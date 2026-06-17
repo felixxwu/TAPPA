@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b8perfbench0001"]
+
+[ext_resource type="Script" path="res://benchmark/perf_benchmark.gd" id="1_bench"]
+
+[node name="Benchmark" type="Node"]
+script = ExtResource("1_bench")

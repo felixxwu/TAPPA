@@ -1,0 +1,146 @@
+class_name CarLibrary
+extends RefCounted
+# A small roster of selectable cars, cycled in-game with the HUD's car button
+# (see hud.gd) and applied by car.gd's apply_car(). Each entry overlays the
+# neutral baseline tuning (car.tscn + game_config.tres) with one real car's
+# character: body/cabin box dimensions, wheelbase and track, wheel/tyre size,
+# mass, power, tyre grip, aero drag, shift_time (gearbox shift speed),
+# engine_type (the engine sound preset) and the driven axle layout.
+#
+# Dimensions (length / width / wheelbase / track) come from manufacturer spec
+# data and are used directly in metres (Godot units = metres).
+#
+# Dynamics values are in real SI units, matching GameConfig (mass in kg, torque
+# in N·m), anchored to the Mazda MX-5:
+#   * mass     — the car's real kerb mass in kg.
+#   * peak_torque — the car's REAL published peak crank torque in N·m (the sim
+#                models crank torque directly). redline is its real rev limit;
+#                together (torque x revs) they give a realistic power character,
+#                so e.g. the high-revving LFA makes its power up at 9000 rpm
+#                rather than on torque alone. The engine preset still sets the
+#                rpm where torque peaks and the curve shape.
+#   * grip_front / grip_rear — tyre friction (wheel_friction_slip_*), a
+#                dimensionless coefficient: road tyres near the 0.8 / 0.6
+#                baseline, performance/AWD cars progressively stickier; the rear
+#                is kept a touch lower so power-on oversteer stays possible
+#                (most extreme on the under-tyred Mustang). Grip is capped around
+#                ~0.98 front: beyond that the lateral force at the tall body's
+#                contact patches rolls the car over in a hard turn, so the
+#                grippier supercars are pegged here to slide rather than tip.
+#   * shift_time — seconds of clutch-open throttle cut per gear change
+#                (GameConfig.shift_time): the manual roadster (MX-5) is slowest,
+#                the dual-clutch / automated supercars (911 PDK, RS3 DSG,
+#                Aventador ISR) snap through gears fastest.
+#
+# engine_type indexes GameConfig.ENGINE_PRESETS: 0 i4, 1 i5, 2 i6, 3 v6,
+# 4 v8, 5 v10, 6 v12. drive_mode matches Drivetrain.DriveMode: 0 RWD, 1 AWD,
+# 2 FWD.
+#
+# low_octave_mix (GameConfig.engine_low_octave_mix) crossfades the engine voice
+# toward a copy one octave lower (half the firing frequency), for cars whose
+# synthesized note sits too high. 0 = normal voice only; 0.5 = a 50/50 blend of
+# the normal and low-octave voices. Tuned per car to taste; e.g. the high-revving
+# Lexus LFA V10 blends in the lower octave to drop its scream into a fuller register.
+#
+# volume_db (GameConfig.engine_volume_db) is the per-car master level of the
+# engine voice, in decibels. apply_car() copies it into GameConfig before the
+# synth rebuilds. All cars start at -6.0 (the GameConfig fallback default), a
+# placeholder for per-car balancing — raise a car to make it louder, lower it
+# to make it quieter relative to the others.
+#
+# noise_db is the per-car broadband-noise level, in decibels. The two inputs to
+# the engine soft clipper — the cylinder voice and the white noise — are each
+# controlled independently before the waveshaper: the voice by volume_db, the
+# noise by noise_db. apply_car() converts noise_db to a linear amplitude
+# (db_to_linear) and writes it into GameConfig.engine_noise_level before the
+# synth rebuilds; engine_noise_level is the fallback default for cars that omit
+# noise_db. All cars start at the same value (≈ the prior global noise floor).
+#
+# soft_clip_post_gain (GameConfig.engine_soft_clip_post_gain) is the per-car
+# post-amp applied after the sine soft clipper, trimming each car's shaped
+# output level (1.0 = transparent). apply_car() copies it into GameConfig before
+# the synth rebuilds; the config value is the fallback default. The clipper's
+# pre-amp (engine_soft_clip_drive) stays a single global value.
+
+const RWD := 0
+const AWD := 1
+const FWD := 2
+
+# body / cabin are BoxMesh sizes (width, height, length) in metres; the chassis
+# collision box reuses body with a little extra height. cabin_z offsets the
+# greenhouse along the car's length (+ = rearward). track and wheelbase set the
+# wheel positions; wheel_radius / wheel_width size the tyre cylinders.
+#
+# suspension_travel (m) is the spring's working length — it also doubles as the
+# wheel raycast / rest length (GameConfig.suspension_travel), so a shorter travel
+# also sits the car lower. suspension_stiffness is the spring rate
+# (GameConfig.suspension_stiffness); the compression/rebound dampers are derived
+# from it (critically damped, see GameConfig.suspension_damping_*), not specified
+# per car. Soft & tall roadster/muscle (MX-5, Mustang) vs stiff & low supercars
+# (911, LFA, Aventador).
+const CARS: Array[Dictionary] = [
+	{
+		"name": "Mazda MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
+		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0,
+		"grip_front": 0.90, "grip_rear": 0.95, "shift_time": 0.30,  # manual H-pattern roadster
+		"engine_type": 0, "drive_mode": RWD, "drag": 3.53, "low_octave_mix": 0.2, "volume_db": -5, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
+		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
+		"wheel_radius": 0.30, "wheel_width": 0.195,
+		"suspension_travel": 0.42, "suspension_stiffness": 10.0,  # compliant roadster baseline
+		# Renders the authored blender/mx5.glb body (Car/Mx5Body) instead of the
+		# procedural chassis+cabin boxes; see car.gd apply_car(). Wheels stay
+		# procedural. Only this car carries the flag.
+		"use_model": true,
+	},
+	{
+		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
+		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0,
+		"grip_front": 0.9, "grip_rear": 0.9, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
+		"engine_type": 1, "drive_mode": AWD, "drag": 3.70, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
+		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
+		"wheel_radius": 0.335, "wheel_width": 0.235,
+		"suspension_travel": 0.45, "suspension_stiffness": 13.0,  # firm AWD hot hatch
+	},
+	{
+		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
+		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0,
+		"grip_front": 0.95, "grip_rear": 0.95, "shift_time": 0.06,  # 8-speed PDK
+		"engine_type": 2, "drive_mode": RWD, "drag": 3.35, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
+		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
+		"wheel_radius": 0.34, "wheel_width": 0.245,
+		"suspension_travel": 0.42, "suspension_stiffness": 15.0,  # taut sports car, lower ride
+	},
+	{
+		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
+		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0,
+		"grip_front": 1, "grip_rear": 1, "shift_time": 0.16,  # automated single-clutch ASG
+		"engine_type": 5, "drive_mode": RWD, "drag": 3.17, "low_octave_mix": 0.5, "volume_db": 7, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
+		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
+		"wheel_radius": 0.34, "wheel_width": 0.255,
+		"suspension_travel": 0.40, "suspension_stiffness": 16.0,  # stiff front-mid GT
+	},
+	{
+		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
+		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0,
+		"grip_front": 0.90, "grip_rear": 0.80, "shift_time": 0.22,  # 6-speed manual muscle
+		"engine_type": 4, "drive_mode": RWD, "drag": 3.88, "low_octave_mix": 0.8, "volume_db": 7, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
+		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
+		"wheel_radius": 0.34, "wheel_width": 0.255,
+		"suspension_travel": 0.55, "suspension_stiffness": 11.0,  # heavy muscle car, softer & taller
+	},
+	{
+		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
+		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0,
+		"grip_front": 0.98, "grip_rear": 0.90, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
+		"engine_type": 6, "drive_mode": AWD, "drag": 3.35, "low_octave_mix": 0.5, "volume_db": 10, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
+		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
+		"wheel_radius": 0.35, "wheel_width": 0.30,
+		"suspension_travel": 0.38, "suspension_stiffness": 18.0,  # very stiff supercar, lowest ride
+	},
+]

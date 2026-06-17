@@ -1,0 +1,142 @@
+extends GutTest
+# TrackGenerator: a pure-2D search that chains CornerLibrary corners (corner ->
+# straight -> corner) from a start frame, avoiding cell overlaps, and returns a
+# centerline Curve2D plus an occupied-cell set. These tests cover the geometry
+# helpers first, then the full search.
+
+const TrackGenerator = preload("res://scripts/track_generator.gd")
+
+
+func test_frame_transform_maps_local_axes_to_world() -> void:
+	# Local +Y is "forward" (the heading); local +X is "right" of it.
+	var xf := TrackGenerator.frame_transform(Vector2(10.0, 5.0), Vector2(0.0, 1.0))
+	assert_almost_eq(xf * Vector2(0.0, 0.0), Vector2(10.0, 5.0), Vector2(1e-4, 1e-4),
+		"origin maps to the frame position")
+	assert_almost_eq(xf * Vector2(0.0, 1.0), Vector2(10.0, 6.0), Vector2(1e-4, 1e-4),
+		"local +Y (forward) follows the heading")
+	# A vector (no translation) only rotates.
+	assert_almost_eq(xf.basis_xform(Vector2(0.0, 2.0)), Vector2(0.0, 2.0), Vector2(1e-4, 1e-4),
+		"basis_xform ignores translation")
+
+
+func test_mirror_points_negates_x_when_flipped() -> void:
+	var pts := [
+		[Vector2(0.0, 0.0), Vector2(0.0, 0.0), Vector2(0.0, 3.0)],
+		[Vector2(2.0, 4.0), Vector2(-1.0, -0.5), Vector2(0.0, 0.0)],
+	]
+	var same := TrackGenerator.mirror_points(pts, false)
+	assert_almost_eq(same[1][0], Vector2(2.0, 4.0), Vector2(1e-4, 1e-4), "no flip keeps x")
+	var flipped := TrackGenerator.mirror_points(pts, true)
+	assert_almost_eq(flipped[1][0], Vector2(-2.0, 4.0), Vector2(1e-4, 1e-4), "flip negates pos.x")
+	assert_almost_eq(flipped[1][1], Vector2(1.0, -0.5), Vector2(1e-4, 1e-4), "flip negates in_control.x")
+
+
+func test_rasterize_cells_covers_width_around_a_straight() -> void:
+	# A 10 m straight along +X at the origin, width 2 m -> cells within 1 m of it.
+	var line := PackedVector2Array([Vector2(0.0, 0.0), Vector2(10.0, 0.0)])
+	var cells := TrackGenerator.rasterize_cells(line, 2.0)
+	# The cell at the centre of the line is included.
+	assert_true(cells.has(Vector2i(5, 0)), "centre cell on the line is covered")
+	# A cell well outside half-width (>1 m away in z) is not.
+	assert_false(cells.has(Vector2i(5, 8)), "cell 4 m off the line is not covered")
+	# Coverage is symmetric about the line (z just above and below).
+	assert_true(cells.has(Vector2i(5, -1)), "cell just below the line is covered")
+
+
+func test_exit_heading_is_unit_direction_of_last_segment() -> void:
+	var poly := PackedVector2Array([Vector2(0.0, 0.0), Vector2(1.0, 0.0), Vector2(1.0, 3.0)])
+	var h := TrackGenerator.exit_heading(poly)
+	assert_almost_eq(h, Vector2(0.0, 1.0), Vector2(1e-4, 1e-4), "heading follows the last segment, normalised")
+
+
+const START_POS := Vector2(0.0, 0.0)
+const START_HEADING := Vector2(0.0, 1.0)
+
+
+func _generate(seed_value: int, turns: int = 6, width: float = 6.0) -> Dictionary:
+	return TrackGenerator.generate(START_POS, START_HEADING, seed_value, turns, width)
+
+
+func test_generate_is_deterministic_per_seed() -> void:
+	var a := _generate(7)
+	var b := _generate(7)
+	assert_eq(a["cells"].size(), b["cells"].size(), "same seed -> same number of cells")
+	assert_eq(a["pieces"].size(), b["pieces"].size(), "same seed -> same number of pieces")
+
+
+func test_generate_places_requested_corner_count() -> void:
+	var r := _generate(3, 6)
+	assert_eq(r["pieces"].size(), 6, "exactly the requested number of corners are placed")
+	assert_true(r["complete"], "the search completed within the cap")
+
+
+func test_generate_starts_at_the_spawn_frame() -> void:
+	var r := _generate(5)
+	var curve: Curve2D = r["centerline"]
+	assert_gt(curve.point_count, 1, "centerline has multiple points")
+	assert_almost_eq(curve.get_point_position(0), START_POS, Vector2(1e-3, 1e-3),
+		"centerline starts at the spawn position")
+
+
+func test_generate_avoids_cell_overlap_between_pieces() -> void:
+	# Each piece records the cells it added; those sets must be disjoint (the
+	# search adds a cell to the occupied set only once, on the piece that claims
+	# it), proving no later piece re-covers an earlier piece's cells.
+	var r := _generate(11, 8)
+	var seen: Dictionary = {}
+	for piece in r["pieces"]:
+		for cell in piece["cells"]:
+			assert_false(seen.has(cell), "cell %s claimed by exactly one piece" % cell)
+			seen[cell] = true
+
+
+func test_clearance_inflates_the_collision_footprint() -> void:
+	# Clearance feeds the overlap test as `width + 2*clearance`: a straight whose
+	# footprint is rasterized at the inflated width covers cells the bare width
+	# would not, so neighbouring sections must keep that extra gap.
+	var line := PackedVector2Array([Vector2(0.0, 0.0), Vector2(10.0, 0.0)])
+	var bare := TrackGenerator.rasterize_cells(line, 6.0)            # half-width 3 m
+	var inflated := TrackGenerator.rasterize_cells(line, 6.0 + 2.0 * 6.0)  # half-width 9 m
+	assert_false(bare.has(Vector2i(5, 8)), "cell ~4 m off the line is clear at width only")
+	assert_true(inflated.has(Vector2i(5, 8)), "the same cell is occupied once clearance is added")
+
+
+func test_generate_with_clearance_is_deterministic_and_non_overlapping() -> void:
+	# generate() threads clearance through the search: still deterministic per
+	# seed, and pieces still claim disjoint cells (the core overlap invariant).
+	var a := TrackGenerator.generate(START_POS, START_HEADING, 11, 8, 6.0, 6.0)
+	var b := TrackGenerator.generate(START_POS, START_HEADING, 11, 8, 6.0, 6.0)
+	assert_eq(int(a["cells"].size()), int(b["cells"].size()),
+		"same seed + clearance -> identical footprint")
+	var seen: Dictionary = {}
+	for piece in a["pieces"]:
+		for cell in piece["cells"]:
+			assert_false(seen.has(cell), "cell %s claimed by exactly one piece" % cell)
+			seen[cell] = true
+
+
+func test_generate_is_g1_continuous_at_joins() -> void:
+	# Consecutive tessellated centerline segments never reverse direction: the
+	# angle between successive segment directions stays well under 90 degrees,
+	# i.e. the track has no kinks/cusps at piece joins.
+	var r := _generate(2, 8)
+	var pts: PackedVector2Array = (r["centerline"] as Curve2D).tessellate()
+	for i in range(2, pts.size()):
+		var d0 := (pts[i - 1] - pts[i - 2])
+		var d1 := (pts[i] - pts[i - 1])
+		if d0.length() < 1e-4 or d1.length() < 1e-4:
+			continue
+		assert_gt(d0.normalized().dot(d1.normalized()), 0.0,
+			"no reversal between successive segments at index %d" % i)
+
+
+func test_generate_uses_both_left_and_right_flips() -> void:
+	var lefts := false
+	var rights := false
+	for seed_value in [1, 2, 3, 4, 5]:
+		for piece in _generate(seed_value)["pieces"]:
+			if piece["flip"]:
+				lefts = true
+			else:
+				rights = true
+	assert_true(lefts and rights, "both left and right corners appear across seeds")

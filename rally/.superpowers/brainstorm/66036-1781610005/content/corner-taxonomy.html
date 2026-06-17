@@ -1,0 +1,58 @@
+<h2>Proposed corner taxonomy</h2>
+<p class="subtitle">Top-down view. Car enters from the bottom (grey = entry straight), turns
+through the corner (blue), exits (grey). My working model: <b>the number sets how much the
+road heading rotates</b>, and tighter corners also use a smaller radius.</p>
+
+<div id="grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:10px"></div>
+
+<p class="subtitle" style="margin-top:18px">Key questions for you in the terminal below 👇</p>
+
+<script>
+// Each corner: heading change (deg) + radius (m). Entry/exit straights shown for context.
+const TYPES = [
+  {name:"6 (almost straight)", t:12,  r:90},
+  {name:"5",                    t:25,  r:65},
+  {name:"4",                    t:40,  r:45},
+  {name:"3",                    t:55,  r:32},
+  {name:"2",                    t:70,  r:22},
+  {name:"1 (sharpest gradient)",t:85,  r:15},
+  {name:"Square (90° sharp)",   t:90,  r:8},
+  {name:"Hairpin (~180°)",      t:180, r:9},
+  {name:"Straight (e.g. 100m)", t:0,   r:0, straightLen:100},
+];
+const L_IN = 18, L_OUT = 22; // meters of entry/exit straight to display
+
+function buildPath(tt){
+  const pts=[]; let x=0,y=0,h=Math.PI/2; // facing +y (up)
+  const step=(d)=>{ x+=Math.cos(h)*d; y+=Math.sin(h)*d; pts.push([x,y]); };
+  pts.push([0,0]);
+  let ein=L_IN; if(tt.t===0) return straightPath(tt.straightLen||100);
+  for(let i=0;i<ein;i++) step(1);
+  const arcLen=tt.r*tt.t*Math.PI/180, n=Math.max(8,Math.round(arcLen));
+  const dh=(tt.t*Math.PI/180)/n;
+  for(let i=0;i<n;i++){ h-=dh; step(arcLen/n); } // right turn
+  for(let i=0;i<L_OUT;i++) step(1);
+  return {pts, splitIn:ein, splitArc:ein+n};
+}
+function straightPath(len){ const pts=[]; for(let i=0;i<=len;i++) pts.push([0,i]); return {pts, splitIn:Math.floor(len*0.45), splitArc:Math.ceil(len*0.55), straight:true}; }
+
+function render(tt){
+  const P=buildPath(tt), pts=P.pts;
+  let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9;
+  pts.forEach(([px,py])=>{minx=Math.min(minx,px);maxx=Math.max(maxx,px);miny=Math.min(miny,py);maxy=Math.max(maxy,py);});
+  const W=170,H=150,pad=14;
+  const sx=(W-2*pad)/Math.max(1,(maxx-minx)), sy=(H-2*pad)/Math.max(1,(maxy-miny));
+  const s=Math.min(sx,sy);
+  const tx=px=>pad+(px-minx)*s, ty=py=>H-pad-(py-miny)*s; // flip y
+  const seg=(a,b,col,w)=>{ let d="M"+tx(pts[a][0])+" "+ty(pts[a][1]); for(let i=a+1;i<=b;i++) d+=" L"+tx(pts[i][0])+" "+ty(pts[i][1]); return `<path d="${d}" stroke="${col}" stroke-width="${w}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`; };
+  let svg=`<svg width="${W}" height="${H}" style="background:#11131a;border-radius:8px">`;
+  svg+=seg(0,P.splitIn,"#555",6);
+  svg+=seg(P.splitIn,P.splitArc,P.straight?"#555":"#5b8dff",6);
+  svg+=seg(P.splitArc,pts.length-1,"#555",6);
+  // entry arrow
+  svg+=`<circle cx="${tx(pts[0][0])}" cy="${ty(pts[0][1])}" r="4" fill="#7CFC00"/>`;
+  svg+=`</svg>`;
+  return `<div style="text-align:center"><div class="label" style="margin-bottom:4px">${tt.name}</div>${svg}</div>`;
+}
+document.getElementById("grid").innerHTML = TYPES.map(render).join("");
+</script>

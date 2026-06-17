@@ -1,0 +1,150 @@
+[gd_scene format=3]
+
+[ext_resource type="Shader" path="res://shaders/ps1_models.gdshader" id="1_models"]
+[ext_resource type="Script" path="res://scripts/car.gd" id="2_car"]
+[ext_resource type="Script" path="res://scripts/engine_audio.gd" id="3_engaud"]
+[ext_resource type="PackedScene" path="res://blender/mx5.glb" id="4_mx5model"]
+
+[sub_resource type="BoxMesh" id="mesh_chassis"]
+size = Vector3(1.6, 0.5, 3)
+
+[sub_resource type="ShaderMaterial" id="mat_chassis"]
+render_priority = 0
+shader = ExtResource("1_models")
+shader_parameter/albedo_color = Color(0.85, 0.2, 0.15, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+
+[sub_resource type="BoxMesh" id="mesh_cabin"]
+size = Vector3(1.3, 0.45, 1.4)
+
+[sub_resource type="ShaderMaterial" id="mat_cabin"]
+render_priority = 0
+shader = ExtResource("1_models")
+shader_parameter/albedo_color = Color(0.25, 0.3, 0.4, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+
+[sub_resource type="BoxShape3D" id="shape_chassis"]
+size = Vector3(1.6, 0.7, 3)
+
+[sub_resource type="CylinderMesh" id="mesh_wheel"]
+top_radius = 0.35
+bottom_radius = 0.35
+height = 0.25
+
+[sub_resource type="ShaderMaterial" id="mat_wheel"]
+render_priority = 0
+shader = ExtResource("1_models")
+shader_parameter/albedo_color = Color(0.12, 0.12, 0.12, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_spoke"]
+render_priority = 0
+shader = ExtResource("1_models")
+shader_parameter/albedo_color = Color(0.85, 0.85, 0.78, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+
+[sub_resource type="BoxMesh" id="mesh_spoke"]
+size = Vector3(0.27, 0.62, 0.06)
+
+[node name="Car" type="VehicleBody3D"]
+mass = 120.0
+script = ExtResource("2_car")
+
+[node name="Chassis" type="MeshInstance3D" parent="."]
+mesh = SubResource("mesh_chassis")
+surface_material_override/0 = SubResource("mat_chassis")
+
+[node name="EngineAudio" type="AudioStreamPlayer" parent="."]
+script = ExtResource("3_engaud")
+
+[node name="Cabin" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0.2)
+mesh = SubResource("mesh_cabin")
+surface_material_override/0 = SubResource("mat_cabin")
+
+[node name="Mx5Body" parent="." instance=ExtResource("4_mx5model")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, -0.5, 0)
+visible = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("shape_chassis")
+
+[node name="WheelFL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.85, -0.1, -1.05)
+use_as_steering = true
+
+[node name="Visual" type="Node3D" parent="WheelFL"]
+
+[node name="Tire" type="MeshInstance3D" parent="WheelFL/Visual"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("mesh_wheel")
+surface_material_override/0 = SubResource("mat_wheel")
+
+[node name="Spoke1" type="MeshInstance3D" parent="WheelFL/Visual"]
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
+
+[node name="Spoke2" type="MeshInstance3D" parent="WheelFL/Visual"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
+
+[node name="WheelFR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.85, -0.1, -1.05)
+use_as_steering = true
+
+[node name="Visual" type="Node3D" parent="WheelFR"]
+
+[node name="Tire" type="MeshInstance3D" parent="WheelFR/Visual"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("mesh_wheel")
+surface_material_override/0 = SubResource("mat_wheel")
+
+[node name="Spoke1" type="MeshInstance3D" parent="WheelFR/Visual"]
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
+
+[node name="Spoke2" type="MeshInstance3D" parent="WheelFR/Visual"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
+
+[node name="WheelRL" type="VehicleWheel3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.85, -0.1, 1.05)
+use_as_traction = true
+
+[node name="Visual" type="Node3D" parent="WheelRL"]
+
+[node name="Tire" type="MeshInstance3D" parent="WheelRL/Visual"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("mesh_wheel")
+surface_material_override/0 = SubResource("mat_wheel")
+
+[node name="Spoke1" type="MeshInstance3D" parent="WheelRL/Visual"]
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
+
+[node name="Spoke2" type="MeshInstance3D" parent="WheelRL/Visual"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
+
+[node name="WheelRR" type="VehicleWheel3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.85, -0.1, 1.05)
+use_as_traction = true
+
+[node name="Visual" type="Node3D" parent="WheelRR"]
+
+[node name="Tire" type="MeshInstance3D" parent="WheelRR/Visual"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("mesh_wheel")
+surface_material_override/0 = SubResource("mat_wheel")
+
+[node name="Spoke1" type="MeshInstance3D" parent="WheelRR/Visual"]
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
+
+[node name="Spoke2" type="MeshInstance3D" parent="WheelRR/Visual"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("mesh_spoke")
+surface_material_override/0 = SubResource("mat_spoke")
