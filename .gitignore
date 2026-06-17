@@ -1,0 +1,5 @@
+# Godot 4 editor cache
+rally/.godot/
+
+# Build / export artifacts
+rally/build/
