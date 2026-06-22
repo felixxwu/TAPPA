@@ -15,6 +15,15 @@
 > for dev/debug), NOT to switch between a "high" and "low" path. Do not add a
 > quality-tier switch.
 
+## ⚠️ Open action items (asset / prerequisite work)
+
+- [ ] **Create low-poly 3D models of the trees and foliage** (Blender → `.glb`,
+      like `blender/mx5.glb`) so the alpha-cutout billboards can ultimately be
+      **swapped for solid opaque meshes** in the game. This is a prerequisite for
+      the "opaque low-poly meshes" direction under item 2 — the code can't be
+      verified in-engine until the models exist. Owner: Felix. See
+      [item 2 → Alternative direction](#alternative-direction-opaque-low-poly-meshes-instead-of-cutout-billboards).
+
 ## Context / current state (measured from the code)
 
 - Renderer: GL Compatibility, `rendering_method.mobile="gl_compatibility"`,
@@ -178,6 +187,47 @@ needed (mirrors how `TreeScatter.scatter` is tested).
 Pop-in when turning fast if the cone margin is too tight — pad it and lean on the
 `fade_band` dither. Throttling the cull too aggressively shows lag between camera
 and visible set; tune cadence.
+
+### Alternative direction: opaque low-poly meshes instead of cutout billboards
+
+> **⚠️ REMINDER — ASSET WORK NEEDED (Felix):** before this can land, I need to
+> **create low-poly 3D models of the trees and foliage** (e.g. a faceted
+> pyramid/cone canopy + trunk for trees, a small opaque blob for bushes) in
+> Blender and export them as `.glb`, the same way the MX-5 body already lives in
+> `blender/mx5.glb`. The eventual goal is to **swap the alpha-cutout billboards
+> out for these solid meshes** in the game. None of the code work below can be
+> verified in-engine until those models exist.
+
+On the target hardware the foliage is **fill-bound**, and alpha-cutout
+billboards are the worst case for it: `discard` disables early-Z/HSR, and even a
+lone billboard wastes ~half its shaded fragments on the transparent part of the
+quad. Opaque low-poly meshes flip that — early-Z works, solids occlude each
+other (bounded overdraw), no per-fragment discard tax, no alpha channel needed —
+at the cost of more (cheap, abundant) vertices. Net: very likely faster here,
+and the chunky faceted look suits the PS1/PS2 aesthetic.
+
+Plan once the models exist:
+1. Author the tree/bush meshes in `blender/`, export `.glb` (mirror `mx5.glb` /
+   `mx5.glb.import`). Keep them genuinely low-poly (~tens of tris each) and small
+   in screen coverage so they don't reintroduce overdraw.
+2. Give them an **opaque** material on `shaders/ps1_models.gdshader` (already the
+   project's unshaded mesh shader) — no `discard`, no alpha — so they go through
+   the same quantize/dither/fog pipeline as everything else.
+3. `BillboardField` becomes a generic instanced-mesh field (or add a sibling
+   `FoliageField`): same `MultiMesh` + spatial/view-cone cull + visible cap +
+   collision-box logic from items 2/3, but with `mm.mesh` set to the authored
+   `.glb` mesh instead of a `QuadMesh`, and the billboard shader dropped. The
+   per-instance transform path is unchanged.
+4. Drop the camera-facing billboard yaw (real geometry doesn't need it) and the
+   `alpha_scissor` / `bayer4x4` discard; keep the distance fade (it can move to a
+   cheap per-instance `visible_instance_count` cut now that culling is CPU-side).
+5. Update `features/trees.md` and `features/rendering.md`; re-point the
+   `world.gd` build calls (`scripts/world.gd:81-95`) at the mesh field.
+
+This supersedes the billboard-specific parts of item 1 (tree/bush mipmaps) and
+item 2 (the fragment-discard discussion) **if** adopted — keep the spatial cull,
+visible cap, and collision culling regardless. Decide billboard-vs-mesh before
+implementing item 2 so the field class is built the right way once.
 
 ---
 
