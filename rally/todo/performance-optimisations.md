@@ -23,6 +23,10 @@
       the "opaque low-poly meshes" direction under item 2 — the code can't be
       verified in-engine until the models exist. Owner: Felix. See
       [item 2 → Alternative direction](#alternative-direction-opaque-low-poly-meshes-instead-of-cutout-billboards).
+- [ ] **Decide the web-export threading model** (item 7): threaded build (smoother
+      chunk loading) vs. single-threaded build (boots on more old / low-memory
+      devices). This shapes the terrain-gen work and is a prerequisite for the web
+      build actually running on the oldest target phones. Owner: Felix.
 
 ## Context / current state (measured from the code)
 
@@ -44,9 +48,13 @@
   of `features/*.md` lines say "5×5"; the code is `RADIUS=1` → 3×3. Fix the docs
   while here.
 
-The five items below are ordered by expected impact on old phones:
-**(2) and (3) — foliage draw + collision — are the biggest wins; (1) and (4)
-are cheap and safe; (5) is mostly an advisory "probably don't".**
+Items 1–5 below are the **GPU / fill / render-side** work; items 6–12 (in the
+**CPU & platform** section further down) are the pure-CPU and platform costs the
+PS1 look can't touch. Of the GPU items, **(2) and (3) — foliage draw + collision
+— are the biggest wins; (1) and (4) are cheap and safe; (5) is mostly an advisory
+"probably don't".** Of the CPU items, **(6) audio and (7) the threaded-export
+decision move the needle most.** See the consolidated implementation order at the
+end.
 
 ---
 
@@ -360,14 +368,196 @@ chunk's ring distance exceeds it. Default OFF (collision on all loaded chunks).
 
 ---
 
+# CPU & platform (non-GPU)
+
+Items 1–5 are about the GPU / fill / render-side cost. The items below are
+**pure CPU and platform** costs that run every frame regardless of the graphics
+style — i.e. the PS1 look does nothing for them, which is the crux of the
+original "looks retro ⇒ runs on old phones" theory: the aesthetic only addresses
+the GPU side, and several of the real old-phone bottlenecks are here.
+**Items 6 and 7 are the two that genuinely move the needle for old phones.**
+
+## 6. Engine audio: per-sample DSP in GDScript on the main thread
+
+### Why
+`scripts/engine_audio.gd:31` pulls audio every `_process` frame and
+`scripts/engine_audio_synth.gd fill()` (`:82`) runs a **per-sample loop at
+22,050 Hz**. Each sample, `_voice()` (`:130`) loops `firing_phases × harmonics`
+— for a 6-cylinder car at the default `engine_harmonics = 4` that's ~24 `sin()`
+**plus 24 `pow()`** per sample, plus `exp()`, two `randf()`, a DC blocker and a
+soft clipper. That is on the order of **~half a million transcendental calls per
+second in interpreted GDScript, on the main thread, every frame.** This is a
+classic old-phone / web-export CPU cost and is completely invisible to the PS1
+look. It also couples audio to frame rate: the fill runs in `_process`, so a few
+slow frames underrun the 0.1 s buffer → audible crackle (with a 30 fps cap
+that's only ~3 frames of headroom).
+
+### Plan
+1. **Precompute the harmonic weights.** `pow(0.6 + 0.4*load_factor, h)`
+   (`engine_audio_synth.gd:138`) depends only on harmonic index and the load
+   factor, not the sample — build a small `[harmonics]` weight table once per
+   `fill()` (load_factor is constant across the buffer) instead of calling `pow`
+   per sample. Biggest single win, no behaviour change.
+2. **Avoid the per-frame allocation.** `_scratch.slice(0, n)`
+   (`engine_audio.gd:41`) allocates a fresh `PackedVector2Array` every frame for
+   `push_buffer`; reuse a pre-sized buffer / push the scratch directly.
+3. **Lower the shipped cost.** Set `engine_harmonics` lower in
+   `config/game_config.tres` (it is currently the code default 4 — not
+   overridden) if the note still reads well at 2–3. Single shipped value, per the
+   inherently-low-end principle.
+4. **Optionally decouple from the render frame.** Consider filling the
+   `AudioStreamGenerator` from a thread / on an audio cadence rather than
+   `_process`, so a slow render frame can't underrun audio. Heavier change; do
+   only if 1–3 don't clear it.
+
+### Files
+`scripts/engine_audio_synth.gd`, `scripts/engine_audio.gd`,
+`scripts/game_config.gd` + `config/game_config.tres`, `features/engine-audio.md`.
+
+### Tests
+`engine_audio_synth.gd` is pure/headless (`RefCounted`, `fill()` only) — add a
+test asserting the precomputed-weight path produces the same samples as the
+current per-sample `pow` (within float epsilon) for a few rpm/throttle/harmonic
+cases, so the optimisation is provably behaviour-preserving.
+
+### Risk
+Low. The weight precompute is algebraically identical; keep an epsilon-compare
+test. Threading the fill (step 4) is the only risky part — gate it separately.
+
+## 7. Threaded web export vs. old-device compatibility — DECISION NEEDED
+
+### Why
+`export_presets.cfg:30` sets `variant/thread_support=true` with
+`threads/emscripten_pool_size=8` / `godot_pool_size=4`, and `serve_web.sh` sends
+the COOP/COEP headers. Threaded WASM requires `SharedArrayBuffer`, which:
+- needs the **host** to send cross-origin-isolation headers (itch.io etc. must
+  have "SharedArrayBuffer support" toggled on — see `build_web.sh:8-9`), and
+- **isn't available on older / low-memory mobile browsers**, and the thread
+  pools cost extra memory cheap phones may not have.
+
+So the threaded build can **fail to start or OOM on exactly the old hardware the
+project targets** — directly at odds with "runs on any device, even old phones."
+Meanwhile the terrain generation relies on `WorkerThreadPool`
+(`terrain_manager.gd:436`) to keep chunk loading off the main thread, so a
+non-threaded export would **hitch on chunk loads** unless tuned.
+
+### Plan / decision
+Make this an explicit, tested choice rather than an accident of the preset:
+1. **Decide the priority:** maximum device reach (single-threaded export) vs.
+   smoother chunk loading (threaded export). For the stated goal, lean toward a
+   **single-threaded export as the shipped web build**, accepting that terrain
+   gen must then be smooth on the main thread.
+2. **Make terrain gen survive single-threaded.** `terrain_manager.gd` already
+   has `use_threaded_generation` and a synchronous path. When threads are
+   unavailable, fall back to synchronous generation but **spread the work**: keep
+   `MAX_INTEGRATIONS_PER_FRAME = 1` (`:14`) and consider time-slicing
+   `compute_chunk_data` (it's the heavy CPU half) across frames so a boundary
+   crossing doesn't stall. Detect thread availability at runtime
+   (`OS.get_processor_count()` / whether `WorkerThreadPool` ran) rather than
+   hardcoding.
+3. **If keeping threads**, document the host header requirement and provide the
+   single-threaded build as a fallback for devices/hosts that can't do SAB.
+4. Confirm the chosen export actually boots on a low-end test device before
+   shipping.
+
+### Files
+`export_presets.cfg`, `scripts/terrain_manager.gd`, `build_web.sh` /
+`serve_web.sh` (docs), `features/terrain.md`, `features/architecture.md`.
+
+### Risk
+Single-threaded terrain gen reintroduces the startup/boundary hitch the threads
+were added to hide; the fog masks far pop-in but not a frame stall. Time-slicing
+`compute_chunk_data` is the mitigation and needs care (partial-chunk state).
+
+## 8. Physics hot-path allocation churn
+
+### Why
+`scripts/drivetrain.gd step()` rebuilds a `contacts` array of ~10-key
+dictionaries **every physics tick**, plus a `front_reaction_each` dict inside the
+`SPIN_SUBSTEPS = 8` loop. Allocating dictionaries/arrays 60×/s on the main thread
+adds GC pressure on low-end devices. The substepping itself is fine — it's the
+per-tick allocation that's the smell.
+
+### Plan
+Preallocate the per-wheel contact structures once (max 4 wheels) and refill them
+in place each tick; replace the per-contact `Dictionary` with fixed fields /
+parallel typed arrays (`PackedFloat32Array` etc.), and hoist `front_reaction_each`
+out of the substep loop (reuse one dict, or index by wheel slot). Behaviour
+unchanged; only the allocations go away.
+
+### Files
+`scripts/drivetrain.gd`. Covered by the existing drivetrain/physics tests
+(`tests/headless/`); they must stay green unchanged (this is a pure refactor).
+
+### Risk
+Low, but it touches the tire model — rely on the existing physics tests as the
+guard (per `CLAUDE.md`, a previously-green physics test failing means the
+refactor changed behaviour).
+
+## 9. Post-process back-buffer copy (awareness)
+
+`shaders/ps1_post_process.gdshader` uses `hint_screen_texture`, forcing a
+full-screen framebuffer grab every frame on GL Compatibility — one extra
+full-screen bandwidth round-trip per frame. **Cheap at 480×360**, so this is
+*awareness, not an action item*: if the post-process ever shows up on the `P`
+overlay's render-gpu line, the alternative is rendering the scene to a
+`SubViewport` and doing the dither as a single blit instead of a back-buffer
+copy. Low priority; the current cost is small.
+
+## 10. HUD per-frame string allocation (minor)
+
+`scripts/hud.gd:_process` (`:39`) rebuilds ~6 label strings every frame
+(`"%d km/h"`, `"%d rpm"`, etc.) even when the values are unchanged → small
+per-frame GC. Cache the last numeric values and only re-format / re-assign
+`.text` when they change. Minor; do it alongside other cleanup.
+
+## 11. `downforce_readouts` allocated when debug is off (minor)
+
+`scripts/car.gd:146-149` builds the nested `downforce_readouts` array **every
+physics tick even when the wheel-force overlay is off** (it's only consumed by
+`WheelForceDebug`, which already early-outs when hidden,
+`wheel_force_debug.gd:64`). Guard the array build behind
+`cfg.debug_wheel_forces` so the shipped game doesn't allocate it. Tiny win, near-
+zero risk.
+
+## 12. Scaled HeightMapShape3D collision (minor / awareness)
+
+`scripts/terrain_chunk.gd:22` scales the `CollisionShape3D` node as the
+cell-size workaround for `HeightMapShape3D`. Scaling collision shapes is
+discouraged with Jolt (per-contact transform cost / precision). Acknowledged in
+the code comment; only worth revisiting if `cpu physics` on the `P` overlay
+points at terrain contacts after items 3 and 8. Low priority.
+
+---
+
+## Already done right (do not chase these)
+
+- The wheel-force debug overlay early-outs when hidden
+  (`wheel_force_debug.gd:64`) — no cost in the shipped game.
+- Wheel lists are cached (`drivetrain.gd` `rear_wheels`/`front_wheels`,
+  `car.gd` `_any_wheel_airborne`), not `find_children`'d per frame.
+- Terrain generation is threaded with a per-frame integration cap
+  (`MAX_INTEGRATIONS_PER_FRAME = 1`) and a synchronous fallback already exists.
+- The web export's threading headers are correctly configured (`serve_web.sh`,
+  `export_presets.cfg`) — the open question in item 7 is *whether to use threads
+  at all* on the oldest devices, not whether they're set up right.
+
+---
+
 ## Suggested implementation order
 
 1. **Item 4** (frame cap) — one line, immediate thermal win, zero risk.
 2. **Item 1** (mipmaps + LOD bias) — cheap, safe bandwidth win.
-3. **Item 2** (foliage CPU cull + visible cap) — biggest GPU win.
-4. **Item 3** (collision box cull) — biggest physics win; shares item 2's bins.
-5. **Item 5** — only after profiling with the `P` overlay shows residual physics
-   cost; most likely skipped.
+3. **Item 6** (engine-audio CPU) — biggest pure-CPU win; mostly the `pow`
+   precompute, behaviour-preserving with a test.
+4. **Item 7** (threaded-export decision) — gates whether the game boots at all on
+   the oldest devices; decide early, it shapes the terrain-gen work.
+5. **Item 2** (foliage CPU cull + visible cap) — biggest GPU win.
+6. **Item 3** (collision box cull) — biggest physics win; shares item 2's bins.
+7. **Item 8** (physics-tick allocations) — refactor, guarded by existing tests.
+8. **Items 10–11** (minor allocations) — fold into the above cleanups.
+9. **Items 5, 9, 12** — only after the `P` overlay shows residual cost in their
+   area; most likely skipped.
 
 ## Cross-cutting: inherently low-end, no quality tiers
 There is no quality-profile switch. Items 1–4 each add a `GameConfig` knob, but
