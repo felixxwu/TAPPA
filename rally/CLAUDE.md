@@ -10,6 +10,16 @@
   file(s) in the SAME piece of work — keep the docs in sync with the code, the
   same way tests are kept in sync.
 
+## Todo / specs folder
+
+- The `todo/` folder holds planning specs for work to be implemented later
+  (e.g. `todo/performance-optimisations.md`). Read the relevant spec before
+  implementing anything it covers, and keep it in sync as items land.
+- When you finish implementing items from a todo spec, ask the user whether
+  to remove the completed points from the spec — and if EVERY item in a spec
+  is done, ask whether to delete the whole `.md` file. Do not remove items or
+  delete the file without checking first.
+
 ## Testing (mandatory)
 
 - When adding or changing functionality, add or update tests in the same piece
