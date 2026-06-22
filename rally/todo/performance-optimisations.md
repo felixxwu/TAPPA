@@ -7,6 +7,13 @@
 > (`scripts/game_config.gd` + `config/game_config.tres`), never hardcoded in
 > scripts/scenes. Update the relevant `features/*.md` doc and add/adjust tests
 > in the same piece of work.
+>
+> **Design principle: the game is _inherently_ low-end.** There is no separate
+> "low quality" profile or toggle — the aggressive values below are simply the
+> defaults, the only mode the game ships. Every device gets the same lean
+> pipeline. The `GameConfig` knobs exist for tuning the single shipped value (and
+> for dev/debug), NOT to switch between a "high" and "low" path. Do not add a
+> quality-tier switch.
 
 ## Context / current state (measured from the code)
 
@@ -64,7 +71,8 @@ phone the bandwidth cost outweighs the aesthetic.
      where `lod_bias` is a `uniform float` (default ~0.5–1.0). Same idea for the
      ground in `shaders/ps1_models.gdshader` if ground bandwidth shows up in the
      profiler (`P` overlay, render-gpu line). Expose `texture_lod_bias` in
-     `GameConfig` so it can be tuned / raised on a low-end profile.
+     `GameConfig` as the single shipped value (default biased toward cheaper
+     mips), tunable for dev.
 3. Keep `filter_nearest` (PS1 look) — mipmapping is independent of the
    magnification filter; with nearest + mipmaps you still get crisp up-close
    texels but cheaper minified sampling.
@@ -116,8 +124,8 @@ submitted, with a hard cap on visible instances.
    - Write survivors' transforms into the MultiMesh buffer and set
      `multimesh.visible_instance_count = survivor_count`.
 4. **Max visible instance count (all objects):** add a `GameConfig` cap
-   (e.g. `max_visible_billboards`, default ~800 trees / ~800 bushes, lower on a
-   low-end profile). When survivors exceed the cap, keep the nearest N (the bins
+   (e.g. `max_visible_billboards`, default ~800 trees / ~800 bushes — a single
+   shipped cap, not a per-tier value). When survivors exceed the cap, keep the nearest N (the bins
    are already roughly distance-ordered; do a partial nearest selection, not a
    full sort — see draw-order note below). This bounds worst-case cost
    regardless of how dense a forest the track generates.
@@ -145,8 +153,8 @@ submitted, with a hard cap on visible instances.
   the visible subset) is itself expensive in GDScript and would likely cost more
   than it saves — the opposite of the goal on a weak CPU.
 - **What actually helps** is reducing the *number* of overlapping fragments:
-  the distance cull, the view-cone cull, the visible cap, and lowering
-  `trees_per_turn` / `tree_render_distance_m` on the low-end profile. Spatial
+  the distance cull, the view-cone cull, the visible cap, and keeping
+  `trees_per_turn` / `tree_render_distance_m` lean by default. Spatial
   binning gives "roughly near-first" submission for free without a sort.
 - If profiling later shows the foliage is genuinely overdraw-bound and CPU has
   headroom, a *coarse* bucket sort (by bin distance, not per-instance) is the
@@ -233,12 +241,12 @@ cap keeps the GPU/CPU cool and the frame pacing even.
    `Engine.max_fps = cfg.target_fps` (only set when `> 0`).
 3. Consider `DisplayServer.window_set_vsync_mode(VSYNC_ENABLED)` so the 30 cap is
    aligned to the display (avoids tearing + further smooths pacing). On web/mobile
-   exports vsync behaviour differs; gate behind the profile if it causes issues.
+   exports vsync behaviour differs; disable it if it causes issues there.
 4. Decouple physics: physics already runs in `_physics_process` at the project
    physics tick (default 60). With a 30 fps render cap, leave physics at 60 for
    stable handling (`car.gd`/`drivetrain.gd` integrate there). If CPU-bound on the
-   weakest devices, expose `physics/common/physics_ticks_per_second` via a profile
-   and consider 30 — but test handling carefully (tire model is tick-sensitive).
+   weakest devices, lower `physics/common/physics_ticks_per_second` to 30 as the
+   shipped value — but test handling carefully (the tire model is tick-sensitive).
 
 ### Files
 `scripts/world.gd`, `scripts/game_config.gd` + `config/game_config.tres`,
@@ -298,7 +306,7 @@ rendered area but reduce the collision surface per body.
 Expose `terrain_collision_radius` in `GameConfig` (default = `RADIUS`, i.e. all
 loaded chunks get collision) so it can be tuned/measured without code changes,
 and have `TerrainChunk._build_collision` skip the `HeightMapShape3D` when the
-chunk's ring distance exceeds it. Gate behind a profile; default OFF.
+chunk's ring distance exceeds it. Default OFF (collision on all loaded chunks).
 
 ---
 
@@ -311,10 +319,13 @@ chunk's ring distance exceeds it. Gate behind a profile; default OFF.
 5. **Item 5** — only after profiling with the `P` overlay shows residual physics
    cost; most likely skipped.
 
-## Cross-cutting: low-end quality profile
-Items 1–4 each add a `GameConfig` knob. Bundle the aggressive values
-(`trees_per_turn`↓, `tree_render_distance_m`↓, `max_visible_billboards`↓,
-`texture_lod_bias`↑, `target_fps=30`) behind a single profile switch so a weak
-device can opt into all of them at once, keeping the desktop/dev experience
-unchanged. This matches the existing config-first architecture
+## Cross-cutting: inherently low-end, no quality tiers
+There is no quality-profile switch. Items 1–4 each add a `GameConfig` knob, but
+each knob holds **one shipped value** — the lean one — that every device runs.
+Set the aggressive defaults directly in `config/game_config.tres`
+(`trees_per_turn`↓, `tree_render_distance_m`↓, `max_visible_billboards` capped,
+`texture_lod_bias`↑, `target_fps=30`). The knobs exist for tuning that single
+value and for dev/debug, not for branching between a "high" and "low" path. If a
+future device proves too weak, lower the shipped defaults further — do not add a
+tier system. This matches the config-first architecture
 (`features/configuration.md`).
