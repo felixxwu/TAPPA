@@ -9,6 +9,11 @@
 - Every time a feature is added or modified, update the relevant `features/`
   file(s) in the SAME piece of work — keep the docs in sync with the code, the
   same way tests are kept in sync.
+- `gameplay.md` is the high-level gameplay design / vision doc ("Gran Turismo,
+  but with rally stages") — the north star the `todo/` specs ladder up to. Read
+  it for intent on progression, damage, rewards, tuning, and the final showdown.
+  It's design-level, not an implementation spec; keep it aligned when gameplay
+  direction changes.
 
 ## Todo / specs folder
 
