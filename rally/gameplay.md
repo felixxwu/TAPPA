@@ -102,16 +102,19 @@ roguelike**: do you risk your best car to win, or play it safe?
     **auto-derived function of the seeded track** (length + corner-difficulty
     mix), **calibrated by Felix during testing** on a sample of seeds so the
     formula lands correct difficulty everywhere. A curated few (e.g. the
-    showdown) can still get hand-set targets. *(Needs your sign-off — see Open
-    questions.)*
+    showdown) can still get hand-set targets. **Decided.** A dedicated
+    fine-tuning session (run sample seeds, eyeball the derived targets, adjust
+    the formula's difficulty weights) is planned once the formula exists.
 - **Opponents:** each AI gets a random time in **[target, 2 × target]**. **Some
   opponents DNF** an event, disqualifying them from that rally. Opponent times +
   who DNFs are **fixed per rally seed** so the leaderboard is stable across
   retries (you're chasing a fixed field, not a re-rolled one).
+- **Field size: 10–15 opponents** per rally — a full leaderboard, with some DNFs
+  thinning it out.
 - **Retry, damage sticks:** the player can re-attempt, but any damage from the
   failed attempt persists and the opponent field is unchanged.
-- *(Proposed: ~5–7 opponents per rally; DNF for the player = car destroyed
-  mid-rally or failing to finish an event.)*
+- *(Proposed: DNF for the player = car destroyed mid-rally or failing to finish
+  an event.)*
 
 ## Progression & rewards
 
