@@ -15,6 +15,12 @@
 - The `todo/` folder holds planning specs for work to be implemented later
   (e.g. `todo/performance-optimisations.md`). Read the relevant spec before
   implementing anything it covers, and keep it in sync as items land.
+- When writing a new todo spec, ground it in REAL code: cite concrete files,
+  line numbers, function/variable names, and config fields as they actually
+  exist (verify by reading the code, don't guess). Brainstorm the spec WITH the
+  user before/while writing it — surface the approach, trade-offs, and open
+  questions and let them steer it, rather than committing a finished spec
+  unilaterally.
 - When you finish implementing items from a todo spec, ask the user whether
   to remove the completed points from the spec — and if EVERY item in a spec
   is done, ask whether to delete the whole `.md` file. Do not remove items or
