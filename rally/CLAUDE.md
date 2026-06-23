@@ -21,6 +21,10 @@
   user before/while writing it — surface the approach, trade-offs, and open
   questions and let them steer it, rather than committing a finished spec
   unilaterally.
+- If a todo depends on other work (another spec, or a prerequisite feature),
+  note that dependency explicitly in the spec file. Before implementing a todo
+  that has dependencies, make sure the dependency is done first — implement it
+  (or confirm it's already in place) before starting the dependent work.
 - When you finish implementing items from a todo spec, ask the user whether
   to remove the completed points from the spec — and if EVERY item in a spec
   is done, ask whether to delete the whole `.md` file. Do not remove items or
