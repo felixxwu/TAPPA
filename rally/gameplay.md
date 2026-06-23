@@ -198,14 +198,20 @@ These underpin everything above and likely each become their own todo:
 
 ## Open questions / to decide later
 
-- **Target-time model** for seeded rallies: confirm the auto-derived,
-  Felix-calibrated formula (vs. hand-authoring a curated subset only).
-- **Opponent count** per rally and exact **DNF trigger** for the player.
+- **Player DNF trigger:** what fails a player out of an event/rally — car
+  destroyed mid-rally, missing a time cut, off-track timeout, or some mix?
 - **Starter cars:** are the unchosen two ever obtainable, or purely a starting
   pick?
 - **Points metric** definition (placement-based? completion-based?) feeding the
-  reward ceiling and showdown meter.
+  reward ceiling and showdown meter — and the **threshold** that unlocks the
+  showdown.
 - **Damage tuning:** cap value, damage-per-impact, and how steeply alignment/
   power degrade — settle via playtesting.
 - **Upgrade catalogue:** the full list of upgrade types and each one's config
   mapping.
+
+### Decided (kept here for trace)
+
+- **Target-time model:** auto-derived from the seeded track, Felix-calibrated in
+  a dedicated fine-tuning session once the formula exists.
+- **Opponent count:** 10–15 per rally, thinned by DNFs.
