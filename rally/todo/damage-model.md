@@ -96,6 +96,29 @@ When working HP reaches **0** on a non-immortal car:
 - Player DNF happens **only** this way — there is no time-cut fail-out
   (`gameplay.md`).
 
+### 5. In-run HP HUD + impact feedback (decided)
+
+Because a wreck **destroys** the car, the player must be able to read damage in
+the moment to make the "back off or push?" call (`gameplay.md` › *Damage*). Add a
+live readout to the in-car HUD (`scripts/hud.gd`, `main.tscn` `HUD` CanvasLayer,
+`features/hud.md`):
+- **HP gauge** — a bar (and/or number) showing working HP / `max_hp`, updated
+  each frame from the fielded car's HP like the existing speed/gear/RPM labels
+  (`hud.gd._process`). Colour-graded (green → amber → red) as `d` rises.
+- **Low-HP warning** — below a `GameConfig` threshold (`hud_low_hp_warn_frac`)
+  the gauge flashes / pulses so the danger is unmissable.
+- **Impact cue** — a brief screen flash (and the `impact_*` SFX, `todo/audio.md`)
+  on each HP-losing hit, sized to the impulse, so a chip vs a big hit reads
+  differently.
+- **Immortal starter** — hide the gauge (or show `∞`); it never takes damage.
+- Gate behind a `hud_hp_enabled` flag (mirrors `hud_enabled`). This is the
+  in-run counterpart to the **HQ stats-panel HP bar** (`todo/menus.md` rig 2),
+  which shows HP *between* runs.
+
+Audio hooks (all thin, defined in `todo/audio.md`): an above-threshold impact
+fires `Audio.play_sfx_3d("impact_soft"/"impact_hard", contact_point)`; a wreck
+fires `Audio.play_sfx("wreck")`.
+
 ## New `GameConfig` tunables (magnitudes only — values via playtest)
 
 | Field | Meaning |
@@ -104,6 +127,8 @@ When working HP reaches **0** on a non-immortal car:
 | `hp_per_impulse` | HP lost per unit impulse above the threshold |
 | `damage_power_loss_max` | fraction of engine power lost at 0 HP (caps effect) |
 | `damage_steer_bias_max` | max alignment steer bias (rad) at 0 HP |
+| `hud_hp_enabled` | bool — show the in-run HP gauge (mirrors `hud_enabled`) |
+| `hud_low_hp_warn_frac` | HP fraction below which the gauge flashes a warning |
 
 Per-car **`max_hp`** lives in `CarLibrary` (metadata prerequisite), with a
 `mass`-keyed default; it is **not** a `GameConfig` field.
@@ -122,6 +147,10 @@ Per-car **`max_hp`** lives in `CarLibrary` (metadata prerequisite), with a
   layer/group so the filter has something to match.
 - **Relates to** `todo/stage-start-and-end.md` — the `wrecked` DNF parallels its
   `stage_completed` end-of-event hook; HP is written back at event boundaries.
+- **Audio** (`todo/audio.md`) — the impact/wreck SFX hooks (§5) call `Audio`;
+  thin, optional (silent fallback) until audio lands.
+- **HUD** (`features/hud.md`) — the in-run HP gauge (§5) extends the existing HUD
+  alongside speed/gear/RPM.
 
 ## Testing
 
@@ -135,6 +164,8 @@ Headless GUT tests (`tests/headless/`):
 - **Immortal starter:** takes impacts without losing HP and never wrecks.
 - **Persistence handoff:** working HP at event end is written via
   `Save.apply_damage` and reloads unchanged (round-trip with the save tests).
+- **HUD readout:** the HP gauge reflects working HP / `max_hp`; crosses into the
+  warning state below `hud_low_hp_warn_frac`; is hidden for the immortal starter.
 
 ## Out of scope / open questions
 
@@ -143,7 +174,8 @@ Headless GUT tests (`tests/headless/`):
   power/steer degrade. Settle via playtest.
 - **Steering-pull direction** — **decided: random (±1) per run/event start**, not
   seed-tied (see *Effects* §3). Re-rolls on each run / re-entry.
-- **Visible damage** — dents/smoke/visual feedback are not specced here; the model
-  is mechanical only for now. A HUD HP readout during a run is a menus/HUD concern.
+- **Visible damage** — dents/smoke on the car mesh are not specced here; the model
+  is mechanical + HUD only for now. *(The in-run HP gauge / warning / impact flash
+  is now in scope — see §5.)*
 - **Cosmetic vs hard caps** — whether very low HP also affects braking/grip, or
   only power+alignment as above. Start with the two `gameplay.md` names them.

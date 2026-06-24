@@ -67,6 +67,12 @@ camera you already drive, so the menu count stays tiny.
 
 ## Locations (continuous spaces, linked by camera fly-throughs)
 
+0. **Title** *(boot)* — **diegetic**: the menu camera opens on the **HQ exterior**
+   with a flat title card + **Continue / New / Settings** (Continue shown only if
+   `Save.has_save()`). New → `ConfirmModal` (overwrites the single profile) →
+   starter pick; Continue → fly into HQ; Settings → overlay 11. Not a separate
+   scene — it's the HQ scene framed from outside with the title overlay, then the
+   same fly-through into the car park. Kept lightweight.
 1. **HQ / Garage** *(the hub — one continuous space you pan around, an outdoor
    car park wrapping a garage building)*. Physically contains three **stations**:
    - **Car park** *(outdoor)* — your owned cars parked in the lot (the *showroom
@@ -83,7 +89,11 @@ camera you already drive, so the menu count stays tiny.
    Inventory, Starter-showroom **and** World Map screens.
 2. **Start line** *(per rally)* — the fielded car on the grid with the stage
    ahead: **briefing → pre-launch presence → countdown → run → between-event
-   standings**. Mostly owned by `todo/stage-start-and-end.md` /
+   standings**. The **briefing** is a world-anchored panel showing rally name,
+   restriction, the 3-event overview, and your fielded car + **HP bar** (so the
+   risk is legible before you commit). The presence cars (ahead/behind) are
+   atmospheric flavour, not the real opponent field (`todo/rally-event-flow.md`).
+   Mostly owned by `todo/stage-start-and-end.md` /
    `track-progress-and-reset.md`; entered by fly-through from the map.
 3. **Podium** *(end of rally)* — a 3D podium with the top-3 cars + the reward
    reveal, then a fly-through back to HQ (the won car arrives in the car park).
@@ -96,6 +106,10 @@ camera you already drive, so the menu count stays tiny.
    **The workhorse**, reused for: the first-run **starter pick** (car list = the
    3 starters), **HQ owned-car browse** (car list = owned), and **field-a-car**
    for a rally (filtered to *owned ∧ eligible*). Built on `Car.respawn`/`apply_car`.
+   **Duplicate models** (instance-based ownership allows two of the same model
+   with diverging HP/upgrades — `todo/save-persistence.md`) are disambiguated by a
+   short auto-suffix in the lineup/stats label (e.g. "MX-5 #2"), keyed on
+   `OwnedCar.instance_id`.
 2. **Stats panel (world-anchored)** — floating panel beside the focused car:
    metadata tags (engine/drivetrain/country/type/power-to-weight), **HP bar**,
    installed upgrades, performance summary. Rendered as a `SubViewport` texture on
@@ -123,14 +137,19 @@ camera you already drive, so the menu count stays tiny.
 7. **Standings overlay** — full ranked field (position, name, time / `DNF` /
    `WRECKED`, player highlighted). Shown as a between-event interstitial and at
    results; the Podium handles the top-3 flourish, this handles the full list.
-8. **Pause overlay** — Resume / **Abandon to HQ** (no retry — a non-top-3 rally is
-   re-entered later from the map, `gameplay.md`). First user of `get_tree().paused`.
+8. **Pause overlay** — Resume / **Settings** (opens overlay 11 without unpausing) /
+   **Abandon to HQ** (no retry — a non-top-3 rally is re-entered later from the
+   map, `gameplay.md`). First user of `get_tree().paused`.
 9. **Inventory / upgrade picker** — the flat list of owned items (upgrade parts +
    repair kits, with counts) the **tuning lift** opens to install a part onto the
    raised car or spend a repair kit. Flat by design (pragmatic hybrid: dense list,
    readability wins); replaces the old physical parts bench.
 10. **ConfirmModal** — small message + confirm/cancel: "field this low-HP car?",
     "abandon rally?", "install upgrade?", "use repair kit?".
+11. **Settings overlay** — volume sliders (Master / SFX / Music / Engine) + a
+    quality toggle, reachable from **Pause** and **Title**. Flat by design (dense
+    controls). Owned by `todo/settings.md` (persists to `settings.cfg`, separate
+    from the progression save); this list just notes where it surfaces.
 
 ### Tuning-lift knobs (real config fields)
 
@@ -172,6 +191,30 @@ HQ (pan): car park (lineup) ⇄ tuning lift (tune + upgrades) ⇄ map     │
                   (no retry: a non-top-3 rally returns to HQ, re-enter from map)
 ```
 
+## Menu navigation & input
+
+The diegetic menus need a small, **dedicated input action set**, separate from
+the driving inputs (`accelerate`/`steer_*`/etc. in `project.godot [input]`), so
+panning between stations/cars/pins is unambiguous:
+
+- **Actions** (new entries in `project.godot [input]`): `menu_left` / `menu_right`
+  (previous/next car or station), `menu_up` / `menu_down` (move between focusable
+  panels, slider rows), `menu_select` (confirm / pick), `menu_back` (up a level /
+  close overlay). Defaults: arrows + Enter/Esc; gamepad d-pad + A/B.
+- **Camera response:** `menu_left/right` retarget the menu camera to the
+  adjacent station marker / parked car (reusing `CameraManager.retarget` /
+  the `MENU` mode below); `menu_select` triggers the focused action (field a car,
+  select a rally pin, install an upgrade).
+- **Mobile:** tap a car/pin/panel to focus + select; swipe left/right to pan
+  between stations/cars; a Back button mirrors `menu_back`. Reuses the
+  `MobileControls` `CanvasLayer` pattern (`mobile-controls.md`) but with menu
+  affordances, not driving sticks. Layout of these is still open (below).
+- **UI audio:** `menu_*` actions fire `ui_move` / `ui_select` / `ui_back` SFX
+  (`todo/audio.md`).
+
+An input-map pass adds these actions; the rigs read them uniformly so every
+location navigates the same way.
+
 ## Technical approach (proposed)
 
 - **Menu camera:** add a `MENU` mode to `CameraManager` (`camera_manager.gd:7`)
@@ -196,8 +239,9 @@ HQ (pan): car park (lineup) ⇄ tuning lift (tune + upgrades) ⇄ map     │
 - **HQ environment art** (the garage building, the outdoor car park, lighting,
   station layout, the indoor/outdoor transition) — design during build; only
   station-marker positions are config.
-- **Input model for camera navigation** (left/right to next station/car, select,
-  back) — unspecified here; needs an input-map pass.
+- **Input model for camera navigation** — specced in *Menu navigation & input*
+  above (new `menu_*` actions + mobile gestures); the concrete keybind defaults
+  and an input-map pass are the remaining work.
 - **Panel tech final call** — SubViewport-quad vs Label3D per panel; prototype
   both for legibility before committing.
 - **Drivable overworld** was considered and **deferred** in favour of the

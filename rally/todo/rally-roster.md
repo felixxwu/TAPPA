@@ -130,7 +130,11 @@ the map, not an in-place retry).
 - A rally is **completed** when the player finishes **top-3 on combined time**
   among the non-DNF field (`gameplay.md`). The save records it in
   `rallies[rally_id]` (`completed`, `best_combined_ms` — already in the save
-  spec's `RallyRecord`).
+  spec's `RallyRecord`). Recording completion is **idempotent** — re-winning a
+  rally updates `best_combined_ms` but does not change the completed flag or the
+  `completed_count`. The **car reward, however, fires on every top-3 finish**
+  (renewable supply, `gameplay.md` / `todo/reward-system.md`), so a beaten rally
+  is farmable for replacement cars; only the *progress metric* is one-shot.
 - **Progress = count of completed rallies** — the single metric (`gameplay.md`):
   it caps reward tier *and* gates the showdown. `RallyLibrary.completed_count(profile)`.
 - **Showdown unlock:** the `showdown` rally is enterable only when **every

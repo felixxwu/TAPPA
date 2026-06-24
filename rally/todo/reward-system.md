@@ -72,7 +72,18 @@ No ownership/slot filtering at draw time — upgrades land in inventory; the pla
 chooses where to install them (`todo/upgrade-catalogue.md`). Duplicates of a part
 just stack the inventory count.
 
-## Car draw (per rally completed)
+## Car draw (per rally finished top-3 — including re-wins / farming)
+
+**The car reward fires on every top-3 finish, not only the first**
+*(decided — renewable supply)*. `complete_rally` records completion once (it's
+the showdown-progress metric, idempotent), but `draw_car` is called **every**
+time the player places top-3 — so re-running a completed rally re-grants a car.
+This is what makes the supply infinite: a wrecked car is always re-winnable, and
+the player can grind any beaten rally for replacements/duplicates. **The tier
+ceiling still clamps** the farmed draw (`target_tier` is unchanged on a re-win),
+so farming builds breadth, not a difficulty skip. The flow controller
+(`todo/rally-event-flow.md`) owns the call site; this function doesn't care
+whether it's a first win or a farm.
 
 `RewardSystem.draw_car(rally_difficulty, profile) -> model_id | null`:
 1. `target_tier = clamp(f(rally_difficulty), 1, tier_ceiling(...))`.
@@ -96,7 +107,12 @@ just stack the inventory count.
 
 The **open-class floor** (`todo/rally-roster.md`) independently guarantees the
 player is never left with zero enterable rallies, so the car draw only has to
-avoid *wasting* a grant, not prevent a hard lock.
+avoid *wasting* a grant, not prevent a hard lock. **And because rewards are
+farmable** (above), the car draw also can't permanently brick *completion*: a
+restriction whose only eligible car was wrecked can be re-satisfied by re-winning
+the rally that grants such a car (or any rally whose tier covers it). The
+anti-soft-lock filter therefore optimises *quality* of a grant; it is no longer
+load-bearing for reachability — renewable supply is.
 
 ## RNG & anti-savescum
 
@@ -175,3 +191,7 @@ reproducibility:
 - **Repair kit:** a low-weight entry in the per-event upgrade pool (one roll).
 - **Tier pick:** draw at exactly the clamped tier (anti-soft-lock step-down is the
   only exception).
+- **Renewable supply:** the car reward fires on **every** top-3 finish, so
+  re-winning a completed rally re-grants a car (clamped by the same tier ceiling).
+  Completion is recorded once; the reward repeats. This guarantees 100%
+  completion is always reachable despite permanent car destruction.

@@ -177,7 +177,9 @@ func hide_countdown() -> void:
 ```
 
 `ceili(seconds_left)` gives `3` for (3,2], `2` for (2,1], `1` for (1,0], then
-`GO` at 0. Optional polish: a quick scale/fade tween per tick — keep cheap,
+`GO` at 0. **Audio hook:** fire `Audio.play_sfx("countdown_beep")` on each
+integer tick and `Audio.play_sfx("countdown_go")` at `GO` (`todo/audio.md`; thin,
+silent fallback until clips land). Optional polish: a quick scale/fade tween per tick — keep cheap,
 respect the project's lean rendering. The brief `GO` flash can be handled by the
 `StageManager` holding the label visible for ~0.5 s into `RUNNING` before calling
 `hide_countdown()`; start simple and tune.

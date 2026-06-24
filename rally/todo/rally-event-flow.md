@@ -103,9 +103,13 @@ start_rally(R, C)
                   placement = 1 + count(opponents non-DNF with lower combined)
   PODIUM  → Podium rig + full Standings overlay
             if placement <= 3 and not _dnf:
-                Save.complete_rally(R.id, combined)
+                Save.complete_rally(R.id, combined)   # idempotent: records completion once
                 model = RewardSystem.draw_car(R.difficulty, profile)   # may be null
                 if model: Save.grant_car(model) + reward reveal (car arrives in HQ car park)
+                # FARMING: the car reward fires on EVERY top-3 finish, including
+                # re-wins of an already-completed rally (renewable supply,
+                # gameplay.md). complete_rally only records the first; draw_car
+                # always runs. Tier ceiling still clamps the draw.
             # else: no reward; the rally stays incomplete (see No retry below)
   → fly-through back to HQ
 ```
@@ -196,6 +200,9 @@ StageManager results (no real driving needed):
   grants nothing; starting it again via `start_rally` resets `_event_times_ms` and
   runs fresh while the (stubbed) opponent field and persisted HP are unchanged.
 - **Showdown:** a top-3 showdown finish emits the win beat, not a reward draw.
+- **Farming re-win:** running an **already-completed** rally to a top-3 finish
+  calls `draw_car` again (a second car grant) while `complete_rally` records no
+  new completion — supply is renewable, progress count unchanged.
 - **No-session boot:** loading `main.tscn` with no active session still applies the
   default car/track (regression guard for `world._ready`).
 
@@ -203,7 +210,8 @@ StageManager results (no real driving needed):
 
 - **Presence scene contents** — the ahead/behind cars are atmosphere owned by the
   Start line (`todo/menus.md` / `todo/stage-start-and-end.md`); only the *trigger*
-  is here.
+  is here. They are **flavour, not the real opponent field** (which is derived
+  times, never driven), so they need not match the leaderboard — cheap to stage.
 - **Standings partial-time display** — how mid-rally combined-vs-field is shown
   between events (a Standings-overlay detail).
 - **Abandon semantics** — abandoning mid-rally (Pause overlay) returns to HQ with

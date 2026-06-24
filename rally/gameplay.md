@@ -39,6 +39,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Showdown unlock | **All rallies completed** (top-3 each). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
 | Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
+| Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable (a wrecked car is always re-winnable) so 100% stays reachable. Farmed rewards stay under the **same progress-tier ceiling**. |
 | Upgrades on car death | **Returned to inventory.** Only the chassis is lost; installed upgrades go back to the player. |
 
 ---
@@ -48,7 +49,12 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **Starters:** the player picks **1 of 3** starter cars at the beginning. Each is
   low-performance and, crucially, **damage-immune** (effectively infinite HP) —
   the permanent safety net so the player can never be left with nothing drivable.
-  The **two unchosen starters can be obtained later** as reward cars.
+  The **two unchosen starters can be obtained later** as reward cars. *(Which 3
+  cars are starters is a content decision: the current `CarLibrary` is six
+  performance cars, so designate the lowest-power existing car(s) and/or add a
+  couple of humble starter chassis — a `CarLibrary` roster call, not a schema
+  one. The **immortal** flag is per owned instance, set only on the chosen
+  starter — `todo/save-persistence.md`.)*
 - **Car metadata for restrictions.** Every car needs tags so rallies can filter
   it: **engine size/type**, **drivetrain layout** (FWD/RWD/AWD — the sim already
   has drive modes via `drivetrain.cycle_drive_mode`), **country**, **car type**
@@ -83,6 +89,10 @@ roguelike**: do you risk your best car to win, or play it safe?
   weakens the car in the next unless repaired.
 - **Starter is immune** (effectively infinite HP — never wrecked, never
   destroyed) — the anti-soft-lock floor.
+- **In-run feedback.** Because wrecking destroys the car, the run shows a **live
+  HP gauge** in the in-car HUD with a **low-HP warning** and an impact cue, so the
+  player can make the "back off or push?" call in the moment. *(Implementation in
+  `todo/damage-model.md` › HUD; impact/crash audio in `todo/audio.md`.)*
 - **Repair** is possible **only via a rare "repair kit" item** from the lootbox,
   spent between rallies to restore HP.
 - *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
@@ -136,6 +146,16 @@ roguelike**: do you risk your best car to win, or play it safe?
 
 - **Per event:** a **random upgrade** drops into the inventory.
 - **Per rally completed (top 3 on combined time):** a **random car** is granted.
+- **Rewards are renewable / farmable.** Re-running a rally and finishing **top 3
+  again grants its car reward again** — completion itself is recorded once (it's
+  the showdown-progress metric), but the **reward repeats** on every top-3 finish.
+  So the car supply is **infinite**: a wrecked car can always be re-won by
+  re-racing, and the player can grind any rally for replacements. **The
+  progress-tier ceiling still clamps farmed rewards** (you farm at your current
+  power band, not above it), so grinding builds *breadth*, not a difficulty skip.
+  Per-event upgrade drops (incl. the repair kit) already repeat simply by running
+  events. This is what guarantees the showdown (100% completion) is always
+  reachable — see *Anti-soft-lock*.
 - **Reveal as a lootbox / slot machine** — spinning reels that settle on the
   reward, so the player glimpses the breadth of cars/upgrades that exist (a
   discovery hook, not just a grant).
@@ -143,9 +163,15 @@ roguelike**: do you risk your best car to win, or play it safe?
   better reward) **clamped by a progress ceiling** (early game can't yield a top
   car even on a lucky win). Progress = **number of rallies completed** — the same
   count that drives the showdown unlock, so no separate metric is needed.
-- **Anti-soft-lock (both):** open-class rallies as the floor **+** reward logic
-  that guarantees every granted car is eligible for **≥1 still-incomplete rally**
-  and the player is **never** left with zero enterable rallies.
+- **Anti-soft-lock (both, + renewable supply):** open-class rallies as the floor
+  **+** reward logic that guarantees every granted car is eligible for **≥1
+  still-incomplete rally** and the player is **never** left with zero enterable
+  rallies. **Crucially, because rewards are farmable** (re-winning a rally
+  re-grants its car), the car supply is *renewable*: even if your only car
+  eligible for a narrow-restriction rally is **wrecked**, you can always re-win a
+  replacement by re-racing. This closes the one remaining hole — that finite car
+  rewards + permanent car destruction could otherwise make 100% completion (the
+  showdown) permanently unreachable.
 
 <!-- Upgrades implementation: `todo/upgrade-catalogue.md`. -->
 
@@ -154,11 +180,12 @@ roguelike**: do you risk your best car to win, or play it safe?
 Two distinct systems:
 
 - **Tuning** — **free, reversible** adjustments made in the garage, per car. Maps
-  directly onto existing `GameConfig` car knobs:
+  directly onto existing `GameConfig` car knobs. *(Implementation: `todo/tuning.md`
+  — three single-axis sliders, stored as `OwnedCar.tuning` deltas.)*
   - **Front/rear grip balance** (understeer ↔ oversteer): `wheel_friction_slip_front`
     (0.8) vs `wheel_friction_slip_rear` (0.6).
   - **Brake bias**: not a knob today — `brake_torque` is per-axle/equal; **add a
-    front/rear brake-split** parameter.
+    front/rear brake-split** parameter (the one new code knob `todo/tuning.md` owns).
   - **Aero balance** (only if the **aero upgrade** is installed): how much front
     vs rear downforce — `downforce_front` / `downforce_rear`.
 - **Upgrades** — **inventory items** applied to a car (consumable to install),
@@ -175,6 +202,9 @@ resolve into `GameConfig`/`CarLibrary` values, never hardcoded.
 The player should never feel alone in the rally:
 - **Pre-countdown scene:** a car **ahead** launching its run and a car **behind**
   waiting its turn — an animated start-area beat before control is handed over.
+  These are **atmospheric flavour, not the real opponent field** (the field is
+  derived times, not driven cars) — so they're cheap to stage and don't have to
+  match the leaderboard.
 - **Podium scene:** at the rally's end, an animated **podium** showing who placed.
 - *(These hook into the start/end flow — see `todo/stage-start-and-end.md`; the
   pre-countdown scene precedes that spec's 3-second countdown.)*
@@ -205,7 +235,14 @@ These underpin everything above and likely each become their own todo:
   installs upgrades, and a stylised map with 3D pins; a start-line; a podium)
   with world-anchored floating panels, not a flat menu
   layer. The in-car HUD already exists. Broken down into locations + reusable
-  rigs in **`todo/menus.md`**.
+  rigs in **`todo/menus.md`** (incl. the Title beat, Pause/Settings/Standings
+  overlays, and menu-navigation input).
+- **Audio** — beyond the procedural engine sound, the game needs **impact/crash,
+  countdown, UI and reward/podium sound** + a **bus layout** so volumes are
+  mixable. Specced in **`todo/audio.md`**.
+- **Settings** — a small **options surface** (volume sliders + a quality toggle)
+  persisted to a separate `settings.cfg` (not the progression save). Specced in
+  **`todo/settings.md`**.
 
 ## Relationship to existing todos
 
@@ -234,6 +271,13 @@ These underpin everything above and likely each become their own todo:
   a fixed formula CarLibrary defaults from?).
 - **Roster size:** roughly how many rallies make up the finite world map (sets
   how long "complete them all" takes).
+- **Which 3 cars are starters:** a `CarLibrary` content call (the current six are
+  all performance cars) — designate low-power existing cars and/or add humble
+  starter chassis.
+- **Win / credits beat:** what winning the showdown actually presents (credits +
+  a stats summary is the likely shape) — its own small spec when we get there.
+- **Quality toggle:** which single lever the Settings *quality* option drives
+  (render scale, post-process, or foliage density) — `todo/settings.md`.
 
 ### Decided (kept here for trace)
 
@@ -245,3 +289,14 @@ These underpin everything above and likely each become their own todo:
 - **Rally completion:** finish top-3 (combined time). **Showdown:** all rallies
   completed. Rally-completion count is the single progress metric (also caps
   reward tier) — no separate points system.
+- **Reward supply:** **infinite / farmable** — re-winning a completed rally
+  re-grants its car reward (clamped by the progress-tier ceiling); completion is
+  recorded once. Makes the car supply renewable so wrecking can never permanently
+  brick 100% completion. *(`todo/reward-system.md`.)*
+- **Tuning:** the **minimal three-knob** set (grip balance, brake bias, aero
+  balance) as single-axis sliders; brake-bias is the one new code knob.
+  *(`todo/tuning.md`.)*
+- **In-run damage feedback:** a live HP gauge + low-HP warning + impact cue in the
+  HUD. *(`todo/damage-model.md` › HUD, `todo/audio.md`.)*
+- **Audio & settings:** spec a sound system (impacts/countdown/UI + bus layout)
+  and a minimal settings overlay now. *(`todo/audio.md`, `todo/settings.md`.)*
