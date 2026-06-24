@@ -257,9 +257,10 @@ shows engine/drivetrain/country/type/p-w + an HP bar), the rally roster
   todo).
 - **Rally roster todo** — defines the `rally_id` space that `rallies` keys on.
 - **Consumed by `todo/menus.md`** — Title's Continue/New branch (`Save.has_save()`),
-  the car lineup (owned cars), parts bench (inventory), tuning lift (per-car
-  tuning), map (rally completion + showdown meter), reward reveal (grant_car /
-  add_item). The menus spec already lists this as a hard dependency.
+  the car park (owned cars), the inventory overlay (inventory), tuning lift
+  (per-car tuning + upgrade install), map (rally completion + showdown meter),
+  reward reveal (grant_car / add_item). The menus spec already lists this as a
+  hard dependency.
 - **Relates to the damage model** (`gameplay.md` › *Damage*) — `apply_damage` /
   `wreck_car` are where HP changes get persisted.
 
