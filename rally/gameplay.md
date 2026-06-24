@@ -190,9 +190,10 @@ These underpin everything above and likely each become their own todo:
   type/p-w) **plus per-car max HP**.
 - **Rally roster** — the finite curated list of rallies (seed + restriction);
   its completion count drives both the reward ceiling and the showdown unlock.
-- **Meta-game UI shell** — world map, garage, tuning screen, inventory, lootbox
-  reveal, leaderboard, podium. (The in-car HUD already exists; this is the
-  surrounding menu layer, which barely exists today.)
+- **Meta-game UI shell** — world map, garage, tuning, inventory, lootbox reveal,
+  leaderboard, podium. (The in-car HUD already exists; this is the surrounding
+  menu layer, which barely exists today.) Broken down into a reusable component
+  set + screens in **`todo/menus.md`**.
 
 ## Relationship to existing todos
 
