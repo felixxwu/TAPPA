@@ -234,6 +234,9 @@ system, and it's the hard blocker for saving (the id) and for rally restrictions
 - **`engine_displacement_l`** *(float, optional)* — only if rallies restrict by
   engine *size* as well as cylinder layout (MX-5 2.0, RS3 2.5, 911 3.0, LFA 4.8,
   Mustang 5.0, Aventador 6.5). Skip until a rally needs it.
+- **`reward_tier`** *(int)* — the car's reward tier, used by the reward system
+  (`todo/reward-system.md`) to match a draw's clamped tier. Default from a
+  power-to-weight heuristic, overridable per car.
 
 **New lookup helper:** `CarLibrary.index_of(id) -> int` (and/or `by_id(id) ->
 Dictionary`), so save/load and `apply_car` resolve a stable id to the current

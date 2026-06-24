@@ -128,6 +128,8 @@ roguelike**: do you risk your best car to win, or play it safe?
   time-cut DNF — a slow run just places badly; only running out of HP ends the
   rally early.
 
+<!-- Implementation: `todo/reward-system.md` (draw policy). -->
+
 ## Progression & rewards
 
 - **Per event:** a **random upgrade** drops into the inventory.
