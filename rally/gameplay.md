@@ -191,8 +191,8 @@ These underpin everything above and likely each become their own todo:
 - **Rally roster** — the finite curated list of rallies (seed + restriction);
   its completion count drives both the reward ceiling and the showdown unlock.
 - **Meta-game UI shell** — **diegetic / in-world**: menus are 3D locations (an HQ
-  garage hub holding the car lineup, tuning lift, parts bench and a map diorama;
-  a start-line; a podium) with world-anchored floating panels, not a flat menu
+  garage hub holding the car lineup, tuning lift, parts bench and a stylised map
+  with 3D pins; a start-line; a podium) with world-anchored floating panels, not a flat menu
   layer. The in-car HUD already exists. Broken down into locations + reusable
   rigs in **`todo/menus.md`**.
 
