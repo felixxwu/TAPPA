@@ -59,6 +59,8 @@ roguelike**: do you risk your best car to win, or play it safe?
   installed upgrades. The lootbox reveals double as the player's window into what
   cars/upgrades *exist* in the game.
 
+<!-- Implementation: `todo/damage-model.md`. -->
+
 ## Damage model
 
 - Each car has **HP (durability)** — a per-car stat. **Heavier cars tend to have
@@ -141,6 +143,8 @@ roguelike**: do you risk your best car to win, or play it safe?
   that guarantees every granted car is eligible for **≥1 still-incomplete rally**
   and the player is **never** left with zero enterable rallies.
 
+<!-- Upgrades implementation: `todo/upgrade-catalogue.md`. -->
+
 ## Tuning & upgrades
 
 Two distinct systems:
@@ -213,9 +217,11 @@ These underpin everything above and likely each become their own todo:
 ## Open questions / to decide later
 
 - **Damage tuning:** per-car max HP, HP-per-impact, and how steeply alignment/
-  power degrade with HP lost — settle via playtesting.
+  power degrade with HP lost — settle via playtesting. *(Mechanism specced in
+  `todo/damage-model.md`; only the numbers are open.)*
 - **Upgrade catalogue:** the full list of upgrade types and each one's config
-  mapping.
+  mapping. *(Data model + pipeline specced in `todo/upgrade-catalogue.md`; the
+  concrete part list/numbers are open.)*
 - **HP↔mass curve:** how strongly durability tracks weight (a soft guideline, or
   a fixed formula CarLibrary defaults from?).
 - **Roster size:** roughly how many rallies make up the finite world map (sets
