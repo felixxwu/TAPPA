@@ -25,8 +25,8 @@
 >
 > **Dependencies (none implemented yet — see `gameplay.md` › Foundations):**
 > Save/persistence, CarLibrary metadata + per-car HP (both specced in
-> `todo/save-persistence.md`), and the rally roster. Every location reads that
-> state. **Relates to** `todo/stage-start-and-end.md` (the
+> `todo/save-persistence.md`), and the rally roster (`todo/rally-roster.md`).
+> Every location reads that state. **Relates to** `todo/stage-start-and-end.md` (the
 > Start-line location *is* its countdown + pre-launch presence scene; its
 > placeholder stage-complete panel becomes the Podium location here) and
 > `todo/track-progress-and-reset.md` (event completion + in-run reset surfaced by

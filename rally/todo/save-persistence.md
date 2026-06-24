@@ -255,7 +255,8 @@ shows engine/drivetrain/country/type/p-w + an HP bar), the rally roster
   a stable `id` per entry is required before ownership can be saved safely. *Do
   this first.* Upgrade items likewise need stable `item_id`s (upgrade-catalogue
   todo).
-- **Rally roster todo** — defines the `rally_id` space that `rallies` keys on.
+- **Rally roster** (`todo/rally-roster.md`) — defines the `rally_id` space that
+  `rallies` keys on, and the completion/unlock functions that read it.
 - **Consumed by `todo/menus.md`** — Title's Continue/New branch (`Save.has_save()`),
   the car park (owned cars), the inventory overlay (inventory), tuning lift
   (per-car tuning + upgrade install), map (rally completion + showdown meter),
