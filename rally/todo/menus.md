@@ -14,8 +14,8 @@
 > **diegetic rigs** reused inside them, not around flat screens.
 >
 > **Three settled choices shape everything below:**
-> - **World map = a 3D map diorama** (orbit/pan a relief map with rally markers),
->   not a flat map.
+> - **World map = a stylised map plane with 3D location pins** the camera pans
+>   across (not a flat menu, but lighter than an orbited relief diorama).
 > - **Pragmatic hybrid diegesis** — 3D staging + world-anchored panels for
 >   navigation and stats; flat overlays kept *only* for **Pause** and **dense
 >   data** (full standings). Readability wins over purity there.
@@ -57,7 +57,7 @@ camera you already drive, so the menu count stays tiny.
   **new mode / dedicated cinematic camera** that animates between station markers
   using the same retarget pattern.
 - **Start-line reuse:** `world._generate_track(cfg)` builds a stage from
-  `cfg.track_seed` (`world.gd:58,65`) — the diorama passes a rally's seed in to
+  `cfg.track_seed` (`world.gd:58,65`) — the map passes a rally's seed in to
   enter that rally.
 - **No player-progress save.** `Config` autoload (`scripts/config.gd`) holds only
   the working `GameConfig` (`Config.data`, `:6`).
@@ -71,7 +71,8 @@ camera you already drive, so the menu count stays tiny.
    - **Car lineup** — your owned cars parked in a row (the *showroom rig*).
    - **Tuning lift** — the selected car raised; tuning happens here.
    - **Parts bench** — your inventory (upgrades + repair kits).
-   - **Map diorama** — the rally selector (see rig 3).
+   - **Map table** — the rally selector: a stylised map plane with 3D pins
+     (see rig 3).
    The camera glides between stations; this single location absorbs what would
    have been the Garage, Tuning, Inventory **and** World Map screens.
 2. **Starter showroom** *(first run only)* — the 3 starter cars on display;
@@ -80,7 +81,7 @@ camera you already drive, so the menu count stays tiny.
 3. **Start line** *(per rally)* — the fielded car on the grid with the stage
    ahead: **briefing → pre-launch presence → countdown → run → between-event
    standings**. Mostly owned by `todo/stage-start-and-end.md` /
-   `track-progress-and-reset.md`; entered by fly-through from the diorama.
+   `track-progress-and-reset.md`; entered by fly-through from the map.
 4. **Podium** *(end of rally)* — a 3D podium with the top-3 cars + the reward
    reveal, then a fly-through back to HQ (the won car arrives in the lineup).
 
@@ -96,10 +97,11 @@ camera you already drive, so the menu count stays tiny.
    installed upgrades, performance summary. Rendered as a `SubViewport` texture on
    a camera-facing quad (or `Label3D` for simple text). Reused wherever a car is
    focused (showroom rig, tuning lift, reward arrival).
-3. **Map diorama** — a relief map / table the camera orbits; rally **markers**
-   show *locked / eligible / completed* state and, on focus, the rally's
-   restriction + 3 events; a **showdown progress meter** (*rallies completed /
-   total*) sits on the table. Selecting a marker → fly-through to the Start line.
+3. **Map (stylised plane + 3D pins)** — a styled map plane the camera pans
+   across; rally **pins** show *locked / eligible / completed* state and, on
+   focus, the rally's restriction + 3 events; a **showdown progress meter**
+   (*rallies completed / total*) sits alongside. Selecting a pin → fly-through to
+   the Start line.
 4. **Tuning lift** — the selected car raised on the lift; world-anchored sliders
    drive the real config knobs (below). Lives at the HQ tuning station.
 5. **Parts bench** — inventory items (upgrade parts, repair kits) as tiles/objects
@@ -138,7 +140,7 @@ Per `gameplay.md` › Tuning, mapped to existing `GameConfig` (`game_config.gd`)
 |---|:--:|:--:|:--:|:--:|
 | Showroom rig | ● (owned) | ● (starters) | ● (field-a-car) | |
 | Stats panel | ● | ● | ● | ● (reward) |
-| Map diorama | ● | | | |
+| Map (plane + pins) | ● | | | |
 | Tuning lift | ● | | | |
 | Parts bench | ● | | | |
 | Reward reveal | ● (car arrives) | | | ● |
@@ -152,8 +154,8 @@ Per `gameplay.md` › Tuning, mapped to existing `GameConfig` (`game_config.gd`)
 ```
 Title ─New─▶ Starter showroom (showroom rig) ─flythrough─▶ HQ ◀───────┐
       Continue ───────────────────────────────────────────▶ HQ       │
-HQ (pan between stations): lineup ⇄ tuning lift ⇄ parts bench ⇄ diorama│
-   diorama ─select rally▶ field-a-car (showroom rig) ─flythrough─▶     │
+HQ (pan between stations): lineup ⇄ tuning lift ⇄ parts bench ⇄ map   │
+   map ─select rally▶ field-a-car (showroom rig) ─flythrough─▶         │
         Start line: briefing ▶ presence ▶ countdown ▶ RUN (HUD)        │
             RUN ⇄ Pause overlay                                        │
             RUN ─(events 1,2)▶ Standings overlay ▶ RUN                 │
@@ -187,7 +189,7 @@ HQ (pan between stations): lineup ⇄ tuning lift ⇄ parts bench ⇄ diorama│
   back) — unspecified here; needs an input-map pass.
 - **Panel tech final call** — SubViewport-quad vs Label3D per panel; prototype
   both for legibility before committing.
-- **Drivable overworld** was considered and **deferred** in favour of the map
-  diorama; revisit only if HQ→rally wants physical travel later.
+- **Drivable overworld** was considered and **deferred** in favour of the
+  stylised map + pins; revisit only if HQ→rally wants physical travel later.
 - **Save format & slots** — owned by the (pending) save/persistence todo.
 - **Mobile layout** for world-anchored panels and camera nav — unspecified.
