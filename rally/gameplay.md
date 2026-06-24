@@ -207,6 +207,10 @@ These underpin everything above and likely each become their own todo:
 
 ## Relationship to existing todos
 
+- `todo/rally-event-flow.md` — the session controller that sequences a rally's 3
+  events and drives the handoffs to HP/standings/rewards/podium/HQ. Sits above the
+  per-stage flow below and is the rally-level consumer of its `stage_completed`
+  hook.
 - `todo/stage-start-and-end.md` — countdown, elapsed timer, stage-complete. The
   **pre-countdown presence scene** and **podium** extend its start/end flow; the
   **event timer** is the per-event time that sums into the rally result.
