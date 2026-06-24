@@ -33,7 +33,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 |---|---|
 | Economy | **No currency.** Progression is purely cars + upgrades won. |
 | Damage repair | **Repair only via rare items** (a "repair kit" lootbox reward). |
-| Run stakes | **Retry allowed, but damage sticks.** Opponent results are fixed per rally seed; damage from a failed attempt persists. |
+| Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
 | Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + car destroyed. |
 | Rally complete | **Finish top 3** in a rally (combined time). |
 | Showdown unlock | **All rallies completed** (top-3 each). The world map is a **finite, curated set**. |
@@ -119,11 +119,13 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **Opponents:** each AI gets a random time in **[target, 2 × target]**. **Some
   opponents DNF** an event, disqualifying them from that rally. Opponent times +
   who DNFs are **fixed per rally seed** so the leaderboard is stable across
-  retries (you're chasing a fixed field, not a re-rolled one).
+  re-attempts (you're chasing a fixed field, not a re-rolled one).
 - **Field size: 10–15 opponents** per rally — a full leaderboard, with some DNFs
   thinning it out.
-- **Retry, damage sticks:** the player can re-attempt, but any damage from the
-  failed attempt persists and the opponent field is unchanged.
+- **No retry, damage sticks:** there is no in-place retry. A rally you don't win
+  drops you back to HQ; you can **re-enter it later from the map** (a fresh full
+  attempt), but any damage taken persists and the opponent field is unchanged.
+  Re-attempting therefore routes through HQ — repair or swap cars first.
 - **Player DNF:** the only fail-out is **wrecking the car** (HP → 0). There is no
   time-cut DNF — a slow run just places badly; only running out of HP ends the
   rally early.

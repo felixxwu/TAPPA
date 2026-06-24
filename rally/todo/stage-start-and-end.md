@@ -24,9 +24,10 @@ A per-stage start/end flow on top of the existing always-live scene:
 3. **End** — when **progress reaches 100%**, **stop the timer** and **show the
    stage-complete menu**.
 
-> The contents/actions of the stage-complete menu (restart, retry same seed, new
-> track, best time, etc.) are **out of scope here** and will be specified in a
-> separate menus todo. This spec only goes as far as: stop the timer, freeze the
+> The contents/actions after a stage (standings, podium, rewards, back to HQ) are
+> **out of scope here** and are owned by `todo/rally-event-flow.md` / the menus
+> todo. *(Note: the meta-game has no retry — see `gameplay.md` Run stakes.)* This
+> spec only goes as far as: stop the timer, freeze the
 > final time, and **surface a `stage_completed(elapsed_seconds)` hook + show a
 > placeholder panel** that the future menu attaches to. *(The rally-level consumer
 > of that hook is `todo/rally-event-flow.md`, which sequences 3 events into a
@@ -273,6 +274,6 @@ Add to `tests/headless/` (GUT; `./run_tests.sh` in the background):
 
 ## Open / deferred (own a follow-up todo)
 
-- **Stage-complete menu contents & actions** (restart, retry same seed, new
-  track, best/previous time, etc.) — explicitly deferred to a separate menus
-  todo; this spec only provides the `stage_completed` signal + placeholder panel.
+- **Post-stage flow** (standings, podium, rewards, back to HQ) — owned by
+  `todo/rally-event-flow.md` and the menus todo; this spec only provides the
+  `stage_completed` signal + placeholder panel. (No retry — `gameplay.md`.)

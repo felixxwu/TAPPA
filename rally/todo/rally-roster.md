@@ -113,7 +113,7 @@ Per `gameplay.md` › *Events, target times & opponents*:
 - **Opponent field is recomputed from the rally seed, never saved** (matches the
   save spec's "opponent times derived, not stored"). `OpponentField.generate(rally,
   event_targets) -> Array[Opponent]`, seeded by the rally id/seed so the field is
-  **identical across retries**:
+  **identical across re-attempts**:
   - **10–15 opponents** (`gameplay.md`).
   - Per event, each opponent gets a time in **[target, 2 × target]**.
   - **Some opponents DNF** an event; a DNF in any event disqualifies them from the
@@ -122,7 +122,8 @@ Per `gameplay.md` › *Events, target times & opponents*:
     non-DNF field on combined time.
 
 Because the seed is fixed, the leaderboard is stable — the player chases a fixed
-field across retries (damage sticks, opponents don't re-roll).
+field across re-attempts (damage sticks, opponents don't re-roll; re-entered from
+the map, not an in-place retry).
 
 ## Completion, progress & showdown unlock
 
