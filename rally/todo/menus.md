@@ -1,163 +1,193 @@
-# Menus & UI Shell — implementation spec
+# Menus & UI Shell — implementation spec (diegetic / in-world)
 
 > Status: **planned, not yet implemented.** Implementation brief for the
-> meta-game menu layer described in `gameplay.md`. Follow the config-first
-> convention (`CLAUDE.md`): any tunable (animation times, layout constants worth
-> exposing) goes in `GameConfig` (`scripts/game_config.gd` +
+> meta-game UI described in `gameplay.md`. Follow the config-first convention
+> (`CLAUDE.md`): tunables (camera move times, panel offsets, station positions
+> worth exposing) go in `GameConfig` (`scripts/game_config.gd` +
 > `config/game_config.tres`), never hardcoded. Update the relevant `features/*.md`
 > doc and add/adjust tests in the same piece of work.
 >
-> **Design goal (from the user): the shortest possible menu set, achieved by
-> reusing components.** This spec is organised around a handful of reusable
-> components that the screens compose — not one bespoke screen per feature.
+> **Direction (decided with the user): the menus live in the 3D world.** There is
+> no flat "menu layer" for navigation — you move a camera through physical
+> locations and read **world-anchored floating panels**. This deliberately blurs
+> the menu/screen line, so this spec is organised around **locations** and the
+> **diegetic rigs** reused inside them, not around flat screens.
+>
+> **Three settled choices shape everything below:**
+> - **World map = a 3D map diorama** (orbit/pan a relief map with rally markers),
+>   not a flat map.
+> - **Pragmatic hybrid diegesis** — 3D staging + world-anchored panels for
+>   navigation and stats; flat overlays kept *only* for **Pause** and **dense
+>   data** (full standings). Readability wins over purity there.
+> - **Combine surfaces into shared continuous locations, fly the camera between
+>   locations.** Related surfaces share one physical space (you pan within it);
+>   distinct spaces are linked by camera fly-throughs.
 >
 > **Dependencies (none implemented yet — see `gameplay.md` › Foundations):**
-> - **Save / persistence** — owned cars, per-car HP, installed upgrades,
->   inventory, rally-completion state. Every screen here reads/writes it. Needs
->   its own todo first.
-> - **CarLibrary metadata + per-car max HP** — the picker filters and the car
->   card read tags (engine/drivetrain/country/type/p-w) and HP that don't exist
->   on `CarLibrary.CARS` yet.
-> - **Rally roster** — the finite list of rallies (seed + restriction) the World
->   Map renders.
->
-> **Relates to** `todo/stage-start-and-end.md` (its placeholder stage-complete
-> panel becomes the **Results** screen here; the countdown / pre-launch presence
-> scene stay in that spec) and `todo/track-progress-and-reset.md` (event
-> completion + the in-run reset that Pause exposes).
+> Save/persistence, CarLibrary metadata + per-car HP, and the rally roster. Every
+> location reads that state. **Relates to** `todo/stage-start-and-end.md` (the
+> Start-line location *is* its countdown + pre-launch presence scene; its
+> placeholder stage-complete panel becomes the Podium location here) and
+> `todo/track-progress-and-reset.md` (event completion + in-run reset surfaced by
+> Pause).
 
 ## Goal
 
-Cover every UI surface `gameplay.md` implies with **5 reusable components** plus
-**1 small utility**, composed into **6 screens** (the in-car HUD already exists).
-Tuning and Inventory are **panels inside the Garage**, not separate screens, to
-keep the count down.
+Cover every surface `gameplay.md` implies with **4 locations**, **7 diegetic
+rigs**, and **3 flat overlays** — reusing the car you already render and the
+camera you already drive, so the menu count stays tiny.
 
 ## Current state (measured from the code)
 
-- **No menu/meta-game UI exists.** The only UI is three `CanvasLayer`s:
-  `HUD` (layer 2, `scripts/hud.gd`, `main.tscn:87-89`), `MobileControls`
-  (layer 3, `main.tscn:143-145`), and the perf overlay (`scripts/perf_overlay.gd`).
-  HUD visibility is gated by `Config.data.hud_enabled` (`hud.gd:18`).
-- **Nothing pauses the game.** Per `todo/stage-start-and-end.md`, nothing uses
-  `get_tree().paused` and there is no popup/menu/pause layer anywhere. The scene
-  is live the instant it loads (`world.gd._ready()`, `scripts/world.gd:10`).
-- **No player-progress persistence.** The `Config` autoload (`scripts/config.gd`)
-  only holds the working `GameConfig` (`Config.data`, `config.gd:6`) and can
-  `reset()` it to the authored baseline (`config.gd:18`). There is **no save of
-  owned cars / HP / inventory / completion.**
-- **Cars** live in `CarLibrary.CARS` — an array of dicts (`car_library.gd:81+`)
-  with `name`, `mass`, `engine_type`, `drive_mode` (`RWD/AWD/FWD` consts at
-  `car_library.gd:65-67`), grip, body dims, etc. **No** country / car-type /
-  HP / power-to-weight fields yet. Car selection today is a debug cycle:
-  `Car.apply_car(index)` / `respawn(old, index, spawn_xform)` / `next_car_index()`
-  (`car.gd:253,226,239`), driven by `world.cycle_car()` (`world.gd:105`) off the
-  HUD `CarButton` (`hud.gd:33-36`). The picker below **replaces** that debug cycle
-  with real selection.
-- **Track is seeded:** `world._generate_track(cfg)` uses `cfg.track_seed`
-  (`world.gd:58,65`) — the World Map / Rally Briefing pass a per-rally seed in
-  here to load a specific rally.
-
-> Implication: this is greenfield. Build it as scene-based `Control` trees under
-> `CanvasLayer`s (matching `hud.gd`'s pattern) on layers **above** the HUD, with
-> one script per component/screen in `scripts/ui/` (proposed folder).
+- **No meta-game UI and nothing pauses.** Only `HUD` (layer 2, `scripts/hud.gd`,
+  `main.tscn:87-89`), `MobileControls` (layer 3, `main.tscn:143-145`) and the
+  perf overlay exist; nothing uses `get_tree().paused` (per
+  `todo/stage-start-and-end.md`). The scene is live on load
+  (`world.gd._ready()`, `scripts/world.gd:10`).
+- **The car is already a reusable 3D node.** `Car.apply_car(index)` /
+  `respawn(old, index, spawn_xform)` / `next_car_index()` (`car.gd:253,226,239`)
+  build a car (procedural chassis or the glb body) at a transform. The diegetic
+  car lineups **reuse this** to spawn *parked, physics-frozen* cars at station
+  markers — no new render path. `CarLibrary.CARS` (`car_library.gd:81+`) is the
+  source (and where metadata/HP get added).
+- **The camera is already retargetable.** `CameraManager` has
+  `enum Mode { CHASE, BONNET }` (`camera_manager.gd:7`), with `cycle()`,
+  `retarget(car)` and `_apply()` (`camera_manager.gd:31,42,53`); `ChaseCamera`
+  smooths toward its `target` (`chase_camera.gd:3,25`). The menu camera is a
+  **new mode / dedicated cinematic camera** that animates between station markers
+  using the same retarget pattern.
+- **Start-line reuse:** `world._generate_track(cfg)` builds a stage from
+  `cfg.track_seed` (`world.gd:58,65`) — the diorama passes a rally's seed in to
+  enter that rally.
+- **No player-progress save.** `Config` autoload (`scripts/config.gd`) holds only
+  the working `GameConfig` (`Config.data`, `:6`).
 
 ---
 
-## Reusable components (build once)
+## Locations (continuous spaces, linked by camera fly-throughs)
 
-1. **`CarPicker`** — a scrollable list / carousel of cars. Parameterised by
-   *(source list, optional filter predicate, action label, on-select callback)*.
-   Renders a `CarCard` for the focused entry. **This is the workhorse** the user
-   flagged — see the reuse matrix.
-2. **`CarCard`** — read-only display of **one** car: name, metadata tags
-   (engine / drivetrain / country / type / power-to-weight), **HP bar**, installed
-   upgrades, performance summary. A pure display unit; everything car-shaped
-   embeds it.
-3. **`StandingsList`** — ranked rows: position, name, combined/event time or
-   `DNF`/`WRECKED`, with the player's row highlighted. Built from a rally's fixed
-   opponent field (`gameplay.md` › Opponents).
-4. **`RewardReveal`** — the lootbox / slot-machine reveal. Resolves to either a
-   `CarCard` (rally reward) or an item tile (event reward) — one animation, two
-   payload types.
-5. **`ItemList`** — grid of inventory items (upgrades + repair kits) with a select
-   callback. Item tile is its sub-unit; reused as `RewardReveal`'s item payload.
-6. **`ConfirmModal`** *(small utility)* — generic message + confirm/cancel. Reused
-   for "field this low-HP car?", "abandon rally?", "install upgrade?", "use repair
-   kit?".
+1. **HQ / Garage** *(the hub — one continuous space you pan around)*. Physically
+   contains four **stations**:
+   - **Car lineup** — your owned cars parked in a row (the *showroom rig*).
+   - **Tuning lift** — the selected car raised; tuning happens here.
+   - **Parts bench** — your inventory (upgrades + repair kits).
+   - **Map diorama** — the rally selector (see rig 3).
+   The camera glides between stations; this single location absorbs what would
+   have been the Garage, Tuning, Inventory **and** World Map screens.
+2. **Starter showroom** *(first run only)* — the 3 starter cars on display;
+   reuses the *showroom rig*; picking one flows (camera fly-through) into HQ. The
+   two unchosen starters can be won later (`gameplay.md`).
+3. **Start line** *(per rally)* — the fielded car on the grid with the stage
+   ahead: **briefing → pre-launch presence → countdown → run → between-event
+   standings**. Mostly owned by `todo/stage-start-and-end.md` /
+   `track-progress-and-reset.md`; entered by fly-through from the diorama.
+4. **Podium** *(end of rally)* — a 3D podium with the top-3 cars + the reward
+   reveal, then a fly-through back to HQ (the won car arrives in the lineup).
 
-## Screens (compose the components)
+## Diegetic rigs (3D, reusable inside locations)
 
-1. **Title / Save** — New Game / Continue. New Game opens `CarPicker` over the 3
-   starters ("choose your starter"). Minimal.
-2. **World Map** *(hub)* — lists the rally roster with per-rally state
-   (**locked** / **eligible** / **completed**), shows the **showdown progress
-   meter** (*rallies completed / total*, `gameplay.md` › Final showdown), and a
-   button into the Garage. Selecting a rally → Rally Briefing.
-3. **Rally Briefing** — one rally: its restriction, the 3 events, and **Field a
-   car** → `CarPicker` filtered to *owned ∧ eligible*; `ConfirmModal` if the
-   chosen car is low on HP; **Start** loads the rally seed into
-   `world._generate_track` and begins the run. The **final showdown is just a
-   rally** here (unlocked once all others are completed) — no extra screen.
-4. **Garage** *(hub)* — composes `CarPicker` (owned cars) + `CarCard` (selected) +
-   a **Tuning panel** (sliders, below) + an **Inventory panel** (`ItemList` →
-   apply upgrade / repair kit to the selected car, via `ConfirmModal`). Tuning and
-   Inventory are **panels here, not separate screens.**
-5. **Pause overlay** *(in-run)* — Resume / **Retry** (damage sticks,
-   `gameplay.md` › Run stakes) / Abandon to map. First user of `get_tree().paused`.
-6. **Results → Reward** — post-run sequence: `StandingsList` (final combined
-   standings, **podium** styling for top-3) → `RewardReveal` (the per-event
-   upgrades and, if **top-3**, the rally car). Offers **Retry** if not top-3. This
-   is the concrete realisation of the placeholder panel from
-   `todo/stage-start-and-end.md`.
+1. **Showroom rig** — N parked, physics-frozen car nodes on a rail + the menu
+   camera dollying to the focused car + a world-anchored **stats panel**.
+   Parameterised by *(car list, optional filter, on-select)*. **The workhorse**,
+   reused for: starter pick, HQ car-lineup browse, and **field-a-car** for a
+   rally (filtered to *owned ∧ eligible*). Built on `Car.respawn`/`apply_car`.
+2. **Stats panel (world-anchored)** — floating panel beside the focused car:
+   metadata tags (engine/drivetrain/country/type/power-to-weight), **HP bar**,
+   installed upgrades, performance summary. Rendered as a `SubViewport` texture on
+   a camera-facing quad (or `Label3D` for simple text). Reused wherever a car is
+   focused (showroom rig, tuning lift, reward arrival).
+3. **Map diorama** — a relief map / table the camera orbits; rally **markers**
+   show *locked / eligible / completed* state and, on focus, the rally's
+   restriction + 3 events; a **showdown progress meter** (*rallies completed /
+   total*) sits on the table. Selecting a marker → fly-through to the Start line.
+4. **Tuning lift** — the selected car raised on the lift; world-anchored sliders
+   drive the real config knobs (below). Lives at the HQ tuning station.
+5. **Parts bench** — inventory items (upgrade parts, repair kits) as tiles/objects
+   on the bench; select one → apply to a car (`ConfirmModal`). Dense lists may
+   fall back to a flat panel anchored at the bench (pragmatic hybrid).
+6. **Reward reveal** — a *physical* reveal replacing the slot-machine metaphor: a
+   spotlight sweeps the lineup and stops on the reward, or a garage door opens and
+   the won car rolls in; item rewards land on the parts bench. Resolves to a
+   *stats panel* (car) or a bench tile (item).
+7. **Podium** — top-3 cars on a 3D podium; the diegetic counterpart of the
+   standings overlay for the headline result.
 
-> **Between-events leaderboard** (after events 1 & 2) is **not a new screen** — it
-> is `StandingsList` shown as a short interstitial, then the next event starts.
-> **HUD** already exists (`hud.gd`); its debug `CarButton` is removed once the
-> Garage/Briefing own car selection.
+## Flat overlays (pragmatic hybrid — dense data & pause only)
 
-### Tuning panel knobs (real config fields)
+8. **Standings overlay** — full ranked field (position, name, time / `DNF` /
+   `WRECKED`, player highlighted). Shown as a between-event interstitial and at
+   results; the Podium handles the top-3 flourish, this handles the full list.
+9. **Pause overlay** — Resume / **Retry** (damage sticks, `gameplay.md`) /
+   Abandon to HQ. First user of `get_tree().paused`.
+10. **ConfirmModal** — small message + confirm/cancel: "field this low-HP car?",
+    "abandon rally?", "install upgrade?", "use repair kit?".
+
+### Tuning-lift knobs (real config fields)
 
 Per `gameplay.md` › Tuning, mapped to existing `GameConfig` (`game_config.gd`):
 - **Front/rear grip balance** — `wheel_friction_slip_front` (`:106`) /
   `wheel_friction_slip_rear` (`:107`).
 - **Aero balance** *(only if the aero upgrade is installed)* —
   `downforce_front` / `downforce_rear` (`:76,80`).
-- **Brake bias** — **new knob** (today `brake_torque` `:66` is a single per-axle
+- **Brake bias** — **new knob** (today `brake_torque` `:66` is one per-axle
   value); add a front/rear split.
 
-## Reuse matrix
+## Reuse matrix (location × rig/overlay)
 
-| Component | Title | World Map | Rally Briefing | Garage | Pause | Results |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CarPicker` | ● (starter) | | ● (field) | ● (browse) | | |
-| `CarCard` | ● | | ● (fielded) | ● | | ● (reward) |
-| `StandingsList` | | | | | | ● (+ podium, interstitial) |
-| `RewardReveal` | | | | | | ● (car + items) |
-| `ItemList` | | | | ● (inventory) | | ● (item reward) |
-| `ConfirmModal` | | | ● | ● | ● | ● (retry) |
+| Rig / overlay | HQ | Starter showroom | Start line | Podium |
+|---|:--:|:--:|:--:|:--:|
+| Showroom rig | ● (owned) | ● (starters) | ● (field-a-car) | |
+| Stats panel | ● | ● | ● | ● (reward) |
+| Map diorama | ● | | | |
+| Tuning lift | ● | | | |
+| Parts bench | ● | | | |
+| Reward reveal | ● (car arrives) | | | ● |
+| Podium | | | | ● |
+| Standings overlay | | | ● (interstitial) | ● |
+| Pause overlay | | | ● | |
+| ConfirmModal | ● | ● | ● | ● |
 
 ## Navigation flow
 
 ```
-Title ─New─▶ CarPicker(starter) ─▶ World Map ◀────────────────┐
-            Continue ─────────────▶ World Map (hub)           │
-World Map ⇄ Garage (CarPicker+CarCard+Tuning+Inventory)       │
-World Map ─▶ Rally Briefing ─field(CarPicker)▶ Run (HUD) ──┐  │
-                                         Pause overlay ⇄ Run│  │
-   Run ─(events 1,2)▶ StandingsList interstitial ─▶ Run     │  │
-   Run ─(event 3)──▶ Results (StandingsList/podium)         │  │
-                       └▶ RewardReveal ─▶ World Map ─────────┴──┘
-                       └▶ Retry (if not top-3) ─▶ Run
+Title ─New─▶ Starter showroom (showroom rig) ─flythrough─▶ HQ ◀───────┐
+      Continue ───────────────────────────────────────────▶ HQ       │
+HQ (pan between stations): lineup ⇄ tuning lift ⇄ parts bench ⇄ diorama│
+   diorama ─select rally▶ field-a-car (showroom rig) ─flythrough─▶     │
+        Start line: briefing ▶ presence ▶ countdown ▶ RUN (HUD)        │
+            RUN ⇄ Pause overlay                                        │
+            RUN ─(events 1,2)▶ Standings overlay ▶ RUN                 │
+            RUN ─(event 3)──▶ Podium: standings + Reward reveal ───────┘
+                                 └▶ Retry (if not top-3) ▶ RUN
 ```
+
+## Technical approach (proposed)
+
+- **Menu camera:** add a `MENU` mode to `CameraManager` (`camera_manager.gd:7`)
+  or a dedicated cinematic camera that tweens between named **station markers**
+  (Position3D nodes) per location, reusing the `retarget`/`_apply` pattern
+  (`:42,53`). Camera move times → `GameConfig`.
+- **Parked cars:** instantiate via `Car.respawn`/`apply_car` (`car.gd:226,253`)
+  with physics frozen (`freeze = true`) at lineup markers — reuses the existing
+  car visuals, no new render path.
+- **World-anchored panels:** `SubViewport` → texture on a camera-facing quad
+  (`Sprite3D`/`MeshInstance3D`), or `Label3D` for simple labels. Flat overlays
+  (standings/pause) stay on a `CanvasLayer` above the HUD.
+- **HQ is its own lightweight scene** (no track generation); the Start line uses
+  `world._generate_track(cfg)` (`world.gd:58`) with the selected rally seed.
+- **Scene boundaries follow the locations:** HQ, Starter showroom, Start
+  line+run (existing `main.tscn`), Podium. Fly-throughs are camera tweens; scene
+  loads happen under cover of the fly-through/fade.
 
 ## Out of scope / open questions
 
-- **Visual style & animation** of each component (slot-machine timing, podium
-  staging) — to be designed during build; expose timings via `GameConfig`.
-- **Confirm panel-vs-screen** for Tuning/Inventory: spec'd as Garage panels to
-  minimise screens; revisit if they grow.
-- **Mobile layout** — `MobileControls` (layer 3) coexists with the run HUD only;
-  menus assume pointer/touch but their responsive layout is unspecified here.
-- **Save format & slots** — owned by the (pending) save/persistence todo, not
-  this one.
+- **HQ environment art** (the building, lighting, station layout) — design during
+  build; only station-marker positions are config.
+- **Input model for camera navigation** (left/right to next station/car, select,
+  back) — unspecified here; needs an input-map pass.
+- **Panel tech final call** — SubViewport-quad vs Label3D per panel; prototype
+  both for legibility before committing.
+- **Drivable overworld** was considered and **deferred** in favour of the map
+  diorama; revisit only if HQ→rally wants physical travel later.
+- **Save format & slots** — owned by the (pending) save/persistence todo.
+- **Mobile layout** for world-anchored panels and camera nav — unspecified.
