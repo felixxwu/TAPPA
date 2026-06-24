@@ -7,8 +7,9 @@
 > hardcoded in flow logic. Update the relevant `features/*.md` doc and add tests
 > in the same piece of work.
 >
-> **A few calls are marked `(proposed)`** — the storage form and per-event seed
-> model are genuine forks; see *Open questions*.
+> **The two forks are decided** (with the user): the roster is a **`RallyLibrary`
+> in code** and **each event stores its own explicit seed**. Baked into the
+> sections below; see *Decided (kept for trace)*.
 
 ## Goal
 
@@ -54,7 +55,8 @@ RallyDef
   showdown: bool          # the final rally; locked until all others completed
 
 EventDef
-  seed: int               # -> TrackGenerator seed_value
+  seed: int               # -> TrackGenerator seed_value; explicit per event
+                          #    (a base+index derive helper is authoring-only)
   turn_count: int         # -> track length (showdown events are longer)
   width: float            # optional; defaults to GameConfig.track_width
   target_ms_override: int # optional; else target is auto-derived (see below)
@@ -72,16 +74,15 @@ Each event is one seeded `TrackGenerator` track; a rally's result is the
 (`restriction == null`) are the anti-soft-lock floor the immortal starter always
 qualifies for.
 
-## Storage (proposed)
+## Storage (decided)
 
 **Mirror `CarLibrary`: a `RallyLibrary` (`scripts/rally_library.gd`,
-`class_name RallyLibrary`) holding `const RALLIES: Array[Dictionary]`** `(proposed)`.
+`class_name RallyLibrary`) holding `const RALLIES: Array[Dictionary]`** *(decided)*.
 Rationale: consistent with the existing authored car roster (`car_library.gd`),
 easy to diff/review in code, and the nested events/restriction structure is
-clumsy to author in a `.tres` inspector. The alternative — a `RallyRoster`
-`Resource` (`.tres`) — is more "config-first" but worse for nested data; noted in
-*Open questions*. Either way, **per-event tuning numbers that aren't structural**
-(e.g. global target-time formula weights) still belong in `GameConfig`.
+clumsy to author in a `.tres` inspector. Either way, **per-event tuning numbers
+that aren't structural** (e.g. global target-time formula weights) still belong
+in `GameConfig`.
 
 ## Restriction matching
 
@@ -197,11 +198,6 @@ Headless GUT tests (`tests/headless/`, mirroring `test_car_library.gd`):
 
 ## Out of scope / open questions
 
-- **Storage form — `RallyLibrary` const vs `.tres` Resource** *(proposed:
-  const, mirroring `CarLibrary`)*. Confirm before building.
-- **Per-event seeds — explicit per event vs derived from one rally base seed**
-  (`rally_seed + event_index`) *(proposed: explicit, so authors curate
-  good-looking tracks; a derive helper can speed authoring)*.
 - **Roster size** — how many rallies make "complete them all" a satisfying but
   reachable goal (`gameplay.md` open question). Decide via playtest; the data
   model doesn't care.
@@ -211,3 +207,11 @@ Headless GUT tests (`tests/headless/`, mirroring `test_car_library.gd`):
 - **Restriction richness** — whether `car_type`/`country`/engine-size are all
   needed at launch or a subset; depends on how varied the curated rallies want to
   be.
+
+### Decided (kept for trace)
+
+- **Storage form:** a **`RallyLibrary` in code** (`const RALLIES: Array[Dictionary]`),
+  mirroring `CarLibrary` — consistent with the codebase, clean for nested data.
+- **Event seeds:** **explicit per event** (each `EventDef` stores its own seed),
+  so authors curate good-looking tracks and can swap one event without shifting
+  the others; a `base + index` derive helper is authoring-only convenience.
