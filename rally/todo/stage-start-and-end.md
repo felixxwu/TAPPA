@@ -28,7 +28,9 @@ A per-stage start/end flow on top of the existing always-live scene:
 > track, best time, etc.) are **out of scope here** and will be specified in a
 > separate menus todo. This spec only goes as far as: stop the timer, freeze the
 > final time, and **surface a `stage_completed(elapsed_seconds)` hook + show a
-> placeholder panel** that the future menu attaches to.
+> placeholder panel** that the future menu attaches to. *(The rally-level consumer
+> of that hook is `todo/rally-event-flow.md`, which sequences 3 events into a
+> rally.)*
 
 ## Context / current state (measured from the code)
 
