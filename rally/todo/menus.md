@@ -191,5 +191,5 @@ HQ (pan between stations): lineup ⇄ tuning lift ⇄ parts bench ⇄ map   │
   both for legibility before committing.
 - **Drivable overworld** was considered and **deferred** in favour of the
   stylised map + pins; revisit only if HQ→rally wants physical travel later.
-- **Save format & slots** — owned by the (pending) save/persistence todo.
+- **Save format & slots** — owned by `todo/save-persistence.md`.
 - **Mobile layout** for world-anchored panels and camera nav — unspecified.
