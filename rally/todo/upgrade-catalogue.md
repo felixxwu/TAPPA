@@ -110,7 +110,7 @@ Install/consume semantics (per `gameplay.md`):
 - Upgrades are the **per-event** reward; cars are the **per-rally** reward
   (`gameplay.md`). The reward draw picks an `UpgradeDef` by `tier`, **clamped by
   progress** (rallies-completed ceiling) so early wins can't yield top-tier parts.
-- The reward tier function is **reward-system logic** (its own concern); this
+- The reward tier function is **reward-system logic** (`todo/reward-system.md`); this
   spec only provides the `tier`-keyed catalogue to draw from and `add_item` to
   grant into inventory.
 - The **reward reveal** rig (`todo/menus.md` rig 5) shows the granted item.

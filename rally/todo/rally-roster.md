@@ -144,7 +144,7 @@ The roster underwrites two of the soft-lock guards:
    there's always somewhere to race. A roster **validity check** (in tests)
    asserts ≥1 open-class rally exists at each difficulty tier the starter can
    reach.
-2. **Reward-eligibility query:** the reward system (separate todo) must only grant
+2. **Reward-eligibility query:** the reward system (`todo/reward-system.md`) must only grant
    cars that stay eligible for ≥1 still-incomplete rally. The roster exposes the
    query it needs: `RallyLibrary.incomplete_rallies_enterable_by(car_meta,
    profile) -> Array[RallyDef]`. The reward logic owns the *policy*; the roster
