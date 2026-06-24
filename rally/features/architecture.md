@@ -54,6 +54,11 @@ Declared in `project.godot` `[autoload]`:
 - **`Config`** → `scripts/config.gd`. Loads `config/game_config.tres` at startup
   into `Config.data` (a `GameConfig`). Read-only at runtime; every gameplay
   system reads from it. See [configuration.md](configuration.md).
+- **`Save`** → `scripts/save_manager.gd`. Loads the player profile (owned cars,
+  HP, inventory, rally completion) from `user://profile.json` at boot and
+  autosaves on every meaningful change. Per-player *mutable progress*, kept
+  distinct from `Config`'s authored baseline. See
+  [save-persistence.md](save-persistence.md).
 
 ## Data flow
 

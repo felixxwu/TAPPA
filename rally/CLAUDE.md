@@ -50,6 +50,31 @@
   the relevant subset (e.g. the specific test file/script affected by your
   change). Save the full `./run_tests.sh` run for the END of a task, as the final
   verification before declaring the work complete.
+- For the FINAL full-suite run (and any run you expect to need failure triage),
+  prefer delegating it to a sub-agent (launched in the BACKGROUND, so the main
+  agent stays unblocked and is notified on completion) rather than running it
+  inline. The agent runs `./run_tests.sh`, reads the verbose GUT output, and
+  returns just a clean verdict (pass / fail + the failing test names and
+  messages) — keeping hundreds of lines of test log out of the main context.
+  Tell the sub-agent the run is slow (15-20 min; GUT physics tests are
+  wall-clock-paced) so it waits with a generous timeout instead of killing it
+  early. The sub-agent does NOT add concurrency (the one-run-at-a-time rule below
+  still holds, across agents too); its only job is to absorb noisy output and
+  hand back the digest. For quick `--fast` subset iteration, an inline background
+  run with a grep filter is lighter-weight and fine.
+- While waiting on a test run, periodically check that it is actually making
+  progress and not hung — a finished run prints `ALL TESTS PASSED` / `TESTS
+  FAILED`, so prolonged silence past the usual duration is a red flag. Inspect
+  the live Godot processes and their ages, e.g.
+  `ps -eo pid,etimes,args | grep '[G]odot'`: a healthy headless run lasts a few
+  minutes, so a Godot test process whose elapsed time (`etimes`, in seconds) is
+  far beyond that — tens of minutes or more — is stuck/orphaned (often a hung run
+  from earlier). A stale process also starves the real run of CPU, and because
+  GUT physics tests are paced to real wall-clock time, that drags everything out.
+  Confirm it is the headless test binary (the Godot path above) and clearly too
+  old to be the current run, then ask before killing it (`kill <pid>`) so the
+  active run can finish promptly. Don't kill a process you can't confidently
+  identify as a stuck test run.
 - Before starting a test run, check whether a background shell is already
   running `./run_tests.sh`. If one is, do NOT start another — wait for the
   existing run to finish and use its result. Concurrent runs waste resources

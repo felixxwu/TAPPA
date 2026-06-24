@@ -1,0 +1,395 @@
+extends Node
+# Autoload "Save": the single source of truth for everything the meta-game
+# mutates — owned cars (each with its own HP / installed upgrades / tuning),
+# the uninstalled-item inventory, and rally completion — persisted as JSON at
+# user://profile.json so progress survives a restart on both desktop and the
+# web build (see todo/save-persistence.md).
+#
+# It is deliberately SEPARATE from the `Config` autoload: `Config` holds the
+# authored car/world tuning baseline (a duplicate of game_config.tres), while
+# this profile is per-player mutable progress. Save stores tuning numbers but
+# never touches GameConfig — the car-fielding code reads the stored tuning and
+# writes the live Config.data (mirroring how car.gd's apply_car reshapes it).
+#
+# Ownership is INSTANCE-BASED: each owned car is a unique instance (instance_id)
+# that references a CarLibrary model id, so two cars of the same model can
+# diverge in HP / upgrades / tuning (the random-car reward can grant a model you
+# already own). Max-HP is CarLibrary metadata, derived not stored.
+
+# Bump on any breaking shape change to PlayerProfile; older files are migrated
+# forward on load (see _migrate), newer files are refused rather than truncated.
+const SCHEMA_VERSION := 1
+
+# Default profile location. Kept as a settable property (not a hard const) so
+# named save slots can be layered on later without reworking the API, and so
+# headless tests can redirect to a throwaway file.
+const DEFAULT_PROFILE_PATH := "user://profile.json"
+
+# Coalesce bursts of mutations into one disk write ~1s after the last change, so
+# a flurry of autosave triggers (e.g. an event resolving several rewards) costs
+# one atomic write rather than many.
+const SAVE_DEBOUNCE_SEC := 1.0
+
+# The loaded profile (a plain Dictionary mirroring the JSON shape — keeps load /
+# save / migration as pure dict transforms with no engine-class coupling).
+var profile: Dictionary = {}
+
+# Where the active profile is read from / written to. Tests override this before
+# calling load_or_new().
+var profile_path: String = DEFAULT_PROFILE_PATH
+
+# True when a degraded environment (blocked storage / read-only fs) forces an
+# in-memory-only profile — the UI surfaces a "progress won't be saved" notice.
+var save_disabled := false
+
+var _debounce: Timer
+
+
+func _ready() -> void:
+	_debounce = Timer.new()
+	_debounce.one_shot = true
+	_debounce.wait_time = SAVE_DEBOUNCE_SEC
+	_debounce.timeout.connect(save_now)
+	add_child(_debounce)
+	load_or_new()
+
+
+# Persist on the way out, including when a mobile/web tab is backgrounded — on
+# the HTML5 export user:// is IndexedDB, which may not flush before the tab
+# closes, so we force a synchronous write on these notifications.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED:
+		save_now()
+
+
+# --- Load --------------------------------------------------------------------
+
+# Populate `profile` from disk, falling back to .bak then to a fresh default.
+# Never overwrites a file it could not read (the player may want to recover it).
+func load_or_new() -> void:
+	save_disabled = false
+	var loaded := _read_file(profile_path)
+	if loaded.is_empty():
+		loaded = _read_file(profile_path + ".bak")
+	if loaded.is_empty():
+		profile = _default_profile()
+		return
+	var migrated := _migrate(loaded)
+	if migrated.is_empty():
+		# A newer-than-known or unmigratable file: keep it untouched on disk and
+		# run on a fresh in-memory profile rather than clobbering it.
+		push_warning("Save: profile at %s is unreadable/newer than v%d — starting fresh, file kept"
+			% [profile_path, SCHEMA_VERSION])
+		profile = _default_profile()
+		save_disabled = true
+		return
+	profile = _sanitise(migrated)
+
+
+# Read + JSON-parse a profile file. Returns {} on any failure (missing,
+# unopenable, garbage) so callers can fall through to the next source.
+func _read_file(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return {}
+	var text := f.get_as_text()
+	f.close()
+	# Use the JSON instance API (not JSON.parse_string) so malformed input is
+	# reported via a returned error code instead of an engine-level error macro.
+	var json := JSON.new()
+	if json.parse(text) != OK:
+		return {}
+	if typeof(json.data) != TYPE_DICTIONARY:
+		return {}
+	return json.data
+
+
+# Drop entries that no longer resolve against the current roster (a car removed
+# from CarLibrary) so old saves stay loadable as the roster evolves.
+func _sanitise(p: Dictionary) -> Dictionary:
+	var kept: Array = []
+	for car in p.get("cars", []):
+		if CarLibrary.index_of(car.get("model_id", "")) >= 0:
+			kept.append(car)
+		else:
+			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
+	p["cars"] = kept
+	return p
+
+
+func has_save() -> bool:
+	return FileAccess.file_exists(profile_path)
+
+
+# --- Save --------------------------------------------------------------------
+
+# Mark the profile dirty and (re)arm the debounce timer. Call this from mutators
+# / call sites after a change; the actual disk write happens once the burst
+# settles. No-op when storage is disabled.
+func save() -> void:
+	if save_disabled:
+		return
+	profile["updated_utc"] = ""  # caller may stamp; cosmetic, see Notes in spec
+	_debounce.start()
+
+
+# Force an immediate atomic write (bypassing the debounce). Writes to a .tmp
+# then renames over the real file so a crash mid-write can't corrupt the only
+# profile, and keeps the prior file as .bak for one generation.
+func save_now() -> void:
+	if save_disabled:
+		return
+	_debounce.stop()
+	var tmp := profile_path + ".tmp"
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		push_warning("Save: cannot open %s for writing — progress will not be saved" % tmp)
+		save_disabled = true
+		return
+	f.store_string(JSON.stringify(profile, "\t"))
+	f.close()
+	var dir := DirAccess.open(profile_path.get_base_dir())
+	if dir != null:
+		if FileAccess.file_exists(profile_path):
+			dir.rename(profile_path, profile_path + ".bak")
+		dir.rename(tmp, profile_path)
+
+
+# Overwrite the current profile with a fresh one (after a ConfirmModal in the
+# menus). Writes immediately so "New game" is durable at once.
+func reset_new_game() -> void:
+	profile = _default_profile()
+	save_disabled = false
+	save_now()
+
+
+func _default_profile() -> Dictionary:
+	return {
+		"schema_version": SCHEMA_VERSION,
+		"created_utc": "",
+		"updated_utc": "",
+		"starter_picked": false,
+		"starter_model_id": "",
+		"next_instance_id": 1,
+		"cars": [],
+		"inventory": {},
+		"rallies": {},
+		"showdown_unlocked": false,
+		"showdown_completed": false,
+		"reward_history": [],
+	}
+
+
+# --- Migration ---------------------------------------------------------------
+# Migrations are pure Dictionary -> Dictionary transforms keyed by the version
+# they upgrade FROM, so they're unit-testable without disk I/O. Returns {} to
+# signal "refuse to load" (newer-than-known, or a step is missing).
+
+func _migrate(p: Dictionary) -> Dictionary:
+	var v: int = int(p.get("schema_version", 0))
+	if v > SCHEMA_VERSION:
+		return {}  # downgrade: refuse
+	while v < SCHEMA_VERSION:
+		if not _MIGRATIONS.has(v):
+			return {}  # gap in the migration chain: refuse rather than guess
+		p = _MIGRATIONS[v].call(p)
+		v = int(p.get("schema_version", v + 1))
+	# Backfill any keys a (correctly-versioned but partial) file is missing.
+	var base := _default_profile()
+	for k in base:
+		if not p.has(k):
+			p[k] = base[k]
+	return p
+
+# version N -> N+1 transforms. Empty until the first breaking change ships;
+# e.g. `0: func(p): p["schema_version"] = 1; ...; return p`.
+const _MIGRATIONS := {}
+
+
+# --- Owned-car mutators ------------------------------------------------------
+
+# Grant a new owned-car instance referencing a CarLibrary model id. `immortal`
+# is true only for the chosen starter (which can never be wrecked). Returns the
+# new OwnedCar dict.
+func grant_car(model_id: String, immortal := false) -> Dictionary:
+	var entry := CarLibrary.by_id(model_id)
+	var max_hp: float = entry.get("max_hp", 1000.0) if not entry.is_empty() else 1000.0
+	var car := {
+		"instance_id": int(profile["next_instance_id"]),
+		"model_id": model_id,
+		"hp": max_hp,
+		"immortal": immortal,
+		"installed_upgrades": [],
+		"tuning": {},
+	}
+	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
+	profile["cars"].append(car)
+	if not profile.get("reward_history", []).has(model_id):
+		profile["reward_history"].append(model_id)
+	save()
+	return car
+
+
+# The OwnedCar dict for an instance id, or {} if not owned.
+func get_car(instance_id: int) -> Dictionary:
+	for car in profile["cars"]:
+		if int(car["instance_id"]) == instance_id:
+			return car
+	return {}
+
+
+# Apply impact damage. Clamps HP at 0; reaching 0 wrecks the car (unless it is
+# the immortal starter, which floors at 1 HP and is never removed).
+func apply_damage(instance_id: int, amount: float) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	var hp := float(car["hp"]) - amount
+	if car.get("immortal", false):
+		car["hp"] = maxf(1.0, hp)
+		save()
+		return
+	if hp <= 0.0:
+		wreck_car(instance_id)
+		return
+	car["hp"] = hp
+	save()
+
+
+# Wreck a car: return its installed upgrades to the inventory, then remove the
+# instance. The immortal starter is never wrecked (no-op).
+func wreck_car(instance_id: int) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty() or car.get("immortal", false):
+		return
+	for item_id in car.get("installed_upgrades", []):
+		add_item(item_id, 1, false)
+	profile["cars"].erase(car)
+	save()
+
+
+func set_tuning(instance_id: int, tuning: Dictionary) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	car["tuning"] = tuning.duplicate(true)
+	save()
+
+
+# --- Inventory + upgrade install --------------------------------------------
+
+func add_item(item_id: String, n := 1, do_save := true) -> void:
+	var inv: Dictionary = profile["inventory"]
+	inv[item_id] = int(inv.get(item_id, 0)) + n
+	if not profile.get("reward_history", []).has(item_id):
+		profile["reward_history"].append(item_id)
+	if do_save:
+		save()
+
+
+# Remove n of an item from inventory if available. Returns true on success.
+func consume_item(item_id: String, n := 1) -> bool:
+	var inv: Dictionary = profile["inventory"]
+	var have := int(inv.get(item_id, 0))
+	if have < n:
+		return false
+	if have == n:
+		inv.erase(item_id)
+	else:
+		inv[item_id] = have - n
+	save()
+	return true
+
+
+# Pull one item from inventory and fit it to a car. Enforces one-upgrade-per-slot
+# (UpgradeLibrary): installing into an occupied slot replaces the incumbent,
+# returning it to inventory. Consumables (the repair kit) and unknown ids can't
+# be slotted — use use_repair_kit() for those. Returns true on success.
+func install_upgrade(instance_id: int, item_id: String) -> bool:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return false
+	var slot := UpgradeLibrary.slot_of(item_id)
+	if slot.is_empty() or UpgradeLibrary.is_consumable(item_id):
+		return false  # not a slottable upgrade
+	if int(profile["inventory"].get(item_id, 0)) < 1:
+		return false  # nothing to install; don't disturb the incumbent
+	# Replace any incumbent occupying the same slot (returned to inventory).
+	for existing in car["installed_upgrades"].duplicate():
+		if UpgradeLibrary.slot_of(existing) == slot:
+			car["installed_upgrades"].erase(existing)
+			add_item(existing, 1, false)
+	consume_item(item_id, 1)
+	car["installed_upgrades"].append(item_id)
+	save()
+	return true
+
+
+# Remove a fitted item from a car and return it to inventory. Returns true if
+# the item was actually fitted.
+func uninstall_upgrade(instance_id: int, item_id: String) -> bool:
+	var car := get_car(instance_id)
+	if car.is_empty() or not car["installed_upgrades"].has(item_id):
+		return false
+	car["installed_upgrades"].erase(item_id)
+	add_item(item_id, 1, false)
+	save()
+	return true
+
+
+# Spend one repair kit to heal a car by `heal_amount` HP, clamped to the car's
+# CarLibrary max_hp. The heal amount is a tuning value the caller reads from
+# GameConfig (repair_kit_hp), keeping Save free of config coupling. Returns true
+# if a kit was consumed and applied. The only way HP goes back up.
+func use_repair_kit(instance_id: int, heal_amount: float) -> bool:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return false
+	if not consume_item(UpgradeLibrary.REPAIR_KIT_ID, 1):
+		return false
+	var entry := CarLibrary.by_id(car["model_id"])
+	var max_hp: float = entry.get("max_hp", float(car["hp"])) if not entry.is_empty() else float(car["hp"])
+	car["hp"] = minf(max_hp, float(car["hp"]) + heal_amount)
+	save()
+	return true
+
+
+# --- Rally completion --------------------------------------------------------
+
+# Record a top-3 rally finish. Idempotent for the `completed` flag; updates the
+# best combined time when a faster one comes in. The CAR reward is NOT granted
+# here (re-wins are farmable — see reward-system.md); this only records progress
+# and re-derives the showdown unlock.
+func complete_rally(rally_id: String, combined_ms: int) -> void:
+	var rallies: Dictionary = profile["rallies"]
+	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0})
+	rec["completed"] = true
+	if int(rec.get("best_combined_ms", 0)) <= 0 or combined_ms < int(rec["best_combined_ms"]):
+		rec["best_combined_ms"] = combined_ms
+	rallies[rally_id] = rec
+	_recompute_showdown()
+	save()
+
+
+func rally_completed(rally_id: String) -> bool:
+	return profile["rallies"].get(rally_id, {}).get("completed", false)
+
+
+# Number of rallies top-3'd — the single progression metric driving the
+# reward-tier ceiling and the showdown unlock.
+func completed_rally_count() -> int:
+	var n := 0
+	for rally_id in profile["rallies"]:
+		if profile["rallies"][rally_id].get("completed", false):
+			n += 1
+	return n
+
+
+# Showdown unlock is gated on rally completion. The exact threshold belongs to
+# the rally roster (todo/rally-roster.md), which isn't implemented yet — when it
+# lands, wire its "all rallies complete" query in here. Until then this is a
+# conservative no-op so the flag is only ever set deliberately.
+func _recompute_showdown() -> void:
+	pass

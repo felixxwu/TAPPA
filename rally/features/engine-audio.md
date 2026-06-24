@@ -181,3 +181,16 @@ its `soft_clip_post_gain`.
 (global), `engine_soft_clip_post_gain` (per-car from
 `CarLibrary.soft_clip_post_gain`), plus `engine_type`
 (firing pattern). See [configuration.md](configuration.md).
+
+## Performance note
+
+The per-sample synthesis loop is the project's heaviest pure-CPU cost (run on the
+main thread at the mix rate). Two allocation/compute optimisations are in place,
+both behaviour-preserving:
+- `_voice()` computes its per-harmonic weights (`pow(0.6 + 0.4·load, h)/h`) once
+  per call and reuses them across all firing phases, instead of recomputing the
+  same `pow()` inside the firing-phase loop — removes a firing-phases-fold of
+  `pow()` calls per sample (the values don't depend on the firing phase).
+- `engine_audio.gd` sizes its scratch buffer to exactly the frames available and
+  pushes it directly, dropping the per-frame `slice()` allocation.
+Both are guarded by the existing `test_engine_audio*` tests.

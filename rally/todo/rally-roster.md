@@ -1,6 +1,18 @@
-# Rally Roster — implementation spec
+# Rally Roster — implementation spec  ✅ DONE
 
-> Status: **planned, not yet implemented.** Implementation brief for the
+> Status: **DONE (core).** `RallyLibrary` (`scripts/rally_library.gd`) is in
+> place: the authored `RALLIES` roster (5 rallies + 1 showdown), eligibility,
+> target-time derivation (placeholder formula pending calibration), the
+> deterministic opponent field + placement/top-3, progress/showdown gating, and
+> the anti-soft-lock `incomplete_rallies_enterable_by` query. Headless tests in
+> `tests/headless/test_rally_library.gd` (+ an integration smoke in
+> `test_smoke.gd`) cover all of it. Doc: `features/rally-roster.md`.
+> **Still open / deferred:** roster size + final curation, the real target-time
+> length/corner formula and its `GameConfig` weights (calibration pass), opponent
+> name pool (cosmetic), and wiring `Save._recompute_showdown()` to
+> `RallyLibrary.showdown_unlocked` once a flow layer exists.
+>
+> Implementation brief for the
 > **finite, curated rally list** named under `gameplay.md` › *Foundations* and
 > *World map & rallies*. Follow the config-first convention (`CLAUDE.md`):
 > authored content (the roster, per-event tunables) lives in data, never

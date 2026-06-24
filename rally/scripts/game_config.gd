@@ -265,6 +265,14 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Width, in 0.5 m cells, of the smooth transition band just outside the road
 ## edge where height and colour blend from the flat road to the true terrain.
 @export var track_transition_cells := 3
+## Lateral distance from the road centerline, in metres, within which track
+## progress accrues; straying beyond it triggers the off-track reset. MUST stay
+## below `track_clearance` (else the global nearest-point query can snap to a
+## different track section). Default ≈ road half-width (track_width/2) + margin.
+@export var track_progress_max_dist_m := 5.0
+## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
+## runs regardless; this only gates the snap-back-onto-road behaviour.
+@export var off_track_reset_enabled := true
 
 
 @export_group("Trees")
@@ -298,6 +306,17 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Distance (m) bushes are sunk into the ground, hiding the gap at the bottom of
 ## the bush texture.
 @export_range(0.0, 5.0) var bush_sink_m := 0.5
+
+
+@export_group("Performance")
+## Render frame cap (FPS). The game is inherently low-end and ships one lean
+## value; a steady cap avoids thermal throttling on phones. 0 = uncapped (desktop
+## dev). Physics runs independently at the project physics tick.
+@export_range(0, 240) var target_fps := 30
+## Texture LOD bias for the foliage/ground shaders: positive values pull distant
+## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
+## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
+@export_range(0.0, 4.0) var texture_lod_bias := 0.75
 
 
 func _init() -> void:

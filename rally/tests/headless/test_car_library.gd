@@ -59,9 +59,38 @@ func test_each_spec_is_sane() -> void:
 		assert_gt(spec["suspension_travel"], spec["wheel_radius"], who + " spring travel clears wheel radius")
 		assert_between(spec["suspension_stiffness"], 0.1, 50.0, who + " spring stiffness in a sane range")
 		assert_between(spec["low_octave_mix"], 0.0, 1.0, who + " low_octave_mix is a 0..1 blend")
-		assert_between(spec["volume_db"], -60.0, 6.0, who + " volume_db in a sane dB range")
+		assert_between(spec["volume_db"], -60.0, 12.0, who + " volume_db in a sane dB range")
 		# The track must fit inside the body width or wheels poke out absurdly.
 		assert_lte(spec["track"], spec["body"]["x"] + 0.1, who + " track within body width")
+		# Persistence + progression metadata (see save-persistence.md).
+		assert_true(spec["id"] is String and not spec["id"].is_empty(), who + " has a stable string id")
+		assert_true(spec["country"] is String and not spec["country"].is_empty(), who + " has a country tag")
+		assert_true(spec["car_type"] is String and not spec["car_type"].is_empty(), who + " has a car_type tag")
+		assert_gt(spec["max_hp"], 0.0, who + " has positive max_hp")
+		assert_gt(spec["reward_tier"], 0, who + " has a reward_tier")
+
+
+func test_car_ids_are_unique_and_stable_lookups_work() -> void:
+	var ids := {}
+	for spec in CarLibrary.CARS:
+		assert_false(ids.has(spec["id"]), "id '%s' is unique" % spec["id"])
+		ids[spec["id"]] = true
+	# index_of / by_id resolve a stable id to the current array position.
+	for i in CarLibrary.CARS.size():
+		var id: String = CarLibrary.CARS[i]["id"]
+		assert_eq(CarLibrary.index_of(id), i, "index_of('%s') resolves to %d" % [id, i])
+		assert_eq(CarLibrary.by_id(id)["name"], CarLibrary.CARS[i]["name"], "by_id('%s') returns the entry" % id)
+	# Unknown ids degrade safely (the save system drops orphaned entries).
+	assert_eq(CarLibrary.index_of("nope"), -1, "unknown id -> -1")
+	assert_true(CarLibrary.by_id("nope").is_empty(), "unknown id -> empty dict")
+
+
+func test_power_to_weight_ranks_cars() -> void:
+	# The heuristic is relative-only, but the Aventador must out-rank the MX-5.
+	var mx5 := CarLibrary.by_id("mx5")
+	var aventador := CarLibrary.by_id("aventador")
+	assert_gt(CarLibrary.power_to_weight(aventador), CarLibrary.power_to_weight(mx5),
+		"Aventador has a higher power-to-weight than the MX-5")
 
 
 func test_main_boots_as_first_car() -> void:

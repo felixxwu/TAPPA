@@ -22,6 +22,7 @@ const DC_BLOCK_R := 0.995
 var _mix_rate: float
 var _firing_phases: Array[float]
 var _harmonics: int
+var _harmonic_weights: PackedFloat32Array  # scratch, recomputed per _voice() call
 var _idle_gain: float
 var _noise_level: float
 var _master_gain: float  # linear, from engine_volume_db
@@ -48,6 +49,7 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_mix_rate = mix_rate
 	_firing_phases = cfg.engine_firing_phases()
 	_harmonics = cfg.engine_harmonics
+	_harmonic_weights.resize(_harmonics)
 	_idle_gain = cfg.engine_idle_gain
 	_noise_level = cfg.engine_noise_level
 	_master_gain = db_to_linear(cfg.engine_volume_db)
@@ -128,6 +130,14 @@ func soft_clip(x: float) -> float:
 
 # Sum each firing pulse: a short harmonic burst windowed near its crank phase.
 func _voice(phase: float, load_factor: float) -> float:
+	# The per-harmonic weight depends only on the harmonic index and load_factor,
+	# not the firing phase — so compute it ONCE here and reuse across every firing
+	# phase below, instead of recomputing the same pow() inside the inner loop for
+	# each phase. Algebraically identical (load_factor is fixed within a call);
+	# removes a firing_phases-fold of pow() calls per sample.
+	var base := 0.6 + 0.4 * load_factor
+	for h in range(1, _harmonics + 1):
+		_harmonic_weights[h - 1] = pow(base, float(h)) / float(h)
 	var out := 0.0
 	for fp in _firing_phases:
 		var d := fposmod(phase - fp, 1.0)  # 0..1 since this firing fired
@@ -135,7 +145,6 @@ func _voice(phase: float, load_factor: float) -> float:
 		var local := d * TAU
 		var pulse := 0.0
 		for h in range(1, _harmonics + 1):
-			var weight := pow(0.6 + 0.4 * load_factor, float(h)) / float(h)
-			pulse += sin(local * float(h)) * weight
+			pulse += sin(local * float(h)) * _harmonic_weights[h - 1]
 		out += pulse * window
 	return out / float(maxi(_firing_phases.size(), 1))

@@ -92,6 +92,13 @@ shader change.
 `track_transition_cells` in `config/game_config.tres` (the `Track` group of
 `GameConfig`).
 
+## Track progress & off-track reset
+
+The generated centerline is retained after `set_track` by a `TrackProgress` node
+(`scripts/track_progress.gd`), which tracks how far the car has driven along the
+road and snaps it back on when it strays too far. See
+[progress.md](progress.md).
+
 ## Tests
 
 `tests/headless/test_corner_library.gd` — the library has the expected unique

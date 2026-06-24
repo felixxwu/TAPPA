@@ -72,6 +72,20 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
 
 ## Tests
 
+## Performance defaults (inherently low-end)
+
+The game ships one lean pipeline for every device (no quality tiers). Relevant
+shipped knobs in `GameConfig`:
+- **`target_fps`** (default 30) — a render frame cap applied in `world._ready()`
+  (skipped under `--headless`, so it never throttles the test runner) to avoid
+  thermal throttling on phones. Physics stays at the project physics tick.
+- **`texture_lod_bias`** (default 0.75) — biases distant foliage sampling toward
+  cheaper mip levels (a `lod_bias` uniform in `shaders/billboard.gdshader`, set
+  from `BillboardField.build()`). The tree/bush textures now have **mipmaps
+  enabled** (`textures/tree.png.import`, `textures/bush.webp.import`), so distant
+  billboards no longer thrash the texture cache. `filter_nearest` is kept (PS1
+  look) — mipmapping is independent of the magnification filter.
+
 Rendering **setup** (environment, mesh shader materials, post-process shader,
 shader sources) is covered by `test_render_smoke.gd` — see
 [testing.md](testing.md). There is no pixel-diff golden test: it only worked

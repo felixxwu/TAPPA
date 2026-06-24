@@ -17,6 +17,32 @@ func test_scene_instantiates() -> void:
 	assert_not_null(_scene)
 
 
+func test_save_autoload_registered() -> void:
+	# The Save autoload (player profile / persistence) must be wired in
+	# project.godot alongside Config.
+	var save := get_node_or_null("/root/Save")
+	assert_not_null(save, "Save autoload registered")
+	assert_true(save.has_method("load_or_new"), "Save exposes load_or_new()")
+	assert_true(save.has_method("grant_car"), "Save exposes grant_car()")
+
+
+func test_entering_a_rally_event_generates_its_track() -> void:
+	# Entering a rally event = writing its (seed, turn_count, width) into
+	# Config.data, then generating — the same Config mutation pattern apply_car
+	# uses. Assert that flow builds a track without error (rally-roster.md).
+	var RallyLibrary = load("res://scripts/rally_library.gd")
+	var event: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
+	Config.data.track_seed = int(event["seed"])
+	Config.data.track_turn_count = int(event["turn_count"])
+	Config.data.track_width = RallyLibrary.event_width(event)
+	_scene._generate_track(Config.data)
+	# The flow completes and the scene is still valid (no crash building the
+	# rally's track from its seed).
+	assert_not_null(_scene.get_node("Floor"), "Floor present after generating the rally track")
+	assert_eq(Config.data.track_seed, int(event["seed"]), "rally event seed applied to Config")
+	Config.reset()  # don't leak the rally seed into other tests
+
+
 func test_car_is_vehicle_with_four_wheels() -> void:
 	var car := _scene.get_node("Car") as VehicleBody3D
 	assert_not_null(car, "Car node must be a VehicleBody3D")
@@ -193,9 +219,11 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 		"bush field still renders one instance per position")
 	assert_null(field.get_node_or_null("Collision"),
 		"with_collision == false builds no Collision body")
-	# y_offset sinks the sprite: instance Y is ground height minus the sink.
+	# y_offset sinks the sprite: instance Y is ground height minus the sink. Read
+	# the renderer-independent instance_positions mirror — the MultiMesh transform
+	# buffer lives in the RenderingServer, which is a no-op stub under --headless.
 	var p := positions[0]
-	var origin := field.multimesh.get_instance_transform(0).origin
+	var origin := field.instance_positions[0]
 	assert_almost_eq(origin, Vector3(p.x, floor.height_at(p.x, p.y) - 0.5, p.y),
 		Vector3(1e-3, 1e-3, 1e-3), "bush sunk into ground by the y_offset")
 

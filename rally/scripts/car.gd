@@ -15,6 +15,7 @@ var _rear_axle := Vector3.ZERO
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
 var _car_index := -1  # selected CarLibrary entry, or -1 for the untouched baseline
 var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount (scene rest pose)
+var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
 
 func _ready() -> void:
@@ -47,9 +48,9 @@ func _ready() -> void:
 		# so car swaps relocate from a clean rest pose, not a drifted one.
 		_wheel_mounts[wheel] = wheel.position
 	drivetrain = Drivetrain.new(self)
-	var debug_overlay := WheelForceDebug.new(self)
-	debug_overlay.visible = cfg.debug_wheel_forces
-	add_child(debug_overlay)
+	_debug_overlay = WheelForceDebug.new(self)
+	_debug_overlay.visible = cfg.debug_wheel_forces
+	add_child(_debug_overlay)
 	_recompute_axles()
 
 
@@ -143,10 +144,14 @@ func _physics_process(delta: float) -> void:
 	var down := -global_transform.basis.y
 	apply_force(down * v2 * cfg.downforce_front, global_transform.basis * _front_axle)
 	apply_force(down * v2 * cfg.downforce_rear, global_transform.basis * _rear_axle)
-	downforce_readouts = [
-		[global_position + global_transform.basis * _front_axle, down * v2 * cfg.downforce_front],
-		[global_position + global_transform.basis * _rear_axle, down * v2 * cfg.downforce_rear],
-	]
+	# Only build the debug-overlay readout array when the overlay is actually
+	# visible — it's the sole consumer (WheelForceDebug, toggled at runtime by H),
+	# so the shipped game doesn't allocate it every physics tick.
+	if _debug_overlay.visible:
+		downforce_readouts = [
+			[global_position + global_transform.basis * _front_axle, down * v2 * cfg.downforce_front],
+			[global_position + global_transform.basis * _rear_axle, down * v2 * cfg.downforce_rear],
+		]
 
 	# Front wheels caster toward the direction of travel (blended in by
 	# steer_travel_alignment; at 1.0 they fully track it, making countersteer
@@ -206,8 +211,17 @@ func _any_wheel_airborne() -> bool:
 	return false
 
 
+# Manual reset (the `R` action): back to the authored spawn pose.
 func _reset() -> void:
-	global_transform = _start_transform
+	reset_to(_start_transform)
+
+
+# Reset the car to an arbitrary pose with motion zeroed — shared by the manual
+# reset and the off-track recovery (TrackProgress). Restores velocities, wheel
+# spin and engine state so the car drops in cleanly rather than carrying over
+# stale momentum.
+func reset_to(xform: Transform3D) -> void:
+	global_transform = xform
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	drivetrain.rear_omega = 0.0
