@@ -10,9 +10,9 @@
 > baseline, the profile is per-player mutable progress. Update the relevant
 > `features/*.md` doc and add tests in the same piece of work.
 >
-> **A few calls are marked `(proposed)` — confirm with Felix before building.**
-> The big forks (ownership model, file format, single-vs-multi profile) are
-> called out in *Open questions* and should be settled first.
+> **The three big forks are decided** (with the user): **instance-based**
+> ownership, **JSON at `user://`**, and a **single auto-saved profile**. They're
+> baked into the model below; see *Decided (kept for trace)*.
 
 ## Goal
 
@@ -69,7 +69,7 @@ seed — `gameplay.md`, recompute from the seed); track geometry (regenerated fr
 
 ## Data model (proposed)
 
-**Ownership is instance-based, not model-keyed** `(proposed)`. Each owned car is
+**Ownership is instance-based, not model-keyed** *(decided)*. Each owned car is
 a unique **instance** that *references* a `CarLibrary` model id and carries its
 own mutable state. Rationale: per-car HP + the fact that the random-car reward
 can grant a model you already own (`gameplay.md` › *Progression*) means two cars
@@ -114,15 +114,15 @@ Notes:
 - **`item_id` / `model_id`** are the stable string ids defined by the
   CarLibrary-metadata and upgrade-catalogue todos — this spec only consumes them.
 
-## Storage mechanism (proposed)
+## Storage mechanism (decided)
 
-- **Format: JSON at `user://profile.json`** `(proposed)`. Inspectable, trivially
+- **Format: JSON at `user://profile.json`** *(decided)*. Inspectable, trivially
   versioned/migrated, and decoupled from engine class layout — unlike a Godot
   `Resource` (`.tres`), whose `ResourceSaver`/`load` path couples the save to
   script class names and breaks awkwardly when fields are renamed. `ConfigFile`
   is a fine alternative but is flatter than the nested model above. Serialize
   with `JSON.stringify` / parse with `JSON.parse_string`, via `FileAccess`.
-- **A single auto-saved profile** `(proposed)`, not named save slots. The game is
+- **A single auto-saved profile** *(decided)*, not named save slots. The game is
   one continuous progression (`gameplay.md`); "New game" overwrites after a
   `ConfirmModal`. Multiple slots can be layered on later by making the filename a
   parameter — note this so the API doesn't bake in the single-file assumption.
@@ -237,10 +237,6 @@ Headless GUT tests (`tests/headless/`, per `CLAUDE.md`):
 
 ## Out of scope / open questions
 
-- **Ownership model — instance-based vs model-keyed** *(proposed: instance-based)*.
-  Biggest fork; confirm before building.
-- **File format — JSON vs Godot Resource vs ConfigFile** *(proposed: JSON)*.
-- **Single profile vs named save slots** *(proposed: single, auto-saved)*.
 - **Encryption / tamper-resistance** — `FileAccess.open_encrypted_with_pass`
   exists, but for a single-player time-attack game plaintext JSON is probably
   fine. Decide if leaderboard integrity ever matters.
@@ -250,3 +246,14 @@ Headless GUT tests (`tests/headless/`, per `CLAUDE.md`):
 - **Settings vs progress:** audio/graphics/control settings are *not* covered
   here; if they need persisting, decide whether they share `profile.json` or get
   their own `settings.cfg` (likely the latter — different lifecycle).
+
+### Decided (kept for trace)
+
+- **Ownership model:** **instance-based** — each owned car is a unique instance
+  referencing a `CarLibrary` model id, with its own HP/upgrades/tuning (supports
+  duplicate models from the random-car reward).
+- **File format:** **JSON at `user://profile.json`** (inspectable, migratable,
+  decoupled from engine class layout).
+- **Profiles:** a **single auto-saved profile**; "New game" overwrites after a
+  `ConfirmModal`. Filename stays a parameter so named slots can be added later
+  without reworking the API.
