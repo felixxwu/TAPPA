@@ -35,7 +35,7 @@ the `.tres` requires a scene reload to take effect.
 | `steer_assist_torque` | 200.0 | Yaw torque vs understeer (N·m) |
 | `steer_assist_min_speed` | 8.333 | Min speed (m/s ≈30 km/h) before steer assist applies |
 | `level_assist_torque` | 8000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
-| `wheel_roll_influence` | 0.1 | Body roll from lateral tire force (0..1) |
+| `wheel_roll_influence` | 0.1 | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM, 1 = contact patch |
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |
 | `wheel_friction_slip_rear` | 0.6 | Rear tire grip coefficient μ |
 | `suspension_travel` | 0.5 | Spring compression distance (m) |

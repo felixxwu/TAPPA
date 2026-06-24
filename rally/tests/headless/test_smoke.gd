@@ -8,9 +8,18 @@ const ACTIONS := [
 var _scene: Node3D
 
 
-func before_each() -> void:
+# main.tscn._ready() generates the full terrain + track, which is expensive, so
+# build it ONCE for the whole script instead of per-test. Every test here is a
+# read-only structural check except the two camera tests, which reset the car's
+# position/velocity themselves — so a single shared instance is safe.
+func before_all() -> void:
 	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
+	add_child(_scene)
+	await get_tree().physics_frame  # let world._ready() generate + apply + build
+
+
+func after_all() -> void:
+	_scene.free()
 
 
 func test_scene_instantiates() -> void:
@@ -154,6 +163,20 @@ func test_flat_fixture_has_car_and_ground() -> void:
 func test_input_actions_exist() -> void:
 	for action in ACTIONS:
 		assert_true(InputMap.has_action(action), "action exists: " + action)
+
+
+# Every gameplay action must be reachable from a controller (standard racing
+# layout: triggers throttle/brake, left stick steer, bumpers shift, face buttons
+# for the rest). Debug-only actions stay keyboard-only and are excluded here.
+func test_gameplay_actions_have_joypad_bindings() -> void:
+	var controller_actions := ACTIONS + ["handbrake"]
+	for action in controller_actions:
+		var has_joypad := false
+		for event in InputMap.action_get_events(action):
+			if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+				has_joypad = true
+				break
+		assert_true(has_joypad, "action has a controller binding: " + action)
 
 
 func test_bonnet_camera_parented_to_car_facing_forward() -> void:

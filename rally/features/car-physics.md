@@ -23,7 +23,7 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    (Y) cycles RWD→AWD→FWD; `shift_up`/`shift_down` (E/Q) request manual shifts.
 2. **Throttle/brake resolution:**
    - *Auto:* `engine.select_forward/select_reverse` pick a gear at low speed;
-     `engine.update_auto` handles upshifts based on ground speed.
+	 `engine.update_auto` handles upshifts based on ground speed.
    - *Manual:* W accelerates (or reverses in R gear); S brakes / reverses.
    - Near-zero speed engages a parking brake.
 3. **Steering:** front wheels caster toward the direction of travel
@@ -38,9 +38,9 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
 4. **Aero forces:**
    - *Drag:* `-velocity * |velocity| * drag_coefficient` (quadratic).
    - *Downforce:* `v² * downforce_{front,rear}` applied at the axle midpoints;
-     also recorded in `downforce_readouts` for the debug overlay. Either
-     coefficient may be negative, which produces lift (an upward force that
-     unloads that axle at speed).
+	 also recorded in `downforce_readouts` for the debug overlay. Either
+	 coefficient may be negative, which produces lift (an upward force that
+	 unloads that axle at speed).
 5. **Self-righting assist:** when one or more wheels are off the ground, a
    roll+pitch torque (`level_assist_torque`) eases the chassis back toward
    level. The torque axis is `car_up × world_up` — it lies in the horizontal

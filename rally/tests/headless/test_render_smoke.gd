@@ -12,9 +12,18 @@ extends GutTest
 var _scene: Node3D
 
 
-func before_each() -> void:
+# main.tscn._ready() generates the full terrain + track, which is expensive, so
+# build it ONCE for the whole script. Every test here is a read-only check of
+# the rendering setup (or runs a few process frames on it), so a single shared
+# instance is safe.
+func before_all() -> void:
 	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
+	add_child(_scene)
+	await get_tree().physics_frame  # let world._ready() generate + apply + build
+
+
+func after_all() -> void:
+	_scene.free()
 
 
 func _assert_shader_material(mat: Material, who: String) -> void:

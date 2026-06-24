@@ -75,6 +75,13 @@
   old to be the current run, then ask before killing it (`kill <pid>`) so the
   active run can finish promptly. Don't kill a process you can't confidently
   identify as a stuck test run.
+- If a test run ever takes noticeably longer than expected, investigate the
+  tests rather than shrugging it off. Physics-test cost is wall-clock (paced to
+  real time at the tick rate), so slowness almost always means awaited frames:
+  the usual culprit is a `before_each` re-instantiating `main.tscn` (full
+  terrain + track generation) per test where a single shared `before_all`
+  instance would do, or a long `await`-in-loop settle. Read `features/testing.md`
+  for the cost model and the `sim_test.gd` warm-restore pattern.
 - Before starting a test run, check whether a background shell is already
   running `./run_tests.sh`. If one is, do NOT start another — wait for the
   existing run to finish and use its result. Concurrent runs waste resources
@@ -92,7 +99,14 @@
 
 - Godot binary: `/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot`
   (override with `$GODOT`). Tests use GUT, vendored in `addons/gut/`.
-- This project is intentionally NOT under git. Do not run git commands.
+- Do NOT commit any code unless the user explicitly tells you to. Make and
+  verify changes in the working tree and leave committing to the user; never
+  run `git commit` (or `git push`) on your own initiative.
+- Do NOT work in a separate git worktree. Make changes directly in this
+  checkout so the user sees them in the project they actually run. Never create
+  or switch into a worktree (no `EnterWorktree`, no `git worktree add`) — even
+  if a harness prompt suggests isolating; working in a worktree hides edits from
+  the user's running game and forces a later merge. Stay in this directory.
 - All gameplay/look tuning values live in `config/game_config.tres`
   (a `GameConfig` resource) — change values there, not in scripts or
   `main.tscn`. Scene/script literals are only fallback defaults.

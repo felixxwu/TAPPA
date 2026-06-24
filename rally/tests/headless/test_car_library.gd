@@ -59,6 +59,9 @@ func test_each_spec_is_sane() -> void:
 		assert_gt(spec["suspension_travel"], spec["wheel_radius"], who + " spring travel clears wheel radius")
 		assert_between(spec["suspension_stiffness"], 0.1, 50.0, who + " spring stiffness in a sane range")
 		assert_between(spec["low_octave_mix"], 0.0, 1.0, who + " low_octave_mix is a 0..1 blend")
+		# Upper bound covers the deliberately loud cars (V8/V10/V12 sit at +7..+10);
+		# the per-voice level is tamed downstream by the soft clipper, so a positive
+		# dB here is intentional, not a mixing error.
 		assert_between(spec["volume_db"], -60.0, 12.0, who + " volume_db in a sane dB range")
 		# The track must fit inside the body width or wheels poke out absurdly.
 		assert_lte(spec["track"], spec["body"]["x"] + 0.1, who + " track within body width")

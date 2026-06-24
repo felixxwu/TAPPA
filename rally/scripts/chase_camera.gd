@@ -48,7 +48,39 @@ func _physics_process(delta: float) -> void:
 	var weight := 1.0 - exp(-_smoothing * delta)
 	_travel_dir = _travel_dir.slerp(target_dir, weight).normalized()
 
-	# Place the camera behind the (smoothed) orbital direction, offset by a
-	# horizontal distance and a height, then point it straight at the car.
-	global_position = target.global_position - _travel_dir * _distance + Vector3.UP * _height
+	# Place the camera behind the (smoothed) orbital direction. The height is
+	# measured from the terrain directly below the camera (not from the car), so
+	# the camera keeps a constant clearance over the ground it is flying over.
+	# `follow_distance` is the EUCLIDEAN (straight-line) distance to the car, so we
+	# trade off horizontal reach against the vertical gap: the bigger the height
+	# difference, the closer in the camera sits horizontally to keep the same true
+	# distance. Because the camera height depends on the terrain under it (which
+	# depends on the horizontal offset), solve it with a couple of fixed-point
+	# iterations starting from the full distance.
+	var origin := target.global_position
+	var horizontal := _distance
+	for _i in 2:
+		var pos := origin - _travel_dir * horizontal
+		pos.y = _ground_height_at(pos.x, pos.z) + _height
+		var dy := pos.y - origin.y
+		# Solve sqrt(horizontal^2 + dy^2) = distance for the horizontal reach.
+		horizontal = sqrt(max(0.0, _distance * _distance - dy * dy))
+	var final_pos := origin - _travel_dir * horizontal
+	final_pos.y = _ground_height_at(final_pos.x, final_pos.z) + _height
+	global_position = final_pos
+
+	# Point straight at the car (un-smoothed).
 	look_at(target.global_position, Vector3.UP)
+
+
+# Terrain surface height at a world (x, z), used to seat the camera a fixed
+# distance above the ground below it. Looks for a sibling that exposes height_at
+# (the hilly Floor in the main scene); on flat test fixtures there is none, so it
+# falls back to 0.
+func _ground_height_at(x: float, z: float) -> float:
+	var parent := get_parent()
+	if parent != null:
+		for sibling in parent.get_children():
+			if sibling != self and sibling.has_method("height_at"):
+				return sibling.height_at(x, z)
+	return 0.0
