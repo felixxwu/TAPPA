@@ -24,8 +24,8 @@ roguelike**: do you risk your best car to win, or play it safe?
 4. See the **leaderboard** after each event vs. AI opponents.
 5. Earn a **random upgrade** per event (lootbox reveal); **win the rally** → a
    **random car** (lootbox reveal). Damage you took **carries over**.
-6. **Tune & upgrade** between rallies. Repeat, working toward the **final
-   showdown** unlocked by a points threshold.
+6. **Tune & upgrade** between rallies. Repeat, completing rallies (finish
+   **top 3**) until **all** are done, which unlocks the **final showdown**.
 
 ## Locked decisions (from design brainstorm)
 
@@ -34,7 +34,9 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Economy | **No currency.** Progression is purely cars + upgrades won. |
 | Damage repair | **Repair only via rare items** (a "repair kit" lootbox reward). |
 | Run stakes | **Retry allowed, but damage sticks.** Opponent results are fixed per rally seed; damage from a failed attempt persists. |
-| Showdown unlock | **Threshold / points total** (not literally every rally). |
+| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + car destroyed. |
+| Rally complete | **Finish top 3** in a rally (combined time). |
+| Showdown unlock | **All rallies completed** (top-3 each). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
 | Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
 | Upgrades on car death | **Returned to inventory.** Only the chassis is lost; installed upgrades go back to the player. |
@@ -44,9 +46,9 @@ roguelike**: do you risk your best car to win, or play it safe?
 ## Cars & the garage
 
 - **Starters:** the player picks **1 of 3** starter cars at the beginning. Each is
-  low-performance and, crucially, **damage-immune** — the permanent safety net so
-  the player can never be left with nothing drivable. *(Proposed: the other two
-  starters are not obtainable later; they're just a starting-flavour choice.)*
+  low-performance and, crucially, **damage-immune** (effectively infinite HP) —
+  the permanent safety net so the player can never be left with nothing drivable.
+  The **two unchosen starters can be obtained later** as reward cars.
 - **Car metadata for restrictions.** Every car needs tags so rallies can filter
   it: **engine size/type**, **drivetrain layout** (FWD/RWD/AWD — the sim already
   has drive modes via `drivetrain.cycle_drive_mode`), **country**, **car type**
@@ -59,38 +61,45 @@ roguelike**: do you risk your best car to win, or play it safe?
 
 ## Damage model
 
-- Damage is a per-car value that **only accumulates** between events and between
-  rallies (no passive healing). It rises from **hitting objects** (the roadside
-  signs / trees already have collision; impacts feed the damage value).
-- **Effects scale with damage:**
+- Each car has **HP (durability)** — a per-car stat. **Heavier cars tend to have
+  more HP** (more durable); the value is a per-car override in **`CarLibrary`**,
+  loosely keyed to `mass`. HP **only depletes** between events and rallies (no
+  passive regen). **Hitting objects** (the roadside signs / trees already have
+  collision) subtracts HP scaled by impact severity.
+- **Effects scale with damage** (i.e. with HP lost, as a fraction of max):
   - **Wheel alignment** → a steering pull (the car drifts to one side). The sim
     has no alignment-offset knob today; add one (a constant toe/steer bias fed
     into the steering in `car.gd`).
   - **Engine power** → reduced output. No single power multiplier exists today
     (power comes from the `engine_type` preset / `ENGINE_PRESETS`); add a
     **damage power-multiplier** applied to engine torque.
-- **Carry-over & cap.** Damage persists across events and rallies. At a **damage
-  cap** the car is **destroyed**: disqualified for the rest of the current rally
-  *and* unusable in all future rallies. **Its installed upgrades return to the
-  player's inventory** (only the chassis is lost).
-- **Starter is immune** (never damaged, never destroyed) — the anti-soft-lock
-  floor.
+- **Wreck at 0 HP.** When a car's HP hits **0 it is wrecked**: the current rally
+  is an immediate **DNF**, and the car is **destroyed** — unusable in all future
+  rallies. **Its installed upgrades return to the player's inventory** (only the
+  chassis is lost).
+- **HP carries over** across events and rallies — chip damage from one rally
+  weakens the car in the next unless repaired.
+- **Starter is immune** (effectively infinite HP — never wrecked, never
+  destroyed) — the anti-soft-lock floor.
 - **Repair** is possible **only via a rare "repair kit" item** from the lootbox,
-  spent between rallies to reduce a car's damage.
-- *(Implementation: damage→effect mapping and the cap value are tuning numbers;
-  defer exact values to a damage todo + playtesting. Reuses the existing
-  collision on signs/trees as impact sources.)*
+  spent between rallies to restore HP.
+- *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
+  power degrade with HP lost are tuning numbers; defer exact values to a damage
+  todo + playtesting. Reuses the existing collision on signs/trees as impact
+  sources.)*
 
 ## World map & rallies
 
-- The world map offers a **large number of rallies**, each **generated from an
-  RNG seed** (the track generator is already seeded — `track_seed`).
+- The world map offers a **finite, curated set of rallies** (large but countable
+  — "complete them all" must be a reachable goal), each **generated from an RNG
+  seed** (the track generator is already seeded — `track_seed`). Curated = a
+  fixed list of seeds + restrictions, not an endless stream.
 - Each rally has a **restriction** (engine size, drivetrain layout, country, car
   type, p/w ratio, …). The player must **own a matching car** to enter. An
   **open-class** pool (no restriction) is always present so the starter always
   has somewhere to race.
 - A rally = **3 events**. **Combined time across all 3** sets the final rally
-  time and finishing position.
+  time and finishing position. A rally is **completed** by finishing **top 3**.
 - After **each event** the player sees a **leaderboard**: their time vs. the AI
   field, so they always know how they're doing.
 
@@ -113,24 +122,24 @@ roguelike**: do you risk your best car to win, or play it safe?
   thinning it out.
 - **Retry, damage sticks:** the player can re-attempt, but any damage from the
   failed attempt persists and the opponent field is unchanged.
-- *(Proposed: DNF for the player = car destroyed mid-rally or failing to finish
-  an event.)*
+- **Player DNF:** the only fail-out is **wrecking the car** (HP → 0). There is no
+  time-cut DNF — a slow run just places badly; only running out of HP ends the
+  rally early.
 
 ## Progression & rewards
 
 - **Per event:** a **random upgrade** drops into the inventory.
-- **Per rally win (all 3 events):** a **random car** is granted.
+- **Per rally completed (top 3 on combined time):** a **random car** is granted.
 - **Reveal as a lootbox / slot machine** — spinning reels that settle on the
   reward, so the player glimpses the breadth of cars/upgrades that exist (a
   discovery hook, not just a grant).
 - **Reward balancing (both):** tier = **f(rally difficulty)** (harder rally →
-  better reward) **clamped by an overall-progress ceiling** (early game can't
-  yield a top car even on a lucky win).
+  better reward) **clamped by a progress ceiling** (early game can't yield a top
+  car even on a lucky win). Progress = **number of rallies completed** — the same
+  count that drives the showdown unlock, so no separate metric is needed.
 - **Anti-soft-lock (both):** open-class rallies as the floor **+** reward logic
   that guarantees every granted car is eligible for **≥1 still-incomplete rally**
   and the player is **never** left with zero enterable rallies.
-- *(Implication: a points/progress metric underlies both the reward ceiling and
-  the showdown unlock — define it once and share it.)*
 
 ## Tuning & upgrades
 
@@ -164,23 +173,23 @@ The player should never feel alone in the rally:
 
 ## The final showdown
 
-- A **final showdown rally** with **extra-long events**, entered **only** once a
-  **points threshold** is reached (not literally every rally).
+- A **final showdown rally** with **extra-long events**, entered **only** once
+  **every rally on the world map is completed** (top-3 in each).
 - It should read clearly as **the main goal**; the **events-selection menu shows
-  progress toward it** (a points/▰▰▱ meter), so the player always knows how close
-  they are.
+  progress toward it** (a *rallies completed / total* meter, ▰▰▱), so the player
+  always knows how close they are.
 - *(Proposed: winning the showdown is the game's "win" / credits beat.)*
 
 ## Foundations this implies (cross-cutting)
 
 These underpin everything above and likely each become their own todo:
-- **Save / persistence** — owned cars, per-car damage, installed upgrades,
-  inventory, rally completion/points, reward history. Nothing here works without
-  it.
+- **Save / persistence** — owned cars, per-car HP, installed upgrades, inventory,
+  rally completion (which rallies are top-3'd), reward history. Nothing here works
+  without it.
 - **CarLibrary metadata** — the restriction tags (engine/drivetrain/country/
-  type/p-w).
-- **Points/progress metric** — shared by the reward ceiling and the showdown
-  unlock + meter.
+  type/p-w) **plus per-car max HP**.
+- **Rally roster** — the finite curated list of rallies (seed + restriction);
+  its completion count drives both the reward ceiling and the showdown unlock.
 - **Meta-game UI shell** — world map, garage, tuning screen, inventory, lootbox
   reveal, leaderboard, podium. (The in-car HUD already exists; this is the
   surrounding menu layer, which barely exists today.)
@@ -198,20 +207,22 @@ These underpin everything above and likely each become their own todo:
 
 ## Open questions / to decide later
 
-- **Player DNF trigger:** what fails a player out of an event/rally — car
-  destroyed mid-rally, missing a time cut, off-track timeout, or some mix?
-- **Starter cars:** are the unchosen two ever obtainable, or purely a starting
-  pick?
-- **Points metric** definition (placement-based? completion-based?) feeding the
-  reward ceiling and showdown meter — and the **threshold** that unlocks the
-  showdown.
-- **Damage tuning:** cap value, damage-per-impact, and how steeply alignment/
-  power degrade — settle via playtesting.
+- **Damage tuning:** per-car max HP, HP-per-impact, and how steeply alignment/
+  power degrade with HP lost — settle via playtesting.
 - **Upgrade catalogue:** the full list of upgrade types and each one's config
   mapping.
+- **HP↔mass curve:** how strongly durability tracks weight (a soft guideline, or
+  a fixed formula CarLibrary defaults from?).
+- **Roster size:** roughly how many rallies make up the finite world map (sets
+  how long "complete them all" takes).
 
 ### Decided (kept here for trace)
 
 - **Target-time model:** auto-derived from the seeded track, Felix-calibrated in
   a dedicated fine-tuning session once the formula exists.
 - **Opponent count:** 10–15 per rally, thinned by DNFs.
+- **Player DNF:** only by wrecking (HP → 0); no time-cut fail-out.
+- **Starter cars:** the two unchosen starters are obtainable later as rewards.
+- **Rally completion:** finish top-3 (combined time). **Showdown:** all rallies
+  completed. Rally-completion count is the single progress metric (also caps
+  reward tier) — no separate points system.
