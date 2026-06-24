@@ -187,7 +187,8 @@ These underpin everything above and likely each become their own todo:
   rally completion (which rallies are top-3'd), reward history. Nothing here works
   without it.
 - **CarLibrary metadata** — the restriction tags (engine/drivetrain/country/
-  type/p-w) **plus per-car max HP**.
+  type/p-w) **plus per-car max HP**. An additive pass on the existing
+  `CarLibrary`; specced in `todo/save-persistence.md` › *Prerequisite*.
 - **Rally roster** — the finite curated list of rallies (seed + restriction);
   its completion count drives both the reward ceiling and the showdown unlock.
 - **Meta-game UI shell** — **diegetic / in-world**: menus are 3D locations (an HQ

@@ -203,13 +203,58 @@ out so the reward system doesn't separately try to solve it.
   drop the orphaned entry on load and log it, rather than hard-failing — keeps
   old saves loadable as the roster evolves.
 
+## Prerequisite: extend `CarLibrary` with metadata
+
+The library **already exists** (`CarLibrary.CARS`, `car_library.gd:81+` — the 6
+cars). This is an **additive metadata pass on the existing entries**, not a new
+system, and it's the hard blocker for saving (the id) and for rally restrictions
++ damage. Do it first.
+
+**Already present — reuse as-is (no new field):**
+- `engine_type` (`car_library.gd:86` etc — index into `ENGINE_PRESETS`: i4/i5/i6/
+  v6/v8/v10/v12) and `drive_mode` (`RWD`/`AWD`/`FWD`, `car_library.gd:65-67`) →
+  two restriction tags come for free.
+- `mass`, `peak_torque`, `redline` → **power-to-weight is derived, not stored**
+  (a `CarLibrary.power_to_weight(entry)` helper; exact formula is a tuning
+  detail — rough peak power ≈ f(`peak_torque`, `redline`), ÷ `mass`).
+
+**New fields to add per entry:**
+- **`id`** *(string, required)* — a stable key, e.g. `"mx5"`, `"rs3"`,
+  `"porsche911"`, `"lfa"`, `"mustang"`, `"aventador"`. **Never reordered or
+  reused.** Replaces array-index identity (`car.gd:16,253`) everywhere ownership
+  is persisted.
+- **`country`** *(string)* — e.g. `JP` (MX-5, LFA), `DE` (RS3, 911), `US`
+  (Mustang), `IT` (Aventador). A restriction tag.
+- **`car_type`** *(string)* — e.g. roadster / hatch / coupe / saloon. A
+  restriction tag; values authored per car.
+- **`max_hp`** *(float)* — per-car durability the damage model needs; the saved
+  `OwnedCar.hp` clamps to it. Loosely keyed to `mass` (`gameplay.md` › *Damage*):
+  default from a `mass`-based formula, override per car. Exact numbers are
+  damage-tuning, deferred to playtesting.
+- **`engine_displacement_l`** *(float, optional)* — only if rallies restrict by
+  engine *size* as well as cylinder layout (MX-5 2.0, RS3 2.5, 911 3.0, LFA 4.8,
+  Mustang 5.0, Aventador 6.5). Skip until a rally needs it.
+
+**New lookup helper:** `CarLibrary.index_of(id) -> int` (and/or `by_id(id) ->
+Dictionary`), so save/load and `apply_car` resolve a stable id to the current
+array position. `apply_car(index)` (`car.gd:253`) can stay index-based
+internally; only the *persisted* identity becomes the id.
+
+**Not a library field:** the **immortal** flag is per *owned instance*
+(`OwnedCar.immortal`), set when a car is granted as the chosen starter — the
+library only supplies `max_hp`. Which cars are the 3 starters is a roster/design
+call, not metadata schema.
+
+*Consumed by:* this save spec (id + max_hp), `todo/menus.md` (the stats panel
+shows engine/drivetrain/country/type/p-w + an HP bar), the rally roster
+(restriction matching), and the damage model (`max_hp`).
+
 ## Dependencies
 
-- **CarLibrary metadata todo (prerequisite for ids).** This spec needs a
-  **stable string `id`** on every `CarLibrary.CARS` entry (`car_library.gd:81+`)
-  and on every upgrade item. Today cars are keyed by array index (`car.gd:16,253`)
-  — that must become an id lookup before ownership can be saved safely. *Do this
-  first* (it's small: add `"id"` per entry + an id→index helper).
+- **CarLibrary metadata** — see *Prerequisite* above (folded into this spec):
+  a stable `id` per entry is required before ownership can be saved safely. *Do
+  this first.* Upgrade items likewise need stable `item_id`s (upgrade-catalogue
+  todo).
 - **Rally roster todo** — defines the `rally_id` space that `rallies` keys on.
 - **Consumed by `todo/menus.md`** — Title's Continue/New branch (`Save.has_save()`),
   the car lineup (owned cars), parts bench (inventory), tuning lift (per-car
