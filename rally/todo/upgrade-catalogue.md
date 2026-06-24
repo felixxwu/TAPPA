@@ -56,8 +56,8 @@ live when the aero kit is installed (`todo/menus.md` › tuning-lift knobs).
 
 **Mirror `CarLibrary` / `RallyLibrary`: an `UpgradeLibrary`
 (`scripts/upgrade_library.gd`, `class_name UpgradeLibrary`) holding
-`const UPGRADES: Array[Dictionary]`** `(proposed — same fork settled for the
-rally roster)`.
+`const UPGRADES: Array[Dictionary]`** *(decided — follows the same in-code
+choice settled for the rally roster)*.
 
 ```
 UpgradeDef
@@ -78,9 +78,9 @@ UpgradeDef
 `UpgradeLibrary.apply(owned_car, cfg)` walks `installed_upgrades` and applies each
 item's `effect` to `cfg` (step 2 above). Pure and testable.
 
-## Slot model (proposed)
+## Slot model (decided)
 
-**One upgrade per slot, tier-based** `(proposed)`: a car holds at most one
+**One upgrade per slot, tier-based** *(decided)*: a car holds at most one
 `engine` / `aero` / `suspension` / `brakes` upgrade. Installing into an occupied
 slot **replaces** the incumbent, returning the old item to inventory. Rationale:
 keeps effects bounded (no stacking ten engine kits) and the stats panel readable.
@@ -146,8 +146,8 @@ Headless GUT tests (`tests/headless/`, mirroring `test_car_library.gd`):
 
 ## Out of scope / open questions
 
-- **Slot model — one-per-slot (replace) vs free stacking** *(proposed:
-  one-per-slot)*. Confirm before building.
+- **Slot model** — **decided: one-per-slot, tiered** (installing replaces +
+  returns the incumbent). See *Slot model*.
 - **Full upgrade list** — the concrete set of parts per slot and per tier, and
   each one's exact `effect` numbers (balance pass, deferred).
 - **Manual uninstall** — left out by default (parts return only on wreck); add a
