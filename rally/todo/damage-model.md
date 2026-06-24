@@ -78,7 +78,7 @@ non-immortal** car:
   drifts to one side; `damage_steer_bias_max` is in the same radians unit as
   `steer_limit` (`game_config.gd:82`). **`align_bias_sign` is re-rolled randomly
   (±1) at each run/event start** *(decided)* — not tied to the rally seed, so a
-  retry can pull the other way; the player can't pre-learn it.
+  re-entry can pull the other way; the player can't pre-learn it.
 - **Engine power loss** — scale the driven torque:
   `drive_torque *= 1.0 - d * cfg.damage_power_loss_max` at `drivetrain.gd:116`
   (or inside `engine.step`). `damage_power_loss_max` is the fraction of power
@@ -142,7 +142,7 @@ Headless GUT tests (`tests/headless/`):
   hand-set per car, `gameplay.md` open q), impulse threshold, and how steeply
   power/steer degrade. Settle via playtest.
 - **Steering-pull direction** — **decided: random (±1) per run/event start**, not
-  seed-tied (see *Effects* §3). Re-rolls on retry.
+  seed-tied (see *Effects* §3). Re-rolls on each run / re-entry.
 - **Visible damage** — dents/smoke/visual feedback are not specced here; the model
   is mechanical only for now. A HUD HP readout during a run is a menus/HUD concern.
 - **Cosmetic vs hard caps** — whether very low HP also affects braking/grip, or

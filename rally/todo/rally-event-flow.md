@@ -8,9 +8,9 @@
 > Update the relevant `features/*.md` doc and add tests in the same piece of work.
 >
 > **Forks decided** (with the user): the session is an **autoload that survives
-> per-event scene reloads**; **retries are allowed and damage sticks** (whole-rally
-> re-run); a **mid-rally wreck keeps upgrades earned from completed events**. See
-> *Decided (kept for trace)*.
+> per-event scene reloads**; there is **no retry** (a non-top-3 rally returns to HQ
+> and is re-entered later from the map, damage persisting); a **mid-rally wreck
+> keeps upgrades earned from completed events**. See *Decided (kept for trace)*.
 
 ## Goal
 
@@ -23,8 +23,8 @@ re-implementing any of them.
 ## What it owns vs. what it calls
 
 - **Owns:** the rally-level state machine, the in-progress session state (which
-  rally, event index, accumulated event times, the fielded car), scene
-  transitions between events/standings/podium/HQ, and the retry decision.
+  rally, event index, accumulated event times, the fielded car), and scene
+  transitions between events/standings/podium/HQ.
 - **Calls:** `StageManager` (one event's countdown→run→complete,
   `todo/stage-start-and-end.md`), `OpponentField` + `RallyLibrary`
   (`todo/rally-roster.md`, placement), `RewardSystem` (`todo/reward-system.md`,
@@ -106,8 +106,7 @@ start_rally(R, C)
                 Save.complete_rally(R.id, combined)
                 model = RewardSystem.draw_car(R.difficulty, profile)   # may be null
                 if model: Save.grant_car(model) + reward reveal (car arrives in HQ car park)
-            else:
-                offer Retry (see below)
+            # else: no reward; the rally stays incomplete (see No retry below)
   → fly-through back to HQ
 ```
 
@@ -125,15 +124,18 @@ On the `wrecked` signal (HP→0, non-immortal car, `todo/damage-model.md`):
 - Skip remaining events, go straight to RESULTS as DNF (no car reward, no
   further event upgrades), then back to HQ. Player DNF happens **only** this way.
 
-## Retry (allowed, damage sticks)
+## No retry (re-enter from HQ)
 
-If the player doesn't place top-3 (and isn't DNF), offer **Retry** (the Pause
-overlay's Retry, `todo/menus.md` overlay 8). Retry **re-runs the whole rally**
-from event 1 for a fresh combined time; **damage taken persists** and the
-**opponent field is unchanged** (fixed per seed) — exactly `gameplay.md`'s locked
-*Run stakes* decision. Declining returns to HQ; the rally stays **incomplete and
-re-enterable later** from the map. *(Whole-rally vs from-failed-event retry: see
-open questions — proceeding with whole-rally.)*
+There is **no in-place retry**. Whatever the result, the session ends and flies
+back to HQ:
+- **Top-3:** rally completed + reward (above).
+- **Not top-3 / DNF:** no reward; the rally stays **incomplete**.
+A rally is re-attempted only by **selecting it again from the map** later — a
+fresh full run (event times reset), with **damage persisted** on the car and the
+**opponent field unchanged** (fixed per seed). So re-attempting routes through HQ,
+where the player can repair/swap first. This is `gameplay.md`'s *Run stakes*
+decision: no retry, damage sticks. The Pause overlay therefore offers only
+**Resume / Abandon to HQ** — no Retry.
 
 ## Showdown
 
@@ -158,7 +160,7 @@ when `RallyLibrary.showdown_unlocked(profile)` is true.
 RallySession.start_rally(rally: Dictionary, owned_car: Dictionary) -> void
 RallySession.report_event_result(elapsed_ms: int, hp_lost: float) -> void  # from StageManager
 RallySession.report_wreck() -> void                                        # from damage model
-RallySession.retry() / RallySession.abandon() -> void                      # from Pause overlay
+RallySession.abandon() -> void                                             # from Pause overlay (-> HQ, rally incomplete)
 signal rally_finished(result: Dictionary)
 ```
 
@@ -190,15 +192,15 @@ StageManager results (no real driving needed):
 - **Per-event upgrade:** one `add_item` per completed event; three on a full run.
 - **Wreck mid-rally:** `report_wreck` on event 2 → DNF, `wreck_car` called, no car
   reward, upgrades from event 1 retained, no event-3 upgrade.
-- **Retry:** declining vs retrying; retry resets `_event_times_ms` and re-runs
-  from event 0 while the (stubbed) opponent field and persisted HP are unchanged.
+- **No retry / re-enter:** a non-top-3 finish leaves the rally incomplete and
+  grants nothing; starting it again via `start_rally` resets `_event_times_ms` and
+  runs fresh while the (stubbed) opponent field and persisted HP are unchanged.
 - **Showdown:** a top-3 showdown finish emits the win beat, not a reward draw.
 - **No-session boot:** loading `main.tscn` with no active session still applies the
   default car/track (regression guard for `world._ready`).
 
 ## Out of scope / open questions
 
-- **Retry granularity** — whole-rally (proceeding) vs resume-from-failed-event.
 - **Presence scene contents** — the ahead/behind cars are atmosphere owned by the
   Start line (`todo/menus.md` / `todo/stage-start-and-end.md`); only the *trigger*
   is here.
@@ -213,6 +215,8 @@ StageManager results (no real driving needed):
 
 - **Session home:** an autoload `RallySession` that survives per-event scene
   reloads; each event reloads `main.tscn` with its seed.
-- **Retry:** allowed, whole-rally re-run, damage sticks, opponents fixed.
+- **No retry:** any finish ends the session back at HQ; a non-top-3 rally stays
+  incomplete and is re-attempted only by re-entering from the map (damage sticks,
+  opponents fixed). Pause offers Resume / Abandon only.
 - **Mid-rally wreck:** keeps upgrades earned from completed events; car destroyed,
   rally DNF.

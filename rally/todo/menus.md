@@ -123,8 +123,8 @@ camera you already drive, so the menu count stays tiny.
 7. **Standings overlay** — full ranked field (position, name, time / `DNF` /
    `WRECKED`, player highlighted). Shown as a between-event interstitial and at
    results; the Podium handles the top-3 flourish, this handles the full list.
-8. **Pause overlay** — Resume / **Retry** (damage sticks, `gameplay.md`) /
-   Abandon to HQ. First user of `get_tree().paused`.
+8. **Pause overlay** — Resume / **Abandon to HQ** (no retry — a non-top-3 rally is
+   re-entered later from the map, `gameplay.md`). First user of `get_tree().paused`.
 9. **Inventory / upgrade picker** — the flat list of owned items (upgrade parts +
    repair kits, with counts) the **tuning lift** opens to install a part onto the
    raised car or spend a repair kit. Flat by design (pragmatic hybrid: dense list,
@@ -169,7 +169,7 @@ HQ (pan): car park (lineup) ⇄ tuning lift (tune + upgrades) ⇄ map     │
             RUN ⇄ Pause overlay                                        │
             RUN ─(events 1,2)▶ Standings overlay ▶ RUN                 │
             RUN ─(event 3)──▶ Podium: standings + Reward reveal ───────┘
-                                 └▶ Retry (if not top-3) ▶ RUN
+                  (no retry: a non-top-3 rally returns to HQ, re-enter from map)
 ```
 
 ## Technical approach (proposed)
