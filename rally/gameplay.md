@@ -191,6 +191,7 @@ These underpin everything above and likely each become their own todo:
   `CarLibrary`; specced in `todo/save-persistence.md` › *Prerequisite*.
 - **Rally roster** — the finite curated list of rallies (seed + restriction);
   its completion count drives both the reward ceiling and the showdown unlock.
+  Specced in `todo/rally-roster.md`.
 - **Meta-game UI shell** — **diegetic / in-world**: menus are 3D locations (an HQ
   garage hub with an outdoor car park for the lineup, a tuning lift that also
   installs upgrades, and a stylised map with 3D pins; a start-line; a podium)
