@@ -361,6 +361,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 3.0) var sign_edge_inset_m := 0.3
 ## Collision/footprint depth along the road, in metres.
 @export_range(0.1, 3.0) var sign_base_depth_m := 0.8
+## Mass (kg) of a sign's knock-over body. Light so the car scatters it freely.
+## Signs deal no HP damage — they are cosmetic clutter, not obstacles.
+@export_range(0.1, 50.0) var sign_mass_kg := 3.0
 ## Map of texture_key (e.g. "sector_2", "arrow_square_left") → res://textures/signs/*.png.
 ## Empty leaves every sign on its per-kind colour fallback.
 @export var sign_textures: Dictionary = {}
@@ -460,6 +463,7 @@ func sign_render_params() -> Dictionary:
 		"splay_deg": sign_splay_deg,
 		"edge_inset_m": sign_edge_inset_m,
 		"base_depth_m": sign_base_depth_m,
+		"mass_kg": sign_mass_kg,
 		"textures": sign_textures,
 		"track_width": track_width,
 	}

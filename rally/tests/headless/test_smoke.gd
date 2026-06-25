@@ -264,7 +264,7 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 		Vector3(1e-3, 1e-3, 1e-3), "bush sunk into ground by the y_offset")
 
 
-func test_sign_field_builds_signs_with_collision_at_road_height() -> void:
+func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	var floor := _scene.get_node("Floor") as TerrainManager
 	var field := SignField.new()
 	add_child_autofree(field)
@@ -277,22 +277,27 @@ func test_sign_field_builds_signs_with_collision_at_road_height() -> void:
 	field.build(layout, floor, Config.data.sign_render_params())
 	assert_eq(field.sign_count, layout.size(), "one sign built per layout entry")
 	assert_eq(field.get_child_count(), layout.size(), "one node per sign")
-	var sign0 := field.get_child(0) as Node3D
-	# Two splayed panels (count MeshInstance3D children directly — find_children
-	# defaults to owned=true, which excludes programmatically-built nodes).
+	# Each sign is a light, knockable RigidBody3D (the wet-floor-board feel).
+	var sign0 := field.get_child(0) as RigidBody3D
+	assert_not_null(sign0, "each sign is a RigidBody3D")
+	assert_gt(sign0.mass, 0.0, "sign body has a mass")
+	assert_lt(sign0.mass, 50.0, "sign is light enough for the car to scatter")
+	# Two splayed panels + a collision shape, both children of the body so the
+	# whole sign tumbles together (count directly — find_children defaults to
+	# owned=true, which excludes programmatically-built nodes).
 	var panels := 0
+	var has_shape := false
 	for child in sign0.get_children():
 		if child is MeshInstance3D:
 			panels += 1
+		elif child is CollisionShape3D:
+			has_shape = true
 	assert_eq(panels, 2, "each sign has two A-frame panels")
-	# Obstacle collision body (so a hit drains HP like trees do).
-	var body := sign0.get_node_or_null("Collision") as StaticBody3D
-	assert_not_null(body, "each sign has a Collision StaticBody3D")
-	assert_true(body.is_in_group(DamageModel.OBSTACLE_GROUP),
-		"sign body is in the damage OBSTACLE_GROUP")
-	assert_true(body.get_child_count() > 0 and body.get_child(0) is CollisionShape3D,
-		"collision body carries a shape")
-	# The sign sits at the centerline road-surface height for its position.
+	assert_true(has_shape, "sign body carries a collision shape")
+	# Knockable cosmetic clutter: deals NO HP damage, so it is NOT a damage obstacle.
+	assert_false(sign0.is_in_group(DamageModel.OBSTACLE_GROUP),
+		"signs are not in the damage OBSTACLE_GROUP (no HP penalty)")
+	# The sign starts at the centerline road-surface height for its position.
 	var p: Vector2 = layout[0]["pos"]
 	assert_almost_eq(sign0.position.y, floor.height_at(p.x, p.y), 1e-3,
 		"sign sits on the road surface height")

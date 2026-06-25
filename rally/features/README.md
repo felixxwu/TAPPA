@@ -38,7 +38,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
-| [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder, obstacle collision) |
+| [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder; light knockable bodies, no damage) |
 | [camera.md](camera.md) | Chase camera follow behavior |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout and mode buttons |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding (vertical slice; full diegetic UI deferred) |

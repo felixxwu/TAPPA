@@ -8,8 +8,11 @@ extends Node3D
 # (unlike the foliage in todo/performance-optimisations.md); the engine frustum-
 # culls the MeshInstance3Ds and each sign carries its own face texture anyway.
 #
-# Each sign gets a StaticBody3D in the OBSTACLE_GROUP, so hitting one drains HP
-# through the same damage path as trees/bushes (todo/damage-model.md §2).
+# Each sign is a light RigidBody3D so the car scatters it on contact (the
+# wet-floor-board feel). Signs are deliberately NOT in the damage OBSTACLE_GROUP:
+# they are cosmetic clutter you plough through freely, with no HP penalty (unlike
+# the solid trees/bushes). A RigidBody sleeps once it settles, so the at-rest cost
+# is negligible despite there being one body per sign.
 
 const SIGN_SHADER := preload("res://shaders/ps1_models.gdshader")
 
@@ -35,6 +38,7 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 	var splay := deg_to_rad(float(params["splay_deg"]))
 	var edge_inset: float = params["edge_inset_m"]
 	var base_depth: float = params["base_depth_m"]
+	var mass: float = params["mass_kg"]
 	var textures: Dictionary = params.get("textures", {})
 	var half_w: float = float(params["track_width"]) / 2.0
 
@@ -50,17 +54,21 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 		# (the road band is flattened to the centerline; see TerrainManager).
 		var y := terrain.height_at(pos.x, pos.y)
 
-		var sign_root := Node3D.new()
-		sign_root.name = "Sign%d" % sign_count
-		# -Z runs along the road tangent; ridge (local X) crosses the road.
+		# The sign IS a light RigidBody3D — panels + hitbox are its children, so it
+		# tumbles as one when the car clips it. NOT in OBSTACLE_GROUP (no HP damage).
+		var sign_body := RigidBody3D.new()
+		sign_body.name = "Sign%d" % sign_count
+		sign_body.mass = mass
+		# -Z runs along the road tangent; ridge (local X) crosses the road. This is
+		# the resting pose; physics takes over from here once the car hits it.
 		var fwd3 := Vector3(tangent.x, 0.0, tangent.y).normalized()
-		sign_root.transform = Transform3D(Basis.looking_at(fwd3, Vector3.UP),
+		sign_body.transform = Transform3D(Basis.looking_at(fwd3, Vector3.UP),
 			Vector3(edge.x, y, edge.y))
-		add_child(sign_root)
+		add_child(sign_body)
 
 		var mat := _material_for(String(entry["kind"]), String(entry["texture_key"]), textures)
-		_add_panels(sign_root, panel_size, thickness, splay, mat)
-		_add_collision(sign_root, panel_size, base_depth)
+		_add_panels(sign_body, panel_size, thickness, splay, mat)
+		_add_collision_shape(sign_body, panel_size, base_depth)
 		sign_count += 1
 
 
@@ -85,13 +93,11 @@ func _add_panels(sign_root: Node3D, panel_size: Vector2, thickness: float,
 		sign_root.add_child(panel)
 
 
-# A single box hitbox covering the A-frame footprint, resting on the ground. Tagged
-# as an obstacle so the damage model counts contacts against it.
-func _add_collision(sign_root: Node3D, panel_size: Vector2, base_depth: float) -> void:
-	var body := StaticBody3D.new()
-	body.name = "Collision"
-	body.add_to_group(DamageModel.OBSTACLE_GROUP)
-	sign_root.add_child(body)
+# A single box hitbox covering the A-frame footprint, a direct child of the
+# RigidBody so it moves with the sign. Centred half its height above the body
+# origin so the box bottom rests on the ground; this offset also puts the centre
+# of mass above the base, so a low hit tips the sign over rather than sliding it.
+func _add_collision_shape(body: RigidBody3D, panel_size: Vector2, base_depth: float) -> void:
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(panel_size.x, panel_size.y, base_depth)
