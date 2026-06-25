@@ -56,8 +56,9 @@
   inline. The agent runs `./run_tests.sh`, reads the verbose GUT output, and
   returns just a clean verdict (pass / fail + the failing test names and
   messages) — keeping hundreds of lines of test log out of the main context.
-  Tell the sub-agent the run is slow (15-20 min; GUT physics tests are
-  wall-clock-paced) so it waits with a generous timeout instead of killing it
+  Tell the sub-agent the run takes ~10 min (the runner passes `--fixed-fps 60`
+  so frame-awaiting no longer costs real time, but heavy scene/terrain setup
+  remains) so it waits with a generous timeout instead of killing it
   early. The sub-agent does NOT add concurrency (the one-run-at-a-time rule below
   still holds, across agents too); its only job is to absorb noisy output and
   hand back the digest. For quick `--fast` subset iteration, an inline background
@@ -69,19 +70,20 @@
   `ps -eo pid,etimes,args | grep '[G]odot'`: a healthy headless run lasts a few
   minutes, so a Godot test process whose elapsed time (`etimes`, in seconds) is
   far beyond that — tens of minutes or more — is stuck/orphaned (often a hung run
-  from earlier). A stale process also starves the real run of CPU, and because
-  GUT physics tests are paced to real wall-clock time, that drags everything out.
+  from earlier). A stale process also starves the real run of CPU, which (since
+  the runner's `--fixed-fps 60` makes the sim run at CPU speed) directly drags
+  everything out.
   Confirm it is the headless test binary (the Godot path above) and clearly too
   old to be the current run, then ask before killing it (`kill <pid>`) so the
   active run can finish promptly. Don't kill a process you can't confidently
   identify as a stuck test run.
 - If a test run ever takes noticeably longer than expected, investigate the
-  tests rather than shrugging it off. Physics-test cost is wall-clock (paced to
-  real time at the tick rate), so slowness almost always means awaited frames:
-  the usual culprit is a `before_each` re-instantiating `main.tscn` (full
-  terrain + track generation) per test where a single shared `before_all`
-  instance would do, or a long `await`-in-loop settle. Read `features/testing.md`
-  for the cost model and the `sim_test.gd` warm-restore pattern.
+  tests rather than shrugging it off. With the runner's `--fixed-fps 60` the
+  loop runs at CPU speed, so cost is dominated by genuine CPU work — usually a
+  `before_each` re-instantiating `main.tscn` (full terrain + track generation)
+  per test where a single shared `before_all` instance would do, or a long
+  `await`-in-loop settle. Read `features/testing.md` for the cost model and the
+  `sim_test.gd` warm-restore pattern.
 - Before starting a test run, check whether a background shell is already
   running `./run_tests.sh`. If one is, do NOT start another — wait for the
   existing run to finish and use its result. Concurrent runs waste resources
