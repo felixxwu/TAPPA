@@ -211,6 +211,27 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
 @export var hud_elapsed_enabled := true
 
+@export_group("Damage")
+# Per-car HP attrition (todo/damage-model.md). Max HP is CarLibrary metadata
+# (mass-keyed), NOT here; these are the global magnitudes that govern how impacts
+# drain it and how a damaged car degrades. Tuning numbers are placeholders to be
+# settled by playtest — this fixes the mechanism, not the values.
+## Contact impulse (N·s) below which a hit costs no HP — filters gentle
+## scrapes/kerbs so normal driving never chips the car.
+@export_range(0.0, 1000.0) var impact_min_impulse := 50.0
+## HP lost per unit of contact impulse ABOVE impact_min_impulse.
+@export_range(0.0, 5.0) var hp_per_impulse := 0.1
+## Fraction of engine power lost at 0 HP (caps the power-loss effect). The driven
+## torque is scaled by 1 - d * this, where d is the damage fraction.
+@export_range(0.0, 1.0) var damage_power_loss_max := 0.4
+## Max wheel-alignment steer bias (radians, same unit as steer_limit) at 0 HP —
+## the car pulls to one side as it takes damage. Direction is re-rolled per run.
+@export_range(0.0, 0.5) var damage_steer_bias_max := 0.08
+## Show the in-run HP gauge (mirrors hud_enabled). Hidden for the immortal starter.
+@export var hud_hp_enabled := true
+## HP fraction below which the gauge flashes a low-HP warning.
+@export_range(0.0, 1.0) var hud_low_hp_warn_frac := 0.25
+
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).
 # Shown automatically on touch devices (DisplayServer.is_touchscreen_available()).

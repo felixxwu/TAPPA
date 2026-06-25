@@ -64,6 +64,15 @@ the live config by `car.gd`'s `apply_car()` and pushed onto all four wheels
 supercars (911, LFA, Aventador). The `config/game_config.tres` values are the
 baseline/fallback.
 
+## Damage effects
+
+`car.gd` owns a `DamageModel` (see [damage.md](damage.md)) that degrades the car
+as its HP falls. Two effects fold into the per-step loop above: a **steer-bias
+pull** added to `steer_target` (step 3) and a **power scale** on the driven torque
+(`drivetrain.power_scale`, step 6). Both are 0 at full HP and for the immortal
+starter. `car.gd` also enables contact monitoring and reads obstacle-contact
+impulses in `_integrate_forces` to drain HP.
+
 ## Braking summary
 
 | Input | Torque | Target |

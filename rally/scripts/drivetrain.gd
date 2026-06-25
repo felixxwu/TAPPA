@@ -28,6 +28,9 @@ enum DriveMode { RWD, AWD, FWD }
 var car: VehicleBody3D
 var engine: EngineSim
 var drive_mode := DriveMode.RWD  # which axle(s) the engine drives
+# Multiplier on the engine's driven torque, set by car.gd each tick from the
+# damage model (1.0 = healthy, <1 as HP falls). See todo/damage-model.md §3.
+var power_scale := 1.0
 var rear_wheels: Array = []
 var front_wheels: Array = []
 var hardpoints: Dictionary = {}  # wheel -> rest-pose local position
@@ -113,7 +116,8 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 		# The engine is geared to the driven axle(s); its total wheel torque
 		# (drive, engine braking and shift cuts all live in EngineSim).
 		# Brakes move omega toward zero but never reverse it (no sign flip-flop).
-		var drive_torque := engine.step(h, throttle, driveline_omega())
+		# power_scale fades the driven torque as the car takes damage (1.0 healthy).
+		var drive_torque := engine.step(h, throttle, driveline_omega()) * power_scale
 		match drive_mode:
 			DriveMode.AWD:
 				if handbrake:

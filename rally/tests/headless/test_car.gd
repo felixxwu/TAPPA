@@ -359,3 +359,27 @@ func test_level_assist_quiet_when_planted() -> void:
 	var after := _car.global_transform.basis.y.dot(Vector3.UP)
 	assert_almost_eq(after, before, 0.02, "no level assist while all wheels are grounded")
 	assert_lt(_car.angular_velocity.length(), 0.3, "grounded car is not spun by the assist")
+
+
+# --- Damage model integration (todo/damage-model.md) -------------------------
+# The DamageModel maths are unit-tested in test_damage_model.gd; these check the
+# car wires it in — contact monitoring is enabled and the per-tick power/steer
+# effects read the model's current HP.
+
+func test_car_has_damage_model_and_contact_monitor() -> void:
+	assert_not_null(_car.damage, "car builds a DamageModel")
+	assert_true(_car.contact_monitor, "contact monitoring is on so impacts can be read")
+	assert_gt(_car.max_contacts_reported, 0, "the car reports contacts for the damage model")
+
+
+func test_power_scale_tracks_damage() -> void:
+	var cfg: GameConfig = Config.data
+	# Healthy: full power passes through to the drivetrain.
+	_car.damage.field(1000.0, 1000.0, false)
+	await _wait_physics(2)
+	assert_almost_eq(_car.drivetrain.power_scale, 1.0, 0.001, "full HP keeps full power")
+	# Half HP: the driven torque is scaled by the configured loss curve.
+	_car.damage.hp = 500.0
+	await _wait_physics(2)
+	assert_almost_eq(_car.drivetrain.power_scale, 1.0 - 0.5 * cfg.damage_power_loss_max, 0.001,
+		"power scale follows the damage fraction each tick")

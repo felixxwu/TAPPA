@@ -23,8 +23,21 @@ var track_progress: Node
 @onready var _elapsed_label: Label = $ElapsedLabel
 @onready var _stage_complete_panel: Control = $StageCompletePanel
 @onready var _stage_complete_label: Label = $StageCompletePanel/StageCompleteLabel
+# In-run damage readout (todo/damage-model.md §5): a colour-graded HP bar that
+# flashes a warning when low, plus a red screen flash on each HP-losing impact.
+@onready var _hp_label: Label = $HPLabel
+@onready var _hp_bar: ProgressBar = $HPBar
+@onready var _impact_flash: ColorRect = $ImpactFlash
 
 const _DRIVE_NAMES := ["RWD", "AWD", "FWD"]
+
+# Low-HP warning pulse speed (rad/s) and the impact-flash response curve: each
+# HP-losing hit bumps the red overlay's alpha by (loss fraction) * GAIN, capped at
+# MAX, and the overlay fades back out at DECAY alpha/sec.
+const _HP_PULSE_SPEED := 9.0
+const _IMPACT_FLASH_GAIN := 6.0
+const _IMPACT_FLASH_MAX := 0.6
+const _IMPACT_FLASH_DECAY := 2.0
 
 # Last displayed values, so _process only re-formats + re-assigns a label when
 # its value actually changes (avoids per-frame string allocation / GC churn).
@@ -35,6 +48,10 @@ var _last_auto := false
 var _last_drive := -1
 var _last_car := ""
 var _last_progress := -1
+# Working HP last frame, to detect HP-losing impacts (fire the flash); -1 = no
+# reading yet / gauge hidden. _hp_pulse_t advances the low-HP warning oscillation.
+var _last_hp := -1.0
+var _hp_pulse_t := 0.0
 
 
 func _ready() -> void:
@@ -97,6 +114,38 @@ func _process(_delta: float) -> void:
 		if pct != _last_progress:
 			_last_progress = pct
 			_progress_label.text = "%d%%" % pct
+	_update_damage(_delta)
+
+
+# Drive the HP gauge + impact flash off the car's damage model. Hidden when
+# hud_hp_enabled is off or for the immortal starter (which never takes damage).
+func _update_damage(delta: float) -> void:
+	var dmg: DamageModel = car.damage
+	var show_gauge := dmg != null and Config.data.hud_hp_enabled and not dmg.immortal
+	_hp_bar.visible = show_gauge
+	_hp_label.visible = show_gauge
+	if show_gauge:
+		var frac := clampf(dmg.hp / dmg.max_hp, 0.0, 1.0) if dmg.max_hp > 0.0 else 0.0
+		_hp_bar.value = frac
+		# Green (full) → amber → red (empty) via hue; flash by modulating alpha when
+		# below the low-HP warning fraction so the danger is unmissable.
+		var col := Color.from_hsv(frac * 0.33, 0.8, 0.95)
+		if frac < Config.data.hud_low_hp_warn_frac:
+			_hp_pulse_t += delta * _HP_PULSE_SPEED
+			col.a = lerpf(0.35, 1.0, 0.5 + 0.5 * sin(_hp_pulse_t))
+		else:
+			_hp_pulse_t = 0.0
+		_hp_bar.modulate = col
+		# Bump the impact flash on any HP drop since last frame, sized to the loss.
+		if _last_hp >= 0.0 and dmg.hp < _last_hp:
+			var bump := (_last_hp - dmg.hp) / dmg.max_hp * _IMPACT_FLASH_GAIN
+			_impact_flash.color.a = minf(_impact_flash.color.a + bump, _IMPACT_FLASH_MAX)
+		_last_hp = dmg.hp
+	else:
+		_last_hp = -1.0
+	# Fade the flash back out regardless of gauge visibility.
+	if _impact_flash.color.a > 0.0:
+		_impact_flash.color.a = maxf(0.0, _impact_flash.color.a - delta * _IMPACT_FLASH_DECAY)
 
 
 func _gear_text(gear: int) -> String:

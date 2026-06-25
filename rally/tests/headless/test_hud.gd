@@ -152,3 +152,37 @@ func test_stage_complete_panel_shows_final_time() -> void:
 	hud.show_stage_complete(67.43)
 	assert_true(panel.visible, "complete panel shown on stage completion")
 	assert_string_contains(label.text, "1:07.43", "panel shows the final time")
+
+
+# --- HP gauge (todo/damage-model.md §5) --------------------------------------
+# The HUD reads the car's DamageModel each frame; these set it directly and await
+# a frame, then assert the bar (the same pattern as the speed/gear labels above).
+
+func test_hp_gauge_tracks_working_hp() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
+	car.damage.field(1000.0, 1000.0, false)
+	await get_tree().process_frame
+	assert_true(bar.visible, "gauge shown for a mortal car")
+	assert_almost_eq(bar.value, 1.0, 0.001, "full HP reads full")
+	car.damage.hp = 250.0
+	await get_tree().process_frame
+	assert_almost_eq(bar.value, 0.25, 0.001, "gauge reflects working HP / max_hp")
+
+
+func test_hp_gauge_hidden_for_immortal_starter() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
+	car.damage.field(1000.0, 1000.0, true)  # immortal
+	await get_tree().process_frame
+	assert_false(bar.visible, "the immortal starter shows no HP gauge")
+
+
+func test_hp_gauge_hidden_when_disabled() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
+	Config.data.hud_hp_enabled = false
+	car.damage.field(1000.0, 1000.0, false)
+	await get_tree().process_frame
+	assert_false(bar.visible, "gauge suppressed when hud_hp_enabled is off")
+	Config.data.hud_hp_enabled = true

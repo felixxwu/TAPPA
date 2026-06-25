@@ -18,6 +18,18 @@ On-screen readout plus two interactive mode buttons.
 | `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
 | `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top-right) |
 | `StageCompletePanel` | placeholder result panel | driven by `StageManager` |
+| `HPBar` (+ `HPLabel`) | working HP / `max_hp` | `car.damage` (colour-graded green→amber→red) |
+| `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
+
+## Damage gauge
+
+The `HPBar`/`HPLabel`/`ImpactFlash` are driven by `_update_damage(delta)` (called
+from `_process`) off the car's `DamageModel` (see [damage.md](damage.md)): the bar
+tracks `hp / max_hp` and is hue-graded from green (full) to red (empty); below
+`hud_low_hp_warn_frac` it pulses a low-HP warning. Any HP drop since the previous
+frame bumps the red `ImpactFlash` overlay (sized to the loss), which fades back
+out each frame. The gauge is hidden when `hud_hp_enabled` is off or for the
+immortal starter (which never takes damage).
 
 ## Stage flow widgets
 
@@ -61,4 +73,5 @@ test runs fall back to the committed default `config/version="0.0-dev"`.
 
 ## Related config
 
-`hud_enabled`. See [configuration.md](configuration.md).
+`hud_enabled`, `hud_elapsed_enabled`, `hud_hp_enabled`, `hud_low_hp_warn_frac`.
+See [configuration.md](configuration.md) and [damage.md](damage.md).

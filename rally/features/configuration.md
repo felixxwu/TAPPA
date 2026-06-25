@@ -85,6 +85,19 @@ the `.tres` requires a scene reload to take effect.
 
 See [stage.md](stage.md).
 
+### Damage
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `impact_min_impulse` | 50.0 | Contact impulse (N·s) below which a hit costs no HP |
+| `hp_per_impulse` | 0.1 | HP lost per unit impulse above the threshold |
+| `damage_power_loss_max` | 0.4 | Fraction of engine power lost at 0 HP |
+| `damage_steer_bias_max` | 0.08 | Max wheel-alignment steer pull (rad) at 0 HP |
+| `hud_hp_enabled` | true | Show the in-run HP gauge (hidden for the immortal starter) |
+| `hud_low_hp_warn_frac` | 0.25 | HP fraction below which the gauge flashes a warning |
+
+Per-car `max_hp` is CarLibrary metadata, not a `GameConfig` field. See
+[damage.md](damage.md).
+
 ### Terrain Layers
 Three (wavelength, amplitude) pairs — `terrain_layerN_wavelength` /
 `terrain_layerN_amplitude` for N = 1,2,3 (large hills → fine bumps). See

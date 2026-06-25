@@ -8,8 +8,20 @@ const CAR_SCENE := preload("res://car.tscn")
 # instead of oscillating.
 const LEVEL_ASSIST_DAMPING := 0.35
 
+# Contacts the chassis reports per physics tick for the damage model. The car only
+# ever touches a few obstacles at once; a small cap keeps contact monitoring cheap.
+const MAX_CONTACTS_REPORTED := 8
+
+# Re-emitted from the car's DamageModel when working HP hits 0 (a run DNF). A
+# fielded car has already been removed from the save by then; the rally/menu layer
+# (todo/rally-event-flow.md) listens here. See todo/damage-model.md §4.
+signal wrecked()
+
 var _start_transform: Transform3D
 var drivetrain: Drivetrain
+# Per-car HP / attrition state + the handling/power degradation maths
+# (todo/damage-model.md). Built in _ready, (re)configured per car in apply_car.
+var damage: DamageModel
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
@@ -54,6 +66,16 @@ func _ready() -> void:
 		# so car swaps relocate from a clean rest pose, not a drifted one.
 		_wheel_mounts[wheel] = wheel.position
 	drivetrain = Drivetrain.new(self)
+	# Read per-contact impulses in _integrate_forces (used by the damage model to
+	# turn obstacle hits into HP loss). The chassis box is the only solid shape —
+	# the wheels are raycasts — so this reports chassis-vs-world contacts only.
+	contact_monitor = true
+	max_contacts_reported = MAX_CONTACTS_REPORTED
+	# Damage state: unbound (free-roam) until a car is applied / fielded. apply_car
+	# fills in the per-car max HP; this keeps the baseline car sane on its own.
+	damage = DamageModel.new()
+	damage.field(damage.max_hp, damage.max_hp, false)
+	damage.wrecked.connect(_on_wrecked)
 	_debug_overlay = WheelForceDebug.new(self)
 	_debug_overlay.visible = cfg.debug_wheel_forces
 	add_child(_debug_overlay)
@@ -144,6 +166,9 @@ func _physics_process(delta: float) -> void:
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
 	var handbrake := controls_locked or Input.is_action_pressed("handbrake")
+	# Damage power loss: fade the driven torque as HP falls (1.0 healthy). 0 effect
+	# at full HP / for the immortal starter. See todo/damage-model.md §3.
+	drivetrain.power_scale = damage.power_multiplier(cfg)
 	drivetrain.step(delta, drive, brake_input, handbrake)
 
 	# Quadratic aero drag; with redline-limited gearing, this sets how hard
@@ -185,6 +210,9 @@ func _physics_process(delta: float) -> void:
 	# builds. Shares the threshold with the steer-assist torque ramp below.
 	var align_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
 	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + steer_input * cfg.steer_limit
+	# Damage wheel-alignment pull: a constant bias toward one side that grows as HP
+	# falls (0 at full HP / for the immortal starter). See todo/damage-model.md §3.
+	steer_target += damage.steer_bias(cfg)
 	steering = move_toward(steering, steer_target, cfg.steer_speed * delta)
 	# Direct yaw torque about the car's up axis while steering, to fight
 	# understeer when the front tires alone can't rotate the car. Faded in
@@ -211,6 +239,33 @@ func _physics_process(delta: float) -> void:
 		)
 
 	if not controls_locked and Input.is_action_just_pressed("reset_car"):
+		_reset()
+
+
+# Read solid-contact impulses each physics tick and feed obstacle hits to the
+# damage model. Only contacts against bodies in the obstacle group count (trees /
+# bushes / signs); ground and road contacts are ignored, so normal driving never
+# chips HP. contact_monitor + max_contacts_reported are enabled in _ready.
+func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	if damage == null:
+		return
+	var cfg: GameConfig = Config.data
+	for i in state.get_contact_count():
+		var collider := state.get_contact_collider_object(i) as Node
+		if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
+			continue
+		var impulse := state.get_contact_impulse(i).length()
+		damage.register_impact(impulse, state.get_contact_local_position(i), cfg)
+
+
+# DamageModel reached 0 HP. Re-emit for the rally/menu layer. In free-roam (an
+# UNBOUND model, no OwnedCar) there is no DNF flow yet, so heal to full and drop
+# back at the spawn so play continues; a fielded car leaves the consequences to
+# its listener (todo/rally-event-flow.md).
+func _on_wrecked() -> void:
+	wrecked.emit()
+	if damage.instance_id < 0:
+		damage.hp = damage.max_hp
 		_reset()
 
 
@@ -386,6 +441,12 @@ func apply_car(index: int) -> String:
 	var audio := $EngineAudio as Node
 	if audio.has_method("reconfigure"):
 		audio.reconfigure()
+
+	# Per-car HP pool (CarLibrary metadata, mass-keyed). Free-roam fields it unbound
+	# at full HP; a future rally layer re-fields it from the OwnedCar (with the
+	# stored HP + instance id) when a car is taken to the Start line.
+	var max_hp: float = spec.get("max_hp", damage.max_hp)
+	damage.field(max_hp, max_hp, false)
 
 	_reset()
 	return spec["name"]

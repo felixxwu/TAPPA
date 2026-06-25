@@ -22,7 +22,9 @@ custom combined-slip tire model and explicit RWD/AWD/FWD behavior.
 2. Integrate spin over **8 substeps** (`SPIN_SUBSTEPS`) for stability:
    - Compute tire force from slip + grip curve (`_tire_force`).
    - Accumulate force impulse; react on wheel spin states.
-   - `engine.step()` supplies drive/brake torque.
+   - `engine.step()` supplies drive/brake torque, scaled by `power_scale`
+     (set each tick by `car.gd` from the damage model — 1.0 healthy, lower as HP
+     falls; see [damage.md](damage.md)).
    - Couple wheels per `drive_mode`.
 3. Apply the time-averaged tire force to the chassis.
 
