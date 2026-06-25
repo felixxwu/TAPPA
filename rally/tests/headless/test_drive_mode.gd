@@ -94,9 +94,12 @@ func test_awd_locks_front_to_rear() -> void:
 	# AWD drives all four wheels, so it grips harder and spins less than RWD;
 	# the launch still slips past the grip peak (genuine wheelspin). Margin
 	# trimmed 0.3 -> 0.1 when the RPM-dependent engine-friction model cut WOT
-	# torque ~13%, so the launch makes less wheelspin while still clearing peak.
+	# torque ~13%, then 0.1 -> 0.05 when the roll/pitch tuning change
+	# (wheel_roll_influence 1.0 -> 0.5, longitudinal force applied at the
+	# roll-scaled height) further reduced launch wheelspin (slip ~1.56 vs peak
+	# 1.5) — still a clear margin past peak, just smaller.
 	var slip: float = dt.rear_omega * cfg.wheel_radius - _car.linear_velocity.length()
-	assert_gt(slip, cfg.tire_slip_peak + 0.1, "the locked driveline spins under power")
+	assert_gt(slip, cfg.tire_slip_peak + 0.05, "the locked driveline spins under power")
 
 
 func test_fwd_locks_front_axle_into_spool() -> void:

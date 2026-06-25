@@ -8,6 +8,12 @@ var _controls: CanvasLayer
 
 
 func before_each() -> void:
+	# Hermetic input state: the touch controls only RELEASE actions they pressed
+	# themselves (_set_held tracks per-button ownership), so a press leaked by an
+	# earlier test would survive into the idle/region assertions here. Clear all
+	# actions up front rather than trusting the previous test's cleanup.
+	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate"]:
+		Input.action_release(a)
 	Config.data.mobile_controls_force = true
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
