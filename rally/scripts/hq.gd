@@ -57,17 +57,31 @@ func _build_ui() -> void:
 	title.add_theme_font_size_override("font_size", 28)
 	root.add_child(title)
 
-	root.add_child(_section_label("Your cars"))
-	_cars_box = VBoxContainer.new()
-	root.add_child(_cars_box)
+	# The car/rally lists can be taller than a phone screen, so they live in a
+	# scroll view that expands to fill the space between the fixed title and the
+	# pinned Start button — the primary action stays on-screen no matter how many
+	# cars/rallies are listed.
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
 
-	root.add_child(_section_label("Rallies"))
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 8)
+	scroll.add_child(content)
+
+	content.add_child(_section_label("Your cars"))
+	_cars_box = VBoxContainer.new()
+	content.add_child(_cars_box)
+
+	content.add_child(_section_label("Rallies"))
 	_rallies_box = VBoxContainer.new()
-	root.add_child(_rallies_box)
+	content.add_child(_rallies_box)
 
 	_status = Label.new()
 	_status.text = "Select a car and a rally."
-	root.add_child(_status)
+	content.add_child(_status)
 
 	_start_button = Button.new()
 	_start_button.text = "Start Rally"

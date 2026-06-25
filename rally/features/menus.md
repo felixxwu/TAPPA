@@ -30,6 +30,11 @@ rallies it can enter (`RallyLibrary.is_eligible`; the showdown only once
 `showdown_unlocked`; completed rallies marked but still enterable for farming).
 **Start** calls `RallySession.start_rally(rally, owned)`.
 
+Layout: the title is fixed at the top and the **Start** button is pinned at the
+bottom, with the car/rally lists in a `ScrollContainer` that fills the space
+between them — so on short/phone screens the lists scroll and the primary action
+is never clipped off the bottom edge.
+
 ## Run-scene fielding (`world.gd`)
 
 When a `RallySession` is active, `world._ready` fields the player's OwnedCar via
