@@ -57,6 +57,17 @@ func test_gear_and_rpm_labels_track_engine() -> void:
 	assert_eq((_scene.get_node("HUD/GearLabel") as Label).text, "N", "neutral shows N")
 
 
+func test_version_label_shows_project_version() -> void:
+	# build_web.sh stamps application/config/version (0.<commits> + SHA) into the
+	# export; the HUD mirrors it with a "v" prefix. In editor/test runs it reads
+	# the project default ("0.0-dev").
+	var label := _scene.get_node("HUD/VersionLabel") as Label
+	assert_not_null(label, "HUD has a version label")
+	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
+	assert_ne(ver, "", "project.godot defines application/config/version")
+	assert_eq(label.text, "v" + ver, "version label mirrors application/config/version")
+
+
 func test_mode_button_toggles_gearbox() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var engine: EngineSim = car.drivetrain.engine

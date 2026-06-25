@@ -67,7 +67,6 @@
 
 - Godot binary: `/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot`
   (override with `$GODOT`). Tests use GUT, vendored in `addons/gut/`.
-- This project is intentionally NOT under git. Do not run git commands.
 - All gameplay/look tuning values live in `config/game_config.tres`
   (a `GameConfig` resource) — change values there, not in scripts or
   `main.tscn`. Scene/script literals are only fallback defaults.

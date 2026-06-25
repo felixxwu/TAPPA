@@ -10,6 +10,7 @@ extends CanvasLayer
 @onready var _mode_button: Button = $ModeButton
 @onready var _drive_button: Button = $DriveButton
 @onready var _car_button: Button = $CarButton
+@onready var _version_label: Label = $VersionLabel
 
 const _DRIVE_NAMES := ["RWD", "AWD", "FWD"]
 
@@ -19,6 +20,11 @@ func _ready() -> void:
 	_mode_button.pressed.connect(_on_mode_pressed)
 	_drive_button.pressed.connect(_on_drive_pressed)
 	_car_button.pressed.connect(_on_car_pressed)
+	# Build version is stamped into application/config/version by build_web.sh
+	# (0.<git commit count> + short SHA); falls back to the project default on
+	# editor/dev runs. Set once here — it never changes at runtime.
+	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
+	_version_label.text = "v" + ver if ver != "" else "dev"
 
 
 func _on_mode_pressed() -> void:
