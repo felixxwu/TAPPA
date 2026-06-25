@@ -43,34 +43,55 @@ func _label_texts(root: Node) -> String:
 	return "\n".join(parts)
 
 
-func test_hq_grants_starter_and_shows_the_focused_car_and_rallies() -> void:
+func test_hq_grants_starter_and_parks_the_focused_car_and_rallies() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 1, "the immortal starter is granted on the first HQ visit")
 	assert_true(_save.profile["cars"][0]["immortal"], "the starter is immortal")
 	assert_true(_save.profile["starter_picked"], "starter_picked recorded")
-	# The diegetic showroom spawns the focused car as a parked 3D prop (the starter).
-	assert_not_null(hq._car, "the focused car is spawned as a 3D prop")
-	assert_eq(hq._car.current_car_name(), "Mazda MX-5", "the starter is the focused car")
-	assert_true(hq._car.freeze, "the showroom car is physics-frozen (a static prop)")
+	# The car park spawns one parked 3D prop per owned car (here just the starter).
+	assert_eq(hq._cars.size(), 1, "one parked car per owned instance")
+	assert_eq(hq._cars[0].current_car_name(), "Mazda MX-5", "the starter is parked + focused")
+	assert_true(hq._cars[0].freeze, "parked cars are physics-frozen props")
 	assert_eq(hq._selected_instance_id, int(_save.profile["cars"][0]["instance_id"]),
 		"the focused car is the selected car")
-	assert_not_null(hq._camera, "a menu camera frames the showroom")
+	assert_not_null(hq._camera, "a menu camera frames the lot")
 	assert_gt(hq._rallies_box.get_child_count(), 0, "rallies the focused car can enter are listed")
 
 
-func test_hq_cycling_focus_changes_the_shown_and_selected_car() -> void:
+func test_hq_parks_the_whole_lineup_with_per_car_meshes() -> void:
+	# Two box-bodied cars of different sizes must keep their OWN body meshes — the
+	# car scene shares mesh sub-resources across instances, so without per-instance
+	# duplication both would render at whichever was applied last.
+	_save.grant_car("rs3", false)       # body 1.55 x 0.60 x 4.00
+	_save.grant_car("mustang", false)   # body 1.92 x 0.55 x 4.78
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Own a second car, then cycle focus to it: the spawned car + selection follow.
+	assert_eq(hq._cars.size(), 3, "starter + the two granted cars are all parked")
+	var size_by_name := {}
+	for car in hq._cars:
+		var chassis := car.get_node("Chassis") as MeshInstance3D
+		size_by_name[car.current_car_name()] = (chassis.mesh as BoxMesh).size
+	assert_eq(size_by_name["Audi RS3"], Vector3(1.55, 0.6, 4.0), "the RS3 keeps its own body size")
+	assert_eq(size_by_name["Ford Mustang GT"], Vector3(1.92, 0.55, 4.78), "the Mustang keeps its own body size")
+	assert_ne(size_by_name["Audi RS3"], size_by_name["Ford Mustang GT"],
+		"parked cars do NOT share one mesh (per-instance duplication)")
+
+
+func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Own a second car, then focus it: the lot rebuilds and selection follows.
 	var rs3: Dictionary = _save.grant_car("rs3", false)
 	hq.focus_instance(int(rs3["instance_id"]))
 	await get_tree().process_frame
-	assert_eq(hq._car.current_car_name(), "Audi RS3", "cycling focus respawns the focused model")
+	assert_eq(hq._cars.size(), 2, "the newly granted car is parked when focused")
+	assert_eq(hq._cars[hq._focus].current_car_name(), "Audi RS3", "the focused slot is the RS3")
 	assert_eq(hq._selected_instance_id, int(rs3["instance_id"]), "focusing a car selects it")
-	# Wrap forward through the 2-car lot returns to the first car.
+	# Wrap left from the first car returns to the last in the 2-car lot.
 	hq._focus = 0
 	hq._cycle_focus(-1)
 	await get_tree().process_frame

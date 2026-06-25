@@ -1,20 +1,23 @@
 # Diegetic HQ — first 3D location (kickoff slice)
 
-> Status: **🟢 FIRST SLICE SHIPPED.** The 3D HQ showroom is in (`hq.tscn` is now a
-> `Node3D`, `scripts/hq.gd`): a lit lot, a menu camera that eases into a 3/4 hero
-> shot, the focused owned car spawned as a parked, physics-frozen, silenced `Car`
-> prop (via `Car.apply_owned`), a billboarded `Label3D` stat panel, prev/next car
-> cycling (`◄ ►` + `menu_left`/`menu_right`), and the rally board + Start kept as a
-> flat `CanvasLayer` overlay. Config: `GameConfig.menu_camera_offset` /
-> `menu_camera_move_time` / `menu_camera_look_height`; input actions
-> `menu_left/right/select/back` added to `project.godot`. Tests in
-> `tests/headless/test_menu_flow.gd`; doc in `features/menus.md`.
+> Status: **🟢 SHIPPED (incl. the parked lineup).** The 3D HQ car park is in
+> (`hq.tscn` is a `Node3D`, `scripts/hq.gd`): a lit lot with **every owned car
+> parked in a centred row** as a physics-frozen, silenced `Car` prop (via
+> `Car.apply_owned`), a menu camera that **pans between** the parked cars on cycle
+> (`◄ ►` + `menu_left`/`menu_right`), a billboarded `Label3D` stat panel beside the
+> focused car, and the rally board + Start as a flat `CanvasLayer` overlay. Each
+> parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed lineup
+> renders each at its true size despite `car.tscn`'s shared mesh sub-resources.
+> Config: `GameConfig.menu_camera_offset` / `menu_camera_move_time` /
+> `menu_camera_look_height` / `menu_car_spacing`; input actions
+> `menu_left/right/select/back` in `project.godot`. Tests in
+> `tests/headless/test_menu_flow.gd` (incl. a per-car-mesh-uniqueness assertion);
+> doc in `features/menus.md`.
 >
-> **Shipped vs the build steps below:** steps 1–5 are done **for a single focused
-> car** (the chosen scope). **Still open:** the **simultaneous parked lineup** of N
-> cars (needs per-instance mesh duplication + visual verification — see *Open
-> questions*), and the later slices (map pins, tuning lift, reward rig,
-> fly-throughs) that stay in `todo/menus.md`.
+> **Shipped:** build steps 1–5 below, **for the full parked lineup** (not just one
+> focused car). **Still open** (later slices, stay in `todo/menus.md`): the map →
+> 3D pins port, the tuning lift, the 3D reward-reveal rig + 3D podium, camera
+> fly-throughs *between* locations, and per-car paint/highlight polish.
 >
 > This is the actionable *first slice* of the diegetic 3D menu build whose full
 > vision lives
@@ -92,16 +95,18 @@ SubViewport stats panel. This slice only needs left/right "focus next car" input
 ## Proposed build steps
 
 1. ~~**HQ 3D shell**~~ **DONE** — `hq.tscn` is a `Node3D`; `hq.gd._build_world()`
-   makes the lit lot (ambient + sun + ground plane), a `DisplayMarker`, and the
-   camera. *(Markers are built in code, not authored; the lineup of N markers is
-   the deferred lineup follow-up.)* Starter grant + Start handoff kept.
+   makes the lit lot (ambient + sun + ground plane) + the camera, and
+   `_build_showroom()` lays out one `Marker3D` per owned car in a centred row
+   (`GameConfig.menu_car_spacing`). Starter grant + Start handoff kept.
 2. ~~**Menu camera**~~ **DONE** — a dedicated `Camera3D` (decided: separate from
-   `CameraManager`, see open questions) tweens its `global_transform` into the 3/4
-   framing over `GameConfig.menu_camera_move_time` (`_ease_camera_to_focus`).
-3. ~~**Showroom rig**~~ **DONE (single focused car)** — `_spawn_focused_car` builds
-   one frozen/silenced `Car` at the marker via `apply_owned`; `_cycle_focus` /
-   `focus_instance` swap it. **Open:** the simultaneous N-car lineup (instance-id
-   suffixes land with it).
+   `CameraManager`) tweens its `global_transform` into the 3/4 framing over
+   `GameConfig.menu_camera_move_time` (`_ease_camera_to_focus`), panning along the
+   lot to the focused car.
+3. ~~**Showroom rig**~~ **DONE (full lineup)** — `_build_showroom` parks one
+   frozen/silenced `Car` per owned car via `apply_owned`, each with its own meshes
+   (`_dup_meshes`); `_cycle_focus` / `focus_instance` pan between them (no respawn);
+   `_ensure_showroom_current` rebuilds when the owned set changes (reward / wreck).
+   **Open polish:** duplicate-model name suffixes ("MX-5 #2") and per-car paint.
 4. ~~**Stats label**~~ **DONE** — billboarded `Label3D` beside the car (name + the
    drivetrain/country/type/tier/power-to-weight/HP line), mirrored into the overlay.
 5. ~~**Wire selection**~~ **DONE** — the focused car sets `_selected_instance_id`;
@@ -121,13 +126,19 @@ SubViewport stats panel. This slice only needs left/right "focus next car" input
 - **Boot scene:** the 3D HQ **is** the boot scene (replaced the flat `Control`
   outright); the flat loop logic is preserved inside it as the overlay.
 
+**Resolved by the lineup:**
+- **Simultaneous parked lineup — DONE.** `_dup_meshes` gives each parked car its
+  own copies of the shared `car.tscn` mesh sub-resources right after `apply_owned`,
+  so a mixed lineup renders each at its true size (asserted in
+  `test_hq_parks_the_whole_lineup_with_per_car_meshes`). The `Config.data` stomp by
+  the last `apply_car` is harmless: the props don't simulate, and `world.gd`
+  re-applies the fielded car's config before any run.
+
 **Still open:**
-- **Simultaneous parked lineup (the main follow-up).** Showing N cars at once needs
-  per-instance **mesh duplication** (the car scene's chassis/cabin/wheel
-  `BoxMesh`/`CylinderMesh` sub-resources are shared across `car.tscn` instances, so
-  `apply_car` sizing one would resize all) **and** a way to keep `Config.data` from
-  being stomped by the last `apply_car`. Plus it wants visual verification, which
-  this headless cloud env can't do — so it's deferred until it can be eyeballed.
+- **Per-car visual identity** — duplicate-model name suffixes ("MX-5 #2") and
+  distinct paint per car (the chassis material is still shared/one colour).
+- **Lineup scale** — every owned car is parked; if a garage grows large this may
+  want a cap / scroll. Fine at current roster sizes; revisit if it bites.
 - **Environment art** — placeholder lot/lighting until the look is designed
   (menus.md defers HQ art too); marker layout becomes config when the lineup lands.
 - **Mobile/gamepad polish** — `menu_select`/`menu_back` are mapped but HQ only uses

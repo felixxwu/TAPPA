@@ -30,17 +30,19 @@ The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (n
 track generation). On first visit it grants the **immortal starter** (`mx5`) — the
 anti-soft-lock floor.
 
-**Diegetic 3D showroom (first slice — `todo/diegetic-hq.md`).** The car-park
-surface is a real 3D scene: a lit lot with the **focused car** spawned as a parked,
-physics-frozen, silenced `Car` prop (reusing `Car.apply_owned`), framed by a
-**menu camera** that eases into a 3/4 hero shot
-(`GameConfig.menu_camera_offset` / `menu_camera_move_time`). `◄ ►` (or the
-`menu_left`/`menu_right` inputs) cycle which owned car is focused — and the focused
-car **is** the selected car. A billboarded `Label3D` shows its name + stats beside
-it. **Scope:** one focused car at a time (the proven one-car-at-a-time invariant —
-`apply_owned` mutates the shared `Config.data` + car mesh sub-resources); a
-simultaneous parked lineup is the documented follow-up. The car name + stat line
-also mirror into the flat overlay for legibility (and headless tests).
+**Diegetic 3D car park (`todo/diegetic-hq.md`).** The car-park surface is a real 3D
+scene: a lit lot with **every owned car parked in a centred row** as a
+physics-frozen, silenced `Car` prop (reusing `Car.apply_owned`), spaced by
+`GameConfig.menu_car_spacing`. A **menu camera** pans between them — `◄ ►` (or the
+`menu_left`/`menu_right` inputs) move the focus and the camera eases to a 3/4 hero
+shot of the focused car (`GameConfig.menu_camera_offset` / `menu_camera_move_time`).
+The focused car **is** the selected car. A billboarded `Label3D` shows its name +
+stats beside it (mirrored into the overlay for legibility + headless tests). Each
+parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed lineup
+renders each at its true size despite `car.tscn`'s shared mesh sub-resources;
+`_ensure_showroom_current` rebuilds the lot when the owned set changes (reward /
+wreck). The shared-`Config.data` write from `apply_owned` is harmless here — the
+props don't simulate and `world.gd` re-applies the fielded car's config per run.
 
 The car stat line (shared by the `Label3D` and the overlay) shows the data the
 player weighs risk on: drivetrain / country / type / reward tier / power-to-weight
@@ -90,21 +92,22 @@ things:
 
 ## Deferred (rest of the diegetic 3D build)
 
-The HQ 3D showroom (above) is the first slice. Still deferred
+The HQ 3D car park (above, full parked lineup) is in. Still deferred
 ([../todo/diegetic-hq.md](../todo/diegetic-hq.md) for the next slices, umbrella in
-[../todo/menus.md](../todo/menus.md)): the **simultaneous parked lineup** (vs one
-focused car), the map → 3D pins port, the tuning lift + inventory overlay, the
-pause overlay, the 3D reward-reveal rig + 3D podium, the full `menu_*` set + mobile
+[../todo/menus.md](../todo/menus.md)): per-car paint + duplicate-model name
+suffixes, the map → 3D pins port, the tuning lift + inventory overlay, the pause
+overlay, the 3D reward-reveal rig + 3D podium, the full `menu_*` set + mobile
 gestures, and camera fly-through transitions *between* locations. The between-event
 **standings interstitial** is still a straight reload (RallySession emits
 `standings_ready` for the overlay to hook); standings are surfaced at the podium.
 
 ## Tests
 
-`tests/headless/test_menu_flow.gd` — HQ grants the starter and spawns the focused
-3D car (frozen prop) framed by the menu camera, cycling focus respawns/reselects
-the car, the rally board shows locked rallies with their restriction + the showdown
-meter, Start launches a session, the podium renders the finish summary **and the
-reward reveal + standings**, and the run scene fields the bound session car. The
-pure `RallyLibrary.build_standings` ranking and the enriched `RallySession` result
-are covered in `test_rally_library.gd` / `test_rally_session.gd`.
+`tests/headless/test_menu_flow.gd` — HQ grants the starter and parks it (frozen
+prop) framed by the menu camera; the whole owned lineup parks with **per-car
+meshes** (a mixed lineup keeps each body at its true size); cycling focus
+re-selects the car and wraps; the rally board shows locked rallies with their
+restriction + the showdown meter; Start launches a session; the podium renders the
+finish summary **and the reward reveal + standings**; and the run scene fields the
+bound session car. The pure `RallyLibrary.build_standings` ranking and the enriched
+`RallySession` result are covered in `test_rally_library.gd` / `test_rally_session.gd`.

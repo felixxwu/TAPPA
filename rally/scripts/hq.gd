@@ -1,29 +1,32 @@
 extends Node3D
-# HQ — the meta-game hub (todo/menus.md location 1). This is the FIRST diegetic 3D
-# slice (todo/diegetic-hq.md): the flat car-park surface is replaced by a real 3D
-# showroom — a menu camera framing your car in a lit lot, cycled prev/next — while
-# the rally board + Start stay a flat overlay (the map → 3D-pins port is a later
+# HQ — the meta-game hub (todo/menus.md location 1), diegetic 3D build
+# (todo/diegetic-hq.md). The car park is a real 3D lot: your owned cars are parked
+# in a row as physics-frozen props, and a menu camera pans between them as you cycle
+# the focus (◄ ► / menu_left/right). The focused car IS the selected car. The rally
+# board + Start stay a flat CanvasLayer overlay (the map → 3D-pins port is a later
 # slice). It is the game's boot scene and stays lightweight (NO track generation).
 #
-# Scope note (todo/diegetic-hq.md): this slice shows ONE focused car at a time (the
-# proven one-car-at-a-time invariant — `Car.apply_owned` mutates the shared
-# `Config.data` and the car scene's mesh sub-resources, so configuring N cars at
-# once would stomp them). A simultaneous parked lineup is the immediate follow-up,
-# once per-instance mesh duplication is handled and the result can be eyeballed.
+# Shared-resource note: car.tscn's chassis/cabin/wheel meshes are SubResources
+# shared across instances, so apply_car sizing one car's body would resize every
+# parked car. _dup_meshes() gives each parked car its own mesh copies right after
+# apply_owned, so a mixed lineup shows each car at its true size. apply_owned also
+# writes the shared Config.data (last car wins) — harmless here since the props
+# don't simulate and world.gd re-applies the fielded car's config before a run.
 
 const CAR_SCENE := preload("res://car.tscn")
 
 var _selected_instance_id := -1
 var _selected_rally_id := ""
 
-# Showroom state: the owned-car list and which one is focused (shown + selected).
+# Showroom state: the owned-car list, the parked car nodes + their lot markers
+# (parallel to _owned), and which slot is focused (shown + selected).
 var _owned: Array = []
+var _cars: Array = []
+var _markers: Array = []
 var _focus := 0
-var _car: Node3D = null
 
 # 3D staging.
 var _camera: Camera3D
-var _display_marker: Marker3D
 var _stats_label: Label3D
 var _cam_tween: Tween
 
@@ -39,8 +42,8 @@ func _ready() -> void:
 	_ensure_starter()
 	_build_world()
 	_build_overlay()
-	_reload_owned()
-	_show_focused_car()
+	_build_showroom()
+	_focus_changed(true)  # snap the camera in on the first frame
 
 
 # First run: grant the immortal starter (the anti-soft-lock floor — it can never
@@ -74,37 +77,30 @@ func _build_world() -> void:
 	sun.light_energy = 1.1
 	add_child(sun)
 
-	# The lot floor: a plain plane (visual only — the parked car is physics-frozen,
+	# The lot floor: a plain plane (visual only — the parked cars are physics-frozen,
 	# so no collider is needed).
 	var ground := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(60.0, 60.0)
+	plane.size = Vector2(120.0, 60.0)
 	ground.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.18, 0.19, 0.22)
 	ground.material_override = mat
 	add_child(ground)
 
-	# Where the focused car sits.
-	_display_marker = Marker3D.new()
-	add_child(_display_marker)
-
-	# A floating stats panel beside the car (Label3D for the slice; the SubViewport
-	# panel of menus.md rig 2 is deferred). Billboarded so it always faces the camera.
+	# A floating stats panel beside the focused car (Label3D for the slice; the
+	# SubViewport panel of menus.md rig 2 is deferred). Billboarded to face the camera.
 	_stats_label = Label3D.new()
 	_stats_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_stats_label.modulate = Color(1, 1, 1)
 	_stats_label.outline_size = 12
 	_stats_label.font_size = 64
 	_stats_label.pixel_size = 0.006
-	_stats_label.position = Vector3(-2.6, 1.4, 0.0)
 	_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	add_child(_stats_label)
 
 	_camera = Camera3D.new()
 	_camera.current = true
 	add_child(_camera)
-	_snap_camera_to_focus()
 
 
 # --- Flat overlay (rally board + start) --------------------------------------
@@ -127,8 +123,8 @@ func _build_overlay() -> void:
 	title.add_theme_font_size_override("font_size", 28)
 	root.add_child(title)
 
-	# Car selector: ◄ / ► cycle the focused car (mirrors the menu_left/right inputs
-	# and the swipe gestures the diegetic spec calls for; tap-friendly for mobile).
+	# Car selector: ◄ / ► pan the camera to the prev/next parked car (mirrors the
+	# menu_left/right inputs; tap-friendly for mobile).
 	var nav := HBoxContainer.new()
 	nav.add_theme_constant_override("separation", 8)
 	root.add_child(nav)
@@ -185,42 +181,101 @@ func _section_label(text: String) -> Label:
 	return l
 
 
-# --- Showroom (the focused car) ----------------------------------------------
+# --- Car park (the parked lineup) --------------------------------------------
 
-# Re-read the owned-car list from the save and clamp the focus into range.
-func _reload_owned() -> void:
+# (Re)build the lot from the saved cars: one marker + one parked car per owned
+# instance, laid out in a centred row. Frees any previous lineup first.
+func _build_showroom() -> void:
+	for car in _cars:
+		if is_instance_valid(car):
+			car.queue_free()
+	for marker in _markers:
+		if is_instance_valid(marker):
+			marker.queue_free()
+	_cars = []
+	_markers = []
 	_owned = Save.profile.get("cars", [])
-	if _owned.is_empty():
-		_focus = 0
-	else:
-		_focus = clampi(_focus, 0, _owned.size() - 1)
+	var cfg: GameConfig = Config.data
+	var n := _owned.size()
+	for i in n:
+		var marker := Marker3D.new()
+		# Centre the row on the origin so the lot reads symmetrically.
+		marker.position = Vector3((i - (n - 1) * 0.5) * cfg.menu_car_spacing, 0.0, 0.0)
+		add_child(marker)
+		_markers.append(marker)
+		_cars.append(_spawn_parked_car(_owned[i], marker))
+	_focus = clampi(_focus, 0, maxi(0, n - 1))
 
 
-# Focus the owned car with this instance id (re-reading the save first, so a car
-# just won/granted shows up). Used by the reward arrival and tests.
+# Spawn one owned car as a parked, silent, physics-frozen prop at a marker, with its
+# OWN mesh copies (see _dup_meshes) so a mixed lineup shows each at its true size.
+func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
+	var car := CAR_SCENE.instantiate()
+	add_child(car)
+	car.apply_owned(owned)
+	_dup_meshes(car)
+	car.global_transform = marker.global_transform
+	car.freeze = true
+	car.collision_layer = 0
+	car.collision_mask = 0
+	var audio := car.get_node_or_null("EngineAudio")
+	if audio != null and audio.has_method("stop"):
+		audio.stop()
+	car.process_mode = Node.PROCESS_MODE_DISABLED
+	return car
+
+
+# Give a car instance its own copies of every mesh resource. car.tscn's body/wheel
+# meshes are SubResources shared across instances; apply_car resized the shared one
+# to THIS car, so duplicating now freezes those dimensions before the next car's
+# apply_car mutates the shared original again.
+func _dup_meshes(car: Node) -> void:
+	for mi in car.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if m.mesh != null:
+			m.mesh = m.mesh.duplicate()
+
+
+# Rebuild the lot if the saved cars no longer match what's parked (a reward arrived,
+# a car was wrecked) — keeps focus_instance / cycling correct after the set changes.
+func _ensure_showroom_current() -> void:
+	var cars: Array = Save.profile.get("cars", [])
+	var stale := cars.size() != _cars.size()
+	if not stale:
+		for i in cars.size():
+			if int(cars[i].get("instance_id", -1)) != int(_owned[i].get("instance_id", -1)):
+				stale = true
+				break
+	if stale:
+		_build_showroom()
+
+
+# Focus the owned car with this instance id (rebuilding the lot first if the set
+# changed, so a car just won/granted is parked and reachable). Used by the reward
+# arrival and tests.
 func focus_instance(instance_id: int) -> void:
-	_reload_owned()
+	_ensure_showroom_current()
 	for i in _owned.size():
 		if int(_owned[i].get("instance_id", -1)) == instance_id:
 			_focus = i
 			break
-	_show_focused_car()
+	_focus_changed()
 
 
-# Step the focus to the prev/next owned car (wrapping), re-reading the save so the
-# list stays current.
+# Pan the focus to the prev/next parked car (wrapping).
 func _cycle_focus(step: int) -> void:
-	_reload_owned()
-	if _owned.is_empty():
+	_ensure_showroom_current()
+	if _cars.is_empty():
 		return
-	_focus = wrapi(_focus + step, 0, _owned.size())
-	_show_focused_car()
+	_focus = wrapi(_focus + step, 0, _cars.size())
+	_focus_changed()
 
 
-# Spawn (or respawn) the focused car as a parked, silent, physics-frozen prop, make
-# it the selected car, and refresh the camera + panels + rally board around it.
-func _show_focused_car() -> void:
-	if _owned.is_empty():
+# React to a focus change: make the focused car the selected car, re-aim the camera
+# + stats panel at it, and refresh the rally board. No respawn — every car is
+# already parked, so this is just a camera pan.
+func _focus_changed(snap := false) -> void:
+	if _cars.is_empty():
 		_selected_instance_id = -1
 		_car_name_label.text = "(no cars)"
 		_car_stats_label.text = ""
@@ -230,37 +285,20 @@ func _show_focused_car() -> void:
 		return
 	var owned: Dictionary = _owned[_focus]
 	_selected_instance_id = int(owned.get("instance_id", -1))
-	_spawn_focused_car(owned)
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var header := "%s  #%d  (%d of %d)" % [
-		entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _owned.size()]
-	_car_name_label.text = header
+	_car_name_label.text = "%s  #%d  (%d of %d)" % [
+		entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _cars.size()]
 	var stats := _car_stats_text(owned, entry)
 	_car_stats_label.text = stats
 	_stats_label.text = "%s\n%s" % [entry.get("name", "?"), stats]
-	_ease_camera_to_focus()
+	# Park the floating panel just beside (and above) the focused car.
+	_stats_label.global_position = (_markers[_focus] as Marker3D).global_position + Vector3(-2.6, 1.4, 0.0)
+	if snap:
+		_snap_camera_to_focus()
+	else:
+		_ease_camera_to_focus()
 	_refresh_rallies()
 	_update_status()
-
-
-func _spawn_focused_car(owned: Dictionary) -> void:
-	if _car != null:
-		_car.queue_free()
-		_car = null
-	var car := CAR_SCENE.instantiate()
-	add_child(car)
-	car.apply_owned(owned)
-	# Park it: sit it exactly at the marker, kill physics + input + engine audio so
-	# it's a pure static prop (no driving, no idle engine note in the menu).
-	car.global_transform = _display_marker.global_transform
-	car.freeze = true
-	car.collision_layer = 0
-	car.collision_mask = 0
-	var audio := car.get_node_or_null("EngineAudio")
-	if audio != null and audio.has_method("stop"):
-		audio.stop()
-	car.process_mode = Node.PROCESS_MODE_DISABLED
-	_car = car
 
 
 # One-line car summary shared by the overlay and the 3D Label3D.
@@ -289,11 +327,17 @@ func _drive_text(drive_mode: int) -> String:
 
 # --- Menu camera -------------------------------------------------------------
 
+func _focused_car_pos() -> Vector3:
+	if _markers.is_empty():
+		return Vector3.ZERO
+	return (_markers[_focus] as Marker3D).global_position
+
+
 # The framing transform for the focused car: a 3/4 hero shot from the configured
 # offset, looking at the car a little above its origin.
 func _camera_target_xform() -> Transform3D:
 	var cfg: GameConfig = Config.data
-	var car_pos := _display_marker.global_transform.origin
+	var car_pos := _focused_car_pos()
 	var eye := car_pos + cfg.menu_camera_offset
 	var look := car_pos + Vector3.UP * cfg.menu_camera_look_height
 	var t := Transform3D.IDENTITY
@@ -305,8 +349,8 @@ func _snap_camera_to_focus() -> void:
 	_camera.global_transform = _camera_target_xform()
 
 
-# Ease the camera into the framing over GameConfig.menu_camera_move_time (a small
-# settle each time you cycle cars). Snaps when the move time is ~0.
+# Ease the camera into the framing over GameConfig.menu_camera_move_time (a pan
+# along the lot each time you cycle cars). Snaps when the move time is ~0.
 func _ease_camera_to_focus() -> void:
 	var cfg: GameConfig = Config.data
 	if _cam_tween != null and _cam_tween.is_valid():
