@@ -253,6 +253,17 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Field of view (degrees) for the bonnet camera.
 @export_range(30.0, 120.0) var bonnet_fov := 75.0
 
+@export_group("Menu / HQ")
+## Seconds the HQ menu camera takes to ease into framing the focused car
+## (todo/diegetic-hq.md). 0 snaps instantly.
+@export var menu_camera_move_time := 0.6
+## HQ menu camera position relative to the focused car (car space: -Z is the car's
+## nose), so the default sits the camera ahead-and-to-the-side at eye height for a
+## 3/4 hero shot.
+@export var menu_camera_offset := Vector3(3.2, 1.6, 4.8)
+## Height (m) above the car's origin that the HQ menu camera looks at.
+@export var menu_camera_look_height := 0.6
+
 @export_group("World")
 @export var fog_density := 0.02
 @export var background_color := Color(0.35, 0.3, 0.45)
