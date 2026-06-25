@@ -1,6 +1,28 @@
 # Performance Optimisation Spec — mobile / low-end devices
 
-> Status: **planned, not yet implemented.** This document is the implementation
+> Status: **PARTIALLY DONE.** The unblocked, decision-free, low-risk items are
+> implemented: **item 4** (frame cap — `GameConfig.target_fps`=30, applied in
+> `world._ready`, skipped under `--headless`), **item 1** (mipmaps on
+> tree/bush `.import` + `lod_bias` uniform in `billboard.gdshader` driven by
+> `GameConfig.texture_lod_bias`), **item 6** (engine-audio: per-harmonic `pow`
+> hoisted out of the firing-phase loop in `_voice`; scratch `slice()` allocation
+> dropped in `engine_audio.gd`), **item 11** (guard `downforce_readouts` behind
+> `debug_wheel_forces`), and **item 10** (HUD label string-change caching). Docs:
+> `features/rendering.md`, `features/engine-audio.md`.
+>
+> **Still open — BLOCKED ON YOUR DECISIONS / ASSETS:**
+> - **Items 2 + 3** (foliage view-cone cull + visible cap, collision-box cull):
+>   gated on the **billboard-vs-opaque-low-poly-mesh decision** (and the `.glb`
+>   foliage models if mesh) — the spec says decide before building the field
+>   class. The biggest GPU/physics wins, but need that call first.
+> - **Item 7** (web-export threading): an explicit DECISION NEEDED (single-thread
+>   reach vs. threaded smoothness).
+>
+> **Deferred (optional / advisory):** item 8 (physics-tick alloc refactor — a
+> safe follow-up, guarded by existing tests), and items 5/9/12 (the spec's own
+> recommendation is "measure first / probably skip").
+>
+> This document is the implementation
 > brief. It references the code as it exists on this branch so the work can be
 > picked up later. Follow the project's config-first convention
 > (`CLAUDE.md`): every new tunable goes in `GameConfig`

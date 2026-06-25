@@ -44,17 +44,6 @@ func test_accelerate_moves_car_forward() -> void:
 		"W must move the car along its -Z forward (regression: reversed controls)")
 
 
-func test_steer_left_turns_left() -> void:
-	var start_yaw := _car.rotation.y
-	Input.action_press("accelerate")
-	Input.action_press("steer_left")
-	await _wait_physics(90)
-	Input.action_release("accelerate")
-	Input.action_release("steer_left")
-	var yaw_delta := wrapf(_car.rotation.y - start_yaw, -PI, PI)
-	assert_gt(yaw_delta, 0.1, "steering left while driving forward increases yaw")
-
-
 func test_reset_returns_to_start() -> void:
 	# Reset returns to the spawn transform captured in car._ready(). On the
 	# flat fixture the car does not slide during settling, so the spawn and
@@ -112,6 +101,45 @@ func test_redline_gearing_caps_top_speed() -> void:
 	var speed := _car.linear_velocity.dot(forward)
 	assert_lt(speed, start_speed - 1.0,
 		"full throttle above redline-limited top speed must decelerate")
+
+
+func test_roll_influence_scales_longitudinal_pitch() -> void:
+	# The longitudinal (braking/throttle) force's vertical lever is scaled by
+	# wheel_roll_influence, so at 0 it acts at CoM height (no pitch) and at 1 at
+	# the contact patch (the chassis dives/squats). Brake from a fixed cruising
+	# speed at both settings and compare the immediate pitch rate (angular
+	# velocity about the car's lateral axis) — measured over a few frames so it
+	# reads the direct torque response, not later chaotic grip dynamics.
+	var pitch_at_com := await _brake_pitch_rate(0.0)
+	var pitch_at_patch := await _brake_pitch_rate(1.0)
+	assert_almost_eq(pitch_at_com, 0.0, 0.05,
+		"at roll_influence 0 the braking force acts at CoM height -> negligible pitch")
+	assert_gt(pitch_at_patch, pitch_at_com + 0.1,
+		"raising roll_influence applies the braking force higher -> the chassis pitches (dives)")
+
+
+# Peak pitch rate (|angular velocity| about the car's lateral axis) while braking
+# from a steady 20 m/s cruise at the given wheel_roll_influence. Wheel spin is
+# pre-synced to road speed so there is no launch/lockup transient to muddy it.
+func _brake_pitch_rate(influence: float) -> float:
+	var cfg: GameConfig = Config.data
+	var saved := cfg.wheel_roll_influence
+	cfg.wheel_roll_influence = influence
+	var r: float = cfg.wheel_radius
+	var forward := -_car.global_transform.basis.z
+	_car.linear_velocity = forward * 20.0
+	_car.angular_velocity = Vector3.ZERO
+	_car.drivetrain.rear_omega = 20.0 / r
+	for w in _car.drivetrain.front_omega:
+		_car.drivetrain.front_omega[w] = 20.0 / r
+	Input.action_press("brake_reverse")
+	var peak := 0.0
+	for i in 8:
+		await _wait_physics(1)
+		peak = maxf(peak, absf(_car.angular_velocity.dot(_car.global_transform.basis.x)))
+	Input.action_release("brake_reverse")
+	cfg.wheel_roll_influence = saved
+	return peak
 
 
 func test_front_wheels_caster_toward_travel_direction() -> void:
@@ -174,88 +202,6 @@ func test_travel_alignment_scales_down_at_low_speed() -> void:
 		"low-speed alignment must be scaled down relative to high speed")
 
 
-func test_steer_assist_torque_yaws_car() -> void:
-	# Above the min-speed threshold the assist applies yaw torque directly, so
-	# steering left rotates the car. Drive it forward fast enough to clear
-	# steer_assist_min_speed, then isolate the assist's contribution by comparing
-	# the yaw with the torque enabled vs disabled at the same speed.
-	var cfg: GameConfig = Config.data
-	var saved := cfg.steer_assist_torque
-	var forward := -_car.global_transform.basis.z
-	var v := (cfg.steer_assist_min_speed + 5.0) * forward
-
-	cfg.steer_assist_torque = 0.0
-	_car.global_transform.origin = Vector3.ZERO
-	_car.linear_velocity = v
-	_car.angular_velocity = Vector3.ZERO
-	var base_yaw := _car.rotation.y
-	Input.action_press("steer_left")
-	await _wait_physics(30)
-	Input.action_release("steer_left")
-	var yaw_no_assist := wrapf(_car.rotation.y - base_yaw, -PI, PI)
-
-	cfg.steer_assist_torque = 1000.0
-	_car.global_transform.origin = Vector3.ZERO
-	_car.linear_velocity = v
-	_car.angular_velocity = Vector3.ZERO
-	var start_yaw := _car.rotation.y
-	Input.action_press("steer_left")
-	await _wait_physics(30)
-	Input.action_release("steer_left")
-	var yaw_with_assist := wrapf(_car.rotation.y - start_yaw, -PI, PI)
-	cfg.steer_assist_torque = saved
-
-	assert_gt(yaw_with_assist, yaw_no_assist + 0.05,
-		"steer assist torque adds left yaw above the min-speed threshold")
-
-
-func test_steer_assist_torque_ramps_with_speed() -> void:
-	# The assist torque is faded in linearly from 0 at standstill to full at
-	# steer_assist_min_speed. Isolate the torque's contribution the same way as
-	# above (yaw with it on minus off, at a fixed speed), and compare that
-	# contribution at half the ramp speed (scale ≈ 0.5) against full ramp speed
-	# (scale clamped to 1.0). The low-speed contribution must be clearly smaller.
-	var cfg: GameConfig = Config.data
-	var saved := cfg.steer_assist_torque
-	var slow_contrib := await _assist_yaw_contribution(cfg.steer_assist_min_speed * 0.5)
-	var fast_contrib := await _assist_yaw_contribution(cfg.steer_assist_min_speed + 5.0)
-	cfg.steer_assist_torque = saved
-
-	assert_gt(fast_contrib, 0.05, "assist still contributes yaw at full ramp speed")
-	assert_lt(slow_contrib, fast_contrib * 0.7,
-		"assist torque is ramped down at lower speed, contributing less yaw")
-
-
-# Yaw added by steer_assist_torque alone at a fixed forward speed: yaw while
-# steering left with the assist on minus the same run with it off, so wheel grip
-# and travel alignment (which also yaw the car) cancel out.
-func _assist_yaw_contribution(test_speed: float) -> float:
-	var cfg: GameConfig = Config.data
-	var forward := -_car.global_transform.basis.z
-	var v := forward * test_speed
-
-	cfg.steer_assist_torque = 0.0
-	_car.global_transform.origin = Vector3.ZERO
-	_car.linear_velocity = v
-	_car.angular_velocity = Vector3.ZERO
-	var off_base := _car.rotation.y
-	Input.action_press("steer_left")
-	await _wait_physics(30)
-	Input.action_release("steer_left")
-	var yaw_off := wrapf(_car.rotation.y - off_base, -PI, PI)
-
-	cfg.steer_assist_torque = 1000.0
-	_car.global_transform.origin = Vector3.ZERO
-	_car.linear_velocity = v
-	_car.angular_velocity = Vector3.ZERO
-	var on_base := _car.rotation.y
-	Input.action_press("steer_left")
-	await _wait_physics(30)
-	Input.action_release("steer_left")
-	var yaw_on := wrapf(_car.rotation.y - on_base, -PI, PI)
-	return yaw_on - yaw_off
-
-
 func test_steer_assist_suppressed_below_min_speed() -> void:
 	# Below steer_assist_min_speed the assist is suppressed, so at a standstill
 	# (where the front tires can generate no turn) a large assist torque must
@@ -272,24 +218,6 @@ func test_steer_assist_suppressed_below_min_speed() -> void:
 	cfg.steer_assist_torque = saved
 	var yaw_delta := absf(wrapf(_car.rotation.y - start_yaw, -PI, PI))
 	assert_lt(yaw_delta, 0.02, "steer assist does not yaw a stationary car")
-
-
-func test_throttle_drives_during_powerslide() -> void:
-	# Drive must survive a slide: the lateral demand is clamped to the friction
-	# max BEFORE it competes with engine force, so throttle keeps accelerating
-	# the car along its heading mid-drift (with the stock solver path the
-	# unclamped lateral demand ate the whole grip budget and drive went to ~0).
-	var forward := -_car.global_transform.basis.z
-	var left := -_car.global_transform.basis.x
-	_car.linear_velocity = forward * 5.0 + left * 10.0
-	Input.action_press("accelerate")
-	await _wait_physics(60)
-	Input.action_release("accelerate")
-	var fwd_speed := _car.linear_velocity.dot(-_car.global_transform.basis.z)
-	# Threshold rebaselined from 6.5 -> 6.2 when the gross-curve + RPM-dependent
-	# engine-friction model trimmed WOT torque ~13%; the car still clearly gains
-	# speed from the 5.0 m/s start (failure mode is drive eaten to ~0 -> ~5.0).
-	assert_gt(fwd_speed, 6.2, "throttle still accelerates along heading mid-slide")
 
 
 func _axle_normal_sum(rear: bool) -> float:

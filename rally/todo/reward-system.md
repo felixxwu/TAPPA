@@ -1,6 +1,18 @@
-# Reward System — implementation spec
+# Reward System — implementation spec  ✅ DONE
 
-> Status: **planned, not yet implemented.** Implementation brief for the reward
+> Status: **DONE (core).** `RewardSystem` (`scripts/reward_system.gd`) implements
+> the pure draw policy: `tier_ceiling` / `target_tier` clamp, `draw_upgrade`
+> (target-tier parts + low-weight repair kit), and `draw_car` (anti-soft-lock
+> eligibility filter, prefer-un-owned, tier step-down, null when nothing
+> eligible). Static functions with an injectable RNG. Tests:
+> `tests/headless/test_reward_system.gd` (7, seeded). Doc:
+> `features/reward-system.md`. **Still open / deferred:** the curve values
+> (`tier_ceiling` shape, `f(difficulty)` remap, `repair_kit_drop_weight`) move to
+> `GameConfig` in the balance pass; the call site (per-event / per-rally trigger)
+> and reveal are owned by `todo/rally-event-flow.md` + `todo/menus.md`. The draw
+> functions return an id — the caller delivers via `Save.add_item`/`grant_car`.
+>
+> Implementation brief for the reward
 > **draw policy** in `gameplay.md` › *Progression & rewards* — what the player is
 > granted after an event (an upgrade) and after completing a rally (a car).
 > Follow the config-first convention (`CLAUDE.md`): the tier/clamp curves are

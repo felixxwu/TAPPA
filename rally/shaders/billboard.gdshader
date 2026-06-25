@@ -9,6 +9,9 @@ uniform sampler2D albedo : source_color, filter_nearest;
 uniform float alpha_scissor : hint_range(0.0, 1.0) = 0.5;
 uniform float render_distance = 80.0;
 uniform float fade_band = 15.0;
+// Bias distant sampling toward cheaper (lower) mip levels — saves texture
+// bandwidth on tile-based mobile GPUs. Needs mipmaps enabled on the texture.
+uniform float lod_bias = 0.0;
 
 varying float v_cam_dist;
 
@@ -45,7 +48,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec4 tex = texture(albedo, UV);
+	vec4 tex = texture(albedo, UV, lod_bias);
 	// 1 up close, 0 at the cutoff; dither out fragments as it drops.
 	float fade = clamp((render_distance - v_cam_dist) / max(fade_band, 0.001), 0.0, 1.0);
 	if (tex.a < alpha_scissor || fade <= bayer4x4(FRAGCOORD.xy)) {

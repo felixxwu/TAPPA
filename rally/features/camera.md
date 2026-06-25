@@ -18,15 +18,27 @@ when the car's heading changes suddenly. The camera always looks **directly at
 the car** (the look-at is not smoothed), so the target stays centred while the
 viewpoint swings around gently.
 
+The camera's **height is measured from the terrain directly below the camera**,
+not from the car: it samples the ground height at its own horizontal position
+(via a `height_at` sibling — the hilly `Floor`) and sits `follow_height` above
+that. So the camera keeps a constant clearance over the ground it is flying
+over, rather than rising and falling as the car climbs and descends hills. On
+flat test fixtures (no `height_at` sibling) the ground height falls back to 0.
+
 ### Behavior (`_physics_process`)
 
 ```
 target_dir = horizontal(target.linear_velocity).normalized()   # direction of motion
 # below MIN_TRAVEL_SPEED (1 m/s), fall back to the car's facing direction
 travel_dir = slerp(travel_dir, target_dir, 1 - exp(-smoothing * delta))  # eased orbit
-position   = target.position
-           - travel_dir * follow_distance    # behind the (smoothed) orbital direction
-           + UP * follow_height
+# follow_distance is the EUCLIDEAN distance to the car. position.y is a fixed
+# clearance over the terrain UNDER the camera, so the vertical gap dy depends on
+# where the camera ends up — and the horizontal reach must shrink to compensate:
+# horizontal = sqrt(follow_distance^2 - dy^2). Since dy depends on the reach and
+# the reach depends on dy, it is solved with a couple of fixed-point iterations.
+horizontal = sqrt(follow_distance^2 - dy^2)
+position   = target.position - travel_dir * horizontal       # behind the smoothed orbit
+position.y = ground_height_at(position.xz) + follow_height    # fixed clearance over terrain
 look_at(target.position, UP)                 # exact — look-at is NOT smoothed
 ```
 

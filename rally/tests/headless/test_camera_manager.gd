@@ -5,11 +5,21 @@ var _scene: Node3D
 var _mgr: Node
 
 
-func before_each() -> void:
+# main.tscn._ready() generates the full terrain + track, which is expensive, so
+# build it ONCE for the whole script. The two mutating tests are order-safe: the
+# camera-cycle test wraps back to chase (net-neutral), and the destructive
+# cycle_car test (which swaps the Car node) is defined last. GUT runs tests in
+# definition order, so a single shared instance is safe.
+func before_all() -> void:
 	Config.reset()
 	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
+	add_child(_scene)
+	await get_tree().physics_frame  # let world._ready() generate + apply + build
 	_mgr = _scene.get_node("CameraManager")
+
+
+func after_all() -> void:
+	_scene.free()
 
 
 func _current_count() -> int:

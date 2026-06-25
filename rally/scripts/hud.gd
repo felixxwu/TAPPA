@@ -4,15 +4,30 @@ extends CanvasLayer
 
 @export var car: VehicleBody3D
 
+# Temporary on-screen track-progress readout. Set by world.gd once the
+# TrackProgress manager exists; null in scenes that don't generate a track.
+var track_progress: Node
+
 @onready var _speed_label: Label = $SpeedLabel
 @onready var _gear_label: Label = $GearLabel
 @onready var _rpm_label: Label = $RPMLabel
+@onready var _progress_label: Label = $ProgressLabel
 @onready var _mode_button: Button = $ModeButton
 @onready var _drive_button: Button = $DriveButton
 @onready var _car_button: Button = $CarButton
 @onready var _version_label: Label = $VersionLabel
 
 const _DRIVE_NAMES := ["RWD", "AWD", "FWD"]
+
+# Last displayed values, so _process only re-formats + re-assigns a label when
+# its value actually changes (avoids per-frame string allocation / GC churn).
+var _last_speed := -1
+var _last_gear := -999
+var _last_rpm := -1
+var _last_auto := false
+var _last_drive := -1
+var _last_car := ""
+var _last_progress := -1
 
 
 func _ready() -> void:
@@ -43,13 +58,34 @@ func _on_car_pressed() -> void:
 
 
 func _process(_delta: float) -> void:
-	_speed_label.text = "%d km/h" % roundi(car.linear_velocity.length() * 3.6)
 	var engine: EngineSim = car.drivetrain.engine
-	_gear_label.text = _gear_text(engine.gear)
-	_rpm_label.text = "%d rpm" % roundi(engine.rpm())
-	_mode_button.text = "AUTO" if engine.auto else "MANUAL"
-	_drive_button.text = _DRIVE_NAMES[car.drivetrain.drive_mode]
-	_car_button.text = car.current_car_name()
+	var speed := roundi(car.linear_velocity.length() * 3.6)
+	if speed != _last_speed:
+		_last_speed = speed
+		_speed_label.text = "%d km/h" % speed
+	if engine.gear != _last_gear:
+		_last_gear = engine.gear
+		_gear_label.text = _gear_text(engine.gear)
+	var rpm := roundi(engine.rpm())
+	if rpm != _last_rpm:
+		_last_rpm = rpm
+		_rpm_label.text = "%d rpm" % rpm
+	if engine.auto != _last_auto:
+		_last_auto = engine.auto
+		_mode_button.text = "AUTO" if engine.auto else "MANUAL"
+	var drive: int = car.drivetrain.drive_mode
+	if drive != _last_drive:
+		_last_drive = drive
+		_drive_button.text = _DRIVE_NAMES[drive]
+	var car_name: String = car.current_car_name()
+	if car_name != _last_car:
+		_last_car = car_name
+		_car_button.text = car_name
+	if track_progress != null:
+		var pct := roundi(track_progress.progress_percent() * 100.0)
+		if pct != _last_progress:
+			_last_progress = pct
+			_progress_label.text = "%d%%" % pct
 
 
 func _gear_text(gear: int) -> String:

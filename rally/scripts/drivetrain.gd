@@ -163,11 +163,13 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 					front_omega[wheel] = omega
 
 	# Apply the time-averaged tire force to the chassis and publish readouts.
-	# The longitudinal force acts at the contact patch. The lateral force's roll
-	# lever (its height above the centre of mass) is scaled by wheel_roll_influence
-	# so 0 applies it at CoM height (no body roll, rollover-proof) and 1 at the
-	# contact patch (full physical roll); the horizontal lever is kept intact
-	# either way so the lateral force still yaws the car into the turn.
+	# Both the longitudinal and lateral forces have their roll/pitch lever (the
+	# height of the application point above the centre of mass) scaled by
+	# wheel_roll_influence: 0 applies them at CoM height (no body roll from
+	# cornering, no pitch dive/squat from braking/throttle, rollover-proof) and 1
+	# at the contact patch (full physical roll and pitch). The horizontal lever is
+	# kept intact either way so the lateral force still yaws the car into the turn
+	# and the longitudinal force still acts along the contact patch.
 	var share := car.mass / float(hardpoints.size())
 	var up := car.global_transform.basis.y
 	for c in contacts:
@@ -175,9 +177,9 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 		var lat_force: Vector3 = c.side * c.impulse_lat / delta
 		var offset: Vector3 = c.cp - car.global_position
 		var vertical: Vector3 = up * up.dot(offset)
-		var lat_offset: Vector3 = (offset - vertical) + vertical * cfg.wheel_roll_influence
-		car.apply_force(long_force, offset)
-		car.apply_force(lat_force, lat_offset)
+		var rolled_offset: Vector3 = (offset - vertical) + vertical * cfg.wheel_roll_influence
+		car.apply_force(long_force, rolled_offset)
+		car.apply_force(lat_force, rolled_offset)
 		readouts[c.wheel] = {
 			normal = c.n_force,
 			demand = (

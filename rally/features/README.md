@@ -23,12 +23,17 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 |------|--------|
 | [architecture.md](architecture.md) | Project layout, scene tree, autoloads, data flow |
 | [configuration.md](configuration.md) | `GameConfig` resource — every tunable, the `Config` autoload |
+| [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, rally completion) at `user://profile.json` |
+| [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, target times, opponent field, showdown gating) |
+| [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, repair kit, tuning gates) |
+| [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (tier clamp, per-event upgrade, per-rally car with anti-soft-lock) |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
 | [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift |
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
+| [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
 | [camera.md](camera.md) | Chase camera follow behavior |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout and mode buttons |
@@ -53,6 +58,10 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Camera | `scripts/chase_camera.gd` |
 | HUD | `scripts/hud.gd` |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |
+| Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
+| Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress) |
+| Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots, repair kit) |
+| Reward draws | `scripts/reward_system.gd` (`RewardSystem` — tier clamp, upgrade/car draws) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard.gdshader` |
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/perf_overlay.gd` |

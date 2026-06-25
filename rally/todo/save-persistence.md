@@ -1,6 +1,16 @@
-# Save / Persistence — implementation spec
+# Save / Persistence — implementation spec  ✅ DONE
 
-> Status: **planned, not yet implemented.** Implementation brief for the
+> Status: **DONE (core, desktop).** The `Save` autoload
+> (`scripts/save_manager.gd`), the CarLibrary metadata pass (`id` / `country` /
+> `car_type` / `max_hp` / `reward_tier` + `index_of`/`by_id`/`power_to_weight`),
+> the full mutator API, atomic writes + `.bak`/default fallback, versioning &
+> migration scaffolding, and headless tests (`test_save_manager.gd`, plus
+> additions to `test_car_library.gd` / `test_smoke.gd`) are in place and green.
+> **Still open:** verifying the round-trip on an actual **web export**
+> (IndexedDB flush — highest-risk, untested), and wiring `_recompute_showdown()`
+> once the rally roster lands. Doc: `features/save-persistence.md`.
+>
+> Implementation brief for the
 > player-progress save system named first under `gameplay.md` › *Foundations
 > this implies* — **"Nothing here works without it."** Follow the config-first
 > convention (`CLAUDE.md`): authored *tuning baselines* stay in `GameConfig`

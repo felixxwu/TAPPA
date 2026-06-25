@@ -1,6 +1,18 @@
-# Track Progress & Off-Track Reset — implementation spec
+# Track Progress & Off-Track Reset — implementation spec  ✅ DONE
 
-> Status: **planned, not yet implemented.** This document is the implementation
+> Status: **DONE (core).** `TrackProgress` (`scripts/track_progress.gd`) retains
+> the centerline (wired in `world.gd._generate_track`, re-targeted on car swap),
+> tracks monotonic `_best_offset`, and snaps the car back on-road past
+> `track_progress_max_dist_m`. `Car._reset()` was split into `_reset()` +
+> `reset_to(xform)` so the manual `R` reset and the off-track recovery share one
+> path. New `GameConfig` Track knobs `track_progress_max_dist_m` (5.0) and
+> `off_track_reset_enabled` (true). Tests:
+> `tests/headless/test_track_progress.gd` (5). Docs: `features/progress.md` (+
+> `features/track.md`). **Deferred:** the optional HUD progress label (§6) — the
+> `progress_percent()` getter is exposed and ready, but the label isn't wired
+> into `hud.gd`/`main.tscn` yet.
+>
+> This document is the implementation
 > brief. It references the code as it exists on this branch so the work can be
 > picked up later. Follow the project's config-first convention (`CLAUDE.md`):
 > every new tunable goes in `GameConfig` (`scripts/game_config.gd` +

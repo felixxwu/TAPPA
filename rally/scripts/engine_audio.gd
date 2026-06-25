@@ -35,7 +35,9 @@ func _process(_delta: float) -> void:
 	var n := _playback.get_frames_available()
 	if n <= 0:
 		return
-	if _scratch.size() < n:
+	# Size the scratch buffer to exactly n frames so we can push it directly,
+	# avoiding a per-frame slice() allocation. resize only fires when n changes.
+	if _scratch.size() != n:
 		_scratch.resize(n)
 	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.limiting)
-	_playback.push_buffer(_scratch.slice(0, n))
+	_playback.push_buffer(_scratch)

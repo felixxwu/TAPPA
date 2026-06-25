@@ -40,7 +40,11 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
 `BillboardField` (`scripts/billboard_field.gd`) is the shared renderer for both
 trees and bushes — a `MultiMeshInstance3D` subclass: one `MultiMesh` of `QuadMesh` instances (one
 draw call). Each instance is placed at `(x, Floor.height_at(x,z), z)`; the quad
-pivot is its bottom edge (`center_offset`) so trunks sit on the ground.
+pivot is its bottom edge (`center_offset`) so trunks sit on the ground. `build()`
+also records each placed world position in `instance_positions: PackedVector3Array`
+— a renderer-independent mirror of the MultiMesh transforms, since the MultiMesh
+buffer lives in the RenderingServer (a no-op stub under `--headless`, so tests
+read `instance_positions` instead).
 `shaders/billboard.gdshader` is a cylindrical billboard — each quad yaws to face
 the camera but stays upright — with an alpha-scissor cutout (crisp edges, no
 blend sorting) and an unshaded PS1-flat look.

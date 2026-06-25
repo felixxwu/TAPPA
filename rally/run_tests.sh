@@ -7,9 +7,17 @@
 #                   for quick iteration. Final checks should run the full suite.
 set -u
 
-GODOT="${GODOT:-/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot}"
-if [[ ! -x "$GODOT" ]]; then
-  echo "error: Godot binary not found at $GODOT (set \$GODOT to override)" >&2
+# Godot binary: honour $GODOT if set, otherwise try known per-platform
+# locations (macOS app bundle, Steam Deck/Linux download) in order.
+if [[ -z "${GODOT:-}" ]]; then
+  for candidate in \
+    /Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot \
+    /home/deck/tools/godot/Godot_v4.6-stable_linux.x86_64; do
+    if [[ -x "$candidate" ]]; then GODOT="$candidate"; break; fi
+  done
+fi
+if [[ -z "${GODOT:-}" || ! -x "$GODOT" ]]; then
+  echo "error: Godot binary not found (set \$GODOT to override)" >&2
   exit 2
 fi
 

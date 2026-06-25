@@ -9,6 +9,12 @@ const BUSH_SEED_OFFSET := 1013
 
 func _ready() -> void:
 	var cfg: GameConfig = Config.data
+	# Frame cap: a steady ceiling keeps phones cool (avoids thermal throttling).
+	# 0 = uncapped for desktop dev. Physics stays at the project physics tick.
+	# Skipped under --headless (no rendering to pace) so it can't throttle the
+	# frame-awaiting test runner.
+	if cfg.target_fps > 0 and DisplayServer.get_name() != "headless":
+		Engine.max_fps = cfg.target_fps
 	var env: Environment = $WorldEnvironment.environment
 	env.fog_density = cfg.fog_density
 	env.background_color = cfg.background_color
@@ -94,10 +100,23 @@ func _generate_track(cfg: GameConfig) -> void:
 		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m, -cfg.bush_sink_m)
 
+	# Retain the centerline in a TrackProgress manager: tracks how far the car has
+	# driven and snaps it back onto the road if it strays too far (the Curve2D is
+	# otherwise discarded after set_track).
+	_track_progress = TrackProgress.new()
+	_track_progress.name = "TrackProgress"
+	add_child(_track_progress)
+	_track_progress.setup(result["centerline"], $Car, $Floor as TerrainManager)
+	($HUD as CanvasLayer).track_progress = _track_progress
+
 
 # The authored car spawn transform, captured at boot so each car swap spawns in
 # the same place rather than wherever the previous car drove to.
 var _car_spawn: Transform3D
+
+# Tracks track progress + off-track reset for the current car (re-targeted on a
+# car swap, since the fresh car respawns at the start).
+var _track_progress: TrackProgress
 
 
 # Swap to the next car in the library: re-instantiate a fresh car (see
@@ -114,6 +133,10 @@ func cycle_car() -> void:
 	var fresh: Node = car.respawn(car, car.next_car_index(), _car_spawn)
 	mgr.retarget(fresh)
 	($HUD as CanvasLayer).car = fresh
+	# Re-point progress tracking at the fresh car (it respawns at the start, so
+	# progress resets to the spawn offset too).
+	if _track_progress != null:
+		_track_progress.retarget(fresh, $Floor as TerrainManager)
 
 
 func _layers_match(layers: Array[TerrainLayer], params: Array[Vector2]) -> bool:

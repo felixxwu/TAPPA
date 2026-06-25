@@ -14,6 +14,13 @@ const BILLBOARD_SHADER := preload("res://shaders/billboard.gdshader")
 # the body's lifetime. Null when built without collision.
 var _collision_shape: BoxShape3D
 
+# The world position placed for each instance, in build order — a
+# renderer-independent mirror of the MultiMesh instance transforms. The MultiMesh
+# transform buffer lives in the RenderingServer, which is a no-op stub under
+# --headless (get_instance_transform / buffer come back empty there), so this
+# array is the only way headless tests can verify placement. Populated by build().
+var instance_positions: PackedVector3Array
+
 
 func build(positions: PackedVector2Array, floor: TerrainManager, size: Vector2,
 		texture: Texture2D, collision_radius: float, collision_height: float,
@@ -29,12 +36,16 @@ func build(positions: PackedVector2Array, floor: TerrainManager, size: Vector2,
 	mat.set_shader_parameter("albedo", texture)
 	mat.set_shader_parameter("render_distance", render_distance)
 	mat.set_shader_parameter("fade_band", render_fade)
+	# Bias distant foliage to cheaper mips (mobile texture-bandwidth win).
+	mat.set_shader_parameter("lod_bias", Config.data.texture_lod_bias)
 	quad.surface_set_material(0, mat)
 
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = quad
 	mm.instance_count = positions.size()
+	instance_positions = PackedVector3Array()
+	instance_positions.resize(positions.size())
 
 	# One StaticBody3D holds every hitbox; all share one BoxShape3D resource
 	# instanced per position with its own transform (cheap: one shape, N
@@ -52,7 +63,9 @@ func build(positions: PackedVector2Array, floor: TerrainManager, size: Vector2,
 		# y_offset sinks the sprite into the ground (negative) to hide a gap at
 		# the bottom of its texture, or lifts it (positive).
 		var y := floor.height_at(p.x, p.y) + y_offset
-		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(p.x, y, p.y)))
+		var pos := Vector3(p.x, y, p.y)
+		instance_positions[i] = pos
+		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos))
 		if with_collision:
 			# Box centred half its height above the ground so it rests on it.
 			var box_xform := Transform3D(Basis.IDENTITY, Vector3(p.x, y + collision_height * 0.5, p.y))

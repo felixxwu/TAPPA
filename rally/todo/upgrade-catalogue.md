@@ -1,6 +1,19 @@
-# Upgrade Catalogue — implementation spec
+# Upgrade Catalogue — implementation spec  ✅ DONE
 
-> Status: **planned, not yet implemented.** Implementation brief for the upgrade
+> Status: **DONE (core).** `UpgradeLibrary` (`scripts/upgrade_library.gd`)
+> holds the authored `UPGRADES` catalogue (engine/aero/suspension/brakes kits +
+> the repair kit), the pure `apply(owned_car, cfg)` effect pipeline (step 2), and
+> the aero / brake-bias tuning gates. `Save` now enforces one-upgrade-per-slot in
+> `install_upgrade` (replaces + returns the incumbent; rejects consumables/unknown
+> ids) and adds `use_repair_kit(instance_id, heal_amount)` (heal clamped to
+> max_hp). Tests: `tests/headless/test_upgrade_library.gd` + slot/repair/wreck
+> coverage in `test_save_manager.gd`. Doc: `features/upgrade-catalogue.md`.
+> **Still open / deferred:** the full part list per slot/tier and exact `effect`
+> numbers (balance pass), the `repair_kit_hp` GameConfig tunable (caller passes
+> the heal amount today), and the reward-draw policy (owned by
+> `todo/reward-system.md` — this spec only provides the tier-keyed pool).
+>
+> Implementation brief for the upgrade
 > **items** in `gameplay.md` › *Tuning & upgrades* and *Progression & rewards* —
 > the inventory parts (and the repair kit) won as rewards and fitted to cars.
 > Follow the config-first convention (`CLAUDE.md`): every upgrade effect resolves
