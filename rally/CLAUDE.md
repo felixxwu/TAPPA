@@ -50,6 +50,18 @@
   the relevant subset (e.g. the specific test file/script affected by your
   change). Save the full `./run_tests.sh` run for the END of a task, as the final
   verification before declaring the work complete.
+- **Test runtime budget (~5 minutes).** The full suite should stay under about 5
+  minutes. If a full run takes longer than that, spend some effort bringing the
+  runtime back down before declaring the work complete — don't just accept the
+  regression. The cost is CPU-bound (the runner uses `--fixed-fps 60`, so awaited
+  frames are cheap); the usual culprit is full-world generation — instantiating
+  `main.tscn` runs `world.gd._ready()`, which generates the track + scatters
+  trees/bushes for ~15 s per instance. Reach for the cheap patterns first:
+  `SceneTestHelpers.minimal_world()` for tests that don't inspect the
+  track/terrain/foliage (cuts a build to <1 s), `sim_test.gd`'s cached settle for
+  physics tests, and bare-logic tests (no scene) where possible. Reserve full
+  generation for the few files that genuinely assert on it. See
+  `features/testing.md` for the cost model and the available levers.
 - For the FINAL full-suite run (and any run you expect to need failure triage),
   prefer delegating it to a sub-agent (launched in the BACKGROUND, so the main
   agent stays unblocked and is notified on completion) rather than running it
