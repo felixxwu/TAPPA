@@ -27,8 +27,11 @@
 > Pause / Inventory / Confirm overlays, the between-event standings interstitial,
 > the `menu_*` input action set + mobile gestures, and the camera fly-through
 > transitions. The sections below specify that remaining work. **The first 3D
-> slice is kicked off in [`todo/diegetic-hq.md`](diegetic-hq.md)** (3D car park +
-> menu camera + showroom rig).
+> slice has SHIPPED — the HQ 3D showroom** (lit lot + menu camera + a parked
+> focused-car prop + `Label3D` stats, single car for now; `menu_left/right/select/back`
+> input actions added), see [`todo/diegetic-hq.md`](diegetic-hq.md). Still
+> flat/deferred: the simultaneous parked lineup, the map → 3D pins, the tuning
+> lift, the 3D podium/reward rig, and the fly-throughs.
 >
 > Follow the config-first convention
 > (`CLAUDE.md`): tunables (camera move times, panel offsets, station positions

@@ -43,19 +43,42 @@ func _label_texts(root: Node) -> String:
 	return "\n".join(parts)
 
 
-func test_hq_grants_starter_and_lists_cars_and_rallies() -> void:
-	var hq: Control = load("res://hq.tscn").instantiate()
+func test_hq_grants_starter_and_shows_the_focused_car_and_rallies() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 1, "the immortal starter is granted on the first HQ visit")
 	assert_true(_save.profile["cars"][0]["immortal"], "the starter is immortal")
 	assert_true(_save.profile["starter_picked"], "starter_picked recorded")
-	assert_gt(hq._cars_box.get_child_count(), 0, "owned cars are listed")
-	assert_gt(hq._rallies_box.get_child_count(), 0, "rallies the car can enter are listed")
+	# The diegetic showroom spawns the focused car as a parked 3D prop (the starter).
+	assert_not_null(hq._car, "the focused car is spawned as a 3D prop")
+	assert_eq(hq._car.current_car_name(), "Mazda MX-5", "the starter is the focused car")
+	assert_true(hq._car.freeze, "the showroom car is physics-frozen (a static prop)")
+	assert_eq(hq._selected_instance_id, int(_save.profile["cars"][0]["instance_id"]),
+		"the focused car is the selected car")
+	assert_not_null(hq._camera, "a menu camera frames the showroom")
+	assert_gt(hq._rallies_box.get_child_count(), 0, "rallies the focused car can enter are listed")
+
+
+func test_hq_cycling_focus_changes_the_shown_and_selected_car() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Own a second car, then cycle focus to it: the spawned car + selection follow.
+	var rs3: Dictionary = _save.grant_car("rs3", false)
+	hq.focus_instance(int(rs3["instance_id"]))
+	await get_tree().process_frame
+	assert_eq(hq._car.current_car_name(), "Audi RS3", "cycling focus respawns the focused model")
+	assert_eq(hq._selected_instance_id, int(rs3["instance_id"]), "focusing a car selects it")
+	# Wrap forward through the 2-car lot returns to the first car.
+	hq._focus = 0
+	hq._cycle_focus(-1)
+	await get_tree().process_frame
+	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
 func test_hq_start_button_launches_a_session() -> void:
-	var hq: Control = load("res://hq.tscn").instantiate()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	# Select the starter + the shakedown, then press Start (auto_load_scenes is off,
@@ -103,13 +126,13 @@ func test_podium_reveals_reward_and_standings() -> void:
 
 
 func test_hq_shows_locked_rallies_with_their_restriction() -> void:
-	var hq: Control = load("res://hq.tscn").instantiate()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	# Field the AWD RS3 (German hatch): RWD Masters + the JP-only Rising Sun should
 	# both show as locked with a reason, so the unlock path is visible.
 	var rs3: Dictionary = _save.grant_car("rs3", false)
-	hq._on_car_selected(int(rs3["instance_id"]))
+	hq.focus_instance(int(rs3["instance_id"]))
 	await get_tree().process_frame
 	var locked: Array[String] = []
 	for btn in hq._rallies_box.find_children("*", "Button", true, false):

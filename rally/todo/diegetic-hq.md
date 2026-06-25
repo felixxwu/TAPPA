@@ -1,7 +1,23 @@
 # Diegetic HQ — first 3D location (kickoff slice)
 
-> Status: **planned, not yet implemented — brainstorm-first.** This is the
-> actionable *first slice* of the diegetic 3D menu build whose full vision lives
+> Status: **🟢 FIRST SLICE SHIPPED.** The 3D HQ showroom is in (`hq.tscn` is now a
+> `Node3D`, `scripts/hq.gd`): a lit lot, a menu camera that eases into a 3/4 hero
+> shot, the focused owned car spawned as a parked, physics-frozen, silenced `Car`
+> prop (via `Car.apply_owned`), a billboarded `Label3D` stat panel, prev/next car
+> cycling (`◄ ►` + `menu_left`/`menu_right`), and the rally board + Start kept as a
+> flat `CanvasLayer` overlay. Config: `GameConfig.menu_camera_offset` /
+> `menu_camera_move_time` / `menu_camera_look_height`; input actions
+> `menu_left/right/select/back` added to `project.godot`. Tests in
+> `tests/headless/test_menu_flow.gd`; doc in `features/menus.md`.
+>
+> **Shipped vs the build steps below:** steps 1–5 are done **for a single focused
+> car** (the chosen scope). **Still open:** the **simultaneous parked lineup** of N
+> cars (needs per-instance mesh duplication + visual verification — see *Open
+> questions*), and the later slices (map pins, tuning lift, reward rig,
+> fly-throughs) that stay in `todo/menus.md`.
+>
+> This is the actionable *first slice* of the diegetic 3D menu build whose full
+> vision lives
 > in [`todo/menus.md`](menus.md) (the umbrella spec: 3 locations, 6 rigs, 4
 > overlays, camera fly-throughs, `menu_*` input). That spec is large and
 > all-at-once; this file carves off the **smallest end-to-end 3D chunk** that
@@ -75,33 +91,48 @@ SubViewport stats panel. This slice only needs left/right "focus next car" input
 
 ## Proposed build steps
 
-1. **HQ 3D shell** — new `Node3D` HQ scene: ground, lighting, N car-park station
-   markers (`Marker3D`), marker positions in `GameConfig`. Keep `hq.gd`'s starter
-   grant + Start handoff; render the rally board as a flat overlay child.
-2. **Menu camera** — add a `MENU` camera that tweens to a target marker over
-   `GameConfig.menu_camera_move_time`. Reuse the `retarget`/`_apply` shape.
-3. **Showroom rig** — spawn owned cars frozen at the markers; focus index drives
-   the camera + the stats label. Disambiguate duplicate models with the
-   `instance_id` suffix ("MX-5 #2"), as menus.md rig 1 specifies.
-4. **Stats label** — `Label3D` beside the focused car: name, HP, drivetrain /
-   country / type / power-to-weight (the data the flat card already computes).
-5. **Wire selection** — focusing a car sets the same `_selected_instance_id`
-   `hq.gd` already uses, so the existing rally board + Start path is unchanged.
+1. ~~**HQ 3D shell**~~ **DONE** — `hq.tscn` is a `Node3D`; `hq.gd._build_world()`
+   makes the lit lot (ambient + sun + ground plane), a `DisplayMarker`, and the
+   camera. *(Markers are built in code, not authored; the lineup of N markers is
+   the deferred lineup follow-up.)* Starter grant + Start handoff kept.
+2. ~~**Menu camera**~~ **DONE** — a dedicated `Camera3D` (decided: separate from
+   `CameraManager`, see open questions) tweens its `global_transform` into the 3/4
+   framing over `GameConfig.menu_camera_move_time` (`_ease_camera_to_focus`).
+3. ~~**Showroom rig**~~ **DONE (single focused car)** — `_spawn_focused_car` builds
+   one frozen/silenced `Car` at the marker via `apply_owned`; `_cycle_focus` /
+   `focus_instance` swap it. **Open:** the simultaneous N-car lineup (instance-id
+   suffixes land with it).
+4. ~~**Stats label**~~ **DONE** — billboarded `Label3D` beside the car (name + the
+   drivetrain/country/type/tier/power-to-weight/HP line), mirrored into the overlay.
+5. ~~**Wire selection**~~ **DONE** — the focused car sets `_selected_instance_id`;
+   the existing rally board + Start path is unchanged.
 
-## Open questions (decide while building)
+## Open questions
 
-- **New `MENU` mode in `CameraManager` vs a separate HQ-only cinematic camera?**
-  (Driving modes and menu framing have little in common — leaning separate.)
-- **Tween mechanism** — `Tween` on the camera transform vs a `ChaseCamera`-style
-  per-frame smooth toward the marker. Tween is simpler for discrete focus jumps.
-- **Headless testability** — the flat loop is fully headless-tested; a 3D scene
-  with a camera is harder. What's the minimum assertable contract (e.g. "N frozen
-  car nodes spawned for N owned cars", "focus index clamps", "selecting sets
-  `_selected_instance_id`") so this slice keeps a test like the others?
-- **Boot scene swap** — make the 3D HQ the boot scene, or keep flat HQ as a
-  fallback behind a flag until the 3D one is proven on a phone?
-- **Environment art** — placeholder until the look is designed (menus.md defers
-  HQ art too); only marker positions are config in this slice.
+**Decided during the slice:**
+- **Camera:** a **separate HQ-only `Camera3D`** (not a `CameraManager` `MENU`
+  mode) — driving modes and menu framing share nothing.
+- **Tween mechanism:** a `Tween` on the camera `global_transform` (one ease per
+  focus change), snapping when `menu_camera_move_time <= 0`.
+- **Headless contract:** the slice asserts a focused `Car` prop spawns + is frozen,
+  the camera exists, cycling focus respawns/reselects the model, focus wraps, and
+  the rally board reflects the focused car (`test_menu_flow.gd`). Tween/visual
+  framing is not asserted (no display in headless).
+- **Boot scene:** the 3D HQ **is** the boot scene (replaced the flat `Control`
+  outright); the flat loop logic is preserved inside it as the overlay.
+
+**Still open:**
+- **Simultaneous parked lineup (the main follow-up).** Showing N cars at once needs
+  per-instance **mesh duplication** (the car scene's chassis/cabin/wheel
+  `BoxMesh`/`CylinderMesh` sub-resources are shared across `car.tscn` instances, so
+  `apply_car` sizing one would resize all) **and** a way to keep `Config.data` from
+  being stomped by the last `apply_car`. Plus it wants visual verification, which
+  this headless cloud env can't do — so it's deferred until it can be eyeballed.
+- **Environment art** — placeholder lot/lighting until the look is designed
+  (menus.md defers HQ art too); marker layout becomes config when the lineup lands.
+- **Mobile/gamepad polish** — `menu_select`/`menu_back` are mapped but HQ only uses
+  left/right + Start today; swipe-to-cycle and a Back affordance come with the
+  wider `menu_*` pass in `menus.md`.
 
 ## Relationship to other specs
 
