@@ -6,8 +6,20 @@ const TREE_TEXTURE := preload("res://textures/tree.png")
 const BUSH_TEXTURE := preload("res://textures/bush.webp")
 const BUSH_SEED_OFFSET := 1013
 
+# Headless (test) runs build the world synchronously — see _yield_frame(). Cached
+# so the staged-loading awaits collapse to no-ops and tests see a fully-built
+# world the instant main.tscn is instantiated, exactly as before this overlay.
+var _headless := false
+
 
 func _ready() -> void:
+	_headless = DisplayServer.get_name() == "headless"
+	# Cover the screen before any heavy generation so the player sees staged
+	# progress instead of a frozen frame between Godot's boot bar finishing and
+	# the first playable frame. Freed by _generate_track() once the world is up.
+	var loading := LoadingScreen.new()
+	add_child(loading)
+
 	var cfg: GameConfig = Config.data
 	# Frame cap: a steady ceiling keeps phones cool (avoids thermal throttling).
 	# 0 = uncapped for desktop dev. Physics stays at the project physics tick.
@@ -51,17 +63,31 @@ func _ready() -> void:
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	$Car.apply_car(0)
 
-	_generate_track(cfg)
+	await _generate_track(cfg, loading)
 
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
 	# wheel-force debug overlay; harmless and idle until toggled on.
 	add_child(PerfOverlay.new($Floor as TerrainManager))
 
 
+# Yield a frame so a freshly-set LoadingScreen step actually paints before the
+# next blocking generation call. A no-op under headless, where the await would
+# otherwise spread world generation across frames and break tests that inspect
+# the world right after instantiating main.tscn — there the whole _ready chain
+# runs synchronously within add_child(), as it did before staged loading.
+func _yield_frame() -> void:
+	if not _headless:
+		await get_tree().process_frame
+
+
 # Build the track from the car's spawn pose, bake road heights, and build the
 # (deferred) terrain ring with flattening + colouring already applied — so no
-# chunk is ever rebuilt at startup.
-func _generate_track(cfg: GameConfig) -> void:
+# chunk is ever rebuilt at startup. Each heavy step sets the loading label and
+# yields a frame first (outside headless) so the message paints before the
+# blocking work runs; `loading` is freed once the world is ready.
+func _generate_track(cfg: GameConfig, loading: LoadingScreen) -> void:
+	loading.set_step("Generating track…")
+	await _yield_frame()
 	var xform: Transform3D = $Car.global_transform
 	var start_pos := Vector2(xform.origin.x, xform.origin.z)
 	# A Node3D's forward is -Z; project it onto the XZ plane.
@@ -72,8 +98,13 @@ func _generate_track(cfg: GameConfig) -> void:
 		cfg.track_clearance)
 	var transition_m := cfg.track_transition_cells * TerrainManager.CELL_M
 	$Floor.set_track(result["centerline"], cfg.track_width, transition_m)
+
+	loading.set_step("Building terrain…")
+	await _yield_frame()
 	$Floor.build_initial()
 
+	loading.set_step("Scattering trees…")
+	await _yield_frame()
 	# Scatter billboard trees around each turn, then render them in one MultiMesh.
 	# height_at needs the terrain noise cache, which build_initial() has warmed.
 	# Reject trees on the visible road inflated by tree_road_margin_m — NOT the
@@ -90,6 +121,8 @@ func _generate_track(cfg: GameConfig) -> void:
 		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, true,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
 
+	loading.set_step("Scattering bushes…")
+	await _yield_frame()
 	# Bushes: same scatter + render as trees, but bush.webp, no collision, and an
 	# offset seed so they don't land on the same spots as the trees.
 	var bushes := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
@@ -108,6 +141,9 @@ func _generate_track(cfg: GameConfig) -> void:
 	add_child(_track_progress)
 	_track_progress.setup(result["centerline"], $Car, $Floor as TerrainManager)
 	($HUD as CanvasLayer).track_progress = _track_progress
+
+	# World is ready — drop the loading overlay.
+	loading.finish()
 
 
 # The authored car spawn transform, captured at boot so each car swap spawns in

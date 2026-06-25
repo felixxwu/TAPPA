@@ -64,7 +64,15 @@ Declared in `project.godot` `[autoload]`:
 
 1. `Config` autoload loads `game_config.tres` before any scene runs.
 2. `world.gd._ready()` pushes config values into scene-owned resources
-   (environment fog/color, terrain layers, material colors, post-process res).
+   (environment fog/color, terrain layers, material colors, post-process res),
+   then generates the world. It first puts up a full-screen `LoadingScreen`
+   (`scripts/loading_screen.gd`, created in code) and advances its step label
+   across generation stages (track → terrain → trees → bushes), yielding a
+   frame between each so the message paints before the blocking work. Godot's
+   boot bar only covers engine + `.pck` load; this overlay covers the heavy
+   world-gen that runs afterwards. Under headless the per-step `await`s are
+   no-ops, so generation stays synchronous (tests see a fully-built world right
+   after instantiating `main.tscn`). The overlay is freed once the world is up.
 3. Per-system scripts (`car.gd`, `drivetrain.gd`, `engine.gd`, `chase_camera.gd`,
    `terrain_manager.gd`, `hud.gd`, `engine_audio.gd`) read `Config.data` directly for
    their own tunables.
@@ -77,4 +85,3 @@ Declared in `project.godot` `[autoload]`:
   field and read it. Literals in scenes/scripts are fallback only.
 - **Custom tire physics:** Godot's built-in `VehicleWheel3D` friction is disabled
   (friction slip set to 0); all contact forces come from `drivetrain.gd`.
-- **Not under git** — see CLAUDE.md. Do not run git commands here.
