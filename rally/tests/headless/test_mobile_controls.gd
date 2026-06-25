@@ -3,6 +3,8 @@ extends GutTest
 # throttle / brake) drive the existing input actions. Gated to touch devices
 # via mobile_controls_force.
 
+const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
+
 var _scene: Node3D
 var _controls: CanvasLayer
 
@@ -14,6 +16,9 @@ func before_each() -> void:
 	# actions up front rather than trusting the previous test's cleanup.
 	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate"]:
 		Input.action_release(a)
+	# These tests only exercise the touch overlay, not the track/foliage, so boot
+	# a minimal world (~15s -> <1s per instance), then force the controls on.
+	SceneHelpers.minimal_world()
 	Config.data.mobile_controls_force = true
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
@@ -21,7 +26,10 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	Config.data.mobile_controls_force = false
+	# Config.reset() restores the authored baseline — both mobile_controls_force
+	# AND the minimal track/foliage minimal_world() set — so later files that don't
+	# reset Config still generate the full world they expect.
+	Config.reset()
 	# Clear any actions a test left held so cases don't bleed into each other.
 	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate"]:
 		Input.action_release(a)
