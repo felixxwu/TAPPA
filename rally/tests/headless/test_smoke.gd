@@ -264,6 +264,40 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 		Vector3(1e-3, 1e-3, 1e-3), "bush sunk into ground by the y_offset")
 
 
+func test_sign_field_builds_signs_with_collision_at_road_height() -> void:
+	var floor := _scene.get_node("Floor") as TerrainManager
+	var field := SignField.new()
+	add_child_autofree(field)
+	# A hand-made layout (no full track needed): one of each kind, both sides.
+	var layout := [
+		{"kind": "start", "texture_key": "start", "pos": Vector2(4, 6), "tangent": Vector2(0, 1), "side": 1},
+		{"kind": "sector", "texture_key": "sector_2", "pos": Vector2(12, 8), "tangent": Vector2(1, 0), "side": -1},
+		{"kind": "turn", "texture_key": "arrow_square_left", "pos": Vector2(-5, 9), "tangent": Vector2(0, 1), "side": 1},
+	]
+	field.build(layout, floor, Config.data.sign_render_params())
+	assert_eq(field.sign_count, layout.size(), "one sign built per layout entry")
+	assert_eq(field.get_child_count(), layout.size(), "one node per sign")
+	var sign0 := field.get_child(0) as Node3D
+	# Two splayed panels (count MeshInstance3D children directly — find_children
+	# defaults to owned=true, which excludes programmatically-built nodes).
+	var panels := 0
+	for child in sign0.get_children():
+		if child is MeshInstance3D:
+			panels += 1
+	assert_eq(panels, 2, "each sign has two A-frame panels")
+	# Obstacle collision body (so a hit drains HP like trees do).
+	var body := sign0.get_node_or_null("Collision") as StaticBody3D
+	assert_not_null(body, "each sign has a Collision StaticBody3D")
+	assert_true(body.is_in_group(DamageModel.OBSTACLE_GROUP),
+		"sign body is in the damage OBSTACLE_GROUP")
+	assert_true(body.get_child_count() > 0 and body.get_child(0) is CollisionShape3D,
+		"collision body carries a shape")
+	# The sign sits at the centerline road-surface height for its position.
+	var p: Vector2 = layout[0]["pos"]
+	assert_almost_eq(sign0.position.y, floor.height_at(p.x, p.y), 1e-3,
+		"sign sits on the road surface height")
+
+
 func test_main_scene_generates_a_track() -> void:
 	await get_tree().physics_frame  # let world._ready() generate + apply + build
 	var floor_node = _scene.get_node("Floor")

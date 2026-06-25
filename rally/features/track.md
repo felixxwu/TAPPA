@@ -59,7 +59,10 @@ to world XZ (`x → world x`, `y → world z`).
   search restarts with a perturbed seed up to `MAX_RESTARTS`, then returns its
   best partial track (never hangs). `generate(start_pos, start_heading, seed,
   turn_count, width, clearance=0)` returns `{ centerline: Curve2D, cells: Dictionary,
-  pieces: Array, complete: bool }`.
+  pieces: Array, complete: bool }`. Each piece dict records `corner`, `flip`,
+  `straight`, `cells`, and its `entry_pos` / `entry_heading` (the pose at the
+  start of its connecting straight — used by roadside-sign placement, see
+  [signs.md](signs.md)).
 - **Clearance:** the overlap test rasterizes the collision footprint at
   `width + 2*clearance`, not the visible `width`. So `track_clearance` (m) forces
   non-adjacent sections to keep that much extra gap — stopping the track from

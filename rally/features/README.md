@@ -38,6 +38,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
+| [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder, obstacle collision) |
 | [camera.md](camera.md) | Chase camera follow behavior |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout and mode buttons |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding (vertical slice; full diegetic UI deferred) |
@@ -59,6 +60,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |
 | Track generation | `scripts/track_generator.gd` |
 | Trees & bushes | `scripts/tree_scatter.gd`, `scripts/billboard_field.gd`, `shaders/billboard.gdshader` |
+| Roadside signs | `scripts/sign_layout.gd` (`SignLayout` planner), `scripts/sign_field.gd` (`SignField` builder) |
 | Camera | `scripts/chase_camera.gd` |
 | HUD | `scripts/hud.gd` |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |

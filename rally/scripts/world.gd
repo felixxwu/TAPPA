@@ -146,6 +146,17 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m, -cfg.bush_sink_m)
 
+	if loading != null:
+		loading.set_step("Placing signs…")
+	await _yield_frame()
+	# Roadside signs: sector boards, turn arrows, and start/finish gates along the
+	# stage (todo/roadside-signs.md). Few per stage, so individual nodes (not a
+	# MultiMesh); their collision bodies are obstacles, so clipping one costs HP.
+	var sign_layout := SignLayout.plan(result["centerline"], result["pieces"], cfg.sign_params())
+	var sign_field := SignField.new()
+	add_child(sign_field)
+	sign_field.build(sign_layout, $Floor as TerrainManager, cfg.sign_render_params())
+
 	# Retain the centerline in a TrackProgress manager: tracks how far the car has
 	# driven and snaps it back onto the road if it strays too far (the Curve2D is
 	# otherwise discarded after set_track). Reuse the node across regenerations

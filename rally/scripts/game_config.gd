@@ -342,6 +342,30 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 5.0) var bush_sink_m := 0.5
 
 
+@export_group("Roadside Signs")
+# A-frame (wet-floor) roadside signs along the stage: sector boards, turn arrows,
+# and start/finish banners (todo/roadside-signs.md). Few per stage (tens), so they
+# are individual nodes, not a MultiMesh. Authored face textures go in sign_textures;
+# until they exist, a per-kind colour fallback keeps the geometry testable.
+## Number of equal arc-length sectors the stage is split into. Signs mark
+## entering sectors 2..N (sector 1 is the start gate).
+@export_range(1, 12) var sign_sector_count := 4
+## One A-frame panel's width (x) by height (y), in metres — thin near-square boards.
+@export var sign_panel_size_m := Vector2(1.2, 1.2)
+## Panel thickness, in metres.
+@export_range(0.005, 0.5) var sign_thickness_m := 0.05
+## Half-angle, in degrees, each panel tilts from vertical to form the A-frame splay.
+@export_range(0.0, 60.0) var sign_splay_deg := 20.0
+## How far inside the visible road edge the sign base sits, in metres — keeps the
+## footprint on the flat road surface rather than the sloped verge.
+@export_range(0.0, 3.0) var sign_edge_inset_m := 0.3
+## Collision/footprint depth along the road, in metres.
+@export_range(0.1, 3.0) var sign_base_depth_m := 0.8
+## Map of texture_key (e.g. "sector_2", "arrow_square_left") → res://textures/signs/*.png.
+## Empty leaves every sign on its per-kind colour fallback.
+@export var sign_textures: Dictionary = {}
+
+
 @export_group("Performance")
 ## Render frame cap (FPS). The game is inherently low-end and ships one lean
 ## value; a steady cap avoids thermal throttling on phones. 0 = uncapped (desktop
@@ -417,4 +441,25 @@ func tree_params() -> Dictionary:
 		"spawn_radius_m": tree_spawn_radius_m,
 		"min_tree_dist_m": tree_min_tree_dist_m,
 		"max_retries": tree_max_retries,
+	}
+
+
+# Layout inputs for SignLayout.plan (todo/roadside-signs.md §2): what to place.
+func sign_params() -> Dictionary:
+	return {
+		"sector_count": sign_sector_count,
+	}
+
+
+# Render/build inputs for SignField.build (§3): how each placed sign looks and
+# where it sits relative to the road edge.
+func sign_render_params() -> Dictionary:
+	return {
+		"panel_size_m": sign_panel_size_m,
+		"thickness_m": sign_thickness_m,
+		"splay_deg": sign_splay_deg,
+		"edge_inset_m": sign_edge_inset_m,
+		"base_depth_m": sign_base_depth_m,
+		"textures": sign_textures,
+		"track_width": track_width,
 	}

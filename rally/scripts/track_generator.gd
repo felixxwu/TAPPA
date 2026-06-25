@@ -228,6 +228,12 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 				"flip": cand["flip"],
 				"straight": cand["straight"],
 				"cells": added_cells,
+				# Entry pose of this piece (the connecting straight's start). The
+				# corner itself begins after `straight` metres along `entry_heading`.
+				# Additive — used by SignLayout (todo/roadside-signs.md §1); existing
+				# consumers ignore it.
+				"entry_pos": frame_pos,
+				"entry_heading": frame_heading,
 			})
 			frame_pos = built["exit_pos"]
 			frame_heading = built["exit_heading"]
