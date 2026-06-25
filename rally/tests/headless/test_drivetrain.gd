@@ -7,9 +7,10 @@ var _car: VehicleBody3D
 func before_each() -> void:
 	# Flat-ground fixture (same as test_car.gd): drivetrain behavior must not
 	# depend on terrain generation settings.
-	# Restore the authored baseline tuning: another scene's car selection mutates
-	# the shared Config singleton, and these assertions are tuned to the baseline.
-	Config.reset()
+	# Pin the frozen test car: another scene's car selection mutates the shared
+	# Config singleton, and these assertions are calibrated to the stable test
+	# baseline (fixtures/test_config.tres), not the shipped gameplay tuning.
+	SceneTestHelpers.use_test_config()
 	_scene = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(_scene)
 	_car = _scene.get_node("Car")

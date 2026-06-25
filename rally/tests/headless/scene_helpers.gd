@@ -15,6 +15,29 @@ extends RefCounted
 # fully wired world: car, HUD, cameras and a (short) TrackProgress are all built
 # exactly as in the full game. Call it INSTEAD of Config.reset() right before
 # instantiating main.tscn.
+#
+# use_test_config() loads the frozen physics baseline (fixtures/test_config.tres)
+# — see that file's role below.
+
+
+# Frozen physics/handling baseline the model tests calibrate against, kept
+# separate from the shipped config/game_config.tres so gameplay balance changes
+# (grip, steer assist, traction ellipse, easier rivals, …) never break the
+# drivetrain/physics assertions. Only update it when the physics MODEL changes.
+const TEST_CONFIG_PATH := "res://tests/fixtures/test_config.tres"
+
+
+# Point the live Config singleton at the frozen test baseline (a private
+# duplicate, like Config.reset()). Physics/behaviour tests call this INSTEAD of
+# Config.reset() so their tuned thresholds depend on the stable test car, not on
+# whatever the shipped config currently is.
+static func use_test_config() -> void:
+	var base := load(TEST_CONFIG_PATH) as GameConfig
+	if base == null:
+		push_error("Failed to load %s — falling back to Config.reset()" % TEST_CONFIG_PATH)
+		Config.reset()
+		return
+	Config.data = base.duplicate(true)
 
 
 # Reset Config to the authored baseline, then strip world generation down to the

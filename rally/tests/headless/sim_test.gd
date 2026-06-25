@@ -45,7 +45,7 @@ func _make_scene() -> void:
 # and caches the resting transform; every later call restores that pose and
 # stabilises in RESTORE_FRAMES instead of SETTLE_FRAMES.
 func setup_settled_car() -> void:
-	Config.reset()
+	SceneTestHelpers.use_test_config()
 	_make_scene()
 	if _has_settled:
 		_car.global_transform = _settled_xform
