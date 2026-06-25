@@ -103,7 +103,9 @@ func test_opponent_field_shape_and_bounds() -> void:
 			var sum := 0
 			for i in targets.size():
 				var t: int = opp["event_times_ms"][i]
-				assert_between(t, targets[i], targets[i] * 2, "event time in [target, 2x target]")
+				var lo := int(floor(targets[i] * RallyLibrary.RIVAL_PACE_MIN))
+				var hi := int(ceil(targets[i] * (RallyLibrary.RIVAL_PACE_MIN + RallyLibrary.RIVAL_PACE_SPREAD)))
+				assert_between(t, lo, hi, "event time within the rival pace band (slower than target)")
 				sum += t
 			assert_eq(int(opp["combined_ms"]), sum, "combined time is the sum of event times")
 

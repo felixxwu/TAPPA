@@ -28,11 +28,19 @@ const DEFAULT_WIDTH := 6.0
 const REF_SPEED_MPS := 28.0      # ~100 km/h reference pace over the centerline
 const CORNER_PENALTY_S := 1.1    # seconds added per non-straight piece
 
-# Opponent-field shape (gameplay.md): 10–15 rivals, each event time in
-# [target, 2×target], some DNF (a DNF in any event disqualifies the rally).
+# Opponent-field shape (gameplay.md): 10–15 rivals, some DNF (a DNF in any event
+# disqualifies the rally).
 const FIELD_MIN := 10
 const FIELD_MAX := 15
-const DNF_CHANCE := 0.12         # per-opponent, per-event
+const DNF_CHANCE := 0.18         # per-opponent, per-event
+
+# Rival pace band, as multiples of the event target time: each clean rival's
+# event time is uniform in [target × RIVAL_PACE_MIN, target × (RIVAL_PACE_MIN +
+# RIVAL_PACE_SPREAD)]. The floor sits above the target so even the quickest
+# rival runs slower than the target pace, keeping the field beatable; raise the
+# floor to make rivals easier, lower it to make them tougher.
+const RIVAL_PACE_MIN := 1.35
+const RIVAL_PACE_SPREAD := 1.0
 
 
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
@@ -181,8 +189,8 @@ static func generate_opponent_field(rally: Dictionary, event_target_ms: Array) -
 				dnf = true
 				times.append(-1)
 			else:
-				# Time somewhere in [target, 2 x target].
-				times.append(int(round(target * (1.0 + rng.randf()))))
+				# Slower than target pace by a random margin within the band.
+				times.append(int(round(target * (RIVAL_PACE_MIN + rng.randf() * RIVAL_PACE_SPREAD))))
 		var combined := -1
 		if not dnf:
 			combined = 0

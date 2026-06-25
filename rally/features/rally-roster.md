@@ -44,8 +44,10 @@ recomputed.
   pass; `REF_SPEED_MPS` / `CORNER_PENALTY_S` move to `GameConfig` then). An
   `event.target_ms_override` wins when present.
 - `generate_opponent_field(rally, event_target_ms)` — the fixed field:
-  10–15 rivals, each event time in `[target, 2×target]`, some **DNF**; a DNF in
-  any event disqualifies the opponent (`combined_ms = -1`, doesn't rank).
+  10–15 rivals, each clean event time in `[target × RIVAL_PACE_MIN, target ×
+  (RIVAL_PACE_MIN + RIVAL_PACE_SPREAD)]` (the band sits above the target, so
+  rivals always run slower than target pace — beatable by design), some **DNF**;
+  a DNF in any event disqualifies the opponent (`combined_ms = -1`, doesn't rank).
 - `placement(field, player_combined_ms)` / `is_top3(...)` — the player's 1-based
   placement among the non-DNF field on combined time.
 - `completed_count(profile)` — the single progression metric (caps reward tier +
