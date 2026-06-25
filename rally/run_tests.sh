@@ -59,7 +59,13 @@ run_pass() {
 echo "=== warmup: rebuild class cache (--import) ==="
 "$GODOT" --headless --import >/dev/null 2>&1 || true
 
-GUT_ARGS=(--headless -d -s addons/gut/gut_cmdln.gd -gdir=res://tests/headless -ginclude_subdirs -gexit)
+# --fixed-fps 60 decouples the main loop from wall-clock: each iteration advances
+# by a fixed 1/60 s delta (matching the default physics_ticks_per_second) and the
+# loop runs at CPU speed instead of being paced to real time. The per-step physics
+# delta is unchanged, so the sim is bit-for-bit identical to a real-time run — it
+# just stops costing ~1/60 s of wall-clock per awaited frame. Must equal the
+# physics tick rate so exactly one physics tick fires per frame.
+GUT_ARGS=(--headless --fixed-fps 60 -d -s addons/gut/gut_cmdln.gd -gdir=res://tests/headless -ginclude_subdirs -gexit)
 if [[ -n "$SELECT" ]]; then
   echo "=== headless (--fast: matching '$SELECT') ==="
   GUT_ARGS+=(-gselect="$SELECT")

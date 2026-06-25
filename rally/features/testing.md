@@ -44,14 +44,26 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 
 ### Keeping the suite fast
 
-Physics-test cost is **wall-clock, not CPU**: Godot's headless physics loop is
-paced to real time at the tick rate, so each `await get_tree().physics_frame`
-costs ~1/60 s regardless of how trivial the scene is. There is **no engine
-setting that runs the same fixed-delta sim faster** — `Engine.time_scale` and a
-higher `physics_ticks_per_second` both change the per-step delta (verified:
-`time_scale = 8` makes the physics delta 8× bigger), which would alter the
-physics the tuned assertions depend on. `Engine.max_fps` has no effect headless.
-So the only lever is **awaiting fewer frames**:
+By default Godot's headless main loop is **paced to real time** at the tick
+rate, so each `await get_tree().physics_frame` costs ~1/60 s of wall-clock
+regardless of how trivial the scene is.
+
+The runner removes that pacing with the **`--fixed-fps 60`** CLI flag (in
+`run_tests.sh`'s `GUT_ARGS`). It advances the loop by a fixed 1/60 s delta each
+iteration and runs at CPU speed instead of synchronising to real time — the
+per-step physics delta is **unchanged**, so the sim is bit-for-bit identical to
+a real-time run (verified: a 600-frame probe dropped from ~10 s to ~0.04 s wall
+with the same 1/60 delta; `test_car.gd` went 28 s → 1.5 s, all assertions still
+green). The flag value must equal `physics_ticks_per_second` (the default 60) so
+exactly one physics tick fires per frame. This is unlike `Engine.time_scale` /
+raising `physics_ticks_per_second`, which both change the per-step delta
+(verified: `time_scale = 8` makes the delta 8× bigger) and so would alter the
+physics the tuned assertions depend on; `Engine.max_fps` has no effect headless.
+
+`--fixed-fps` only collapses time spent **awaiting frames** — genuine CPU work
+(scene instantiation, terrain/track generation, script compile in
+`before_all`/`before_each`) is the remaining floor. So the second lever, still
+worth applying, is **awaiting fewer frames** and sharing scene setup:
 
 - **`tests/headless/sim_test.gd`** is the base for physics-scene tests. It
   settles the baseline car **once**, caches the resting `Transform3D`, and on
