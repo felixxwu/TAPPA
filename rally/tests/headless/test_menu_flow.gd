@@ -43,24 +43,55 @@ func _label_texts(root: Node) -> String:
 	return "\n".join(parts)
 
 
-func test_hq_grants_starter_and_parks_the_focused_car_and_rallies() -> void:
+func _map_pins(hq: Node3D) -> Array:
+	return hq._map_area.find_children("*", "Button", true, false)
+
+
+func test_hq_boots_to_the_world_map() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 1, "the immortal starter is granted on the first HQ visit")
 	assert_true(_save.profile["cars"][0]["immortal"], "the starter is immortal")
-	assert_true(_save.profile["starter_picked"], "starter_picked recorded")
-	# The car park spawns one parked 3D prop per owned car (here just the starter).
-	assert_eq(hq._cars.size(), 1, "one parked car per owned instance")
-	assert_eq(hq._cars[0].current_car_name(), "Mazda MX-5", "the starter is parked + focused")
-	assert_true(hq._cars[0].freeze, "parked cars are physics-frozen props")
-	assert_eq(hq._selected_instance_id, int(_save.profile["cars"][0]["instance_id"]),
-		"the focused car is the selected car")
-	assert_not_null(hq._camera, "a menu camera frames the lot")
-	assert_gt(hq._rallies_box.get_child_count(), 0, "rallies the focused car can enter are listed")
+	# The first screen is the world map: pins are shown, the car screen is hidden,
+	# and no cars are parked until a rally is chosen.
+	assert_eq(hq._screen, hq.Screen.MAP, "HQ boots to the world-map screen")
+	assert_true(hq._map_layer.visible, "the map overlay is shown")
+	assert_false(hq._car_layer.visible, "the car-select overlay is hidden on the map")
+	assert_eq(_map_pins(hq).size(), RallyLibrary.RALLIES.size(), "one pin per rally")
+	assert_eq(hq._cars.size(), 0, "no cars are parked until a rally is chosen")
 
 
-func test_hq_parks_the_whole_lineup_with_per_car_meshes() -> void:
+func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var showdown_locked := false
+	for pin in _map_pins(hq):
+		if (pin as Button).text.contains("Showdown"):
+			showdown_locked = (pin as Button).disabled
+	assert_true(showdown_locked, "the showdown pin is locked until every other rally is completed")
+	assert_string_contains(hq._map_meter.text, "Progress to the Showdown", "the progress meter is shown")
+
+
+func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Own an AWD RS3 alongside the RWD starter, then pick the RWD-only rally: only the
+	# eligible (RWD) car is parked on the car screen, and the AWD car is filtered out.
+	_save.grant_car("rs3", false)
+	hq._on_rally_pin("rwd_masters")
+	await get_tree().process_frame
+	assert_eq(hq._screen, hq.Screen.CARS, "picking a rally moves to the car-select screen")
+	assert_false(hq._map_layer.visible, "the map overlay is hidden on the car screen")
+	assert_true(hq._car_layer.visible, "the car-select overlay is shown")
+	assert_eq(hq._cars.size(), 1, "only the eligible (RWD) car is parked")
+	assert_eq(hq._cars[0].current_car_name(), "Mazda MX-5", "the AWD RS3 is filtered out of an RWD-only rally")
+	assert_string_contains(hq._rally_banner.text, "RWD cars", "the banner spells out the rally restriction")
+
+
+func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	# Two box-bodied cars of different sizes must keep their OWN body meshes — the
 	# car scene shares mesh sub-resources across instances, so without per-instance
 	# duplication both would render at whichever was applied last.
@@ -69,7 +100,9 @@ func test_hq_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_eq(hq._cars.size(), 3, "starter + the two granted cars are all parked")
+	hq._on_rally_pin("shakedown")  # open-class: all three are eligible
+	await get_tree().process_frame
+	assert_eq(hq._cars.size(), 3, "starter + the two granted cars are all eligible + parked")
 	var size_by_name := {}
 	for car in hq._cars:
 		var chassis := car.get_node("Chassis") as MeshInstance3D
@@ -81,31 +114,44 @@ func test_hq_parks_the_whole_lineup_with_per_car_meshes() -> void:
 
 
 func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
+	_save.grant_car("rs3", false)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Own a second car, then focus it: the lot rebuilds and selection follows.
-	var rs3: Dictionary = _save.grant_car("rs3", false)
-	hq.focus_instance(int(rs3["instance_id"]))
+	hq._on_rally_pin("shakedown")  # open-class: both cars eligible
 	await get_tree().process_frame
-	assert_eq(hq._cars.size(), 2, "the newly granted car is parked when focused")
-	assert_eq(hq._cars[hq._focus].current_car_name(), "Audi RS3", "the focused slot is the RS3")
-	assert_eq(hq._selected_instance_id, int(rs3["instance_id"]), "focusing a car selects it")
-	# Wrap left from the first car returns to the last in the 2-car lot.
+	assert_eq(hq._cars.size(), 2, "both eligible cars are parked")
+	assert_eq(hq._selected_instance_id, int(hq._eligible[0]["instance_id"]), "the first car is selected on entry")
+	hq._cycle_focus(1)
+	assert_eq(hq._focus, 1, "cycling right advances the focus")
+	assert_eq(hq._selected_instance_id, int(hq._eligible[1]["instance_id"]), "the newly focused car is selected")
 	hq._focus = 0
 	hq._cycle_focus(-1)
-	await get_tree().process_frame
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
-func test_hq_start_button_launches_a_session() -> void:
+func test_hq_back_returns_to_the_map() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Select the starter + the shakedown, then press Start (auto_load_scenes is off,
-	# so no scene change; start_rally derives targets from the seeded tracks).
-	hq._selected_instance_id = int(_save.profile["cars"][0]["instance_id"])
-	hq._selected_rally_id = "shakedown"
+	hq._on_rally_pin("shakedown")
+	await get_tree().process_frame
+	assert_eq(hq._screen, hq.Screen.CARS, "on the car screen after picking a rally")
+	hq._show_map()
+	assert_eq(hq._screen, hq.Screen.MAP, "Back returns to the world map")
+	assert_true(hq._map_layer.visible, "the map is shown again")
+	assert_eq(hq._cars.size(), 0, "the parked lineup is cleared when returning to the map")
+
+
+func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Pick a rally on the map, then Start with the focused (auto-selected) car.
+	# auto_load_scenes is off, so no scene change; start_rally derives targets.
+	hq._on_rally_pin("shakedown")
+	await get_tree().process_frame
+	assert_false(hq._start_button.disabled, "Start is enabled once a rally + eligible car are chosen")
 	hq._on_start_pressed()
 	assert_true(RallySession.is_active(), "Start hands off to an active RallySession")
 	assert_eq(RallySession.rally_id(), "shakedown", "the chosen rally is running")
@@ -144,28 +190,6 @@ func test_podium_reveals_reward_and_standings() -> void:
 	assert_string_contains(text, "Aero Kit", "the singular upgrade is listed too")
 	assert_string_contains(text, "Rival 1", "the standings list the opponent field")
 	assert_string_contains(text, "WRECKED", "a DNF opponent reads as WRECKED in the standings")
-
-
-func test_hq_shows_locked_rallies_with_their_restriction() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	# Field the AWD RS3 (German hatch): RWD Masters + the JP-only Rising Sun should
-	# both show as locked with a reason, so the unlock path is visible.
-	var rs3: Dictionary = _save.grant_car("rs3", false)
-	hq.focus_instance(int(rs3["instance_id"]))
-	await get_tree().process_frame
-	var locked: Array[String] = []
-	for btn in hq._rallies_box.find_children("*", "Button", true, false):
-		if (btn as Button).disabled:
-			locked.append((btn as Button).text)
-	var blob := "\n".join(locked)
-	assert_string_contains(blob, "RWD Masters", "the RWD-only rally is shown locked, not hidden")
-	assert_string_contains(blob, "RWD cars", "the lock spells out the drivetrain restriction")
-	assert_string_contains(blob, "Showdown", "the showdown is shown locked until all rallies are done")
-	# And the progress meter is present.
-	assert_string_contains(_label_texts(hq._rallies_box), "Progress to the Showdown",
-		"the showdown progress meter is shown")
 
 
 func test_run_scene_fields_the_bound_session_car() -> void:

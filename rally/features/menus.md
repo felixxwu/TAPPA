@@ -18,50 +18,44 @@ The flat UI here proves the loop end-to-end and wires
 ## The loop
 
 ```
-HQ (boot scene) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0)
+HQ map (pick rally) ─▶ HQ car select (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0)
    main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ next event (reload)
                                           └─ car.wrecked ─▶ report_wreck (DNF)
-   final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
+   final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ map
 ```
 
 ## HQ (`hq.gd`)
 
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no
 track generation). On first visit it grants the **immortal starter** (`mx5`) — the
-anti-soft-lock floor.
+anti-soft-lock floor. HQ is **two separate screens**, shown one at a time, in the
+order **pick rally → pick eligible car → Start** (`enum Screen { MAP, CARS }`).
 
-**Diegetic 3D car park (`todo/diegetic-hq.md`).** The car-park surface is a real 3D
-scene: a lit lot with **every owned car parked in a centred row** as a
-physics-frozen, silenced `Car` prop (reusing `Car.apply_owned`), spaced by
-`GameConfig.menu_car_spacing`. A **menu camera** pans between them — `◄ ►` (or the
-`menu_left`/`menu_right` inputs) move the focus and the camera eases to a 3/4 hero
-shot of the focused car (`GameConfig.menu_camera_offset` / `menu_camera_move_time`).
-The focused car **is** the selected car. A billboarded `Label3D` shows its name +
-stats beside it (mirrored into the overlay for legibility + headless tests). Each
-parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed lineup
-renders each at its true size despite `car.tscn`'s shared mesh sub-resources;
-`_ensure_showroom_current` rebuilds the lot when the owned set changes (reward /
-wreck). The shared-`Config.data` write from `apply_owned` is harmless here — the
-props don't simulate and `world.gd` re-applies the fielded car's config per run.
+**Screen 1 — World map (flat overlay).** A basic map: every rally is a **pin**
+placed at its authored `map_pos` (a normalised point, positioned by fractional
+anchors so it lands correctly at any size). Each pin shows the rally name, its
+difficulty + restriction (`any car` / `RWD cars` / …), and a ✓ when completed. The
+**showdown** pin is locked (disabled) until every other rally is completed; a
+**progress meter** (`completed / total`) sits up top. Picking a pin sets the chosen
+rally and flies to screen 2. *(Basic flat map; the stylised 3D map plane of
+`menus.md` rig 3 is a later slice.)*
 
-The car stat line (shared by the `Label3D` and the overlay) shows the data the
-player weighs risk on: drivetrain / country / type / reward tier / power-to-weight
-(`CarLibrary.power_to_weight`) and HP (∞ for the immortal starter).
+**Screen 2 — Car select (3D car park).** Only the owned cars **eligible for the
+chosen rally** (`RallyLibrary.is_eligible`) are parked in a lit lot, in a centred
+row spaced by `GameConfig.menu_car_spacing`, each a physics-frozen, silenced `Car`
+prop (reusing `Car.apply_owned`). A **menu camera** pans between them — `◄ ►` (or
+`menu_left`/`menu_right`) move the focus and the camera eases to a 3/4 hero shot
+(`GameConfig.menu_camera_offset` / `menu_camera_move_time`); the focused car **is**
+the selected car. A billboarded `Label3D` shows its name + stats beside it (drive /
+country / type / tier / power-to-weight / HP), mirrored into the overlay. A
+**banner** names the rally + its restriction; **Start** calls
+`RallySession.start_rally(rally, owned)`; **◄ Map** (or `menu_back`) returns to the
+map. If no owned car qualifies, a hint shows and Start is disabled.
 
-**Rally board (unlock state).** A flat overlay (`CanvasLayer`) above the 3D lot.
-Unlike a filtered list, **every** rally is shown
-so the unlock path is legible. For the selected car a rally is either
-*enterable* (eligible, selectable, ✓ if already completed — still enterable to
-farm rewards) or *locked* and disabled with the reason spelled out: the
-restriction it fails (`needs RWD cars`, `needs JP cars`, …) or, for the showdown,
-`complete all rallies first (X/Y)`. A **showdown progress meter**
-(`completed / total`) sits above the board. **Start** calls
-`RallySession.start_rally(rally, owned)`.
-
-Layout: the title is fixed at the top and the **Start** button is pinned at the
-bottom, with the car/rally lists in a `ScrollContainer` that fills the space
-between them — so on short/phone screens the lists scroll and the primary action
-is never clipped off the bottom edge.
+Each parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed
+lineup renders each at its true size despite `car.tscn`'s shared mesh
+sub-resources. The shared-`Config.data` write from `apply_owned` is harmless here —
+the props don't simulate and `world.gd` re-applies the fielded car's config per run.
 
 ## Run-scene fielding (`world.gd`)
 
@@ -103,11 +97,13 @@ gestures, and camera fly-through transitions *between* locations. The between-ev
 
 ## Tests
 
-`tests/headless/test_menu_flow.gd` — HQ grants the starter and parks it (frozen
-prop) framed by the menu camera; the whole owned lineup parks with **per-car
-meshes** (a mixed lineup keeps each body at its true size); cycling focus
-re-selects the car and wraps; the rally board shows locked rallies with their
-restriction + the showdown meter; Start launches a session; the podium renders the
-finish summary **and the reward reveal + standings**; and the run scene fields the
-bound session car. The pure `RallyLibrary.build_standings` ranking and the enriched
-`RallySession` result are covered in `test_rally_library.gd` / `test_rally_session.gd`.
+`tests/headless/test_menu_flow.gd` — HQ boots to the world map (one pin per rally,
+showdown pin locked); choosing a rally moves to the car screen and **filters to the
+eligible cars** (an AWD car is excluded from an RWD-only rally); an open rally parks
+the whole lineup with **per-car meshes** (a mixed lineup keeps each body at its true
+size); cycling focus re-selects the car and wraps; **◄ Map** returns to the map and
+clears the lineup; choosing rally → car → Start launches a session; the podium
+renders the finish summary **and the reward reveal + standings**; and the run scene
+fields the bound session car. The pure `RallyLibrary.build_standings` ranking and
+the enriched `RallySession` result are covered in `test_rally_library.gd` /
+`test_rally_session.gd`.
