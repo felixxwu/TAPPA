@@ -3,6 +3,13 @@ extends GutTest
 # tree/bush scatter). The staged-loading awaits are no-ops under headless, so
 # generation must still complete synchronously when main.tscn is instantiated.
 
+# Preloaded (not load()ed) so the scene's script dependencies — world.gd and the
+# generators it pulls in — compile when THIS test script is collected, not inside
+# a test body. Otherwise their reload-time warnings (e.g. the codebase's
+# `const CornerLibrary = preload(...)` shadowing pattern) get attributed to the
+# running test as "unexpected errors" in an isolated --fast run.
+const MAIN_SCENE := preload("res://main.tscn")
+
 
 func test_set_step_updates_label() -> void:
 	var screen := LoadingScreen.new()
@@ -23,15 +30,15 @@ func test_world_generation_completes_synchronously_when_headless() -> void:
 	# staged generation chain runs within instantiate()+add_child. HUD.track_progress
 	# is wired at the very end of that chain, so its presence proves the whole
 	# chain ran — i.e. staging didn't accidentally defer world-gen across frames.
-	var scene := load("res://main.tscn").instantiate()
+	var scene: Node3D = MAIN_SCENE.instantiate()
 	add_child_autofree(scene)
-	var hud := scene.get_node("HUD")
+	var hud = scene.get_node("HUD")
 	assert_not_null(hud.track_progress,
 		"world finished generating synchronously (HUD.track_progress is set)")
 
 
 func test_loading_overlay_removed_after_generation() -> void:
-	var scene := load("res://main.tscn").instantiate()
+	var scene: Node3D = MAIN_SCENE.instantiate()
 	add_child_autofree(scene)
 	# finish() queue_frees the overlay during _ready; one frame later it's gone.
 	await get_tree().process_frame

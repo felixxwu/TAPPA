@@ -85,8 +85,9 @@ func _yield_frame() -> void:
 # chunk is ever rebuilt at startup. Each heavy step sets the loading label and
 # yields a frame first (outside headless) so the message paints before the
 # blocking work runs; `loading` is freed once the world is ready.
-func _generate_track(cfg: GameConfig, loading: LoadingScreen) -> void:
-	loading.set_step("Generating track…")
+func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
+	if loading != null:
+		loading.set_step("Generating track…")
 	await _yield_frame()
 	var xform: Transform3D = $Car.global_transform
 	var start_pos := Vector2(xform.origin.x, xform.origin.z)
@@ -99,11 +100,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen) -> void:
 	var transition_m := cfg.track_transition_cells * TerrainManager.CELL_M
 	$Floor.set_track(result["centerline"], cfg.track_width, transition_m)
 
-	loading.set_step("Building terrain…")
+	if loading != null:
+		loading.set_step("Building terrain…")
 	await _yield_frame()
 	$Floor.build_initial()
 
-	loading.set_step("Scattering trees…")
+	if loading != null:
+		loading.set_step("Scattering trees…")
 	await _yield_frame()
 	# Scatter billboard trees around each turn, then render them in one MultiMesh.
 	# height_at needs the terrain noise cache, which build_initial() has warmed.
@@ -121,7 +124,8 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen) -> void:
 		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, true,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
 
-	loading.set_step("Scattering bushes…")
+	if loading != null:
+		loading.set_step("Scattering bushes…")
 	await _yield_frame()
 	# Bushes: same scatter + render as trees, but bush.webp, no collision, and an
 	# offset seed so they don't land on the same spots as the trees.
@@ -142,8 +146,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen) -> void:
 	_track_progress.setup(result["centerline"], $Car, $Floor as TerrainManager)
 	($HUD as CanvasLayer).track_progress = _track_progress
 
-	# World is ready — drop the loading overlay.
-	loading.finish()
+	# World is ready — drop the loading overlay (absent for direct/programmatic
+	# regeneration, e.g. entering a rally event).
+	if loading != null:
+		loading.finish()
 
 
 # The authored car spawn transform, captured at boot so each car swap spawns in

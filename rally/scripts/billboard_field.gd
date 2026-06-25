@@ -22,7 +22,7 @@ var _collision_shape: BoxShape3D
 var instance_positions: PackedVector3Array
 
 
-func build(positions: PackedVector2Array, floor: TerrainManager, size: Vector2,
+func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2,
 		texture: Texture2D, collision_radius: float, collision_height: float,
 		with_collision: bool, render_distance: float, render_fade: float,
 		y_offset: float = 0.0) -> void:
@@ -62,7 +62,7 @@ func build(positions: PackedVector2Array, floor: TerrainManager, size: Vector2,
 		var p := positions[i]
 		# y_offset sinks the sprite into the ground (negative) to hide a gap at
 		# the bottom of its texture, or lifts it (positive).
-		var y := floor.height_at(p.x, p.y) + y_offset
+		var y := terrain.height_at(p.x, p.y) + y_offset
 		var pos := Vector3(p.x, y, p.y)
 		instance_positions[i] = pos
 		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos))
