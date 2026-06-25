@@ -1,14 +1,13 @@
 extends GutTest
 # Shared base for physics-scene tests on the flat test-track fixture.
 #
-# WHY THIS EXISTS — the cost of physics tests is wall-clock, not CPU. Godot's
-# headless physics loop is paced to real time at the tick rate: every awaited
-# physics frame costs ~1/60 s of wall-clock regardless of how trivial the scene
-# is. There is NO engine setting that runs the same fixed-delta sim faster —
-# Engine.time_scale and a higher physics_ticks_per_second both change the
-# per-step delta (verified: time_scale=8 makes delta 8x bigger), which would
-# alter the physics the tuned assertions depend on. The only safe lever is to
-# await FEWER frames.
+# WHY THIS EXISTS — the runner's --fixed-fps 60 already decouples the loop from
+# wall-clock (frames run at CPU speed, same 1/60 delta), so the remaining cost is
+# the CPU per physics step. Awaiting FEWER frames is still the lever: settling a
+# car from the spawn clearance takes ~150 frames of solver work, and paying that
+# in every before_each adds up. (time_scale / a higher physics_ticks_per_second
+# are NOT alternatives — both change the per-step delta, altering the physics the
+# tuned assertions depend on.)
 #
 # So instead of dropping the car from its 2.5 m spawn clearance and waiting
 # ~150 frames to settle in every before_each, we settle ONCE, cache the resting

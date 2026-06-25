@@ -2,12 +2,24 @@ extends GutTest
 # HUD speed readout: shows the car's airspeed (chassis velocity magnitude)
 # in km/h, gated by the hud_enabled config flag.
 
+const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
+
 var _scene: Node3D
 
 
 func before_each() -> void:
+	# The HUD tests don't care about the track or its foliage — minimal_world()
+	# boots main.tscn with a 1-turn track and no trees, ~15s -> <1s per instance.
+	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
+
+
+func after_each() -> void:
+	# minimal_world() left Config on a 1-turn / no-foliage track; restore the
+	# authored baseline so later files that don't reset Config (e.g.
+	# test_loading_screen) still generate the full world they expect.
+	Config.reset()
 
 
 func test_hud_visible_when_enabled() -> void:

@@ -61,16 +61,28 @@ raising `physics_ticks_per_second`, which both change the per-step delta
 physics the tuned assertions depend on; `Engine.max_fps` has no effect headless.
 
 `--fixed-fps` only collapses time spent **awaiting frames** — genuine CPU work
-(scene instantiation, terrain/track generation, script compile in
-`before_all`/`before_each`) is the remaining floor. So the second lever, still
-worth applying, is **awaiting fewer frames** and sharing scene setup:
+is the remaining floor. The dominant such cost is **`main.tscn` generation**:
+`world.gd._ready()` runs the full rally-track DFS search (~7 s) and scatters
+trees + bushes (~7 s) synchronously, so each instantiate is ~15 s of CPU. The
+levers, in order of payoff:
 
-- **`tests/headless/sim_test.gd`** is the base for physics-scene tests. It
-  settles the baseline car **once**, caches the resting `Transform3D`, and on
-  later setups restores that pose and stabilises in `RESTORE_FRAMES` (~10)
-  instead of dropping from the 2.5 m spawn clearance and waiting `SETTLE_FRAMES`
-  (150). `test_car.gd` / `test_engine.gd` extend it; `test_car_types.gd` keeps a
-  per-car-index settled-pose cache via the same mechanism.
+- **Don't generate a world you don't inspect.** `tests/headless/scene_helpers.gd`
+  exposes `SceneTestHelpers.minimal_world()` — call it instead of `Config.reset()`
+  right before instantiating `main.tscn`. It trims the track to 1 turn and sets
+  `trees_per_turn = 0` (which zeroes bushes too — they share the scatter params),
+  cutting the build from ~15 s to <1 s while still wiring up the car, HUD, cameras
+  and TrackProgress. `test_hud.gd` / `test_mobile_controls.gd` / `test_car_library.gd`
+  use it (each `after_each` calls `Config.reset()` so the minimal track/foliage
+  doesn't leak into later files that don't reset Config). Only the files that
+  genuinely assert on the track/terrain/foliage (`test_car_terrain.gd`,
+  `test_loading_screen.gd`, `test_terrain.gd`) pay the full generation.
+- **Settle once, not per test.** `tests/headless/sim_test.gd` is the base for
+  physics-scene tests. It settles the baseline car **once**, caches the resting
+  `Transform3D`, and on later setups restores that pose and stabilises in
+  `RESTORE_FRAMES` (~10) instead of dropping from the 2.5 m spawn clearance and
+  waiting `SETTLE_FRAMES` (150). `test_car.gd` / `test_engine.gd` extend it;
+  `test_car_types.gd` keeps a per-car-index settled-pose cache via the same
+  mechanism.
 - **Logic that doesn't need a scene** (flywheel/gearbox/clutch math) lives in
   `test_engine_logic.gd`, which builds a bare `EngineSim` and pays no settle
   cost at all. Reserve the physics fixture for behaviour that genuinely needs

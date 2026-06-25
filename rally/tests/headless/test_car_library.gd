@@ -4,13 +4,17 @@ extends GutTest
 # must overlay its dimensions, mass, engine character and drive layout.
 
 const CarLibrary = preload("res://scripts/car_library.gd")
+const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 var _scene: Node3D
 var _car: VehicleBody3D
 
 
 func before_each() -> void:
-	Config.reset()
+	# These tests inspect the car roster + apply_car/cycle_car, not the track or
+	# its foliage, so boot a minimal world (~15s -> <1s per instance). minimal_world
+	# resets Config to baseline first, exactly as the old Config.reset() did.
+	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 	_car = _scene.get_node("Car")
