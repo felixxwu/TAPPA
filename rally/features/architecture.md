@@ -4,7 +4,9 @@
 
 ```
 rally/
-├── main.tscn              # Entry-point scene (set in project.godot)
+├── hq.tscn                # Boot scene — the HQ hub (set in project.godot); see menus.md
+├── podium.tscn            # End-of-rally result scene
+├── main.tscn              # The run scene (a rally event / dev free-roam)
 ├── car.tscn               # VehicleBody3D car, instanced into main.tscn
 ├── project.godot          # Engine config: autoloads, input map, rendering
 ├── run_tests.sh           # Test runner (headless + visual passes)

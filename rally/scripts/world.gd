@@ -58,12 +58,21 @@ func _ready() -> void:
 	_mat($Car/WheelFL/Visual/Spoke1).set_shader_parameter("albedo_color", cfg.wheel_spoke_color)
 	($PostProcess/ColorRect.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
 
-	# Boot the playable scene with the first library car (the Mazda MX-5)
-	# selected; the HUD's car button cycles through the rest at runtime.
+	# Field the car. With an active RallySession this event runs the player's
+	# OwnedCar (baseline + upgrades + saved HP, todo/rally-event-flow.md); a plain
+	# dev boot keeps the first library car (the Mazda MX-5).
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
-	$Car.apply_car(0)
+	if RallySession.is_active():
+		_field_session_car()
+	else:
+		$Car.apply_car(0)
 
 	await _generate_track(cfg, loading)
+
+	# A session run wires this event's completion / wreck back to the orchestrator,
+	# and routes the rally's finish to the podium.
+	if RallySession.is_active():
+		_wire_session_signals()
 
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
 	# wheel-force debug overlay; harmless and idle until toggled on.
@@ -174,6 +183,49 @@ var _track_progress: TrackProgress
 # Owns the per-stage countdown -> run timer -> completion flow for the current
 # stage (recreated on each track regeneration).
 var _stage_manager: StageManager
+
+# Working HP the fielded car started this event with, so the event's HP loss can
+# be reported back to the session at completion. Set when fielding a session car.
+var _event_start_hp := 0.0
+
+
+# --- RallySession run-scene integration (todo/rally-event-flow.md) ------------
+
+# Configure the car for the session's fielded OwnedCar; fall back to the default
+# car if the instance has vanished from the save (defensive).
+func _field_session_car() -> void:
+	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+	if owned.is_empty():
+		$Car.apply_car(0)
+		return
+	$Car.apply_owned(owned)
+	_event_start_hp = $Car.damage.hp
+
+
+# Route this event's StageManager / damage signals to the session, and the rally's
+# finish to the podium. Connections on the per-event scene's nodes are dropped
+# automatically when the scene reloads for the next event.
+func _wire_session_signals() -> void:
+	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
+		_stage_manager.stage_completed.connect(_on_session_event_completed)
+	if not ($Car as Node).wrecked.is_connected(_on_session_car_wrecked):
+		($Car as Node).wrecked.connect(_on_session_car_wrecked)
+	if not RallySession.rally_finished.is_connected(_on_session_rally_finished):
+		RallySession.rally_finished.connect(_on_session_rally_finished)
+
+
+func _on_session_event_completed(elapsed_seconds: float) -> void:
+	var hp_lost: float = maxf(0.0, _event_start_hp - $Car.damage.hp)
+	RallySession.report_event_result(int(round(elapsed_seconds * 1000.0)), hp_lost)
+
+
+func _on_session_car_wrecked() -> void:
+	RallySession.report_wreck()
+
+
+# Rally over (or DNF): show the podium. Loads under the (placeholder) transition.
+func _on_session_rally_finished(_result: Dictionary) -> void:
+	get_tree().change_scene_to_file("res://podium.tscn")
 
 
 # Swap to the next car in the library: re-instantiate a fresh car (see

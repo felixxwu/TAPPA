@@ -452,6 +452,42 @@ func apply_car(index: int) -> String:
 	return spec["name"]
 
 
+# Field an OwnedCar (todo/rally-event-flow.md fielding pipeline): the CarLibrary
+# baseline, then the installed upgrades, then the working damage state from the
+# saved HP. Used by world.gd when a RallySession is active; free-roam uses
+# apply_car directly. (Per-car tuning — todo/tuning.md — is the missing step 3;
+# slotted in here once it lands.)
+func apply_owned(owned: Dictionary) -> String:
+	var model_id := String(owned.get("model_id", ""))
+	var idx := CarLibrary.index_of(model_id)
+	if idx < 0:
+		idx = 0
+	var car_name := apply_car(idx)
+	# Step 2: installed upgrades multiply/extend the live config. apply_car already
+	# pushed the baseline suspension onto the wheels, so re-sync after a stiffness
+	# upgrade mutates cfg (other upgraded fields are read live each physics step).
+	UpgradeLibrary.apply(owned, Config.data)
+	_sync_suspension_to_wheels()
+	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
+	# removes it from the save (the immortal starter skips depletion).
+	var entry := CarLibrary.by_id(model_id)
+	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
+	damage.field(max_hp, float(owned.get("hp", max_hp)),
+		bool(owned.get("immortal", false)), int(owned.get("instance_id", -1)))
+	return car_name
+
+
+# Re-push the live suspension stiffness + derived dampers onto all four wheels
+# (apply_car does this inline while relocating wheels; this is the standalone
+# version for when an upgrade changes cfg.suspension_stiffness after apply_car).
+func _sync_suspension_to_wheels() -> void:
+	var cfg: GameConfig = Config.data
+	for wheel in find_children("*", "VehicleWheel3D", false):
+		wheel.suspension_stiffness = cfg.suspension_stiffness
+		wheel.damping_compression = cfg.suspension_damping_compression()
+		wheel.damping_relaxation = cfg.suspension_damping_relaxation()
+
+
 # Give every MeshInstance3D in the authored body model the PS1 material
 # (ps1_models.gdshader) carrying the model's baked texture, so the glb stays in
 # the same unshaded / quantize / dither / fog pipeline as the rest of the scene

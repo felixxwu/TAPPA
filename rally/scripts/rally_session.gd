@@ -47,6 +47,7 @@ var _event_times_ms: Array[int] = []   # accumulated, one per completed event
 var _event_targets_ms: Array = []      # per-event target time (drives the field)
 var _opponent_field: Array = []        # fixed per rally seed (never saved)
 var _dnf := false
+var _last_result: Dictionary = {}      # the most recent finish, read by the podium
 
 # When true (the default for real play) RallySession performs the per-event scene
 # loads itself. Headless tests set it false and drive report_* directly with
@@ -119,8 +120,9 @@ func report_wreck() -> void:
 func abandon() -> void:
 	if _phase == Phase.IDLE:
 		return
+	_last_result = {"placed": -1, "completed": false, "combined_ms": -1, "dnf": false, "abandoned": true}
 	_reset_to_idle()
-	rally_finished.emit({"placed": -1, "completed": false, "combined_ms": -1, "dnf": false, "abandoned": true})
+	rally_finished.emit(_last_result)
 
 
 # --- Readouts (menus / tests) ------------------------------------------------
@@ -151,6 +153,11 @@ func rally_id() -> String:
 
 func opponent_field() -> Array:
 	return _opponent_field
+
+
+# The most recent rally's finish summary (for the podium scene). {} before any.
+func last_result() -> Dictionary:
+	return _last_result
 
 
 func current_event() -> Dictionary:
@@ -203,6 +210,7 @@ func _resolve_results() -> void:
 		"combined_ms": combined,
 		"dnf": _dnf,
 	}
+	_last_result = result
 	_reset_to_idle()
 	rally_finished.emit(result)
 

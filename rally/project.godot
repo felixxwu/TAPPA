@@ -12,7 +12,7 @@ config_version=5
 
 config/name="rally"
 config/version="0.0-dev"
-run/main_scene="res://main.tscn"
+run/main_scene="res://hq.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
