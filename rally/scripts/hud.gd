@@ -16,6 +16,13 @@ var track_progress: Node
 @onready var _drive_button: Button = $DriveButton
 @onready var _car_button: Button = $CarButton
 @onready var _version_label: Label = $VersionLabel
+# Stage flow widgets, driven by StageManager (todo/stage-start-and-end.md):
+# the big centered 3·2·1·GO, the small top-right run timer, and the placeholder
+# stage-complete panel. Hidden until the stage flow calls the methods below.
+@onready var _countdown_label: Label = $CountdownLabel
+@onready var _elapsed_label: Label = $ElapsedLabel
+@onready var _stage_complete_panel: Control = $StageCompletePanel
+@onready var _stage_complete_label: Label = $StageCompletePanel/StageCompleteLabel
 
 const _DRIVE_NAMES := ["RWD", "AWD", "FWD"]
 
@@ -40,6 +47,10 @@ func _ready() -> void:
 	# editor/dev runs. Set once here — it never changes at runtime.
 	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
 	_version_label.text = "v" + ver if ver != "" else "dev"
+	# Stage widgets start hidden; StageManager reveals them at the right moments.
+	_countdown_label.visible = false
+	_elapsed_label.visible = false
+	_stage_complete_panel.visible = false
 
 
 func _on_mode_pressed() -> void:
@@ -94,3 +105,40 @@ func _gear_text(gear: int) -> String:
 	if gear == 0:
 		return "N"
 	return str(gear)
+
+
+# --- Stage flow (driven by StageManager, todo/stage-start-and-end.md) ---------
+
+# Big centered countdown. ceili maps (2,3]→3, (1,2]→2, (0,1]→1; 0 (or below)
+# shows "GO".
+func show_countdown(seconds_left: float) -> void:
+	_countdown_label.visible = true
+	_countdown_label.text = str(ceili(seconds_left)) if seconds_left > 0.0 else "GO"
+
+
+func hide_countdown() -> void:
+	_countdown_label.visible = false
+
+
+# Small top-right run timer. Gated by hud_elapsed_enabled (mirrors hud_enabled);
+# one formatted string per frame is acceptable since the value changes every tick.
+func show_elapsed(seconds: float) -> void:
+	if not Config.data.hud_elapsed_enabled:
+		return
+	_elapsed_label.visible = true
+	_elapsed_label.text = _format_time(seconds)
+
+
+# Placeholder stage-complete panel — at minimum the final time. The menu's
+# buttons/actions are a separate todo (rally-event-flow.md / menus.md); this is
+# the stub the future flow attaches to.
+func show_stage_complete(seconds: float) -> void:
+	_stage_complete_panel.visible = true
+	_stage_complete_label.text = "STAGE COMPLETE\n%s" % _format_time(seconds)
+
+
+# m:ss.cc, e.g. 1:07.43.
+func _format_time(seconds: float) -> String:
+	var minutes := int(seconds / 60.0)
+	var rem := seconds - minutes * 60.0
+	return "%d:%05.2f" % [minutes, rem]

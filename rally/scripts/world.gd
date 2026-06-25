@@ -139,12 +139,23 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Retain the centerline in a TrackProgress manager: tracks how far the car has
 	# driven and snaps it back onto the road if it strays too far (the Curve2D is
-	# otherwise discarded after set_track).
-	_track_progress = TrackProgress.new()
-	_track_progress.name = "TrackProgress"
-	add_child(_track_progress)
+	# otherwise discarded after set_track). Reuse the node across regenerations
+	# (entering a new event) so managers don't accumulate or collide on name.
+	if _track_progress == null:
+		_track_progress = TrackProgress.new()
+		_track_progress.name = "TrackProgress"
+		add_child(_track_progress)
 	_track_progress.setup(result["centerline"], $Car, $Floor as TerrainManager)
 	($HUD as CanvasLayer).track_progress = _track_progress
+
+	# Per-stage start/end flow: lock the car, count down, time the run, and signal
+	# completion when progress reaches the finish (todo/stage-start-and-end.md).
+	# Reuse the node across regenerations so only one ticks.
+	if _stage_manager == null:
+		_stage_manager = StageManager.new()
+		_stage_manager.name = "StageManager"
+		add_child(_stage_manager)
+	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress)
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
 	# regeneration, e.g. entering a rally event).
@@ -159,6 +170,10 @@ var _car_spawn: Transform3D
 # Tracks track progress + off-track reset for the current car (re-targeted on a
 # car swap, since the fresh car respawns at the start).
 var _track_progress: TrackProgress
+
+# Owns the per-stage countdown -> run timer -> completion flow for the current
+# stage (recreated on each track regeneration).
+var _stage_manager: StageManager
 
 
 # Swap to the next car in the library: re-instantiate a fresh car (see
@@ -179,6 +194,10 @@ func cycle_car() -> void:
 	# progress resets to the spawn offset too).
 	if _track_progress != null:
 		_track_progress.retarget(fresh, $Floor as TerrainManager)
+	# Re-arm the stage on the fresh car (it spawns at the start), so the countdown
+	# restarts and the manager doesn't keep a freed car reference.
+	if _stage_manager != null:
+		_stage_manager.setup(fresh, $HUD as CanvasLayer, _track_progress)
 
 
 func _layers_match(layers: Array[TerrainLayer], params: Array[Vector2]) -> bool:

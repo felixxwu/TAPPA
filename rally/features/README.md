@@ -34,6 +34,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
+| [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
 | [camera.md](camera.md) | Chase camera follow behavior |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout and mode buttons |
@@ -62,6 +63,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress) |
 | Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots, repair kit) |
 | Reward draws | `scripts/reward_system.gd` (`RewardSystem` — tier clamp, upgrade/car draws) |
+| Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard.gdshader` |
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/perf_overlay.gd` |

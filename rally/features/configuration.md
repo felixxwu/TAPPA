@@ -76,6 +76,15 @@ the `.tres` requires a scene reload to take effect.
 | `fog_density` | 0.02 | Environment fog thickness |
 | `background_color` | (0.35,0.3,0.45) | Sky + fog color |
 
+### Stage
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `stage_countdown_seconds` | 3.0 | Countdown before controls unlock at the start of a stage |
+| `stage_complete_percent` | 99.0 | Track-progress % (0..100) that ends the stage |
+| `hud_elapsed_enabled` | true | Show the top-right run timer |
+
+See [stage.md](stage.md).
+
 ### Terrain Layers
 Three (wavelength, amplitude) pairs — `terrain_layerN_wavelength` /
 `terrain_layerN_amplitude` for N = 1,2,3 (large hills → fine bumps). See

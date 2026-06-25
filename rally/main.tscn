@@ -160,6 +160,46 @@ theme_override_font_sizes/font_size = 10
 text = "v0.0"
 horizontal_alignment = 2
 
+[node name="ElapsedLabel" type="Label" parent="HUD" unique_id=1044419646]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -100.0
+offset_top = 26.0
+offset_right = -8.0
+offset_bottom = 46.0
+grow_horizontal = 0
+theme_override_font_sizes/font_size = 14
+text = "0:00.00"
+horizontal_alignment = 2
+
+[node name="CountdownLabel" type="Label" parent="HUD" unique_id=1044419647]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 64
+text = "3"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StageCompletePanel" type="PanelContainer" parent="HUD" unique_id=1044419648]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -110.0
+offset_top = -40.0
+offset_right = 110.0
+offset_bottom = 40.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="StageCompleteLabel" type="Label" parent="HUD/StageCompletePanel" unique_id=1044419649]
+theme_override_font_sizes/font_size = 20
+text = "STAGE COMPLETE"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="MobileControls" type="CanvasLayer" parent="." unique_id=1664740689]
 layer = 3
 script = ExtResource("9_mobile")

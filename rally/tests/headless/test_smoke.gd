@@ -124,6 +124,19 @@ func test_hud_car_button_present() -> void:
 	assert_not_null(button, "HUD has a car-selector button")
 
 
+func test_stage_flow_wired() -> void:
+	# The per-stage flow (todo/stage-start-and-end.md): a StageManager node plus
+	# the HUD widgets it drives (countdown, run timer, complete panel).
+	assert_not_null(_scene.get_node_or_null("StageManager") as StageManager,
+		"world wires a StageManager into the scene")
+	assert_not_null(_scene.get_node_or_null("HUD/CountdownLabel") as Label,
+		"HUD has the big countdown label")
+	assert_not_null(_scene.get_node_or_null("HUD/ElapsedLabel") as Label,
+		"HUD has the run-timer label")
+	assert_not_null(_scene.get_node_or_null("HUD/StageCompletePanel") as Control,
+		"HUD has the stage-complete panel")
+
+
 func test_environment_has_fog_and_no_lights() -> void:
 	var env := (_scene.get_node("WorldEnvironment") as WorldEnvironment).environment
 	assert_true(env.fog_enabled, "fog enabled")

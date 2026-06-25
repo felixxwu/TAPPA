@@ -200,6 +200,17 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_group("HUD")
 @export var hud_enabled := true  # on-screen speed readout
 
+@export_group("Stage")
+## Countdown length, in seconds, before the car's controls unlock at the start
+## of a stage. The car holds position (handbrake forced) until it elapses.
+@export var stage_countdown_seconds := 3.0
+## Track-progress percentage (0..100) that ends the stage. Below 100 because
+## progress is monotonic and the on-road snap means _best_offset can approach but
+## not exactly reach the baked length — see todo/stage-start-and-end.md §1.
+@export_range(0.0, 100.0) var stage_complete_percent := 99.0
+## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
+@export var hud_elapsed_enabled := true
+
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).
 # Shown automatically on touch devices (DisplayServer.is_touchscreen_available()).

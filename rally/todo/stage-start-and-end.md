@@ -1,16 +1,32 @@
-# Stage Start & End Procedure — implementation spec
+# Stage Start & End Procedure — implementation spec  ✅ DONE
 
-> Status: **planned, not yet implemented.** Implementation brief, referencing the
+> Status: **DONE (core).** `StageManager` (`scripts/stage_manager.gd`) owns the
+> COUNTDOWN → RUNNING → COMPLETE flow, the `controls_locked` gate on `car.gd`
+> (input neutralised + handbrake forced while locked), the HUD widgets
+> (`CountdownLabel` / `ElapsedLabel` / `StageCompletePanel` in `main.tscn`, driven
+> by `hud.gd.show_countdown` / `show_elapsed` / `show_stage_complete`), the
+> `stage_completed(elapsed)` + `stage_started` signals, and the three `Stage`
+> `GameConfig` knobs. Wired in `world.gd._generate_track` (recreated per
+> regeneration; re-armed on car swap). Tests: `tests/headless/test_stage_manager.gd`
+> (+ HUD widget tests in `test_hud.gd`, structural check in `test_smoke.gd`). Doc:
+> `features/stage.md`.
+> **Still open / deferred:** the **GO flash duration** is a `StageManager` const
+> (`GO_FLASH_SECONDS`), not a config knob; the optional per-tick countdown
+> **beep / GO sting** audio hooks are noted but not wired (no `Audio` autoload yet
+> — `todo/audio.md`); the **post-stage flow** (standings/podium/rewards/HQ) and
+> the stage-complete panel's real buttons are owned by `todo/rally-event-flow.md`
+> + `todo/menus.md` — this spec only provides the signal + placeholder panel.
+>
+> Implementation brief, referencing the
 > code as it exists on this branch. Follow the config-first convention
 > (`CLAUDE.md`): every new tunable goes in `GameConfig`
 > (`scripts/game_config.gd` + `config/game_config.tres`), never hardcoded.
 > Update the relevant `features/*.md` doc and add/adjust tests in the same piece
 > of work.
 >
-> **Depends on `todo/track-progress-and-reset.md`.** The "stage complete" trigger
-> reads the progress value produced by the `TrackProgress` node defined there
-> (`progress_percent()` / `_best_offset` / `_baked_length`). Implement track
-> progress first, or at least land its `TrackProgress` API, before this.
+> **Depends on `todo/track-progress-and-reset.md`.** ✅ Done — the "stage complete"
+> trigger reads `TrackProgress.progress_percent()` (a 0..1 fraction, scaled to the
+> 0..100 `stage_complete_percent`).
 
 ## Goal
 

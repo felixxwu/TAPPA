@@ -106,3 +106,49 @@ func test_drive_button_cycles_layout() -> void:
 	await get_tree().process_frame
 	assert_eq(dt.drive_mode, Drivetrain.DriveMode.AWD, "clicking cycles RWD -> AWD")
 	assert_eq(button.text, "AWD", "button text follows the layout")
+
+
+# --- Stage flow widgets (todo/stage-start-and-end.md) ------------------------
+# These call the HUD methods directly (synchronously, so the scene's StageManager
+# doesn't tick and overwrite the state) and assert the labels/panel.
+
+func test_countdown_label_formats_ticks_and_go() -> void:
+	var hud := _scene.get_node("HUD")
+	var label := _scene.get_node("HUD/CountdownLabel") as Label
+	hud.show_countdown(2.5)
+	assert_true(label.visible, "countdown label shown while counting")
+	assert_eq(label.text, "3", "ceili(2.5) shows 3 (the first second counts as 3)")
+	hud.show_countdown(1.6)
+	assert_eq(label.text, "2", "ceili(1.6) shows 2")
+	hud.show_countdown(0.6)
+	assert_eq(label.text, "1", "ceili(0.6) shows 1")
+	hud.show_countdown(0.0)
+	assert_eq(label.text, "GO", "zero shows GO")
+	hud.hide_countdown()
+	assert_false(label.visible, "hide_countdown hides the label")
+
+
+func test_elapsed_label_formats_and_respects_config() -> void:
+	var hud := _scene.get_node("HUD")
+	var label := _scene.get_node("HUD/ElapsedLabel") as Label
+	label.visible = false
+	Config.data.hud_elapsed_enabled = true
+	hud.show_elapsed(67.43)
+	assert_true(label.visible, "elapsed label shown when hud_elapsed_enabled")
+	assert_eq(label.text, "1:07.43", "elapsed formats as m:ss.cc")
+	# Disabled: the label is left untouched (stays hidden).
+	label.visible = false
+	Config.data.hud_elapsed_enabled = false
+	hud.show_elapsed(99.9)
+	assert_false(label.visible, "elapsed label suppressed when hud_elapsed_enabled is off")
+	Config.data.hud_elapsed_enabled = true
+
+
+func test_stage_complete_panel_shows_final_time() -> void:
+	var hud := _scene.get_node("HUD")
+	var panel := _scene.get_node("HUD/StageCompletePanel") as Control
+	var label := _scene.get_node("HUD/StageCompletePanel/StageCompleteLabel") as Label
+	assert_false(panel.visible, "complete panel hidden until the stage ends")
+	hud.show_stage_complete(67.43)
+	assert_true(panel.visible, "complete panel shown on stage completion")
+	assert_string_contains(label.text, "1:07.43", "panel shows the final time")

@@ -17,6 +17,12 @@ var _car_index := -1  # selected CarLibrary entry, or -1 for the untouched basel
 var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount (scene rest pose)
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
+# When true, driver input is ignored and the handbrake is forced on, so the car
+# physically holds still (e.g. during the stage countdown). Set by StageManager;
+# the rest of the simulation (drag, suspension, camera) keeps running so the car
+# settles naturally. See todo/stage-start-and-end.md §2.
+var controls_locked := false
+
 
 func _ready() -> void:
 	var cfg: GameConfig = Config.data
@@ -86,17 +92,22 @@ func _recompute_axles() -> void:
 func _physics_process(delta: float) -> void:
 	var cfg: GameConfig = Config.data
 	var engine := drivetrain.engine
-	if Input.is_action_just_pressed("toggle_gearbox"):
-		engine.auto = not engine.auto
-	if Input.is_action_just_pressed("cycle_drive_mode"):
-		drivetrain.cycle_drive_mode()
-	if not engine.auto:
-		if Input.is_action_just_pressed("shift_up"):
-			engine.request_shift(1)
-		if Input.is_action_just_pressed("shift_down"):
-			engine.request_shift(-1)
+	# Discrete gear/mode actions only respond when controls are unlocked, so the
+	# player can't shift or change mode mid-countdown.
+	if not controls_locked:
+		if Input.is_action_just_pressed("toggle_gearbox"):
+			engine.auto = not engine.auto
+		if Input.is_action_just_pressed("cycle_drive_mode"):
+			drivetrain.cycle_drive_mode()
+		if not engine.auto:
+			if Input.is_action_just_pressed("shift_up"):
+				engine.request_shift(1)
+			if Input.is_action_just_pressed("shift_down"):
+				engine.request_shift(-1)
 
-	var throttle := Input.get_axis("brake_reverse", "accelerate")
+	# Neutralise driver input while locked; the forced handbrake below holds the
+	# car on a slope without freezing the whole simulation.
+	var throttle := 0.0 if controls_locked else Input.get_axis("brake_reverse", "accelerate")
 	var fwd_pedal := maxf(throttle, 0.0)  # W
 	var rev_pedal := maxf(-throttle, 0.0)  # S
 	var moving_forward := linear_velocity.dot(-global_transform.basis.z) > 1.0
@@ -132,7 +143,8 @@ func _physics_process(delta: float) -> void:
 			brake_input = rev_pedal
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
-	drivetrain.step(delta, drive, brake_input, Input.is_action_pressed("handbrake"))
+	var handbrake := controls_locked or Input.is_action_pressed("handbrake")
+	drivetrain.step(delta, drive, brake_input, handbrake)
 
 	# Quadratic aero drag; with redline-limited gearing, this sets how hard
 	# the top of each gear pulls.
@@ -166,7 +178,7 @@ func _physics_process(delta: float) -> void:
 		# slide can't spin the wheels to extreme angles. Only applied when
 		# moving forwards; when slow or reversing, plain input steering.
 		travel_angle = clampf(atan2(-local_vel.x, -local_vel.z), -PI / 3.0, PI / 3.0)
-	var steer_input := Input.get_axis("steer_right", "steer_left")
+	var steer_input := 0.0 if controls_locked else Input.get_axis("steer_right", "steer_left")
 	# Ramp the travel alignment in linearly from 0 at standstill to its full
 	# configured value at steer_assist_min_speed (≈30 km/h), so it doesn't fight
 	# low-speed input steering yet returns smoothly with no sudden jump as speed
@@ -198,7 +210,7 @@ func _physics_process(delta: float) -> void:
 			- roll_pitch_rate * cfg.level_assist_torque * LEVEL_ASSIST_DAMPING
 		)
 
-	if Input.is_action_just_pressed("reset_car"):
+	if not controls_locked and Input.is_action_just_pressed("reset_car"):
 		_reset()
 
 

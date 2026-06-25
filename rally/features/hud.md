@@ -15,6 +15,19 @@ On-screen readout plus two interactive mode buttons.
 | `ModeButton` | `MANUAL` / `AUTO` | `engine.auto` (clickable) |
 | `DriveButton` | `RWD` / `AWD` / `FWD` | `drivetrain.drive_mode` (clickable) |
 | `VersionLabel` | `"v0.<n> (<sha>)"` | `application/config/version` (read once) |
+| `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
+| `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top-right) |
+| `StageCompletePanel` | placeholder result panel | driven by `StageManager` |
+
+## Stage flow widgets
+
+The `CountdownLabel`, `ElapsedLabel` and `StageCompletePanel` are hidden at
+`_ready()` and driven by the `StageManager` (see [stage.md](stage.md)) through
+four methods: `show_countdown(seconds_left)` (big centered `3·2·1·GO`;
+`ceili` maps the remaining time to the digit, `0` → `GO`), `hide_countdown()`,
+`show_elapsed(seconds)` (top-right `m:ss.cc`, gated by `hud_elapsed_enabled`),
+and `show_stage_complete(seconds)` (the placeholder result panel). `_format_time`
+is the shared `m:ss.cc` formatter.
 
 ## Behavior
 
