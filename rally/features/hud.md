@@ -31,8 +31,11 @@ Labels/buttons are direct children of the `HUD` CanvasLayer, positioned via
 `offset_*` with explicit `font_size` overrides. All sizes are deliberately
 small (font 14 for labels, 10 for buttons) — the HUD is rendered at 1/2 scale.
 
-The `VersionLabel` is anchored to the bottom-left (`anchor_top/bottom = 1.0`,
-`grow_vertical = 0`) so it sits in the corner regardless of viewport height.
+The `VersionLabel` is anchored to the top-right (`anchor_left/right = 1.0`,
+`grow_horizontal = 0`, `horizontal_alignment = 2`) so it sits in that corner
+regardless of viewport width. The track-progress `ProgressLabel` sits below the
+`ModeButton`/`DriveButton`/`CarButton` stack (`offset_top = 92`) so the
+transmission/drive switchers don't obscure it.
 
 ## Build version
 
