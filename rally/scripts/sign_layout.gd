@@ -88,14 +88,14 @@ static func _emit_pair(out: Array, centerline: Curve2D, length: float, offset: f
 # near the end of the curve so the finish gate still gets a sensible tangent).
 static func _tangent_at(centerline: Curve2D, offset: float, length: float) -> Vector2:
 	var pos := centerline.sample_baked(offset)
-	var tan: Vector2
+	var tangent: Vector2
 	if offset + TANGENT_EPS_M <= length:
-		tan = centerline.sample_baked(offset + TANGENT_EPS_M) - pos
+		tangent = centerline.sample_baked(offset + TANGENT_EPS_M) - pos
 	else:
-		tan = pos - centerline.sample_baked(maxf(0.0, offset - TANGENT_EPS_M))
-	if tan.length() < 1e-5:
+		tangent = pos - centerline.sample_baked(maxf(0.0, offset - TANGENT_EPS_M))
+	if tangent.length() < 1e-5:
 		return Vector2(0.0, 1.0)
-	return tan.normalized()
+	return tangent.normalized()
 
 
 # Atlas key for a turn arrow: shape from the corner name, direction from the flip

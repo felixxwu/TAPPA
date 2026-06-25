@@ -1,26 +1,34 @@
 # Menus & UI Shell — implementation spec (diegetic / in-world)
 
-> Status: **🟡 VERTICAL SLICE SHIPPED — full diegetic build still open.** A
-> placeholder flat-UI loop is in place and proves the loop end-to-end: **HQ
-> (boot) → field car → run → podium → HQ**, wiring `RallySession`
+> Status: **🟡 FLAT-UI LOOP COMPLETE — full diegetic 3D build still open.** A
+> flat-UI loop is in place and proves the loop end-to-end with the meta-game made
+> legible: **HQ (boot) → field car → run → podium → HQ**, wiring `RallySession`
 > (`todo/rally-event-flow.md`) into the run scene. See the living doc
 > [`features/menus.md`](../features/menus.md) (source: `hq.tscn` + `scripts/hq.gd`,
 > `podium.tscn` + `scripts/podium.gd`, session-aware fielding in `scripts/world.gd`;
 > tests in `tests/headless/test_menu_flow.gd`).
 >
-> **What the slice already covers (struck from the build list below):** the HQ
-> hub as the boot scene (immortal-starter grant, owned-car list, eligible-rally
-> list incl. showdown-gating + completed marks, scrollable so the Start action
-> never clips on phones), the **Start → `RallySession.start_rally`** handoff,
-> run-scene **fielding** + `stage_completed`/`wrecked` → `report_*` wiring, and a
-> placeholder **Podium** reading `last_result` (placement / combined / DNF / win).
+> **What the flat-UI build already covers (struck from the build list below):** the
+> HQ hub as the boot scene (immortal-starter grant, scrollable so Start never
+> clips on phones); **car selection as stat cards** (drivetrain/country/type/
+> reward-tier/power-to-weight + an HP bar + installed upgrades — the flat stand-in
+> for rig 1+2); the **rally board with unlock state** (every rally shown,
+> ineligible ones disabled with their restriction spelled out, showdown gated with
+> a progress meter — the flat stand-in for rig 3); the **Start →
+> `RallySession.start_rally`** handoff; run-scene **fielding** +
+> `stage_completed`/`wrecked` → `report_*` wiring; the **Podium reward reveal**
+> (won car with a NEW badge + per-event upgrades — flat stand-in for rig 5+6); and
+> the **Standings overlay (overlay 7)** at results (full ranked field via
+> `RallyLibrary.build_standings`).
 >
 > **What remains (the bulk of this spec):** the entire **diegetic 3D staging** —
 > the car-park / tuning-lift / map-table locations, the stylised map plane + pins,
 > world-anchored SubViewport stats panels, the 3D podium + reward-reveal rig, the
-> flat Standings / Pause / Inventory / Confirm overlays, the `menu_*` input
-> action set + mobile gestures, and the camera fly-through transitions. The
-> sections below specify that remaining work.
+> Pause / Inventory / Confirm overlays, the between-event standings interstitial,
+> the `menu_*` input action set + mobile gestures, and the camera fly-through
+> transitions. The sections below specify that remaining work. **The first 3D
+> slice is kicked off in [`todo/diegetic-hq.md`](diegetic-hq.md)** (3D car park +
+> menu camera + showroom rig).
 >
 > Follow the config-first convention
 > (`CLAUDE.md`): tunables (camera move times, panel offsets, station positions
@@ -156,8 +164,11 @@ camera you already drive, so the menu count stays tiny.
 ## Flat overlays (pragmatic hybrid — dense data & pause only)
 
 7. **Standings overlay** — full ranked field (position, name, time / `DNF` /
-   `WRECKED`, player highlighted). Shown as a between-event interstitial and at
-   results; the Podium handles the top-3 flourish, this handles the full list.
+   `WRECKED`, player highlighted). ~~Shown at results~~ **(DONE, flat: rendered at
+   the podium via `RallyLibrary.build_standings`, player row marked + tinted).**
+   Still open: the **between-event interstitial** form (needs the run scene to
+   pause and react to `standings_ready`); the Podium handles the top-3 flourish,
+   this handles the full list.
 8. **Pause overlay** — Resume / **Settings** (opens overlay 11 without unpausing) /
    **Abandon to HQ** (no retry — a non-top-3 rally is re-entered later from the
    map, `gameplay.md`). First user of `get_tree().paused`.

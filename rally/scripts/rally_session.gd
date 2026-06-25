@@ -47,6 +47,7 @@ var _event_times_ms: Array[int] = []   # accumulated, one per completed event
 var _event_targets_ms: Array = []      # per-event target time (drives the field)
 var _opponent_field: Array = []        # fixed per rally seed (never saved)
 var _dnf := false
+var _upgrades_won: Array[String] = []  # per-event upgrade ids drawn this rally (reveal)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
 
 # When true (the default for real play) RallySession performs the per-event scene
@@ -68,6 +69,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, event_targets_ms: Arr
 	_event_index = 0
 	_event_times_ms = []
 	_dnf = false
+	_upgrades_won = []
 	_event_targets_ms = event_targets_ms if not event_targets_ms.is_empty() else _compute_event_targets(rally)
 	_opponent_field = RallyLibrary.generate_opponent_field(rally, _event_targets_ms)
 	_enter_event()
@@ -89,6 +91,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	var item_id: String = RewardSystem.draw_upgrade(int(_rally.get("difficulty", 1)), Save.profile)
 	Save.add_item(item_id)
 	Save.save()
+	_upgrades_won.append(item_id)
 	upgrade_revealed.emit(item_id)
 	_event_index += 1
 	if _event_index >= EVENTS_PER_RALLY:
@@ -191,17 +194,25 @@ func _resolve_results() -> void:
 	var top3 := not _dnf and placed >= 1 and placed <= 3
 
 	_set_phase(Phase.PODIUM)
+	# Reward outcome, captured for the podium reveal (todo/menus.md rig 5).
+	var car_reward := ""
+	var car_reward_is_new := false
+	var showdown_done := false
 	if top3:
 		# complete_rally records the FIRST completion (idempotent); the car reward
 		# fires on EVERY top-3 finish, including re-wins (renewable supply).
 		Save.complete_rally(String(_rally.get("id", "")), combined)
 		if bool(_rally.get("showdown", false)):
+			showdown_done = true
 			showdown_won.emit()
 		else:
 			var model: Variant = RewardSystem.draw_car(int(_rally.get("difficulty", 1)), Save.profile)
 			if model != null:
-				Save.grant_car(String(model))
-				car_rewarded.emit(String(model))
+				car_reward = String(model)
+				# "New" iff the player didn't already own this model before the grant.
+				car_reward_is_new = not _owns_model(car_reward)
+				Save.grant_car(car_reward)
+				car_rewarded.emit(car_reward)
 		Save.save()
 
 	var result := {
@@ -209,10 +220,28 @@ func _resolve_results() -> void:
 		"completed": top3,
 		"combined_ms": combined,
 		"dnf": _dnf,
+		"rally_id": String(_rally.get("id", "")),
+		"rally_name": String(_rally.get("name", "")),
+		# Full ranked field for the standings overlay (built before _reset clears it).
+		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf),
+		# Reward reveal data (todo/menus.md): per-event upgrades + the top-3 car.
+		"upgrades": _upgrades_won.duplicate(),
+		"car_reward": car_reward,
+		"car_reward_is_new": car_reward_is_new,
+		"showdown_won": showdown_done,
 	}
 	_last_result = result
 	_reset_to_idle()
 	rally_finished.emit(result)
+
+
+# Whether the player already owns at least one instance of `model_id` (used to
+# flag a car reward as "new" before it is granted).
+func _owns_model(model_id: String) -> bool:
+	for car in Save.profile.get("cars", []):
+		if String(car.get("model_id", "")) == model_id:
+			return true
+	return false
 
 
 func _reset_to_idle() -> void:
@@ -223,6 +252,7 @@ func _reset_to_idle() -> void:
 	_event_targets_ms = []
 	_opponent_field = []
 	_dnf = false
+	_upgrades_won = []
 	_set_phase(Phase.IDLE)
 
 

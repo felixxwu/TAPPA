@@ -138,6 +138,33 @@ func test_placement_and_top3() -> void:
 	assert_false(RallyLibrary.is_top3(field, 999), "P4 is not top-3")
 
 
+func test_build_standings_ranks_field_and_sinks_dnfs() -> void:
+	var field := [
+		{"name": "A", "dnf": false, "combined_ms": 100},
+		{"name": "B", "dnf": true, "combined_ms": -1},
+		{"name": "C", "dnf": false, "combined_ms": 300},
+	]
+	# Player runs 200ms clean: ranks 2nd (behind A, ahead of C); B (DNF) trails all.
+	var standings := RallyLibrary.build_standings(field, 200, false)
+	assert_eq(standings.size(), 4, "field + player")
+	assert_eq(String(standings[0]["name"]), "A", "fastest classified is first")
+	assert_eq(standings[0]["placed"], 1, "first place is P1")
+	assert_true(standings[1]["is_player"], "the player slots into 2nd on time")
+	assert_eq(standings[1]["placed"], 2, "player placed equals placement()")
+	assert_eq(standings[2]["placed"], 3, "the slower opponent is P3")
+	assert_eq(standings[3]["placed"], -1, "the DNF trails the field and does not place")
+	assert_eq(RallyLibrary.placement(field, 200), standings[1]["placed"],
+		"build_standings agrees with placement() for the player")
+
+
+func test_build_standings_handles_a_wrecked_player() -> void:
+	var field := [{"name": "A", "dnf": false, "combined_ms": 100}]
+	var standings := RallyLibrary.build_standings(field, -1, true)
+	assert_true(standings[0]["is_player"] == false, "the classified opponent ranks above a wrecked player")
+	assert_true(standings[1]["is_player"], "the wrecked player sinks to the bottom")
+	assert_eq(standings[1]["placed"], -1, "a wrecked player does not place")
+
+
 # --- Progress / showdown -----------------------------------------------------
 
 func test_completed_count_tracks_profile() -> void:

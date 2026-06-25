@@ -95,6 +95,32 @@ func test_happy_path_accumulates_and_places() -> void:
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE after finishing")
 
 
+func test_result_carries_rewards_and_standings_for_the_podium() -> void:
+	var finish := _capture_finish()
+	_start("shakedown")  # open-class, difficulty 1
+	# Player combined 60000; one opponent faster (50000) -> placed 2nd, top-3 win.
+	RallySession._opponent_field = _field([50000, 70000, 80000])
+	for i in 3:
+		RallySession.report_event_result(20000)
+	var r: Dictionary = finish[0]
+	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
+	assert_eq(r["upgrades"].size(), 3, "the three per-event upgrade ids are captured for the reveal")
+	# Difficulty 1 clamps to tier 1, whose only car is the mx5 the player already
+	# owns — so the reward is the mx5 and correctly flagged NOT new (exercises the
+	# is_new=false path).
+	assert_eq(String(r["car_reward"]), "mx5", "a top-3 finish records the won car model for the reveal")
+	assert_false(r["car_reward_is_new"], "the won car is already owned, so not flagged new")
+	assert_false(r["showdown_won"], "the shakedown is not the showdown")
+	# Standings = field (3) + player, ranked, player classified 2nd.
+	var standings: Array = r["standings"]
+	assert_eq(standings.size(), 4, "standings includes the player plus the opponent field")
+	var player: Dictionary = {}
+	for e in standings:
+		if e["is_player"]:
+			player = e
+	assert_eq(player["placed"], 2, "the player's standings position matches the placement")
+
+
 func test_one_upgrade_revealed_per_event() -> void:
 	_start("shakedown")
 	RallySession._opponent_field = _field([90000])  # player will be top-3
