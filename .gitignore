@@ -3,3 +3,6 @@ rally/.godot/
 
 # Build / export artifacts
 rally/build/
+
+# Local secrets / env
+.env
