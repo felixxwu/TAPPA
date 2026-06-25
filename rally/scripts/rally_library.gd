@@ -211,6 +211,45 @@ static func is_top3(field: Array, player_combined_ms: int) -> bool:
 	return placement(field, player_combined_ms) <= 3
 
 
+# A fully ranked standings table for the results screen (todo/menus.md overlay 7):
+# the opponent field plus the player, sorted fastest-combined-first with the DNF
+# entries (wrecked / disqualified) sinking to the bottom. Each entry:
+#   { name:String, combined_ms:int, dnf:bool, is_player:bool, placed:int }
+# `placed` is the 1-based finishing position among the classified (non-DNF)
+# entries; DNF entries get placed = -1. Consistent with placement() — a non-DNF
+# player's `placed` equals placement(field, player_combined_ms).
+static func build_standings(field: Array, player_combined_ms: int, player_dnf: bool, player_name := "You") -> Array:
+	var entries: Array = []
+	for opp in field:
+		entries.append({
+			"name": String(opp.get("name", "Rival")),
+			"combined_ms": int(opp.get("combined_ms", -1)),
+			"dnf": bool(opp.get("dnf", false)),
+			"is_player": false,
+		})
+	entries.append({
+		"name": player_name,
+		"combined_ms": player_combined_ms,
+		"dnf": player_dnf,
+		"is_player": true,
+	})
+	# Classified entries sort by combined time ascending; DNFs always trail them.
+	entries.sort_custom(func(a, b):
+		if bool(a["dnf"]) != bool(b["dnf"]):
+			return not bool(a["dnf"])
+		if bool(a["dnf"]):
+			return false
+		return int(a["combined_ms"]) < int(b["combined_ms"]))
+	var pos := 0
+	for e in entries:
+		if bool(e["dnf"]):
+			e["placed"] = -1
+		else:
+			pos += 1
+			e["placed"] = pos
+	return entries
+
+
 # Deterministic integer seed for a rally's opponent field: folds the stable id
 # with the first event seed so two rallies never share a field by accident.
 static func _rally_seed(rally: Dictionary) -> int:

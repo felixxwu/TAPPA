@@ -98,7 +98,11 @@ func _section_label(text: String) -> Label:
 	return l
 
 
-# (Re)build the owned-car buttons. Selecting a car re-derives its eligible rallies.
+# (Re)build the owned-car cards. Selecting a car re-derives its eligible rallies.
+# Each card shows the metadata the player needs to make the risk/eligibility call:
+# drivetrain / country / type / reward tier / power-to-weight, an HP bar, and any
+# installed upgrades (todo/menus.md rig 1+2 — the flat stand-in for the showroom
+# rig + world-anchored stats panel).
 func _refresh_cars() -> void:
 	for child in _cars_box.get_children():
 		child.queue_free()
@@ -110,29 +114,84 @@ func _refresh_cars() -> void:
 	if _selected_instance_id < 0 or Save.get_car(_selected_instance_id).is_empty():
 		_selected_instance_id = int(cars[0]["instance_id"])
 	for car in cars:
-		var id := int(car["instance_id"])
-		var btn := Button.new()
-		btn.text = _car_label(car)
-		btn.focus_mode = Control.FOCUS_NONE
-		btn.toggle_mode = true
-		btn.button_pressed = id == _selected_instance_id
-		btn.pressed.connect(_on_car_selected.bind(id))
-		_cars_box.add_child(btn)
+		_cars_box.add_child(_car_card(car))
 	_refresh_rallies()
 
 
-func _car_label(car: Dictionary) -> String:
+# A selectable stat card for one owned car: header toggle (model + instance), a
+# metadata line, an HP bar, and an installed-upgrades line when fitted.
+func _car_card(car: Dictionary) -> Control:
+	var id := int(car["instance_id"])
 	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-	var model_name := String(entry.get("name", car.get("model_id", "?")))
-	var max_hp: float = entry.get("max_hp", 0.0)
+	var card := VBoxContainer.new()
+	card.add_theme_constant_override("separation", 2)
+
+	var btn := Button.new()
+	btn.text = "%s  #%d" % [entry.get("name", car.get("model_id", "?")), id]
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.toggle_mode = true
+	btn.button_pressed = id == _selected_instance_id
+	btn.pressed.connect(_on_car_selected.bind(id))
+	card.add_child(btn)
+
+	var stats := Label.new()
+	stats.add_theme_font_size_override("font_size", 12)
+	stats.text = "%s · %s · %s · tier %d · %.2f kW/kg" % [
+		_drive_text(int(entry.get("drive_mode", -1))),
+		String(entry.get("country", "?")),
+		String(entry.get("car_type", "?")),
+		int(entry.get("reward_tier", 0)),
+		CarLibrary.power_to_weight(entry),
+	]
+	card.add_child(stats)
+	card.add_child(_hp_row(car, entry))
+
+	var ups: Array = car.get("installed_upgrades", [])
+	if not ups.is_empty():
+		var names: Array[String] = []
+		for item_id in ups:
+			names.append(String(UpgradeLibrary.by_id(String(item_id)).get("name", item_id)))
+		var u := Label.new()
+		u.add_theme_font_size_override("font_size", 12)
+		u.text = "Upgrades: %s" % ", ".join(names)
+		card.add_child(u)
+	return card
+
+
+# An HP bar + readout for a car. The immortal starter shows a full bar and ∞.
+func _hp_row(car: Dictionary, entry: Dictionary) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var immortal: bool = car.get("immortal", false)
+	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(car.get("hp", 0.0))
-	var hp_text := "∞" if car.get("immortal", false) else "%d/%d HP" % [roundi(hp), roundi(max_hp)]
-	return "%s  #%d  (%s)" % [model_name, int(car["instance_id"]), hp_text]
+	var bar := ProgressBar.new()
+	bar.custom_minimum_size = Vector2(160, 12)
+	bar.show_percentage = false
+	bar.max_value = 1.0 if immortal else maxf(1.0, max_hp)
+	bar.value = 1.0 if immortal else hp
+	row.add_child(bar)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", 12)
+	label.text = "∞ HP" if immortal else "%d/%d HP" % [roundi(hp), roundi(max_hp)]
+	row.add_child(label)
+	return row
 
 
-# (Re)build the rally buttons for the selected car: only rallies it is eligible
-# for, with the showdown shown only once unlocked. Completed rallies are marked
-# (still enterable — re-wins farm rewards, todo/reward-system.md).
+func _drive_text(drive_mode: int) -> String:
+	match drive_mode:
+		CarLibrary.RWD: return "RWD"
+		CarLibrary.AWD: return "AWD"
+		CarLibrary.FWD: return "FWD"
+		_: return "?"
+
+
+# (Re)build the rally board for the selected car. Unlike the first slice, EVERY
+# rally is shown so the player can see what's locked and WHY: a rally the selected
+# car can't enter is disabled with its restriction spelled out ("needs RWD"), so
+# the unlock path ("win a JP car → Rising Sun opens") is legible. Completed rallies
+# are marked ✓ but stay selectable (re-wins farm rewards, todo/reward-system.md).
+# The showdown is shown locked with a progress meter until every other rally is done.
 func _refresh_rallies() -> void:
 	for child in _rallies_box.get_children():
 		child.queue_free()
@@ -141,19 +200,69 @@ func _refresh_rallies() -> void:
 		return
 	var meta := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var sd_unlocked := RallyLibrary.showdown_unlocked(Save.profile)
+
+	# Showdown progress meter (gameplay.md › the final showdown): completed / total.
+	var total := 0
 	for rally in RallyLibrary.RALLIES:
-		if rally["showdown"] and not sd_unlocked:
-			continue
-		if not RallyLibrary.is_eligible(rally, meta):
-			continue
+		if not rally["showdown"]:
+			total += 1
+	var done_count := RallyLibrary.completed_count(Save.profile)
+	var meter := Label.new()
+	meter.add_theme_font_size_override("font_size", 12)
+	meter.text = "Progress to the Showdown: %d / %d rallies completed" % [done_count, total]
+	_rallies_box.add_child(meter)
+
+	for rally in RallyLibrary.RALLIES:
+		var rally_id := String(rally["id"])
+		var is_showdown: bool = rally["showdown"]
+		var eligible := RallyLibrary.is_eligible(rally, meta)
+		var done := Save.rally_completed(rally_id)
 		var btn := Button.new()
-		var done := Save.rally_completed(String(rally["id"]))
-		btn.text = "%s  (diff %d)%s" % [rally["name"], int(rally["difficulty"]), "  ✓" if done else ""]
 		btn.focus_mode = Control.FOCUS_NONE
-		btn.toggle_mode = true
-		btn.button_pressed = String(rally["id"]) == _selected_rally_id
-		btn.pressed.connect(_on_rally_selected.bind(String(rally["id"])))
+		# A rally is enterable when the car is eligible AND (it's not the showdown,
+		# or the showdown is unlocked). Locked rallies are shown but disabled.
+		var enterable := eligible and (not is_showdown or sd_unlocked)
+		if enterable:
+			btn.toggle_mode = true
+			btn.button_pressed = rally_id == _selected_rally_id
+			btn.text = "%s  (diff %d)%s" % [rally["name"], int(rally["difficulty"]), "  ✓" if done else ""]
+			btn.pressed.connect(_on_rally_selected.bind(rally_id))
+		else:
+			btn.disabled = true
+			btn.text = "🔒 %s  (diff %d) — %s" % [
+				rally["name"], int(rally["difficulty"]), _lock_reason(rally, is_showdown, sd_unlocked, done_count, total)]
 		_rallies_box.add_child(btn)
+
+
+# Why a shown-but-locked rally can't be entered by the selected car: either the
+# showdown gate (complete all rallies first) or the car failing the restriction.
+func _lock_reason(rally: Dictionary, is_showdown: bool, sd_unlocked: bool, done_count: int, total: int) -> String:
+	if is_showdown and not sd_unlocked:
+		return "complete all rallies first (%d/%d)" % [done_count, total]
+	return "needs %s" % _restriction_text(rally.get("restriction", {}))
+
+
+# Human-readable summary of a rally's restriction, for the locked-rally hint and
+# (eventually) the briefing panel. Empty restriction is open-class (never locked).
+func _restriction_text(restriction: Dictionary) -> String:
+	if restriction.is_empty():
+		return "any car"
+	var parts: Array[String] = []
+	if restriction.has("drive_mode"):
+		parts.append("%s cars" % _drive_text(int(restriction["drive_mode"])))
+	if restriction.has("country"):
+		parts.append("%s cars" % String(restriction["country"]))
+	if restriction.has("car_type"):
+		parts.append("%s body" % String(restriction["car_type"]))
+	if restriction.has("engine_min_l"):
+		parts.append("engine ≥ %.1f L" % float(restriction["engine_min_l"]))
+	if restriction.has("engine_max_l"):
+		parts.append("engine ≤ %.1f L" % float(restriction["engine_max_l"]))
+	if restriction.has("pw_min"):
+		parts.append("power-to-weight ≥ %.2f" % float(restriction["pw_min"]))
+	if restriction.has("pw_max"):
+		parts.append("power-to-weight ≤ %.2f" % float(restriction["pw_max"]))
+	return ", ".join(parts)
 
 
 func _on_car_selected(instance_id: int) -> void:
@@ -174,7 +283,9 @@ func _update_status() -> void:
 	_start_button.disabled = not can_start
 	if can_start:
 		var rally := RallyLibrary.by_id(_selected_rally_id)
-		_status.text = "Field %s in %s" % [_car_label(car), rally["name"]]
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		var model_name := String(entry.get("name", car.get("model_id", "?")))
+		_status.text = "Field %s #%d in %s" % [model_name, int(car["instance_id"]), rally["name"]]
 	else:
 		_status.text = "Select a car and a rally."
 
