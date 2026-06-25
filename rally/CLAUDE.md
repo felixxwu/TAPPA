@@ -99,9 +99,6 @@
 
 - Godot binary: `/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot`
   (override with `$GODOT`). Tests use GUT, vendored in `addons/gut/`.
-- Do NOT commit any code unless the user explicitly tells you to. Make and
-  verify changes in the working tree and leave committing to the user; never
-  run `git commit` (or `git push`) on your own initiative.
 - Do NOT work in a separate git worktree. Make changes directly in this
   checkout so the user sees them in the project they actually run. Never create
   or switch into a worktree (no `EnterWorktree`, no `git worktree add`) — even
