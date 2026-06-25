@@ -59,6 +59,10 @@ Declared in `project.godot` `[autoload]`:
   autosaves on every meaningful change. Per-player *mutable progress*, kept
   distinct from `Config`'s authored baseline. See
   [save-persistence.md](save-persistence.md).
+- **`RallySession`** → `scripts/rally_session.gd`. The rally-level event-flow
+  orchestrator — idle until a rally starts, then survives the per-event scene
+  reloads while it sequences events, placement and rewards. See
+  [rally-session.md](rally-session.md).
 
 ## Data flow
 

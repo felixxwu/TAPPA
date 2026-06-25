@@ -27,6 +27,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, target times, opponent field, showdown gating) |
 | [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, repair kit, tuning gates) |
 | [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (tier clamp, per-event upgrade, per-rally car with anti-soft-lock) |
+| [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, wreck/DNF, no-retry) |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, wreck at 0 HP |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
@@ -64,6 +65,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress) |
 | Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots, repair kit) |
 | Reward draws | `scripts/reward_system.gd` (`RewardSystem` — tier clamp, upgrade/car draws) |
+| Rally session | `scripts/rally_session.gd` (`RallySession` autoload — event-flow orchestration) |
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |

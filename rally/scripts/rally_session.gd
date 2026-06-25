@@ -1,0 +1,249 @@
+extends Node
+# Autoload "RallySession": the rally-level session orchestrator. One coordinator
+# that turns "the player picked rally R with owned car C" into the full loop —
+# field the car, run 3 events, accumulate times, place against the fixed opponent
+# field, grant rewards, and finish (podium → HQ). It sits one level ABOVE the
+# per-stage StageManager (todo/stage-start-and-end.md) and OWNS only the
+# rally-level state machine + in-progress state; it CALLS the systems that already
+# exist (RallyLibrary, RewardSystem, Save) rather than re-implementing them.
+# See todo/rally-event-flow.md.
+#
+# Like Config / Save it is an autoload (no class_name, reached by the global
+# `RallySession`), and it SURVIVES the per-event scene reloads — each event is a
+# fresh load of main.tscn with that event's seed written into Config.data first.
+#
+# This module is the testable BRAIN: it is driven by report_event_result /
+# report_wreck (called by the run scene's StageManager / damage model) and emits
+# signals the menus layer (todo/menus.md) renders (presence, standings, reward
+# reveal, podium). The run-scene fielding + signal wiring lands with menus, where
+# there is finally an entry point (the map's start_rally) to exercise it.
+
+enum Phase { IDLE, PRESENCE, RUNNING, STANDINGS, RESULTS, PODIUM }
+
+const EVENTS_PER_RALLY := 3
+
+# End-of-rally summary (todo/rally-event-flow.md API):
+#   placed:int (1-based, -1 if DNF), completed:bool (top-3), combined_ms:int
+#   (-1 if DNF), dnf:bool
+signal rally_finished(result: Dictionary)
+# Phase transitions, for menus to react to (fly-throughs / overlays).
+signal phase_changed(phase: int)
+# An event is about to run (presence beat + StageManager handoff in the run scene).
+signal event_started(event_index: int, event: Dictionary)
+# A between-event standings interstitial should show (after events 0 and 1).
+signal standings_ready(event_index: int)
+# A per-event upgrade was drawn + granted — reward reveal hook (menus rig 5).
+signal upgrade_revealed(item_id: String)
+# A top-3 car reward was drawn + granted — reward reveal (car arrives in HQ).
+signal car_rewarded(model_id: String)
+# A top-3 showdown finish: the game's win / credits beat fires instead of a draw.
+signal showdown_won()
+
+var _phase: int = Phase.IDLE
+var _rally: Dictionary = {}            # the RallyDef being run ({} when IDLE)
+var _car_instance_id := -1             # the fielded OwnedCar instance
+var _event_index := 0                  # 0..2
+var _event_times_ms: Array[int] = []   # accumulated, one per completed event
+var _event_targets_ms: Array = []      # per-event target time (drives the field)
+var _opponent_field: Array = []        # fixed per rally seed (never saved)
+var _dnf := false
+
+# When true (the default for real play) RallySession performs the per-event scene
+# loads itself. Headless tests set it false and drive report_* directly with
+# precomputed target times, so no track generation or scene reload happens.
+var auto_load_scenes := true
+
+
+# --- Public API --------------------------------------------------------------
+
+# Begin a rally with the given RallyDef and fielded OwnedCar. `event_targets_ms`
+# is optional precomputed per-event target times (ms); when omitted, real play
+# derives them by generating each event's track. Resets all per-rally state, so
+# re-entering a rally from the map runs fresh (no retry — the opponent field and
+# persisted HP are unchanged). Kicks the first event.
+func start_rally(rally: Dictionary, owned_car: Dictionary, event_targets_ms: Array = []) -> void:
+	_rally = rally
+	_car_instance_id = int(owned_car.get("instance_id", -1))
+	_event_index = 0
+	_event_times_ms = []
+	_dnf = false
+	_event_targets_ms = event_targets_ms if not event_targets_ms.is_empty() else _compute_event_targets(rally)
+	_opponent_field = RallyLibrary.generate_opponent_field(rally, _event_targets_ms)
+	_enter_event()
+
+
+# An event finished cleanly (from StageManager.stage_completed in the run scene).
+# Accumulate the time, persist chip damage, draw + grant a per-event upgrade, then
+# either advance to the next event (via standings) or resolve the rally.
+func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
+	if _phase != Phase.RUNNING:
+		return
+	_event_times_ms.append(elapsed_ms)
+	# HP persists at each event boundary (Save debounces/autosaves). Only a fielded
+	# (bound) car has an instance to write back to.
+	if _car_instance_id >= 0 and hp_lost > 0.0:
+		Save.apply_damage(_car_instance_id, hp_lost)
+	# A random upgrade per completed event (gameplay.md); granted + saved at once so
+	# the unseeded draw is savescum-proof (reward-system.md).
+	var item_id: String = RewardSystem.draw_upgrade(int(_rally.get("difficulty", 1)), Save.profile)
+	Save.add_item(item_id)
+	Save.save()
+	upgrade_revealed.emit(item_id)
+	_event_index += 1
+	if _event_index >= EVENTS_PER_RALLY:
+		_resolve_results()
+	else:
+		# Standings interstitial after events 0 and 1, then on to the next event.
+		_set_phase(Phase.STANDINGS)
+		standings_ready.emit(_event_index)
+		_enter_event()
+
+
+# The fielded car was wrecked (HP→0, from the damage model). Immediate DNF: skip
+# the remaining events and resolve. Upgrades already revealed this rally are kept.
+func report_wreck() -> void:
+	if _phase != Phase.RUNNING:
+		return
+	_dnf = true
+	# The bound damage model already removes the instance; calling again is a
+	# harmless no-op, but we own the destruction so report_wreck is correct even
+	# when driven directly (tests / an unbound caller).
+	if _car_instance_id >= 0:
+		Save.wreck_car(_car_instance_id)
+		Save.save()
+	_resolve_results()
+
+
+# Abandon mid-rally (from the Pause overlay): end the session back at HQ with the
+# rally left incomplete and damage persisted — no penalty, no reward (no retry).
+func abandon() -> void:
+	if _phase == Phase.IDLE:
+		return
+	_reset_to_idle()
+	rally_finished.emit({"placed": -1, "completed": false, "combined_ms": -1, "dnf": false, "abandoned": true})
+
+
+# --- Readouts (menus / tests) ------------------------------------------------
+
+func is_active() -> bool:
+	return _phase != Phase.IDLE
+
+
+func phase() -> int:
+	return _phase
+
+
+func event_index() -> int:
+	return _event_index
+
+
+func event_times_ms() -> Array[int]:
+	return _event_times_ms
+
+
+func car_instance_id() -> int:
+	return _car_instance_id
+
+
+func rally_id() -> String:
+	return String(_rally.get("id", ""))
+
+
+func opponent_field() -> Array:
+	return _opponent_field
+
+
+func current_event() -> Dictionary:
+	var events: Array = _rally.get("events", [])
+	return events[_event_index] if _event_index >= 0 and _event_index < events.size() else {}
+
+
+# --- Internals ---------------------------------------------------------------
+
+# Enter the current event: announce it (presence + StageManager handoff happen in
+# the run scene) and, in real play, load that event's run scene with its seed.
+func _enter_event() -> void:
+	_set_phase(Phase.RUNNING)
+	var event := current_event()
+	event_started.emit(_event_index, event)
+	if auto_load_scenes:
+		_load_event_scene(event)
+
+
+# Total the events, place against the field, record completion + grant rewards on
+# a top-3 finish (showdown wins instead of a car draw), then finish back to IDLE.
+func _resolve_results() -> void:
+	_set_phase(Phase.RESULTS)
+	var combined := -1
+	var placed := -1
+	if not _dnf:
+		combined = 0
+		for t in _event_times_ms:
+			combined += int(t)
+		placed = RallyLibrary.placement(_opponent_field, combined)
+	var top3 := not _dnf and placed >= 1 and placed <= 3
+
+	_set_phase(Phase.PODIUM)
+	if top3:
+		# complete_rally records the FIRST completion (idempotent); the car reward
+		# fires on EVERY top-3 finish, including re-wins (renewable supply).
+		Save.complete_rally(String(_rally.get("id", "")), combined)
+		if bool(_rally.get("showdown", false)):
+			showdown_won.emit()
+		else:
+			var model: Variant = RewardSystem.draw_car(int(_rally.get("difficulty", 1)), Save.profile)
+			if model != null:
+				Save.grant_car(String(model))
+				car_rewarded.emit(String(model))
+		Save.save()
+
+	var result := {
+		"placed": placed,
+		"completed": top3,
+		"combined_ms": combined,
+		"dnf": _dnf,
+	}
+	_reset_to_idle()
+	rally_finished.emit(result)
+
+
+func _reset_to_idle() -> void:
+	_rally = {}
+	_car_instance_id = -1
+	_event_index = 0
+	_event_times_ms = []
+	_event_targets_ms = []
+	_opponent_field = []
+	_dnf = false
+	_set_phase(Phase.IDLE)
+
+
+func _set_phase(p: int) -> void:
+	_phase = p
+	phase_changed.emit(p)
+
+
+# Per-event target times (ms) for the opponent field, derived by generating each
+# event's seeded track (deterministic for the seed). Only used in real play; tests
+# pass precomputed targets to start_rally so no track generation happens.
+func _compute_event_targets(rally: Dictionary) -> Array:
+	var cfg: GameConfig = Config.data
+	var targets: Array = []
+	for event in rally.get("events", []):
+		var width := RallyLibrary.event_width(event)
+		var result := TrackGenerator.generate(
+			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
+			int(event.get("turn_count", 10)), width, cfg.track_clearance)
+		targets.append(RallyLibrary.derive_target_ms(result, event))
+	return targets
+
+
+# Write the event's track parameters into the live config and reload the run
+# scene. The load hides under the menus fly-through/fade (todo/menus.md). Mirrors
+# apply_car's runtime Config.data mutation.
+func _load_event_scene(event: Dictionary) -> void:
+	var cfg: GameConfig = Config.data
+	cfg.track_seed = int(event.get("seed", cfg.track_seed))
+	cfg.track_turn_count = int(event.get("turn_count", cfg.track_turn_count))
+	cfg.track_width = RallyLibrary.event_width(event)
+	get_tree().change_scene_to_file("res://main.tscn")

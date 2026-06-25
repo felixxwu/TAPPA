@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 
 Config="*res://scripts/config.gd"
 Save="*res://scripts/save_manager.gd"
+RallySession="*res://scripts/rally_session.gd"
 
 [display]
 
