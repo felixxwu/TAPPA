@@ -7,8 +7,9 @@
 > migration scaffolding, and headless tests (`test_save_manager.gd`, plus
 > additions to `test_car_library.gd` / `test_smoke.gd`) are in place and green.
 > **Still open:** verifying the round-trip on an actual **web export**
-> (IndexedDB flush — highest-risk, untested), and wiring `_recompute_showdown()`
-> once the rally roster lands. Doc: `features/save-persistence.md`.
+> (IndexedDB flush — highest-risk, untested) — now split into its own
+> `todo/web-save-persistence.md`; and wiring `_recompute_showdown()` once the
+> rally roster lands. Doc: `features/save-persistence.md`.
 >
 > Implementation brief for the
 > player-progress save system named first under `gameplay.md` › *Foundations
