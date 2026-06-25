@@ -57,14 +57,15 @@ In real play (`auto_load_scenes = true`) each event writes its
 `(seed, turn_count, width)` into `Config.data` and reloads `main.tscn`. Headless
 tests set `auto_load_scenes = false` and drive `report_*` directly.
 
-## Not yet wired
+## Run-scene wiring
 
-The **run-scene fielding + signal wiring** (world.gd configuring the car from the
-fielded OwnedCar via the upgrade/tuning/damage pipeline, and routing
-`StageManager.stage_completed` / car `wrecked` to `report_*`) and the menus that
-call `start_rally` land with [../todo/menus.md](../todo/menus.md), where there is
-an entry point to exercise them end-to-end. RallySession is the tested brain those
-hook into.
+The **run-scene fielding + signal wiring** is in place ([menus.md](menus.md)):
+`world.gd` configures the car from the fielded OwnedCar via the
+upgrade/tuning/damage pipeline and routes `StageManager.stage_completed` / car
+`wrecked` to `report_*` when a session is active. The placeholder HQ calls
+`start_rally`, so the loop runs end-to-end. The **diegetic presentation** around
+it (standings / podium / reward-reveal staging, `standings_ready` etc.) is the
+deferred full menus build — RallySession already emits the signals it hooks.
 
 ## Tests
 

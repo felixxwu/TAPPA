@@ -1,7 +1,28 @@
 # Menus & UI Shell — implementation spec (diegetic / in-world)
 
-> Status: **planned, not yet implemented.** Implementation brief for the
-> meta-game UI described in `gameplay.md`. Follow the config-first convention
+> Status: **🟡 VERTICAL SLICE SHIPPED — full diegetic build still open.** A
+> placeholder flat-UI loop is in place and proves the loop end-to-end: **HQ
+> (boot) → field car → run → podium → HQ**, wiring `RallySession`
+> (`todo/rally-event-flow.md`) into the run scene. See the living doc
+> [`features/menus.md`](../features/menus.md) (source: `hq.tscn` + `scripts/hq.gd`,
+> `podium.tscn` + `scripts/podium.gd`, session-aware fielding in `scripts/world.gd`;
+> tests in `tests/headless/test_menu_flow.gd`).
+>
+> **What the slice already covers (struck from the build list below):** the HQ
+> hub as the boot scene (immortal-starter grant, owned-car list, eligible-rally
+> list incl. showdown-gating + completed marks, scrollable so the Start action
+> never clips on phones), the **Start → `RallySession.start_rally`** handoff,
+> run-scene **fielding** + `stage_completed`/`wrecked` → `report_*` wiring, and a
+> placeholder **Podium** reading `last_result` (placement / combined / DNF / win).
+>
+> **What remains (the bulk of this spec):** the entire **diegetic 3D staging** —
+> the car-park / tuning-lift / map-table locations, the stylised map plane + pins,
+> world-anchored SubViewport stats panels, the 3D podium + reward-reveal rig, the
+> flat Standings / Pause / Inventory / Confirm overlays, the `menu_*` input
+> action set + mobile gestures, and the camera fly-through transitions. The
+> sections below specify that remaining work.
+>
+> Follow the config-first convention
 > (`CLAUDE.md`): tunables (camera move times, panel offsets, station positions
 > worth exposing) go in `GameConfig` (`scripts/game_config.gd` +
 > `config/game_config.tres`), never hardcoded. Update the relevant `features/*.md`
