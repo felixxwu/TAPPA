@@ -115,9 +115,9 @@ text = "0 rpm"
 
 [node name="ProgressLabel" type="Label" parent="HUD" unique_id=1261069771]
 offset_left = 8.0
-offset_top = 48.0
+offset_top = 92.0
 offset_right = 208.0
-offset_bottom = 68.0
+offset_bottom = 112.0
 theme_override_font_sizes/font_size = 14
 text = "0%"
 
@@ -149,15 +149,16 @@ theme_override_font_sizes/font_size = 10
 text = "Mazda MX-5"
 
 [node name="VersionLabel" type="Label" parent="HUD" unique_id=1044419645]
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 8.0
-offset_top = -22.0
-offset_right = 220.0
-offset_bottom = -6.0
-grow_vertical = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -120.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 24.0
+grow_horizontal = 0
 theme_override_font_sizes/font_size = 10
 text = "v0.0"
+horizontal_alignment = 2
 
 [node name="MobileControls" type="CanvasLayer" parent="." unique_id=1664740689]
 layer = 3
