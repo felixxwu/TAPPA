@@ -85,6 +85,33 @@ func test_hq_map_sizes_to_the_viewport_and_pans_clamped() -> void:
 	assert_eq(hq._map_content.position, Vector2.ZERO, "panning is clamped to the near edge")
 
 
+func test_hq_touch_drag_is_scaled_into_canvas_space() -> void:
+	# Touch drag deltas arrive in physical screen pixels; with the viewport stretch
+	# they must be converted to logical canvas units, else the map drags faster than
+	# the finger. A mouse-motion delta, already in canvas space, pans 1:1.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._map_frame.size = Vector2(800, 400)
+	hq._size_map()
+	var factor: Vector2 = hq._screen_to_canvas()
+
+	hq._map_content.position = Vector2.ZERO
+	var drag := InputEventScreenDrag.new()
+	drag.relative = Vector2(-40, -20)
+	hq._map_input(drag)
+	assert_eq(hq._map_content.position, Vector2(-40, -20) * factor,
+		"a touch drag pans by its delta converted to canvas space")
+
+	hq._map_content.position = Vector2.ZERO
+	hq._panning = true
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(-40, -20)
+	hq._map_input(motion)
+	assert_eq(hq._map_content.position, Vector2(-40, -20),
+		"a mouse drag (already canvas-space) pans 1:1")
+
+
 func _pin_for(hq: Node3D, rally_id: String) -> Button:
 	for pin in _map_pins(hq):
 		if String((pin as Button).get_meta("rally_id", "")) == rally_id:

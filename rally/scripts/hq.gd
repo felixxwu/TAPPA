@@ -69,9 +69,9 @@ var _cam_tween: Tween
 # World-map overlay. The map content is larger than the on-screen frame and is
 # panned (dragged) within it; pins ride on the content. The content is sized
 # RELATIVE to the frame (MAP_VIEW_FACTOR × the visible viewport on each axis) so
-# the zoom is consistent across screen sizes — at 2× you can pan one screen's worth
-# in each direction and no more (keeps it from reading as zoomed-in on mobile).
-const MAP_VIEW_FACTOR := 2.0
+# the zoom is consistent across screen sizes — at 1.5× you can pan half a screen's
+# worth in each direction and no more (keeps it from reading as zoomed-in on mobile).
+const MAP_VIEW_FACTOR := 1.5
 var _map_layer: CanvasLayer
 var _map_frame: Control      # the on-screen viewport into the map (clips + pans)
 var _map_content: Control    # the full map plane; panned by moving it
@@ -337,6 +337,19 @@ func _stars_for(rally_id: String) -> int:
 func _pan_map(delta: Vector2) -> void:
 	_map_content.position += delta
 	_clamp_map()
+
+
+# Per-axis factor mapping a physical-screen delta to logical canvas units (the
+# inverse of the viewport stretch). 1:1 when there's no stretch (or no window yet).
+func _screen_to_canvas() -> Vector2:
+	var win := get_window()
+	if win == null:
+		return Vector2.ONE
+	var canvas := get_viewport().get_visible_rect().size
+	var screen := Vector2(win.size)
+	return Vector2(
+		canvas.x / screen.x if screen.x > 0.0 else 1.0,
+		canvas.y / screen.y if screen.y > 0.0 else 1.0)
 
 
 # Keep the map plane covering the frame: you can't drag past its edges.
@@ -746,11 +759,17 @@ func _map_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		_panning = event.pressed
 	elif event is InputEventMouseMotion and _panning:
+		# Mouse motion deltas are already in the logical canvas space.
 		_pan_map(event.relative)
 	elif event is InputEventScreenTouch:
 		_panning = event.pressed
 	elif event is InputEventScreenDrag:
-		_pan_map(event.relative)
+		# Touch drag deltas arrive in PHYSICAL screen pixels — with the viewport
+		# stretch (project.godot: stretch/mode=viewport, keep_height) the canvas is
+		# rendered at a fixed logical height and scaled up to the device, so an
+		# un-scaled delta drags the map several times faster than the finger. Convert
+		# the delta from screen space back to canvas space first.
+		_pan_map(event.relative * _screen_to_canvas())
 
 
 func _cars_input(event: InputEvent) -> void:
