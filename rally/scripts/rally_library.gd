@@ -50,6 +50,7 @@ const RIVAL_PACE_SPREAD := 1.0
 const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Shakedown", "difficulty": 1, "showdown": false,
+		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {},  # open-class anti-soft-lock floor
 		"events": [
 			{"seed": 1001, "turn_count": 10},
@@ -59,6 +60,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "difficulty": 2, "showdown": false,
+		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {},  # open-class
 		"events": [
 			{"seed": 2001, "turn_count": 14},
@@ -68,6 +70,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "rwd_masters", "name": "RWD Masters", "difficulty": 2, "showdown": false,
+		"map_pos": Vector2(0.52, 0.64),
 		"restriction": {"drive_mode": CarLibrary.RWD},
 		"events": [
 			{"seed": 3001, "turn_count": 13},
@@ -77,6 +80,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "rising_sun", "name": "Rising Sun Rally", "difficulty": 3, "showdown": false,
+		"map_pos": Vector2(0.82, 0.34),
 		"restriction": {"country": "JP"},
 		"events": [
 			{"seed": 4001, "turn_count": 16},
@@ -86,6 +90,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "grand_tour", "name": "Grand Tour", "difficulty": 3, "showdown": false,
+		"map_pos": Vector2(0.66, 0.28),
 		"restriction": {},  # open-class at the top reachable tier
 		"events": [
 			{"seed": 5001, "turn_count": 18},
@@ -95,6 +100,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "the_showdown", "name": "The Showdown", "difficulty": 4, "showdown": true,
+		"map_pos": Vector2(0.5, 0.12),
 		"restriction": {},  # open so the immortal starter can always finish the game
 		"events": [
 			{"seed": 9001, "turn_count": 22},

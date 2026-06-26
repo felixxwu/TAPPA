@@ -1,46 +1,59 @@
 extends Node3D
-# HQ — the meta-game hub (todo/menus.md location 1). This is the FIRST diegetic 3D
-# slice (todo/diegetic-hq.md): the flat car-park surface is replaced by a real 3D
-# showroom — a menu camera framing your car in a lit lot, cycled prev/next — while
-# the rally board + Start stay a flat overlay (the map → 3D-pins port is a later
-# slice). It is the game's boot scene and stays lightweight (NO track generation).
+# HQ — the meta-game hub (todo/menus.md location 1), diegetic 3D build
+# (todo/diegetic-hq.md). Two SEPARATE screens, in this order:
+#   1. WORLD MAP (flat overlay) — pick a rally from pins on a basic map.
+#   2. CAR SELECT (3D car park) — pick from the cars ELIGIBLE for that rally; the
+#      eligible cars are parked in a row and the menu camera pans between them.
+# Only one screen's controls show at a time. Start (on the car screen) hands off to
+# RallySession. It is the game's boot scene and stays lightweight (NO track gen).
 #
-# Scope note (todo/diegetic-hq.md): this slice shows ONE focused car at a time (the
-# proven one-car-at-a-time invariant — `Car.apply_owned` mutates the shared
-# `Config.data` and the car scene's mesh sub-resources, so configuring N cars at
-# once would stomp them). A simultaneous parked lineup is the immediate follow-up,
-# once per-instance mesh duplication is handled and the result can be eyeballed.
+# Shared-resource note: car.tscn's body/wheel meshes are SubResources shared across
+# instances, so apply_car sizing one parked car would resize every other. After
+# apply_owned each parked car gets its OWN mesh copies (_dup_meshes) so a mixed lot
+# shows each at its true size. apply_owned also writes the shared Config.data (last
+# car wins) — harmless here: the props don't simulate, and world.gd re-applies the
+# fielded car's config before a run.
+
+enum Screen { MAP, CARS }
 
 const CAR_SCENE := preload("res://car.tscn")
 
-var _selected_instance_id := -1
+var _screen: int = Screen.MAP
 var _selected_rally_id := ""
+var _selected_instance_id := -1
 
-# Showroom state: the owned-car list and which one is focused (shown + selected).
-var _owned: Array = []
+# Car-select state: the owned cars eligible for the chosen rally, the parked car
+# nodes + their lot markers (parallel to _eligible), and which slot is focused.
+var _eligible: Array = []
+var _cars: Array = []
+var _markers: Array = []
 var _focus := 0
-var _car: Node3D = null
 
-# 3D staging.
+# 3D staging (the car park).
 var _camera: Camera3D
-var _display_marker: Marker3D
 var _stats_label: Label3D
 var _cam_tween: Tween
 
-# Flat overlay widgets.
-var _rallies_box: VBoxContainer
-var _status: Label
-var _start_button: Button
+# World-map overlay.
+var _map_layer: CanvasLayer
+var _map_area: Control
+var _map_meter: Label
+
+# Car-select overlay.
+var _car_layer: CanvasLayer
+var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
+var _start_button: Button
+var _no_eligible_label: Label
 
 
 func _ready() -> void:
 	_ensure_starter()
 	_build_world()
-	_build_overlay()
-	_reload_owned()
-	_show_focused_car()
+	_build_map_overlay()
+	_build_car_overlay()
+	_show_map()
 
 
 # First run: grant the immortal starter (the anti-soft-lock floor — it can never
@@ -54,7 +67,7 @@ func _ensure_starter() -> void:
 	Save.save()
 
 
-# --- 3D world (the lot) ------------------------------------------------------
+# --- 3D world (the lot, used by the car-select screen) -----------------------
 
 func _build_world() -> void:
 	var cfg: GameConfig = Config.data
@@ -74,44 +87,40 @@ func _build_world() -> void:
 	sun.light_energy = 1.1
 	add_child(sun)
 
-	# The lot floor: a plain plane (visual only — the parked car is physics-frozen,
-	# so no collider is needed).
 	var ground := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(60.0, 60.0)
+	plane.size = Vector2(120.0, 60.0)
 	ground.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.18, 0.19, 0.22)
 	ground.material_override = mat
 	add_child(ground)
 
-	# Where the focused car sits.
-	_display_marker = Marker3D.new()
-	add_child(_display_marker)
-
-	# A floating stats panel beside the car (Label3D for the slice; the SubViewport
-	# panel of menus.md rig 2 is deferred). Billboarded so it always faces the camera.
+	# Billboarded stats panel beside the focused car (Label3D for now; the
+	# SubViewport panel of menus.md rig 2 is deferred).
 	_stats_label = Label3D.new()
 	_stats_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_stats_label.modulate = Color(1, 1, 1)
 	_stats_label.outline_size = 12
 	_stats_label.font_size = 64
 	_stats_label.pixel_size = 0.006
-	_stats_label.position = Vector3(-2.6, 1.4, 0.0)
 	_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	add_child(_stats_label)
 
 	_camera = Camera3D.new()
 	_camera.current = true
 	add_child(_camera)
-	_snap_camera_to_focus()
 
 
-# --- Flat overlay (rally board + start) --------------------------------------
+# --- World-map overlay (screen 1) --------------------------------------------
 
-func _build_overlay() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
+func _build_map_overlay() -> void:
+	_map_layer = CanvasLayer.new()
+	add_child(_map_layer)
+
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0.10, 0.13, 0.18)
+	_map_layer.add_child(bg)
 
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -120,15 +129,110 @@ func _build_overlay() -> void:
 	root.offset_right = -16.0
 	root.offset_bottom = -16.0
 	root.add_theme_constant_override("separation", 8)
-	layer.add_child(root)
+	_map_layer.add_child(root)
 
 	var title := Label.new()
-	title.text = "RALLY HQ"
+	title.text = "WORLD MAP — choose a rally"
 	title.add_theme_font_size_override("font_size", 28)
 	root.add_child(title)
 
-	# Car selector: ◄ / ► cycle the focused car (mirrors the menu_left/right inputs
-	# and the swipe gestures the diegetic spec calls for; tap-friendly for mobile).
+	_map_meter = Label.new()
+	_map_meter.add_theme_font_size_override("font_size", 14)
+	root.add_child(_map_meter)
+
+	# The map plane: a panel the pins are placed on by fractional anchors, so they
+	# land at each rally's map_pos regardless of screen size. (Basic flat map; the
+	# stylised 3D map plane of menus.md rig 3 is a later slice.)
+	var frame := PanelContainer.new()
+	frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(frame)
+	_map_area = Control.new()
+	_map_area.clip_contents = true
+	frame.add_child(_map_area)
+
+
+# (Re)build the rally pins for the current progress. Every rally is a pin; the
+# showdown is locked (disabled) until all others are completed. Completed rallies
+# are marked ✓. Eligibility-by-car is NOT gated here — that's the next screen.
+func _refresh_map() -> void:
+	for child in _map_area.get_children():
+		child.queue_free()
+	var sd_unlocked := RallyLibrary.showdown_unlocked(Save.profile)
+	var total := 0
+	for rally in RallyLibrary.RALLIES:
+		if not rally["showdown"]:
+			total += 1
+	var done_count := RallyLibrary.completed_count(Save.profile)
+	_map_meter.text = "Progress to the Showdown: %d / %d rallies completed" % [done_count, total]
+
+	for rally in RallyLibrary.RALLIES:
+		var rally_id := String(rally["id"])
+		var is_showdown: bool = rally["showdown"]
+		var locked := is_showdown and not sd_unlocked
+		var done := Save.rally_completed(rally_id)
+		var pin := Button.new()
+		pin.focus_mode = Control.FOCUS_NONE
+		var restriction := _restriction_text(rally.get("restriction", {}))
+		var mark := "  ✓" if done else ""
+		if locked:
+			pin.disabled = true
+			pin.text = "🔒 %s\ncomplete all rallies first" % rally["name"]
+		else:
+			pin.text = "%s%s\n(diff %d · %s)" % [rally["name"], mark, int(rally["difficulty"]), restriction]
+			pin.pressed.connect(_on_rally_pin.bind(rally_id))
+		# Place the pin at its fractional map position (centred on the point).
+		var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
+		pin.anchor_left = mp.x
+		pin.anchor_right = mp.x
+		pin.anchor_top = mp.y
+		pin.anchor_bottom = mp.y
+		pin.offset_left = -90.0
+		pin.offset_right = 90.0
+		pin.offset_top = -22.0
+		pin.offset_bottom = 22.0
+		_map_area.add_child(pin)
+
+
+func _on_rally_pin(rally_id: String) -> void:
+	_selected_rally_id = rally_id
+	_enter_car_screen()
+
+
+# --- Car-select overlay (screen 2) -------------------------------------------
+
+func _build_car_overlay() -> void:
+	_car_layer = CanvasLayer.new()
+	add_child(_car_layer)
+
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = 16.0
+	root.offset_top = 16.0
+	root.offset_right = -16.0
+	root.offset_bottom = -16.0
+	root.add_theme_constant_override("separation", 8)
+	_car_layer.add_child(root)
+
+	_rally_banner = Label.new()
+	_rally_banner.add_theme_font_size_override("font_size", 22)
+	root.add_child(_rally_banner)
+
+	var hint := Label.new()
+	hint.text = "Choose your car"
+	hint.add_theme_font_size_override("font_size", 14)
+	root.add_child(hint)
+
+	# Push the car nav + actions to the bottom so the 3D car park is visible above.
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(spacer)
+
+	_no_eligible_label = Label.new()
+	_no_eligible_label.add_theme_font_size_override("font_size", 16)
+	_no_eligible_label.visible = false
+	root.add_child(_no_eligible_label)
+
+	# Car selector: ◄ / ► pan the camera to the prev/next eligible car.
 	var nav := HBoxContainer.new()
 	nav.add_theme_constant_override("separation", 8)
 	root.add_child(nav)
@@ -150,109 +254,102 @@ func _build_overlay() -> void:
 
 	_car_stats_label = Label.new()
 	_car_stats_label.add_theme_font_size_override("font_size", 12)
+	_car_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_car_stats_label)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root.add_child(scroll)
-
-	var content := VBoxContainer.new()
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", 8)
-	scroll.add_child(content)
-
-	content.add_child(_section_label("Rallies"))
-	_rallies_box = VBoxContainer.new()
-	content.add_child(_rallies_box)
-
-	_status = Label.new()
-	_status.text = "Pick a rally."
-	content.add_child(_status)
-
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	root.add_child(actions)
+	var back := Button.new()
+	back.text = "◄ Map"
+	back.focus_mode = Control.FOCUS_NONE
+	back.pressed.connect(_show_map)
+	actions.add_child(back)
 	_start_button = Button.new()
 	_start_button.text = "Start Rally"
 	_start_button.focus_mode = Control.FOCUS_NONE
-	_start_button.disabled = true
+	_start_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_start_button.pressed.connect(_on_start_pressed)
-	root.add_child(_start_button)
+	actions.add_child(_start_button)
 
 
-func _section_label(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", 16)
-	return l
+# --- Screen transitions ------------------------------------------------------
+
+func _show_map() -> void:
+	_screen = Screen.MAP
+	_selected_instance_id = -1
+	_clear_lineup()
+	_car_layer.visible = false
+	_map_layer.visible = true
+	_refresh_map()
 
 
-# --- Showroom (the focused car) ----------------------------------------------
-
-# Re-read the owned-car list from the save and clamp the focus into range.
-func _reload_owned() -> void:
-	_owned = Save.profile.get("cars", [])
-	if _owned.is_empty():
-		_focus = 0
-	else:
-		_focus = clampi(_focus, 0, _owned.size() - 1)
-
-
-# Focus the owned car with this instance id (re-reading the save first, so a car
-# just won/granted shows up). Used by the reward arrival and tests.
-func focus_instance(instance_id: int) -> void:
-	_reload_owned()
-	for i in _owned.size():
-		if int(_owned[i].get("instance_id", -1)) == instance_id:
-			_focus = i
-			break
-	_show_focused_car()
-
-
-# Step the focus to the prev/next owned car (wrapping), re-reading the save so the
-# list stays current.
-func _cycle_focus(step: int) -> void:
-	_reload_owned()
-	if _owned.is_empty():
-		return
-	_focus = wrapi(_focus + step, 0, _owned.size())
-	_show_focused_car()
-
-
-# Spawn (or respawn) the focused car as a parked, silent, physics-frozen prop, make
-# it the selected car, and refresh the camera + panels + rally board around it.
-func _show_focused_car() -> void:
-	if _owned.is_empty():
-		_selected_instance_id = -1
-		_car_name_label.text = "(no cars)"
+# Enter the car-select screen for the chosen rally: park only the ELIGIBLE owned
+# cars and frame the first one. With none eligible, show a hint + disable Start.
+func _enter_car_screen() -> void:
+	_screen = Screen.CARS
+	_map_layer.visible = false
+	_car_layer.visible = true
+	_build_eligible_lineup()
+	var rally := RallyLibrary.by_id(_selected_rally_id)
+	var done := Save.rally_completed(_selected_rally_id)
+	_rally_banner.text = "%s%s  (diff %d) — needs %s" % [
+		rally.get("name", "?"), "  ✓" if done else "",
+		int(rally.get("difficulty", 0)), _restriction_text(rally.get("restriction", {}))]
+	if _eligible.is_empty():
+		_no_eligible_label.visible = true
+		_no_eligible_label.text = "No eligible car for this rally — win or pick a qualifying car."
+		_car_name_label.text = ""
 		_car_stats_label.text = ""
 		_stats_label.text = ""
-		_refresh_rallies()
-		_update_status()
+		_start_button.disabled = true
 		return
-	var owned: Dictionary = _owned[_focus]
-	_selected_instance_id = int(owned.get("instance_id", -1))
-	_spawn_focused_car(owned)
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var header := "%s  #%d  (%d of %d)" % [
-		entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _owned.size()]
-	_car_name_label.text = header
-	var stats := _car_stats_text(owned, entry)
-	_car_stats_label.text = stats
-	_stats_label.text = "%s\n%s" % [entry.get("name", "?"), stats]
-	_ease_camera_to_focus()
-	_refresh_rallies()
-	_update_status()
+	_no_eligible_label.visible = false
+	_focus = 0
+	_focus_changed(true)  # snap the camera in on entry
 
 
-func _spawn_focused_car(owned: Dictionary) -> void:
-	if _car != null:
-		_car.queue_free()
-		_car = null
+# --- Car park (the eligible lineup) ------------------------------------------
+
+func _clear_lineup() -> void:
+	for car in _cars:
+		if is_instance_valid(car):
+			car.queue_free()
+	for marker in _markers:
+		if is_instance_valid(marker):
+			marker.queue_free()
+	_cars = []
+	_markers = []
+	_eligible = []
+
+
+# Park one frozen car per owned car eligible for the selected rally, laid out in a
+# centred row (GameConfig.menu_car_spacing).
+func _build_eligible_lineup() -> void:
+	_clear_lineup()
+	var rally := RallyLibrary.by_id(_selected_rally_id)
+	for car in Save.profile.get("cars", []):
+		var meta := CarLibrary.by_id(String(car.get("model_id", "")))
+		if RallyLibrary.is_eligible(rally, meta):
+			_eligible.append(car)
+	var cfg: GameConfig = Config.data
+	var n := _eligible.size()
+	for i in n:
+		var marker := Marker3D.new()
+		marker.position = Vector3((i - (n - 1) * 0.5) * cfg.menu_car_spacing, 0.0, 0.0)
+		add_child(marker)
+		_markers.append(marker)
+		_cars.append(_spawn_parked_car(_eligible[i], marker))
+
+
+# Spawn one owned car as a parked, silent, physics-frozen prop at a marker, with its
+# OWN mesh copies (see _dup_meshes) so a mixed lineup shows each at its true size.
+func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	var car := CAR_SCENE.instantiate()
 	add_child(car)
 	car.apply_owned(owned)
-	# Park it: sit it exactly at the marker, kill physics + input + engine audio so
-	# it's a pure static prop (no driving, no idle engine note in the menu).
-	car.global_transform = _display_marker.global_transform
+	_dup_meshes(car)
+	car.global_transform = marker.global_transform
 	car.freeze = true
 	car.collision_layer = 0
 	car.collision_mask = 0
@@ -260,7 +357,47 @@ func _spawn_focused_car(owned: Dictionary) -> void:
 	if audio != null and audio.has_method("stop"):
 		audio.stop()
 	car.process_mode = Node.PROCESS_MODE_DISABLED
-	_car = car
+	return car
+
+
+# Give a car instance its own copies of every mesh resource (car.tscn's body/wheel
+# meshes are SubResources shared across instances; apply_car resized the shared one
+# to THIS car, so duplicating now freezes those dimensions before the next car's
+# apply_car mutates the shared original again).
+func _dup_meshes(car: Node) -> void:
+	for mi in car.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if m.mesh != null:
+			m.mesh = m.mesh.duplicate()
+
+
+# Pan the focus to the prev/next eligible car (wrapping).
+func _cycle_focus(step: int) -> void:
+	if _cars.is_empty():
+		return
+	_focus = wrapi(_focus + step, 0, _cars.size())
+	_focus_changed()
+
+
+# React to a focus change: make the focused car the selected car, re-aim the camera
+# + stats panel at it. No respawn — every eligible car is already parked.
+func _focus_changed(snap := false) -> void:
+	if _cars.is_empty():
+		return
+	var owned: Dictionary = _eligible[_focus]
+	_selected_instance_id = int(owned.get("instance_id", -1))
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	_car_name_label.text = "%s  #%d  (%d of %d)" % [
+		entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _cars.size()]
+	var stats := _car_stats_text(owned, entry)
+	_car_stats_label.text = stats
+	_stats_label.text = "%s\n%s" % [entry.get("name", "?"), stats]
+	_stats_label.global_position = (_markers[_focus] as Marker3D).global_position + Vector3(-2.6, 1.4, 0.0)
+	_start_button.disabled = false
+	if snap:
+		_snap_camera_to_focus()
+	else:
+		_ease_camera_to_focus()
 
 
 # One-line car summary shared by the overlay and the 3D Label3D.
@@ -287,93 +424,7 @@ func _drive_text(drive_mode: int) -> String:
 		_: return "?"
 
 
-# --- Menu camera -------------------------------------------------------------
-
-# The framing transform for the focused car: a 3/4 hero shot from the configured
-# offset, looking at the car a little above its origin.
-func _camera_target_xform() -> Transform3D:
-	var cfg: GameConfig = Config.data
-	var car_pos := _display_marker.global_transform.origin
-	var eye := car_pos + cfg.menu_camera_offset
-	var look := car_pos + Vector3.UP * cfg.menu_camera_look_height
-	var t := Transform3D.IDENTITY
-	t.origin = eye
-	return t.looking_at(look, Vector3.UP)  # looking_at keeps the origin (the eye)
-
-
-func _snap_camera_to_focus() -> void:
-	_camera.global_transform = _camera_target_xform()
-
-
-# Ease the camera into the framing over GameConfig.menu_camera_move_time (a small
-# settle each time you cycle cars). Snaps when the move time is ~0.
-func _ease_camera_to_focus() -> void:
-	var cfg: GameConfig = Config.data
-	if _cam_tween != null and _cam_tween.is_valid():
-		_cam_tween.kill()
-	if cfg.menu_camera_move_time <= 0.0:
-		_snap_camera_to_focus()
-		return
-	_cam_tween = create_tween()
-	_cam_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_cam_tween.tween_property(_camera, "global_transform", _camera_target_xform(), cfg.menu_camera_move_time)
-
-
-# --- Rally board (flat overlay) ----------------------------------------------
-
-# (Re)build the rally board for the focused car. EVERY rally is shown so the player
-# can see what's locked and WHY: a rally the car can't enter is disabled with its
-# restriction spelled out ("needs RWD"), so the unlock path is legible. Completed
-# rallies are marked ✓ but stay selectable (re-wins farm rewards). The showdown is
-# shown locked with a progress meter until every other rally is done.
-func _refresh_rallies() -> void:
-	for child in _rallies_box.get_children():
-		child.queue_free()
-	var owned := Save.get_car(_selected_instance_id)
-	if owned.is_empty():
-		return
-	var meta := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var sd_unlocked := RallyLibrary.showdown_unlocked(Save.profile)
-
-	var total := 0
-	for rally in RallyLibrary.RALLIES:
-		if not rally["showdown"]:
-			total += 1
-	var done_count := RallyLibrary.completed_count(Save.profile)
-	var meter := Label.new()
-	meter.add_theme_font_size_override("font_size", 12)
-	meter.text = "Progress to the Showdown: %d / %d rallies completed" % [done_count, total]
-	_rallies_box.add_child(meter)
-
-	for rally in RallyLibrary.RALLIES:
-		var rally_id := String(rally["id"])
-		var is_showdown: bool = rally["showdown"]
-		var eligible := RallyLibrary.is_eligible(rally, meta)
-		var done := Save.rally_completed(rally_id)
-		var btn := Button.new()
-		btn.focus_mode = Control.FOCUS_NONE
-		var enterable := eligible and (not is_showdown or sd_unlocked)
-		if enterable:
-			btn.toggle_mode = true
-			btn.button_pressed = rally_id == _selected_rally_id
-			btn.text = "%s  (diff %d)%s" % [rally["name"], int(rally["difficulty"]), "  ✓" if done else ""]
-			btn.pressed.connect(_on_rally_selected.bind(rally_id))
-		else:
-			btn.disabled = true
-			btn.text = "🔒 %s  (diff %d) — %s" % [
-				rally["name"], int(rally["difficulty"]), _lock_reason(rally, is_showdown, sd_unlocked, done_count, total)]
-		_rallies_box.add_child(btn)
-
-
-# Why a shown-but-locked rally can't be entered by the focused car: either the
-# showdown gate (complete all rallies first) or the car failing the restriction.
-func _lock_reason(rally: Dictionary, is_showdown: bool, sd_unlocked: bool, done_count: int, total: int) -> String:
-	if is_showdown and not sd_unlocked:
-		return "complete all rallies first (%d/%d)" % [done_count, total]
-	return "needs %s" % _restriction_text(rally.get("restriction", {}))
-
-
-# Human-readable summary of a rally's restriction, for the locked-rally hint.
+# Human-readable summary of a rally's restriction (the map pin + the car banner).
 func _restriction_text(restriction: Dictionary) -> String:
 	if restriction.is_empty():
 		return "any car"
@@ -395,23 +446,45 @@ func _restriction_text(restriction: Dictionary) -> String:
 	return ", ".join(parts)
 
 
-func _on_rally_selected(rally_id: String) -> void:
-	_selected_rally_id = rally_id
-	_update_status()
+# --- Menu camera -------------------------------------------------------------
+
+func _focused_car_pos() -> Vector3:
+	if _markers.is_empty():
+		return Vector3.ZERO
+	return (_markers[_focus] as Marker3D).global_position
 
 
-func _update_status() -> void:
-	var car := Save.get_car(_selected_instance_id)
-	var can_start := not car.is_empty() and _selected_rally_id != ""
-	_start_button.disabled = not can_start
-	if can_start:
-		var rally := RallyLibrary.by_id(_selected_rally_id)
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-		var model_name := String(entry.get("name", car.get("model_id", "?")))
-		_status.text = "Field %s #%d in %s" % [model_name, int(car["instance_id"]), rally["name"]]
-	else:
-		_status.text = "Pick a rally."
+# The framing transform for the focused car: a 3/4 hero shot from the configured
+# offset, looking at the car a little above its origin.
+func _camera_target_xform() -> Transform3D:
+	var cfg: GameConfig = Config.data
+	var car_pos := _focused_car_pos()
+	var eye := car_pos + cfg.menu_camera_offset
+	var look := car_pos + Vector3.UP * cfg.menu_camera_look_height
+	var t := Transform3D.IDENTITY
+	t.origin = eye
+	return t.looking_at(look, Vector3.UP)  # looking_at keeps the origin (the eye)
 
+
+func _snap_camera_to_focus() -> void:
+	_camera.global_transform = _camera_target_xform()
+
+
+# Ease the camera into the framing over GameConfig.menu_camera_move_time (a pan
+# along the lot each time you cycle cars). Snaps when the move time is ~0.
+func _ease_camera_to_focus() -> void:
+	var cfg: GameConfig = Config.data
+	if _cam_tween != null and _cam_tween.is_valid():
+		_cam_tween.kill()
+	if cfg.menu_camera_move_time <= 0.0:
+		_snap_camera_to_focus()
+		return
+	_cam_tween = create_tween()
+	_cam_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_cam_tween.tween_property(_camera, "global_transform", _camera_target_xform(), cfg.menu_camera_move_time)
+
+
+# --- Start -------------------------------------------------------------------
 
 # Hand off to the orchestrator. RallySession derives the event target times,
 # builds the opponent field, and loads the first event's run scene.
@@ -426,9 +499,13 @@ func _on_start_pressed() -> void:
 # --- Menu input (todo/menus.md › Menu navigation & input) --------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _screen != Screen.CARS:
+		return
 	if event.is_action_pressed("menu_left"):
 		_cycle_focus(-1)
 	elif event.is_action_pressed("menu_right"):
 		_cycle_focus(1)
 	elif event.is_action_pressed("menu_select") and not _start_button.disabled:
 		_on_start_pressed()
+	elif event.is_action_pressed("menu_back"):
+		_show_map()

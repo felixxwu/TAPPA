@@ -26,12 +26,14 @@
 > world-anchored SubViewport stats panels, the 3D podium + reward-reveal rig, the
 > Pause / Inventory / Confirm overlays, the between-event standings interstitial,
 > the `menu_*` input action set + mobile gestures, and the camera fly-through
-> transitions. The sections below specify that remaining work. **The first 3D
-> slice has SHIPPED — the HQ 3D showroom** (lit lot + menu camera + a parked
-> focused-car prop + `Label3D` stats, single car for now; `menu_left/right/select/back`
-> input actions added), see [`todo/diegetic-hq.md`](diegetic-hq.md). Still
-> flat/deferred: the simultaneous parked lineup, the map → 3D pins, the tuning
-> lift, the 3D podium/reward rig, and the fly-throughs.
+> transitions. The sections below specify that remaining work. **The HQ flow has
+> SHIPPED as two separate screens** — a **basic flat world map** to pick a rally
+> (pins + showdown lock + progress), then a **3D car park** showing only the
+> eligible cars (parked lineup + panning menu camera + `Label3D` stats +
+> `menu_*` inputs); see [`todo/diegetic-hq.md`](diegetic-hq.md). Still deferred: the
+> map's **stylised 3D plane + 3D pins** (the flat map is the basic version),
+> per-car paint, the tuning lift, the 3D podium/reward rig, and the fly-throughs
+> *between* the map and the lot.
 >
 > Follow the config-first convention
 > (`CLAUDE.md`): tunables (camera move times, panel offsets, station positions

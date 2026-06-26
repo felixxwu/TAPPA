@@ -263,6 +263,8 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var menu_camera_offset := Vector3(3.2, 1.6, 4.8)
 ## Height (m) above the car's origin that the HQ menu camera looks at.
 @export var menu_camera_look_height := 0.6
+## Spacing (m) between parked cars in the HQ car-park lineup (along the lot's X).
+@export var menu_car_spacing := 6.0
 
 @export_group("World")
 @export var fog_density := 0.02
