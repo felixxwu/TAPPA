@@ -110,7 +110,10 @@ func _physics_process(_delta: float) -> void:
 			_last_pos[i] = null
 			continue
 		if _last_pos[i] == null or wxz.distance_to(_last_pos[i]) >= step:
-			_emit_segment(i, wpos, _normal_at(w_off))
+			# A fresh point after a break (airborne / off-gravel) starts a NEW strip —
+			# it must NOT bridge to the last on-ground point across the gap.
+			var connected: bool = _last_pos[i] != null
+			_emit_segment(i, wpos, _normal_at(w_off), connected)
 			_last_pos[i] = wxz
 
 
@@ -119,20 +122,24 @@ func _physics_process(_delta: float) -> void:
 # height comes from the WHEEL (hub Y − wheel radius), not terrain.height_at — near
 # the road the terrain mesh is flattened to the baked road height the car sits on,
 # so the raw noise height would sink the ribbon under the road in cuts/dips.
-func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2) -> void:
+func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, connected: bool) -> void:
 	var y := wheel_pos.y - Config.data.wheel_radius + Config.data.tire_mark_ground_offset_m
 	var center := Vector3(wheel_pos.x, y, wheel_pos.z)
 	var across := Vector3(road_n.x, 0.0, road_n.y) * (Config.data.tire_mark_width_m * 0.5)
 	var pairs: Array = _pairs[i]
-	pairs.append([center + across, center - across])
+	# [left, right, connected] — `connected` = bridge a quad back to the previous
+	# point. A strip start (after a break) is false, so jumps leave a real gap.
+	pairs.append([center + across, center - across, connected])
 	var cap: int = maxi(2, Config.data.tire_mark_max_segments)
 	while pairs.size() > cap:
 		pairs.pop_front()
 	_rebuild(i)
 
 
-# Rebuild a wheel's ribbon ArrayMesh from its segment pairs: a triangle strip of
-# quads (cull disabled, so winding doesn't matter for the flat-on-ground ribbon).
+# Rebuild a wheel's ribbon ArrayMesh from its segment pairs: a quad between each
+# CONSECUTIVE pair, but only where the later point is `connected` — a break (the
+# wheel left the ground / the gravel) leaves a gap instead of a stretched quad.
+# (Cull disabled, so winding doesn't matter for the flat-on-ground ribbon.)
 func _rebuild(i: int) -> void:
 	var mesh := _ribbons[i].mesh as ArrayMesh
 	mesh.clear_surfaces()
@@ -140,13 +147,17 @@ func _rebuild(i: int) -> void:
 	if pairs.size() < 2:
 		return
 	var verts := PackedVector3Array()
-	for k in pairs.size() - 1:
-		var l0: Vector3 = pairs[k][0]
-		var r0: Vector3 = pairs[k][1]
-		var l1: Vector3 = pairs[k + 1][0]
-		var r1: Vector3 = pairs[k + 1][1]
+	for k in range(1, pairs.size()):
+		if not bool(pairs[k][2]):
+			continue  # gap: this point starts a new strip, don't bridge across the jump
+		var l0: Vector3 = pairs[k - 1][0]
+		var r0: Vector3 = pairs[k - 1][1]
+		var l1: Vector3 = pairs[k][0]
+		var r1: Vector3 = pairs[k][1]
 		verts.append(l0); verts.append(l1); verts.append(r0)
 		verts.append(r0); verts.append(l1); verts.append(r1)
+	if verts.is_empty():
+		return
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts

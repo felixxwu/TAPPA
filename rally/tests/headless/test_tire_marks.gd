@@ -139,3 +139,17 @@ func test_airborne_wheel_stops_marking() -> void:
 	_wheels[0]._contact = false  # lift the wheel off the ground
 	_drive(tm, 2.0, [])
 	assert_eq(tm.segment_count(0), before, "an airborne wheel lays no new segment")
+
+
+func test_jump_leaves_a_gap_not_a_stretched_quad() -> void:
+	var tm := _make()
+	_drive(tm, 0.0, [])          # strip start (point 0)
+	_drive(tm, 1.0, [])          # point 1 — connected to 0
+	_wheels[0]._contact = false  # car jumps: airborne, no point
+	_drive(tm, 5.0, [])
+	_wheels[0]._contact = true   # land 4 m further on
+	_drive(tm, 5.0, [])          # landing point — must NOT bridge across the jump
+	var pairs: Array = tm._pairs[0]
+	assert_true(bool(pairs[1][2]), "consecutive on-ground points stay connected")
+	assert_false(bool(pairs[pairs.size() - 1][2]),
+		"the landing point starts a new strip, leaving a gap across the jump")

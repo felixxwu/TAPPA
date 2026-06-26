@@ -57,7 +57,9 @@ All in `GameConfig` (the "Tire Marks" group): `tire_marks_enabled`,
 `tests/headless/test_tire_marks.gd` — a straight `Curve2D` + stub car/wheels drive
 the logic without a vehicle or rendering: four ribbons collected, marks accumulate
 on the gravel, none off it, a sub-step move adds nothing, the ring buffer caps the
-count, below the speed floor lays nothing, and an airborne wheel stops marking.
+count, below the speed floor lays nothing, an airborne wheel stops marking, and a
+jump leaves a real gap (the landing point starts a new strip, not a stretched quad
+bridged back to the take-off point).
 
 ## Out of scope (todo/tire-marks.md)
 
