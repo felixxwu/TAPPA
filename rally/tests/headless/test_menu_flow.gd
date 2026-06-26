@@ -62,18 +62,23 @@ func test_hq_boots_to_the_world_map() -> void:
 	assert_eq(hq._cars.size(), 0, "no cars are parked until a rally is chosen")
 
 
-func test_hq_map_pans_and_clamps_to_the_edges() -> void:
+func test_hq_map_sizes_to_the_viewport_and_pans_clamped() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Pin the frame to a known size so the clamp bounds are deterministic.
-	hq._map_frame.size = Vector2(800, 400)
+	# Pin the frame to a known size, then fit the map to it (the content is sized
+	# relative to the frame so it's never wider than MAP_VIEW_FACTOR x the screen).
+	var frame := Vector2(800, 400)
+	hq._map_frame.size = frame
+	hq._size_map()
+	assert_eq(hq._map_content.size, frame * hq.MAP_VIEW_FACTOR,
+		"the map plane is MAP_VIEW_FACTOR x the viewport on each axis")
 	hq._map_content.position = Vector2.ZERO
 	hq._pan_map(Vector2(-100, -50))
 	assert_eq(hq._map_content.position, Vector2(-100, -50), "dragging moves the map content 1:1")
 	# Pan far past the bottom-right: clamps so the map's far edge meets the frame.
 	hq._pan_map(Vector2(-100000, -100000))
-	assert_eq(hq._map_content.position, Vector2(800, 400) - hq.MAP_SIZE,
+	assert_eq(hq._map_content.position, frame - hq._map_content.size,
 		"panning is clamped to the map's far edge")
 	# Pan far the other way: clamps at the near (top-left) edge.
 	hq._pan_map(Vector2(100000, 100000))

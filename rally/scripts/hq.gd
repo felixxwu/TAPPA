@@ -67,11 +67,14 @@ var _stats_label: Label3D
 var _cam_tween: Tween
 
 # World-map overlay. The map content is larger than the on-screen frame and is
-# panned (dragged) within it; pins ride on the content.
-const MAP_SIZE := Vector2(1800.0, 1200.0)
+# panned (dragged) within it; pins ride on the content. The content is sized
+# RELATIVE to the frame (MAP_VIEW_FACTOR × the visible viewport on each axis) so
+# the zoom is consistent across screen sizes — at 2× you can pan one screen's worth
+# in each direction and no more (keeps it from reading as zoomed-in on mobile).
+const MAP_VIEW_FACTOR := 2.0
 var _map_layer: CanvasLayer
 var _map_frame: Control      # the on-screen viewport into the map (clips + pans)
-var _map_content: Control    # the full map plane (MAP_SIZE); panned by moving it
+var _map_content: Control    # the full map plane; panned by moving it
 var _map_bg: ColorRect
 var _map_meter: Label
 var _panning := false
@@ -192,9 +195,11 @@ func _build_map_overlay() -> void:
 	root.add_child(_map_meter)
 
 	# The map: a clipping frame (the viewport into the world) holding a larger map
-	# plane (_map_content, MAP_SIZE) that is dragged around inside it. Pins are
-	# placed on the content by fractional anchors, so they ride along when panning.
-	# (Basic flat map; the stylised 3D map plane of menus.md rig 3 is a later slice.)
+	# plane (_map_content) that is dragged around inside it. The content is sized to
+	# MAP_VIEW_FACTOR × the frame in _size_map (so the zoom tracks screen size). Pins
+	# are placed on the content by fractional anchors, so they ride along when
+	# panning and rescale with the content. (Basic flat map; the stylised 3D map
+	# plane of menus.md rig 3 is a later slice.)
 	_map_frame = Control.new()
 	_map_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_map_frame.clip_contents = true
@@ -203,22 +208,30 @@ func _build_map_overlay() -> void:
 	root.add_child(_map_frame)
 
 	_map_content = Control.new()
-	_map_content.size = MAP_SIZE
 	_map_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_frame.add_child(_map_content)
 
 	_map_bg = ColorRect.new()
-	_map_bg.size = MAP_SIZE
 	_map_bg.color = Color(0.13, 0.18, 0.16)
 	_map_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_content.add_child(_map_bg)
 
 
+# Size the map plane to MAP_VIEW_FACTOR × the current frame (the visible viewport),
+# so the map is never wider than that multiple of the screen on either axis.
+func _size_map() -> void:
+	_map_content.size = _map_frame.size * MAP_VIEW_FACTOR
+	_map_bg.size = _map_content.size
+
+
 func _on_map_resized() -> void:
-	# Centre the map the first time the frame gets a real size, then keep the pan
-	# clamped to the edges on later resizes.
-	if not _map_centered and _map_frame.size.x > 0.0:
-		_map_content.position = (_map_frame.size - MAP_SIZE) * 0.5
+	# Re-fit the content to the (new) frame size, centre it the first time the frame
+	# gets a real size, then keep the pan clamped to the edges.
+	if _map_frame.size.x <= 0.0:
+		return
+	_size_map()
+	if not _map_centered:
+		_map_content.position = (_map_frame.size - _map_content.size) * 0.5
 		_map_centered = true
 	_clamp_map()
 
@@ -329,9 +342,10 @@ func _pan_map(delta: Vector2) -> void:
 # Keep the map plane covering the frame: you can't drag past its edges.
 func _clamp_map() -> void:
 	var fs := _map_frame.size
+	var cs := _map_content.size
 	var pos := _map_content.position
-	pos.x = clampf(pos.x, minf(0.0, fs.x - MAP_SIZE.x), maxf(0.0, fs.x - MAP_SIZE.x))
-	pos.y = clampf(pos.y, minf(0.0, fs.y - MAP_SIZE.y), maxf(0.0, fs.y - MAP_SIZE.y))
+	pos.x = clampf(pos.x, minf(0.0, fs.x - cs.x), maxf(0.0, fs.x - cs.x))
+	pos.y = clampf(pos.y, minf(0.0, fs.y - cs.y), maxf(0.0, fs.y - cs.y))
 	_map_content.position = pos
 
 

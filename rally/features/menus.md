@@ -32,7 +32,9 @@ anti-soft-lock floor. HQ is **two separate screens**, shown one at a time, in th
 order **pick rally → pick eligible car → Start** (`enum Screen { MAP, CARS }`).
 
 **Screen 1 — World map (flat overlay).** A basic, **pannable** map: a clipping
-frame (`_map_frame`) onto a larger map plane (`_map_content`, `MAP_SIZE`) that you
+frame (`_map_frame`) onto a larger map plane (`_map_content`, sized to
+`MAP_VIEW_FACTOR` × the viewport on each axis so the zoom tracks screen size — 2×,
+so it never reads as zoomed-in on mobile) that you
 **drag to pan** — mouse drag, finger drag (`InputEventScreenDrag`), or the left
 controller stick (polled in `_process`, paced by `GameConfig.menu_map_pan_speed`);
 panning clamps to the map edges. Every rally is a simple **icon pin** on the plane
