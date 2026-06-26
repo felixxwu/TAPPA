@@ -344,7 +344,7 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var tire_mark_max_segments := 200
 ## Height the ribbon sits above the wheel's contact patch, in metres (lifts it
 ## clear of the road surface so it never z-fights or clips under the terrain).
-@export var tire_mark_ground_offset_m := 0.05
+@export var tire_mark_ground_offset_m := 0.15
 ## Extra lateral allowance beyond the road half-width within which marks still lay
 ## (so the verge of the gravel still marks), in metres.
 @export var tire_mark_gravel_margin_m := 0.3
