@@ -20,13 +20,15 @@ Each `_physics_process` (skipped when `tire_marks_enabled` is off, the centerlin
 is missing, or the car is gone):
 - **Speed gate** — below `tire_mark_min_speed_mps` every ribbon is broken (no marks
   while parked / during the countdown).
-- **Road frame** — one windowed nearest-offset on the centerline for the car centre
-  (`_windowed_offset`, the same local-search idea as `TrackProgress`), giving the
-  local road point + left normal. Wheels are within a couple of metres, so this one
-  frame gates all four.
+- **Offset cache** — one windowed nearest-offset on the centerline for the car
+  centre (`_windowed_offset`, the same local-search idea as `TrackProgress`),
+  seeding each wheel's tighter search.
 - **Per wheel** (duck-typed on `is_in_contact()`, so `VehicleWheel3D` and test stubs
-  both work): when in contact and within `track_width/2 + tire_mark_gravel_margin_m`
-  of the centerline (on the gravel), and it has moved ≥ `tire_mark_segment_step_m`
+  both work): gated by ITS OWN nearest road point (`_wheel_offset`, searched in a
+  tight window around the car's offset) — NOT the car's tangent, which on a corner
+  would wrongly reject a wheel that's on the road but ahead on the curve. When in
+  contact and within `track_width/2 + tire_mark_gravel_margin_m` of the centerline
+  (on the gravel), and it has moved ≥ `tire_mark_segment_step_m`
   since its last point, append a ribbon segment — a left/right pair across the road
   normal at the wheel's **contact patch** (`y = hub.y − wheel_radius +
   tire_mark_ground_offset_m`, NOT `terrain.height_at` — near the road the terrain

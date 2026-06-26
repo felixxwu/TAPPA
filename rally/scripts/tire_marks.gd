@@ -14,6 +14,8 @@ extends Node3D
 const SEARCH_BACK_M := 30.0
 const SEARCH_FWD_M := 60.0
 const SEARCH_STEP_M := 1.0
+# Tighter window (around the car's offset) for each wheel's own nearest-point gate.
+const WHEEL_WINDOW_M := 20.0
 
 var _centerline: Curve2D
 var _baked_length := 0.0
@@ -87,10 +89,11 @@ func _physics_process(_delta: float) -> void:
 		for i in _last_pos.size():
 			_last_pos[i] = null
 		return
-	var car_xz := Vector2(_car.global_position.x, _car.global_position.z)
-	var frame := _road_frame(car_xz)       # [road_point: Vector2, road_normal: Vector2]
-	var road_pt: Vector2 = frame[0]
-	var road_n: Vector2 = frame[1]
+	# Advance the shared offset cache from the car, then gate each wheel by ITS OWN
+	# nearest centerline point (not the car's road frame — on a corner a wheel that's
+	# on the road but ahead on the curve reads as far off-axis against the car's
+	# tangent and would be wrongly rejected).
+	_offset = _windowed_offset(Vector2(_car.global_position.x, _car.global_position.z))
 	var gate := _half_width + Config.data.tire_mark_gravel_margin_m
 	var step := Config.data.tire_mark_segment_step_m
 	for i in _wheels.size():
@@ -100,13 +103,14 @@ func _physics_process(_delta: float) -> void:
 			continue
 		var wpos: Vector3 = wheel.global_position
 		var wxz := Vector2(wpos.x, wpos.z)
-		# Lateral distance from the road centerline (local frame): off the gravel
-		# (incl. the verge margin) breaks the ribbon.
-		if absf((wxz - road_pt).dot(road_n)) > gate:
+		var w_off := _wheel_offset(wxz)
+		# True distance to the wheel's nearest road point: off the gravel (incl. the
+		# verge margin) breaks the ribbon.
+		if wxz.distance_to(_centerline.sample_baked(w_off)) > gate:
 			_last_pos[i] = null
 			continue
 		if _last_pos[i] == null or wxz.distance_to(_last_pos[i]) >= step:
-			_emit_segment(i, wpos, road_n)
+			_emit_segment(i, wpos, _normal_at(w_off))
 			_last_pos[i] = wxz
 
 
@@ -150,24 +154,32 @@ func _rebuild(i: int) -> void:
 	mesh.surface_set_material(0, _material)
 
 
-# Local road point + left normal at the car's windowed nearest offset. Wheels are
-# within a couple of metres, so this one frame gates all four.
-func _road_frame(here: Vector2) -> Array:
-	_offset = _windowed_offset(here)
-	var p := _centerline.sample_baked(_offset)
-	var ahead := _centerline.sample_baked(minf(_offset + 1.0, _baked_length))
-	var tangent := ahead - p
+# The left road normal at an offset (for the ribbon's width direction).
+func _normal_at(offset: float) -> Vector2:
+	var p := _centerline.sample_baked(offset)
+	var tangent := _centerline.sample_baked(minf(offset + 1.0, _baked_length)) - p
 	if tangent.length() < 0.001:
-		tangent = p - _centerline.sample_baked(maxf(_offset - 1.0, 0.0))
+		tangent = p - _centerline.sample_baked(maxf(offset - 1.0, 0.0))
 	if tangent.length() < 0.001:
 		tangent = Vector2(0.0, 1.0)
 	tangent = tangent.normalized()
-	return [p, Vector2(-tangent.y, tangent.x)]
+	return Vector2(-tangent.y, tangent.x)
 
 
+# The car's nearest offset, searched in a wide window around the last value.
 func _windowed_offset(here: Vector2) -> float:
-	var lo := maxf(0.0, _offset - SEARCH_BACK_M)
-	var hi := minf(_baked_length, _offset + SEARCH_FWD_M)
+	return _search_offset(here, _offset - SEARCH_BACK_M, _offset + SEARCH_FWD_M)
+
+
+# A wheel's nearest offset — a tighter window around the car's offset (wheels are
+# within a couple of metres of the car along the track).
+func _wheel_offset(here: Vector2) -> float:
+	return _search_offset(here, _offset - WHEEL_WINDOW_M, _offset + WHEEL_WINDOW_M)
+
+
+func _search_offset(here: Vector2, from_m: float, to_m: float) -> float:
+	var lo := maxf(0.0, from_m)
+	var hi := minf(_baked_length, to_m)
 	var best_o := lo
 	var best_d := INF
 	var o := lo

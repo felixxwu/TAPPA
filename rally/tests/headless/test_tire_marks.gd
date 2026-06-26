@@ -52,12 +52,17 @@ func _make(half_width := 3.0) -> TireMarks:
 	return tm
 
 
-# Place a wheel at a world XZ. The car stays at the origin (its linear_velocity
-# stub drives the speed gate independently), so a wheel's local position IS its
-# world position — and the road frame, sampled at the car, stays at the origin
-# with a constant normal along this straight road, so the lateral gate is just |x|.
-func _put_wheel(i: int, x: float, z: float) -> void:
-	_wheels[i].position = Vector3(x, 0.0, z)
+# Drive the car (and its wheels) to world z and tick. Wheels are children of the
+# car, so each wheel's local x with the car at z puts it at world (x, 0, z) — car
+# and wheels advance together (the gravel gate searches the centerline around the
+# CAR's offset, so the wheels must stay near the car, as in real play). `xs` is the
+# per-wheel lateral offset from the centerline; pass fewer to leave wheels at 0.
+func _drive(tm: TireMarks, z: float, xs: Array) -> void:
+	_car.position = Vector3(0.0, 0.0, z)
+	for i in _wheels.size():
+		var x: float = xs[i] if i < xs.size() else 0.0
+		_wheels[i].position = Vector3(x, 0.0, 0.0)  # local; world == (x, 0, z)
+	tm._physics_process(0.0)
 
 
 func test_collects_four_wheels() -> void:
@@ -70,30 +75,43 @@ func test_marks_accumulate_on_gravel() -> void:
 	# Wheels straddle the centerline (|x| <= 3.3 gate) — on the gravel — advancing
 	# 1 m per tick (> the 0.5 m segment step).
 	for s in 6:
-		_put_wheel(0, -0.8, s); _put_wheel(1, 0.8, s); _put_wheel(2, -0.8, s); _put_wheel(3, 0.8, s)
-		tm._physics_process(0.0)
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
 		assert_gt(tm.segment_count(i), 1, "wheel %d lays a ribbon on the gravel" % i)
 
 
 func test_no_marks_off_the_gravel() -> void:
 	var tm := _make()
-	# Wheels far to the side (x = 10 m > 3.3 gate).
+	# Wheels far to the side (x = 10 m > 3.3 gate) while the car drives the road.
 	for s in 6:
-		for i in 4:
-			_put_wheel(i, 10.0, s)
-		tm._physics_process(0.0)
+		_drive(tm, s, [10.0, 10.0, 10.0, 10.0])
 	for i in 4:
 		assert_eq(tm.segment_count(i), 0, "wheel %d off the gravel lays no marks" % i)
 
 
+func test_corner_wheel_on_road_ahead_still_marks() -> void:
+	# Curved road: up +Z to (0,40), then a 90-degree turn running +X. A wheel that's
+	# on the post-bend road but well ahead of the car along the curve must still mark
+	# — it's gated by ITS OWN nearest road point (distance 0 here), not the car's
+	# tangent (against which it reads ~5 m off-axis and would be wrongly rejected).
+	var curve := Curve2D.new()
+	curve.add_point(Vector2(0, 0))
+	curve.add_point(Vector2(0, 40))
+	curve.add_point(Vector2(40, 40))
+	var tm := TireMarks.new()
+	add_child_autofree(tm)
+	tm.setup(curve, _car, null, 3.0)
+	_car.position = Vector3(0, 0, 35)            # just before the bend
+	_wheels[0].global_position = Vector3(5, 0, 40)  # on the post-bend road, 5 m along +X
+	tm._physics_process(0.0)
+	assert_gt(tm.segment_count(0), 0, "a wheel on the road ahead of the bend still marks")
+
+
 func test_sub_step_movement_adds_no_segment() -> void:
 	var tm := _make()
-	_put_wheel(0, 0, 0)
-	tm._physics_process(0.0)           # first point
+	_drive(tm, 0.0, [])           # first point
 	var after_first := tm.segment_count(0)
-	_put_wheel(0, 0, 0.1)
-	tm._physics_process(0.0)           # moved 0.1 m < 0.5 m step
+	_drive(tm, 0.1, [])           # moved 0.1 m < 0.5 m step
 	assert_eq(tm.segment_count(0), after_first, "no new segment until the wheel moves a full step")
 
 
@@ -101,8 +119,7 @@ func test_ring_buffer_caps_segments() -> void:
 	Config.data.tire_mark_max_segments = 5
 	var tm := _make()
 	for s in 50:
-		_put_wheel(0, 0, s)
-		tm._physics_process(0.0)
+		_drive(tm, s, [])
 	assert_eq(tm.segment_count(0), 5, "the per-wheel ribbon is capped to max_segments")
 
 
@@ -110,16 +127,15 @@ func test_below_min_speed_lays_nothing() -> void:
 	var tm := _make()
 	_car.linear_velocity = Vector3(0, 0, 0.5)  # below the 2 m/s floor
 	for s in 6:
-		_put_wheel(0, 0, s)
-		tm._physics_process(0.0)
+		_drive(tm, s, [])
 	assert_eq(tm.segment_count(0), 0, "no marks below the speed floor")
 
 
 func test_airborne_wheel_stops_marking() -> void:
 	var tm := _make()
-	_put_wheel(0, 0, 0); tm._physics_process(0.0)
-	_put_wheel(0, 0, 1); tm._physics_process(0.0)
+	_drive(tm, 0.0, [])
+	_drive(tm, 1.0, [])
 	var before := tm.segment_count(0)
 	_wheels[0]._contact = false  # lift the wheel off the ground
-	_put_wheel(0, 0, 2); tm._physics_process(0.0)
+	_drive(tm, 2.0, [])
 	assert_eq(tm.segment_count(0), before, "an airborne wheel lays no new segment")

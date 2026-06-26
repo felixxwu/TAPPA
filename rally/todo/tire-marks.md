@@ -40,15 +40,16 @@ swap (`world.cycle_car`) it re-targets the fresh car and clears its marks (like
 
 1. **Speed gate** — skip when `car.linear_velocity.length() < tire_mark_min_speed_mps`
    (no marks while parked / in the countdown).
-2. **Road frame** — one windowed nearest-offset on the centerline for the car
+2. **Offset cache** — one windowed nearest-offset on the centerline for the car
    origin (cheap, seeded from last tick — same pattern as
-   `TrackProgress._local_closest_offset`), giving the local road point + tangent
-   (hence the road normal). Wheels are within ~2.5 m of the car, so this local
-   frame applies to all four.
-3. **Per wheel** (`drivetrain.front_wheels + rear_wheels`, or
-   `find_children VehicleWheel3D`): when `wheel.is_in_contact()`:
-   - lateral = `(wheel_xz − road_point) · road_normal`.
-   - **on_gravel** = `abs(lateral) <= track_width * 0.5 + tire_mark_gravel_margin_m`.
+   `TrackProgress._local_closest_offset`), used to seed each wheel's search.
+3. **Per wheel** (duck-typed on `is_in_contact()`): when in contact, gate by ITS
+   OWN nearest road point (a tighter windowed search around the car's offset), NOT
+   the car's tangent — on a corner a wheel that's on the road but ahead on the
+   curve reads as far off-axis against the car's tangent and would be wrongly
+   rejected:
+   - **on_gravel** = `wheel_xz.distance_to(nearest_road_point) <= track_width * 0.5
+     + tire_mark_gravel_margin_m`.
    - **on gravel** and the wheel has moved ≥ `tire_mark_segment_step_m` since its
      last point: append a quad bridging the previous left/right pair to a new pair,
      centred at the wheel's contact patch (`x,z` of the hub, `y = hub.y −
