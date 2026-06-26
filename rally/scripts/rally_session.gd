@@ -201,7 +201,7 @@ func _resolve_results() -> void:
 	if top3:
 		# complete_rally records the FIRST completion (idempotent); the car reward
 		# fires on EVERY top-3 finish, including re-wins (renewable supply).
-		Save.complete_rally(String(_rally.get("id", "")), combined)
+		Save.complete_rally(String(_rally.get("id", "")), combined, placed)
 		if bool(_rally.get("showdown", false)):
 			showdown_done = true
 			showdown_won.emit()

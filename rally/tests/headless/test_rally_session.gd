@@ -111,6 +111,8 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	assert_eq(String(r["car_reward"]), "mx5", "a top-3 finish records the won car model for the reveal")
 	assert_false(r["car_reward_is_new"], "the won car is already owned, so not flagged new")
 	assert_false(r["showdown_won"], "the shakedown is not the showdown")
+	# A 2nd-place finish records best placement 2 (drives the world-map stars).
+	assert_eq(_save.best_placement("shakedown"), 2, "the best finishing position is recorded")
 	# Standings = field (3) + player, ranked, player classified 2nd.
 	var standings: Array = r["standings"]
 	assert_eq(standings.size(), 4, "standings includes the player plus the opponent field")

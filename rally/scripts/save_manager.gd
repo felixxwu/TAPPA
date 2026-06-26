@@ -362,12 +362,16 @@ func use_repair_kit(instance_id: int, heal_amount: float) -> bool:
 # best combined time when a faster one comes in. The CAR reward is NOT granted
 # here (re-wins are farmable — see reward-system.md); this only records progress
 # and re-derives the showdown unlock.
-func complete_rally(rally_id: String, combined_ms: int) -> void:
+func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> void:
 	var rallies: Dictionary = profile["rallies"]
-	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0})
+	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
 	rec["completed"] = true
 	if int(rec.get("best_combined_ms", 0)) <= 0 or combined_ms < int(rec["best_combined_ms"]):
 		rec["best_combined_ms"] = combined_ms
+	# Track the BEST (lowest) finishing position ever achieved here — it drives the
+	# map's star rating. Lower placement is better; 0 means "never placed".
+	if placed > 0 and (int(rec.get("best_placed", 0)) <= 0 or placed < int(rec["best_placed"])):
+		rec["best_placed"] = placed
 	rallies[rally_id] = rec
 	_recompute_showdown()
 	save()
@@ -375,6 +379,12 @@ func complete_rally(rally_id: String, combined_ms: int) -> void:
 
 func rally_completed(rally_id: String) -> bool:
 	return profile["rallies"].get(rally_id, {}).get("completed", false)
+
+
+# Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.
+# Drives the world-map star rating (1st → 3 stars, 2nd → 2, 3rd → 1, else 0).
+func best_placement(rally_id: String) -> int:
+	return int(profile["rallies"].get(rally_id, {}).get("best_placed", 0))
 
 
 # Number of rallies top-3'd — the single progression metric driving the

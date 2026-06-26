@@ -14,7 +14,10 @@ extends Node3D
 # car wins) — harmless here: the props don't simulate, and world.gd re-applies the
 # fielded car's config before a run.
 
-enum Screen { MAP, CARS }
+enum Screen { MAP, DETAIL, CARS }
+
+# 1st place earns 3 stars, 2nd → 2, 3rd → 1, anything else (incl. not completed) → 0.
+const MAX_STARS := 3
 
 const CAR_SCENE := preload("res://car.tscn")
 
@@ -45,6 +48,11 @@ var _map_meter: Label
 var _panning := false
 var _map_centered := false
 
+# Rally-detail overlay (screen 2).
+var _detail_layer: CanvasLayer
+var _detail_title: Label
+var _detail_body: Label
+
 # Car-select overlay.
 var _car_layer: CanvasLayer
 var _rally_banner: Label
@@ -58,6 +66,7 @@ func _ready() -> void:
 	_ensure_starter()
 	_build_world()
 	_build_map_overlay()
+	_build_detail_overlay()
 	_build_car_overlay()
 	_show_map()
 
@@ -185,12 +194,13 @@ func _on_map_resized() -> void:
 	_clamp_map()
 
 
-# (Re)build the rally pins for the current progress. Every rally is a pin; the
-# showdown is locked (disabled) until all others are completed. Completed rallies
-# are marked ✓. Eligibility-by-car is NOT gated here — that's the next screen.
+# (Re)build the rally pins: a simple clickable icon with the rally name and a
+# star rating under it (3 stars for a 1st-place best, 2 for 2nd, 1 for 3rd, else
+# empty). Clicking opens the rally detail (screen 2). The showdown icon is locked
+# (disabled) until all other rallies are completed.
 func _refresh_map() -> void:
 	for child in _map_content.get_children():
-		if child is Button:
+		if child != _map_bg:
 			child.queue_free()
 	var sd_unlocked := RallyLibrary.showdown_unlocked(Save.profile)
 	var total := 0
@@ -201,31 +211,71 @@ func _refresh_map() -> void:
 	_map_meter.text = "Progress to the Showdown: %d / %d rallies completed" % [done_count, total]
 
 	for rally in RallyLibrary.RALLIES:
-		var rally_id := String(rally["id"])
-		var is_showdown: bool = rally["showdown"]
-		var locked := is_showdown and not sd_unlocked
-		var done := Save.rally_completed(rally_id)
-		var pin := Button.new()
-		pin.focus_mode = Control.FOCUS_NONE
-		var restriction := _restriction_text(rally.get("restriction", {}))
-		var mark := "  ✓" if done else ""
-		if locked:
-			pin.disabled = true
-			pin.text = "🔒 %s\ncomplete all rallies first" % rally["name"]
-		else:
-			pin.text = "%s%s\n(diff %d · %s)" % [rally["name"], mark, int(rally["difficulty"]), restriction]
-			pin.pressed.connect(_on_rally_pin.bind(rally_id))
-		# Place the pin at its fractional map position (centred on the point).
-		var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
-		pin.anchor_left = mp.x
-		pin.anchor_right = mp.x
-		pin.anchor_top = mp.y
-		pin.anchor_bottom = mp.y
-		pin.offset_left = -90.0
-		pin.offset_right = 90.0
-		pin.offset_top = -22.0
-		pin.offset_bottom = 22.0
-		_map_content.add_child(pin)
+		_map_content.add_child(_map_pin(rally, sd_unlocked))
+
+
+# One map pin: [icon button] over [name] over [stars], placed at the rally's
+# fractional map_pos. The icon button carries the rally id in metadata so the rest
+# of the UI (and tests) can find it; only the icon is clickable.
+func _map_pin(rally: Dictionary, sd_unlocked: bool) -> Control:
+	var rally_id := String(rally["id"])
+	var locked: bool = rally["showdown"] and not sd_unlocked
+	var pin := VBoxContainer.new()
+	pin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pin.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var icon := Button.new()
+	icon.focus_mode = Control.FOCUS_NONE
+	icon.add_theme_font_size_override("font_size", 30)
+	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	icon.set_meta("rally_id", rally_id)
+	icon.text = "🔒" if locked else "🏁"
+	icon.disabled = locked
+	if not locked:
+		icon.pressed.connect(_on_rally_pin.bind(rally_id))
+	pin.add_child(icon)
+
+	var name_lbl := Label.new()
+	name_lbl.text = String(rally["name"])
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pin.add_child(name_lbl)
+
+	var stars_lbl := Label.new()
+	stars_lbl.text = _stars_text(_stars_for(rally_id))
+	stars_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stars_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	stars_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pin.add_child(stars_lbl)
+
+	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
+	pin.anchor_left = mp.x
+	pin.anchor_right = mp.x
+	pin.anchor_top = mp.y
+	pin.anchor_bottom = mp.y
+	pin.offset_left = -80.0
+	pin.offset_right = 80.0
+	pin.offset_top = -32.0
+	pin.offset_bottom = 44.0
+	return pin
+
+
+# Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
+# anything else (or never placed) → 0.
+func _stars_for(rally_id: String) -> int:
+	var placed := Save.best_placement(rally_id)
+	if placed >= 1 and placed <= MAX_STARS:
+		return MAX_STARS + 1 - placed
+	return 0
+
+
+# A ★/☆ string showing `earned` filled stars out of MAX_STARS.
+func _stars_text(earned: int) -> String:
+	var s := ""
+	for i in MAX_STARS:
+		s += "★" if i < earned else "☆"
+	return s
 
 
 # --- Map panning (drag / touch / controller stick) ---------------------------
@@ -247,7 +297,76 @@ func _clamp_map() -> void:
 
 func _on_rally_pin(rally_id: String) -> void:
 	_selected_rally_id = rally_id
-	_enter_car_screen()
+	_show_detail()
+
+
+# --- Rally-detail overlay (screen 2) -----------------------------------------
+
+func _build_detail_overlay() -> void:
+	_detail_layer = CanvasLayer.new()
+	add_child(_detail_layer)
+
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0.08, 0.10, 0.14)
+	_detail_layer.add_child(bg)
+
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = 24.0
+	root.offset_top = 24.0
+	root.offset_right = -24.0
+	root.offset_bottom = -24.0
+	root.add_theme_constant_override("separation", 12)
+	_detail_layer.add_child(root)
+
+	_detail_title = Label.new()
+	_detail_title.add_theme_font_size_override("font_size", 30)
+	root.add_child(_detail_title)
+
+	_detail_body = Label.new()
+	_detail_body.add_theme_font_size_override("font_size", 16)
+	_detail_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(_detail_body)
+
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	root.add_child(actions)
+	var back := Button.new()
+	back.text = "◄ Map"
+	back.focus_mode = Control.FOCUS_NONE
+	back.pressed.connect(_show_map)
+	actions.add_child(back)
+	var enter := Button.new()
+	enter.text = "Enter Rally — choose car ►"
+	enter.focus_mode = Control.FOCUS_NONE
+	enter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	enter.pressed.connect(_enter_car_screen)
+	actions.add_child(enter)
+
+
+# Show the detail screen for the selected rally: name, difficulty, restriction,
+# event count, and the player's best result / star rating.
+func _show_detail() -> void:
+	_screen = Screen.DETAIL
+	_clear_lineup()
+	_map_layer.visible = false
+	_car_layer.visible = false
+	_detail_layer.visible = true
+	var rally := RallyLibrary.by_id(_selected_rally_id)
+	_detail_title.text = String(rally.get("name", "?"))
+	var best := Save.best_placement(_selected_rally_id)
+	var best_line := "Best finish: P%d   %s" % [best, _stars_text(_stars_for(_selected_rally_id))] if best > 0 \
+		else "Not yet completed (finish top 3 to earn stars)"
+	var lines: Array[String] = [
+		"Difficulty: %d" % int(rally.get("difficulty", 0)),
+		"Eligible cars: %s" % _restriction_text(rally.get("restriction", {})),
+		"%d events — combined time sets your result." % rally.get("events", []).size(),
+		best_line,
+	]
+	if bool(rally.get("showdown", false)):
+		lines.append("THE SHOWDOWN — the final challenge.")
+	_detail_body.text = "\n".join(lines)
 
 
 # --- Car-select overlay (screen 2) -------------------------------------------
@@ -313,9 +432,9 @@ func _build_car_overlay() -> void:
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
 	var back := Button.new()
-	back.text = "◄ Map"
+	back.text = "◄ Back"
 	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(_show_map)
+	back.pressed.connect(_show_detail)
 	actions.add_child(back)
 	_start_button = Button.new()
 	_start_button.text = "Start Rally"
@@ -331,6 +450,7 @@ func _show_map() -> void:
 	_screen = Screen.MAP
 	_selected_instance_id = -1
 	_clear_lineup()
+	_detail_layer.visible = false
 	_car_layer.visible = false
 	_map_layer.visible = true
 	_refresh_map()
@@ -341,6 +461,7 @@ func _show_map() -> void:
 func _enter_car_screen() -> void:
 	_screen = Screen.CARS
 	_map_layer.visible = false
+	_detail_layer.visible = false
 	_car_layer.visible = true
 	_build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
@@ -579,7 +700,7 @@ func _cars_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("menu_select") and not _start_button.disabled:
 		_on_start_pressed()
 	elif event.is_action_pressed("menu_back"):
-		_show_map()
+		_show_detail()
 
 
 # Controller-stick panning of the world map (the left stick); drag panning is

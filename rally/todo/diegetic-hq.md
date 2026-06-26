@@ -1,19 +1,24 @@
 # Diegetic HQ — first 3D location (kickoff slice)
 
-> Status: **🟢 SHIPPED (two-screen flow + parked lineup).** HQ (`hq.tscn` is a
-> `Node3D`, `scripts/hq.gd`) is two SEPARATE screens, in order **pick rally → pick
-> eligible car → Start** (`enum Screen { MAP, CARS }`):
+> Status: **🟢 SHIPPED (three-screen flow + parked lineup).** HQ (`hq.tscn` is a
+> `Node3D`, `scripts/hq.gd`) is three SEPARATE screens, in order **pick rally →
+> rally detail → pick eligible car → Start** (`enum Screen { MAP, DETAIL, CARS }`):
 > - **World map (screen 1, flat overlay):** a **pannable** map — a clipping frame
 >   onto a larger plane you **drag** (mouse / finger / left controller stick,
->   `GameConfig.menu_map_pan_speed`), clamped to the edges. Every rally is a **pin**
->   at its authored `map_pos` (fractional anchors), showing name / diff / restriction
->   / ✓; the showdown pin is locked until all others are completed; a progress meter
->   sits on top. A basic flat map — the stylised 3D map plane (rig 3) is still later.
-> - **Car select (screen 2, 3D car park):** only the cars **eligible for the chosen
+>   `GameConfig.menu_map_pan_speed`), clamped to the edges. Every rally is a simple
+>   **icon pin** at its `map_pos`: a 🏁 icon over the name over a **star rating**
+>   (1st-place best → ★★★, 2nd → ★★☆, 3rd → ★☆☆, else ☆☆☆, from
+>   `Save.best_placement`). The showdown pin is 🔒-locked until all others are
+>   completed; a progress meter sits on top. Basic flat map — the stylised 3D map
+>   plane (rig 3) is still later.
+> - **Rally detail (screen 2, flat overlay):** name, difficulty, eligible-cars
+>   restriction, event count, and the best finish + stars; **Enter Rally** advances,
+>   **◄ Map** goes back.
+> - **Car select (screen 3, 3D car park):** only the cars **eligible for the chosen
 >   rally** are parked in a lit lot as physics-frozen, silenced `Car` props (via
 >   `Car.apply_owned`); a menu camera **pans between** them on cycle (`◄ ►` +
 >   `menu_left/right`), a billboarded `Label3D` shows the focused car's stats, a
->   banner names the rally + restriction, and Start / ◄ Map (or `menu_back`) act.
+>   banner names the rally + restriction, and Start / ◄ Back (or `menu_back`) act.
 >   Each parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed lot
 >   renders each at its true size despite `car.tscn`'s shared mesh sub-resources.
 >

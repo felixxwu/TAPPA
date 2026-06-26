@@ -80,28 +80,66 @@ func test_hq_map_pans_and_clamps_to_the_edges() -> void:
 	assert_eq(hq._map_content.position, Vector2.ZERO, "panning is clamped to the near edge")
 
 
+func _pin_for(hq: Node3D, rally_id: String) -> Button:
+	for pin in _map_pins(hq):
+		if String((pin as Button).get_meta("rally_id", "")) == rally_id:
+			return pin
+	return null
+
+
 func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var showdown_locked := false
-	for pin in _map_pins(hq):
-		if (pin as Button).text.contains("Showdown"):
-			showdown_locked = (pin as Button).disabled
-	assert_true(showdown_locked, "the showdown pin is locked until every other rally is completed")
+	assert_true(_pin_for(hq, "the_showdown").disabled,
+		"the showdown pin is locked until every other rally is completed")
+	assert_false(_pin_for(hq, "shakedown").disabled, "a normal rally pin is clickable")
 	assert_string_contains(hq._map_meter.text, "Progress to the Showdown", "the progress meter is shown")
+
+
+func test_hq_map_stars_reflect_best_placement() -> void:
+	# A 1st-place best earns 3 stars; a 3rd-place best earns 1.
+	_save.complete_rally("shakedown", 60000, 1)
+	_save.complete_rally("coastal_sprint", 90000, 3)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._stars_for("shakedown"), 3, "1st place earns 3 stars")
+	assert_eq(hq._stars_for("coastal_sprint"), 1, "3rd place earns 1 star")
+	assert_eq(hq._stars_for("rwd_masters"), 0, "an unplayed rally earns 0 stars")
+	assert_eq(hq._stars_text(3), "★★★", "3 stars render full")
+	assert_eq(hq._stars_text(1), "★☆☆", "1 star renders 1 filled of 3")
+
+
+func test_hq_opening_a_rally_shows_its_detail_then_enters_cars() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Clicking a pin opens the rally-detail screen (not the cars yet).
+	hq._on_rally_pin("rwd_masters")
+	assert_eq(hq._screen, hq.Screen.DETAIL, "clicking a pin opens the rally detail")
+	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
+	assert_false(hq._car_layer.visible, "the car screen is not shown yet")
+	assert_string_contains(hq._detail_title.text, "RWD Masters", "the detail names the rally")
+	assert_string_contains(hq._detail_body.text, "RWD cars", "the detail spells out the eligibility")
+	# Entering from the detail moves to the car screen.
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	assert_eq(hq._screen, hq.Screen.CARS, "Enter Rally moves to the car-select screen")
+	assert_false(hq._detail_layer.visible, "the detail overlay is hidden on the car screen")
 
 
 func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Own an AWD RS3 alongside the RWD starter, then pick the RWD-only rally: only the
-	# eligible (RWD) car is parked on the car screen, and the AWD car is filtered out.
+	# Own an AWD RS3 alongside the RWD starter, pick the RWD-only rally and enter: only
+	# the eligible (RWD) car is parked on the car screen, the AWD car is filtered out.
 	_save.grant_car("rs3", false)
 	hq._on_rally_pin("rwd_masters")
+	hq._enter_car_screen()
 	await get_tree().process_frame
-	assert_eq(hq._screen, hq.Screen.CARS, "picking a rally moves to the car-select screen")
+	assert_eq(hq._screen, hq.Screen.CARS, "on the car-select screen")
 	assert_false(hq._map_layer.visible, "the map overlay is hidden on the car screen")
 	assert_true(hq._car_layer.visible, "the car-select overlay is shown")
 	assert_eq(hq._cars.size(), 1, "only the eligible (RWD) car is parked")
@@ -119,6 +157,7 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_rally_pin("shakedown")  # open-class: all three are eligible
+	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._cars.size(), 3, "starter + the two granted cars are all eligible + parked")
 	var size_by_name := {}
@@ -137,6 +176,7 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_rally_pin("shakedown")  # open-class: both cars eligible
+	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._cars.size(), 2, "both eligible cars are parked")
 	assert_eq(hq._selected_instance_id, int(hq._eligible[0]["instance_id"]), "the first car is selected on entry")
@@ -148,26 +188,32 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
-func test_hq_back_returns_to_the_map() -> void:
+func test_hq_back_steps_cars_to_detail_to_map() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_rally_pin("shakedown")
+	hq._enter_car_screen()
 	await get_tree().process_frame
-	assert_eq(hq._screen, hq.Screen.CARS, "on the car screen after picking a rally")
+	assert_eq(hq._screen, hq.Screen.CARS, "on the car screen after entering")
+	# Back from the cars returns to the rally detail (not all the way to the map).
+	hq._show_detail()
+	assert_eq(hq._screen, hq.Screen.DETAIL, "Back from the cars returns to the rally detail")
+	assert_eq(hq._cars.size(), 0, "the parked lineup is cleared when leaving the car screen")
+	# Back from the detail returns to the map.
 	hq._show_map()
-	assert_eq(hq._screen, hq.Screen.MAP, "Back returns to the world map")
+	assert_eq(hq._screen, hq.Screen.MAP, "Back from the detail returns to the world map")
 	assert_true(hq._map_layer.visible, "the map is shown again")
-	assert_eq(hq._cars.size(), 0, "the parked lineup is cleared when returning to the map")
 
 
 func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Pick a rally on the map, then Start with the focused (auto-selected) car.
+	# Pick a rally on the map → detail → enter, then Start with the focused car.
 	# auto_load_scenes is off, so no scene change; start_rally derives targets.
 	hq._on_rally_pin("shakedown")
+	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_false(hq._start_button.disabled, "Start is enabled once a rally + eligible car are chosen")
 	hq._on_start_pressed()
