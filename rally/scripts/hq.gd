@@ -19,6 +19,35 @@ enum Screen { MAP, DETAIL, CARS }
 # 1st place earns 3 stars, 2nd → 2, 3rd → 1, anything else (incl. not completed) → 0.
 const MAX_STARS := 3
 
+
+# A row of DRAWN stars (filled = earned). Drawn rather than ★/☆ text because the
+# project's font has no glyphs for those symbols (they'd render as tofu boxes).
+class StarRow extends Control:
+	const STAR_R := 8.0
+	const GAP := 5.0
+	var _earned := 0
+	var _total := 3
+
+	func _init(earned: int, total: int) -> void:
+		_earned = earned
+		_total = total
+		custom_minimum_size = Vector2(_total * (STAR_R * 2.0 + GAP), STAR_R * 2.0 + 4.0)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		for i in _total:
+			var center := Vector2(STAR_R + i * (STAR_R * 2.0 + GAP), STAR_R + 2.0)
+			var col := Color(1.0, 0.82, 0.3) if i < _earned else Color(0.32, 0.34, 0.40)
+			draw_colored_polygon(_star_points(center, STAR_R), col)
+
+	func _star_points(center: Vector2, r: float) -> PackedVector2Array:
+		var pts := PackedVector2Array()
+		for k in 10:
+			var ang := -PI / 2.0 + k * PI / 5.0
+			var rad := r if k % 2 == 0 else r * 0.45
+			pts.append(center + Vector2(cos(ang), sin(ang)) * rad)
+		return pts
+
 const CAR_SCENE := preload("res://car.tscn")
 
 var _screen: int = Screen.MAP
@@ -224,13 +253,7 @@ func _map_pin(rally: Dictionary, sd_unlocked: bool) -> Control:
 	pin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pin.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	var icon := Button.new()
-	icon.focus_mode = Control.FOCUS_NONE
-	icon.add_theme_font_size_override("font_size", 30)
-	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	icon.set_meta("rally_id", rally_id)
-	icon.text = "🔒" if locked else "🏁"
-	icon.disabled = locked
+	var icon := _pin_icon(rally_id, locked, int(rally.get("difficulty", 1)))
 	if not locked:
 		icon.pressed.connect(_on_rally_pin.bind(rally_id))
 	pin.add_child(icon)
@@ -242,12 +265,10 @@ func _map_pin(rally: Dictionary, sd_unlocked: bool) -> Control:
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pin.add_child(name_lbl)
 
-	var stars_lbl := Label.new()
-	stars_lbl.text = _stars_text(_stars_for(rally_id))
-	stars_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stars_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
-	stars_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pin.add_child(stars_lbl)
+	# Stars are DRAWN (StarRow), not font glyphs — the project font has no ★/☆.
+	var stars := StarRow.new(_stars_for(rally_id), MAX_STARS)
+	stars.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	pin.add_child(stars)
 
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
 	pin.anchor_left = mp.x
@@ -256,9 +277,36 @@ func _map_pin(rally: Dictionary, sd_unlocked: bool) -> Control:
 	pin.anchor_bottom = mp.y
 	pin.offset_left = -80.0
 	pin.offset_right = 80.0
-	pin.offset_top = -32.0
-	pin.offset_bottom = 44.0
+	pin.offset_top = -36.0
+	pin.offset_bottom = 48.0
 	return pin
+
+
+# The clickable map marker: a rounded colour chip (tier-coloured, grey when locked)
+# — a "simple icon" that needs no font glyph. Carries the rally id in metadata.
+func _pin_icon(rally_id: String, locked: bool, difficulty: int) -> Button:
+	var icon := Button.new()
+	icon.focus_mode = Control.FOCUS_NONE
+	icon.custom_minimum_size = Vector2(44.0, 44.0)
+	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	icon.set_meta("rally_id", rally_id)
+	icon.disabled = locked
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.35, 0.37, 0.42) if locked else _tier_color(difficulty)
+	sb.set_corner_radius_all(10)
+	sb.set_border_width_all(2)
+	sb.border_color = Color(0.0, 0.0, 0.0, 0.45)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		icon.add_theme_stylebox_override(state, sb)
+	return icon
+
+
+func _tier_color(difficulty: int) -> Color:
+	match difficulty:
+		1: return Color(0.32, 0.70, 0.42)   # green
+		2: return Color(0.30, 0.56, 0.86)   # blue
+		3: return Color(0.92, 0.62, 0.26)   # orange
+		_: return Color(0.86, 0.32, 0.32)   # red (showdown / top tier)
 
 
 # Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
@@ -268,14 +316,6 @@ func _stars_for(rally_id: String) -> int:
 	if placed >= 1 and placed <= MAX_STARS:
 		return MAX_STARS + 1 - placed
 	return 0
-
-
-# A ★/☆ string showing `earned` filled stars out of MAX_STARS.
-func _stars_text(earned: int) -> String:
-	var s := ""
-	for i in MAX_STARS:
-		s += "★" if i < earned else "☆"
-	return s
 
 
 # --- Map panning (drag / touch / controller stick) ---------------------------
@@ -333,12 +373,12 @@ func _build_detail_overlay() -> void:
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
 	var back := Button.new()
-	back.text = "◄ Map"
+	back.text = "< Map"
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(_show_map)
 	actions.add_child(back)
 	var enter := Button.new()
-	enter.text = "Enter Rally — choose car ►"
+	enter.text = "Enter Rally — choose car >"
 	enter.focus_mode = Control.FOCUS_NONE
 	enter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	enter.pressed.connect(_enter_car_screen)
@@ -356,7 +396,7 @@ func _show_detail() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	_detail_title.text = String(rally.get("name", "?"))
 	var best := Save.best_placement(_selected_rally_id)
-	var best_line := "Best finish: P%d   %s" % [best, _stars_text(_stars_for(_selected_rally_id))] if best > 0 \
+	var best_line := "Best finish: P%d   (%d / %d stars)" % [best, _stars_for(_selected_rally_id), MAX_STARS] if best > 0 \
 		else "Not yet completed (finish top 3 to earn stars)"
 	var lines: Array[String] = [
 		"Difficulty: %d" % int(rally.get("difficulty", 0)),
@@ -408,7 +448,7 @@ func _build_car_overlay() -> void:
 	nav.add_theme_constant_override("separation", 8)
 	root.add_child(nav)
 	var prev := Button.new()
-	prev.text = "◄"
+	prev.text = "<"
 	prev.focus_mode = Control.FOCUS_NONE
 	prev.pressed.connect(_cycle_focus.bind(-1))
 	nav.add_child(prev)
@@ -418,7 +458,7 @@ func _build_car_overlay() -> void:
 	_car_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	nav.add_child(_car_name_label)
 	var next := Button.new()
-	next.text = "►"
+	next.text = ">"
 	next.focus_mode = Control.FOCUS_NONE
 	next.pressed.connect(_cycle_focus.bind(1))
 	nav.add_child(next)
@@ -432,7 +472,7 @@ func _build_car_overlay() -> void:
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
 	var back := Button.new()
-	back.text = "◄ Back"
+	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(_show_detail)
 	actions.add_child(back)
@@ -467,7 +507,7 @@ func _enter_car_screen() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var done := Save.rally_completed(_selected_rally_id)
 	_rally_banner.text = "%s%s  (diff %d) — needs %s" % [
-		rally.get("name", "?"), "  ✓" if done else "",
+		rally.get("name", "?"), "  (done)" if done else "",
 		int(rally.get("difficulty", 0)), _restriction_text(rally.get("restriction", {}))]
 	if _eligible.is_empty():
 		_no_eligible_label.visible = true
@@ -578,8 +618,8 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	var immortal: bool = owned.get("immortal", false)
 	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(owned.get("hp", 0.0))
-	var hp_text := "∞ HP" if immortal else "%d/%d HP" % [roundi(hp), roundi(max_hp)]
-	return "%s · %s · %s · tier %d · %.2f kW/kg · %s" % [
+	var hp_text := "INF HP" if immortal else "%d/%d HP" % [roundi(hp), roundi(max_hp)]
+	return "%s | %s | %s | tier %d | %.2f kW/kg | %s" % [
 		_drive_text(int(entry.get("drive_mode", -1))),
 		String(entry.get("country", "?")),
 		String(entry.get("car_type", "?")),
@@ -609,13 +649,13 @@ func _restriction_text(restriction: Dictionary) -> String:
 	if restriction.has("car_type"):
 		parts.append("%s body" % String(restriction["car_type"]))
 	if restriction.has("engine_min_l"):
-		parts.append("engine ≥ %.1f L" % float(restriction["engine_min_l"]))
+		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
-		parts.append("engine ≤ %.1f L" % float(restriction["engine_max_l"]))
+		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
 	if restriction.has("pw_min"):
-		parts.append("power-to-weight ≥ %.2f" % float(restriction["pw_min"]))
+		parts.append("power-to-weight >= %.2f" % float(restriction["pw_min"]))
 	if restriction.has("pw_max"):
-		parts.append("power-to-weight ≤ %.2f" % float(restriction["pw_max"]))
+		parts.append("power-to-weight <= %.2f" % float(restriction["pw_max"]))
 	return ", ".join(parts)
 
 

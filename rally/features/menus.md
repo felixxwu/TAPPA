@@ -36,11 +36,14 @@ frame (`_map_frame`) onto a larger map plane (`_map_content`, `MAP_SIZE`) that y
 **drag to pan** — mouse drag, finger drag (`InputEventScreenDrag`), or the left
 controller stick (polled in `_process`, paced by `GameConfig.menu_map_pan_speed`);
 panning clamps to the map edges. Every rally is a simple **icon pin** on the plane
-at its authored `map_pos` (fractional anchors): a clickable 🏁 icon (the rally id is
-in its metadata) over the rally name over a **star rating** (`_stars_for` →
-`_stars_text`): 1st-place best = ★★★, 2nd = ★★☆, 3rd = ★☆☆, otherwise ☆☆☆. Only
-the icon captures the mouse (so a tap opens it); everything else ignores it so an
-empty-map press falls through to the pan handler. The **showdown** pin is 🔒-locked
+at its authored `map_pos` (fractional anchors): a clickable tier-coloured chip icon
+(`_pin_icon`, a `StyleBoxFlat` rounded square; the rally id is in its metadata) over
+the rally name over a **star rating** — 1st-place best = 3 stars, 2nd = 2, 3rd = 1,
+else 0 (`_stars_for`). Stars are **drawn** (the `StarRow` inner class, filled vs
+empty star polygons) rather than ★/☆ text, because the project font has no glyphs
+for those symbols (they'd render as tofu boxes — same reason the UI avoids emoji and
+uses ASCII like `<`/`>` for nav). Only the icon captures the mouse (so a tap opens
+it); everything else ignores it so an empty-map press falls through to the pan handler. The **showdown** pin is 🔒-locked
 (disabled) until every other rally is completed; a **progress meter** sits up top.
 Clicking a pin opens screen 2. *(Basic flat map; the stylised 3D map plane of
 `menus.md` rig 3 is a later slice.)*

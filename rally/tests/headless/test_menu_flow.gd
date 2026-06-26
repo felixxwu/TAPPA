@@ -87,6 +87,18 @@ func _pin_for(hq: Node3D, rally_id: String) -> Button:
 	return null
 
 
+# The drawn StarRow sitting beside the rally's icon (the pin is a VBox of
+# [icon, name, StarRow]). Identified as the sibling that isn't a Button or Label.
+func _star_row_for(hq: Node3D, rally_id: String) -> Control:
+	var icon := _pin_for(hq, rally_id)
+	if icon == null:
+		return null
+	for sibling in icon.get_parent().get_children():
+		if not (sibling is Button) and not (sibling is Label):
+			return sibling
+	return null
+
+
 func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -107,8 +119,11 @@ func test_hq_map_stars_reflect_best_placement() -> void:
 	assert_eq(hq._stars_for("shakedown"), 3, "1st place earns 3 stars")
 	assert_eq(hq._stars_for("coastal_sprint"), 1, "3rd place earns 1 star")
 	assert_eq(hq._stars_for("rwd_masters"), 0, "an unplayed rally earns 0 stars")
-	assert_eq(hq._stars_text(3), "★★★", "3 stars render full")
-	assert_eq(hq._stars_text(1), "★☆☆", "1 star renders 1 filled of 3")
+	# The rating is drawn (a StarRow), not font text — confirm the pin carries one
+	# with the right earned count rather than a tofu ★/☆ string.
+	var star_row := _star_row_for(hq, "shakedown")
+	assert_not_null(star_row, "the pin shows a drawn star row")
+	assert_eq(star_row._earned, 3, "the drawn row fills 3 stars for a 1st-place best")
 
 
 func test_hq_opening_a_rally_shows_its_detail_then_enters_cars() -> void:
@@ -250,7 +265,7 @@ func test_podium_reveals_reward_and_standings() -> void:
 	var text := _label_texts(pod)
 	assert_string_contains(text, "Porsche 911", "the won car is revealed by name")
 	assert_string_contains(text, "NEW", "an un-owned car reward is flagged NEW")
-	assert_string_contains(text, "Stage 1 Engine Kit ×2", "duplicate upgrades are aggregated with a count")
+	assert_string_contains(text, "Stage 1 Engine Kit x2", "duplicate upgrades are aggregated with a count")
 	assert_string_contains(text, "Aero Kit", "the singular upgrade is listed too")
 	assert_string_contains(text, "Rival 1", "the standings list the opponent field")
 	assert_string_contains(text, "WRECKED", "a DNF opponent reads as WRECKED in the standings")

@@ -97,13 +97,13 @@ func _build_rewards(content: VBoxContainer, result: Dictionary) -> void:
 	if car_reward != "":
 		var entry := CarLibrary.by_id(car_reward)
 		var car_name := String(entry.get("name", car_reward))
-		var badge := "  ⭐ NEW" if result.get("car_reward_is_new", false) else ""
+		var badge := "  (NEW)" if result.get("car_reward_is_new", false) else ""
 		var car_label := Label.new()
-		car_label.text = "🚗 Car won: %s%s — delivered to HQ" % [car_name, badge]
+		car_label.text = "Car won: %s%s — delivered to HQ" % [car_name, badge]
 		content.add_child(car_label)
 	for line in _upgrade_lines(upgrades):
 		var l := Label.new()
-		l.text = "🔧 %s" % line
+		l.text = "+ %s" % line
 		content.add_child(l)
 
 
@@ -122,7 +122,7 @@ func _upgrade_lines(upgrades: Array) -> Array[String]:
 	for key in order:
 		var display_name := String(UpgradeLibrary.by_id(key).get("name", key))
 		var n: int = counts[key]
-		lines.append("%s ×%d" % [display_name, n] if n > 1 else display_name)
+		lines.append("%s x%d" % [display_name, n] if n > 1 else display_name)
 	return lines
 
 
@@ -135,7 +135,7 @@ func _standings_row(entry: Dictionary) -> Label:
 	var time_text := "WRECKED" if entry.get("dnf", false) else _fmt(int(entry.get("combined_ms", -1)))
 	var who := String(entry.get("name", "?"))
 	var is_player: bool = entry.get("is_player", false)
-	l.text = "%s%s — %s — %s" % ["▶ " if is_player else "", pos_text, who, time_text]
+	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
 	if is_player:
 		l.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
 	return l
