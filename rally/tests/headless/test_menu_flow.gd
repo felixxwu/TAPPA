@@ -236,7 +236,11 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_false(hq._start_button.disabled, "Start is enabled once a rally + eligible car are chosen")
-	hq._on_start_pressed()
+	# Start shows the loading overlay first, then hands off after a frame (so the
+	# overlay paints before the heavy target derivation) — await the whole thing.
+	await hq._on_start_pressed()
+	assert_gt(hq.find_children("*", "LoadingScreen", true, false).size(), 0,
+		"a loading overlay is shown immediately on Start")
 	assert_true(RallySession.is_active(), "Start hands off to an active RallySession")
 	assert_eq(RallySession.rally_id(), "shakedown", "the chosen rally is running")
 

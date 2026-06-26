@@ -63,9 +63,12 @@ prop (reusing `Car.apply_owned`). A **menu camera** pans between them — `◄ �
 (`GameConfig.menu_camera_offset` / `menu_camera_move_time`); the focused car **is**
 the selected car. A billboarded `Label3D` shows its name + stats beside it (drive /
 country / type / tier / power-to-weight / HP), mirrored into the overlay. A
-**banner** names the rally + its restriction; **Start** calls
-`RallySession.start_rally(rally, owned)`; **◄ Back** (or `menu_back`) returns to the
-rally detail. If no owned car qualifies, a hint shows and Start is disabled.
+**banner** names the rally + its restriction; **Start** shows the `LoadingScreen`
+overlay immediately and (after a frame, so it paints) calls
+`RallySession.start_rally(rally, owned)` — the handoff derives event target times by
+generating each track, which is heavy, so the overlay covers that work instead of
+freezing HQ. **◄ Back** (or `menu_back`) returns to the rally detail. If no owned car
+qualifies, a hint shows and Start is disabled.
 
 Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)
 finishing position ever recorded there, stored by `Save.complete_rally(id, ms,

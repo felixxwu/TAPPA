@@ -713,13 +713,20 @@ func _ease_camera_to_focus() -> void:
 
 # --- Start -------------------------------------------------------------------
 
-# Hand off to the orchestrator. RallySession derives the event target times,
-# builds the opponent field, and loads the first event's run scene.
+# Hand off to the orchestrator. RallySession derives the event target times
+# (generating each event's track) and loads the first event's run scene — heavy,
+# synchronous work that would otherwise freeze HQ with no feedback. So cover the
+# screen with the loading overlay FIRST and let it paint a frame, then do the
+# handoff behind it (the run scene then shows its own loading screen — continuous).
 func _on_start_pressed() -> void:
 	var owned := Save.get_car(_selected_instance_id)
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
+	var loading := LoadingScreen.new()
+	loading.set_step("Preparing rally…")
+	add_child(loading)
+	await get_tree().process_frame  # let the overlay paint before the heavy handoff
 	RallySession.start_rally(rally, owned)
 
 
