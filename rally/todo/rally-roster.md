@@ -65,6 +65,7 @@ RallyDef
   restriction: Restriction | null   # null / empty = open-class (always eligible)
   difficulty: int         # tier; drives reward tier (clamped by progress) + sort
   showdown: bool          # the final rally; locked until all others completed
+  map_pos: Vector2        # normalised 0..1 pin position on the HQ world map (UI only)
 
 EventDef
   seed: int               # -> TrackGenerator seed_value; explicit per event

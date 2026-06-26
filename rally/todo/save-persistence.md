@@ -112,6 +112,7 @@ OwnedCar
 RallyRecord
   completed: bool                     # top-3 achieved
   best_combined_ms: int               # best combined time across the 3 events
+  best_placed: int                    # best (lowest) finishing position ever; drives the map stars
 ```
 
 Notes:
@@ -162,7 +163,7 @@ Save.apply_damage(instance_id, amount)   # clamp at 0 -> wreck (unless immortal)
 Save.add_item(item_id, n=1) / consume_item(item_id)
 Save.install_upgrade(instance_id, item_id) / uninstall(...)
 Save.set_tuning(instance_id, tuning)
-Save.complete_rally(rally_id, combined_ms)  # idempotent: sets completed once, updates best_combined_ms; recomputes showdown_unlock. The CAR reward (RewardSystem.draw_car) fires per top-3 finish, NOT here — re-wins are farmable (reward-system.md).
+Save.complete_rally(rally_id, combined_ms, placed)  # idempotent: sets completed once, updates best_combined_ms + best_placed; recomputes showdown_unlock. The CAR reward (RewardSystem.draw_car) fires per top-3 finish, NOT here — re-wins are farmable (reward-system.md). best_placement(id) reads back the best finish.
 ```
 
 Keep `Save` **free of `GameConfig` coupling**: it stores tuning numbers, but it

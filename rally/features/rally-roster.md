@@ -21,6 +21,8 @@ Each `RALLIES` entry:
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   target_ms_override? }`. The `seed`/`turn_count`/`width` feed
   `TrackGenerator.generate` unchanged; the showdown's events are longer.
+- `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
+  world map (`hq.gd`). Pure UI data; no effect on the sim.
 
 A rally's result is the **combined time across its 3 events**.
 

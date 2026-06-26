@@ -37,15 +37,23 @@ re-implementing them.
 | `report_wreck()` | DNF: destroy the instance (`Save.wreck_car`), skip remaining events, resolve. Upgrades earned earlier this rally are kept. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
 
-Signals: `rally_finished(result)` (`{placed, completed, combined_ms, dnf}`),
-`phase_changed(phase)`, `event_started(i, event)`, `standings_ready(i)`,
-`upgrade_revealed(item_id)`, `car_rewarded(model_id)`, `showdown_won()`.
+Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
+event)`, `standings_ready(i)`, `upgrade_revealed(item_id)`,
+`car_rewarded(model_id)`, `showdown_won()`.
+
+`last_result()` (the podium reads it) returns the finish dict — the base
+`{placed, completed, combined_ms, dnf}` plus, for the reveal/standings:
+`rally_id`, `rally_name`, `standings` (the full ranked field +
+player via `RallyLibrary.build_standings`), `upgrades` (the per-event ids drawn
+this rally), `car_reward` (model id, `""` if none), `car_reward_is_new` (bool), and
+`showdown_won` (bool).
 
 ## Results & rewards
 
 On resolve: `combined = sum(event_times)`, `placed =
 RallyLibrary.placement(field, combined)`. A **top-3, non-DNF** finish records
-completion (`Save.complete_rally`, idempotent) and grants a reward — a **car** for
+completion + best placement (`Save.complete_rally(id, combined, placed)`,
+idempotent; the placement drives the world-map stars) and grants a reward — a **car** for
 a normal rally (`RewardSystem.draw_car`, fires on **every** top-3 including
 re-wins → renewable supply), or the **win beat** (`showdown_won`) for the
 showdown. Non-top-3 / DNF grants nothing and leaves the rally incomplete (**no

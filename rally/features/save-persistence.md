@@ -28,8 +28,10 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   of the same model can diverge (the random-car reward can grant a model you
   already own).
 - `inventory` — `{ item_id -> count }` for uninstalled upgrades + repair kits.
-- `rallies` — `{ rally_id -> { completed, best_combined_ms } }`, only completed
-  rallies present. Completion count is the single progression metric.
+- `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed } }`, only
+  completed rallies present. Completion count is the single progression metric;
+  `best_placed` is the best (lowest) finishing position ever achieved there (drives
+  the world-map star rating).
 - `showdown_unlocked` / `showdown_completed` — the end-game beat.
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
 
@@ -57,9 +59,10 @@ that mutate + autosave: `grant_car(model_id, immortal)`, `get_car(instance_id)`,
 `install_upgrade` / `uninstall_upgrade` (install enforces one-per-slot via
 `UpgradeLibrary`, replacing + returning the incumbent; see
 `features/upgrade-catalogue.md`), `use_repair_kit(instance_id, heal_amount)`
-(spend a kit to heal, clamped to max_hp), `complete_rally(rally_id, combined_ms)`
-(idempotent; keeps the best time; does **not** grant the car reward — re-wins are
-farmable). `rally_completed(id)` / `completed_rally_count()` query progress.
+(spend a kit to heal, clamped to max_hp), `complete_rally(rally_id, combined_ms,
+placed)` (idempotent; keeps the best time **and** best placement; does **not** grant
+the car reward — re-wins are farmable). `rally_completed(id)` /
+`completed_rally_count()` / `best_placement(id)` query progress.
 
 ## Durability & integrity
 
