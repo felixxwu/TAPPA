@@ -168,6 +168,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	_track_progress.setup(result["centerline"], $Car, $Floor as TerrainManager)
 	($HUD as CanvasLayer).track_progress = _track_progress
 
+	# Tire marks: gravel ruts laid behind the wheels while on the road
+	# (todo/tire-marks.md). Reuse the node across regenerations like the managers
+	# above; gated to the road half-width, so it needs the centerline + terrain.
+	if _tire_marks == null:
+		_tire_marks = TireMarks.new()
+		_tire_marks.name = "TireMarks"
+		add_child(_tire_marks)
+	_tire_marks.setup(result["centerline"], $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
+
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
 	# Reuse the node across regenerations so only one ticks.
@@ -194,6 +203,9 @@ var _track_progress: TrackProgress
 # Owns the per-stage countdown -> run timer -> completion flow for the current
 # stage (recreated on each track regeneration).
 var _stage_manager: StageManager
+
+# Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
+var _tire_marks: TireMarks
 
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
@@ -257,6 +269,9 @@ func cycle_car() -> void:
 	# progress resets to the spawn offset too).
 	if _track_progress != null:
 		_track_progress.retarget(fresh, $Floor as TerrainManager)
+	# Re-point tire marks at the fresh car and clear the outgoing car's ribbons.
+	if _tire_marks != null:
+		_tire_marks.retarget(fresh)
 	# Re-arm the stage on the fresh car (it spawns at the start), so the countdown
 	# restarts and the manager doesn't keep a freed car reference.
 	if _stage_manager != null:
