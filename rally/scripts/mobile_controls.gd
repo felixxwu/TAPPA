@@ -16,8 +16,10 @@ const STEER_RIGHT := 1
 const BRAKE := 2
 const THROTTLE := 3
 const _BUTTONS := [
-	{"label": "◀", "action": &"steer_left"},
-	{"label": "▶", "action": &"steer_right"},
+	# ASCII labels — the project font has no glyphs for arrow symbols (they render
+	# as tofu boxes), so steering uses "<"/">" to match the BRAKE/GAS text buttons.
+	{"label": "<", "action": &"steer_left"},
+	{"label": ">", "action": &"steer_right"},
 	{"label": "BRAKE", "action": &"brake_reverse"},
 	{"label": "GAS", "action": &"accelerate"},
 ]
