@@ -339,19 +339,6 @@ func _pan_map(delta: Vector2) -> void:
 	_clamp_map()
 
 
-# Per-axis factor mapping a physical-screen delta to logical canvas units (the
-# inverse of the viewport stretch). 1:1 when there's no stretch (or no window yet).
-func _screen_to_canvas() -> Vector2:
-	var win := get_window()
-	if win == null:
-		return Vector2.ONE
-	var canvas := get_viewport().get_visible_rect().size
-	var screen := Vector2(win.size)
-	return Vector2(
-		canvas.x / screen.x if screen.x > 0.0 else 1.0,
-		canvas.y / screen.y if screen.y > 0.0 else 1.0)
-
-
 # Keep the map plane covering the frame: you can't drag past its edges.
 func _clamp_map() -> void:
 	var fs := _map_frame.size
@@ -739,7 +726,12 @@ func _on_start_pressed() -> void:
 	var loading := LoadingScreen.new()
 	loading.set_step("Preparing rally…")
 	add_child(loading)
-	await get_tree().process_frame  # let the overlay paint before the heavy handoff
+	# Let the overlay actually PAINT before the heavy, synchronous handoff
+	# (start_rally generates a track per event, then changes scene). One
+	# process_frame resumes during the idle step — before the overlay is drawn — so
+	# the screen still froze with no feedback. Wait for a fully presented frame.
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
 	RallySession.start_rally(rally, owned)
 
 
@@ -756,20 +748,17 @@ func _unhandled_input(event: InputEvent) -> void:
 # is consumed by the pin — see the IGNORE filters in _build_map_overlay — so this
 # only fires for the empty map, which is where you grab to pan.)
 func _map_input(event: InputEvent) -> void:
+	# Pan from mouse events ONLY. On touch devices the engine's "emulate mouse from
+	# touch" (project.godot › input_devices) turns finger drags into the SAME mouse
+	# button + motion events, so this one path covers mouse and finger alike. (We
+	# used to also handle InputEventScreenDrag, but that double-counted a finger drag
+	# — once as the touch drag, once as its emulated mouse motion — making the map
+	# pan ~2x faster than the finger.) Mouse-motion deltas are already in the logical
+	# canvas space, so panning tracks the pointer 1:1.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		_panning = event.pressed
 	elif event is InputEventMouseMotion and _panning:
-		# Mouse motion deltas are already in the logical canvas space.
 		_pan_map(event.relative)
-	elif event is InputEventScreenTouch:
-		_panning = event.pressed
-	elif event is InputEventScreenDrag:
-		# Touch drag deltas arrive in PHYSICAL screen pixels — with the viewport
-		# stretch (project.godot: stretch/mode=viewport, keep_height) the canvas is
-		# rendered at a fixed logical height and scaled up to the device, so an
-		# un-scaled delta drags the map several times faster than the finger. Convert
-		# the delta from screen space back to canvas space first.
-		_pan_map(event.relative * _screen_to_canvas())
 
 
 func _cars_input(event: InputEvent) -> void:

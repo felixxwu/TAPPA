@@ -35,6 +35,10 @@ window/stretch/aspect="keep_height"
 
 import/blender/enabled=false
 
+[input_devices]
+
+pointing/emulate_mouse_from_touch=true
+
 [input]
 
 accelerate={

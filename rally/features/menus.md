@@ -35,13 +35,14 @@ order **pick rally → pick eligible car → Start** (`enum Screen { MAP, CARS }
 frame (`_map_frame`) onto a larger map plane (`_map_content`, sized to
 `MAP_VIEW_FACTOR` × the viewport on each axis so the zoom tracks screen size — 1.5×,
 so it never reads as zoomed-in on mobile) that you
-**drag to pan** — mouse drag, finger drag (`InputEventScreenDrag`), or the left
-controller stick (polled in `_process`, paced by `GameConfig.menu_map_pan_speed`);
-panning clamps to the map edges. Touch-drag deltas arrive in physical screen
-pixels, so under the viewport stretch (`project.godot`: `stretch/mode=viewport`,
-`keep_height`) they're converted to logical canvas units via `_screen_to_canvas`
-before panning — otherwise the map drags faster than the finger. Mouse-motion
-deltas are already canvas-space and pan 1:1. Every rally is a simple **icon pin** on the plane
+**drag to pan**, or the left controller stick (polled in `_process`, paced by
+`GameConfig.menu_map_pan_speed`); panning clamps to the map edges. Drag panning is
+**mouse-only** in `_map_input`: finger drags reach it as emulated mouse events
+(`project.godot › input_devices/pointing/emulate_mouse_from_touch`), so one path
+covers mouse and finger and the map tracks the pointer 1:1. (Handling
+`InputEventScreenDrag` as well double-counted a finger drag — once as the touch
+drag, once as its emulated mouse motion — making the map pan ~2× faster than the
+finger.) Every rally is a simple **icon pin** on the plane
 at its authored `map_pos` (fractional anchors): a clickable tier-coloured chip icon
 (`_pin_icon`, a `StyleBoxFlat` rounded square; the rally id is in its metadata) over
 the rally name over a **star rating** — 1st-place best = 3 stars, 2nd = 2, 3rd = 1,
