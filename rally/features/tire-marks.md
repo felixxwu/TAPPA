@@ -28,7 +28,10 @@ is missing, or the car is gone):
   both work): when in contact and within `track_width/2 + tire_mark_gravel_margin_m`
   of the centerline (on the gravel), and it has moved ≥ `tire_mark_segment_step_m`
   since its last point, append a ribbon segment — a left/right pair across the road
-  normal at the wheel's ground point (`y = TerrainManager.height_at + tire_mark_ground_offset_m`).
+  normal at the wheel's **contact patch** (`y = hub.y − wheel_radius +
+  tire_mark_ground_offset_m`, NOT `terrain.height_at` — near the road the terrain
+  mesh is flattened to the baked road height the car rides on, so the raw noise
+  height would sink the ribbon under the road in cuts/dips).
   Off the gravel or airborne, the ribbon **breaks** (a fresh strip starts later, no
   line across the gap).
 - **Cap** — each wheel's segment list is a ring buffer of `tire_mark_max_segments`

@@ -329,9 +329,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_group("Tire Marks")
 ## Gravel ruts laid behind the wheels while driving on the road (todo/tire-marks.md).
 @export var tire_marks_enabled := true
-## Mark colour — a solid shade close to the gravel but darker (disturbed gravel).
-## Calibrated by eye against the road texture; the road has no single base colour.
-@export var tire_mark_color := Color(0.22, 0.21, 0.19)
+## Mark colour — a solid shade close to the gravel but a touch darker (disturbed
+## gravel). gravel.jpg averages ~0.42 grey; this sits just under it. Unshaded, so
+## tune against the lit road in-game.
+@export var tire_mark_color := Color(0.35, 0.34, 0.32)
 ## Width of a wheel's mark ribbon, in metres (roughly a tyre's width).
 @export var tire_mark_width_m := 0.22
 ## Don't lay marks below this car speed (m/s) — keeps the countdown/parked car clean.
@@ -341,8 +342,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Max segments retained per wheel (ring buffer); older marks recycle. ~100 m at
 ## the default step — bounds memory, and the chase cam looks forward anyway.
 @export var tire_mark_max_segments := 200
-## Height the ribbon sits above the terrain surface, in metres (avoids z-fighting).
-@export var tire_mark_ground_offset_m := 0.03
+## Height the ribbon sits above the wheel's contact patch, in metres (lifts it
+## clear of the road surface so it never z-fights or clips under the terrain).
+@export var tire_mark_ground_offset_m := 0.05
 ## Extra lateral allowance beyond the road half-width within which marks still lay
 ## (so the verge of the gravel still marks), in metres.
 @export var tire_mark_gravel_margin_m := 0.3

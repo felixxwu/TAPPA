@@ -51,8 +51,10 @@ swap (`world.cycle_car`) it re-targets the fresh car and clears its marks (like
    - **on_gravel** = `abs(lateral) <= track_width * 0.5 + tire_mark_gravel_margin_m`.
    - **on gravel** and the wheel has moved ≥ `tire_mark_segment_step_m` since its
      last point: append a quad bridging the previous left/right pair to a new pair,
-     centred at the wheel's ground point (`x,z` of the hub, `y =
-     TerrainManager.height_at(x,z) + tire_mark_ground_offset_m`), `tire_mark_width_m`
+     centred at the wheel's contact patch (`x,z` of the hub, `y = hub.y −
+     wheel_radius + tire_mark_ground_offset_m` — the wheel's real contact, NOT
+     `terrain.height_at`, which is the raw noise height and sinks under the
+     flattened road in cuts/dips), `tire_mark_width_m`
      wide across the road normal.
    - **off gravel** (or not in contact): break the ribbon (next on-gravel point
      starts a fresh strip — no long line across the gap).

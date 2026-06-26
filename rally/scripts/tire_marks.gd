@@ -98,22 +98,26 @@ func _physics_process(_delta: float) -> void:
 		if not wheel.is_in_contact():
 			_last_pos[i] = null
 			continue
-		var wxz := Vector2(wheel.global_position.x, wheel.global_position.z)
+		var wpos: Vector3 = wheel.global_position
+		var wxz := Vector2(wpos.x, wpos.z)
 		# Lateral distance from the road centerline (local frame): off the gravel
 		# (incl. the verge margin) breaks the ribbon.
 		if absf((wxz - road_pt).dot(road_n)) > gate:
 			_last_pos[i] = null
 			continue
 		if _last_pos[i] == null or wxz.distance_to(_last_pos[i]) >= step:
-			_emit_segment(i, wxz, road_n)
+			_emit_segment(i, wpos, road_n)
 			_last_pos[i] = wxz
 
 
 # Append one ribbon point for a wheel (left/right of its ground contact, across the
-# road normal), cap the ring buffer, and rebuild that wheel's surface.
-func _emit_segment(i: int, wheel_xz: Vector2, road_n: Vector2) -> void:
-	var y := _ground_height(wheel_xz.x, wheel_xz.y) + Config.data.tire_mark_ground_offset_m
-	var center := Vector3(wheel_xz.x, y, wheel_xz.y)
+# road normal), cap the ring buffer, and rebuild that wheel's surface. The contact
+# height comes from the WHEEL (hub Y − wheel radius), not terrain.height_at — near
+# the road the terrain mesh is flattened to the baked road height the car sits on,
+# so the raw noise height would sink the ribbon under the road in cuts/dips.
+func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2) -> void:
+	var y := wheel_pos.y - Config.data.wheel_radius + Config.data.tire_mark_ground_offset_m
+	var center := Vector3(wheel_pos.x, y, wheel_pos.z)
 	var across := Vector3(road_n.x, 0.0, road_n.y) * (Config.data.tire_mark_width_m * 0.5)
 	var pairs: Array = _pairs[i]
 	pairs.append([center + across, center - across])
@@ -174,12 +178,6 @@ func _windowed_offset(here: Vector2) -> float:
 			best_o = o
 		o += SEARCH_STEP_M
 	return best_o
-
-
-func _ground_height(x: float, z: float) -> float:
-	if _terrain != null and _terrain.has_method("height_at"):
-		return _terrain.height_at(x, z)
-	return 0.0
 
 
 func _ensure_material() -> void:
