@@ -4,76 +4,74 @@
 plus the session-aware fielding in `scripts/world.gd`. See the full design in
 [../todo/menus.md](../todo/menus.md).
 
-This is the **flat-UI build** of the menu shell: a working
-HQ → field car → run → podium → HQ loop that makes the whole meta-game legible —
-car selection with stats, a rally board that shows what's locked and why, a
-podium reward reveal, and full opponent standings. The full spec calls for a
-diegetic 3D world (car-park / tuning-lift / map-table stations, a stylised map
-plane with rally pins, SubViewport stats panels, a 3D podium, camera
-fly-throughs, `menu_*` input actions) — that staging is **deferred**, with its
-first concrete slice kicked off in [../todo/diegetic-hq.md](../todo/diegetic-hq.md).
-The flat UI here proves the loop end-to-end and wires
-[rally-session.md](rally-session.md) into the run scene.
+This is the **diegetic 3D build** of the menu shell: HQ is one continuous 3D space
+the camera flies through (an exterior title shot, a garage interior, the map table,
+and the outdoor car park) rather than flat overlay screens. It still closes the
+whole meta-game loop — pick a rally on a 3D map, choose an eligible car in the car
+park, run it, see the podium — and wires [rally-session.md](rally-session.md) into
+the run scene. The podium + between-event standings are still flat scenes (the 3D
+reward rig / podium are later refinements); remaining diegetic polish (tuning UI,
+per-car paint, camera fly-throughs *between* far stations) lives in
+[../todo/diegetic-hq.md](../todo/diegetic-hq.md) / [../todo/menus.md](../todo/menus.md).
 
 ## The loop
 
 ```
-HQ map (pick rally) ─▶ rally detail ─Enter─▶ car select (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0)
+exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pin) ─▶ rally detail ─Enter─▶ car park (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0)
    main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ standings.tscn ─Continue─▶ next event
                                           └─ car.wrecked ─▶ report_wreck (DNF)
-   final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ map
+   final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
 ```
 
 ## HQ (`hq.gd`)
 
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no
 track generation). On first visit it grants the **immortal starter** (`mx5`) — the
-anti-soft-lock floor. HQ is **two separate screens**, shown one at a time, in the
-order **pick rally → pick eligible car → Start** (`enum Screen { MAP, CARS }`).
+anti-soft-lock floor. HQ is **one diegetic 3D space** the camera flies through; an
+`enum View { EXTERIOR, GARAGE, TABLE, CARPARK }` names the camera **stations** and
+`_go_to(view)` tweens the single `Camera3D` between their poses
+(`GameConfig.hq_*_cam_eye/look`, eased over `menu_camera_move_time`). Clickable 3D
+objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_pickable`
+(`get_viewport().physics_object_picking` is on); their handlers also respond to
+`menu_*` keyboard/gamepad input. The environment — block buildings, the garage
+shell, the table, the lift — is built from `BoxMesh` blocks via `_block()`
+(placeholder art; the framing/positions that the flow depends on are in `GameConfig`).
 
-**Screen 1 — World map (flat overlay).** A basic, **pannable** map: a clipping
-frame (`_map_frame`) onto a larger map plane (`_map_content`, sized to
-`MAP_VIEW_FACTOR` × the viewport on each axis so the zoom tracks screen size — 1.5×,
-so it never reads as zoomed-in on mobile) that you
-**drag to pan**, or the left controller stick (polled in `_process`, paced by
-`GameConfig.menu_map_pan_speed`); panning clamps to the map edges. Drag panning is
-**mouse-only** in `_map_input`: finger drags reach it as emulated mouse events
-(`project.godot › input_devices/pointing/emulate_mouse_from_touch`), so one path
-covers mouse and finger and the map tracks the pointer 1:1. (Handling
-`InputEventScreenDrag` as well double-counted a finger drag — once as the touch
-drag, once as its emulated mouse motion — making the map pan ~2× faster than the
-finger.) Every rally is a simple **icon pin** on the plane
-at its authored `map_pos` (fractional anchors): a clickable tier-coloured chip icon
-(`_pin_icon`, a `StyleBoxFlat` rounded square; the rally id is in its metadata) over
-the rally name over a **star rating** — 1st-place best = 3 stars, 2nd = 2, 3rd = 1,
-else 0 (`_stars_for`). Stars are **drawn** (the `StarRow` inner class, filled vs
-empty star polygons) rather than ★/☆ text, because the project font has no glyphs
-for those symbols (they'd render as tofu boxes — same reason the UI avoids emoji and
-uses ASCII like `<`/`>` for nav). Only the icon captures the mouse (so a tap opens
-it); everything else ignores it so an empty-map press falls through to the pan handler. The **showdown** pin is 🔒-locked
-(disabled) until every other rally is completed; a **progress meter** sits up top.
-Clicking a pin opens screen 2. *(Basic flat map; the stylised 3D map plane of
-`menus.md` rig 3 is a later slice.)*
+**EXTERIOR (boot/title).** A title + **Start** button over an establishing shot of
+the block skyline and the outdoor car park. Start (or `menu_select`) flies the
+camera into the garage.
 
-**Screen 2 — Rally detail (flat overlay).** Expands the picked rally: name,
-difficulty, eligible-cars restriction, event count, and the player's **best finish
-+ stars** (or "not yet completed"). **Enter Rally** advances to screen 3; **◄ Map**
-returns to the map.
+**GARAGE.** A block garage interior holding the **map table** and the **tuning
+lift**. Tapping the table drops to the map view; tapping the lift flashes
+"Tuning bay — coming soon" (the tuning slice is later). A HUD hint + Back (to the
+exterior) sit on top.
 
-**Screen 3 — Car select (3D car park).** Only the owned cars **eligible for the
-chosen rally** (`RallyLibrary.is_eligible`) are parked in a lit lot, in a centred
-row spaced by `GameConfig.menu_car_spacing`, each a physics-frozen, silenced `Car`
-prop (reusing `Car.apply_owned`). A **menu camera** pans between them — `◄ ►` (or
-`menu_left`/`menu_right`) move the focus and the camera eases to a 3/4 hero shot
-(`GameConfig.menu_camera_offset` / `menu_camera_move_time`); the focused car **is**
-the selected car. A billboarded `Label3D` shows its name + stats beside it (drive /
-country / type / tier / power-to-weight / HP), mirrored into the overlay. A
-**banner** names the rally + its restriction; **Start** shows the `LoadingScreen`
-overlay immediately and (after a frame, so it paints) calls
-`RallySession.start_rally(rally, owned)` — the handoff derives event target times by
-generating each track, which is heavy, so the overlay covers that work instead of
-freezing HQ. **◄ Back** (or `menu_back`) returns to the rally detail. If no owned car
-qualifies, a hint shows and Start is disabled.
+**TABLE (the 3D world map).** A near-top-down look at the table's flat map plane.
+Every rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
+tier-coloured cone marker, a billboarded `Label3D` name, and a row of small
+**sphere stars** above it — 1st-place best = 3 gold, 2nd = 2, 3rd = 1, else grey
+(`_stars_for`). (3D sphere stars sidestep the font's missing ★/☆ glyphs — same
+reason the UI uses ASCII `<`/`>` for nav.) Each unlocked pin carries a pickable
+`Area3D` (rally id bound to the handler) and its `rally_id`/`locked` in metadata;
+the **showdown** pin is grey + **non-pickable** until every other rally is
+completed. A progress meter sits on the HUD. Tapping a pin opens the **rally
+detail** sub-panel (name, difficulty, eligible-cars restriction, event count,
+best finish + stars); **Enter Rally** flies out to the car park, **◄ Map** dismisses
+the panel, and the table Back returns to the garage.
+
+**CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
+rally** (`RallyLibrary.is_eligible`) are parked at `GameConfig.hq_carpark_origin`,
+in a centred row spaced by `menu_car_spacing`, each a physics-frozen, silenced `Car`
+prop (reusing `Car.apply_owned`). `◄ ►` (or `menu_left`/`menu_right`) move the focus
+and the camera eases to a 3/4 hero shot (`menu_camera_offset` / `menu_camera_move_time`);
+the focused car **is** the selected car. A billboarded `Label3D` shows its name +
+stats beside it (drive / country / type / tier / power-to-weight / HP), mirrored into
+the overlay. A **banner** names the rally + restriction; **Start** shows the
+`LoadingScreen` overlay immediately and (after a fully presented frame, so it paints)
+calls `RallySession.start_rally(rally, owned)` — the handoff derives event target
+times by generating each track, which is heavy, so the overlay covers that work
+instead of freezing HQ. **◄ Back** (or `menu_back`) returns to the map table and
+clears the lineup. If no owned car qualifies, a hint shows and Start is disabled.
 
 Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)
 finishing position ever recorded there, stored by `Save.complete_rally(id, ms,
@@ -113,27 +111,29 @@ things:
 
 ## Deferred (rest of the diegetic 3D build)
 
-The HQ 3D car park (above, full parked lineup) is in. Still deferred
-([../todo/diegetic-hq.md](../todo/diegetic-hq.md) for the next slices, umbrella in
-[../todo/menus.md](../todo/menus.md)): per-car paint + duplicate-model name
-suffixes, the map → 3D pins port, the tuning lift + inventory overlay, the pause
-overlay, the 3D reward-reveal rig + 3D podium, the full `menu_*` set + mobile
-gestures, and camera fly-through transitions *between* locations. The between-event
-**standings interstitial** now ships as a flat `standings.tscn` (cumulative
-leaderboard); the diegetic 3D version is the later refinement.
+The diegetic HQ space (exterior / garage / 3D map table / car park, with the camera
+flying between stations) is in. Still deferred
+([../todo/diegetic-hq.md](../todo/diegetic-hq.md), umbrella in
+[../todo/menus.md](../todo/menus.md)): the **tuning lift** UI + inventory (the lift
+is a clickable placeholder for now), per-car paint + duplicate-model name suffixes,
+designed environment art (blocks are placeholder), a pause overlay, the 3D
+reward-reveal rig + 3D podium, and camera fly-through transitions for the longer
+hops. The podium + between-event **standings interstitial** still ship as flat
+scenes (`podium.tscn` / `standings.tscn`); the diegetic 3D versions are later
+refinements.
 
 ## Tests
 
-`tests/headless/test_menu_flow.gd` — HQ boots to the world map (one icon pin per
-rally, showdown pin locked); the map **pans and clamps to its edges**; **stars
-reflect best placement** (1st→3, 3rd→1, unplayed→0); clicking a pin opens the
-**rally detail**, and Enter advances to the car screen which **filters to the
-eligible cars** (an AWD car is excluded from an RWD-only rally); an open rally parks
-the whole lineup with **per-car meshes** (a mixed lineup keeps each body at its true
-size); cycling focus re-selects the car and wraps; **Back** steps car → detail →
-map and clears the lineup; pin → detail → enter → car → Start launches a session;
-the **between-event standings interstitial** renders the cumulative leaderboard;
-the podium renders the finish summary **and the reward reveal + standings**; and the
-run scene fields the bound session car. The pure `RallyLibrary.build_standings` ranking and
-the enriched `RallySession` result are covered in `test_rally_library.gd` /
-`test_rally_session.gd`.
+`tests/headless/test_menu_flow.gd` — HQ boots to the **exterior title** (one 3D map
+pin per rally, showdown pin locked + non-pickable); **Start flies into the garage**;
+tapping the table shows the **map view**; **stars reflect best placement** (1st→3,
+3rd→1, unplayed→0); tapping a pin opens the **rally detail**, and Enter flies to the
+**car park** which **filters to the eligible cars** (an AWD car is excluded from an
+RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
+mixed lineup keeps each body at its true size); cycling focus re-selects the car and
+wraps; **Back** steps car park → table → garage and clears the lineup; pin → enter →
+car → Start launches a session; the **between-event standings interstitial** renders
+the cumulative leaderboard; the podium renders the finish summary **and the reward
+reveal + standings**; and the run scene fields the bound session car. The pure
+`RallyLibrary.build_standings` ranking and the enriched `RallySession` result are
+covered in `test_rally_library.gd` / `test_rally_session.gd`.

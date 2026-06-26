@@ -1,11 +1,21 @@
 extends Node3D
-# HQ — the meta-game hub (todo/menus.md location 1), diegetic 3D build
-# (todo/diegetic-hq.md). Two SEPARATE screens, in this order:
-#   1. WORLD MAP (flat overlay) — pick a rally from pins on a basic map.
-#   2. CAR SELECT (3D car park) — pick from the cars ELIGIBLE for that rally; the
-#      eligible cars are parked in a row and the menu camera pans between them.
-# Only one screen's controls show at a time. Start (on the car screen) hands off to
-# RallySession. It is the game's boot scene and stays lightweight (NO track gen).
+# HQ — the meta-game hub (todo/menus.md location 1), now a DIEGETIC 3D space the
+# camera flies through (todo/diegetic-hq.md) instead of flat overlay screens. One
+# world; the camera moves between "stations":
+#   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park. A
+#     title + Start button. Start flies the camera into the garage.
+#   * GARAGE   — a block garage interior holding the MAP TABLE and the TUNING LIFT.
+#     Tap the table to see the rallies; tap the lift to tune (coming later).
+#   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
+#     its detail; Enter flies out to the car park.
+#   * CARPARK  — the outdoor lineup of the cars ELIGIBLE for the chosen rally; pan
+#     between them and Start.
+# Flow: pick rally (table) -> choose eligible car (car park) -> Start -> RallySession.
+# It is the game's boot scene and stays lightweight (NO track gen).
+#
+# Clickable 3D objects (table, lift, rally pins) are Area3D with input_ray_pickable;
+# get_viewport().physics_object_picking drives the picking. Headless tests call the
+# handlers (_enter_table / _on_rally_pin / _enter_car_screen / ...) directly.
 #
 # Shared-resource note: car.tscn's body/wheel meshes are SubResources shared across
 # instances, so apply_car sizing one parked car would resize every other. After
@@ -14,79 +24,48 @@ extends Node3D
 # car wins) — harmless here: the props don't simulate, and world.gd re-applies the
 # fielded car's config before a run.
 
-enum Screen { MAP, DETAIL, CARS }
+# Camera stations (see the per-station poses in GameConfig "Menu / HQ").
+enum View { EXTERIOR, GARAGE, TABLE, CARPARK }
 
 # 1st place earns 3 stars, 2nd → 2, 3rd → 1, anything else (incl. not completed) → 0.
+# Shown on the 3D map pins as small sphere meshes (gold = earned, grey = not) — a 3D
+# row sidesteps the project font's missing ★/☆ glyphs (they'd render as tofu boxes,
+# same reason the UI uses ASCII like `<`/`>` for nav).
 const MAX_STARS := 3
-
-
-# A row of DRAWN stars (filled = earned). Drawn rather than ★/☆ text because the
-# project's font has no glyphs for those symbols (they'd render as tofu boxes).
-class StarRow extends Control:
-	const STAR_R := 8.0
-	const GAP := 5.0
-	var _earned := 0
-	var _total := 3
-
-	func _init(earned: int, total: int) -> void:
-		_earned = earned
-		_total = total
-		custom_minimum_size = Vector2(_total * (STAR_R * 2.0 + GAP), STAR_R * 2.0 + 4.0)
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	func _draw() -> void:
-		for i in _total:
-			var center := Vector2(STAR_R + i * (STAR_R * 2.0 + GAP), STAR_R + 2.0)
-			var col := Color(1.0, 0.82, 0.3) if i < _earned else Color(0.32, 0.34, 0.40)
-			draw_colored_polygon(_star_points(center, STAR_R), col)
-
-	func _star_points(center: Vector2, r: float) -> PackedVector2Array:
-		var pts := PackedVector2Array()
-		for k in 10:
-			var ang := -PI / 2.0 + k * PI / 5.0
-			var rad := r if k % 2 == 0 else r * 0.45
-			pts.append(center + Vector2(cos(ang), sin(ang)) * rad)
-		return pts
 
 const CAR_SCENE := preload("res://car.tscn")
 
-var _screen: int = Screen.MAP
+var _view: int = View.EXTERIOR
+var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
 var _selected_rally_id := ""
 var _selected_instance_id := -1
 
-# Car-select state: the owned cars eligible for the chosen rally, the parked car
-# nodes + their lot markers (parallel to _eligible), and which slot is focused.
+# Car-park state: the owned cars eligible for the chosen rally, the parked car nodes
+# + their lot markers (parallel to _eligible), and which slot is focused.
 var _eligible: Array = []
 var _cars: Array = []
 var _markers: Array = []
 var _focus := 0
 
-# 3D staging (the car park).
+# 3D staging.
 var _camera: Camera3D
-var _stats_label: Label3D
+var _stats_label: Label3D       # billboarded car stats beside the focused parked car
 var _cam_tween: Tween
+var _map_plane: MeshInstance3D  # the flat map laid on the table top
+var _pins_root: Node3D          # parent of the rally pins
+var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
 
-# World-map overlay. The map content is larger than the on-screen frame and is
-# panned (dragged) within it; pins ride on the content. The content is sized
-# RELATIVE to the frame (MAP_VIEW_FACTOR × the visible viewport on each axis) so
-# the zoom is consistent across screen sizes — at 1.5× you can pan half a screen's
-# worth in each direction and no more (keeps it from reading as zoomed-in on mobile).
-const MAP_VIEW_FACTOR := 1.5
-var _map_layer: CanvasLayer
-var _map_frame: Control      # the on-screen viewport into the map (clips + pans)
-var _map_content: Control    # the full map plane; panned by moving it
-var _map_bg: ColorRect
-var _map_meter: Label
-var _panning := false
-var _map_centered := false
-
-# Rally-detail overlay (screen 2).
+# Overlays (one CanvasLayer per station; only the active one is visible).
+var _title_layer: CanvasLayer
+var _garage_layer: CanvasLayer
+var _table_layer: CanvasLayer
 var _detail_layer: CanvasLayer
+var _car_layer: CanvasLayer
+
+var _lift_msg: Label            # transient "tuning coming soon" line in the garage
+var _map_meter: Label           # progress-to-showdown meter on the table HUD
 var _detail_title: Label
 var _detail_body: Label
-
-# Car-select overlay.
-var _car_layer: CanvasLayer
 var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
@@ -96,11 +75,16 @@ var _no_eligible_label: Label
 
 func _ready() -> void:
 	_ensure_starter()
-	_build_world()
-	_build_map_overlay()
+	_build_environment()
+	_build_title_overlay()
+	_build_garage_overlay()
+	_build_table_overlay()
 	_build_detail_overlay()
 	_build_car_overlay()
-	_show_map()
+	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
+	get_viewport().physics_object_picking = true
+	_refresh_map_pins()
+	_go_to(View.EXTERIOR, true)
 
 
 # First run: grant the immortal starter (the anti-soft-lock floor — it can never
@@ -114,9 +98,9 @@ func _ensure_starter() -> void:
 	Save.save()
 
 
-# --- 3D world (the lot, used by the car-select screen) -----------------------
+# --- 3D world (buildings, garage, table, lift, car park) ---------------------
 
-func _build_world() -> void:
+func _build_environment() -> void:
 	var cfg: GameConfig = Config.data
 
 	var env := WorldEnvironment.new()
@@ -136,14 +120,19 @@ func _build_world() -> void:
 
 	var ground := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(120.0, 60.0)
+	plane.size = Vector2(240.0, 240.0)
 	ground.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.18, 0.19, 0.22)
 	ground.material_override = mat
 	add_child(ground)
 
-	# Billboarded stats panel beside the focused car (Label3D for now; the
+	_build_buildings()
+	_build_garage()
+	_build_map_table()
+	_build_lift()
+
+	# Billboarded stats panel beside the focused car (Label3D for now; the richer
 	# SubViewport panel of menus.md rig 2 is deferred).
 	_stats_label = Label3D.new()
 	_stats_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -158,160 +147,190 @@ func _build_world() -> void:
 	add_child(_camera)
 
 
-# --- World-map overlay (screen 1) --------------------------------------------
-
-func _build_map_overlay() -> void:
-	_map_layer = CanvasLayer.new()
-	add_child(_map_layer)
-
-	# Everything except the pins ignores the mouse, so a press on empty map falls
-	# through to _unhandled_input (where drag-panning lives); pins keep STOP so they
-	# stay clickable.
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.06, 0.08, 0.11)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_layer.add_child(bg)
-
-	var root := VBoxContainer.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 16.0
-	root.offset_top = 16.0
-	root.offset_right = -16.0
-	root.offset_bottom = -16.0
-	root.add_theme_constant_override("separation", 8)
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_layer.add_child(root)
-
-	var title := Label.new()
-	title.text = "WORLD MAP — drag to pan, tap a rally"
-	title.add_theme_font_size_override("font_size", 28)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(title)
-
-	_map_meter = Label.new()
-	_map_meter.add_theme_font_size_override("font_size", 14)
-	_map_meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_map_meter)
-
-	# The map: a clipping frame (the viewport into the world) holding a larger map
-	# plane (_map_content) that is dragged around inside it. The content is sized to
-	# MAP_VIEW_FACTOR × the frame in _size_map (so the zoom tracks screen size). Pins
-	# are placed on the content by fractional anchors, so they ride along when
-	# panning and rescale with the content. (Basic flat map; the stylised 3D map
-	# plane of menus.md rig 3 is a later slice.)
-	_map_frame = Control.new()
-	_map_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_map_frame.clip_contents = true
-	_map_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_frame.resized.connect(_on_map_resized)
-	root.add_child(_map_frame)
-
-	_map_content = Control.new()
-	_map_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_frame.add_child(_map_content)
-
-	_map_bg = ColorRect.new()
-	_map_bg.color = Color(0.13, 0.18, 0.16)
-	_map_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_content.add_child(_map_bg)
+# A solid colour block (BoxMesh, centred at pos). The building/garage/table/lift art
+# is deliberately placeholder (todo/diegetic-hq.md defers HQ art); the camera framing
+# and the table/lift/car-park positions that the flow depends on live in GameConfig.
+func _block(pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	mi.material_override = m
+	mi.position = pos
+	add_child(mi)
+	return mi
 
 
-# Size the map plane to MAP_VIEW_FACTOR × the current frame (the visible viewport),
-# so the map is never wider than that multiple of the screen on either axis.
-func _size_map() -> void:
-	_map_content.size = _map_frame.size * MAP_VIEW_FACTOR
-	_map_bg.size = _map_content.size
+# Placeholder skyline behind the car park — simple blocks of varying height.
+func _build_buildings() -> void:
+	var blocks := [
+		[Vector3(-16.0, 5.0, 42.0), Vector3(9.0, 10.0, 9.0), Color(0.26, 0.28, 0.34)],
+		[Vector3(14.0, 7.0, 46.0), Vector3(8.0, 14.0, 8.0), Color(0.30, 0.31, 0.36)],
+		[Vector3(0.0, 6.0, 54.0), Vector3(12.0, 12.0, 10.0), Color(0.24, 0.26, 0.31)],
+		[Vector3(-26.0, 4.0, 32.0), Vector3(7.0, 8.0, 12.0), Color(0.28, 0.29, 0.33)],
+		[Vector3(25.0, 5.0, 34.0), Vector3(7.0, 10.0, 9.0), Color(0.27, 0.28, 0.34)],
+	]
+	for b in blocks:
+		_block(b[0], b[1], b[2])
 
 
-func _on_map_resized() -> void:
-	# Re-fit the content to the (new) frame size, centre it the first time the frame
-	# gets a real size, then keep the pan clamped to the edges.
-	if _map_frame.size.x <= 0.0:
-		return
-	_size_map()
-	if not _map_centered:
-		_map_content.position = (_map_frame.size - _map_content.size) * 0.5
-		_map_centered = true
-	_clamp_map()
+# The garage shell: floor, back + side walls, a flat roof. Open toward +Z (the car
+# park) so the camera looks in through the front from the garage station.
+func _build_garage() -> void:
+	var cfg: GameConfig = Config.data
+	var gx: float = cfg.hq_garage_size.x
+	var gz: float = cfg.hq_garage_size.y
+	var wall_h := 5.0
+	var t := 0.4
+	var wall := Color(0.30, 0.31, 0.35)
+	_block(Vector3(0.0, 0.05, 0.0), Vector3(gx, 0.1, gz), Color(0.22, 0.23, 0.26))            # floor
+	_block(Vector3(0.0, wall_h * 0.5, -gz * 0.5), Vector3(gx, wall_h, t), wall)                # back
+	_block(Vector3(-gx * 0.5, wall_h * 0.5, 0.0), Vector3(t, wall_h, gz), wall)                # left
+	_block(Vector3(gx * 0.5, wall_h * 0.5, 0.0), Vector3(t, wall_h, gz), wall)                 # right
+	_block(Vector3(0.0, wall_h, 0.0), Vector3(gx, t, gz), Color(0.26, 0.27, 0.31))             # roof
 
 
-# (Re)build the rally pins: a simple clickable icon with the rally name and a
-# star rating under it (3 stars for a 1st-place best, 2 for 2nd, 1 for 3rd, else
-# empty). Clicking opens the rally detail (screen 2). The showdown icon is locked
-# (disabled) until all other rallies are completed.
-func _refresh_map() -> void:
-	for child in _map_content.get_children():
-		if child != _map_bg:
-			child.queue_free()
+# The map table: a block with the flat 3D map plane on top + a pickable area so a tap
+# (in the garage view) drops the camera to the table view.
+func _build_map_table() -> void:
+	var cfg: GameConfig = Config.data
+	var p: Vector3 = cfg.hq_table_pos
+	var s: Vector3 = cfg.hq_table_size
+	_block(p + Vector3(0.0, s.y * 0.5, 0.0), s, Color(0.34, 0.26, 0.18))  # table (wood)
+	var top_y := p.y + s.y
+
+	_map_plane = MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = cfg.hq_map_plane_size
+	_map_plane.mesh = pm
+	var mm := StandardMaterial3D.new()
+	mm.albedo_color = Color(0.16, 0.28, 0.22)  # map green
+	_map_plane.material_override = mm
+	_map_plane.position = Vector3(p.x, top_y + 0.01, p.z)
+	add_child(_map_plane)
+
+	_pins_root = Node3D.new()
+	add_child(_pins_root)
+
+	var area := Area3D.new()
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(s.x, 0.6, s.z)
+	cs.shape = box
+	area.add_child(cs)
+	area.position = Vector3(p.x, top_y, p.z)
+	area.input_ray_pickable = true
+	area.input_event.connect(_on_table_input)
+	add_child(area)
+
+
+# The tuning lift: a platform + two posts, with a pickable area. Tapping it (in the
+# garage) flashes a "coming soon" line — tuning itself is a later slice.
+func _build_lift() -> void:
+	var cfg: GameConfig = Config.data
+	var p: Vector3 = cfg.hq_lift_pos
+	var s: Vector3 = cfg.hq_lift_size
+	var metal := Color(0.40, 0.42, 0.46)
+	_block(p + Vector3(0.0, s.y * 0.5, 0.0), s, metal)  # platform
+	_block(p + Vector3(-s.x * 0.5 + 0.2, 1.1, 0.0), Vector3(0.2, 2.2, 0.2), metal)
+	_block(p + Vector3(s.x * 0.5 - 0.2, 1.1, 0.0), Vector3(0.2, 2.2, 0.2), metal)
+
+	var area := Area3D.new()
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(s.x, 2.4, s.z)
+	cs.shape = box
+	area.add_child(cs)
+	area.position = p + Vector3(0.0, 1.2, 0.0)
+	area.input_ray_pickable = true
+	area.input_event.connect(_on_lift_input)
+	add_child(area)
+
+
+# --- 3D map pins -------------------------------------------------------------
+
+# (Re)build the rally pins on the table's map plane: a tier-coloured pin marker at
+# each rally's normalised map_pos, with a billboarded name and a row of sphere stars
+# (1st-place best → 3 gold, 2nd → 2, 3rd → 1, else grey). The showdown pin is locked
+# (grey, non-pickable) until every other rally is completed.
+func _refresh_map_pins() -> void:
+	for c in _pins_root.get_children():
+		c.queue_free()
+	_pins = []
+	var cfg: GameConfig = Config.data
 	var sd_unlocked := RallyLibrary.showdown_unlocked(Save.profile)
-	var total := 0
+	var p: Vector3 = cfg.hq_table_pos
+	var size: Vector2 = cfg.hq_map_plane_size
+	var top_y := p.y + cfg.hq_table_size.y + 0.02
 	for rally in RallyLibrary.RALLIES:
-		if not rally["showdown"]:
-			total += 1
-	var done_count := RallyLibrary.completed_count(Save.profile)
-	_map_meter.text = "Progress to the Showdown: %d / %d rallies completed" % [done_count, total]
-
-	for rally in RallyLibrary.RALLIES:
-		_map_content.add_child(_map_pin(rally, sd_unlocked))
+		var pin := _make_pin(rally, sd_unlocked, p, size, top_y)
+		_pins_root.add_child(pin)
+		_pins.append(pin)
+	_refresh_meter()
 
 
-# One map pin: [icon button] over [name] over [stars], placed at the rally's
-# fractional map_pos. The icon button carries the rally id in metadata so the rest
-# of the UI (and tests) can find it; only the icon is clickable.
-func _map_pin(rally: Dictionary, sd_unlocked: bool) -> Control:
+func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
 	var rally_id := String(rally["id"])
-	var locked: bool = rally["showdown"] and not sd_unlocked
-	var pin := VBoxContainer.new()
-	pin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pin.alignment = BoxContainer.ALIGNMENT_CENTER
-
-	var icon := _pin_icon(rally_id, locked, int(rally.get("difficulty", 1)))
-	if not locked:
-		icon.pressed.connect(_on_rally_pin.bind(rally_id))
-	pin.add_child(icon)
-
-	var name_lbl := Label.new()
-	name_lbl.text = String(rally["name"])
-	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_lbl.add_theme_font_size_override("font_size", 13)
-	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pin.add_child(name_lbl)
-
-	# Stars are DRAWN (StarRow), not font glyphs — the project font has no ★/☆.
-	var stars := StarRow.new(_stars_for(rally_id), MAX_STARS)
-	stars.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	pin.add_child(stars)
-
+	var locked: bool = bool(rally["showdown"]) and not sd_unlocked
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
-	pin.anchor_left = mp.x
-	pin.anchor_right = mp.x
-	pin.anchor_top = mp.y
-	pin.anchor_bottom = mp.y
-	pin.offset_left = -80.0
-	pin.offset_right = 80.0
-	pin.offset_top = -36.0
-	pin.offset_bottom = 48.0
+	# map_pos is normalised 0..1; centre the map plane, x→world X, y→world Z.
+	var local := Vector3((mp.x - 0.5) * plane_size.x, 0.0, (mp.y - 0.5) * plane_size.y)
+	var pin := Node3D.new()
+	pin.position = Vector3(table_pos.x, top_y, table_pos.z) + local
+	pin.set_meta("rally_id", rally_id)
+	pin.set_meta("locked", locked)
+
+	var marker := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = 0.16
+	cone.height = 0.5
+	marker.mesh = cone
+	marker.position = Vector3(0.0, cone.height * 0.5, 0.0)
+	var cm := StandardMaterial3D.new()
+	cm.albedo_color = Color(0.35, 0.37, 0.42) if locked else _tier_color(int(rally.get("difficulty", 1)))
+	marker.material_override = cm
+	pin.add_child(marker)
+
+	# Stars: small sphere meshes (3D, no font glyph needed). Earned = gold, else grey.
+	var earned := _stars_for(rally_id)
+	for k in MAX_STARS:
+		var star := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.06
+		sm.height = 0.12
+		star.mesh = sm
+		var smat := StandardMaterial3D.new()
+		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		smat.albedo_color = Color(1.0, 0.82, 0.3) if k < earned else Color(0.32, 0.34, 0.40)
+		star.material_override = smat
+		star.position = Vector3((k - (MAX_STARS - 1) * 0.5) * 0.17, cone.height + 0.16, 0.0)
+		pin.add_child(star)
+
+	var name3d := Label3D.new()
+	name3d.text = String(rally["name"])
+	name3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	name3d.font_size = 48
+	name3d.pixel_size = 0.0035
+	name3d.outline_size = 8
+	name3d.position = Vector3(0.0, cone.height + 0.42, 0.0)
+	pin.add_child(name3d)
+
+	# Pickable hit sphere (skipped for a locked pin so it can't be entered).
+	if not locked:
+		var area := Area3D.new()
+		var cs := CollisionShape3D.new()
+		var sph := SphereShape3D.new()
+		sph.radius = 0.45
+		cs.shape = sph
+		area.add_child(cs)
+		area.position = Vector3(0.0, cone.height * 0.5, 0.0)
+		area.input_ray_pickable = true
+		area.input_event.connect(_on_pin_input.bind(rally_id))
+		pin.add_child(area)
 	return pin
-
-
-# The clickable map marker: a rounded colour chip (tier-coloured, grey when locked)
-# — a "simple icon" that needs no font glyph. Carries the rally id in metadata.
-func _pin_icon(rally_id: String, locked: bool, difficulty: int) -> Button:
-	var icon := Button.new()
-	icon.focus_mode = Control.FOCUS_NONE
-	icon.custom_minimum_size = Vector2(44.0, 44.0)
-	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	icon.set_meta("rally_id", rally_id)
-	icon.disabled = locked
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.35, 0.37, 0.42) if locked else _tier_color(difficulty)
-	sb.set_corner_radius_all(10)
-	sb.set_border_width_all(2)
-	sb.border_color = Color(0.0, 0.0, 0.0, 0.45)
-	for state in ["normal", "hover", "pressed", "disabled"]:
-		icon.add_theme_stylebox_override(state, sb)
-	return icon
 
 
 func _tier_color(difficulty: int) -> Color:
@@ -331,48 +350,156 @@ func _stars_for(rally_id: String) -> int:
 	return 0
 
 
-# --- Map panning (drag / touch / controller stick) ---------------------------
-
-# Move the map plane by a pointer delta and keep it clamped to the frame edges.
-func _pan_map(delta: Vector2) -> void:
-	_map_content.position += delta
-	_clamp_map()
-
-
-# Keep the map plane covering the frame: you can't drag past its edges.
-func _clamp_map() -> void:
-	var fs := _map_frame.size
-	var cs := _map_content.size
-	var pos := _map_content.position
-	pos.x = clampf(pos.x, minf(0.0, fs.x - cs.x), maxf(0.0, fs.x - cs.x))
-	pos.y = clampf(pos.y, minf(0.0, fs.y - cs.y), maxf(0.0, fs.y - cs.y))
-	_map_content.position = pos
+func _refresh_meter() -> void:
+	if _map_meter == null:
+		return
+	var total := 0
+	for rally in RallyLibrary.RALLIES:
+		if not rally["showdown"]:
+			total += 1
+	var done := RallyLibrary.completed_count(Save.profile)
+	_map_meter.text = "Progress to the Showdown: %d / %d rallies completed" % [done, total]
 
 
-func _on_rally_pin(rally_id: String) -> void:
-	_selected_rally_id = rally_id
-	_show_detail()
+# --- 3D picking handlers (real play; tests call the targets directly) --------
+
+func _on_table_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int) -> void:
+	if _view == View.GARAGE and _is_click(event):
+		_enter_table()
 
 
-# --- Rally-detail overlay (screen 2) -----------------------------------------
+func _on_lift_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int) -> void:
+	if _view == View.GARAGE and _is_click(event):
+		_flash_lift_message()
 
-func _build_detail_overlay() -> void:
-	_detail_layer = CanvasLayer.new()
-	add_child(_detail_layer)
 
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.08, 0.10, 0.14)
-	_detail_layer.add_child(bg)
+func _on_pin_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int, rally_id: String) -> void:
+	if _view == View.TABLE and not _detail_open and _is_click(event):
+		_on_rally_pin(rally_id)
 
+
+func _is_click(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+
+
+# --- Station overlays --------------------------------------------------------
+
+# A full-rect VBox inside a fresh CanvasLayer, with standard margins. Returns both.
+func _make_overlay(margin := 24.0) -> Array:
+	var layer := CanvasLayer.new()
+	add_child(layer)
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 24.0
-	root.offset_top = 24.0
-	root.offset_right = -24.0
-	root.offset_bottom = -24.0
+	root.offset_left = margin
+	root.offset_top = margin
+	root.offset_right = -margin
+	root.offset_bottom = -margin
 	root.add_theme_constant_override("separation", 12)
-	_detail_layer.add_child(root)
+	layer.add_child(root)
+	return [layer, root]
+
+
+func _build_title_overlay() -> void:
+	var made := _make_overlay()
+	_title_layer = made[0]
+	var root: VBoxContainer = made[1]
+	root.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var title := Label.new()
+	title.text = "RALLY HQ"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 56)
+	root.add_child(title)
+
+	var sub := Label.new()
+	sub.text = "Build your garage. Win rallies. Reach the Showdown."
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 16)
+	root.add_child(sub)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 16)
+	root.add_child(spacer)
+
+	var start := Button.new()
+	start.text = "Start"
+	start.focus_mode = Control.FOCUS_NONE
+	start.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	start.custom_minimum_size = Vector2(220, 52)
+	start.pressed.connect(_on_exterior_start)
+	root.add_child(start)
+
+
+func _build_garage_overlay() -> void:
+	var made := _make_overlay()
+	_garage_layer = made[0]
+	var root: VBoxContainer = made[1]
+
+	var hint := Label.new()
+	hint.text = "GARAGE — tap the map table to choose a rally, or the lift to tune"
+	hint.add_theme_font_size_override("font_size", 22)
+	root.add_child(hint)
+
+	_lift_msg = Label.new()
+	_lift_msg.add_theme_font_size_override("font_size", 16)
+	_lift_msg.modulate = Color(1, 1, 1, 0.85)
+	root.add_child(_lift_msg)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(spacer)
+
+	var actions := HBoxContainer.new()
+	root.add_child(actions)
+	var back := Button.new()
+	back.text = "< Back"
+	back.focus_mode = Control.FOCUS_NONE
+	back.pressed.connect(func() -> void: _go_to(View.EXTERIOR))
+	actions.add_child(back)
+	# Convenience: jump straight to the map table.
+	var to_table := Button.new()
+	to_table.text = "Open map table >"
+	to_table.focus_mode = Control.FOCUS_NONE
+	to_table.pressed.connect(_enter_table)
+	actions.add_child(to_table)
+
+
+func _build_table_overlay() -> void:
+	var made := _make_overlay()
+	_table_layer = made[0]
+	var root: VBoxContainer = made[1]
+
+	var hint := Label.new()
+	hint.text = "WORLD MAP — tap a rally to see its details"
+	hint.add_theme_font_size_override("font_size", 22)
+	root.add_child(hint)
+
+	_map_meter = Label.new()
+	_map_meter.add_theme_font_size_override("font_size", 14)
+	root.add_child(_map_meter)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(spacer)
+
+	var back := Button.new()
+	back.text = "< Back to garage"
+	back.focus_mode = Control.FOCUS_NONE
+	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
+	root.add_child(back)
+
+
+func _build_detail_overlay() -> void:
+	var made := _make_overlay()
+	_detail_layer = made[0]
+	var root: VBoxContainer = made[1]
+	# A solid backing so the detail reads as a panel over the map.
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0.08, 0.10, 0.14, 0.96)
+	_detail_layer.add_child(bg)
+	_detail_layer.move_child(bg, 0)
 
 	_detail_title = Label.new()
 	_detail_title.add_theme_font_size_override("font_size", 30)
@@ -389,7 +516,7 @@ func _build_detail_overlay() -> void:
 	var back := Button.new()
 	back.text = "< Map"
 	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(_show_map)
+	back.pressed.connect(_hide_detail)
 	actions.add_child(back)
 	var enter := Button.new()
 	enter.text = "Enter Rally — choose car >"
@@ -399,44 +526,10 @@ func _build_detail_overlay() -> void:
 	actions.add_child(enter)
 
 
-# Show the detail screen for the selected rally: name, difficulty, restriction,
-# event count, and the player's best result / star rating.
-func _show_detail() -> void:
-	_screen = Screen.DETAIL
-	_clear_lineup()
-	_map_layer.visible = false
-	_car_layer.visible = false
-	_detail_layer.visible = true
-	var rally := RallyLibrary.by_id(_selected_rally_id)
-	_detail_title.text = String(rally.get("name", "?"))
-	var best := Save.best_placement(_selected_rally_id)
-	var best_line := "Best finish: P%d   (%d / %d stars)" % [best, _stars_for(_selected_rally_id), MAX_STARS] if best > 0 \
-		else "Not yet completed (finish top 3 to earn stars)"
-	var lines: Array[String] = [
-		"Difficulty: %d" % int(rally.get("difficulty", 0)),
-		"Eligible cars: %s" % _restriction_text(rally.get("restriction", {})),
-		"%d events — combined time sets your result." % rally.get("events", []).size(),
-		best_line,
-	]
-	if bool(rally.get("showdown", false)):
-		lines.append("THE SHOWDOWN — the final challenge.")
-	_detail_body.text = "\n".join(lines)
-
-
-# --- Car-select overlay (screen 2) -------------------------------------------
-
 func _build_car_overlay() -> void:
-	_car_layer = CanvasLayer.new()
-	add_child(_car_layer)
-
-	var root := VBoxContainer.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 16.0
-	root.offset_top = 16.0
-	root.offset_right = -16.0
-	root.offset_bottom = -16.0
-	root.add_theme_constant_override("separation", 8)
-	_car_layer.add_child(root)
+	var made := _make_overlay(16.0)
+	_car_layer = made[0]
+	var root: VBoxContainer = made[1]
 
 	_rally_banner = Label.new()
 	_rally_banner.add_theme_font_size_override("font_size", 22)
@@ -488,7 +581,7 @@ func _build_car_overlay() -> void:
 	var back := Button.new()
 	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(_show_detail)
+	back.pressed.connect(_car_back)
 	actions.add_child(back)
 	_start_button = Button.new()
 	_start_button.text = "Start Rally"
@@ -498,31 +591,86 @@ func _build_car_overlay() -> void:
 	actions.add_child(_start_button)
 
 
-# --- Screen transitions ------------------------------------------------------
-
-func _show_map() -> void:
-	_screen = Screen.MAP
-	_selected_instance_id = -1
-	_clear_lineup()
-	_detail_layer.visible = false
-	_car_layer.visible = false
-	_map_layer.visible = true
-	_refresh_map()
+# Show only the active station's overlay (detail is a TABLE sub-state).
+func _update_overlays() -> void:
+	_title_layer.visible = _view == View.EXTERIOR
+	_garage_layer.visible = _view == View.GARAGE
+	_table_layer.visible = _view == View.TABLE and not _detail_open
+	_detail_layer.visible = _view == View.TABLE and _detail_open
+	_car_layer.visible = _view == View.CARPARK
 
 
-# Enter the car-select screen for the chosen rally: park only the ELIGIBLE owned
-# cars and frame the first one. With none eligible, show a hint + disable Start.
+# --- Station transitions -----------------------------------------------------
+
+# Move to a station: update overlays + fly the camera there. CARPARK framing tracks
+# the focused car, so it's driven by _focus_changed (after the lineup is built).
+func _go_to(view: int, snap := false) -> void:
+	_view = view
+	if view != View.TABLE:
+		_detail_open = false
+	_update_overlays()
+	if view == View.CARPARK:
+		return  # camera handled by _focus_changed once the lineup exists
+	_move_camera_to(_station_xform(view), snap)
+
+
+func _on_exterior_start() -> void:
+	_go_to(View.GARAGE)
+
+
+func _enter_table() -> void:
+	_detail_open = false
+	_refresh_map_pins()  # reflect any newly-earned stars / showdown unlock
+	_go_to(View.TABLE)
+
+
+func _flash_lift_message() -> void:
+	_lift_msg.text = "Tuning bay — coming soon."
+
+
+func _on_rally_pin(rally_id: String) -> void:
+	_selected_rally_id = rally_id
+	_show_detail()
+
+
+# Show the detail panel for the selected rally (a sub-state of the TABLE view).
+func _show_detail() -> void:
+	var rally := RallyLibrary.by_id(_selected_rally_id)
+	_detail_title.text = String(rally.get("name", "?"))
+	var best := Save.best_placement(_selected_rally_id)
+	var best_line := "Best finish: P%d   (%d / %d stars)" % [best, _stars_for(_selected_rally_id), MAX_STARS] if best > 0 \
+		else "Not yet completed (finish top 3 to earn stars)"
+	var lines: Array[String] = [
+		"Difficulty: %d" % int(rally.get("difficulty", 0)),
+		"Eligible cars: %s" % _restriction_text(rally.get("restriction", {})),
+		"%d events — combined time sets your result." % rally.get("events", []).size(),
+		best_line,
+	]
+	if bool(rally.get("showdown", false)):
+		lines.append("THE SHOWDOWN — the final challenge.")
+	_detail_body.text = "\n".join(lines)
+	_detail_open = true
+	_view = View.TABLE
+	_update_overlays()
+
+
+func _hide_detail() -> void:
+	_detail_open = false
+	_update_overlays()
+
+
+# Enter the car park for the chosen rally: park only the ELIGIBLE owned cars and
+# frame the first. With none eligible, show a hint + disable Start.
 func _enter_car_screen() -> void:
-	_screen = Screen.CARS
-	_map_layer.visible = false
-	_detail_layer.visible = false
-	_car_layer.visible = true
 	_build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var done := Save.rally_completed(_selected_rally_id)
 	_rally_banner.text = "%s%s  (diff %d) — needs %s" % [
 		rally.get("name", "?"), "  (done)" if done else "",
 		int(rally.get("difficulty", 0)), _restriction_text(rally.get("restriction", {}))]
+	_view = View.CARPARK
+	_detail_open = false
+	_update_overlays()
 	if _eligible.is_empty():
 		_no_eligible_label.visible = true
 		_no_eligible_label.text = "No eligible car for this rally — win or pick a qualifying car."
@@ -530,10 +678,17 @@ func _enter_car_screen() -> void:
 		_car_stats_label.text = ""
 		_stats_label.text = ""
 		_start_button.disabled = true
+		_move_camera_to(_station_xform(View.CARPARK), true)
 		return
 	_no_eligible_label.visible = false
 	_focus = 0
-	_focus_changed(true)  # snap the camera in on entry
+	_focus_changed(true)  # snaps the camera onto the first car
+
+
+func _car_back() -> void:
+	_clear_lineup()
+	_selected_instance_id = -1
+	_go_to(View.TABLE)
 
 
 # --- Car park (the eligible lineup) ------------------------------------------
@@ -551,7 +706,7 @@ func _clear_lineup() -> void:
 
 
 # Park one frozen car per owned car eligible for the selected rally, laid out in a
-# centred row (GameConfig.menu_car_spacing).
+# centred row at the car-park origin (GameConfig.hq_carpark_origin / menu_car_spacing).
 func _build_eligible_lineup() -> void:
 	_clear_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
@@ -563,7 +718,7 @@ func _build_eligible_lineup() -> void:
 	var n := _eligible.size()
 	for i in n:
 		var marker := Marker3D.new()
-		marker.position = Vector3((i - (n - 1) * 0.5) * cfg.menu_car_spacing, 0.0, 0.0)
+		marker.position = cfg.hq_carpark_origin + Vector3((i - (n - 1) * 0.5) * cfg.menu_car_spacing, 0.0, 0.0)
 		add_child(marker)
 		_markers.append(marker)
 		_cars.append(_spawn_parked_car(_eligible[i], marker))
@@ -621,10 +776,7 @@ func _focus_changed(snap := false) -> void:
 	_stats_label.text = "%s\n%s" % [entry.get("name", "?"), stats]
 	_stats_label.global_position = (_markers[_focus] as Marker3D).global_position + Vector3(-2.6, 1.4, 0.0)
 	_start_button.disabled = false
-	if snap:
-		_snap_camera_to_focus()
-	else:
-		_ease_camera_to_focus()
+	_move_camera_to(_camera_target_xform(), snap)
 
 
 # One-line car summary shared by the overlay and the 3D Label3D.
@@ -651,7 +803,7 @@ func _drive_text(drive_mode: int) -> String:
 		_: return "?"
 
 
-# Human-readable summary of a rally's restriction (the map pin + the car banner).
+# Human-readable summary of a rally's restriction (the detail panel + the car banner).
 func _restriction_text(restriction: Dictionary) -> String:
 	if restriction.is_empty():
 		return "any car"
@@ -673,11 +825,30 @@ func _restriction_text(restriction: Dictionary) -> String:
 	return ", ".join(parts)
 
 
-# --- Menu camera -------------------------------------------------------------
+# --- Camera ------------------------------------------------------------------
+
+# A camera transform that sits at `eye` looking at `look`.
+func _look_xform(eye: Vector3, look: Vector3) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	t.origin = eye
+	if eye.distance_to(look) < 0.001:
+		return t
+	return t.looking_at(look, Vector3.UP)  # looking_at keeps the origin (the eye)
+
+
+# The camera pose for a station.
+func _station_xform(view: int) -> Transform3D:
+	var cfg: GameConfig = Config.data
+	match view:
+		View.GARAGE: return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
+		View.TABLE: return _look_xform(cfg.hq_table_cam_eye, cfg.hq_table_cam_look)
+		View.CARPARK: return _camera_target_xform()
+		_: return _look_xform(cfg.hq_exterior_cam_eye, cfg.hq_exterior_cam_look)
+
 
 func _focused_car_pos() -> Vector3:
 	if _markers.is_empty():
-		return Vector3.ZERO
+		return Config.data.hq_carpark_origin
 	return (_markers[_focus] as Marker3D).global_position
 
 
@@ -686,29 +857,28 @@ func _focused_car_pos() -> Vector3:
 func _camera_target_xform() -> Transform3D:
 	var cfg: GameConfig = Config.data
 	var car_pos := _focused_car_pos()
-	var eye := car_pos + cfg.menu_camera_offset
-	var look := car_pos + Vector3.UP * cfg.menu_camera_look_height
-	var t := Transform3D.IDENTITY
-	t.origin = eye
-	return t.looking_at(look, Vector3.UP)  # looking_at keeps the origin (the eye)
+	return _look_xform(car_pos + cfg.menu_camera_offset, car_pos + Vector3.UP * cfg.menu_camera_look_height)
 
 
 func _snap_camera_to_focus() -> void:
-	_camera.global_transform = _camera_target_xform()
+	_move_camera_to(_camera_target_xform(), true)
 
 
-# Ease the camera into the framing over GameConfig.menu_camera_move_time (a pan
-# along the lot each time you cycle cars). Snaps when the move time is ~0.
 func _ease_camera_to_focus() -> void:
+	_move_camera_to(_camera_target_xform(), false)
+
+
+# Ease (or snap) the camera to a transform over GameConfig.menu_camera_move_time.
+func _move_camera_to(xform: Transform3D, snap: bool) -> void:
 	var cfg: GameConfig = Config.data
 	if _cam_tween != null and _cam_tween.is_valid():
 		_cam_tween.kill()
-	if cfg.menu_camera_move_time <= 0.0:
-		_snap_camera_to_focus()
+	if snap or cfg.menu_camera_move_time <= 0.0:
+		_camera.global_transform = xform
 		return
 	_cam_tween = create_tween()
 	_cam_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_cam_tween.tween_property(_camera, "global_transform", _camera_target_xform(), cfg.menu_camera_move_time)
+	_cam_tween.tween_property(_camera, "global_transform", xform, cfg.menu_camera_move_time)
 
 
 # --- Start -------------------------------------------------------------------
@@ -727,38 +897,40 @@ func _on_start_pressed() -> void:
 	loading.set_step("Preparing rally…")
 	add_child(loading)
 	# Let the overlay actually PAINT before the heavy, synchronous handoff
-	# (start_rally generates a track per event, then changes scene). One
-	# process_frame resumes during the idle step — before the overlay is drawn — so
-	# the screen still froze with no feedback. Wait for a fully presented frame.
+	# (start_rally generates a track per event, then changes scene). ONE
+	# process_frame wasn't enough: it resumes at the start of the next frame, before
+	# the overlay's deferred layout (anchors → size) has resolved and drawn, so the
+	# screen still froze blank. Two frames let the first draw the laid-out overlay and
+	# resume after it. (RenderingServer.frame_post_draw is the "right" signal but never
+	# fires under the headless test runner — it wedges the test loop — so we stick to
+	# process_frame, which resolves both in-game and headless.)
 	await get_tree().process_frame
-	await RenderingServer.frame_post_draw
+	await get_tree().process_frame
 	RallySession.start_rally(rally, owned)
 
 
-# --- Menu input (todo/menus.md › Menu navigation & input) --------------------
+# --- Menu input (keyboard / gamepad; clicking 3D objects is the primary path) -
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _screen == Screen.MAP:
-		_map_input(event)
-	elif _screen == Screen.CARS:
-		_cars_input(event)
-
-
-# World map: drag to pan with the mouse or a finger. (A press that lands on a pin
-# is consumed by the pin — see the IGNORE filters in _build_map_overlay — so this
-# only fires for the empty map, which is where you grab to pan.)
-func _map_input(event: InputEvent) -> void:
-	# Pan from mouse events ONLY. On touch devices the engine's "emulate mouse from
-	# touch" (project.godot › input_devices) turns finger drags into the SAME mouse
-	# button + motion events, so this one path covers mouse and finger alike. (We
-	# used to also handle InputEventScreenDrag, but that double-counted a finger drag
-	# — once as the touch drag, once as its emulated mouse motion — making the map
-	# pan ~2x faster than the finger.) Mouse-motion deltas are already in the logical
-	# canvas space, so panning tracks the pointer 1:1.
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		_panning = event.pressed
-	elif event is InputEventMouseMotion and _panning:
-		_pan_map(event.relative)
+	match _view:
+		View.EXTERIOR:
+			if event.is_action_pressed("menu_select"):
+				_on_exterior_start()
+		View.GARAGE:
+			if event.is_action_pressed("menu_select"):
+				_enter_table()
+			elif event.is_action_pressed("menu_back"):
+				_go_to(View.EXTERIOR)
+		View.TABLE:
+			if _detail_open:
+				if event.is_action_pressed("menu_select"):
+					_enter_car_screen()
+				elif event.is_action_pressed("menu_back"):
+					_hide_detail()
+			elif event.is_action_pressed("menu_back"):
+				_go_to(View.GARAGE)
+		View.CARPARK:
+			_cars_input(event)
 
 
 func _cars_input(event: InputEvent) -> void:
@@ -769,16 +941,4 @@ func _cars_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("menu_select") and not _start_button.disabled:
 		_on_start_pressed()
 	elif event.is_action_pressed("menu_back"):
-		_show_detail()
-
-
-# Controller-stick panning of the world map (the left stick); drag panning is
-# handled event-by-event in _map_input.
-func _process(delta: float) -> void:
-	if _screen != Screen.MAP or _map_frame == null:
-		return
-	var stick := Vector2(
-		Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
-	if stick.length() > 0.2:  # deadzone
-		# Pushing the stick right reveals the map to the right (content slides left).
-		_pan_map(-stick * Config.data.menu_map_pan_speed * delta)
+		_car_back()

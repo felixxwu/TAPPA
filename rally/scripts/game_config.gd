@@ -265,9 +265,32 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var menu_camera_look_height := 0.6
 ## Spacing (m) between parked cars in the HQ car-park lineup (along the lot's X).
 @export var menu_car_spacing := 6.0
-## World-map pan speed (px/sec) when panning with a controller stick (drag panning
-## moves 1:1 with the pointer; this only paces the analog stick).
-@export var menu_map_pan_speed := 1100.0
+
+# --- Diegetic HQ: one 3D space the camera flies through (todo/diegetic-hq.md).
+# Camera "stations" are an eye position + a look target (world space); the camera
+# tweens between them over menu_camera_move_time. The exterior is the boot/title
+# shot (block buildings + the car park); Start flies into the garage (the map table
+# + the tuning lift); tapping the table drops to a near-top-down view of the 3D map.
+## Exterior/title camera: eye, then look target.
+@export var hq_exterior_cam_eye := Vector3(0.0, 13.0, 58.0)
+@export var hq_exterior_cam_look := Vector3(0.0, 2.5, 26.0)
+## Garage interior camera (sees the map table + tuning lift).
+@export var hq_garage_cam_eye := Vector3(0.0, 4.6, 13.0)
+@export var hq_garage_cam_look := Vector3(0.0, 1.1, 0.0)
+## Map-table camera: a near-top-down look down onto the table's 3D map.
+@export var hq_table_cam_eye := Vector3(-3.0, 5.4, 2.6)
+@export var hq_table_cam_look := Vector3(-3.0, 0.95, -0.2)
+## Where the car-park lineup sits (outside, in front of the garage). Cars row along X.
+@export var hq_carpark_origin := Vector3(0.0, 0.0, 26.0)
+## Garage interior footprint (m): floor X/Z extent; walls + roof are built from it.
+@export var hq_garage_size := Vector2(14.0, 12.0)
+## Map table: centre position, block size, and the 3D map plane laid on its top.
+@export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
+@export var hq_table_size := Vector3(4.6, 0.9, 3.4)
+@export var hq_map_plane_size := Vector2(4.2, 3.0)
+## Tuning lift: centre position + platform size (a clickable placeholder for now).
+@export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
+@export var hq_lift_size := Vector3(3.0, 0.35, 3.0)
 
 @export_group("World")
 @export var fog_density := 0.02

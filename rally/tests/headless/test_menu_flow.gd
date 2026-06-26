@@ -1,7 +1,8 @@
 extends GutTest
-# Menus vertical slice (todo/menus.md): the placeholder HQ → run → podium loop and
-# the run-scene fielding that wires it to RallySession (todo/rally-event-flow.md).
-# Runs against a throwaway Save profile.
+# Menus vertical slice (todo/menus.md, todo/diegetic-hq.md): the diegetic 3D HQ
+# (camera stations: exterior title → garage → map table → car park) → run → podium
+# loop, and the run-scene fielding that wires it to RallySession
+# (todo/rally-event-flow.md). Runs against a throwaway Save profile.
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const TEST_PATH := "user://test_menu_flow_profile.json"
@@ -43,104 +44,67 @@ func _label_texts(root: Node) -> String:
 	return "\n".join(parts)
 
 
-func _map_pins(hq: Node3D) -> Array:
-	return hq._map_content.find_children("*", "Button", true, false)
+# --- HQ (diegetic 3D hub) ----------------------------------------------------
+
+# The 3D map pin for a rally (each pin Node3D carries a "rally_id" meta).
+func _pin_for(hq: Node3D, rally_id: String) -> Node3D:
+	for pin in hq._pins:
+		if String((pin as Node3D).get_meta("rally_id", "")) == rally_id:
+			return pin
+	return null
 
 
-func test_hq_boots_to_the_world_map() -> void:
+func test_hq_boots_to_the_exterior_title() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 1, "the immortal starter is granted on the first HQ visit")
 	assert_true(_save.profile["cars"][0]["immortal"], "the starter is immortal")
-	# The first screen is the world map: pins are shown, the car screen is hidden,
-	# and no cars are parked until a rally is chosen.
-	assert_eq(hq._screen, hq.Screen.MAP, "HQ boots to the world-map screen")
-	assert_true(hq._map_layer.visible, "the map overlay is shown")
-	assert_false(hq._car_layer.visible, "the car-select overlay is hidden on the map")
-	assert_eq(_map_pins(hq).size(), RallyLibrary.RALLIES.size(), "one pin per rally")
+	# Boots to the exterior/title station: the title overlay is up, nothing parked.
+	assert_eq(hq._view, hq.View.EXTERIOR, "HQ boots to the exterior title station")
+	assert_true(hq._title_layer.visible, "the title overlay is shown")
+	assert_false(hq._car_layer.visible, "the car-park overlay is hidden at the title")
 	assert_eq(hq._cars.size(), 0, "no cars are parked until a rally is chosen")
+	# The 3D map table is populated with one pin per rally.
+	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
 
 
-func test_hq_map_sizes_to_the_viewport_and_pans_clamped() -> void:
+func test_hq_start_flies_into_the_garage() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Pin the frame to a known size, then fit the map to it (the content is sized
-	# relative to the frame so it's never wider than MAP_VIEW_FACTOR x the screen).
-	var frame := Vector2(800, 400)
-	hq._map_frame.size = frame
-	hq._size_map()
-	assert_eq(hq._map_content.size, frame * hq.MAP_VIEW_FACTOR,
-		"the map plane is MAP_VIEW_FACTOR x the viewport on each axis")
-	hq._map_content.position = Vector2.ZERO
-	hq._pan_map(Vector2(-100, -50))
-	assert_eq(hq._map_content.position, Vector2(-100, -50), "dragging moves the map content 1:1")
-	# Pan far past the bottom-right: clamps so the map's far edge meets the frame.
-	hq._pan_map(Vector2(-100000, -100000))
-	assert_eq(hq._map_content.position, frame - hq._map_content.size,
-		"panning is clamped to the map's far edge")
-	# Pan far the other way: clamps at the near (top-left) edge.
-	hq._pan_map(Vector2(100000, 100000))
-	assert_eq(hq._map_content.position, Vector2.ZERO, "panning is clamped to the near edge")
+	hq._on_exterior_start()
+	assert_eq(hq._view, hq.View.GARAGE, "Start flies the camera into the garage")
+	assert_true(hq._garage_layer.visible, "the garage overlay is shown")
+	assert_false(hq._title_layer.visible, "the title overlay is hidden in the garage")
 
 
-func test_hq_map_pans_via_mouse_only_no_double_pan() -> void:
-	# Panning is mouse-only: a mouse drag pans 1:1 (canvas space). Finger drags reach
-	# us as emulated mouse motion (project.godot emulate_mouse_from_touch), so the
-	# same path covers both. A raw InputEventScreenDrag is ignored — handling it too
-	# would double-pan a finger drag (once as the touch drag, once as the emulated
-	# mouse motion), the bug that made the map move ~2x faster than the finger.
+func test_hq_opening_the_table_shows_the_map() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._map_frame.size = Vector2(800, 400)
-	hq._size_map()
-
-	hq._map_content.position = Vector2.ZERO
-	hq._panning = true
-	var motion := InputEventMouseMotion.new()
-	motion.relative = Vector2(-40, -20)
-	hq._map_input(motion)
-	assert_eq(hq._map_content.position, Vector2(-40, -20), "a mouse drag pans 1:1")
-
-	var drag := InputEventScreenDrag.new()
-	drag.relative = Vector2(-40, -20)
-	hq._map_input(drag)
-	assert_eq(hq._map_content.position, Vector2(-40, -20),
-		"a raw screen-drag is ignored (no double-pan on top of emulated mouse motion)")
-
-
-func _pin_for(hq: Node3D, rally_id: String) -> Button:
-	for pin in _map_pins(hq):
-		if String((pin as Button).get_meta("rally_id", "")) == rally_id:
-			return pin
-	return null
-
-
-# The drawn StarRow sitting beside the rally's icon (the pin is a VBox of
-# [icon, name, StarRow]). Identified as the sibling that isn't a Button or Label.
-func _star_row_for(hq: Node3D, rally_id: String) -> Control:
-	var icon := _pin_for(hq, rally_id)
-	if icon == null:
-		return null
-	for sibling in icon.get_parent().get_children():
-		if not (sibling is Button) and not (sibling is Label):
-			return sibling
-	return null
+	hq._on_exterior_start()
+	hq._enter_table()
+	assert_eq(hq._view, hq.View.TABLE, "tapping the table drops the camera to the map view")
+	assert_true(hq._table_layer.visible, "the map HUD is shown")
+	assert_string_contains(hq._map_meter.text, "Progress to the Showdown", "the progress meter is shown")
 
 
 func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_true(_pin_for(hq, "the_showdown").disabled,
+	var showdown := _pin_for(hq, "the_showdown")
+	assert_true(bool(showdown.get_meta("locked")),
 		"the showdown pin is locked until every other rally is completed")
-	assert_false(_pin_for(hq, "shakedown").disabled, "a normal rally pin is clickable")
-	assert_string_contains(hq._map_meter.text, "Progress to the Showdown", "the progress meter is shown")
+	assert_eq(showdown.find_children("*", "Area3D", true, false).size(), 0,
+		"a locked pin is not pickable (no hit area)")
+	var normal := _pin_for(hq, "shakedown")
+	assert_false(bool(normal.get_meta("locked")), "a normal rally pin is unlocked")
+	assert_gt(normal.find_children("*", "Area3D", true, false).size(), 0, "an unlocked pin is pickable")
 
 
-func test_hq_map_stars_reflect_best_placement() -> void:
+func test_hq_pins_stars_reflect_best_placement() -> void:
 	# A 1st-place best earns 3 stars; a 3rd-place best earns 1.
 	_save.complete_rally("shakedown", 60000, 1)
 	_save.complete_rally("coastal_sprint", 90000, 3)
@@ -150,29 +114,20 @@ func test_hq_map_stars_reflect_best_placement() -> void:
 	assert_eq(hq._stars_for("shakedown"), 3, "1st place earns 3 stars")
 	assert_eq(hq._stars_for("coastal_sprint"), 1, "3rd place earns 1 star")
 	assert_eq(hq._stars_for("rwd_masters"), 0, "an unplayed rally earns 0 stars")
-	# The rating is drawn (a StarRow), not font text — confirm the pin carries one
-	# with the right earned count rather than a tofu ★/☆ string.
-	var star_row := _star_row_for(hq, "shakedown")
-	assert_not_null(star_row, "the pin shows a drawn star row")
-	assert_eq(star_row._earned, 3, "the drawn row fills 3 stars for a 1st-place best")
 
 
-func test_hq_opening_a_rally_shows_its_detail_then_enters_cars() -> void:
+func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Clicking a pin opens the rally-detail screen (not the cars yet).
+	hq._on_exterior_start()
+	hq._enter_table()
 	hq._on_rally_pin("rwd_masters")
-	assert_eq(hq._screen, hq.Screen.DETAIL, "clicking a pin opens the rally detail")
+	assert_true(hq._detail_open, "tapping a pin opens the rally detail")
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
-	assert_false(hq._car_layer.visible, "the car screen is not shown yet")
+	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
 	assert_string_contains(hq._detail_title.text, "RWD Masters", "the detail names the rally")
 	assert_string_contains(hq._detail_body.text, "RWD cars", "the detail spells out the eligibility")
-	# Entering from the detail moves to the car screen.
-	hq._enter_car_screen()
-	await get_tree().process_frame
-	assert_eq(hq._screen, hq.Screen.CARS, "Enter Rally moves to the car-select screen")
-	assert_false(hq._detail_layer.visible, "the detail overlay is hidden on the car screen")
 
 
 func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
@@ -180,14 +135,14 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	# Own an AWD RS3 alongside the RWD starter, pick the RWD-only rally and enter: only
-	# the eligible (RWD) car is parked on the car screen, the AWD car is filtered out.
+	# the eligible (RWD) car is parked, the AWD car is filtered out.
 	_save.grant_car("rs3", false)
 	hq._on_rally_pin("rwd_masters")
 	hq._enter_car_screen()
 	await get_tree().process_frame
-	assert_eq(hq._screen, hq.Screen.CARS, "on the car-select screen")
-	assert_false(hq._map_layer.visible, "the map overlay is hidden on the car screen")
-	assert_true(hq._car_layer.visible, "the car-select overlay is shown")
+	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
+	assert_true(hq._car_layer.visible, "the car-park overlay is shown")
+	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
 	assert_eq(hq._cars.size(), 1, "only the eligible (RWD) car is parked")
 	assert_eq(hq._cars[0].current_car_name(), "Mazda MX-5", "the AWD RS3 is filtered out of an RWD-only rally")
 	assert_string_contains(hq._rally_banner.text, "RWD cars", "the banner spells out the rally restriction")
@@ -234,30 +189,32 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
-func test_hq_back_steps_cars_to_detail_to_map() -> void:
+func test_hq_back_steps_carpark_to_table_to_garage() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._enter_table()
 	hq._on_rally_pin("shakedown")
 	hq._enter_car_screen()
 	await get_tree().process_frame
-	assert_eq(hq._screen, hq.Screen.CARS, "on the car screen after entering")
-	# Back from the cars returns to the rally detail (not all the way to the map).
-	hq._show_detail()
-	assert_eq(hq._screen, hq.Screen.DETAIL, "Back from the cars returns to the rally detail")
-	assert_eq(hq._cars.size(), 0, "the parked lineup is cleared when leaving the car screen")
-	# Back from the detail returns to the map.
-	hq._show_map()
-	assert_eq(hq._screen, hq.Screen.MAP, "Back from the detail returns to the world map")
-	assert_true(hq._map_layer.visible, "the map is shown again")
+	assert_eq(hq._view, hq.View.CARPARK, "in the car park after entering")
+	# Back from the car park returns to the map table, clearing the lineup.
+	hq._car_back()
+	assert_eq(hq._view, hq.View.TABLE, "Back from the car park returns to the map table")
+	assert_eq(hq._cars.size(), 0, "the parked lineup is cleared when leaving the car park")
+	assert_true(hq._table_layer.visible, "the map HUD is shown again")
+	# Back from the table returns to the garage.
+	hq._go_to(hq.View.GARAGE)
+	assert_eq(hq._view, hq.View.GARAGE, "Back from the table returns to the garage")
 
 
 func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Pick a rally on the map → detail → enter, then Start with the focused car.
-	# auto_load_scenes is off, so no scene change; start_rally derives targets.
+	# Pick a rally → enter, then Start with the focused car. auto_load_scenes is off,
+	# so no scene change; start_rally derives targets.
 	hq._on_rally_pin("shakedown")
 	hq._enter_car_screen()
 	await get_tree().process_frame

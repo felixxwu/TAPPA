@@ -1,38 +1,44 @@
 # Diegetic HQ — first 3D location (kickoff slice)
 
-> Status: **🟢 SHIPPED (three-screen flow + parked lineup).** HQ (`hq.tscn` is a
-> `Node3D`, `scripts/hq.gd`) is three SEPARATE screens, in order **pick rally →
-> rally detail → pick eligible car → Start** (`enum Screen { MAP, DETAIL, CARS }`):
-> - **World map (screen 1, flat overlay):** a **pannable** map — a clipping frame
->   onto a larger plane you **drag** (mouse / finger / left controller stick,
->   `GameConfig.menu_map_pan_speed`), clamped to the edges. Every rally is a simple
->   **icon pin** at its `map_pos`: a 🏁 icon over the name over a **star rating**
->   (1st-place best → ★★★, 2nd → ★★☆, 3rd → ★☆☆, else ☆☆☆, from
->   `Save.best_placement`). The showdown pin is 🔒-locked until all others are
->   completed; a progress meter sits on top. Basic flat map — the stylised 3D map
->   plane (rig 3) is still later.
-> - **Rally detail (screen 2, flat overlay):** name, difficulty, eligible-cars
->   restriction, event count, and the best finish + stars; **Enter Rally** advances,
->   **◄ Map** goes back.
-> - **Car select (screen 3, 3D car park):** only the cars **eligible for the chosen
->   rally** are parked in a lit lot as physics-frozen, silenced `Car` props (via
->   `Car.apply_owned`); a menu camera **pans between** them on cycle (`◄ ►` +
->   `menu_left/right`), a billboarded `Label3D` shows the focused car's stats, a
->   banner names the rally + restriction, and Start / ◄ Back (or `menu_back`) act.
->   Each parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed lot
+> Status: **🟢 SHIPPED (full diegetic space — camera flies between stations).** HQ
+> (`hq.tscn` is a `Node3D`, `scripts/hq.gd`) is now ONE 3D space the camera moves
+> through; `enum View { EXTERIOR, GARAGE, TABLE, CARPARK }` names the stations and
+> `_go_to(view)` tweens the single `Camera3D` between their poses (the old flat
+> overlay "screens" are gone). The environment is built from `BoxMesh` blocks
+> (`_block()`): a skyline of buildings, the garage shell, the map table, the lift.
+> - **Exterior (title):** establishing shot of the buildings + the outdoor car park
+>   with a title + **Start** button; Start (or `menu_select`) flies into the garage.
+> - **Garage:** block interior with the **map table** + the **tuning lift**. Tapping
+>   the table → map view; tapping the lift flashes "coming soon" (tuning is a later
+>   slice). Both are `Area3D` clickables (`get_viewport().physics_object_picking`).
+> - **Table (3D world map):** near-top-down look at the table's flat map plane. Each
+>   rally is a 3D **pin** (`_make_pin`) at its `map_pos`: a tier-coloured cone, a
+>   billboarded `Label3D` name, and a row of **sphere stars** (1st-place best → 3
+>   gold, 2nd → 2, 3rd → 1, else grey, from `Save.best_placement`). The showdown pin
+>   is grey + **non-pickable** until all others are completed; a progress meter sits
+>   on the HUD. Tapping an (unlocked) pin opens the rally-detail sub-panel; **Enter
+>   Rally** flies to the car park, **◄ Map** dismisses it.
+> - **Car park (reused for car select):** the cars **eligible for the chosen rally**
+>   are parked outside at `GameConfig.hq_carpark_origin` as physics-frozen, silenced
+>   `Car` props (via `Car.apply_owned`); a menu camera **pans between** them on cycle
+>   (`◄ ►` + `menu_left/right`), a billboarded `Label3D` shows the focused car's
+>   stats, a banner names the rally + restriction, and Start / ◄ Back act. Each
+>   parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed lot
 >   renders each at its true size despite `car.tscn`'s shared mesh sub-resources.
 >
-> Config: `GameConfig.menu_camera_offset` / `menu_camera_move_time` /
-> `menu_camera_look_height` / `menu_car_spacing` / `menu_map_pan_speed`; rally
+> Config (`GameConfig` "Menu / HQ"): `hq_exterior_cam_eye/look`, `hq_garage_cam_eye/look`,
+> `hq_table_cam_eye/look`, `hq_carpark_origin`, `hq_garage_size`, `hq_table_pos/size`,
+> `hq_map_plane_size`, `hq_lift_pos/size`, plus `menu_camera_offset` /
+> `menu_camera_move_time` / `menu_camera_look_height` / `menu_car_spacing`; rally
 > `map_pos` in `RallyLibrary.RALLIES`; input actions `menu_left/right/select/back`
-> in `project.godot`. Tests in `tests/headless/test_menu_flow.gd` (incl. map
-> pan/clamp, eligibility-filter + per-car-mesh-uniqueness assertions); doc in
+> in `project.godot`. Tests in `tests/headless/test_menu_flow.gd` (station flow,
+> 3D-pin + lock + eligibility-filter + per-car-mesh-uniqueness assertions); doc in
 > `features/menus.md`.
 >
-> **Still open** (later slices, stay in `todo/menus.md`): the flat map → **stylised
-> 3D map plane + 3D pins** port, the tuning lift, the 3D reward-reveal rig + 3D
-> podium, camera fly-throughs *between* the map and the lot, and per-car paint /
-> name-suffix polish.
+> **Still open** (later slices, stay in `todo/menus.md`): the **tuning lift** UI +
+> inventory (the lift is a clickable placeholder), the 3D reward-reveal rig + 3D
+> podium, camera fly-throughs for the longer hops, designed environment art (blocks
+> are placeholder), and per-car paint / name-suffix polish.
 >
 > This is the actionable *first slice* of the diegetic 3D menu build whose full
 > vision lives
