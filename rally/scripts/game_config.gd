@@ -329,17 +329,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_group("Tire Marks")
 ## Gravel ruts laid behind the wheels while driving on the road (todo/tire-marks.md).
 @export var tire_marks_enabled := true
-## Mark colour at light load (normal driving) — a solid shade close to the gravel.
-## gravel.jpg averages ~0.42 grey; this sits just under it. Unshaded, so tune
-## against the lit road in-game.
-@export var tire_mark_color := Color(0.40, 0.39, 0.36)
-## Mark colour under HEAVY load (braking, cornering, landing) — darker, more
-## pronounced ruts. The mark lerps from tire_mark_color toward this as the wheel's
-## ground (normal) force rises from its static load to tire_mark_heavy_load_ratio x.
-@export var tire_mark_color_heavy := Color(0.24, 0.23, 0.21)
-## Normal-force ratio (vs the wheel's static load) at which the mark reaches
-## tire_mark_color_heavy. 2.0 = twice the resting load → fully dark.
-@export var tire_mark_heavy_load_ratio := 2.0
+## Mark colour — a solid, constant shade just a touch darker than the gravel
+## (gravel.jpg averages ~0.42 grey). Unshaded, so tune against the lit road in-game.
+@export var tire_mark_color := Color(0.36, 0.35, 0.33)
 ## Width of a wheel's mark ribbon, in metres (roughly a tyre's width).
 @export var tire_mark_width_m := 0.22
 ## Don't lay marks below this car speed (m/s) — keeps the countdown/parked car clean.

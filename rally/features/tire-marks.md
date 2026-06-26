@@ -40,23 +40,15 @@ is missing, or the car is gone):
   (oldest recycled); only the wheel's own surface rebuilds on a new segment. Memory
   is bounded and the chase cam looks forward, so far-behind marks are off-screen.
 
-## Colour & pressure
+## Colour
 
-The ribbon uses a **per-vertex colour** (unshaded, `vertex_color_use_as_albedo`),
-so each segment can vary. The colour lerps from `tire_mark_color` (light, normal
-driving — close to the gravel) toward `tire_mark_color_heavy` (dark, pronounced) by
-the wheel's **ground/normal force** relative to its static load
-(`_segment_color` → `_blend_for_load`): braking, cornering, and landings press the
-tyre harder and leave darker ruts. The force is `drivetrain.readouts[wheel].normal`
-— the same per-wheel value the wheel-force debug overlay draws; the static load is
-`mass·g / wheels`. `tire_mark_heavy_load_ratio` sets the force (×static) at which
-the mark goes fully dark.
+A solid, constant colour (`tire_mark_color`) — a touch darker than the gravel
+(gravel.jpg averages ~0.42 grey). Unshaded material, cull disabled.
 
 ## Configuration
 
 All in `GameConfig` (the "Tire Marks" group): `tire_marks_enabled`,
-`tire_mark_color` (light/normal), `tire_mark_color_heavy` (heavy load),
-`tire_mark_heavy_load_ratio`, `tire_mark_width_m`, `tire_mark_min_speed_mps`,
+`tire_mark_color`, `tire_mark_width_m`, `tire_mark_min_speed_mps`,
 `tire_mark_segment_step_m`, `tire_mark_max_segments`, `tire_mark_ground_offset_m`,
 `tire_mark_gravel_margin_m`.
 
@@ -69,6 +61,6 @@ count, below the speed floor lays nothing, and an airborne wheel stops marking.
 
 ## Out of scope (todo/tire-marks.md)
 
-Per-surface variation (grass/mud) and alpha fade-out over distance — gravel-only,
-hard-capped for now. (Load-based colour darkening is in; skid/slip-based colouring
-could layer on top later.)
+Per-surface variation (grass/mud), alpha fade-out over distance, and any
+load/skid-based colour variation — gravel-only, constant colour, hard-capped for
+now. (Load-based darkening was tried and reverted — didn't read well.)

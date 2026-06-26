@@ -131,20 +131,6 @@ func test_below_min_speed_lays_nothing() -> void:
 	assert_eq(tm.segment_count(0), 0, "no marks below the speed floor")
 
 
-func test_pressure_darkens_the_mark_under_load() -> void:
-	var tm := _make()
-	var base: Color = Config.data.tire_mark_color
-	var heavy: Color = Config.data.tire_mark_color_heavy
-	var static_load := 3000.0
-	assert_eq(tm._blend_for_load(static_load, static_load), base, "static load -> light base colour")
-	assert_eq(tm._blend_for_load(static_load * Config.data.tire_mark_heavy_load_ratio, static_load), heavy,
-		"heavy load (ratio x static) -> dark heavy colour")
-	var mid: Color = tm._blend_for_load(static_load * 1.5, static_load)  # ratio 2 -> t = 0.5
-	assert_lt(mid.r, base.r, "partial load is darker than the base")
-	assert_gt(mid.r, heavy.r, "partial load is lighter than full heavy load")
-	assert_eq(tm._blend_for_load(0.0, static_load), base, "no force (no drivetrain) -> base colour")
-
-
 func test_airborne_wheel_stops_marking() -> void:
 	var tm := _make()
 	_drive(tm, 0.0, [])
