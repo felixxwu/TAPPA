@@ -98,5 +98,6 @@ Drive the logic with a stub car + a straight `Curve2D` (mirrors
 
 - Per-surface variation (grass marks, mud) — gravel only for now.
 - Fade-out alpha over distance (the hard cap is enough for v1).
-- Skid-intensity colouring (darker when sliding) — always-on uniform marks for now.
+- Skid/slip-intensity colouring (darker when sliding) — load-based darkening (by
+  ground normal force) is in; slip-based could layer on top.
 - The eventual diegetic/3D-map work is unrelated.

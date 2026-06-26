@@ -110,7 +110,7 @@ func _physics_process(_delta: float) -> void:
 			_last_pos[i] = null
 			continue
 		if _last_pos[i] == null or wxz.distance_to(_last_pos[i]) >= step:
-			_emit_segment(i, wpos, _normal_at(w_off))
+			_emit_segment(i, wpos, _normal_at(w_off), _segment_color(wheel))
 			_last_pos[i] = wxz
 
 
@@ -119,12 +119,12 @@ func _physics_process(_delta: float) -> void:
 # height comes from the WHEEL (hub Y − wheel radius), not terrain.height_at — near
 # the road the terrain mesh is flattened to the baked road height the car sits on,
 # so the raw noise height would sink the ribbon under the road in cuts/dips.
-func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2) -> void:
+func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, color: Color) -> void:
 	var y := wheel_pos.y - Config.data.wheel_radius + Config.data.tire_mark_ground_offset_m
 	var center := Vector3(wheel_pos.x, y, wheel_pos.z)
 	var across := Vector3(road_n.x, 0.0, road_n.y) * (Config.data.tire_mark_width_m * 0.5)
 	var pairs: Array = _pairs[i]
-	pairs.append([center + across, center - across])
+	pairs.append([center + across, center - across, color])  # [left, right, per-point colour]
 	var cap: int = maxi(2, Config.data.tire_mark_max_segments)
 	while pairs.size() > cap:
 		pairs.pop_front()
@@ -133,6 +133,8 @@ func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2) -> void:
 
 # Rebuild a wheel's ribbon ArrayMesh from its segment pairs: a triangle strip of
 # quads (cull disabled, so winding doesn't matter for the flat-on-ground ribbon).
+# Per-point colours drive ALBEDO (the material uses vertex colour), so the ribbon
+# darkens under load along its length.
 func _rebuild(i: int) -> void:
 	var mesh := _ribbons[i].mesh as ArrayMesh
 	mesh.clear_surfaces()
@@ -140,18 +142,56 @@ func _rebuild(i: int) -> void:
 	if pairs.size() < 2:
 		return
 	var verts := PackedVector3Array()
+	var colors := PackedColorArray()
 	for k in pairs.size() - 1:
 		var l0: Vector3 = pairs[k][0]
 		var r0: Vector3 = pairs[k][1]
+		var c0: Color = pairs[k][2]
 		var l1: Vector3 = pairs[k + 1][0]
 		var r1: Vector3 = pairs[k + 1][1]
+		var c1: Color = pairs[k + 1][2]
 		verts.append(l0); verts.append(l1); verts.append(r0)
+		colors.append(c0); colors.append(c1); colors.append(c0)
 		verts.append(r0); verts.append(l1); verts.append(r1)
+		colors.append(c0); colors.append(c1); colors.append(c1)
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_COLOR] = colors
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	mesh.surface_set_material(0, _material)
+
+
+# Mark colour for a wheel: lerp from the light base toward the heavy colour by the
+# wheel's ground (normal) force relative to its static load, so braking / cornering
+# / landing (which press the tyre harder) leave darker, more pronounced ruts.
+func _segment_color(wheel: Node) -> Color:
+	return _blend_for_load(_wheel_normal_force(wheel), _static_wheel_load())
+
+
+func _blend_for_load(n_force: float, static_load: float) -> Color:
+	var base: Color = Config.data.tire_mark_color
+	if n_force <= 0.0 or static_load <= 0.0:
+		return base
+	var ratio: float = maxf(1.0, Config.data.tire_mark_heavy_load_ratio)
+	# 0 at (or below) static load, 1 at ratio x static load.
+	var t := clampf((n_force / static_load - 1.0) / (ratio - 1.0), 0.0, 1.0)
+	return base.lerp(Config.data.tire_mark_color_heavy, t)
+
+
+# The wheel's current ground (normal) force, published per physics tick by the
+# Drivetrain tire model (the same value the wheel-force debug overlay draws). 0 if
+# unavailable (no drivetrain / not loaded this tick).
+func _wheel_normal_force(wheel: Node) -> float:
+	var dt: Variant = _car.get("drivetrain")
+	if dt == null:
+		return 0.0
+	return float((dt.readouts.get(wheel, {}) as Dictionary).get("normal", 0.0))
+
+
+# A wheel's resting load — total car weight split across the wheels.
+func _static_wheel_load() -> float:
+	return Config.data.mass * 9.8 / maxi(1, _wheels.size())
 
 
 # The left road normal at an offset (for the ribbon's width direction).
@@ -198,7 +238,8 @@ func _ensure_material() -> void:
 	_material = StandardMaterial3D.new()
 	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_material.albedo_color = Config.data.tire_mark_color
+	# Per-vertex colour drives the albedo so each segment can darken under load.
+	_material.vertex_color_use_as_albedo = true
 
 
 # --- Readouts (tests) --------------------------------------------------------
