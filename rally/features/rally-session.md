@@ -33,8 +33,10 @@ re-implementing them.
 | Call | Effect |
 |------|--------|
 | `start_rally(rally, owned_car, event_targets_ms := [])` | seed state, build the opponent field, kick event 0. Targets are derived from each event's track when omitted; tests pass them in to skip generation. |
-| `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), draw + grant a per-event upgrade (`RewardSystem.draw_upgrade` → `Save.add_item` → `Save.save`), then advance (standings) or resolve. |
-| `report_wreck()` | DNF: destroy the instance (`Save.wreck_car`), skip remaining events, resolve. Upgrades earned earlier this rally are kept. |
+| `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), draw + grant a per-event upgrade (`RewardSystem.draw_upgrade` → `Save.add_item` → `Save.save`), then **pause on the standings** (non-final event) or resolve (final). |
+| `continue_to_next_event()` | resume from the between-event standings interstitial into the next event. |
+| `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time, ranked via `build_standings`); read by the standings scene. `events_completed()` gives the count for its header. |
+| `report_wreck()` | DNF: destroy the instance (`Save.wreck_car`), skip remaining events, resolve. Upgrades earned earlier this rally are kept. Only valid while `RUNNING` (you can't wreck on the standings screen). |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
@@ -62,8 +64,12 @@ retry** — re-enter from the map later; damage and the opponent field persist).
 ## Scene transitions
 
 In real play (`auto_load_scenes = true`) each event writes its
-`(seed, turn_count, width)` into `Config.data` and reloads `main.tscn`. Headless
-tests set `auto_load_scenes = false` and drive `report_*` directly.
+`(seed, turn_count, width)` into `Config.data` and reloads `main.tscn`. Between
+events the session loads `standings.tscn` (the leaderboard interstitial) and waits;
+its Continue calls `continue_to_next_event()`, which loads the next event. The
+final event loads `podium.tscn` instead. Headless tests set
+`auto_load_scenes = false`, drive `report_*` directly, and call
+`continue_to_next_event()` to step past the standings pause (no scenes load).
 
 ## Run-scene wiring
 

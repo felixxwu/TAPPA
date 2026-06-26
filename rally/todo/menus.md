@@ -169,11 +169,12 @@ camera you already drive, so the menu count stays tiny.
 ## Flat overlays (pragmatic hybrid — dense data & pause only)
 
 7. **Standings overlay** — full ranked field (position, name, time / `DNF` /
-   `WRECKED`, player highlighted). ~~Shown at results~~ **(DONE, flat: rendered at
-   the podium via `RallyLibrary.build_standings`, player row marked + tinted).**
-   Still open: the **between-event interstitial** form (needs the run scene to
-   pause and react to `standings_ready`); the Podium handles the top-3 flourish,
-   this handles the full list.
+   `WRECKED`, player highlighted). ~~Shown at results~~ ~~and as a between-event
+   interstitial~~ **(DONE, flat: at the podium via `RallyLibrary.build_standings`,
+   AND as the between-event interstitial `standings.tscn` showing the cumulative
+   leaderboard — the rally pauses there and `continue_to_next_event()` resumes).**
+   The Podium handles the top-3 flourish; this handles the full list. Open: the
+   diegetic 3D styling.
 8. **Pause overlay** — Resume / **Settings** (opens overlay 11 without unpausing) /
    **Abandon to HQ** (no retry — a non-top-3 rally is re-entered later from the
    map, `gameplay.md`). First user of `get_tree().paused`.

@@ -97,10 +97,47 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if _event_index >= EVENTS_PER_RALLY:
 		_resolve_results()
 	else:
-		# Standings interstitial after events 0 and 1, then on to the next event.
+		# Between events the rally PAUSES on a standings interstitial (the leaderboard
+		# so far); the player resumes with continue_to_next_event(). In real play the
+		# standings scene is loaded; tests drive continue_to_next_event() directly.
 		_set_phase(Phase.STANDINGS)
 		standings_ready.emit(_event_index)
-		_enter_event()
+		if auto_load_scenes:
+			_load_standings_scene()
+
+
+# Resume from the between-event standings interstitial into the next event.
+func continue_to_next_event() -> void:
+	if _phase != Phase.STANDINGS:
+		return
+	_enter_event()
+
+
+# The leaderboard AS OF the events completed so far: each opponent's combined time
+# over those events vs the player's, ranked (DNFs sink). Read by the standings
+# interstitial. Before any event completes it's just the seeded field at 0.
+func current_standings() -> Array:
+	var done := _event_times_ms.size()
+	var player_combined := 0
+	for t in _event_times_ms:
+		player_combined += int(t)
+	var partial: Array = []
+	for opp in _opponent_field:
+		var times: Array = opp.get("event_times_ms", [])
+		var dnf := false
+		var sum := 0
+		for i in done:
+			if i < times.size() and int(times[i]) < 0:
+				dnf = true
+			elif i < times.size():
+				sum += int(times[i])
+		partial.append({"name": opp.get("name", "Rival"), "combined_ms": -1 if dnf else sum, "dnf": dnf})
+	return RallyLibrary.build_standings(partial, player_combined, _dnf)
+
+
+# How many events the player has completed so far (for the interstitial header).
+func events_completed() -> int:
+	return _event_times_ms.size()
 
 
 # The fielded car was wrecked (HP→0, from the damage model). Immediate DNF: skip
@@ -285,3 +322,9 @@ func _load_event_scene(event: Dictionary) -> void:
 	cfg.track_turn_count = int(event.get("turn_count", cfg.track_turn_count))
 	cfg.track_width = RallyLibrary.event_width(event)
 	get_tree().change_scene_to_file("res://main.tscn")
+
+
+# Show the between-event standings interstitial; its Continue calls
+# continue_to_next_event() to load the next event.
+func _load_standings_scene() -> void:
+	get_tree().change_scene_to_file("res://standings.tscn")

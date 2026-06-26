@@ -1,5 +1,13 @@
 # Track Progress & Off-Track Reset — implementation spec  ✅ DONE
 
+> **Updated since shipping:** the off-track threshold is now **generous (25 m)** and
+> the nearest-point check is a **local windowed search** (`_local_closest_offset`)
+> around current progress rather than a global `get_closest_offset`. So you can run
+> wide onto the verge before being snapped back, the threshold is **independent of
+> `track_clearance`** (the old below-`track_clearance` assert is gone), and the
+> pseudo-code below using `get_closest_offset` is superseded — see
+> `features/progress.md` for the current behaviour.
+>
 > Status: **DONE (core).** `TrackProgress` (`scripts/track_progress.gd`) retains
 > the centerline (wired in `world.gd._generate_track`, re-targeted on car swap),
 > tracks monotonic `_best_offset`, and snaps the car back on-road past

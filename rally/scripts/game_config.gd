@@ -316,10 +316,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## edge where height and colour blend from the flat road to the true terrain.
 @export var track_transition_cells := 3
 ## Lateral distance from the road centerline, in metres, within which track
-## progress accrues; straying beyond it triggers the off-track reset. MUST stay
-## below `track_clearance` (else the global nearest-point query can snap to a
-## different track section). Default ≈ road half-width (track_width/2) + margin.
-@export var track_progress_max_dist_m := 5.0
+## progress accrues; straying beyond it triggers the off-track reset. Generous on
+## purpose — you can run wide onto the verge / cut across rough ground (rally!)
+## before being snapped back. The distance is measured against a LOCAL window of
+## the centerline (TrackProgress._local_closest_offset), so this is independent of
+## `track_clearance` and won't snap onto a different track section.
+@export var track_progress_max_dist_m := 25.0
 ## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true

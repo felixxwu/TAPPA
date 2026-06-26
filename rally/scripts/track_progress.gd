@@ -9,6 +9,15 @@ extends Node
 #
 # Created and wired by world.gd._generate_track once the centerline exists.
 
+# The off-track distance is measured against a LOCAL window of the centerline
+# around the current progress, not a global nearest-point query — so a wide reset
+# tolerance can't snap onto a different part of the track that happens to pass by
+# spatially (a hairpin, a parallel straight). The window slides forward with
+# progress; these bound how far back/ahead it samples and at what resolution.
+const SEARCH_BACK_M := 40.0
+const SEARCH_FWD_M := 140.0
+const SEARCH_STEP_M := 1.0
+
 var _centerline: Curve2D
 var _baked_length: float
 var _car: Node            # a Car (VehicleBody3D) — uses global_transform + reset_to
@@ -30,13 +39,12 @@ func setup(centerline: Curve2D, car: Node, terrain: Node) -> void:
 	_baked_length = centerline.get_baked_length()
 	_car = car
 	_terrain = terrain
+	# Seed progress at the spawn. A global nearest-point query is safe here: the car
+	# starts on the road at the track's beginning, so there's no ambiguity. From then
+	# on the per-tick query is windowed (see _local_closest_offset).
 	var p: Vector3 = car.global_transform.origin
 	_best_offset = _centerline.get_closest_offset(Vector2(p.x, p.z))
 	_best_reset = _reset_xform_at(_best_offset)
-	# Safety: the global nearest-point query is only reliable while the threshold
-	# stays well inside the generator's section spacing.
-	assert(Config.data.track_progress_max_dist_m < Config.data.track_clearance,
-		"track_progress_max_dist_m must stay below track_clearance")
 
 
 # Re-point at a freshly spawned car on the same track (a car swap), resetting
@@ -50,7 +58,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	var p: Vector3 = _car.global_transform.origin
 	var here := Vector2(p.x, p.z)
-	var offset := _centerline.get_closest_offset(here)
+	var offset := _local_closest_offset(here)
 	var on_curve := _centerline.sample_baked(offset)
 	var dist := here.distance_to(on_curve)
 	if dist <= Config.data.track_progress_max_dist_m:
@@ -59,6 +67,26 @@ func _physics_process(_delta: float) -> void:
 			_best_reset = _reset_xform_at(offset)
 	elif Config.data.off_track_reset_enabled:
 		_car.reset_to(_best_reset)
+
+
+# Nearest centerline offset to `here`, searched only within a window around the
+# current progress (best_offset − SEARCH_BACK_M .. + SEARCH_FWD_M). Sampling
+# locally — rather than Curve2D.get_closest_offset over the whole curve — keeps a
+# wide off-track tolerance from snapping onto a spatially-near but along-track-far
+# section. Resolution is SEARCH_STEP_M, ample against the metres-wide threshold.
+func _local_closest_offset(here: Vector2) -> float:
+	var lo := maxf(0.0, _best_offset - SEARCH_BACK_M)
+	var hi := minf(_baked_length, _best_offset + SEARCH_FWD_M)
+	var best_o := lo
+	var best_d := INF
+	var o := lo
+	while o <= hi:
+		var d := here.distance_squared_to(_centerline.sample_baked(o))
+		if d < best_d:
+			best_d = d
+			best_o = o
+		o += SEARCH_STEP_M
+	return best_o
 
 
 # Convert a baked offset on the 2D curve into a 3D pose on the road facing along

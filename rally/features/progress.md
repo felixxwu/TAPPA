@@ -15,8 +15,10 @@ calls `setup(centerline, car, terrain)`. On a car swap (`cycle_car`) it
 car respawns at the start).
 
 Each `_physics_process` tick:
-- Find the car's nearest offset on the curve (`get_closest_offset`) and the
-  lateral distance to the centerline there.
+- Find the car's nearest offset on the curve via `_local_closest_offset` — a
+  **windowed** search of the baked centerline around the current progress
+  (`_best_offset − SEARCH_BACK_M .. + SEARCH_FWD_M`, sampled every
+  `SEARCH_STEP_M`) — and the lateral distance to the centerline there.
 - **Within** `Config.data.track_progress_max_dist_m`: if the offset beats the
   best ever reached, advance `_best_offset` (the monotonic progress counter) and
   recompute the recovery pose. Driving backwards lowers the live offset but never
@@ -25,9 +27,13 @@ Each `_physics_process` tick:
   snapping the car back onto the road at the furthest recorded point.
 
 The single threshold does double duty: inside it progress accrues, crossing
-outside triggers the reset. It must stay below `track_clearance` (asserted in
-`setup`) so the global nearest-point query can't snap to a different, nearby
-section of a winding track.
+outside triggers the reset. It's deliberately **generous** (default 25 m — run
+wide onto the verge / cut rough ground before being snapped back). Because the
+nearest-point search is local (windowed around current progress) rather than a
+global `get_closest_offset`, a wide threshold can't snap onto a spatially-near but
+along-track-far section of a winding track — so it's independent of
+`track_clearance` (the old below-`track_clearance` assert is gone). The spawn seed
+in `setup` still uses a global query (unambiguous at the start line).
 
 ## The recovery pose
 
@@ -48,7 +54,7 @@ off-track recovery now share one code path.
 
 | Field | Default | Purpose |
 |---|---|---|
-| `track_progress_max_dist_m` | `5.0` | Lateral distance from the centerline within which progress counts; beyond it triggers the reset. Must stay `< track_clearance`. |
+| `track_progress_max_dist_m` | `25.0` | Lateral distance from the centerline within which progress counts; beyond it triggers the reset. Generous (run wide before snapping back); independent of `track_clearance` thanks to the windowed search. |
 | `off_track_reset_enabled` | `true` | Master switch for the auto-reset (progress tracking runs regardless). |
 
 ## Readouts

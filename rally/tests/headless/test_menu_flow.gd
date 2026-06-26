@@ -236,6 +236,26 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 	assert_eq(RallySession.rally_id(), "shakedown", "the chosen rally is running")
 
 
+func test_standings_interstitial_renders_the_leaderboard() -> void:
+	# After a non-final event the rally pauses on the standings; the scene shows the
+	# cumulative leaderboard so far. (auto_load_scenes is off, so no scene loads.)
+	var owned: Dictionary = _save.grant_car("rs3", false)
+	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, [60000, 60000, 60000])
+	RallySession._opponent_field = [
+		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
+		{"name": "Slow", "event_times_ms": [80000, 80000, 80000], "dnf": false, "combined_ms": 240000},
+	]
+	RallySession.report_event_result(50000)  # complete event 1 -> STANDINGS
+	var sc: Control = load("res://standings.tscn").instantiate()
+	add_child_autofree(sc)
+	await get_tree().process_frame
+	var text := _label_texts(sc)
+	assert_string_contains(text, "after event 1", "the interstitial headers the event just finished")
+	assert_string_contains(text, "Coastal Sprint", "it names the rally")
+	assert_string_contains(text, "Quick", "the opponent field is listed")
+	assert_string_contains(text, "Slow", "the whole field is shown")
+
+
 func test_podium_shows_the_finish_summary() -> void:
 	RallySession._last_result = {"placed": 2, "completed": true, "combined_ms": 65000, "dnf": false}
 	var pod: Control = load("res://podium.tscn").instantiate()

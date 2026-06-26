@@ -63,6 +63,15 @@ func _start(rally_id: String, model := "mx5") -> Dictionary:
 	return owned
 
 
+# Drive a full set of events, resuming through the between-event standings pause
+# (the rally now PAUSES on a leaderboard after each non-final event).
+func _report_events(times: Array) -> void:
+	for i in times.size():
+		RallySession.report_event_result(int(times[i]))
+		if i < times.size() - 1:
+			RallySession.continue_to_next_event()
+
+
 # Capture the next rally_finished result (one-shot, so nothing leaks across tests).
 func _capture_finish() -> Array:
 	var box: Array = [null]
@@ -81,8 +90,10 @@ func test_happy_path_accumulates_and_places() -> void:
 	_start("shakedown")
 	RallySession._opponent_field = _field([50000, 60000, 70000, 80000, 90000])
 	RallySession.report_event_result(20000)
+	RallySession.continue_to_next_event()
 	RallySession.report_event_result(20000)
 	assert_eq(RallySession.event_times_ms(), [20000, 20000] as Array[int], "times accumulate per event")
+	RallySession.continue_to_next_event()
 	RallySession.report_event_result(20000)  # combined 60000 -> resolve
 	var r: Dictionary = finish[0]
 	assert_not_null(r, "rally_finished emitted")
@@ -100,8 +111,7 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	_start("shakedown")  # open-class, difficulty 1
 	# Player combined 60000; one opponent faster (50000) -> placed 2nd, top-3 win.
 	RallySession._opponent_field = _field([50000, 70000, 80000])
-	for i in 3:
-		RallySession.report_event_result(20000)
+	_report_events([20000, 20000, 20000])
 	var r: Dictionary = finish[0]
 	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
 	assert_eq(r["upgrades"].size(), 3, "the three per-event upgrade ids are captured for the reveal")
@@ -123,14 +133,39 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	assert_eq(player["placed"], 2, "the player's standings position matches the placement")
 
 
+func test_between_event_standings_pause_and_leaderboard() -> void:
+	_start("shakedown")
+	# Two rivals: one quick (40k/event), one slow (80k/event). Player runs 50k/event.
+	RallySession._opponent_field = [
+		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
+		{"name": "Slow", "event_times_ms": [80000, 80000, 80000], "dnf": false, "combined_ms": 240000},
+	]
+	RallySession.report_event_result(50000)
+	# After event 1 the rally PAUSES on the standings (it does not auto-advance).
+	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS, "the rally pauses on the standings after an event")
+	assert_eq(RallySession.events_completed(), 1, "one event completed")
+	# Leaderboard so far (cumulative over 1 event): Quick 40k, player 50k, Slow 80k.
+	var s := RallySession.current_standings()
+	assert_eq(s.size(), 3, "the player + both rivals are ranked")
+	assert_eq(String(s[0]["name"]), "Quick", "the quickest rival leads after event 1")
+	assert_true(s[1]["is_player"], "the player sits 2nd on cumulative time")
+	assert_eq(s[1]["combined_ms"], 50000, "the player's cumulative time is its one event so far")
+	# Resume into the next event.
+	RallySession.continue_to_next_event()
+	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING, "continuing resumes the next event")
+	assert_eq(RallySession.event_index(), 1, "now running event index 1")
+
+
 func test_one_upgrade_revealed_per_event() -> void:
 	_start("shakedown")
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	assert_eq(_total_items(), 0, "no items before the rally")
 	RallySession.report_event_result(10000)
 	assert_eq(_total_items(), 1, "one upgrade after event 1")
+	RallySession.continue_to_next_event()
 	RallySession.report_event_result(10000)
 	assert_eq(_total_items(), 2, "one upgrade after event 2")
+	RallySession.continue_to_next_event()
 	RallySession.report_event_result(10000)
 	assert_eq(_total_items(), 3, "three upgrades over a full run")
 
@@ -142,6 +177,7 @@ func test_wreck_midrally_is_dnf_and_keeps_earned_upgrades() -> void:
 	RallySession._opponent_field = _field([50000])
 	RallySession.report_event_result(20000)  # event 1 completes -> 1 upgrade
 	assert_eq(_total_items(), 1, "earned one upgrade before the wreck")
+	RallySession.continue_to_next_event()  # resume from the standings into event 2
 	RallySession.report_wreck()  # wreck during event 2
 	var r: Dictionary = finish[0]
 	assert_true(r["dnf"], "a wreck is a DNF")
@@ -160,8 +196,7 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 	# A slow, non-top-3 finish (slower than every opponent).
 	var finish := _capture_finish()
 	RallySession._opponent_field = _field([10000, 20000, 30000, 40000, 50000])
-	for i in 3:
-		RallySession.report_event_result(1_000_000)
+	_report_events([1_000_000, 1_000_000, 1_000_000])
 	var r: Dictionary = finish[0]
 	assert_false(r["completed"], "a non-top-3 finish does not complete the rally")
 	assert_eq(r["placed"], 6, "slower than all 5 opponents -> placed 6th")
@@ -182,8 +217,7 @@ func test_showdown_win_beat_instead_of_car_draw() -> void:
 	_start("the_showdown")
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	var cars_before: int = _save.profile["cars"].size()
-	for i in 3:
-		RallySession.report_event_result(10000)
+	_report_events([10000, 10000, 10000])
 	assert_true(won[0], "a top-3 showdown finish fires the win beat")
 	assert_eq(_save.profile["cars"].size(), cars_before, "the showdown grants no car reward")
 	assert_true(_save.rally_completed("the_showdown"), "the showdown records completion")
@@ -198,8 +232,7 @@ func test_farming_rewin_grants_car_without_new_completion() -> void:
 	RallySession.car_rewarded.connect(func(_m: String) -> void: rewards[0] += 1, CONNECT_ONE_SHOT)
 	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, [60000, 60000, 60000])
 	RallySession._opponent_field = _field([90000])  # top-3 re-win
-	for i in 3:
-		RallySession.report_event_result(10000)
+	_report_events([10000, 10000, 10000])
 	assert_eq(_save.completed_rally_count(), completed_before, "a re-win records no new completion")
 	assert_eq(rewards[0], 1, "a top-3 re-win still draws a car (renewable supply)")
 	assert_eq(_save.profile["cars"].size(), cars_before + 1, "the re-won car is granted")

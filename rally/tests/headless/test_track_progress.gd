@@ -62,10 +62,22 @@ func test_progress_advances_on_road_and_is_monotonic() -> void:
 func test_progress_gated_by_distance() -> void:
 	_put_car(0, 0)
 	var tp := _make_progress()
-	# Far along the road but well outside the lateral threshold (x = 10 m > 5 m).
-	_put_car(10, 50)
+	# Far along the road but well outside the lateral threshold (x = 40 m > 25 m).
+	_put_car(40, 50)
 	tp._physics_process(0.0)
 	assert_almost_eq(tp.progress_offset(), 0.0, 0.5, "off-road position does not advance progress")
+
+
+func test_wide_tolerance_keeps_running_wide_on_track() -> void:
+	# The reset tolerance is deliberately generous (rally): running wide onto the
+	# verge (x = 15 m, inside the 25 m threshold) still counts as on-track — it
+	# advances progress and does NOT snap back.
+	_put_car(0, 0)
+	var tp := _make_progress()
+	_put_car(15, 40)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_offset(), 40.0, 0.5, "running wide within tolerance still advances progress")
+	assert_eq(_car.reset_calls.size(), 0, "no reset while within the wide tolerance")
 
 
 func test_off_track_triggers_reset_to_last_progress_pose() -> void:
@@ -73,7 +85,7 @@ func test_off_track_triggers_reset_to_last_progress_pose() -> void:
 	var tp := _make_progress()
 	_put_car(0, 30)  # progress to ~30 m, on-road
 	tp._physics_process(0.0)
-	_put_car(10, 30)  # stray off-road (x = 10 m)
+	_put_car(40, 30)  # stray well off-road (x = 40 m > 25 m)
 	tp._physics_process(0.0)
 	assert_eq(_car.reset_calls.size(), 1, "off-track stray triggers exactly one reset")
 	var xform: Transform3D = _car.reset_calls[0]
@@ -91,7 +103,7 @@ func test_off_track_reset_can_be_disabled() -> void:
 	_put_car(0, 0)
 	var tp := _make_progress()
 	Config.data.off_track_reset_enabled = false
-	_put_car(10, 30)  # off-road
+	_put_car(40, 30)  # well off-road (x = 40 m > 25 m)
 	tp._physics_process(0.0)
 	assert_eq(_car.reset_calls.size(), 0, "no reset fires when off_track_reset_enabled is false")
 

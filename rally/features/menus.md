@@ -19,7 +19,7 @@ The flat UI here proves the loop end-to-end and wires
 
 ```
 HQ map (pick rally) ─▶ rally detail ─Enter─▶ car select (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0)
-   main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ next event (reload)
+   main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ standings.tscn ─Continue─▶ next event
                                           └─ car.wrecked ─▶ report_wreck (DNF)
    final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ map
 ```
@@ -109,8 +109,8 @@ The HQ 3D car park (above, full parked lineup) is in. Still deferred
 suffixes, the map → 3D pins port, the tuning lift + inventory overlay, the pause
 overlay, the 3D reward-reveal rig + 3D podium, the full `menu_*` set + mobile
 gestures, and camera fly-through transitions *between* locations. The between-event
-**standings interstitial** is still a straight reload (RallySession emits
-`standings_ready` for the overlay to hook); standings are surfaced at the podium.
+**standings interstitial** now ships as a flat `standings.tscn` (cumulative
+leaderboard); the diegetic 3D version is the later refinement.
 
 ## Tests
 
@@ -122,6 +122,7 @@ eligible cars** (an AWD car is excluded from an RWD-only rally); an open rally p
 the whole lineup with **per-car meshes** (a mixed lineup keeps each body at its true
 size); cycling focus re-selects the car and wraps; **Back** steps car → detail →
 map and clears the lineup; pin → detail → enter → car → Start launches a session;
+the **between-event standings interstitial** renders the cumulative leaderboard;
 the podium renders the finish summary **and the reward reveal + standings**; and the
 run scene fields the bound session car. The pure `RallyLibrary.build_standings` ranking and
 the enriched `RallySession` result are covered in `test_rally_library.gd` /
