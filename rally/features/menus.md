@@ -31,14 +31,19 @@ track generation). On first visit it grants the **immortal starter** (`mx5`) —
 anti-soft-lock floor. HQ is **two separate screens**, shown one at a time, in the
 order **pick rally → pick eligible car → Start** (`enum Screen { MAP, CARS }`).
 
-**Screen 1 — World map (flat overlay).** A basic map: every rally is a **pin**
-placed at its authored `map_pos` (a normalised point, positioned by fractional
-anchors so it lands correctly at any size). Each pin shows the rally name, its
-difficulty + restriction (`any car` / `RWD cars` / …), and a ✓ when completed. The
-**showdown** pin is locked (disabled) until every other rally is completed; a
-**progress meter** (`completed / total`) sits up top. Picking a pin sets the chosen
-rally and flies to screen 2. *(Basic flat map; the stylised 3D map plane of
-`menus.md` rig 3 is a later slice.)*
+**Screen 1 — World map (flat overlay).** A basic, **pannable** map: a clipping
+frame (`_map_frame`) onto a larger map plane (`_map_content`, `MAP_SIZE`) that you
+**drag to pan** — mouse drag, finger drag (`InputEventScreenDrag`), or the left
+controller stick (polled in `_process`, paced by `GameConfig.menu_map_pan_speed`);
+panning clamps to the map edges. Every rally is a **pin** on the plane at its
+authored `map_pos` (a normalised point, positioned by fractional anchors), showing
+the rally name, its difficulty + restriction (`any car` / `RWD cars` / …), and a ✓
+when completed. Pins keep mouse capture (so a tap selects); everything else ignores
+the mouse so an empty-map press falls through to the pan handler. The **showdown**
+pin is locked (disabled) until every other rally is completed; a **progress meter**
+(`completed / total`) sits up top. Picking a pin sets the chosen rally and flies to
+screen 2. *(Basic flat map; the stylised 3D map plane of `menus.md` rig 3 is a
+later slice.)*
 
 **Screen 2 — Car select (3D car park).** Only the owned cars **eligible for the
 chosen rally** (`RallyLibrary.is_eligible`) are parked in a lit lot, in a centred
@@ -98,8 +103,9 @@ gestures, and camera fly-through transitions *between* locations. The between-ev
 ## Tests
 
 `tests/headless/test_menu_flow.gd` — HQ boots to the world map (one pin per rally,
-showdown pin locked); choosing a rally moves to the car screen and **filters to the
-eligible cars** (an AWD car is excluded from an RWD-only rally); an open rally parks
+showdown pin locked); the map **pans and clamps to its edges**; choosing a rally
+moves to the car screen and **filters to the eligible cars** (an AWD car is excluded
+from an RWD-only rally); an open rally parks
 the whole lineup with **per-car meshes** (a mixed lineup keeps each body at its true
 size); cycling focus re-selects the car and wraps; **◄ Map** returns to the map and
 clears the lineup; choosing rally → car → Start launches a session; the podium

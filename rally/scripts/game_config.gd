@@ -265,6 +265,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var menu_camera_look_height := 0.6
 ## Spacing (m) between parked cars in the HQ car-park lineup (along the lot's X).
 @export var menu_car_spacing := 6.0
+## World-map pan speed (px/sec) when panning with a controller stick (drag panning
+## moves 1:1 with the pointer; this only paces the analog stick).
+@export var menu_map_pan_speed := 1100.0
 
 @export_group("World")
 @export var fog_density := 0.02

@@ -34,10 +34,16 @@ var _camera: Camera3D
 var _stats_label: Label3D
 var _cam_tween: Tween
 
-# World-map overlay.
+# World-map overlay. The map content is larger than the on-screen frame and is
+# panned (dragged) within it; pins ride on the content.
+const MAP_SIZE := Vector2(1800.0, 1200.0)
 var _map_layer: CanvasLayer
-var _map_area: Control
+var _map_frame: Control      # the on-screen viewport into the map (clips + pans)
+var _map_content: Control    # the full map plane (MAP_SIZE); panned by moving it
+var _map_bg: ColorRect
 var _map_meter: Label
+var _panning := false
+var _map_centered := false
 
 # Car-select overlay.
 var _car_layer: CanvasLayer
@@ -117,9 +123,13 @@ func _build_map_overlay() -> void:
 	_map_layer = CanvasLayer.new()
 	add_child(_map_layer)
 
+	# Everything except the pins ignores the mouse, so a press on empty map falls
+	# through to _unhandled_input (where drag-panning lives); pins keep STOP so they
+	# stay clickable.
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.10, 0.13, 0.18)
+	bg.color = Color(0.06, 0.08, 0.11)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_layer.add_child(bg)
 
 	var root := VBoxContainer.new()
@@ -129,34 +139,59 @@ func _build_map_overlay() -> void:
 	root.offset_right = -16.0
 	root.offset_bottom = -16.0
 	root.add_theme_constant_override("separation", 8)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_layer.add_child(root)
 
 	var title := Label.new()
-	title.text = "WORLD MAP — choose a rally"
+	title.text = "WORLD MAP — drag to pan, tap a rally"
 	title.add_theme_font_size_override("font_size", 28)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(title)
 
 	_map_meter = Label.new()
 	_map_meter.add_theme_font_size_override("font_size", 14)
+	_map_meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_map_meter)
 
-	# The map plane: a panel the pins are placed on by fractional anchors, so they
-	# land at each rally's map_pos regardless of screen size. (Basic flat map; the
-	# stylised 3D map plane of menus.md rig 3 is a later slice.)
-	var frame := PanelContainer.new()
-	frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(frame)
-	_map_area = Control.new()
-	_map_area.clip_contents = true
-	frame.add_child(_map_area)
+	# The map: a clipping frame (the viewport into the world) holding a larger map
+	# plane (_map_content, MAP_SIZE) that is dragged around inside it. Pins are
+	# placed on the content by fractional anchors, so they ride along when panning.
+	# (Basic flat map; the stylised 3D map plane of menus.md rig 3 is a later slice.)
+	_map_frame = Control.new()
+	_map_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_map_frame.clip_contents = true
+	_map_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_frame.resized.connect(_on_map_resized)
+	root.add_child(_map_frame)
+
+	_map_content = Control.new()
+	_map_content.size = MAP_SIZE
+	_map_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_frame.add_child(_map_content)
+
+	_map_bg = ColorRect.new()
+	_map_bg.size = MAP_SIZE
+	_map_bg.color = Color(0.13, 0.18, 0.16)
+	_map_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_content.add_child(_map_bg)
+
+
+func _on_map_resized() -> void:
+	# Centre the map the first time the frame gets a real size, then keep the pan
+	# clamped to the edges on later resizes.
+	if not _map_centered and _map_frame.size.x > 0.0:
+		_map_content.position = (_map_frame.size - MAP_SIZE) * 0.5
+		_map_centered = true
+	_clamp_map()
 
 
 # (Re)build the rally pins for the current progress. Every rally is a pin; the
 # showdown is locked (disabled) until all others are completed. Completed rallies
 # are marked ✓. Eligibility-by-car is NOT gated here — that's the next screen.
 func _refresh_map() -> void:
-	for child in _map_area.get_children():
-		child.queue_free()
+	for child in _map_content.get_children():
+		if child is Button:
+			child.queue_free()
 	var sd_unlocked := RallyLibrary.showdown_unlocked(Save.profile)
 	var total := 0
 	for rally in RallyLibrary.RALLIES:
@@ -190,7 +225,24 @@ func _refresh_map() -> void:
 		pin.offset_right = 90.0
 		pin.offset_top = -22.0
 		pin.offset_bottom = 22.0
-		_map_area.add_child(pin)
+		_map_content.add_child(pin)
+
+
+# --- Map panning (drag / touch / controller stick) ---------------------------
+
+# Move the map plane by a pointer delta and keep it clamped to the frame edges.
+func _pan_map(delta: Vector2) -> void:
+	_map_content.position += delta
+	_clamp_map()
+
+
+# Keep the map plane covering the frame: you can't drag past its edges.
+func _clamp_map() -> void:
+	var fs := _map_frame.size
+	var pos := _map_content.position
+	pos.x = clampf(pos.x, minf(0.0, fs.x - MAP_SIZE.x), maxf(0.0, fs.x - MAP_SIZE.x))
+	pos.y = clampf(pos.y, minf(0.0, fs.y - MAP_SIZE.y), maxf(0.0, fs.y - MAP_SIZE.y))
+	_map_content.position = pos
 
 
 func _on_rally_pin(rally_id: String) -> void:
@@ -499,8 +551,27 @@ func _on_start_pressed() -> void:
 # --- Menu input (todo/menus.md › Menu navigation & input) --------------------
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _screen != Screen.CARS:
-		return
+	if _screen == Screen.MAP:
+		_map_input(event)
+	elif _screen == Screen.CARS:
+		_cars_input(event)
+
+
+# World map: drag to pan with the mouse or a finger. (A press that lands on a pin
+# is consumed by the pin — see the IGNORE filters in _build_map_overlay — so this
+# only fires for the empty map, which is where you grab to pan.)
+func _map_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_panning = event.pressed
+	elif event is InputEventMouseMotion and _panning:
+		_pan_map(event.relative)
+	elif event is InputEventScreenTouch:
+		_panning = event.pressed
+	elif event is InputEventScreenDrag:
+		_pan_map(event.relative)
+
+
+func _cars_input(event: InputEvent) -> void:
 	if event.is_action_pressed("menu_left"):
 		_cycle_focus(-1)
 	elif event.is_action_pressed("menu_right"):
@@ -509,3 +580,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_start_pressed()
 	elif event.is_action_pressed("menu_back"):
 		_show_map()
+
+
+# Controller-stick panning of the world map (the left stick); drag panning is
+# handled event-by-event in _map_input.
+func _process(delta: float) -> void:
+	if _screen != Screen.MAP or _map_frame == null:
+		return
+	var stick := Vector2(
+		Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
+	if stick.length() > 0.2:  # deadzone
+		# Pushing the stick right reveals the map to the right (content slides left).
+		_pan_map(-stick * Config.data.menu_map_pan_speed * delta)

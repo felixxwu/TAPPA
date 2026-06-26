@@ -44,7 +44,7 @@ func _label_texts(root: Node) -> String:
 
 
 func _map_pins(hq: Node3D) -> Array:
-	return hq._map_area.find_children("*", "Button", true, false)
+	return hq._map_content.find_children("*", "Button", true, false)
 
 
 func test_hq_boots_to_the_world_map() -> void:
@@ -60,6 +60,24 @@ func test_hq_boots_to_the_world_map() -> void:
 	assert_false(hq._car_layer.visible, "the car-select overlay is hidden on the map")
 	assert_eq(_map_pins(hq).size(), RallyLibrary.RALLIES.size(), "one pin per rally")
 	assert_eq(hq._cars.size(), 0, "no cars are parked until a rally is chosen")
+
+
+func test_hq_map_pans_and_clamps_to_the_edges() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Pin the frame to a known size so the clamp bounds are deterministic.
+	hq._map_frame.size = Vector2(800, 400)
+	hq._map_content.position = Vector2.ZERO
+	hq._pan_map(Vector2(-100, -50))
+	assert_eq(hq._map_content.position, Vector2(-100, -50), "dragging moves the map content 1:1")
+	# Pan far past the bottom-right: clamps so the map's far edge meets the frame.
+	hq._pan_map(Vector2(-100000, -100000))
+	assert_eq(hq._map_content.position, Vector2(800, 400) - hq.MAP_SIZE,
+		"panning is clamped to the map's far edge")
+	# Pan far the other way: clamps at the near (top-left) edge.
+	hq._pan_map(Vector2(100000, 100000))
+	assert_eq(hq._map_content.position, Vector2.ZERO, "panning is clamped to the near edge")
 
 
 func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
