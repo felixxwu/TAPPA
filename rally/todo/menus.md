@@ -21,19 +21,27 @@
 > the **Standings overlay (overlay 7)** at results (full ranked field via
 > `RallyLibrary.build_standings`).
 >
-> **What remains (the bulk of this spec):** the entire **diegetic 3D staging** —
-> the car-park / tuning-lift / map-table locations, the stylised map plane + pins,
-> world-anchored SubViewport stats panels, the 3D podium + reward-reveal rig, the
-> Pause / Inventory / Confirm overlays, the between-event standings interstitial,
-> the `menu_*` input action set + mobile gestures, and the camera fly-through
-> transitions. The sections below specify that remaining work. **The HQ flow has
-> SHIPPED as three separate screens** — a **basic pannable world map** of icon pins
-> with star ratings (best-placement: 1st→★★★, 3rd→★☆☆) + showdown lock + progress,
-> a **rally-detail** screen (Enter Rally), then a **3D car park** showing only the
-> eligible cars (parked lineup + panning menu camera + `Label3D` stats + `menu_*`
-> inputs); see [`todo/diegetic-hq.md`](diegetic-hq.md). Still deferred: the map's
-> **stylised 3D plane + 3D pins** (the flat map is the basic version), per-car
-> paint, the tuning lift, the 3D podium/reward rig, and the fly-throughs.
+> **The diegetic 3D HQ has SHIPPED** (see [`todo/diegetic-hq.md`](diegetic-hq.md)):
+> HQ is now ONE 3D space the camera flies through — `enum View { EXTERIOR, GARAGE,
+> TABLE, CARPARK }` with `_go_to(view)` tweening between station poses, NOT flat
+> screens. Done: the **exterior/title** shot (block skyline + Start), the **garage**
+> (block interior with the map table + a clickable tuning-lift placeholder), the
+> **3D map table** (a real plane with 3D **pins** — tier-coloured cones, billboarded
+> `Label3D` names, sphere stars from best-placement, showdown grey/locked, progress
+> meter; **drag to pan**, tap-to-select on release), the **car park** (eligible-car
+> parked lineup + panning menu camera + `Label3D` stats, reused for car selection),
+> the **Start → `RallySession.start_rally`** handoff with a loading overlay, the
+> run-scene **fielding** + `report_*` wiring, the **Podium reward reveal**, the
+> **Standings overlay** at results, AND the **between-event standings interstitial**
+> (`standings.tscn`).
+>
+> **What remains:** the **tuning lift** UI + inventory (the lift is a clickable
+> placeholder), per-car paint + duplicate-model name suffixes, world-anchored
+> SubViewport stats panels (richer than the current `Label3D`), the 3D podium +
+> reward-reveal rig (the podium/standings are still flat scenes), the Pause /
+> Inventory / Confirm overlays, designed environment art (blocks are placeholder),
+> and camera fly-through transitions for the longer hops. The sections below specify
+> that remaining work.
 >
 > Follow the config-first convention
 > (`CLAUDE.md`): tunables (camera move times, panel offsets, station positions
