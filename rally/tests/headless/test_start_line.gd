@@ -73,6 +73,22 @@ func test_queue_has_a_leader_and_a_trailer() -> void:
 	assert_eq(sl.queue_count(), 2, "the car is queued between a leader and a trailing car")
 
 
+func test_queue_cars_are_scripted_and_axis_locked() -> void:
+	var sl := _make()
+	var leader = sl._leader
+	assert_true(leader.ai_controlled, "queue cars drive under scripted control, not player Input")
+	assert_true(leader.axis_lock_linear_x, "lateral axis locked so they can't veer off line")
+	assert_true(leader.axis_lock_angular_y, "yaw locked so they stay pointed straight")
+	assert_false(leader.freeze, "they run live physics (suspension loads), not frozen")
+	assert_eq(leader.ai_throttle, 0.0, "they idle on the parking brake until launch")
+
+
+func test_launch_floors_the_leader() -> void:
+	var sl := _make()
+	sl.launch()
+	assert_eq(sl._leader.ai_throttle, 1.0, "the leader floors it on launch so it pulls away")
+
+
 func test_launch_starts_the_drive_off_not_the_countdown() -> void:
 	var sl := _make()
 	sl.launch()

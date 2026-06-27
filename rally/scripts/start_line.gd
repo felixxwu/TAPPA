@@ -44,14 +44,10 @@ var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
 var _leader: Node3D     # the car ahead — drives off on launch
-var _trailer: Node3D    # the car behind — scoots up on launch
+var _trailer: Node3D    # the car behind — rolls up on launch
 
-# Queue motion captured at setup (world space).
+# The player's start pose, captured at setup (the queue lays out around it).
 var _start_xform: Transform3D
-var _leader_from := Vector3.ZERO
-var _leader_to := Vector3.ZERO
-var _trailer_from := Vector3.ZERO
-var _trailer_to := Vector3.ZERO
 
 
 func _cfg() -> GameConfig:
@@ -187,19 +183,25 @@ func _build_fade() -> void:
 # --- Queue cars (leader ahead, trailer behind) -------------------------------
 
 # Spawn the two atmosphere cars that bookend the player in the start queue. They are
-# frozen, collision-off, silenced car props (the HQ car-park pattern); models are
-# picked deterministically from the rally seed so the queue is stable per event.
+# LIVE, scripted, silenced car props (so they drive off with real suspension load);
+# models are picked deterministically from the rally seed so the queue is stable.
 func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
 	var cfg := _cfg()
 	var gap := cfg.start_queue_gap
 	# Local -Z is the car's nose, so the leader is ahead (negative Z), trailer behind.
-	_leader_from = _ground(_start_xform * Vector3(0, 0, -gap), terrain)
-	_leader_to = _ground(_start_xform * Vector3(0, 0, -(gap + cfg.start_drive_off_distance)), terrain)
-	_trailer_from = _ground(_start_xform * Vector3(0, 0, gap), terrain)
-	_trailer_to = _ground(_start_xform * Vector3(0, 0, gap * 0.4), terrain)
+	var leader_pos := _ground(_start_xform * Vector3(0, 0, -gap), terrain)
+	var trailer_pos := _ground(_start_xform * Vector3(0, 0, gap), terrain)
 	var seed_base := _queue_seed(rally)
-	_leader = _spawn_prop(seed_base % CarLibrary.CARS.size(), _leader_from)
-	_trailer = _spawn_prop((seed_base + 1) % CarLibrary.CARS.size(), _trailer_from)
+	_leader = _spawn_prop(seed_base % CarLibrary.CARS.size(), leader_pos)
+	_trailer = _spawn_prop((seed_base + 1) % CarLibrary.CARS.size(), trailer_pos)
+	# Drive on the terrain, but never shove (or get shoved by) the player or each
+	# other — they're flavour, not a real field.
+	if _player is PhysicsBody3D:
+		for prop in [_leader, _trailer]:
+			if prop != null:
+				(prop as PhysicsBody3D).add_collision_exception_with(_player)
+	if _leader != null and _trailer != null:
+		(_leader as PhysicsBody3D).add_collision_exception_with(_trailer)
 
 
 # Drop a world point onto the terrain, keeping the player's ride height above it.
@@ -210,9 +212,12 @@ func _ground(pos: Vector3, terrain: Node) -> Vector3:
 	return pos
 
 
-# A parked, silent, physics-frozen car prop facing the start heading, with its own
-# mesh copies so a mixed queue keeps each body at its true size (car.tscn shares
-# mesh sub-resources between instances).
+# A live, scripted, silent car prop facing the start heading, with its own mesh
+# copies so a mixed queue keeps each body at its true size (car.tscn shares mesh
+# sub-resources between instances). It runs full physics (real suspension load /
+# squat) but reads scripted throttle/steer instead of player Input, and is axis-
+# locked to a straight line so it can't veer (the start heading is world -Z, so
+# lock lateral world-X + yaw world-Y; suspension world-Y and pitch world-X stay free).
 func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 	var car := CAR_SCENE.instantiate()
 	add_child(car)
@@ -220,13 +225,23 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 		car.apply_car(model_index)
 	_dup_meshes(car)
 	car.global_transform = Transform3D(_start_xform.basis, pos)
-	car.freeze = true
-	car.collision_layer = 0
-	car.collision_mask = 0
+	car.freeze = false
+	car.ai_controlled = true
+	car.ai_throttle = 0.0
+	car.ai_steer = 0.0
+	car.ai_handbrake = false
+	car.axis_lock_linear_x = true
+	car.axis_lock_angular_y = true
+	# Auto gearbox so throttle pulls away without manual shifting.
+	if car.drivetrain != null and car.drivetrain.engine != null:
+		car.drivetrain.engine.auto = true
+	# Silence its engine — no audio clutter from the atmosphere cars.
 	var audio := car.get_node_or_null("EngineAudio")
-	if audio != null and audio.has_method("stop"):
-		audio.stop()
-	car.process_mode = Node.PROCESS_MODE_DISABLED
+	if audio != null:
+		audio.process_mode = Node.PROCESS_MODE_DISABLED
+		if audio is AudioStreamPlayer:
+			audio.playing = false
+			audio.volume_db = -80.0
 	return car
 
 
@@ -255,15 +270,12 @@ func _process(delta: float) -> void:
 			_advance_orbit(delta)
 			_seq_t += delta
 			var cfg := _cfg()
-			var u := clampf(_seq_t / maxf(cfg.start_drive_off_seconds, 0.0001), 0.0, 1.0)
-			var e := ease(u, 0.4)  # ease-out so the cars surge then settle
-			if _leader != null:
-				_leader.global_position = _leader_from.lerp(_leader_to, e)
-			if _trailer != null:
-				_trailer.global_position = _trailer_from.lerp(_trailer_to, e)
+			# The leader holds full throttle (set at launch) and pulls away under its
+			# own physics; the trailer rolls up briefly then eases off so the parking
+			# brake settles it back at the line.
+			if _trailer != null and is_instance_valid(_trailer):
+				_trailer.ai_throttle = 1.0 if _seq_t < cfg.start_trailer_scoot_seconds else 0.0
 			if _seq_t >= cfg.start_drive_off_seconds:
-				if _leader != null:
-					_leader.visible = false  # gone up the road; the fade hides the pop
 				_seq = Seq.FADE_OUT
 				_seq_t = 0.0
 		Seq.FADE_OUT:
@@ -307,6 +319,12 @@ func launch() -> void:
 	_launched = true
 	if _overlay != null:
 		_overlay.visible = false
+	# Leader and trailer both surge on the throttle; the trailer eases off mid-animation
+	# (see _process DRIVE_OFF) while the leader keeps pulling away.
+	if _leader != null and is_instance_valid(_leader):
+		_leader.ai_throttle = 1.0
+	if _trailer != null and is_instance_valid(_trailer):
+		_trailer.ai_throttle = 1.0
 	_seq = Seq.DRIVE_OFF
 	_seq_t = 0.0
 
@@ -322,8 +340,18 @@ func _handoff() -> void:
 		_hud.visible = Config.data.hud_enabled
 	if _mobile != null:
 		_mobile.visible = true
+	_despawn_queue()  # gone under cover of the black, so they cost nothing during the run
 	if _stage_manager != null and _stage_manager.has_method("begin_countdown"):
 		_stage_manager.begin_countdown()
+
+
+# Free the queue cars (they've driven off / rolled up and the screen is black).
+func _despawn_queue() -> void:
+	for prop in [_leader, _trailer]:
+		if prop != null and is_instance_valid(prop):
+			prop.queue_free()
+	_leader = null
+	_trailer = null
 
 
 # --- Readouts (for tests) ----------------------------------------------------
