@@ -80,6 +80,25 @@ func _capture_finish() -> Array:
 	return box
 
 
+# The start-line "time to beat" — the fastest non-DNF rival's time for the CURRENT
+# event, tracking the event index as the rally advances. -1 when idle.
+func test_current_event_target_ms_tracks_fastest_rival_per_event() -> void:
+	assert_eq(RallySession.current_event_target_ms(), -1, "idle: no time to beat")
+	_start("coastal_sprint")
+	RallySession._opponent_field = [
+		{"name": "A", "event_times_ms": [50000, 82000, 82000], "dnf": false, "combined_ms": 214000},
+		{"name": "B", "event_times_ms": [45000, 90000, 90000], "dnf": false, "combined_ms": 225000},
+		{"name": "C", "event_times_ms": [-1, 70000, 70000], "dnf": true, "combined_ms": -1},
+	]
+	# Event 0: C did not set a time (-1, skipped), so the fastest is B's 45000.
+	assert_eq(RallySession.current_event_target_ms(), 45000, "event 0 fastest rival time")
+	RallySession.report_event_result(60000)   # -> standings
+	RallySession.continue_to_next_event()      # -> event 1
+	assert_eq(RallySession.event_index(), 1, "advanced to event 1")
+	# Event 1: C's 70000 now counts and is the fastest.
+	assert_eq(RallySession.current_event_target_ms(), 70000, "event 1 fastest rival time")
+
+
 func test_idle_when_no_rally() -> void:
 	assert_false(RallySession.is_active(), "no session active at rest")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "phase is IDLE")

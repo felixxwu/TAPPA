@@ -215,25 +215,27 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var hud_elapsed_enabled := true
 
 @export_group("Start Line")
-## The pre-event start-line scene (todo/menus.md location 2): a diegetic briefing
-## panel + atmosphere "presence" cars shown before the countdown, while the car is
-## held locked, until the player launches. Only runs inside an active RallySession;
-## a plain dev boot of main.tscn skips straight to the countdown. Turn off to
-## restore the old "drop straight into the countdown" behaviour even in a session.
+## The pre-event start-line sequence (todo/menus.md location 2): on track load the
+## "time to beat" is shown while an orbit camera circles the car queued between a
+## leader and a trailing car; on launch the leader drives off and the field scoots
+## up, then the screen fades to black and back to the chase camera + driving UI as
+## the countdown starts. Only runs inside an active RallySession; a plain dev boot
+## of main.tscn skips straight to the countdown. Off restores that old behaviour.
 @export var start_line_enabled := true
-## How many atmosphere presence cars to line up at the start (flavour only — NOT
-## the real opponent field, which is RallyLibrary's per-seed roster). 0 disables them.
-@export_range(0, 8) var start_presence_count := 3
-## Lateral spacing (m) between staggered presence cars, left/right of the player.
-@export var start_presence_lateral := 3.2
-## Distance (m) further back per staggered row of presence cars.
-@export var start_presence_longitudinal := 5.5
-## Briefing panel position relative to the player's start pose (car space: -Z is the
-## nose, +Y up), so the default floats it above and slightly ahead where the chase
-## camera frames it. The panel billboards toward the camera regardless.
-@export var start_briefing_offset := Vector3(0.0, 2.6, -2.6)
-## World-space size (m per pixel) of the billboarded briefing panel.
-@export var start_briefing_pixel_size := 0.0045
+## Orbit camera angular speed (rad/s) around the car during the start reveal.
+@export var start_orbit_speed := 0.5
+## Orbit camera radius (m) out from the car.
+@export var start_orbit_radius := 7.0
+## Orbit camera height (m) above the car it looks at.
+@export var start_orbit_height := 2.4
+## Gap (m) between queued cars along the start heading (leader ahead, one behind).
+@export var start_queue_gap := 7.0
+## How far (m) the leader car drives off ahead when the player launches.
+@export var start_drive_off_distance := 60.0
+## Seconds the launch animation runs (leader drives off, field scoots up).
+@export var start_drive_off_seconds := 2.0
+## Seconds each half (out, then back) of the fade-to-black transition takes.
+@export var start_fade_seconds := 0.6
 
 @export_group("Damage")
 # Per-car HP attrition (todo/damage-model.md). Max HP is CarLibrary metadata

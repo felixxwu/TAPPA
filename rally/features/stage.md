@@ -15,10 +15,11 @@ a run timer ticks until the finish line, then a placeholder complete panel shows
 
 0. **STAGING** *(optional)* — when `setup(..., staged = true)`, the car is locked
    and the manager simply **waits** (no countdown ticking) while the pre-event
-   start-line scene ([start-line.md](start-line.md)) shows its briefing + presence
-   cars. The player launches; `StartLine` calls `begin_countdown()`, which moves to
-   COUNTDOWN. A plain dev boot (or a car swap) is set up un-staged and skips this
-   straight to COUNTDOWN, exactly as before the start-line scene existed.
+   start-line sequence ([start-line.md](start-line.md)) plays its time-to-beat
+   reveal + orbit camera + launch animation. When it finishes (after the fade),
+   `StartLine` calls `begin_countdown()`, which moves to COUNTDOWN. A plain dev boot
+   (or a car swap) is set up un-staged and skips this straight to COUNTDOWN, exactly
+   as before the start-line scene existed.
 1. **COUNTDOWN** — `setup()` (un-staged) or `begin_countdown()` locks the car
    (`controls_locked = true`) and arms
    `_countdown_left = stage_countdown_seconds`. Each frame shows the big centered
