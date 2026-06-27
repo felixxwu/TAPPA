@@ -39,8 +39,9 @@ intentionally keyboard-only.
 
 ## Touch / mobile
 
-On touch devices the same actions are driven by on-screen buttons (steer left,
-steer right, throttle, brake) — see [mobile-controls.md](mobile-controls.md).
+On touch devices the same actions are driven by on-screen controls: stacked
+gas/brake pedals (bottom-right) and an analog steering slider that recentres on
+release (bottom-left) — see [mobile-controls.md](mobile-controls.md).
 
 See also: [car-physics.md](car-physics.md),
 [engine-and-transmission.md](engine-and-transmission.md),

@@ -7,32 +7,38 @@ On-screen touch controls for phones.
 
 ## Layout
 
-Four equal-width buttons fill the bottom strip of the viewport, left-to-right
-(`_BUTTONS`; region index == list position):
+Two pedals stacked **bottom-right** and a steering **slider** bottom-left, laid out
+in code as fractions of the live viewport (re-laid-out on `size_changed`):
 
-| Region | Label | Action driven |
-|--------|-------|---------------|
-| `STEER_LEFT` (0)  | `◀`     | `steer_left` |
-| `STEER_RIGHT` (1) | `▶`     | `steer_right` |
-| `BRAKE` (2)       | `BRAKE` | `brake_reverse` |
-| `THROTTLE` (3)    | `GAS`   | `accelerate` |
+| Control | Position | Drives |
+|---------|----------|--------|
+| `GAS` (0)   | top of the right stack    | `accelerate` (digital) |
+| `BRAKE` (1) | below GAS, right-aligned  | `brake_reverse` (digital) |
+| Steering slider | bottom-left, horizontal | `steer_left` / `steer_right` (analog) |
 
-The strip occupies the bottom `_STRIP_HEIGHT_RATIO` (0.15) of the viewport
-height; touches above it fall through to the game. Panels are built and laid
-out in code from the live viewport size, and re-laid-out on `size_changed`.
+`_gas_rect` / `_brake_rect` / `_slider_rect` are the hit regions; touches elsewhere
+fall through to the game.
 
 ## Behavior
 
-- **Drives existing input actions.** Each button press/releases the same action
-  as the keyboard (`steer_left`, `steer_right`, `accelerate`, `brake_reverse`)
-  via `Input.action_press/release`, so `car.gd` needs no touch awareness. See
-  [controls.md](controls.md).
-- **Multitouch.** Raw `InputEventScreenTouch`/`Drag` are handled directly
-  (indexed by pointer) rather than via Control buttons, so e.g. steering and
-  throttle register simultaneously. Mouse events also drive the controls
-  (index -1) for desktop testing.
-- Holds are tracked in `_held` (one flag per button) so actions only
-  press/release on transitions; `_exit_tree()` releases anything still held.
+- **Drives existing input actions.** Gas/brake press the same actions as the
+  keyboard via `Input.action_press/release`. The slider feeds **analog** strength
+  into `steer_left` / `steer_right` via `Input.action_press(action, strength)` —
+  `car.gd` reads steering as `Input.get_axis("steer_right", "steer_left")` (strength
+  based), so a half-thrown slider gives half steering. `car.gd` needs no touch
+  awareness. See [controls.md](controls.md).
+- **Steering slider.** Touching inside the slider **captures** that pointer
+  (`_slider_owner`); dragging it sets steer from the thumb's X via `_steer_from_x`
+  ([-1 full left .. +1 full right], centre = straight, clamped if you slide off the
+  rail). Lifting the finger clears the owner so steering **springs back to centre**.
+  A thumb `ColorRect` tracks the value.
+- **Multitouch.** Raw `InputEventScreenTouch`/`Drag` are handled directly (indexed
+  by pointer), so steering (the captured slider pointer) and a gas/brake press
+  register simultaneously. Mouse events also drive the controls (index -1) for
+  desktop testing.
+- Button holds are tracked in `_held` (one flag per pedal) so actions only
+  press/release on transitions; `_exit_tree()` releases anything still held,
+  including the steer actions.
 
 ## When it appears
 
@@ -53,5 +59,6 @@ desktop/in the editor). See [configuration.md](configuration.md).
 
 ## Tests
 
-`tests/headless/test_mobile_controls.gd` — visibility gating, throttle, brake,
-steering, multitouch, and release.
+`tests/headless/test_mobile_controls.gd` — visibility gating, gas, brake, the analog
+steering slider (full-left / full-right / partial strength), the slider recentring on
+release, slider + gas multitouch, and button release.
