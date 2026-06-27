@@ -497,8 +497,8 @@ func _sync_suspension_to_wheels() -> void:
 		wheel.damping_relaxation = cfg.suspension_damping_relaxation()
 
 
-# Give every MeshInstance3D in the authored body model the PS1 material
-# (ps1_models.gdshader) carrying the model's baked texture, so the glb stays in
+# Give every MeshInstance3D in the authored body model the lit PS1 material
+# (ps1_models_lit.gdshader) carrying the model's baked texture, so the glb stays in
 # the same unshaded / quantize / dither / fog pipeline as the rest of the scene
 # instead of using its imported Blender material. albedo_color is left white so
 # the texture's own colours show through (ALBEDO = texture × albedo_color).
@@ -506,7 +506,7 @@ func _sync_suspension_to_wheels() -> void:
 const MX5_TEXTURE := preload("res://blender/mx5_texture.png")
 
 func _apply_model_material(model: Node3D) -> void:
-	var shader: Shader = load("res://shaders/ps1_models.gdshader")
+	var shader: Shader = load("res://shaders/ps1_models_lit.gdshader")
 	for mesh in model.find_children("*", "MeshInstance3D", true):
 		var mi := mesh as MeshInstance3D
 		var mat := mi.get_surface_override_material(0) as ShaderMaterial

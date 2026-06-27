@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="Shader" path="res://shaders/ps1_models.gdshader" id="1_models"]
+[ext_resource type="Shader" path="res://shaders/ps1_models_lit.gdshader" id="1_models"]
 [ext_resource type="Script" path="res://scripts/car.gd" id="2_car"]
 [ext_resource type="Script" path="res://scripts/engine_audio.gd" id="3_engaud"]
 [ext_resource type="PackedScene" path="res://blender/mx5.glb" id="4_mx5model"]

@@ -88,18 +88,28 @@ func test_models_shader_blends_to_road_texture() -> void:
 	assert_true(src.contains("blend_road"), "ps1_models gates the road blend behind blend_road")
 
 
-func test_models_shader_has_fake_lighting() -> void:
-	var src := FileAccess.get_file_as_string("res://shaders/ps1_models.gdshader")
-	# Lighting is faked in-shader; the material must stay unshaded (no engine
+func test_lit_car_shader_has_fake_lighting() -> void:
+	var src := FileAccess.get_file_as_string("res://shaders/ps1_models_lit.gdshader")
+	# The car variant fakes lighting in-shader; it must stay unshaded (no engine
 	# lighting pass / shadows) and gate the effect behind light_amount.
-	assert_true(src.contains("unshaded"), "ps1_models stays render_mode unshaded")
-	assert_true(src.contains("light_amount"), "ps1_models gates fake lighting behind light_amount")
-	assert_true(src.contains("void vertex()"), "ps1_models computes lighting per-vertex")
+	assert_true(src.contains("unshaded"), "ps1_models_lit stays render_mode unshaded")
+	assert_true(src.contains("light_amount"), "ps1_models_lit gates fake lighting behind light_amount")
+	assert_true(src.contains("void vertex()"), "ps1_models_lit computes lighting per-vertex")
+
+
+func test_terrain_shader_has_no_vertex_stage() -> void:
+	# Performance guard: the shared terrain shader must NOT carry a vertex() stage.
+	# The terrain is the heaviest geometry (tens of thousands of vertices in the
+	# loaded chunk ring), so per-vertex lighting there is a real mobile regression.
+	# Car lighting lives in the separate ps1_models_lit.gdshader instead.
+	var src := FileAccess.get_file_as_string("res://shaders/ps1_models.gdshader")
+	assert_false(src.contains("void vertex()"), "ps1_models (terrain) has no vertex stage")
+	assert_false(src.contains("light_amount"), "ps1_models (terrain) carries no lighting cost")
 
 
 func test_car_meshes_are_lit_but_terrain_is_flat() -> void:
-	# world.gd applies the fake lighting to the car meshes only; the terrain
-	# leaves light_amount at the shader default (0) and stays flat.
+	# The car meshes use the lit shader (world.gd applies the light params); the
+	# terrain uses the plain shader, which has no light_amount uniform at all.
 	var car_chassis := _scene.get_node("Car/Chassis") as MeshInstance3D
 	var car_mat := car_chassis.get_surface_override_material(0) as ShaderMaterial
 	assert_not_null(car_mat, "car chassis has a ShaderMaterial")
@@ -107,8 +117,8 @@ func test_car_meshes_are_lit_but_terrain_is_flat() -> void:
 
 	var floor_node := _scene.get_node("Floor")
 	var terrain_mat := floor_node.chunk_material as ShaderMaterial
-	# Never set on the terrain material → null (shader default 0 = flat).
-	assert_null(terrain_mat.get_shader_parameter("light_amount"), "terrain stays flat (light_amount unset)")
+	# The terrain shader has no light_amount uniform → null (flat, no extra cost).
+	assert_null(terrain_mat.get_shader_parameter("light_amount"), "terrain shader has no lighting uniform")
 
 
 func test_terrain_material_enables_road_blend_with_gravel() -> void:

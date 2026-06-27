@@ -196,7 +196,7 @@ func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
 	var mi: MeshInstance3D = model.find_children("*", "MeshInstance3D", true)[0]
 	var mat := mi.get_surface_override_material(0) as ShaderMaterial
 	assert_not_null(mat, "model mesh has a shader material override")
-	assert_eq(mat.shader, load("res://shaders/ps1_models.gdshader"), "model uses the PS1 model shader")
+	assert_eq(mat.shader, load("res://shaders/ps1_models_lit.gdshader"), "model uses the lit PS1 model shader")
 	assert_eq(mat.get_shader_parameter("albedo_color"), Color.WHITE, "model texture shown untinted")
 	assert_not_null(mat.get_shader_parameter("albedo_texture"), "model carries its baked texture")
 
