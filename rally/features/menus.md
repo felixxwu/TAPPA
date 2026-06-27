@@ -33,13 +33,18 @@ anti-soft-lock floor. HQ is **one diegetic 3D space** the camera flies through; 
 (`GameConfig.hq_*_cam_eye/look`, eased over `menu_camera_move_time`). Clickable 3D
 objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_pickable`
 (`get_viewport().physics_object_picking` is on); their handlers also respond to
-`menu_*` keyboard/gamepad input. The environment — block buildings, the garage
-shell, the table, the lift — is built from `BoxMesh` blocks via `_block()`
-(placeholder art; the framing/positions that the flow depends on are in `GameConfig`).
+`menu_*` keyboard/gamepad input. The environment — a block-building skyline
+**behind the garage** (`_build_buildings`, kept clear of the title camera's view),
+billboard **trees** framing the lot (`_build_trees`, reusing the stage's
+`BillboardField`), the garage shell, the table, the lift — is built from `BoxMesh`
+blocks via `_block()` (placeholder art; the framing/positions that the flow depends
+on are in `GameConfig`).
 
 **EXTERIOR (boot/title).** A title + **Start** button over an establishing shot of
-the block skyline and the outdoor car park. Start (or `menu_select`) flies the
-camera into the garage.
+the outdoor car park, with a block skyline **behind the garage** and trees framing
+the lot. The player's **whole owned collection** is parked in the car park here
+(`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
+car. Start (or `menu_select`) flies the camera into the garage.
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**. Tapping the table drops to the map view; tapping the lift flashes
@@ -69,7 +74,8 @@ car park, **◄ Map** dismisses the panel, and the table Back returns to the gar
 **CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
 rally** (`RallyLibrary.is_eligible`) are parked at `GameConfig.hq_carpark_origin`,
 in a centred row spaced by `menu_car_spacing`, each a silenced `Car` prop (reusing
-`Car.apply_owned`). The props **drop in live** (raised by `menu_car_drop_height` onto
+`Car.apply_owned`). Parking is shared with the title via `_build_lineup(cars)` —
+the car-select screen passes the eligible cars, the title passes all owned. The props **drop in live** (raised by `menu_car_drop_height` onto
 a collision floor under the lot) so they **settle onto their suspension**, then
 `_freeze_lineup` freezes the settled pose after `menu_car_settle_seconds` (guarded by
 a generation id so re-entering the lot cancels a stale freeze) — so a full car park

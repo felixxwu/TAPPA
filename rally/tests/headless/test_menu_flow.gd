@@ -60,13 +60,24 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 1, "the immortal starter is granted on the first HQ visit")
 	assert_true(_save.profile["cars"][0]["immortal"], "the starter is immortal")
-	# Boots to the exterior/title station: the title overlay is up, nothing parked.
+	# Boots to the exterior/title station: the title overlay is up, and the player's
+	# whole collection is parked in the car park (just the starter so far).
 	assert_eq(hq._view, hq.View.EXTERIOR, "HQ boots to the exterior title station")
 	assert_true(hq._title_layer.visible, "the title overlay is shown")
 	assert_false(hq._car_layer.visible, "the car-park overlay is hidden at the title")
-	assert_eq(hq._cars.size(), 0, "no cars are parked until a rally is chosen")
+	assert_eq(hq._cars.size(), 1, "the player's whole collection is parked on the title (the starter so far)")
 	# The 3D map table is populated with one pin per rally.
 	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
+
+
+func test_hq_title_parks_all_owned_cars() -> void:
+	# The title shows the whole collection, regardless of rally eligibility — grant
+	# an AWD RS3 (which an RWD rally would exclude) and it's still parked.
+	_save.grant_car("rs3", false)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._cars.size(), 2, "the title parks every owned car (starter + RS3)")
 
 
 func test_hq_start_flies_into_the_garage() -> void:

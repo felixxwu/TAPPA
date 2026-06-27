@@ -190,35 +190,48 @@ func _block(pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
 	return mi
 
 
-# Placeholder skyline behind the car park — simple blocks of varying height.
+# Placeholder skyline BEHIND the garage (−Z) — simple blocks of varying height.
+# The title camera (hq_exterior_cam_*) sits out at +Z looking back over the car
+# park toward the garage, so buildings belong behind the garage (its back wall is
+# at z ≈ −6); placing them in front of it would block the shot.
 func _build_buildings() -> void:
 	var blocks := [
-		[Vector3(-16.0, 5.0, 42.0), Vector3(9.0, 10.0, 9.0), Color(0.26, 0.28, 0.34)],
-		[Vector3(14.0, 7.0, 46.0), Vector3(8.0, 14.0, 8.0), Color(0.30, 0.31, 0.36)],
-		[Vector3(0.0, 6.0, 54.0), Vector3(12.0, 12.0, 10.0), Color(0.24, 0.26, 0.31)],
-		[Vector3(-26.0, 4.0, 32.0), Vector3(7.0, 8.0, 12.0), Color(0.28, 0.29, 0.33)],
-		[Vector3(25.0, 5.0, 34.0), Vector3(7.0, 10.0, 9.0), Color(0.27, 0.28, 0.34)],
+		[Vector3(-15.0, 6.0, -16.0), Vector3(9.0, 12.0, 9.0), Color(0.26, 0.28, 0.34)],
+		[Vector3(-3.0, 8.0, -24.0), Vector3(11.0, 16.0, 10.0), Color(0.24, 0.26, 0.31)],
+		[Vector3(12.0, 7.0, -18.0), Vector3(9.0, 14.0, 9.0), Color(0.30, 0.31, 0.36)],
+		[Vector3(24.0, 5.0, -13.0), Vector3(8.0, 10.0, 8.0), Color(0.28, 0.29, 0.33)],
+		[Vector3(-25.0, 5.0, -14.0), Vector3(8.0, 10.0, 9.0), Color(0.27, 0.28, 0.34)],
+		[Vector3(5.0, 5.0, -12.0), Vector3(7.0, 10.0, 7.0), Color(0.29, 0.30, 0.35)],
 	]
 	for b in blocks:
 		_block(b[0], b[1], b[2])
 
 
-# A ring of background trees around the lot so HQ reads as an outdoor clearing
-# under the open-field skybox, instead of floating on a bare plane. Reuses the
-# stage's billboard renderer/texture (one MultiMesh, one draw call); scenery only
-# (no collision). Deterministic scatter in an annulus that clears the buildings
-# (z up to ~59) and the central garage/car-park/camera area.
+# Trees framing the lot so HQ reads as an outdoor clearing under the open-field
+# skybox, instead of floating on a bare plane. Reuses the stage's billboard
+# renderer/texture (one MultiMesh, one draw call); scenery only (no collision).
+# A close-in annulus, but with the front-centre corridor kept clear so trees never
+# block the title camera's view of the car park, and the garage footprint kept
+# clear so none spawn inside it. Trees hug the garage's sides and back.
 func _build_trees() -> void:
 	var cfg: GameConfig = Config.data
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20240
 	var positions := PackedVector2Array()
-	var inner := 64.0
-	var outer := 112.0  # inside the 240 m ground plane's half-extent
-	for _i in 150:
+	var inner := 18.0
+	var outer := 66.0
+	for _i in 320:
 		var ang := rng.randf() * TAU
 		var rad := sqrt(rng.randf()) * (outer - inner) + inner
-		positions.append(Vector2(cos(ang) * rad, sin(ang) * rad))
+		var p := Vector2(cos(ang) * rad, sin(ang) * rad)
+		# Keep the front-centre clear: the car park sits at +Z (hq_carpark_origin)
+		# and the title camera looks down that corridor, so no trees with |x| small
+		# and z ahead of the garage. Also skip the garage footprint itself.
+		if absf(p.x) < 22.0 and p.y > 8.0:
+			continue
+		if absf(p.x) < 9.0 and absf(p.y) < 9.0:
+			continue
+		positions.append(p)
 	# HQ ground is a flat plane at y = 0; a layerless TerrainManager returns height
 	# 0 everywhere, which is all BillboardField needs to seat the trees. Used only
 	# during build(), then freed.
@@ -687,6 +700,9 @@ func _go_to(view: int, snap := false) -> void:
 	_view = view
 	if view != View.TABLE:
 		_detail_open = false
+	# The title screen shows the player's whole collection parked in the car park.
+	if view == View.EXTERIOR:
+		_build_title_lineup()
 	_update_overlays()
 	if view == View.CARPARK:
 		return  # camera handled by _focus_changed once the lineup exists
@@ -788,27 +804,40 @@ func _clear_lineup() -> void:
 	_eligible = []
 
 
-# Park one car per owned car eligible for the selected rally, laid out in a centred
-# row at the car-park origin (GameConfig.hq_carpark_origin / menu_car_spacing). The
-# cars drop in live and settle onto their suspension, then freeze (see _settle_lineup).
+# Park the owned cars ELIGIBLE for the selected rally (the car-select screen).
 func _build_eligible_lineup() -> void:
-	_clear_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
+	var eligible: Array = []
 	for car in Save.profile.get("cars", []):
-		var meta := CarLibrary.by_id(String(car.get("model_id", "")))
-		if RallyLibrary.is_eligible(rally, meta):
-			_eligible.append(car)
+		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(String(car.get("model_id", "")))):
+			eligible.append(car)
+	_build_lineup(eligible)
+
+
+# Park ALL owned cars for the title screen, so the player's whole collection is on
+# show in the car park behind the title overlay (rebuilt on entering EXTERIOR).
+func _build_title_lineup() -> void:
+	_build_lineup(Save.profile.get("cars", []).duplicate())
+
+
+# Park the given owned cars, laid out in a centred row at the car-park origin
+# (GameConfig.hq_carpark_origin / menu_car_spacing). The cars drop in live and
+# settle onto their suspension, then freeze (see _freeze_lineup). Shared by the
+# rally car-select lineup (eligible cars) and the title screen (all owned cars).
+func _build_lineup(cars: Array) -> void:
+	_clear_lineup()
+	_eligible = cars
 	var cfg: GameConfig = Config.data
-	var n := _eligible.size()
+	var n := cars.size()
 	for i in n:
 		var marker := Marker3D.new()
 		marker.position = cfg.hq_carpark_origin + Vector3((i - (n - 1) * 0.5) * cfg.menu_car_spacing, 0.0, 0.0)
 		add_child(marker)
 		_markers.append(marker)
-		_cars.append(_spawn_parked_car(_eligible[i], marker))
+		_cars.append(_spawn_parked_car(cars[i], marker))
 	# Let the lineup settle under physics for a moment, then freeze the settled pose.
-	# Guarded by a generation id so re-entering the car park (a new lineup) cancels a
-	# pending freeze for the old one.
+	# Guarded by a generation id so re-building the lineup cancels a pending freeze
+	# for the old one.
 	_settle_generation += 1
 	get_tree().create_timer(cfg.menu_car_settle_seconds).timeout.connect(
 		_freeze_lineup.bind(_settle_generation))
