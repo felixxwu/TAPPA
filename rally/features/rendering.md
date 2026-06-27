@@ -15,11 +15,13 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
 ## Shaders (`shaders/`)
 
 ### `ps1_models.gdshader` — `spatial`, `unshaded`
-Flat-shaded material for the terrain (no lighting model at all). It has **no
+Terrain material. The shader itself runs no lighting math and has **no
 `vertex()` stage** — a deliberate performance choice, since the terrain is the
 heaviest geometry in the scene (tens of thousands of vertices across the loaded
-chunk ring) and must keep its pass-through vertex path. Car lighting lives in
-the separate `ps1_models_lit.gdshader` (below).
+chunk ring) and must keep its pass-through vertex path. Its shading is instead
+**baked into the vertex colours** at generation time (see below / [terrain.md](terrain.md)),
+which the fragment already multiplies in for free. Car lighting, which can't be
+baked, lives in the separate `ps1_models_lit.gdshader` (below).
 Uniforms: `albedo_texture` and `road_texture` (both source_color, nearest,
 default white), `albedo_color`, `texture_tile`, `blend_road` (bool, default
 `false`), and `road_uv_scale` (road tiling relative to the ground; set from
@@ -28,7 +30,10 @@ default white), `albedo_color`, `texture_tile`, `blend_road` (bool, default
 When `blend_road` is on (the terrain material sets it), the per-vertex `COLOR.a`
 cross-fades the ground texture (grass) to the road texture (gravel) where the
 terrain bakes road weight into vertex-colour alpha (see
-[terrain.md](terrain.md)/[track.md](track.md)); `COLOR.rgb` is a flat tint.
+[terrain.md](terrain.md)/[track.md](track.md)); `COLOR.rgb` is the ground tint
+**times the baked static lighting** (`terrain_manager._bake_light`, mirroring the
+car shader's math) — so the hills get the same hemisphere+sun shading as the car
+at zero per-frame cost, valid because the terrain and sun never move.
 
 Used by: the terrain floor.
 
@@ -51,8 +56,9 @@ vertex, interpolated for free by the rasteriser. `light_amount`
 `light_amount`, `light_dir`, `sun_color`, `sky_color`, `ground_color`.
 `world.gd` calls `cfg.apply_car_light()` on the chassis/cabin/wheel/spoke
 materials, and `car.gd._apply_model_material()` does the same for the MX-5 body.
-The values (`car_light_amount`, `sun_direction`, `sun_color`, `sky_color`,
-`ground_color`) live in `GameConfig` under the **Car Lighting** group.
+The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
+`sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
+alongside `terrain_light_amount` for the baked terrain shading.
 
 Used by: car chassis/cabin/wheels/spokes, and the MX-5's authored body model
 (see below).
@@ -87,15 +93,18 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
 | Car/Cabin | `albedo_color` | `cabin_color` (dark blue) |
 | Wheels (all 4) | `albedo_color` | `wheel_color` (black) |
 | Spokes (all 8) | `albedo_color` | `wheel_spoke_color` (silver) |
-| Car meshes + MX-5 body | fake-light uniforms | Car Lighting group (`cfg.apply_car_light`) |
+| Car meshes + MX-5 body | fake-light uniforms | Lighting group (`cfg.apply_car_light`) |
+| Floor (terrain) | baked vertex-colour shading | Lighting group (`cfg.apply_terrain_light`) |
 | PostProcess/ColorRect | `virtual_resolution` | `virtual_resolution` [480,360] |
 
 ## Environment
 
 - No light nodes and no engine lighting pass — the materials stay `unshaded`.
   Car meshes get cheap fake per-vertex (Gouraud) lighting from the car-only
-  `ps1_models_lit.gdshader` (see above); the terrain shader has no vertex stage,
-  so the heaviest geometry pays nothing, and everything else stays flat.
+  `ps1_models_lit.gdshader` (computed live, since the car rotates). The terrain
+  gets the same hemisphere+sun look **baked into its vertex colours** once at
+  generation time, so its shader keeps a pass-through vertex path and the
+  heaviest geometry pays nothing per frame. Trees/bushes/signs stay flat.
 - Fog enabled, `fog_density` (0.02), color = `background_color` (purple-ish).
 - No bloom, no shadows.
 

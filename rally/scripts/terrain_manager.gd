@@ -50,6 +50,19 @@ var road_heights: Dictionary = {}   # vertex index (Vector2i) -> nearest road Y
 var road_blend: Dictionary = {}     # vertex index -> height blend weight [0,1]
 var track_weights: Dictionary = {}  # cell index -> colour blend weight [0,1]
 
+# Baked terrain lighting. The terrain and the sun never move, so the fake
+# directional+hemisphere shading (mirroring shaders/ps1_models_lit.gdshader) is
+# computed ONCE per vertex at generation time and folded into the vertex
+# colour's RGB — which the flat terrain shader already multiplies into ALBEDO.
+# So it costs nothing per frame (unlike the car, which rotates and must light in
+# its shader). light_amount 0 = flat (the bake becomes a no-op white multiply).
+# Set from GameConfig's Lighting group by world.gd before build_initial().
+var light_amount: float = 0.0
+var sun_dir: Vector3 = Vector3(0.4, 0.9, 0.35).normalized()
+var sun_color: Color = Color(0.5, 0.5, 0.5)
+var sky_color: Color = Color(0.5, 0.5, 0.5)
+var ground_color: Color = Color(0.35, 0.35, 0.35)
+
 # Node whose position drives chunk loading (the car). Resolved lazily.
 @export var focus_path: NodePath = NodePath("../Car")
 
@@ -196,6 +209,9 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 	# tint now blends smoothly across cells instead of stepping per square.
 	var vertices := PackedVector3Array(); vertices.resize(count)
 	var uvs := PackedVector2Array(); uvs.resize(count)
+	# Per-vertex baked light tint (white when light_amount is 0). Folded into the
+	# vertex colour by vertex_colors() so the flat shader multiplies it for free.
+	var lights := PackedColorArray(); lights.resize(count)
 	for zi in SAMPLES:
 		var lz := -half + zi * CELL_M
 		var wz := center.z + lz
@@ -212,6 +228,7 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 			heights[idx] = h
 			vertices[idx] = Vector3(lx, h, lz)
 			uvs[idx] = Vector2(wx, wz) * tile
+			lights[idx] = _bake_light(noises, amplitudes, wx, wz)
 
 	var per_edge := SAMPLES - 1
 	var cells := per_edge * per_edge
@@ -228,7 +245,7 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 			indices[ii + 3] = b; indices[ii + 4] = d; indices[ii + 5] = c
 			ii += 6
 
-	var colors := vertex_colors(coord)
+	var colors := vertex_colors(coord, lights)
 
 	return {
 		"center": center,
@@ -247,8 +264,9 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 # cell coords, so a shared edge vertex averages the same four global cells from
 # either chunk -> weights match exactly across seams (no stitching). Smoothly
 # ramped rather than stepped.
-func vertex_colors(coord: Vector2i) -> PackedColorArray:
+func vertex_colors(coord: Vector2i, lights: PackedColorArray = PackedColorArray()) -> PackedColorArray:
 	var per_edge := SAMPLES - 1
+	var has_light := not lights.is_empty()
 	var colors := PackedColorArray()
 	colors.resize(SAMPLES * SAMPLES)
 	for zi in SAMPLES:
@@ -262,9 +280,40 @@ func vertex_colors(coord: Vector2i) -> PackedColorArray:
 				+ track_weights.get(Vector2i(gx - 1, gz), 0.0)
 				+ track_weights.get(Vector2i(gx, gz), 0.0)
 			) / 4.0
-			colors[zi * SAMPLES + xi] = Color(
-				default_cell_color.r, default_cell_color.g, default_cell_color.b, w)
+			# RGB = ground tint × baked light; ALPHA = road blend weight.
+			var idx := zi * SAMPLES + xi
+			var lgt := lights[idx] if has_light else Color(1, 1, 1)
+			colors[idx] = Color(
+				default_cell_color.r * lgt.r,
+				default_cell_color.g * lgt.g,
+				default_cell_color.b * lgt.b,
+				w)
 	return colors
+
+
+# Bake the static terrain shading for one vertex into a light tint. Mirrors the
+# math in shaders/ps1_models_lit.gdshader (hemisphere ambient + one directional
+# sun), but on the CPU at generation time using a normal taken from the noise
+# height field via central differences — continuous across world coords, so it
+# matches at chunk seams with no stitching. Returns white when light_amount is 0
+# (a no-op multiply). The road-flattened heights are ignored for the normal: the
+# road is near-flat anyway and sampling the pure field keeps seams consistent.
+func _bake_light(noises: Array, amplitudes: PackedFloat32Array, wx: float, wz: float) -> Color:
+	if light_amount <= 0.0:
+		return Color(1, 1, 1)
+	var hl := _sample_height(noises, amplitudes, wx - CELL_M, wz)
+	var hr := _sample_height(noises, amplitudes, wx + CELL_M, wz)
+	var hd := _sample_height(noises, amplitudes, wx, wz - CELL_M)
+	var hu := _sample_height(noises, amplitudes, wx, wz + CELL_M)
+	var n := Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized()
+	var hemi := n.y * 0.5 + 0.5
+	var ambient := ground_color.lerp(sky_color, hemi)
+	var ndl: float = maxf(n.dot(sun_dir), 0.0)
+	var lit := Color(
+		ambient.r + sun_color.r * ndl,
+		ambient.g + sun_color.g * ndl,
+		ambient.b + sun_color.b * ndl)
+	return Color(1, 1, 1).lerp(lit, light_amount)
 
 
 # Chunk coordinate (integer grid) containing a world position.

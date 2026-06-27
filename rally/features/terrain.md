@@ -103,11 +103,22 @@ the true terrain across a transition band just outside the road edge, using
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.
-- `vertex_colors(coord)` — per grid vertex, RGB is `default_cell_color`; ALPHA is
-  the average of the (up to 4) surrounding cells' `track_weights`, so the road
-  fade is smooth over the band. `track_weights` is keyed by **global** cell
-  coords, so a shared edge vertex averages the same four cells from either chunk
-  → weights match exactly across seams.
+- `vertex_colors(coord, lights)` — per grid vertex, RGB is `default_cell_color ×
+  baked light`; ALPHA is the average of the (up to 4) surrounding cells'
+  `track_weights`, so the road fade is smooth over the band. `track_weights` is
+  keyed by **global** cell coords, so a shared edge vertex averages the same four
+  cells from either chunk → weights match exactly across seams.
+- `_bake_light(noises, amplitudes, wx, wz)` — the static terrain shading, baked
+  ONCE per vertex at generation time into the colour RGB above (the flat terrain
+  shader already multiplies RGB into ALBEDO, so this costs nothing per frame).
+  Mirrors `shaders/ps1_models_lit.gdshader` (hemisphere ambient + one directional
+  sun) but on the CPU, with the normal taken from the noise height field via
+  central differences (`_sample_height` at ±1 cell) — continuous across world
+  coords, so it matches at chunk seams with no stitching. Returns white when
+  `light_amount` is 0. Params (`light_amount`, `sun_dir`, `sun_color`,
+  `sky_color`, `ground_color`) are pushed from `GameConfig` by `world.gd`
+  (`apply_terrain_light`) before the initial build. Valid because the terrain and
+  sun never move; the car can't bake (it rotates) and lights in its shader.
 - `set_track(centerline, width, transition_m)` — call
   `bake_track`, and **rebuild any currently-loaded chunks** (full `setup()`, since
   geometry changes). At startup the ring is deferred (see below), so nothing is

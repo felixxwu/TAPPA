@@ -336,15 +336,19 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var wheel_color := Color(0.12, 0.12, 0.12)
 @export var wheel_spoke_color := Color(0.85, 0.85, 0.78)
 
-@export_group("Car Lighting")
-# Fake per-vertex lighting baked into ps1_models.gdshader (the material stays
-# unshaded — no light nodes, no shadows, no extra render pass). Applied only to
-# the car meshes; the terrain leaves the shader's light_amount at 0 so it stays
-# flat. See features/rendering.md.
-## 0 = flat (unlit), 1 = full fake lighting. How strongly the sun/ambient tint
-## the car.
+@export_group("Lighting")
+# Fake hemisphere-ambient + single-directional-sun shading (no light nodes, no
+# shadows, no extra render pass — see features/rendering.md). The CAR computes
+# it per-vertex in shaders/ps1_models_lit.gdshader (it rotates, so its lit side
+# changes each frame). The TERRAIN, which never moves under a sun that never
+# moves, bakes the identical math into its vertex colours ONCE at generation
+# time (terrain_manager._bake_light) — zero per-frame cost. Both share the sun
+# direction and colours below; each has its own amount.
+## 0 = flat (unlit), 1 = full shading. Strength on the car.
 @export_range(0.0, 1.0) var car_light_amount := 1.0
-## World-space direction TO the sun (need not be normalised; the shader does it).
+## 0 = flat (unlit), 1 = full shading. Strength baked into the terrain.
+@export_range(0.0, 1.0) var terrain_light_amount := 1.0
+## World-space direction TO the sun (need not be normalised; normalised on use).
 @export var sun_direction := Vector3(0.4, 0.9, 0.35)
 ## Directional "sun" contribution added on lit-facing surfaces.
 @export var sun_color := Color(0.5, 0.5, 0.5)
@@ -540,6 +544,17 @@ func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("sun_color", sun_color)
 	mat.set_shader_parameter("sky_color", sky_color)
 	mat.set_shader_parameter("ground_color", ground_color)
+
+
+# Push the shared sun/ambient values + the terrain amount onto a TerrainManager,
+# which bakes them into vertex colours when chunks generate. Call BEFORE the
+# initial terrain build so the shading is baked into the first chunks.
+func apply_terrain_light(tm: TerrainManager) -> void:
+	tm.light_amount = terrain_light_amount
+	tm.sun_dir = sun_direction.normalized()
+	tm.sun_color = sun_color
+	tm.sky_color = sky_color
+	tm.ground_color = ground_color
 
 
 # The scalar tree-scatter knobs packed into the Dictionary TreeScatter.scatter

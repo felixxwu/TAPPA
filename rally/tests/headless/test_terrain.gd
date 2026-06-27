@@ -220,6 +220,42 @@ func test_vertex_colors_carry_road_weight_in_alpha() -> void:
 	assert_almost_eq(colors[samples * samples - 1].a, 0.0, 0.001, "vertex away from road -> alpha 0")
 
 
+func test_terrain_bakes_static_lighting_into_vertex_colours() -> void:
+	# Steep layer so vertex normals vary and the baked shading has something to
+	# shade. White tint -> a vertex's RGB IS the baked light, all grey (grey sun).
+	var lit := _make_manager([_make_layer(20.0, 6.0)] as Array[TerrainLayer], 7)
+	lit.default_cell_color = Color(1, 1, 1)
+	lit.light_amount = 1.0
+	lit.sun_dir = Vector3(0.4, 0.9, 0.35).normalized()
+	lit.sun_color = Color(0.5, 0.5, 0.5)
+	lit.sky_color = Color(0.5, 0.5, 0.5)
+	lit.ground_color = Color(0.35, 0.35, 0.35)
+	var colors: PackedColorArray = lit.compute_chunk_data(Vector2i(0, 0))["colors"]
+	var lo := 1.0
+	var hi := 0.0
+	for c in colors:
+		assert_almost_eq(c.r, c.g, 1e-5, "grey light keeps channels equal")
+		lo = minf(lo, c.r)
+		hi = maxf(hi, c.r)
+	# Range is [ground .. sky+sun] = [0.35 .. 1.0]; the slopes must produce real
+	# variation rather than a constant tint, and every value stays in range.
+	assert_gt(hi - lo, 0.02, "baked shading varies across the sloped terrain")
+	assert_true(lo >= 0.35 - 1e-4, "darkest vertex no darker than the ambient floor")
+	assert_true(hi <= 1.0 + 1e-4, "brightest vertex stays within range")
+
+
+func test_terrain_lighting_off_keeps_flat_tint() -> void:
+	# light_amount 0 -> the bake is a no-op white multiply, RGB is the raw tint.
+	var flat := _make_manager([_make_layer(20.0, 6.0)] as Array[TerrainLayer], 7)
+	flat.default_cell_color = Color(0.2, 0.4, 0.6)
+	flat.light_amount = 0.0
+	var colors: PackedColorArray = flat.compute_chunk_data(Vector2i(0, 0))["colors"]
+	for c in colors:
+		assert_almost_eq(c.r, 0.2, 1e-5, "r is the flat tint when unlit")
+		assert_almost_eq(c.g, 0.4, 1e-5, "g is the flat tint when unlit")
+		assert_almost_eq(c.b, 0.6, 1e-5, "b is the flat tint when unlit")
+
+
 func test_threaded_generation_loads_ring() -> void:
 	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
 	m.use_threaded_generation = true
