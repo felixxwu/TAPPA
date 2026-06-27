@@ -29,9 +29,10 @@ The session **brain** is done; what's left is the diegetic dressing around it,
 all owned by the deferred full menus build:
 
 - ~~**Pre-launch presence** — the ahead/behind atmosphere cars at the Start line.~~
-  ✅ **DONE.** The pre-event start-line scene (briefing panel + staggered atmosphere
-  presence cars, launched into the countdown) shipped as `scripts/start_line.gd`
-  (`StageManager` STAGING phase + `world.gd` wiring). See
+  ✅ **DONE.** The pre-event start-line sequence shipped as `scripts/start_line.gd`
+  (`StageManager` STAGING phase + `world.gd` wiring): a TIME-TO-BEAT reveal + orbit
+  camera with a leader car ahead and a trailing car behind, the leader driving off
+  and the field scooting up on launch, then a fade into the countdown. See
   [`features/start-line.md`](../features/start-line.md).
 - **Standings interstitial** — between events 0→1→2 it's currently a straight
   reload; `RallySession` already emits `standings_ready(i)` for the overlay

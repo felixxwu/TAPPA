@@ -195,6 +195,23 @@ func opponent_field() -> Array:
 	return _opponent_field
 
 
+# The "time to beat" shown at the start line: the fastest non-DNF rival's time (ms)
+# for the CURRENT event. The opponents set it (it's a real, beatable stage time),
+# unlike the derived par which is faster than the whole field. -1 if no classified
+# rival has a time for this event (empty field / before a rally starts).
+func current_event_target_ms() -> int:
+	if _event_index < 0:
+		return -1
+	var best := -1
+	for opp in _opponent_field:
+		var times: Array = opp.get("event_times_ms", [])
+		if _event_index < times.size():
+			var t := int(times[_event_index])
+			if t >= 0 and (best < 0 or t < best):
+				best = t
+	return best
+
+
 # The most recent rally's finish summary (for the podium scene). {} before any.
 func last_result() -> Dictionary:
 	return _last_result

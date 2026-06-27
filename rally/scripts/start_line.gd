@@ -1,225 +1,225 @@
 class_name StartLine
 extends Node3D
-# The pre-event start-line scene (todo/menus.md location 2) — the diegetic moment
-# between picking a car in HQ and the 3·2·1·GO countdown. It runs inside the live
-# run scene (main.tscn) once the world is built and a RallySession is active, and
-# shows two things while the car is held locked by the StageManager's STAGING phase:
+# The pre-event start-line sequence (todo/menus.md location 2) — the cinematic
+# moment between picking a car in HQ and the 3·2·1·GO countdown. It runs inside the
+# live run scene (main.tscn) once the world is built and a RallySession is active,
+# while the car is held locked by the StageManager's STAGING phase:
 #
-#   * a world-anchored BRIEFING panel — rally name, event N of 3, the car
-#     restriction, and the fielded car + its HP bar, "so the risk is legible
-#     before you commit" (gameplay.md). A SubViewport Control rendered onto a
-#     billboarded Sprite3D — the richer diegetic panel of menus.md rig 2.
-#   * a few atmosphere PRESENCE cars staggered at the grid — flavour only, NOT
-#     the real opponent field (that's RallyLibrary's per-seed roster). Frozen,
-#     collision-off, silenced car props, reusing the HQ car-park prop pattern.
-#
-# The player launches with menu_select (Enter / gamepad A) or a tap; StartLine then
-# hides the briefing and calls StageManager.begin_countdown() to start the run.
+#   1. REVEAL  — a flat overlay shows the "TIME TO BEAT" (the fastest rival's stage
+#      time, set by the opponents) while an orbit camera circles the car, which is
+#      queued between a LEADER car ahead and a TRAILING car behind. The driving HUD
+#      is hidden. The player launches with the Start button, menu_select or a tap.
+#   2. LAUNCH  — the leader "drives off" ahead and the trailing car scoots up toward
+#      the line over start_drive_off_seconds.
+#   3. FADE    — the screen fades to black; at full black the camera hands back to
+#      the chase camera, the driving UI returns and StageManager.begin_countdown()
+#      starts the countdown; then it fades back in.
 #
 # Created and wired by world.gd (session runs only). A plain dev boot of main.tscn
 # never builds a StartLine and the StageManager goes straight to the countdown.
 
 const CAR_SCENE := preload("res://car.tscn")
 
-var _stage_manager: Node       # the StageManager — begin_countdown() on launch
+# Sequence phases. ORBIT waits for the launch; the rest are time-driven in _process.
+enum Seq { ORBIT, DRIVE_OFF, FADE_OUT, FADE_IN, DONE }
+
+var _seq: int = Seq.ORBIT
+var _seq_t := 0.0          # seconds into the current timed phase
+var _orbit_angle := 0.0    # accumulated orbit camera angle (rad)
 var _launched := false
 
-# Diegetic nodes.
-var _briefing: Node3D          # holds the billboarded panel sprite
-var _viewport: SubViewport     # renders the briefing Control onto the sprite
-var _presence: Array = []      # the parked atmosphere car props
+# Refs handed in by world.gd (camera/HUD optional so tests can omit them).
+var _player: Node3D
+var _stage_manager: Node
+var _chase_camera: Camera3D
+var _hud: CanvasLayer
+var _mobile: CanvasLayer
 
-# Panel controls kept so tests (and a future refresh) can read them without
-# depending on the SubViewport actually rendering under headless.
-var _rally_label: Label
-var _event_label: Label
-var _restriction_label: Label
-var _car_label: Label
-var _hp_bar: ProgressBar
-var _hp_label: Label
-var _prompt_label: Label
+# Nodes this scene owns.
+var _orbit_cam: Camera3D
+var _overlay: CanvasLayer
+var _start_button: Button
+var _target_label: Label
+var _subtitle_label: Label
+var _fade: CanvasLayer
+var _fade_rect: ColorRect
+var _leader: Node3D     # the car ahead — drives off on launch
+var _trailer: Node3D    # the car behind — scoots up on launch
+
+# Queue motion captured at setup (world space).
+var _start_xform: Transform3D
+var _leader_from := Vector3.ZERO
+var _leader_to := Vector3.ZERO
+var _trailer_from := Vector3.ZERO
+var _trailer_to := Vector3.ZERO
 
 
 func _cfg() -> GameConfig:
 	return Config.data
 
 
-# Build the start-line scene around the fielded car. `start_xform` is the car's
-# global pose at the grid (its spawn), used to lay out the panel + presence cars;
-# `terrain` (a TerrainManager, optional) lets presence cars sit on the ground.
-func setup(car: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary, event_index: int) -> void:
+# Build the start-line sequence around the fielded car. `target_ms` is the time to
+# beat (RallySession.current_event_target_ms()); `terrain` (optional) sits the queue
+# cars on the ground; `chase_camera` / `hud` / `mobile` are handed back at the fade.
+func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
+		event_index: int, target_ms: int, chase_camera: Camera3D = null,
+		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
+	_player = player
 	_stage_manager = stage_manager
-	var start_xform := car.global_transform
-	_build_briefing(car, rally, event_index, start_xform)
-	_spawn_presence(rally, start_xform, terrain)
+	_chase_camera = chase_camera
+	_hud = hud
+	_mobile = mobile
+	_start_xform = player.global_transform
+	# Hide the driving UI; the reveal is camera-only until the fade hands it back.
+	if _hud != null:
+		_hud.visible = false
+	if _mobile != null:
+		_mobile.visible = false
+	_build_orbit_camera()
+	_build_overlay(rally, event_index, target_ms)
+	_build_fade()
+	_spawn_queue(rally, terrain)
+	_update_orbit()
 
 
-# --- Briefing panel (world-anchored SubViewport -> billboarded Sprite3D) ------
+# --- Orbit camera ------------------------------------------------------------
 
-func _build_briefing(car: Node3D, rally: Dictionary, event_index: int, start_xform: Transform3D) -> void:
+func _build_orbit_camera() -> void:
+	_orbit_cam = Camera3D.new()
+	_orbit_cam.fov = 70.0
+	_orbit_cam.current = true  # take over from the chase camera for the reveal
+	add_child(_orbit_cam)
+
+
+# Place the orbit camera on its circle around the car at the current angle.
+func _update_orbit() -> void:
+	if _orbit_cam == null:
+		return
 	var cfg := _cfg()
-	_briefing = Node3D.new()
-	_briefing.name = "Briefing"
-	add_child(_briefing)
-	_briefing.global_position = start_xform * cfg.start_briefing_offset
-
-	# A SubViewport holding the panel Control. Transparent so only the panel shows;
-	# UPDATE_ALWAYS keeps it live (cheap — a static panel) and renders in-game while
-	# headless simply never produces pixels, which the logic below doesn't need.
-	_viewport = SubViewport.new()
-	_viewport.size = Vector2i(360, 300)
-	_viewport.transparent_bg = true
-	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	_briefing.add_child(_viewport)
-	_viewport.add_child(_build_panel(car, rally, event_index))
-
-	var sprite := Sprite3D.new()
-	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	sprite.shaded = false
-	sprite.double_sided = true
-	sprite.pixel_size = cfg.start_briefing_pixel_size
-	sprite.texture = _viewport.get_texture()
-	_briefing.add_child(sprite)
+	var center := _player.global_position if _player != null else _start_xform.origin
+	center += Vector3.UP * (cfg.start_orbit_height * 0.4)
+	var eye := center + Vector3(
+		cos(_orbit_angle) * cfg.start_orbit_radius,
+		cfg.start_orbit_height,
+		sin(_orbit_angle) * cfg.start_orbit_radius)
+	_orbit_cam.look_at_from_position(eye, center, Vector3.UP)
 
 
-# The briefing Control tree (lives inside the SubViewport). References to the live
-# labels / HP bar are retained on the StartLine for tests + future refresh.
-func _build_panel(car: Node3D, rally: Dictionary, event_index: int) -> Control:
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.07, 0.09, 0.13, 0.94)
-	style.border_color = Color(0.9, 0.7, 0.25, 0.9)
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(8)
-	style.set_content_margin_all(16)
-	panel.add_theme_stylebox_override("panel", style)
+# --- Overlay (flat "time to beat" card over the orbiting scene) --------------
 
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 8)
-	panel.add_child(col)
+func _build_overlay(rally: Dictionary, event_index: int, target_ms: int) -> void:
+	_overlay = CanvasLayer.new()
+	_overlay.layer = 5  # above the HUD (2) / mobile (3), below the fade
+	add_child(_overlay)
 
-	_rally_label = _line(col, String(rally.get("name", "Rally")), 30)
-	_rally_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.alignment = BoxContainer.ALIGNMENT_CENTER
+	root.add_theme_constant_override("separation", 6)
+	_overlay.add_child(root)
+
+	var heading := Label.new()
+	heading.text = "TIME TO BEAT"
+	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	heading.add_theme_font_size_override("font_size", 20)
+	heading.modulate = Color(1, 1, 1, 0.85)
+	root.add_child(heading)
+
+	_target_label = Label.new()
+	_target_label.text = _format_ms(target_ms)
+	_target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_target_label.add_theme_font_size_override("font_size", 64)
+	_target_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+	root.add_child(_target_label)
 
 	var total: int = rally.get("events", []).size()
 	if total <= 0:
 		total = RallySession.EVENTS_PER_RALLY
-	_event_label = _line(col, "Event %d of %d" % [event_index + 1, total], 18)
+	_subtitle_label = Label.new()
+	_subtitle_label.text = "%s — Event %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total]
+	_subtitle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_subtitle_label.add_theme_font_size_override("font_size", 16)
+	root.add_child(_subtitle_label)
 
-	_restriction_label = _line(col, "Eligible: %s" % _restriction_text(rally.get("restriction", {})), 14)
-	_restriction_label.modulate = Color(1, 1, 1, 0.8)
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 20)
+	root.add_child(spacer)
 
-	_sep(col)
+	_start_button = Button.new()
+	_start_button.text = "Start"
+	_start_button.focus_mode = Control.FOCUS_NONE
+	_start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_start_button.custom_minimum_size = Vector2(220, 52)
+	_start_button.pressed.connect(launch)
+	root.add_child(_start_button)
 
-	_car_label = _line(col, _car_name(car), 20)
-
-	# HP row: a real bar (the "risk is legible" cue), or "INF" for the immortal starter.
-	var hp_row := HBoxContainer.new()
-	hp_row.add_theme_constant_override("separation", 8)
-	col.add_child(hp_row)
-	_hp_label = Label.new()
-	_hp_label.add_theme_font_size_override("font_size", 14)
-	_hp_label.text = "HP"
-	hp_row.add_child(_hp_label)
-	_hp_bar = ProgressBar.new()
-	_hp_bar.max_value = 1.0
-	_hp_bar.step = 0.001
-	_hp_bar.show_percentage = false
-	_hp_bar.custom_minimum_size = Vector2(180, 16)
-	_hp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hp_row.add_child(_hp_bar)
-	_apply_hp(car)
-
-	_sep(col)
-
-	_prompt_label = _line(col, "Press ENTER or tap to launch", 16)
-	_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_prompt_label.modulate = Color(0.7, 0.9, 1.0)
-	return panel
+	var hint := Label.new()
+	hint.text = "Press ENTER or tap to launch"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 14)
+	hint.modulate = Color(0.7, 0.9, 1.0)
+	root.add_child(hint)
 
 
-func _line(parent: Node, text: String, size: int) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	parent.add_child(l)
-	return l
+# m:ss.cc, or an em dash when there's no rival time to show.
+func _format_ms(ms: int) -> String:
+	if ms < 0:
+		return "—"
+	var seconds := ms / 1000.0
+	var minutes := int(seconds / 60.0)
+	var rem := seconds - minutes * 60.0
+	return "%d:%05.2f" % [minutes, rem]
 
 
-func _sep(parent: Node) -> void:
-	var s := Control.new()
-	s.custom_minimum_size = Vector2(0, 4)
-	parent.add_child(s)
+# --- Fade-to-black overlay ---------------------------------------------------
+
+func _build_fade() -> void:
+	_fade = CanvasLayer.new()
+	_fade.layer = 100  # above everything, so the transition fully covers the screen
+	add_child(_fade)
+	_fade_rect = ColorRect.new()
+	_fade_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade_rect.color = Color(0, 0, 0, 0)
+	_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade.add_child(_fade_rect)
 
 
-# Fill the HP bar from the car's damage model (immortal cars show full + "INF").
-func _apply_hp(car: Node) -> void:
-	var dmg = car.get("damage") if car != null else null
-	if dmg == null:
-		_hp_bar.value = 1.0
-		_hp_label.text = "HP"
-		return
-	if bool(dmg.immortal):
-		_hp_bar.value = 1.0
-		_hp_bar.modulate = Color(0.6, 0.85, 1.0)
-		_hp_label.text = "INF HP"
-		return
-	var frac := clampf(dmg.hp / dmg.max_hp, 0.0, 1.0) if dmg.max_hp > 0.0 else 0.0
-	_hp_bar.value = frac
-	_hp_bar.modulate = Color.from_hsv(frac * 0.33, 0.8, 0.95)  # green→amber→red, matches the HUD
-	_hp_label.text = "%d/%d HP" % [roundi(dmg.hp), roundi(dmg.max_hp)]
+# --- Queue cars (leader ahead, trailer behind) -------------------------------
 
-
-func _car_name(car: Node) -> String:
-	if car != null and car.has_method("current_car_name"):
-		var n: String = car.current_car_name()
-		if n != "":
-			return n
-	return "Your car"
-
-
-# --- Presence cars (atmosphere only) -----------------------------------------
-
-# Stagger a few frozen car props behind the player at the grid, alternating sides
-# and stepping back a row every two cars. Models are picked deterministically from
-# the rally's seed so the line-up is stable for a given event.
-func _spawn_presence(rally: Dictionary, start_xform: Transform3D, terrain: Node) -> void:
+# Spawn the two atmosphere cars that bookend the player in the start queue. They are
+# frozen, collision-off, silenced car props (the HQ car-park pattern); models are
+# picked deterministically from the rally seed so the queue is stable per event.
+func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
 	var cfg := _cfg()
-	var count: int = cfg.start_presence_count
-	if count <= 0:
-		return
-	var seed_base := _presence_seed(rally)
-	for i in count:
-		var side := -1.0 if i % 2 == 0 else 1.0
-		# Step back a row every two cars (0,0,1,1,2,…); float math avoids the
-		# integer-division warning while keeping the same stepping.
-		var row := floorf(float(i) / 2.0) + 1.0
-		var local := Vector3(side * cfg.start_presence_lateral, 0.0, row * cfg.start_presence_longitudinal)
-		var pos := start_xform * local
-		if terrain != null and terrain.has_method("height_at"):
-			pos.y = terrain.height_at(pos.x, pos.z) + (start_xform.origin.y - _terrain_floor(terrain, start_xform.origin))
-		var model_index := (seed_base + i) % CarLibrary.CARS.size()
-		_presence.append(_spawn_prop(model_index, pos, start_xform.basis))
+	var gap := cfg.start_queue_gap
+	# Local -Z is the car's nose, so the leader is ahead (negative Z), trailer behind.
+	_leader_from = _ground(_start_xform * Vector3(0, 0, -gap), terrain)
+	_leader_to = _ground(_start_xform * Vector3(0, 0, -(gap + cfg.start_drive_off_distance)), terrain)
+	_trailer_from = _ground(_start_xform * Vector3(0, 0, gap), terrain)
+	_trailer_to = _ground(_start_xform * Vector3(0, 0, gap * 0.4), terrain)
+	var seed_base := _queue_seed(rally)
+	_leader = _spawn_prop(seed_base % CarLibrary.CARS.size(), _leader_from)
+	_trailer = _spawn_prop((seed_base + 1) % CarLibrary.CARS.size(), _trailer_from)
 
 
-# Ride height of the player car above the terrain at its spawn — reused so presence
-# cars sit at the same height over their (possibly different) ground sample.
-func _terrain_floor(terrain: Node, origin: Vector3) -> float:
+# Drop a world point onto the terrain, keeping the player's ride height above it.
+func _ground(pos: Vector3, terrain: Node) -> Vector3:
 	if terrain != null and terrain.has_method("height_at"):
-		return terrain.height_at(origin.x, origin.z)
-	return origin.y
+		var ride: float = _start_xform.origin.y - terrain.height_at(_start_xform.origin.x, _start_xform.origin.z)
+		pos.y = terrain.height_at(pos.x, pos.z) + ride
+	return pos
 
 
-# A parked, silent, physics-frozen car prop (the HQ car-park pattern): its own mesh
-# copies so a mixed line-up keeps each body at its true size, no collision, no sim.
-func _spawn_prop(model_index: int, pos: Vector3, heading: Basis) -> Node3D:
+# A parked, silent, physics-frozen car prop facing the start heading, with its own
+# mesh copies so a mixed queue keeps each body at its true size (car.tscn shares
+# mesh sub-resources between instances).
+func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 	var car := CAR_SCENE.instantiate()
 	add_child(car)
 	if car.has_method("apply_car"):
 		car.apply_car(model_index)
 	_dup_meshes(car)
-	car.global_transform = Transform3D(heading, pos)
+	car.global_transform = Transform3D(_start_xform.basis, pos)
 	car.freeze = true
 	car.collision_layer = 0
 	car.collision_mask = 0
@@ -237,18 +237,61 @@ func _dup_meshes(car: Node) -> void:
 			m.mesh = m.mesh.duplicate()
 
 
-# Deterministic per-rally seed for the presence line-up (stable across re-entries).
-func _presence_seed(rally: Dictionary) -> int:
+# Deterministic per-rally seed for the queue line-up (stable across re-entries).
+func _queue_seed(rally: Dictionary) -> int:
 	var events: Array = rally.get("events", [])
 	if not events.is_empty():
 		return int(events[0].get("seed", 0))
 	return 0
 
 
-# --- Launch ------------------------------------------------------------------
+# --- Sequence ----------------------------------------------------------------
+
+func _process(delta: float) -> void:
+	match _seq:
+		Seq.ORBIT:
+			_advance_orbit(delta)
+		Seq.DRIVE_OFF:
+			_advance_orbit(delta)
+			_seq_t += delta
+			var cfg := _cfg()
+			var u := clampf(_seq_t / maxf(cfg.start_drive_off_seconds, 0.0001), 0.0, 1.0)
+			var e := ease(u, 0.4)  # ease-out so the cars surge then settle
+			if _leader != null:
+				_leader.global_position = _leader_from.lerp(_leader_to, e)
+			if _trailer != null:
+				_trailer.global_position = _trailer_from.lerp(_trailer_to, e)
+			if _seq_t >= cfg.start_drive_off_seconds:
+				if _leader != null:
+					_leader.visible = false  # gone up the road; the fade hides the pop
+				_seq = Seq.FADE_OUT
+				_seq_t = 0.0
+		Seq.FADE_OUT:
+			_seq_t += delta
+			var fade := maxf(_cfg().start_fade_seconds, 0.0001)
+			_fade_rect.color.a = clampf(_seq_t / fade, 0.0, 1.0)
+			if _seq_t >= _cfg().start_fade_seconds:
+				_handoff()
+				_seq = Seq.FADE_IN
+				_seq_t = 0.0
+		Seq.FADE_IN:
+			_seq_t += delta
+			var fade := maxf(_cfg().start_fade_seconds, 0.0001)
+			_fade_rect.color.a = clampf(1.0 - _seq_t / fade, 0.0, 1.0)
+			if _seq_t >= _cfg().start_fade_seconds:
+				_fade.visible = false
+				_seq = Seq.DONE
+		Seq.DONE:
+			pass
+
+
+func _advance_orbit(delta: float) -> void:
+	_orbit_angle += delta * _cfg().start_orbit_speed
+	_update_orbit()
+
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _launched:
+	if _seq != Seq.ORBIT:
 		return
 	if event.is_action_pressed("menu_select") \
 			or (event is InputEventScreenTouch and event.pressed) \
@@ -256,54 +299,47 @@ func _unhandled_input(event: InputEvent) -> void:
 		launch()
 
 
-# Hide the briefing and hand off to the countdown. Idempotent — a second tap during
-# the countdown does nothing (begin_countdown() is itself a no-op outside STAGING).
+# Begin the launch animation (leader drives off, field scoots up). Idempotent — only
+# fires from the waiting ORBIT phase, so a second tap during the sequence is ignored.
 func launch() -> void:
-	if _launched:
+	if _launched or _seq != Seq.ORBIT:
 		return
 	_launched = true
-	if _briefing != null:
-		_briefing.visible = false
-	if _viewport != null:
-		_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED  # stop rendering the hidden panel
+	if _overlay != null:
+		_overlay.visible = false
+	_seq = Seq.DRIVE_OFF
+	_seq_t = 0.0
+
+
+# At full black: hand the camera back to the chase camera, restore the driving UI,
+# and start the countdown. (The StageManager has been waiting in STAGING.)
+func _handoff() -> void:
+	if _orbit_cam != null:
+		_orbit_cam.current = false
+	if _chase_camera != null:
+		_chase_camera.current = true
+	if _hud != null:
+		_hud.visible = Config.data.hud_enabled
+	if _mobile != null:
+		_mobile.visible = true
 	if _stage_manager != null and _stage_manager.has_method("begin_countdown"):
 		_stage_manager.begin_countdown()
+
+
+# --- Readouts (for tests) ----------------------------------------------------
+
+func sequence_phase() -> int:
+	return _seq
 
 
 func has_launched() -> bool:
 	return _launched
 
 
-func presence_count() -> int:
-	return _presence.size()
-
-
-# --- Restriction text (mirrors hq.gd's wording for the briefing) -------------
-
-func _restriction_text(restriction: Dictionary) -> String:
-	if restriction.is_empty():
-		return "any car"
-	var parts: Array[String] = []
-	if restriction.has("drive_mode"):
-		parts.append("%s cars" % _drive_text(int(restriction["drive_mode"])))
-	if restriction.has("country"):
-		parts.append("%s cars" % String(restriction["country"]))
-	if restriction.has("car_type"):
-		parts.append("%s body" % String(restriction["car_type"]))
-	if restriction.has("engine_min_l"):
-		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
-	if restriction.has("engine_max_l"):
-		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	if restriction.has("pw_min"):
-		parts.append("power-to-weight >= %.2f" % float(restriction["pw_min"]))
-	if restriction.has("pw_max"):
-		parts.append("power-to-weight <= %.2f" % float(restriction["pw_max"]))
-	return ", ".join(parts)
-
-
-func _drive_text(drive_mode: int) -> String:
-	match drive_mode:
-		CarLibrary.RWD: return "RWD"
-		CarLibrary.AWD: return "AWD"
-		CarLibrary.FWD: return "FWD"
-		_: return "?"
+func queue_count() -> int:
+	var n := 0
+	if _leader != null:
+		n += 1
+	if _trailer != null:
+		n += 1
+	return n

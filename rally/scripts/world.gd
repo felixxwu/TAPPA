@@ -241,14 +241,17 @@ func _should_stage() -> bool:
 		and not RallyLibrary.by_id(RallySession.rally_id()).is_empty()
 
 
-# Build the start-line scene around the fielded car (briefing panel + presence
-# cars). The StageManager is already in STAGING; StartLine launches it.
+# Build the pre-event start-line sequence around the fielded car (the time-to-beat
+# reveal + orbit camera + start queue). The StageManager is already in STAGING;
+# StartLine hands the camera/UI back and launches it after its fade.
 func _build_start_line() -> void:
 	var rally := RallyLibrary.by_id(RallySession.rally_id())
 	_start_line = StartLine.new()
 	_start_line.name = "StartLine"
 	add_child(_start_line)
-	_start_line.setup($Car, $Floor, _stage_manager, rally, RallySession.event_index())
+	_start_line.setup($Car, $Floor, _stage_manager, rally, RallySession.event_index(),
+		RallySession.current_event_target_ms(), $ChaseCamera as Camera3D,
+		$HUD as CanvasLayer, $MobileControls as CanvasLayer)
 
 # Configure the car for the session's fielded OwnedCar; fall back to the default
 # car if the instance has vanished from the save (defensive).
