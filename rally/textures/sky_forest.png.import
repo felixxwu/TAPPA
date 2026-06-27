@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmb2crodouqje"
-path="res://.godot/imported/sky_sunset.png-dee8a90c2dfb3773ae15033f8ff56294.ctex"
+uid="uid://bjsbniu8vs2gf"
+path="res://.godot/imported/sky_forest.png-b9873bf5a32421b25d217f19ba354250.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://textures/sky_sunset.png"
-dest_files=["res://.godot/imported/sky_sunset.png-dee8a90c2dfb3773ae15033f8ff56294.ctex"]
+source_file="res://textures/sky_forest.png"
+dest_files=["res://.godot/imported/sky_forest.png-b9873bf5a32421b25d217f19ba354250.ctex"]
 
 [params]
 

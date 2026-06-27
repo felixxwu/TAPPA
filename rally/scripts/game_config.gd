@@ -355,8 +355,8 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## reads clearly above the haze.
 @export_range(0.0, 1.0) var fog_sky_affect := 0.15
 ## Fog / backdrop colour. Matched to the skybox's HORIZON (sampled from
-## textures/sky_sunset.png) so the distant terrain dissolves into the sky seam.
-@export var background_color := Color(0.589, 0.544, 0.520)
+## textures/sky_forest.png) so the distant terrain dissolves into the treeline seam.
+@export var background_color := Color(0.360, 0.350, 0.272)
 ## Coarse far-terrain backdrop (DistantTerrain) that gives the sky a horizon past
 ## the detailed chunk ring. Disable to fall back to fog-only edge hiding.
 @export var distant_terrain_enabled := true
