@@ -113,6 +113,10 @@ func _recompute_axles() -> void:
 
 func _physics_process(delta: float) -> void:
 	var cfg: GameConfig = Config.data
+	# Decay the damage model's post-hit impact cooldown (groups a sustained crash
+	# into one hit; see DamageModel.register_impact).
+	if damage != null:
+		damage.tick_cooldown(delta)
 	var engine := drivetrain.engine
 	# Discrete gear/mode actions only respond when controls are unlocked, so the
 	# player can't shift or change mode mid-countdown.

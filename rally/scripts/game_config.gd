@@ -221,6 +221,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 1000.0) var impact_min_impulse := 50.0
 ## HP lost per unit of contact impulse ABOVE impact_min_impulse.
 @export_range(0.0, 5.0) var hp_per_impulse := 0.1
+## Cap on the HP a SINGLE impact can cost, as a fraction of max HP — so no one crash
+## can wreck the car. At ~1/3 a car survives 2 big hits and the 3rd wrecks it.
+@export_range(0.0, 1.0) var impact_max_loss_frac := 0.34
+## After a damaging hit, ignore further impacts for this long (s). Groups a sustained
+## crash (pinned against / tumbling through obstacles) into ONE hit, not 30 per tick.
+@export_range(0.0, 5.0) var impact_cooldown_s := 0.7
 ## Fraction of engine power lost at 0 HP (caps the power-loss effect). The driven
 ## torque is scaled by 1 - d * this, where d is the damage fraction.
 @export_range(0.0, 1.0) var damage_power_loss_max := 0.4

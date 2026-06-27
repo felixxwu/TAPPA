@@ -65,10 +65,47 @@ func test_register_impact_reduces_hp_and_emits_damaged() -> void:
 	assert_almost_eq(dm.hp, 1000.0 - expected, 1e-5, "HP drained by the loss")
 	assert_almost_eq(got["loss"], expected, 1e-5, "damaged carries the loss")
 	assert_eq(got["point"], Vector3(1, 2, 3), "damaged carries the contact point")
-	# A sub-threshold hit costs nothing and does NOT emit.
+	# A sub-threshold hit costs nothing and does NOT emit. (The earlier hit started a
+	# cooldown, but a scrape would cost nothing regardless.)
 	got["count"] = 0
 	assert_eq(dm.register_impact(1.0, Vector3.ZERO, cfg), 0.0, "scrape costs nothing")
 	assert_eq(got["count"], 0, "no damaged signal for a no-cost hit")
+
+
+func test_single_impact_is_capped_and_cannot_wreck() -> void:
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0, false)
+	var wrecks := {"n": 0}
+	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
+	# A colossal single impact is capped to a fraction of max HP, so it can't wreck.
+	var loss := dm.register_impact(cfg.impact_min_impulse + 1.0e6, Vector3.ZERO, cfg)
+	assert_almost_eq(loss, 1000.0 * cfg.impact_max_loss_frac, 1e-3,
+		"a single impact is capped to impact_max_loss_frac of max HP")
+	assert_gt(dm.hp, 0.0, "one crash cannot wreck the car")
+	assert_eq(wrecks["n"], 0, "no wreck from a single hit")
+
+
+func test_cooldown_groups_a_crash_and_it_takes_several_hits_to_wreck() -> void:
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0, false)
+	var wrecks := {"n": 0}
+	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
+	var big := cfg.impact_min_impulse + 1.0e6
+	dm.register_impact(big, Vector3.ZERO, cfg)
+	var after_one := dm.hp
+	# A second impact during the cooldown (same crash, next tick) is ignored.
+	dm.register_impact(big, Vector3.ZERO, cfg)
+	assert_almost_eq(dm.hp, after_one, 1e-5, "impacts during the cooldown count as one hit")
+	# Separated big hits eventually wreck it — but it takes several.
+	var hits := 1
+	while dm.hp > 0.0 and hits < 10:
+		dm.tick_cooldown(cfg.impact_cooldown_s)  # let the cooldown expire
+		dm.register_impact(big, Vector3.ZERO, cfg)
+		hits += 1
+	assert_between(hits, 2, 4, "a car survives ~2-3 big hits before wrecking")
+	assert_eq(wrecks["n"], 1, "wrecked exactly once, on the final hit")
 
 
 # --- Effects scale with damage fraction --------------------------------------

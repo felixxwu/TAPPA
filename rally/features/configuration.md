@@ -90,6 +90,8 @@ See [stage.md](stage.md).
 |----------|---------|---------|
 | `impact_min_impulse` | 50.0 | Contact impulse (N·s) below which a hit costs no HP |
 | `hp_per_impulse` | 0.1 | HP lost per unit impulse above the threshold |
+| `impact_max_loss_frac` | 0.34 | Cap on one impact's HP loss, as a fraction of max HP (no single crash wrecks) |
+| `impact_cooldown_s` | 0.7 | Post-hit window where impacts are ignored (groups a crash into one hit) |
 | `damage_power_loss_max` | 0.4 | Fraction of engine power lost at 0 HP |
 | `damage_steer_bias_max` | 0.08 | Max wheel-alignment steer pull (rad) at 0 HP |
 | `hud_hp_enabled` | true | Show the in-run HP gauge (hidden for the immortal starter) |

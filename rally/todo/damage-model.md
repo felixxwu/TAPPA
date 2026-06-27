@@ -11,7 +11,10 @@
 
 Per-car HP pool (CarLibrary `max_hp`, mass-keyed) on the fielded car; impacts
 above `impact_min_impulse` drain it (`hp_per_impulse`, obstacle-group filtered so
-ground/road never chip); power and steer-alignment degrade with the damage
+ground/road never chip), with a per-hit cap (`impact_max_loss_frac` of max HP) and a
+post-hit cooldown (`impact_cooldown_s`) so one crash can't instantly wreck the car —
+a car survives ~2-3 big hits (the chassis contacts an obstacle every tick while
+pinned, so the cooldown groups a whole crash into one hit); power and steer-alignment degrade with the damage
 fraction `d` (`damage_power_loss_max` / `damage_steer_bias_max`, bias direction
 re-rolled per run); wreck at 0 HP emits `wrecked`, calls `Save.wreck_car`
 (upgrades returned then instance destroyed); the immortal starter skips all of

@@ -38,6 +38,17 @@ hp_loss = max(0, impulse - impact_min_impulse) * hp_per_impulse
 ```
 
 `hp_loss_for_impulse()` is a pure static so the conversion is unit-testable.
+
+Two guards stop a single crash from instantly wrecking the car (cars should survive
+2-3 big hits):
+- **Per-hit cap** — the loss is clamped to `impact_max_loss_frac` of max HP, so no
+  one impact can take more than ~1/3 of the bar.
+- **Post-hit cooldown** — after a damaging hit, impacts are ignored for
+  `impact_cooldown_s`. The chassis contacts an obstacle *every physics tick* while
+  it's pinned/tumbling, so without this one crash would register dozens of hits;
+  the cooldown groups a whole crash into a single hit. `car.gd._physics_process`
+  decays it via `damage.tick_cooldown(delta)`.
+
 A hit that costs HP emits `damaged(hp_loss, contact_point)` for the HUD/audio cue.
 
 ## Effects (scale with the damage fraction `d = 1 - hp/max_hp`)
@@ -72,13 +83,15 @@ hidden when `hud_hp_enabled` is off or for the immortal starter.
 
 ## Config knobs (`GameConfig`, *Damage* group)
 
-`impact_min_impulse`, `hp_per_impulse`, `damage_power_loss_max`,
+`impact_min_impulse`, `hp_per_impulse`, `impact_max_loss_frac`,
+`impact_cooldown_s`, `damage_power_loss_max`,
 `damage_steer_bias_max`, `hud_hp_enabled`, `hud_low_hp_warn_frac`. Per-car
 `max_hp` is CarLibrary metadata, **not** a `GameConfig` field. Tuning numbers are
 placeholders pending playtest (the mechanism is fixed, the values are not).
 
 ## Tests
 
-`tests/headless/test_damage_model.gd` (impulse→HP, effect scaling, bound/unbound
-wreck, upgrade return, immortal, persistence round-trip),
+`tests/headless/test_damage_model.gd` (impulse→HP, the per-hit cap + post-hit
+cooldown grouping a crash into one hit / needing several hits to wreck, effect
+scaling, bound/unbound wreck, upgrade return, immortal, persistence round-trip),
 `test_car.gd` (contact monitor + power-scale wiring), `test_hud.gd` (HP gauge).

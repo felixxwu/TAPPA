@@ -39,6 +39,10 @@ var instance_id := -1
 # +1 / -1 alignment-pull direction, re-rolled each run so it can't be pre-learnt
 # (todo/damage-model.md §3). Set via reroll_bias(); defaults to a pull, not 0.
 var align_bias_sign := 1.0
+# Seconds of impact immunity remaining after a damaging hit (impact_cooldown_s).
+# Ticked down by car.gd each physics frame (tick_cooldown). Groups one crash —
+# which contacts the chassis every tick while pinned — into a single hit.
+var _impact_cooldown := 0.0
 
 
 # Field the model for a run: bind it to an OwnedCar (or -1 for free-roam), set the
@@ -49,7 +53,13 @@ func field(p_max_hp: float, p_hp: float, p_immortal: bool, p_instance_id := -1) 
 	hp = clampf(p_hp, 0.0, max_hp)
 	immortal = p_immortal
 	instance_id = p_instance_id
+	_impact_cooldown = 0.0
 	reroll_bias()
+
+
+# Decay the post-hit impact cooldown. Called by car.gd each physics frame.
+func tick_cooldown(delta: float) -> void:
+	_impact_cooldown = maxf(0.0, _impact_cooldown - delta)
 
 
 # Re-roll the alignment-pull direction (±1). Random per run so a re-entry can pull
@@ -90,9 +100,16 @@ static func hp_loss_for_impulse(impulse: float, cfg: GameConfig) -> float:
 func register_impact(impulse: float, contact_point: Vector3, cfg: GameConfig) -> float:
 	if immortal:
 		return 0.0
+	# Within the post-hit cooldown the crash is still "in progress" — ignore it so a
+	# car pinned against a tree (which contacts every tick) loses HP once, not per frame.
+	if _impact_cooldown > 0.0:
+		return 0.0
 	var loss := hp_loss_for_impulse(impulse, cfg)
 	if loss <= 0.0:
 		return 0.0
+	# Cap a single hit so no one crash can wreck the car (survive 2-3 big hits).
+	loss = minf(loss, max_hp * cfg.impact_max_loss_frac)
+	_impact_cooldown = cfg.impact_cooldown_s
 	apply_loss(loss)
 	damaged.emit(loss, contact_point)
 	return loss
