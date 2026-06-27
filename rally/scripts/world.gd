@@ -116,11 +116,26 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# A Node3D's forward is -Z; project it onto the XZ plane.
 	var fwd := -xform.basis.z
 	var start_heading := Vector2(fwd.x, fwd.z).normalized()
+	# Staged runs (the start-line sequence) force a straight lead-in around the start
+	# line: generate the track from a point AHEAD so the leader has straight road to
+	# drive off down, and prepend a straight stub BEHIND for the trailing car. The
+	# generator — and the opponents' target times — are untouched; only the run-scene
+	# road/progress centerline gets the lead-in.
+	var staged := _should_stage()
+	var gen_start := start_pos
+	if staged:
+		gen_start = start_pos + start_heading * cfg.start_lead_in_ahead_m
 	var result := TrackGenerator.generate(
-		start_pos, start_heading, cfg.track_seed, cfg.track_turn_count, cfg.track_width,
+		gen_start, start_heading, cfg.track_seed, cfg.track_turn_count, cfg.track_width,
 		cfg.track_clearance)
+	# Road/progress centerline (with the lead-in for staged runs). The raw generated
+	# centerline still feeds the signs, so the start gate sits ahead of the launch
+	# point — the cars cross it as they pull away.
+	var road_centerline := result["centerline"] as Curve2D
+	if staged:
+		road_centerline = _with_start_lead_in(road_centerline, start_pos, start_heading, cfg)
 	var transition_m := cfg.track_transition_cells * TerrainManager.CELL_M
-	$Floor.set_track(result["centerline"], cfg.track_width, transition_m)
+	$Floor.set_track(road_centerline, cfg.track_width, transition_m)
 
 	if loading != null:
 		loading.set_step("Building terrain…")
@@ -138,7 +153,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# margin keeps a small, tunable gap between the nearest trees and the road.
 	var road_footprint := cfg.track_width + 2.0 * cfg.tree_road_margin_m
 	var road_cells := TrackGenerator.rasterize_cells(
-		(result["centerline"] as Curve2D).tessellate(), road_footprint)
+		road_centerline.tessellate(), road_footprint)
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(), cfg.track_seed)
 	var tree_field := BillboardField.new()
 	add_child(tree_field)
@@ -178,7 +193,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		_track_progress = TrackProgress.new()
 		_track_progress.name = "TrackProgress"
 		add_child(_track_progress)
-	_track_progress.setup(result["centerline"], $Car, $Floor as TerrainManager)
+	_track_progress.setup(road_centerline, $Car, $Floor as TerrainManager)
 	($HUD as CanvasLayer).track_progress = _track_progress
 
 	# Tire marks: gravel ruts laid behind the wheels while on the road
@@ -188,7 +203,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		_tire_marks = TireMarks.new()
 		_tire_marks.name = "TireMarks"
 		add_child(_tire_marks)
-	_tire_marks.setup(result["centerline"], $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
+	_tire_marks.setup(road_centerline, $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
 
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
@@ -197,9 +212,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		_stage_manager = StageManager.new()
 		_stage_manager.name = "StageManager"
 		add_child(_stage_manager)
-	# Staged runs hold the car in the start-line scene (briefing + presence) until
-	# the player launches; otherwise the countdown arms immediately, as before.
-	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, _should_stage())
+	# Staged runs hold the car in the start-line sequence until the player launches;
+	# otherwise the countdown arms immediately, as before. (`staged` computed above.)
+	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
 	# regeneration, e.g. entering a rally event).
@@ -252,6 +267,19 @@ func _build_start_line() -> void:
 	_start_line.setup($Car, $Floor, _stage_manager, rally, RallySession.event_index(),
 		RallySession.current_event_target_ms(), $ChaseCamera as Camera3D,
 		$HUD as CanvasLayer, $MobileControls as CanvasLayer)
+
+
+# Prepend a straight lead-in to a generated centerline: a stub BEHIND the start line
+# (so the trailing queue car sits on road) through the start, joining the generated
+# track (which was generated start_lead_in_ahead_m AHEAD, so start→track is straight
+# too). Both prepended segments are handle-free, so they're dead straight.
+func _with_start_lead_in(gen: Curve2D, start_2d: Vector2, heading_2d: Vector2, cfg: GameConfig) -> Curve2D:
+	var c := Curve2D.new()
+	c.add_point(start_2d - heading_2d * cfg.start_lead_in_behind_m)  # behind stub
+	c.add_point(start_2d)                                           # the start line
+	for i in gen.point_count:
+		c.add_point(gen.get_point_position(i), gen.get_point_in(i), gen.get_point_out(i))
+	return c
 
 # Configure the car for the session's fielded OwnedCar; fall back to the default
 # car if the instance has vanished from the save (defensive).

@@ -35,6 +35,16 @@ var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by
 # settles naturally. See todo/stage-start-and-end.md §2.
 var controls_locked := false
 
+# Scripted ("AI") control for non-player cars — the start-line queue (scripts/
+# start_line.gd) drives the leader/trailer with full physics so they pull away and
+# roll up with real suspension load. When true the car ignores global Input and
+# drives from these values instead (same axes/sign as the player inputs). Use axis
+# locks on the body to keep such a car straight; see start_line.gd.
+var ai_controlled := false
+var ai_throttle := 0.0    # -1..1, forward positive (brake_reverse..accelerate axis)
+var ai_steer := 0.0       # -1..1, left positive (steer_right..steer_left axis)
+var ai_handbrake := false
+
 
 func _ready() -> void:
 	var cfg: GameConfig = Config.data
@@ -119,8 +129,8 @@ func _physics_process(delta: float) -> void:
 		damage.tick_cooldown(delta)
 	var engine := drivetrain.engine
 	# Discrete gear/mode actions only respond when controls are unlocked, so the
-	# player can't shift or change mode mid-countdown.
-	if not controls_locked:
+	# player can't shift or change mode mid-countdown. Scripted cars never read them.
+	if not controls_locked and not ai_controlled:
 		if Input.is_action_just_pressed("toggle_gearbox"):
 			engine.auto = not engine.auto
 		if Input.is_action_just_pressed("cycle_drive_mode"):
@@ -133,7 +143,7 @@ func _physics_process(delta: float) -> void:
 
 	# Neutralise driver input while locked; the forced handbrake below holds the
 	# car on a slope without freezing the whole simulation.
-	var throttle := 0.0 if controls_locked else Input.get_axis("brake_reverse", "accelerate")
+	var throttle := ai_throttle if ai_controlled else (0.0 if controls_locked else Input.get_axis("brake_reverse", "accelerate"))
 	var fwd_pedal := maxf(throttle, 0.0)  # W
 	var rev_pedal := maxf(-throttle, 0.0)  # S
 	var moving_forward := linear_velocity.dot(-global_transform.basis.z) > 1.0
@@ -169,7 +179,7 @@ func _physics_process(delta: float) -> void:
 			brake_input = rev_pedal
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
-	var handbrake := controls_locked or Input.is_action_pressed("handbrake")
+	var handbrake := ai_handbrake if ai_controlled else (controls_locked or Input.is_action_pressed("handbrake"))
 	# Damage power loss: fade the driven torque as HP falls (1.0 healthy). 0 effect
 	# at full HP / for the immortal starter. See todo/damage-model.md §3.
 	drivetrain.power_scale = damage.power_multiplier(cfg)
@@ -207,7 +217,7 @@ func _physics_process(delta: float) -> void:
 		# slide can't spin the wheels to extreme angles. Only applied when
 		# moving forwards; when slow or reversing, plain input steering.
 		travel_angle = clampf(atan2(-local_vel.x, -local_vel.z), -PI / 3.0, PI / 3.0)
-	var steer_input := 0.0 if controls_locked else Input.get_axis("steer_right", "steer_left")
+	var steer_input := ai_steer if ai_controlled else (0.0 if controls_locked else Input.get_axis("steer_right", "steer_left"))
 	# Ramp the travel alignment in linearly from 0 at standstill to its full
 	# configured value at steer_assist_min_speed (≈30 km/h), so it doesn't fight
 	# low-speed input steering yet returns smoothly with no sudden jump as speed
@@ -242,7 +252,7 @@ func _physics_process(delta: float) -> void:
 			- roll_pitch_rate * cfg.level_assist_torque * LEVEL_ASSIST_DAMPING
 		)
 
-	if not controls_locked and Input.is_action_just_pressed("reset_car"):
+	if not controls_locked and not ai_controlled and Input.is_action_just_pressed("reset_car"):
 		_reset()
 
 

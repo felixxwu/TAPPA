@@ -77,6 +77,19 @@ pull** added to `steer_target` (step 3) and a **power scale** on the driven torq
 starter. `car.gd` also enables contact monitoring and reads obstacle-contact
 impulses in `_integrate_forces` to drain HP.
 
+## Control source (player / locked / scripted)
+
+`_physics_process` reads its throttle / steer / handbrake from one of three sources:
+- **Player** (default) — global `Input` actions.
+- **Locked** (`controls_locked`, set by [`StageManager`](stage.md)) — input neutralised
+  and the handbrake forced, so the car holds still during the countdown while the rest
+  of the sim (suspension, drag, camera) keeps running.
+- **Scripted** (`ai_controlled`) — the car ignores `Input` and drives from
+  `ai_throttle` / `ai_steer` / `ai_handbrake` (same axes/sign as the player inputs).
+  Used for the [start-line](start-line.md) queue cars, which run full physics (real
+  suspension load) under script while axis-locked to a straight line. Discrete actions
+  (shift / mode / reset) are ignored when locked or scripted.
+
 ## Braking summary
 
 | Input | Torque | Target |
