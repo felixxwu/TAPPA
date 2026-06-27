@@ -45,6 +45,8 @@
       the "opaque low-poly meshes" direction under item 2 — the code can't be
       verified in-engine until the models exist. Owner: Felix. See
       [item 2 → Alternative direction](#alternative-direction-opaque-low-poly-meshes-instead-of-cutout-billboards).
+      The model swap is also the prerequisite for the vegetation auto-LOD + sky
+      work in [`todo/distant-terrain-and-sky.md`](distant-terrain-and-sky.md).
 - [ ] **Decide the web-export threading model** (item 7): threaded build (smoother
       chunk loading) vs. single-threaded build (boots on more old / low-memory
       devices). This shapes the terrain-gen work and is a prerequisite for the web
