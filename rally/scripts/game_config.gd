@@ -397,6 +397,17 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Ambient colour on downward-facing surfaces (ground bounce).
 @export var ground_color := Color(0.35, 0.35, 0.35)
 
+@export_subgroup("Reflection")
+## Fake skybox reflection on the car (matcap). 0 = off, 1 = full strength. The
+## old car-game cheat: a pre-baked "chrome ball" image is indexed by the
+## view-space normal and added to the panels, so they catch a moving sky/horizon
+## highlight with no reflection probe or extra render pass. See
+## shaders/ps1_models_lit.gdshader and features/rendering.md.
+@export_range(0.0, 1.0) var car_reflection_amount := 0.5
+## The matcap sphere image sampled for the reflection — a photo/render of a
+## reflective ball. Swap it to change what the car appears to "reflect".
+@export var car_reflection_matcap: Texture2D = preload("res://textures/matcap_chrome.png")
+
 @export_group("Track")
 ## Total width of the generated track, in metres; cells within half this
 ## distance of the centerline are coloured as track.
@@ -584,6 +595,8 @@ func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("sun_color", sun_color)
 	mat.set_shader_parameter("sky_color", sky_color)
 	mat.set_shader_parameter("ground_color", ground_color)
+	mat.set_shader_parameter("matcap_texture", car_reflection_matcap)
+	mat.set_shader_parameter("matcap_amount", car_reflection_amount)
 
 
 # Push the shared sun/ambient values + the terrain amount onto a TerrainManager,
