@@ -12,7 +12,7 @@
 [ext_resource type="Script" uid="uid://da6jmm86ad2c" path="res://scripts/mobile_controls.gd" id="9_mobile"]
 [ext_resource type="Script" uid="uid://c1ihaadjtfrte" path="res://scripts/camera_manager.gd" id="10_cammgr"]
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
-[ext_resource type="Texture2D" uid="uid://bjsbniu8vs2gf" path="res://textures/sky_forest.png" id="12_sky"]
+[ext_resource type="Texture2D" uid="uid://djc8oestbfpa7" path="res://textures/sky_alpine.png" id="12_sky"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("12_sky")
@@ -24,7 +24,7 @@ sky_material = SubResource("sky_mat")
 background_mode = 2
 sky = SubResource("sky")
 fog_enabled = true
-fog_light_color = Color(0.36, 0.35, 0.272, 1)
+fog_light_color = Color(0.311, 0.315, 0.268, 1)
 fog_density = 0.005
 fog_sky_affect = 0.15
 

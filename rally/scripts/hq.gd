@@ -116,7 +116,7 @@ func _build_environment() -> void:
 	# Same skybox as the run scene (main.tscn) so HQ shares the look. The garage
 	# stays lit (directional + ambient below); the sky is just the backdrop.
 	var sky_mat := PanoramaSkyMaterial.new()
-	sky_mat.panorama = load("res://textures/sky_forest.png")
+	sky_mat.panorama = load("res://textures/sky_alpine.png")
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	e.background_mode = Environment.BG_SKY

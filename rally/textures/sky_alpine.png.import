@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bjsbniu8vs2gf"
-path="res://.godot/imported/sky_forest.png-b9873bf5a32421b25d217f19ba354250.ctex"
+uid="uid://djc8oestbfpa7"
+path="res://.godot/imported/sky_alpine.png-20c8adb75e147ab2989705d17142e242.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://textures/sky_forest.png"
-dest_files=["res://.godot/imported/sky_forest.png-b9873bf5a32421b25d217f19ba354250.ctex"]
+source_file="res://textures/sky_alpine.png"
+dest_files=["res://.godot/imported/sky_alpine.png-20c8adb75e147ab2989705d17142e242.ctex"]
 
 [params]
 

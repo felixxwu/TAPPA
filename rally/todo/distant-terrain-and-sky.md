@@ -5,20 +5,20 @@
 > `world._generate_track`, `GameConfig.distant_terrain_*`), **fog demotion**
 > (`fog_density` 0.005, `fog_sky_affect` 0.15, `background_color` matched to the
 > sky horizon), and the **skybox** (`PanoramaSkyMaterial` with the CC0
-> `textures/sky_forest.png` — a pine forest, Poly Haven `forest_slope` via the
-> drei-assets GitHub mirror — in `main.tscn` + `hq.gd`). Tests:
+> `textures/sky_alpine.png` — an open alpine sky with a pine treeline + distant
+> peaks, Poly Haven `immenstadter_horn` via the drei-assets GitHub mirror — in
+> `main.tscn` + `hq.gd`). Tests:
 > `test_terrain.gd::test_distant_terrain_*`, `test_render_smoke.gd` (skybox + fog
 > + backdrop). Docs: `features/rendering.md`, `features/terrain.md`.
 > **§2 (vegetation auto-LOD) is intentionally NOT done** — vegetation still pops
 > in at the old `tree_render_distance_m` (80 m); acceptable for now. It remains
 > gated on the billboard→opaque-model swap in `todo/performance-optimisations.md`.
 >
-> **Follow-ups worth noting:** the forest panorama is a dense pine interior, so
-> its horizon is a wall of trunks + canopy/sky gaps overhead (rather than an open
-> sky dome) — an alpine open-sky alternative (`immenstadter_horn`) was previewed
-> and is a one-line swap if the forest dome reads oddly against the 3D terrain.
-> The LDR sky is 1024×512 (fine, but a higher-res or per-rally tint could come
-> later). The backdrop rebuild
+> **Follow-ups worth noting:** the alpine panorama is an open cloudy sky with a
+> pine treeline + distant peaks (chosen over the denser `forest_slope` interior,
+> which read as a trunk-wall horizon against the 3D terrain). The LDR sky is
+> 1024×512 (fine, but a higher-res or per-rally tint could come later). The
+> backdrop rebuild
 > (~2.6k `height_at` calls) runs on the main thread every `recenter_m` (100 m) —
 > thread it if it hitches on the mobile-web target.
 >
