@@ -14,7 +14,25 @@ class StubStage:
 		begin_calls += 1
 
 
-var _player: Node3D
+# Stand-in for the fielded player Car — a VehicleBody3D (so the roll-up staging,
+# which is gated on `is VehicleBody3D` + the AI hook, runs) with just the hook
+# properties and a minimal drivetrain for the gearbox-auto restore.
+class StubEngine:
+	extends RefCounted
+	var auto := false
+class StubDrivetrain:
+	extends RefCounted
+	var engine := StubEngine.new()
+class StubPlayer:
+	extends VehicleBody3D
+	var ai_controlled := false
+	var ai_throttle := 0.0
+	var ai_steer := 0.0
+	var ai_handbrake := false
+	var drivetrain := StubDrivetrain.new()
+
+
+var _player: StubPlayer
 var _stage: StubStage
 var _chase: Camera3D
 var _hud: CanvasLayer
@@ -22,7 +40,7 @@ var _hud: CanvasLayer
 
 func before_each() -> void:
 	Config.reset()
-	_player = Node3D.new()
+	_player = StubPlayer.new()
 	add_child_autofree(_player)
 	_stage = StubStage.new()
 	add_child_autofree(_stage)
@@ -87,6 +105,36 @@ func test_launch_floors_the_leader() -> void:
 	var sl := _make()
 	sl.launch()
 	assert_eq(sl._leader.ai_throttle, 1.0, "the leader floors it on launch so it pulls away")
+
+
+func test_player_is_staged_behind_the_line_to_roll_up() -> void:
+	var sl := _make()
+	# Staged half a gap behind the line (local +Z), scripted + axis-locked so it rolls
+	# straight up with the field instead of sitting still and getting rear-ended.
+	assert_true(_player.ai_controlled, "the player is scripted for the roll-up")
+	assert_true(_player.axis_lock_linear_x, "player lateral locked during the roll-up")
+	assert_true(_player.axis_lock_angular_y, "player yaw locked during the roll-up")
+	assert_almost_eq(_player.global_position.z, Config.data.start_queue_gap * 0.5, 0.01,
+		"player staged half a gap behind the start line")
+
+
+func test_player_rolls_up_on_a_stagger_after_the_leader() -> void:
+	var sl := _make()
+	sl.launch()
+	# Just after launch the player hasn't moved yet (it waits one stagger).
+	assert_eq(_player.ai_throttle, 0.0, "player holds until its stagger")
+	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
+	assert_eq(_player.ai_throttle, 1.0, "player rolls up once its stagger elapses")
+
+
+func test_handoff_releases_the_player_to_normal_driving() -> void:
+	var sl := _make()
+	sl.launch()
+	sl._process(Config.data.start_drive_off_seconds)
+	sl._process(Config.data.start_fade_seconds)
+	assert_false(_player.ai_controlled, "the player is handed back to normal driving")
+	assert_false(_player.axis_lock_linear_x, "lateral lock released so the player can steer")
+	assert_false(_player.axis_lock_angular_y, "yaw lock released for the run")
 
 
 func test_launch_starts_the_drive_off_not_the_countdown() -> void:

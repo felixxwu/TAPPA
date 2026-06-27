@@ -233,17 +233,20 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Seconds the launch animation runs: the leader car drives off under its own
 ## physics and the trailing car rolls up, before the fade-to-black.
 @export var start_drive_off_seconds := 2.0
-## Seconds the trailing car holds throttle to roll up before easing off (< the
-## drive-off length, so it settles at the line under the parking brake).
+## Seconds a rolling-up car holds throttle before easing off (< the drive-off
+## length, so it settles under the parking brake). Applies to the player + trailer.
 @export var start_trailer_scoot_seconds := 0.7
+## Stagger (s) between successive cars launching, so the queue rolls off one after
+## another (leader, then player, then trailer) rather than all at once.
+@export var start_queue_stagger_seconds := 0.35
 ## Seconds each half (out, then back) of the fade-to-black transition takes.
 @export var start_fade_seconds := 0.6
 ## Straight road (m) forced AHEAD of the start line on a staged run, so the leader
 ## has road to drive off down (the queue cars are axis-locked to a straight line).
 @export var start_lead_in_ahead_m := 22.0
-## Straight road (m) extended BEHIND the start line on a staged run, so the trailing
-## car sits on road rather than on the grass behind the spawn.
-@export var start_lead_in_behind_m := 12.0
+## Straight road (m) extended BEHIND the start line on a staged run, so the player
+## (staged half a gap back) and the trailing car behind it sit on road.
+@export var start_lead_in_behind_m := 16.0
 
 @export_group("Damage")
 # Per-car HP attrition (todo/damage-model.md). Max HP is CarLibrary metadata

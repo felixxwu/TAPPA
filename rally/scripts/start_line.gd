@@ -46,8 +46,11 @@ var _fade_rect: ColorRect
 var _leader: Node3D     # the car ahead — drives off on launch
 var _trailer: Node3D    # the car behind — rolls up on launch
 
-# The player's start pose, captured at setup (the queue lays out around it).
+# The player's start pose, captured at setup (the queue lays out around it). The
+# player is staged half a gap behind this line and rolls UP to it on launch.
 var _start_xform: Transform3D
+var _player_staged := false   # true once the player is scripted for the roll-up
+var _player_auto_was := false # the player's gearbox auto flag, restored at hand-off
 
 
 func _cfg() -> GameConfig:
@@ -74,8 +77,30 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_build_orbit_camera()
 	_build_overlay(rally, event_index, target_ms)
 	_build_fade()
+	_stage_player(terrain)
 	_spawn_queue(rally, terrain)
 	_update_orbit()
+
+
+# Roll-up start: stage the player half a gap BEHIND the line so it rolls up to the
+# line with the field (instead of sitting still and getting rear-ended). Scripted +
+# axis-locked like the queue cars while staging; cleared at the hand-off so the run
+# drives normally. No-op for a non-Car player (test stubs without the hook).
+func _stage_player(terrain: Node) -> void:
+	if not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
+		return
+	var setback := _cfg().start_queue_gap * 0.5
+	_player.global_transform = Transform3D(_start_xform.basis, _ground(_start_xform * Vector3(0, 0, setback), terrain))
+	_player.ai_controlled = true
+	_player.ai_throttle = 0.0
+	_player.ai_steer = 0.0
+	_player.ai_handbrake = false
+	_player.axis_lock_linear_x = true
+	_player.axis_lock_angular_y = true
+	if "drivetrain" in _player and _player.drivetrain != null and _player.drivetrain.engine != null:
+		_player_auto_was = _player.drivetrain.engine.auto
+		_player.drivetrain.engine.auto = true  # so throttle pulls forward; restored at hand-off
+	_player_staged = true
 
 
 # --- Orbit camera ------------------------------------------------------------
@@ -188,9 +213,11 @@ func _build_fade() -> void:
 func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
 	var cfg := _cfg()
 	var gap := cfg.start_queue_gap
-	# Local -Z is the car's nose, so the leader is ahead (negative Z), trailer behind.
+	# Local -Z is the car's nose. Leader is ahead of the line (negative Z); the player
+	# is staged half a gap behind (see _stage_player), so the trailer sits a full gap
+	# behind the player.
 	var leader_pos := _ground(_start_xform * Vector3(0, 0, -gap), terrain)
-	var trailer_pos := _ground(_start_xform * Vector3(0, 0, gap), terrain)
+	var trailer_pos := _ground(_start_xform * Vector3(0, 0, gap * 0.5 + gap), terrain)
 	var seed_base := _queue_seed(rally)
 	_leader = _spawn_prop(seed_base % CarLibrary.CARS.size(), leader_pos)
 	_trailer = _spawn_prop((seed_base + 1) % CarLibrary.CARS.size(), trailer_pos)
@@ -270,11 +297,16 @@ func _process(delta: float) -> void:
 			_advance_orbit(delta)
 			_seq_t += delta
 			var cfg := _cfg()
-			# The leader holds full throttle (set at launch) and pulls away under its
-			# own physics; the trailer rolls up briefly then eases off so the parking
-			# brake settles it back at the line.
+			# Staggered roll-off: the leader pulls away first (full throttle, set at
+			# launch); the player rolls up one stagger later; the trailer one stagger
+			# after that. Each holds throttle for the scoot window then eases off so
+			# the parking brake settles it.
+			var stagger := cfg.start_queue_stagger_seconds
+			var scoot := cfg.start_trailer_scoot_seconds
+			if _player_staged and _player is VehicleBody3D and "ai_controlled" in _player:
+				_player.ai_throttle = 1.0 if (_seq_t >= stagger and _seq_t < stagger + scoot) else 0.0
 			if _trailer != null and is_instance_valid(_trailer):
-				_trailer.ai_throttle = 1.0 if _seq_t < cfg.start_trailer_scoot_seconds else 0.0
+				_trailer.ai_throttle = 1.0 if (_seq_t >= 2.0 * stagger and _seq_t < 2.0 * stagger + scoot) else 0.0
 			if _seq_t >= cfg.start_drive_off_seconds:
 				_seq = Seq.FADE_OUT
 				_seq_t = 0.0
@@ -319,12 +351,10 @@ func launch() -> void:
 	_launched = true
 	if _overlay != null:
 		_overlay.visible = false
-	# Leader and trailer both surge on the throttle; the trailer eases off mid-animation
-	# (see _process DRIVE_OFF) while the leader keeps pulling away.
+	# The leader goes first and keeps pulling away; the player and trailer roll up on
+	# a stagger (see _process DRIVE_OFF).
 	if _leader != null and is_instance_valid(_leader):
 		_leader.ai_throttle = 1.0
-	if _trailer != null and is_instance_valid(_trailer):
-		_trailer.ai_throttle = 1.0
 	_seq = Seq.DRIVE_OFF
 	_seq_t = 0.0
 
@@ -340,9 +370,27 @@ func _handoff() -> void:
 		_hud.visible = Config.data.hud_enabled
 	if _mobile != null:
 		_mobile.visible = true
-	_despawn_queue()  # gone under cover of the black, so they cost nothing during the run
+	_release_player()  # hand the player back to normal driving for the run
+	_despawn_queue()   # gone under cover of the black, so they cost nothing during the run
 	if _stage_manager != null and _stage_manager.has_method("begin_countdown"):
 		_stage_manager.begin_countdown()
+
+
+# Undo the roll-up scripting so the run drives normally: clear the AI override and
+# axis locks (else the player couldn't turn) and restore the gearbox auto flag. The
+# StageManager keeps controls_locked through the countdown, so the car holds at the
+# line until GO.
+func _release_player() -> void:
+	if not _player_staged or not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
+		return
+	_player.ai_controlled = false
+	_player.ai_throttle = 0.0
+	_player.ai_steer = 0.0
+	_player.axis_lock_linear_x = false
+	_player.axis_lock_angular_y = false
+	if "drivetrain" in _player and _player.drivetrain != null and _player.drivetrain.engine != null:
+		_player.drivetrain.engine.auto = _player_auto_was
+	_player_staged = false
 
 
 # Free the queue cars (they've driven off / rolled up and the screen is black).

@@ -17,33 +17,40 @@ car is held locked. Three phases, driven in `_process`:
    **leader** car ahead and a **trailing** car behind. The driving HUD + mobile
    controls are hidden. Launch with the button, `menu_select` (Enter / gamepad A),
    or a tap.
-2. **DRIVE-OFF (launch)** — the leader and trailer **floor the throttle**; the
-   leader pulls away up the road while the trailer rolls up to the line and eases
-   off (`start_trailer_scoot_seconds`) so its parking brake settles it. The overlay
-   hides. This runs for `start_drive_off_seconds`.
+2. **DRIVE-OFF (launch)** — a **staggered rolling start**: the leader pulls away
+   first, then one `start_queue_stagger_seconds` later the **player rolls up** to the
+   line, then another stagger later the **trailer** rolls up behind it. Each holds
+   throttle for `start_trailer_scoot_seconds` then eases off so its parking brake
+   settles it. The overlay hides. This runs for `start_drive_off_seconds`.
 3. **FADE** — the screen **fades to black** (`start_fade_seconds`); at full black the
-   queue cars are despawned, the camera hands back to the **chase camera**, the
-   **driving UI returns**, and `StageManager.begin_countdown()` starts the countdown;
-   then it **fades back in**.
+   player is released to normal driving, the queue cars are despawned, the camera
+   hands back to the **chase camera**, the **driving UI returns**, and
+   `StageManager.begin_countdown()` starts the countdown; then it **fades back in**.
 
-The player car never moves during the sequence (it stays at its spawn = the start
-line, so track progress lines up); only the two atmosphere cars move. They are
-**flavour only — NOT the real opponent field** (that's `RallyLibrary`'s per-seed
-roster, surfaced in the standings).
+The cars are **flavour only — NOT the real opponent field** (that's `RallyLibrary`'s
+per-seed roster, surfaced in the standings).
 
-## Physically-simulated queue cars
+## Physically-simulated cars (rolling start)
 
-The leader and trailer are **live `Car` props** (not frozen), so they drive off with
-real suspension load, squat and weight transfer. They run full physics but read
-**scripted control** instead of player Input via the `car.gd` hook
-(`ai_controlled` + `ai_throttle` / `ai_steer` / `ai_handbrake`), with an auto
-gearbox. To stop them veering they are **axis-locked to a straight line**:
-`axis_lock_linear_x` (lateral) + `axis_lock_angular_y` (yaw) — the start heading is
-always world −Z — while suspension travel (linear Y) and pitch (angular X) stay
-free. They keep **collision exceptions** with the player and each other (so they
-never shove the staged car), their engines are silenced, and they're **despawned at
-the fade** so they cost nothing during the run. Cost is bounded: two extra cars for
-~2–3 s while the player is stationary, then gone.
+The leader, trailer **and the player** drive under real physics during the roll-up,
+so they load their suspension (squat / weight transfer) instead of sliding. They run
+full physics but read **scripted control** instead of player Input via the `car.gd`
+hook (`ai_controlled` + `ai_throttle` / `ai_steer` / `ai_handbrake`), with an auto
+gearbox, and are **axis-locked to a straight line** (`axis_lock_linear_x` lateral +
+`axis_lock_angular_y` yaw — the start heading is always world −Z — leaving suspension
+linear-Y and pitch angular-X free) so they can't veer.
+
+The **player** is staged half a `start_queue_gap` behind the line and rolls up to it
+with the field (so the trailer following it keeps its gap instead of rear-ending a
+stationary car); at the fade it is **released** — AI override and axis locks cleared,
+gearbox-auto restored — so the run drives normally. The `StageManager` keeps it
+locked through the countdown, so it holds at the line until GO. The player ends near
+the line; track progress projects onto the lead-in, so the exact stop doesn't matter.
+
+The two queue cars keep **collision exceptions** with the player and each other (so
+they never shove it), engines silenced, and are **despawned at the fade** so they
+cost nothing during the run. Cost is bounded: a couple of extra cars for ~2–3 s while
+the player is otherwise stationary, then gone.
 
 ## Straight start lead-in (staged runs)
 
@@ -83,10 +90,11 @@ the countdown arms immediately.
 | `start_orbit_height` | `2.4` | Orbit camera height (m) above the car. |
 | `start_queue_gap` | `7.0` | Gap (m) between queued cars along the start heading. |
 | `start_drive_off_seconds` | `2.0` | Length of the drive-off animation before the fade. |
-| `start_trailer_scoot_seconds` | `0.7` | How long the trailer holds throttle before easing off. |
+| `start_trailer_scoot_seconds` | `0.7` | How long a rolling-up car (player / trailer) holds throttle before easing off. |
+| `start_queue_stagger_seconds` | `0.35` | Delay between successive cars launching (leader → player → trailer). |
 | `start_fade_seconds` | `0.6` | Length of each half (out, back) of the fade. |
 | `start_lead_in_ahead_m` | `22.0` | Straight road forced ahead of the start line (staged runs). |
-| `start_lead_in_behind_m` | `12.0` | Straight road extended behind the start line (staged runs). |
+| `start_lead_in_behind_m` | `16.0` | Straight road extended behind the start line, for the staged player + trailer. |
 
 See [configuration.md](configuration.md).
 
@@ -94,9 +102,10 @@ See [configuration.md](configuration.md).
 
 - `tests/headless/test_start_line.gd` — the reveal shows the formatted time to beat
   (and `—` when none) + context, hides the HUD and takes the camera; the queue cars
-  are scripted + axis-locked + live (not frozen); `launch()` floors the leader and
-  starts the drive-off (not the countdown); after the drive-off + fade the camera/UI
-  hand back and `begin_countdown()` fires exactly once (idempotent).
+  are scripted + axis-locked + live (not frozen); the player is staged half a gap
+  behind and scripted, `launch()` floors the leader, the player rolls up after its
+  stagger, and after the drive-off + fade the player is released to normal driving
+  and `begin_countdown()` fires exactly once (idempotent).
 - `tests/headless/test_rally_session.gd` — `current_event_target_ms()` returns the
   fastest non-DNF rival's time for the current event and tracks the event index.
 - `tests/headless/test_stage_manager.gd` — the `STAGING` phase holds until
