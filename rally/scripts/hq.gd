@@ -183,10 +183,10 @@ func _build_buildings() -> void:
 		_block(b[0], b[1], b[2])
 
 
-# The garage shell: floor + back/side walls, open-topped. NO roof: the table-map
-# camera looks down onto the table from above, so a roof would occlude it (a roof
-# slab over the table reads as a blank grey screen in the map view). Open toward +Z
-# (the car park) so the camera also looks in through the front from the garage station.
+# The garage shell: floor, back + side walls, and a flat roof. Open toward +Z (the
+# car park) so the camera looks in through the front from the garage station. The
+# roof is safe to keep: the table-map camera (eye y ~2.6) and the garage camera both
+# sit BELOW the roof (y ~4.8+), so neither looks down through it.
 func _build_garage() -> void:
 	var cfg: GameConfig = Config.data
 	var gx: float = cfg.hq_garage_size.x
@@ -198,6 +198,7 @@ func _build_garage() -> void:
 	_block(Vector3(0.0, wall_h * 0.5, -gz * 0.5), Vector3(gx, wall_h, t), wall)                # back
 	_block(Vector3(-gx * 0.5, wall_h * 0.5, 0.0), Vector3(t, wall_h, gz), wall)                # left
 	_block(Vector3(gx * 0.5, wall_h * 0.5, 0.0), Vector3(t, wall_h, gz), wall)                 # right
+	_block(Vector3(0.0, wall_h, 0.0), Vector3(gx, t, gz), Color(0.26, 0.27, 0.31))             # roof
 
 
 # The map table: a block with the flat 3D map plane on top + a pickable area so a tap
