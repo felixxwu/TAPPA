@@ -81,6 +81,11 @@ func _ready() -> void:
 	# and routes the rally's finish to the podium.
 	if RallySession.is_active():
 		_wire_session_signals()
+		# Pre-event start-line scene: briefing + presence cars before the countdown
+		# (todo/menus.md location 2). Only when staged (start_line_enabled + a real
+		# rally); the StageManager is already waiting in STAGING for its launch.
+		if _should_stage():
+			_build_start_line()
 
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
 	# wheel-force debug overlay; harmless and idle until toggled on.
@@ -192,7 +197,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		_stage_manager = StageManager.new()
 		_stage_manager.name = "StageManager"
 		add_child(_stage_manager)
-	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress)
+	# Staged runs hold the car in the start-line scene (briefing + presence) until
+	# the player launches; otherwise the countdown arms immediately, as before.
+	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, _should_stage())
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
 	# regeneration, e.g. entering a rally event).
@@ -215,12 +222,33 @@ var _stage_manager: StageManager
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
 
+# The pre-event start-line scene (briefing + presence cars); built for staged
+# session runs and freed with the scene on the next event reload.
+var _start_line: StartLine
+
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
 
 
 # --- RallySession run-scene integration (todo/rally-event-flow.md) ------------
+
+# Whether this run should open with the pre-event start-line scene: a session run
+# with the feature enabled AND a resolvable rally (so a missing rally never strands
+# the car in STAGING with no StartLine to launch it).
+func _should_stage() -> bool:
+	return RallySession.is_active() and Config.data.start_line_enabled \
+		and not RallyLibrary.by_id(RallySession.rally_id()).is_empty()
+
+
+# Build the start-line scene around the fielded car (briefing panel + presence
+# cars). The StageManager is already in STAGING; StartLine launches it.
+func _build_start_line() -> void:
+	var rally := RallyLibrary.by_id(RallySession.rally_id())
+	_start_line = StartLine.new()
+	_start_line.name = "StartLine"
+	add_child(_start_line)
+	_start_line.setup($Car, $Floor, _stage_manager, rally, RallySession.event_index())
 
 # Configure the car for the session's fielded OwnedCar; fall back to the default
 # car if the instance has vanished from the save (defensive).

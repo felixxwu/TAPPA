@@ -17,7 +17,7 @@ per-car paint, camera fly-throughs *between* far stations) lives in
 ## The loop
 
 ```
-exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pin) ─▶ rally detail ─Enter─▶ car park (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0)
+exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pin) ─▶ rally detail ─Enter─▶ car park (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0) ─start line: briefing + presence ─launch─▶ countdown ─▶ RUN
    main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ standings.tscn ─Continue─▶ next event
                                           └─ car.wrecked ─▶ report_wreck (DNF)
    final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
@@ -115,6 +115,15 @@ things:
 `last_result` carries `rally_name`, `standings`, `upgrades`, `car_reward`,
 `car_reward_is_new`, and `showdown_won` alongside the original
 `placed`/`completed`/`combined_ms`/`dnf`. **Continue** returns to HQ.
+
+## Start line (location 2)
+
+The pre-event **start-line scene** — the diegetic **briefing** panel (rally, event
+N/3, restriction, fielded car + HP bar) and the **pre-launch presence** cars — is
+built inside the run scene before the countdown; the player launches it into the
+`StageManager` countdown. See [start-line.md](start-line.md). Between-event
+**standings** (`standings.tscn`) and the **Pause** overlay remain the open parts of
+this location.
 
 ## Deferred (rest of the diegetic 3D build)
 

@@ -37,6 +37,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
+| [start-line.md](start-line.md) | `StartLine` — the pre-event start-line scene (diegetic briefing panel + atmosphere presence cars) before the countdown |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
 | [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder; light knockable bodies, no damage) |
 | [tire-marks.md](tire-marks.md) | `TireMarks` — gravel ruts laid behind the wheels (per-wheel ribbon mesh, gated to the road, capped) |
