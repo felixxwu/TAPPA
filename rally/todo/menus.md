@@ -137,6 +137,12 @@ camera you already drive, so the menu count stays tiny.
    atmospheric flavour, not the real opponent field (`todo/rally-event-flow.md`).
    Mostly owned by `todo/stage-start-and-end.md` /
    `track-progress-and-reset.md`; entered by fly-through from the map.
+   ✅ **The briefing panel + presence cars shipped** (`scripts/start_line.gd`,
+   [`features/start-line.md`](../features/start-line.md)) — the diegetic
+   world-anchored briefing (rally / event N-of-3 / restriction / fielded car + HP
+   bar) and the staggered atmosphere presence cars, launched into the countdown.
+   Still open here: the **map→start-line fly-through** transition, the between-event
+   **standings** styling, and the **Pause** overlay.
 3. **Podium** *(end of rally)* — a 3D podium with the top-3 cars + the reward
    reveal, then a fly-through back to HQ (the won car arrives in the car park).
 

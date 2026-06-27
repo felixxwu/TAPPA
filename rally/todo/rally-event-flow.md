@@ -28,8 +28,11 @@ grants a car (farming: fires on every re-win) or the showdown win beat → finis
 The session **brain** is done; what's left is the diegetic dressing around it,
 all owned by the deferred full menus build:
 
-- **Pre-launch presence** — the ahead/behind atmosphere cars at the Start line.
-  Only the *trigger* is here; the staging is `todo/menus.md` / `stage-start-and-end.md`.
+- ~~**Pre-launch presence** — the ahead/behind atmosphere cars at the Start line.~~
+  ✅ **DONE.** The pre-event start-line scene (briefing panel + staggered atmosphere
+  presence cars, launched into the countdown) shipped as `scripts/start_line.gd`
+  (`StageManager` STAGING phase + `world.gd` wiring). See
+  [`features/start-line.md`](../features/start-line.md).
 - **Standings interstitial** — between events 0→1→2 it's currently a straight
   reload; `RallySession` already emits `standings_ready(i)` for the overlay
   (`todo/menus.md` overlay 7) to hook the running combined-vs-field display onto.

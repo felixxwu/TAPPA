@@ -214,6 +214,27 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
 @export var hud_elapsed_enabled := true
 
+@export_group("Start Line")
+## The pre-event start-line scene (todo/menus.md location 2): a diegetic briefing
+## panel + atmosphere "presence" cars shown before the countdown, while the car is
+## held locked, until the player launches. Only runs inside an active RallySession;
+## a plain dev boot of main.tscn skips straight to the countdown. Turn off to
+## restore the old "drop straight into the countdown" behaviour even in a session.
+@export var start_line_enabled := true
+## How many atmosphere presence cars to line up at the start (flavour only — NOT
+## the real opponent field, which is RallyLibrary's per-seed roster). 0 disables them.
+@export_range(0, 8) var start_presence_count := 3
+## Lateral spacing (m) between staggered presence cars, left/right of the player.
+@export var start_presence_lateral := 3.2
+## Distance (m) further back per staggered row of presence cars.
+@export var start_presence_longitudinal := 5.5
+## Briefing panel position relative to the player's start pose (car space: -Z is the
+## nose, +Y up), so the default floats it above and slightly ahead where the chase
+## camera frames it. The panel billboards toward the camera regardless.
+@export var start_briefing_offset := Vector3(0.0, 2.6, -2.6)
+## World-space size (m per pixel) of the billboarded briefing panel.
+@export var start_briefing_pixel_size := 0.0045
+
 @export_group("Damage")
 # Per-car HP attrition (todo/damage-model.md). Max HP is CarLibrary metadata
 # (mass-keyed), NOT here; these are the global magnitudes that govern how impacts

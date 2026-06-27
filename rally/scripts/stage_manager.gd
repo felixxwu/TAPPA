@@ -1,6 +1,11 @@
 class_name StageManager
 extends Node
 # Owns the per-stage start/end flow on top of the always-live world:
+#   0. STAGING   — (optional) the car is locked while the pre-event start-line
+#      scene (briefing + presence cars, scripts/start_line.gd) holds, until the
+#      player launches and StartLine calls begin_countdown(). Skipped unless the
+#      manager is set up `staged` (a session run with start_line_enabled); a plain
+#      dev boot goes straight to COUNTDOWN exactly as before.
 #   1. COUNTDOWN — the car is locked (handbrake forced) while a big centered
 #      3·2·1·GO counts down on the HUD.
 #   2. RUNNING   — controls unlock, an elapsed timer runs (small, top-right).
@@ -15,7 +20,7 @@ extends Node
 #
 # Created and wired by world.gd once the car, HUD and TrackProgress exist.
 
-enum Phase { COUNTDOWN, RUNNING, COMPLETE }
+enum Phase { STAGING, COUNTDOWN, RUNNING, COMPLETE }
 
 # How long the "GO" stays on screen after controls unlock, before it's hidden.
 # A small flash; kept a const (not a config knob) to match the spec's three-knob
@@ -40,28 +45,52 @@ func _cfg() -> GameConfig:
 	return Config.data
 
 
-# Wire the manager to the live scene and arm the countdown, locking the car from
-# the first frame so it can't be driven before GO. Initialisation lives here (not
+# Wire the manager to the live scene and arm the flow, locking the car from the
+# first frame so it can't be driven before GO. Initialisation lives here (not
 # _ready) because add_child runs _ready before world.gd hands over these refs.
-func setup(car: Node, hud: Node, progress: Node) -> void:
+#
+# `staged` holds the car in STAGING (no countdown yet) so the pre-event start-line
+# scene can show its briefing first; StartLine calls begin_countdown() to proceed.
+# When false (the default — a plain dev boot, or a car swap) the countdown arms
+# immediately, exactly as before the start-line scene existed.
+func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_car = car
 	_hud = hud
 	_progress = progress
-	_phase = Phase.COUNTDOWN
-	_countdown_left = _cfg().stage_countdown_seconds
 	_elapsed = 0.0
 	_go_flash_left = 0.0
 	if _car != null:
 		_car.controls_locked = true
+	if staged:
+		# Wait at the start line; the countdown only arms once StartLine launches.
+		_phase = Phase.STAGING
+		_countdown_left = _cfg().stage_countdown_seconds
+	else:
+		_phase = Phase.COUNTDOWN
+		_countdown_left = _cfg().stage_countdown_seconds
+		if _hud != null and _hud.has_method("show_countdown"):
+			_hud.show_countdown(_countdown_left)
+	_armed = true
+
+
+# Leave STAGING and start the 3·2·1·GO countdown. Called by StartLine when the
+# player launches the event; the car stays locked through the countdown as usual.
+# No-op unless we're actually staging, so a double-launch can't restart the run.
+func begin_countdown() -> void:
+	if not _armed or _phase != Phase.STAGING:
+		return
+	_phase = Phase.COUNTDOWN
+	_countdown_left = _cfg().stage_countdown_seconds
 	if _hud != null and _hud.has_method("show_countdown"):
 		_hud.show_countdown(_countdown_left)
-	_armed = true
 
 
 func _process(delta: float) -> void:
 	if not _armed:
 		return
 	match _phase:
+		Phase.STAGING:
+			pass  # held at the start line until StartLine calls begin_countdown()
 		Phase.COUNTDOWN:
 			_tick_countdown(delta)
 		Phase.RUNNING:
