@@ -75,6 +75,20 @@
   still holds, across agents too); its only job is to absorb noisy output and
   hand back the digest. For quick `--fast` subset iteration, an inline background
   run with a grep filter is lighter-weight and fine.
+- **Prompt the verification sub-agent so it can't return empty.** `run_tests.sh`
+  takes minutes, so the Bash tool auto-backgrounds it inside the sub-agent; the
+  agent then sometimes reports a premature "I'll wait for the notification" as its
+  result and ends its turn before the run finishes (the parent receives that empty
+  message, not the verdict). The prompt MUST tell the agent: (1) the command will be
+  auto-backgrounded; do NOT emit any interim message and do NOT end your turn until
+  the run has finished — your FINAL message must be the verdict digest, never "I'll
+  wait"; (2) make the wait deterministic — pipe through `tee` to a log and, if it
+  backgrounds, block on it, e.g.
+  `GODOT=$GODOT ./run_tests.sh --fast <name> 2>&1 | tee /tmp/run.log | tail -40`
+  then `until grep -q 'TESTS PASSED\|TESTS FAILED' /tmp/run.log; do sleep 5; done; tail -30 /tmp/run.log`.
+  The `tee` keeps the full log on disk so the verdict survives a re-entered turn.
+  If a sub-agent still comes back without a verdict, don't re-run — `SendMessage`
+  it for the digest (the results are already in its context).
 - While waiting on a test run, periodically check that it is actually making
   progress and not hung — a finished run prints `ALL TESTS PASSED` / `TESTS
   FAILED`, so prolonged silence past the usual duration is a red flag. Inspect
