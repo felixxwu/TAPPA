@@ -106,7 +106,7 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
   generation time, so its shader keeps a pass-through vertex path and the
   heaviest geometry pays nothing per frame. Trees/bushes/signs stay flat.
 - **Skybox** (`main.tscn` env `background_mode = Sky`): a `PanoramaSkyMaterial`
-  with a CC0 photographic alpine sky equirect (`textures/sky_alpine.png`, a tonemapped
+  with a CC0 photographic open-field sky equirect (`textures/sky_field.png`, a tonemapped
   LDR downscale of a Poly Haven HDRI). The full-screen post-process quantizes it
   to the same 5-bit + dither look, so it reads as native PS1, not a pasted photo.
   `hq.gd` builds the same sky in code so HQ matches.
