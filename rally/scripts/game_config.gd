@@ -230,9 +230,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var start_orbit_height := 2.4
 ## Gap (m) between queued cars along the start heading (leader ahead, one behind).
 @export var start_queue_gap := 7.0
-## Seconds the launch animation runs: the leader car drives off under its own
-## physics and the trailing car rolls up, before the fade-to-black.
-@export var start_drive_off_seconds := 2.0
+## Safety cap (s) on the launch animation: the fade-to-black normally waits for the
+## player to roll up and come to a COMPLETE stop, but won't wait longer than this.
+@export var start_drive_off_seconds := 3.5
 ## Seconds a rolling-up car holds throttle before easing off (< the drive-off
 ## length, so it settles under the parking brake). Applies to the player + trailer.
 @export var start_trailer_scoot_seconds := 0.7

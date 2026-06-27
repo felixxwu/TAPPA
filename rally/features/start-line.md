@@ -21,7 +21,9 @@ car is held locked. Three phases, driven in `_process`:
    first, then one `start_queue_stagger_seconds` later the **player rolls up** to the
    line, then another stagger later the **trailer** rolls up behind it. Each holds
    throttle for `start_trailer_scoot_seconds` then eases off so its parking brake
-   settles it. The overlay hides. This runs for `start_drive_off_seconds`.
+   settles it. The overlay hides. The fade does **not** start until the player has
+   rolled up and come to a **complete stop** (`STOP_SPEED_EPS`), so the chase-cam
+   cut never happens mid-roll; `start_drive_off_seconds` is a safety cap.
 3. **FADE** — the screen **fades to black** (`start_fade_seconds`); at full black the
    player is released to normal driving, the queue cars are despawned, the camera
    hands back to the **chase camera**, the **driving UI returns**, and
@@ -89,7 +91,7 @@ the countdown arms immediately.
 | `start_orbit_radius` | `7.0` | Orbit camera radius (m) from the car. |
 | `start_orbit_height` | `2.4` | Orbit camera height (m) above the car. |
 | `start_queue_gap` | `7.0` | Gap (m) between queued cars along the start heading. |
-| `start_drive_off_seconds` | `2.0` | Length of the drive-off animation before the fade. |
+| `start_drive_off_seconds` | `3.5` | Safety cap on the drive-off; the fade normally waits for the player to fully stop. |
 | `start_trailer_scoot_seconds` | `0.7` | How long a rolling-up car (player / trailer) holds throttle before easing off. |
 | `start_queue_stagger_seconds` | `0.35` | Delay between successive cars launching (leader → player → trailer). |
 | `start_fade_seconds` | `0.6` | Length of each half (out, back) of the fade. |
@@ -104,8 +106,9 @@ See [configuration.md](configuration.md).
   (and `—` when none) + context, hides the HUD and takes the camera; the queue cars
   are scripted + axis-locked + live (not frozen); the player is staged half a gap
   behind and scripted, `launch()` floors the leader, the player rolls up after its
-  stagger, and after the drive-off + fade the player is released to normal driving
-  and `begin_countdown()` fires exactly once (idempotent).
+  stagger, the fade waits for the player to come to a complete stop, and after the
+  drive-off + fade the player is released to normal driving and `begin_countdown()`
+  fires exactly once (idempotent).
 - `tests/headless/test_rally_session.gd` — `current_event_target_ms()` returns the
   fastest non-DNF rival's time for the current event and tracks the event index.
 - `tests/headless/test_stage_manager.gd` — the `STAGING` phase holds until

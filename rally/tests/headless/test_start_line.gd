@@ -127,6 +127,20 @@ func test_player_rolls_up_on_a_stagger_after_the_leader() -> void:
 	assert_eq(_player.ai_throttle, 1.0, "player rolls up once its stagger elapses")
 
 
+func test_fade_waits_for_the_player_to_come_to_a_stop() -> void:
+	var sl := _make()
+	sl.launch()
+	# Past the roll-up window but the player is still moving: must NOT transition yet
+	# (and we're under the safety cap).
+	_player.linear_velocity = Vector3(0, 0, -5)
+	sl._process(Config.data.start_queue_stagger_seconds + Config.data.start_trailer_scoot_seconds + 0.2)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DRIVE_OFF, "holds the reveal while the player is still rolling")
+	# Once stopped, it transitions into the fade.
+	_player.linear_velocity = Vector3.ZERO
+	sl._process(0.1)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "fades once the player has come to a stop")
+
+
 func test_handoff_releases_the_player_to_normal_driving() -> void:
 	var sl := _make()
 	sl.launch()

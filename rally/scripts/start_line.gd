@@ -20,6 +20,10 @@ extends Node3D
 
 const CAR_SCENE := preload("res://car.tscn")
 
+# Speed (m/s) below which the player counts as stopped at the line — the fade to the
+# chase cam waits for this so the transition never happens while the car is rolling.
+const STOP_SPEED_EPS := 0.4
+
 # Sequence phases. ORBIT waits for the launch; the rest are time-driven in _process.
 enum Seq { ORBIT, DRIVE_OFF, FADE_OUT, FADE_IN, DONE }
 
@@ -307,7 +311,11 @@ func _process(delta: float) -> void:
 				_player.ai_throttle = 1.0 if (_seq_t >= stagger and _seq_t < stagger + scoot) else 0.0
 			if _trailer != null and is_instance_valid(_trailer):
 				_trailer.ai_throttle = 1.0 if (_seq_t >= 2.0 * stagger and _seq_t < 2.0 * stagger + scoot) else 0.0
-			if _seq_t >= cfg.start_drive_off_seconds:
+			# Don't cut to the chase cam until the player has finished rolling up AND
+			# come to a COMPLETE stop, so the transition never happens mid-roll;
+			# start_drive_off_seconds is a safety cap so it can't wait forever.
+			var rolled := _seq_t >= stagger + scoot
+			if (rolled and _player_stopped()) or _seq_t >= cfg.start_drive_off_seconds:
 				_seq = Seq.FADE_OUT
 				_seq_t = 0.0
 		Seq.FADE_OUT:
@@ -332,6 +340,14 @@ func _process(delta: float) -> void:
 func _advance_orbit(delta: float) -> void:
 	_orbit_angle += delta * _cfg().start_orbit_speed
 	_update_orbit()
+
+
+# Whether the player has effectively stopped (settled at the line). Non-Car players
+# (test stubs without physics) read as stopped.
+func _player_stopped() -> bool:
+	if not (_player is VehicleBody3D):
+		return true
+	return (_player as VehicleBody3D).linear_velocity.length() < STOP_SPEED_EPS
 
 
 func _unhandled_input(event: InputEvent) -> void:
