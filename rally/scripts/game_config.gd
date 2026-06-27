@@ -336,6 +336,23 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var wheel_color := Color(0.12, 0.12, 0.12)
 @export var wheel_spoke_color := Color(0.85, 0.85, 0.78)
 
+@export_group("Car Lighting")
+# Fake per-vertex lighting baked into ps1_models.gdshader (the material stays
+# unshaded — no light nodes, no shadows, no extra render pass). Applied only to
+# the car meshes; the terrain leaves the shader's light_amount at 0 so it stays
+# flat. See features/rendering.md.
+## 0 = flat (unlit), 1 = full fake lighting. How strongly the sun/ambient tint
+## the car.
+@export_range(0.0, 1.0) var car_light_amount := 1.0
+## World-space direction TO the sun (need not be normalised; the shader does it).
+@export var sun_direction := Vector3(0.4, 0.9, 0.35)
+## Directional "sun" contribution added on lit-facing surfaces.
+@export var sun_color := Color(0.5, 0.5, 0.5)
+## Ambient colour on upward-facing surfaces (sky).
+@export var sky_color := Color(0.5, 0.5, 0.5)
+## Ambient colour on downward-facing surfaces (ground bounce).
+@export var ground_color := Color(0.35, 0.35, 0.35)
+
 @export_group("Track")
 ## Total width of the generated track, in metres; cells within half this
 ## distance of the centerline are coloured as track.
@@ -511,6 +528,18 @@ func terrain_layers() -> Array[Vector2]:
 		Vector2(terrain_layer2_wavelength, terrain_layer2_amplitude),
 		Vector2(terrain_layer3_wavelength, terrain_layer3_amplitude),
 	]
+
+
+# Push the fake car-lighting uniforms onto a ps1_models.gdshader material. Used
+# for every lit car mesh (chassis/cabin/wheels in world.gd, the MX-5 body in
+# car.gd) so the light parameters live in one place. Terrain materials are never
+# passed here, so they keep the shader's default light_amount of 0 (flat).
+func apply_car_light(mat: ShaderMaterial) -> void:
+	mat.set_shader_parameter("light_amount", car_light_amount)
+	mat.set_shader_parameter("light_dir", sun_direction)
+	mat.set_shader_parameter("sun_color", sun_color)
+	mat.set_shader_parameter("sky_color", sky_color)
+	mat.set_shader_parameter("ground_color", ground_color)
 
 
 # The scalar tree-scatter knobs packed into the Dictionary TreeScatter.scatter

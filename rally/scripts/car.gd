@@ -516,4 +516,7 @@ func _apply_model_material(model: Node3D) -> void:
 			mat.set_shader_parameter("texture_tile", Vector2(1, 1))
 			mat.set_shader_parameter("albedo_color", Color.WHITE)
 			mat.set_shader_parameter("albedo_texture", MX5_TEXTURE)
+			# Same fake per-vertex lighting as the procedural car meshes (see
+			# world.gd) so the authored body gets shape too, not just flat colour.
+			Config.data.apply_car_light(mat)
 			mi.set_surface_override_material(0, mat)

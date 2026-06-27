@@ -56,6 +56,11 @@ func _ready() -> void:
 	# Wheel materials are shared resources; setting each once covers all four.
 	_mat($Car/WheelFL/Visual/Tire).set_shader_parameter("albedo_color", cfg.wheel_color)
 	_mat($Car/WheelFL/Visual/Spoke1).set_shader_parameter("albedo_color", cfg.wheel_spoke_color)
+	# Fake per-vertex lighting (PS1-style) on the car meshes only — the terrain
+	# leaves the shader's light_amount at 0 and stays flat. The MX-5 body model
+	# is lit in car.gd's _apply_model_material when that material is built.
+	for car_mesh in [$Car/Chassis, $Car/Cabin, $Car/WheelFL/Visual/Tire, $Car/WheelFL/Visual/Spoke1]:
+		cfg.apply_car_light(_mat(car_mesh))
 	($PostProcess/ColorRect.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
 
 	# Field the car. With an active RallySession this event runs the player's
