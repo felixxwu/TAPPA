@@ -253,13 +253,22 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 # (mass-keyed), NOT here; these are the global magnitudes that govern how impacts
 # drain it and how a damaged car degrades. Tuning numbers are placeholders to be
 # settled by playtest — this fixes the mechanism, not the values.
-## Contact impulse (N·s) below which a hit costs no HP — filters gentle
-## scrapes/kerbs so normal driving never chips the car.
-@export_range(0.0, 1000.0) var impact_min_impulse := 50.0
-## HP lost per unit of contact impulse ABOVE impact_min_impulse.
-@export_range(0.0, 5.0) var hp_per_impulse := 0.1
-## Cap on the HP a SINGLE impact can cost, as a fraction of max HP — so no one crash
-## can wreck the car. At ~1/3 a car survives 2 big hits and the 3rd wrecks it.
+# Damage is keyed to the SPEED the car was travelling at when it hit something:
+# nothing at a crawl, then a square-law (kinetic-energy) climb so a moderate-speed
+# crash hurts far more than a low-speed nudge. See DamageModel.hp_loss_for_speed.
+## Impact speed (km/h) below which a hit costs no HP — at a crawl the car just
+## leans on obstacles, so low-speed bumps and parking nudges never chip it.
+@export_range(0.0, 60.0) var impact_min_speed_kmh := 10.0
+## Reference impact speed (km/h) at which a hit costs impact_ref_hp_loss. HP loss
+## grows with the SQUARE of speed (kinetic energy) from impact_min_speed_kmh up to
+## here, so a 20 km/h tap barely scratches while a moderate crash bites.
+@export_range(1.0, 200.0) var impact_ref_speed_kmh := 60.0
+## HP a reference-speed (impact_ref_speed_kmh) hit costs. With per-car max HP of
+## ~800-1100, ~200 means most cars survive 4-5 such moderate hits; the square law
+## then makes a 20 km/h hit cost only a small fraction of this (barely any damage).
+@export_range(0.0, 2000.0) var impact_ref_hp_loss := 200.0
+## Cap on the HP a SINGLE impact can cost, as a fraction of max HP — so no one
+## high-speed crash can wreck the car outright (it still survives a couple).
 @export_range(0.0, 1.0) var impact_max_loss_frac := 0.34
 ## After a damaging hit, ignore further impacts for this long (s). Groups a sustained
 ## crash (pinned against / tumbling through obstacles) into ONE hit, not 30 per tick.

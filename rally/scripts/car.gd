@@ -256,20 +256,22 @@ func _physics_process(delta: float) -> void:
 		_reset()
 
 
-# Read solid-contact impulses each physics tick and feed obstacle hits to the
-# damage model. Only contacts against bodies in the obstacle group count (trees /
-# bushes / signs); ground and road contacts are ignored, so normal driving never
-# chips HP. contact_monitor + max_contacts_reported are enabled in _ready.
+# Read solid contacts each physics tick and feed obstacle hits to the damage
+# model, keyed to the speed the car was travelling at. Only contacts against bodies
+# in the obstacle group count (trees / bushes / signs); ground and road contacts
+# are ignored, so normal driving never chips HP. The post-hit cooldown in
+# register_impact means a crash registers on its FIRST contact, so this speed is
+# the approach speed. contact_monitor + max_contacts_reported are enabled in _ready.
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if damage == null:
 		return
 	var cfg: GameConfig = Config.data
+	var speed := state.linear_velocity.length()
 	for i in state.get_contact_count():
 		var collider := state.get_contact_collider_object(i) as Node
 		if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
 			continue
-		var impulse := state.get_contact_impulse(i).length()
-		damage.register_impact(impulse, state.get_contact_local_position(i), cfg)
+		damage.register_impact(speed, state.get_contact_local_position(i), cfg)
 
 
 # DamageModel reached 0 HP. Re-emit for the rally/menu layer. In free-roam (an

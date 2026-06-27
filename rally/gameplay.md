@@ -73,7 +73,9 @@ roguelike**: do you risk your best car to win, or play it safe?
   more HP** (more durable); the value is a per-car override in **`CarLibrary`**,
   loosely keyed to `mass`. HP **only depletes** between events and rallies (no
   passive regen). **Hitting objects** (the roadside signs / trees already have
-  collision) subtracts HP scaled by impact severity.
+  collision) subtracts HP **scaled by the speed you hit at** — a square-law
+  (kinetic-energy) curve, so most cars survive 4-5 hits at ~60 km/h but barely
+  scratch at ~20 km/h, and a high-speed crash bites hard.
 - **Effects scale with damage** (i.e. with HP lost, as a fraction of max):
   - **Wheel alignment** → a steering pull (the car drifts to one side). The sim
     has no alignment-offset knob today; add one (a constant toe/steer bias fed

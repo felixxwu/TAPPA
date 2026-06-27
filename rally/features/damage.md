@@ -27,17 +27,26 @@ from the OwnedCar (stored HP + instance id) when a car is taken to the line.
 
 ## Impact → HP loss
 
-`car.gd` enables `contact_monitor` (+ `max_contacts_reported`) and reads
-per-contact impulses in `_integrate_forces`. Only contacts against bodies in the
-`DamageModel.OBSTACLE_GROUP` (`"obstacle"`) group count — trees/bushes (and the
-planned signs) tag their collision body with it in `billboard_field.gd`, so the
-ground/road never chip HP. Each qualifying contact calls `register_impact()`:
+`car.gd` enables `contact_monitor` (+ `max_contacts_reported`) and, in
+`_integrate_forces`, reads the body's travel speed and the per-tick contacts. Only
+contacts against bodies in the `DamageModel.OBSTACLE_GROUP` (`"obstacle"`) group
+count — trees/bushes (and the planned signs) tag their collision body with it in
+`billboard_field.gd`, so the ground/road never chip HP. Each qualifying contact
+calls `register_impact(speed, …)` with the **speed the car was travelling at**:
 
 ```
-hp_loss = max(0, impulse - impact_min_impulse) * hp_per_impulse
+# v = impact speed in km/h (car speed × 3.6); 0 below impact_min_speed_kmh.
+hp_loss = impact_ref_hp_loss * (v² - impact_min_speed_kmh²)
+                             / (impact_ref_speed_kmh² - impact_min_speed_kmh²)
 ```
 
-`hp_loss_for_impulse()` is a pure static so the conversion is unit-testable.
+A **square law** (kinetic energy): a hit at the reference speed
+(`impact_ref_speed_kmh`, ~60 km/h) costs `impact_ref_hp_loss` (~200 HP), so with
+per-car max HP of 800-1100 most cars survive **4-5 moderate hits**; the square
+then makes a 20 km/h hit cost only a small fraction of that, so the car **barely
+takes damage at low speed**. The post-hit cooldown (below) means a crash registers
+on its FIRST contact, so this is the approach speed, not a decelerated one.
+`hp_loss_for_speed()` is a pure static so the conversion is unit-testable.
 
 Two guards stop a single crash from instantly wrecking the car (cars should survive
 2-3 big hits):
@@ -83,15 +92,15 @@ hidden when `hud_hp_enabled` is off or for the immortal starter.
 
 ## Config knobs (`GameConfig`, *Damage* group)
 
-`impact_min_impulse`, `hp_per_impulse`, `impact_max_loss_frac`,
-`impact_cooldown_s`, `damage_power_loss_max`,
+`impact_min_speed_kmh`, `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
+`impact_max_loss_frac`, `impact_cooldown_s`, `damage_power_loss_max`,
 `damage_steer_bias_max`, `hud_hp_enabled`, `hud_low_hp_warn_frac`. Per-car
 `max_hp` is CarLibrary metadata, **not** a `GameConfig` field. Tuning numbers are
 placeholders pending playtest (the mechanism is fixed, the values are not).
 
 ## Tests
 
-`tests/headless/test_damage_model.gd` (impulse→HP, the per-hit cap + post-hit
+`tests/headless/test_damage_model.gd` (speed→HP + the 60/20 km/h calibration, the per-hit cap + post-hit
 cooldown grouping a crash into one hit / needing several hits to wreck, effect
 scaling, bound/unbound wreck, upgrade return, immortal, persistence round-trip),
 `test_car.gd` (contact monitor + power-scale wiring), `test_hud.gd` (HP gauge).

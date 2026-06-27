@@ -10,8 +10,11 @@
 ## What shipped
 
 Per-car HP pool (CarLibrary `max_hp`, mass-keyed) on the fielded car; impacts
-above `impact_min_impulse` drain it (`hp_per_impulse`, obstacle-group filtered so
-ground/road never chip), with a per-hit cap (`impact_max_loss_frac` of max HP) and a
+drain it **scaled by the speed the car was travelling at** — a square-law
+(kinetic-energy) curve, zero below `impact_min_speed_kmh`, reaching
+`impact_ref_hp_loss` at `impact_ref_speed_kmh` (obstacle-group filtered so
+ground/road never chip), so most cars survive 4-5 hits at ~60 km/h and barely any
+at ~20 km/h — with a per-hit cap (`impact_max_loss_frac` of max HP) and a
 post-hit cooldown (`impact_cooldown_s`) so one crash can't instantly wreck the car —
 a car survives ~2-3 big hits (the chassis contacts an obstacle every tick while
 pinned, so the cooldown groups a whole crash into one hit); power and steer-alignment degrade with the damage
@@ -24,8 +27,8 @@ it. In-run HUD gauge (colour-graded, low-HP warning pulse, impact flash, gated b
 
 ## Remaining / deferred (live in other specs)
 
-- **Tuning numbers** — `max_hp` per car, the `mass`→HP curve, the impulse
-  threshold, and how steeply power/steer degrade are placeholders. The mechanism
+- **Tuning numbers** — `max_hp` per car, the `mass`→HP curve, the speed→HP
+  damage curve, and how steeply power/steer degrade are placeholders. The mechanism
   is fixed; the values are settled by **playtest** (`gameplay.md` says so).
 - **Impact / wreck SFX** — §5's `Audio.play_sfx_3d("impact_*")` / `"wreck"` hooks
   are stubbed silent; they light up with **`todo/audio.md`** (bus layout + SFX).

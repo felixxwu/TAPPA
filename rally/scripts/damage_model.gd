@@ -31,6 +31,10 @@ signal wrecked()
 # _integrate_forces. BillboardField tags its collision body with this.
 const OBSTACLE_GROUP := "obstacle"
 
+# m/s -> km/h, so the speed-keyed damage maths can work in the km/h the GameConfig
+# knobs are authored in (car.gd reads the body's velocity in m/s).
+const MPS_TO_KMH := 3.6
+
 var max_hp := 1000.0
 var hp := 1000.0
 var immortal := false
@@ -88,23 +92,32 @@ func power_multiplier(cfg: GameConfig) -> float:
 	return 1.0 - damage_fraction() * cfg.damage_power_loss_max
 
 
-# HP a contact of the given impulse magnitude costs: nothing up to the threshold,
-# then linear above it. Pure/static so the conversion is unit-testable.
-static func hp_loss_for_impulse(impulse: float, cfg: GameConfig) -> float:
-	return maxf(0.0, impulse - cfg.impact_min_impulse) * cfg.hp_per_impulse
+# HP a contact at the given travel speed (m/s) costs: nothing up to
+# impact_min_speed_kmh, then a square-law (kinetic-energy) climb that reaches
+# impact_ref_hp_loss at impact_ref_speed_kmh. Working in km/h matches the config
+# knobs. Pure/static so the conversion is unit-testable.
+static func hp_loss_for_speed(speed_mps: float, cfg: GameConfig) -> float:
+	var v := speed_mps * MPS_TO_KMH
+	var lo := cfg.impact_min_speed_kmh
+	if v <= lo:
+		return 0.0
+	# Square law normalised so the loss is 0 at lo and impact_ref_hp_loss at the
+	# reference speed; above the reference it keeps climbing (capped by the caller).
+	var span := maxf(cfg.impact_ref_speed_kmh * cfg.impact_ref_speed_kmh - lo * lo, 1e-6)
+	return cfg.impact_ref_hp_loss * (v * v - lo * lo) / span
 
 
-# Register an obstacle contact: convert its impulse to HP loss, apply it, and
-# (when it actually costs HP) emit `damaged` for the HUD/audio cue. Returns the
-# HP lost. The immortal starter ignores impacts entirely.
-func register_impact(impulse: float, contact_point: Vector3, cfg: GameConfig) -> float:
+# Register an obstacle contact at the car's travel speed (m/s): convert it to HP
+# loss, apply it, and (when it actually costs HP) emit `damaged` for the HUD/audio
+# cue. Returns the HP lost. The immortal starter ignores impacts entirely.
+func register_impact(speed_mps: float, contact_point: Vector3, cfg: GameConfig) -> float:
 	if immortal:
 		return 0.0
 	# Within the post-hit cooldown the crash is still "in progress" — ignore it so a
 	# car pinned against a tree (which contacts every tick) loses HP once, not per frame.
 	if _impact_cooldown > 0.0:
 		return 0.0
-	var loss := hp_loss_for_impulse(impulse, cfg)
+	var loss := hp_loss_for_speed(speed_mps, cfg)
 	if loss <= 0.0:
 		return 0.0
 	# Cap a single hit so no one crash can wreck the car (survive 2-3 big hits).

@@ -30,23 +30,47 @@ func _clean() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-# --- Impulse -> HP -----------------------------------------------------------
+# --- Speed -> HP -------------------------------------------------------------
 
-func test_impulse_below_threshold_costs_nothing() -> void:
+# Helper: an impact speed (m/s) for a given km/h, matching the config's units.
+func _mps(kmh: float) -> float:
+	return kmh / DamageModel.MPS_TO_KMH
+
+
+func test_low_speed_below_threshold_costs_nothing() -> void:
 	var cfg: GameConfig = Config.data
-	assert_eq(DamageModel.hp_loss_for_impulse(0.0, cfg), 0.0, "no contact, no loss")
-	assert_eq(DamageModel.hp_loss_for_impulse(cfg.impact_min_impulse, cfg), 0.0,
-		"a hit exactly at the threshold still costs nothing")
-	assert_eq(DamageModel.hp_loss_for_impulse(cfg.impact_min_impulse - 1.0, cfg), 0.0,
-		"a gentle scrape below the threshold costs nothing")
+	assert_eq(DamageModel.hp_loss_for_speed(0.0, cfg), 0.0, "stationary, no loss")
+	assert_eq(DamageModel.hp_loss_for_speed(_mps(cfg.impact_min_speed_kmh), cfg), 0.0,
+		"a hit exactly at the threshold speed still costs nothing")
+	assert_eq(DamageModel.hp_loss_for_speed(_mps(cfg.impact_min_speed_kmh - 1.0), cfg), 0.0,
+		"a crawl below the threshold speed costs nothing")
 
 
-func test_impulse_above_threshold_is_linear() -> void:
+func test_hp_loss_grows_with_square_of_speed() -> void:
 	var cfg: GameConfig = Config.data
-	var impulse := cfg.impact_min_impulse + 100.0
-	var expected := 100.0 * cfg.hp_per_impulse
-	assert_almost_eq(DamageModel.hp_loss_for_impulse(impulse, cfg), expected, 1e-5,
-		"HP loss is (impulse - threshold) * hp_per_impulse")
+	# At the reference speed a hit costs exactly the reference HP loss.
+	assert_almost_eq(DamageModel.hp_loss_for_speed(_mps(cfg.impact_ref_speed_kmh), cfg),
+		cfg.impact_ref_hp_loss, 1e-3, "a reference-speed hit costs impact_ref_hp_loss")
+	# Square law: halving the speed cuts the loss to well under half (so a slow hit
+	# is disproportionately gentle), and the loss rises monotonically with speed.
+	var slow := DamageModel.hp_loss_for_speed(_mps(cfg.impact_ref_speed_kmh * 0.5), cfg)
+	var fast := DamageModel.hp_loss_for_speed(_mps(cfg.impact_ref_speed_kmh), cfg)
+	assert_lt(slow, fast * 0.4, "half the speed costs much less than half the HP (energy law)")
+	assert_gt(fast, slow, "faster hits always cost more")
+
+
+# The behaviour the design calls for: a ~60 km/h hit lets most cars (max HP
+# 800-1100) survive 4-5 hits, while a ~20 km/h hit barely scratches them.
+func test_speed_damage_calibration() -> void:
+	var cfg: GameConfig = Config.data
+	var loss_60 := DamageModel.hp_loss_for_speed(_mps(60.0), cfg)
+	assert_between(int(ceil(800.0 / loss_60)), 4, 5,
+		"a ~800 HP car survives 4-5 hits at 60 km/h")
+	assert_between(int(ceil(1000.0 / loss_60)), 4, 5,
+		"a ~1000 HP car survives 4-5 hits at 60 km/h")
+	var loss_20 := DamageModel.hp_loss_for_speed(_mps(20.0), cfg)
+	assert_lt(loss_20 / 800.0, 0.05,
+		"a 20 km/h hit costs under 5% of the smallest car's HP (barely any damage)")
 
 
 func test_register_impact_reduces_hp_and_emits_damaged() -> void:
@@ -58,17 +82,17 @@ func test_register_impact_reduces_hp_and_emits_damaged() -> void:
 		got["loss"] = loss
 		got["point"] = point
 		got["count"] += 1)
-	var impulse := cfg.impact_min_impulse + 200.0
-	var expected := 200.0 * cfg.hp_per_impulse
-	var hit_loss := dm.register_impact(impulse, Vector3(1, 2, 3), cfg)
-	assert_almost_eq(hit_loss, expected, 1e-5, "register_impact returns the HP lost")
-	assert_almost_eq(dm.hp, 1000.0 - expected, 1e-5, "HP drained by the loss")
-	assert_almost_eq(got["loss"], expected, 1e-5, "damaged carries the loss")
+	var speed := _mps(cfg.impact_ref_speed_kmh)
+	var expected := cfg.impact_ref_hp_loss  # below the per-hit cap for a 1000 HP car
+	var hit_loss := dm.register_impact(speed, Vector3(1, 2, 3), cfg)
+	assert_almost_eq(hit_loss, expected, 1e-3, "register_impact returns the HP lost")
+	assert_almost_eq(dm.hp, 1000.0 - expected, 1e-3, "HP drained by the loss")
+	assert_almost_eq(got["loss"], expected, 1e-3, "damaged carries the loss")
 	assert_eq(got["point"], Vector3(1, 2, 3), "damaged carries the contact point")
-	# A sub-threshold hit costs nothing and does NOT emit. (The earlier hit started a
-	# cooldown, but a scrape would cost nothing regardless.)
+	# A below-threshold hit costs nothing and does NOT emit. (The earlier hit started
+	# a cooldown, but a crawl would cost nothing regardless.)
 	got["count"] = 0
-	assert_eq(dm.register_impact(1.0, Vector3.ZERO, cfg), 0.0, "scrape costs nothing")
+	assert_eq(dm.register_impact(_mps(1.0), Vector3.ZERO, cfg), 0.0, "low-speed nudge costs nothing")
 	assert_eq(got["count"], 0, "no damaged signal for a no-cost hit")
 
 
@@ -78,8 +102,8 @@ func test_single_impact_is_capped_and_cannot_wreck() -> void:
 	dm.field(1000.0, 1000.0, false)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	# A colossal single impact is capped to a fraction of max HP, so it can't wreck.
-	var loss := dm.register_impact(cfg.impact_min_impulse + 1.0e6, Vector3.ZERO, cfg)
+	# A colossal single impact (huge speed) is capped to a fraction of max HP, so it can't wreck.
+	var loss := dm.register_impact(_mps(1.0e6), Vector3.ZERO, cfg)
 	assert_almost_eq(loss, 1000.0 * cfg.impact_max_loss_frac, 1e-3,
 		"a single impact is capped to impact_max_loss_frac of max HP")
 	assert_gt(dm.hp, 0.0, "one crash cannot wreck the car")
@@ -92,7 +116,7 @@ func test_cooldown_groups_a_crash_and_it_takes_several_hits_to_wreck() -> void:
 	dm.field(1000.0, 1000.0, false)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	var big := cfg.impact_min_impulse + 1.0e6
+	var big := _mps(1.0e6)  # huge speed -> capped per-hit loss
 	dm.register_impact(big, Vector3.ZERO, cfg)
 	var after_one := dm.hp
 	# A second impact during the cooldown (same crash, next tick) is ignored.

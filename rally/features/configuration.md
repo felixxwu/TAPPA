@@ -88,8 +88,9 @@ See [stage.md](stage.md).
 ### Damage
 | Property | Default | Purpose |
 |----------|---------|---------|
-| `impact_min_impulse` | 50.0 | Contact impulse (N·s) below which a hit costs no HP |
-| `hp_per_impulse` | 0.1 | HP lost per unit impulse above the threshold |
+| `impact_min_speed_kmh` | 10.0 | Impact speed (km/h) below which a hit costs no HP |
+| `impact_ref_speed_kmh` | 60.0 | Reference impact speed (km/h) at which a hit costs `impact_ref_hp_loss` |
+| `impact_ref_hp_loss` | 200.0 | HP a reference-speed hit costs (square-law in speed); ~200 ⇒ most cars survive 4-5 hits at 60 km/h, barely any at 20 |
 | `impact_max_loss_frac` | 0.34 | Cap on one impact's HP loss, as a fraction of max HP (no single crash wrecks) |
 | `impact_cooldown_s` | 0.7 | Post-hit window where impacts are ignored (groups a crash into one hit) |
 | `damage_power_loss_max` | 0.4 | Fraction of engine power lost at 0 HP |
