@@ -110,6 +110,14 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
   LDR downscale of a Poly Haven HDRI). The full-screen post-process quantizes it
   to the same 5-bit + dither look, so it reads as native PS1, not a pasted photo.
   `hq.gd` builds the same sky in code so HQ matches.
+- **Sun alignment.** The car/terrain fake light (`sun_direction`) must point at
+  the visible sun. Convention: panoramas are pre-rolled with
+  `tools/align_sky_sun.py` so the sun sits at the image CENTRE — which is `-Z` in
+  Godot's panorama mapping (the camera's default forward) — so `sun_direction`'s
+  azimuth is always `-Z` (`x≈0, z<0`) and only its elevation tracks the sky's sun
+  height. Dropping in a new sky: run the tool (it rolls the image and prints the
+  `sun_direction` to paste into `GameConfig`). The roll is a pure yaw, so the
+  horizon stays level. (HQ uses its own `DirectionalLight3D`, independent of this.)
 - **Distant terrain** (`scripts/distant_terrain.gd`, `DistantTerrain`): a coarse,
   collision-free backdrop mesh sampling the same noise as the real terrain,
   extending past the detailed 3×3 chunk ring (~75 m) so the reduced fog reveals a
