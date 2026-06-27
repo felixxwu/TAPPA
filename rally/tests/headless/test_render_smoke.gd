@@ -137,12 +137,12 @@ func test_car_meshes_are_lit_but_terrain_is_flat() -> void:
 	assert_not_null(car_mat, "car chassis has a ShaderMaterial")
 	assert_gt(car_mat.get_shader_parameter("light_amount"), 0.0, "car mesh is lit (light_amount > 0)")
 	# Fake-light direction is the configured, skybox-aligned sun. The panorama is
-	# rolled (tools/align_sky_sun.py) so the sun sits at image centre — which is -Z
-	# in Godot's mapping — so the light comes from -Z (z < 0) and the shading lines
+	# rolled (tools/align_sky_sun.py) so the sun sits at image centre — which is +Z
+	# in Godot's mapping — so the light comes from +Z (z > 0) and the shading lines
 	# up with the visible sun.
 	var light_dir = car_mat.get_shader_parameter("light_dir")
 	assert_eq(light_dir, Config.data.sun_direction, "car shading uses the configured sun_direction")
-	assert_lt(light_dir.z, 0.0, "sun-centred convention: the light comes from -Z")
+	assert_gt(light_dir.z, 0.0, "sun-centred convention: the light comes from +Z")
 
 	var floor_node := _scene.get_node("Floor")
 	var terrain_mat := floor_node.chunk_material as ShaderMaterial

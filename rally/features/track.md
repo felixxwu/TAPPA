@@ -69,8 +69,8 @@ to world XZ (`x → world x`, `y → world z`).
   different searches; **restart 0 keeps the authored seed**) up to `MAX_RESTARTS`,
   returning the deepest partial if all fail. A pathological seed that once took ~8
   minutes now bails and a fresh restart completes the track in well under a second.
-  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0)` returns
-  `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool }`. Each
+  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0, reserve_behind_m=0)`
+  returns `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool }`. Each
   piece dict records `corner`, `flip`, `straight`, `cells`, and its `entry_pos` /
   `entry_heading` (the pose at the start of its connecting straight — used by
   roadside-sign placement, see [signs.md](signs.md)).
@@ -79,6 +79,14 @@ to world XZ (`x → world x`, `y → world z`).
   non-adjacent sections to keep that much extra gap — stopping the track from
   looping back and running alongside itself too closely — without widening the
   rendered road (these `cells` feed only the overlap test, never `set_track`).
+- **Reserved start corridor:** `reserve_behind_m` pre-occupies a straight corridor
+  directly *behind* the start (at the collision width), so the search can't loop the
+  track back across the start-line lead-in stub the run scene prepends there
+  ([start-line.md](start-line.md)). Cells within the join buffer of the start may
+  still overlap (the track emerges from there); only loop-backs further out are
+  rejected. It's defined relative to the start frame, so the generated SHAPE depends
+  only on `(seed, turn_count, width, reserve)` — the same value is passed when
+  deriving opponent target times, keeping them in sync with the run-scene track.
 
 ## Rendering
 

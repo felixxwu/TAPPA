@@ -352,12 +352,18 @@ func _set_phase(p: int) -> void:
 # pass precomputed targets to start_rally so no track generation happens.
 func _compute_event_targets(rally: Dictionary) -> Array:
 	var cfg: GameConfig = Config.data
+	# Match the run scene's start-line lead-in reservation (world.gd) so the target
+	# track shape — and thus the derived times — equal what the player drives. The
+	# reservation is relative to the start frame, so the canonical pose here is fine.
+	var reserve_behind := 0.0
+	if cfg.start_line_enabled:
+		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
 	var targets: Array = []
 	for event in rally.get("events", []):
 		var width := RallyLibrary.event_width(event)
 		var result := TrackGenerator.generate(
 			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
-			int(event.get("turn_count", 10)), width, cfg.track_clearance)
+			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind)
 		targets.append(RallyLibrary.derive_target_ms(result, event))
 	return targets
 

@@ -99,10 +99,24 @@ static func exit_heading(polyline: PackedVector2Array) -> Vector2:
 # `clearance` (m) inflates the collision footprint beyond the visible track so
 # non-adjacent sections must keep that much extra gap; it does NOT widen the
 # rendered road (cells here feed only the overlap test, not Floor.set_track).
+# `reserve_behind_m` (m) pre-occupies a straight corridor directly BEHIND the
+# start (at the collision width), so the search can't loop the track back across
+# the start-line lead-in stub the run scene prepends there (todo/start-line). It
+# is defined RELATIVE to the start frame, so the generated SHAPE is identical for
+# any (start_pos, start_heading) — keeping the opponents' derived target times
+# (computed at a canonical pose with the same value) in sync with the run track.
 static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int,
-		turn_count: int, width: float, clearance: float = 0.0) -> Dictionary:
+		turn_count: int, width: float, clearance: float = 0.0,
+		reserve_behind_m: float = 0.0) -> Dictionary:
 	var coll_width := width + 2.0 * clearance
 	var corners := _turn_corners()
+	# Cells of the lead-in corridor behind the start (empty when not staged). Cells
+	# within the join buffer of the start are still allowed to overlap (the track
+	# emerges from there); only loop-backs further out are blocked.
+	var reserved: Dictionary = {}
+	if reserve_behind_m > 0.0:
+		var back := start_pos - start_heading.normalized() * reserve_behind_m
+		reserved = rasterize_cells(PackedVector2Array([start_pos, back]), coll_width)
 	# Track the deepest partial across restarts so a give-up still renders the best
 	# attempt (not just the last one). Each restart is bounded by the per-attempt step
 	# budget (see _search / STEPS_PER_TURN), so trying many is cheap.
@@ -110,7 +124,7 @@ static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int
 	for restart in MAX_RESTARTS:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = seed_value + restart * RESTART_SEED_STRIDE
-		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng)
+		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved)
 		if result["complete"]:
 			return result
 		if best_partial.is_empty() or result["pieces"].size() > best_partial["pieces"].size():
@@ -215,7 +229,7 @@ static func _point_seg_dist_sq(p: Vector2, a: Vector2, b: Vector2) -> float:
 # the same cells ~half/RASTER_STEP times over, which made each candidate ~70 ms and
 # turned a heavy-backtracking seed into a multi-minute hang.
 static func _collide_and_cells(polyline: PackedVector2Array, width: float,
-		occupied: Dictionary, frame_pos: Vector2) -> Dictionary:
+		occupied: Dictionary, reserved: Dictionary, frame_pos: Vector2) -> Dictionary:
 	var cells: Dictionary = {}
 	var half := width / 2.0
 	var half_sq := half * half
@@ -236,14 +250,18 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 				if _point_seg_dist_sq(centre, a, b) > half_sq:
 					continue
 				cells[cell] = true
-				if occupied.has(cell) and centre.distance_squared_to(frame_pos) > buffer_sq:
+				# Collide against placed track OR the reserved lead-in corridor; cells
+				# within the join buffer of the current frame are allowed to touch.
+				if (occupied.has(cell) or reserved.has(cell)) \
+						and centre.distance_squared_to(frame_pos) > buffer_sq:
 					return { "collides": true, "cells": cells }
 	return { "collides": false, "cells": cells }
 
 
 # DFS backtracking. Builds the world polybezier point-by-point.
 static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
-		width: float, corners: Array, rng: RandomNumberGenerator) -> Dictionary:
+		width: float, corners: Array, rng: RandomNumberGenerator,
+		reserved: Dictionary = {}) -> Dictionary:
 	# world_points: Array of [pos, in, out]; starts with the spawn point.
 	var world_points: Array = [[start_pos, Vector2.ZERO, Vector2.ZERO]]
 	var occupied: Dictionary = {}
@@ -271,7 +289,7 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			top["idx"] += 1
 			var built := _build_candidate(cand, corners, frame_pos, frame_heading)
 			# Overlap test (early-exits on the first overlapping cell) + footprint cells.
-			var hit := _collide_and_cells(built["poly"], width, occupied, frame_pos)
+			var hit := _collide_and_cells(built["poly"], width, occupied, reserved, frame_pos)
 			if hit["collides"]:
 				continue
 			# Commit.

@@ -112,9 +112,9 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
   `hq.gd` builds the same sky in code so HQ matches.
 - **Sun alignment.** The car/terrain fake light (`sun_direction`) must point at
   the visible sun. Convention: panoramas are pre-rolled with
-  `tools/align_sky_sun.py` so the sun sits at the image CENTRE — which is `-Z` in
-  Godot's panorama mapping (the camera's default forward) — so `sun_direction`'s
-  azimuth is always `-Z` (`x≈0, z<0`) and only its elevation tracks the sky's sun
+  `tools/align_sky_sun.py` so the sun sits at the image CENTRE — which is `+Z` in
+  Godot's panorama mapping (verified in-engine) — so `sun_direction`'s azimuth is
+  always `+Z` (`x≈0, z>0`) and only its elevation tracks the sky's sun
   height. Dropping in a new sky: run the tool (it rolls the image and prints the
   `sun_direction` to paste into `GameConfig`). The roll is a pure yaw, so the
   horizon stays level. (HQ uses its own `DirectionalLight3D`, independent of this.)

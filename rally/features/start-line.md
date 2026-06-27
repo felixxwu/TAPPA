@@ -60,18 +60,26 @@ the player is otherwise stationary, then gone.
 
 The queue needs straight road both ahead (for the leader's run-off) and behind (for
 the trailer), but the generated track can start on a corner with no road behind the
-spawn. So for staged runs `world.gd` builds a straight lead-in **without touching the
-generator**: it generates the track from a point `start_lead_in_ahead_m` **ahead** of
-the spawn, then `_with_start_lead_in` prepends a handle-free straight stub
-`start_lead_in_behind_m` **behind** the spawn, through the spawn, to the generated
-track. The road mesh, terrain flattening, `TrackProgress`, tree rejection and tire
-marks all use this extended centerline; the **signs** keep using the raw generated
-centerline, so the start gate sits ahead of the launch point (the cars cross it as
-they pull away). Trade-offs (both small, configurable): the progress bar starts at a
-few % (the spawn sits a few metres into the centerline), and the player drives the
-~`ahead_m` of lead-in that the opponents' par time doesn't include (negligible vs the
-rival pace band). The opponents' target times are derived from the raw generator and
-so are unaffected.
+spawn. So for staged runs `world.gd` generates the track from a point
+`start_lead_in_ahead_m` **ahead** of the spawn, then `_with_start_lead_in` prepends a
+handle-free straight stub `start_lead_in_behind_m` **behind** the spawn, through the
+spawn, to the generated track. The road mesh, terrain flattening, `TrackProgress`,
+tree rejection and tire marks all use this extended centerline; the **signs** keep
+using the raw generated centerline, so the start gate sits ahead of the launch point
+(the cars cross it as they pull away).
+
+So the search doesn't loop the track back across that lead-in stub, `world.gd`
+**reserves** the whole lead-in corridor in the generator — it passes
+`reserve_behind_m = start_lead_in_ahead_m + start_lead_in_behind_m`, which
+pre-occupies a straight corridor behind the generation start (see
+[track.md](track.md)). Because the reservation is relative to the start frame, the
+generated track SHAPE stays a pure function of `(seed, turn_count, width, reserve)`;
+`RallySession._compute_event_targets` passes the **same** reserve at its canonical
+pose, so the opponents' derived target times match the track the player actually
+drives. Trade-offs (both small, configurable): the progress bar starts at a few %
+(the spawn sits a few metres into the centerline), and the player drives the
+~`ahead_m` of lead-in that the par time doesn't include (negligible vs the rival
+pace band).
 
 ## Wiring & lifecycle
 

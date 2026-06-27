@@ -405,11 +405,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 1.0) var terrain_light_amount := 1.0
 ## World-space direction TO the sun (need not be normalised; normalised on use).
 ## ALIGNED TO THE SKYBOX: panoramas are pre-rolled (tools/align_sky_sun.py) so the
-## sun sits at the image centre, which is -Z in Godot's panorama mapping — hence
-## the azimuth here is always -Z (x≈0, z<0); only the elevation (y/z split) tracks
-## the sky's sun height. Current value matches textures/sky_field.png's low sun.
-## If a new sky's lit side looks reversed in-game, flip the sign of z.
-@export var sun_direction := Vector3(0.0, 0.184, -0.983)
+## sun sits at the image centre, which is +Z in Godot's panorama mapping (verified
+## in-engine) — hence the azimuth here is always +Z (x≈0, z>0); only the elevation
+## (y/z split) tracks the sky's sun height. Matches textures/sky_field.png's low sun.
+@export var sun_direction := Vector3(0.0, 0.184, 0.983)
 ## Directional "sun" contribution added on lit-facing surfaces.
 @export var sun_color := Color(0.5, 0.5, 0.5)
 ## Ambient colour on upward-facing surfaces (sky).

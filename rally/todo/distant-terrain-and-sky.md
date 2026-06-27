@@ -9,7 +9,7 @@
 > treeline), Poly Haven `rooitou_park` via the drei-assets GitHub mirror — in
 > `main.tscn` + `hq.gd`). The fake-light `sun_direction` is **aligned to the
 > skybox sun**: panoramas are pre-rolled (`tools/align_sky_sun.py`) so the sun is
-> at image centre = `-Z`, and `sun_direction` matches (azimuth `-Z`, elevation
+> at image centre = `+Z`, and `sun_direction` matches (azimuth `+Z`, elevation
 > from the sky's sun). Tests:
 > `test_terrain.gd::test_distant_terrain_*`, `test_render_smoke.gd` (skybox + fog
 > + backdrop). Docs: `features/rendering.md`, `features/terrain.md`.

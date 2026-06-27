@@ -70,6 +70,35 @@ func test_generate_places_requested_corner_count() -> void:
 	assert_true(r["complete"], "the search completed within the cap")
 
 
+func test_generate_avoids_the_reserved_start_corridor() -> void:
+	# Mimics the start-line lead-in: a straight corridor reserved BEHIND the start
+	# (−heading). The search must not loop the track back across it.
+	var width := 6.0
+	var clearance := 8.0
+	var reserve := 38.0  # ahead (22) + behind (16), as world.gd passes
+	var r := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, width, clearance, reserve)
+	assert_true(r["complete"], "still generates with a reserved start corridor")
+	var coll := width + 2.0 * clearance
+	var back := START_POS - START_HEADING * reserve
+	var reserved := TrackGenerator.rasterize_cells(PackedVector2Array([START_POS, back]), coll)
+	# Placed cells may touch the corridor only near the start (the join/emergence,
+	# within the buffer); none may overlap the far corridor (a genuine loop-back).
+	var far_overlaps := 0
+	for cell in r["cells"]:
+		if reserved.has(cell):
+			var c := Vector2((cell.x + 0.5) * 0.5, (cell.y + 0.5) * 0.5)  # CELL_M = 0.5
+			if c.distance_to(START_POS) > coll * 1.5:
+				far_overlaps += 1
+	assert_eq(far_overlaps, 0, "track never loops back into the reserved start corridor")
+
+
+func test_reservation_keeps_generation_deterministic() -> void:
+	var a := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 8.0, 38.0)
+	var b := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 8.0, 38.0)
+	assert_eq(a["cells"].size(), b["cells"].size(), "same inputs + reserve -> same track")
+	assert_eq(a["pieces"].size(), b["pieces"].size(), "deterministic piece count with a reservation")
+
+
 func test_generate_starts_at_the_spawn_frame() -> void:
 	var r := _generate(5)
 	var curve: Curve2D = r["centerline"]

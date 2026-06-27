@@ -4,15 +4,13 @@
 The car/terrain use a FAKE directional light (GameConfig.sun_direction); for the
 shading to match the visible sun, the panorama's sun must sit at a known spot.
 Convention: the sun is rolled to the image's HORIZONTAL CENTRE, which in Godot's
-panorama mapping is the -Z direction (what the camera looks down by default).
-A horizontal roll is a pure yaw, so the horizon stays level (no tilt).
+panorama mapping is the +Z direction (verified in-engine). A horizontal roll is a
+pure yaw, so the horizon stays level (no tilt).
 
 Drop-in workflow for a new sky:
     python3 tools/align_sky_sun.py textures/sky_new.png
 then paste the printed `sun_direction` into GameConfig (sun is centred, so the
-azimuth is always -Z; only the elevation — the y/z split — changes per sky).
-If in-game the lit side is OPPOSITE the sun, flip the sign of sun_direction.z
-(covers the panorama winding convention; verify once visually).
+azimuth is always +Z; only the elevation — the y/z split — changes per sky).
 
 Usage: align_sky_sun.py IN.png [OUT.png]   (OUT defaults to overwriting IN)
 """
@@ -44,7 +42,7 @@ def main():
     # sun_direction at the centred azimuth (-Z) and the sun's detected elevation.
     polar = v * math.pi                 # 0 = zenith, pi/2 = horizon
     y = math.cos(polar)
-    z = -math.sin(polar)                # centre column -> -Z
+    z = math.sin(polar)                 # centre column -> +Z (Godot panorama mapping)
     elev = 90.0 - math.degrees(polar)
     print(f"detected sun at u={u:.3f} v={v:.3f}  (elevation {elev:.1f} deg)")
     print(f"rolled {shift}px -> sun centred; wrote {out}")

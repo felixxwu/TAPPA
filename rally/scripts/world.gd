@@ -123,15 +123,22 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Staged runs (the start-line sequence) force a straight lead-in around the start
 	# line: generate the track from a point AHEAD so the leader has straight road to
 	# drive off down, and prepend a straight stub BEHIND for the trailing car. The
-	# generator — and the opponents' target times — are untouched; only the run-scene
-	# road/progress centerline gets the lead-in.
+	# lead-in corridor is RESERVED in the generator (reserve_behind_m below) so the
+	# search can't loop the track back across it. Track SHAPE stays a function of
+	# (seed, turn_count, width, reserve) only, so the opponents' target times — which
+	# pass the same reserve at a canonical pose (RallySession._compute_event_targets)
+	# — stay in sync.
 	var staged := _should_stage()
 	var gen_start := start_pos
+	# Corridor reserved behind the generation start = the whole lead-in (the ahead
+	# straight start→gen_start plus the behind stub). 0 when not staged.
+	var reserve_behind := 0.0
 	if staged:
 		gen_start = start_pos + start_heading * cfg.start_lead_in_ahead_m
+		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
 	var result := TrackGenerator.generate(
 		gen_start, start_heading, cfg.track_seed, cfg.track_turn_count, cfg.track_width,
-		cfg.track_clearance)
+		cfg.track_clearance, reserve_behind)
 	# Road/progress centerline (with the lead-in for staged runs). The raw generated
 	# centerline still feeds the signs, so the start gate sits ahead of the launch
 	# point — the cars cross it as they pull away.
