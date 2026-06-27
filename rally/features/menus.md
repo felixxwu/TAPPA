@@ -40,7 +40,7 @@ billboard **trees** framing the lot (`_build_trees`, reusing the stage's
 blocks via `_block()` (placeholder art; the framing/positions that the flow depends
 on are in `GameConfig`).
 
-**EXTERIOR (boot/title).** A title + **Start** button over an establishing shot of
+**EXTERIOR (boot/title).** Just a **Start** button over an establishing shot of
 the outdoor car park, with a block skyline **behind the garage** and trees framing
 the lot. The player's **whole owned collection** is parked in the car park here
 (`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every

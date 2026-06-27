@@ -7,7 +7,7 @@
 > overlay "screens" are gone). The environment is built from `BoxMesh` blocks
 > (`_block()`): a skyline of buildings, the garage shell, the map table, the lift.
 > - **Exterior (title):** establishing shot of the buildings + the outdoor car park
->   with a title + **Start** button; Start (or `menu_select`) flies into the garage.
+>   with just a **Start** button; Start (or `menu_select`) flies into the garage.
 > - **Garage:** block interior with the **map table** + the **tuning lift**. Tapping
 >   the table → map view; tapping the lift flashes "coming soon" (tuning is a later
 >   slice). Both are `Area3D` clickables (`get_viewport().physics_object_picking`).

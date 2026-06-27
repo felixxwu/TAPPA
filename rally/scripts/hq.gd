@@ -2,8 +2,8 @@ extends Node3D
 # HQ — the meta-game hub (todo/menus.md location 1), now a DIEGETIC 3D space the
 # camera flies through (todo/diegetic-hq.md) instead of flat overlay screens. One
 # world; the camera moves between "stations":
-#   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park. A
-#     title + Start button. Start flies the camera into the garage.
+#   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park, with
+#     just a Start button. Start flies the camera into the garage.
 #   * GARAGE   — a block garage interior holding the MAP TABLE and the TUNING LIFT.
 #     Tap the table to see the rallies; tap the lift to tune (coming later).
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
@@ -493,22 +493,8 @@ func _build_title_overlay() -> void:
 	var root: VBoxContainer = made[1]
 	root.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	var title := Label.new()
-	title.text = "RALLY HQ"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 56)
-	root.add_child(title)
-
-	var sub := Label.new()
-	sub.text = "Build your garage. Win rallies. Reach the Showdown."
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_font_size_override("font_size", 16)
-	root.add_child(sub)
-
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 16)
-	root.add_child(spacer)
-
+	# Title screen is just the Start button over the parked-collection backdrop —
+	# no title/subtitle text.
 	var start := Button.new()
 	start.text = "Start"
 	start.focus_mode = Control.FOCUS_NONE
