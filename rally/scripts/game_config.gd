@@ -277,9 +277,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Garage interior camera (sees the map table + tuning lift).
 @export var hq_garage_cam_eye := Vector3(0.0, 4.6, 13.0)
 @export var hq_garage_cam_look := Vector3(0.0, 1.1, 0.0)
-## Map-table camera: a near-top-down look down onto the table's 3D map.
-@export var hq_table_cam_eye := Vector3(-3.0, 5.4, 2.6)
-@export var hq_table_cam_look := Vector3(-3.0, 0.95, -0.2)
+## Map-table camera: a near-top-down look down onto the table's 3D map. Zoomed in
+## so the map fills the screen; drag to pan across it (clamped to the map extents).
+@export var hq_table_cam_eye := Vector3(-3.0, 3.6, 1.8)
+@export var hq_table_cam_look := Vector3(-3.0, 0.95, -0.3)
+## Map-table pan speed: world metres per screen pixel of drag.
+@export var hq_table_pan_speed := 0.012
 ## Where the car-park lineup sits (outside, in front of the garage). Cars row along X.
 @export var hq_carpark_origin := Vector3(0.0, 0.0, 26.0)
 ## Garage interior footprint (m): floor X/Z extent; walls + roof are built from it.

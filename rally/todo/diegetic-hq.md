@@ -11,13 +11,17 @@
 > - **Garage:** block interior with the **map table** + the **tuning lift**. Tapping
 >   the table → map view; tapping the lift flashes "coming soon" (tuning is a later
 >   slice). Both are `Area3D` clickables (`get_viewport().physics_object_picking`).
-> - **Table (3D world map):** near-top-down look at the table's flat map plane. Each
->   rally is a 3D **pin** (`_make_pin`) at its `map_pos`: a tier-coloured cone, a
->   billboarded `Label3D` name, and a row of **sphere stars** (1st-place best → 3
->   gold, 2nd → 2, 3rd → 1, else grey, from `Save.best_placement`). The showdown pin
->   is grey + **non-pickable** until all others are completed; a progress meter sits
->   on the HUD. Tapping an (unlocked) pin opens the rally-detail sub-panel; **Enter
->   Rally** flies to the car park, **◄ Map** dismisses it.
+> - **Table (3D world map):** zoomed-in, near-top-down look at the table's flat map
+>   plane, **drag to pan** (clamped to the map; `hq_table_pan_speed`). Each rally is
+>   a 3D **pin** (`_make_pin`) at its `map_pos`: a tier-coloured cone, a billboarded
+>   `Label3D` name, and a row of **sphere stars** (1st-place best → 3 gold, 2nd → 2,
+>   3rd → 1, else grey, from `Save.best_placement`). The showdown pin is grey +
+>   **non-pickable** until all others are completed; a progress meter sits on the
+>   HUD. Tapping an (unlocked) pin opens the rally-detail sub-panel; **Enter Rally**
+>   flies to the car park, **◄ Map** dismisses it. (Pin picking needs the HUD
+>   overlays made pass-through via `_passthrough_overlay`, else the full-rect HUD
+>   swallows the touch; selection fires on release + no-drag so a pan doesn't open a
+>   pin.)
 > - **Car park (reused for car select):** the cars **eligible for the chosen rally**
 >   are parked outside at `GameConfig.hq_carpark_origin` as physics-frozen, silenced
 >   `Car` props (via `Car.apply_owned`); a menu camera **pans between** them on cycle

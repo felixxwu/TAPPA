@@ -130,6 +130,47 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	assert_string_contains(hq._detail_body.text, "RWD cars", "the detail spells out the eligibility")
 
 
+func test_hq_table_drag_pans_and_clamps() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_table()
+	assert_eq(hq._table_pan, Vector3.ZERO, "the map re-centres when opened")
+	hq._pan_table(Vector2(-100, -50))
+	assert_gt(hq._table_pan.x, 0.0, "dragging pans the map view")
+	# A huge drag clamps to the map extents (half the plane each way).
+	hq._pan_table(Vector2(-100000, -100000))
+	var cfg: GameConfig = Config.data
+	assert_almost_eq(hq._table_pan.x, cfg.hq_map_plane_size.x * 0.5, 0.001, "pan clamps to the map's far X edge")
+	assert_almost_eq(hq._table_pan.z, cfg.hq_map_plane_size.y * 0.5, 0.001, "pan clamps to the map's far Z edge")
+
+
+func test_hq_dragging_the_map_does_not_open_a_rally() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_table()
+	# Press → move → the press becomes a pan-drag, not a tap.
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	hq._table_pan_input(press)
+	var move := InputEventMouseMotion.new()
+	move.relative = Vector2(40, 0)
+	hq._table_pan_input(move)
+	assert_true(hq._table_dragged, "a drag past the threshold is detected")
+	# A release over a pin while dragging must NOT open that rally.
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "shakedown")
+	assert_false(hq._detail_open, "dragging the map does not open the pin under the finger")
+	# A clean tap (no drag) on a pin DOES open it (selection fires on release).
+	hq._table_dragged = false
+	hq._on_pin_input(null, release, Vector3.ZERO, Vector3.ZERO, 0, "shakedown")
+	assert_true(hq._detail_open, "a tap with no drag opens the rally detail")
+
+
 func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)

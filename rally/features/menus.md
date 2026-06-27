@@ -46,18 +46,25 @@ lift**. Tapping the table drops to the map view; tapping the lift flashes
 "Tuning bay — coming soon" (the tuning slice is later). A HUD hint + Back (to the
 exterior) sit on top.
 
-**TABLE (the 3D world map).** A near-top-down look at the table's flat map plane.
-Every rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
+**TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
+plane. Every rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
 tier-coloured cone marker, a billboarded `Label3D` name, and a row of small
 **sphere stars** above it — 1st-place best = 3 gold, 2nd = 2, 3rd = 1, else grey
 (`_stars_for`). (3D sphere stars sidestep the font's missing ★/☆ glyphs — same
 reason the UI uses ASCII `<`/`>` for nav.) Each unlocked pin carries a pickable
 `Area3D` (rally id bound to the handler) and its `rally_id`/`locked` in metadata;
 the **showdown** pin is grey + **non-pickable** until every other rally is
-completed. A progress meter sits on the HUD. Tapping a pin opens the **rally
-detail** sub-panel (name, difficulty, eligible-cars restriction, event count,
-best finish + stars); **Enter Rally** flies out to the car park, **◄ Map** dismisses
-the panel, and the table Back returns to the garage.
+completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
+finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
+plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
+**release** and only if the press wasn't a drag (`_table_dragged`), so panning never
+opens the pin under the finger. **Crucially the station overlays are made
+pass-through** (`_passthrough_overlay` sets every non-button control to
+`MOUSE_FILTER_IGNORE`) — otherwise the full-rect HUD container/labels/spacer (all
+default `STOP`) would swallow every touch and the 3D pins would never get a pick.
+Tapping a pin opens the **rally detail** sub-panel (name, difficulty, eligible-cars
+restriction, event count, best finish + stars); **Enter Rally** flies out to the
+car park, **◄ Map** dismisses the panel, and the table Back returns to the garage.
 
 **CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
 rally** (`RallyLibrary.is_eligible`) are parked at `GameConfig.hq_carpark_origin`,
@@ -127,7 +134,9 @@ refinements.
 `tests/headless/test_menu_flow.gd` — HQ boots to the **exterior title** (one 3D map
 pin per rally, showdown pin locked + non-pickable); **Start flies into the garage**;
 tapping the table shows the **map view**; **stars reflect best placement** (1st→3,
-3rd→1, unplayed→0); tapping a pin opens the **rally detail**, and Enter flies to the
+3rd→1, unplayed→0); the map table **pans and clamps to its edges**, and a drag does
+**not** open the pin under the finger (selection is release + no-drag); tapping a pin
+opens the **rally detail**, and Enter flies to the
 **car park** which **filters to the eligible cars** (an AWD car is excluded from an
 RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and

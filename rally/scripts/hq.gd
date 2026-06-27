@@ -40,6 +40,13 @@ var _detail_open := false       # the rally-detail panel is up (a sub-state of T
 var _selected_rally_id := ""
 var _selected_instance_id := -1
 
+# Map-table pan state: drag the table view around (the map can be larger than the
+# screen once zoomed in). _table_pan is the camera's X/Z offset from its base pose;
+# _table_dragged distinguishes a pan from a tap so a drag doesn't open a rally.
+var _table_pan := Vector3.ZERO
+var _table_panning := false
+var _table_dragged := false
+
 # Car-park state: the owned cars eligible for the chosen rally, the parked car nodes
 # + their lot markers (parallel to _eligible), and which slot is focused.
 var _eligible: Array = []
@@ -286,8 +293,8 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	var marker := MeshInstance3D.new()
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.0
-	cone.bottom_radius = 0.16
-	cone.height = 0.5
+	cone.bottom_radius = 0.08
+	cone.height = 0.28
 	marker.mesh = cone
 	marker.position = Vector3(0.0, cone.height * 0.5, 0.0)
 	var cm := StandardMaterial3D.new()
@@ -300,31 +307,32 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	for k in MAX_STARS:
 		var star := MeshInstance3D.new()
 		var sm := SphereMesh.new()
-		sm.radius = 0.06
-		sm.height = 0.12
+		sm.radius = 0.035
+		sm.height = 0.07
 		star.mesh = sm
 		var smat := StandardMaterial3D.new()
 		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		smat.albedo_color = Color(1.0, 0.82, 0.3) if k < earned else Color(0.32, 0.34, 0.40)
 		star.material_override = smat
-		star.position = Vector3((k - (MAX_STARS - 1) * 0.5) * 0.17, cone.height + 0.16, 0.0)
+		star.position = Vector3((k - (MAX_STARS - 1) * 0.5) * 0.10, cone.height + 0.09, 0.0)
 		pin.add_child(star)
 
 	var name3d := Label3D.new()
 	name3d.text = String(rally["name"])
 	name3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	name3d.font_size = 48
-	name3d.pixel_size = 0.0035
-	name3d.outline_size = 8
-	name3d.position = Vector3(0.0, cone.height + 0.42, 0.0)
+	name3d.font_size = 36
+	name3d.pixel_size = 0.0022
+	name3d.outline_size = 6
+	name3d.position = Vector3(0.0, cone.height + 0.24, 0.0)
 	pin.add_child(name3d)
 
-	# Pickable hit sphere (skipped for a locked pin so it can't be entered).
+	# Pickable hit sphere (skipped for a locked pin so it can't be entered). Kept a bit
+	# larger than the marker so the pin stays easy to tap once it's small on screen.
 	if not locked:
 		var area := Area3D.new()
 		var cs := CollisionShape3D.new()
 		var sph := SphereShape3D.new()
-		sph.radius = 0.45
+		sph.radius = 0.28
 		cs.shape = sph
 		area.add_child(cs)
 		area.position = Vector3(0.0, cone.height * 0.5, 0.0)
@@ -375,12 +383,18 @@ func _on_lift_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vecto
 
 
 func _on_pin_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int, rally_id: String) -> void:
-	if _view == View.TABLE and not _detail_open and _is_click(event):
+	# Select on RELEASE, and only if the press didn't turn into a pan-drag — so
+	# dragging across the map to pan never accidentally opens a rally.
+	if _view == View.TABLE and not _detail_open and not _table_dragged and _is_release(event):
 		_on_rally_pin(rally_id)
 
 
 func _is_click(event: InputEvent) -> bool:
 	return event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+
+
+func _is_release(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT
 
 
 # --- Station overlays --------------------------------------------------------
@@ -398,6 +412,17 @@ func _make_overlay(margin := 24.0) -> Array:
 	root.add_theme_constant_override("separation", 12)
 	layer.add_child(root)
 	return [layer, root]
+
+
+# Let taps fall THROUGH an overlay to the 3D scene behind it — only buttons keep
+# capturing input. Without this the full-rect container + its labels/spacer (all
+# default MOUSE_FILTER_STOP) eat every touch and the 3D map (table / lift / pins,
+# picked via Area3D) never receives a pick. Call after the overlay is populated.
+func _passthrough_overlay(root: Control) -> void:
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for n in root.find_children("*", "Control", true, false):
+		if not (n is BaseButton):
+			(n as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func _build_title_overlay() -> void:
@@ -464,6 +489,8 @@ func _build_garage_overlay() -> void:
 	to_table.pressed.connect(_enter_table)
 	actions.add_child(to_table)
 
+	_passthrough_overlay(root)  # let taps reach the 3D table / lift behind the HUD
+
 
 func _build_table_overlay() -> void:
 	var made := _make_overlay()
@@ -489,6 +516,8 @@ func _build_table_overlay() -> void:
 	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
 	root.add_child(back)
+
+	_passthrough_overlay(root)  # let taps / drags reach the 3D map pins behind the HUD
 
 
 func _build_detail_overlay() -> void:
@@ -621,6 +650,9 @@ func _on_exterior_start() -> void:
 
 func _enter_table() -> void:
 	_detail_open = false
+	_table_pan = Vector3.ZERO  # re-centre the map each time we open it
+	_table_dragged = false
+	_table_panning = false
 	_refresh_map_pins()  # reflect any newly-earned stars / showdown unlock
 	_go_to(View.TABLE)
 
@@ -842,7 +874,7 @@ func _station_xform(view: int) -> Transform3D:
 	var cfg: GameConfig = Config.data
 	match view:
 		View.GARAGE: return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
-		View.TABLE: return _look_xform(cfg.hq_table_cam_eye, cfg.hq_table_cam_look)
+		View.TABLE: return _look_xform(cfg.hq_table_cam_eye + _table_pan, cfg.hq_table_cam_look + _table_pan)
 		View.CARPARK: return _camera_target_xform()
 		_: return _look_xform(cfg.hq_exterior_cam_eye, cfg.hq_exterior_cam_look)
 
@@ -930,8 +962,33 @@ func _unhandled_input(event: InputEvent) -> void:
 					_hide_detail()
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.GARAGE)
+			else:
+				_table_pan_input(event)
 		View.CARPARK:
 			_cars_input(event)
+
+
+# Drag the map table around (mouse, or finger via emulate_mouse_from_touch). A drag
+# sets _table_dragged so the release doesn't also open the pin under the finger.
+func _table_pan_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_table_panning = event.pressed
+		if event.pressed:
+			_table_dragged = false
+	elif event is InputEventMouseMotion and _table_panning:
+		if event.relative.length() > 2.0:
+			_table_dragged = true
+		_pan_table(event.relative)
+
+
+# Translate the table camera in the map plane (X/Z) by a screen-drag delta — grab the
+# map and drag it. Clamped so the view stays over the map. Snaps (follows the finger).
+func _pan_table(rel: Vector2) -> void:
+	var cfg: GameConfig = Config.data
+	var half := cfg.hq_map_plane_size
+	_table_pan.x = clampf(_table_pan.x - rel.x * cfg.hq_table_pan_speed, -half.x * 0.5, half.x * 0.5)
+	_table_pan.z = clampf(_table_pan.z - rel.y * cfg.hq_table_pan_speed, -half.y * 0.5, half.y * 0.5)
+	_move_camera_to(_station_xform(View.TABLE), true)
 
 
 func _cars_input(event: InputEvent) -> void:
