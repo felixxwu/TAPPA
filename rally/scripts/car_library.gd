@@ -89,7 +89,7 @@ const CARS: Array[Dictionary] = [
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
 		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0,
 		"grip_front": 0.90, "grip_rear": 1.05, "shift_time": 0.30,  # manual H-pattern roadster
-		"engine_type": 0, "drive_mode": RWD, "drag": 3.53, "downforce_rear": 0.06, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"engine_type": 0, "drive_mode": RWD, "drag": 3.53, "downforce_rear": 0.5, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
