@@ -47,22 +47,33 @@ to world XZ (`x → world x`, `y → world z`).
   turn is a right-hand corner with its x mirrored (`mirror_points`). Joins are
   G1-continuous (each piece's entry tangent aligns to the previous exit heading,
   `exit_heading`).
-- **Overlap (hard-avoid):** each piece rasterizes its cells (`rasterize_cells`,
-  every 0.5 m global cell within `width/2` of the centerline). A candidate is
-  rejected if any cell is already occupied, **excluding** a join buffer of cells
-  within `width` of the entry (where it legitimately abuts the previous piece).
+- **Overlap (hard-avoid), early-exit:** a candidate is rejected if its footprint
+  (0.5 m global cells within `width/2` of its centerline) overlaps an already-occupied
+  cell, **excluding** a join buffer of cells within `width` of the entry (where it
+  legitimately abuts the previous piece). `_collide_and_cells` rasterizes the
+  footprint **and** tests `occupied` in one pass, **bailing on the first overlapping
+  cell** — most candidates during backtracking collide, so this avoids rasterizing
+  their whole footprint. It scans each segment's bounding box once (point-to-segment
+  distance), not a `reach×reach` block at every 0.25 m sample; the old oversampling
+  re-tested each cell ~`width/RASTER_STEP` times and made one candidate ~70 ms,
+  turning a boxed-in seed into a multi-minute hang.
 - **DFS backtracking:** a per-depth stack of shuffled candidate iterators. The
   first valid candidate is placed; when a depth's candidates are exhausted, the
   last placed corner is undone (cells/points/frame restored) and the previous
   depth resumes at its next untried candidate.
-- **Safety:** `MAX_STEPS` caps placements+backtracks per attempt; on failure the
-  search restarts with a perturbed seed up to `MAX_RESTARTS`, then returns its
-  best partial track (never hangs). `generate(start_pos, start_heading, seed,
-  turn_count, width, clearance=0)` returns `{ centerline: Curve2D, cells: Dictionary,
-  pieces: Array, complete: bool }`. Each piece dict records `corner`, `flip`,
-  `straight`, `cells`, and its `entry_pos` / `entry_heading` (the pose at the
-  start of its connecting straight — used by roadside-sign placement, see
-  [signs.md](signs.md)).
+- **Safety / no hang:** each attempt is capped at `STEPS_BASE + turn_count *
+  STEPS_PER_TURN` steps — generous over a healthy search (~`turn_count` steps) but
+  tight enough that a seed that boxes itself in and backtracks exponentially is
+  **abandoned** rather than ground out. `generate` then restarts with a far-apart
+  seed (`seed + restart * RESTART_SEED_STRIDE`, so restarts explore genuinely
+  different searches; **restart 0 keeps the authored seed**) up to `MAX_RESTARTS`,
+  returning the deepest partial if all fail. A pathological seed that once took ~8
+  minutes now bails and a fresh restart completes the track in well under a second.
+  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0)` returns
+  `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool }`. Each
+  piece dict records `corner`, `flip`, `straight`, `cells`, and its `entry_pos` /
+  `entry_heading` (the pose at the start of its connecting straight — used by
+  roadside-sign placement, see [signs.md](signs.md)).
 - **Clearance:** the overlap test rasterizes the collision footprint at
   `width + 2*clearance`, not the visible `width`. So `track_clearance` (m) forces
   non-adjacent sections to keep that much extra gap — stopping the track from

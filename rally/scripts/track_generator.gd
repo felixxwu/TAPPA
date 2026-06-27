@@ -12,8 +12,21 @@ const CornerLibrary = preload("res://scripts/corner_library.gd")
 const CELL_M := 0.5                                  # global cell grid size
 const STRAIGHT_OPTIONS_M := [0.0, 5.0, 10.0, 20.0]   # connecting straight lengths
 const RASTER_STEP_M := 0.25                          # centerline sampling for cells
-const MAX_STEPS := 4000                              # placement+backtrack cap per attempt
-const MAX_RESTARTS := 8                              # random restarts before giving up
+# Per-attempt placement+backtrack budget = STEPS_BASE + turn_count * STEPS_PER_TURN.
+# A healthy search places each corner first- or second-try, completing in roughly
+# `turn_count` steps; a seed that boxes itself in backtracks exponentially and blows
+# past this. The budget gives generous headroom over a healthy run yet abandons a
+# thrashing one fast, so generate() can restart it with a fresh, far-apart seed (which
+# almost always completes quickly) instead of grinding. (One unlucky seed used to need
+# ~274 steps for a 14-corner track and took minutes; a fresh seed does it in ~14.)
+const STEPS_BASE := 20
+const STEPS_PER_TURN := 3
+const MAX_RESTARTS := 24                             # random restarts before giving up
+# Restarts are spread far apart in seed space (not seed+1, seed+2, …) so each explores
+# a genuinely different search rather than a neighbouring one that tends to fail the
+# same way. Restart 0 stays at the authored seed, so tracks that already generate fast
+# keep their exact layout.
+const RESTART_SEED_STRIDE := 1_000_003
 
 
 # Transform2D mapping local corner space (x = right, y = forward/heading) to
@@ -57,6 +70,11 @@ static func rasterize_cells(polyline: PackedVector2Array, width: float) -> Dicti
 			for dz in range(-reach, reach + 1):
 				for dx in range(-reach, reach + 1):
 					var cell := Vector2i(cx + dx, cz + dz)
+					# Already stamped by a nearby sample? Adjacent samples (every
+					# RASTER_STEP_M) re-cover most of the same cells, so this skip avoids
+					# ~half/RASTER_STEP redundant distance checks per cell.
+					if cells.has(cell):
+						continue
 					# Cell centre in world space.
 					var centre := Vector2((cell.x + 0.5) * CELL_M, (cell.y + 0.5) * CELL_M)
 					if centre.distance_to(p) <= half:
@@ -85,18 +103,20 @@ static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int
 		turn_count: int, width: float, clearance: float = 0.0) -> Dictionary:
 	var coll_width := width + 2.0 * clearance
 	var corners := _turn_corners()
+	# Track the deepest partial across restarts so a give-up still renders the best
+	# attempt (not just the last one). Each restart is bounded by the per-attempt step
+	# budget (see _search / STEPS_PER_TURN), so trying many is cheap.
+	var best_partial: Dictionary = {}
 	for restart in MAX_RESTARTS:
 		var rng := RandomNumberGenerator.new()
-		rng.seed = seed_value + restart
+		rng.seed = seed_value + restart * RESTART_SEED_STRIDE
 		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng)
 		if result["complete"]:
 			return result
-	# Last attempt's partial result (never hangs); caller can still render it.
-	var rng_final := RandomNumberGenerator.new()
-	rng_final.seed = seed_value + MAX_RESTARTS
-	var partial := _search(start_pos, start_heading, turn_count, coll_width, corners, rng_final)
-	push_warning("TrackGenerator: only placed %d/%d corners" % [partial["pieces"].size(), turn_count])
-	return partial
+		if best_partial.is_empty() or result["pieces"].size() > best_partial["pieces"].size():
+			best_partial = result
+	push_warning("TrackGenerator: only placed %d/%d corners" % [best_partial["pieces"].size(), turn_count])
+	return best_partial
 
 
 # The library corners eligible as "turns" (everything except the plain Straight).
@@ -122,13 +142,14 @@ static func _candidates(corners: Array, rng: RandomNumberGenerator) -> Array:
 	return list
 
 
-# Build the world points + cells a candidate would add, given the current frame.
-# Returns { "points": Array of [pos,in,out], "cells": Dictionary,
+# Build the world points + tessellated polyline a candidate would add, given the
+# current frame. Returns { "points": Array of [pos,in,out], "poly": PackedVector2Array,
 #           "exit_pos": Vector2, "exit_heading": Vector2, "merge_out": Vector2 }.
 # `points` are the NEW control points to append after the current last point;
-# `merge_out` is the out-handle to set on the current last point (the join).
+# `merge_out` is the out-handle to set on the current last point (the join). The
+# footprint cells + overlap test are deferred to _collide_and_cells (early-exit).
 static func _build_candidate(cand: Dictionary, corners: Array, frame_pos: Vector2,
-		frame_heading: Vector2, width: float) -> Dictionary:
+		frame_heading: Vector2) -> Dictionary:
 	# 1. Connecting straight.
 	var straight_len: float = cand["straight"]
 	var straight_end := frame_pos + frame_heading * straight_len
@@ -160,14 +181,64 @@ static func _build_candidate(cand: Dictionary, corners: Array, frame_pos: Vector
 	for ap in appended:
 		temp.add_point(ap[0], ap[1], ap[2])
 	var poly := temp.tessellate()
-	var cells := rasterize_cells(poly, width)
+	# NB: the footprint cells are NOT rasterized here — _search does that lazily via
+	# _collide_and_cells so a colliding candidate bails on the first overlap instead of
+	# paying to rasterize its whole footprint (the dominant cost under backtracking).
 	return {
 		"points": appended,
-		"cells": cells,
+		"poly": poly,
 		"exit_pos": appended[appended.size() - 1][0],
 		"exit_heading": exit_heading(poly),
 		"merge_out": merge_out,
 	}
+
+
+# Squared distance from point p to segment a-b.
+static func _point_seg_dist_sq(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var denom := ab.length_squared()
+	var t := 0.0
+	if denom > 0.0:
+		t = clampf((p - a).dot(ab) / denom, 0.0, 1.0)
+	return p.distance_squared_to(a + ab * t)
+
+
+# Rasterize a candidate's footprint AND test it against `occupied` in one pass, bailing
+# the instant an overlapping cell is found outside the join buffer (cells within
+# `width` of the entry `frame_pos`, where touching the existing track is expected).
+# Returns { collides: bool, cells: Dictionary }; on a collision `cells` is partial
+# (the candidate is rejected, so it's discarded anyway); otherwise `cells` is the full
+# footprint, ready to commit.
+#
+# Each segment scans its bounding box ONCE (point-to-segment distance), rather than
+# stamping a reach×reach block at every RASTER_STEP_M sample — the old way re-tested
+# the same cells ~half/RASTER_STEP times over, which made each candidate ~70 ms and
+# turned a heavy-backtracking seed into a multi-minute hang.
+static func _collide_and_cells(polyline: PackedVector2Array, width: float,
+		occupied: Dictionary, frame_pos: Vector2) -> Dictionary:
+	var cells: Dictionary = {}
+	var half := width / 2.0
+	var half_sq := half * half
+	var buffer_sq := width * width
+	for i in range(1, polyline.size()):
+		var a := polyline[i - 1]
+		var b := polyline[i]
+		var cx0 := floori((minf(a.x, b.x) - half) / CELL_M)
+		var cx1 := floori((maxf(a.x, b.x) + half) / CELL_M)
+		var cz0 := floori((minf(a.y, b.y) - half) / CELL_M)
+		var cz1 := floori((maxf(a.y, b.y) + half) / CELL_M)
+		for cz in range(cz0, cz1 + 1):
+			for cx in range(cx0, cx1 + 1):
+				var cell := Vector2i(cx, cz)
+				if cells.has(cell):
+					continue
+				var centre := Vector2((cx + 0.5) * CELL_M, (cz + 0.5) * CELL_M)
+				if _point_seg_dist_sq(centre, a, b) > half_sq:
+					continue
+				cells[cell] = true
+				if occupied.has(cell) and centre.distance_squared_to(frame_pos) > buffer_sq:
+					return { "collides": true, "cells": cells }
+	return { "collides": false, "cells": cells }
 
 
 # DFS backtracking. Builds the world polybezier point-by-point.
@@ -181,10 +252,14 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 	var frame_heading := start_heading.normalized()
 	var stack: Array = []  # one entry per placed corner (plus the frontier)
 	var steps := 0
+	# Per-attempt budget scaled by track length. A healthy search completes well within
+	# this; one that exceeds it is grinding a doomed subtree, so we bail and let the
+	# caller restart with a fresh, far-apart seed (cheap — see generate()).
+	var max_steps: int = STEPS_BASE + turn_count * STEPS_PER_TURN
 
 	while pieces.size() < turn_count:
 		steps += 1
-		if steps > MAX_STEPS:
+		if steps > max_steps:
 			break
 		# Ensure the current depth has a candidate iterator (the frontier).
 		if stack.size() == pieces.size():
@@ -194,23 +269,16 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		while top["idx"] < top["cands"].size():
 			var cand: Dictionary = top["cands"][top["idx"]]
 			top["idx"] += 1
-			var built := _build_candidate(cand, corners, frame_pos, frame_heading, width)
-			# Overlap test, ignoring cells within a join buffer of the entry.
-			var collides := false
-			for cell in built["cells"]:
-				if not occupied.has(cell):
-					continue
-				var centre := Vector2((cell.x + 0.5) * CELL_M, (cell.y + 0.5) * CELL_M)
-				if centre.distance_to(frame_pos) > width:
-					collides = true
-					break
-			if collides:
+			var built := _build_candidate(cand, corners, frame_pos, frame_heading)
+			# Overlap test (early-exits on the first overlapping cell) + footprint cells.
+			var hit := _collide_and_cells(built["poly"], width, occupied, frame_pos)
+			if hit["collides"]:
 				continue
 			# Commit.
 			var prev_out: Vector2 = world_points[world_points.size() - 1][2]
 			world_points[world_points.size() - 1][2] = built["merge_out"]
 			var added_cells: Array = []
-			for cell in built["cells"]:
+			for cell in hit["cells"]:
 				if not occupied.has(cell):
 					occupied[cell] = true
 					added_cells.append(cell)
