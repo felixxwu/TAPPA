@@ -13,16 +13,6 @@ uniform sampler2D albedo_texture : source_color, filter_nearest, hint_default_wh
 uniform vec4 albedo_color : source_color = vec4(1.0);
 uniform vec2 texture_tile = vec2(1.0, 1.0);
 
-// Fake skybox reflection (matcap / "material capture"): a pre-baked image of a
-// reflective ball, indexed by the VIEW-SPACE surface normal. It costs one extra
-// texture read and no scene data at all — the classic old-car-game cheat for
-// "reflective paint". The reflection tracks the camera (so curved panels sweep a
-// sky/horizon highlight as you orbit) but is the same canned image regardless of
-// what's actually around the car. matcap_amount 0 (the default for the
-// non-reflective meshes) makes the whole thing a no-op.
-uniform sampler2D matcap_texture : source_color, hint_default_black, filter_linear_mipmap;
-uniform float matcap_amount : hint_range(0.0, 1.0) = 0.0;
-
 // Fake lighting, all in world space so shading tracks the car as it turns.
 // light_amount blends the whole effect in (0 = flat, 1 = full); GameConfig's
 // Car Lighting group drives these via world.gd / car.gd (cfg.apply_car_light).
@@ -46,13 +36,5 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 base = texture(albedo_texture, UV * texture_tile).rgb * albedo_color.rgb * COLOR.rgb * v_light;
-	// Sphere-map lookup: the view-space normal's xy maps the surface onto the
-	// matcap "chrome ball" — centre = facing the camera, edges = grazing angles.
-	// y is flipped because Godot's UV origin is top-left. Added (not mixed) so the
-	// bright sky rim reads as a glossy highlight rather than replacing the paint;
-	// this matcap's dark centre keeps head-on panels close to their base colour.
-	vec2 matcap_uv = vec2(NORMAL.x, -NORMAL.y) * 0.5 + 0.5;
-	vec3 reflection = texture(matcap_texture, matcap_uv).rgb;
-	ALBEDO = base + reflection * matcap_amount;
+	ALBEDO = texture(albedo_texture, UV * texture_tile).rgb * albedo_color.rgb * COLOR.rgb * v_light;
 }

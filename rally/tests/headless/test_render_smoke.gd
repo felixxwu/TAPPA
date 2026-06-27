@@ -97,15 +97,6 @@ func test_lit_car_shader_has_fake_lighting() -> void:
 	assert_true(src.contains("void vertex()"), "ps1_models_lit computes lighting per-vertex")
 
 
-func test_lit_car_shader_has_matcap_reflection() -> void:
-	var src := FileAccess.get_file_as_string("res://shaders/ps1_models_lit.gdshader")
-	# Fake skybox reflection: sample a matcap by the view-space normal and add it,
-	# gated behind matcap_amount (0 = no-op for the non-reflective meshes).
-	assert_true(src.contains("matcap_texture"), "ps1_models_lit samples a matcap_texture")
-	assert_true(src.contains("matcap_amount"), "ps1_models_lit gates the reflection behind matcap_amount")
-	assert_true(src.contains("NORMAL"), "ps1_models_lit indexes the matcap by the view-space NORMAL")
-
-
 func test_terrain_shader_has_no_vertex_stage() -> void:
 	# Performance guard: the shared terrain shader must NOT carry a vertex() stage.
 	# The terrain is the heaviest geometry (tens of thousands of vertices in the
@@ -123,9 +114,6 @@ func test_car_meshes_are_lit_but_terrain_is_flat() -> void:
 	var car_mat := car_chassis.get_surface_override_material(0) as ShaderMaterial
 	assert_not_null(car_mat, "car chassis has a ShaderMaterial")
 	assert_gt(car_mat.get_shader_parameter("light_amount"), 0.0, "car mesh is lit (light_amount > 0)")
-	# apply_car_light also wires the fake-reflection matcap onto the car meshes.
-	assert_gt(car_mat.get_shader_parameter("matcap_amount"), 0.0, "car mesh gets a matcap reflection (matcap_amount > 0)")
-	assert_not_null(car_mat.get_shader_parameter("matcap_texture"), "car mesh has a matcap texture assigned")
 
 	var floor_node := _scene.get_node("Floor")
 	var terrain_mat := floor_node.chunk_material as ShaderMaterial

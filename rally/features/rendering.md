@@ -60,21 +60,6 @@ The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
 `sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
 alongside `terrain_light_amount` for the baked terrain shading.
 
-The fragment also adds a **fake skybox reflection** via a matcap ("material
-capture") — the old car-game cheat for reflective paint with no reflection
-probe, cubemap, or extra render pass. A pre-baked image of a reflective ball
-(`textures/matcap_chrome.png`, a dark-centred chrome with a bright sky rim) is
-indexed by the **view-space normal** (`matcap_uv = vec2(N.x, -N.y)·0.5+0.5`;
-y flipped for Godot's top-left UV origin) and added on top of the lit base
-colour (`ALBEDO = base + reflection × matcap_amount`). Because the lookup uses
-the view-space normal, the highlight tracks the camera — curved panels sweep a
-sky/horizon glint as you orbit — but it's the same canned image regardless of
-what is actually around the car. Uniforms `matcap_texture` and `matcap_amount`
-are pushed by the same `cfg.apply_car_light()` call (so every car mesh gets it);
-`car_reflection_amount` (default 0.5; 0 = off) and `car_reflection_matcap` live
-in `GameConfig` under **Lighting → Reflection**. Swap the texture to change what
-the car appears to reflect (any matcap/sphere-map image works).
-
 Used by: car chassis/cabin/wheels/spokes, and the MX-5's authored body model
 (see below).
 
