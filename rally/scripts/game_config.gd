@@ -305,6 +305,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var menu_camera_look_height := 0.6
 ## Spacing (m) between parked cars in the HQ car-park lineup (along the lot's X).
 @export var menu_car_spacing := 6.0
+## Height (m) above the lot the parked cars drop from, so they settle onto their
+## suspension under physics before being frozen at the settled pose.
+@export var menu_car_drop_height := 0.6
+## Seconds the parked cars run live physics to settle before they're frozen (so a
+## full car park costs nothing to keep parked once settled).
+@export var menu_car_settle_seconds := 1.2
 
 # --- Diegetic HQ: one 3D space the camera flies through (todo/diegetic-hq.md).
 # Camera "stations" are an eye position + a look target (world space); the camera

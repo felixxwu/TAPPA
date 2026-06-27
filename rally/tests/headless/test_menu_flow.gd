@@ -212,6 +212,31 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 		"parked cars do NOT share one mesh (per-instance duplication)")
 
 
+func test_hq_parked_cars_settle_live_then_freeze() -> void:
+	# Parked cars drop in LIVE (so they settle onto their suspension), then freeze at
+	# the settled pose so a full car park costs nothing to keep parked.
+	_save.grant_car("rs3", false)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("shakedown")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	assert_gt(hq._cars.size(), 0, "the lineup is parked")
+	for car in hq._cars:
+		assert_false(car.freeze, "parked cars start live so they settle on their suspension")
+	# The settle timer freezes them; drive that directly (deterministic, no waiting).
+	hq._freeze_lineup(hq._settle_generation)
+	for car in hq._cars:
+		assert_true(car.freeze, "settled cars are frozen at their pose")
+	# A stale freeze (old generation) must not touch a freshly-rebuilt lineup.
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	hq._freeze_lineup(hq._settle_generation - 1)
+	for car in hq._cars:
+		assert_false(car.freeze, "a superseded freeze leaves the new lineup live")
+
+
 func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	_save.grant_car("rs3", false)
 	var hq: Node3D = load("res://hq.tscn").instantiate()

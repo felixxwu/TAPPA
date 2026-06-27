@@ -68,8 +68,12 @@ car park, **◄ Map** dismisses the panel, and the table Back returns to the gar
 
 **CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
 rally** (`RallyLibrary.is_eligible`) are parked at `GameConfig.hq_carpark_origin`,
-in a centred row spaced by `menu_car_spacing`, each a physics-frozen, silenced `Car`
-prop (reusing `Car.apply_owned`). `◄ ►` (or `menu_left`/`menu_right`) move the focus
+in a centred row spaced by `menu_car_spacing`, each a silenced `Car` prop (reusing
+`Car.apply_owned`). The props **drop in live** (raised by `menu_car_drop_height` onto
+a collision floor under the lot) so they **settle onto their suspension**, then
+`_freeze_lineup` freezes the settled pose after `menu_car_settle_seconds` (guarded by
+a generation id so re-entering the lot cancels a stale freeze) — so a full car park
+costs nothing to keep parked. `◄ ►` (or `menu_left`/`menu_right`) move the focus
 and the camera eases to a 3/4 hero shot (`menu_camera_offset` / `menu_camera_move_time`);
 the focused car **is** the selected car. A billboarded `Label3D` shows its name +
 stats beside it (drive / country / type / tier / power-to-weight / HP), mirrored into

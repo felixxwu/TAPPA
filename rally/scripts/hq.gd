@@ -53,6 +53,9 @@ var _eligible: Array = []
 var _cars: Array = []
 var _markers: Array = []
 var _focus := 0
+# Bumped each time a lineup is (re)built so a pending settle-then-freeze timer for an
+# old lineup no-ops when it fires (see _build_eligible_lineup / _freeze_lineup).
+var _settle_generation := 0
 
 # 3D staging.
 var _camera: Camera3D
@@ -133,6 +136,17 @@ func _build_environment() -> void:
 	mat.albedo_color = Color(0.18, 0.19, 0.22)
 	ground.material_override = mat
 	add_child(ground)
+
+	# Collision floor under the lot so the parked cars settle onto their suspension
+	# (the visual ground plane has no collision). A thick box with its top at y = 0.
+	var floor_body := StaticBody3D.new()
+	var floor_shape := CollisionShape3D.new()
+	var floor_box := BoxShape3D.new()
+	floor_box.size = Vector3(240.0, 2.0, 240.0)
+	floor_shape.shape = floor_box
+	floor_shape.position = Vector3(0.0, -1.0, 0.0)  # top face at y = 0
+	floor_body.add_child(floor_shape)
+	add_child(floor_body)
 
 	_build_buildings()
 	_build_garage()
@@ -728,6 +742,7 @@ func _car_back() -> void:
 # --- Car park (the eligible lineup) ------------------------------------------
 
 func _clear_lineup() -> void:
+	_settle_generation += 1  # cancel any pending settle-then-freeze for this lineup
 	for car in _cars:
 		if is_instance_valid(car):
 			car.queue_free()
@@ -739,8 +754,9 @@ func _clear_lineup() -> void:
 	_eligible = []
 
 
-# Park one frozen car per owned car eligible for the selected rally, laid out in a
-# centred row at the car-park origin (GameConfig.hq_carpark_origin / menu_car_spacing).
+# Park one car per owned car eligible for the selected rally, laid out in a centred
+# row at the car-park origin (GameConfig.hq_carpark_origin / menu_car_spacing). The
+# cars drop in live and settle onto their suspension, then freeze (see _settle_lineup).
 func _build_eligible_lineup() -> void:
 	_clear_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
@@ -756,24 +772,46 @@ func _build_eligible_lineup() -> void:
 		add_child(marker)
 		_markers.append(marker)
 		_cars.append(_spawn_parked_car(_eligible[i], marker))
+	# Let the lineup settle under physics for a moment, then freeze the settled pose.
+	# Guarded by a generation id so re-entering the car park (a new lineup) cancels a
+	# pending freeze for the old one.
+	_settle_generation += 1
+	get_tree().create_timer(cfg.menu_car_settle_seconds).timeout.connect(
+		_freeze_lineup.bind(_settle_generation))
 
 
-# Spawn one owned car as a parked, silent, physics-frozen prop at a marker, with its
-# OWN mesh copies (see _dup_meshes) so a mixed lineup shows each at its true size.
+# Spawn one owned car as a live, silent car prop at a marker (raised by
+# menu_car_drop_height so it drops onto its suspension), with its OWN mesh copies
+# (see _dup_meshes) so a mixed lineup shows each at its true size. It runs physics
+# until _freeze_lineup locks the settled pose.
 func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	var car := CAR_SCENE.instantiate()
 	add_child(car)
 	car.apply_owned(owned)
 	_dup_meshes(car)
-	car.global_transform = marker.global_transform
-	car.freeze = true
-	car.collision_layer = 0
-	car.collision_mask = 0
+	var xform := marker.global_transform
+	xform.origin += Vector3.UP * Config.data.menu_car_drop_height
+	car.global_transform = xform
+	car.freeze = false  # live so it settles; frozen by _freeze_lineup once at rest
+	# Silence its engine — no audio from the parked cars.
 	var audio := car.get_node_or_null("EngineAudio")
-	if audio != null and audio.has_method("stop"):
-		audio.stop()
-	car.process_mode = Node.PROCESS_MODE_DISABLED
+	if audio != null:
+		audio.process_mode = Node.PROCESS_MODE_DISABLED
+		if audio is AudioStreamPlayer:
+			audio.playing = false
+			audio.volume_db = -80.0
 	return car
+
+
+# Freeze the settled lineup (called a moment after spawning). No-op if a newer
+# lineup has since been built (generation mismatch) or the cars are gone.
+func _freeze_lineup(generation: int) -> void:
+	if generation != _settle_generation:
+		return
+	for car in _cars:
+		if is_instance_valid(car):
+			car.freeze = true
+			car.process_mode = Node.PROCESS_MODE_DISABLED
 
 
 # Give a car instance its own copies of every mesh resource (car.tscn's body/wheel
