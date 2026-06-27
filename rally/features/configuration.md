@@ -28,7 +28,7 @@ the `.tres` requires a scene reload to take effect.
 | `brake_torque` | 300.0 | Foot-brake N·m per axle (S) |
 | `handbrake_torque` | 400.0 | Rear handbrake N·m (Space) |
 | `drag_coefficient` | 0.4 | Quadratic aero drag (top-speed limiter) |
-| `downforce_front` / `downforce_rear` | 0.0 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0) |
+| `downforce_front` / `downforce_rear` | 0.0 / 0.06 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0). Rear has a small baseline on all cars |
 | `steer_limit` | 0.3 rad | Max steer angle from travel direction |
 | `steer_speed` | 5.0 | Steering responsiveness (rad/s) |
 | `steer_travel_alignment` | 1.0 | Auto-countersteer fraction (0..1) |

@@ -37,6 +37,7 @@ func test_config_resource_loads() -> void:
 	assert_true("downforce_rear" in cfg, "downforce_rear exists on GameConfig")
 	assert_between(cfg.downforce_front, -2.0, 2.0, "downforce_front sane")
 	assert_between(cfg.downforce_rear, -2.0, 2.0, "downforce_rear sane")
+	assert_gt(cfg.downforce_rear, 0.0, "all cars get a small baseline rear downforce")
 
 
 # Looks up the export metadata (hint + hint_string) for a property by name.

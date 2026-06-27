@@ -40,7 +40,9 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    - *Downforce:* `v² * downforce_{front,rear}` applied at the axle midpoints;
 	 also recorded in `downforce_readouts` for the debug overlay. Either
 	 coefficient may be negative, which produces lift (an upward force that
-	 unloads that axle at speed).
+	 unloads that axle at speed). All cars carry a small baseline `downforce_rear`
+	 (≈15% of weight at 25 m/s) to keep the tail planted under power; the front
+	 baseline is 0. The aero_kit upgrade adds more on top.
 5. **Self-righting assist:** when one or more wheels are off the ground, a
    roll+pitch torque (`level_assist_torque`) eases the chassis back toward
    level. The torque axis is `car_up × world_up` — it lies in the horizontal
