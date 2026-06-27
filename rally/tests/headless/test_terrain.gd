@@ -49,6 +49,12 @@ func test_distant_terrain_follows_noise_and_has_no_collision() -> void:
 	var v := verts[60]  # an interior vertex
 	assert_almost_eq(v.y, manager.height_at(v.x, v.z) - dt.sink_m, 0.001,
 		"distant vertex follows the terrain noise, sunk by sink_m")
+	# A hole is cut over the loaded chunk footprint (so the coarse mesh can't poke
+	# through the detailed ring): fewer triangles than a full per_edge×per_edge grid.
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var full := 10 * 10 * 6  # per_edge=round(2*50/10)=10 -> 100 cells × 6 indices
+	assert_gt(idx.size(), 0, "distant terrain still has an outer ring of triangles")
+	assert_lt(idx.size(), full, "a hole is cut where the detailed chunks load")
 	assert_null(dt.get_node_or_null("Collision"), "distant terrain is scenery — no collision body")
 
 

@@ -34,6 +34,7 @@ enum View { EXTERIOR, GARAGE, TABLE, CARPARK }
 const MAX_STARS := 3
 
 const CAR_SCENE := preload("res://car.tscn")
+const TREE_TEXTURE := preload("res://textures/tree.png")
 
 var _view: int = View.EXTERIOR
 var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
@@ -153,6 +154,7 @@ func _build_environment() -> void:
 	add_child(floor_body)
 
 	_build_buildings()
+	_build_trees()
 	_build_garage()
 	_build_map_table()
 	_build_lift()
@@ -199,6 +201,34 @@ func _build_buildings() -> void:
 	]
 	for b in blocks:
 		_block(b[0], b[1], b[2])
+
+
+# A ring of background trees around the lot so HQ reads as an outdoor clearing
+# under the open-field skybox, instead of floating on a bare plane. Reuses the
+# stage's billboard renderer/texture (one MultiMesh, one draw call); scenery only
+# (no collision). Deterministic scatter in an annulus that clears the buildings
+# (z up to ~59) and the central garage/car-park/camera area.
+func _build_trees() -> void:
+	var cfg: GameConfig = Config.data
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20240
+	var positions := PackedVector2Array()
+	var inner := 64.0
+	var outer := 112.0  # inside the 240 m ground plane's half-extent
+	for _i in 150:
+		var ang := rng.randf() * TAU
+		var rad := sqrt(rng.randf()) * (outer - inner) + inner
+		positions.append(Vector2(cos(ang) * rad, sin(ang) * rad))
+	# HQ ground is a flat plane at y = 0; a layerless TerrainManager returns height
+	# 0 everywhere, which is all BillboardField needs to seat the trees. Used only
+	# during build(), then freed.
+	var flat := TerrainManager.new()
+	flat.layers = [] as Array[TerrainLayer]
+	var field := BillboardField.new()
+	add_child(field)
+	field.build(positions, flat, cfg.tree_size_m, TREE_TEXTURE,
+		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false, 1000.0, 0.0)
+	flat.free()
 
 
 # The garage shell: floor, back + side walls, and a flat roof. Open toward +Z (the

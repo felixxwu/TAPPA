@@ -146,9 +146,12 @@ ring — collision-free scenery sampling the same `height_at`/`light_at` noise,
 re-centred on the car — so the now-thin fog (`fog_density` 0.005) reveals a
 horizon for the skybox instead of a cliff. See
 [rendering.md](rendering.md) and [../todo/distant-terrain-and-sky.md](../todo/distant-terrain-and-sky.md).
-The backdrop is sunk slightly (`distant_terrain` `sink_m`) so the accurate detail
-ring always renders on top in the overlap; the coarse-vs-fine seam at the ring
-edge is hidden by the haze. Tunables: `GameConfig.distant_terrain_*`.
+It rebuilds in lockstep with the detail ring (on every focus **chunk crossing**)
+and **cuts a hole** over the currently-loaded chunk footprint, so the coarse mesh
+never overlaps — and pokes through — the accurate detailed chunks. A
+one-coarse-cell overlap is kept under the ring's edge (sunk by `sink_m`) so the
+detail ring wins there and no gap shows at the seam. Tunables:
+`GameConfig.distant_terrain_*`.
 
 ## Performance
 

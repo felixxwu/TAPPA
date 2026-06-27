@@ -364,8 +364,6 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(50.0, 1000.0) var distant_terrain_radius_m := 250.0
 ## Backdrop grid spacing (m). Coarse is fine at distance; smaller = finer hills, more verts.
 @export_range(2.0, 40.0) var distant_terrain_cell_m := 10.0
-## Rebuild the backdrop once the car moves this far from its last centre (m).
-@export_range(10.0, 400.0) var distant_terrain_recenter_m := 100.0
 @export var terrain_tile_per_meter := 0.125  # ground texture tiles per metre, baked into terrain UVs
 ## Gravel/road texture tiles per metre. Independent of the ground tiling so the
 ## road can be finer or coarser than the surrounding grass.

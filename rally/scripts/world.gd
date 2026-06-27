@@ -155,7 +155,6 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		_distant_terrain.name = "DistantTerrain"
 		_distant_terrain.radius_m = cfg.distant_terrain_radius_m
 		_distant_terrain.cell_m = cfg.distant_terrain_cell_m
-		_distant_terrain.recenter_m = cfg.distant_terrain_recenter_m
 		add_child(_distant_terrain)
 		_distant_terrain.setup($Floor as TerrainManager, $Car)
 

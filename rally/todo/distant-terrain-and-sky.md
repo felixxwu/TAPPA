@@ -17,8 +17,11 @@
 > **Follow-ups worth noting:** the sky panorama is an open green field + blue sky
 > (`rooitou_park`), chosen for a plain, treeline-free horizon (earlier tries:
 > Venice sunset, dense `forest_slope`, alpine `immenstadter_horn`). The LDR sky is
-> 1024×512 (fine, but a higher-res or per-rally tint could come later). The
-> backdrop rebuild
+> 1024×512 (fine, but a higher-res or per-rally tint could come later). HQ
+> (`hq.gd`) is ringed with billboard trees so it reads as an outdoor clearing
+> under the same sky. The backdrop now rebuilds on every focus **chunk crossing**
+> and **cuts a hole** over the loaded chunk footprint so it can't poke through the
+> detail ring. The backdrop rebuild
 > (~2.6k `height_at` calls) runs on the main thread every `recenter_m` (100 m) —
 > thread it if it hitches on the mobile-web target.
 >
