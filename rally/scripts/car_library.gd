@@ -31,6 +31,11 @@ extends RefCounted
 #                (GameConfig.shift_time): the manual roadster (MX-5) is slowest,
 #                the dual-clutch / automated supercars (911 PDK, RS3 DSG,
 #                Aventador ISR) snap through gears fastest.
+#   * downforce_front / downforce_rear — aero downforce (N per (m/s)² at each axle,
+#                GameConfig.downforce_*). apply_car() SETS these from the spec (so a
+#                car with 0 has none — no hidden global baseline), and the aero_kit
+#                upgrade adds on top. All cars carry a small rear value to keep the
+#                tail planted under power; front defaults to 0 when omitted.
 #
 # engine_type indexes GameConfig.ENGINE_PRESETS: 0 i4, 1 i5, 2 i6, 3 v6,
 # 4 v8, 5 v10, 6 v12. drive_mode matches Drivetrain.DriveMode: 0 RWD, 1 AWD,
@@ -84,7 +89,7 @@ const CARS: Array[Dictionary] = [
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
 		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0,
 		"grip_front": 0.90, "grip_rear": 1.05, "shift_time": 0.30,  # manual H-pattern roadster
-		"engine_type": 0, "drive_mode": RWD, "drag": 3.53, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"engine_type": 0, "drive_mode": RWD, "drag": 3.53, "downforce_rear": 0.06, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
@@ -99,7 +104,7 @@ const CARS: Array[Dictionary] = [
 		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 2,
 		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0,
 		"grip_front": 0.9, "grip_rear": 1.0, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
-		"engine_type": 1, "drive_mode": AWD, "drag": 3.70, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"engine_type": 1, "drive_mode": AWD, "drag": 3.70, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
 		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
 		"wheel_radius": 0.335, "wheel_width": 0.235,
@@ -110,7 +115,7 @@ const CARS: Array[Dictionary] = [
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 3,
 		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0,
 		"grip_front": 0.95, "grip_rear": 1.05, "shift_time": 0.06,  # 8-speed PDK
-		"engine_type": 2, "drive_mode": RWD, "drag": 3.35, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"engine_type": 2, "drive_mode": RWD, "drag": 3.35, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
 		"wheel_radius": 0.34, "wheel_width": 0.245,
@@ -121,7 +126,7 @@ const CARS: Array[Dictionary] = [
 		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
 		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0,
 		"grip_front": 1, "grip_rear": 1.1, "shift_time": 0.16,  # automated single-clutch ASG
-		"engine_type": 5, "drive_mode": RWD, "drag": 3.17, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"engine_type": 5, "drive_mode": RWD, "drag": 3.17, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -132,7 +137,7 @@ const CARS: Array[Dictionary] = [
 		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0,
 		"grip_front": 0.90, "grip_rear": 0.90, "shift_time": 0.22,  # 6-speed manual muscle
-		"engine_type": 4, "drive_mode": RWD, "drag": 3.88, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"engine_type": 4, "drive_mode": RWD, "drag": 3.88, "downforce_rear": 0.06, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
 		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -143,7 +148,7 @@ const CARS: Array[Dictionary] = [
 		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 4,
 		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0,
 		"grip_front": 0.98, "grip_rear": 1.0, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
-		"engine_type": 6, "drive_mode": AWD, "drag": 3.35, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"engine_type": 6, "drive_mode": AWD, "drag": 3.35, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
 		"wheel_radius": 0.35, "wheel_width": 0.30,

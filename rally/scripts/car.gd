@@ -354,6 +354,11 @@ func apply_car(index: int) -> String:
 	cfg.wheel_friction_slip_front = spec["grip_front"]
 	cfg.wheel_friction_slip_rear = spec["grip_rear"]
 	cfg.shift_time = spec["shift_time"]
+	# Per-car aero downforce (N per (m/s)² at each axle). SET (not added) so a spec of
+	# 0 means 0 — no hidden global baseline — and so re-fielding can't accumulate the
+	# value. apply_owned applies the aero_kit upgrade ON TOP of this afterwards.
+	cfg.downforce_front = spec.get("downforce_front", 0.0)
+	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
 	cfg.engine_low_octave_mix = spec.get("low_octave_mix", 0.0)
 	cfg.engine_volume_db = spec.get("volume_db", cfg.engine_volume_db)
 	# Per-car noise floor authored in dB; convert to the linear amplitude the

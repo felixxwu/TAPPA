@@ -298,6 +298,21 @@ func test_downforce_inert_at_standstill() -> void:
 		"downforce is speed-dependent: no effect at standstill")
 
 
+func test_apply_car_sets_downforce_from_spec_overwriting_stale() -> void:
+	# Downforce is a PER-CAR spec value: apply_car SETS (not adds) it, so a car with
+	# 0 has none (no hidden global baseline) and re-fielding can't accumulate it.
+	var cfg: GameConfig = Config.data
+	cfg.downforce_front = 0.5  # pollute, as a prior fielding / aero_kit upgrade would
+	cfg.downforce_rear = 0.5
+	_car.apply_car(0)  # MX-5
+	var spec: Dictionary = CarLibrary.CARS[0]
+	assert_almost_eq(cfg.downforce_rear, float(spec.get("downforce_rear", 0.0)), 1e-6,
+		"apply_car sets rear downforce from the spec, overwriting the stale value")
+	assert_almost_eq(cfg.downforce_front, float(spec.get("downforce_front", 0.0)), 1e-6,
+		"front downforce comes from the spec (0 when unspecified)")
+	assert_gt(cfg.downforce_rear, 0.0, "the MX-5 carries a small baseline rear downforce")
+
+
 # --- Self-righting (level) assist -------------------------------------------
 # When any wheel is airborne, the car gets a roll+pitch torque back toward
 # level, scaled by how far it is tilted. It must not yaw, and must not act when

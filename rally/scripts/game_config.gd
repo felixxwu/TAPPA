@@ -76,10 +76,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(-2.0, 2.0) var downforce_front := 0.0
 ## N of aero downforce per (m/s)² at the REAR axle. Same effect as the front
 ## value, but biases grip rearward — raise it to settle a loose tail at speed.
-## Negative values produce lift, lightening the rear at speed. A small baseline
-## (≈15% of car weight at 25 m/s) is applied to ALL cars to keep the tail planted
-## under power; the aero_kit upgrade adds more on top.
-@export_range(-2.0, 2.0) var downforce_rear := 0.06
+## Negative values produce lift, lightening the rear at speed. Set PER-CAR by
+## car.gd.apply_car from the CarLibrary spec's `downforce_front`/`downforce_rear`
+## (this default is only the fallback when a spec omits them); the aero_kit upgrade
+## adds on top of the car's value.
+@export_range(-2.0, 2.0) var downforce_rear := 0.0
 ## Max steering offset (radians) from the car's direction of travel.
 @export_range(0.0, 1.2) var steer_limit := 0.3
 @export var steer_speed := 5.0

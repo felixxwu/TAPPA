@@ -51,6 +51,8 @@ func test_each_spec_is_sane() -> void:
 			who + " engine_type indexes a real preset")
 		assert_between(spec["drive_mode"], 0, 2, who + " drive_mode is RWD/AWD/FWD")
 		assert_gt(spec["drag"], 0.0, who + " has drag")
+		assert_gt(spec.get("downforce_rear", 0.0), 0.0, who + " carries some rear downforce")
+		assert_between(spec.get("downforce_rear", 0.0), 0.0, 2.0, who + " rear downforce in a sane range")
 		for axis in ["x", "y", "z"]:
 			assert_gt(spec["body"][axis], 0.0, who + " body." + axis + " positive")
 			assert_gt(spec["cabin"][axis], 0.0, who + " cabin." + axis + " positive")
