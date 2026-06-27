@@ -168,6 +168,17 @@ func height_at(x: float, z: float) -> float:
 	return _sample_height(_cached_noises, _cached_amplitudes, x, z)
 
 
+# Baked light tint at a world XZ (main thread), mirroring the per-vertex bake in
+# compute_chunk_data so the distant backdrop (DistantTerrain) shades identically
+# to the near chunks. White (a no-op) when light_amount is 0. Uses the cached
+# noises like height_at.
+func light_at(x: float, z: float) -> Color:
+	if light_amount <= 0.0:
+		return Color(1, 1, 1)
+	_ensure_noise_cache()
+	return _bake_light(_cached_noises, _cached_amplitudes, x, z)
+
+
 # SAMPLES x SAMPLES heights centred on `center` (a chunk centre), sampled at
 # absolute world coords so adjacent chunks agree on shared edges. Noises are
 # built once here (height_at rebuilds per call — fine for single samples, too

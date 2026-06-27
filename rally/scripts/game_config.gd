@@ -347,8 +347,25 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var hq_lift_size := Vector3(3.0, 0.35, 3.0)
 
 @export_group("World")
-@export var fog_density := 0.02
-@export var background_color := Color(0.35, 0.3, 0.45)
+## Exponential distance fog. Demoted from "opaque wall hiding the ~75 m terrain
+## edge" to thin aerial haze now that DistantTerrain provides a far horizon — low
+## enough to see the distant hills + skybox. See todo/distant-terrain-and-sky.md.
+@export var fog_density := 0.005
+## How much the fog tints the sky (Environment.fog_sky_affect). Low so the skybox
+## reads clearly above the haze.
+@export_range(0.0, 1.0) var fog_sky_affect := 0.15
+## Fog / backdrop colour. Matched to the skybox's HORIZON (sampled from
+## textures/sky_sunset.png) so the distant terrain dissolves into the sky seam.
+@export var background_color := Color(0.589, 0.544, 0.520)
+## Coarse far-terrain backdrop (DistantTerrain) that gives the sky a horizon past
+## the detailed chunk ring. Disable to fall back to fog-only edge hiding.
+@export var distant_terrain_enabled := true
+## Half-extent of the backdrop square (m) — how far the visible terrain reaches.
+@export_range(50.0, 1000.0) var distant_terrain_radius_m := 250.0
+## Backdrop grid spacing (m). Coarse is fine at distance; smaller = finer hills, more verts.
+@export_range(2.0, 40.0) var distant_terrain_cell_m := 10.0
+## Rebuild the backdrop once the car moves this far from its last centre (m).
+@export_range(10.0, 400.0) var distant_terrain_recenter_m := 100.0
 @export var terrain_tile_per_meter := 0.125  # ground texture tiles per metre, baked into terrain UVs
 ## Gravel/road texture tiles per metre. Independent of the ground tiling so the
 ## road can be finer or coarser than the surrounding grass.

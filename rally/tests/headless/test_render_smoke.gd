@@ -42,6 +42,28 @@ func test_world_environment_present() -> void:
 	assert_not_null(we.environment as Environment, "WorldEnvironment has an Environment")
 
 
+func test_environment_uses_skybox_with_demoted_fog() -> void:
+	var env := (_scene.get_node("WorldEnvironment") as WorldEnvironment).environment
+	assert_eq(env.background_mode, Environment.BG_SKY, "background is a Sky, not a flat colour")
+	assert_not_null(env.sky, "environment has a Sky resource")
+	if env.sky != null:
+		assert_true(env.sky.sky_material is PanoramaSkyMaterial,
+			"sky uses a panorama (photographic) material, not a colour gradient")
+	# Fog demoted from the old ~0.03 edge-hiding wall to thin haze, and not allowed
+	# to fully wash out the sky.
+	assert_lt(env.fog_density, 0.02, "fog reduced now that DistantTerrain hides the edge")
+	assert_lt(env.fog_sky_affect, 1.0, "fog does not fully tint the sky")
+
+
+func test_distant_terrain_backdrop_built() -> void:
+	var dt := _scene.get_node_or_null("DistantTerrain") as MeshInstance3D
+	assert_not_null(dt, "distant-terrain backdrop built to give the sky a horizon")
+	if dt != null:
+		assert_not_null(dt.mesh, "distant terrain has a mesh")
+		assert_null(dt.get_node_or_null("Collision"), "distant terrain is scenery (no collision)")
+		assert_not_null(dt.material_override, "distant terrain reuses the shared chunk material")
+
+
 func test_terrain_chunks_have_shader_materials() -> void:
 	# The terrain is now a chunk manager; chunks are created at runtime, so grab
 	# any loaded chunk's mesh and verify its material survives mesh assignment.

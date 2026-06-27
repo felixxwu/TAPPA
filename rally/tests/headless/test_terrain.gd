@@ -30,6 +30,28 @@ func _make_manager(layer_list: Array[TerrainLayer], seed_value: int = 1337) -> N
 	return manager
 
 
+func test_distant_terrain_follows_noise_and_has_no_collision() -> void:
+	# The coarse far backdrop (distant_terrain.gd) samples the SAME noise as the
+	# real terrain so it matches at the seam, sits a touch lower (so the detail
+	# ring wins the overlap), and is pure scenery (no collision).
+	var manager = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
+	var dt := DistantTerrain.new()
+	dt.radius_m = 50.0
+	dt.cell_m = 10.0
+	dt.sink_m = 0.5
+	autofree(dt)
+	dt.setup(manager, null)  # null focus -> centres at origin; out of tree -> no _process
+	assert_not_null(dt.mesh, "distant terrain builds a mesh")
+	var arrays: Array = dt.mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	# per_edge = round(2*radius/cell) = 10 -> (10+1)^2 = 121 vertices.
+	assert_eq(verts.size(), 121, "coarse grid has (per_edge+1)^2 vertices")
+	var v := verts[60]  # an interior vertex
+	assert_almost_eq(v.y, manager.height_at(v.x, v.z) - dt.sink_m, 0.001,
+		"distant vertex follows the terrain noise, sunk by sink_m")
+	assert_null(dt.get_node_or_null("Collision"), "distant terrain is scenery — no collision body")
+
+
 func test_height_at_is_deterministic_per_seed() -> void:
 	var a := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 42)
 	var b := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 42)

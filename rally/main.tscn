@@ -12,13 +12,21 @@
 [ext_resource type="Script" uid="uid://da6jmm86ad2c" path="res://scripts/mobile_controls.gd" id="9_mobile"]
 [ext_resource type="Script" uid="uid://c1ihaadjtfrte" path="res://scripts/camera_manager.gd" id="10_cammgr"]
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
+[ext_resource type="Texture2D" uid="uid://cmb2crodouqje" path="res://textures/sky_sunset.png" id="12_sky"]
+
+[sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
+panorama = ExtResource("12_sky")
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
 
 [sub_resource type="Environment" id="env"]
-background_mode = 1
-background_color = Color(0.35, 0.3, 0.45, 1)
+background_mode = 2
+sky = SubResource("sky")
 fog_enabled = true
-fog_light_color = Color(0.35, 0.3, 0.45, 1)
-fog_density = 0.02
+fog_light_color = Color(0.589, 0.544, 0.52, 1)
+fog_density = 0.005
+fog_sky_affect = 0.15
 
 [sub_resource type="Resource" id="Resource_kek77"]
 script = ExtResource("3_5vw27")

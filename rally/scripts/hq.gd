@@ -111,12 +111,16 @@ func _ensure_starter() -> void:
 # --- 3D world (buildings, garage, table, lift, car park) ---------------------
 
 func _build_environment() -> void:
-	var cfg: GameConfig = Config.data
-
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
-	e.background_mode = Environment.BG_COLOR
-	e.background_color = cfg.background_color
+	# Same skybox as the run scene (main.tscn) so HQ shares the look. The garage
+	# stays lit (directional + ambient below); the sky is just the backdrop.
+	var sky_mat := PanoramaSkyMaterial.new()
+	sky_mat.panorama = load("res://textures/sky_sunset.png")
+	var sky := Sky.new()
+	sky.sky_material = sky_mat
+	e.background_mode = Environment.BG_SKY
+	e.sky = sky
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	e.ambient_light_color = Color(0.6, 0.6, 0.68)
 	e.ambient_light_energy = 1.0

@@ -1,8 +1,26 @@
 # Distant Terrain + Skybox Spec — view distance & a real sky
 
-> Status: **NOT STARTED — planning brief.** Brainstormed; nothing built. This is
-> the implementation brief, referencing the code as it exists on this branch so
-> it can be picked up later. Follow the project's config-first convention
+> Status: **§1, §3, §4 DONE; §2 deferred.** Implemented: the coarse
+> **DistantTerrain** backdrop (`scripts/distant_terrain.gd`, wired in
+> `world._generate_track`, `GameConfig.distant_terrain_*`), **fog demotion**
+> (`fog_density` 0.005, `fog_sky_affect` 0.15, `background_color` matched to the
+> sky horizon), and the **skybox** (`PanoramaSkyMaterial` with the CC0
+> `textures/sky_sunset.png`, in `main.tscn` + `hq.gd`). Tests:
+> `test_terrain.gd::test_distant_terrain_*`, `test_render_smoke.gd` (skybox + fog
+> + backdrop). Docs: `features/rendering.md`, `features/terrain.md`.
+> **§2 (vegetation auto-LOD) is intentionally NOT done** — vegetation still pops
+> in at the old `tree_render_distance_m` (80 m); acceptable for now. It remains
+> gated on the billboard→opaque-model swap in `todo/performance-optimisations.md`.
+>
+> **Follow-ups worth noting:** the sunset panorama includes faint
+> buildings/skyline at the horizon (Venice) — swap `sky_sunset.png` for a
+> building-free sky if that reads wrong; and the LDR sky is 1024×512 (fine, but a
+> cleaner higher-res or per-rally tint could come later). The backdrop rebuild
+> (~2.6k `height_at` calls) runs on the main thread every `recenter_m` (100 m) —
+> thread it if it hitches on the mobile-web target.
+>
+> Original planning brief follows, referencing the code as it exists on this
+> branch. Follow the project's config-first convention
 > (`CLAUDE.md`): every new tunable goes in `GameConfig` (`scripts/game_config.gd`
 > + `config/game_config.tres`), never hardcoded in scripts/scenes. Update the
 > relevant `features/*.md` docs and add/adjust tests in the same piece of work.

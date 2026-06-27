@@ -105,7 +105,21 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
   gets the same hemisphere+sun look **baked into its vertex colours** once at
   generation time, so its shader keeps a pass-through vertex path and the
   heaviest geometry pays nothing per frame. Trees/bushes/signs stay flat.
-- Fog enabled, `fog_density` (0.02), color = `background_color` (purple-ish).
+- **Skybox** (`main.tscn` env `background_mode = Sky`): a `PanoramaSkyMaterial`
+  with a CC0 photographic sunset equirect (`textures/sky_sunset.png`, a tonemapped
+  LDR downscale of a Poly Haven HDRI). The full-screen post-process quantizes it
+  to the same 5-bit + dither look, so it reads as native PS1, not a pasted photo.
+  `hq.gd` builds the same sky in code so HQ matches.
+- **Distant terrain** (`scripts/distant_terrain.gd`, `DistantTerrain`): a coarse,
+  collision-free backdrop mesh sampling the same noise as the real terrain,
+  extending past the detailed 3×3 chunk ring (~75 m) so the reduced fog reveals a
+  horizon for the sky instead of the ring's hard edge. Re-centres on the car.
+  Built in `world._generate_track()`; tunables in `GameConfig` (`distant_terrain_*`).
+- **Fog** demoted from edge-hider to thin aerial haze now that the backdrop hides
+  the edge: `fog_density` (0.005), `fog_sky_affect` (0.15, so the sky reads above
+  the haze), `fog_light_color = background_color` — and `background_color`
+  (0.589, 0.544, 0.520) is **matched to the skybox's horizon** so the distant
+  terrain dissolves into the sky seam. All applied in `world._ready()` from config.
 - No bloom, no shadows.
 
 ## Tests

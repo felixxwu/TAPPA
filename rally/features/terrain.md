@@ -8,7 +8,7 @@
 Procedurally generated rolling terrain from stacked Perlin noise. The terrain is
 **infinite in theory**: `height_at(x, z)` is a pure function of absolute world
 coordinates, so any point in the world has a defined height. Only the car's
-immediate surroundings are ever built — a moving 5×5 grid of chunks that loads
+immediate surroundings are ever built — a moving 3×3 grid of chunks that loads
 and unloads as the car drives. `@tool` means chunks also regenerate live in the
 editor (centred on the origin, since there is no car there), and config drives
 the manager at runtime via `world.gd`.
@@ -137,11 +137,18 @@ previews terrain regardless of the flag.
 None. With infinite chunks there is always collision ground beneath the car, so
 the old `Border` safety wall and far visual plane were removed.
 
-## Fog
+## Fog & distant backdrop
 
-The far chunk edge sits ~100–150 m from the car (with the 5×5 ring). Fog (`fog_density` in
-`config/game_config.tres`) should hide chunks loading/unloading at that range;
-if chunks visibly pop in, increase the fog density.
+The detailed 3×3 ring's edge sits only ~75–105 m from the car. Rather than hide
+that edge with dense fog (which also hid the sky), a coarse **`DistantTerrain`**
+backdrop (`scripts/distant_terrain.gd`) extends the visible terrain far past the
+ring — collision-free scenery sampling the same `height_at`/`light_at` noise,
+re-centred on the car — so the now-thin fog (`fog_density` 0.005) reveals a
+horizon for the skybox instead of a cliff. See
+[rendering.md](rendering.md) and [../todo/distant-terrain-and-sky.md](../todo/distant-terrain-and-sky.md).
+The backdrop is sunk slightly (`distant_terrain` `sink_m`) so the accurate detail
+ring always renders on top in the overlap; the coarse-vs-fine seam at the ring
+edge is hidden by the haze. Tunables: `GameConfig.distant_terrain_*`.
 
 ## Performance
 

@@ -31,6 +31,10 @@ func _ready() -> void:
 	env.fog_density = cfg.fog_density
 	env.background_color = cfg.background_color
 	env.fog_light_color = cfg.background_color
+	# How much the (now reduced) fog tints the sky. Low so the skybox reads clearly
+	# above the distant haze; the panorama's own horizon + the fog colour (matched
+	# to the sky horizon, see background_color) blend the terrain edge into the sky.
+	env.fog_sky_affect = cfg.fog_sky_affect
 
 	# Setting this property triggers a full terrain regeneration; skip when equal.
 	if $Floor.texture_tile_per_meter != cfg.terrain_tile_per_meter:
@@ -142,6 +146,19 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	await _yield_frame()
 	$Floor.build_initial()
 
+	# Coarse distant backdrop so the reduced fog reveals a horizon (for the sky)
+	# instead of the hard edge where the detailed 3x3 ring ends (~75 m). Pure
+	# scenery: no collision, re-centres on the car. Built after build_initial() has
+	# warmed the noise cache height_at/light_at read. See distant_terrain.gd.
+	if cfg.distant_terrain_enabled and _distant_terrain == null:
+		_distant_terrain = DistantTerrain.new()
+		_distant_terrain.name = "DistantTerrain"
+		_distant_terrain.radius_m = cfg.distant_terrain_radius_m
+		_distant_terrain.cell_m = cfg.distant_terrain_cell_m
+		_distant_terrain.recenter_m = cfg.distant_terrain_recenter_m
+		add_child(_distant_terrain)
+		_distant_terrain.setup($Floor as TerrainManager, $Car)
+
 	if loading != null:
 		loading.set_step("Scattering trees…")
 	await _yield_frame()
@@ -236,6 +253,9 @@ var _stage_manager: StageManager
 
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
+
+# Coarse far-terrain backdrop that gives the sky a horizon (distant_terrain.gd).
+var _distant_terrain: DistantTerrain
 
 # The pre-event start-line scene (briefing + presence cars); built for staged
 # session runs and freed with the scene on the next event reload.
