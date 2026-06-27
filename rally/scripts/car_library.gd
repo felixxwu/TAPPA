@@ -20,13 +20,15 @@ extends RefCounted
 #                rather than on torque alone. The engine preset still sets the
 #                rpm where torque peaks and the curve shape.
 #   * grip_front / grip_rear — tyre friction (wheel_friction_slip_*), a
-#                dimensionless coefficient: road tyres near the 0.8 / 0.6
-#                baseline, performance/AWD cars progressively stickier. The rear
-#                is run a touch grippier than the front for a planted, stable
-#                tail that resists snap power-on oversteer. Front grip is capped
-#                around ~0.98: beyond that the lateral force at the tall body's
-#                contact patches rolls the car over in a hard turn, so the
-#                grippier supercars are pegged here to slide rather than tip.
+#                dimensionless coefficient. The whole roster was raised ~20% over
+#                its original road-tyre baseline (which sat the road cars near
+#                0.9 front / 1.05 rear), so cars now run ~1.08 front and up. The
+#                rear is kept a touch grippier than the front for a planted,
+#                stable tail that resists snap power-on oversteer. Rollover from
+#                the higher lateral force is held off by the low wheel_roll_influence
+#                (GameConfig, 0.1) rather than by capping front grip — watch the
+#                taller bodies (Mustang/Mustang-like) in hard turns if grip rises
+#                much further.
 #   * shift_time — seconds of clutch-open throttle cut per gear change
 #                (GameConfig.shift_time): the manual roadster (MX-5) is slowest,
 #                the dual-clutch / automated supercars (911 PDK, RS3 DSG,
@@ -88,7 +90,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Mazda MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
 		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0,
-		"grip_front": 0.90, "grip_rear": 1.05, "shift_time": 0.30,  # manual H-pattern roadster
+		"grip_front": 1.08, "grip_rear": 1.26, "shift_time": 0.30,  # manual H-pattern roadster
 		"engine_type": 0, "drive_mode": RWD, "drag": 3.53, "downforce_rear": 0.5, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
@@ -103,7 +105,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
 		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 2,
 		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0,
-		"grip_front": 0.9, "grip_rear": 1.0, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
+		"grip_front": 1.08, "grip_rear": 1.20, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
 		"engine_type": 1, "drive_mode": AWD, "drag": 3.70, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
 		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
@@ -114,7 +116,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 3,
 		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0,
-		"grip_front": 0.95, "grip_rear": 1.05, "shift_time": 0.06,  # 8-speed PDK
+		"grip_front": 1.14, "grip_rear": 1.26, "shift_time": 0.06,  # 8-speed PDK
 		"engine_type": 2, "drive_mode": RWD, "drag": 3.35, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
@@ -125,7 +127,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
 		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
 		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0,
-		"grip_front": 1, "grip_rear": 1.1, "shift_time": 0.16,  # automated single-clutch ASG
+		"grip_front": 1.20, "grip_rear": 1.32, "shift_time": 0.16,  # automated single-clutch ASG
 		"engine_type": 5, "drive_mode": RWD, "drag": 3.17, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
@@ -136,7 +138,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
 		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0,
-		"grip_front": 0.90, "grip_rear": 0.90, "shift_time": 0.22,  # 6-speed manual muscle
+		"grip_front": 1.08, "grip_rear": 1.08, "shift_time": 0.22,  # 6-speed manual muscle
 		"engine_type": 4, "drive_mode": RWD, "drag": 3.88, "downforce_rear": 0.06, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
 		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
@@ -147,7 +149,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
 		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 4,
 		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0,
-		"grip_front": 0.98, "grip_rear": 1.0, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
+		"grip_front": 1.18, "grip_rear": 1.20, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
 		"engine_type": 6, "drive_mode": AWD, "drag": 3.35, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
