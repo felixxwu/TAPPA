@@ -180,14 +180,22 @@ static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -
 # The fixed opponent field for a rally, given each event's target time (ms).
 # Reseeded from the rally id so the leaderboard is identical across re-attempts.
 # Returns an Array of opponents:
-#   { name: String, event_times_ms: Array[int], dnf: bool, combined_ms: int }
-# A DNF in any event disqualifies the opponent (combined_ms = -1, doesn't rank).
+#   { name: String, car_id: String, car_name: String,
+#     event_times_ms: Array[int], dnf: bool, combined_ms: int }
+# Each rival is assigned a car from the rally's eligible roster (so e.g. an
+# RWD-only rally fields RWD rivals), drawn from the same seeded RNG so the line-up
+# is stable across re-attempts. A DNF in any event disqualifies the opponent
+# (combined_ms = -1, doesn't rank).
 static func generate_opponent_field(rally: Dictionary, event_target_ms: Array) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
+	var car_pool := _eligible_cars(rally)
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
 	var field: Array = []
 	for i in count:
+		# Pick the rival's car first so the draw order is stable; the time/DNF rolls
+		# below follow it in the same RNG stream.
+		var car: Dictionary = car_pool[rng.randi_range(0, car_pool.size() - 1)]
 		var times: Array = []
 		var dnf := false
 		for target in event_target_ms:
@@ -204,11 +212,24 @@ static func generate_opponent_field(rally: Dictionary, event_target_ms: Array) -
 				combined += int(t)
 		field.append({
 			"name": "Rival %d" % (i + 1),
+			"car_id": String(car.get("id", "")),
+			"car_name": String(car.get("name", "")),
 			"event_times_ms": times,
 			"dnf": dnf,
 			"combined_ms": combined,
 		})
 	return field
+
+
+# The CarLibrary entries a rally's restriction admits — the pool its rivals are
+# drawn from. Falls back to the whole roster if a restriction somehow admits no
+# car (it never should; open-class admits everything).
+static func _eligible_cars(rally: Dictionary) -> Array:
+	var pool: Array = []
+	for entry in CarLibrary.CARS:
+		if is_eligible(rally, entry):
+			pool.append(entry)
+	return pool if not pool.is_empty() else CarLibrary.CARS
 
 
 # Player's 1-based placement on combined time among the non-DNF field (the
@@ -228,21 +249,24 @@ static func is_top3(field: Array, player_combined_ms: int) -> bool:
 # A fully ranked standings table for the results screen (todo/menus.md overlay 7):
 # the opponent field plus the player, sorted fastest-combined-first with the DNF
 # entries (wrecked / disqualified) sinking to the bottom. Each entry:
-#   { name:String, combined_ms:int, dnf:bool, is_player:bool, placed:int }
-# `placed` is the 1-based finishing position among the classified (non-DNF)
-# entries; DNF entries get placed = -1. Consistent with placement() — a non-DNF
-# player's `placed` equals placement(field, player_combined_ms).
-static func build_standings(field: Array, player_combined_ms: int, player_dnf: bool, player_name := "You") -> Array:
+#   { name:String, car_name:String, combined_ms:int, dnf:bool, is_player:bool, placed:int }
+# `car_name` is the car that entrant drove (the leaderboard shows it); empty when
+# unknown. `placed` is the 1-based finishing position among the classified
+# (non-DNF) entries; DNF entries get placed = -1. Consistent with placement() — a
+# non-DNF player's `placed` equals placement(field, player_combined_ms).
+static func build_standings(field: Array, player_combined_ms: int, player_dnf: bool, player_name := "You", player_car_name := "") -> Array:
 	var entries: Array = []
 	for opp in field:
 		entries.append({
 			"name": String(opp.get("name", "Rival")),
+			"car_name": String(opp.get("car_name", "")),
 			"combined_ms": int(opp.get("combined_ms", -1)),
 			"dnf": bool(opp.get("dnf", false)),
 			"is_player": false,
 		})
 	entries.append({
 		"name": player_name,
+		"car_name": player_car_name,
 		"combined_ms": player_combined_ms,
 		"dnf": player_dnf,
 		"is_player": true,

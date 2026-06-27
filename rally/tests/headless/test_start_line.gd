@@ -59,25 +59,39 @@ func _rally() -> Dictionary:
 	return RallyLibrary.by_id("rwd_masters")
 
 
-func _make(target_ms := 75430, event_index := 0) -> StartLine:
+func _leaders() -> Array:
+	return [
+		{"name": "Rival 3", "car_name": "Porsche 911", "time_ms": 75430},  # 1:15.43, the leader
+		{"name": "Rival 1", "car_name": "Lexus LFA", "time_ms": 78120},
+		{"name": "Rival 7", "car_name": "Audi RS3", "time_ms": 80050},
+	]
+
+
+func _make(leaders := [], event_index := 0) -> StartLine:
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)  # drive the sequence manually for deterministic timing
-	sl.setup(_player, null, _stage, _rally(), event_index, target_ms, _chase, _hud)
+	sl.setup(_player, null, _stage, _rally(), event_index, leaders, _chase, _hud)
 	return sl
 
 
-func test_reveal_shows_time_to_beat_and_context() -> void:
-	var sl := _make(75430, 1)  # 1:15.43, second event
-	assert_eq(sl._target_label.text, "1:15.43", "the headline shows the time to beat (m:ss.cc)")
+func test_reveal_shows_top_three_times_to_beat_and_context() -> void:
+	var sl := _make(_leaders(), 1)  # second event
+	assert_eq(sl._leader_rows.size(), 3, "the reveal lists the top three rivals to beat")
+	var top := sl._leader_rows[0].text
+	assert_string_contains(top, "1:15.43", "the leader's time to beat is shown (m:ss.cc)")
+	assert_string_contains(top, "Rival 3", "the leader's driver name is shown")
+	assert_string_contains(top, "Porsche 911", "the car the leader drove is shown")
+	assert_string_contains(sl._leader_rows[2].text, "Audi RS3", "third place's car is shown too")
 	assert_string_contains(sl._subtitle_label.text, "RWD Masters", "the rally is named")
 	assert_string_contains(sl._subtitle_label.text, "Event 2 of 3", "the event index is shown")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "it waits in the orbit/reveal phase")
 
 
-func test_missing_rival_time_shows_dash() -> void:
-	var sl := _make(-1)
-	assert_eq(sl._target_label.text, "—", "no classified rival time reads as a dash")
+func test_missing_rival_times_show_dash() -> void:
+	var sl := _make([])
+	assert_eq(sl._leader_rows.size(), 1, "with no rival times there's a single placeholder row")
+	assert_eq(sl._leader_rows[0].text, "—", "no classified rival times read as a dash")
 
 
 func test_reveal_hides_hud_and_takes_the_camera() -> void:

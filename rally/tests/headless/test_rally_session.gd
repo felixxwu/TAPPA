@@ -99,6 +99,47 @@ func test_current_event_target_ms_tracks_fastest_rival_per_event() -> void:
 	assert_eq(RallySession.current_event_target_ms(), 70000, "event 1 fastest rival time")
 
 
+# The start-line reveal lists the top three rivals for the CURRENT event — fastest
+# first, each with the car they drove — and skips any who DNF'd this event.
+func test_current_event_leaders_lists_top_three_with_cars() -> void:
+	assert_true(RallySession.current_event_leaders().is_empty(), "idle: no leaders")
+	_start("coastal_sprint")
+	RallySession._opponent_field = [
+		{"name": "A", "car_name": "Porsche 911", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "B", "car_name": "Lexus LFA", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "C", "car_name": "Audi RS3", "event_times_ms": [-1, 0, 0], "dnf": true, "combined_ms": -1},
+		{"name": "D", "car_name": "Ford Mustang GT", "event_times_ms": [60000, 0, 0], "dnf": false, "combined_ms": 1},
+	]
+	# Event 0: C set no time (-1, omitted). Fastest-first: B 45k, A 50k, D 60k.
+	var leaders := RallySession.current_event_leaders(3)
+	assert_eq(leaders.size(), 3, "the top three rivals for the event are returned")
+	assert_eq(String(leaders[0]["name"]), "B", "the fastest rival leads")
+	assert_eq(String(leaders[0]["car_name"]), "Lexus LFA", "the leader's car comes through")
+	assert_eq(int(leaders[0]["time_ms"]), 45000, "the leader's event time comes through")
+	assert_eq(String(leaders[2]["name"]), "D", "third fastest is listed third")
+	for e in leaders:
+		assert_ne(String(e["name"]), "C", "a rival who DNF'd this event is omitted")
+
+
+# The leaderboard carries the car each entrant drove — the rivals' and the
+# player's fielded car.
+func test_standings_carry_the_player_and_rival_cars() -> void:
+	_start("shakedown", "mx5")
+	RallySession._opponent_field = [
+		{"name": "Quick", "car_name": "Porsche 911", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
+	]
+	RallySession.report_event_result(50000)
+	var player := {}
+	var rival := {}
+	for e in RallySession.current_standings():
+		if e["is_player"]:
+			player = e
+		else:
+			rival = e
+	assert_eq(String(rival["car_name"]), "Porsche 911", "the rival's car is in the standings")
+	assert_eq(String(player["car_name"]), "Mazda MX-5", "the player's fielded car is in the standings")
+
+
 func test_idle_when_no_rally() -> void:
 	assert_false(RallySession.is_active(), "no session active at rest")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "phase is IDLE")

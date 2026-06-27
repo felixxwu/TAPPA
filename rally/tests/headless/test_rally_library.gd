@@ -118,6 +118,20 @@ func test_opponent_field_is_deterministic() -> void:
 	assert_eq(a, b, "same rally seed -> identical opponent field")
 
 
+func test_opponents_drive_eligible_cars() -> void:
+	# Every rival is assigned an identified car; in a restricted rally the car must
+	# satisfy the restriction (RWD Masters fields only RWD rivals).
+	var rally := RallyLibrary.by_id("rwd_masters")
+	var field := RallyLibrary.generate_opponent_field(rally, [60000, 60000, 60000])
+	for opp in field:
+		var car_id := String(opp.get("car_id", ""))
+		assert_ne(car_id, "", "%s drives an identified car" % opp["name"])
+		var meta := CarLibrary.by_id(car_id)
+		assert_false(meta.is_empty(), "the rival car id resolves to a CarLibrary entry")
+		assert_eq(int(meta.get("drive_mode", -1)), CarLibrary.RWD, "RWD-only rally fields only RWD rivals")
+		assert_eq(String(opp.get("car_name", "")), String(meta.get("name", "")), "car name matches the id")
+
+
 func test_dnfs_occur_somewhere_in_the_roster() -> void:
 	var any_dnf := false
 	for rally in RallyLibrary.RALLIES:
@@ -157,6 +171,15 @@ func test_build_standings_ranks_field_and_sinks_dnfs() -> void:
 	assert_eq(standings[3]["placed"], -1, "the DNF trails the field and does not place")
 	assert_eq(RallyLibrary.placement(field, 200), standings[1]["placed"],
 		"build_standings agrees with placement() for the player")
+
+
+func test_build_standings_carries_the_car_each_entrant_drove() -> void:
+	var field := [{"name": "A", "car_name": "Porsche 911", "dnf": false, "combined_ms": 100}]
+	# Player runs 200ms (behind A), driving the MX-5.
+	var standings := RallyLibrary.build_standings(field, 200, false, "You", "Mazda MX-5")
+	assert_eq(String(standings[0]["car_name"]), "Porsche 911", "the opponent's car is carried into the standings")
+	assert_true(standings[1]["is_player"], "the player ranks 2nd")
+	assert_eq(String(standings[1]["car_name"]), "Mazda MX-5", "the player's car is carried into the standings")
 
 
 func test_build_standings_handles_a_wrecked_player() -> void:

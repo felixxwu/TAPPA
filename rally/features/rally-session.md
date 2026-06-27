@@ -35,7 +35,8 @@ re-implementing them.
 | `start_rally(rally, owned_car, event_targets_ms := [])` | seed state, build the opponent field, kick event 0. Targets are derived from each event's track when omitted; tests pass them in to skip generation. |
 | `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), draw + grant a per-event upgrade (`RewardSystem.draw_upgrade` → `Save.add_item` → `Save.save`), then **pause on the standings** (non-final event) or resolve (final). |
 | `continue_to_next_event()` | resume from the between-event standings interstitial into the next event. |
-| `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time, ranked via `build_standings`); read by the standings scene. `events_completed()` gives the count for its header. |
+| `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time **and the car each drove**, ranked via `build_standings`); read by the standings scene. `events_completed()` gives the count for its header. |
+| `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_name, time_ms}`); DNF-this-event omitted. Drives the start-line "times to beat" reveal. |
 | `report_wreck()` | DNF: destroy the instance (`Save.wreck_car`), skip remaining events, resolve. Upgrades earned earlier this rally are kept. Only valid while `RUNNING` (you can't wreck on the standings screen). |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
 

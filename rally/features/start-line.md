@@ -10,9 +10,11 @@ The diegetic sequence between picking a car in HQ and the `3·2·1·GO` countdow
 once the world is built and a [`RallySession`](rally-session.md) is active, while the
 car is held locked. Three phases, driven in `_process`:
 
-1. **REVEAL (orbit)** — a flat overlay shows the **TIME TO BEAT** (the fastest
-   non-DNF rival's time for this stage — `RallySession.current_event_target_ms()`,
-   `m:ss.cc`, or `—`) plus a `Rally — Event N of 3` subtitle and a **Start** button.
+1. **REVEAL (orbit)** — a flat overlay shows the **TIMES TO BEAT**: the **top three
+   rivals** for this stage, fastest first, each as `P{n}  Driver — Car — m:ss.cc`
+   (`RallySession.current_event_leaders(3)`; the leader is highlighted, the car is
+   dropped when unknown, and a single `—` stands in when no rival has a time yet).
+   Below it a `Rally — Event N of 3` subtitle and a **Start** button.
    Behind it an **orbit camera** circles the car, which is queued between a
    **leader** car ahead and a **trailing** car behind. The driving HUD + mobile
    controls are hidden. Launch with the button, `menu_select` (Enter / gamepad A),
@@ -102,14 +104,16 @@ See [configuration.md](configuration.md).
 
 ## Tests
 
-- `tests/headless/test_start_line.gd` — the reveal shows the formatted time to beat
-  (and `—` when none) + context, hides the HUD and takes the camera; the queue cars
-  are scripted + axis-locked + live (not frozen); the player is staged half a gap
-  behind and scripted, `launch()` floors the leader, the player rolls up after its
-  stagger, the fade waits for the player to come to a complete stop, and after the
-  drive-off + fade the player is released to normal driving and `begin_countdown()`
-  fires exactly once (idempotent).
+- `tests/headless/test_start_line.gd` — the reveal lists the top three rivals to beat
+  with each driver's name, car and time (and a single `—` when none) + context, hides
+  the HUD and takes the camera; the queue cars are scripted + axis-locked + live (not
+  frozen); the player is staged half a gap behind and scripted, `launch()` floors the
+  leader, the player rolls up after its stagger, the fade waits for the player to come
+  to a complete stop, and after the drive-off + fade the player is released to normal
+  driving and `begin_countdown()` fires exactly once (idempotent).
 - `tests/headless/test_rally_session.gd` — `current_event_target_ms()` returns the
-  fastest non-DNF rival's time for the current event and tracks the event index.
+  fastest non-DNF rival's time for the current event and tracks the event index;
+  `current_event_leaders()` returns the top three rivals (fastest first, with their
+  cars, DNF-this-event omitted) for the start-line reveal.
 - `tests/headless/test_stage_manager.gd` — the `STAGING` phase holds until
   `begin_countdown()`, which is a no-op outside `STAGING`.

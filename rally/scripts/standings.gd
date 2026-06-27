@@ -58,14 +58,17 @@ func _build_ui() -> void:
 	root.add_child(cont)
 
 
-# One standings row: position, name, cumulative time / DNF; the player's row is
-# tinted and marked. Mirrors the podium's row format.
+# One standings row: position, name (and the car they drove), cumulative time /
+# DNF; the player's row is tinted and marked. Mirrors the podium's row format.
 func _standings_row(entry: Dictionary) -> Label:
 	var l := Label.new()
 	var placed := int(entry.get("placed", -1))
 	var pos_text := "P%d" % placed if placed >= 1 else "DNF"
 	var time_text := "WRECKED" if entry.get("dnf", false) else _fmt(int(entry.get("combined_ms", -1)))
 	var who := String(entry.get("name", "?"))
+	var car := String(entry.get("car_name", ""))
+	if car != "":
+		who += " (%s)" % car
 	var is_player: bool = entry.get("is_player", false)
 	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
 	if is_player:

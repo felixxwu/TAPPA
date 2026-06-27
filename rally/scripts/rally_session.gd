@@ -42,6 +42,7 @@ signal showdown_won()
 var _phase: int = Phase.IDLE
 var _rally: Dictionary = {}            # the RallyDef being run ({} when IDLE)
 var _car_instance_id := -1             # the fielded OwnedCar instance
+var _car_model_id := ""                # the fielded car's CarLibrary model id (for the player's standings car)
 var _event_index := 0                  # 0..2
 var _event_times_ms: Array[int] = []   # accumulated, one per completed event
 var _event_targets_ms: Array = []      # per-event target time (drives the field)
@@ -66,6 +67,7 @@ var auto_load_scenes := true
 func start_rally(rally: Dictionary, owned_car: Dictionary, event_targets_ms: Array = []) -> void:
 	_rally = rally
 	_car_instance_id = int(owned_car.get("instance_id", -1))
+	_car_model_id = String(owned_car.get("model_id", ""))
 	_event_index = 0
 	_event_times_ms = []
 	_dnf = false
@@ -131,8 +133,37 @@ func current_standings() -> Array:
 				dnf = true
 			elif i < times.size():
 				sum += int(times[i])
-		partial.append({"name": opp.get("name", "Rival"), "combined_ms": -1 if dnf else sum, "dnf": dnf})
-	return RallyLibrary.build_standings(partial, player_combined, _dnf)
+		partial.append({"name": opp.get("name", "Rival"), "car_name": opp.get("car_name", ""), "combined_ms": -1 if dnf else sum, "dnf": dnf})
+	return RallyLibrary.build_standings(partial, player_combined, _dnf, "You", _player_car_name())
+
+
+# The player's fielded car name, for their row in the leaderboards. "" when no car
+# is fielded or the model id resolves to nothing (e.g. headless tests).
+func _player_car_name() -> String:
+	return String(CarLibrary.by_id(_car_model_id).get("name", ""))
+
+
+# The top `n` rivals for the CURRENT event — each rival's time for THIS event with
+# the car they drove, fastest first — shown on the start-line reveal in place of a
+# single "time to beat". Rivals who DNF'd this event (no time set) are omitted.
+# Returns up to n entries: { name:String, car_name:String, time_ms:int }. Empty
+# before a rally starts / when no rival has a time for this event.
+func current_event_leaders(n: int = 3) -> Array:
+	if _event_index < 0:
+		return []
+	var rows: Array = []
+	for opp in _opponent_field:
+		var times: Array = opp.get("event_times_ms", [])
+		if _event_index < times.size():
+			var t := int(times[_event_index])
+			if t >= 0:
+				rows.append({
+					"name": String(opp.get("name", "Rival")),
+					"car_name": String(opp.get("car_name", "")),
+					"time_ms": t,
+				})
+	rows.sort_custom(func(a, b): return int(a["time_ms"]) < int(b["time_ms"]))
+	return rows.slice(0, n)
 
 
 # How many events the player has completed so far (for the interstitial header).
@@ -277,7 +308,7 @@ func _resolve_results() -> void:
 		"rally_id": String(_rally.get("id", "")),
 		"rally_name": String(_rally.get("name", "")),
 		# Full ranked field for the standings overlay (built before _reset clears it).
-		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf),
+		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf, "You", _player_car_name()),
 		# Reward reveal data (todo/menus.md): per-event upgrades + the top-3 car.
 		"upgrades": _upgrades_won.duplicate(),
 		"car_reward": car_reward,
@@ -301,6 +332,7 @@ func _owns_model(model_id: String) -> bool:
 func _reset_to_idle() -> void:
 	_rally = {}
 	_car_instance_id = -1
+	_car_model_id = ""
 	_event_index = 0
 	_event_times_ms = []
 	_event_targets_ms = []

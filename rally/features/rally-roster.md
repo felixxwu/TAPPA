@@ -50,6 +50,13 @@ recomputed.
   (RIVAL_PACE_MIN + RIVAL_PACE_SPREAD)]` (the band sits above the target, so
   rivals always run slower than target pace — beatable by design), some **DNF**;
   a DNF in any event disqualifies the opponent (`combined_ms = -1`, doesn't rank).
+  Each rival is also assigned a **car** (`car_id` / `car_name`) drawn from the
+  rally's eligible roster (`_eligible_cars` filters by the restriction, so an
+  RWD-only rally fields RWD rivals) using the same seeded RNG — so the line-up is
+  stable across re-attempts and shows up on the start-line reveal + leaderboards.
+- `build_standings(field, player_combined_ms, player_dnf, player_name, player_car_name)`
+  — the ranked table (field + player, DNFs sink). Each entry carries the
+  `car_name` that entrant drove (empty when unknown) so the leaderboards can show it.
 - `placement(field, player_combined_ms)` / `is_top3(...)` — the player's 1-based
   placement among the non-DNF field on combined time.
 - `completed_count(profile)` — the single progression metric (caps reward tier +

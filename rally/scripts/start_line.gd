@@ -5,10 +5,11 @@ extends Node3D
 # live run scene (main.tscn) once the world is built and a RallySession is active,
 # while the car is held locked by the StageManager's STAGING phase:
 #
-#   1. REVEAL  — a flat overlay shows the "TIME TO BEAT" (the fastest rival's stage
-#      time, set by the opponents) while an orbit camera circles the car, which is
-#      queued between a LEADER car ahead and a TRAILING car behind. The driving HUD
-#      is hidden. The player launches with the Start button, menu_select or a tap.
+#   1. REVEAL  — a flat overlay shows the "TIMES TO BEAT" (the top three rivals'
+#      stage times for this event, with each driver's name and the car they drove)
+#      while an orbit camera circles the car, which is queued between a LEADER car
+#      ahead and a TRAILING car behind. The driving HUD is hidden. The player
+#      launches with the Start button, menu_select or a tap.
 #   2. LAUNCH  — the leader "drives off" ahead and the trailing car scoots up toward
 #      the line over start_drive_off_seconds.
 #   3. FADE    — the screen fades to black; at full black the camera hands back to
@@ -43,7 +44,8 @@ var _mobile: CanvasLayer
 var _orbit_cam: Camera3D
 var _overlay: CanvasLayer
 var _start_button: Button
-var _target_label: Label
+var _leaders_box: VBoxContainer
+var _leader_rows: Array[Label] = []   # one row per shown rival (or a single dash)
 var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
@@ -61,11 +63,12 @@ func _cfg() -> GameConfig:
 	return Config.data
 
 
-# Build the start-line sequence around the fielded car. `target_ms` is the time to
-# beat (RallySession.current_event_target_ms()); `terrain` (optional) sits the queue
-# cars on the ground; `chase_camera` / `hud` / `mobile` are handed back at the fade.
+# Build the start-line sequence around the fielded car. `leaders` is the top-three
+# rivals to beat for this event (RallySession.current_event_leaders()), each
+# { name, car_name, time_ms }; `terrain` (optional) sits the queue cars on the
+# ground; `chase_camera` / `hud` / `mobile` are handed back at the fade.
 func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
-		event_index: int, target_ms: int, chase_camera: Camera3D = null,
+		event_index: int, leaders: Array, chase_camera: Camera3D = null,
 		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
 	_player = player
 	_stage_manager = stage_manager
@@ -79,7 +82,7 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	if _mobile != null:
 		_mobile.visible = false
 	_build_orbit_camera()
-	_build_overlay(rally, event_index, target_ms)
+	_build_overlay(rally, event_index, leaders)
 	_build_fade()
 	_stage_player(terrain)
 	_spawn_queue(rally, terrain)
@@ -130,9 +133,9 @@ func _update_orbit() -> void:
 	_orbit_cam.look_at_from_position(eye, center, Vector3.UP)
 
 
-# --- Overlay (flat "time to beat" card over the orbiting scene) --------------
+# --- Overlay (flat "times to beat" card over the orbiting scene) -------------
 
-func _build_overlay(rally: Dictionary, event_index: int, target_ms: int) -> void:
+func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void:
 	_overlay = CanvasLayer.new()
 	_overlay.layer = 5  # above the HUD (2) / mobile (3), below the fade
 	add_child(_overlay)
@@ -144,18 +147,36 @@ func _build_overlay(rally: Dictionary, event_index: int, target_ms: int) -> void
 	_overlay.add_child(root)
 
 	var heading := Label.new()
-	heading.text = "TIME TO BEAT"
+	heading.text = "TIMES TO BEAT"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 20)
 	heading.modulate = Color(1, 1, 1, 0.85)
 	root.add_child(heading)
 
-	_target_label = Label.new()
-	_target_label.text = _format_ms(target_ms)
-	_target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_target_label.add_theme_font_size_override("font_size", 64)
-	_target_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
-	root.add_child(_target_label)
+	# Top-three rivals for this event: rank, driver, car and time. The leader (the
+	# actual time to beat) is highlighted; if no rival set a time yet, a single dash
+	# stands in.
+	_leaders_box = VBoxContainer.new()
+	_leaders_box.add_theme_constant_override("separation", 2)
+	root.add_child(_leaders_box)
+	_leader_rows = []
+	if leaders.is_empty():
+		var dash := _leader_row_label("—")
+		dash.add_theme_font_size_override("font_size", 44)
+		dash.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+		_leaders_box.add_child(dash)
+		_leader_rows.append(dash)
+	else:
+		for i in leaders.size():
+			var row := _leader_row_label(_format_leader(i + 1, leaders[i]))
+			if i == 0:
+				row.add_theme_font_size_override("font_size", 30)
+				row.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+			else:
+				row.add_theme_font_size_override("font_size", 22)
+				row.modulate = Color(1, 1, 1, 0.9)
+			_leaders_box.add_child(row)
+			_leader_rows.append(row)
 
 	var total: int = rally.get("events", []).size()
 	if total <= 0:
@@ -184,6 +205,23 @@ func _build_overlay(rally: Dictionary, event_index: int, target_ms: int) -> void
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.modulate = Color(0.7, 0.9, 1.0)
 	root.add_child(hint)
+
+
+# A centered leaderboard row label (styling applied by the caller).
+func _leader_row_label(text: String) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return l
+
+
+# One rival row: "P1   Rival 3 — Porsche 911 — 1:15.43". The car is dropped when
+# unknown (empty), leaving "P1   Rival 3 — 1:15.43".
+func _format_leader(pos: int, entry: Dictionary) -> String:
+	var car := String(entry.get("car_name", ""))
+	var car_part := " — %s" % car if car != "" else ""
+	return "P%d   %s%s — %s" % [
+		pos, String(entry.get("name", "Rival")), car_part, _format_ms(int(entry.get("time_ms", -1)))]
 
 
 # m:ss.cc, or an em dash when there's no rival time to show.
