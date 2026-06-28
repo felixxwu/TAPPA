@@ -55,21 +55,17 @@ def floor():
 
 
 def wall():
+    # Only vertical seams + isotropic grain — NO horizontal features. A BoxMesh
+    # flips the vertical UV between its +X / -X (and front/back) faces, so any
+    # horizontal detail (a bottom scuff, a top rail) would land at the bottom on
+    # one wall and the top on the opposite one. Keeping the panel flip-invariant
+    # makes every wall read identically regardless of which face it lands on.
     img = solid((208, 208, 202))
     d = ImageDraw.Draw(img, "RGBA")
-    # Vertical panel seams.
-    for x in range(0, S + 1, 64):
+    for x in range(0, S + 1, 64):                      # vertical panel seams
         d.line([(x, 0), (x, S)], fill=(184, 184, 178, 255), width=2)
-    # Top rail + a horizontal mid seam.
-    d.rectangle([0, 0, S, 10], fill=(150, 150, 146, 255))
-    d.line([(0, 150), (S, 150)], fill=(190, 190, 184, 255), width=2)
-    img = grain(img, 10, 0.18)
-    # Scuff / grime gradient along the bottom.
-    d = ImageDraw.Draw(img, "RGBA")
-    for i in range(140):
-        a = int(70 * (i / 140.0) ** 2)
-        d.line([(0, S - i), (S, S - i)], fill=(60, 58, 56, a))
-    save(img, "garage_wall.png")
+        d.line([(x + 2, 0), (x + 2, S)], fill=(224, 224, 220, 120), width=1)  # seam highlight
+    save(grain(img, 10, 0.16), "garage_wall.png")
 
 
 def cabinet():
