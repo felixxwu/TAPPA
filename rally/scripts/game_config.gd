@@ -599,7 +599,7 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var wheel_particle_color := Color(0.42, 0.40, 0.36)
 ## Hard cap on live particles (the ring-buffer size + MultiMesh instance count).
 ## Oldest clods are recycled first, so memory and draw cost are bounded.
-@export_range(16, 2000) var wheel_particle_max := 300
+@export_range(16, 2000) var wheel_particle_max := 50
 ## Edge length of each square clod billboard, in metres.
 @export var wheel_particle_size_m := 0.12
 ## Minimum wheelspin (tread speed minus ground speed along the roll direction, m/s)
