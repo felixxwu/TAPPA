@@ -391,22 +391,31 @@ func _build_trees() -> void:
 	flat.free()
 
 
-# The garage shell: floor, back + side walls, and a flat roof. Open toward +Z (the
-# car park) so the camera looks in through the front from the garage station. The
-# roof is safe to keep: the table-map camera (eye y ~2.6) and the garage camera both
-# sit BELOW the roof (y ~4.8+), so neither looks down through it.
+# The garage shell — the two-bay service-park model (scripts/garage.gd). Open
+# toward +Z (the car park) so the camera looks in through the front from the
+# garage station; the LEFT bay frames the map table (hq_table_pos, −X) and the
+# RIGHT bay frames the tuning lift (hq_lift_pos, +X). The model is sized to the
+# hq_garage_size footprint and centred at the origin (front edge at +gz/2, back
+# wall at −gz/2), matching the old placeholder so the camera stations and the
+# table/lift placement are unchanged. Its own environment + ground are off (the
+# HQ provides the sky, sun, grass and concrete apron); it keeps its per-bay
+# ceiling lights. The table-map camera (eye y ~2.6) and garage camera both sit
+# below the roof (~5.6), so neither looks down through it.
 func _build_garage() -> void:
 	var cfg: GameConfig = Config.data
 	var gx: float = cfg.hq_garage_size.x
 	var gz: float = cfg.hq_garage_size.y
-	var wall_h := 5.0
-	var t := 0.4
-	var wall := Color(0.30, 0.31, 0.35)
-	_block(Vector3(0.0, 0.05, 0.0), Vector3(gx, 0.1, gz), Color(0.22, 0.23, 0.26))            # floor
-	_block(Vector3(0.0, wall_h * 0.5, -gz * 0.5), Vector3(gx, wall_h, t), wall)                # back
-	_block(Vector3(-gx * 0.5, wall_h * 0.5, 0.0), Vector3(t, wall_h, gz), wall)                # left
-	_block(Vector3(gx * 0.5, wall_h * 0.5, 0.0), Vector3(t, wall_h, gz), wall)                 # right
-	_block(Vector3(0.0, wall_h, 0.0), Vector3(gx, t, gz), Color(0.26, 0.27, 0.31))             # roof
+	var garage: Node3D = load("res://scripts/garage.gd").new()
+	garage.build_environment = false
+	garage.build_ground = false
+	garage.num_bays = 2
+	garage.bay_depth = gz
+	# Two bays + three pillars span the full footprint width.
+	garage.bay_width = (gx - 3.0 * garage.pillar_w) / 2.0
+	# Model origin is the centre of the FRONT edge; shift it forward by half the
+	# depth so the shell straddles the origin like the old placeholder did.
+	garage.position = Vector3(0.0, 0.0, gz * 0.5)
+	add_child(garage)
 
 
 # The map table: a block with the flat 3D map plane on top + a pickable area so a tap
