@@ -104,6 +104,7 @@ var _lift_tween: Tween
 var _camera: Camera3D
 var _stats_label: Label3D       # billboarded car stats beside the focused parked car
 var _cam_tween: Tween
+var _map_table: MapTable        # the wooden table model the map plane sits on
 var _map_plane: MeshInstance3D  # the flat map laid on the table top
 var _pins_root: Node3D          # parent of the rally pins
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
@@ -494,7 +495,12 @@ func _build_map_table() -> void:
 	var cfg: GameConfig = Config.data
 	var p: Vector3 = cfg.hq_table_pos
 	var s: Vector3 = cfg.hq_table_size
-	_block(p + Vector3(0.0, s.y * 0.5, 0.0), s, Color(0.34, 0.26, 0.18))  # table (wood)
+	# A proper wooden table (top + apron + legs + stretchers) instead of a plain
+	# block; its top surface sits at y = s.y so the map plane / pins still align.
+	_map_table = MapTable.new()
+	_map_table.table_size = s
+	_map_table.position = p
+	add_child(_map_table)
 	var top_y := p.y + s.y
 
 	_map_plane = MeshInstance3D.new()

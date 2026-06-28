@@ -70,6 +70,28 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
 
 
+func test_hq_map_table_is_a_proper_wooden_model() -> void:
+	# The map table is a built MapTable (top + apron + legs + stretchers), not a
+	# single placeholder block, and its top surface sits at the configured height so
+	# the map plane / pins still align.
+	var cfg: GameConfig = Config.data
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_true(hq._map_table is MapTable, "the table is a MapTable model")
+	assert_eq(hq._map_table.position, cfg.hq_table_pos, "the table sits at the configured spot")
+	assert_almost_eq(hq._map_table.top_y(), cfg.hq_table_size.y, 0.001,
+		"the table top stays at the configured height (map plane / pins align)")
+	# Tabletop slab + four apron rails + four legs + three stretchers = 12 meshes.
+	var meshes: Array = hq._map_table.find_children("*", "MeshInstance3D", true, false)
+	assert_eq(meshes.size(), 12, "the table is built from a top, apron, legs and stretchers")
+	# Every part wears the shared wood texture.
+	for mi in meshes:
+		var mat := (mi as MeshInstance3D).material_override as StandardMaterial3D
+		assert_not_null(mat, "each table part has a material")
+		assert_not_null(mat.albedo_texture, "each table part wears the wood grain texture")
+
+
 func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
