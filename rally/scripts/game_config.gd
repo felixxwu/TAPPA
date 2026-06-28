@@ -771,7 +771,11 @@ func apply_car_light(mat: ShaderMaterial) -> void:
 # which bakes them into vertex colours when chunks generate. Call BEFORE the
 # initial terrain build so the shading is baked into the first chunks.
 func apply_terrain_light(tm: TerrainManager) -> void:
-	tm.light_amount = terrain_light_amount
+	# TEMP: terrain shading bake disabled to cut chunk-generation CPU on web (the
+	# per-vertex _bake_light does 4 extra noise samples per vertex; light_amount 0
+	# makes _bake_light / light_at early-return white with no work). Restore by
+	# putting this back to `terrain_light_amount`. See features/terrain.md.
+	tm.light_amount = 0.0  # was: terrain_light_amount
 	tm.sun_dir = sun_direction.normalized()
 	tm.sun_color = sun_color
 	tm.sky_color = sky_color
