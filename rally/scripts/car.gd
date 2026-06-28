@@ -474,10 +474,9 @@ func apply_car(index: int) -> String:
 
 
 # Field an OwnedCar (todo/rally-event-flow.md fielding pipeline): the CarLibrary
-# baseline, then the installed upgrades, then the working damage state from the
-# saved HP. Used by world.gd when a RallySession is active; free-roam uses
-# apply_car directly. (Per-car tuning — todo/tuning.md — is the missing step 3;
-# slotted in here once it lands.)
+# baseline, then the installed upgrades, then the per-car tuning, then the working
+# damage state from the saved HP. Used by world.gd when a RallySession is active;
+# free-roam uses apply_car directly (no upgrades/tuning).
 func apply_owned(owned: Dictionary) -> String:
 	var model_id := String(owned.get("model_id", ""))
 	var idx := CarLibrary.index_of(model_id)
@@ -488,6 +487,10 @@ func apply_owned(owned: Dictionary) -> String:
 	# pushed the baseline suspension onto the wheels, so re-sync after a stiffness
 	# upgrade mutates cfg (other upgraded fields are read live each physics step).
 	UpgradeLibrary.apply(owned, Config.data)
+	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
+	# of the upgraded baseline (todo/tuning.md). Gating (brake/aero) reads the same
+	# installed upgrades, so it must run after step 2.
+	TuningLibrary.apply(owned, Config.data)
 	_sync_suspension_to_wheels()
 	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
 	# removes it from the save (the immortal starter skips depletion).

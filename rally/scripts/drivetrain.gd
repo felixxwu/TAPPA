@@ -89,8 +89,12 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 		})
 
 	var h := delta / float(SPIN_SUBSTEPS)
-	var front_brake := brake * cfg.brake_torque  # per front wheel
-	var rear_brake := front_brake + (cfg.handbrake_torque if handbrake else 0.0)
+	# Foot-brake torque split front/rear by cfg.brake_bias (the brake_bias tuning
+	# knob, todo/tuning.md). The * 2.0 normalises so brake_bias = 0.5 reproduces the
+	# old equal split exactly (front = rear = brake * brake_torque).
+	var total_brake := brake * cfg.brake_torque * 2.0
+	var front_brake := total_brake * cfg.brake_bias  # per front wheel
+	var rear_brake := total_brake * (1.0 - cfg.brake_bias) + (cfg.handbrake_torque if handbrake else 0.0)
 	var front_inertia := cfg.axle_inertia * 0.5  # per front wheel
 	# A driven axle is a locked spool. front_spool_inertia/brake fold the two
 	# front wheels into one unit for FWD/AWD.

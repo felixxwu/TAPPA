@@ -35,8 +35,10 @@
 > **Standings overlay** at results, AND the **between-event standings interstitial**
 > (`standings.tscn`).
 >
-> **What remains:** the **tuning lift** UI + inventory (the lift is a clickable
-> placeholder), per-car paint + duplicate-model name suffixes, world-anchored
+> **What remains:** ~~the **tuning lift** UI + inventory~~ **(DONE — the lift raises
+> the player's selected car, with a side-anchored menu carrying the TUNE sliders and
+> the UPGRADES install/repair list; see [`features/tuning.md`](../features/tuning.md) /
+> [`features/menus.md`](../features/menus.md))**, per-car paint + duplicate-model name suffixes, world-anchored
 > SubViewport stats panels (richer than the current `Label3D`), the 3D podium +
 > reward-reveal rig (the podium/standings are still flat scenes), the Pause /
 > Inventory / Confirm overlays, designed environment art (blocks are placeholder),

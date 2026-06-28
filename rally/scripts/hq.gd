@@ -5,9 +5,13 @@ extends Node3D
 #   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park, with
 #     just a Start button. Start flies the camera into the garage.
 #   * GARAGE   — a block garage interior holding the MAP TABLE and the TUNING LIFT.
-#     Tap the table to see the rallies; tap the lift to tune (coming later).
+#     The player's SELECTED car is raised on the lift here. Tap the table to see the
+#     rallies; tap the lift to tune.
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
+#   * LIFT     — the tuning bay: the selected car raised on the lift on one side, the
+#     tuning menu on the other. Two menus — TUNE (grip/brake/aero sliders) and
+#     UPGRADES (install parts + repair) — plus a control to change which car is tuned.
 #   * CARPARK  — the outdoor lineup of the cars ELIGIBLE for the chosen rally; pan
 #     between them and Start.
 # Flow: pick rally (table) -> choose eligible car (car park) -> Start -> RallySession.
@@ -25,7 +29,11 @@ extends Node3D
 # fielded car's config before a run.
 
 # Camera stations (see the per-station poses in GameConfig "Menu / HQ").
-enum View { EXTERIOR, GARAGE, TABLE, CARPARK }
+enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK }
+
+# The two tuning-lift menus (todo/menus.md rig 4): TUNE = the handling sliders,
+# UPGRADES = install parts / repair. Both share the change-car control + Back.
+enum LiftTab { TUNE, UPGRADES }
 
 # 1st place earns 3 stars, 2nd → 2, 3rd → 1, anything else (incl. not completed) → 0.
 # Shown on the 3D map pins as small sphere meshes (gold = earned, grey = not) — a 3D
@@ -58,6 +66,13 @@ var _focus := 0
 # old lineup no-ops when it fires (see _build_eligible_lineup / _freeze_lineup).
 var _settle_generation := 0
 
+# Tuning-lift state: the selected car raised on the lift (a Car prop, separate from
+# the car-park lineup), which OwnedCar it is, and which menu (TUNE / UPGRADES) is up.
+var _lift_car: Node3D
+var _lift_owned: Dictionary = {}
+var _lift_car_instance_id := -2  # what _lift_car was built for (-2 = nothing yet)
+var _lift_tab: int = LiftTab.TUNE
+
 # 3D staging.
 var _camera: Camera3D
 var _stats_label: Label3D       # billboarded car stats beside the focused parked car
@@ -71,9 +86,9 @@ var _title_layer: CanvasLayer
 var _garage_layer: CanvasLayer
 var _table_layer: CanvasLayer
 var _detail_layer: CanvasLayer
+var _lift_layer: CanvasLayer
 var _car_layer: CanvasLayer
 
-var _lift_msg: Label            # transient "tuning coming soon" line in the garage
 var _map_meter: Label           # progress-to-showdown meter on the table HUD
 var _detail_title: Label
 var _detail_body: Label
@@ -83,14 +98,26 @@ var _car_stats_label: Label
 var _start_button: Button
 var _no_eligible_label: Label
 
+# Tuning-lift overlay widgets (the right-side menu panel).
+var _lift_car_label: Label      # selected car name + stats at the top of the panel
+var _lift_tab_tune: Button
+var _lift_tab_upgrades: Button
+var _lift_tune_box: VBoxContainer    # the TUNE menu (sliders)
+var _lift_upgrades_box: VBoxContainer  # the UPGRADES menu (install / repair)
+var _lift_sliders: Dictionary = {}     # axis -> HSlider
+var _lift_slider_rows: Dictionary = {} # axis -> the row Control (to grey out when locked)
+var _lift_slider_values: Dictionary = {}  # axis -> the value Label
+
 
 func _ready() -> void:
 	_ensure_starter()
+	_ensure_selection()
 	_build_environment()
 	_build_title_overlay()
 	_build_garage_overlay()
 	_build_table_overlay()
 	_build_detail_overlay()
+	_build_lift_overlay()
 	_build_car_overlay()
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
@@ -107,6 +134,12 @@ func _ensure_starter() -> void:
 	Save.profile["starter_picked"] = true
 	Save.profile["starter_model_id"] = "mx5"
 	Save.save()
+
+
+# Make sure a valid car is selected (the one raised on the lift). Save.selected_car
+# self-heals to the first owned car when the stored id is unset/invalid.
+func _ensure_selection() -> void:
+	Save.selected_car()
 
 
 # --- 3D world (buildings, garage, table, lift, car park) ---------------------
@@ -441,7 +474,7 @@ func _on_table_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vect
 
 func _on_lift_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int) -> void:
 	if _view == View.GARAGE and _is_click(event):
-		_flash_lift_message()
+		_enter_lift()
 
 
 func _on_pin_input(_cam: Node, event: InputEvent, _pos: Vector3, _normal: Vector3, _shape: int, rally_id: String) -> void:
@@ -510,27 +543,28 @@ func _build_garage_overlay() -> void:
 	var root: VBoxContainer = made[1]
 
 	var hint := Label.new()
-	hint.text = "GARAGE — tap the map table to choose a rally, or the lift to tune"
+	hint.text = "GARAGE — tap the map table to choose a rally, or the lift to tune your car"
 	hint.add_theme_font_size_override("font_size", 22)
 	root.add_child(hint)
-
-	_lift_msg = Label.new()
-	_lift_msg.add_theme_font_size_override("font_size", 16)
-	_lift_msg.modulate = Color(1, 1, 1, 0.85)
-	root.add_child(_lift_msg)
 
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(spacer)
 
 	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
 	var back := Button.new()
 	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(func() -> void: _go_to(View.EXTERIOR))
 	actions.add_child(back)
-	# Convenience: jump straight to the map table.
+	# Convenience buttons mirroring the clickable 3D lift / table.
+	var to_lift := Button.new()
+	to_lift.text = "Tune car (lift) >"
+	to_lift.focus_mode = Control.FOCUS_NONE
+	to_lift.pressed.connect(_enter_lift)
+	actions.add_child(to_lift)
 	var to_table := Button.new()
 	to_table.text = "Open map table >"
 	to_table.focus_mode = Control.FOCUS_NONE
@@ -604,6 +638,180 @@ func _build_detail_overlay() -> void:
 	actions.add_child(enter)
 
 
+# The tuning-lift menu: a solid panel anchored to ONE side of the screen (the right
+# hq_lift_menu_width_frac of the width) so the raised car — framed to the LEFT by the
+# lift camera (hq_lift_cam_*) — stays in clear view. Holds the two menus (TUNE sliders
+# / UPGRADES list), the change-car control, and Back. The left of the screen has no
+# Control, so the 3D car shows through there.
+func _build_lift_overlay() -> void:
+	var frac: float = Config.data.hq_lift_menu_width_frac
+	_lift_layer = CanvasLayer.new()
+	add_child(_lift_layer)
+
+	var bg := ColorRect.new()
+	bg.anchor_left = 1.0 - frac
+	bg.anchor_right = 1.0
+	bg.anchor_top = 0.0
+	bg.anchor_bottom = 1.0
+	bg.color = Color(0.08, 0.10, 0.14, 0.96)
+	_lift_layer.add_child(bg)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "top", "right", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 20)
+	bg.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 10)
+	margin.add_child(root)
+
+	var title := Label.new()
+	title.text = "TUNING BAY"
+	title.add_theme_font_size_override("font_size", 26)
+	root.add_child(title)
+
+	_lift_car_label = Label.new()
+	_lift_car_label.add_theme_font_size_override("font_size", 14)
+	_lift_car_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(_lift_car_label)
+
+	# Change which car is tuned (cycles all owned cars; updates the selected car).
+	var car_nav := HBoxContainer.new()
+	car_nav.add_theme_constant_override("separation", 8)
+	root.add_child(car_nav)
+	var prev_car := Button.new()
+	prev_car.text = "< Car"
+	prev_car.focus_mode = Control.FOCUS_NONE
+	prev_car.pressed.connect(_cycle_lift_car.bind(-1))
+	car_nav.add_child(prev_car)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	car_nav.add_child(spacer)
+	var next_car := Button.new()
+	next_car.text = "Car >"
+	next_car.focus_mode = Control.FOCUS_NONE
+	next_car.pressed.connect(_cycle_lift_car.bind(1))
+	car_nav.add_child(next_car)
+
+	# The two-menu tab strip.
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 6)
+	root.add_child(tabs)
+	_lift_tab_tune = Button.new()
+	_lift_tab_tune.text = "Tune"
+	_lift_tab_tune.focus_mode = Control.FOCUS_NONE
+	_lift_tab_tune.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lift_tab_tune.pressed.connect(_set_lift_tab.bind(LiftTab.TUNE))
+	tabs.add_child(_lift_tab_tune)
+	_lift_tab_upgrades = Button.new()
+	_lift_tab_upgrades.text = "Upgrades"
+	_lift_tab_upgrades.focus_mode = Control.FOCUS_NONE
+	_lift_tab_upgrades.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lift_tab_upgrades.pressed.connect(_set_lift_tab.bind(LiftTab.UPGRADES))
+	tabs.add_child(_lift_tab_upgrades)
+
+	# Scrollable content area (the upgrades list can grow past the panel height).
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 10)
+	scroll.add_child(content)
+
+	_build_lift_tune_box(content)
+	_lift_upgrades_box = VBoxContainer.new()
+	_lift_upgrades_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lift_upgrades_box.add_theme_constant_override("separation", 8)
+	content.add_child(_lift_upgrades_box)
+
+	var back := Button.new()
+	back.text = "< Back to garage"
+	back.focus_mode = Control.FOCUS_NONE
+	back.pressed.connect(_lift_back)
+	root.add_child(back)
+
+
+# Build the TUNE menu: one slider row per tuning axis. Static structure; gating /
+# values are refreshed per car by _refresh_lift_ui.
+func _build_lift_tune_box(parent: VBoxContainer) -> void:
+	_lift_tune_box = VBoxContainer.new()
+	_lift_tune_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lift_tune_box.add_theme_constant_override("separation", 12)
+	parent.add_child(_lift_tune_box)
+
+	var hint := Label.new()
+	hint.text = "Free, reversible handling tweaks. Slide left/right and they save instantly."
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.modulate = Color(1, 1, 1, 0.8)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lift_tune_box.add_child(hint)
+
+	# One row per axis: a heading + value, then the slider. The labels at each end
+	# name the slider's directions so the player knows which way is which.
+	for spec in [
+		{"axis": "grip_balance", "name": "Grip balance", "lo": "understeer", "hi": "oversteer"},
+		{"axis": "brake_bias", "name": "Brake bias", "lo": "rearward", "hi": "forward"},
+		{"axis": "aero_balance", "name": "Aero balance", "lo": "front", "hi": "rear"},
+	]:
+		_lift_tune_box.add_child(_make_slider_row(spec))
+
+	var reset := Button.new()
+	reset.text = "Reset to neutral"
+	reset.focus_mode = Control.FOCUS_NONE
+	reset.pressed.connect(_reset_tuning)
+	_lift_tune_box.add_child(reset)
+
+
+func _make_slider_row(spec: Dictionary) -> Control:
+	var axis := String(spec["axis"])
+	var row := VBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 2)
+
+	var header := HBoxContainer.new()
+	row.add_child(header)
+	var name_label := Label.new()
+	name_label.text = String(spec["name"])
+	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(name_label)
+	var value := Label.new()
+	value.add_theme_font_size_override("font_size", 14)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	header.add_child(value)
+	_lift_slider_values[axis] = value
+
+	var slider := HSlider.new()
+	slider.min_value = -1.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value_changed.connect(_on_tune_slider_changed.bind(axis))
+	row.add_child(slider)
+	_lift_sliders[axis] = slider
+
+	var ends := HBoxContainer.new()
+	row.add_child(ends)
+	var lo := Label.new()
+	lo.text = String(spec["lo"])
+	lo.add_theme_font_size_override("font_size", 11)
+	lo.modulate = Color(1, 1, 1, 0.6)
+	lo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ends.add_child(lo)
+	var hi := Label.new()
+	hi.text = String(spec["hi"])
+	hi.add_theme_font_size_override("font_size", 11)
+	hi.modulate = Color(1, 1, 1, 0.6)
+	hi.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ends.add_child(hi)
+
+	_lift_slider_rows[axis] = row
+	return row
+
+
 func _build_car_overlay() -> void:
 	var made := _make_overlay(16.0)
 	_car_layer = made[0]
@@ -675,6 +883,7 @@ func _update_overlays() -> void:
 	_garage_layer.visible = _view == View.GARAGE
 	_table_layer.visible = _view == View.TABLE and not _detail_open
 	_detail_layer.visible = _view == View.TABLE and _detail_open
+	_lift_layer.visible = _view == View.LIFT
 	_car_layer.visible = _view == View.CARPARK
 
 
@@ -689,6 +898,12 @@ func _go_to(view: int, snap := false) -> void:
 	# The title screen shows the player's whole collection parked in the car park.
 	if view == View.EXTERIOR:
 		_build_title_lineup()
+	# The selected car is raised on the lift whenever we're inside (garage/lift); it
+	# costs nothing once frozen, so keep it around while inside and drop it otherwise.
+	if view == View.GARAGE or view == View.LIFT:
+		_ensure_lift_car()
+	else:
+		_clear_lift_car()
 	_update_overlays()
 	if view == View.CARPARK:
 		return  # camera handled by _focus_changed once the lineup exists
@@ -706,10 +921,6 @@ func _enter_table() -> void:
 	_table_panning = false
 	_refresh_map_pins()  # reflect any newly-earned stars / showdown unlock
 	_go_to(View.TABLE)
-
-
-func _flash_lift_message() -> void:
-	_lift_msg.text = "Tuning bay — coming soon."
 
 
 func _on_rally_pin(rally_id: String) -> void:
@@ -741,6 +952,250 @@ func _show_detail() -> void:
 func _hide_detail() -> void:
 	_detail_open = false
 	_update_overlays()
+
+
+# --- Tuning lift (todo/tuning.md / todo/menus.md rig 4) ----------------------
+
+# Enter the tuning bay: raise the selected car on the lift, frame it to one side,
+# and show the tuning menu on the other. Defaults to the TUNE menu.
+func _enter_lift() -> void:
+	_ensure_lift_car()
+	_lift_tab = LiftTab.TUNE
+	_refresh_lift_ui()
+	_go_to(View.LIFT)
+
+
+func _lift_back() -> void:
+	_go_to(View.GARAGE)
+
+
+func _set_lift_tab(tab: int) -> void:
+	_lift_tab = tab
+	_refresh_lift_ui()
+
+
+# Cycle which owned car is on the lift (and is therefore the selected car). Wraps;
+# re-spawns the lift car and refreshes the menus for the new car.
+func _cycle_lift_car(step: int) -> void:
+	var cars: Array = Save.profile.get("cars", [])
+	if cars.size() <= 1:
+		return
+	var idx := 0
+	for i in cars.size():
+		if int(cars[i].get("instance_id", -1)) == Save.selected_instance_id():
+			idx = i
+			break
+	idx = wrapi(idx + step, 0, cars.size())
+	Save.set_selected_car(int(cars[idx].get("instance_id", -1)))
+	_lift_car_instance_id = -2  # force a respawn for the new selection
+	_ensure_lift_car()
+	_refresh_lift_ui()
+
+
+# Spawn (or keep) the selected car raised on the lift. No-op if the right car is
+# already there. The lift car is frozen immediately (wheels hang, as on a ramp).
+func _ensure_lift_car() -> void:
+	var owned := Save.selected_car()
+	if owned.is_empty():
+		_clear_lift_car()
+		return
+	var id := int(owned.get("instance_id", -1))
+	if is_instance_valid(_lift_car) and _lift_car_instance_id == id:
+		_lift_owned = owned
+		return
+	_clear_lift_car()
+	_lift_owned = owned
+	_lift_car_instance_id = id
+	_lift_car = _spawn_lift_car(owned)
+
+
+func _clear_lift_car() -> void:
+	if is_instance_valid(_lift_car):
+		_lift_car.queue_free()
+	_lift_car = null
+	_lift_car_instance_id = -2
+
+
+# Build the selected car as a silent, frozen prop on the lift platform, raised by
+# hq_lift_car_height (its own mesh copies, like the car-park props — see _dup_meshes).
+func _spawn_lift_car(owned: Dictionary) -> Node3D:
+	var cfg: GameConfig = Config.data
+	var car := CAR_SCENE.instantiate()
+	add_child(car)
+	car.apply_owned(owned)
+	_dup_meshes(car)
+	var xform := Transform3D.IDENTITY
+	xform.origin = cfg.hq_lift_pos + Vector3(0.0, cfg.hq_lift_size.y + cfg.hq_lift_car_height, 0.0)
+	car.global_transform = xform
+	car.freeze = true
+	car.process_mode = Node.PROCESS_MODE_DISABLED
+	var audio := car.get_node_or_null("EngineAudio")
+	if audio != null:
+		audio.process_mode = Node.PROCESS_MODE_DISABLED
+		if audio is AudioStreamPlayer:
+			audio.playing = false
+			audio.volume_db = -80.0
+	return car
+
+
+# Refresh the whole menu for the current selected car: name + stats, which menu is
+# shown, the sliders' gating/values, and the upgrades list.
+func _refresh_lift_ui() -> void:
+	_lift_owned = Save.selected_car()
+	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
+	var id := int(_lift_owned.get("instance_id", -1))
+	_lift_car_label.text = "%s  #%d\n%s" % [
+		entry.get("name", "?"), id, _car_stats_text(_lift_owned, entry)]
+	_lift_tune_box.visible = _lift_tab == LiftTab.TUNE
+	_lift_upgrades_box.visible = _lift_tab == LiftTab.UPGRADES
+	_lift_tab_tune.disabled = _lift_tab == LiftTab.TUNE
+	_lift_tab_upgrades.disabled = _lift_tab == LiftTab.UPGRADES
+	_refresh_sliders()
+	_rebuild_upgrades_box()
+
+
+# Reflect the stored tuning + each axis's unlock state onto the sliders.
+func _refresh_sliders() -> void:
+	var tuning: Dictionary = _lift_owned.get("tuning", {})
+	for axis in TuningLibrary.AXES:
+		var slider: HSlider = _lift_sliders[axis]
+		var value: Label = _lift_slider_values[axis]
+		var row: Control = _lift_slider_rows[axis]
+		var unlocked := TuningLibrary.axis_unlocked(_lift_owned, axis)
+		slider.editable = unlocked
+		row.modulate = Color(1, 1, 1, 1.0 if unlocked else 0.4)
+		# set_value_no_signal so syncing the UI doesn't re-save the value.
+		slider.set_value_no_signal(clampf(float(tuning.get(axis, 0.0)), -1.0, 1.0))
+		if unlocked:
+			value.text = "%+.2f" % slider.value
+		else:
+			value.text = "needs %s" % ("Big Brake Kit" if axis == "brake_bias" else "Aero Kit")
+
+
+func _on_tune_slider_changed(value: float, axis: String) -> void:
+	if _lift_owned.is_empty():
+		return
+	var tuning: Dictionary = _lift_owned.get("tuning", {})
+	tuning[axis] = value
+	_lift_owned["tuning"] = tuning
+	Save.set_tuning(int(_lift_owned.get("instance_id", -1)), tuning)
+	(_lift_slider_values[axis] as Label).text = "%+.2f" % value
+
+
+# Zero every axis (free + instant) — the lift's Reset action (todo/tuning.md).
+func _reset_tuning() -> void:
+	if _lift_owned.is_empty():
+		return
+	_lift_owned["tuning"] = {}
+	Save.set_tuning(int(_lift_owned.get("instance_id", -1)), {})
+	_refresh_sliders()
+
+
+# Rebuild the UPGRADES menu for the current car: one row per slot showing what's
+# fitted, an Install button per matching uninstalled item in the inventory, an
+# Uninstall, and the repair-kit action. Items return to inventory on uninstall.
+func _rebuild_upgrades_box() -> void:
+	for c in _lift_upgrades_box.get_children():
+		c.queue_free()
+	var id := int(_lift_owned.get("instance_id", -1))
+	var installed: Array = _lift_owned.get("installed_upgrades", [])
+	var inventory: Dictionary = Save.profile.get("inventory", {})
+
+	var heading := Label.new()
+	heading.text = "Install parts onto this car. Parts return to your inventory if you swap them out."
+	heading.add_theme_font_size_override("font_size", 12)
+	heading.modulate = Color(1, 1, 1, 0.8)
+	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lift_upgrades_box.add_child(heading)
+
+	for slot in UpgradeLibrary.SLOTS:
+		_lift_upgrades_box.add_child(_make_slot_row(slot, id, installed, inventory))
+
+	# Repair kit + HP (the one consumable; heals working HP).
+	_lift_upgrades_box.add_child(_make_repair_row(id, inventory))
+
+
+func _make_slot_row(slot: String, instance_id: int, installed: Array, inventory: Dictionary) -> Control:
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 2)
+
+	# The fitted item in this slot (if any).
+	var fitted := ""
+	for item_id in installed:
+		if UpgradeLibrary.slot_of(item_id) == slot:
+			fitted = item_id
+			break
+
+	var header := Label.new()
+	header.add_theme_font_size_override("font_size", 15)
+	var fitted_name: String = UpgradeLibrary.by_id(fitted).get("name", "—") if fitted != "" else "— empty —"
+	header.text = "%s: %s" % [slot.capitalize(), fitted_name]
+	box.add_child(header)
+
+	# Uninstall the fitted item.
+	if fitted != "":
+		var uninstall := Button.new()
+		uninstall.text = "Remove"
+		uninstall.focus_mode = Control.FOCUS_NONE
+		uninstall.pressed.connect(_uninstall_upgrade.bind(instance_id, fitted))
+		box.add_child(uninstall)
+
+	# An Install button for each owned (uninstalled) item that fits this slot.
+	for item_id in inventory:
+		if UpgradeLibrary.slot_of(item_id) != slot:
+			continue
+		var count := int(inventory[item_id])
+		if count <= 0:
+			continue
+		var install := Button.new()
+		install.text = "Install %s  (x%d)" % [UpgradeLibrary.by_id(item_id).get("name", item_id), count]
+		install.focus_mode = Control.FOCUS_NONE
+		install.pressed.connect(_install_upgrade.bind(instance_id, item_id))
+		box.add_child(install)
+	return box
+
+
+func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var kits := int(inventory.get(UpgradeLibrary.REPAIR_KIT_ID, 0))
+	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", 15)
+	if bool(_lift_owned.get("immortal", false)):
+		label.text = "Condition: INDESTRUCTIBLE (starter)"
+		box.add_child(label)
+		return box
+	label.text = "Condition: %d / %d HP   —   Repair Kits: x%d" % [
+		roundi(float(_lift_owned.get("hp", 0.0))), roundi(float(entry.get("max_hp", 0.0))), kits]
+	box.add_child(label)
+	if kits > 0:
+		var repair := Button.new()
+		repair.text = "Use Repair Kit (+%d HP)" % roundi(Config.data.repair_kit_hp)
+		repair.focus_mode = Control.FOCUS_NONE
+		repair.pressed.connect(_use_repair_kit.bind(instance_id))
+		box.add_child(repair)
+	return box
+
+
+func _install_upgrade(instance_id: int, item_id: String) -> void:
+	if Save.install_upgrade(instance_id, item_id):
+		_lift_car_instance_id = -2  # the car's spec changed — rebuild the prop
+		_ensure_lift_car()
+		_refresh_lift_ui()
+
+
+func _uninstall_upgrade(instance_id: int, item_id: String) -> void:
+	if Save.uninstall_upgrade(instance_id, item_id):
+		_lift_car_instance_id = -2
+		_ensure_lift_car()
+		_refresh_lift_ui()
+
+
+func _use_repair_kit(instance_id: int) -> void:
+	if Save.use_repair_kit(instance_id, Config.data.repair_kit_hp):
+		_refresh_lift_ui()
 
 
 # Enter the car park for the chosen rally: park only the ELIGIBLE owned cars and
@@ -963,6 +1418,7 @@ func _station_xform(view: int) -> Transform3D:
 	match view:
 		View.GARAGE: return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
 		View.TABLE: return _look_xform(cfg.hq_table_cam_eye + _table_pan, cfg.hq_table_cam_look + _table_pan)
+		View.LIFT: return _look_xform(cfg.hq_lift_cam_eye, cfg.hq_lift_cam_look)
 		View.CARPARK: return _camera_target_xform()
 		_: return _look_xform(cfg.hq_exterior_cam_eye, cfg.hq_exterior_cam_look)
 
@@ -1040,8 +1496,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		View.GARAGE:
 			if event.is_action_pressed("menu_select"):
 				_enter_table()
+			elif event.is_action_pressed("menu_left"):
+				_enter_lift()
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.EXTERIOR)
+		View.LIFT:
+			if event.is_action_pressed("menu_left"):
+				_cycle_lift_car(-1)
+			elif event.is_action_pressed("menu_right"):
+				_cycle_lift_car(1)
+			elif event.is_action_pressed("menu_select"):
+				_set_lift_tab(LiftTab.UPGRADES if _lift_tab == LiftTab.TUNE else LiftTab.TUNE)
+			elif event.is_action_pressed("menu_back"):
+				_lift_back()
 		View.TABLE:
 			if _detail_open:
 				if event.is_action_pressed("menu_select"):

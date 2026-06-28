@@ -27,6 +27,10 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   own `hp`, `immortal` flag, `installed_upgrades`, and `tuning` deltas. Two cars
   of the same model can diverge (the random-car reward can grant a model you
   already own).
+- `selected_instance_id` — the owned car the player has **selected** (the one raised
+  on the garage tuning lift; see `features/tuning.md`). Resolved lazily by
+  `Save.selected_car()`, which self-heals to the first owned car when the stored id
+  is unset (`-1`) or no longer owned (e.g. after a wreck).
 - `inventory` — `{ item_id -> count }` for uninstalled upgrades + repair kits.
 - `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed } }`, only
   completed rallies present. Completion count is the single progression metric;
@@ -55,7 +59,9 @@ heuristic.
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
 that mutate + autosave: `grant_car(model_id, immortal)`, `get_car(instance_id)`,
 `apply_damage(instance_id, amount)`, `wreck_car(instance_id)`,
-`set_tuning(instance_id, tuning)`, `add_item` / `consume_item`,
+`set_tuning(instance_id, tuning)`, `selected_car()` / `selected_instance_id()` /
+`set_selected_car(instance_id)` (the lift's selected car, self-healing),
+`add_item` / `consume_item`,
 `install_upgrade` / `uninstall_upgrade` (install enforces one-per-slot via
 `UpgradeLibrary`, replacing + returning the incumbent; see
 `features/upgrade-catalogue.md`), `use_repair_kit(instance_id, heal_amount)`

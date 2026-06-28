@@ -174,6 +174,7 @@ func _default_profile() -> Dictionary:
 		"starter_model_id": "",
 		"next_instance_id": 1,
 		"cars": [],
+		"selected_instance_id": -1,
 		"inventory": {},
 		"rallies": {},
 		"showdown_unlocked": false,
@@ -275,6 +276,37 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 	if car.is_empty():
 		return
 	car["tuning"] = tuning.duplicate(true)
+	save()
+
+
+# --- Selected car ------------------------------------------------------------
+# The player always has one owned car "selected" — the one raised on the garage
+# tuning lift (todo/menus.md). It's the default car the lift tunes/upgrades, and
+# (unless a rally car-select overrides it) the one fielded. Stored as an instance
+# id, resolved lazily so it always points at a still-owned car.
+
+# The selected OwnedCar, or {} if the player owns nothing. Falls back to (and
+# records) the first owned car when the stored id is unset or no longer owned —
+# so the selection self-heals after a wreck removes the selected instance.
+func selected_car() -> Dictionary:
+	var cars: Array = profile.get("cars", [])
+	if cars.is_empty():
+		return {}
+	var id := int(profile.get("selected_instance_id", -1))
+	var car := get_car(id)
+	if car.is_empty():
+		car = cars[0]
+		set_selected_car(int(car.get("instance_id", -1)))
+	return car
+
+
+func selected_instance_id() -> int:
+	var car := selected_car()
+	return int(car.get("instance_id", -1)) if not car.is_empty() else -1
+
+
+func set_selected_car(instance_id: int) -> void:
+	profile["selected_instance_id"] = instance_id
 	save()
 
 

@@ -266,6 +266,93 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
+# --- Tuning lift (todo/tuning.md / todo/menus.md rig 4) ----------------------
+
+func test_hq_lift_raises_the_selected_car() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# The starter is selected on first boot, so it's the one on the lift.
+	assert_eq(_save.selected_instance_id(), int(_save.profile["cars"][0]["instance_id"]),
+		"the starter is selected on first boot")
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.LIFT, "tapping the lift flies the camera to the tuning bay")
+	assert_true(hq._lift_layer.visible, "the tuning menu is shown")
+	assert_true(is_instance_valid(hq._lift_car), "the selected car is raised on the lift")
+	assert_eq(hq._lift_car.current_car_name(), "Mazda MX-5", "the lift shows the selected car")
+
+
+func test_hq_lift_tune_sliders_save_tuning_per_car() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	# Moving the (always-available) grip slider stores the value on the selected car.
+	hq._lift_sliders["grip_balance"].value = 0.6
+	var owned: Dictionary = _save.selected_car()
+	assert_almost_eq(float(owned["tuning"]["grip_balance"]), 0.6, 0.001,
+		"the grip slider saves onto the selected car's tuning")
+	# Reset zeroes every axis (free + instant).
+	hq._reset_tuning()
+	assert_true(_save.selected_car().get("tuning", {}).is_empty(), "Reset clears the tuning deltas")
+
+
+func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	# The starter has no kits: grip is tunable, brake bias + aero are locked.
+	assert_true(hq._lift_sliders["grip_balance"].editable, "grip is always tunable")
+	assert_false(hq._lift_sliders["brake_bias"].editable, "brake bias locked without the brake kit")
+	assert_false(hq._lift_sliders["aero_balance"].editable, "aero locked without the aero kit")
+	# Fit a brake kit to a fresh car and select it — its brake-bias slider unlocks.
+	var owned: Dictionary = _save.grant_car("rs3", false)
+	var id := int(owned["instance_id"])
+	_save.add_item("brake_kit")
+	_save.install_upgrade(id, "brake_kit")
+	_save.set_selected_car(id)
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_true(hq._lift_sliders["brake_bias"].editable, "the brake kit unlocks brake-bias tuning")
+	assert_false(hq._lift_sliders["aero_balance"].editable, "aero still locked (no aero kit)")
+
+
+func test_hq_lift_change_car_updates_the_selection() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	_save.grant_car("rs3", false)  # now two owned cars
+	hq._enter_lift()
+	await get_tree().process_frame
+	var before: int = _save.selected_instance_id()
+	hq._cycle_lift_car(1)
+	assert_ne(_save.selected_instance_id(), before, "cycling the lift car changes the selected car")
+	assert_eq(hq._lift_car_instance_id, _save.selected_instance_id(),
+		"the raised car follows the new selection")
+
+
+func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var owned: Dictionary = _save.grant_car("rs3", false)
+	var id := int(owned["instance_id"])
+	_save.set_selected_car(id)
+	_save.add_item("engine_stage1")
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._set_lift_tab(hq.LiftTab.UPGRADES)
+	hq._install_upgrade(id, "engine_stage1")
+	assert_true(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),
+		"installing from the upgrades menu fits the part to the selected car")
+	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 0,
+		"the installed part is consumed from inventory")
+
+
 func test_hq_back_steps_carpark_to_table_to_garage() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)

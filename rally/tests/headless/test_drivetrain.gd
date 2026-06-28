@@ -65,6 +65,45 @@ func test_brake_lockup() -> void:
 	assert_gt(_car.linear_velocity.length(), 3.0, "car still sliding while locked")
 
 
+# The brake_bias tuning knob (todo/tuning.md) splits the foot brake front/rear.
+# brake_bias = 1.0 sends ALL of it to the front: the fronts lock while the rear,
+# given no foot brake, keeps rolling. (The * 2.0 normalisation means 0.5 reproduces
+# the old equal split — guarded by test_brake_lockup above, which runs at the
+# default 0.5.)
+func test_brake_bias_forward_locks_the_front_not_the_rear() -> void:
+	Config.data.brake_bias = 1.0
+	var r: float = Config.data.wheel_radius
+	var fwd := -_car.global_transform.basis.z
+	_car.linear_velocity = fwd * 15.0
+	_car.drivetrain.rear_omega = 15.0 / r
+	for w in _car.drivetrain.front_omega:
+		_car.drivetrain.front_omega[w] = 15.0 / r
+	Input.action_press("brake_reverse")
+	await _wait_physics(20)
+	Input.action_release("brake_reverse")
+	var front: float = _car.drivetrain.front_omega.values()[0] * r
+	assert_lt(absf(front), 1.0, "all-front bias locks the front axle")
+	assert_gt(absf(_car.drivetrain.rear_omega) * r, 3.0, "the rear gets no foot brake and keeps rolling")
+
+
+# The mirror: brake_bias = 0.0 sends all of it to the rear — the rear locks while
+# the (free-rolling RWD) front keeps turning.
+func test_brake_bias_rearward_locks_the_rear_not_the_front() -> void:
+	Config.data.brake_bias = 0.0
+	var r: float = Config.data.wheel_radius
+	var fwd := -_car.global_transform.basis.z
+	_car.linear_velocity = fwd * 15.0
+	_car.drivetrain.rear_omega = 15.0 / r
+	for w in _car.drivetrain.front_omega:
+		_car.drivetrain.front_omega[w] = 15.0 / r
+	Input.action_press("brake_reverse")
+	await _wait_physics(20)
+	Input.action_release("brake_reverse")
+	var front: float = _car.drivetrain.front_omega.values()[0] * r
+	assert_lt(absf(_car.drivetrain.rear_omega) * r, 1.0, "all-rear bias locks the rear axle")
+	assert_gt(absf(front), 3.0, "the front gets no foot brake and keeps rolling")
+
+
 func test_handbrake_locks_rear_only_and_breaks_grip() -> void:
 	var fwd := -_car.global_transform.basis.z
 	var r: float = Config.data.wheel_radius

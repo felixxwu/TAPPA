@@ -1,6 +1,11 @@
 # Tuning — implementation spec
 
-> Status: **planned, not yet implemented.** Implementation brief for the **free,
+> Status: **✅ IMPLEMENTED.** See [`features/tuning.md`](../features/tuning.md)
+> (`TuningLibrary`, the `brake_bias` drivetrain split, the `Tuning` GameConfig group,
+> the `apply_owned` step-3 hook, and the tuning-lift UI in `hq.gd`). The sections
+> below are the original brief, kept for reference.
+>
+> Original brief for the **free,
 > reversible per-car tuning** half of `gameplay.md` › *Tuning & upgrades* — the
 > garage adjustments the player makes for free, as distinct from consumable
 > *upgrades* (`todo/upgrade-catalogue.md`). Follow the config-first convention

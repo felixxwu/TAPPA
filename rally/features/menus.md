@@ -47,9 +47,21 @@ the lot. The player's **whole owned collection** is parked in the car park here
 car. Start (or `menu_select`) flies the camera into the garage.
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
-lift**. Tapping the table drops to the map view; tapping the lift flashes
-"Tuning bay — coming soon" (the tuning slice is later). A HUD hint + Back (to the
-exterior) sit on top.
+lift**, with the player's **selected car raised on the lift** (`_ensure_lift_car`,
+spawned whenever the camera is inside — garage/lift — and dropped otherwise).
+Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
+(LIFT view). A HUD hint + Back (to the exterior) + convenience buttons sit on top.
+
+**LIFT (the tuning bay).** The selected car raised on the lift, framed to one side
+(`hq_lift_cam_*`) so the **tuning menu** — a solid panel anchored to the other side
+of the screen (`hq_lift_menu_width_frac`) — never covers it. Two menus toggled by a
+tab strip: **Tune** (a slider per tuning axis — grip / brake-bias / aero — locked
+axes greyed with a "needs X kit" note, plus **Reset to neutral**; each change saves
+via `Save.set_tuning`) and **Upgrades** (per-slot install/remove from inventory via
+`Save.install_upgrade`/`uninstall_upgrade`, parts returned on swap, plus the **Repair
+Kit** action `Save.use_repair_kit`). A change-car control cycles all owned cars,
+updating the **selected car** (`Save.selected_car`/`set_selected_car`) and re-raising
+it on the lift. See [tuning.md](tuning.md) for the underlying config pipeline.
 
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
 plane. Every rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
@@ -137,11 +149,10 @@ this location.
 
 ## Deferred (rest of the diegetic 3D build)
 
-The diegetic HQ space (exterior / garage / 3D map table / car park, with the camera
-flying between stations) is in. Still deferred
+The diegetic HQ space (exterior / garage / 3D map table / car park / tuning lift,
+with the camera flying between stations) is in. Still deferred
 ([../todo/diegetic-hq.md](../todo/diegetic-hq.md), umbrella in
-[../todo/menus.md](../todo/menus.md)): the **tuning lift** UI + inventory (the lift
-is a clickable placeholder for now), per-car paint + duplicate-model name suffixes,
+[../todo/menus.md](../todo/menus.md)): per-car paint + duplicate-model name suffixes,
 designed environment art (blocks are placeholder), a pause overlay, the 3D
 reward-reveal rig + 3D podium, and camera fly-through transitions for the longer
 hops. The podium + between-event **standings interstitial** still ship as flat

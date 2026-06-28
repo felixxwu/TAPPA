@@ -125,6 +125,24 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## terrain when it drops in, especially on a slope or after resizing the car.
 @export var spawn_clearance := 2.5
 
+@export_group("Tuning")
+# Free, reversible per-car tuning (todo/tuning.md). Each OwnedCar stores three
+# normalized sliders in [-1, +1] (grip_balance / brake_bias / aero_balance);
+# TuningLibrary.apply re-balances the live config from these, scaled by the
+# authority knobs below so a slider can never zero or invert a value. The lift
+# UI (hq.gd) drives the sliders; gating (aero/brake) comes from installed upgrades.
+## Front share of the foot-brake torque (the new front/rear split drivetrain.gd
+## applies). 0.5 = today's equal split; the brake_bias slider moves it around 0.5.
+@export_range(0.0, 1.0) var brake_bias := 0.5
+## Max fraction of grip shifted front<->rear at slider |1| (grip_balance).
+@export_range(0.0, 1.0) var tuning_grip_authority := 0.15
+## Half-span of brake_bias the slider can move from 0.5 (brake_bias, gated by the
+## brakes upgrade) — e.g. 0.3 lets the slider reach brake_bias in [0.2, 0.8].
+@export_range(0.0, 0.5) var tuning_brake_authority := 0.3
+## Max fraction of downforce shifted front<->rear at slider |1| (aero_balance,
+## gated by the aero upgrade).
+@export_range(0.0, 1.0) var tuning_aero_authority := 0.5
+
 @export_group("Engine & Transmission")
 ## Engine type. Selecting a preset drives the whole engine character — cylinder
 ## count and firing angles (the sound) plus redline, peak torque and the rpm it
@@ -283,6 +301,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var hud_hp_enabled := true
 ## HP fraction below which the gauge flashes a low-HP warning.
 @export_range(0.0, 1.0) var hud_low_hp_warn_frac := 0.25
+## HP restored by one Repair Kit (the one consumable upgrade item) at the tuning
+## lift. Save.use_repair_kit clamps the heal to the car's CarLibrary max_hp.
+@export_range(0.0, 2000.0) var repair_kit_hp := 300.0
 
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).
@@ -351,9 +372,20 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 3.4)
 @export var hq_map_plane_size := Vector2(4.2, 3.0)
-## Tuning lift: centre position + platform size (a clickable placeholder for now).
+## Tuning lift: centre position + platform size.
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
 @export var hq_lift_size := Vector3(3.0, 0.35, 3.0)
+## Height (m) the selected car is raised to on the lift (wheels hanging, as on a
+## real ramp). Above the platform top.
+@export var hq_lift_car_height := 1.3
+## Tuning-lift camera: frames the raised car off to one side so the tuning menu
+## (anchored to the other side of the screen, hq.gd) doesn't cover the car. eye,
+## then look target — the look is offset toward +X of the car so it sits LEFT of
+## frame, leaving the right side clear for the menu panel.
+@export var hq_lift_cam_eye := Vector3(2.6, 2.2, 6.0)
+@export var hq_lift_cam_look := Vector3(5.2, 1.3, -1.0)
+## Fraction of the screen width the tuning menu panel occupies (anchored right).
+@export_range(0.25, 0.6) var hq_lift_menu_width_frac := 0.42
 
 @export_group("World")
 ## Exponential distance fog. Demoted from "opaque wall hiding the ~75 m terrain
