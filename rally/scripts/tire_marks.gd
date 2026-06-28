@@ -1,15 +1,19 @@
 class_name TireMarks
 extends Node3D
-# Lays gravel ruts behind the car's wheels while it drives ON the road. The
+# Lays tyre marks behind the car's wheels while it drives ON the road. The
 # gl_compatibility renderer has no Decals, so each wheel gets a persistent ribbon
-# mesh (an ArrayMesh rebuilt as segments are appended), coloured a solid shade
-# close to the gravel. See features/tire-marks.md.
+# mesh (an ArrayMesh rebuilt as segments are appended); each segment carries a
+# vertex colour so one ribbon can show both surfaces. See features/tire-marks.md.
+#
+# Two surfaces, two behaviours:
+#   - GRAVEL: a solid gravel-coloured rut laid continuously while moving.
+#   - TARMAC: a dark skidmark laid ONLY while a driven wheel is spinning (the same
+#     wheelspin slip gate the gravel spray uses in wheel_particles.gd) — a cleanly
+#     rolling wheel on tarmac leaves nothing.
+# The grass off the road footprint never marks.
 #
 # Created + wired by world.gd._generate_track once the centerline exists; re-targeted
-# on a car swap (world.gd.cycle_car). Marks are gated to the gravel road surface only
-# — not the grass off the footprint, nor the paved tarmac run (the tarmac throws no
-# ruts, mirroring wheel_particles.gd) — capped per wheel (a ring buffer), and only
-# laid while moving.
+# on a car swap (world.gd.cycle_car). Marks are capped per wheel (a ring buffer).
 
 # Windowed nearest-offset search of the centerline (around the car's last offset),
 # mirroring TrackProgress — local, so it never snaps to a far part of a winding road.
@@ -18,10 +22,9 @@ const SEARCH_FWD_M := 60.0
 const SEARCH_STEP_M := 1.0
 # Tighter window (around the car's offset) for each wheel's own nearest-point gate.
 const WHEEL_WINDOW_M := 20.0
-# Marks lay on the GRAVEL only — not grass (gated by the road footprint below) and
-# not tarmac. A wheel on the tarmac half (tarmac_weight above this midpoint, the
-# same 0.5 the road colour/grip feather across) lays no mark, matching the gravel
-# spray gate in wheel_particles.gd.
+# Surface split: a wheel reads as tarmac above this tarmac_weight (the same 0.5 the
+# road colour/grip feather across), gravel at or below it. Gravel lays a continuous
+# rut; tarmac lays a skidmark only under wheelspin.
 const TARMAC_WEIGHT_MAX := 0.5
 
 var _centerline: Curve2D
@@ -116,20 +119,40 @@ func _physics_process(_delta: float) -> void:
 		if wxz.distance_to(_centerline.sample_baked(w_off)) > gate:
 			_last_pos[i] = null
 			continue
-		# On the road, but only the GRAVEL run marks: a wheel over the tarmac half
-		# breaks the ribbon (terrain is null on the flat test fixtures, where every
-		# surface reads as gravel).
+		# On the road — pick the mark by surface. Gravel lays a continuous rut; tarmac
+		# lays a dark skidmark ONLY while this driven wheel spins (a cleanly rolling
+		# wheel on tarmac leaves nothing). Terrain is null on the flat test fixtures,
+		# where every surface reads as gravel.
+		var color: Color = Config.data.tire_mark_color
 		if _terrain != null and _terrain.has_method("surface_at"):
 			var surf: Vector2 = _terrain.surface_at(wpos.x, wpos.z)
 			if surf.y > TARMAC_WEIGHT_MAX:
-				_last_pos[i] = null
-				continue
+				if not _wheel_spinning(wheel, wpos):
+					_last_pos[i] = null
+					continue
+				color = Config.data.tire_mark_tarmac_color
 		if _last_pos[i] == null or wxz.distance_to(_last_pos[i]) >= step:
-			# A fresh point after a break (airborne / off-gravel) starts a NEW strip —
-			# it must NOT bridge to the last on-ground point across the gap.
+			# A fresh point after a break (airborne / off the gravel / not skidding)
+			# starts a NEW strip — it must NOT bridge to the last point across the gap.
 			var connected: bool = _last_pos[i] != null
-			_emit_segment(i, wpos, _normal_at(w_off), connected)
+			_emit_segment(i, wpos, _normal_at(w_off), connected, color)
 			_last_pos[i] = wxz
+
+
+# Is this DRIVEN wheel spinning faster than the ground (the tarmac-skid gate)? Reads
+# the car's drivetrain exactly as wheel_particles.gd does: wheelspin is the tread
+# surface speed (omega x radius) OUTRUNNING the ground along the roll direction by
+# more than wheel_particle_min_slip_mps. Undriven wheels free-roll (never skid here),
+# and with no drivetrain (flat test fixtures) we can't tell, so report not spinning.
+func _wheel_spinning(wheel: Node, wpos: Vector3) -> bool:
+	var dt = _car.get("drivetrain")
+	if dt == null or not dt.is_wheel_driven(wheel):
+		return false
+	var r: float = Config.data.wheel_radius
+	var cp := Vector3(wpos.x, wpos.y - r, wpos.z)
+	var surface_speed: float = dt.wheel_omega(wheel) * r
+	var roll: float = dt.wheel_forward(wheel).dot(dt.velocity_at(cp))
+	return surface_speed - roll >= Config.data.wheel_particle_min_slip_mps
 
 
 # Append one ribbon point for a wheel (left/right of its ground contact, across the
@@ -137,14 +160,15 @@ func _physics_process(_delta: float) -> void:
 # height comes from the WHEEL (hub Y − wheel radius), not terrain.height_at — near
 # the road the terrain mesh is flattened to the baked road height the car sits on,
 # so the raw noise height would sink the ribbon under the road in cuts/dips.
-func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, connected: bool) -> void:
+func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, connected: bool, color: Color) -> void:
 	var y := wheel_pos.y - Config.data.wheel_radius + Config.data.tire_mark_ground_offset_m
 	var center := Vector3(wheel_pos.x, y, wheel_pos.z)
 	var across := Vector3(road_n.x, 0.0, road_n.y) * (Config.data.tire_mark_width_m * 0.5)
 	var pairs: Array = _pairs[i]
-	# [left, right, connected] — `connected` = bridge a quad back to the previous
-	# point. A strip start (after a break) is false, so jumps leave a real gap.
-	pairs.append([center + across, center - across, connected])
+	# [left, right, connected, color] — `connected` = bridge a quad back to the
+	# previous point (a strip start after a break is false, so jumps leave a real
+	# gap); `color` is the per-segment vertex colour (gravel rut vs tarmac skid).
+	pairs.append([center + across, center - across, connected, color])
 	var cap: int = maxi(2, Config.data.tire_mark_max_segments)
 	while pairs.size() > cap:
 		pairs.pop_front()
@@ -162,6 +186,7 @@ func _rebuild(i: int) -> void:
 	if pairs.size() < 2:
 		return
 	var verts := PackedVector3Array()
+	var cols := PackedColorArray()
 	for k in range(1, pairs.size()):
 		if not bool(pairs[k][2]):
 			continue  # gap: this point starts a new strip, don't bridge across the jump
@@ -171,11 +196,16 @@ func _rebuild(i: int) -> void:
 		var r1: Vector3 = pairs[k][1]
 		verts.append(l0); verts.append(l1); verts.append(r0)
 		verts.append(r0); verts.append(l1); verts.append(r1)
+		# This quad takes the later point's colour (gravel rut or tarmac skid).
+		var col: Color = pairs[k][3]
+		for _v in 6:
+			cols.append(col)
 	if verts.is_empty():
 		return
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_COLOR] = cols
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	mesh.surface_set_material(0, _material)
 
@@ -224,7 +254,9 @@ func _ensure_material() -> void:
 	_material = StandardMaterial3D.new()
 	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_material.albedo_color = Config.data.tire_mark_color
+	# Each segment carries its own colour (gravel rut vs tarmac skid) as a vertex
+	# colour, so one ribbon mesh per wheel can show both surfaces.
+	_material.vertex_color_use_as_albedo = true
 
 
 # --- Readouts (tests) --------------------------------------------------------

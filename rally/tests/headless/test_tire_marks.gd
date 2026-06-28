@@ -14,10 +14,30 @@ class StubWheel:
 		return _contact
 
 
-# Stub car: just the bits TireMarks reads — a velocity and a position.
+# Stub car: just the bits TireMarks reads — a velocity, a position, and (for the
+# tarmac-skid gate) an optional drivetrain. Null drivetrain = can't detect spin.
 class StubCar:
 	extends Node3D
 	var linear_velocity := Vector3(0, 0, 10.0)  # moving, above the speed floor
+	var drivetrain = null
+
+
+# Stub drivetrain: the slice TireMarks._wheel_spinning reads, mirroring Drivetrain.
+# `surface_speed` is the tread speed (omega x radius); `roll_speed` is the ground
+# speed along the roll direction. Wheelspin = surface_speed − roll_speed.
+class StubDrivetrain:
+	extends RefCounted
+	var driven := true
+	var surface_speed := 0.0
+	var roll_speed := 0.0
+	func is_wheel_driven(_w) -> bool:
+		return driven
+	func wheel_omega(_w) -> float:
+		return surface_speed / maxf(Config.data.wheel_radius, 0.0001)
+	func wheel_forward(_w) -> Vector3:
+		return Vector3(0, 0, 1)
+	func velocity_at(_cp) -> Vector3:
+		return Vector3(0, 0, roll_speed)
 
 
 # Stub terrain: reports (road_weight, tarmac_weight) like TerrainManager.surface_at.
@@ -118,15 +138,50 @@ func test_marks_lay_on_gravel_surface() -> void:
 		assert_gt(tm.segment_count(i), 1, "wheel %d lays a ribbon on the gravel" % i)
 
 
-func test_no_marks_on_tarmac() -> void:
-	# Same on-road wheels, but the surface reports tarmac (tarmac_weight 1) — no marks.
+func test_no_marks_on_tarmac_without_wheelspin() -> void:
+	# On tarmac (tarmac_weight 1) but the wheels roll cleanly (no drivetrain spin) —
+	# a cleanly rolling wheel on tarmac leaves no skidmark.
 	var terrain := StubTerrain.new()
 	terrain.tarmac = 1.0
+	_car.drivetrain = StubDrivetrain.new()  # not spinning (surface == roll == 0)
 	var tm := _make_with_terrain(terrain)
 	for s in 6:
 		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
 	for i in 4:
-		assert_eq(tm.segment_count(i), 0, "wheel %d on tarmac lays no marks" % i)
+		assert_eq(tm.segment_count(i), 0, "wheel %d rolling on tarmac lays no skidmark" % i)
+
+
+func test_skidmarks_on_tarmac_under_wheelspin() -> void:
+	# On tarmac with the driven wheels spinning (tread outrunning the ground past the
+	# slip floor): a dark skidmark IS laid.
+	var terrain := StubTerrain.new()
+	terrain.tarmac = 1.0
+	var dt := StubDrivetrain.new()
+	dt.surface_speed = 20.0  # tread speed
+	dt.roll_speed = 5.0      # ground speed -> slip 15 m/s >> the min-slip floor
+	_car.drivetrain = dt
+	var tm := _make_with_terrain(terrain)
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	for i in 4:
+		assert_gt(tm.segment_count(i), 1, "wheel %d spinning on tarmac lays a skidmark" % i)
+
+
+func test_no_skidmarks_on_tarmac_from_undriven_wheels() -> void:
+	# A spinning reading but the wheel is undriven (free-rolling): no skidmark, matching
+	# the gravel-spray gate that only fires for driven wheels.
+	var terrain := StubTerrain.new()
+	terrain.tarmac = 1.0
+	var dt := StubDrivetrain.new()
+	dt.driven = false
+	dt.surface_speed = 20.0
+	dt.roll_speed = 5.0
+	_car.drivetrain = dt
+	var tm := _make_with_terrain(terrain)
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	for i in 4:
+		assert_eq(tm.segment_count(i), 0, "undriven wheel %d on tarmac lays no skidmark" % i)
 
 
 func test_corner_wheel_on_road_ahead_still_marks() -> void:
