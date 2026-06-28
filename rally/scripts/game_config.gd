@@ -519,7 +519,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 
 @export_group("Trees")
 ## Billboard tree sprites scattered around each track turn.
-## Placement attempts (and max trees) per turn.
+## Target tree count per turn — drives the scatter grid's density (the actual count is
+## approximate, since foliage sits on a global jittered grid). 0 disables trees AND
+## bushes (they share these params).
 @export_range(0, 500) var trees_per_turn := 12
 ## Radius, in metres, of the disc around each turn anchor that trees spawn in.
 @export_range(1.0, 100.0) var tree_spawn_radius_m := 25.0
@@ -527,10 +529,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## are rejected on the road footprint inflated by this margin, so larger values
 ## push the nearest trees further back from the track.
 @export_range(0.0, 20.0) var tree_road_margin_m := 1.0
-## Minimum spacing, in metres, between any two trees.
-@export_range(0.0, 30.0) var tree_min_tree_dist_m := 4.0
-## Retries per tree before that tree is skipped (placement bounded by this).
-@export_range(0, 50) var tree_max_retries := 8
+## How far each tree wanders from its grid-cell centre, as a fraction of the cell
+## (0 = a rigid lattice, 1 = anywhere in the cell). Spacing is inherent: two trees are
+## never closer than (1 - tree_jitter) x cell, so lower values look more regular.
+@export_range(0.0, 1.0) var tree_jitter := 0.6
 ## Billboard size in metres: width (x) by height (y). Pivot is the bottom edge.
 @export var tree_size_m := Vector2(4.0, 6.0)
 ## Half-extent (m) in X/Z of each tree's box hitbox — a square trunk footprint.
@@ -673,8 +675,7 @@ func tree_params() -> Dictionary:
 	return {
 		"trees_per_turn": trees_per_turn,
 		"spawn_radius_m": tree_spawn_radius_m,
-		"min_tree_dist_m": tree_min_tree_dist_m,
-		"max_retries": tree_max_retries,
+		"jitter": tree_jitter,
 	}
 
 

@@ -14,17 +14,23 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
 
 - `turn_anchor(piece)` — centroid of the piece's rasterized `cells` (world XZ),
   i.e. roughly where the turn is.
-- `scatter(pieces, road_cells, params, seed_value)` — for each piece, makes
-  `trees_per_turn` placement attempts. Each attempt samples a uniform point in
-  a disc of `spawn_radius_m` around the anchor, then rejects it if its 0.5 m
-  cell IS a road cell (`_on_road`, a single dict lookup) or if it is within
-  `min_tree_dist_m` of an already-placed tree. Rejecting only on-road cells
-  (rather than by a distance margin) lets trees spawn right up to the road
-  edge — a tree may sit in the cell immediately beside the road — while never
-  landing on it. A rejected tree retries up to `max_retries` times, then is
-  skipped. The seed is `track_seed` offset, so placement is deterministic but
-  does not visually track corner choices. Returns accepted positions; never
-  hangs (work is bounded by `turns × trees_per_turn × (1 + max_retries)`).
+- `scatter(pieces, road_cells, params, seed_value)` — places foliage on a **global
+  jittered grid**, not by rejection sampling. The grid cell size
+  (`grid_cell_size`) is derived from the target density —
+  `spawn_radius_m * sqrt(PI / trees_per_turn)` — so one point per cell over a turn
+  disc yields ~`trees_per_turn` trees. For each turn, it walks the grid cells its
+  disc covers; each cell emits a single point at the cell centre plus a **seeded
+  jitter** of up to ±`jitter`/2 of a cell, then keeps it only if the point lands
+  inside the disc and its 0.5 m cell is not a road cell (`_on_road`, one dict
+  lookup). The grid is **global** — a `used` set means overlapping turn discs share
+  cells, so a cell is never placed twice and spacing stays even across the whole
+  track. Because there's one point per cell, two trees are **never closer than
+  `(1 - jitter) * cell`** (axis-adjacent worst case) — spacing is guaranteed by
+  construction with **no neighbour scan**, so the cost is O(cells), not the old
+  O(N²). The jitter (and a per-seed whole-lattice **phase**) are pure hashes of
+  `(cell, seed_value)`, so placement is deterministic and order-independent, and a
+  different seed (the bush offset) lands on an interleaved grid rather than the same
+  cells. Reads only the in-memory `pieces` + `road_cells` — never the placed scene.
 
   **`road_cells` is the visible road footprint inflated by the margin**,
   rasterized at `track_width + 2*tree_road_margin_m` via
@@ -73,18 +79,19 @@ with trees the same way it collides with the ground.
 Bushes use the same `TreeScatter` placement and the same `BillboardField`
 renderer / render-distance dissolve as trees, with these differences: they use
 `textures/bush.webp`, they are built with `with_collision = false` (no hitbox),
-they scatter with `track_seed + 1013` so they don't land on the same spots as the
-trees, they use their own (smaller) `bush_size_m`, and they are sunk into the
-ground by `bush_sink_m` (passed as a negative `y_offset` to `BillboardField.build`)
-to hide the gap at the bottom of the bush texture. They reuse every other `tree_*`
-value (count, radius, margin, spacing, retries, render distance/fade). `world.gd`
-builds the tree field and the bush field back to back.
+they scatter with `track_seed + 1013` so the per-seed grid phase puts them on an
+interleaved grid (not the trees' cells), they use their own (smaller) `bush_size_m`,
+and they are sunk into the ground by `bush_sink_m` (passed as a negative `y_offset`
+to `BillboardField.build`) to hide the gap at the bottom of the bush texture. They
+reuse every other `tree_*` value (count, radius, margin, jitter, render
+distance/fade). `world.gd` builds the tree field and the bush field back to back.
 
 ## Configuration
 
-`Trees` group in `config/game_config.tres`: `trees_per_turn`,
+`Trees` group in `config/game_config.tres`: `trees_per_turn` (density target),
 `tree_spawn_radius_m`, `tree_road_margin_m` (gap from the road edge),
-`tree_min_tree_dist_m`, `tree_max_retries`, `tree_size_m` (width × height),
+`tree_jitter` (how far trees wander from the grid; lower = more regular),
+`tree_size_m` (width × height),
 `tree_collision_radius_m` (box half-extent in X/Z), `tree_collision_height_m`
 (box height), `tree_render_distance_m` (cull distance), `tree_render_fade_m`
 (dissolve band), `bush_size_m` (bush billboard size), `bush_sink_m` (how far
@@ -95,7 +102,8 @@ bushes sink into the ground). `GameConfig.tree_params()` packs the scalar scatte
 ## Tests
 
 `tests/headless/test_tree_scatter.gd` — anchor centroid, determinism per seed,
-no tree on a road cell, trees can hug the road edge, tree spacing,
-within-radius, count bound, and impossible constraints returning quickly. `tests/headless/test_smoke.gd` — the billboard
-shader loads with code, and a built `TreeField` has one MultiMesh instance per
-position.
+different seeds differ, no tree on a road cell, the grid's guaranteed minimum
+spacing `(1 - jitter) * cell`, within-radius of an anchor, density bounded by the
+grid cells a disc covers, a zero target placing nothing, and an all-road area
+placing nothing. `tests/headless/test_smoke.gd` — the billboard shader loads with
+code, and a built `BillboardField` has one MultiMesh instance per position.

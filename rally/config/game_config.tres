@@ -50,6 +50,5 @@ track_seed = 2
 track_turn_count = 30
 trees_per_turn = 200
 tree_spawn_radius_m = 50.0
-tree_min_tree_dist_m = 3.0
 tree_collision_radius_m = 0.1
 bush_size_m = Vector2(2, 2)
