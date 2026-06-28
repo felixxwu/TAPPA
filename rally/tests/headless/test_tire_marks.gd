@@ -20,6 +20,16 @@ class StubCar:
 	var linear_velocity := Vector3(0, 0, 10.0)  # moving, above the speed floor
 
 
+# Stub terrain: reports (road_weight, tarmac_weight) like TerrainManager.surface_at.
+# A constant tarmac-ness lets a test put the whole road on tarmac (or gravel).
+# Extends Node because TireMarks.setup() types the terrain argument as Node.
+class StubTerrain:
+	extends Node
+	var tarmac := 0.0
+	func surface_at(_x: float, _z: float) -> Vector2:
+		return Vector2(1.0, tarmac)
+
+
 var _car: StubCar
 var _curve: Curve2D
 var _wheels: Array = []
@@ -49,6 +59,14 @@ func _make(half_width := 3.0) -> TireMarks:
 	var tm := TireMarks.new()
 	add_child_autofree(tm)
 	tm.setup(_curve, _car, null, half_width)  # null terrain -> ground height 0
+	return tm
+
+
+func _make_with_terrain(terrain: StubTerrain, half_width := 3.0) -> TireMarks:
+	add_child_autofree(terrain)
+	var tm := TireMarks.new()
+	add_child_autofree(tm)
+	tm.setup(_curve, _car, terrain, half_width)
 	return tm
 
 
@@ -87,6 +105,28 @@ func test_no_marks_off_the_gravel() -> void:
 		_drive(tm, s, [10.0, 10.0, 10.0, 10.0])
 	for i in 4:
 		assert_eq(tm.segment_count(i), 0, "wheel %d off the gravel lays no marks" % i)
+
+
+func test_marks_lay_on_gravel_surface() -> void:
+	# Terrain present and reporting gravel (tarmac_weight 0): the road marks as before.
+	var terrain := StubTerrain.new()
+	terrain.tarmac = 0.0
+	var tm := _make_with_terrain(terrain)
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	for i in 4:
+		assert_gt(tm.segment_count(i), 1, "wheel %d lays a ribbon on the gravel" % i)
+
+
+func test_no_marks_on_tarmac() -> void:
+	# Same on-road wheels, but the surface reports tarmac (tarmac_weight 1) — no marks.
+	var terrain := StubTerrain.new()
+	terrain.tarmac = 1.0
+	var tm := _make_with_terrain(terrain)
+	for s in 6:
+		_drive(tm, s, [-0.8, 0.8, -0.8, 0.8])
+	for i in 4:
+		assert_eq(tm.segment_count(i), 0, "wheel %d on tarmac lays no marks" % i)
 
 
 func test_corner_wheel_on_road_ahead_still_marks() -> void:

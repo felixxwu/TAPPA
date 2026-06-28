@@ -6,8 +6,10 @@ extends Node3D
 # close to the gravel. See features/tire-marks.md.
 #
 # Created + wired by world.gd._generate_track once the centerline exists; re-targeted
-# on a car swap (world.gd.cycle_car). Marks are gated to the road footprint (only
-# the gravel), capped per wheel (a ring buffer), and only laid while moving.
+# on a car swap (world.gd.cycle_car). Marks are gated to the gravel road surface only
+# — not the grass off the footprint, nor the paved tarmac run (the tarmac throws no
+# ruts, mirroring wheel_particles.gd) — capped per wheel (a ring buffer), and only
+# laid while moving.
 
 # Windowed nearest-offset search of the centerline (around the car's last offset),
 # mirroring TrackProgress — local, so it never snaps to a far part of a winding road.
@@ -16,6 +18,11 @@ const SEARCH_FWD_M := 60.0
 const SEARCH_STEP_M := 1.0
 # Tighter window (around the car's offset) for each wheel's own nearest-point gate.
 const WHEEL_WINDOW_M := 20.0
+# Marks lay on the GRAVEL only — not grass (gated by the road footprint below) and
+# not tarmac. A wheel on the tarmac half (tarmac_weight above this midpoint, the
+# same 0.5 the road colour/grip feather across) lays no mark, matching the gravel
+# spray gate in wheel_particles.gd.
+const TARMAC_WEIGHT_MAX := 0.5
 
 var _centerline: Curve2D
 var _baked_length := 0.0
@@ -104,11 +111,19 @@ func _physics_process(_delta: float) -> void:
 		var wpos: Vector3 = wheel.global_position
 		var wxz := Vector2(wpos.x, wpos.z)
 		var w_off := _wheel_offset(wxz)
-		# True distance to the wheel's nearest road point: off the gravel (incl. the
-		# verge margin) breaks the ribbon.
+		# True distance to the wheel's nearest road point: off the road (incl. the
+		# verge margin) — i.e. on the grass — breaks the ribbon.
 		if wxz.distance_to(_centerline.sample_baked(w_off)) > gate:
 			_last_pos[i] = null
 			continue
+		# On the road, but only the GRAVEL run marks: a wheel over the tarmac half
+		# breaks the ribbon (terrain is null on the flat test fixtures, where every
+		# surface reads as gravel).
+		if _terrain != null and _terrain.has_method("surface_at"):
+			var surf: Vector2 = _terrain.surface_at(wpos.x, wpos.z)
+			if surf.y > TARMAC_WEIGHT_MAX:
+				_last_pos[i] = null
+				continue
 		if _last_pos[i] == null or wxz.distance_to(_last_pos[i]) >= step:
 			# A fresh point after a break (airborne / off-gravel) starts a NEW strip —
 			# it must NOT bridge to the last on-ground point across the gap.
