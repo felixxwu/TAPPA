@@ -303,6 +303,7 @@ func _build_environment() -> void:
 	_build_buildings()
 	_build_trees()
 	_build_garage()
+	_build_carpark()
 	_build_map_table()
 	_build_lift()
 
@@ -416,6 +417,75 @@ func _build_garage() -> void:
 	# depth so the shell straddles the origin like the old placeholder did.
 	garage.position = Vector3(0.0, 0.0, gz * 0.5)
 	add_child(garage)
+
+
+# --- Car park surface (painted parking bays) ---------------------------------
+
+# Lay a tarmac parking-bay surface in front of the garage: a textured plane over the
+# concrete apron with painted white bay dividers, one bay per max_owned_cars slot, so
+# each parked car sits in its own marked bay. Centred on the lot (hq_carpark_origin +
+# menu_car_park_offset) and sized from the bay width (menu_car_spacing) and depth
+# (menu_carpark_bay_depth) so the bay grid lines up exactly with where _build_lineup
+# parks the cars. Built once with the HQ; the cars are parked/cleared on top of it.
+func _build_carpark() -> void:
+	var cfg: GameConfig = Config.data
+	var bays: int = max(1, cfg.max_owned_cars)
+	var bw: float = cfg.menu_car_spacing
+	var depth: float = cfg.menu_carpark_bay_depth
+	var center := _carpark_center()
+	var surface := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(bays * bw, depth)
+	surface.mesh = pm
+	# A hair above the concrete apron (y = 0) so the markings win over it without
+	# z-fighting; the cars settle onto y = 0, so this sits just under their tyres.
+	surface.position = Vector3(center.x, 0.012, center.z)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = _carpark_bay_texture(bays)
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.roughness = 0.95
+	surface.material_override = mat
+	add_child(surface)
+
+
+# World centre (XZ) of the car-park lot — the bay row + its painted surface share it.
+func _carpark_center() -> Vector3:
+	var cfg: GameConfig = Config.data
+	return cfg.hq_carpark_origin + Vector3(cfg.menu_car_park_offset, 0.0, 0.0)
+
+
+# World X of the centre of bay `i` (0 = left / −X), derived from the lot centre, bay
+# count and bay width so the cars (_build_lineup) and the painted dividers agree.
+func _bay_center_x(i: int, bays: int) -> float:
+	var bw: float = Config.data.menu_car_spacing
+	return _carpark_center().x + (i + 0.5 - bays * 0.5) * bw
+
+
+# Procedural tarmac-with-bay-markings texture: a dark asphalt field with white bay
+# dividers every bay (bays + 1 lines) plus a solid "kerb" line across the back of the
+# bays (the edge the nose-out cars back up to). The divider period matches one bay so,
+# tiled 1:1 across the surface plane, the lines fall on the bay boundaries.
+func _carpark_bay_texture(bays: int) -> ImageTexture:
+	var px_per_bay := 96
+	var w := bays * px_per_bay
+	var h := 200
+	var img := Image.create(w, h, true, Image.FORMAT_RGBA8)
+	var asphalt := Color(0.15, 0.16, 0.18)
+	var paint := Color(0.86, 0.87, 0.84)
+	img.fill(asphalt)
+	var half := 3  # half line width, px
+	# Vertical bay dividers (run front-to-back along the plane's V / world Z).
+	for b in range(bays + 1):
+		var cx := clampi(b * px_per_bay, half, w - half - 1)
+		for x in range(cx - half, cx + half + 1):
+			for y in range(h):
+				img.set_pixel(x, y, paint)
+	# A solid kerb line across the back edge of every bay.
+	for y in range(0, half * 2 + 1):
+		for x in range(w):
+			img.set_pixel(x, y, paint)
+	img.generate_mipmaps()  # the lines minify cleanly when the lot is far / oblique
+	return ImageTexture.create_from_image(img)
 
 
 # The map table: a block with the flat 3D map plane on top + a pickable area so a tap
@@ -1816,23 +1886,28 @@ func _build_title_lineup() -> void:
 	_build_lineup(Save.profile.get("cars", []).duplicate())
 
 
-# Park the given owned cars, laid out in a centred row at the car-park origin
-# (GameConfig.hq_carpark_origin / menu_car_spacing). The cars drop in live and
-# settle onto their suspension, then freeze (see _freeze_lineup). Shared by the
-# rally car-select lineup (eligible cars) and the title screen (all owned cars).
+# Park the given owned cars in the painted bays, laid out as a centred row ALONG X at
+# the car-park lot (GameConfig.hq_carpark_origin / menu_car_spacing), each car parked
+# nose-out toward the courtyard / menu camera (+Z) so the front-3/4 framing shows its
+# face with the garage behind it. Fewer cars than bays are centred within the grid so
+# they stay over real bays. The cars drop in live and settle onto their suspension,
+# then freeze (see _freeze_lineup). Shared by the rally car-select lineup (eligible
+# cars) and the title screen (all owned cars).
 func _build_lineup(cars: Array) -> void:
 	_clear_lineup()
 	_eligible = cars
 	var cfg: GameConfig = Config.data
 	var n := cars.size()
+	var bays: int = max(1, cfg.max_owned_cars)
+	var center := _carpark_center()
+	# Centre the occupied bays within the lot (clamped so an over-cap overflow lineup,
+	# which can briefly exceed the bay count, still starts at the first bay).
+	var start: int = max(0, floori((bays - n) / 2.0))
 	for i in n:
 		var marker := Marker3D.new()
-		# Push the lineup off-centre (along +X) and run the row back along Z, then yaw
-		# each car 90° so its flank faces the garage (−Z) and its nose points at the
-		# now-emptier centre courtyard (−X) — parked along the lot edge, not head-on.
-		marker.position = cfg.hq_carpark_origin + Vector3(
-			cfg.menu_car_park_offset, 0.0, (i - (n - 1) * 0.5) * cfg.menu_car_spacing)
-		marker.rotation.y = PI * 0.5
+		marker.position = Vector3(_bay_center_x(start + i, bays), 0.0, center.z)
+		# Nose toward +Z (the courtyard / camera), so the menu camera sits in front.
+		marker.rotation.y = PI
 		add_child(marker)
 		_markers.append(marker)
 		_cars.append(_spawn_parked_car(cars[i], marker))
@@ -1907,7 +1982,9 @@ func _focus_changed(snap := false) -> void:
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var stats := _car_stats_text(owned, entry)
 	_stats_label.text = "%s\n%s" % [entry.get("name", "?"), stats]
-	_stats_label.global_position = (_markers[_focus] as Marker3D).global_position + Vector3(-2.6, 1.4, 0.0)
+	# Float the billboarded stats above the focused car (toward the +Z camera) so the
+	# row-along-X lineup keeps it clear of the neighbouring bays.
+	_stats_label.global_position = (_markers[_focus] as Marker3D).global_position + Vector3(-1.4, 2.6, 1.6)
 	# The same lineup + focus machinery drives both the rally car-select (CARPARK)
 	# and the scrap prompt (OVERFLOW); update whichever overlay is up.
 	if _view == View.OVERFLOW:

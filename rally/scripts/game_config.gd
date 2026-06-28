@@ -356,14 +356,19 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Seconds the HQ menu camera takes to ease into framing the focused car
 ## (todo/diegetic-hq.md). 0 snaps instantly.
 @export var menu_camera_move_time := 0.6
-## HQ menu camera position relative to the focused car (car space: -Z is the car's
-## nose), so the default sits the camera ahead-and-to-the-side at eye height for a
-## 3/4 hero shot.
-@export var menu_camera_offset := Vector3(3.2, 1.6, 4.8)
+## HQ menu camera position relative to the focused car (WORLD space — added to the
+## car's position). The parked cars face +Z (nose toward the courtyard / camera), so
+## a positive +Z offset sits the camera IN FRONT of the car looking back past it at
+## the garage (-Z), with a +X side-step + eye-height lift for a front-3/4 hero shot.
+@export var menu_camera_offset := Vector3(2.6, 1.5, 6.2)
 ## Height (m) above the car's origin that the HQ menu camera looks at.
-@export var menu_camera_look_height := 0.6
-## Spacing (m) between parked cars in the HQ car-park lineup (along the lot's X).
-@export var menu_car_spacing := 6.0
+@export var menu_camera_look_height := 0.7
+## Width (m) of one parking bay in the HQ car park — the spacing between parked cars
+## along the lot's X, and the period of the painted bay markings (_build_carpark).
+@export var menu_car_spacing := 3.4
+## Front-to-back depth (m) of a parking bay: the length of the painted bay surface
+## along Z, sized to comfortably hold a car parked nose-out toward the courtyard.
+@export var menu_carpark_bay_depth := 5.4
 ## Height (m) above the lot the parked cars drop from, so they settle onto their
 ## suspension under physics before being frozen at the settled pose.
 @export var menu_car_drop_height := 0.6
@@ -374,12 +379,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## even when the garage is full; the next HQ visit then makes the player scrap one
 ## (the just-won car included) back down to this cap. See hq.gd's OVERFLOW station.
 @export var max_owned_cars := 10
-## Car-park lineup placement. The lineup is pushed this far off the lot centre (m,
-## along +X) and each car is yawed 90° so its flank faces the garage and its nose
-## points at the now-open centre courtyard; the row itself recedes along Z
-## (menu_car_spacing apart). The exterior/title camera is shifted by the same
-## offset so it still frames the lineup at the same 45°-ish angle.
-@export var menu_car_park_offset := 8.0
+## Car-park lineup placement. The lot centre is shifted this far off the world centre
+## (m, along +X). The bays run as a centred row ALONG X at hq_carpark_origin, each car
+## parked nose-out toward the courtyard / camera (+Z) in its own painted bay, so the
+## front-3/4 menu camera frames the focused car with the garage behind it. The
+## exterior/title camera is shifted by the same offset so it stays centred on the row.
+@export var menu_car_park_offset := 0.0
 
 # --- Podium / reward-reveal sequence (podium.gd) ------------------------------
 ## Height (m) above each podium step the top-3 cars drop from, so they settle onto
@@ -402,9 +407,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 # tweens between them over menu_camera_move_time. The exterior is the boot/title
 # shot (block buildings + the car park); Start flies into the garage (the map table
 # + the tuning lift); tapping the table drops to a near-top-down view of the 3D map.
-## Exterior/title camera: eye, then look target.
-@export var hq_exterior_cam_eye := Vector3(0.0, 13.0, 58.0)
-@export var hq_exterior_cam_look := Vector3(0.0, 2.5, 26.0)
+## Exterior/title camera: eye, then look target. Sits out past the car park (+Z)
+## looking back over the bays at the garage; the parked cars face this camera.
+@export var hq_exterior_cam_eye := Vector3(0.0, 8.5, 46.0)
+@export var hq_exterior_cam_look := Vector3(0.0, 1.8, 24.0)
 ## Garage interior camera (sees the map table + tuning lift).
 @export var hq_garage_cam_eye := Vector3(0.0, 4.6, 13.0)
 @export var hq_garage_cam_look := Vector3(0.0, 1.1, 0.0)

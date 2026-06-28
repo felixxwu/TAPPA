@@ -287,6 +287,50 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
+func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
+	# The lineup is a centred row ALONG X — one car per painted bay — each parked
+	# nose-out toward the courtyard / menu camera (+Z), not the old recede-along-Z row.
+	_save.grant_car("rs3", false)
+	_save.grant_car("mustang", false)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("shakedown")  # open-class: starter + the two granted cars
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	assert_eq(hq._markers.size(), 3, "three eligible cars are parked")
+	var cfg: GameConfig = Config.data
+	var lot_z: float = (cfg.hq_carpark_origin + Vector3(cfg.menu_car_park_offset, 0.0, 0.0)).z
+	for m in hq._markers:
+		var marker := m as Marker3D
+		assert_almost_eq(marker.position.z, lot_z, 0.001, "the lineup is a row along X at the lot's Z")
+		assert_almost_eq(marker.rotation.y, PI, 0.001, "each car is parked nose-out toward the camera (+Z)")
+	# Distinct bay columns along X, centred within the bay grid + aligned to bay centres.
+	assert_ne((hq._markers[0] as Marker3D).position.x, (hq._markers[1] as Marker3D).position.x,
+		"adjacent cars occupy separate bays along X")
+	var bays: int = max(1, cfg.max_owned_cars)
+	var start: int = max(0, floori((bays - 3) / 2.0))
+	for i in 3:
+		assert_almost_eq((hq._markers[i] as Marker3D).position.x, hq._bay_center_x(start + i, bays), 0.001,
+			"car %d sits centred in its painted bay" % i)
+
+
+func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
+	# The menu camera sits IN FRONT of the focused car (the cars face +Z), looking back
+	# past it toward the garage (−Z) — the new framing, not the old 3/4-from-behind.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("shakedown")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	var car_pos: Vector3 = hq._focused_car_pos()
+	var xform: Transform3D = hq._camera_target_xform()
+	assert_gt(xform.origin.z, car_pos.z, "the camera is in front of the car (+Z), not behind it")
+	var forward: Vector3 = -xform.basis.z  # a camera looks down its local −Z
+	assert_lt(forward.z, 0.0, "the camera looks back toward the car and the garage (−Z)")
+
+
 # --- Garage overflow: scrap a car to make room (max_owned_cars) --------------
 
 # Boot HQ owning more than the cap and it routes to the OVERFLOW scrap prompt
