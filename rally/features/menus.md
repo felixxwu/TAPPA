@@ -91,7 +91,10 @@ control cycles all owned cars, updating the **selected car**
 [tuning.md](tuning.md) for the underlying config pipeline.
 
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
-plane. Every rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
+plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal in
+X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
+albedo texture so the aerial colours read true under the garage lighting). Every
+rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
 tier-coloured cone marker, a billboarded `Label3D` name, and a row of small
 **sphere stars** above it — 1st-place best = 3 gold, 2nd = 2, 3rd = 1, else grey
 (`_stars_for`). (3D sphere stars sidestep the font's missing ★/☆ glyphs — same
