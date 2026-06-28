@@ -296,6 +296,12 @@ func _place_arch(node_name: String, pos: Vector2, heading: Vector2,
 	if heading.length() < 1e-5:
 		heading = Vector2(0.0, 1.0)
 	heading = heading.normalized()
+	# Replace any arch from a previous in-place regeneration (entering a new event)
+	# so gates don't stack up — freed immediately so the new one keeps the name.
+	var existing := get_node_or_null(node_name)
+	if existing != null:
+		remove_child(existing)
+		existing.free()
 	var arch := FinishArch.new()
 	arch.name = node_name
 	# Clear opening spans the full road width plus a margin on each side, so the
