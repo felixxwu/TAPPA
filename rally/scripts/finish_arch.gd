@@ -198,7 +198,6 @@ func _face(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, nrm: Vector3) ->
 # ---------------------------------------------------------------------------
 func _add_inflatable_seams() -> void:
 	var seam_mat := _make_material(seam_color)
-	var half_w := span * 0.5 + leg_width
 	var z := depth * 0.5 + 0.01
 	# Horizontal seams down each leg.
 	var leg_centres := [-(span * 0.5 + leg_width * 0.5), (span * 0.5 + leg_width * 0.5)]
@@ -311,8 +310,8 @@ func _add_rope(a: Vector3, b: Vector3, mat: ShaderMaterial) -> void:
 	var mid := (a + b) * 0.5
 	# Orient the cylinder (local +Y) along the rope direction.
 	var dir := (b - a).normalized()
-	var basis := _basis_from_y(dir)
-	mi.transform = Transform3D(basis, mid)
+	var rope_basis := _basis_from_y(dir)
+	mi.transform = Transform3D(rope_basis, mid)
 	add_child(mi)
 
 

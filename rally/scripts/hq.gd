@@ -482,10 +482,11 @@ func _build_lift() -> void:
 
 # --- 3D map pins -------------------------------------------------------------
 
-# (Re)build the rally pins on the table's map plane: a tier-coloured pin marker at
-# each rally's normalised map_pos, with a billboarded name and a row of sphere stars
-# (1st-place best → 3 gold, 2nd → 2, 3rd → 1, else grey). The showdown pin is locked
-# (grey, non-pickable) until every other rally is completed.
+# (Re)build the rally pins on the table's map plane: a state-coloured flag marker
+# (RallyFlag) at each rally's normalised map_pos, with a billboarded name and a row
+# of sphere stars (1st-place best → 3 gold, 2nd → 2, 3rd → 1, else grey). The flag
+# colour encodes the medal tier; the showdown pin is locked (grey/disabled,
+# non-pickable) until every other rally is completed.
 func _refresh_map_pins() -> void:
 	for c in _pins_root.get_children():
 		c.queue_free()
@@ -513,20 +514,16 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	pin.set_meta("rally_id", rally_id)
 	pin.set_meta("locked", locked)
 
-	var marker := MeshInstance3D.new()
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.0
-	cone.bottom_radius = 0.08
-	cone.height = 0.28
-	marker.mesh = cone
-	marker.position = Vector3(0.0, cone.height * 0.5, 0.0)
-	var cm := StandardMaterial3D.new()
-	cm.albedo_color = Color(0.35, 0.37, 0.42) if locked else _tier_color(int(rally.get("difficulty", 1)))
-	marker.material_override = cm
-	pin.add_child(marker)
-
-	# Stars: small sphere meshes (3D, no font glyph needed). Earned = gold, else grey.
+	# The marker: a procedural flag whose colour encodes the rally's state — locked
+	# (grey/disabled) or its earned-star medal tier (red→bronze→silver→gold). See
+	# RallyFlag / features/menus.md.
 	var earned := _stars_for(rally_id)
+	var flag := RallyFlag.build(locked, earned)
+	pin.add_child(flag)
+	var marker_top := RallyFlag.POLE_HEIGHT
+
+	# Stars: small sphere meshes (3D, no font glyph needed) hung above the flag as an
+	# exact readout of the medal tier the colour conveys. Earned = gold, else grey.
 	for k in MAX_STARS:
 		var star := MeshInstance3D.new()
 		var sm := SphereMesh.new()
@@ -537,7 +534,7 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		smat.albedo_color = Color(1.0, 0.82, 0.3) if k < earned else Color(0.32, 0.34, 0.40)
 		star.material_override = smat
-		star.position = Vector3((k - (MAX_STARS - 1) * 0.5) * 0.10, cone.height + 0.09, 0.0)
+		star.position = Vector3((k - (MAX_STARS - 1) * 0.5) * 0.10, marker_top + 0.10, 0.0)
 		pin.add_child(star)
 
 	var name3d := Label3D.new()
@@ -546,7 +543,7 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	name3d.font_size = 36
 	name3d.pixel_size = 0.0022
 	name3d.outline_size = 6
-	name3d.position = Vector3(0.0, cone.height + 0.24, 0.0)
+	name3d.position = Vector3(0.0, marker_top + 0.25, 0.0)
 	pin.add_child(name3d)
 
 	# Pickable hit sphere (skipped for a locked pin so it can't be entered). Kept a bit
@@ -558,19 +555,11 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 		sph.radius = 0.28
 		cs.shape = sph
 		area.add_child(cs)
-		area.position = Vector3(0.0, cone.height * 0.5, 0.0)
+		area.position = Vector3(0.0, marker_top * 0.5, 0.0)
 		area.input_ray_pickable = true
 		area.input_event.connect(_on_pin_input.bind(rally_id))
 		pin.add_child(area)
 	return pin
-
-
-func _tier_color(difficulty: int) -> Color:
-	match difficulty:
-		1: return Color(0.32, 0.70, 0.42)   # green
-		2: return Color(0.30, 0.56, 0.86)   # blue
-		3: return Color(0.92, 0.62, 0.26)   # orange
-		_: return Color(0.86, 0.32, 0.32)   # red (showdown / top tier)
 
 
 # Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
