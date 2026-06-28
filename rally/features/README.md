@@ -46,6 +46,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [camera.md](camera.md) | Chase camera follow behavior |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout and mode buttons |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding (vertical slice; full diegetic UI deferred) |
+| [garage.md](garage.md) | Procedural rally-team service-park garage model + the multi-angle render harness |
 | [mobile-controls.md](mobile-controls.md) | On-screen touch buttons: steer/throttle/brake (phones/web) |
 | [rendering.md](rendering.md) | PS1 shaders, dither post-process, materials, fog |
 | [debug-tools.md](debug-tools.md) | Force-arrow visualization overlay |
@@ -78,6 +79,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
 | Wreck menu | `scripts/wreck_screen.gd` (`WreckScreen` — crash → orbit camera + Return to HQ) |
 | Game-loop shell | `hq.tscn`/`scripts/hq.gd`, `podium.tscn`/`scripts/podium.gd`, `scripts/world.gd` (session fielding) |
+| Garage model | `garage.tscn`/`scripts/garage.gd`, `tools/render_garage.gd`/`.sh` (multi-angle renders) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard.gdshader` |
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/perf_overlay.gd` |
