@@ -438,3 +438,57 @@ func test_set_track_bakes_fields_and_rebuilds_loaded_chunks() -> void:
 			has_road = true
 			break
 	assert_true(has_road, "rebuilt chunk carries full road weight (alpha 1) where fully on-road")
+
+
+func test_budgeted_generation_spreads_builds_across_frames() -> void:
+	# The web export builds chunks on a frame-budgeted main-thread queue (see
+	# _use_budgeted_generation). force_main_thread_budget drives that path on desktop.
+	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
+	m.force_main_thread_budget = true
+	add_child_autofree(m)  # _ready builds the origin ring synchronously (force_sync)
+	var ring: int = 2 * ManagerScript.RADIUS + 1
+	var ring_count := ring * ring
+	assert_eq(m.loaded_coords().size(), ring_count, "origin ring built synchronously at ready")
+
+	# Drive far away: the old ring frees and the new ring is QUEUED, not built yet.
+	var far_pos := Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0)
+	var far_coord: Vector2i = m.chunk_coord_for(far_pos)
+	m.update_focus(far_pos)
+	assert_eq(m.loaded_coords().size(), 0, "old ring freed; new ring not built on the crossing tick")
+	assert_eq(m._build_queue.size(), ring_count, "full new ring queued for the budgeted pump")
+
+	# The pump builds at most MAX_BUILDS_PER_FRAME chunks per frame.
+	m._pump_build_queue()
+	assert_eq(m.loaded_coords().size(), ManagerScript.MAX_BUILDS_PER_FRAME,
+		"one pump builds at most MAX_BUILDS_PER_FRAME chunks")
+
+	# Pump until drained -> the whole ring lands, no chunk left queued.
+	var guard := 0
+	while not m._build_queue.is_empty() and guard < 100:
+		m._pump_build_queue()
+		guard += 1
+	assert_eq(m.loaded_coords().size(), ring_count, "all queued chunks eventually built")
+	assert_true(m._chunks.has(far_coord), "centre of the new ring loaded")
+
+
+func test_budgeted_pump_skips_coords_that_left_the_ring() -> void:
+	# A coord queued then driven out of the ring before the pump reaches it is
+	# discarded, not built.
+	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
+	m.force_main_thread_budget = true
+	add_child_autofree(m)
+	# Queue a ring far away without pumping.
+	var far_pos := Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0)
+	m.update_focus(far_pos)
+	assert_gt(m._build_queue.size(), 0, "new ring queued")
+	# Jump somewhere else entirely before the pump runs: the queued coords are now
+	# out of the ring and must be skipped.
+	var other_pos := Vector3(0, 0, ManagerScript.CHUNK_M * 40.0)
+	m.update_focus(other_pos)
+	var guard := 0
+	while not m._build_queue.is_empty() and guard < 200:
+		m._pump_build_queue()
+		guard += 1
+	var ring: int = 2 * ManagerScript.RADIUS + 1
+	assert_eq(m.loaded_coords().size(), ring * ring, "only the current ring is built")
+	assert_true(m._chunks.has(m.chunk_coord_for(other_pos)), "current focus chunk loaded")

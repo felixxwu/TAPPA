@@ -12,6 +12,10 @@ const CELL_M := 1.0                          # grid cell size (PS1 low-poly terr
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
 const RADIUS := 1                            # ring radius -> (2*RADIUS+1)^2 = 3x3
 const MAX_INTEGRATIONS_PER_FRAME := 1   # cap chunk node creation per frame
+# Cap chunk generation+spawn per frame on the budgeted (web) path, so a boundary
+# crossing never does more than one chunk's CPU work in a single tick. Matches the
+# integration cap, so both code paths stream at the same one-chunk-per-frame rate.
+const MAX_BUILDS_PER_FRAME := 1
 const ROAD_SAMPLE_STEP_M := 0.25        # centerline sampling density for bake_road
 
 const ChunkScript := preload("res://scripts/terrain_chunk.gd")
@@ -79,11 +83,18 @@ var _last_focus_coord: Vector2i = Vector2i(2147483647, 0)  # force first reconci
 # (enforced in _reconcile via Engine.is_editor_hint(), NOT by mutating this flag —
 # see _ready). Tests set this false explicitly.
 @export var use_threaded_generation: bool = true
+# Force the frame-budgeted main-thread build queue (see _use_budgeted_generation /
+# _pump_build_queue) even off the web export. Off by default; the web export turns
+# the same path on automatically via OS.has_feature("web"). Exists so a headless
+# test can exercise the budgeted path on desktop. Like use_threaded_generation it
+# is NOT mutated in _ready (this is a @tool script — see the note there).
+@export var force_main_thread_budget: bool = false
 # When true, _ready does NOT build the initial ring — a parent (world.gd) builds
 # it via build_initial() after the track is applied, so flattening is baked in on
 # the first build. The editor always previews terrain regardless of this flag.
 @export var defer_initial_build: bool = false
 var _pending: Dictionary = {}          # coord -> WorkerThreadPool task id
+var _build_queue: Array[Vector2i] = [] # coords awaiting budgeted main-thread build
 var _results: Dictionary = {}          # coord -> data Dictionary (worker-written)
 var _results_mutex: Mutex = Mutex.new()
 # Total chunk nodes spawned (mesh + collision built on the main thread). Read by
@@ -513,7 +524,36 @@ func _process(_delta: float) -> void:
 	var focus := _focus_node()
 	if focus != null:
 		update_focus(focus.global_position)
+	_pump_build_queue()
 	_integrate_ready()
+
+
+# True when chunk generation must use the frame-budgeted main-thread queue instead
+# of either the worker pool or the old "build every missing chunk in one frame"
+# synchronous loop. Forced on for the web export: a single-threaded web build (no
+# cross-origin isolation -> no SharedArrayBuffer -> no real threads) runs
+# WorkerThreadPool.add_task SYNCHRONOUSLY on the main thread, so the "threaded"
+# path would still generate a whole ring's worth of chunks in one tick on every
+# boundary crossing — a visible stutter. Budgeting to MAX_BUILDS_PER_FRAME spreads
+# that work across frames. `force_main_thread_budget` lets a headless test exercise
+# the same path on desktop. Never engaged in the editor (deterministic preview).
+func _use_budgeted_generation() -> bool:
+	return not Engine.is_editor_hint() and (force_main_thread_budget or OS.has_feature("web"))
+
+
+# Generate + spawn up to MAX_BUILDS_PER_FRAME queued chunks this frame (budgeted
+# path). Coords that left the ring or were already built while queued are skipped.
+func _pump_build_queue() -> void:
+	if _build_queue.is_empty():
+		return
+	var wanted := target_coords(_last_focus_coord)
+	var built := 0
+	while not _build_queue.is_empty() and built < MAX_BUILDS_PER_FRAME:
+		var coord: Vector2i = _build_queue.pop_front()
+		if not wanted.has(coord) or _chunks.has(coord):
+			continue  # left the ring or already built since it was queued
+		_spawn_chunk(coord, compute_chunk_data(coord))
+		built += 1
 
 
 func _focus_node() -> Node3D:
@@ -547,9 +587,16 @@ func _reconcile(center: Vector2i, force_sync: bool = false) -> void:
 	for coord in wanted:
 		if _chunks.has(coord) or _pending.has(coord):
 			continue
+		if not force_sync and _use_budgeted_generation():
+			# Web / budgeted: enqueue for the per-frame main-thread pump so a boundary
+			# crossing spreads its chunk work across frames instead of stalling the
+			# whole row in one tick. (force_sync — build_initial — still builds the
+			# initial ring immediately below so there's ground under the car at spawn.)
+			if not _build_queue.has(coord):
+				_build_queue.append(coord)
 		# Editor always previews synchronously (deterministic, no worker threads in
 		# the tool context); runtime uses the worker pool when enabled.
-		if use_threaded_generation and not force_sync and not Engine.is_editor_hint():
+		elif use_threaded_generation and not force_sync and not Engine.is_editor_hint():
 			_request_chunk(coord)
 		else:
 			_spawn_chunk(coord, compute_chunk_data(coord))
@@ -604,6 +651,7 @@ func _exit_tree() -> void:
 		WorkerThreadPool.wait_for_task_completion(_pending[coord])
 	_pending.clear()
 	_results.clear()
+	_build_queue.clear()
 
 
 func _rebuild_loaded() -> void:
