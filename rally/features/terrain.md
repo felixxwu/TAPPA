@@ -132,10 +132,6 @@ the true terrain across a transition band just outside the road edge, using
   `sky_color`, `ground_color`) are pushed from `GameConfig` by `world.gd`
   (`apply_terrain_light`) before the initial build. Valid because the terrain and
   sun never move; the car can't bake (it rotates) and lights in its shader.
-  **TEMP:** `apply_terrain_light` currently forces `light_amount = 0`, disabling
-  this bake to cut chunk-generation CPU on web (each vertex otherwise costs 4
-  extra `_sample_height` calls). The `terrain_light_amount` config stays at 1.0;
-  restore by setting `tm.light_amount = terrain_light_amount` again.
 - `set_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
   surface_feather_m)` — call
   `bake_track`, and **rebuild any currently-loaded chunks** (full `setup()`, since
