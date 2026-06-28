@@ -162,10 +162,15 @@ SubViewport stats panel. This slice only needs left/right "focus next car" input
 **Still open:**
 - **Per-car visual identity** — duplicate-model name suffixes ("MX-5 #2") and
   distinct paint per car (the chassis material is still shared/one colour).
-- **Lineup scale** — every owned car is parked; if a garage grows large this may
-  want a cap / scroll. Fine at current roster sizes; revisit if it bites.
-- **Environment art** — placeholder lot/lighting until the look is designed
-  (menus.md defers HQ art too); marker layout becomes config when the lineup lands.
+- **Lineup scale** — every owned car is parked; the lot now has one **painted bay
+  per `max_owned_cars`** (`hq.gd._build_carpark`), with fewer cars centred in the
+  grid, so the collection reads as a proper car park. A garage larger than the cap
+  would still spill past the last bay — revisit a cap/scroll if it bites.
+- **Environment art** — buildings/garage are still placeholder, but the car park is
+  now a **bay-marked tarmac surface** and the parked cars face **nose-out toward the
+  menu camera** (which sits in front, framing each car with the garage behind). Marker
+  layout + bay grid are config (`menu_car_spacing` / `menu_carpark_bay_depth` /
+  `menu_car_park_offset`).
 - **Mobile/gamepad polish** — `menu_select`/`menu_back` are mapped but HQ only uses
   left/right + Start today; swipe-to-cycle and a Back affordance come with the
   wider `menu_*` pass in `menus.md`.

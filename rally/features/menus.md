@@ -46,7 +46,11 @@ blocks via `_block()` (placeholder art; the framing/positions that the flow depe
 on are in `GameConfig`). The ground is a **grass-textured field** (the run scene's
 `textures/grass.jpg`, tiled by `terrain_tile_per_meter`) with a **grey concrete
 apron** laid on top around the garage + car park (`hq_concrete_center`/`hq_concrete_size`),
-so the lot reads as paved and everything beyond it as field.
+so the lot reads as paved and everything beyond it as field. The car park itself is a
+**painted parking-bay surface** (`_build_carpark`): a tarmac plane over the apron with
+white bay dividers (one bay per `max_owned_cars`, `menu_car_spacing` wide) generated
+procedurally as an `ImageTexture` (`_carpark_bay_texture`), so each parked car sits in
+its own marked bay.
 
 **EXTERIOR (boot/title).** A **Start** button and a **Settings** button over an
 establishing shot of the outdoor car park, with a block skyline **behind the
@@ -119,20 +123,22 @@ car park, **◄ Map** dismisses the panel, and the table Back returns to the gar
 
 **CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
 rally** (`RallyLibrary.is_eligible`) are parked at `GameConfig.hq_carpark_origin`,
-in a row that runs back along Z spaced by `menu_car_spacing`, pushed off-centre by
-`menu_car_park_offset` (along +X) and **yawed 90°** so each car's flank faces the
-garage and its nose points at the now-emptier centre courtyard (parked along the
-lot edge, not head-on); each is a silenced `Car` prop (reusing
-`Car.apply_owned`). The exterior/title camera is shifted by the same offset so it
-still frames the lineup at the same angle. Parking is shared with the title via
-`_build_lineup(cars)` — the car-select screen passes the eligible cars, the title
-passes all owned. The props **drop in live** (raised by `menu_car_drop_height` onto
-a collision floor under the lot) so they **settle onto their suspension**, then
-`_freeze_lineup` freezes the settled pose after `menu_car_settle_seconds` (guarded by
-a generation id so re-entering the lot cancels a stale freeze) — so a full car park
-costs nothing to keep parked. `◄ ►` (or `menu_left`/`menu_right`) move the focus
-and the camera eases to a 3/4 hero shot (`menu_camera_offset` / `menu_camera_move_time`);
-the focused car **is** the selected car. A billboarded `Label3D` shows its name +
+in a **centred row ALONG X** — one car per painted bay (`menu_car_spacing` wide), with
+fewer cars than bays centred within the grid — each **parked nose-out toward the
+courtyard / menu camera (+Z)** so the camera frames its front with the garage behind;
+each is a silenced `Car` prop (reusing `Car.apply_owned`). The exterior/title camera is
+shifted by `menu_car_park_offset` (the same lot-centre offset) so it stays centred on
+the row. Parking is shared with the title via `_build_lineup(cars)` — the car-select
+screen passes the eligible cars, the title passes all owned. The props **drop in live**
+(raised by `menu_car_drop_height` onto a collision floor under the lot) so they
+**settle onto their suspension**, then `_freeze_lineup` freezes the settled pose after
+`menu_car_settle_seconds` (guarded by a generation id so re-entering the lot cancels a
+stale freeze) — so a full car park costs nothing to keep parked. `◄ ►` (or
+`menu_left`/`menu_right`) move the focus and the camera eases to a **front 3/4 hero
+shot from in front of the car** (`menu_camera_offset` is added in world space; +Z sits
+the eye ahead of the nose-out car, looking back past it at the garage) over
+`menu_camera_move_time`; the focused car **is** the selected car. A billboarded
+`Label3D` shows its name +
 stats beside it (drive / country / type / tier / power-to-weight / **Health %**),
 mirrored into the overlay. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
