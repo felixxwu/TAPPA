@@ -180,6 +180,7 @@ func _default_profile() -> Dictionary:
 		"showdown_unlocked": false,
 		"showdown_completed": false,
 		"reward_history": [],
+		"settings": {},
 	}
 
 
@@ -307,6 +308,23 @@ func selected_instance_id() -> int:
 
 func set_selected_car(instance_id: int) -> void:
 	profile["selected_instance_id"] = instance_id
+	save()
+
+
+# --- Player settings (device/UI preferences, not progress) -------------------
+# A flat key->value bag under profile["settings"] for preferences like the chosen
+# mobile control scheme. Old profiles missing the key are backfilled on load
+# (_migrate), so callers can read freely.
+
+func get_setting(key: String, default_value = null) -> Variant:
+	var settings: Dictionary = profile.get("settings", {})
+	return settings.get(key, default_value)
+
+
+func set_setting(key: String, value: Variant) -> void:
+	var settings: Dictionary = profile.get("settings", {})
+	settings[key] = value
+	profile["settings"] = settings
 	save()
 
 

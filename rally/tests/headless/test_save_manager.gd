@@ -155,6 +155,18 @@ func test_migration_backfills_missing_keys() -> void:
 	var migrated: Dictionary = _save._migrate(partial)
 	assert_true(migrated.has("inventory"), "missing inventory backfilled")
 	assert_true(migrated.has("rallies"), "missing rallies backfilled")
+	assert_true(migrated.has("settings"), "missing settings bag backfilled (old profiles)")
+
+
+func test_settings_get_set_round_trip() -> void:
+	# Unset keys return the supplied default.
+	assert_eq(_save.get_setting("mobile_control_scheme", 0), 0, "unset setting returns the default")
+	_save.set_setting("mobile_control_scheme", 4)
+	assert_eq(_save.get_setting("mobile_control_scheme", 0), 4, "a set setting reads back")
+	# Persists across a save/reload cycle.
+	_save.save_now()
+	_save.load_or_new()
+	assert_eq(_save.get_setting("mobile_control_scheme", 0), 4, "settings survive save + reload")
 
 
 func test_corrupt_json_falls_back_to_default() -> void:

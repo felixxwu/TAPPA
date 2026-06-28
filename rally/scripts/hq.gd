@@ -28,8 +28,10 @@ extends Node3D
 # car wins) — harmless here: the props don't simulate, and world.gd re-applies the
 # fielded car's config before a run.
 
-# Camera stations (see the per-station poses in GameConfig "Menu / HQ").
-enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK }
+# Camera stations (see the per-station poses in GameConfig "Menu / HQ"). SETTINGS
+# is a flat overlay over the exterior shot (no dedicated camera pose), reached from
+# the title screen.
+enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
 
 # The two tuning-lift menus (todo/menus.md rig 4): TUNE = the handling sliders,
 # UPGRADES = install parts / repair. Both share the change-car control + Back.
@@ -108,6 +110,14 @@ var _table_layer: CanvasLayer
 var _detail_layer: CanvasLayer
 var _lift_layer: CanvasLayer
 var _car_layer: CanvasLayer
+var _settings_layer: CanvasLayer
+# Settings page: the per-scheme row buttons, so the selection highlight can refresh.
+var _settings_rows: Array = []  # [{id:int, button:Button}]
+var _settings_sub: Label             # subtitle (changes wording in the pre-rally gate)
+var _settings_action_button: Button  # bottom button: "< Back" (title) or "Start >" (gate)
+# True when Settings was opened as the mandatory pre-rally control-scheme gate (vs.
+# from the title screen) — the bottom button then starts the rally instead of going back.
+var _settings_gate := false
 
 var _map_meter: Label           # progress-to-showdown meter on the table HUD
 var _detail_title: Label
@@ -167,6 +177,7 @@ func _build_hq() -> void:
 	_build_detail_overlay()
 	_build_lift_overlay()
 	_build_car_overlay()
+	_build_settings_overlay()
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
 	_refresh_map_pins()
@@ -593,8 +604,8 @@ func _build_title_overlay() -> void:
 	var root: VBoxContainer = made[1]
 	root.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	# Title screen is just the Start button over the parked-collection backdrop —
-	# no title/subtitle text.
+	# Title screen is just the Start button (and a Settings button below it) over the
+	# parked-collection backdrop — no title/subtitle text.
 	var start := Button.new()
 	start.text = "Start"
 	start.focus_mode = Control.FOCUS_NONE
@@ -602,6 +613,14 @@ func _build_title_overlay() -> void:
 	start.custom_minimum_size = Vector2(220, 52)
 	start.pressed.connect(_on_exterior_start)
 	root.add_child(start)
+
+	var settings := Button.new()
+	settings.text = "Settings"
+	settings.focus_mode = Control.FOCUS_NONE
+	settings.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	settings.custom_minimum_size = Vector2(220, 44)
+	settings.pressed.connect(func() -> void: _open_settings(false))
+	root.add_child(settings)
 
 
 func _build_garage_overlay() -> void:
@@ -978,6 +997,141 @@ func _build_car_overlay() -> void:
 	actions.add_child(_start_button)
 
 
+# --- Settings page -----------------------------------------------------------
+
+# The title-screen Settings overlay: pick the mobile control scheme. Each option is
+# a tappable row with a vector diagram of its layout (ControlSchemeDiagram), name
+# and how-to; the chosen one is highlighted and persisted via Save.set_setting.
+func _build_settings_overlay() -> void:
+	var made := _make_overlay()
+	_settings_layer = made[0]
+	var root: VBoxContainer = made[1]
+
+	var title := Label.new()
+	title.text = "SETTINGS"
+	title.add_theme_font_size_override("font_size", 32)
+	root.add_child(title)
+
+	_settings_sub = Label.new()
+	_settings_sub.text = "Mobile controls — pick a layout:"
+	_settings_sub.add_theme_font_size_override("font_size", 16)
+	root.add_child(_settings_sub)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 8)
+	scroll.add_child(list)
+
+	_settings_rows.clear()
+	for entry in MobileControls.SCHEMES:
+		list.add_child(_make_scheme_row(int(entry["id"]), entry))
+
+	_settings_action_button = Button.new()
+	_settings_action_button.text = "< Back"
+	_settings_action_button.focus_mode = Control.FOCUS_NONE
+	_settings_action_button.pressed.connect(_on_settings_action)
+	root.add_child(_settings_action_button)
+
+	_refresh_settings_selection()
+
+
+# Open the Settings page. `gate` = the mandatory pre-rally pick (bottom button starts
+# the rally); otherwise it's the title-screen settings (bottom button goes back).
+func _open_settings(gate: bool) -> void:
+	_settings_gate = gate
+	_settings_sub.text = ("Choose your touch controls to start:" if gate
+		else "Mobile controls — pick a layout:")
+	_settings_action_button.text = "Start >" if gate else "< Back"
+	_go_to(View.SETTINGS)
+
+
+# The settings bottom button: in the pre-rally gate, make sure a scheme is saved
+# (the highlighted default if the player didn't tap one) so we never ask again, then
+# start the rally. From the title screen it just returns to the exterior.
+func _on_settings_action() -> void:
+	if _settings_gate:
+		if Save.get_setting(MobileControls.SETTING_KEY, null) == null:
+			Save.set_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
+		_settings_gate = false
+		_begin_rally_start()
+	else:
+		_go_to(View.EXTERIOR)
+
+
+# One selectable scheme row: a full-width flat Button carrying a diagram + text, so
+# the whole row is the hit target (the inner controls are mouse-transparent).
+func _make_scheme_row(id: int, entry: Dictionary) -> Button:
+	var button := Button.new()
+	button.focus_mode = Control.FOCUS_NONE
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.custom_minimum_size = Vector2(0, 92)
+	button.pressed.connect(_select_scheme.bind(id))
+
+	var row := HBoxContainer.new()
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 10
+	row.offset_top = 8
+	row.offset_right = -10
+	row.offset_bottom = -8
+	row.add_theme_constant_override("separation", 14)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(row)
+
+	var diagram := ControlSchemeDiagram.new()
+	diagram.scheme = id
+	diagram.custom_minimum_size = Vector2(132, 76)
+	row.add_child(diagram)
+
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(text)
+	var name_label := Label.new()
+	name_label.text = String(entry["name"])
+	name_label.add_theme_font_size_override("font_size", 18)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text.add_child(name_label)
+	var desc_label := Label.new()
+	desc_label.text = String(entry["desc"])
+	desc_label.add_theme_font_size_override("font_size", 13)
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text.add_child(desc_label)
+
+	_settings_rows.append({"id": id, "button": button})
+	return button
+
+
+# Persist the chosen scheme and refresh the highlight. The live MobileControls reads
+# this on the next run (it's loaded fresh with main.tscn), so no scene is poked here.
+func _select_scheme(id: int) -> void:
+	Save.set_setting(MobileControls.SETTING_KEY, id)
+	_refresh_settings_selection()
+
+
+# Highlight the persisted scheme's row (a tinted, bordered box) and flatten the rest.
+func _refresh_settings_selection() -> void:
+	var current := int(Save.get_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME))
+	for entry in _settings_rows:
+		var button: Button = entry["button"]
+		var selected: bool = int(entry["id"]) == current
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color(0.20, 0.34, 0.52, 0.85) if selected else Color(0.12, 0.14, 0.18, 0.6)
+		for corner in ["top_left", "top_right", "bottom_left", "bottom_right"]:
+			box.set("corner_radius_" + corner, 6)
+		if selected:
+			for side in ["left", "top", "right", "bottom"]:
+				box.set("border_width_" + side, 2)
+			box.border_color = Color(0.55, 0.78, 1.0, 0.95)
+		for state in ["normal", "hover", "pressed", "focus"]:
+			button.add_theme_stylebox_override(state, box)
+
+
 # Show only the active station's overlay (detail is a TABLE sub-state).
 func _update_overlays() -> void:
 	_title_layer.visible = _view == View.EXTERIOR
@@ -986,6 +1140,7 @@ func _update_overlays() -> void:
 	_detail_layer.visible = _view == View.TABLE and _detail_open
 	_lift_layer.visible = _view == View.LIFT
 	_car_layer.visible = _view == View.CARPARK
+	_settings_layer.visible = _view == View.SETTINGS
 
 
 # --- Station transitions -----------------------------------------------------
@@ -1641,6 +1796,28 @@ func _on_start_pressed() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
+	# On mobile, the player must choose a touch control scheme before their first
+	# event. If they haven't picked one yet, show the picker as a gate now; once they
+	# confirm it's saved and we never ask again (see _on_settings_action).
+	if _is_mobile() and Save.get_setting(MobileControls.SETTING_KEY, null) == null:
+		_open_settings(true)
+		return
+	await _begin_rally_start()
+
+
+# True on a touch device (or when the controls are force-enabled for testing) — the
+# only case the mobile control-scheme picker is relevant.
+func _is_mobile() -> bool:
+	return DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force
+
+
+# The actual handoff to RallySession, covered by a loading screen. Split out of
+# _on_start_pressed so the mobile control-scheme gate can call it after the pick.
+func _begin_rally_start() -> void:
+	var owned := Save.get_car(_selected_instance_id)
+	var rally := RallyLibrary.by_id(_selected_rally_id)
+	if owned.is_empty() or rally.is_empty():
+		return
 	var loading := LoadingScreen.new()
 	loading.set_step("Preparing rally…")
 	add_child(loading)
@@ -1667,6 +1844,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		View.EXTERIOR:
 			if event.is_action_pressed("menu_select"):
 				_on_exterior_start()
+		View.SETTINGS:
+			if event.is_action_pressed("menu_back"):
+				# Cancel the pre-rally gate back to the car park; otherwise to the title.
+				_go_to(View.CARPARK if _settings_gate else View.EXTERIOR)
+				_settings_gate = false
 		View.GARAGE:
 			if event.is_action_pressed("menu_select"):
 				_enter_table()

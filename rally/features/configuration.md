@@ -70,6 +70,8 @@ the `.tres` requires a scene reload to take effect.
 |----------|---------|---------|
 | `hud_enabled` | true | Show speed/gear overlay |
 | `mobile_controls_force` | false | Force on-screen touch controls on (testing; otherwise auto-enabled on touch devices) |
+| `tilt_sensitivity` | 2.0 | TILT scheme: multiplier on device roll → steer (higher = full lock at a gentler tilt) |
+| `tilt_deadzone` | 0.05 | TILT scheme: device roll (fraction of 1 g) ignored around level |
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
 | `follow_height` | 3.0 | Chase camera height above (m) |
 | `smoothing` | 5.0 | Camera follow smoothing rate |

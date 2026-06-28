@@ -38,6 +38,9 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   the world-map star rating).
 - `showdown_unlocked` / `showdown_completed` — the end-game beat.
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
+- `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
+  `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old
+  profiles missing it are backfilled on load.
 
 Max-HP is **CarLibrary metadata, not stored**; `OwnedCar.hp` is seeded from and
 clamps to it. Opponent times, track geometry, etc. are derived from seeds, not
@@ -61,6 +64,7 @@ that mutate + autosave: `grant_car(model_id, immortal)`, `get_car(instance_id)`,
 `apply_damage(instance_id, amount)`, `wreck_car(instance_id)`,
 `set_tuning(instance_id, tuning)`, `selected_car()` / `selected_instance_id()` /
 `set_selected_car(instance_id)` (the lift's selected car, self-healing),
+`get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),
 `add_item` / `consume_item`,
 `install_upgrade` / `uninstall_upgrade` (install enforces one-per-slot via
 `UpgradeLibrary`, replacing + returning the incumbent; see

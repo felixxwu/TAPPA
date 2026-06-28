@@ -1,12 +1,15 @@
 extends GutTest
-# On-screen touch controls: GAS + BRAKE stacked bottom-right (digital), and a
-# bottom-left steering SLIDER feeding analog strength into steer_left/steer_right
-# (recentres when released). Gated to touch devices via mobile_controls_force.
+# On-screen touch controls with six selectable schemes (MobileControls.SCHEME_*).
+# The default scheme is SLIDER_GAS_BRAKE: GAS + BRAKE digital pedals bottom-right
+# and a bottom-left steering SLIDER feeding analog strength into steer_left/right.
+# These exercise the default scheme plus the per-scheme action mapping (auto gas,
+# steer buttons, the simple both-sides-brake, and the pure tilt maths). Gated to
+# touch devices via mobile_controls_force.
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 var _scene: Node3D
-var _controls: CanvasLayer
+var _controls  # MobileControls
 
 
 func before_each() -> void:
@@ -41,6 +44,11 @@ func test_visible_when_forced() -> void:
 	assert_true(_controls.visible, "controls shown when mobile_controls_force is set")
 
 
+func test_defaults_to_slider_gas_brake() -> void:
+	assert_eq(_controls._scheme, MobileControls.SCHEME_SLIDER_GAS_BRAKE,
+		"the default scheme is the slider + gas/brake one")
+
+
 func test_hidden_on_desktop() -> void:
 	Config.data.mobile_controls_force = false
 	var scene: Node3D = load("res://main.tscn").instantiate()
@@ -50,6 +58,8 @@ func test_hidden_on_desktop() -> void:
 	assert_false(scene.get_node("MobileControls").visible,
 		"controls hidden on a non-touch device")
 
+
+# --- Default scheme: gas / brake / slider ------------------------------------
 
 func test_no_input_when_idle() -> void:
 	# Nothing touched -> no actions held, steering centred.
@@ -61,14 +71,14 @@ func test_no_input_when_idle() -> void:
 
 
 func test_gas_region_accelerates() -> void:
-	_controls._pointers[0] = _controls.GAS
+	_controls._pointers[0] = "gas"
 	_controls._apply_actions()
 	assert_true(Input.is_action_pressed("accelerate"), "gas button accelerates")
 	assert_false(Input.is_action_pressed("brake_reverse"), "gas does not brake")
 
 
 func test_brake_region_brakes() -> void:
-	_controls._pointers[0] = _controls.BRAKE
+	_controls._pointers[0] = "brake"
 	_controls._apply_actions()
 	assert_true(Input.is_action_pressed("brake_reverse"), "brake button brakes")
 	assert_false(Input.is_action_pressed("accelerate"), "brake does not accelerate")
@@ -118,15 +128,93 @@ func test_multitouch_steer_and_gas_together() -> void:
 	# One pointer owns the slider, another holds gas — both must register.
 	_controls._slider_owner = 1
 	_controls._slider_x = 20.0
-	_controls._pointers[0] = _controls.GAS
+	_controls._pointers[0] = "gas"
 	_controls._apply_actions()
 	assert_gt(Input.get_action_strength("steer_left"), 0.0, "steering holds with throttle")
 	assert_true(Input.is_action_pressed("accelerate"), "throttle holds with steering")
 
 
 func test_release_clears_button() -> void:
-	_controls._pointers[0] = _controls.GAS
+	_controls._pointers[0] = "gas"
 	_controls._apply_actions()
 	_controls._pointers.erase(0)
 	_controls._apply_actions()
 	assert_false(Input.is_action_pressed("accelerate"), "releasing the touch releases the gas action")
+
+
+# --- Steer-button scheme -----------------------------------------------------
+
+func test_steer_buttons_scheme() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
+	_controls._pointers[0] = "steer_left"
+	_controls._apply_actions()
+	assert_almost_eq(Input.get_action_strength("steer_left"), 1.0, 1e-5, "left button = full left steer")
+	assert_almost_eq(Input.get_action_strength("steer_right"), 0.0, 1e-6, "no right steer")
+
+
+# --- Auto-gas schemes: throttle held unless braking --------------------------
+
+func test_auto_gas_holds_throttle_when_idle() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_SLIDER_BRAKE_AUTO)
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("accelerate"), "auto-gas holds throttle when not braking")
+	assert_false(Input.is_action_pressed("brake_reverse"), "no brake when idle")
+
+
+func test_auto_gas_releases_throttle_while_braking() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_SLIDER_BRAKE_AUTO)
+	_controls._pointers[0] = "brake"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("brake_reverse"), "brake button brakes")
+	assert_false(Input.is_action_pressed("accelerate"), "throttle drops while braking (no gas+brake overlap)")
+
+
+# --- Simple left/right scheme: both sides = brake ----------------------------
+
+func test_simple_one_side_steers_with_auto_gas() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_SIMPLE_LR_AUTO)
+	_controls._pointers[0] = "simple_right"
+	_controls._apply_actions()
+	assert_almost_eq(Input.get_action_strength("steer_right"), 1.0, 1e-5, "one side steers that way")
+	assert_true(Input.is_action_pressed("accelerate"), "throttle auto-held while steering")
+	assert_false(Input.is_action_pressed("brake_reverse"), "one side does not brake")
+
+
+func test_simple_both_sides_brake() -> void:
+	_controls.set_scheme(MobileControls.SCHEME_SIMPLE_LR_AUTO)
+	_controls._pointers[0] = "simple_left"
+	_controls._pointers[1] = "simple_right"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("brake_reverse"), "both sides at once = brake")
+	assert_false(Input.is_action_pressed("accelerate"), "throttle drops while braking")
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6, "no steer while braking")
+	assert_almost_eq(Input.get_action_strength("steer_right"), 0.0, 1e-6, "no steer while braking")
+
+
+# --- Tilt steering maths (pure) ----------------------------------------------
+
+func test_tilt_steer_deadzone_and_direction() -> void:
+	# Near-level (within the deadzone) -> no steer.
+	assert_almost_eq(MobileControls.tilt_steer(Vector3(0.2, 0, 9.8), 2.0, 0.05), 0.0, 1e-6,
+		"a roughly level phone does not steer")
+	# Rolled right (positive X gravity past the deadzone) -> positive (right) steer.
+	var right := MobileControls.tilt_steer(Vector3(4.0, 0, 9.0), 2.0, 0.05)
+	assert_gt(right, 0.0, "rolling right steers right")
+	# Rolled left -> negative (left) steer, symmetric.
+	var left := MobileControls.tilt_steer(Vector3(-4.0, 0, 9.0), 2.0, 0.05)
+	assert_almost_eq(left, -right, 1e-6, "left/right tilt is symmetric")
+	# A hard tilt clamps to full lock.
+	assert_almost_eq(MobileControls.tilt_steer(Vector3(20.0, 0, 0.0), 2.0, 0.05), 1.0, 1e-6,
+		"a hard tilt clamps to full lock")
+
+
+# --- Scheme switching --------------------------------------------------------
+
+func test_set_scheme_releases_old_inputs() -> void:
+	# Hold gas in the default scheme, then switch: the old throttle must not linger.
+	_controls._pointers[0] = "gas"
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("accelerate"), "gas held before switch")
+	_controls.set_scheme(MobileControls.SCHEME_SIMPLE_LR_AUTO)
+	assert_false(Input.is_action_pressed("accelerate"),
+		"switching schemes releases inputs held under the old one")

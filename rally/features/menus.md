@@ -48,11 +48,22 @@ on are in `GameConfig`). The ground is a **grass-textured field** (the run scene
 apron** laid on top around the garage + car park (`hq_concrete_center`/`hq_concrete_size`),
 so the lot reads as paved and everything beyond it as field.
 
-**EXTERIOR (boot/title).** Just a **Start** button over an establishing shot of
-the outdoor car park, with a block skyline **behind the garage** and trees framing
-the lot. The player's **whole owned collection** is parked in the car park here
-(`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
-car. Start (or `menu_select`) flies the camera into the garage.
+**EXTERIOR (boot/title).** A **Start** button and a **Settings** button over an
+establishing shot of the outdoor car park, with a block skyline **behind the
+garage** and trees framing the lot. The player's **whole owned collection** is
+parked in the car park here (`_build_title_lineup`, rebuilt on entering EXTERIOR) so
+the title shows off every car. Start (or `menu_select`) flies the camera into the
+garage; Settings opens the SETTINGS overlay.
+
+**SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose) for
+picking the **mobile control scheme**. Each of the six schemes
+([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
+**diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
+its name and how-to; the saved choice is highlighted and persisted via
+`Save.set_setting`. Also shown as a **pre-rally gate**: on mobile, if no scheme has
+been chosen yet, Start opens this page (`_open_settings(true)`) instead of launching
+— the bottom button reads **Start >** and confirms the pick (the highlighted default
+if untouched), saving it so the gate never reappears, then begins the rally.
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,

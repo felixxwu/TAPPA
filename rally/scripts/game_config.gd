@@ -308,8 +308,16 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).
 # Shown automatically on touch devices (DisplayServer.is_touchscreen_available()).
-# Set this true to force them on for testing on a desktop/in the editor.
+# Set this true to force them on for testing on a desktop/in the editor. Which of
+# the six control schemes is shown is a per-player setting chosen on the title
+# screen's Settings page (persisted in the save profile, not here).
 @export var mobile_controls_force := false
+## Tilt-steering sensitivity (TILT scheme): multiplier on the device roll. 1.0 maps
+## a full 90° tilt to full lock; higher reaches full lock at a gentler tilt.
+@export_range(0.5, 5.0) var tilt_sensitivity := 2.0
+## Tilt-steering deadzone: device roll (as a fraction of 1 g) ignored around level,
+## so a phone held roughly flat doesn't drift the steering.
+@export_range(0.0, 0.9) var tilt_deadzone := 0.05
 
 @export_group("Debug")
 @export var debug_wheel_forces := false  # per-wheel arrows (toggle with H): green = suspension, red = friction, blue = aero downforce

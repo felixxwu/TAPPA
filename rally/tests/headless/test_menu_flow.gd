@@ -70,6 +70,27 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
 
 
+func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Open Settings from the title screen.
+	hq._go_to(hq.View.SETTINGS)
+	assert_true(hq._settings_layer.visible, "the settings overlay is shown")
+	assert_false(hq._title_layer.visible, "the title overlay is hidden in settings")
+	# A row per control scheme, each with a diagram.
+	assert_eq(hq._settings_rows.size(), MobileControls.SCHEMES.size(),
+		"one settings row per control scheme")
+	# Pick the tilt scheme; it persists to the save profile.
+	hq._select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
+	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
+		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
+	# Back returns to the title.
+	hq._go_to(hq.View.EXTERIOR)
+	assert_true(hq._title_layer.visible, "Back from settings returns to the title")
+	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
+
+
 func test_hq_title_parks_all_owned_cars() -> void:
 	# The title shows the whole collection, regardless of rally eligibility — grant
 	# an AWD RS3 (which an RWD rally would exclude) and it's still parked.
@@ -400,6 +421,45 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 		"a loading overlay is shown immediately on Start")
 	assert_true(RallySession.is_active(), "Start hands off to an active RallySession")
 	assert_eq(RallySession.rally_id(), "shakedown", "the chosen rally is running")
+
+
+func test_hq_mobile_first_start_gates_on_control_scheme_pick() -> void:
+	Config.data.mobile_controls_force = true  # simulate a touch device
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("shakedown")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	# No control scheme saved yet -> Start shows the picker as a gate, not the rally.
+	assert_null(_save.get_setting(MobileControls.SETTING_KEY, null), "no control preference yet")
+	hq._on_start_pressed()
+	assert_eq(hq._view, hq.View.SETTINGS, "first mobile start shows the control picker")
+	assert_true(hq._settings_gate, "the picker is in pre-rally gate mode")
+	assert_false(RallySession.is_active(), "the rally hasn't started — it's gated on the pick")
+	# Confirm: saves the (default, untouched) scheme so we never ask again, then starts.
+	hq._on_settings_action()
+	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)), MobileControls.DEFAULT_SCHEME,
+		"confirming the gate persists the chosen scheme")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(RallySession.is_active(), "after the pick the rally starts")
+
+
+func test_hq_mobile_start_skips_gate_once_scheme_chosen() -> void:
+	Config.data.mobile_controls_force = true
+	_save.set_setting(MobileControls.SETTING_KEY, MobileControls.SCHEME_TILT_GAS_BRAKE)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("shakedown")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	# A preference exists, so Start goes straight to the rally (no gate).
+	await hq._on_start_pressed()
+	assert_ne(hq._view, hq.View.SETTINGS, "an existing preference skips the picker")
+	assert_true(RallySession.is_active(), "Start launches the rally directly")
 
 
 func test_standings_interstitial_renders_the_leaderboard() -> void:
