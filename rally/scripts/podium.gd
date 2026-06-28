@@ -224,7 +224,11 @@ func _freeze_podium(generation: int) -> void:
 # running physics (so it settles onto its suspension); otherwise it spawns frozen.
 # Gets its own mesh copies (car.tscn shares mesh sub-resources across instances).
 func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = null) -> Node3D:
-	var car := load(CAR_SCENE_PATH).instantiate()
+	# Variant, not :=, so the dynamic car-script calls below (apply_car, freeze)
+	# don't depend on the analyzer resolving car.tscn's root script type at parse
+	# time — that inference is environment-fragile (Godot 4.6 can fail it and break
+	# the whole script). Runtime behaviour is unchanged (dynamic dispatch).
+	var car: Variant = load(CAR_SCENE_PATH).instantiate()
 	(parent if parent != null else self).add_child(car)
 	car.apply_car(library_index)
 	_dup_meshes(car)
@@ -239,7 +243,7 @@ func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = 
 	else:
 		car.freeze = true
 		car.process_mode = Node.PROCESS_MODE_DISABLED
-	var audio := car.get_node_or_null("EngineAudio")
+	var audio: Variant = car.get_node_or_null("EngineAudio")
 	if audio != null:
 		audio.process_mode = Node.PROCESS_MODE_DISABLED
 		if audio is AudioStreamPlayer:
