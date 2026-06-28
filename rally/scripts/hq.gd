@@ -432,7 +432,12 @@ func _build_map_table() -> void:
 	pm.size = cfg.hq_map_plane_size
 	_map_plane.mesh = pm
 	var mm := StandardMaterial3D.new()
-	mm.albedo_color = Color(0.16, 0.28, 0.22)  # map green
+	# Satellite map photo laid over the (now square) table top. Unshaded so the
+	# aerial colours read true under the garage lighting from the near-top-down
+	# table camera, rather than being darkened by the directional sun's angle.
+	mm.albedo_texture = load("res://textures/map_table.jpg")
+	mm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_map_plane.material_override = mm
 	_map_plane.position = Vector3(p.x, top_y + 0.01, p.z)
 	add_child(_map_plane)
