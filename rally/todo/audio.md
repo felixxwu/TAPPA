@@ -18,7 +18,7 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
 
 ## Why it's a gap
 
-- The **damage model is collision-driven** (`todo/damage-model.md` reads contact
+- The **damage model is collision-driven** (`features/damage.md` reads contact
   impulses) but **silent** — a crash that destroys a car gives no audio cue.
 - The **countdown** (`todo/stage-start-and-end.md` § 3, big `3·2·1·GO`) has no
   beep.
@@ -83,8 +83,8 @@ func play_music(id: String) -> void / stop_music()      # optional; Music bus
 
 | id | Trigger | Bus | Source spec |
 |---|---|---|---|
-| `impact_soft` / `impact_hard` | contact impulse over threshold; hard above a bigger one | SFX (3D) | `todo/damage-model.md` § 2 |
-| `wreck` | HP→0 wreck | SFX | `todo/damage-model.md` § 4 |
+| `impact_soft` / `impact_hard` | contact impulse over threshold; hard above a bigger one | SFX (3D) | `features/damage.md` § 2 |
+| `wreck` | HP→0 wreck | SFX | `features/damage.md` § 4 |
 | `countdown_beep` / `countdown_go` | each `3·2·1` tick / `GO` | SFX | `todo/stage-start-and-end.md` § 3 |
 | `ui_move` / `ui_select` / `ui_back` | menu navigation | SFX | `todo/menus.md` nav |
 | `reward_reveal` | lootbox/reward reveal settles | SFX | `todo/menus.md` rig 5 |
@@ -98,7 +98,7 @@ the damage model already computes, so no new physics read.
 
 ## Hooking in (touch points, all thin)
 
-- `todo/damage-model.md` § 2: when an impact passes the threshold, also
+- `features/damage.md` § 2: when an impact passes the threshold, also
   `Audio.play_sfx_3d("impact_*", contact_point)`; on wreck, `play_sfx("wreck")`.
 - `todo/stage-start-and-end.md` § 3: in `show_countdown`, fire `countdown_beep`
   per integer tick and `countdown_go` at `GO`.
@@ -121,7 +121,7 @@ the player profile holds chosen volumes.
 
 - **Settings** (`todo/settings.md`) — owns the volume sliders that drive the bus
   layout this spec defines. Build the bus layout here; Settings reads/writes it.
-- **Damage model** (`todo/damage-model.md`) — the impact/wreck triggers.
+- **Damage model** (`features/damage.md`) — the impact/wreck triggers.
 - **Stage start/end** (`todo/stage-start-and-end.md`) — the countdown triggers.
 - **Menus** (`todo/menus.md`) — UI / reward / podium triggers.
 - **Engine audio** (`features/engine-audio.md`) — re-bussed to `Engine`;

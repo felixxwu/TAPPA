@@ -4,13 +4,13 @@ extends RefCounted
 # car.gd the way Drivetrain is (a plain RefCounted helper, no scene coupling). It
 # holds the run's WORKING HP, converts contact impulses into HP loss, exposes the
 # damage-fraction-scaled handling/power effects the car reads each tick, and
-# wrecks the car at 0 HP. See todo/damage-model.md.
+# wrecks the car at 0 HP. See features/damage.md.
 #
 # HP only ever goes DOWN in-run (no passive regen); a repair kit (Save) is the
 # only way it climbs back, and that lives between runs, not here.
 #
 # Binding: when a car is FIELDED from the meta-game (a future rally/Start-line
-# layer, todo/rally-event-flow.md) it carries an OwnedCar instance_id, and a
+# layer, features/rally-session.md) it carries an OwnedCar instance_id, and a
 # wreck removes that instance via Save.wreck_car (returning its upgrades to
 # inventory). In free-roam / dev play the model is UNBOUND (instance_id < 0): it
 # still depletes and degrades and emits `wrecked`, but never touches the save —
@@ -41,7 +41,7 @@ var immortal := false
 # OwnedCar binding; -1 = unbound (free-roam / dev play — never touches Save).
 var instance_id := -1
 # +1 / -1 alignment-pull direction, re-rolled each run so it can't be pre-learnt
-# (todo/damage-model.md §3). Set via reroll_bias(); defaults to a pull, not 0.
+# (features/damage.md). Set via reroll_bias(); defaults to a pull, not 0.
 var align_bias_sign := 1.0
 # Seconds of impact immunity remaining after a damaging hit (impact_cooldown_s).
 # Ticked down by car.gd each physics frame (tick_cooldown). Groups one crash —

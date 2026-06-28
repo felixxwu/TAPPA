@@ -14,13 +14,13 @@ const MAX_CONTACTS_REPORTED := 8
 
 # Re-emitted from the car's DamageModel when working HP hits 0 (a run DNF). A
 # fielded car has already been removed from the save by then; the rally/menu layer
-# (todo/rally-event-flow.md) listens here. See todo/damage-model.md §4.
+# (features/rally-session.md) listens here. See features/damage.md.
 signal wrecked()
 
 var _start_transform: Transform3D
 var drivetrain: Drivetrain
 # Per-car HP / attrition state + the handling/power degradation maths
-# (todo/damage-model.md). Built in _ready, (re)configured per car in apply_car.
+# (features/damage.md). Built in _ready, (re)configured per car in apply_car.
 var damage: DamageModel
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
@@ -181,7 +181,7 @@ func _physics_process(delta: float) -> void:
 			brake_input = 1.0  # parking brake: hold the car on slopes
 	var handbrake := ai_handbrake if ai_controlled else (controls_locked or Input.is_action_pressed("handbrake"))
 	# Damage power loss: fade the driven torque as HP falls (1.0 healthy). 0 effect
-	# at full HP / for the immortal starter. See todo/damage-model.md §3.
+	# at full HP / for the immortal starter. See features/damage.md.
 	drivetrain.power_scale = damage.power_multiplier(cfg)
 	drivetrain.step(delta, drive, brake_input, handbrake)
 
@@ -225,7 +225,7 @@ func _physics_process(delta: float) -> void:
 	var align_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
 	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + steer_input * cfg.steer_limit
 	# Damage wheel-alignment pull: a constant bias toward one side that grows as HP
-	# falls (0 at full HP / for the immortal starter). See todo/damage-model.md §3.
+	# falls (0 at full HP / for the immortal starter). See features/damage.md.
 	steer_target += damage.steer_bias(cfg)
 	steering = move_toward(steering, steer_target, cfg.steer_speed * delta)
 	# Direct yaw torque about the car's up axis while steering, to fight
@@ -277,7 +277,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 # DamageModel reached 0 HP. Re-emit for the rally/menu layer. In free-roam (an
 # UNBOUND model, no OwnedCar) there is no DNF flow yet, so heal to full and drop
 # back at the spawn so play continues; a fielded car leaves the consequences to
-# its listener (todo/rally-event-flow.md).
+# its listener (features/rally-session.md).
 func _on_wrecked() -> void:
 	wrecked.emit()
 	if damage.instance_id < 0:
@@ -473,7 +473,7 @@ func apply_car(index: int) -> String:
 	return spec["name"]
 
 
-# Field an OwnedCar (todo/rally-event-flow.md fielding pipeline): the CarLibrary
+# Field an OwnedCar (features/rally-session.md fielding pipeline): the CarLibrary
 # baseline, then the installed upgrades, then the per-car tuning, then the working
 # damage state from the saved HP. Used by world.gd when a RallySession is active;
 # free-roam uses apply_car directly (no upgrades/tuning).
@@ -488,7 +488,7 @@ func apply_owned(owned: Dictionary) -> String:
 	# upgrade mutates cfg (other upgraded fields are read live each physics step).
 	UpgradeLibrary.apply(owned, Config.data)
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
-	# of the upgraded baseline (todo/tuning.md). Gating (brake/aero) reads the same
+	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
 	# installed upgrades, so it must run after step 2.
 	TuningLibrary.apply(owned, Config.data)
 	_sync_suspension_to_wheels()

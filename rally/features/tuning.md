@@ -4,8 +4,7 @@
 `scripts/drivetrain.gd`, the `Tuning` group in `scripts/game_config.gd`, the
 fielding hook in `scripts/car.gd` (`apply_owned`), and the tuning-lift UI in
 `scripts/hq.gd`. Player state lives on each `OwnedCar` (`Save`,
-[save-persistence.md](save-persistence.md)). Full design:
-[../todo/tuning.md](../todo/tuning.md).
+[save-persistence.md](save-persistence.md)).
 
 **Tuning** is the **free, reversible** half of *Tuning & upgrades* — handling
 nudges the player makes at the garage **tuning lift**, as distinct from consumable

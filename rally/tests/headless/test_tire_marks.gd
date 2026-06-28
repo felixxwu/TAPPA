@@ -1,5 +1,5 @@
 extends GutTest
-# TireMarks: gravel ruts laid behind the wheels (todo/tire-marks.md). Driven
+# TireMarks: gravel ruts laid behind the wheels (features/tire-marks.md). Driven
 # against a straight Curve2D with a stub car + stub wheels, so the gating /
 # emission / ring-buffer logic is tested without a real vehicle or rendering.
 

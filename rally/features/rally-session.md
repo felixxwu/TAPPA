@@ -2,7 +2,7 @@
 
 **Source:** `scripts/rally_session.gd` — the `RallySession` autoload (registered in
 `project.godot` alongside `Config`/`Save`; no `class_name`, reached by the global
-`RallySession`). See the brief in [../todo/rally-event-flow.md](../todo/rally-event-flow.md).
+`RallySession`).
 
 The rally-level coordinator: it turns "the player picked rally R with owned car C"
 into the full loop — field the car, run 3 events, accumulate times, place against

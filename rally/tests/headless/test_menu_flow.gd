@@ -2,7 +2,7 @@ extends GutTest
 # Menus vertical slice (todo/menus.md, todo/diegetic-hq.md): the diegetic 3D HQ
 # (camera stations: exterior title → garage → map table → car park) → run → podium
 # loop, and the run-scene fielding that wires it to RallySession
-# (todo/rally-event-flow.md). Runs against a throwaway Save profile.
+# (features/rally-session.md). Runs against a throwaway Save profile.
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const TEST_PATH := "user://test_menu_flow_profile.json"
@@ -266,7 +266,7 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
-# --- Tuning lift (todo/tuning.md / todo/menus.md rig 4) ----------------------
+# --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
 func test_hq_lift_raises_the_selected_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()

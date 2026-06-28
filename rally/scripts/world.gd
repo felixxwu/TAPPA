@@ -71,7 +71,7 @@ func _ready() -> void:
 	($PostProcess/ColorRect.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
 
 	# Field the car. With an active RallySession this event runs the player's
-	# OwnedCar (baseline + upgrades + saved HP, todo/rally-event-flow.md); a plain
+	# OwnedCar (baseline + upgrades + saved HP, features/rally-session.md); a plain
 	# dev boot keeps the first library car (the Mazda MX-5).
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	if RallySession.is_active():
@@ -220,7 +220,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	($HUD as CanvasLayer).track_progress = _track_progress
 
 	# Tire marks: gravel ruts laid behind the wheels while on the road
-	# (todo/tire-marks.md). Reuse the node across regenerations like the managers
+	# (features/tire-marks.md). Reuse the node across regenerations like the managers
 	# above; gated to the road half-width, so it needs the centerline + terrain.
 	if _tire_marks == null:
 		_tire_marks = TireMarks.new()
@@ -272,7 +272,7 @@ var _start_line: StartLine
 var _event_start_hp := 0.0
 
 
-# --- RallySession run-scene integration (todo/rally-event-flow.md) ------------
+# --- RallySession run-scene integration (features/rally-session.md) ------------
 
 # Whether this run should open with the pre-event start-line scene: a session run
 # with the feature enabled AND a resolvable rally (so a missing rally never strands

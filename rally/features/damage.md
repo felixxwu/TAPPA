@@ -1,9 +1,7 @@
 # Damage Model
 
 **Source:** `scripts/damage_model.gd` (`DamageModel`, a `RefCounted` helper owned
-by `car.gd` like `Drivetrain`). See the implementation brief in
-[../todo/damage-model.md](../todo/damage-model.md) and the design intent in
-`gameplay.md` › *Damage model*.
+by `car.gd` like `Drivetrain`). Design intent in `gameplay.md` › *Damage model*.
 
 Each fielded car has a depleting **HP pool**. Impacts drain it during a run, the
 car's handling and power degrade as HP falls, and at 0 HP the car is **wrecked**
@@ -22,7 +20,7 @@ only ever goes down in-run — a repair kit (Save) is the only way it climbs bac
 
 `field(max_hp, hp, immortal, instance_id)` configures all of the above for a run.
 `car.gd` calls it (unbound, full HP) from `apply_car`; the future rally/Start-line
-layer ([../todo/rally-event-flow.md](../todo/rally-event-flow.md)) re-fields it
+layer ([rally-session.md](rally-session.md)) re-fields it
 from the OwnedCar (stored HP + instance id) when a car is taken to the line.
 
 ## Impact → HP loss

@@ -277,7 +277,7 @@ shows engine/drivetrain/country/type/p-w + an HP bar), the rally roster
   (per-car tuning + upgrade install), map (rally completion + showdown meter),
   reward reveal (grant_car / add_item). The menus spec already lists this as a
   hard dependency.
-- **Relates to the damage model** (`todo/damage-model.md`) — `apply_damage` /
+- **Relates to the damage model** (`features/damage.md`) — `apply_damage` /
   `wreck_car` are where HP changes get persisted; the upgrade catalogue
   (`todo/upgrade-catalogue.md`) defines the `item_id`s inventory/installs key on.
 

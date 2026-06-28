@@ -55,7 +55,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 		body = StaticBody3D.new()
 		body.name = "Collision"
 		# Tag as a damage-dealing obstacle so the car's damage model counts hits
-		# against it (and not the ground/road). See todo/damage-model.md §2.
+		# against it (and not the ground/road). See features/damage.md.
 		body.add_to_group(DamageModel.OBSTACLE_GROUP)
 		add_child(body)
 		_collision_shape = BoxShape3D.new()

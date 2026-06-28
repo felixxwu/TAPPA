@@ -6,7 +6,7 @@ extends Node
 # per-stage StageManager (todo/stage-start-and-end.md) and OWNS only the
 # rally-level state machine + in-progress state; it CALLS the systems that already
 # exist (RallyLibrary, RewardSystem, Save) rather than re-implementing them.
-# See todo/rally-event-flow.md.
+# See features/rally-session.md.
 #
 # Like Config / Save it is an autoload (no class_name, reached by the global
 # `RallySession`), and it SURVIVES the per-event scene reloads — each event is a
@@ -22,7 +22,7 @@ enum Phase { IDLE, PRESENCE, RUNNING, STANDINGS, RESULTS, PODIUM }
 
 const EVENTS_PER_RALLY := 3
 
-# End-of-rally summary (todo/rally-event-flow.md API):
+# End-of-rally summary (features/rally-session.md API):
 #   placed:int (1-based, -1 if DNF), completed:bool (top-3), combined_ms:int
 #   (-1 if DNF), dnf:bool
 signal rally_finished(result: Dictionary)

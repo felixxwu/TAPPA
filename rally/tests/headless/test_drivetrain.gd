@@ -65,7 +65,7 @@ func test_brake_lockup() -> void:
 	assert_gt(_car.linear_velocity.length(), 3.0, "car still sliding while locked")
 
 
-# The brake_bias tuning knob (todo/tuning.md) splits the foot brake front/rear.
+# The brake_bias tuning knob (features/tuning.md) splits the foot brake front/rear.
 # brake_bias = 1.0 sends ALL of it to the front: the fronts lock while the rear,
 # given no foot brake, keeps rolling. (The * 2.0 normalisation means 0.5 reproduces
 # the old equal split — guarded by test_brake_lockup above, which runs at the

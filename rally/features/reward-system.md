@@ -7,7 +7,7 @@ authored libraries + the save profile, with no state beyond an injected RNG
 (mirrors `RallyLibrary` / `UpgradeLibrary`, not an autoload).
 
 **Scope:** it answers *what* to grant. It does **not** own *when* a reward fires
-(the flow controller, `todo/rally-event-flow.md`) or *how* it's revealed (menus
+(the flow controller, `features/rally-session.md`) or *how* it's revealed (menus
 rig 5). The draw functions return an id; the **caller** delivers it via
 `Save.add_item` / `Save.grant_car` and then `Save.save()`. Saving immediately
 after a draw resolves is what makes the unseeded RNG savescum-proof — reloading

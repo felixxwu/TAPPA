@@ -6,7 +6,7 @@ extends RefCounted
 # `id` here); this library defines what those ids mean and what each one DOES to
 # a fielded car's config. See todo/upgrade-catalogue.md.
 #
-# Distinguish from TUNING: tuning (todo/tuning.md, the lift) is free, reversible
+# Distinguish from TUNING: tuning (features/tuning.md, the lift) is free, reversible
 # per-car config nudges. Upgrades are consumable items that change a car's
 # baseline and only return to inventory when the car is wrecked.
 
@@ -21,7 +21,7 @@ const SLOTS := ["engine", "aero", "suspension", "brakes"]
 # Each entry is an UpgradeDef. `effect` maps to GameConfig fields applied in
 # pipeline step 2 (baseline → UPGRADES → tuning → damage). `*_mult` keys multiply
 # the baseline; additive keys add; `unlocks_*` are flags that gate tuning sliders
-# (todo/tuning.md), not numeric config. The concrete part list + exact numbers
+# (features/tuning.md), not numeric config. The concrete part list + exact numbers
 # are a balance pass (deferred); these are legible single-purpose defaults.
 const UPGRADES: Array[Dictionary] = [
 	{
@@ -99,7 +99,7 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 				"downforce_rear":
 					cfg.downforce_rear += float(val)
 				"unlocks_aero_tuning", "unlocks_brake_bias":
-					pass  # flags gate tuning sliders (todo/tuning.md), not cfg
+					pass  # flags gate tuning sliders (features/tuning.md), not cfg
 
 
 # --- Tuning gates ------------------------------------------------------------

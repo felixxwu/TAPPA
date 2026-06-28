@@ -1,7 +1,7 @@
 class_name TuningLibrary
 extends RefCounted
 # Per-car TUNING — free, reversible handling nudges the player makes at the
-# garage tuning lift (todo/tuning.md). This is step 3 of the field-the-car
+# garage tuning lift (features/tuning.md). This is step 3 of the field-the-car
 # pipeline (see car.gd.apply_owned):
 #   1. CarLibrary baseline   apply_car(index)          -> Config.data
 #   2. Installed upgrades    UpgradeLibrary.apply()      (changes the baseline)

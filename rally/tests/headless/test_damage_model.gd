@@ -1,5 +1,5 @@
 extends GutTest
-# DamageModel: the per-car HP / attrition logic (todo/damage-model.md). These
+# DamageModel: the per-car HP / attrition logic (features/damage.md). These
 # exercise the maths and wreck semantics directly against a DamageModel (no
 # physics body needed). The bound-wreck and persistence tests use a throwaway
 # Save profile so a real profile is never touched, mirroring test_save_manager.gd.

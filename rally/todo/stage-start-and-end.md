@@ -14,7 +14,7 @@
 > (`GO_FLASH_SECONDS`), not a config knob; the optional per-tick countdown
 > **beep / GO sting** audio hooks are noted but not wired (no `Audio` autoload yet
 > — `todo/audio.md`); the **post-stage flow** (standings/podium/rewards/HQ) and
-> the stage-complete panel's real buttons are owned by `todo/rally-event-flow.md`
+> the stage-complete panel's real buttons are owned by `features/rally-session.md`
 > + `todo/menus.md` — this spec only provides the signal + placeholder panel.
 >
 > Implementation brief, referencing the
@@ -41,12 +41,12 @@ A per-stage start/end flow on top of the existing always-live scene:
    stage-complete menu**.
 
 > The contents/actions after a stage (standings, podium, rewards, back to HQ) are
-> **out of scope here** and are owned by `todo/rally-event-flow.md` / the menus
+> **out of scope here** and are owned by `features/rally-session.md` / the menus
 > todo. *(Note: the meta-game has no retry — see `gameplay.md` Run stakes.)* This
 > spec only goes as far as: stop the timer, freeze the
 > final time, and **surface a `stage_completed(elapsed_seconds)` hook + show a
 > placeholder panel** that the future menu attaches to. *(The rally-level consumer
-> of that hook is `todo/rally-event-flow.md`, which sequences 3 events into a
+> of that hook is `features/rally-session.md`, which sequences 3 events into a
 > rally.)*
 
 ## Context / current state (measured from the code)
@@ -293,5 +293,5 @@ Add to `tests/headless/` (GUT; `./run_tests.sh` in the background):
 ## Open / deferred (own a follow-up todo)
 
 - **Post-stage flow** (standings, podium, rewards, back to HQ) — owned by
-  `todo/rally-event-flow.md` and the menus todo; this spec only provides the
+  `features/rally-session.md` and the menus todo; this spec only provides the
   `stage_completed` signal + placeholder panel. (No retry — `gameplay.md`.)

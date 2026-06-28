@@ -57,7 +57,7 @@ compose predictably:
 1. CarLibrary baseline   apply_car(index) copies the model's spec → Config.data   (car.gd:253,267)
 2. Installed upgrades    each installed item applies its effect on top            (this spec)
 3. Per-car tuning        the player's tuning deltas (grip/brake bias/aero)        (todo/menus.md)
-4. Damage multipliers    power/steer degraded by current HP fraction              (todo/damage-model.md)
+4. Damage multipliers    power/steer degraded by current HP fraction              (features/damage.md)
 ```
 
 Steps 2–4 are runtime modifications layered on the step-1 baseline; none mutates
@@ -115,7 +115,7 @@ Install/consume semantics (per `gameplay.md`):
   lift: `Save.consume_item("repair_kit")` then heal `OwnedCar.hp` (clamped to
   `max_hp`). How much it heals is a `GameConfig` tunable (`repair_kit_hp` — full
   vs partial restore is a balance call, deferred).
-- Bridges to `todo/damage-model.md`, which owns HP; this spec just defines the
+- Bridges to `features/damage.md`, which owns HP; this spec just defines the
   item.
 
 ## Reward integration
@@ -134,10 +134,10 @@ Install/consume semantics (per `gameplay.md`):
   `installed_upgrades`, and the install/consume/uninstall mutators. This spec
   defines the `item_id`s they key on (the save spec flags "upgrade items need
   stable `item_id`s").
-- **Damage model** (`todo/damage-model.md`) — the repair kit heals its HP; wreck
+- **Damage model** (`features/damage.md`) — the repair kit heals its HP; wreck
   returns installed upgrades here. Tightly paired.
-- **Tuning** (`todo/tuning.md`) — the aero/brake "unlock tuning" flags this
-  catalogue sets gate `todo/tuning.md`'s aero/brake-bias sliders; that spec owns
+- **Tuning** (`features/tuning.md`) — the aero/brake "unlock tuning" flags this
+  catalogue sets gate `features/tuning.md`'s aero/brake-bias sliders; that spec owns
   the new brake-split knob. Pipeline step 2 (here) runs before step 3 (tuning).
 - **CarLibrary metadata prerequisite** — stable `id`s for install/inventory keys.
 - **Consumed by** `todo/menus.md` — the inventory overlay (browse/install/use),
@@ -172,7 +172,7 @@ Headless GUT tests (`tests/headless/`, mirroring `test_car_library.gd`):
   knobs (e.g. a "race kit" doing power + brakes); the `effect` dict already
   supports it, but keep early parts single-purpose for legibility.
 - **Tuning spec** — the free/reversible tuning half (grip balance, brake bias,
-  aero balance) now has its own spec, **`todo/tuning.md`** (resolved — it grew).
+  aero balance) now has its own spec, **`features/tuning.md`** (resolved — it grew).
   That spec owns the **new front/rear brake-split knob** the brakes upgrade's
   `unlocks_brake_bias` flag gates; this catalogue just sets the flag. Pipeline
   step 3 (tuning) runs after step 2 (upgrades).

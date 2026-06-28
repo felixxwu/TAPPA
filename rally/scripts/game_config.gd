@@ -126,7 +126,7 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var spawn_clearance := 2.5
 
 @export_group("Tuning")
-# Free, reversible per-car tuning (todo/tuning.md). Each OwnedCar stores three
+# Free, reversible per-car tuning (features/tuning.md). Each OwnedCar stores three
 # normalized sliders in [-1, +1] (grip_balance / brake_bias / aero_balance);
 # TuningLibrary.apply re-balances the live config from these, scaled by the
 # authority knobs below so a slider can never zero or invert a value. The lift
@@ -267,7 +267,7 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var start_lead_in_behind_m := 16.0
 
 @export_group("Damage")
-# Per-car HP attrition (todo/damage-model.md). Max HP is CarLibrary metadata
+# Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
 # (mass-keyed), NOT here; these are the global magnitudes that govern how impacts
 # drain it and how a damaged car degrades. Tuning numbers are placeholders to be
 # settled by playtest — this fixes the mechanism, not the values.
@@ -485,7 +485,7 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var off_track_reset_enabled := true
 
 @export_group("Tire Marks")
-## Gravel ruts laid behind the wheels while driving on the road (todo/tire-marks.md).
+## Gravel ruts laid behind the wheels while driving on the road (features/tire-marks.md).
 @export var tire_marks_enabled := true
 ## Mark colour — a solid, constant shade just a touch darker than the gravel
 ## (gravel.jpg averages ~0.42 grey). Unshaded, so tune against the lit road in-game.

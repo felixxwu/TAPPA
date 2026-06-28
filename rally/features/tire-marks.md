@@ -3,8 +3,7 @@
 `TireMarks` (`scripts/tire_marks.gd`, `class_name TireMarks extends Node3D`) lays
 subtle, gravel-coloured ruts behind the car's wheels while it drives on the road.
 Created + wired by `world.gd._generate_track` (reused across event regenerations,
-re-targeted on a car swap in `world.gd.cycle_car`). See the design in
-[../todo/tire-marks.md](../todo/tire-marks.md).
+re-targeted on a car swap in `world.gd.cycle_car`).
 
 ## Why a ribbon mesh
 
@@ -61,7 +60,7 @@ count, below the speed floor lays nothing, an airborne wheel stops marking, and 
 jump leaves a real gap (the landing point starts a new strip, not a stretched quad
 bridged back to the take-off point).
 
-## Out of scope (todo/tire-marks.md)
+## Out of scope (features/tire-marks.md)
 
 Per-surface variation (grass/mud), alpha fade-out over distance, and any
 load/skid-based colour variation — gravel-only, constant colour, hard-capped for

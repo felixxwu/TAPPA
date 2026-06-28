@@ -154,7 +154,7 @@ func test_stage_complete_panel_shows_final_time() -> void:
 	assert_string_contains(label.text, "1:07.43", "panel shows the final time")
 
 
-# --- HP gauge (todo/damage-model.md §5) --------------------------------------
+# --- HP gauge (features/damage.md) --------------------------------------
 # The HUD reads the car's DamageModel each frame; these set it directly and await
 # a frame, then assert the bar (the same pattern as the speed/gear labels above).
 

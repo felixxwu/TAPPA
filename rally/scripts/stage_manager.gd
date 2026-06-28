@@ -16,7 +16,7 @@ extends Node
 # end condition; it contains no gameplay physics or UI layout. The post-stage
 # flow (standings, podium, rewards, back to HQ) is OUT OF SCOPE here — this only
 # surfaces the `stage_completed(elapsed_seconds)` signal a future rally/menu
-# layer (todo/rally-event-flow.md) hangs off. See todo/stage-start-and-end.md.
+# layer (features/rally-session.md) hangs off. See todo/stage-start-and-end.md.
 #
 # Created and wired by world.gd once the car, HUD and TrackProgress exist.
 

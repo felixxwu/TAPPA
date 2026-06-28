@@ -3,7 +3,7 @@
 > Status: **🟡 FLAT-UI LOOP COMPLETE — full diegetic 3D build still open.** A
 > flat-UI loop is in place and proves the loop end-to-end with the meta-game made
 > legible: **HQ (boot) → field car → run → podium → HQ**, wiring `RallySession`
-> (`todo/rally-event-flow.md`) into the run scene. See the living doc
+> (`features/rally-session.md`) into the run scene. See the living doc
 > [`features/menus.md`](../features/menus.md) (source: `hq.tscn` + `scripts/hq.gd`,
 > `podium.tscn` + `scripts/podium.gd`, session-aware fielding in `scripts/world.gd`;
 > tests in `tests/headless/test_menu_flow.gd`).
@@ -136,7 +136,7 @@ camera you already drive, so the menu count stays tiny.
    standings**. The **briefing** is a world-anchored panel showing rally name,
    restriction, the 3-event overview, and your fielded car + **HP bar** (so the
    risk is legible before you commit). The presence cars (ahead/behind) are
-   atmospheric flavour, not the real opponent field (`todo/rally-event-flow.md`).
+   atmospheric flavour, not the real opponent field (`features/rally-session.md`).
    Mostly owned by `todo/stage-start-and-end.md` /
    `track-progress-and-reset.md`; entered by fly-through from the map.
    ✅ **The start-line sequence shipped** (`scripts/start_line.gd`,

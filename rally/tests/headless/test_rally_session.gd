@@ -1,5 +1,5 @@
 extends GutTest
-# RallySession: the rally-level orchestrator (todo/rally-event-flow.md). Driven
+# RallySession: the rally-level orchestrator (features/rally-session.md). Driven
 # directly via report_event_result / report_wreck with a precomputed target list
 # and a fixed opponent field — no real driving or scene loads. Runs against a
 # throwaway Save profile so a real profile is never touched.

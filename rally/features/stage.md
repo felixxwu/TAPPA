@@ -54,7 +54,7 @@ stays `false` and the car is freely drivable.
 
 These are the hooks a future rally/menu layer attaches to. The **post-stage flow**
 (standings, podium, rewards, back to HQ) is out of scope here and owned by
-`todo/rally-event-flow.md` — this feature only provides the signal and a
+`features/rally-session.md` — this feature only provides the signal and a
 placeholder panel.
 
 ## Wiring & lifecycle

@@ -9,7 +9,7 @@ car.
 
 **Upgrades vs tuning:** upgrades are consumable items that change a car's
 baseline and only return to inventory when the car is wrecked. Tuning
-(`todo/tuning.md`, the lift) is free, reversible per-car config nudges. This is
+(`features/tuning.md`, the lift) is free, reversible per-car config nudges. This is
 the upgrades half.
 
 ## Catalogue
@@ -30,8 +30,8 @@ predictably:
 1. **CarLibrary baseline** — `apply_car` copies the model's spec into `Config.data`.
 2. **Installed upgrades** — `UpgradeLibrary.apply(owned_car, cfg)` walks
    `installed_upgrades` and applies each `effect` on top.
-3. **Per-car tuning** — the player's tuning deltas (`todo/tuning.md`).
-4. **Damage multipliers** — power/steer degraded by HP fraction (`todo/damage-model.md`).
+3. **Per-car tuning** — the player's tuning deltas (`features/tuning.md`).
+4. **Damage multipliers** — power/steer degraded by HP fraction (`features/damage.md`).
 
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored
 `.tres`. `*_mult` keys multiply the baseline (`peak_torque`, `brake_torque`,

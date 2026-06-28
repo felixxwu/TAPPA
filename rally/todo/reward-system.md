@@ -9,7 +9,7 @@
 > `features/reward-system.md`. **Still open / deferred:** the curve values
 > (`tier_ceiling` shape, `f(difficulty)` remap, `repair_kit_drop_weight`) move to
 > `GameConfig` in the balance pass; the call site (per-event / per-rally trigger)
-> and reveal are owned by `todo/rally-event-flow.md` + `todo/menus.md`. The draw
+> and reveal are owned by `features/rally-session.md` + `todo/menus.md`. The draw
 > functions return an id — the caller delivers via `Save.add_item`/`grant_car`.
 >
 > Implementation brief for the reward
@@ -30,7 +30,7 @@ A small set of **pure draw functions** that answer *what to grant*, given the
 finishing context (rally difficulty) and the player's progress — applying the
 tier ceiling and the anti-soft-lock guarantee so the grant is always fair and
 never bricks the run. It does **not** own *when* rewards fire (the flow
-controller, `todo/rally-event-flow.md`) or *how they're revealed* (the
+controller, `features/rally-session.md`) or *how they're revealed* (the
 menus reward-reveal rig).
 
 ## Current state (measured from the code / specs)
@@ -94,7 +94,7 @@ This is what makes the supply infinite: a wrecked car is always re-winnable, and
 the player can grind any beaten rally for replacements/duplicates. **The tier
 ceiling still clamps** the farmed draw (`target_tier` is unchanged on a re-win),
 so farming builds breadth, not a difficulty skip. The flow controller
-(`todo/rally-event-flow.md`) owns the call site; this function doesn't care
+(`features/rally-session.md`) owns the call site; this function doesn't care
 whether it's a first win or a farm.
 
 `RewardSystem.draw_car(rally_difficulty, profile) -> model_id | null`:
@@ -164,7 +164,7 @@ RewardSystem.target_tier(rally_difficulty, profile) -> int         # the clamp, 
   and the repair-kit item.
 - **Save / persistence** (`todo/save-persistence.md`) — `add_item` / `grant_car`
   deliver grants; save-after-resolve underwrites the unseeded RNG.
-- **Called by** `todo/rally-event-flow.md` (the trigger) and surfaced by
+- **Called by** `features/rally-session.md` (the trigger) and surfaced by
   `todo/menus.md` rig 5 (the reveal).
 
 ## Testing
@@ -194,7 +194,7 @@ reproducibility:
 - **Pity / streak protection** — guaranteeing variety or a repair kit after a dry
   spell; deferred until playtest shows whether it's needed.
 - **Mid-event wreck** — whether an event the player wrecked out of still drops its
-  upgrade; that's the flow controller's call (`todo/rally-event-flow.md`).
+  upgrade; that's the flow controller's call (`features/rally-session.md`).
 
 ### Decided (kept for trace)
 

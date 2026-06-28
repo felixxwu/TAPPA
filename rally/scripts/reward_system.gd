@@ -7,7 +7,7 @@ extends RefCounted
 # todo/reward-system.md.
 #
 # Scope: this module answers WHAT to grant. It does NOT own WHEN a reward fires
-# (the flow controller, todo/rally-event-flow.md) or HOW it's revealed (menus
+# (the flow controller, features/rally-session.md) or HOW it's revealed (menus
 # rig 5). The draw functions return an id; the caller delivers it via
 # Save.add_item / Save.grant_car and then Save.save() — saving immediately after
 # resolve is what makes the unseeded RNG savescum-proof (no re-roll on reload).

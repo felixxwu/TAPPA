@@ -29,7 +29,7 @@ var car: VehicleBody3D
 var engine: EngineSim
 var drive_mode := DriveMode.RWD  # which axle(s) the engine drives
 # Multiplier on the engine's driven torque, set by car.gd each tick from the
-# damage model (1.0 = healthy, <1 as HP falls). See todo/damage-model.md §3.
+# damage model (1.0 = healthy, <1 as HP falls). See features/damage.md.
 var power_scale := 1.0
 var rear_wheels: Array = []
 var front_wheels: Array = []
@@ -90,7 +90,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 
 	var h := delta / float(SPIN_SUBSTEPS)
 	# Foot-brake torque split front/rear by cfg.brake_bias (the brake_bias tuning
-	# knob, todo/tuning.md). The * 2.0 normalises so brake_bias = 0.5 reproduces the
+	# knob, features/tuning.md). The * 2.0 normalises so brake_bias = 0.5 reproduces the
 	# old equal split exactly (front = rear = brake * brake_torque).
 	var total_brake := brake * cfg.brake_torque * 2.0
 	var front_brake := total_brake * cfg.brake_bias  # per front wheel

@@ -376,7 +376,7 @@ func test_level_assist_quiet_when_planted() -> void:
 	assert_lt(_car.angular_velocity.length(), 0.3, "grounded car is not spun by the assist")
 
 
-# --- Damage model integration (todo/damage-model.md) -------------------------
+# --- Damage model integration (features/damage.md) -------------------------
 # The DamageModel maths are unit-tested in test_damage_model.gd; these check the
 # car wires it in — contact monitoring is enabled and the per-tick power/steer
 # effects read the model's current HP.

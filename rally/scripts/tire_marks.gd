@@ -3,7 +3,7 @@ extends Node3D
 # Lays gravel ruts behind the car's wheels while it drives ON the road. The
 # gl_compatibility renderer has no Decals, so each wheel gets a persistent ribbon
 # mesh (an ArrayMesh rebuilt as segments are appended), coloured a solid shade
-# close to the gravel. See todo/tire-marks.md.
+# close to the gravel. See features/tire-marks.md.
 #
 # Created + wired by world.gd._generate_track once the centerline exists; re-targeted
 # on a car swap (world.gd.cycle_car). Marks are gated to the road footprint (only

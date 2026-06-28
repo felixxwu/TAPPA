@@ -954,7 +954,7 @@ func _hide_detail() -> void:
 	_update_overlays()
 
 
-# --- Tuning lift (todo/tuning.md / todo/menus.md rig 4) ----------------------
+# --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
 # Enter the tuning bay: raise the selected car on the lift, frame it to one side,
 # and show the tuning menu on the other. Defaults to the TUNE menu.
@@ -1082,7 +1082,7 @@ func _on_tune_slider_changed(value: float, axis: String) -> void:
 	(_lift_slider_values[axis] as Label).text = "%+.2f" % value
 
 
-# Zero every axis (free + instant) — the lift's Reset action (todo/tuning.md).
+# Zero every axis (free + instant) — the lift's Reset action (features/tuning.md).
 func _reset_tuning() -> void:
 	if _lift_owned.is_empty():
 		return

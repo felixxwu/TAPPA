@@ -65,7 +65,7 @@ roguelike**: do you risk your best car to win, or play it safe?
   installed upgrades. The lootbox reveals double as the player's window into what
   cars/upgrades *exist* in the game.
 
-<!-- Implementation: `todo/damage-model.md`. -->
+<!-- Implementation: `features/damage.md`. -->
 
 ## Damage model
 
@@ -94,7 +94,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **In-run feedback.** Because wrecking destroys the car, the run shows a **live
   HP gauge** in the in-car HUD with a **low-HP warning** and an impact cue, so the
   player can make the "back off or push?" call in the moment. *(Implementation in
-  `todo/damage-model.md` › HUD; impact/crash audio in `todo/audio.md`.)*
+  `features/damage.md` › HUD; impact/crash audio in `todo/audio.md`.)*
 - **Repair** is possible **only via a rare "repair kit" item** from the lootbox,
   spent between rallies to restore HP.
 - *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
@@ -182,12 +182,12 @@ roguelike**: do you risk your best car to win, or play it safe?
 Two distinct systems:
 
 - **Tuning** — **free, reversible** adjustments made in the garage, per car. Maps
-  directly onto existing `GameConfig` car knobs. *(Implementation: `todo/tuning.md`
+  directly onto existing `GameConfig` car knobs. *(Implementation: `features/tuning.md`
   — three single-axis sliders, stored as `OwnedCar.tuning` deltas.)*
   - **Front/rear grip balance** (understeer ↔ oversteer): `wheel_friction_slip_front`
     (0.8) vs `wheel_friction_slip_rear` (0.6).
   - **Brake bias**: not a knob today — `brake_torque` is per-axle/equal; **add a
-    front/rear brake-split** parameter (the one new code knob `todo/tuning.md` owns).
+    front/rear brake-split** parameter (the one new code knob `features/tuning.md` owns).
   - **Aero balance** (only if the **aero upgrade** is installed): how much front
     vs rear downforce — `downforce_front` / `downforce_rear`.
 - **Upgrades** — **inventory items** applied to a car (consumable to install),
@@ -248,7 +248,7 @@ These underpin everything above and likely each become their own todo:
 
 ## Relationship to existing todos
 
-- `todo/rally-event-flow.md` — the session controller that sequences a rally's 3
+- `features/rally-session.md` — the session controller that sequences a rally's 3
   events and drives the handoffs to HP/standings/rewards/podium/HQ. Sits above the
   per-stage flow below and is the rally-level consumer of its `stage_completed`
   hook.
@@ -265,7 +265,7 @@ These underpin everything above and likely each become their own todo:
 
 - **Damage tuning:** per-car max HP, HP-per-impact, and how steeply alignment/
   power degrade with HP lost — settle via playtesting. *(Mechanism specced in
-  `todo/damage-model.md`; only the numbers are open.)*
+  `features/damage.md`; only the numbers are open.)*
 - **Upgrade catalogue:** the full list of upgrade types and each one's config
   mapping. *(Data model + pipeline specced in `todo/upgrade-catalogue.md`; the
   concrete part list/numbers are open.)*
@@ -297,8 +297,8 @@ These underpin everything above and likely each become their own todo:
   brick 100% completion. *(`todo/reward-system.md`.)*
 - **Tuning:** the **minimal three-knob** set (grip balance, brake bias, aero
   balance) as single-axis sliders; brake-bias is the one new code knob.
-  *(`todo/tuning.md`.)*
+  *(`features/tuning.md`.)*
 - **In-run damage feedback:** a live HP gauge + low-HP warning + impact cue in the
-  HUD. *(`todo/damage-model.md` › HUD, `todo/audio.md`.)*
+  HUD. *(`features/damage.md` › HUD, `todo/audio.md`.)*
 - **Audio & settings:** spec a sound system (impacts/countdown/UI + bus layout)
   and a minimal settings overlay now. *(`todo/audio.md`, `todo/settings.md`.)*

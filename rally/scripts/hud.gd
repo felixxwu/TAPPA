@@ -23,7 +23,7 @@ var track_progress: Node
 @onready var _elapsed_label: Label = $ElapsedLabel
 @onready var _stage_complete_panel: Control = $StageCompletePanel
 @onready var _stage_complete_label: Label = $StageCompletePanel/StageCompleteLabel
-# In-run damage readout (todo/damage-model.md §5): a colour-graded HP bar that
+# In-run damage readout (features/damage.md): a colour-graded HP bar that
 # flashes a warning when low, plus a red screen flash on each HP-losing impact.
 @onready var _hp_label: Label = $HPLabel
 @onready var _hp_bar: ProgressBar = $HPBar
