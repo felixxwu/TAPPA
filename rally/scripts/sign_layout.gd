@@ -30,12 +30,12 @@ static func plan(centerline: Curve2D, pieces: Array, params: Dictionary) -> Arra
 		return out
 	var sector_count := int(params.get("sector_count", 4))
 
-	# Start / finish gates (offset 0 and L), a pair each.
-	_emit_pair(out, centerline, length, 0.0, "start", "start")
+	# Finish gate (offset L), a pair. The start is marked by the inflatable start
+	# arch (features/finish-arch.md), so no A-frame start boards are planted.
 	_emit_pair(out, centerline, length, length, "finish", "finish")
 
 	# Sector boards: a pair at each interior boundary, marking entry into 2..N.
-	# Sector 1 is implied by the start gate, so we don't sign offset 0 again.
+	# Sector 1 is implied by the start line, so we don't sign offset 0.
 	for k in range(1, sector_count):
 		var offset := k * length / float(sector_count)
 		_emit_pair(out, centerline, length, offset, "sector", "sector_%d" % (k + 1))

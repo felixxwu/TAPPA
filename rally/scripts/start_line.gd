@@ -444,6 +444,11 @@ func _release_player() -> void:
 	_player.axis_lock_angular_y = false
 	if "drivetrain" in _player and _player.drivetrain != null and _player.drivetrain.engine != null:
 		_player.drivetrain.engine.auto = _player_auto_was
+	# Snap exactly onto the start line (motion zeroed) so the roll-up can't leave the
+	# car short of or past the line — it begins the run on the line, under the start
+	# arch, where track progress reads 0%. Hidden by the fade-to-black.
+	if _player.has_method("reset_to"):
+		_player.reset_to(_start_xform)
 	_player_staged = false
 
 

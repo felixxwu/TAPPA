@@ -114,3 +114,33 @@ func test_progress_percent_tracks_fraction() -> void:
 	_put_car(0, 50)
 	tp._physics_process(0.0)
 	assert_almost_eq(tp.progress_percent(), 0.5, 0.02, "halfway down a 100 m road ~= 0.5")
+
+
+func test_progress_reads_zero_at_the_start_line_despite_the_lead_in() -> void:
+	# The progress centerline includes a straight lead-in behind the start, so the
+	# car spawns partway along the curve (here 20 m), not at the curve origin.
+	# Progress must read 0% at that start line, not 20%.
+	_put_car(0, 20)
+	var tp := _make_progress()  # seeds the origin at the spawn (the start line)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_percent(), 0.0, 0.01, "0% at the start line, not at the curve origin")
+	# The far end of the curve is still the finish (100%).
+	_put_car(0, 100)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_percent(), 1.0, 0.01, "100% at the finish")
+
+
+func test_mark_start_rezeros_progress_at_the_cars_position() -> void:
+	# Any roll-up / settle before the off advances progress; mark_start() (called on
+	# GO) re-anchors 0% to wherever the car is, so the off is always exactly 0%.
+	_put_car(0, 0)
+	var tp := _make_progress()
+	_put_car(0, 30)
+	tp._physics_process(0.0)
+	assert_gt(tp.progress_percent(), 0.0, "progress accrued during the roll-up")
+	tp.mark_start()
+	assert_almost_eq(tp.progress_percent(), 0.0, 0.01, "mark_start re-zeros progress at the off")
+	# Advancing further now counts from the new origin: (65-30)/(100-30) = 0.5.
+	_put_car(0, 65)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_percent(), 0.5, 0.05, "progress counts from the new start origin")

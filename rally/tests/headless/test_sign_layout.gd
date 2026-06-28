@@ -26,21 +26,18 @@ func _of_kind(layout: Array, kind: String) -> Array:
 	return out
 
 
-func test_start_and_finish_are_one_pair_each() -> void:
+func test_finish_is_one_pair_and_no_start_boards() -> void:
 	var r := _generate(3)
 	var layout := _plan(r)
-	var starts := _of_kind(layout, "start")
+	# The start is now marked by the inflatable start arch, not A-frame boards.
+	assert_eq(_of_kind(layout, "start").size(), 0, "no A-frame start boards planted")
 	var finishes := _of_kind(layout, "finish")
-	assert_eq(starts.size(), 2, "start gate is a pair (both sides)")
 	assert_eq(finishes.size(), 2, "finish gate is a pair (both sides)")
 	# One per side.
-	assert_eq(starts[0]["side"] + starts[1]["side"], 0, "start signs are on opposite sides")
-	assert_eq(String(starts[0]["texture_key"]), "start", "start texture key")
+	assert_eq(finishes[0]["side"] + finishes[1]["side"], 0, "finish signs are on opposite sides")
 	assert_eq(String(finishes[0]["texture_key"]), "finish", "finish texture key")
-	# Start sits at the curve origin; finish at the far end.
+	# Finish sits at the far end of the curve.
 	var curve: Curve2D = r["centerline"]
-	assert_almost_eq(starts[0]["pos"], curve.sample_baked(0.0), Vector2(1e-3, 1e-3),
-		"start gate at offset 0")
 	assert_almost_eq(finishes[0]["pos"], curve.sample_baked(curve.get_baked_length()),
 		Vector2(1e-3, 1e-3), "finish gate at offset L")
 

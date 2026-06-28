@@ -6,8 +6,10 @@
 `scripts/game_config.gd`. See the brief in [../todo/roadside-signs.md](../todo/roadside-signs.md).
 
 Free-standing **A-frame ("wet-floor") boards** along the stage that read the road
-to a driver: **sector** boards, **turn arrows**, and **start/finish** gates. Each
-is a **light, knockable `RigidBody3D`** — the car scatters them on contact and
+to a driver: **sector** boards, **turn arrows**, and a **finish** gate. (The start
+is marked by the inflatable start arch — [finish-arch.md](finish-arch.md) — so the
+planner no longer plants A-frame start boards, though `SignField` can still build
+the "start" kind if handed one.) Each is a **light, knockable `RigidBody3D`** — the car scatters them on contact and
 they deal **no HP damage** (they are cosmetic clutter, deliberately *not* in the
 damage `OBSTACLE_GROUP`, unlike the solid trees in [damage.md](damage.md)).
 
@@ -28,13 +30,14 @@ placement dict per physical sign:
 Placement rules:
 - **Sectors** — the stage is split into `sign_sector_count` (default 4) equal
   arc-length segments; a **pair** (both sides) marks entering sectors 2..N at
-  `k*L/count`. Sector 1 is the start gate, so offset 0 isn't double-signed.
+  `k*L/count`. Sector 1 is the start line, so offset 0 isn't signed.
 - **Turns** — for each piece whose corner ∈ `{1, 2, Square, Hairpin}` ("2 or
   sharper"; the compound `Right 4 tightens 2` is excluded), a pair at the
   **corner entry** = `entry_pos + entry_heading * straight` snapped to the curve
   via `get_closest_offset`. The arrow `texture_key` encodes shape (curve / square
   / uturn) + direction (`flip` → left, else right).
-- **Start / Finish** — a pair each at offsets `0` and `L`, forming gates.
+- **Finish** — a pair at offset `L`, forming the finish gate. (No start pair; the
+  start arch marks the start line.)
 
 `SignLayout.sector_offsets(centerline, count)` exposes the boundary offsets so the
 stage timer can reuse them for per-sector splits later ([stage.md](stage.md), §5
@@ -76,7 +79,8 @@ keys into `sign_textures` is all the code needs once they exist.
 
 ## Tests
 
-`tests/headless/test_sign_layout.gd` — sector/turn/start-finish counts, keys,
-offsets, left/right arrow mapping, determinism, `sector_offsets`.
+`tests/headless/test_sign_layout.gd` — sector/turn/finish counts (and that no
+start boards are planted), keys, offsets, left/right arrow mapping, determinism,
+`sector_offsets`.
 `tests/headless/test_smoke.gd` — `SignField.build` creates one node per sign, two
 panels each, an obstacle-group collision body, sitting at the road-surface height.

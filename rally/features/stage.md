@@ -22,9 +22,13 @@ a run timer ticks until the finish line, then a placeholder complete panel shows
    as before the start-line scene existed.
 1. **COUNTDOWN** — `setup()` (un-staged) or `begin_countdown()` locks the car
    (`controls_locked = true`) and arms
-   `_countdown_left = stage_countdown_seconds`. Each frame shows the big centered
-   `3·2·1·GO` on the HUD. When the timer elapses: unlock the car, flash `GO`,
-   emit `stage_started`, switch to RUNNING.
+   `_countdown_left = stage_countdown_seconds`. It also calls
+   `TrackProgress.mark_start()` so progress reads **0% from the line** — the car is
+   on the start line by now (the start-line sequence snapped it there), so the
+   lead-in behind the start and any roll-up settle don't count
+   ([progress.md](progress.md)). Each frame shows the big centered `3·2·1·GO` on
+   the HUD. When the timer elapses: unlock the car, flash `GO`, emit
+   `stage_started`, switch to RUNNING.
 2. **RUNNING** — accrue `_elapsed` each frame and show it top-right (`m:ss.cc`).
    The `GO` flash is held `GO_FLASH_SECONDS` (0.5 s, a const, not a config knob)
    then hidden. When progress reaches the finish, switch to COMPLETE.
