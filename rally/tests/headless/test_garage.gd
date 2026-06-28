@@ -25,7 +25,7 @@ func test_garage_instantiates() -> void:
 
 
 func test_two_bays() -> void:
-	assert_eq(_garage.NUM_BAYS, 2, "garage has two bays")
+	assert_eq(_garage.num_bays, 2, "garage has two bays")
 
 
 func test_structure_geometry_present() -> void:
@@ -53,7 +53,7 @@ func test_environment_and_lighting_present() -> void:
 	var sun := _garage.find_children("*", "DirectionalLight3D", true, false)
 	assert_eq(sun.size(), 1, "garage builds a sun (DirectionalLight3D)")
 	var lamps := _garage.find_children("*", "OmniLight3D", true, false)
-	assert_eq(lamps.size(), _garage.NUM_BAYS, "one interior lamp per bay")
+	assert_eq(lamps.size(), _garage.num_bays, "one interior lamp per bay")
 
 
 func test_survives_a_few_frames() -> void:

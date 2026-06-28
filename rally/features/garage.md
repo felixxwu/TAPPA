@@ -1,11 +1,15 @@
 # Garage — rally-team service-park model
 
-A standalone, procedurally-built 3D model of a **rally-team service-park
-garage**: a low modular structure of **two open, empty service bays** under one
-flat roof, with a plain dark fascia band across the front, dark divider pillars,
-off-white fabric walls and a simple ceiling light rig. The bays are deliberately
-**bare** so the game can stage its own contents inside them (e.g. the player's
-car). The model carries **no team branding**.
+A procedurally-built 3D model of a **rally-team service-park garage**: a low
+modular structure of **two open, empty service bays** under one flat roof, with
+a plain dark fascia band across the front, dark divider pillars, off-white
+fabric walls and a simple ceiling light rig. The bays are deliberately **bare**
+so the game can stage its own contents inside them. The model carries **no team
+branding**.
+
+It is the **HQ hub's garage** (`hq.gd._build_garage`): the LEFT bay frames the
+world-map table, the RIGHT bay frames the tuning lift with the player's car
+raised on it. It also stands alone for the render harness below.
 
 ## Where it lives
 
@@ -71,12 +75,22 @@ and filters the autoload parse-error noise.
 To iterate on the look: edit `garage.gd`, re-run `render_garage.sh`, eyeball the
 PNGs, repeat.
 
+## Wiring into the HQ
+
+`hq.gd._build_garage()` instantiates the model instead of the old placeholder
+block shell. The proportions are exposed as `@export` vars so the HQ re-sizes
+the shell to its `hq_garage_size` footprint and centres it on the origin (front
+edge at `+gz/2`, back wall at `−gz/2`) — matching the old placeholder exactly so
+every camera station (`hq_garage_cam_*`, `hq_table_cam_*`, `hq_lift_cam_*`) and
+the table/lift placement are unchanged. The HQ supplies the sky, sun, grass and
+concrete apron, so the model is added with `build_environment = false` and
+`build_ground = false`; it keeps its per-bay ceiling lights.
+
+`tools/render_hq_garage.gd` (+ `.sh`) is a verification aid: it boots the real
+HQ and captures the garage station to `docs/garage/hq_garage_view.png`.
+
 ## Notes / future work
 
-- The model is a **standalone asset** today; it is not yet wired into the HQ
-  hub (which still uses the placeholder block garage in `hq.gd`). Swapping the
-  HQ garage for this empty shell — and parking the player's car inside it — would
-  be a natural follow-up.
-- Materials are plain `StandardMaterial3D` (not the project's PS1 shaders), so
-  the model reads cleanly on its own; if dropped into the run/HQ scenes it would
-  want the shared `ps1_models` material to match the game's aesthetic.
+- Materials are plain `StandardMaterial3D` (not the project's PS1 shaders); if a
+  closer match to the game's PS1 aesthetic is wanted, the shell could adopt the
+  shared `ps1_models` material.

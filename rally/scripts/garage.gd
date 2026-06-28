@@ -20,14 +20,16 @@ extends Node3D
 # the left-most (−X). Origin sits on the ground at the centre of the front edge.
 
 # --- Proportions (metres) ----------------------------------------------------
-const NUM_BAYS := 2
-const BAY_WIDTH := 6.0          # clear opening width of one bay
-const BAY_DEPTH := 9.0          # front-to-back depth of the structure
-const PILLAR_W := 0.5           # square section of the dividing pillars
-const WALL_H := 4.4             # height of the bay opening (underside of fascia)
-const FASCIA_H := 1.2           # the plain header band above the openings
-const ROOF_T := 0.25
-const FRONT_OVERHANG := 1.1     # roof + fascia jut out past the bay opening
+# Exposed so a host scene (e.g. the HQ hub) can re-size the shell to its
+# footprint before the model builds; defaults are the standalone proportions.
+@export var num_bays := 2
+@export var bay_width := 6.0    # clear opening width of one bay
+@export var bay_depth := 9.0    # front-to-back depth of the structure
+@export var pillar_w := 0.5     # square section of the dividing pillars
+@export var wall_h := 4.4       # height of the bay opening (underside of fascia)
+@export var fascia_h := 1.2     # the plain header band above the openings
+@export var roof_t := 0.25
+@export var front_overhang := 1.1  # roof + fascia jut out past the bay opening
 
 # --- Palette -----------------------------------------------------------------
 const C_FASCIA := Color(0.12, 0.13, 0.15)        # charcoal brand band
@@ -41,6 +43,9 @@ const C_GRAVEL := Color(0.46, 0.41, 0.34)
 # Build the environment + interior lights by default. A host scene that already
 # provides its own lighting can set this false before adding the garage.
 @export var build_environment := true
+# Build the gravel/tarmac ground by default. A host scene with its own ground
+# (e.g. the HQ grass + concrete apron) sets this false to keep just the shell.
+@export var build_ground := true
 
 var _mat_cache: Dictionary = {}
 
@@ -54,7 +59,8 @@ func _ready() -> void:
 func build() -> void:
 	if build_environment:
 		_build_environment()
-	_build_ground()
+	if build_ground:
+		_build_ground()
 	_build_structure()
 	_build_ceiling_rig()
 
@@ -91,19 +97,19 @@ func _block(pos: Vector3, size: Vector3, color: Color, emissive := false) -> Mes
 
 # Total structure width across all bays + the pillars between/around them.
 func _total_width() -> float:
-	return NUM_BAYS * BAY_WIDTH + (NUM_BAYS + 1) * PILLAR_W
+	return num_bays * bay_width + (num_bays + 1) * pillar_w
 
 
 # World X of the centre of bay `i` (0 = left / −X).
 func _bay_center_x(i: int) -> float:
 	var left := -_total_width() * 0.5
-	return left + PILLAR_W + i * (BAY_WIDTH + PILLAR_W) + BAY_WIDTH * 0.5
+	return left + pillar_w + i * (bay_width + pillar_w) + bay_width * 0.5
 
 
-# World X of the centre of pillar `i` (0..NUM_BAYS, left to right).
+# World X of the centre of pillar `i` (0..num_bays, left to right).
 func _pillar_center_x(i: int) -> float:
 	var left := -_total_width() * 0.5
-	return left + PILLAR_W * 0.5 + i * (BAY_WIDTH + PILLAR_W)
+	return left + pillar_w * 0.5 + i * (bay_width + pillar_w)
 
 
 # --- Environment + lighting --------------------------------------------------
@@ -142,10 +148,10 @@ func _build_ground() -> void:
 	# Tarmac apron spanning the structure front, a touch above the gravel.
 	var apron := MeshInstance3D.new()
 	var ap := PlaneMesh.new()
-	ap.size = Vector2(_total_width() + 10.0, BAY_DEPTH + 14.0)
+	ap.size = Vector2(_total_width() + 10.0, bay_depth + 14.0)
 	apron.mesh = ap
 	apron.material_override = _mat(C_TARMAC, false, 0.95)
-	apron.position = Vector3(0.0, 0.0, BAY_DEPTH * 0.5 - 7.0)
+	apron.position = Vector3(0.0, 0.0, bay_depth * 0.5 - 7.0)
 	add_child(apron)
 
 
@@ -153,31 +159,31 @@ func _build_ground() -> void:
 
 func _build_structure() -> void:
 	var w := _total_width()
-	var back_z := -BAY_DEPTH
+	var back_z := -bay_depth
 	var t := 0.4
 
 	# Concrete slab under the whole footprint.
-	_block(Vector3(0.0, 0.04, -BAY_DEPTH * 0.5), Vector3(w, 0.08, BAY_DEPTH), C_FLOOR)
+	_block(Vector3(0.0, 0.04, -bay_depth * 0.5), Vector3(w, 0.08, bay_depth), C_FLOOR)
 
 	# Back wall + side walls in off-white fabric.
-	_block(Vector3(0.0, WALL_H * 0.5, back_z), Vector3(w, WALL_H, t), C_WALL)
-	_block(Vector3(-w * 0.5, WALL_H * 0.5, -BAY_DEPTH * 0.5), Vector3(t, WALL_H, BAY_DEPTH), C_WALL)
-	_block(Vector3(w * 0.5, WALL_H * 0.5, -BAY_DEPTH * 0.5), Vector3(t, WALL_H, BAY_DEPTH), C_WALL)
+	_block(Vector3(0.0, wall_h * 0.5, back_z), Vector3(w, wall_h, t), C_WALL)
+	_block(Vector3(-w * 0.5, wall_h * 0.5, -bay_depth * 0.5), Vector3(t, wall_h, bay_depth), C_WALL)
+	_block(Vector3(w * 0.5, wall_h * 0.5, -bay_depth * 0.5), Vector3(t, wall_h, bay_depth), C_WALL)
 
 	# Front pillars (the dark dividers between/around the bays).
-	for i in range(NUM_BAYS + 1):
+	for i in range(num_bays + 1):
 		var px := _pillar_center_x(i)
-		_block(Vector3(px, (WALL_H + FASCIA_H) * 0.5, FRONT_OVERHANG * 0.3),
-			Vector3(PILLAR_W, WALL_H + FASCIA_H, PILLAR_W), C_PILLAR)
+		_block(Vector3(px, (wall_h + fascia_h) * 0.5, front_overhang * 0.3),
+			Vector3(pillar_w, wall_h + fascia_h, pillar_w), C_PILLAR)
 
 	# Plain fascia header band across the full front, jutting out over the openings.
-	var fascia_y := WALL_H + FASCIA_H * 0.5
-	_block(Vector3(0.0, fascia_y, FRONT_OVERHANG), Vector3(w + 0.4, FASCIA_H, 0.4), C_FASCIA)
+	var fascia_y := wall_h + fascia_h * 0.5
+	_block(Vector3(0.0, fascia_y, front_overhang), Vector3(w + 0.4, fascia_h, 0.4), C_FASCIA)
 
 	# Flat roof spanning the footprint + front overhang.
-	var roof_depth := BAY_DEPTH + FRONT_OVERHANG
-	_block(Vector3(0.0, WALL_H + FASCIA_H + ROOF_T * 0.5, FRONT_OVERHANG - roof_depth * 0.5 + 0.5),
-		Vector3(w + 0.5, ROOF_T, roof_depth), C_ROOF)
+	var roof_depth := bay_depth + front_overhang
+	_block(Vector3(0.0, wall_h + fascia_h + roof_t * 0.5, front_overhang - roof_depth * 0.5 + 0.5),
+		Vector3(w + 0.5, roof_t, roof_depth), C_ROOF)
 
 
 # --- Ceiling light rig -------------------------------------------------------
@@ -185,13 +191,13 @@ func _build_structure() -> void:
 # One emissive light strip + one soft lamp per bay — just enough to light the
 # empty interior. Deliberately minimal (no truss spine / clutter).
 func _build_ceiling_rig() -> void:
-	var rig_y := WALL_H + FASCIA_H - 0.35
-	for i in range(NUM_BAYS):
+	var rig_y := wall_h + fascia_h - 0.35
+	for i in range(num_bays):
 		var cx := _bay_center_x(i)
-		_block(Vector3(cx, rig_y, -BAY_DEPTH * 0.5),
-			Vector3(0.25, 0.12, BAY_DEPTH - 1.5), Color(0.92, 0.92, 0.94), true)
+		_block(Vector3(cx, rig_y, -bay_depth * 0.5),
+			Vector3(0.25, 0.12, bay_depth - 1.5), Color(0.92, 0.92, 0.94), true)
 		var lamp := OmniLight3D.new()
-		lamp.position = Vector3(cx, rig_y - 0.4, -BAY_DEPTH * 0.5 + 1.0)
+		lamp.position = Vector3(cx, rig_y - 0.4, -bay_depth * 0.5 + 1.0)
 		lamp.light_energy = 1.4
 		lamp.omni_range = 12.0
 		lamp.light_color = Color(0.96, 0.97, 1.0)
