@@ -33,7 +33,7 @@ garage, the parked lineup) is synchronous and takes a beat, so on a real display
 it (`_build_hq`), then reveals — bridging the gap after Godot's boot bar so the load
 never looks frozen. Under the headless test runner it builds synchronously with no
 cover (so tests see a ready HQ after one frame). HQ is **one diegetic 3D space** the camera flies through; an
-`enum View { EXTERIOR, GARAGE, TABLE, CARPARK }` names the camera **stations** and
+`enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }` names the camera **stations** and
 `_go_to(view)` tweens the single `Camera3D` between their poses
 (`GameConfig.hq_*_cam_eye/look`, eased over `menu_camera_move_time`). Clickable 3D
 objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_pickable`
@@ -112,9 +112,14 @@ car park, **◄ Map** dismisses the panel, and the table Back returns to the gar
 
 **CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
 rally** (`RallyLibrary.is_eligible`) are parked at `GameConfig.hq_carpark_origin`,
-in a centred row spaced by `menu_car_spacing`, each a silenced `Car` prop (reusing
-`Car.apply_owned`). Parking is shared with the title via `_build_lineup(cars)` —
-the car-select screen passes the eligible cars, the title passes all owned. The props **drop in live** (raised by `menu_car_drop_height` onto
+in a row that runs back along Z spaced by `menu_car_spacing`, pushed off-centre by
+`menu_car_park_offset` (along +X) and **yawed 90°** so each car's flank faces the
+garage and its nose points at the now-emptier centre courtyard (parked along the
+lot edge, not head-on); each is a silenced `Car` prop (reusing
+`Car.apply_owned`). The exterior/title camera is shifted by the same offset so it
+still frames the lineup at the same angle. Parking is shared with the title via
+`_build_lineup(cars)` — the car-select screen passes the eligible cars, the title
+passes all owned. The props **drop in live** (raised by `menu_car_drop_height` onto
 a collision floor under the lot) so they **settle onto their suspension**, then
 `_freeze_lineup` freezes the settled pose after `menu_car_settle_seconds` (guarded by
 a generation id so re-entering the lot cancels a stale freeze) — so a full car park
@@ -128,6 +133,18 @@ calls `RallySession.start_rally(rally, owned)` — the handoff derives event tar
 times by generating each track, which is heavy, so the overlay covers that work
 instead of freezing HQ. **◄ Back** (or `menu_back`) returns to the map table and
 clears the lineup. If no owned car qualifies, a hint shows and Start is disabled.
+
+**OVERFLOW (scrap a car to make room).** The player may own at most
+`GameConfig.max_owned_cars` (10) cars. A top-3 finish still grants its car even
+when the garage is full, so on the **next HQ entry** `_build_hq` checks
+`_over_car_limit()` and, if over, routes to the OVERFLOW station instead of the
+title. It parks the **whole collection** (the just-won car included) with the same
+`_build_lineup` + focus machinery as the car park, shows a `GARAGE FULL — (n / cap)`
+banner, and a **Scrap this car** action removes the focused instance via
+`Save.scrap_car` (returns its upgrades to inventory, refuses the immortal starter —
+its scrap button is disabled with a note). Scrapping re-evaluates: still over →
+re-prompt; back at the cap → fly to the title. There is no Back — the player can't
+leave until the garage is under the cap.
 
 Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)
 finishing position ever recorded there, stored by `Save.complete_rally(id, ms,

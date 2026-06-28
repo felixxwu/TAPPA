@@ -62,6 +62,8 @@ heuristic.
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
 that mutate + autosave: `grant_car(model_id, immortal)`, `get_car(instance_id)`,
 `apply_damage(instance_id, amount)`, `wreck_car(instance_id)`,
+`scrap_car(instance_id)` (a deliberate player removal — returns upgrades to
+inventory, refuses the immortal starter; drives HQ's garage-overflow prompt),
 `set_tuning(instance_id, tuning)`, `selected_car()` / `selected_instance_id()` /
 `set_selected_car(instance_id)` (the lift's selected car, self-healing),
 `get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),

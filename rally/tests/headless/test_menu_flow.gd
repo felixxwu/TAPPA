@@ -287,6 +287,77 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
+# --- Garage overflow: scrap a car to make room (max_owned_cars) --------------
+
+# Boot HQ owning more than the cap and it routes to the OVERFLOW scrap prompt
+# (instead of the title), parking the whole collection.
+func test_hq_over_car_limit_boots_to_the_scrap_prompt() -> void:
+	Config.data.max_owned_cars = 2  # small cap so the test stays light
+	_save.grant_car("rs3", false)
+	_save.grant_car("mustang", false)  # 2 granted; the boot starter makes 3 > cap
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.OVERFLOW, "over the cap, HQ boots to the scrap prompt")
+	assert_true(hq._overflow_layer.visible, "the overflow overlay is shown")
+	assert_false(hq._title_layer.visible, "the title overlay is hidden while overflowing")
+	assert_eq(hq._cars.size(), 3, "the whole collection is parked to choose from")
+	assert_string_contains(hq._overflow_banner.text, "3 / 2", "the banner shows owned vs the cap")
+
+
+# Scrapping cars drops the count and, once back at the cap, flies out to the title.
+func test_hq_scrapping_clears_overflow_and_returns_to_title() -> void:
+	Config.data.max_owned_cars = 2
+	_save.grant_car("rs3", false)
+	_save.grant_car("mustang", false)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(_save.profile["cars"].size(), 3, "3 owned at boot (starter + 2)")
+	# Focus a scrappable (non-immortal) car and scrap it.
+	while bool(hq._eligible[hq._focus].get("immortal", false)):
+		hq._cycle_focus(1)
+	hq._on_scrap_pressed()
+	await get_tree().process_frame
+	assert_eq(_save.profile["cars"].size(), 2, "scrapping removed one car")
+	assert_eq(hq._view, hq.View.EXTERIOR, "back at the cap, HQ flies out to the title")
+	assert_true(hq._title_layer.visible, "the title overlay is shown again")
+
+
+# The immortal starter can't be scrapped: its scrap button is disabled with a note.
+func test_hq_overflow_cannot_scrap_immortal_starter() -> void:
+	Config.data.max_owned_cars = 1
+	_save.grant_car("rs3", false)  # starter + this = 2 > cap
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.OVERFLOW, "over the cap on boot")
+	# Find the immortal starter in the lineup and focus it.
+	for i in hq._eligible.size():
+		if bool(hq._eligible[i].get("immortal", false)):
+			hq._focus = i
+			hq._focus_changed(true)
+			break
+	assert_true(hq._scrap_button.disabled, "the immortal starter's scrap action is disabled")
+	assert_string_contains(hq._overflow_note.text, "can't be scrapped", "a note explains why")
+	# Scrapping it anyway is a no-op (count unchanged, still overflowing).
+	hq._on_scrap_pressed()
+	assert_eq(_save.profile["cars"].size(), 2, "the starter wasn't scrapped")
+	assert_eq(hq._view, hq.View.OVERFLOW, "still in the scrap prompt")
+
+
+# At or under the cap, HQ boots straight to the title (no scrap prompt).
+func test_hq_at_car_limit_boots_to_the_title() -> void:
+	Config.data.max_owned_cars = 3
+	_save.grant_car("rs3", false)
+	_save.grant_car("mustang", false)  # starter + 2 = 3 == cap (not over)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.EXTERIOR, "at the cap (not over), HQ boots to the title")
+	assert_false(hq._overflow_layer.visible, "no scrap prompt at the cap")
+
+
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
 func test_hq_lift_raises_the_selected_car() -> void:

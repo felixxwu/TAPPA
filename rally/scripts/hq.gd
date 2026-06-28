@@ -31,7 +31,12 @@ extends Node3D
 # Camera stations (see the per-station poses in GameConfig "Menu / HQ"). SETTINGS
 # is a flat overlay over the exterior shot (no dedicated camera pose), reached from
 # the title screen.
-enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
+#   * OVERFLOW  — the garage-full prompt: shown on entering HQ while the player owns
+#     more than GameConfig.max_owned_cars (e.g. after a win pushed them to 11). The
+#     whole collection is parked in the car park and the player must scrap one car
+#     (the just-won car included; the immortal starter excepted) to drop back to the
+#     cap before they can do anything else. Reuses the car-park lineup + framing.
+enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 
 # The two tuning-lift menus (todo/menus.md rig 4): TUNE = the handling sliders,
 # UPGRADES = install parts / repair. Both share the change-car control + Back.
@@ -111,6 +116,7 @@ var _detail_layer: CanvasLayer
 var _lift_layer: CanvasLayer
 var _car_layer: CanvasLayer
 var _settings_layer: CanvasLayer
+var _overflow_layer: CanvasLayer
 # Settings page: the per-scheme row buttons, so the selection highlight can refresh.
 var _settings_rows: Array = []  # [{id:int, button:Button}]
 var _settings_sub: Label             # subtitle (changes wording in the pre-rally gate)
@@ -127,6 +133,13 @@ var _car_name_label: Label
 var _car_stats_label: Label
 var _start_button: Button
 var _no_eligible_label: Label
+
+# Garage-overflow overlay widgets (the OVERFLOW station — scrap a car to make room).
+var _overflow_banner: Label
+var _overflow_car_label: Label
+var _overflow_stats_label: Label
+var _overflow_note: Label
+var _scrap_button: Button
 
 # Tuning-lift overlay widgets (the right-side menu panel).
 var _lift_car_label: Label      # selected car name + stats at the top of the panel
@@ -186,10 +199,17 @@ func _build_hq() -> void:
 	_build_car_overlay()
 	_build_settings_overlay()
 	_build_confirm_dialog()
+	_build_overflow_overlay()
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
 	_refresh_map_pins()
-	_go_to(View.EXTERIOR, true)
+	# A win can push the player past the car cap (the car is still granted). If the
+	# garage is over capacity on entry, force the scrap-a-car prompt before anything
+	# else; otherwise boot to the usual exterior/title shot.
+	if _over_car_limit():
+		_enter_overflow(true)
+	else:
+		_go_to(View.EXTERIOR, true)
 
 
 # First run: grant the immortal starter (the anti-soft-lock floor — it can never
@@ -1005,6 +1025,123 @@ func _build_car_overlay() -> void:
 	actions.add_child(_start_button)
 
 
+# --- Garage overflow (scrap a car to make room) ------------------------------
+
+# The OVERFLOW overlay: a banner + the focused car's name/stats, the same ◄ / ►
+# car selector as the car park, and a "Scrap this car" action. Mirrors the car
+# overlay's bottom-anchored layout so the 3D lineup shows above it.
+func _build_overflow_overlay() -> void:
+	var made := _make_overlay(16.0)
+	_overflow_layer = made[0]
+	var root: VBoxContainer = made[1]
+
+	_overflow_banner = Label.new()
+	_overflow_banner.add_theme_font_size_override("font_size", 22)
+	root.add_child(_overflow_banner)
+
+	var hint := Label.new()
+	hint.text = "Your garage is full. Pick a car to scrap — the just-won car counts too."
+	hint.add_theme_font_size_override("font_size", 14)
+	root.add_child(hint)
+
+	# Push the nav + actions to the bottom so the 3D car park is visible above.
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(spacer)
+
+	# Car selector: ◄ / ► pan the camera to the prev/next owned car.
+	var nav := HBoxContainer.new()
+	nav.add_theme_constant_override("separation", 8)
+	root.add_child(nav)
+	var prev := Button.new()
+	prev.text = "<"
+	prev.focus_mode = Control.FOCUS_NONE
+	prev.pressed.connect(_cycle_focus.bind(-1))
+	nav.add_child(prev)
+	_overflow_car_label = Label.new()
+	_overflow_car_label.add_theme_font_size_override("font_size", 18)
+	_overflow_car_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_overflow_car_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nav.add_child(_overflow_car_label)
+	var next := Button.new()
+	next.text = ">"
+	next.focus_mode = Control.FOCUS_NONE
+	next.pressed.connect(_cycle_focus.bind(1))
+	nav.add_child(next)
+
+	_overflow_stats_label = Label.new()
+	_overflow_stats_label.add_theme_font_size_override("font_size", 12)
+	_overflow_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(_overflow_stats_label)
+
+	_overflow_note = Label.new()
+	_overflow_note.add_theme_font_size_override("font_size", 12)
+	_overflow_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_overflow_note.modulate = Color(1, 0.8, 0.4)
+	root.add_child(_overflow_note)
+
+	_scrap_button = Button.new()
+	_scrap_button.text = "Scrap this car"
+	_scrap_button.focus_mode = Control.FOCUS_NONE
+	_scrap_button.pressed.connect(_on_scrap_pressed)
+	root.add_child(_scrap_button)
+
+
+# Whether the player owns more cars than the cap (so the scrap prompt must show).
+func _over_car_limit() -> bool:
+	return _owned_count() > Config.data.max_owned_cars
+
+
+func _owned_count() -> int:
+	return Save.profile.get("cars", []).size()
+
+
+# Enter the scrap-a-car prompt: park the WHOLE collection and frame the first car.
+func _enter_overflow(snap := false) -> void:
+	_build_lineup(Save.profile.get("cars", []).duplicate())
+	_view = View.OVERFLOW
+	_detail_open = false
+	_clear_lift_car()  # not inside the garage while overflowing
+	_update_overlays()
+	_focus = 0
+	_focus_changed(snap)
+
+
+# Scrap the focused car (unless it's the immortal starter), then re-evaluate: stay
+# in the prompt while still over the cap, otherwise fly out to the title.
+func _on_scrap_pressed() -> void:
+	if _eligible.is_empty() or _focus >= _eligible.size():
+		return
+	var owned: Dictionary = _eligible[_focus]
+	if bool(owned.get("immortal", false)):
+		return  # the starter can't be scrapped
+	var id := int(owned.get("instance_id", -1))
+	if not Save.scrap_car(id):
+		return
+	Save.save()
+	if _selected_instance_id == id:
+		_selected_instance_id = -1
+	if _over_car_limit():
+		_enter_overflow(true)  # rebuild the (smaller) lineup, keep prompting
+	else:
+		_clear_lineup()
+		_go_to(View.EXTERIOR, true)
+
+
+# Refresh the overflow overlay for the focused car (banner count, name, stats, and
+# the scrap button — disabled with a note for the immortal starter).
+func _refresh_overflow_ui(owned: Dictionary, entry: Dictionary, stats: String) -> void:
+	_overflow_banner.text = "GARAGE FULL — scrap a car to make room  (%d / %d)" % [
+		_owned_count(), Config.data.max_owned_cars]
+	_overflow_car_label.text = "%s  #%d  (%d of %d)" % [
+		entry.get("name", owned.get("model_id", "?")),
+		int(owned.get("instance_id", -1)), _focus + 1, _cars.size()]
+	_overflow_stats_label.text = stats
+	var immortal: bool = owned.get("immortal", false)
+	_scrap_button.disabled = immortal
+	_overflow_note.text = "The starter car can't be scrapped — choose another." if immortal else ""
+
+
 # --- Settings page -----------------------------------------------------------
 
 # The title-screen Settings overlay: pick the mobile control scheme. Each option is
@@ -1164,6 +1301,7 @@ func _update_overlays() -> void:
 	_lift_layer.visible = _view == View.LIFT
 	_car_layer.visible = _view == View.CARPARK
 	_settings_layer.visible = _view == View.SETTINGS
+	_overflow_layer.visible = _view == View.OVERFLOW
 
 
 # --- Station transitions -----------------------------------------------------
@@ -1629,7 +1767,12 @@ func _build_lineup(cars: Array) -> void:
 	var n := cars.size()
 	for i in n:
 		var marker := Marker3D.new()
-		marker.position = cfg.hq_carpark_origin + Vector3((i - (n - 1) * 0.5) * cfg.menu_car_spacing, 0.0, 0.0)
+		# Push the lineup off-centre (along +X) and run the row back along Z, then yaw
+		# each car 90° so its flank faces the garage (−Z) and its nose points at the
+		# now-emptier centre courtyard (−X) — parked along the lot edge, not head-on.
+		marker.position = cfg.hq_carpark_origin + Vector3(
+			cfg.menu_car_park_offset, 0.0, (i - (n - 1) * 0.5) * cfg.menu_car_spacing)
+		marker.rotation.y = PI * 0.5
 		add_child(marker)
 		_markers.append(marker)
 		_cars.append(_spawn_parked_car(cars[i], marker))
@@ -1702,13 +1845,18 @@ func _focus_changed(snap := false) -> void:
 	var owned: Dictionary = _eligible[_focus]
 	_selected_instance_id = int(owned.get("instance_id", -1))
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	_car_name_label.text = "%s  #%d  (%d of %d)" % [
-		entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _cars.size()]
 	var stats := _car_stats_text(owned, entry)
-	_car_stats_label.text = stats
 	_stats_label.text = "%s\n%s" % [entry.get("name", "?"), stats]
 	_stats_label.global_position = (_markers[_focus] as Marker3D).global_position + Vector3(-2.6, 1.4, 0.0)
-	_start_button.disabled = false
+	# The same lineup + focus machinery drives both the rally car-select (CARPARK)
+	# and the scrap prompt (OVERFLOW); update whichever overlay is up.
+	if _view == View.OVERFLOW:
+		_refresh_overflow_ui(owned, entry, stats)
+	else:
+		_car_name_label.text = "%s  #%d  (%d of %d)" % [
+			entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _cars.size()]
+		_car_stats_label.text = stats
+		_start_button.disabled = false
 	_move_camera_to(_camera_target_xform(), snap)
 
 
@@ -1777,7 +1925,12 @@ func _station_xform(view: int) -> Transform3D:
 		View.TABLE: return _look_xform(cfg.hq_table_cam_eye + _table_pan, cfg.hq_table_cam_look + _table_pan)
 		View.LIFT: return _look_xform(cfg.hq_lift_cam_eye, cfg.hq_lift_cam_look)
 		View.CARPARK: return _camera_target_xform()
-		_: return _look_xform(cfg.hq_exterior_cam_eye, cfg.hq_exterior_cam_look)
+		View.OVERFLOW: return _camera_target_xform()
+		# Title shot: shift by the lineup's off-centre offset so it stays framed at the
+		# same angle (a pure X translation of eye + look keeps the view direction).
+		_: return _look_xform(
+			cfg.hq_exterior_cam_eye + Vector3(cfg.menu_car_park_offset, 0.0, 0.0),
+			cfg.hq_exterior_cam_look + Vector3(cfg.menu_car_park_offset, 0.0, 0.0))
 
 
 func _focused_car_pos() -> Vector3:
@@ -1908,6 +2061,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				_table_pan_input(event)
 		View.CARPARK:
 			_cars_input(event)
+		View.OVERFLOW:
+			# Pan the lineup and scrap the focused car. No "back" — the player can't
+			# leave the prompt until the garage is back under the cap.
+			if event.is_action_pressed("menu_left"):
+				_cycle_focus(-1)
+			elif event.is_action_pressed("menu_right"):
+				_cycle_focus(1)
+			elif event.is_action_pressed("menu_select") and not _scrap_button.disabled:
+				_on_scrap_pressed()
 
 
 # Drag the map table around (mouse, or finger via emulate_mouse_from_touch). A drag

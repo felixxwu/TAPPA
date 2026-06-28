@@ -357,6 +357,16 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Seconds the parked cars run live physics to settle before they're frozen (so a
 ## full car park costs nothing to keep parked once settled).
 @export var menu_car_settle_seconds := 1.2
+## Maximum number of cars the player may own. Winning a rally still grants the car
+## even when the garage is full; the next HQ visit then makes the player scrap one
+## (the just-won car included) back down to this cap. See hq.gd's OVERFLOW station.
+@export var max_owned_cars := 10
+## Car-park lineup placement. The lineup is pushed this far off the lot centre (m,
+## along +X) and each car is yawed 90° so its flank faces the garage and its nose
+## points at the now-open centre courtyard; the row itself recedes along Z
+## (menu_car_spacing apart). The exterior/title camera is shifted by the same
+## offset so it still frames the lineup at the same 45°-ish angle.
+@export var menu_car_park_offset := 8.0
 
 # --- Diegetic HQ: one 3D space the camera flies through (todo/diegetic-hq.md).
 # Camera "stations" are an eye position + a look target (world space); the camera

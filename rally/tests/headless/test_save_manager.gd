@@ -89,6 +89,25 @@ func test_wreck_consumes_upgrades_and_removes_car() -> void:
 		"fitted upgrade is consumed for good — not returned on wreck")
 
 
+func test_scrap_removes_car_consumes_upgrades_and_spares_immortal() -> void:
+	var starter: Dictionary = _save.grant_car("mx5", true)  # the immortal starter
+	var car: Dictionary = _save.grant_car("mustang")
+	_save.add_item("engine_stage1", 1)
+	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
+
+	# Scrapping a normal car removes it; its fitted upgrade is lost with it (consumed
+	# for good when applied, like a wreck — not refunded).
+	assert_true(_save.scrap_car(car["instance_id"]), "scrapping a normal car succeeds")
+	assert_eq(_save.profile["cars"].size(), 1, "scrapped car removed (only the starter remains)")
+	assert_false(_save.profile["inventory"].has("engine_stage1"), "fitted upgrade is not refunded on scrap")
+
+	# The immortal starter can never be scrapped.
+	assert_false(_save.scrap_car(starter["instance_id"]), "the immortal starter can't be scrapped")
+	assert_eq(_save.profile["cars"].size(), 1, "the starter is still owned")
+	# An unknown instance is a harmless no-op.
+	assert_false(_save.scrap_car(99999), "scrapping an unknown instance is a no-op")
+
+
 func test_install_replaces_same_slot_incumbent() -> void:
 	var car: Dictionary = _save.grant_car("porsche911")
 	_save.add_item("engine_stage1", 1)
