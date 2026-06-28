@@ -98,4 +98,17 @@ func _run() -> void:
 		img.save_png(path)
 		print("SAVED ", path, " ", img.get_size())
 
+	# Swap to the START banner set and re-shoot a front view, to check that variant.
+	arch.top_banner = "top_start"
+	arch.back_banner = "back_start"
+	arch.leg_banner = "leg_start"
+	arch.build()
+	cam.position = shots["front"]
+	cam.look_at(target, Vector3.UP)
+	await process_frame
+	await process_frame
+	var start_img := vp.get_texture().get_image()
+	start_img.save_png("%s/start_front.png" % OUT_DIR)
+	print("SAVED %s/start_front.png" % OUT_DIR)
+
 	quit()

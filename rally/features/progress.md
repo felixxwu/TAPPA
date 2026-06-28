@@ -60,10 +60,13 @@ off-track recovery now share one code path.
 ## Readouts
 
 `progress_offset()`, `baked_length()`, and `progress_percent()` (0..1) are
-exposed for the HUD and, later, the stage-completion gate
-(`todo/stage-start-and-end.md`, which fires near 99%). A **temporary** percentage
-readout is wired into the HUD (`HUD/ProgressLabel`, fed by `world.gd` setting
-`HUD.track_progress`); it's a placeholder until the real stage UI lands.
+exposed for the HUD and the stage-completion gate ([stage.md](stage.md), which
+fires at 100% — coinciding with the finish arch at the centerline end). The
+windowed search also samples its **far edge exactly**, so the very end of the
+curve is reachable and `progress_percent()` can hit 1.0 (a 1 m step would
+otherwise cap it ~1 m short). A **temporary** percentage readout is wired into the
+HUD (`HUD/ProgressLabel`, fed by `world.gd` setting `HUD.track_progress`); it's a
+placeholder until the real stage UI lands.
 
 ## Tests
 

@@ -86,6 +86,13 @@ func _local_closest_offset(here: Vector2) -> float:
 			best_d = d
 			best_o = o
 		o += SEARCH_STEP_M
+	# Always test the exact far edge of the window too. The stepped loop stops up to
+	# SEARCH_STEP_M short of `hi`, so at the very end of the curve (hi == baked_length)
+	# progress would otherwise cap ~1 m short — never quite 100%. Sampling `hi`
+	# exactly lets progress reach the finish line (and the 100% stage-complete edge).
+	var d_hi := here.distance_squared_to(_centerline.sample_baked(hi))
+	if d_hi < best_d:
+		best_o = hi
 	return best_o
 
 

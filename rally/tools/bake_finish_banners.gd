@@ -27,6 +27,9 @@ func _init() -> void:
 	await _bake("top", Vector2i(1280, 200), _build_top)
 	await _bake("leg", Vector2i(256, 768), _build_leg)
 	await _bake("back", Vector2i(1280, 200), _build_back)
+	await _bake("top_start", Vector2i(1280, 200), _build_top_start)
+	await _bake("back_start", Vector2i(1280, 200), _build_back_start)
+	await _bake("leg_start", Vector2i(256, 768), _build_leg_start)
 	print("BANNERS DONE")
 	quit()
 
@@ -86,14 +89,23 @@ func _sponsor(parent: Control, pos: Vector2, size: Vector2, header: String,
 		body, int((size.y - head_h) * 0.4), INK)
 
 
-# ---- TOP beam strip: FINISH on each side, sponsor cards through the middle ----
+# ---- TOP beam strip: wordmark on each side, sponsor cards through the middle ----
 func _build_top(root: Control, size: Vector2i) -> void:
+	_build_top_word(root, size, "FINISH")
+
+
+# START variant of the top strip — same layout, START wordmarks.
+func _build_top_start(root: Control, size: Vector2i) -> void:
+	_build_top_word(root, size, "START")
+
+
+func _build_top_word(root: Control, size: Vector2i, word: String) -> void:
 	_rect(root, Vector2.ZERO, size, ORANGE)
 	var w := float(size.x)
 	var h := float(size.y)
-	# FINISH wordmark, far left and far right (cream on orange, like the photo).
-	_label(root, Vector2(0.0, 0), Vector2(0.30 * w, h), "FINISH", int(h * 0.46), CREAM)
-	_label(root, Vector2(0.70 * w, 0), Vector2(0.30 * w, h), "FINISH", int(h * 0.46), CREAM)
+	# Wordmark, far left and far right (cream on orange, like the photo).
+	_label(root, Vector2(0.0, 0), Vector2(0.30 * w, h), word, int(h * 0.46), CREAM)
+	_label(root, Vector2(0.70 * w, 0), Vector2(0.30 * w, h), word, int(h * 0.46), CREAM)
 	# Centre band of sponsor cards.
 	var cy := h * 0.16
 	var ch := h * 0.68
@@ -107,8 +119,17 @@ func _build_top(root: Control, size: Vector2i) -> void:
 	_sponsor(root, Vector2(x, cy), Vector2(cw, ch), "DESERT", "CUP", RED)
 
 
-# ---- LEG: stacked sponsor panels + a CONGRATS! footer ----
+# ---- LEG: stacked sponsor panels + a footer. The finish legs say CONGRATS!, the
+# start legs say GO! — otherwise identical. ----
 func _build_leg(root: Control, size: Vector2i) -> void:
+	_build_leg_footer(root, size, "CONGRATS!", ORANGE)
+
+
+func _build_leg_start(root: Control, size: Vector2i) -> void:
+	_build_leg_footer(root, size, "GO!", GREEN)
+
+
+func _build_leg_footer(root: Control, size: Vector2i, footer: String, footer_col: Color) -> void:
 	_rect(root, Vector2.ZERO, size, SAND.lightened(0.25))
 	var w := float(size.x)
 	var h := float(size.y)
@@ -125,14 +146,22 @@ func _build_leg(root: Control, size: Vector2i) -> void:
 	y += h * 0.16 + pad
 	_sponsor(root, Vector2(pad, y), Vector2(pw, h * 0.16), "TURBO", "OIL", RED)
 	y += h * 0.16 + pad
-	# CONGRATS! footer.
-	_rect(root, Vector2(pad, y), Vector2(pw, h * 0.1), ORANGE)
-	_label(root, Vector2(pad, y), Vector2(pw, h * 0.1), "CONGRATS!", int(h * 0.045), WHITE)
+	_rect(root, Vector2(pad, y), Vector2(pw, h * 0.1), footer_col)
+	_label(root, Vector2(pad, y), Vector2(pw, h * 0.1), footer, int(h * 0.045), WHITE)
 
 
 # ---- BACK of the top beam (down-track side): just the wordmark + emblem ----
 func _build_back(root: Control, size: Vector2i) -> void:
+	_build_back_word(root, size, "RALLY  RAID  CHAMPIONSHIP")
+
+
+# START gate back face (faces down-track): a send-off message.
+func _build_back_start(root: Control, size: Vector2i) -> void:
+	_build_back_word(root, size, "GOOD  LUCK")
+
+
+func _build_back_word(root: Control, size: Vector2i, text: String) -> void:
 	_rect(root, Vector2.ZERO, size, ORANGE)
 	var w := float(size.x)
 	var h := float(size.y)
-	_label(root, Vector2(0, 0), Vector2(w, h), "RALLY  RAID  CHAMPIONSHIP", int(h * 0.42), CREAM)
+	_label(root, Vector2(0, 0), Vector2(w, h), text, int(h * 0.42), CREAM)

@@ -1,10 +1,12 @@
 class_name FinishArch
 extends Node3D
-# Procedural inflatable rally finish arch — the fat orange "portal" gate seen at
-# the end of a stage (Dakar-style), modelled on the reference photo: two tapered
-# inflatable legs joined by a top beam with rounded inner/outer corners, FINISH
-# banners down each leg and a sponsor strip across the top, anchored by guy ropes
-# to ground stakes on each side.
+# Procedural inflatable rally gate — the fat orange "portal" seen at a stage's
+# start/finish (Dakar-style), modelled on the reference photo: two inflatable legs
+# joined by a top beam with rounded inner/outer corners, wordmark banners down each
+# leg and a sponsor strip across the top, anchored by guy ropes to ground stakes on
+# each side. The same model serves BOTH gates — world.gd builds a FINISH one at the
+# centerline end and a START one at the start line; the `*_banner` exports below
+# pick which baked banner set (FINISH vs START wordmarks) it wears.
 #
 # Built entirely from code so it fits the project's procedural-asset style (cf.
 # SignField) and the PS1 flat-shaded look: one extruded arch mesh with the lit
@@ -30,6 +32,14 @@ const ARCH_SHADER := preload("res://shaders/ps1_models_lit.gdshader")
 @export var arch_color: Color = Color(0.86, 0.30, 0.16)   # inflatable orange-red
 @export var seam_color: Color = Color(0.72, 0.23, 0.12)   # darker inflatable seams
 @export var sun_direction: Vector3 = Vector3(0.35, 0.85, 0.4)
+
+# --- Banners ------------------------------------------------------------------
+# Base names of the baked banner textures (textures/finish/<name>.png) for the top
+# beam (approach face), its down-track back face, and the legs. Defaults wear the
+# FINISH set; the start gate sets these to the START set (see tools/bake_finish_banners.gd).
+@export var top_banner: String = "top"
+@export var back_banner: String = "back"
+@export var leg_banner: String = "leg"
 
 var _mat: ShaderMaterial
 
@@ -218,8 +228,8 @@ func _add_banners() -> void:
 	var beam_y := height - top_height
 	var total_w := span + 2.0 * leg_width
 	# Top beam strip, front (approach) and back (down-track) faces.
-	var top_tex := _load_banner("top")
-	var back_tex := _load_banner("back")
+	var top_tex := _load_banner(top_banner)
+	var back_tex := _load_banner(back_banner)
 	_add_banner_quad(top_tex, Color(0.95, 0.95, 0.92),
 		Vector3(0, beam_y + top_height * 0.5, hz),
 		Vector2(total_w * 0.99, top_height * 0.86), false)
@@ -227,7 +237,7 @@ func _add_banners() -> void:
 		Vector3(0, beam_y + top_height * 0.5, -hz),
 		Vector2(total_w * 0.99, top_height * 0.86), true)
 	# Leg sponsor panels, front face of each leg.
-	var leg_tex := _load_banner("leg")
+	var leg_tex := _load_banner(leg_banner)
 	for cx in [-(span * 0.5 + leg_width * 0.5), (span * 0.5 + leg_width * 0.5)]:
 		_add_banner_quad(leg_tex, Color(0.85, 0.78, 0.6),
 			Vector3(cx, beam_y * 0.5, hz),

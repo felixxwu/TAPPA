@@ -312,29 +312,62 @@ func test_main_scene_generates_a_track() -> void:
 	assert_eq(floor_node.loaded_coords().size(), ring * ring, "deferred ring is built once the track is applied")
 
 
-func test_finish_arch_straddles_the_road_at_the_stage_end() -> void:
-	# world.gd places one FinishArch at the centerline end, sized so its clear
-	# opening spans the full road width with margin, and turned across the road.
-	var arch: Node3D = null
+func _await_node(name: String) -> Node3D:
+	var n: Node3D = null
 	for _i in range(240):
-		arch = _scene.get_node_or_null("FinishArch") as Node3D
-		if arch != null:
-			break
+		n = _scene.get_node_or_null(name) as Node3D
+		if n != null:
+			return n
 		await get_tree().process_frame
+	return n
+
+
+func _assert_spans_road_upright(arch: Node3D, who: String) -> void:
+	var cfg: GameConfig = Config.data
+	# The clear opening must cover the whole road (track_width) and then some.
+	assert_gt(arch.span, cfg.track_width, who + " opening is wider than the road")
+	assert_almost_eq(arch.span, cfg.track_width + 2.0 * cfg.finish_arch_road_margin_m, 0.01,
+		who + " opening = road width + a margin each side")
+	# The legs (inner faces at +/- span/2) clear the road edges (+/- width/2).
+	assert_gt(arch.span * 0.5, cfg.track_width * 0.5, who + " leg inner faces sit outside the road")
+	assert_gt(arch.global_transform.origin.y, -50.0, who + " sits on the terrain, not far below")
+	# Local X (leg-to-leg) runs across the road and stays horizontal (gate upright).
+	assert_almost_eq(arch.global_transform.basis.x.normalized().y, 0.0, 0.05,
+		who + " leg-to-leg axis stays horizontal")
+
+
+func test_finish_arch_straddles_the_road_at_the_stage_end() -> void:
+	# world.gd places one FinishArch at the centerline END — i.e. exactly 100%
+	# track progress — so crossing it ends the stage immediately.
+	var arch := await _await_node("FinishArch")
 	assert_not_null(arch, "world built a FinishArch at the stage end")
 	if arch == null:
 		return
-	var cfg: GameConfig = Config.data
-	# The clear opening must cover the whole road (track_width) and then some.
-	assert_gt(arch.span, cfg.track_width, "arch opening is wider than the road")
-	assert_almost_eq(arch.span, cfg.track_width + 2.0 * cfg.finish_arch_road_margin_m, 0.01,
-		"opening = road width + a margin each side")
-	# The legs (inner faces at +/- span/2) must clear the road edges (+/- width/2).
-	assert_gt(arch.span * 0.5, cfg.track_width * 0.5, "leg inner faces sit outside the road")
-	# Local X (the leg-to-leg axis) should run across the road, i.e. roughly
-	# perpendicular to the road tangent — so the gate's depth (local Z) runs
-	# along the road. We assert the arch is rotated off world axes (placed, not
-	# left at identity) and stands at/above ground.
-	assert_gt(arch.global_transform.origin.y, -50.0, "arch sits on the terrain, not far below")
-	var across := arch.global_transform.basis.x.normalized()
-	assert_almost_eq(across.y, 0.0, 0.05, "the leg-to-leg axis stays horizontal (gate is upright)")
+	_assert_spans_road_upright(arch, "finish arch")
+	assert_eq(arch.top_banner, "top", "finish arch wears the FINISH banner set")
+	# It must sit at the end of the progress centerline (100%). Compare its XZ to the
+	# centerline's far end, read off the live TrackProgress.
+	var tp = _scene.get_node_or_null("TrackProgress")
+	assert_not_null(tp, "TrackProgress present")
+	if tp != null:
+		var end2: Vector2 = tp._centerline.sample_baked(tp.baked_length())
+		var here2 := Vector2(arch.global_transform.origin.x, arch.global_transform.origin.z)
+		assert_lt(here2.distance_to(end2), 1.0, "finish arch sits at the centerline end (100% progress)")
+
+
+func test_start_arch_straddles_the_road_at_the_start_line() -> void:
+	# world.gd places a matching StartArch at the car's spawn (the start line).
+	var arch := await _await_node("StartArch")
+	assert_not_null(arch, "world built a StartArch at the start line")
+	if arch == null:
+		return
+	_assert_spans_road_upright(arch, "start arch")
+	assert_eq(arch.top_banner, "top_start", "start arch wears the START banner set")
+	# It straddles the start line — the car's spawn, which on a dev boot is the
+	# start of the progress centerline (offset 0). Compare to that rather than the
+	# live car, which earlier camera tests reposition.
+	var tp = _scene.get_node_or_null("TrackProgress")
+	if tp != null:
+		var start2: Vector2 = tp._centerline.sample_baked(0.0)
+		var here2 := Vector2(arch.global_transform.origin.x, arch.global_transform.origin.z)
+		assert_lt(here2.distance_to(start2), 1.0, "start arch sits at the start line (centerline offset 0)")

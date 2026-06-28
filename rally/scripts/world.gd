@@ -220,12 +220,22 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	add_child(sign_field)
 	sign_field.build(sign_layout, $Floor as TerrainManager, cfg.sign_render_params())
 
-	# Finish arch: the inflatable gate straddling the road at the stage end, aligned
-	# with the finish sign pair (features/finish-arch.md). Its clear opening is sized
-	# to the road width plus a margin so the legs stand off the road, and it is turned
-	# so the FINISH face meets the approaching driver.
+	# Finish + start arches: the inflatable gates straddling the road
+	# (features/finish-arch.md). The FINISH gate sits at the END of the progress
+	# centerline — i.e. exactly 100% track progress — so crossing it ends the stage
+	# immediately; the START gate sits at the start line where the car actually
+	# spawns. Each opening is sized to the road width plus a margin so the legs stand
+	# clear, and each is turned so its banner face meets the driver.
+	var arch_terrain := $Floor as TerrainManager
 	if cfg.finish_arch_enabled:
-		_place_finish_arch(result["centerline"] as Curve2D, cfg, $Floor as TerrainManager)
+		var fin_len := road_centerline.get_baked_length()
+		if fin_len > 0.0:
+			var fin_pos := road_centerline.sample_baked(fin_len)
+			var fin_tan := fin_pos - road_centerline.sample_baked(maxf(0.0, fin_len - 0.5))
+			_place_arch("FinishArch", fin_pos, fin_tan, "top", "back", "leg", cfg, arch_terrain)
+	if cfg.start_arch_enabled:
+		# start_pos / start_heading is the car's real spawn pose (the start line).
+		_place_arch("StartArch", start_pos, start_heading, "top_start", "back_start", "leg_start", cfg, arch_terrain)
 
 	# Retain the centerline in a TrackProgress manager: tracks how far the car has
 	# driven and snaps it back onto the road if it strays too far (the Curve2D is
@@ -274,32 +284,31 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		loading.finish()
 
 
-# Build and position the finish arch at the end of the road centerline. The arch
-# stands in its local XY plane and is extruded along its local Z (depth), so we
-# orient that depth axis along the road tangent: Basis.looking_at(fwd) points the
-# node's -Z down-track, leaving +Z (the FINISH face) toward the oncoming driver.
-# The base sits at the centerline (road-surface) height, like the signs.
-func _place_finish_arch(centerline: Curve2D, cfg: GameConfig, terrain: TerrainManager) -> void:
-	var length := centerline.get_baked_length()
-	if length <= 0.0:
-		return
-	var end_pos := centerline.sample_baked(length)
-	# Road direction at the end, by backward finite difference.
-	var tangent := end_pos - centerline.sample_baked(maxf(0.0, length - 0.5))
-	if tangent.length() < 1e-5:
-		tangent = Vector2(0.0, 1.0)
-	tangent = tangent.normalized()
-
+# Build and position one inflatable arch straddling the road at `pos`, facing along
+# `heading` (the road direction there). The arch stands in its local XY plane and is
+# extruded along its local Z (depth), so Basis.looking_at(heading) points the node's
+# -Z down-track, leaving +Z (the banner face) toward the driver. The base sits at the
+# centerline (road-surface) height, like the signs. `top_banner`/`back_banner` pick
+# the FINISH vs START banner set.
+func _place_arch(node_name: String, pos: Vector2, heading: Vector2,
+		top_banner: String, back_banner: String, leg_banner: String,
+		cfg: GameConfig, terrain: TerrainManager) -> void:
+	if heading.length() < 1e-5:
+		heading = Vector2(0.0, 1.0)
+	heading = heading.normalized()
 	var arch := FinishArch.new()
-	arch.name = "FinishArch"
+	arch.name = node_name
 	# Clear opening spans the full road width plus a margin on each side, so the
 	# legs stand clear of the road and the car drives through the gap.
 	arch.span = cfg.track_width + 2.0 * cfg.finish_arch_road_margin_m
-	add_child(arch)  # _ready() -> build() runs here, after span is set
-	var fwd3 := Vector3(tangent.x, 0.0, tangent.y).normalized()
-	var ground_y := terrain.height_at(end_pos.x, end_pos.y)
+	arch.top_banner = top_banner
+	arch.back_banner = back_banner
+	arch.leg_banner = leg_banner
+	add_child(arch)  # _ready() -> build() runs here, after the params are set
+	var fwd3 := Vector3(heading.x, 0.0, heading.y).normalized()
+	var ground_y := terrain.height_at(pos.x, pos.y)
 	arch.transform = Transform3D(Basis.looking_at(fwd3, Vector3.UP),
-		Vector3(end_pos.x, ground_y, end_pos.y))
+		Vector3(pos.x, ground_y, pos.y))
 
 
 # The authored car spawn transform, captured at boot so each car swap spawns in
