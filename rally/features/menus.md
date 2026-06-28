@@ -27,7 +27,12 @@ exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pi
 
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no
 track generation). On first visit it grants the **immortal starter** (`mx5`) — the
-anti-soft-lock floor. HQ is **one diegetic 3D space** the camera flies through; an
+anti-soft-lock floor. Building the HQ (ground, buildings, the billboard tree ring, the
+garage, the parked lineup) is synchronous and takes a beat, so on a real display
+`_ready` shows a **`LoadingScreen` cover** the moment the scene starts, builds behind
+it (`_build_hq`), then reveals — bridging the gap after Godot's boot bar so the load
+never looks frozen. Under the headless test runner it builds synchronously with no
+cover (so tests see a ready HQ after one frame). HQ is **one diegetic 3D space** the camera flies through; an
 `enum View { EXTERIOR, GARAGE, TABLE, CARPARK }` names the camera **stations** and
 `_go_to(view)` tweens the single `Camera3D` between their poses
 (`GameConfig.hq_*_cam_eye/look`, eased over `menu_camera_move_time`). Clickable 3D

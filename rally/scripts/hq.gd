@@ -121,6 +121,34 @@ var _lift_slider_values: Dictionary = {}  # axis -> the value Label
 func _ready() -> void:
 	_ensure_starter()
 	_ensure_selection()
+	# Headless (the test runner): build synchronously so tests see a ready HQ after one
+	# frame, with no loading cover. A real display gets the covered build below.
+	if DisplayServer.get_name() == "headless":
+		_build_hq()
+		return
+	# Godot's boot bar only covers the engine + .pck download + script compile. Building
+	# the HQ (ground, buildings, the billboard tree ring, the garage, the parked lineup)
+	# runs synchronously and takes a beat — long enough to look frozen once the boot bar
+	# finishes. So cover that gap with OUR loading screen FIRST: add it, let it paint,
+	# then do the heavy build behind it and reveal.
+	var loading := LoadingScreen.new()
+	loading.set_title("Entering HQ…")
+	loading.set_step("Preparing the garage…")
+	add_child(loading)
+	# Two frames: the first lays out the overlay (deferred anchors → size), the second
+	# draws it, so the build doesn't run before the cover is actually on screen.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_build_hq()
+	# Let the built scene render one frame before lifting the cover, so the reveal lands
+	# on the title shot rather than a half-built frame.
+	await get_tree().process_frame
+	loading.finish()
+
+
+# Build the whole HQ (environment, station overlays, map pins, initial title view).
+# Synchronous; the caller decides whether to cover it with a loading screen.
+func _build_hq() -> void:
 	_build_environment()
 	_build_title_overlay()
 	_build_garage_overlay()

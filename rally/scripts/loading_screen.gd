@@ -44,6 +44,12 @@ func _init() -> void:
 	box.add_child(_step)
 
 
+# Set the headline (defaults to "Loading stage…"; the HQ uses its own wording).
+func set_title(text: String) -> void:
+	if _title != null:
+		_title.text = text
+
+
 # Update the current-stage line (e.g. "Building terrain…").
 func set_step(text: String) -> void:
 	if _step != null:
