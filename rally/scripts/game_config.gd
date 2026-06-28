@@ -539,6 +539,43 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var tire_mark_gravel_margin_m := 0.3
 
 
+@export_group("Wheel Particles")
+## Cheap gravel spray flung from the driven wheels when they spin faster than the
+## ground (features/wheel-dust.md). One MultiMesh of billboarded quads.
+@export var wheel_particles_enabled := true
+## Clod colour — matched to the gravel road (gravel.jpg averages ~0.42 grey).
+## Unshaded, so tune it against the lit road in-game.
+@export var wheel_particle_color := Color(0.42, 0.40, 0.36)
+## Hard cap on live particles (the ring-buffer size + MultiMesh instance count).
+## Oldest clods are recycled first, so memory and draw cost are bounded.
+@export_range(16, 2000) var wheel_particle_max := 300
+## Edge length of each square clod billboard, in metres.
+@export var wheel_particle_size_m := 0.12
+## Minimum wheelspin (tread speed minus ground speed along the roll direction, m/s)
+## before any dirt is thrown — keeps a cleanly-rolling wheel from spraying.
+@export var wheel_particle_min_slip_mps := 1.5
+## How long each clod lives before it recycles, in seconds.
+@export var wheel_particle_lifetime_s := 1.1
+## Throw speed as a fraction of the wheel's surface speed (omega x radius). 1.0
+## flings clods backward as fast as the tread spins; lower keeps the spray tighter.
+@export_range(0.0, 2.0) var wheel_particle_speed_scale := 0.4
+## Extra upward launch speed added to every clod, in m/s — angles the spray up.
+@export var wheel_particle_up_speed_mps := 2.2
+## Downward gravity applied to each clod, in m/s^2 (sells the weight of the dirt).
+@export var wheel_particle_gravity_mps2 := 12.0
+## Linear air drag per second (fraction of speed bled off each second) — a slight
+## value so fast clods decelerate a touch in flight rather than flying dead straight.
+@export_range(0.0, 5.0) var wheel_particle_air_resistance := 0.6
+## Clods spawned per emitting wheel per physics tick while it spins.
+@export_range(1, 20) var wheel_particle_spawn_count := 3
+## Random spread of the throw, as a fraction of the throw speed — widens the spray
+## cone (and grows with how hard the wheel is spinning).
+@export_range(0.0, 1.0) var wheel_particle_spread := 0.35
+## Extra lateral allowance beyond the road half-width within which dirt still flies
+## (the gravel verge), in metres. Off this footprint (grass) sprays nothing.
+@export var wheel_particle_gravel_margin_m := 0.3
+
+
 @export_group("Trees")
 ## Billboard tree sprites scattered around each track turn.
 ## Target tree count per turn — drives the scatter grid's density (the actual count is

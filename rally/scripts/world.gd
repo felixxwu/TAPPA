@@ -232,6 +232,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		add_child(_tire_marks)
 	_tire_marks.setup(road_centerline, $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
 
+	# Wheel dust: cheap gravel spray flung from the driven wheels under wheelspin
+	# (features/wheel-dust.md). Reused across regenerations like the managers above;
+	# gated to the road half-width so it only sprays on the gravel, not the grass.
+	if _wheel_particles == null:
+		_wheel_particles = WheelParticles.new()
+		_wheel_particles.name = "WheelParticles"
+		add_child(_wheel_particles)
+	_wheel_particles.setup(road_centerline, $Car, cfg.track_width * 0.5)
+
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
 	# Reuse the node across regenerations so only one ticks.
@@ -263,6 +272,10 @@ var _stage_manager: StageManager
 
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
+
+# Flings cheap gravel dust off the driven wheels under wheelspin (re-targeted on
+# a car swap).
+var _wheel_particles: WheelParticles
 
 # Coarse far-terrain backdrop that gives the sky a horizon (distant_terrain.gd).
 var _distant_terrain: DistantTerrain
@@ -369,6 +382,9 @@ func cycle_car() -> void:
 	# Re-point tire marks at the fresh car and clear the outgoing car's ribbons.
 	if _tire_marks != null:
 		_tire_marks.retarget(fresh)
+	# Re-point wheel dust at the fresh car and clear the outgoing car's clods.
+	if _wheel_particles != null:
+		_wheel_particles.retarget(fresh)
 	# Re-arm the stage on the fresh car (it spawns at the start), so the countdown
 	# restarts and the manager doesn't keep a freed car reference.
 	if _stage_manager != null:

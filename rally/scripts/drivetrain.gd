@@ -225,6 +225,26 @@ func _omega_of(wheel: VehicleWheel3D) -> float:
 	return rear_omega if wheel.use_as_traction else front_omega[wheel]
 
 
+# Public read of a wheel's simulated spin (rad/s). Lets other systems (the wheel
+# dust particles) detect wheelspin from the real spin state without poking the
+# private per-wheel/axle dictionaries directly.
+func wheel_omega(wheel: VehicleWheel3D) -> float:
+	return _omega_of(wheel)
+
+
+# Whether the engine currently powers this wheel, per the drive mode. Undriven
+# wheels free-roll, so they never fling dirt no matter how fast they turn — the
+# wheel-dust system uses this to gate emission to the driven axle(s).
+func is_wheel_driven(wheel: VehicleWheel3D) -> bool:
+	match drive_mode:
+		DriveMode.AWD:
+			return true
+		DriveMode.FWD:
+			return not wheel.use_as_traction
+		_:  # RWD
+			return wheel.use_as_traction
+
+
 # Advance RWD -> AWD -> FWD -> RWD (the UI / keyboard toggle).
 func cycle_drive_mode() -> void:
 	drive_mode = ((drive_mode + 1) % 3) as DriveMode

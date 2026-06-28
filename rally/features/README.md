@@ -42,6 +42,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
 | [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder; light knockable bodies, no damage) |
 | [tire-marks.md](tire-marks.md) | `TireMarks` — gravel ruts laid behind the wheels (per-wheel ribbon mesh, gated to the road, capped) |
+| [wheel-dust.md](wheel-dust.md) | `WheelParticles` — cheap gravel spray flung from the driven wheels under wheelspin (CPU pool + MultiMesh, ring-buffered, gated to the gravel) |
 | [camera.md](camera.md) | Chase camera follow behavior |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout and mode buttons |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding (vertical slice; full diegetic UI deferred) |
