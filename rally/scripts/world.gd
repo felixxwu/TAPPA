@@ -220,6 +220,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	add_child(sign_field)
 	sign_field.build(sign_layout, $Floor as TerrainManager, cfg.sign_render_params())
 
+	# Finish arch: the inflatable gate straddling the road at the stage end, aligned
+	# with the finish sign pair (features/finish-arch.md). Its clear opening is sized
+	# to the road width plus a margin so the legs stand off the road, and it is turned
+	# so the FINISH face meets the approaching driver.
+	if cfg.finish_arch_enabled:
+		_place_finish_arch(result["centerline"] as Curve2D, cfg, $Floor as TerrainManager)
+
 	# Retain the centerline in a TrackProgress manager: tracks how far the car has
 	# driven and snaps it back onto the road if it strays too far (the Curve2D is
 	# otherwise discarded after set_track). Reuse the node across regenerations
@@ -265,6 +272,34 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# regeneration, e.g. entering a rally event).
 	if loading != null:
 		loading.finish()
+
+
+# Build and position the finish arch at the end of the road centerline. The arch
+# stands in its local XY plane and is extruded along its local Z (depth), so we
+# orient that depth axis along the road tangent: Basis.looking_at(fwd) points the
+# node's -Z down-track, leaving +Z (the FINISH face) toward the oncoming driver.
+# The base sits at the centerline (road-surface) height, like the signs.
+func _place_finish_arch(centerline: Curve2D, cfg: GameConfig, terrain: TerrainManager) -> void:
+	var length := centerline.get_baked_length()
+	if length <= 0.0:
+		return
+	var end_pos := centerline.sample_baked(length)
+	# Road direction at the end, by backward finite difference.
+	var tangent := end_pos - centerline.sample_baked(maxf(0.0, length - 0.5))
+	if tangent.length() < 1e-5:
+		tangent = Vector2(0.0, 1.0)
+	tangent = tangent.normalized()
+
+	var arch := FinishArch.new()
+	arch.name = "FinishArch"
+	# Clear opening spans the full road width plus a margin on each side, so the
+	# legs stand clear of the road and the car drives through the gap.
+	arch.span = cfg.track_width + 2.0 * cfg.finish_arch_road_margin_m
+	add_child(arch)  # _ready() -> build() runs here, after span is set
+	var fwd3 := Vector3(tangent.x, 0.0, tangent.y).normalized()
+	var ground_y := terrain.height_at(end_pos.x, end_pos.y)
+	arch.transform = Transform3D(Basis.looking_at(fwd3, Vector3.UP),
+		Vector3(end_pos.x, ground_y, end_pos.y))
 
 
 # The authored car spawn transform, captured at boot so each car swap spawns in

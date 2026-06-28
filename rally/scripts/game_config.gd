@@ -696,6 +696,17 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Empty leaves every sign on its per-kind colour fallback.
 @export var sign_textures: Dictionary = {}
 
+@export_group("Finish Arch")
+# The inflatable rally finish gate straddling the road at the stage end
+# (features/finish-arch.md). One per stage, placed by world.gd at the centerline's
+# end and aligned with the finish sign pair.
+## Whether to build the finish arch at the end of the stage.
+@export var finish_arch_enabled := true
+## Clear gap, in metres, between each road edge and the inside face of a leg.
+## The arch's opening = track_width + 2 x this, so the legs stand clear of the
+## road and the car drives through cleanly.
+@export_range(0.0, 6.0) var finish_arch_road_margin_m := 1.5
+
 
 @export_group("Performance")
 ## Render frame cap (FPS). The game is inherently low-end and ships one lean

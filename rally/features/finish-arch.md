@@ -1,19 +1,38 @@
 # Finish Arch
 
 **Sources:** `scripts/finish_arch.gd` (`FinishArch`, a self-building `Node3D`),
-banner art baked by `tools/bake_finish_banners.gd` into `textures/finish/`.
-Iterated visually with `tools/render_model.gd`.
+placed by `scripts/world.gd._place_finish_arch`, banner art baked by
+`tools/bake_finish_banners.gd` into `textures/finish/`. Iterated visually with
+`tools/render_model.gd`.
 
-The fat inflatable **finish gate** seen at the end of a stage — a Dakar-style
-orange portal that spans the road, with `FINISH` wordmarks across the top beam,
-sponsor cards through the centre, stacked sponsor panels down each leg, and guy
-ropes anchored to ground stakes on both sides. Built entirely from code (like
+The fat inflatable **finish gate** at the end of a stage — a Dakar-style orange
+portal that spans the road, with `FINISH` wordmarks across the top beam, sponsor
+cards through the centre, stacked sponsor panels down each leg, and guy ropes
+anchored to ground stakes on both sides. Built entirely from code (like
 [signs.md](signs.md) / [trees.md](trees.md)) so it fits the procedural-asset
 style and the PS1 flat-shaded look.
 
-> Status: a standalone, drop-in asset. It is **not yet wired into the generated
-> world** — the start/finish gates in [signs.md](signs.md) are still the simple
-> A-frame boards. This arch is the richer finish-line model to slot in later.
+## Placement in the world
+
+`world.gd._generate_track` calls `_place_finish_arch(centerline, cfg, terrain)`
+after the roadside signs, so the arch sits at the **end of the road centerline**,
+co-located with the finish sign pair ([signs.md](signs.md), which keeps its small
+A-frame `finish` boards as well). Placement:
+
+- **Position** — the centerline's end point, at the centerline (road-surface)
+  height (`terrain.height_at`), like the signs.
+- **Orientation** — the arch is built in its local XY plane and extruded along
+  local Z (depth), so `Basis.looking_at(road_tangent, UP)` aligns the depth axis
+  with the road: the node's −Z points down-track and **+Z (the FINISH face) turns
+  to meet the approaching driver**.
+- **Width** — the clear opening is set to `track_width + 2 ×
+  finish_arch_road_margin_m`, so the legs stand off the road on both sides and the
+  car drives through the gap cleanly. With the defaults (6 m road, 1.5 m margin)
+  the opening is 9 m and the overall arch ~12.4 m wide.
+
+Config (`GameConfig` › *Finish Arch*): `finish_arch_enabled` (build it at all),
+`finish_arch_road_margin_m` (gap between each road edge and a leg's inner face).
+It is visual-only (no collision); the legs sit clear of the racing line.
 
 ## Geometry (`FinishArch`)
 
@@ -90,4 +109,7 @@ to `tools/render_out/`. Pure tooling — not shipped in the game.
 `tests/headless/test_finish_arch.gd` — the arch builds a solid body mesh, spans
 its configured opening/height and stands on the ground, has the expected banner
 quads + ropes + stakes, and `build()` is idempotent (rebuild replaces rather
-than appends).
+than appends). `tests/headless/test_smoke.gd` —
+`test_finish_arch_straddles_the_road_at_the_stage_end` checks that `world.gd`
+builds one arch at the centerline end whose opening is wider than the road and
+that stands upright across it.

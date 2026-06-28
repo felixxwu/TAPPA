@@ -52,10 +52,11 @@ func _run() -> void:
 	ground.material_override = gmat
 	world.add_child(ground)
 
-	# A road strip down the middle so the arch reads as a gate over a road.
+	# A road strip down the middle, at the real in-game track_width (6 m), so the
+	# render shows the arch's legs standing clear of the road on both sides.
 	var road := MeshInstance3D.new()
 	var rplane := PlaneMesh.new()
-	rplane.size = Vector2(9, 60)
+	rplane.size = Vector2(6, 60)
 	road.mesh = rplane
 	var rmat := StandardMaterial3D.new()
 	rmat.albedo_color = Color(0.32, 0.31, 0.30)
@@ -64,9 +65,11 @@ func _run() -> void:
 	road.position = Vector3(0, 0.01, 0)
 	world.add_child(road)
 
-	# The model under test.
+	# The model under test, sized exactly as world.gd places it: a clear opening of
+	# track_width (6 m) + a 1.5 m margin each side = 9 m, so the legs clear the road.
 	var ArchScene = load("res://scripts/finish_arch.gd")
 	var arch = ArchScene.new()
+	arch.span = 6.0 + 2.0 * 1.5
 	world.add_child(arch)
 
 	var cam := Camera3D.new()

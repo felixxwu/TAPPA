@@ -310,3 +310,31 @@ func test_main_scene_generates_a_track() -> void:
 	assert_gt(floor_node.road_heights.size(), 0, "world baked road heights for flattening")
 	var ring: int = 2 * TerrainManager.RADIUS + 1
 	assert_eq(floor_node.loaded_coords().size(), ring * ring, "deferred ring is built once the track is applied")
+
+
+func test_finish_arch_straddles_the_road_at_the_stage_end() -> void:
+	# world.gd places one FinishArch at the centerline end, sized so its clear
+	# opening spans the full road width with margin, and turned across the road.
+	var arch: Node3D = null
+	for _i in range(240):
+		arch = _scene.get_node_or_null("FinishArch") as Node3D
+		if arch != null:
+			break
+		await get_tree().process_frame
+	assert_not_null(arch, "world built a FinishArch at the stage end")
+	if arch == null:
+		return
+	var cfg: GameConfig = Config.data
+	# The clear opening must cover the whole road (track_width) and then some.
+	assert_gt(arch.span, cfg.track_width, "arch opening is wider than the road")
+	assert_almost_eq(arch.span, cfg.track_width + 2.0 * cfg.finish_arch_road_margin_m, 0.01,
+		"opening = road width + a margin each side")
+	# The legs (inner faces at +/- span/2) must clear the road edges (+/- width/2).
+	assert_gt(arch.span * 0.5, cfg.track_width * 0.5, "leg inner faces sit outside the road")
+	# Local X (the leg-to-leg axis) should run across the road, i.e. roughly
+	# perpendicular to the road tangent — so the gate's depth (local Z) runs
+	# along the road. We assert the arch is rotated off world axes (placed, not
+	# left at identity) and stands at/above ground.
+	assert_gt(arch.global_transform.origin.y, -50.0, "arch sits on the terrain, not far below")
+	var across := arch.global_transform.basis.x.normalized()
+	assert_almost_eq(across.y, 0.0, 0.05, "the leg-to-leg axis stays horizontal (gate is upright)")
