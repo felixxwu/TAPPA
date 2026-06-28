@@ -3,9 +3,11 @@ extends GutTest
 # Structural smoke test for the procedural rally-team garage (scripts/garage.gd,
 # garage.tscn). The garage builds entirely from primitives in _ready with no
 # autoload dependency and no terrain generation, so it's cheap to instance here.
-# It's a deliberately bare two-bay shell, so the checks assert the structure +
-# lighting are present, the interior is EMPTY, and there's no leftover branding.
-# Building it must raise no script errors (the runner fails on any "SCRIPT ERROR").
+# It's a two-bay shell furnished to look lived-in (textured floor/walls, tool
+# chests, a workbench, a pegboard, a tyre stack) while keeping the bay centres
+# clear for the HQ's map table / tuning lift. The checks assert the structure +
+# lighting + furnishings are present and that there's no team branding. Building
+# it must raise no script errors (the runner fails on any "SCRIPT ERROR").
 
 var _garage: Node3D
 
@@ -20,6 +22,10 @@ func after_all() -> void:
 	_garage.free()
 
 
+func _meshes() -> Array:
+	return _garage.find_children("*", "MeshInstance3D", true, false)
+
+
 func test_garage_instantiates() -> void:
 	assert_not_null(_garage, "garage scene instantiates")
 
@@ -28,23 +34,47 @@ func test_two_bays() -> void:
 	assert_eq(_garage.num_bays, 2, "garage has two bays")
 
 
-func test_structure_geometry_present() -> void:
-	# Slab, back + 2 side walls, 3 pillars, fascia, roof, 2 ground planes and the
-	# 2 ceiling strips — a modest, simplified mesh count. Assert it's in a sane
-	# band: enough to be the shell, few enough to confirm the interior is bare.
-	var meshes := _garage.find_children("*", "MeshInstance3D", true, false)
-	assert_between(meshes.size(), 10, 22, "garage built the simplified shell (no clutter)")
+func test_structure_and_props_geometry_present() -> void:
+	# Shell (slab, walls, pillars, fascia, roof) + ground + ceiling strips + the
+	# interior furnishings (cabinets, pegboards, workbench, tyres). A sane upper
+	# bound guards against runaway clutter.
+	assert_between(_meshes().size(), 28, 70, "garage built the furnished shell")
 
 
-func test_interior_is_empty() -> void:
-	# An empty shell carries no signage, no car/lift and no crew, so there are no
-	# Label3D nodes and no cylinder/sphere/torus props anywhere in the model.
+func test_textured_surfaces_present() -> void:
+	# Floor, walls, cabinets, pegboards and the bench carry image textures — the
+	# "lived-in" look. Several meshes should have an albedo_texture assigned.
+	var textured := 0
+	for mi in _meshes():
+		var mat := (mi as MeshInstance3D).material_override as StandardMaterial3D
+		if mat != null and mat.albedo_texture != null:
+			textured += 1
+	assert_gt(textured, 8, "many surfaces are textured (floor, walls, cabinets, …)")
+
+
+func test_tool_cabinets_present() -> void:
+	# At least one mesh uses the tool-chest texture.
+	var cabinets := 0
+	for mi in _meshes():
+		var mat := (mi as MeshInstance3D).material_override as StandardMaterial3D
+		if mat != null and mat.albedo_texture != null \
+				and mat.albedo_texture.resource_path == _garage.TEX_CABINET:
+			cabinets += 1
+	assert_gt(cabinets, 3, "tool chests line the bays")
+
+
+func test_tyre_stack_present() -> void:
+	var cylinders := 0
+	for mi in _meshes():
+		if (mi as MeshInstance3D).mesh is CylinderMesh:
+			cylinders += 1
+	assert_gte(cylinders, 4, "a tyre stack (cylinders) furnishes a corner")
+
+
+func test_no_team_branding() -> void:
+	# The model carries no signage / branding text.
 	assert_eq(_garage.find_children("*", "Label3D", true, false).size(), 0,
-		"no text/signage in the empty garage")
-	for mi in _garage.find_children("*", "MeshInstance3D", true, false):
-		var mesh := (mi as MeshInstance3D).mesh
-		assert_true(mesh is BoxMesh or mesh is PlaneMesh,
-			"only structural box/plane meshes remain (no prop primitives)")
+		"no branding text in the garage")
 
 
 func test_environment_and_lighting_present() -> void:
