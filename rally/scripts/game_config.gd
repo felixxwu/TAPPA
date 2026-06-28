@@ -466,6 +466,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(50.0, 1000.0) var distant_terrain_radius_m := 250.0
 ## Backdrop grid spacing (m). Coarse is fine at distance; smaller = finer hills, more verts.
 @export_range(2.0, 40.0) var distant_terrain_cell_m := 10.0
+## Depth (m) the whole coarse backdrop is sunk below true terrain height, so the
+## detailed chunk ring always sits above it and the coarse mesh never pokes
+## through. No holes are cut in the backdrop (it underlaps the detail ring
+## entirely); at distance the slight step at the ring edge is imperceptible.
+@export_range(0.0, 5.0) var distant_terrain_sink_m := 1.5
 @export var terrain_tile_per_meter := 0.125  # ground texture tiles per metre, baked into terrain UVs
 ## Gravel/road texture tiles per metre. Independent of the ground tiling so the
 ## road can be finer or coarser than the surrounding grass.

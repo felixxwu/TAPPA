@@ -164,19 +164,19 @@ ring — collision-free scenery sampling the same `height_at`/`light_at` noise,
 re-centred on the car — so the now-thin fog (`fog_density` 0.005) reveals a
 horizon for the skybox instead of a cliff. See
 [rendering.md](rendering.md) and [../todo/distant-terrain-and-sky.md](../todo/distant-terrain-and-sky.md).
-The coarse geometry re-centres on every focus **chunk crossing**, and **cuts a
-hole** only over the chunks the detail ring has **actually loaded**
-(`loaded_coords()`) — NOT the whole wanted ring. This is the fix for the
-skybox-through-the-ground flash: detail chunks integrate one per frame, so on a
-crossing the leading chunks don't exist for several frames; holing the wanted
-footprint up front would bare the sky over those not-yet-loaded cells. Holing
-only loaded chunks means the coarse backdrop always covers whatever the detail
-ring hasn't filled yet. As each chunk integrates the hole grows to match via a
-cheap **index-only** rebuild (`_recut_hole`, triggered by a change in
-`integrations_total`) — the cached coarse vertices don't change between crossings,
-so no noise is re-sampled for the grow-in. A one-coarse-cell underlap is kept
-around each loaded chunk's edge (sunk by `sink_m`) so the detail ring wins there
-and no gap shows at the seam. Tunables: `GameConfig.distant_terrain_*`.
+The coarse geometry re-centres on every focus **chunk crossing** and is a
+**full, uncut grid** — it underlaps the entire detail ring rather than holing out
+the loaded chunks. To stop it poking through the detailed terrain, the **whole
+backdrop is sunk `sink_m`** (default 1.5 m, `GameConfig.distant_terrain_sink_m`)
+below true height, so the detail ring always renders above it and the coarse mesh
+stays hidden beneath. At the ring's outer edge the coarse surface steps down by
+`sink_m`, but that edge is ~75 m away and softened by fog, so the step is
+imperceptible. This also guarantees the skybox is never exposed (the backdrop
+covers everything, including chunks the detail ring hasn't streamed in yet). It
+trades a tiny, constant bit of occluded coarse overdraw under the detail ring for
+**zero per-crossing work** — no loaded-chunk tracking, no index re-cut on chunk
+integration, no skybox-flash race; the backdrop only rebuilds on a chunk
+crossing. Tunables: `GameConfig.distant_terrain_*`.
 
 ## Performance
 
