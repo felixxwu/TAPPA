@@ -94,6 +94,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## the car is too slow for understeer to matter and the aid only makes low-speed
 ## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.
 @export_range(0.0, 50.0) var steer_assist_min_speed := 8.333
+## Slip angle (radians) at which the steer-assist yaw torque tapers to zero. The
+## assist is full when the car points along its travel direction and fades
+## linearly to nothing once the car has rotated this far into the turn, so it
+## helps rotate the car in but won't keep over-rotating it into a spin. 30° ≈ 0.524 rad.
+@export_range(0.0, 1.571) var steer_assist_max_angle := deg_to_rad(30.0)
 ## Self-righting assist: when one or more wheels leave the ground, a roll+pitch
 ## torque (N·m at full 90° tilt) eases the car back toward flat, scaling with how
 ## far it has tilted. Never yaws the car. 0 disables. A landing/anti-flip aid,

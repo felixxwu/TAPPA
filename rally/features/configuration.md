@@ -34,6 +34,7 @@ the `.tres` requires a scene reload to take effect.
 | `steer_travel_alignment` | 1.0 | Auto-countersteer fraction (0..1) |
 | `steer_assist_torque` | 200.0 | Yaw torque vs understeer (N·m) |
 | `steer_assist_min_speed` | 8.333 | Min speed (m/s ≈30 km/h) before steer assist applies |
+| `steer_assist_max_angle` | 0.524 rad | Slip angle (≈30°) at which steer assist tapers to zero; full at 0, linear in between |
 | `level_assist_torque` | 8000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
 | `wheel_roll_influence` | 0.1 | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM, 1 = contact patch |
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |
@@ -125,5 +126,6 @@ calls `_apply_engine_preset()`, which copies the preset into the engine fields.
 ## Current overrides in `game_config.tres`
 
 The committed `.tres` differs from script defaults in places, e.g. `engine_type
-= 1` (i5), `auto_gearbox = true`, `drag_coefficient = 0.3`, `steer_limit = 0.4`,
-`upshift_redline_fraction = 0.75`. Check the file for the authoritative values.
+= 1` (i5), `auto_gearbox = true`, `drag_coefficient = 0.3`, `steer_limit = 0.5`,
+`steer_assist_torque = 3000.0`, `upshift_redline_fraction = 0.75`. Check the file
+for the authoritative values.

@@ -234,7 +234,18 @@ func _physics_process(delta: float) -> void:
 	# than switched on abruptly at that threshold), so it ramps back up smoothly
 	# with no sudden jump while still staying out of low-speed handling.
 	var assist_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
-	apply_torque(global_transform.basis.y * steer_input * cfg.steer_assist_torque * assist_scale)
+	# Taper the assist off as the car rotates into the turn. travel_angle is the
+	# slip angle (travel direction relative to the car's nose); steering into a
+	# slide rotates the car so its nose leads the travel direction, which is the
+	# same sign as steer_input. -travel_angle * sign(steer_input) is therefore how
+	# far the car has already rotated in the steering direction. Full assist at 0,
+	# fading linearly to none at steer_assist_max_angle, so it helps rotate the car
+	# in but stops adding torque once it's turned enough — no over-rotation/spin.
+	var rotated_into_turn := -travel_angle * signf(steer_input)
+	var angle_scale := 1.0
+	if cfg.steer_assist_max_angle > 0.0:
+		angle_scale = clampf(1.0 - rotated_into_turn / cfg.steer_assist_max_angle, 0.0, 1.0)
+	apply_torque(global_transform.basis.y * steer_input * cfg.steer_assist_torque * assist_scale * angle_scale)
 
 	# Self-righting assist: while any wheel is off the ground, ease the chassis
 	# back toward level. up × world_up is the roll+pitch axis that rotates the

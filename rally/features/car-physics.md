@@ -34,7 +34,11 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    (`steer_assist_torque`) fights understeer,
    faded in linearly from 0 at standstill to full at `steer_assist_min_speed`
    (≈30 km/h) — rather than switched on abruptly at that threshold — so it ramps
-   up smoothly without making low-speed handling twitchy.
+   up smoothly without making low-speed handling twitchy. It also tapers with the
+   car's slip angle: full when the car points along its travel direction, fading
+   linearly to zero once it has rotated `steer_assist_max_angle` (≈30°) into the
+   turn, so the aid helps rotate the car in but won't keep over-rotating it into a
+   spin.
 4. **Aero forces:**
    - *Drag:* `-velocity * |velocity| * drag_coefficient` (quadratic).
    - *Downforce:* `v² * downforce_{front,rear}` applied at the axle midpoints;

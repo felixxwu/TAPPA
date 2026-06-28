@@ -220,6 +220,57 @@ func test_steer_assist_suppressed_below_min_speed() -> void:
 	assert_lt(yaw_delta, 0.02, "steer assist does not yaw a stationary car")
 
 
+func test_steer_assist_tapers_with_slip_angle() -> void:
+	# The assist fades linearly with how far the car has already rotated into the
+	# turn: full at zero slip, nothing past steer_assist_max_angle. Steering left,
+	# measure the yaw the assist adds (torque on minus off, over a short window)
+	# when the car points along its travel vs. when it has slipped well past the
+	# limit — the slipped contribution must taper to near nothing.
+	var cfg: GameConfig = Config.data
+	var saved_torque := cfg.steer_assist_torque
+	var saved_angle := cfg.steer_assist_max_angle
+	cfg.steer_assist_max_angle = deg_to_rad(15.0)
+
+	var aligned := await _steer_assist_yaw_gain(0.0)
+	var slipped := await _steer_assist_yaw_gain(deg_to_rad(45.0))
+
+	cfg.steer_assist_torque = saved_torque
+	cfg.steer_assist_max_angle = saved_angle
+
+	assert_gt(aligned, 0.03,
+		"aligned: the assist must add left yaw when the car points along its travel")
+	assert_lt(absf(slipped), aligned * 0.3,
+		"slipped past steer_assist_max_angle: the assist contribution must taper away")
+
+
+# Left-steer yaw rate the assist adds (torque 8000 minus torque 0) over a short
+# window, with the car driving at 20 m/s but already slipped the given angle INTO
+# the turn (travel to the right of the nose). Differencing the two torque runs
+# isolates the assist from the identical front-wheel/grip yaw in both.
+func _steer_assist_yaw_gain(slip_into_turn: float) -> float:
+	var off := await _left_steer_yaw_rate(slip_into_turn, 0.0)
+	var on := await _left_steer_yaw_rate(slip_into_turn, 8000.0)
+	return on - off
+
+
+func _left_steer_yaw_rate(slip_into_turn: float, torque: float) -> float:
+	var cfg: GameConfig = Config.data
+	cfg.steer_assist_torque = torque
+	# Reset to the spawn pose so both torque runs start from an identical state.
+	Input.action_press("reset_car")
+	await _wait_physics(5)
+	Input.action_release("reset_car")
+	await _wait_physics(120)
+	var forward := -_car.global_transform.basis.z
+	var right := _car.global_transform.basis.x
+	_car.linear_velocity = (forward * cos(slip_into_turn) + right * sin(slip_into_turn)) * 20.0
+	_car.angular_velocity = Vector3.ZERO
+	Input.action_press("steer_left")
+	await _wait_physics(12)
+	Input.action_release("steer_left")
+	return _car.angular_velocity.y
+
+
 func _axle_normal_sum(rear: bool) -> float:
 	var total := 0.0
 	for wheel in _car.find_children("*", "VehicleWheel3D", false):
