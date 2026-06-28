@@ -171,14 +171,33 @@ func _build_environment() -> void:
 	sun.light_energy = 1.1
 	add_child(sun)
 
-	var ground := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(240.0, 240.0)
-	ground.mesh = plane
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.18, 0.19, 0.22)
-	ground.material_override = mat
-	add_child(ground)
+	var cfg: GameConfig = Config.data
+	# Grass field covering the whole lot, with the concrete apron (below) laid on top
+	# around the garage + car park. The grass uses the same texture as the run scene's
+	# terrain, tiled to match (terrain_tile_per_meter), sitting a hair below the apron.
+	var grass_size := 240.0
+	var grass := MeshInstance3D.new()
+	var grass_plane := PlaneMesh.new()
+	grass_plane.size = Vector2(grass_size, grass_size)
+	grass.mesh = grass_plane
+	grass.position.y = -0.02  # just under the concrete so the apron wins where they overlap
+	var grass_mat := StandardMaterial3D.new()
+	grass_mat.albedo_texture = load("res://textures/grass.jpg")
+	var tiles := grass_size * cfg.terrain_tile_per_meter
+	grass_mat.uv1_scale = Vector3(tiles, tiles, 1.0)
+	grass.material_override = grass_mat
+	add_child(grass)
+
+	# Grey concrete apron around the garage + car park (the player parks / tunes here).
+	var concrete := MeshInstance3D.new()
+	var concrete_plane := PlaneMesh.new()
+	concrete_plane.size = cfg.hq_concrete_size
+	concrete.mesh = concrete_plane
+	concrete.position = Vector3(cfg.hq_concrete_center.x, 0.0, cfg.hq_concrete_center.z)
+	var concrete_mat := StandardMaterial3D.new()
+	concrete_mat.albedo_color = Color(0.18, 0.19, 0.22)
+	concrete.material_override = concrete_mat
+	add_child(concrete)
 
 	# Collision floor under the lot so the parked cars settle onto their suspension
 	# (the visual ground plane has no collision). A thick box with its top at y = 0.

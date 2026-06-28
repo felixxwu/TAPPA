@@ -38,7 +38,10 @@ objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_picka
 billboard **trees** framing the lot (`_build_trees`, reusing the stage's
 `BillboardField`), the garage shell, the table, the lift — is built from `BoxMesh`
 blocks via `_block()` (placeholder art; the framing/positions that the flow depends
-on are in `GameConfig`).
+on are in `GameConfig`). The ground is a **grass-textured field** (the run scene's
+`textures/grass.jpg`, tiled by `terrain_tile_per_meter`) with a **grey concrete
+apron** laid on top around the garage + car park (`hq_concrete_center`/`hq_concrete_size`),
+so the lot reads as paved and everything beyond it as field.
 
 **EXTERIOR (boot/title).** Just a **Start** button over an establishing shot of
 the outdoor car park, with a block skyline **behind the garage** and trees framing

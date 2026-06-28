@@ -368,6 +368,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var hq_carpark_origin := Vector3(0.0, 0.0, 26.0)
 ## Garage interior footprint (m): floor X/Z extent; walls + roof are built from it.
 @export var hq_garage_size := Vector2(14.0, 12.0)
+## Grey concrete apron under the garage + car park: centre (XZ) and size (X, Z). Laid
+## over the grass-textured ground so the lot reads as paved and the rest as field.
+@export var hq_concrete_center := Vector3(0.0, 0.0, 13.0)
+@export var hq_concrete_size := Vector2(48.0, 44.0)
 ## Map table: centre position, block size, and the 3D map plane laid on its top.
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 3.4)
