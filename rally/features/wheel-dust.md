@@ -38,8 +38,9 @@ per-instance engine round-trips a frame is the classic MultiMesh trap — it mur
 mobile/WebGL; one bulk upload sidesteps it. The upload is **skipped entirely when
 nothing changed**: `_advance` is a no-op while `_alive == 0`, so an idle car (or
 one driving cleanly with no wheelspin) does ~zero per-frame particle work. The
-centerline gravel gate is also only searched while a wheel is actually spinning,
-and each wheel uses a tight `WHEEL_WINDOW_M` window around the car's offset.
+surface gate is a single `TerrainManager.surface_at` dictionary lookup (no
+centerline search), evaluated only after a wheel has already passed the wheelspin
+test.
 
 If the spray still costs too much on a weak device, the cheapest dials (in order
 of impact) are `wheel_particle_max` (pool size = the per-tick loop length),
@@ -62,11 +63,14 @@ Each `_physics_process` (skipped when `wheel_particles_enabled` is off):
     (`Drivetrain.wheel_forward`), **not** the car's total speed. This is the key to
     the slide case: a car drifting sideways at speed still counts as spinning as
     long as the tread turns faster than it rolls forward.
-  - **Gravel gate** — the wheel must be within `track_width/2 +
-    wheel_particle_gravel_margin_m` of the road centerline (windowed nearest-offset
-    search around the car's cached offset, mirroring `TireMarks`). Off that
-    footprint (the verge / **grass**) sprays nothing. The car offset is only
-    searched once a wheel is actually spinning, so a clean drive skips it.
+  - **Surface gate** — one `Drivetrain.terrain.surface_at(x, z)` lookup returns
+    `(road_weight, tarmac_weight)`. The wheel must be at least half onto the road
+    (`road_weight ≥ ROAD_WEIGHT_MIN`, else it's **grass**) AND on the gravel half
+    (`tarmac_weight ≤ TARMAC_WEIGHT_MAX`, else it's **tarmac**, which throws no
+    dirt). Both thresholds sit at the midpoint of the same feather bands the road
+    colour/grip blend across. With no terrain wired (flat fixtures), nothing
+    sprays. This reuses the surface system added for per-surface grip — see
+    `features/drivetrain-and-tires.md`.
 
 ## Throw direction & speed
 
@@ -90,21 +94,20 @@ All in `GameConfig` (the "Wheel Particles" group): `wheel_particles_enabled`,
 `wheel_particle_min_slip_mps`, `wheel_particle_lifetime_s`,
 `wheel_particle_speed_scale`, `wheel_particle_up_speed_mps`,
 `wheel_particle_gravity_mps2`, `wheel_particle_air_resistance`,
-`wheel_particle_spawn_count`, `wheel_particle_spread`,
-`wheel_particle_gravel_margin_m`.
+`wheel_particle_spawn_count`, `wheel_particle_spread`.
 
-## TODO — tarmac
+## Surfaces
 
-There is no surface type yet; every road is gravel, so the gravel gate is the road
-footprint. **Once tarmac is introduced**, wheels spinning on tarmac must spray no
-dirt — add that surface check at the gravel gate in `_emit_from_wheels`
-(`TODO(tarmac)` marks the spot). Grass is already excluded (off the road footprint).
+Both excluded surfaces are now handled by the live `surface_at` gate: **grass**
+(off the road footprint) and **tarmac** (paved — throws no dirt). Only the gravel
+road sprays. This landed once the per-surface system existed; there is no longer a
+pending tarmac TODO here.
 
 ## Tests
 
-`tests/headless/test_wheel_particles.gd` — a straight `Curve2D` + a stub car with a
-stub drivetrain and stub wheels drive the gating / emission / ring-buffer logic
+`tests/headless/test_wheel_particles.gd` — a stub car with a stub drivetrain, stub
+wheels and a stub terrain surface drive the gating / emission / ring-buffer logic
 without a real vehicle or rendering: dirt flies from a driven, spinning, on-gravel
-wheel; none from an undriven wheel, a wheel rolling no faster than the ground, or a
-wheel off the gravel (grass); a spinning *and* sliding wheel still emits and throws
-backward + sideways; and the ring buffer caps the live count.
+wheel; none from an undriven wheel, a wheel rolling no faster than the ground, a
+wheel on grass (off the road), or a wheel on tarmac; a spinning *and* sliding wheel
+still emits and throws backward + sideways; and the ring buffer caps the live count.

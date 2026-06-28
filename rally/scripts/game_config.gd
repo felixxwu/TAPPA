@@ -622,9 +622,6 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Random spread of the throw, as a fraction of the throw speed — widens the spray
 ## cone (and grows with how hard the wheel is spinning).
 @export_range(0.0, 1.0) var wheel_particle_spread := 0.35
-## Extra lateral allowance beyond the road half-width within which dirt still flies
-## (the gravel verge), in metres. Off this footprint (grass) sprays nothing.
-@export var wheel_particle_gravel_margin_m := 0.3
 
 
 @export_group("Trees")

@@ -241,12 +241,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Wheel dust: cheap gravel spray flung from the driven wheels under wheelspin
 	# (features/wheel-dust.md). Reused across regenerations like the managers above;
-	# gated to the road half-width so it only sprays on the gravel, not the grass.
+	# the surface under each wheel (gravel vs grass/tarmac) is read live off the
+	# car's drivetrain terrain, so it only needs the car here.
 	if _wheel_particles == null:
 		_wheel_particles = WheelParticles.new()
 		_wheel_particles.name = "WheelParticles"
 		add_child(_wheel_particles)
-	_wheel_particles.setup(road_centerline, $Car, cfg.track_width * 0.5)
+	_wheel_particles.setup($Car)
 
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).

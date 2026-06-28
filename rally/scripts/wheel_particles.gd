@@ -13,15 +13,6 @@ extends MultiMeshInstance3D
 # ring buffer: new particles overwrite the oldest slot, so memory and draw cost
 # are hard-capped no matter how long the wheels spin. See features/wheel-dust.md.
 
-# Windowed nearest-offset search of the centerline (mirrors TireMarks), so the
-# road gate stays local on a winding stage instead of snapping to a far section.
-# The wheels sit within ~2 m of the car, so once the car's offset is found each
-# wheel only needs a tight window around it (keeps the search cheap on mobile).
-const SEARCH_BACK_M := 30.0
-const SEARCH_FWD_M := 60.0
-const SEARCH_STEP_M := 1.0
-const WHEEL_WINDOW_M := 4.0
-
 # Floats per MultiMesh instance for TRANSFORM_3D with no colour/custom data: a
 # 3x4 matrix, with the origin at offsets 3/7/11. We keep every instance's basis
 # at identity (the billboard material orients the quad anyway) and only ever
@@ -36,11 +27,14 @@ const STRIDE := 12
 # nothing visible.
 const HIDE_Y := -1.0e7
 
+# Surface gate thresholds against TerrainManager.surface_at (road_weight, tarmac_weight).
+# The wheel must be at least half onto the road (else it's grass) AND on the gravel
+# half (else it's tarmac, which throws no dirt). 0.5 is the midpoint of the same
+# feather bands the road colour/grip blend across.
+const ROAD_WEIGHT_MIN := 0.5
+const TARMAC_WEIGHT_MAX := 0.5
+
 var _car: Node                 # the VehicleBody3D (read for drivetrain + position)
-var _centerline: Curve2D
-var _baked_length := 0.0
-var _half_width := 3.0         # road half-width (track_width * 0.5)
-var _offset := 0.0             # cached windowed nearest-offset for the car centre
 
 # Particle pool (parallel arrays, index == MultiMesh instance == ring slot).
 var _pos: PackedVector3Array
@@ -52,20 +46,16 @@ var _alive := 0
 var _max := 0
 
 
-# Wire to a freshly generated track + the current car. half_width is the road
-# half-width (track_width * 0.5) the spray is gated to (off it = grass/verge).
-func setup(centerline: Curve2D, car: Node, half_width: float) -> void:
-	_centerline = centerline
-	_baked_length = centerline.get_baked_length() if centerline != null else 0.0
-	_half_width = half_width
-	_offset = 0.0
+# Wire to the current car. The wheel/surface state is read live off the car's
+# drivetrain each tick (spin, driven axle, the terrain that classifies the
+# surface), so nothing else needs threading through here.
+func setup(car: Node) -> void:
 	_car = car
 	_build_pool()
 
 
 # Re-point at a freshly spawned car (a car swap) and clear all live particles.
 func retarget(car: Node) -> void:
-	_offset = 0.0
 	_car = car
 	_clear()
 
@@ -177,15 +167,18 @@ func _advance(delta: float) -> bool:
 
 # Spawn dirt from every driven wheel that is in contact, spinning faster than the
 # ground, and sitting on the gravel road. Reads the live drivetrain each tick, so
-# a car swap (which rebuilds the drivetrain) needs no extra wiring here.
+# a car swap (which rebuilds the drivetrain) needs no extra wiring here. Returns
+# true if anything was emitted (so the caller uploads the buffer once).
 func _emit_from_wheels() -> bool:
 	var cfg: GameConfig = Config.data
 	var dt = _car.drivetrain
+	var terrain = dt.terrain
+	# No surface info (flat test fixtures / not yet wired) means we can't tell
+	# gravel from grass or tarmac, so spray nothing rather than guess.
+	if terrain == null or not terrain.has_method("surface_at"):
+		return false
 	var r: float = cfg.wheel_radius
 	var min_slip: float = cfg.wheel_particle_min_slip_mps
-	# Refresh the car's road offset only when something is actually spinning, so the
-	# centerline search is skipped entirely on a clean drive.
-	var offset_ready := false
 	var emitted := false
 	for wheel in dt.front_wheels + dt.rear_wheels:
 		# Undriven wheels free-roll — they never fling dirt however fast they turn.
@@ -201,17 +194,15 @@ func _emit_from_wheels() -> bool:
 		# Wheelspin is the wheel surface OUTRUNNING the ground along the rolling
 		# direction (v_long), NOT the car's total speed — so a car that is sliding
 		# sideways at speed still counts as spinning as long as the tread is turning
-		# faster than it is rolling forward.
-		var v_long: float = fwd.dot(vel)
-		var long_slip: float = surface_speed - v_long
-		if long_slip < min_slip:
+		# faster than it is rolling forward. Cheapest test, so gate on it first.
+		if surface_speed - fwd.dot(vel) < min_slip:
 			continue
-		# Gate to the gravel: off the road footprint (the verge / grass) flings
-		# nothing. TODO(tarmac): once a paved surface type exists, also skip wheels
-		# spinning on tarmac here — tarmac throws no dirt. (features/wheel-dust.md)
-		if not _on_gravel(Vector2(wpos.x, wpos.z), offset_ready):
+		# Surface gate (one cheap terrain lookup): spray ONLY on the gravel road —
+		# not grass (off the road footprint), not tarmac (paved throws no dirt).
+		# surface_at -> (road_weight 0=grass..1=road, tarmac_weight 0=gravel..1=tarmac).
+		var surf: Vector2 = terrain.surface_at(wpos.x, wpos.z)
+		if surf.x < ROAD_WEIGHT_MIN or surf.y > TARMAC_WEIGHT_MAX:
 			continue
-		offset_ready = true
 		_spray(cfg, cp, fwd, vel, surface_speed)
 		emitted = true
 	return emitted
@@ -252,36 +243,6 @@ func _emit(cfg: GameConfig, pos: Vector3, vel: Vector3) -> void:
 	_vel[_next] = vel
 	_life[_next] = cfg.wheel_particle_lifetime_s
 	_set_origin(_next, pos)  # caller uploads the whole buffer once per tick
-
-
-# True when a wheel position is on the gravel road footprint (half-width plus a
-# verge margin). `seeded` says the per-car offset cache is already fresh this tick.
-func _on_gravel(xz: Vector2, seeded: bool) -> bool:
-	if _centerline == null:
-		return false
-	if not seeded:
-		_offset = _search_offset(
-			Vector2(_car.global_position.x, _car.global_position.z),
-			_offset - SEARCH_BACK_M, _offset + SEARCH_FWD_M
-		)
-	var gate: float = _half_width + Config.data.wheel_particle_gravel_margin_m
-	var w_off := _search_offset(xz, _offset - WHEEL_WINDOW_M, _offset + WHEEL_WINDOW_M)
-	return xz.distance_to(_centerline.sample_baked(w_off)) <= gate
-
-
-func _search_offset(here: Vector2, from_m: float, to_m: float) -> float:
-	var lo := maxf(0.0, from_m)
-	var hi := minf(_baked_length, to_m)
-	var best_o := lo
-	var best_d := INF
-	var o := lo
-	while o <= hi:
-		var d := here.distance_squared_to(_centerline.sample_baked(o))
-		if d < best_d:
-			best_d = d
-			best_o = o
-		o += SEARCH_STEP_M
-	return best_o
 
 
 # --- Readouts (tests) --------------------------------------------------------

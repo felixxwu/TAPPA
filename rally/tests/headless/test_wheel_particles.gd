@@ -1,7 +1,7 @@
 extends GutTest
 # WheelParticles: cheap gravel spray flung from the driven wheels under wheelspin
-# (features/wheel-dust.md). Driven against a straight Curve2D with a stub car +
-# stub drivetrain + stub wheels, so the gating / emission / ring-buffer logic is
+# (features/wheel-dust.md). Driven against a stub car + stub drivetrain + stub
+# wheels + a stub terrain surface, so the gating / emission / ring-buffer logic is
 # exercised without a real vehicle or rendering.
 
 const WheelParticles = preload("res://scripts/wheel_particles.gd")
@@ -18,13 +18,24 @@ class StubWheel:
 		return _contact
 
 
-# Stub drivetrain: classifies/driven-gates the wheels and reports spin + ground
-# velocity, mirroring the real Drivetrain's public surface.
+# Stub terrain: reports (road_weight, tarmac_weight) like TerrainManager.surface_at.
+# Within |x| <= road_half it's road; beyond that it's grass (road_weight 0).
+class StubTerrain:
+	extends RefCounted
+	var road_half := 3.0
+	var tarmac := 0.0
+	func surface_at(x: float, _z: float) -> Vector2:
+		return Vector2(1.0 if absf(x) <= road_half else 0.0, tarmac)
+
+
+# Stub drivetrain: classifies/driven-gates the wheels and reports spin, ground
+# velocity, and the terrain — mirroring the real Drivetrain's public surface.
 class StubDrivetrain:
 	extends RefCounted
 	var front_wheels: Array = []
 	var rear_wheels: Array = []
 	var ground_vel := Vector3.ZERO  # ground velocity at the contact (uniform stub)
+	var terrain
 	func is_wheel_driven(w) -> bool:
 		return w.driven
 	func wheel_forward(w) -> Vector3:
@@ -43,23 +54,22 @@ class StubCar:
 
 var _car: StubCar
 var _dt: StubDrivetrain
-var _curve: Curve2D
+var _terrain: StubTerrain
 var _wheels: Array = []
 
 
 func before_each() -> void:
 	Config.reset()
 	Config.data.wheel_particles_enabled = true
-	# A straight road 200 m along +Z (curve points are Vector2(world_x, world_z)).
-	_curve = Curve2D.new()
-	_curve.add_point(Vector2(0, 0))
-	_curve.add_point(Vector2(0, 200))
 	_car = StubCar.new()
 	_dt = StubDrivetrain.new()
+	_terrain = StubTerrain.new()
+	_dt.terrain = _terrain
 	_car.drivetrain = _dt
 	add_child_autofree(_car)
-	_car.position = Vector3(0, 0, 10)  # on the road, ~offset 10
-	# Four wheels: two front (undriven by default mode in the stub) + two rear.
+	_car.position = Vector3(0, 0, 10)
+	# Four wheels: two front + two rear (all flagged driven in the stub by default;
+	# individual tests flip `driven` to model an undriven axle).
 	_wheels = []
 	for i in 4:
 		var w := StubWheel.new()
@@ -72,10 +82,10 @@ func after_each() -> void:
 	Config.reset()
 
 
-func _make(half_width := 3.0) -> WheelParticles:
+func _make() -> WheelParticles:
 	var wp := WheelParticles.new()
 	add_child_autofree(wp)
-	wp.setup(_curve, _car, half_width)
+	wp.setup(_car)
 	return wp
 
 
@@ -99,7 +109,7 @@ func test_pool_starts_empty_and_capped() -> void:
 func test_driven_spinning_on_gravel_emits() -> void:
 	var wp := _make()
 	# Rear (driven) wheel spinning at 10 m/s tread vs a stationary ground -> well
-	# over the slip floor, sitting on the centerline.
+	# over the slip floor, sitting on the gravel road.
 	_wheels[2].omega = _omega_for(10.0)
 	_tick(wp)
 	assert_gt(wp.live_count(), 0, "a driven wheel spinning on the gravel throws dirt")
@@ -123,13 +133,22 @@ func test_no_emit_when_not_spinning_faster_than_ground() -> void:
 	assert_eq(wp.live_count(), 0, "no dirt when the wheel only rolls (no wheelspin)")
 
 
-func test_no_emit_off_the_gravel() -> void:
+func test_no_emit_on_grass() -> void:
 	var wp := _make()
-	# Driven wheel spinning, but 10 m off to the side (on the grass, past the gate).
+	# Driven wheel spinning, but 10 m off to the side -> off the road (grass).
 	_wheels[2].position = Vector3(10, 0, 0)
 	_wheels[2].omega = _omega_for(10.0)
 	_tick(wp)
-	assert_eq(wp.live_count(), 0, "a wheel spinning off the gravel (grass) throws nothing")
+	assert_eq(wp.live_count(), 0, "a wheel spinning on grass (off the road) throws nothing")
+
+
+func test_no_emit_on_tarmac() -> void:
+	var wp := _make()
+	# Driven wheel spinning on the road, but the surface is tarmac -> no dirt.
+	_terrain.tarmac = 1.0
+	_wheels[2].omega = _omega_for(10.0)
+	_tick(wp)
+	assert_eq(wp.live_count(), 0, "a wheel spinning on tarmac throws no dirt")
 
 
 func test_sliding_and_spinning_still_emits_and_sprays_sideways() -> void:
