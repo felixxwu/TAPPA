@@ -577,9 +577,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_group("Tire Marks")
 ## Gravel ruts laid behind the wheels while driving on the road (features/tire-marks.md).
 @export var tire_marks_enabled := true
-## Mark colour — a solid, constant shade just a touch darker than the gravel
+## Gravel rut colour — a solid, constant shade just a touch darker than the gravel
 ## (gravel.jpg averages ~0.42 grey). Unshaded, so tune against the lit road in-game.
 @export var tire_mark_color := Color(0.36, 0.35, 0.33)
+## Tarmac skidmark colour — a dark, near-black scuff laid only where a driven wheel
+## spins on the tarmac (the gravel ruts use tire_mark_color instead).
+@export var tire_mark_tarmac_color := Color(0.08, 0.08, 0.08)
 ## Width of a wheel's mark ribbon, in metres (roughly a tyre's width).
 @export var tire_mark_width_m := 0.22
 ## Don't lay marks below this car speed (m/s) — keeps the countdown/parked car clean.
