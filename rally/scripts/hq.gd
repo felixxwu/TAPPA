@@ -981,17 +981,26 @@ func _on_exterior_start() -> void:
 	_go_to(View.GARAGE)
 
 
-# Take the web/mobile build fullscreen (landscape) on the first user gesture. Browsers
-# reject fullscreen requests outside a user-activation context, so this is called from
-# input handlers (the Start button, or the first tap — see _unhandled_input). Gated to
-# the touch web build so a desktop browser isn't forced fullscreen during dev; the
-# landscape lock itself comes from the project's handheld orientation setting.
+# Take the web/mobile build fullscreen on the first user gesture, but ONLY when we're
+# stuck in portrait. Browsers reject fullscreen outside a user-activation context, so
+# this is called from input handlers (the Start button / first tap — see
+# _unhandled_input). Gated to the touch web build so a desktop browser isn't forced
+# fullscreen during dev.
+#
+# Crucial: some embedders (itch.io) already auto-present the game fullscreen in
+# landscape. Re-requesting fullscreen on the canvas there FLIPS it to portrait, so if
+# we're already landscape we leave it alone — there's nothing to fix. We only force
+# fullscreen when the viewport is portrait; the landscape orientation lock then comes
+# from the export's fullscreenchange handler (export_presets head_include).
 func _maybe_enter_web_fullscreen() -> void:
 	if _web_fullscreen_done or not OS.has_feature("web"):
 		return
 	if not (DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force):
 		return
 	_web_fullscreen_done = true
+	var size := DisplayServer.window_get_size()
+	if size.x >= size.y:
+		return  # already landscape (e.g. itch.io's auto-fullscreen) — don't disturb it
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
