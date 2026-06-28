@@ -48,6 +48,10 @@ var _view: int = View.EXTERIOR
 var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
 var _selected_rally_id := ""
 var _selected_instance_id := -1
+# On the web build, go fullscreen on the player's first tap (browsers only allow
+# fullscreen from a user gesture). Latched so we request it once. Orientation is
+# locked to landscape via project.godot (display/window/handheld/orientation).
+var _web_fullscreen_done := false
 
 # Map-table pan state: drag the table view around (the map can be larger than the
 # screen once zoomed in). _table_pan is the camera's X/Z offset from its base pose;
@@ -964,7 +968,22 @@ func _go_to(view: int, snap := false) -> void:
 
 
 func _on_exterior_start() -> void:
+	_maybe_enter_web_fullscreen()
 	_go_to(View.GARAGE)
+
+
+# Take the web/mobile build fullscreen (landscape) on the first user gesture. Browsers
+# reject fullscreen requests outside a user-activation context, so this is called from
+# input handlers (the Start button, or the first tap — see _unhandled_input). Gated to
+# the touch web build so a desktop browser isn't forced fullscreen during dev; the
+# landscape lock itself comes from the project's handheld orientation setting.
+func _maybe_enter_web_fullscreen() -> void:
+	if _web_fullscreen_done or not OS.has_feature("web"):
+		return
+	if not (DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force):
+		return
+	_web_fullscreen_done = true
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
 func _enter_table() -> void:
@@ -1584,6 +1603,9 @@ func _on_start_pressed() -> void:
 # --- Menu input (keyboard / gamepad; clicking 3D objects is the primary path) -
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Any first tap/click on the web build is a valid gesture to go fullscreen.
+	if (event is InputEventScreenTouch and event.pressed) or _is_click(event):
+		_maybe_enter_web_fullscreen()
 	match _view:
 		View.EXTERIOR:
 			if event.is_action_pressed("menu_select"):
