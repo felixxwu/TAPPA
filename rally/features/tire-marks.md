@@ -38,6 +38,8 @@ is missing, or the car is gone):
 - **Cap** — each wheel's segment list is a ring buffer of `tire_mark_max_segments`
   (oldest recycled); only the wheel's own surface rebuilds on a new segment. Memory
   is bounded and the chase cam looks forward, so far-behind marks are off-screen.
+  The trail length is `tire_mark_max_segments × tire_mark_segment_step_m` — at the
+  configured 20 × 0.5 m that is a **10 m** trail behind each wheel.
 
 ## Colour
 

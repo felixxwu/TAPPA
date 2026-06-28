@@ -58,3 +58,5 @@ trees_per_turn = 200
 tree_spawn_radius_m = 50.0
 tree_collision_radius_m = 0.1
 bush_size_m = Vector2(2, 2)
+tire_mark_max_segments = 20
+tire_mark_ground_offset_m = 0.25
