@@ -203,13 +203,18 @@ func _build_hq() -> void:
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
 	_refresh_map_pins()
+	# Returning from the podium's final Continue opens straight on the GARAGE view
+	# (one-shot flag set by podium.gd); a normal boot opens the exterior title.
+	# Read + clear it now so it never lingers past this boot.
+	var want_garage: bool = RallySession.return_to_garage
+	RallySession.return_to_garage = false
 	# A win can push the player past the car cap (the car is still granted). If the
 	# garage is over capacity on entry, force the scrap-a-car prompt before anything
-	# else; otherwise boot to the usual exterior/title shot.
+	# else; otherwise boot to the garage (returning from a rally) or the title shot.
 	if _over_car_limit():
 		_enter_overflow(true)
 	else:
-		_go_to(View.EXTERIOR, true)
+		_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
 
 
 # First run: grant the immortal starter (the anti-soft-lock floor — it can never

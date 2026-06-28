@@ -167,20 +167,35 @@ this runs — `main.tscn` is still independently runnable.
 
 ## Podium (`podium.gd`)
 
-Reads `RallySession.last_result()` (a scrollable layout like HQ) and shows three
-things:
-- **Headline result** — rally name, placement + combined time, or DNF; a top-3
-  reads as `RALLY WON!` (or `THE SHOWDOWN IS WON` for the final rally).
-- **Reward reveal** — the won car by name with a `⭐ NEW` badge when first owned
-  (`car_reward` / `car_reward_is_new`), plus the per-event **upgrades** collected,
-  aggregated as `Name ×N`. Both were already granted by `RallySession`; the podium
-  only reveals them.
-- **Standings** — the full ranked field (`RallyLibrary.build_standings`): position,
-  name, time / `WRECKED`, with the player's row marked `▶` and tinted.
+A **3D reward sequence** (the scene root is a `Node3D`), stepped through with a
+single **Next** button, reading `RallySession.last_result()`. The stages present
+depend on the result (`_compute_stages`): the first two always show; the reveals
+only when something was won.
 
-`last_result` carries `rally_name`, `standings`, `upgrades`, `car_reward`,
-`car_reward_is_new`, and `showdown_won` alongside the original
-`placed`/`completed`/`combined_ms`/`dnf`. **Continue** returns to HQ.
+1. **PODIUM** — the **top-3 finishers' cars stand on a 3D podium** (1st centred +
+   tallest, 2nd/3rd to the sides). The cars are spawned above their steps and drop
+   in live so they **settle onto their suspension** (then freeze the settled pose,
+   like the HQ car park), reading the `car_id` now carried on each standings entry.
+   The headline result (rally, placement + time, or DNF; top-3 → `RALLY WON!`) sits
+   over it.
+2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
+   position, name + car, time / `WRECKED`, the player's row tinted + marked.
+3. **CAR_REVEAL** (only if `car_reward != ""`) — a **slot-machine** spin through the
+   car roster that decelerates and **locks onto the car won**, then that car turns
+   on a **showroom turntable** with its name + a `(NEW)` tag when first owned.
+4. **UPGRADE_REVEAL** (only if an upgrade was won) — the same slot-machine spin for
+   the **single per-rally upgrade**, landing on its name.
+
+The **Next button is hidden during a slot spin** and only reappears once it locks
+on (`_reveal_done`). The final Next returns to HQ, setting
+`RallySession.return_to_garage` so HQ opens on the **garage** view. Slot durations /
+drop height / settle time / turntable speed are `GameConfig` tunables
+(`podium_*`). Headless runs build synchronously and resolve the spins instantly so
+tests can step the stages.
+
+`last_result` carries `rally_name`, `standings` (each entry with `car_id`),
+`upgrades` (the one id won, `[]` on a DNF), `car_reward`, `car_reward_is_new`, and
+`showdown_won` alongside the original `placed`/`completed`/`combined_ms`/`dnf`.
 
 ## Start line (location 2)
 

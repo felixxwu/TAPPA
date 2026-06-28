@@ -561,38 +561,80 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 
 
 func test_podium_shows_the_finish_summary() -> void:
+	# The podium opens on its first stage (the 3D podium) showing the headline result.
 	RallySession._last_result = {"placed": 2, "completed": true, "combined_ms": 65000, "dnf": false}
-	var pod: Control = load("res://podium.tscn").instantiate()
+	var pod: Node3D = load("res://podium.tscn").instantiate()
 	add_child_autofree(pod)
 	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.PODIUM, "the podium opens on the PODIUM stage")
 	var text := _label_texts(pod)
 	assert_string_contains(text, "P2", "podium shows the placement")
 	assert_string_contains(text, "WON", "a top-3 finish reads as a win")
 
 
-func test_podium_reveals_reward_and_standings() -> void:
-	# A top-3 win that grants the Porsche 911 plus two upgrades, with a small field.
+func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
+	# A top-3 win that grants the Porsche 911 plus the single per-rally upgrade. The
+	# reward sequence steps PODIUM -> LEADERBOARD -> CAR_REVEAL -> UPGRADE_REVEAL, with
+	# the slot-machine spins resolving instantly under headless.
 	RallySession._last_result = {
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
 		"car_reward": "porsche911", "car_reward_is_new": true,
-		"upgrades": ["engine_stage1", "engine_stage1", "aero_kit"],
+		"upgrades": ["engine_stage1"],
 		"standings": [
 			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},
 			{"name": "Rival 1", "combined_ms": 70000, "dnf": false, "is_player": false, "placed": 2},
 			{"name": "Rival 2", "combined_ms": -1, "dnf": true, "is_player": false, "placed": -1},
 		],
 	}
-	var pod: Control = load("res://podium.tscn").instantiate()
+	var pod: Node3D = load("res://podium.tscn").instantiate()
 	add_child_autofree(pod)
 	await get_tree().process_frame
-	var text := _label_texts(pod)
-	assert_string_contains(text, "Porsche 911", "the won car is revealed by name")
-	assert_string_contains(text, "NEW", "an un-owned car reward is flagged NEW")
-	assert_string_contains(text, "Stage 1 Engine Kit x2", "duplicate upgrades are aggregated with a count")
-	assert_string_contains(text, "Aero Kit", "the singular upgrade is listed too")
-	assert_string_contains(text, "Rival 1", "the standings list the opponent field")
-	assert_string_contains(text, "WRECKED", "a DNF opponent reads as WRECKED in the standings")
+	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.CAR_REVEAL, pod.Stage.UPGRADE_REVEAL] as Array[int],
+		"all four reward stages are queued when a car + upgrade were won")
+
+	# Next -> the leaderboard.
+	pod._on_next()
+	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.LEADERBOARD, "Next from the podium shows the leaderboard")
+	var lb := _label_texts(pod)
+	assert_string_contains(lb, "Rival 1", "the leaderboard lists the opponent field")
+	assert_string_contains(lb, "WRECKED", "a DNF opponent reads as WRECKED on the leaderboard")
+
+	# Next -> the car slot-machine reveal (resolves instantly headless).
+	pod._on_next()
+	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.CAR_REVEAL, "Next from the leaderboard shows the car reveal")
+	assert_true(pod._reveal_done, "the slot spin resolves instantly under headless")
+	assert_true(pod._next_button.visible, "Next reappears once the spin locks on")
+	var car := _label_texts(pod)
+	assert_string_contains(car, "Porsche 911", "the won car is revealed by name")
+	assert_string_contains(car, "NEW", "an un-owned car reward is flagged NEW")
+
+	# Next -> the upgrade slot-machine reveal.
+	pod._on_next()
+	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next from the car reveal shows the upgrade reveal")
+	assert_string_contains(_label_texts(pod), "Stage 1 Engine Kit", "the won upgrade is revealed by name")
+	assert_eq(pod._next_button.text, "Continue to HQ", "the final stage's button returns to HQ")
+
+
+func test_podium_dnf_sequence_has_no_reward_stages() -> void:
+	# A DNF earns no car and no upgrade, so only the podium + leaderboard show.
+	RallySession._last_result = {
+		"placed": -1, "completed": false, "combined_ms": -1, "dnf": true,
+		"rally_name": "Coastal Sprint", "car_reward": "", "upgrades": [],
+		"standings": [
+			{"name": "Rival 1", "combined_ms": 70000, "dnf": false, "is_player": false, "placed": 1},
+			{"name": "You", "combined_ms": -1, "dnf": true, "is_player": true, "placed": -1},
+		],
+	}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD] as Array[int],
+		"a DNF result queues only the podium + leaderboard (no reward reveals)")
+	assert_string_contains(_label_texts(pod), "DNF", "the headline reads as a DNF")
 
 
 func test_run_scene_fields_the_bound_session_car() -> void:

@@ -368,6 +368,22 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## offset so it still frames the lineup at the same 45°-ish angle.
 @export var menu_car_park_offset := 8.0
 
+# --- Podium / reward-reveal sequence (podium.gd) ------------------------------
+## Height (m) above each podium step the top-3 cars drop from, so they settle onto
+## their suspension under physics (the "suspension simulated and loaded" beat).
+@export var podium_car_drop_height := 0.7
+## Seconds the podium cars run live physics to settle before being frozen.
+@export var podium_car_settle_seconds := 1.4
+## Height (m) of the 1st-place podium step; 2nd/3rd are scaled down from it.
+@export var podium_step_height := 0.9
+## Spacing (m) between the three podium steps (along X). The winner is centred.
+@export var podium_step_spacing := 3.6
+## Seconds the slot-machine reveal (car / upgrade) spins before locking onto the
+## won item. The Continue button is hidden until it finishes. 0 = instant.
+@export var podium_slot_spin_time := 2.2
+## Degrees/second the won car rotates on the showroom turntable in the reveal.
+@export var podium_showroom_spin_dps := 32.0
+
 # --- Diegetic HQ: one 3D space the camera flies through (todo/diegetic-hq.md).
 # Camera "stations" are an eye position + a look target (world space); the camera
 # tweens between them over menu_camera_move_time. The exterior is the boot/title

@@ -257,17 +257,19 @@ static func is_top3(field: Array, player_combined_ms: int) -> bool:
 # A fully ranked standings table for the results screen (todo/menus.md overlay 7):
 # the opponent field plus the player, sorted fastest-combined-first with the DNF
 # entries (wrecked / disqualified) sinking to the bottom. Each entry:
-#   { name:String, car_name:String, combined_ms:int, dnf:bool, is_player:bool, placed:int }
+#   { name:String, car_name:String, car_id:String, combined_ms:int, dnf:bool, is_player:bool, placed:int }
 # `car_name` is the car that entrant drove (the leaderboard shows it); empty when
-# unknown. `placed` is the 1-based finishing position among the classified
+# unknown. `car_id` is that car's stable CarLibrary id (so the podium can spawn the
+# top-3 cars' 3D models); empty when unknown. `placed` is the 1-based finishing position among the classified
 # (non-DNF) entries; DNF entries get placed = -1. Consistent with placement() — a
 # non-DNF player's `placed` equals placement(field, player_combined_ms).
-static func build_standings(field: Array, player_combined_ms: int, player_dnf: bool, player_name := "You", player_car_name := "") -> Array:
+static func build_standings(field: Array, player_combined_ms: int, player_dnf: bool, player_name := "You", player_car_name := "", player_car_id := "") -> Array:
 	var entries: Array = []
 	for opp in field:
 		entries.append({
 			"name": String(opp.get("name", "Rival")),
 			"car_name": String(opp.get("car_name", "")),
+			"car_id": String(opp.get("car_id", "")),
 			"combined_ms": int(opp.get("combined_ms", -1)),
 			"dnf": bool(opp.get("dnf", false)),
 			"is_player": false,
@@ -275,6 +277,7 @@ static func build_standings(field: Array, player_combined_ms: int, player_dnf: b
 	entries.append({
 		"name": player_name,
 		"car_name": player_car_name,
+		"car_id": player_car_id,
 		"combined_ms": player_combined_ms,
 		"dnf": player_dnf,
 		"is_player": true,

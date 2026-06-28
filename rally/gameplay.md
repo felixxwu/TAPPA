@@ -22,8 +22,9 @@ roguelike**: do you risk your best car to win, or play it safe?
 3. Watch the **pre-launch scene** (car ahead launching, car behind waiting),
    then run the **3 events**; combined time sets your rally result.
 4. See the **leaderboard** after each event vs. AI opponents.
-5. Earn a **random upgrade** per event (lootbox reveal); **win the rally** → a
-   **random car** (lootbox reveal). Damage you took **carries over**.
+5. Finish the rally → earn **one random upgrade** (slot-machine reveal); **win the
+   rally** (top 3) → a **random car** (slot-machine reveal). Damage you took
+   **carries over**.
 6. **Tune & upgrade** between rallies. Repeat, completing rallies (finish
    **top 3**) until **all** are done, which unlocks the **final showdown**.
 
@@ -146,7 +147,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 
 ## Progression & rewards
 
-- **Per event:** a **random upgrade** drops into the inventory.
+- **Per rally finished:** a single **random upgrade** drops into the inventory.
 - **Per rally completed (top 3 on combined time):** a **random car** is granted.
 - **Rewards are renewable / farmable.** Re-running a rally and finishing **top 3
   again grants its car reward again** — completion itself is recorded once (it's
@@ -155,8 +156,8 @@ roguelike**: do you risk your best car to win, or play it safe?
   re-racing, and the player can grind any rally for replacements. **The
   progress-tier ceiling still clamps farmed rewards** (you farm at your current
   power band, not above it), so grinding builds *breadth*, not a difficulty skip.
-  Per-event upgrade drops (incl. the repair kit) already repeat simply by running
-  events. This is what guarantees the showdown (100% completion) is always
+  Per-rally upgrade drops (incl. the repair kit) already repeat simply by running
+  rallies. This is what guarantees the showdown (100% completion) is always
   reachable — see *Anti-soft-lock*.
 - **Reveal as a lootbox / slot machine** — spinning reels that settle on the
   reward, so the player glimpses the breadth of cars/upgrades that exist (a

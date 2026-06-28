@@ -174,7 +174,7 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	_report_events([20000, 20000, 20000])
 	var r: Dictionary = finish[0]
 	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
-	assert_eq(r["upgrades"].size(), 3, "the three per-event upgrade ids are captured for the reveal")
+	assert_eq(r["upgrades"].size(), 1, "a single per-rally upgrade id is captured for the reveal")
 	# Difficulty 1 clamps to tier 1, whose only car is the mx5 the player already
 	# owns — so the reward is the mx5 and correctly flagged NOT new (exercises the
 	# is_new=false path).
@@ -216,27 +216,27 @@ func test_between_event_standings_pause_and_leaderboard() -> void:
 	assert_eq(RallySession.event_index(), 1, "now running event index 1")
 
 
-func test_one_upgrade_revealed_per_event() -> void:
+func test_one_upgrade_won_per_rally() -> void:
 	_start("shakedown")
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	assert_eq(_total_items(), 0, "no items before the rally")
 	RallySession.report_event_result(10000)
-	assert_eq(_total_items(), 1, "one upgrade after event 1")
+	assert_eq(_total_items(), 0, "no upgrade mid-rally — it's one per rally, drawn at the finish")
 	RallySession.continue_to_next_event()
 	RallySession.report_event_result(10000)
-	assert_eq(_total_items(), 2, "one upgrade after event 2")
+	assert_eq(_total_items(), 0, "still no upgrade after the second event")
 	RallySession.continue_to_next_event()
-	RallySession.report_event_result(10000)
-	assert_eq(_total_items(), 3, "three upgrades over a full run")
+	RallySession.report_event_result(10000)  # final event -> resolve
+	assert_eq(_total_items(), 1, "exactly one upgrade is won per rally")
 
 
-func test_wreck_midrally_is_dnf_and_keeps_earned_upgrades() -> void:
+func test_wreck_midrally_is_dnf_and_grants_no_upgrade() -> void:
 	var finish := _capture_finish()
 	var owned := _start("shakedown")
 	var id := int(owned["instance_id"])
 	RallySession._opponent_field = _field([50000])
-	RallySession.report_event_result(20000)  # event 1 completes -> 1 upgrade
-	assert_eq(_total_items(), 1, "earned one upgrade before the wreck")
+	RallySession.report_event_result(20000)  # event 1 completes (no per-event upgrade now)
+	assert_eq(_total_items(), 0, "no upgrade is granted mid-rally")
 	RallySession.continue_to_next_event()  # resume from the standings into event 2
 	RallySession.report_wreck()  # wreck during event 2
 	var r: Dictionary = finish[0]
@@ -245,7 +245,7 @@ func test_wreck_midrally_is_dnf_and_keeps_earned_upgrades() -> void:
 	assert_eq(r["placed"], -1, "DNF does not place")
 	assert_eq(r["combined_ms"], -1, "DNF has no combined time")
 	assert_true(_save.get_car(id).is_empty(), "the wrecked car instance is destroyed")
-	assert_eq(_total_items(), 1, "upgrades earned before the wreck are kept; no further event upgrade")
+	assert_eq(_total_items(), 0, "a DNF rally grants no upgrade (one per FINISHED rally)")
 	assert_false(_save.rally_completed("shakedown"), "a DNF leaves the rally incomplete")
 
 

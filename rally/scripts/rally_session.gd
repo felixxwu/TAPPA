@@ -48,8 +48,13 @@ var _event_times_ms: Array[int] = []   # accumulated, one per completed event
 var _event_targets_ms: Array = []      # per-event target time (drives the field)
 var _opponent_field: Array = []        # fixed per rally seed (never saved)
 var _dnf := false
-var _upgrades_won: Array[String] = []  # per-event upgrade ids drawn this rally (reveal)
+var _upgrades_won: Array[String] = []  # the single upgrade id drawn this rally (reveal)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
+
+# One-shot navigation flag set by the podium's final "Continue": tells HQ to open
+# straight on the GARAGE view (not the exterior title) when it next boots. NOT
+# cleared by _reset_to_idle — it's read + cleared by hq.gd on its next _ready.
+var return_to_garage := false
 
 # When true (the default for real play) RallySession performs the per-event scene
 # loads itself. Headless tests set it false and drive report_* directly with
@@ -78,8 +83,9 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, event_targets_ms: Arr
 
 
 # An event finished cleanly (from StageManager.stage_completed in the run scene).
-# Accumulate the time, persist chip damage, draw + grant a per-event upgrade, then
-# either advance to the next event (via standings) or resolve the rally.
+# Accumulate the time, persist chip damage, then either advance to the next event
+# (via standings) or resolve the rally. The reward upgrade is now drawn ONCE per
+# rally at resolution (one upgrade per rally, not per event) — see _resolve_results.
 func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if _phase != Phase.RUNNING:
 		return
@@ -88,13 +94,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	# (bound) car has an instance to write back to.
 	if _car_instance_id >= 0 and hp_lost > 0.0:
 		Save.apply_damage(_car_instance_id, hp_lost)
-	# A random upgrade per completed event (gameplay.md); granted + saved at once so
-	# the unseeded draw is savescum-proof (reward-system.md).
-	var item_id: String = RewardSystem.draw_upgrade(int(_rally.get("difficulty", 1)), Save.profile)
-	Save.add_item(item_id)
-	Save.save()
-	_upgrades_won.append(item_id)
-	upgrade_revealed.emit(item_id)
+		Save.save()
 	_event_index += 1
 	if _event_index >= EVENTS_PER_RALLY:
 		_resolve_results()
@@ -278,6 +278,16 @@ func _resolve_results() -> void:
 		placed = RallyLibrary.placement(_opponent_field, combined)
 	var top3 := not _dnf and placed >= 1 and placed <= 3
 
+	# One reward upgrade per FINISHED rally (gameplay.md: a single per-rally drop, the
+	# slot-machine reveal on the podium). A DNF rally earns nothing. Granted + saved at
+	# once so the unseeded draw is savescum-proof (reward-system.md).
+	if not _dnf:
+		var item_id: String = RewardSystem.draw_upgrade(int(_rally.get("difficulty", 1)), Save.profile)
+		Save.add_item(item_id)
+		Save.save()
+		_upgrades_won.append(item_id)
+		upgrade_revealed.emit(item_id)
+
 	_set_phase(Phase.PODIUM)
 	# Reward outcome, captured for the podium reveal (todo/menus.md rig 5).
 	var car_reward := ""
@@ -308,7 +318,8 @@ func _resolve_results() -> void:
 		"rally_id": String(_rally.get("id", "")),
 		"rally_name": String(_rally.get("name", "")),
 		# Full ranked field for the standings overlay (built before _reset clears it).
-		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf, "You", _player_car_name()),
+		# Carries each entrant's car_id too, so the podium can spawn the top-3 cars.
+		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf, "You", _player_car_name(), _car_model_id),
 		# Reward reveal data (todo/menus.md): per-event upgrades + the top-3 car.
 		"upgrades": _upgrades_won.duplicate(),
 		"car_reward": car_reward,
