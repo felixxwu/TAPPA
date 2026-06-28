@@ -19,8 +19,12 @@ Each `RALLIES` entry:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
   `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`).
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
-  target_ms_override? }`. The `seed`/`turn_count`/`width` feed
+  forestiness?, target_ms_override? }`. The `seed`/`turn_count`/`width` feed
   `TrackGenerator.generate` unchanged; the showdown's events are longer.
+  `forestiness` (0–1, default 1.0 via `event_forestiness`) sets how wooded the stage
+  is — trees only spawn where the forest noise clears `1 - forestiness`, so each event
+  can read as dense forest or open clearings (bushes ignore it). See
+  [trees.md](trees.md).
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). Pure UI data; no effect on the sim.
 

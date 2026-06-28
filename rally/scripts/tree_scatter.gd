@@ -13,6 +13,11 @@ class_name TreeScatter
 # Everything here reads ONLY the in-memory track data passed in (the generated
 # `pieces` + a rasterized `road_cells` set) — it never samples the placed scene.
 #
+# Trees are further gated into FOREST PATCHES by a low-frequency Perlin field
+# (`forestiness` in [0,1] vs the noise, see scatter): they only spawn where the noise
+# is high enough, so a stage reads as stands of forest broken by clearings rather than
+# one continuous tree line. Bushes pass forestiness 1.0 and so cover everything.
+#
 # `road_cells` must be the VISIBLE road footprint (rasterized at track_width), NOT
 # the clearance-inflated collision set from TrackGenerator.generate — that one is
 # track_width + 2*track_clearance wide and would push every tree metres back from the
@@ -81,7 +86,29 @@ static func _grid_phase(cell: float, seed_value: int) -> Vector2:
 		_hash01(0, 0, seed_value, _PHASE_SALT_Z) * cell)
 
 
-static func scatter(pieces: Array, road_cells: Dictionary, params: Dictionary, seed_value: int) -> PackedVector2Array:
+# The forest-patch noise: a low-frequency Perlin field (wavelength in metres) that
+# breaks an otherwise-uniform scatter into stands of forest and clearings. Seeded so
+# each event's pattern differs and is deterministic. forest_density() normalises a
+# sample to [0, 1].
+static func make_forest_noise(seed_value: int, wavelength: float) -> FastNoiseLite:
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_PERLIN
+	n.seed = seed_value
+	n.frequency = 1.0 / maxf(wavelength, 1.0)
+	return n
+
+
+# A noise sample remapped from ~[-1, 1] to [0, 1] — the "forestiness" at a point.
+static func forest_density(noise: FastNoiseLite, p: Vector2) -> float:
+	return noise.get_noise_2d(p.x, p.y) * 0.5 + 0.5
+
+
+# Scatter foliage. `forestiness` in [0, 1] gates trees by the forest noise: a point is
+# kept only where forest_density > (1 - forestiness), so 1.0 = everywhere (the noise is
+# skipped entirely), 0.0 = nowhere. Bushes pass the default 1.0, so they scatter
+# everywhere regardless of the forest pattern.
+static func scatter(pieces: Array, road_cells: Dictionary, params: Dictionary, seed_value: int,
+		forestiness := 1.0, forest_wavelength := 300.0) -> PackedVector2Array:
 	var result := PackedVector2Array()
 	var cell := grid_cell_size(params)
 	if cell <= 0.0:
@@ -89,6 +116,13 @@ static func scatter(pieces: Array, road_cells: Dictionary, params: Dictionary, s
 	var radius: float = params["spawn_radius_m"]
 	var jitter := clampf(float(params.get("jitter", 0.6)), 0.0, 1.0)
 	var phase := _grid_phase(cell, seed_value)
+	# Forest patches: only build/sample the noise when it can actually exclude anything
+	# (forestiness < 1). The threshold is in normalised [0, 1] density space.
+	var forest: FastNoiseLite = null
+	var forest_threshold := 0.0
+	if forestiness < 1.0:
+		forest = make_forest_noise(seed_value, forest_wavelength)
+		forest_threshold = 1.0 - clampf(forestiness, 0.0, 1.0)
 	# One point per global grid cell. `used` makes overlapping turn discs share cells
 	# (so a cell is never placed twice), keeping the spacing global. The ±1 cell of
 	# padding covers cells whose phase-shifted point drifts into the disc.
@@ -112,5 +146,8 @@ static func scatter(pieces: Array, road_cells: Dictionary, params: Dictionary, s
 				used[key] = true
 				if _on_road(p, road_cells):
 					continue  # cell consumed but the point sits on the road: skip it
+				# Forest gate: drop trees that fall in a clearing (noise below threshold).
+				if forest != null and forest_density(forest, p) <= forest_threshold:
+					continue
 				result.append(p)
 	return result

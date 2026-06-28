@@ -480,6 +480,15 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var track_seed := 1
 ## Number of corners chained into the track.
 @export var track_turn_count := 15
+## How forested this track is, in [0, 1] — the fraction of area covered by trees.
+## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
+## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by
+## RallyLibrary.event_forestiness; the default (1.0) keeps free-roam fully wooded.
+## Bushes ignore this (they scatter everywhere).
+@export_range(0.0, 1.0) var track_forestiness := 1.0
+## Wavelength, in metres, of the Perlin noise that breaks the trees into forest
+## patches (larger = bigger, smoother stands of forest separated by clearings).
+@export_range(10.0, 2000.0) var forest_wavelength_m := 300.0
 ## Width, in 0.5 m cells, of the smooth transition band just outside the road
 ## edge where height and colour blend from the flat road to the true terrain.
 @export var track_transition_cells := 3

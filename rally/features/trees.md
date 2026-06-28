@@ -31,6 +31,16 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
   `(cell, seed_value)`, so placement is deterministic and order-independent, and a
   different seed (the bush offset) lands on an interleaved grid rather than the same
   cells. Reads only the in-memory `pieces` + `road_cells` — never the placed scene.
+- **Forest patches** — trees are then gated by a low-frequency Perlin field so a stage
+  reads as stands of forest broken by clearings, not one continuous tree line. The
+  optional `forestiness` (0–1) + `forest_wavelength` args build a seeded
+  `make_forest_noise` (wavelength in metres, default 300); a tree is kept only where
+  `forest_density(p)` (the noise remapped to [0,1]) exceeds `1 - forestiness`. So
+  `forestiness = 1` keeps everything (the noise is skipped), `0` keeps nothing, and
+  values between thin the trees into patches. It's **per rally event**
+  (`RallyLibrary.event_forestiness` → `cfg.track_forestiness`, written by
+  `RallySession`); free-roam defaults to 1.0 (fully wooded). **Bushes pass the default
+  1.0**, so undergrowth covers the whole stage regardless of the forest pattern.
 
   **`road_cells` is the visible road footprint inflated by the margin**,
   rasterized at `track_width + 2*tree_road_margin_m` via
@@ -97,13 +107,20 @@ distance/fade). `world.gd` builds the tree field and the bush field back to back
 (dissolve band), `bush_size_m` (bush billboard size), `bush_sink_m` (how far
 bushes sink into the ground). `GameConfig.tree_params()` packs the scalar scatter knobs for
 `TreeScatter.scatter`; the collision knobs are passed straight to
-`TreeField.build`.
+`BillboardField.build`.
+
+The **forest-patch** knobs live in the `Track` group instead, since they're per-stage:
+`track_forestiness` (0–1, set per rally event by `RallyLibrary.event_forestiness`) and
+`forest_wavelength_m` (Perlin wavelength, default 300). `world.gd` passes them to the
+tree scatter; the bush scatter omits them (forestiness 1.0).
 
 ## Tests
 
 `tests/headless/test_tree_scatter.gd` — anchor centroid, determinism per seed,
 different seeds differ, no tree on a road cell, the grid's guaranteed minimum
 spacing `(1 - jitter) * cell`, within-radius of an anchor, density bounded by the
-grid cells a disc covers, a zero target placing nothing, and an all-road area
-placing nothing. `tests/headless/test_smoke.gd` — the billboard shader loads with
-code, and a built `BillboardField` has one MultiMesh instance per position.
+grid cells a disc covers, a zero target placing nothing, an all-road area placing
+nothing, and the **forestiness gate** (1.0 = unfiltered, 0 = bare, monotonic in
+between, and every gated tree sits above the `1 - forestiness` noise threshold).
+`tests/headless/test_smoke.gd` — the billboard shader loads with code, and a built
+`BillboardField` has one MultiMesh instance per position.

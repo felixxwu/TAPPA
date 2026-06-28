@@ -53,9 +53,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {},  # open-class anti-soft-lock floor
 		"events": [
-			{"seed": 1001, "turn_count": 10},
-			{"seed": 1002, "turn_count": 12},
-			{"seed": 1003, "turn_count": 11},
+			{"seed": 1001, "turn_count": 10, "forestiness": 0.7},
+			{"seed": 1002, "turn_count": 12, "forestiness": 0.4},
+			{"seed": 1003, "turn_count": 11, "forestiness": 0.85},
 		],
 	},
 	{
@@ -63,9 +63,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {},  # open-class
 		"events": [
-			{"seed": 2001, "turn_count": 14},
-			{"seed": 2002, "turn_count": 13},
-			{"seed": 2003, "turn_count": 15},
+			{"seed": 2001, "turn_count": 14, "forestiness": 0.3},
+			{"seed": 2002, "turn_count": 13, "forestiness": 0.6},
+			{"seed": 2003, "turn_count": 15, "forestiness": 0.45},
 		],
 	},
 	{
@@ -73,9 +73,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.52, 0.64),
 		"restriction": {"drive_mode": CarLibrary.RWD},
 		"events": [
-			{"seed": 3001, "turn_count": 13},
-			{"seed": 3002, "turn_count": 14},
-			{"seed": 3003, "turn_count": 13},
+			{"seed": 3001, "turn_count": 13, "forestiness": 0.5},
+			{"seed": 3002, "turn_count": 14, "forestiness": 0.8},
+			{"seed": 3003, "turn_count": 13, "forestiness": 0.35},
 		],
 	},
 	{
@@ -83,9 +83,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.82, 0.34),
 		"restriction": {"country": "JP"},
 		"events": [
-			{"seed": 4001, "turn_count": 16},
-			{"seed": 4002, "turn_count": 15},
-			{"seed": 4003, "turn_count": 17},
+			{"seed": 4001, "turn_count": 16, "forestiness": 0.6},
+			{"seed": 4002, "turn_count": 15, "forestiness": 0.4},
+			{"seed": 4003, "turn_count": 17, "forestiness": 0.75},
 		],
 	},
 	{
@@ -93,9 +93,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.66, 0.28),
 		"restriction": {},  # open-class at the top reachable tier
 		"events": [
-			{"seed": 5001, "turn_count": 18},
-			{"seed": 5002, "turn_count": 17},
-			{"seed": 5003, "turn_count": 19},
+			{"seed": 5001, "turn_count": 18, "forestiness": 0.55},
+			{"seed": 5002, "turn_count": 17, "forestiness": 0.3},
+			{"seed": 5003, "turn_count": 19, "forestiness": 0.7},
 		],
 	},
 	{
@@ -103,9 +103,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.5, 0.12),
 		"restriction": {},  # open so the immortal starter can always finish the game
 		"events": [
-			{"seed": 9001, "turn_count": 22},
-			{"seed": 9002, "turn_count": 24},
-			{"seed": 9003, "turn_count": 22},
+			{"seed": 9001, "turn_count": 22, "forestiness": 0.8},
+			{"seed": 9002, "turn_count": 24, "forestiness": 0.5},
+			{"seed": 9003, "turn_count": 22, "forestiness": 0.65},
 		],
 	},
 ]
@@ -128,6 +128,14 @@ static func by_id(id: String) -> Dictionary:
 # Width an event runs at — its override, else the authored default.
 static func event_width(event: Dictionary) -> float:
 	return float(event.get("width", DEFAULT_WIDTH))
+
+
+# How forested this event is, in [0, 1]: the fraction of the area covered by trees.
+# Trees only spawn where a 300 m-wavelength noise field exceeds (1 - forestiness), so
+# higher = denser forest, 0 = bare, 1 = trees everywhere (the default for an event that
+# omits it). Bushes ignore this. See TreeScatter / features/trees.md.
+static func event_forestiness(event: Dictionary) -> float:
+	return clampf(float(event.get("forestiness", 1.0)), 0.0, 1.0)
 
 
 # --- Eligibility -------------------------------------------------------------

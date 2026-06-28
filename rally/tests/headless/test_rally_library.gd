@@ -21,9 +21,20 @@ func test_roster_is_well_formed() -> void:
 		assert_gt(rally["difficulty"], 0, "%s has a positive difficulty tier" % rally["id"])
 		for ev in rally["events"]:
 			assert_gt(int(ev["turn_count"]), 0, "%s event has a positive turn_count" % rally["id"])
+			var f := RallyLibrary.event_forestiness(ev)
+			assert_between(f, 0.0, 1.0, "%s event forestiness is in [0, 1]" % rally["id"])
 		if rally["showdown"]:
 			showdowns += 1
 	assert_eq(showdowns, 1, "exactly one showdown rally")
+
+
+func test_event_forestiness_defaults_to_fully_wooded() -> void:
+	# An event that omits forestiness defaults to 1.0 (trees everywhere); authored
+	# values pass through clamped to [0, 1].
+	assert_eq(RallyLibrary.event_forestiness({}), 1.0, "missing forestiness -> 1.0")
+	assert_almost_eq(RallyLibrary.event_forestiness({"forestiness": 0.3}), 0.3, 0.0001, "authored value passes through")
+	assert_eq(RallyLibrary.event_forestiness({"forestiness": 2.0}), 1.0, "clamps above 1")
+	assert_eq(RallyLibrary.event_forestiness({"forestiness": -1.0}), 0.0, "clamps below 0")
 
 
 func test_open_class_floor_at_each_reachable_tier() -> void:

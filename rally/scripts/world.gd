@@ -177,7 +177,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var road_footprint := cfg.track_width + 2.0 * cfg.tree_road_margin_m
 	var road_cells := TrackGenerator.rasterize_cells(
 		road_centerline.tessellate(), road_footprint)
-	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(), cfg.track_seed)
+	# Trees are gated by the per-event forest noise (cfg.track_forestiness): they only
+	# spawn inside the forest patches, breaking up the otherwise-continuous tree line.
+	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
+		cfg.track_seed, cfg.track_forestiness, cfg.forest_wavelength_m)
 	var tree_field := BillboardField.new()
 	add_child(tree_field)
 	tree_field.build(trees, $Floor as TerrainManager, cfg.tree_size_m, TREE_TEXTURE,
@@ -188,7 +191,8 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		loading.set_step("Scattering bushes…")
 	await _yield_frame()
 	# Bushes: same scatter + render as trees, but bush.webp, no collision, and an
-	# offset seed so they don't land on the same spots as the trees.
+	# offset seed so they interleave with the trees. They are NOT forest-gated (default
+	# forestiness 1.0), so undergrowth covers the whole stage, not just the forest.
 	var bushes := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
 	var bush_field := BillboardField.new()

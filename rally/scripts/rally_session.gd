@@ -376,6 +376,7 @@ func _load_event_scene(event: Dictionary) -> void:
 	cfg.track_seed = int(event.get("seed", cfg.track_seed))
 	cfg.track_turn_count = int(event.get("turn_count", cfg.track_turn_count))
 	cfg.track_width = RallyLibrary.event_width(event)
+	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
 	get_tree().change_scene_to_file("res://main.tscn")
 
 

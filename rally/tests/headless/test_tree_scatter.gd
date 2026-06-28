@@ -114,6 +114,57 @@ func test_zero_target_places_nothing() -> void:
 		"a zero target disables foliage")
 
 
+# --- Forest patches (per-event forestiness gate) ----------------------------
+
+func test_forestiness_one_is_unfiltered() -> void:
+	# forestiness 1.0 (the default for trees-everywhere / bushes) skips the noise gate
+	# entirely, so it matches the plain default call.
+	var t := _track()
+	var road := _road_cells(t)
+	var default_call := TreeScatter.scatter(t["pieces"], road, PARAMS, 7)
+	var explicit := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 1.0, 300.0)
+	assert_eq(explicit, default_call, "forestiness 1.0 == unfiltered (trees everywhere)")
+	assert_gt(explicit.size(), 0, "and it still places trees")
+
+
+func test_forestiness_zero_places_no_trees() -> void:
+	var t := _track()
+	var road := _road_cells(t)
+	var none := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 0.0, 300.0)
+	assert_eq(none.size(), 0, "forestiness 0 -> no trees anywhere")
+
+
+func test_forestiness_only_keeps_trees_above_the_noise_threshold() -> void:
+	# A short wavelength so the forest noise varies across the small test track.
+	var t := _track()
+	var road := _road_cells(t)
+	var forestiness := 0.5
+	var wavelength := 15.0
+	var some := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, forestiness, wavelength)
+	var full := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 1.0, wavelength)
+	assert_lte(some.size(), full.size(), "gating never adds trees")
+	# Every placed tree must sit where the forest noise clears (1 - forestiness).
+	var noise := TreeScatter.make_forest_noise(7, wavelength)
+	for p in some:
+		assert_gt(TreeScatter.forest_density(noise, p), 1.0 - forestiness,
+			"a forest-gated tree is above the (1 - forestiness) threshold")
+
+
+func test_forestiness_is_monotonic() -> void:
+	# Raising forestiness only ever keeps a superset (lower threshold), so the count
+	# grows monotonically from 0 (bare) up to the full unfiltered scatter.
+	var t := _track()
+	var road := _road_cells(t)
+	var w := 15.0
+	var bare := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 0.0, w).size()
+	var mid := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 0.5, w).size()
+	var full := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 1.0, w).size()
+	assert_eq(bare, 0, "0 forestiness is bare")
+	assert_lte(mid, full, "more forestiness never removes forest")
+	assert_gte(mid, bare, "more forestiness never removes forest")
+	assert_gt(full, 0, "full forestiness has trees")
+
+
 func test_all_on_road_places_nothing() -> void:
 	# Every reachable cell marked road -> every point is rejected, nothing placed.
 	var t := _track()
