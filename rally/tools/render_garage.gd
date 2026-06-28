@@ -14,14 +14,13 @@ const OUT_DIR := "res://docs/garage/"
 const IMG_W := 1280
 const IMG_H := 720
 
-# Camera poses: [name, eye, look_at, fov]. Tuned to echo the reference photos.
+# Camera poses: [name, eye, look_at, fov]. Framed for the two-bay empty shell.
 const SHOTS := [
-	["01_front_three_quarter", Vector3(15.0, 6.5, 17.0), Vector3(0.0, 2.2, -2.5), 52.0],
-	["02_front_on", Vector3(0.0, 4.2, 18.0), Vector3(0.0, 3.0, -3.0), 48.0],
-	["03_bay_interior", Vector3(2.6, 1.9, 3.0), Vector3(0.0, 1.3, -5.0), 62.0],
-	["04_side", Vector3(24.0, 7.0, 9.0), Vector3(0.0, 3.0, -4.5), 42.0],
-	["05_high_overview", Vector3(14.0, 17.0, 19.0), Vector3(0.0, 0.5, -4.0), 52.0],
-	["06_branding_detail", Vector3(-6.0, 5.6, 9.0), Vector3(-8.5, 5.4, 0.0), 38.0],
+	["01_front_three_quarter", Vector3(11.0, 5.5, 13.0), Vector3(0.0, 2.2, -2.5), 52.0],
+	["02_front_on", Vector3(0.0, 4.0, 14.0), Vector3(0.0, 3.0, -3.0), 50.0],
+	["03_bay_interior", Vector3(3.0, 1.9, 3.0), Vector3(-1.5, 1.6, -6.0), 64.0],
+	["04_side", Vector3(17.0, 6.0, 9.0), Vector3(0.0, 3.0, -4.5), 45.0],
+	["05_high_overview", Vector3(11.0, 13.0, 14.0), Vector3(0.0, 0.5, -4.0), 52.0],
 ]
 
 

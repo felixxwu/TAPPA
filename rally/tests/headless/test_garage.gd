@@ -3,9 +3,9 @@ extends GutTest
 # Structural smoke test for the procedural rally-team garage (scripts/garage.gd,
 # garage.tscn). The garage builds entirely from primitives in _ready with no
 # autoload dependency and no terrain generation, so it's cheap to instance here.
-# We assert the model came up with its key elements (structure, branded fascia,
-# bay floors, crew pillars, ceiling lights, the hero car, crew figures) and that
-# building it raises no script errors (the runner fails on any "SCRIPT ERROR").
+# It's a deliberately bare two-bay shell, so the checks assert the structure +
+# lighting are present, the interior is EMPTY, and there's no leftover branding.
+# Building it must raise no script errors (the runner fails on any "SCRIPT ERROR").
 
 var _garage: Node3D
 
@@ -20,23 +20,31 @@ func after_all() -> void:
 	_garage.free()
 
 
-# All Label3D text in the model, lowercased, joined — handy for branding checks.
-func _all_text() -> String:
-	var parts := PackedStringArray()
-	for l in _garage.find_children("*", "Label3D", true, false):
-		parts.append((l as Label3D).text)
-	return "\n".join(parts)
-
-
 func test_garage_instantiates() -> void:
 	assert_not_null(_garage, "garage scene instantiates")
 
 
-func test_has_substantial_geometry() -> void:
-	# The structure, floors, pillars, lights, car, clutter and figures add up to a
-	# lot of mesh instances — a low count means a build step silently no-op'd.
+func test_two_bays() -> void:
+	assert_eq(_garage.NUM_BAYS, 2, "garage has two bays")
+
+
+func test_structure_geometry_present() -> void:
+	# Slab, back + 2 side walls, 3 pillars, fascia, roof, 2 ground planes and the
+	# 2 ceiling strips — a modest, simplified mesh count. Assert it's in a sane
+	# band: enough to be the shell, few enough to confirm the interior is bare.
 	var meshes := _garage.find_children("*", "MeshInstance3D", true, false)
-	assert_gt(meshes.size(), 40, "garage built a substantial number of mesh instances")
+	assert_between(meshes.size(), 10, 22, "garage built the simplified shell (no clutter)")
+
+
+func test_interior_is_empty() -> void:
+	# An empty shell carries no signage, no car/lift and no crew, so there are no
+	# Label3D nodes and no cylinder/sphere/torus props anywhere in the model.
+	assert_eq(_garage.find_children("*", "Label3D", true, false).size(), 0,
+		"no text/signage in the empty garage")
+	for mi in _garage.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (mi as MeshInstance3D).mesh
+		assert_true(mesh is BoxMesh or mesh is PlaneMesh,
+			"only structural box/plane meshes remain (no prop primitives)")
 
 
 func test_environment_and_lighting_present() -> void:
@@ -46,44 +54,6 @@ func test_environment_and_lighting_present() -> void:
 	assert_eq(sun.size(), 1, "garage builds a sun (DirectionalLight3D)")
 	var lamps := _garage.find_children("*", "OmniLight3D", true, false)
 	assert_eq(lamps.size(), _garage.NUM_BAYS, "one interior lamp per bay")
-
-
-func test_brand_fascia_text_present() -> void:
-	var text := _all_text()
-	assert_true(text.contains("GR"), "GR logo text on the fascia")
-	assert_true(text.contains("TOYOTA GAZOO Racing"), "Toyota Gazoo Racing wordmark present")
-	assert_true(text.contains("Pushing the limits for Better"), "tagline present")
-
-
-func test_crew_name_pillars_present() -> void:
-	var text := _all_text()
-	for crew in _garage.CREW_NAMES:
-		assert_true(text.contains(crew), "crew name plate present: " + crew)
-
-
-func test_hero_car_present_with_number() -> void:
-	# The hero car is a Node3D holding the body blocks + four wheel hubs; it shows
-	# the #18 number panel. Find it by the number label and assert it has wheels.
-	assert_true(_all_text().contains("18"), "hero car carries its race number")
-	var cylinders := 0
-	for mi in _garage.find_children("*", "MeshInstance3D", true, false):
-		if (mi as MeshInstance3D).mesh is CylinderMesh:
-			cylinders += 1
-	# 4 car wheels (tyre+rim = 8 cylinders) + tyre stack + hose pole etc.
-	assert_gt(cylinders, 8, "wheels / tyres built from cylinders")
-
-
-func test_timing_screen_present() -> void:
-	assert_true(_all_text().contains("11:26:54"), "pit timing screen shows the clock")
-
-
-func test_crew_figures_present() -> void:
-	# Each crew figure has a sphere head; assert several heads exist.
-	var spheres := 0
-	for mi in _garage.find_children("*", "MeshInstance3D", true, false):
-		if (mi as MeshInstance3D).mesh is SphereMesh:
-			spheres += 1
-	assert_gt(spheres, 2, "crew figures (sphere heads) populate the bays")
 
 
 func test_survives_a_few_frames() -> void:
