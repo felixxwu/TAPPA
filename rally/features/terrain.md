@@ -164,12 +164,19 @@ ring — collision-free scenery sampling the same `height_at`/`light_at` noise,
 re-centred on the car — so the now-thin fog (`fog_density` 0.005) reveals a
 horizon for the skybox instead of a cliff. See
 [rendering.md](rendering.md) and [../todo/distant-terrain-and-sky.md](../todo/distant-terrain-and-sky.md).
-It rebuilds in lockstep with the detail ring (on every focus **chunk crossing**)
-and **cuts a hole** over the currently-loaded chunk footprint, so the coarse mesh
-never overlaps — and pokes through — the accurate detailed chunks. A
-one-coarse-cell overlap is kept under the ring's edge (sunk by `sink_m`) so the
-detail ring wins there and no gap shows at the seam. Tunables:
-`GameConfig.distant_terrain_*`.
+The coarse geometry re-centres on every focus **chunk crossing**, and **cuts a
+hole** only over the chunks the detail ring has **actually loaded**
+(`loaded_coords()`) — NOT the whole wanted ring. This is the fix for the
+skybox-through-the-ground flash: detail chunks integrate one per frame, so on a
+crossing the leading chunks don't exist for several frames; holing the wanted
+footprint up front would bare the sky over those not-yet-loaded cells. Holing
+only loaded chunks means the coarse backdrop always covers whatever the detail
+ring hasn't filled yet. As each chunk integrates the hole grows to match via a
+cheap **index-only** rebuild (`_recut_hole`, triggered by a change in
+`integrations_total`) — the cached coarse vertices don't change between crossings,
+so no noise is re-sampled for the grow-in. A one-coarse-cell underlap is kept
+around each loaded chunk's edge (sunk by `sink_m`) so the detail ring wins there
+and no gap shows at the seam. Tunables: `GameConfig.distant_terrain_*`.
 
 ## Performance
 

@@ -35,6 +35,7 @@ func test_distant_terrain_follows_noise_and_has_no_collision() -> void:
 	# real terrain so it matches at the seam, sits a touch lower (so the detail
 	# ring wins the overlap), and is pure scenery (no collision).
 	var manager = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
+	add_child_autofree(manager)  # _ready loads the 3x3 ring -> chunks present to hole against
 	var dt := DistantTerrain.new()
 	dt.radius_m = 50.0
 	dt.cell_m = 10.0
@@ -49,13 +50,49 @@ func test_distant_terrain_follows_noise_and_has_no_collision() -> void:
 	var v := verts[60]  # an interior vertex
 	assert_almost_eq(v.y, manager.height_at(v.x, v.z) - dt.sink_m, 0.001,
 		"distant vertex follows the terrain noise, sunk by sink_m")
-	# A hole is cut over the loaded chunk footprint (so the coarse mesh can't poke
+	# A hole is cut over the LOADED chunk footprint (so the coarse mesh can't poke
 	# through the detailed ring): fewer triangles than a full per_edge×per_edge grid.
 	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	var full := 10 * 10 * 6  # per_edge=round(2*50/10)=10 -> 100 cells × 6 indices
 	assert_gt(idx.size(), 0, "distant terrain still has an outer ring of triangles")
-	assert_lt(idx.size(), full, "a hole is cut where the detailed chunks load")
+	assert_lt(idx.size(), full, "a hole is cut where the detailed chunks are loaded")
 	assert_null(dt.get_node_or_null("Collision"), "distant terrain is scenery — no collision body")
+
+
+func test_distant_terrain_keeps_skybox_covered_until_chunks_load() -> void:
+	# The anti-flash guarantee: with NO detail chunks loaded yet, the coarse backdrop
+	# cuts NO hole, so it covers the whole footprint — the skybox can never show
+	# through the ground while the hi-res ring is still streaming in.
+	var manager = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
+	# Deliberately NOT added to the tree -> _ready never runs -> _chunks is empty.
+	assert_eq(manager.loaded_coords().size(), 0, "no detail chunks loaded")
+	var dt := DistantTerrain.new()
+	dt.radius_m = 50.0
+	dt.cell_m = 10.0
+	autofree(dt)
+	dt.setup(manager, null)
+	var idx: PackedInt32Array = dt.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX]
+	var full := 10 * 10 * 6
+	assert_eq(idx.size(), full, "no hole until a detail chunk exists — coarse covers the skybox")
+
+
+func test_distant_terrain_hole_tracks_loaded_chunks() -> void:
+	# As chunks load, the hole grows to match (vs. racing ahead of the hi-res ring).
+	var manager = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
+	var dt := DistantTerrain.new()
+	dt.radius_m = 50.0
+	dt.cell_m = 10.0
+	autofree(dt)
+	dt.setup(manager, null)  # no chunks yet -> full coarse grid
+	var full := 10 * 10 * 6
+	assert_eq(dt.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size(), full,
+		"starts with no hole")
+	# Load the ring, then re-cut: the hole appears only now that chunks exist.
+	add_child_autofree(manager)  # _ready builds the 3x3 ring
+	dt._recut_hole()
+	var holed: int = dt.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size()
+	assert_lt(holed, full, "hole cut once the detail chunks are loaded")
+	assert_gt(holed, 0, "outer coarse ring still drawn")
 
 
 func test_height_at_is_deterministic_per_seed() -> void:
