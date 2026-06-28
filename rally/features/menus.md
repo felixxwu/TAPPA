@@ -47,21 +47,28 @@ the lot. The player's **whole owned collection** is parked in the car park here
 car. Start (or `menu_select`) flies the camera into the garage.
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
-lift**, with the player's **selected car raised on the lift** (`_ensure_lift_car`,
-spawned whenever the camera is inside — garage/lift — and dropped otherwise).
+lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
+spawned whenever the camera is inside — garage/lift — and dropped otherwise). In the
+garage the car rests **lowered on the ground** (`hq_lift_car_lowered_height`).
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view). A HUD hint + Back (to the exterior) + convenience buttons sit on top.
 
-**LIFT (the tuning bay).** The selected car raised on the lift, framed to one side
-(`hq_lift_cam_*`) so the **tuning menu** — a solid panel anchored to the other side
-of the screen (`hq_lift_menu_width_frac`) — never covers it. Two menus toggled by a
-tab strip: **Tune** (a slider per tuning axis — grip / brake-bias / aero — locked
-axes greyed with a "needs X kit" note, plus **Reset to neutral**; each change saves
-via `Save.set_tuning`) and **Upgrades** (per-slot install/remove from inventory via
-`Save.install_upgrade`/`uninstall_upgrade`, parts returned on swap, plus the **Repair
-Kit** action `Save.use_repair_kit`). A change-car control cycles all owned cars,
-updating the **selected car** (`Save.selected_car`/`set_selected_car`) and re-raising
-it on the lift. See [tuning.md](tuning.md) for the underlying config pipeline.
+**LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
+tween from the lowered (garage) pose up to `hq_lift_car_height` over
+`hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
+The car is framed to one side (`hq_lift_cam_*`) so the **tuning menu** — a solid panel
+anchored to the other side of the screen (`hq_lift_menu_width_frac`) — never covers
+it. The panel holds **only** the interactive controls (change-car, the tab strip, the
+scrollable menu content, Back) so it stays short on small screens; the **bay title and
+the car's name/description** sit in a separate **bottom-left** panel beside the car.
+Two menus toggled by the tab strip: **Tune** (a slider per tuning axis — grip /
+brake-bias / aero — locked axes greyed with a "needs X kit" note, plus **Reset to
+neutral**; each change saves via `Save.set_tuning`) and **Upgrades** (per-slot
+install/remove from inventory via `Save.install_upgrade`/`uninstall_upgrade`, parts
+returned on swap, plus the **Repair Kit** action `Save.use_repair_kit`). A change-car
+control cycles all owned cars, updating the **selected car**
+(`Save.selected_car`/`set_selected_car`) and re-spawning it on the lift. See
+[tuning.md](tuning.md) for the underlying config pipeline.
 
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
 plane. Every rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a

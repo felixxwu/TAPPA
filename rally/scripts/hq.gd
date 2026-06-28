@@ -72,6 +72,11 @@ var _lift_car: Node3D
 var _lift_owned: Dictionary = {}
 var _lift_car_instance_id := -2  # what _lift_car was built for (-2 = nothing yet)
 var _lift_tab: int = LiftTab.TUNE
+# Lift animation: the car is LOWERED on the ground in the garage view and RAISED when
+# the bay is entered (tweened over hq_lift_raise_time). _lift_raised is the current
+# target pose; _lift_tween animates the car's height toward it.
+var _lift_raised := false
+var _lift_tween: Tween
 
 # 3D staging.
 var _camera: Camera3D
@@ -640,9 +645,10 @@ func _build_detail_overlay() -> void:
 
 # The tuning-lift menu: a solid panel anchored to ONE side of the screen (the right
 # hq_lift_menu_width_frac of the width) so the raised car — framed to the LEFT by the
-# lift camera (hq_lift_cam_*) — stays in clear view. Holds the two menus (TUNE sliders
-# / UPGRADES list), the change-car control, and Back. The left of the screen has no
-# Control, so the 3D car shows through there.
+# lift camera (hq_lift_cam_*) — stays in clear view. The panel holds only the
+# interactive controls (change-car, the TUNE/UPGRADES tab + its scrollable content,
+# and Back) so it stays short enough for small screens; the bay title and the selected
+# car's name/description sit in a separate BOTTOM-LEFT panel beside the car.
 func _build_lift_overlay() -> void:
 	var frac: float = Config.data.hq_lift_menu_width_frac
 	_lift_layer = CanvasLayer.new()
@@ -665,16 +671,6 @@ func _build_lift_overlay() -> void:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
 	margin.add_child(root)
-
-	var title := Label.new()
-	title.text = "TUNING BAY"
-	title.add_theme_font_size_override("font_size", 26)
-	root.add_child(title)
-
-	_lift_car_label = Label.new()
-	_lift_car_label.add_theme_font_size_override("font_size", 14)
-	_lift_car_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_lift_car_label)
 
 	# Change which car is tuned (cycles all owned cars; updates the selected car).
 	var car_nav := HBoxContainer.new()
@@ -732,6 +728,40 @@ func _build_lift_overlay() -> void:
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(_lift_back)
 	root.add_child(back)
+
+	# The bay title + the selected car's name & description live at the BOTTOM-LEFT —
+	# on the lift side, beside the car — so the right-hand menu panel stays short
+	# enough to fit small screens. A slim self-sizing panel that grows up/right.
+	var info_panel := PanelContainer.new()
+	info_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	info_panel.offset_left = 20
+	info_panel.offset_bottom = -20
+	info_panel.grow_horizontal = Control.GROW_DIRECTION_END
+	info_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var info_style := StyleBoxFlat.new()
+	info_style.bg_color = Color(0.08, 0.10, 0.14, 0.82)
+	info_style.corner_radius_top_left = 6
+	info_style.corner_radius_top_right = 6
+	info_style.corner_radius_bottom_left = 6
+	info_style.corner_radius_bottom_right = 6
+	for side in ["left", "top", "right", "bottom"]:
+		info_style.set("content_margin_" + side, 14.0)
+	info_panel.add_theme_stylebox_override("panel", info_style)
+	_lift_layer.add_child(info_panel)
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 4)
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_panel.add_child(info)
+	var title := Label.new()
+	title.text = "TUNING BAY"
+	title.add_theme_font_size_override("font_size", 22)
+	info.add_child(title)
+	_lift_car_label = Label.new()
+	_lift_car_label.add_theme_font_size_override("font_size", 14)
+	_lift_car_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lift_car_label.custom_minimum_size = Vector2(360, 0)
+	info.add_child(_lift_car_label)
 
 
 # Build the TUNE menu: one slider row per tuning axis. Static structure; gating /
@@ -898,10 +928,14 @@ func _go_to(view: int, snap := false) -> void:
 	# The title screen shows the player's whole collection parked in the car park.
 	if view == View.EXTERIOR:
 		_build_title_lineup()
-	# The selected car is raised on the lift whenever we're inside (garage/lift); it
-	# costs nothing once frozen, so keep it around while inside and drop it otherwise.
-	if view == View.GARAGE or view == View.LIFT:
+	# The selected car sits on the lift whenever we're inside (garage/lift); it costs
+	# nothing once frozen, so keep it around while inside and drop it otherwise. In the
+	# garage it rests LOWERED on the ground; entering the bay (_enter_lift) raises it.
+	if view == View.GARAGE:
 		_ensure_lift_car()
+		_lower_lift_car()
+	elif view == View.LIFT:
+		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	else:
 		_clear_lift_car()
 	_update_overlays()
@@ -963,6 +997,45 @@ func _enter_lift() -> void:
 	_lift_tab = LiftTab.TUNE
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
+	_raise_lift_car()  # slowly raise the car on the lift as we arrive
+
+
+# Raise / lower the car on the lift to its target pose. Lowering is the garage rest
+# pose; raising is the bay pose. Both animate over hq_lift_raise_time.
+func _raise_lift_car() -> void:
+	_lift_raised = true
+	_apply_lift_height(true)
+
+
+func _lower_lift_car() -> void:
+	_lift_raised = false
+	_apply_lift_height(true)
+
+
+# World-space Y of the car origin for the lowered / raised pose (above the platform top).
+func _lift_car_y(raised: bool) -> float:
+	var cfg: GameConfig = Config.data
+	var top := cfg.hq_lift_pos.y + cfg.hq_lift_size.y
+	return top + (cfg.hq_lift_car_height if raised else cfg.hq_lift_car_lowered_height)
+
+
+# Move the lift car to its current target height (_lift_raised), tweening unless
+# animate is false / the time is 0. The tween is owned by HQ (not the frozen car), so
+# it ticks regardless of the car's disabled process mode.
+func _apply_lift_height(animate: bool) -> void:
+	if not is_instance_valid(_lift_car):
+		return
+	var target := _lift_car_y(_lift_raised)
+	if _lift_tween != null and _lift_tween.is_valid():
+		_lift_tween.kill()
+	if not animate or Config.data.hq_lift_raise_time <= 0.0:
+		var p := _lift_car.global_position
+		p.y = target
+		_lift_car.global_position = p
+		return
+	_lift_tween = create_tween()
+	_lift_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_lift_tween.tween_property(_lift_car, "global_position:y", target, Config.data.hq_lift_raise_time)
 
 
 func _lift_back() -> void:
@@ -1010,14 +1083,17 @@ func _ensure_lift_car() -> void:
 
 
 func _clear_lift_car() -> void:
+	if _lift_tween != null and _lift_tween.is_valid():
+		_lift_tween.kill()  # the tween targets the car we're about to free
 	if is_instance_valid(_lift_car):
 		_lift_car.queue_free()
 	_lift_car = null
 	_lift_car_instance_id = -2
 
 
-# Build the selected car as a silent, frozen prop on the lift platform, raised by
-# hq_lift_car_height (its own mesh copies, like the car-park props — see _dup_meshes).
+# Build the selected car as a silent, frozen prop on the lift platform at the current
+# pose height (lowered in the garage, raised in the bay — so a re-spawn while raised
+# appears already raised). Its own mesh copies, like the car-park props (_dup_meshes).
 func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	var cfg: GameConfig = Config.data
 	var car := CAR_SCENE.instantiate()
@@ -1025,7 +1101,7 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	car.apply_owned(owned)
 	_dup_meshes(car)
 	var xform := Transform3D.IDENTITY
-	xform.origin = cfg.hq_lift_pos + Vector3(0.0, cfg.hq_lift_size.y + cfg.hq_lift_car_height, 0.0)
+	xform.origin = Vector3(cfg.hq_lift_pos.x, _lift_car_y(_lift_raised), cfg.hq_lift_pos.z)
 	car.global_transform = xform
 	car.freeze = true
 	car.process_mode = Node.PROCESS_MODE_DISABLED

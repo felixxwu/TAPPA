@@ -74,9 +74,13 @@ the lift (clamped to max HP by `Save.use_repair_kit`).
 
 The garage **tuning lift** ([menus.md](menus.md)) is where this is driven. The
 player always has one owned car **selected** (`Save.selected_car` /
-`set_selected_car`); it is the car raised on the lift. Clicking the lift flies the
-camera to the bay, framing the car to one side (`hq_lift_cam_*`) so the menu panel —
-anchored to the other side (`hq_lift_menu_width_frac`) — never covers it. Two menus:
+`set_selected_car`); it is the car on the lift — resting lowered on the ground in the
+garage and **raised slowly by the lift** when the bay is entered (`hq_lift_raise_time`,
+between `hq_lift_car_lowered_height` and `hq_lift_car_height`). Clicking the lift flies
+the camera to the bay, framing the car to one side (`hq_lift_cam_*`) so the menu panel
+— anchored to the other side (`hq_lift_menu_width_frac`) — never covers it; the bay
+title and car name/description sit bottom-left, beside the car, keeping the menu panel
+compact on small screens. Two menus:
 
 - **Tune** — one slider per axis (locked axes greyed with a "needs X kit" note) plus
   **Reset to neutral**. Each change saves immediately via `Save.set_tuning`.

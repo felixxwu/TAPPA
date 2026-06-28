@@ -275,12 +275,22 @@ func test_hq_lift_raises_the_selected_car() -> void:
 	# The starter is selected on first boot, so it's the one on the lift.
 	assert_eq(_save.selected_instance_id(), int(_save.profile["cars"][0]["instance_id"]),
 		"the starter is selected on first boot")
+	# In the garage the car rests lowered on the ground.
+	hq._on_exterior_start()  # -> GARAGE: spawns the lift car, lowered
+	await get_tree().process_frame
+	assert_true(is_instance_valid(hq._lift_car), "the selected car sits on the lift in the garage")
+	assert_false(hq._lift_raised, "the car is lowered to the ground in the garage view")
 	hq._enter_lift()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "tapping the lift flies the camera to the tuning bay")
 	assert_true(hq._lift_layer.visible, "the tuning menu is shown")
 	assert_true(is_instance_valid(hq._lift_car), "the selected car is raised on the lift")
+	assert_true(hq._lift_raised, "entering the bay raises the car on the lift")
 	assert_eq(hq._lift_car.current_car_name(), "Mazda MX-5", "the lift shows the selected car")
+	# Going back to the garage lowers it again.
+	hq._lift_back()
+	assert_eq(hq._view, hq.View.GARAGE, "Back returns to the garage")
+	assert_false(hq._lift_raised, "the car lowers back to the ground in the garage")
 
 
 func test_hq_lift_tune_sliders_save_tuning_per_car() -> void:

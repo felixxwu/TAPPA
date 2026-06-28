@@ -378,6 +378,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Height (m) the selected car is raised to on the lift (wheels hanging, as on a
 ## real ramp). Above the platform top.
 @export var hq_lift_car_height := 1.3
+## Height (m) above the platform top the car rests at when LOWERED — its pose in
+## the garage view (on the ground). The lift animates between this and
+## hq_lift_car_height when the bay is entered/left.
+@export var hq_lift_car_lowered_height := 0.4
+## Seconds the lift takes to raise/lower the car (the slow ramp animation). 0 snaps.
+@export var hq_lift_raise_time := 1.6
 ## Tuning-lift camera: frames the raised car off to one side so the tuning menu
 ## (anchored to the other side of the screen, hq.gd) doesn't cover the car. eye,
 ## then look target — the look is offset toward +X of the car so it sits LEFT of
