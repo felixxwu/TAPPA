@@ -35,7 +35,10 @@ a run timer ticks until the finish line, then a placeholder complete panel shows
 The finish edge is `progress_percent() * 100.0 >= stage_complete_percent`.
 `TrackProgress.progress_percent()` returns a **0..1 fraction**, so it is scaled to
 the 0..100 config percentage. Progress is monotonic, so this is a one-way edge —
-once COMPLETE, the phase never leaves it.
+once COMPLETE, the phase never leaves it. `stage_complete_percent` is **100**, so
+the stage ends exactly as the car crosses the finish arch ([finish-arch.md](finish-arch.md)),
+which `world.gd` places at the centerline end; `TrackProgress` samples the curve's
+far edge so 100% is reachable ([progress.md](progress.md)).
 
 ## Control lock (`Car.controls_locked`)
 
@@ -72,7 +75,7 @@ the countdown.
 | Field | Default | Purpose |
 |-------|---------|---------|
 | `stage_countdown_seconds` | `3.0` | Countdown length before controls unlock. |
-| `stage_complete_percent` | `99.0` | Track-progress % (0..100) that ends the stage. <100 because progress is monotonic and the on-road snap can stop just short of the baked length. |
+| `stage_complete_percent` | `100.0` | Track-progress % (0..100) that ends the stage. 100 so it coincides with the finish arch at the centerline end; `TrackProgress` samples the curve's far edge so 100% is reachable. |
 | `hud_elapsed_enabled` | `true` | Show the top-right run timer (mirrors `hud_enabled`). |
 
 See [configuration.md](configuration.md). No quality-tier branching — single

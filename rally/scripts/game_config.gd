@@ -238,10 +238,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Countdown length, in seconds, before the car's controls unlock at the start
 ## of a stage. The car holds position (handbrake forced) until it elapses.
 @export var stage_countdown_seconds := 3.0
-## Track-progress percentage (0..100) that ends the stage. Below 100 because
-## progress is monotonic and the on-road snap means _best_offset can approach but
-## not exactly reach the baked length — see todo/stage-start-and-end.md §1.
-@export_range(0.0, 100.0) var stage_complete_percent := 99.0
+## Track-progress percentage (0..100) that ends the stage. 100 so the stage ends
+## exactly as the car crosses the finish arch, which world.gd places at the end of
+## the centerline (100% progress). TrackProgress samples the curve's far edge
+## exactly, so _best_offset can reach the baked length — see track_progress.gd.
+@export_range(0.0, 100.0) var stage_complete_percent := 100.0
 ## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
 @export var hud_elapsed_enabled := true
 
@@ -695,6 +696,19 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Map of texture_key (e.g. "sector_2", "arrow_square_left") → res://textures/signs/*.png.
 ## Empty leaves every sign on its per-kind colour fallback.
 @export var sign_textures: Dictionary = {}
+
+@export_group("Finish Arch")
+# The inflatable rally gates straddling the road (features/finish-arch.md): a
+# FINISH arch at the centerline end (100% progress, so crossing it ends the
+# stage) and a matching START arch at the car's start line. Placed by world.gd.
+## Whether to build the finish arch at the end of the stage.
+@export var finish_arch_enabled := true
+## Whether to build the start arch at the start line.
+@export var start_arch_enabled := true
+## Clear gap, in metres, between each road edge and the inside face of a leg.
+## An arch's opening = track_width + 2 x this, so the legs stand clear of the
+## road and the car drives through cleanly. Shared by both gates.
+@export_range(0.0, 6.0) var finish_arch_road_margin_m := 1.5
 
 
 @export_group("Performance")
