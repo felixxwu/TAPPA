@@ -52,6 +52,8 @@ var _last_progress := -1
 # reading yet / gauge hidden. _hp_pulse_t advances the low-HP warning oscillation.
 var _last_hp := -1.0
 var _hp_pulse_t := 0.0
+# Last displayed health percentage, so the label only re-formats on a change.
+var _last_hp_pct := -1
 
 
 func _ready() -> void:
@@ -127,6 +129,12 @@ func _update_damage(delta: float) -> void:
 	if show_gauge:
 		var frac := clampf(dmg.hp / dmg.max_hp, 0.0, 1.0) if dmg.max_hp > 0.0 else 0.0
 		_hp_bar.value = frac
+		# Label the gauge "Health" + a live percentage (a raw HP number is misleading —
+		# it reads as horsepower). Only re-format when the rounded percent changes.
+		var pct := roundi(frac * 100.0)
+		if pct != _last_hp_pct:
+			_last_hp_pct = pct
+			_hp_label.text = "Health %d%%" % pct
 		# Green (full) → amber → red (empty) via hue; flash by modulating alpha when
 		# below the low-HP warning fraction so the danger is unmissable.
 		var col := Color.from_hsv(frac * 0.33, 0.8, 0.95)
@@ -143,6 +151,7 @@ func _update_damage(delta: float) -> void:
 		_last_hp = dmg.hp
 	else:
 		_last_hp = -1.0
+		_last_hp_pct = -1
 	# Fade the flash back out regardless of gauge visibility.
 	if _impact_flash.color.a > 0.0:
 		_impact_flash.color.a = maxf(0.0, _impact_flash.color.a - delta * _IMPACT_FLASH_DECAY)

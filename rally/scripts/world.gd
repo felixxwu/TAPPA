@@ -291,6 +291,10 @@ var _distant_terrain: DistantTerrain
 # session runs and freed with the scene on the next event reload.
 var _start_line: StartLine
 
+# The mid-event wreck menu (orbit camera + Return to HQ); built when the fielded
+# car is wrecked, freed with the scene when the rally resolves to the podium.
+var _wreck_screen: WreckScreen
+
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
@@ -360,7 +364,19 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 
 
 func _on_session_car_wrecked() -> void:
-	RallySession.report_wreck()
+	# Don't cut straight to the podium — that's too sudden. Let the crash play out,
+	# then show the wreck menu (orbit camera + Return to HQ); reporting the wreck
+	# (the DNF) is deferred until the player chooses to leave. Headless runs (no
+	# display, e.g. tests) skip the cinematic and report immediately.
+	if _headless or _wreck_screen != null:
+		RallySession.report_wreck()
+		return
+	_wreck_screen = WreckScreen.new()
+	_wreck_screen.name = "WreckScreen"
+	add_child(_wreck_screen)
+	_wreck_screen.return_requested.connect(RallySession.report_wreck)
+	_wreck_screen.setup($Car, $ChaseCamera as Camera3D, $HUD as CanvasLayer,
+		$MobileControls as CanvasLayer)
 
 
 # Rally over (or DNF): show the podium. Loads under the (placeholder) transition.

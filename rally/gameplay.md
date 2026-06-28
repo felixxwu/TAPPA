@@ -35,13 +35,13 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Economy | **No currency.** Progression is purely cars + upgrades won. |
 | Damage repair | **Repair only via rare items** (a "repair kit" lootbox reward). |
 | Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
-| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + car destroyed. |
+| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + the car is **kept at 0 HP** (too damaged to field until a repair kit revives it), not destroyed. |
 | Rally complete | **Finish top 3** in a rally (combined time). |
 | Showdown unlock | **All rallies completed** (top-3 each). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
 | Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
 | Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable (a wrecked car is always re-winnable) so 100% stays reachable. Farmed rewards stay under the **same progress-tier ceiling**. |
-| Upgrades on car death | **Lost with the car.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment), so a wreck destroys the chassis *and* its installed parts — nothing returns to the player. |
+| Upgrades on a wreck | **Stay with the car.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment) and never refunded; a wreck keeps the car (at 0 HP) with its parts still fitted, so repairing it brings the whole package back. |
 
 ---
 
@@ -85,19 +85,25 @@ roguelike**: do you risk your best car to win, or play it safe?
     (power comes from the `engine_type` preset / `ENGINE_PRESETS`); add a
     **damage power-multiplier** applied to engine torque.
 - **Wreck at 0 HP.** When a car's HP hits **0 it is wrecked**: the current rally
-  is an immediate **DNF**, and the car is **destroyed** — unusable in all future
-  rallies. **Its installed upgrades are lost with it** — upgrades are fully consumed
-  when fitted, so nothing returns to the player.
+  is an immediate **DNF**. The exit isn't abrupt — the crash is allowed to play
+  out, then an **orbit camera + "car wrecked" menu** (the same slow orbit as the
+  start line) tells the player and offers to **return to HQ**. The wrecked car is
+  **kept in the garage at 0 HP** — **too damaged to enter a rally** until repaired,
+  and its installed upgrades **stay fitted** (parts are consumed on fit, so they're
+  never returned; the car is no longer destroyed).
 - **HP carries over** across events and rallies — chip damage from one rally
   weakens the car in the next unless repaired.
-- **Starter is immune** (effectively infinite HP — never wrecked, never
-  destroyed) — the anti-soft-lock floor.
-- **In-run feedback.** Because wrecking destroys the car, the run shows a **live
-  HP gauge** in the in-car HUD with a **low-HP warning** and an impact cue, so the
-  player can make the "back off or push?" call in the moment. *(Implementation in
-  `features/damage.md` › HUD; impact/crash audio in `todo/audio.md`.)*
-- **Repair** is possible **only via a rare "repair kit" item** from the lootbox,
-  spent between rallies to restore HP.
+- **Starter is immune** (effectively infinite HP — never wrecked) — the
+  anti-soft-lock floor.
+- **In-run feedback.** Because wrecking ends the run, the run shows a **live
+  health gauge** in the in-car HUD (labelled *Health* + a **percentage**, not a raw
+  HP number — "HP" reads as horsepower) with a **low-health warning** and an impact
+  cue, so the player can make the "back off or push?" call in the moment.
+  *(Implementation in `features/damage.md` › HUD; impact/crash audio in
+  `todo/audio.md`.)*
+- **Repair** is via a rare **"repair kit"** item, which **fully restores** a car's
+  health. It can be spent at the **tuning lift**, or at the **car-select screen**
+  when a chosen-but-wrecked car is too damaged to enter — repair it there and race.
 - *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
   power degrade with HP lost are tuning numbers; defer exact values to a damage
   todo + playtesting. Reuses the existing collision on signs/trees as impact

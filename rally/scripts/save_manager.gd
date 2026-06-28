@@ -260,23 +260,29 @@ func apply_damage(instance_id: int, amount: float) -> void:
 	save()
 
 
-# Wreck a car: remove the instance. Its installed upgrades are NOT returned —
-# upgrades are fully consumed when applied (see install_upgrade), so they're lost
-# with the car. The immortal starter is never wrecked (no-op).
+# Wreck a car: leave it OWNED but at 0 HP — too damaged to enter a rally until a
+# Repair Kit restores it (use_repair_kit). The car is NOT deleted; its installed
+# upgrades stay fitted (parts are consumed on fit, so they're never returned). The
+# immortal starter is never wrecked (no-op).
 func wreck_car(instance_id: int) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty() or car.get("immortal", false):
 		return
-	profile["cars"].erase(car)
+	car["hp"] = 0.0
 	save()
 
 
+# Whether an owned car is wrecked: a non-immortal car sitting at 0 HP. A wrecked
+# car stays in the garage but can't be fielded until a Repair Kit restores it.
+func car_is_wrecked(car: Dictionary) -> bool:
+	return not car.is_empty() and not bool(car.get("immortal", false)) and float(car.get("hp", 0.0)) <= 0.0
+
+
 # Permanently scrap an owned car the player chose to remove (e.g. to make room
-# under max_owned_cars). A deliberate player action rather than damage, but like a
-# wreck the instance is erased and its installed upgrades are NOT returned —
-# upgrades are consumed for good when applied (see install_upgrade), so they're
-# lost with the car. The immortal starter can never be scrapped. Returns true if a
-# car was actually removed.
+# under max_owned_cars). A deliberate player action: the instance is erased and its
+# installed upgrades are NOT returned — upgrades are consumed for good when applied
+# (see install_upgrade), so they're lost with the car. The immortal starter can
+# never be scrapped. Returns true if a car was actually removed.
 func scrap_car(instance_id: int) -> bool:
 	var car := get_car(instance_id)
 	if car.is_empty() or car.get("immortal", false):
@@ -393,11 +399,10 @@ func install_upgrade(instance_id: int, item_id: String) -> bool:
 	return true
 
 
-# Spend one repair kit to heal a car by `heal_amount` HP, clamped to the car's
-# CarLibrary max_hp. The heal amount is a tuning value the caller reads from
-# GameConfig (repair_kit_hp), keeping Save free of config coupling. Returns true
-# if a kit was consumed and applied. The only way HP goes back up.
-func use_repair_kit(instance_id: int, heal_amount: float) -> bool:
+# Spend one repair kit to FULLY restore a car's HP to its CarLibrary max_hp — the
+# only way HP climbs back, and what brings a wrecked (0 HP) car back into service.
+# Returns true if a kit was consumed and applied; false if none were owned.
+func use_repair_kit(instance_id: int) -> bool:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return false
@@ -405,7 +410,7 @@ func use_repair_kit(instance_id: int, heal_amount: float) -> bool:
 		return false
 	var entry := CarLibrary.by_id(car["model_id"])
 	var max_hp: float = entry.get("max_hp", float(car["hp"])) if not entry.is_empty() else float(car["hp"])
-	car["hp"] = minf(max_hp, float(car["hp"]) + heal_amount)
+	car["hp"] = max_hp
 	save()
 	return true
 

@@ -314,9 +314,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var hud_hp_enabled := true
 ## HP fraction below which the gauge flashes a low-HP warning.
 @export_range(0.0, 1.0) var hud_low_hp_warn_frac := 0.25
-## HP restored by one Repair Kit (the one consumable upgrade item) at the tuning
-## lift. Save.use_repair_kit clamps the heal to the car's CarLibrary max_hp.
-@export_range(0.0, 2000.0) var repair_kit_hp := 300.0
+## When the fielded car is wrecked mid-event the crash plays out, then an orbit
+## camera + "car wrecked" menu appears (scripts/wreck_screen.gd, reusing the
+## start-line orbit knobs). This caps how long (s) we wait for the wreck to settle
+## before showing the menu, in case the car never fully comes to rest.
+@export_range(0.0, 10.0) var wreck_settle_max_seconds := 4.0
 
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).

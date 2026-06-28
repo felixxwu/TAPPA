@@ -133,6 +133,9 @@ var _car_name_label: Label
 var _car_stats_label: Label
 var _start_button: Button
 var _no_eligible_label: Label
+# Car-park damage UI: a "too damaged" note + a Repair action for a wrecked focused car.
+var _car_warning_label: Label
+var _car_repair_button: Button
 
 # Garage-overflow overlay widgets (the OVERFLOW station — scrap a car to make room).
 var _overflow_banner: Label
@@ -1014,6 +1017,15 @@ func _build_car_overlay() -> void:
 	_car_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_car_stats_label)
 
+	# Shown only when the focused car is wrecked: why it can't be entered + how to fix it.
+	_car_warning_label = Label.new()
+	_car_warning_label.add_theme_font_size_override("font_size", 14)
+	_car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_car_warning_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.4))
+	_car_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_car_warning_label.visible = false
+	root.add_child(_car_warning_label)
+
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
@@ -1022,6 +1034,14 @@ func _build_car_overlay() -> void:
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(_car_back)
 	actions.add_child(back)
+	# Repair the focused wrecked car (uses one kit, restores full health, enables Start).
+	# Hidden unless the focused car is wrecked AND a Repair Kit is owned.
+	_car_repair_button = Button.new()
+	_car_repair_button.text = "Repair (1 kit)"
+	_car_repair_button.focus_mode = Control.FOCUS_NONE
+	_car_repair_button.visible = false
+	_car_repair_button.pressed.connect(_repair_focused_car)
+	actions.add_child(_car_repair_button)
 	_start_button = Button.new()
 	_start_button.text = "Start Rally"
 	_start_button.focus_mode = Control.FOCUS_NONE
@@ -1653,18 +1673,33 @@ func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
 	var label := Label.new()
 	label.add_theme_font_size_override("font_size", 15)
 	if bool(_lift_owned.get("immortal", false)):
-		label.text = "Condition: INDESTRUCTIBLE (starter)"
+		label.text = "Health: INDESTRUCTIBLE (starter)"
 		box.add_child(label)
 		return box
-	label.text = "Condition: %d / %d HP   —   Repair Kits: x%d" % [
-		roundi(float(_lift_owned.get("hp", 0.0))), roundi(float(entry.get("max_hp", 0.0))), kits]
+	# Health as a percentage (a raw HP number reads as horsepower). A wrecked car (0%)
+	# is called out — it can't enter a rally until repaired.
+	var max_hp := float(entry.get("max_hp", 0.0))
+	var hp := float(_lift_owned.get("hp", 0.0))
+	var pct := roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else 0
+	var wrecked := Save.car_is_wrecked(_lift_owned)
+	var health_text := "WRECKED — too damaged to race" if wrecked else "Health: %d%%" % pct
+	label.text = "%s   —   Repair Kits: x%d" % [health_text, kits]
 	box.add_child(label)
-	if kits > 0:
-		var repair := Button.new()
-		repair.text = "Use Repair Kit (+%d HP)" % roundi(Config.data.repair_kit_hp)
-		repair.focus_mode = Control.FOCUS_NONE
-		repair.pressed.connect(_use_repair_kit.bind(instance_id))
-		box.add_child(repair)
+	# A Repair Kit fully restores the car. Offer it whenever the car isn't already at
+	# full health and a kit is owned; flag the missing-kit case for a wrecked car.
+	if hp < max_hp:
+		if kits > 0:
+			var repair := Button.new()
+			repair.text = "Use Repair Kit (restore to full health)"
+			repair.focus_mode = Control.FOCUS_NONE
+			repair.pressed.connect(_use_repair_kit.bind(instance_id))
+			box.add_child(repair)
+		elif wrecked:
+			var note := Label.new()
+			note.text = "No Repair Kits — win one to bring this car back."
+			note.add_theme_font_size_override("font_size", 12)
+			note.modulate = Color(1, 0.7, 0.5)
+			box.add_child(note)
 	return box
 
 
@@ -1698,7 +1733,7 @@ func _apply_upgrade(instance_id: int, item_id: String) -> void:
 
 
 func _use_repair_kit(instance_id: int) -> void:
-	if Save.use_repair_kit(instance_id, Config.data.repair_kit_hp):
+	if Save.use_repair_kit(instance_id):
 		_refresh_lift_ui()
 
 
@@ -1720,6 +1755,8 @@ func _enter_car_screen() -> void:
 		_car_name_label.text = ""
 		_car_stats_label.text = ""
 		_stats_label.text = ""
+		_car_warning_label.visible = false
+		_car_repair_button.visible = false
 		_start_button.disabled = true
 		_move_camera_to(_station_xform(View.CARPARK), true)
 		return
@@ -1865,16 +1902,56 @@ func _focus_changed(snap := false) -> void:
 		_car_name_label.text = "%s  #%d  (%d of %d)" % [
 			entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _cars.size()]
 		_car_stats_label.text = stats
-		_start_button.disabled = false
+		# A wrecked focused car gates Start + offers a Repair (full restore).
+		_refresh_focus_damage(owned)
 	_move_camera_to(_camera_target_xform(), snap)
 
 
-# One-line car summary shared by the overlay and the 3D Label3D.
+# A wrecked focused car can't be entered: disable Start and explain why, offering a
+# Repair (full restore) when a kit is owned. A healthy car clears all of this.
+func _refresh_focus_damage(owned: Dictionary) -> void:
+	if not Save.car_is_wrecked(owned):
+		_start_button.disabled = false
+		_car_warning_label.visible = false
+		_car_repair_button.visible = false
+		return
+	_start_button.disabled = true
+	_car_warning_label.visible = true
+	var kits := int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
+	if kits > 0:
+		_car_warning_label.text = "Too damaged to enter. Use a Repair Kit to restore it to full health and race."
+		_car_repair_button.visible = true
+		_car_repair_button.text = "Repair (1 kit)"
+	else:
+		_car_warning_label.text = "Too damaged to enter — and you have no Repair Kits. Win one, or pick another car."
+		_car_repair_button.visible = false
+
+
+# Spend a Repair Kit on the focused (wrecked) car: full restore, then re-evaluate so
+# Start unlocks and the stats refresh. The owned dict is shared with the save, so the
+# restored HP flows straight back into the lineup.
+func _repair_focused_car() -> void:
+	if _cars.is_empty():
+		return
+	var id := int(_eligible[_focus].get("instance_id", -1))
+	if Save.use_repair_kit(id):
+		_focus_changed()
+
+
+# One-line car summary shared by the overlay and the 3D Label3D. Health reads as a
+# percentage (a raw HP number is misleading — it can read as horsepower); a wrecked
+# (0 HP) car is flagged so the lineup makes clear why it can't be entered.
 func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	var immortal: bool = owned.get("immortal", false)
 	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(owned.get("hp", 0.0))
-	var hp_text := "INF HP" if immortal else "%d/%d HP" % [roundi(hp), roundi(max_hp)]
+	var hp_text: String
+	if immortal:
+		hp_text = "Indestructible"
+	elif max_hp > 0.0 and hp <= 0.0:
+		hp_text = "WRECKED"
+	else:
+		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
 	return "%s | %s | %s | tier %d | %.2f kW/kg | %s" % [
 		_drive_text(int(entry.get("drive_mode", -1))),
 		String(entry.get("country", "?")),

@@ -37,7 +37,7 @@ re-implementing them.
 | `continue_to_next_event()` | resume from the between-event standings interstitial into the next event. |
 | `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time **and the car each drove**, ranked via `build_standings`); read by the standings scene. `events_completed()` gives the count for its header. |
 | `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_name, time_ms}`); DNF-this-event omitted. Drives the start-line "times to beat" reveal. |
-| `report_wreck()` | DNF: destroy the instance (`Save.wreck_car`), skip remaining events, resolve. A DNF earns **no** upgrade (the single per-rally draw only fires on a finished rally). Only valid while `RUNNING` (you can't wreck on the standings screen). |
+| `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. A DNF earns **no** upgrade (the single per-rally draw only fires on a finished rally). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
@@ -81,8 +81,10 @@ final event loads `podium.tscn` instead. Headless tests set
 
 The **run-scene fielding + signal wiring** is in place ([menus.md](menus.md)):
 `world.gd` configures the car from the fielded OwnedCar via the
-upgrade/tuning/damage pipeline and routes `StageManager.stage_completed` / car
-`wrecked` to `report_*` when a session is active. The placeholder HQ calls
+upgrade/tuning/damage pipeline and routes `StageManager.stage_completed` to
+`report_event_result`; a car `wrecked` builds the **`WreckScreen`** whose *Return to
+HQ* button calls `report_wreck` (headless skips the cinematic and reports at once).
+The placeholder HQ calls
 `start_rally`, so the loop runs end-to-end. The **diegetic presentation** around
 it (standings / podium / reward-reveal staging, `standings_ready` etc.) is the
 deferred full menus build — RallySession already emits the signals it hooks.

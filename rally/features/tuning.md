@@ -67,8 +67,9 @@ Tuning is resolved **once at fielding**, like `apply_car` — not re-applied mid
 | `tuning_brake_authority` | `0.3` | Half-span of `brake_bias` the slider moves from `0.5`. |
 | `tuning_aero_authority` | `0.5` | Max downforce fraction shifted front↔rear at slider \|1\|. |
 
-`repair_kit_hp` (`Damage` group, default `300`) is the HP one Repair Kit restores at
-the lift (clamped to max HP by `Save.use_repair_kit`).
+A Repair Kit **fully restores** a car's health (`Save.use_repair_kit`) — there is no
+partial-heal tunable. The lift shows **Health** as a percentage (not a raw HP number,
+which reads as horsepower) and flags a wrecked (0%) car.
 
 ## The tuning lift (UI)
 
@@ -86,8 +87,9 @@ compact on small screens. Two menus:
   **Reset to neutral**. Each change saves immediately via `Save.set_tuning`.
 - **Upgrades** — per-slot install from the inventory (`Save.install_upgrade`); fitting
   **fully consumes** the part (confirmed via a dialog first, since it can't be undone)
-  and a swap scraps the incumbent. Plus the **Repair Kit** action
-  (`Save.use_repair_kit`). Re-spawns the raised car so its body reflects the change.
+  and a swap scraps the incumbent. Plus the **Repair Kit** action — shows Health as a
+  percentage and, when a kit is owned and the car isn't full, a **restore-to-full**
+  button (`Save.use_repair_kit`). Re-spawns the raised car so its body reflects the change.
 
 A change-car control cycles all owned cars (updating the selection), shared by both
 menus.

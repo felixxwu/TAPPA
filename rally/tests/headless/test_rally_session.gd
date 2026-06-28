@@ -244,7 +244,9 @@ func test_wreck_midrally_is_dnf_and_grants_no_upgrade() -> void:
 	assert_false(r["completed"], "DNF never completes the rally")
 	assert_eq(r["placed"], -1, "DNF does not place")
 	assert_eq(r["combined_ms"], -1, "DNF has no combined time")
-	assert_true(_save.get_car(id).is_empty(), "the wrecked car instance is destroyed")
+	# A wrecked car is kept (repairable), not destroyed — it sits at 0 HP in the save.
+	assert_false(_save.get_car(id).is_empty(), "the wrecked car is kept, not destroyed")
+	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "the wrecked car is left at 0 HP")
 	assert_eq(_total_items(), 0, "a DNF rally grants no upgrade (one per FINISHED rally)")
 	assert_false(_save.rally_completed("shakedown"), "a DNF leaves the rally incomplete")
 

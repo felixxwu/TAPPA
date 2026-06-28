@@ -51,13 +51,14 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
   per slot**: installing into an occupied slot replaces the incumbent, which is
   **scrapped, not refunded** (it was already consumed when it was applied).
   Consumables and unknown ids can't be slotted (rejected). There is **no uninstall**
-  — a fitted part can only be replaced by fitting another into the same slot, and
-  nothing is returned on wreck (`Save.wreck_car`). The HQ upgrades menu confirms via
-  a dialog before fitting, since the commitment is irreversible.
-- **`Save.use_repair_kit(instance_id, heal_amount)`** — spends one repair kit and
-  heals the car, clamped to its CarLibrary `max_hp`. The only way HP goes back up.
-  `heal_amount` is passed in (the caller reads it from a `GameConfig` tunable,
-  `repair_kit_hp`, deferred balance) so `Save` stays free of config coupling.
+  — a fitted part can only be replaced by fitting another into the same slot, and a
+  **wrecked car keeps its parts fitted** (the car isn't destroyed — see
+  [save-persistence.md](save-persistence.md)). The HQ upgrades menu confirms via a
+  dialog before fitting, since the commitment is irreversible.
+- **`Save.use_repair_kit(instance_id)`** — spends one repair kit to **fully
+  restore** the car to its CarLibrary `max_hp`. The only way HP goes back up, and
+  what revives a wrecked (0 HP) car. Offered at the tuning lift and at the
+  car-select screen when a chosen car is too damaged to enter.
 
 ## Reward integration
 

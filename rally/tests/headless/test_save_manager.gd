@@ -77,16 +77,21 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 4000, "keeps the fastest time")
 
 
-func test_wreck_consumes_upgrades_and_removes_car() -> void:
+func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("mustang")
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
 	assert_false(_save.profile["inventory"].has("engine_stage1"), "item left inventory once fitted")
 
 	_save.wreck_car(car["instance_id"])
-	assert_eq(_save.profile["cars"].size(), 0, "wrecked car removed")
-	assert_false(_save.profile["inventory"].has("engine_stage1"),
-		"fitted upgrade is consumed for good — not returned on wreck")
+	# A wrecked car is NOT deleted — it stays owned at 0 HP, repairable with a kit.
+	assert_eq(_save.profile["cars"].size(), 1, "the wrecked car is kept, not removed")
+	assert_eq(float(_save.get_car(car["instance_id"])["hp"]), 0.0, "the wrecked car sits at 0 HP")
+	assert_true(_save.car_is_wrecked(_save.get_car(car["instance_id"])), "and reads as wrecked")
+	# Its upgrades ride along with the car (parts are consumed on fit; never returned).
+	assert_false(_save.profile["inventory"].has("engine_stage1"), "the fitted upgrade stays on the car")
+	assert_true(_save.get_car(car["instance_id"])["installed_upgrades"].has("engine_stage1"),
+		"the upgrade is still installed on the wrecked car")
 
 
 func test_scrap_removes_car_consumes_upgrades_and_spares_immortal() -> void:
@@ -130,17 +135,29 @@ func test_install_rejects_consumables_and_unknown_items() -> void:
 	assert_eq(int(_save.profile["inventory"]["repair_kit"]), 1, "rejected install leaves inventory intact")
 
 
-func test_repair_kit_heals_clamped_to_max_hp() -> void:
+func test_repair_kit_restores_to_full() -> void:
 	var car: Dictionary = _save.grant_car("mustang")  # max_hp 1100
+	var max_hp := float(CarLibrary.by_id("mustang")["max_hp"])
 	_save.apply_damage(car["instance_id"], 500.0)  # 600 hp
 	_save.add_item("repair_kit", 2)
-	assert_true(_save.use_repair_kit(car["instance_id"], 300.0), "repair kit consumed")
-	assert_almost_eq(float(_save.get_car(car["instance_id"])["hp"]), 900.0, 0.001, "healed by 300")
+	assert_true(_save.use_repair_kit(car["instance_id"]), "repair kit consumed")
+	# A kit fully restores the car, not a partial heal.
+	assert_almost_eq(float(_save.get_car(car["instance_id"])["hp"]), max_hp, 0.001, "restored to full health")
 	assert_eq(int(_save.profile["inventory"]["repair_kit"]), 1, "one kit consumed")
-	# A big heal clamps at max_hp, never above.
-	_save.use_repair_kit(car["instance_id"], 99999.0)
-	assert_almost_eq(float(_save.get_car(car["instance_id"])["hp"]),
-		float(CarLibrary.by_id("mustang")["max_hp"]), 0.001, "heal clamps to max_hp")
+	assert_false(_save.use_repair_kit(car["instance_id"] + 999), "no kit spent on an unknown car")
+
+
+func test_repair_kit_revives_a_wrecked_car() -> void:
+	var car: Dictionary = _save.grant_car("mustang")
+	var id := int(car["instance_id"])
+	var max_hp := float(CarLibrary.by_id("mustang")["max_hp"])
+	_save.apply_damage(id, 999999.0)  # wreck it -> 0 HP, still owned
+	assert_true(_save.car_is_wrecked(_save.get_car(id)), "the car is wrecked")
+	assert_false(_save.use_repair_kit(id), "can't repair without a kit")
+	_save.add_item("repair_kit", 1)
+	assert_true(_save.use_repair_kit(id), "a kit revives the wrecked car")
+	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001, "the revived car is at full health")
+	assert_false(_save.car_is_wrecked(_save.get_car(id)), "and is no longer wrecked")
 
 
 func test_immortal_starter_never_wrecks() -> void:
@@ -153,7 +170,9 @@ func test_immortal_starter_never_wrecks() -> void:
 func test_apply_damage_wrecks_mortal_car_at_zero() -> void:
 	var car: Dictionary = _save.grant_car("mustang")  # mortal
 	_save.apply_damage(car["instance_id"], 999999.0)
-	assert_eq(_save.profile["cars"].size(), 0, "mortal car wrecked at 0 HP")
+	# Lethal damage wrecks the car but keeps it owned at 0 HP (repairable), not deleted.
+	assert_eq(_save.profile["cars"].size(), 1, "the wrecked car is kept in the garage")
+	assert_eq(float(_save.get_car(car["instance_id"])["hp"]), 0.0, "wrecked at 0 HP")
 
 
 func test_consume_item_respects_counts() -> void:

@@ -61,18 +61,21 @@ heuristic.
 `Save.profile` (the loaded dict), `load_or_new()`, `save()` (debounced ~1s),
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
 that mutate + autosave: `grant_car(model_id, immortal)`, `get_car(instance_id)`,
-`apply_damage(instance_id, amount)`, `wreck_car(instance_id)`,
-`scrap_car(instance_id)` (a deliberate player removal — returns upgrades to
-inventory, refuses the immortal starter; drives HQ's garage-overflow prompt),
+`apply_damage(instance_id, amount)`, `wreck_car(instance_id)` (leaves the car owned
+at **0 HP** — not destroyed — too damaged to field until repaired),
+`car_is_wrecked(car)` (the 0-HP, non-immortal predicate the menus gate on),
+`scrap_car(instance_id)` (a deliberate player removal — erases the car, upgrades
+**not** refunded, refuses the immortal starter; drives HQ's garage-overflow prompt),
 `set_tuning(instance_id, tuning)`, `selected_car()` / `selected_instance_id()` /
 `set_selected_car(instance_id)` (the lift's selected car, self-healing),
 `get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),
 `add_item` / `consume_item`,
 `install_upgrade` (enforces one-per-slot via `UpgradeLibrary`; fitting **fully
-consumes** the part — a swap scraps the incumbent rather than refunding it, and
-nothing returns on wreck; see `features/upgrade-catalogue.md`),
-`use_repair_kit(instance_id, heal_amount)`
-(spend a kit to heal, clamped to max_hp), `complete_rally(rally_id, combined_ms,
+consumes** the part — a swap scraps the incumbent rather than refunding it, and a
+wrecked car keeps its parts fitted; see `features/upgrade-catalogue.md`),
+`use_repair_kit(instance_id)`
+(spend a kit to **fully restore** health — revives a wrecked car),
+`complete_rally(rally_id, combined_ms,
 placed)` (idempotent; keeps the best time **and** best placement; does **not** grant
 the car reward — re-wins are farmable). `rally_completed(id)` /
 `completed_rally_count()` / `best_placement(id)` query progress.

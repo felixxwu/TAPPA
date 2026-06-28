@@ -211,11 +211,11 @@ vertical_alignment = 1
 
 [node name="HPLabel" type="Label" parent="HUD" unique_id=1044419650]
 offset_left = 8.0
-offset_top = 112.0
-offset_right = 60.0
-offset_bottom = 128.0
+offset_top = 98.0
+offset_right = 132.0
+offset_bottom = 112.0
 theme_override_font_sizes/font_size = 10
-text = "HP"
+text = "Health"
 
 [node name="HPBar" type="ProgressBar" parent="HUD" unique_id=1044419651]
 offset_left = 30.0

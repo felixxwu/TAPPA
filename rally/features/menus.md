@@ -19,7 +19,7 @@ per-car paint, camera fly-throughs *between* far stations) lives in
 ```
 exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pin) ─▶ rally detail ─Enter─▶ car park (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0) ─start line: briefing + presence ─launch─▶ countdown ─▶ RUN
    main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ standings.tscn ─Continue─▶ next event
-                                          └─ car.wrecked ─▶ report_wreck (DNF)
+                                          └─ car.wrecked ─▶ WreckScreen (crash → orbit + menu) ─Return to HQ─▶ report_wreck (DNF)
    final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
 ```
 
@@ -126,8 +126,11 @@ a generation id so re-entering the lot cancels a stale freeze) — so a full car
 costs nothing to keep parked. `◄ ►` (or `menu_left`/`menu_right`) move the focus
 and the camera eases to a 3/4 hero shot (`menu_camera_offset` / `menu_camera_move_time`);
 the focused car **is** the selected car. A billboarded `Label3D` shows its name +
-stats beside it (drive / country / type / tier / power-to-weight / HP), mirrored into
-the overlay. A **banner** names the rally + restriction; **Start** shows the
+stats beside it (drive / country / type / tier / power-to-weight / **Health %**),
+mirrored into the overlay. A **wrecked** focused car (`Save.car_is_wrecked`) is
+**too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
+Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_kit`)
+and unlocks Start. A **banner** names the rally + restriction; **Start** shows the
 `LoadingScreen` overlay immediately and (after a fully presented frame, so it paints)
 calls `RallySession.start_rally(rally, owned)` — the handoff derives event target
 times by generating each track, which is heavy, so the overlay covers that work
@@ -160,10 +163,13 @@ the props don't simulate and `world.gd` re-applies the fielded car's config per 
 When a `RallySession` is active, `world._ready` fields the player's OwnedCar via
 `Car.apply_owned` (CarLibrary baseline → installed upgrades → bound damage from
 the saved HP) instead of the default `apply_car(0)`, and wires this event's
-`StageManager.stage_completed` → `report_event_result(elapsed_ms, hp_lost)` and
-the car's `wrecked` → `report_wreck`. `rally_finished` loads the podium. With no
-session (a plain dev boot of `main.tscn`) the default car is fielded and none of
-this runs — `main.tscn` is still independently runnable.
+`StageManager.stage_completed` → `report_event_result(elapsed_ms, hp_lost)`. The
+car's `wrecked` builds a **`WreckScreen`** (`scripts/wreck_screen.gd`): the crash
+plays out, then a slow orbit camera + a **"CAR WRECKED"** menu offers **Return to
+HQ**, which calls `report_wreck` (the DNF). `rally_finished` loads the podium. With
+no session (a plain dev boot of `main.tscn`) the default car is fielded and none of
+this runs — `main.tscn` is still independently runnable. (Headless runs skip the
+wreck cinematic and report immediately.)
 
 ## Podium (`podium.gd`)
 
@@ -229,7 +235,9 @@ opens the **rally detail**, and Enter flies to the
 **car park** which **filters to the eligible cars** (an AWD car is excluded from an
 RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
-wraps; **Back** steps car park → table → garage and clears the lineup; pin → enter →
+wraps; a **wrecked car is gated in the car park** (Start disabled, then a Repair Kit
+restores it to full health and unlocks Start); **Back** steps car park → table →
+garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
 the cumulative leaderboard; the podium renders the finish summary **and the reward
 reveal + standings**; and the run scene fields the bound session car. The pure

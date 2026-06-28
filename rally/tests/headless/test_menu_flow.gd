@@ -358,6 +358,42 @@ func test_hq_at_car_limit_boots_to_the_title() -> void:
 	assert_false(hq._overflow_layer.visible, "no scrap prompt at the cap")
 
 
+func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
+	# A wrecked (0 HP) car still appears in the eligible lineup, but it's too damaged
+	# to enter — Start is disabled until a Repair Kit restores it to full health.
+	var owned: Dictionary = _save.grant_car("rs3", false)
+	var id := int(owned["instance_id"])
+	_save.apply_damage(id, 999999.0)  # wreck it (kept at 0 HP, not deleted)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("shakedown")  # open-class: starter + RS3 both eligible
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	# Focus the wrecked RS3 in the lineup.
+	var idx := -1
+	for i in hq._eligible.size():
+		if int(hq._eligible[i]["instance_id"]) == id:
+			idx = i
+	assert_gt(idx, -1, "the wrecked car is still parked in the lineup")
+	hq._focus = idx
+	hq._focus_changed()
+	# Too damaged, no kit: Start disabled, the warning shows, no Repair offered.
+	assert_true(hq._start_button.disabled, "a wrecked car cannot be entered")
+	assert_true(hq._car_warning_label.visible, "the too-damaged warning is shown")
+	assert_false(hq._car_repair_button.visible, "no Repair option without a kit")
+	# Grant a kit and refresh: the Repair option appears.
+	_save.add_item("repair_kit", 1)
+	hq._focus_changed()
+	assert_true(hq._car_repair_button.visible, "with a kit available, Repair is offered")
+	# Repair: full restore, Start unlocks, the warning clears.
+	hq._repair_focused_car()
+	assert_false(hq._start_button.disabled, "repairing the car enables Start")
+	assert_false(hq._car_warning_label.visible, "the warning clears once repaired")
+	assert_almost_eq(float(_save.get_car(id)["hp"]), float(CarLibrary.by_id("rs3")["max_hp"]), 0.001,
+		"the repaired car is restored to full health")
+
+
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
 func test_hq_lift_raises_the_selected_car() -> void:

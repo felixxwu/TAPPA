@@ -192,7 +192,7 @@ func test_unbound_wreck_emits_without_touching_save() -> void:
 	assert_eq(_save.profile["cars"].size(), 0, "an unbound model never touches the save")
 
 
-func test_bound_wreck_removes_instance_and_consumes_upgrades() -> void:
+func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("mx5", false)
 	var id := int(car["instance_id"])
 	_save.add_item("engine_stage1", 1)
@@ -207,9 +207,13 @@ func test_bound_wreck_removes_instance_and_consumes_upgrades() -> void:
 	dm.apply_loss(40.0)  # -> 0 HP
 
 	assert_eq(wrecks["n"], 1, "wrecked emitted")
-	assert_true(_save.get_car(id).is_empty(), "the instance is removed from the save")
-	assert_false(_save.profile["inventory"].has("engine_stage1"),
-		"the fitted upgrade was consumed on apply — it is not returned when the car is wrecked")
+	# The bound car is left at 0 HP in the save (repairable), not destroyed.
+	assert_false(_save.get_car(id).is_empty(), "the wrecked instance is kept in the save")
+	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "the saved car sits at 0 HP")
+	assert_true(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),
+		"the fitted upgrade stays on the wrecked car")
+	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 0,
+		"the upgrade is not returned to inventory (it rides along with the car)")
 
 
 func test_immortal_takes_no_damage_and_never_wrecks() -> void:
