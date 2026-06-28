@@ -53,9 +53,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {},  # open-class anti-soft-lock floor
 		"events": [
-			{"seed": 1001, "turn_count": 10, "forestiness": 0.7},
-			{"seed": 1002, "turn_count": 12, "forestiness": 0.4},
-			{"seed": 1003, "turn_count": 11, "forestiness": 0.85},
+			{"seed": 1001, "turn_count": 10, "forestiness": 0.7, "surface_mix": 0.0},
+			{"seed": 1002, "turn_count": 12, "forestiness": 0.4, "surface_mix": 0.0},
+			{"seed": 1003, "turn_count": 11, "forestiness": 0.85, "surface_mix": 0.3},
 		],
 	},
 	{
@@ -63,9 +63,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {},  # open-class
 		"events": [
-			{"seed": 2001, "turn_count": 14, "forestiness": 0.3},
-			{"seed": 2002, "turn_count": 13, "forestiness": 0.6},
-			{"seed": 2003, "turn_count": 15, "forestiness": 0.45},
+			{"seed": 2001, "turn_count": 14, "forestiness": 0.3, "surface_mix": 1.0},
+			{"seed": 2002, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7},
+			{"seed": 2003, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0},
 		],
 	},
 	{
@@ -73,9 +73,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.52, 0.64),
 		"restriction": {"drive_mode": CarLibrary.RWD},
 		"events": [
-			{"seed": 3001, "turn_count": 13, "forestiness": 0.5},
-			{"seed": 3002, "turn_count": 14, "forestiness": 0.8},
-			{"seed": 3003, "turn_count": 13, "forestiness": 0.35},
+			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5},
+			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0},
+			{"seed": 3003, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0},
 		],
 	},
 	{
@@ -83,9 +83,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.82, 0.34),
 		"restriction": {"country": "JP"},
 		"events": [
-			{"seed": 4001, "turn_count": 16, "forestiness": 0.6},
-			{"seed": 4002, "turn_count": 15, "forestiness": 0.4},
-			{"seed": 4003, "turn_count": 17, "forestiness": 0.75},
+			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6},
+			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0},
+			{"seed": 4003, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0},
 		],
 	},
 	{
@@ -93,9 +93,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.66, 0.28),
 		"restriction": {},  # open-class at the top reachable tier
 		"events": [
-			{"seed": 5001, "turn_count": 18, "forestiness": 0.55},
-			{"seed": 5002, "turn_count": 17, "forestiness": 0.3},
-			{"seed": 5003, "turn_count": 19, "forestiness": 0.7},
+			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0},
+			{"seed": 5002, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4},
+			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0},
 		],
 	},
 	{
@@ -103,9 +103,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.5, 0.12),
 		"restriction": {},  # open so the immortal starter can always finish the game
 		"events": [
-			{"seed": 9001, "turn_count": 22, "forestiness": 0.8},
-			{"seed": 9002, "turn_count": 24, "forestiness": 0.5},
-			{"seed": 9003, "turn_count": 22, "forestiness": 0.65},
+			{"seed": 9001, "turn_count": 22, "forestiness": 0.8, "surface_mix": 0.5},
+			{"seed": 9002, "turn_count": 24, "forestiness": 0.5, "surface_mix": 0.8},
+			{"seed": 9003, "turn_count": 22, "forestiness": 0.65, "surface_mix": 0.3},
 		],
 	},
 ]
@@ -136,6 +136,13 @@ static func event_width(event: Dictionary) -> float:
 # omits it). Bushes ignore this. See TreeScatter / features/trees.md.
 static func event_forestiness(event: Dictionary) -> float:
 	return clampf(float(event.get("forestiness", 1.0)), 0.0, 1.0)
+
+
+# Fraction of this event's track surfaced as tarmac, in [0, 1] (the rest gravel).
+# The track switches surface exactly once along its length (TrackSurface); 0 = all
+# gravel, 1 = all tarmac. The default (0) keeps an event that omits it all gravel.
+static func event_tarmac_fraction(event: Dictionary) -> float:
+	return clampf(float(event.get("surface_mix", 0.0)), 0.0, 1.0)
 
 
 # --- Eligibility -------------------------------------------------------------

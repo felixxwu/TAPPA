@@ -24,16 +24,22 @@ which the fragment already multiplies in for free. Car lighting, which can't be
 baked, lives in the separate `ps1_models_lit.gdshader` (below).
 Uniforms: `albedo_texture` and `road_texture` (both source_color, nearest,
 default white), `albedo_color`, `texture_tile`, `blend_road` (bool, default
-`false`), and `road_uv_scale` (road tiling relative to the ground; set from
-`road_tile_per_meter / terrain_tile_per_meter` in `world.gd`). Fragment:
-`ALBEDO = mix(albedo_texture, road_texture, blend_road ? COLOR.a : 0) × albedo_color × COLOR.rgb`.
+`false`), `road_uv_scale` (road tiling relative to the ground; set from
+`road_tile_per_meter / terrain_tile_per_meter` in `world.gd`), and `tarmac_color`
+(the flat tarmac fill, set from `cfg.tarmac_color`). Fragment:
+`road = mix(road_texture, tarmac_color, UV2.x)` then
+`ALBEDO = mix(albedo_texture, road, blend_road ? COLOR.a : 0) × albedo_color × COLOR.rgb`.
 When `blend_road` is on (the terrain material sets it), the per-vertex `COLOR.a`
-cross-fades the ground texture (grass) to the road texture (gravel) where the
-terrain bakes road weight into vertex-colour alpha (see
-[terrain.md](terrain.md)/[track.md](track.md)); `COLOR.rgb` is the ground tint
-**times the baked static lighting** (`terrain_manager._bake_light`, mirroring the
-car shader's math) — so the hills get the same hemisphere+sun shading as the car
-at zero per-frame cost, valid because the terrain and sun never move.
+cross-fades the ground texture (grass) to the road where the terrain bakes road
+weight into vertex-colour alpha, and the road itself fades from the gravel
+texture to the flat tarmac colour by the per-vertex tarmac weight in **UV2.x**
+(0 = gravel, 1 = tarmac), feathered across the gravel↔tarmac switch (see
+[terrain.md](terrain.md)/[track.md](track.md)). Tarmac is a placeholder solid
+grey — [../todo/tarmac-texture.md](../todo/tarmac-texture.md). `COLOR.rgb` is the
+ground tint **times the baked static lighting** (`terrain_manager._bake_light`,
+mirroring the car shader's math) — so the hills (and tarmac) get the same
+hemisphere+sun shading as the car at zero per-frame cost, valid because the
+terrain and sun never move.
 
 Used by: the terrain floor.
 

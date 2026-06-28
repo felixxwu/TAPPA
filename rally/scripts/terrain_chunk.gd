@@ -38,6 +38,9 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 	arrays[Mesh.ARRAY_VERTEX] = data["vertices"]
 	arrays[Mesh.ARRAY_TEX_UV] = data["uvs"]
 	arrays[Mesh.ARRAY_COLOR] = data["colors"]
+	# UV2.x carries per-vertex tarmac weight (gravel→tarmac fade); see surface_uv2.
+	if data.has("uv2s"):
+		arrays[Mesh.ARRAY_TEX_UV2] = data["uv2s"]
 	arrays[Mesh.ARRAY_INDEX] = data["indices"]
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)

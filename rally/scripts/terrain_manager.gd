@@ -49,6 +49,12 @@ var default_cell_color: Color = Color(1, 1, 1)
 var road_heights: Dictionary = {}   # vertex index (Vector2i) -> nearest road Y
 var road_blend: Dictionary = {}     # vertex index -> height blend weight [0,1]
 var track_weights: Dictionary = {}  # cell index -> colour blend weight [0,1]
+# Per-cell tarmac-ness in [0,1] at the cell's nearest centerline point: 0 = gravel,
+# 1 = tarmac, feathered across the single surface switch (see TrackSurface). Keyed
+# like track_weights (same road/band cells); read by surface_grip_at() and baked
+# into the mesh UV2.x by surface_uv2()/compute_chunk_data so the shader fades the
+# gravel texture to the flat tarmac colour the same way the road fades from grass.
+var track_surface: Dictionary = {}
 
 # Baked terrain lighting. The terrain and the sun never move, so the fake
 # directional+hemisphere shading (mirroring shaders/ps1_models_lit.gdshader) is
@@ -257,6 +263,7 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 			ii += 6
 
 	var colors := vertex_colors(coord, lights)
+	var uv2s := surface_uv2(coord)
 
 	return {
 		"center": center,
@@ -264,6 +271,7 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 		"vertices": vertices,
 		"uvs": uvs,
 		"colors": colors,
+		"uv2s": uv2s,
 		"indices": indices,
 	}
 
@@ -300,6 +308,47 @@ func vertex_colors(coord: Vector2i, lights: PackedColorArray = PackedColorArray(
 				default_cell_color.b * lgt.b,
 				w)
 	return colors
+
+
+# Per-vertex tarmac weight for one chunk's mesh, carried in UV2.x (the shader
+# mixes the gravel texture toward the flat tarmac colour by it). Like
+# vertex_colors' alpha, each vertex averages the (up to 4) surrounding cells'
+# track_surface values — but only over the cells that ARE road/band cells (present
+# in track_surface), so the gravel/tarmac split isn't dragged toward gravel by the
+# bare grass cells off the road edge. UV2.y is unused (0). Keyed by GLOBAL cell
+# coords, so a shared edge vertex averages the same cells from either chunk (seam-safe).
+func surface_uv2(coord: Vector2i) -> PackedVector2Array:
+	var per_edge := SAMPLES - 1
+	var uv2s := PackedVector2Array()
+	uv2s.resize(SAMPLES * SAMPLES)
+	for zi in SAMPLES:
+		for xi in SAMPLES:
+			var gx := coord.x * per_edge + xi
+			var gz := coord.y * per_edge + zi
+			var sum := 0.0
+			var n := 0
+			for cell in [
+				Vector2i(gx - 1, gz - 1), Vector2i(gx, gz - 1),
+				Vector2i(gx - 1, gz), Vector2i(gx, gz),
+			]:
+				if track_surface.has(cell):
+					sum += track_surface[cell]
+					n += 1
+			var tarmac := sum / float(n) if n > 0 else 0.0
+			uv2s[zi * SAMPLES + xi] = Vector2(tarmac, 0.0)
+	return uv2s
+
+
+# The surface at a world XZ as (road_weight, tarmac_weight), each in [0,1]:
+#   road_weight   — 0 = bare grass (off the road), 1 = full road, ramped across
+#                   the perpendicular grass↔road feather band.
+#   tarmac_weight — 0 = gravel, 1 = tarmac, ramped across the lengthwise switch.
+# Off any track both are 0 (grass / gravel defaults). Pure (no Config), so this
+# @tool script stays editor-safe; the drivetrain turns it into a grip multiplier
+# (Drivetrain.surface_grip) using the configured per-surface μ scales.
+func surface_at(x: float, z: float) -> Vector2:
+	var cell := Vector2i(floori(x / CELL_M), floori(z / CELL_M))
+	return Vector2(track_weights.get(cell, 0.0), track_surface.get(cell, 0.0))
 
 
 # Bake the static terrain shading for one vertex into a light tint. Mirrors the
@@ -364,16 +413,24 @@ static func smooth_ramp(d: float, inner: float, outer: float) -> float:
 #   track_weights[c] = colour blend weight per cell (same ramp, by cell centre)
 # `transition_m` is the band width OUTSIDE width/2. Straight spans tessellate to
 # just their endpoints, so each segment is sub-sampled at ROAD_SAMPLE_STEP_M.
-func bake_track(centerline: Curve2D, width: float, transition_m: float) -> void:
+func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0) -> void:
 	var rh: Dictionary = {}
 	var rb: Dictionary = {}
 	var tw: Dictionary = {}
+	var ts: Dictionary = {}        # cell -> tarmac weight at its nearest centerline point
 	var v_best: Dictionary = {}  # vertex -> nearest distance so far
 	var c_best: Dictionary = {}  # cell -> nearest distance so far
 	var inner := width / 2.0
 	var outer := inner + transition_m
 	var reach := int(ceil(outer / CELL_M)) + 1
 	var poly := centerline.tessellate()
+	# Total polyline length, so each sample's cumulative distance maps to a fraction
+	# along the track for the gravel/tarmac split. Summed from the same tessellation
+	# the samples walk, so the switch lands where TrackSurface expects.
+	var total_m := 0.0
+	for i in range(1, poly.size()):
+		total_m += poly[i - 1].distance_to(poly[i])
+	var dist_m := 0.0  # cumulative distance to the start of the current segment
 	for i in range(1, poly.size()):
 		var a := poly[i - 1]
 		var b := poly[i]
@@ -383,6 +440,9 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float) -> void:
 			var t := float(s) / float(steps) if steps > 0 else 0.0
 			var p := a.lerp(b, t)
 			var y := height_at(p.x, p.y)
+			# Tarmac-ness at this point's distance along the track (feathered switch).
+			var tarmac := TrackSurface.tarmac_weight(
+				dist_m + t * seg_len, total_m, tarmac_fraction, tarmac_first, surface_feather_m)
 			var vbx := roundi(p.x / CELL_M)
 			var vbz := roundi(p.y / CELL_M)
 			var cbx := floori(p.x / CELL_M)
@@ -397,16 +457,19 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float) -> void:
 						v_best[v] = dv
 						rh[v] = y
 						rb[v] = wv
-					# Cell (centre) -> colour field.
+					# Cell (centre) -> colour + surface fields (same nearest sample).
 					var c := Vector2i(cbx + dx, cbz + dz)
 					var dc := Vector2((c.x + 0.5) * CELL_M, (c.y + 0.5) * CELL_M).distance_to(p)
 					var wc := smooth_ramp(dc, inner, outer)
 					if wc > 0.0 and (not c_best.has(c) or dc < c_best[c]):
 						c_best[c] = dc
 						tw[c] = wc
+						ts[c] = tarmac
+		dist_m += seg_len
 	road_heights = rh
 	road_blend = rb
 	track_weights = tw
+	track_surface = ts
 
 
 # Apply a track: bake the weighted height + road-blend fields from the centerline,
@@ -414,8 +477,8 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float) -> void:
 # takes effect. At startup the ring is deferred (see build_initial), so _chunks is
 # empty here and nothing rebuilds; chunks loaded later read the baked fields in
 # compute_chunk_data / vertex_colors at build time.
-func set_track(centerline: Curve2D, width: float, transition_m: float) -> void:
-	bake_track(centerline, width, transition_m)
+func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0) -> void:
+	bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first, surface_feather_m)
 	for coord in _chunks:
 		_chunks[coord].setup(self, coord)
 

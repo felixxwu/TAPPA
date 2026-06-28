@@ -37,7 +37,22 @@ custom combined-slip tire model and explicit RWD/AWD/FWD behavior.
 - `_grip_curve(s)`:
   - `s ≤ tire_slip_peak`: grip rises linearly 0 → 1.
   - `s > tire_slip_peak`: grip rolls off 1.0 → `sliding_grip_ratio` over ~3× peak.
-- Peak grip scaled by `wheel_friction_slip_front` / `_rear` (μ).
+- Peak grip scaled by `wheel_friction_slip_front` / `_rear` (μ), then by a
+  **per-wheel surface multiplier** (`surface_grip`).
+
+## Per-wheel surface grip
+
+Each wheel's μ is scaled by the surface under ITS OWN contact point, so the car
+can run e.g. two wheels on grass and two on gravel and feel the split. `car.gd`
+hands the drivetrain the `Floor` (`drivetrain.terrain`, found as the sibling
+exposing `surface_at`; null on the flat test fixtures → multiplier 1.0).
+`surface_grip(cfg, cp)` asks `TerrainManager.surface_at(x, z)` for the
+`(road_weight, tarmac_weight)` there and blends the configured scales:
+`lerp(grass_grip, lerp(gravel_grip, tarmac_grip, tarmac_weight), road_weight)`.
+So **gravel = `gravel_grip` (1.0, the baseline)**, **grass = `grass_grip` (0.7)**,
+**tarmac = `tarmac_grip` (1.3)**, cross-faded across the same feathered bands the
+road colour uses (grass↔road and gravel↔tarmac — see [terrain.md](terrain.md) /
+[track.md](track.md)).
 
 ## Helper functions
 
@@ -77,5 +92,6 @@ parking brake), `tests/headless/test_drive_mode.gd` (per-mode torque).
 
 ## Related config
 
-`wheel_friction_slip_front/rear`, `wheel_roll_influence`, `drive_mode`,
-`suspension_*`, `brake_torque`, `handbrake_torque`.
+`wheel_friction_slip_front/rear`, `grass_grip`, `gravel_grip`, `tarmac_grip`,
+`wheel_roll_influence`, `drive_mode`, `suspension_*`, `brake_torque`,
+`handbrake_torque`.

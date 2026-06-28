@@ -1385,12 +1385,16 @@ func _show_detail() -> void:
 	var best := Save.best_placement(_selected_rally_id)
 	var best_line := "Best finish: P%d   (%d / %d stars)" % [best, _stars_for(_selected_rally_id), MAX_STARS] if best > 0 \
 		else "Not yet completed (finish top 3 to earn stars)"
+	var events: Array = rally.get("events", [])
 	var lines: Array[String] = [
 		"Difficulty: %d" % int(rally.get("difficulty", 0)),
 		"Eligible cars: %s" % _restriction_text(rally.get("restriction", {})),
-		"%d events — combined time sets your result." % rally.get("events", []).size(),
-		best_line,
+		"%d events — combined time sets your result." % events.size(),
 	]
+	# Per-event surface mix (gravel vs tarmac), one line each.
+	for i in events.size():
+		lines.append("  Event %d: %s" % [i + 1, _surface_mix_text(events[i])])
+	lines.append(best_line)
 	if bool(rally.get("showdown", false)):
 		lines.append("THE SHOWDOWN — the final challenge.")
 	_detail_body.text = "\n".join(lines)
@@ -1909,6 +1913,18 @@ func _restriction_text(restriction: Dictionary) -> String:
 	if restriction.has("pw_max"):
 		parts.append("power-to-weight <= %.2f" % float(restriction["pw_max"]))
 	return ", ".join(parts)
+
+
+# Human-readable gravel/tarmac surface mix for one rally event. Full-one-surface
+# events read as just "all gravel" / "all tarmac"; mixed events show both shares.
+func _surface_mix_text(event: Dictionary) -> String:
+	var tarmac := RallyLibrary.event_tarmac_fraction(event)
+	if tarmac <= 0.0:
+		return "all gravel"
+	if tarmac >= 1.0:
+		return "all tarmac"
+	var tarmac_pct := int(round(tarmac * 100.0))
+	return "%d%% gravel / %d%% tarmac" % [100 - tarmac_pct, tarmac_pct]
 
 
 # --- Camera ------------------------------------------------------------------

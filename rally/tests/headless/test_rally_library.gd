@@ -23,6 +23,8 @@ func test_roster_is_well_formed() -> void:
 			assert_gt(int(ev["turn_count"]), 0, "%s event has a positive turn_count" % rally["id"])
 			var f := RallyLibrary.event_forestiness(ev)
 			assert_between(f, 0.0, 1.0, "%s event forestiness is in [0, 1]" % rally["id"])
+			var t := RallyLibrary.event_tarmac_fraction(ev)
+			assert_between(t, 0.0, 1.0, "%s event tarmac fraction is in [0, 1]" % rally["id"])
 		if rally["showdown"]:
 			showdowns += 1
 	assert_eq(showdowns, 1, "exactly one showdown rally")
@@ -35,6 +37,27 @@ func test_event_forestiness_defaults_to_fully_wooded() -> void:
 	assert_almost_eq(RallyLibrary.event_forestiness({"forestiness": 0.3}), 0.3, 0.0001, "authored value passes through")
 	assert_eq(RallyLibrary.event_forestiness({"forestiness": 2.0}), 1.0, "clamps above 1")
 	assert_eq(RallyLibrary.event_forestiness({"forestiness": -1.0}), 0.0, "clamps below 0")
+
+
+func test_event_tarmac_fraction_defaults_to_all_gravel() -> void:
+	# An event that omits surface_mix is all gravel (0.0); authored values pass
+	# through clamped to [0, 1].
+	assert_eq(RallyLibrary.event_tarmac_fraction({}), 0.0, "missing surface_mix -> 0.0 (all gravel)")
+	assert_almost_eq(RallyLibrary.event_tarmac_fraction({"surface_mix": 0.7}), 0.7, 0.0001, "authored value passes through")
+	assert_eq(RallyLibrary.event_tarmac_fraction({"surface_mix": 2.0}), 1.0, "clamps above 1")
+	assert_eq(RallyLibrary.event_tarmac_fraction({"surface_mix": -1.0}), 0.0, "clamps below 0")
+
+
+func test_roster_has_full_one_surface_events() -> void:
+	# "A fair few" events should be fully one surface (0% or 100% tarmac) so the
+	# roster isn't all mixed stages.
+	var full := 0
+	for rally in RallyLibrary.RALLIES:
+		for ev in rally["events"]:
+			var t := RallyLibrary.event_tarmac_fraction(ev)
+			if t <= 0.0 or t >= 1.0:
+				full += 1
+	assert_gt(full, 5, "several events are fully one surface (all gravel or all tarmac)")
 
 
 func test_open_class_floor_at_each_reachable_tier() -> void:

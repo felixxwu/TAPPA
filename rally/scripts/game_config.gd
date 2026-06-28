@@ -115,6 +115,14 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 1.0) var wheel_roll_influence := 0.1
 @export var wheel_friction_slip_front := 0.8
 @export var wheel_friction_slip_rear := 0.6
+## Per-surface grip multipliers on the base tire μ. Gravel is the standard 1.0
+## (the generated road's default surface); grass (off the road) is lower and
+## tarmac higher. A wheel's multiplier is resolved from the terrain at its
+## contact point (TerrainManager.surface_grip_at) and blends smoothly across the
+## same feathered bands the road colour uses — grass↔road and gravel↔tarmac.
+@export_range(0.1, 2.0) var grass_grip := 0.7
+@export_range(0.1, 2.0) var gravel_grip := 1.0
+@export_range(0.1, 2.0) var tarmac_grip := 1.3
 @export var tire_slip_peak := 1.5
 ## Grip retained when a tire is fully sliding, as a fraction of peak μN. The
 ## tire force falls from full grip at tire_slip_peak down to this when locked.
@@ -531,6 +539,21 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Width, in 0.5 m cells, of the smooth transition band just outside the road
 ## edge where height and colour blend from the flat road to the true terrain.
 @export var track_transition_cells := 3
+## Fraction of this track surfaced as tarmac, in [0, 1]; the rest is gravel. The
+## track switches surface exactly ONCE along its length (gravel→tarmac or
+## tarmac→gravel, picked deterministically from track_seed), so this also fixes
+## where the switch sits. 0 = all gravel, 1 = all tarmac. Set per rally event by
+## RallyLibrary.event_tarmac_fraction; the default (0) keeps free-roam all gravel.
+@export_range(0.0, 1.0) var track_tarmac_fraction := 0.0
+## Length, in metres ALONG the track, of the smooth feather where the surface
+## switches between gravel and tarmac — the lengthwise analogue of the
+## perpendicular grass↔road band (track_transition_cells). Both the road colour
+## and the per-wheel grip cross-fade over this band.
+@export_range(0.0, 40.0) var track_surface_transition_m := 6.0
+## Solid fill colour for tarmac sections. TODO: replace with a proper tarmac
+## texture (see todo/tarmac-texture.md) — for now a flat grey under the same
+## baked terrain lighting as the rest of the floor.
+@export var tarmac_color := Color(0.32, 0.32, 0.34)
 ## Lateral distance from the road centerline, in metres, within which track
 ## progress accrues; straying beyond it triggers the off-track reset. Generous on
 ## purpose — you can run wide onto the verge / cut across rough ground (rally!)

@@ -76,6 +76,7 @@ func _ready() -> void:
 		# so car swaps relocate from a clean rest pose, not a drifted one.
 		_wheel_mounts[wheel] = wheel.position
 	drivetrain = Drivetrain.new(self)
+	drivetrain.terrain = _resolve_terrain()
 	# Read per-contact impulses in _integrate_forces (used by the damage model to
 	# turn obstacle hits into HP loss). The chassis box is the only solid shape —
 	# the wheels are raycasts — so this reports chassis-vs-world contacts only.
@@ -103,6 +104,18 @@ func _ground_height_at(pos: Vector3) -> float:
 			if sibling != self and sibling.has_method("height_at"):
 				return sibling.height_at(pos.x, pos.z)
 	return 0.0
+
+
+# The terrain that resolves per-wheel surface grip (the Floor in the main scene),
+# found as the sibling exposing surface_at. Null on the flat test fixtures, where
+# the drivetrain then leaves every wheel on the base μ. Mirrors _ground_height_at.
+func _resolve_terrain() -> Node:
+	var parent := get_parent()
+	if parent != null:
+		for sibling in parent.get_children():
+			if sibling != self and sibling.has_method("surface_at"):
+				return sibling
+	return null
 
 
 # Axle midpoints for the downforce application points, classified the same way
@@ -466,6 +479,7 @@ func apply_car(index: int) -> String:
 	# Rebuild the drivetrain so it re-reads the moved hardpoints and recomputes
 	# shift speeds for the new redline/gearing, then set the driven axle layout.
 	drivetrain = Drivetrain.new(self)
+	drivetrain.terrain = _resolve_terrain()
 	drivetrain.drive_mode = spec["drive_mode"] as Drivetrain.DriveMode
 	_recompute_axles()
 

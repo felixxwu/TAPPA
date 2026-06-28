@@ -50,6 +50,7 @@ shader_parameter/albedo_color = Color(1, 1, 1, 1)
 shader_parameter/texture_tile = Vector2(1, 1)
 shader_parameter/blend_road = true
 shader_parameter/road_uv_scale = 1.0
+shader_parameter/tarmac_color = Color(0.32, 0.32, 0.34, 1)
 
 [sub_resource type="ShaderMaterial" id="mat_post"]
 shader = ExtResource("2_post")

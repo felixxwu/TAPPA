@@ -363,6 +363,47 @@ func test_bake_track_weights_inside_band_outside() -> void:
 	assert_gt(m.track_weights.size(), 0, "per-cell colour weights baked too")
 
 
+func test_bake_track_surface_split_and_surface_at() -> void:
+	# A 40 m straight along +X. 50% tarmac, gravel-first: gravel near the start,
+	# tarmac near the end, with the switch ~halfway. surface_at reports both the
+	# road weight (1 on road) and the tarmac weight at a world XZ.
+	var m := _make_manager([_make_layer(20.0, 3.0)] as Array[TerrainLayer], 5)
+	var curve := Curve2D.new()
+	curve.add_point(Vector2(0.0, 0.0))
+	curve.add_point(Vector2(40.0, 0.0))
+	m.bake_track(curve, 4.0, 2.0, 0.5, false, 4.0)  # 50% tarmac, gravel first
+	assert_gt(m.track_surface.size(), 0, "per-cell tarmac weights baked")
+	assert_eq(m.track_surface.size(), m.track_weights.size(), "tarmac keyed like road weights")
+	# On the road near the start = gravel (tarmac weight ~0); near the end = tarmac (~1).
+	var start: Vector2 = m.surface_at(2.0, 0.0)
+	var finish: Vector2 = m.surface_at(38.0, 0.0)
+	assert_almost_eq(start.x, 1.0, 1e-4, "on the road at the start")
+	assert_almost_eq(finish.x, 1.0, 1e-4, "on the road at the end")
+	assert_lt(start.y, 0.1, "start is gravel (low tarmac weight)")
+	assert_gt(finish.y, 0.9, "end is tarmac (high tarmac weight)")
+	# Off the road entirely: both weights zero (grass / gravel defaults).
+	var off: Vector2 = m.surface_at(2.0, 50.0)
+	assert_eq(off.x, 0.0, "off-road has no road weight")
+	assert_eq(off.y, 0.0, "off-road has no tarmac weight")
+
+
+func test_compute_chunk_data_bakes_tarmac_into_uv2() -> void:
+	# track_surface (per-cell tarmac weight) is averaged into the mesh UV2.x so the
+	# shader can fade gravel -> tarmac. A fully-tarmac cell cluster -> UV2.x ~1.
+	var m := _make_manager([_make_layer(20.0, 3.0)] as Array[TerrainLayer], 5)
+	m.track_surface = {
+		Vector2i(9, 0): 1.0, Vector2i(10, 0): 1.0,
+		Vector2i(9, -1): 1.0, Vector2i(10, -1): 1.0,
+	}
+	var data: Dictionary = m.compute_chunk_data(Vector2i(0, 0))
+	assert_true(data.has("uv2s"), "chunk data carries uv2s")
+	var uv2s: PackedVector2Array = data["uv2s"]
+	# Vertex (xi=10, zi=0) is surrounded by the four tarmac cells above -> ~1.
+	assert_almost_eq(uv2s[0 * ManagerScript.SAMPLES + 10].x, 1.0, 1e-4, "tarmac vertex UV2.x = 1")
+	# A vertex far from any surface cell averages no cells -> 0 (gravel default).
+	assert_eq(uv2s[25 * ManagerScript.SAMPLES + 25].x, 0.0, "off-surface vertex UV2.x = 0")
+
+
 func test_compute_chunk_data_blends_road_height() -> void:
 	var m := _make_manager([_make_layer(20.0, 3.0)] as Array[TerrainLayer], 5)
 	var v_full := Vector2i(10, 0)  # chunk (0,0) local (xi=10, zi=0)

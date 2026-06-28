@@ -94,12 +94,25 @@ the true terrain across a transition band just outside the road edge, using
 - `road_blend: Dictionary` — vertex index → height blend weight (1 on the road,
   ramping to 0 at the outer band edge; omitted where 0).
 - `track_weights: Dictionary` — cell index → road blend weight (same ramp).
+- `track_surface: Dictionary` — cell index → **tarmac weight** in `[0,1]` at the
+  cell's nearest centerline point (0 = gravel, 1 = tarmac), feathered across the
+  single gravel↔tarmac switch (`TrackSurface`, see [track.md](track.md)). Keyed
+  like `track_weights`. Read by `surface_uv2` (baked into the mesh **UV2.x** so the
+  shader fades the gravel texture → flat tarmac colour) and by `surface_at`.
+- `surface_at(x, z) → Vector2` — `(road_weight, tarmac_weight)` at a world XZ
+  (cell lookup; both 0 off any track). Pure, so the `@tool` script stays
+  editor-safe; the drivetrain turns it into the per-wheel grip multiplier (see
+  [drivetrain-and-tires.md](drivetrain-and-tires.md)).
 - `smooth_ramp(d, inner, outer)` — the weight curve: 1 for `d ≤ inner`
   (`= width/2`), 0 for `d ≥ outer` (`= inner + transition`), smoothstep between.
-- `bake_track(centerline, width, transition_m)` — samples `height_at` densely
-  along the 2D centerline and fills all three fields (nearest height + ramp
-  weight per grid vertex, ramp weight per cell). The road follows terrain
-  elevation lengthwise, is flat across its width, and feathers out over the band.
+- `bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
+  surface_feather_m)` — samples `height_at` densely along the 2D centerline and
+  fills all four fields (nearest height + ramp weight per grid vertex, ramp weight
+  + tarmac weight per cell). The road follows terrain elevation lengthwise, is flat
+  across its width, and feathers out over the band. Tarmac weight comes from each
+  sample's cumulative distance along the polyline via `TrackSurface.tarmac_weight`.
+  The surface args default to all-gravel, so callers that don't split surfaces are
+  unaffected.
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.
@@ -119,7 +132,8 @@ the true terrain across a transition band just outside the road edge, using
   `sky_color`, `ground_color`) are pushed from `GameConfig` by `world.gd`
   (`apply_terrain_light`) before the initial build. Valid because the terrain and
   sun never move; the car can't bake (it rotates) and lights in its shader.
-- `set_track(centerline, width, transition_m)` — call
+- `set_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
+  surface_feather_m)` — call
   `bake_track`, and **rebuild any currently-loaded chunks** (full `setup()`, since
   geometry changes). At startup the ring is deferred (see below), so nothing is
   loaded here and nothing rebuilds; chunks loaded later bake the blend at build

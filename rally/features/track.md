@@ -98,6 +98,25 @@ road texture** (grass → gravel). The road is flat across its width, and its ed
 `track_width/2` — both the height (mesh + collision) and the texture fade blend
 smoothly (smoothstep) from the flat road to the true terrain across that band.
 
+## Surface split (gravel ↔ tarmac)
+
+`scripts/track_surface.gd` (`class_name TrackSurface`, pure static functions)
+splits the road between **gravel** and **tarmac** along its length. A track
+switches surface **exactly once** (each surface is one contiguous run): it either
+opens on gravel and switches to tarmac, or opens on tarmac and switches to gravel
+— `orientation_tarmac_first(seed)` picks which, deterministically from
+`track_seed`. The tarmac run covers `track_tarmac_fraction` of the length (set per
+rally event by `RallyLibrary.event_tarmac_fraction`), which also fixes where the
+switch sits. `tarmac_weight(dist, total, fraction, tarmac_first, feather_m)`
+returns the tarmac-ness in `[0,1]` at a distance along the track, **feathered**
+with a smoothstep over `track_surface_transition_m` (default 6 m) so the
+gravel↔tarmac seam blends like the perpendicular grass↔road edge. It drives BOTH
+the road colour (baked per cell into `track_surface`, then per vertex into mesh
+UV2.x — the shader fades the gravel texture to the flat `tarmac_color`) and the
+per-wheel grip (`surface_at` → `Drivetrain.surface_grip`), so look and feel stay
+in sync. Tarmac is a placeholder solid grey for now — see
+[../todo/tarmac-texture.md](../todo/tarmac-texture.md).
+
 `world.gd._generate_track()` orders startup so nothing is rebuilt: run the search
 from the car's spawn pose (position + −Z forward, projected to XZ) using the
 `track_*` config knobs → `Floor.set_track(centerline, width, transition_m)`
@@ -111,8 +130,8 @@ shader change.
 ## Configuration
 
 `track_width`, `track_clearance`, `track_seed`, `track_turn_count`,
-`track_transition_cells` in `config/game_config.tres` (the `Track` group of
-`GameConfig`).
+`track_transition_cells`, `track_tarmac_fraction`, `track_surface_transition_m`,
+`tarmac_color` in `config/game_config.tres` (the `Track` group of `GameConfig`).
 
 ## Track progress & off-track reset
 

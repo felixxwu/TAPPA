@@ -46,6 +46,8 @@ func _ready() -> void:
 	if cfg.terrain_tile_per_meter > 0.0:
 		road_uv_scale = cfg.road_tile_per_meter / cfg.terrain_tile_per_meter
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("road_uv_scale", road_uv_scale)
+	# Flat tarmac fill colour (TODO: a real tarmac texture — todo/tarmac-texture.md).
+	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("tarmac_color", cfg.tarmac_color)
 	# Assigning layers triggers a full terrain regeneration; skip when equal.
 	if not _layers_match($Floor.layers, cfg.terrain_layers()):
 		var layers: Array[TerrainLayer] = []
@@ -146,7 +148,12 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if staged:
 		road_centerline = _with_start_lead_in(road_centerline, start_pos, start_heading, cfg)
 	var transition_m := cfg.track_transition_cells * TerrainManager.CELL_M
-	$Floor.set_track(road_centerline, cfg.track_width, transition_m)
+	# Surface split: the track runs gravel + tarmac with one switch, the tarmac
+	# share = track_tarmac_fraction (set per rally event). Which surface it opens on
+	# is seeded off track_seed so it's deterministic but varied across events.
+	var tarmac_first := TrackSurface.orientation_tarmac_first(cfg.track_seed)
+	$Floor.set_track(road_centerline, cfg.track_width, transition_m,
+		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m)
 
 	if loading != null:
 		loading.set_step("Building terrain…")

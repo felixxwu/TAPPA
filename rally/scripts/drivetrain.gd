@@ -31,6 +31,10 @@ var drive_mode := DriveMode.RWD  # which axle(s) the engine drives
 # Multiplier on the engine's driven torque, set by car.gd each tick from the
 # damage model (1.0 = healthy, <1 as HP falls). See features/damage.md.
 var power_scale := 1.0
+# Terrain that resolves the surface under each wheel (a TerrainManager exposing
+# surface_at(x, z) -> (road_weight, tarmac_weight)). Set by car.gd from its Floor
+# sibling; null on the flat test fixtures, where every wheel keeps the base μ.
+var terrain: Object = null
 var rear_wheels: Array = []
 var front_wheels: Array = []
 var hardpoints: Dictionary = {}  # wheel -> rest-pose local position
@@ -84,7 +88,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 			mu = (
 				cfg.wheel_friction_slip_front if wheel.use_as_steering
 				else cfg.wheel_friction_slip_rear
-			),
+			) * surface_grip(cfg, cp),
 			impulse_long = 0.0, impulse_lat = 0.0,
 		})
 
@@ -297,6 +301,19 @@ func _tire_force(cfg: GameConfig, c: Dictionary, surface_vel: float, h: float) -
 	f_long = clampf(f_long, -long_cap, long_cap)
 	f_lat = clampf(f_lat, -absf(s_lat) * share / h, absf(s_lat) * share / h)
 	return Vector2(f_long, f_lat)
+
+
+# Per-wheel surface grip multiplier on the base μ at a contact point. Asks the
+# terrain for the (road, tarmac) weights there and blends the configured
+# grass / gravel / tarmac scales across the same feathered bands the road colour
+# uses: road weight fades grass→road, tarmac weight fades gravel→tarmac. With no
+# terrain (flat fixtures) the multiplier is 1.0, so the base μ is unchanged.
+func surface_grip(cfg: GameConfig, cp: Vector3) -> float:
+	if terrain == null or not terrain.has_method("surface_at"):
+		return 1.0
+	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
+	var road_grip := lerpf(cfg.gravel_grip, cfg.tarmac_grip, s.y)
+	return lerpf(cfg.grass_grip, road_grip, s.x)
 
 
 # Grip fraction (0..1 of μN) for a combined slip speed s (m/s): linear up to

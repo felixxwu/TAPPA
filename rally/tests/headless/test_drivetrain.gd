@@ -31,6 +31,33 @@ func _wait_physics(frames: int):
 		await get_tree().physics_frame
 
 
+# Minimal terrain stub exposing surface_at(x, z) -> (road_weight, tarmac_weight).
+class _StubTerrain extends RefCounted:
+	var s := Vector2.ZERO
+	func surface_at(_x: float, _z: float) -> Vector2:
+		return s
+
+
+func test_surface_grip_scales_mu_by_surface() -> void:
+	# surface_grip blends the configured grass/gravel/tarmac scales by the terrain's
+	# (road, tarmac) weights at the contact point. With no terrain it leaves μ alone.
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	var stub := _StubTerrain.new()
+	dt.terrain = stub
+	stub.s = Vector2(0.0, 0.0)  # off-road grass
+	assert_almost_eq(dt.surface_grip(cfg, Vector3.ZERO), cfg.grass_grip, 1e-4, "grass = grass_grip")
+	stub.s = Vector2(1.0, 0.0)  # full gravel road
+	assert_almost_eq(dt.surface_grip(cfg, Vector3.ZERO), cfg.gravel_grip, 1e-4, "gravel = gravel_grip")
+	stub.s = Vector2(1.0, 1.0)  # full tarmac road
+	assert_almost_eq(dt.surface_grip(cfg, Vector3.ZERO), cfg.tarmac_grip, 1e-4, "tarmac = tarmac_grip")
+	stub.s = Vector2(0.5, 0.0)  # road edge, half-faded to grass
+	assert_almost_eq(dt.surface_grip(cfg, Vector3.ZERO), lerpf(cfg.grass_grip, cfg.gravel_grip, 0.5), 1e-4,
+		"half-on-gravel blends grass<->gravel")
+	dt.terrain = null
+	assert_eq(dt.surface_grip(cfg, Vector3.ZERO), 1.0, "no terrain -> unchanged μ")
+
+
 func test_launch_wheelspin() -> void:
 	# Full throttle from rest in 1st: the driven axle must genuinely spin —
 	# slip well past the grip curve's peak — while the car still accelerates.
