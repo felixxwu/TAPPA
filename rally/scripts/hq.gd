@@ -668,10 +668,10 @@ func _build_detail_overlay() -> void:
 
 # The tuning-lift menu: a solid panel anchored to ONE side of the screen (the right
 # hq_lift_menu_width_frac of the width) so the raised car — framed to the LEFT by the
-# lift camera (hq_lift_cam_*) — stays in clear view. The panel holds only the
-# interactive controls (change-car, the TUNE/UPGRADES tab + its scrollable content,
-# and Back) so it stays short enough for small screens; the bay title and the selected
-# car's name/description sit in a separate BOTTOM-LEFT panel beside the car.
+# lift camera (hq_lift_cam_*) — stays in clear view. The panel holds only the menu
+# itself (change-car, the TUNE/UPGRADES tab + its scrollable content) so it stays short
+# enough for small screens; the Back button, the bay title and the selected car's
+# name/description sit on the LEFT (lift) side, beside the car.
 func _build_lift_overlay() -> void:
 	var frac: float = Config.data.hq_lift_menu_width_frac
 	_lift_layer = CanvasLayer.new()
@@ -746,21 +746,30 @@ func _build_lift_overlay() -> void:
 	_lift_upgrades_box.add_theme_constant_override("separation", 8)
 	content.add_child(_lift_upgrades_box)
 
+	# The LEFT side (the lift / car side) carries the Back button and, below it, the bay
+	# title + the selected car's name & description — keeping the right-hand menu panel
+	# free of chrome so the Tune/Upgrades content gets the full panel height on small
+	# screens. A bottom-left column that grows upward (info at the very bottom, Back
+	# above it); mouse-transparent except the button.
+	var left_col := VBoxContainer.new()
+	left_col.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	left_col.offset_left = 20
+	left_col.offset_bottom = -20
+	left_col.grow_horizontal = Control.GROW_DIRECTION_END
+	left_col.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	left_col.add_theme_constant_override("separation", 10)
+	left_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lift_layer.add_child(left_col)
+
 	var back := Button.new()
 	back.text = "< Back to garage"
 	back.focus_mode = Control.FOCUS_NONE
+	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN  # hug content, don't stretch
 	back.pressed.connect(_lift_back)
-	root.add_child(back)
+	left_col.add_child(back)
 
-	# The bay title + the selected car's name & description live at the BOTTOM-LEFT —
-	# on the lift side, beside the car — so the right-hand menu panel stays short
-	# enough to fit small screens. A slim self-sizing panel that grows up/right.
 	var info_panel := PanelContainer.new()
-	info_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	info_panel.offset_left = 20
-	info_panel.offset_bottom = -20
-	info_panel.grow_horizontal = Control.GROW_DIRECTION_END
-	info_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	info_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var info_style := StyleBoxFlat.new()
 	info_style.bg_color = Color(0.08, 0.10, 0.14, 0.82)
@@ -771,7 +780,7 @@ func _build_lift_overlay() -> void:
 	for side in ["left", "top", "right", "bottom"]:
 		info_style.set("content_margin_" + side, 14.0)
 	info_panel.add_theme_stylebox_override("panel", info_style)
-	_lift_layer.add_child(info_panel)
+	left_col.add_child(info_panel)
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 4)
 	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
