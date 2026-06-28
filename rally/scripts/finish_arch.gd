@@ -310,8 +310,8 @@ func _add_rope(a: Vector3, b: Vector3, mat: ShaderMaterial) -> void:
 	var mid := (a + b) * 0.5
 	# Orient the cylinder (local +Y) along the rope direction.
 	var dir := (b - a).normalized()
-	var rot_basis := _basis_from_y(dir)
-	mi.transform = Transform3D(rot_basis, mid)
+	var rope_basis := _basis_from_y(dir)
+	mi.transform = Transform3D(rope_basis, mid)
 	add_child(mi)
 
 

@@ -340,16 +340,19 @@ func _process(delta: float) -> void:
 			_seq_t += delta
 			var cfg := _cfg()
 			# Staggered roll-off: the leader pulls away first (full throttle, set at
-			# launch); the player rolls up one stagger later; the trailer one stagger
-			# after that. Each holds throttle for the scoot window then eases off so
-			# the parking brake settles it.
+			# launch); the player rolls UP TO THE LINE one stagger later (braking to a
+			# stop ON it, not coasting past); the trailer one stagger after that drives
+			# off, holding throttle for the scoot window then easing off.
 			var stagger := cfg.start_queue_stagger_seconds
 			var scoot := cfg.start_trailer_scoot_seconds
 			if _player_staged and _player is VehicleBody3D and "ai_controlled" in _player:
-				_player.ai_throttle = 1.0 if (_seq_t >= stagger and _seq_t < stagger + scoot) else 0.0
+				if _seq_t >= stagger:
+					_roll_player_to_line()
+				else:
+					_player.ai_throttle = 0.0  # hold behind until its stagger
 			if _trailer != null and is_instance_valid(_trailer):
 				_trailer.ai_throttle = 1.0 if (_seq_t >= 2.0 * stagger and _seq_t < 2.0 * stagger + scoot) else 0.0
-			# Don't cut to the chase cam until the player has finished rolling up AND
+			# Don't cut to the chase cam until the player has rolled up to the line AND
 			# come to a COMPLETE stop, so the transition never happens mid-roll;
 			# start_drive_off_seconds is a safety cap so it can't wait forever.
 			var rolled := _seq_t >= stagger + scoot
@@ -378,6 +381,29 @@ func _process(delta: float) -> void:
 func _advance_orbit(delta: float) -> void:
 	_orbit_angle += delta * _cfg().start_orbit_speed
 	_update_orbit()
+
+
+# Roll the staged player UP TO the start line and brake to a stop ON it, instead of
+# flooring it for a fixed window and coasting past (which read as "scoots past then
+# resets"). Drives forward while well behind the line, coasts into a speed-aware
+# brake point, then brakes+holds — so it eases to a halt at the line. `_release_player`
+# still snaps the sub-decimetre residual to the exact line under the fade.
+func _roll_player_to_line() -> void:
+	var fwd := (-_start_xform.basis.z).normalized()
+	var dist: float = (_start_xform.origin - _player.global_position).dot(fwd)
+	var v: float = (_player as VehicleBody3D).linear_velocity.length()
+	# Distance the car needs to brake from its current speed (decel ~14 m/s²) plus a
+	# small reaction margin — start braking once the line is within it.
+	var brake_dist: float = v * v / 28.0 + 0.25
+	if dist <= brake_dist:
+		_player.ai_throttle = -1.0   # on/at the line: brake to a stop
+		_player.ai_handbrake = true
+	elif dist > brake_dist + 1.0:
+		_player.ai_throttle = 1.0    # well behind: roll up
+		_player.ai_handbrake = false
+	else:
+		_player.ai_throttle = 0.0    # coast into the brake point
+		_player.ai_handbrake = false
 
 
 # Whether the player has effectively stopped (settled at the line). Non-Car players
@@ -444,6 +470,11 @@ func _release_player() -> void:
 	_player.axis_lock_angular_y = false
 	if "drivetrain" in _player and _player.drivetrain != null and _player.drivetrain.engine != null:
 		_player.drivetrain.engine.auto = _player_auto_was
+	# Snap exactly onto the start line (motion zeroed) so the roll-up can't leave the
+	# car short of or past the line — it begins the run on the line, under the start
+	# arch, where track progress reads 0%. Hidden by the fade-to-black.
+	if _player.has_method("reset_to"):
+		_player.reset_to(_start_xform)
 	_player_staged = false
 
 

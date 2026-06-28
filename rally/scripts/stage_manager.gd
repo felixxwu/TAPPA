@@ -68,6 +68,7 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	else:
 		_phase = Phase.COUNTDOWN
 		_countdown_left = _cfg().stage_countdown_seconds
+		_mark_progress_start()  # car is on the line now -> progress reads 0% from here
 		if _hud != null and _hud.has_method("show_countdown"):
 			_hud.show_countdown(_countdown_left)
 	_armed = true
@@ -81,8 +82,18 @@ func begin_countdown() -> void:
 		return
 	_phase = Phase.COUNTDOWN
 	_countdown_left = _cfg().stage_countdown_seconds
+	# The start-line sequence has just snapped the car onto the line; anchor 0% here.
+	_mark_progress_start()
 	if _hud != null and _hud.has_method("show_countdown"):
 		_hud.show_countdown(_countdown_left)
+
+
+# Re-anchor track progress to 0% at the car's current (on-the-line) position, so
+# the lead-in behind the start and any roll-up settle don't count. Guarded so the
+# stub progress in tests (without the method) is a no-op.
+func _mark_progress_start() -> void:
+	if _progress != null and _progress.has_method("mark_start"):
+		_progress.mark_start()
 
 
 func _process(delta: float) -> void:

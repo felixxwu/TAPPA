@@ -27,6 +27,12 @@ var _terrain: Node        # a TerrainManager (height_at), or null on flat fixtur
 # this IS the monotonic progress counter. Driving backwards lowers the live
 # offset but never this.
 var _best_offset := 0.0
+# The arc offset that reads as 0% — the start line, not the curve's start. The
+# progress centerline includes a straight lead-in BEHIND the start (so the queue
+# car sits on road), so the curve begins ~start_lead_in_behind_m before the line;
+# anchoring progress here keeps the stage from reading several % before the off.
+# Re-anchored at the race start by mark_start() so the off is always exactly 0%.
+var _origin_offset := 0.0
 # The 3D pose to restore on an off-track event: on the centerline at
 # _best_offset, lifted to ground + spawn_clearance, facing along the road.
 var _best_reset: Transform3D
@@ -44,6 +50,20 @@ func setup(centerline: Curve2D, car: Node, terrain: Node) -> void:
 	# on the per-tick query is windowed (see _local_closest_offset).
 	var p: Vector3 = car.global_transform.origin
 	_best_offset = _centerline.get_closest_offset(Vector2(p.x, p.z))
+	_origin_offset = _best_offset
+	_best_reset = _reset_xform_at(_best_offset)
+
+
+# Re-anchor 0% to the car's current position — called when the stage actually
+# starts (StageManager, on GO), so any roll-up/settle during the start-line
+# sequence is zeroed out and the off reads exactly 0%. A global nearest-point
+# query is safe here for the same reason as setup(): the car is at the start.
+func mark_start() -> void:
+	if _centerline == null or _car == null:
+		return
+	var p: Vector3 = _car.global_transform.origin
+	_origin_offset = _centerline.get_closest_offset(Vector2(p.x, p.z))
+	_best_offset = _origin_offset
 	_best_reset = _reset_xform_at(_best_offset)
 
 
@@ -131,7 +151,11 @@ func baked_length() -> float:
 	return _baked_length
 
 
-# 0.0 .. 1.0 fraction of the track reached. Used by the HUD and (later) the
-# stage-completion gate (todo/stage-start-and-end.md).
+# 0.0 .. 1.0 fraction of the track reached, measured from the start line
+# (_origin_offset) to the finish (baked length) — so the off reads 0% and the
+# finish line reads 100%. Used by the HUD and the stage-completion gate.
 func progress_percent() -> float:
-	return _best_offset / _baked_length if _baked_length > 0.0 else 0.0
+	var span := _baked_length - _origin_offset
+	if span <= 0.0:
+		return 0.0
+	return clampf((_best_offset - _origin_offset) / span, 0.0, 1.0)

@@ -24,7 +24,11 @@ banner set (e.g. the legs read `CONGRATS!` at the finish, `GO!` at the start).
   stage immediately. Co-located with the finish sign pair ([signs.md](signs.md)).
 - **Start** — at `start_pos` / `start_heading`, the **car's real spawn pose** (the
   start line). For a staged run this is the launch point ahead of the lead-in stub;
-  for a dev boot it is centerline offset 0.
+  for a dev boot it is centerline offset 0. This is exactly where track progress
+  reads **0%**: the start-line sequence snaps the car onto the line at the off
+  (`StartLine._release_player` → `Car.reset_to`), and `StageManager` then re-anchors
+  `TrackProgress` to 0% there ([progress.md](progress.md)). The old A-frame start
+  boards are gone — the arch is the start marker now ([signs.md](signs.md)).
 
 Shared placement details:
 

@@ -61,10 +61,15 @@ off-track recovery now share one code path.
 
 `progress_offset()`, `baked_length()`, and `progress_percent()` (0..1) are
 exposed for the HUD and the stage-completion gate ([stage.md](stage.md), which
-fires at 100% — coinciding with the finish arch at the centerline end). The
-windowed search also samples its **far edge exactly**, so the very end of the
-curve is reachable and `progress_percent()` can hit 1.0 (a 1 m step would
-otherwise cap it ~1 m short). A **temporary** percentage readout is wired into the
+fires at 100% — coinciding with the finish arch at the centerline end).
+`progress_percent()` is measured **from the start line, not the curve origin**:
+the progress centerline has a straight lead-in *behind* the start (so the queue
+car sits on road), which would otherwise read several % before the off. It is
+anchored at `_origin_offset` — seeded at the spawn in `setup()` and re-anchored to
+the car's on-the-line position by `mark_start()`, which `StageManager` calls at the
+off — so the start reads exactly **0%**. The windowed search also samples its **far
+edge exactly**, so the very end of the curve is reachable and `progress_percent()`
+can hit 1.0 (a 1 m step would otherwise cap it ~1 m short). A **temporary** percentage readout is wired into the
 HUD (`HUD/ProgressLabel`, fed by `world.gd` setting `HUD.track_progress`); it's a
 placeholder until the real stage UI lands.
 
@@ -74,5 +79,6 @@ placeholder until the real stage UI lands.
 progress advances on-road and is monotonic (backward travel doesn't reduce it);
 an off-road position doesn't advance progress; straying triggers exactly one
 reset whose XZ matches the recorded progress, lifted by `spawn_clearance` and
-facing along the road; the reset can be disabled; and `progress_percent` tracks
-the fraction driven.
+facing along the road; the reset can be disabled; `progress_percent` tracks the
+fraction driven, reads 0% at the start line despite the lead-in, and `mark_start()`
+re-zeros it at the car's position.

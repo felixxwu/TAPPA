@@ -95,13 +95,17 @@ plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal 
 X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
 albedo texture so the aerial colours read true under the garage lighting). Every
 rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
-tier-coloured cone marker, a billboarded `Label3D` name, and a row of small
-**sphere stars** above it — 1st-place best = 3 gold, 2nd = 2, 3rd = 1, else grey
-(`_stars_for`). (3D sphere stars sidestep the font's missing ★/☆ glyphs — same
-reason the UI uses ASCII `<`/`>` for nav.) Each unlocked pin carries a pickable
-`Area3D` (rally id bound to the handler) and its `rally_id`/`locked` in metadata;
-the **showdown** pin is grey + **non-pickable** until every other rally is
-completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
+**state-coloured flag marker** (`RallyFlag` — a pole + waving pennant + finial
+bead), a billboarded `Label3D` name, and a row of small **sphere stars** above it
+— 1st-place best = 3 gold, 2nd = 2, 3rd = 1, else grey (`_stars_for`). The flag's
+pennant colour is the medal ladder (`RallyFlag.state_color`): locked = charcoal
+grey (with a grey finial, so it reads as disabled), 0 stars = race red, then
+bronze / silver / gold for 1 / 2 / 3 stars — so the colour alone conveys the best
+result, with the sphere stars as the exact readout. (3D sphere stars sidestep the
+font's missing ★/☆ glyphs — same reason the UI uses ASCII `<`/`>` for nav.) Each
+unlocked pin carries a pickable `Area3D` (rally id bound to the handler) and its
+`rally_id`/`locked` in metadata; the **showdown** pin is grey + **non-pickable**
+until every other rally is completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
 **release** and only if the press wasn't a drag (`_table_dragged`), so panning never
