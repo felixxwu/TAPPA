@@ -41,9 +41,15 @@ objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_picka
 `menu_*` keyboard/gamepad input. The environment — a block-building skyline
 **behind the garage** (`_build_buildings`, kept clear of the title camera's view),
 billboard **trees** framing the lot (`_build_trees`, reusing the stage's
-`BillboardField`), the garage shell, the table, the lift — is built from `BoxMesh`
+`BillboardField`), the garage shell, the lift — is built from `BoxMesh`
 blocks via `_block()` (placeholder art; the framing/positions that the flow depends
-on are in `GameConfig`). The ground is a **grass-textured field** (the run scene's
+on are in `GameConfig`). The **map table** is the exception: `_build_map_table`
+instantiates a proper `MapTable` model (`scripts/map_table.gd`) — a wooden tabletop
+on four legs, with a skirt apron under the top edge and low stretcher rails, all
+wearing a procedurally-generated wood-grain texture. Its origin is the floor centre
+and its top surface stays at `hq_table_size.y`, so the satellite map plane and the
+rally pins still align. The model is standalone-renderable for visual iteration via
+`tools/render_map_table.sh` (→ `docs/map_table/*.png`). The ground is a **grass-textured field** (the run scene's
 `textures/grass.jpg`, tiled by `terrain_tile_per_meter`) with a **grey concrete
 apron** laid on top around the garage + car park (`hq_concrete_center`/`hq_concrete_size`),
 so the lot reads as paved and everything beyond it as field. The car park itself is a
