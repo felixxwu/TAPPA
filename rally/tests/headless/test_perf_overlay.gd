@@ -44,7 +44,9 @@ func test_activation_toggles_visibility_and_measurement() -> void:
 
 
 func test_sample_and_format_do_not_error() -> void:
-	var o := _make_overlay(_make_terrain())
+	var terrain := _make_terrain()
+	add_child_autofree(terrain)  # own it so it doesn't dangle as an orphan at exit
+	var o := _make_overlay(terrain)
 	o._set_active(true)
 	var s: Dictionary = o._sample(16.7)
 	assert_true(s.has("frame_ms") and s.has("render_gpu_ms"), "sample has expected keys")
