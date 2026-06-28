@@ -301,8 +301,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Cap on the HP a SINGLE impact can cost, as a fraction of max HP — so no one
 ## high-speed crash can wreck the car outright (it still survives a couple).
 @export_range(0.0, 1.0) var impact_max_loss_frac := 0.34
-## After a damaging hit, ignore further impacts for this long (s). Groups a sustained
-## crash (pinned against / tumbling through obstacles) into ONE hit, not 30 per tick.
+## After a damaging hit, ignore further impacts for this long (s). The window re-arms
+## on each continuing obstacle contact, so it only starts counting down once the car
+## breaks free — a sustained crash (pinned against / grinding through obstacles for
+## seconds) stays ONE hit, not 30 per tick nor a fresh hit every cooldown.
 @export_range(0.0, 5.0) var impact_cooldown_s := 0.7
 ## Fraction of engine power lost at 0 HP (caps the power-loss effect). The driven
 ## torque is scaled by 1 - d * this, where d is the damage fraction.

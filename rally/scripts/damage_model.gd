@@ -115,7 +115,13 @@ func register_impact(speed_mps: float, contact_point: Vector3, cfg: GameConfig) 
 		return 0.0
 	# Within the post-hit cooldown the crash is still "in progress" — ignore it so a
 	# car pinned against a tree (which contacts every tick) loses HP once, not per frame.
+	# RE-ARM the window on each continuing contact so a SUSTAINED crash (grinding along
+	# a tree line, or jammed against one for several seconds) stays a single hit: the
+	# timer only starts counting down once the car breaks free of the obstacle. Without
+	# this re-arm the fixed window expires mid-crash and the car re-chips every
+	# impact_cooldown_s while still in contact.
 	if _impact_cooldown > 0.0:
+		_impact_cooldown = cfg.impact_cooldown_s
 		return 0.0
 	var loss := hp_loss_for_speed(speed_mps, cfg)
 	if loss <= 0.0:

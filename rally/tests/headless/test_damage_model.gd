@@ -132,6 +132,27 @@ func test_cooldown_groups_a_crash_and_it_takes_several_hits_to_wreck() -> void:
 	assert_eq(wrecks["n"], 1, "wrecked exactly once, on the final hit")
 
 
+func test_sustained_contact_stays_one_hit() -> void:
+	# Staying jammed against an obstacle reports a contact EVERY physics tick. The
+	# cooldown re-arms on each continuing contact, so a multi-second grind/pin counts
+	# as ONE hit, not a fresh hit every impact_cooldown_s. Mirrors car.gd's per-tick
+	# tick_cooldown(delta) + register_impact() loop while in contact.
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0, false)
+	var big := _mps(1.0e6)
+	dm.register_impact(big, Vector3.ZERO, cfg)
+	var after_one := dm.hp
+	var dt := 1.0 / 60.0
+	# ~3 s of continuous contact — well past the 0.7 s window, so the old fixed
+	# cooldown would have expired and re-chipped several times.
+	for _i in int(3.0 / dt):
+		dm.tick_cooldown(dt)
+		dm.register_impact(big, Vector3.ZERO, cfg)
+	assert_almost_eq(dm.hp, after_one, 1e-5,
+		"a multi-second sustained crash still costs only one hit")
+
+
 # --- Effects scale with damage fraction --------------------------------------
 
 func test_effects_zero_at_full_hp() -> void:

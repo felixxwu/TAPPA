@@ -55,7 +55,10 @@ Two guards stop a single crash from instantly wrecking the car (cars should surv
   `impact_cooldown_s`. The chassis contacts an obstacle *every physics tick* while
   it's pinned/tumbling, so without this one crash would register dozens of hits;
   the cooldown groups a whole crash into a single hit. `car.gd._physics_process`
-  decays it via `damage.tick_cooldown(delta)`.
+  decays it via `damage.tick_cooldown(delta)`. The window **re-arms on each
+  continuing contact**, so the timer only starts counting down once the car breaks
+  free — a *sustained* crash (grinding along a tree line, or jammed against one for
+  several seconds) stays **one** hit instead of re-chipping every `impact_cooldown_s`.
 
 A hit that costs HP emits `damaged(hp_loss, contact_point)` for the HUD/audio cue.
 
