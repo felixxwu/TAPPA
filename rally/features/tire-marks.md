@@ -1,7 +1,8 @@
 # Tire marks (gravel ruts)
 
 `TireMarks` (`scripts/tire_marks.gd`, `class_name TireMarks extends Node3D`) lays
-subtle, gravel-coloured ruts behind the car's wheels while it drives on the road.
+subtle, gravel-coloured ruts behind the car's wheels while it drives on the gravel
+road surface — not the grass off the footprint, nor the paved tarmac run.
 Created + wired by `world.gd._generate_track` (reused across event regenerations,
 re-targeted on a car swap in `world.gd.cycle_car`).
 
@@ -27,14 +28,16 @@ is missing, or the car is gone):
   tight window around the car's offset) — NOT the car's tangent, which on a corner
   would wrongly reject a wheel that's on the road but ahead on the curve. When in
   contact and within `track_width/2 + tire_mark_gravel_margin_m` of the centerline
-  (on the gravel), and it has moved ≥ `tire_mark_segment_step_m`
-  since its last point, append a ribbon segment — a left/right pair across the road
-  normal at the wheel's **contact patch** (`y = hub.y − wheel_radius +
-  tire_mark_ground_offset_m`, NOT `terrain.height_at` — near the road the terrain
-  mesh is flattened to the baked road height the car rides on, so the raw noise
-  height would sink the ribbon under the road in cuts/dips).
-  Off the gravel or airborne, the ribbon **breaks** (a fresh strip starts later, no
-  line across the gap).
+  (on the road, not the grass) **and on the gravel** (`TerrainManager.surface_at`'s
+  `tarmac_weight ≤ 0.5`, the same midpoint the road colour/grip feather across —
+  skipped on the flat test fixtures where terrain is null), and it has moved ≥
+  `tire_mark_segment_step_m` since its last point, append a ribbon segment — a
+  left/right pair across the road normal at the wheel's **contact patch**
+  (`y = hub.y − wheel_radius + tire_mark_ground_offset_m`, NOT `terrain.height_at` —
+  near the road the terrain mesh is flattened to the baked road height the car rides
+  on, so the raw noise height would sink the ribbon under the road in cuts/dips).
+  On the grass, on the tarmac, or airborne, the ribbon **breaks** (a fresh strip
+  starts later, no line across the gap).
 - **Cap** — each wheel's segment list is a ring buffer of `tire_mark_max_segments`
   (oldest recycled); only the wheel's own surface rebuilds on a new segment. Memory
   is bounded and the chase cam looks forward, so far-behind marks are off-screen.
@@ -57,10 +60,11 @@ All in `GameConfig` (the "Tire Marks" group): `tire_marks_enabled`,
 
 `tests/headless/test_tire_marks.gd` — a straight `Curve2D` + stub car/wheels drive
 the logic without a vehicle or rendering: four ribbons collected, marks accumulate
-on the gravel, none off it, a sub-step move adds nothing, the ring buffer caps the
-count, below the speed floor lays nothing, an airborne wheel stops marking, and a
-jump leaves a real gap (the landing point starts a new strip, not a stretched quad
-bridged back to the take-off point).
+on the gravel, none off it (off the footprint, on the grass), none on the tarmac
+(a stub terrain reporting `tarmac_weight = 1`), a sub-step move adds nothing, the
+ring buffer caps the count, below the speed floor lays nothing, an airborne wheel
+stops marking, and a jump leaves a real gap (the landing point starts a new strip,
+not a stretched quad bridged back to the take-off point).
 
 ## Out of scope (features/tire-marks.md)
 
