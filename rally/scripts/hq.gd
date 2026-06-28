@@ -41,8 +41,19 @@ enum LiftTab { TUNE, UPGRADES }
 # same reason the UI uses ASCII like `<`/`>` for nav).
 const MAX_STARS := 3
 
-const CAR_SCENE := preload("res://car.tscn")
-const TREE_TEXTURE := preload("res://textures/tree.png")
+# Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
+# its texture and the engine-audio resources — isn't decoded at script-compile time
+# (before _ready), which would stretch the "stuck at 100%" gap after Godot's boot bar.
+# Both are only needed by _build_hq, which runs behind our LoadingScreen.
+const CAR_SCENE_PATH := "res://car.tscn"
+const TREE_TEXTURE_PATH := "res://textures/tree.png"
+var _car_scene: PackedScene  # cached on first use (load() also caches engine-side)
+
+
+func _car_scene_res() -> PackedScene:
+	if _car_scene == null:
+		_car_scene = load(CAR_SCENE_PATH)
+	return _car_scene
 
 var _view: int = View.EXTERIOR
 var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
@@ -328,7 +339,7 @@ func _build_trees() -> void:
 	flat.layers = [] as Array[TerrainLayer]
 	var field := BillboardField.new()
 	add_child(field)
-	field.build(positions, flat, cfg.tree_size_m, TREE_TEXTURE,
+	field.build(positions, flat, cfg.tree_size_m, load(TREE_TEXTURE_PATH),
 		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false, 1000.0, 0.0)
 	flat.free()
 
@@ -1180,7 +1191,7 @@ func _clear_lift_car() -> void:
 # appears already raised). Its own mesh copies, like the car-park props (_dup_meshes).
 func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	var cfg: GameConfig = Config.data
-	var car := CAR_SCENE.instantiate()
+	var car := _car_scene_res().instantiate()
 	add_child(car)
 	car.apply_owned(owned)
 	_dup_meshes(car)
@@ -1449,7 +1460,7 @@ func _build_lineup(cars: Array) -> void:
 # (see _dup_meshes) so a mixed lineup shows each at its true size. It runs physics
 # until _freeze_lineup locks the settled pose.
 func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
-	var car := CAR_SCENE.instantiate()
+	var car := _car_scene_res().instantiate()
 	add_child(car)
 	car.apply_owned(owned)
 	_dup_meshes(car)
