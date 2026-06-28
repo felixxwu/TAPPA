@@ -26,9 +26,11 @@
 > **full, uncut grid** sunk `distant_terrain_sink_m` (1.5 m) below true height, so
 > the detail ring always sits above it and it can't poke through — no holes are cut
 > (this replaced the earlier per-crossing hole-cutting against the loaded chunk
-> footprint, removing that work entirely). The backdrop rebuild
-> (~2.6k `height_at` calls) runs on the main thread every `recenter_m` (100 m) —
-> thread it if it hitches on the mobile-web target.
+> footprint, removing that work entirely). The backdrop rebuild — ~2.6k vertices,
+> each sampling `height_at` + `light_at` (~5.2k noise evals), plus a ~5k-tri
+> `ArrayMesh` build — runs on the main thread on **every focus chunk crossing**
+> (`CHUNK_M`, 50 m), and is now the only per-crossing cost; thread or amortize it
+> if it hitches on the mobile-web target.
 >
 > Original planning brief follows, referencing the code as it exists on this
 > branch. Follow the project's config-first convention
