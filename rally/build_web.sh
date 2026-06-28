@@ -4,9 +4,12 @@
 #   ./build_web.sh            # release export -> build/web/, zipped to build/rally-web.zip
 #   ./build_web.sh --debug    # debug export (larger, with debug symbols)
 #
-# The zip's main file is index.html (required by itch.io). Note: the "Web"
-# export preset uses thread_support=true, so on itch.io you must enable the
-# "SharedArrayBuffer support" option or the game won't start.
+# The zip's main file is index.html (required by itch.io). The "Web" export
+# preset is single-threaded (thread_support=false) so the build needs no
+# SharedArrayBuffer / cross-origin isolation: it boots on any browser (incl. old
+# / low-memory phones) and you do NOT need to enable itch.io's "SharedArrayBuffer
+# support" option. Terrain generation runs on a frame-budgeted main-thread queue
+# on web (see features/terrain.md) so chunk loading stays smooth without threads.
 set -euo pipefail
 
 GODOT="${GODOT:-/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot}"

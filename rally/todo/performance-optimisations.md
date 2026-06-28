@@ -10,13 +10,24 @@
 > `debug_wheel_forces`), and **item 10** (HUD label string-change caching). Docs:
 > `features/rendering.md`, `features/engine-audio.md`.
 >
+> **Item 7 (web-export threading): DECIDED — ship single-threaded.** Chose
+> maximum device reach over threaded chunk-streaming smoothness, consistent with
+> the inherently-low-end principle. `export_presets.cfg` now sets
+> `variant/thread_support=false` (engine thread pools dropped); the build needs no
+> `SharedArrayBuffer` / cross-origin isolation, so itch.io's SAB toggle is no
+> longer required and `serve_web.sh` serves plain HTTP (no cert / COOP-COEP).
+> Terrain gen already routed web through the frame-budgeted main-thread queue
+> (`_use_budgeted_generation()` keys on `OS.has_feature("web")`, not the thread
+> flag), so no terrain code changed. Docs: `features/terrain.md`, `build_web.sh` /
+> `serve_web.sh` comments. **Remaining (not a code blocker):** confirm the
+> budgeted path stays smooth on a real mid/low-end phone driving fast across chunk
+> boundaries; tune `MAX_BUILDS_PER_FRAME` if it micro-hitches.
+>
 > **Still open — BLOCKED ON YOUR DECISIONS / ASSETS:**
 > - **Items 2 + 3** (foliage view-cone cull + visible cap, collision-box cull):
 >   gated on the **billboard-vs-opaque-low-poly-mesh decision** (and the `.glb`
 >   foliage models if mesh) — the spec says decide before building the field
 >   class. The biggest GPU/physics wins, but need that call first.
-> - **Item 7** (web-export threading): an explicit DECISION NEEDED (single-thread
->   reach vs. threaded smoothness).
 >
 > **Deferred (optional / advisory):** item 8 (physics-tick alloc refactor — a
 > safe follow-up, guarded by existing tests), and items 5/9/12 (the spec's own
@@ -47,10 +58,11 @@
       [item 2 → Alternative direction](#alternative-direction-opaque-low-poly-meshes-instead-of-cutout-billboards).
       The model swap is also the prerequisite for the vegetation auto-LOD + sky
       work in [`todo/distant-terrain-and-sky.md`](distant-terrain-and-sky.md).
-- [ ] **Decide the web-export threading model** (item 7): threaded build (smoother
-      chunk loading) vs. single-threaded build (boots on more old / low-memory
-      devices). This shapes the terrain-gen work and is a prerequisite for the web
-      build actually running on the oldest target phones. Owner: Felix.
+- [x] **Web-export threading model** (item 7): **DECIDED — single-threaded**
+      (`thread_support=false`) for maximum device reach. Terrain gen already uses
+      the frame-budgeted main-thread queue on web, so no code change beyond the
+      preset + script/doc updates. Remaining: a real on-device smoothness check
+      across chunk boundaries (tune `MAX_BUILDS_PER_FRAME` if needed). Owner: Felix.
 
 ## Context / current state (measured from the code)
 
@@ -448,11 +460,23 @@ cases, so the optimisation is provably behaviour-preserving.
 Low. The weight precompute is algebraically identical; keep an epsilon-compare
 test. Threading the fill (step 4) is the only risky part — gate it separately.
 
-## 7. Threaded web export vs. old-device compatibility — DECISION NEEDED
+## 7. Threaded web export vs. old-device compatibility — ✅ DECIDED: single-threaded
+
+> **Resolved:** shipped single-threaded for maximum device reach.
+> `export_presets.cfg` now has `variant/thread_support=false` and the engine
+> thread pools removed; `build_web.sh` / `serve_web.sh` updated (no SAB toggle, no
+> COOP/COEP, plain-HTTP serve); `features/terrain.md` documents the deliberate
+> single-threaded web config. **No terrain code changed** — `terrain_manager.gd`
+> already routes web through the frame-budgeted main-thread queue
+> (`_use_budgeted_generation()` keys on `OS.has_feature("web")`, so it was in
+> force regardless of the thread flag; the worker pool was never actually used on
+> web). The only open follow-up is a real on-device smoothness check across chunk
+> boundaries (tune `MAX_BUILDS_PER_FRAME` if it micro-hitches). The original
+> analysis is kept below for trace.
 
 ### Why
-`export_presets.cfg:30` sets `variant/thread_support=true` with
-`threads/emscripten_pool_size=8` / `godot_pool_size=4`, and `serve_web.sh` sends
+`export_presets.cfg:30` (originally) set `variant/thread_support=true` with
+`threads/emscripten_pool_size=8` / `godot_pool_size=4`, and `serve_web.sh` sent
 the COOP/COEP headers. Threaded WASM requires `SharedArrayBuffer`, which:
 - needs the **host** to send cross-origin-isolation headers (itch.io etc. must
   have "SharedArrayBuffer support" toggled on — see `build_web.sh:8-9`), and

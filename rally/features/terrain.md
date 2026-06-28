@@ -197,17 +197,24 @@ spawn. The **editor**
 (`Engine.is_editor_hint()`) and **tests** force `use_threaded_generation =
 false` for instant, deterministic builds.
 
-**Web export** can't rely on the worker pool: a single-threaded web build (no
-cross-origin isolation → no `SharedArrayBuffer` → no real threads) runs
-`WorkerThreadPool.add_task` *synchronously* on the main thread, so the "threaded"
-path would still generate a whole ring's worth of chunks in one tick on every
-boundary crossing — a visible stutter. `_use_budgeted_generation()` (on whenever
-`OS.has_feature("web")`, or forced via `force_main_thread_budget` for desktop
-tests) instead routes missing coords into `_build_queue`; `_pump_build_queue()`
-generates at most `MAX_BUILDS_PER_FRAME` (1) of them per frame, matching the
-integration cap so chunk loading stays one-chunk-per-frame regardless of threads.
-`build_initial` (`force_sync`) still builds the whole initial ring immediately,
-even on web.
+**Web export is deliberately single-threaded** (`export_presets.cfg`
+`variant/thread_support=false`) so the build needs no `SharedArrayBuffer` /
+cross-origin isolation and boots on any browser, including old / low-memory
+phones — the project's "runs on any device" floor (decided: see
+`todo/performance-optimisations.md` item 7). Without threads the worker pool
+isn't available, so terrain gen runs on the main thread, frame-budgeted so a
+boundary crossing doesn't generate a whole ring in one tick (a visible stutter).
+`_use_budgeted_generation()` (on whenever `OS.has_feature("web")`, or forced via
+`force_main_thread_budget` for desktop tests) routes missing coords into
+`_build_queue`; `_pump_build_queue()` generates at most `MAX_BUILDS_PER_FRAME`
+(1) of them per frame, matching the integration cap so chunk loading stays
+one-chunk-per-frame. This path keys on the `web` platform feature, not on the
+export's thread flag, so it was already in force before threads were turned off —
+the only thing the single-threaded export changes is dropping the unused engine
+thread pools (and the SAB host requirements). `build_initial` (`force_sync`)
+still builds the whole initial ring immediately, even on web. **Desktop** keeps
+real worker-thread generation (`use_threaded_generation`, threads always
+available there).
 
 Newly entered chunks can appear 1–2 frames late, but the car sits well inside
 the loaded 5×5 ring and fog hides the far edge, so the pop-in is not visible.
