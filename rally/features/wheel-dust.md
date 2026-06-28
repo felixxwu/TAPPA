@@ -23,9 +23,28 @@ The pool is a fixed-size **ring buffer** of `wheel_particle_max` slots (parallel
 `_pos` / `_vel` / `_life` arrays, index == MultiMesh instance). A new clod is
 written at `_next = (_next + 1) % max`, so once full it **overwrites the oldest
 slot first**. Memory and draw cost are hard-capped no matter how long the wheels
-spin. Dead slots are parked far below the world (`HIDE_TRANSFORM`) rather than
+spin. Dead slots are parked far below the world (origin Y = `HIDE_Y`) rather than
 zero-scaled — billboard materials don't reliably honour a zero instance scale
 under `gl_compatibility`, and a quad that far down is always off-screen.
+
+## Performance — one buffer upload, not N transform calls
+
+The instance transforms are pushed as a **single `multimesh.buffer` assignment
+per tick**, not per-instance `set_instance_transform()` calls. Each slot keeps an
+identity basis (the billboard material orients the quad anyway), so only the three
+origin floats per slot are ever rewritten in a persistent `PackedFloat32Array`
+(`_buffer`, `STRIDE` = 12 floats/instance, origin at offsets 3/7/11). N
+per-instance engine round-trips a frame is the classic MultiMesh trap — it murders
+mobile/WebGL; one bulk upload sidesteps it. The upload is **skipped entirely when
+nothing changed**: `_advance` is a no-op while `_alive == 0`, so an idle car (or
+one driving cleanly with no wheelspin) does ~zero per-frame particle work. The
+centerline gravel gate is also only searched while a wheel is actually spinning,
+and each wheel uses a tight `WHEEL_WINDOW_M` window around the car's offset.
+
+If the spray still costs too much on a weak device, the cheapest dials (in order
+of impact) are `wheel_particle_max` (pool size = the per-tick loop length),
+`wheel_particle_spawn_count`, and `wheel_particle_lifetime_s` (fewer clods alive
+at once).
 
 ## Per-tick logic
 

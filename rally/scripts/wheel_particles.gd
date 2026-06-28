@@ -15,15 +15,26 @@ extends MultiMeshInstance3D
 
 # Windowed nearest-offset search of the centerline (mirrors TireMarks), so the
 # road gate stays local on a winding stage instead of snapping to a far section.
+# The wheels sit within ~2 m of the car, so once the car's offset is found each
+# wheel only needs a tight window around it (keeps the search cheap on mobile).
 const SEARCH_BACK_M := 30.0
 const SEARCH_FWD_M := 60.0
 const SEARCH_STEP_M := 1.0
-const WHEEL_WINDOW_M := 20.0
+const WHEEL_WINDOW_M := 4.0
 
-# Dead particles are parked far below the world rather than zero-scaled — billboard
-# materials don't reliably honour a zero instance scale under gl_compatibility, but
-# a quad this far down is always off-screen, so it costs nothing visible.
-const HIDE_TRANSFORM := Transform3D(Basis(), Vector3(0.0, -1.0e7, 0.0))
+# Floats per MultiMesh instance for TRANSFORM_3D with no colour/custom data: a
+# 3x4 matrix, with the origin at offsets 3/7/11. We keep every instance's basis
+# at identity (the billboard material orients the quad anyway) and only ever
+# rewrite the three origin floats — so the whole pool is one PackedFloat32Array
+# we push with a SINGLE multimesh.buffer assignment per tick instead of N
+# per-instance set_instance_transform() calls (the latter is the classic
+# MultiMesh perf trap — N engine round-trips a frame murders mobile/WebGL).
+const STRIDE := 12
+# Dead particles are parked far below the world (origin Y) rather than zero-scaled —
+# billboard materials don't reliably honour a zero instance scale under
+# gl_compatibility, but a quad this far down is always off-screen, so it draws
+# nothing visible.
+const HIDE_Y := -1.0e7
 
 var _car: Node                 # the VehicleBody3D (read for drivetrain + position)
 var _centerline: Curve2D
@@ -35,6 +46,7 @@ var _offset := 0.0             # cached windowed nearest-offset for the car cent
 var _pos: PackedVector3Array
 var _vel: PackedVector3Array
 var _life: PackedFloat32Array  # remaining lifetime (s); <= 0 means the slot is dead
+var _buffer: PackedFloat32Array  # the live MultiMesh transform buffer (STRIDE floats/slot)
 var _next := -1                # ring-buffer write cursor (advances, wraps, recycles oldest)
 var _alive := 0
 var _max := 0
@@ -80,37 +92,69 @@ func _build_pool() -> void:
 	_pos = PackedVector3Array(); _pos.resize(_max)
 	_vel = PackedVector3Array(); _vel.resize(_max)
 	_life = PackedFloat32Array(); _life.resize(_max)
+	# Pre-seed every slot's transform with an identity basis (rows on the diagonal)
+	# and a hidden origin. From here on only the three origin floats per slot ever
+	# change, so the buffer never has to rebuild bases.
+	_buffer = PackedFloat32Array()
+	_buffer.resize(_max * STRIDE)
+	for i in _max:
+		var b := i * STRIDE
+		_buffer[b + 0] = 1.0   # basis row 0 x
+		_buffer[b + 5] = 1.0   # basis row 1 y
+		_buffer[b + 10] = 1.0  # basis row 2 z
 	_clear()
+
+
+# Set a slot's instance origin in the buffer (basis stays identity).
+func _set_origin(i: int, p: Vector3) -> void:
+	var b := i * STRIDE
+	_buffer[b + 3] = p.x
+	_buffer[b + 7] = p.y
+	_buffer[b + 11] = p.z
+
+
+# Park a slot off-screen (dead).
+func _hide_slot(i: int) -> void:
+	var b := i * STRIDE
+	_buffer[b + 3] = 0.0
+	_buffer[b + 7] = HIDE_Y
+	_buffer[b + 11] = 0.0
 
 
 # Kill every particle and park its instance off-screen.
 func _clear() -> void:
 	_next = -1
 	_alive = 0
-	if multimesh == null:
+	if multimesh == null or _buffer.is_empty():
 		return
 	for i in _max:
 		_life[i] = 0.0
-		multimesh.set_instance_transform(i, HIDE_TRANSFORM)
+		_hide_slot(i)
+	multimesh.buffer = _buffer
 
 
 func _physics_process(delta: float) -> void:
 	if not Config.data.wheel_particles_enabled or multimesh == null:
 		return
-	# Always advance the existing spray (gravity + drag + lifetime) so airborne
-	# clods finish their arc even when the wheels have stopped spinning.
-	_advance(delta)
-	if not is_instance_valid(_car) or _car.get("drivetrain") == null:
-		return
-	_emit_from_wheels()
+	# Advance the existing spray (gravity + drag + lifetime) so airborne clods
+	# finish their arc even after the wheels stop spinning, then emit new dirt.
+	# Both write straight into _buffer; the GPU upload is a SINGLE assignment at
+	# the end, only when something actually moved or spawned this tick.
+	var changed := _advance(delta)
+	if is_instance_valid(_car) and _car.get("drivetrain") != null:
+		if _emit_from_wheels():
+			changed = true
+	if changed:
+		multimesh.buffer = _buffer
 
 
-# Integrate the live pool one step: gravity pulls each clod down, a slight linear
-# air drag bleeds speed off to sell its weight, and lifetime recycles it. Dead
-# slots are parked off-screen so the MultiMesh draws nothing for them.
-func _advance(delta: float) -> void:
-	if delta <= 0.0:
-		return  # tests tick with delta 0 to emit without ageing the pool
+# Integrate the live pool one step into _buffer: gravity pulls each clod down, a
+# slight linear air drag bleeds speed off to sell its weight, and lifetime
+# recycles it. Returns true if any slot changed (so the caller uploads once). A
+# no-op when nothing is alive — an idle car does zero per-frame particle work.
+func _advance(delta: float) -> bool:
+	if delta <= 0.0 or _alive == 0:
+		return false  # tests tick with delta 0 to emit without ageing the pool
 	var cfg: GameConfig = Config.data
 	var g := cfg.wheel_particle_gravity_mps2
 	var drag := maxf(0.0, 1.0 - cfg.wheel_particle_air_resistance * delta)
@@ -120,20 +164,21 @@ func _advance(delta: float) -> void:
 		_life[i] -= delta
 		if _life[i] <= 0.0:
 			_alive -= 1
-			multimesh.set_instance_transform(i, HIDE_TRANSFORM)
+			_hide_slot(i)
 			continue
 		var v := _vel[i]
 		v.y -= g * delta
 		v *= drag
 		_vel[i] = v
 		_pos[i] += v * delta
-		multimesh.set_instance_transform(i, Transform3D(Basis(), _pos[i]))
+		_set_origin(i, _pos[i])
+	return true
 
 
 # Spawn dirt from every driven wheel that is in contact, spinning faster than the
 # ground, and sitting on the gravel road. Reads the live drivetrain each tick, so
 # a car swap (which rebuilds the drivetrain) needs no extra wiring here.
-func _emit_from_wheels() -> void:
+func _emit_from_wheels() -> bool:
 	var cfg: GameConfig = Config.data
 	var dt = _car.drivetrain
 	var r: float = cfg.wheel_radius
@@ -141,6 +186,7 @@ func _emit_from_wheels() -> void:
 	# Refresh the car's road offset only when something is actually spinning, so the
 	# centerline search is skipped entirely on a clean drive.
 	var offset_ready := false
+	var emitted := false
 	for wheel in dt.front_wheels + dt.rear_wheels:
 		# Undriven wheels free-roll — they never fling dirt however fast they turn.
 		if not dt.is_wheel_driven(wheel):
@@ -167,6 +213,8 @@ func _emit_from_wheels() -> void:
 			continue
 		offset_ready = true
 		_spray(cfg, cp, fwd, vel, surface_speed)
+		emitted = true
+	return emitted
 
 
 # Fling a burst of clods from one wheel's contact patch. The throw direction is
@@ -203,7 +251,7 @@ func _emit(cfg: GameConfig, pos: Vector3, vel: Vector3) -> void:
 	_pos[_next] = pos
 	_vel[_next] = vel
 	_life[_next] = cfg.wheel_particle_lifetime_s
-	multimesh.set_instance_transform(_next, Transform3D(Basis(), pos))
+	_set_origin(_next, pos)  # caller uploads the whole buffer once per tick
 
 
 # True when a wheel position is on the gravel road footprint (half-width plus a
