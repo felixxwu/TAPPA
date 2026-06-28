@@ -426,8 +426,8 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var hq_concrete_size := Vector2(48.0, 44.0)
 ## Map table: centre position, block size, and the 3D map plane laid on its top.
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
-@export var hq_table_size := Vector3(4.6, 0.9, 3.4)
-@export var hq_map_plane_size := Vector2(4.2, 3.0)
+@export var hq_table_size := Vector3(4.6, 0.9, 4.6)
+@export var hq_map_plane_size := Vector2(4.2, 4.2)
 ## Tuning lift: centre position + platform size.
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
 @export var hq_lift_size := Vector3(3.0, 0.35, 3.0)
