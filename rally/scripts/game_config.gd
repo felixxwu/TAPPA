@@ -423,9 +423,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_group("Terrain Layers")
 # Three stacked perlin noise layers: wavelength in metres, amplitude in metres.
 ## Layer 1 wavelength (m): spacing of the largest, rolling hills.
-@export_range(1.0, 200.0) var terrain_layer1_wavelength := 66.784
+@export_range(1.0, 1000.0) var terrain_layer1_wavelength := 66.784
 ## Layer 1 amplitude (m): height of the largest, rolling hills.
-@export_range(0.0, 10.0) var terrain_layer1_amplitude := 10.0
+@export_range(0.0, 100.0) var terrain_layer1_amplitude := 10.0
 ## Layer 2 wavelength (m): spacing of the mid-scale undulations.
 @export_range(1.0, 200.0) var terrain_layer2_wavelength := 15.0
 ## Layer 2 amplitude (m): height of the mid-scale undulations.
