@@ -1,10 +1,10 @@
 extends GutTest
 # WreckScreen: the mid-event wreck sequence (scripts/wreck_screen.gd) — let the
 # crash play out, then an orbit camera + "car wrecked" menu offers Return to HQ.
-# Driven directly with a stub car, advancing _process by hand so the phase
-# transitions are deterministic. The node is NOT added to the SceneTree (so the
-# engine's own _process never races the manual ticks); autofree frees it and its
-# owned camera/overlay at the end.
+# Driven directly with a stub car, advancing _process by hand. The nodes ARE added
+# to the tree (the orbit camera reads the car's global_transform, which needs it),
+# but the test never awaits a frame, so the engine's own _process never fires and
+# the manual ticks stay deterministic.
 
 # A minimal stand-in for the player Car: a physics body that exposes the
 # controls_locked contract WreckScreen toggles, with no engine/drivetrain cost.
@@ -23,9 +23,9 @@ func after_each() -> void:
 
 func test_crashes_then_orbits_and_requests_return() -> void:
 	var car := _CarStub.new()
-	autofree(car)
+	add_child_autofree(car)
 	var ws := WreckScreen.new()
-	autofree(ws)
+	add_child_autofree(ws)
 	var returned := {"n": 0}
 	ws.return_requested.connect(func() -> void: returned["n"] += 1)
 
