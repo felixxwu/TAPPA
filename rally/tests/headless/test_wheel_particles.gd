@@ -108,6 +108,7 @@ func test_driven_spinning_on_gravel_emits() -> void:
 func test_undriven_wheel_does_not_emit() -> void:
 	var wp := _make()
 	# Front wheel spinning hard, but undriven (free-rolling) -> no dirt.
+	_wheels[0].driven = false
 	_wheels[0].omega = _omega_for(10.0)
 	_tick(wp)
 	assert_eq(wp.live_count(), 0, "an undriven wheel flings no dirt however fast it turns")
