@@ -127,5 +127,5 @@ calls `_apply_engine_preset()`, which copies the preset into the engine fields.
 
 The committed `.tres` differs from script defaults in places, e.g. `engine_type
 = 1` (i5), `auto_gearbox = true`, `drag_coefficient = 0.3`, `steer_limit = 0.5`,
-`steer_assist_torque = 3000.0`, `upshift_redline_fraction = 0.75`. Check the file
+`steer_assist_torque = 4000.0`, `upshift_redline_fraction = 0.75`. Check the file
 for the authoritative values.
