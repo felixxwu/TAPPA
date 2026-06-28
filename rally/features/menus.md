@@ -83,8 +83,9 @@ the car's name/description** sit in a separate **bottom-left** panel beside the 
 Two menus toggled by the tab strip: **Tune** (a slider per tuning axis — grip /
 brake-bias / aero — locked axes greyed with a "needs X kit" note, plus **Reset to
 neutral**; each change saves via `Save.set_tuning`) and **Upgrades** (per-slot
-install/remove from inventory via `Save.install_upgrade`/`uninstall_upgrade`, parts
-returned on swap, plus the **Repair Kit** action `Save.use_repair_kit`). A change-car
+install from inventory via `Save.install_upgrade` — fitting **fully consumes** the
+part, confirmed via a dialog first since it can't be undone — plus the **Repair Kit**
+action `Save.use_repair_kit`). A change-car
 control cycles all owned cars, updating the **selected car**
 (`Save.selected_car`/`set_selected_car`) and re-spawning it on the lift. See
 [tuning.md](tuning.md) for the underlying config pipeline.

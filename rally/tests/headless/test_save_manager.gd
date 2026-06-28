@@ -77,7 +77,7 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 4000, "keeps the fastest time")
 
 
-func test_wreck_returns_upgrades_and_removes_car() -> void:
+func test_wreck_consumes_upgrades_and_removes_car() -> void:
 	var car: Dictionary = _save.grant_car("mustang")
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
@@ -85,7 +85,8 @@ func test_wreck_returns_upgrades_and_removes_car() -> void:
 
 	_save.wreck_car(car["instance_id"])
 	assert_eq(_save.profile["cars"].size(), 0, "wrecked car removed")
-	assert_eq(int(_save.profile["inventory"]["engine_stage1"]), 1, "fitted upgrade returned to inventory")
+	assert_false(_save.profile["inventory"].has("engine_stage1"),
+		"fitted upgrade is consumed for good — not returned on wreck")
 
 
 func test_install_replaces_same_slot_incumbent() -> void:
@@ -98,7 +99,8 @@ func test_install_replaces_same_slot_incumbent() -> void:
 	var fitted: Array = _save.get_car(car["instance_id"])["installed_upgrades"]
 	assert_eq(fitted.size(), 1, "only one engine upgrade occupies the slot")
 	assert_true(fitted.has("engine_stage2"), "the newer engine kit is fitted")
-	assert_eq(int(_save.profile["inventory"]["engine_stage1"]), 1, "incumbent returned to inventory")
+	assert_false(_save.profile["inventory"].has("engine_stage1"),
+		"the replaced incumbent is scrapped, not refunded")
 
 
 func test_install_rejects_consumables_and_unknown_items() -> void:

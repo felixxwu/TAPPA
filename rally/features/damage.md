@@ -5,8 +5,9 @@ by `car.gd` like `Drivetrain`). Design intent in `gameplay.md` › *Damage model
 
 Each fielded car has a depleting **HP pool**. Impacts drain it during a run, the
 car's handling and power degrade as HP falls, and at 0 HP the car is **wrecked**
-(run DNF; a fielded car is destroyed and its upgrades returned to inventory). HP
-only ever goes down in-run — a repair kit (Save) is the only way it climbs back.
+(run DNF; a fielded car is destroyed along with its installed upgrades — parts are
+fully consumed when fitted, so they are NOT returned). HP only ever goes down
+in-run — a repair kit (Save) is the only way it climbs back.
 
 ## State (`DamageModel`)
 
@@ -73,7 +74,8 @@ Read each physics tick in `car.gd`; both are 0 at full HP and for the immortal c
 
 `apply_loss()` clamps HP at 0 and, on a non-immortal car, calls `_wreck()`:
 - A **fielded** car (`instance_id >= 0`) calls `Save.wreck_car(instance_id)` —
-  returns its installed upgrades to inventory, then removes the instance.
+  removes the instance; its installed upgrades are gone with it (parts are fully
+  consumed on apply, so nothing is returned to inventory).
 - `wrecked` is emitted either way; `car.gd` re-emits it as the car-level `wrecked`
   signal for the rally/menu layer (sibling to `StageManager.stage_completed`).
 - In **free-roam** (unbound) there is no DNF flow yet, so `car.gd` heals the car

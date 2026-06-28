@@ -84,8 +84,9 @@ compact on small screens. Two menus:
 
 - **Tune** — one slider per axis (locked axes greyed with a "needs X kit" note) plus
   **Reset to neutral**. Each change saves immediately via `Save.set_tuning`.
-- **Upgrades** — per-slot install/remove from the inventory (`Save.install_upgrade` /
-  `uninstall_upgrade`, parts returned on swap) plus the **Repair Kit** action
+- **Upgrades** — per-slot install from the inventory (`Save.install_upgrade`); fitting
+  **fully consumes** the part (confirmed via a dialog first, since it can't be undone)
+  and a swap scraps the incumbent. Plus the **Repair Kit** action
   (`Save.use_repair_kit`). Re-spawns the raised car so its body reflects the change.
 
 A change-car control cycles all owned cars (updating the selection), shared by both

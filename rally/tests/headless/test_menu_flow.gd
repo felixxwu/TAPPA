@@ -377,9 +377,16 @@ func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._set_lift_tab(hq.LiftTab.UPGRADES)
+	# Installing now asks for confirmation first — nothing is fitted until accepted.
 	hq._install_upgrade(id, "engine_stage1")
+	assert_false(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),
+		"the part is not fitted until the confirmation dialog is accepted")
+	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 1,
+		"the part stays in inventory until the fit is confirmed")
+	# Accepting the dialog commits the fit and consumes the part for good.
+	hq._confirm_dialog.confirmed.emit()
 	assert_true(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),
-		"installing from the upgrades menu fits the part to the selected car")
+		"accepting the confirmation fits the part to the selected car")
 	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 0,
 		"the installed part is consumed from inventory")
 

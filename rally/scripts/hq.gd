@@ -138,6 +138,13 @@ var _lift_sliders: Dictionary = {}     # axis -> HSlider
 var _lift_slider_rows: Dictionary = {} # axis -> the row Control (to grey out when locked)
 var _lift_slider_values: Dictionary = {}  # axis -> the value Label
 
+# Confirmation for fitting an upgrade. Applying a part PERMANENTLY consumes it (it
+# never returns to inventory — see Save.install_upgrade), so the player accepts this
+# dialog before the part is committed. _pending_install holds the queued fit
+# {instance_id, item_id} between popping the dialog and the player confirming.
+var _confirm_dialog: ConfirmationDialog
+var _pending_install: Dictionary = {}
+
 
 func _ready() -> void:
 	_ensure_starter()
@@ -178,6 +185,7 @@ func _build_hq() -> void:
 	_build_lift_overlay()
 	_build_car_overlay()
 	_build_settings_overlay()
+	_build_confirm_dialog()
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
 	_refresh_map_pins()
@@ -1132,6 +1140,21 @@ func _refresh_settings_selection() -> void:
 			button.add_theme_stylebox_override(state, box)
 
 
+# --- Confirmation dialog -----------------------------------------------------
+
+# A shared yes/no dialog for irreversible actions. Currently the upgrade-fit gate:
+# applying a part permanently consumes it (it never returns to inventory, not even
+# on a wreck), so the player confirms before committing. _on_install_confirmed runs
+# on accept.
+func _build_confirm_dialog() -> void:
+	_confirm_dialog = ConfirmationDialog.new()
+	_confirm_dialog.title = "Fit upgrade?"
+	_confirm_dialog.ok_button_text = "Fit it"
+	_confirm_dialog.get_cancel_button().text = "Cancel"
+	_confirm_dialog.confirmed.connect(_on_install_confirmed)
+	add_child(_confirm_dialog)
+
+
 # Show only the active station's overlay (detail is a TABLE sub-state).
 func _update_overlays() -> void:
 	_title_layer.visible = _view == View.EXTERIOR
@@ -1418,8 +1441,9 @@ func _reset_tuning() -> void:
 
 
 # Rebuild the UPGRADES menu for the current car: one row per slot showing what's
-# fitted, an Install button per matching uninstalled item in the inventory, an
-# Uninstall, and the repair-kit action. Items return to inventory on uninstall.
+# fitted, an Install button per matching item in the inventory, plus the repair-kit
+# action. Fitting a part consumes it permanently (confirmed first); there's no
+# uninstall — a part can only be replaced by fitting another into the same slot.
 func _rebuild_upgrades_box() -> void:
 	for c in _lift_upgrades_box.get_children():
 		c.queue_free()
@@ -1428,7 +1452,7 @@ func _rebuild_upgrades_box() -> void:
 	var inventory: Dictionary = Save.profile.get("inventory", {})
 
 	var heading := Label.new()
-	heading.text = "Install parts onto this car. Parts return to your inventory if you swap them out."
+	heading.text = "Fit parts onto this car. Fitting consumes the part for good — it can't be removed or recovered."
 	heading.add_theme_font_size_override("font_size", 12)
 	heading.modulate = Color(1, 1, 1, 0.8)
 	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1458,14 +1482,6 @@ func _make_slot_row(slot: String, instance_id: int, installed: Array, inventory:
 	var fitted_name: String = UpgradeLibrary.by_id(fitted).get("name", "—") if fitted != "" else "— empty —"
 	header.text = "%s: %s" % [slot.capitalize(), fitted_name]
 	box.add_child(header)
-
-	# Uninstall the fitted item.
-	if fitted != "":
-		var uninstall := Button.new()
-		uninstall.text = "Remove"
-		uninstall.focus_mode = Control.FOCUS_NONE
-		uninstall.pressed.connect(_uninstall_upgrade.bind(instance_id, fitted))
-		box.add_child(uninstall)
 
 	# An Install button for each owned (uninstalled) item that fits this slot.
 	for item_id in inventory:
@@ -1505,16 +1521,31 @@ func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
 	return box
 
 
+# Fitting a part is irreversible (it's consumed permanently), so ASK first. The
+# actual fit happens in _apply_upgrade once the player accepts the dialog.
 func _install_upgrade(instance_id: int, item_id: String) -> void:
+	var item_name: String = UpgradeLibrary.by_id(item_id).get("name", item_id)
+	_pending_install = {"instance_id": instance_id, "item_id": item_id}
+	_confirm_dialog.dialog_text = (
+		"Fit %s to this car?\n\nThe part is consumed permanently — it can't be removed or recovered, even if the car is wrecked."
+		% item_name)
+	_confirm_dialog.popup_centered()
+
+
+# Accept handler for the fit-confirmation dialog: apply the queued install.
+func _on_install_confirmed() -> void:
+	if _pending_install.is_empty():
+		return
+	var instance_id := int(_pending_install["instance_id"])
+	var item_id := String(_pending_install["item_id"])
+	_pending_install = {}
+	_apply_upgrade(instance_id, item_id)
+
+
+# Actually fit the part (consuming it from inventory) and rebuild the lift + UI.
+func _apply_upgrade(instance_id: int, item_id: String) -> void:
 	if Save.install_upgrade(instance_id, item_id):
 		_lift_car_instance_id = -2  # the car's spec changed — rebuild the prop
-		_ensure_lift_car()
-		_refresh_lift_ui()
-
-
-func _uninstall_upgrade(instance_id: int, item_id: String) -> void:
-	if Save.uninstall_upgrade(instance_id, item_id):
-		_lift_car_instance_id = -2
 		_ensure_lift_car()
 		_refresh_lift_ui()
 

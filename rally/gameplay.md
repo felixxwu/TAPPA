@@ -40,7 +40,7 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
 | Reward balancing | **Both:** reward tier = f(rally difficulty), **clamped** by an overall-progress ceiling so a lucky early win can't drop a top-tier car. |
 | Reward supply | **Infinite / farmable.** Re-winning a completed rally (top 3) grants its car reward **again**; completion is recorded once, the reward repeats. Keeps car supply renewable (a wrecked car is always re-winnable) so 100% stays reachable. Farmed rewards stay under the **same progress-tier ceiling**. |
-| Upgrades on car death | **Returned to inventory.** Only the chassis is lost; installed upgrades go back to the player. |
+| Upgrades on car death | **Lost with the car.** Upgrades are fully consumed when fitted (a one-time, confirmed commitment), so a wreck destroys the chassis *and* its installed parts — nothing returns to the player. |
 
 ---
 
@@ -85,8 +85,8 @@ roguelike**: do you risk your best car to win, or play it safe?
     **damage power-multiplier** applied to engine torque.
 - **Wreck at 0 HP.** When a car's HP hits **0 it is wrecked**: the current rally
   is an immediate **DNF**, and the car is **destroyed** — unusable in all future
-  rallies. **Its installed upgrades return to the player's inventory** (only the
-  chassis is lost).
+  rallies. **Its installed upgrades are lost with it** — upgrades are fully consumed
+  when fitted, so nothing returns to the player.
 - **HP carries over** across events and rallies — chip damage from one rally
   weakens the car in the next unless repaired.
 - **Starter is immune** (effectively infinite HP — never wrecked, never
@@ -190,8 +190,9 @@ Two distinct systems:
     front/rear brake-split** parameter (the one new code knob `features/tuning.md` owns).
   - **Aero balance** (only if the **aero upgrade** is installed): how much front
     vs rear downforce — `downforce_front` / `downforce_rear`.
-- **Upgrades** — **inventory items** applied to a car (consumable to install),
-  won as rewards and returned to inventory if the car is destroyed. Examples:
+- **Upgrades** — **inventory items** applied to a car (fully consumed on install,
+  so fitting is a one-time, confirmed commitment), won as rewards and lost with the
+  car if it is destroyed. Examples:
   engine/power, aero kit (unlocks aero tuning), suspension, brakes, plus the
   **repair kit** (consumed to heal damage). *(Exact upgrade list + how each maps
   to config knobs → its own todo.)*

@@ -7,8 +7,9 @@ extends RefCounted
 # a fielded car's config. See todo/upgrade-catalogue.md.
 #
 # Distinguish from TUNING: tuning (features/tuning.md, the lift) is free, reversible
-# per-car config nudges. Upgrades are consumable items that change a car's
-# baseline and only return to inventory when the car is wrecked.
+# per-car config nudges. Upgrades are consumable items that change a car's baseline
+# and are FULLY CONSUMED when applied — fitting a part uses it up for good; it never
+# returns to inventory (not on swap, and not when the car is wrecked).
 
 # The one consumable's id, referenced by Save when a repair kit is used.
 const REPAIR_KIT_ID := "repair_kit"

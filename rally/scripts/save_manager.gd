@@ -260,14 +260,13 @@ func apply_damage(instance_id: int, amount: float) -> void:
 	save()
 
 
-# Wreck a car: return its installed upgrades to the inventory, then remove the
-# instance. The immortal starter is never wrecked (no-op).
+# Wreck a car: remove the instance. Its installed upgrades are NOT returned —
+# upgrades are fully consumed when applied (see install_upgrade), so they're lost
+# with the car. The immortal starter is never wrecked (no-op).
 func wreck_car(instance_id: int) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty() or car.get("immortal", false):
 		return
-	for item_id in car.get("installed_upgrades", []):
-		add_item(item_id, 1, false)
 	profile["cars"].erase(car)
 	save()
 
@@ -353,10 +352,12 @@ func consume_item(item_id: String, n := 1) -> bool:
 	return true
 
 
-# Pull one item from inventory and fit it to a car. Enforces one-upgrade-per-slot
-# (UpgradeLibrary): installing into an occupied slot replaces the incumbent,
-# returning it to inventory. Consumables (the repair kit) and unknown ids can't
-# be slotted — use use_repair_kit() for those. Returns true on success.
+# Pull one item from inventory and fit it to a car. The part is FULLY CONSUMED on
+# apply — it leaves inventory for good and never returns (not on swap, and not when
+# the car is wrecked). Enforces one-upgrade-per-slot (UpgradeLibrary): installing
+# into an occupied slot replaces the incumbent, which is scrapped (NOT refunded).
+# Consumables (the repair kit) and unknown ids can't be slotted — use
+# use_repair_kit() for those. Returns true on success.
 func install_upgrade(instance_id: int, item_id: String) -> bool:
 	var car := get_car(instance_id)
 	if car.is_empty():
@@ -366,25 +367,13 @@ func install_upgrade(instance_id: int, item_id: String) -> bool:
 		return false  # not a slottable upgrade
 	if int(profile["inventory"].get(item_id, 0)) < 1:
 		return false  # nothing to install; don't disturb the incumbent
-	# Replace any incumbent occupying the same slot (returned to inventory).
+	# Replace any incumbent occupying the same slot (scrapped, not refunded —
+	# the previously-fitted part was already consumed when it was applied).
 	for existing in car["installed_upgrades"].duplicate():
 		if UpgradeLibrary.slot_of(existing) == slot:
 			car["installed_upgrades"].erase(existing)
-			add_item(existing, 1, false)
 	consume_item(item_id, 1)
 	car["installed_upgrades"].append(item_id)
-	save()
-	return true
-
-
-# Remove a fitted item from a car and return it to inventory. Returns true if
-# the item was actually fitted.
-func uninstall_upgrade(instance_id: int, item_id: String) -> bool:
-	var car := get_car(instance_id)
-	if car.is_empty() or not car["installed_upgrades"].has(item_id):
-		return false
-	car["installed_upgrades"].erase(item_id)
-	add_item(item_id, 1, false)
 	save()
 	return true
 

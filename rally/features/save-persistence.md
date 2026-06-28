@@ -66,9 +66,10 @@ that mutate + autosave: `grant_car(model_id, immortal)`, `get_car(instance_id)`,
 `set_selected_car(instance_id)` (the lift's selected car, self-healing),
 `get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),
 `add_item` / `consume_item`,
-`install_upgrade` / `uninstall_upgrade` (install enforces one-per-slot via
-`UpgradeLibrary`, replacing + returning the incumbent; see
-`features/upgrade-catalogue.md`), `use_repair_kit(instance_id, heal_amount)`
+`install_upgrade` (enforces one-per-slot via `UpgradeLibrary`; fitting **fully
+consumes** the part — a swap scraps the incumbent rather than refunding it, and
+nothing returns on wreck; see `features/upgrade-catalogue.md`),
+`use_repair_kit(instance_id, heal_amount)`
 (spend a kit to heal, clamped to max_hp), `complete_rally(rally_id, combined_ms,
 placed)` (idempotent; keeps the best time **and** best placement; does **not** grant
 the car reward — re-wins are farmable). `rally_completed(id)` /

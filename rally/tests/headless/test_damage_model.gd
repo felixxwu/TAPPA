@@ -192,7 +192,7 @@ func test_unbound_wreck_emits_without_touching_save() -> void:
 	assert_eq(_save.profile["cars"].size(), 0, "an unbound model never touches the save")
 
 
-func test_bound_wreck_removes_instance_and_returns_upgrades() -> void:
+func test_bound_wreck_removes_instance_and_consumes_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("mx5", false)
 	var id := int(car["instance_id"])
 	_save.add_item("engine_stage1", 1)
@@ -208,8 +208,8 @@ func test_bound_wreck_removes_instance_and_returns_upgrades() -> void:
 
 	assert_eq(wrecks["n"], 1, "wrecked emitted")
 	assert_true(_save.get_car(id).is_empty(), "the instance is removed from the save")
-	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 1,
-		"the fitted upgrade is returned to inventory before removal")
+	assert_false(_save.profile["inventory"].has("engine_stage1"),
+		"the fitted upgrade was consumed on apply — it is not returned when the car is wrecked")
 
 
 func test_immortal_takes_no_damage_and_never_wrecks() -> void:

@@ -8,9 +8,10 @@ here); this library defines what those ids mean and what each does to a fielded
 car.
 
 **Upgrades vs tuning:** upgrades are consumable items that change a car's
-baseline and only return to inventory when the car is wrecked. Tuning
-(`features/tuning.md`, the lift) is free, reversible per-car config nudges. This is
-the upgrades half.
+baseline and are **fully consumed when applied** — fitting a part uses it up for
+good; it never returns to inventory (not on swap, and not when the car is wrecked).
+Tuning (`features/tuning.md`, the lift) is free, reversible per-car config nudges.
+This is the upgrades half.
 
 ## Catalogue
 
@@ -45,12 +46,14 @@ is fitted.
 
 The slot policy and HP healing live in `Save` (it owns inventory + HP):
 
-- **`Save.install_upgrade(instance_id, item_id)`** — enforces **one upgrade per
-  slot**: installing into an occupied slot replaces the incumbent, returning it
-  to inventory. Consumables and unknown ids can't be slotted (rejected). There is
-  **no free uninstall** — parts return only on wreck (`Save.wreck_car`), to
-  preserve the commitment feel. (`Save.uninstall_upgrade` exists for a future
-  manual-uninstall path but isn't part of normal play.)
+- **`Save.install_upgrade(instance_id, item_id)`** — fitting **fully consumes** the
+  part: it leaves inventory for good and never comes back. Enforces **one upgrade
+  per slot**: installing into an occupied slot replaces the incumbent, which is
+  **scrapped, not refunded** (it was already consumed when it was applied).
+  Consumables and unknown ids can't be slotted (rejected). There is **no uninstall**
+  — a fitted part can only be replaced by fitting another into the same slot, and
+  nothing is returned on wreck (`Save.wreck_car`). The HQ upgrades menu confirms via
+  a dialog before fitting, since the commitment is irreversible.
 - **`Save.use_repair_kit(instance_id, heal_amount)`** — spends one repair kit and
   heals the car, clamped to its CarLibrary `max_hp`. The only way HP goes back up.
   `heal_amount` is passed in (the caller reads it from a `GameConfig` tunable,
@@ -68,5 +71,7 @@ Upgrades are the per-event reward (cars are per-rally). The reward draw picks an
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
 slots, one consumable), lookups, effect application (multiplies/adds on a
 baseline; empty list is a no-op), and the aero / brake-bias tuning gates.
-Slot-replacement, consumable/unknown rejection, repair-kit heal+clamp, and the
-wreck round-trip are in `test_save_manager.gd` (they need the Save profile).
+Slot-replacement (incumbent scrapped, not refunded), consumable/unknown rejection,
+repair-kit heal+clamp, and wreck consumption (parts not returned) are in
+`test_save_manager.gd` (they need the Save profile). The HQ fit-confirmation flow is
+in `test_menu_flow.gd`.
