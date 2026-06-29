@@ -15,7 +15,7 @@ Spec/brainstorm history: [`todo/roadside-spectators.md`](../todo/roadside-specta
 | `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one crowd: steering, MultiMesh render, LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). |
 | `scripts/world.gd` | `_spawn_spectators()` / `_spawn_spectator_group()` build the three groups in `_generate_track`, after the centerline + `road_cells` + trees exist. |
 | `scripts/game_config.gd` | `@export_group("Spectators")` + `spectator_params()`. |
-| `blender/spectator.glb` | The low-poly figure (no armature — hence single-capsule ragdolls). |
+| `blender/spectator.glb` | The low-poly figure: 150 triangles, no armature (hence single-capsule ragdolls). Quadric-decimated for cheap crowds; one mesh used at all distances. |
 
 ## How it works
 
