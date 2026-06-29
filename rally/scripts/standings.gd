@@ -53,11 +53,14 @@ func _build_ui() -> void:
 
 	var cont := Button.new()
 	cont.text = "Continue to next event >"
-	cont.focus_mode = Control.FOCUS_NONE
+	# Focusable + focused on entry so a keyboard/gamepad can Continue (ui_accept) with
+	# no pointer — the only action on this interstitial.
+	cont.focus_mode = Control.FOCUS_ALL
 	cont.pressed.connect(_on_continue)
 	root.add_child(cont)
 
 	UITheme.enforce(self)  # house rules: uppercase + one font size
+	UITheme.focus_grab.bind(cont).call_deferred()
 
 
 # One standings row: position, name (and the car they drove), cumulative time /

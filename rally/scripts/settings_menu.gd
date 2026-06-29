@@ -97,6 +97,35 @@ func at_root() -> bool:
 	return _list_page != null and _list_page.visible
 
 
+# Step back one level for the host's Back / cancel: a sub-page returns to the
+# category list (and reports it consumed the press); the list reports false so the
+# host can close Settings (or run its own bottom action). Keyboard/gamepad Back
+# (menu_back / ui_cancel) and the bottom button both route through here.
+func go_back() -> bool:
+	if at_root():
+		return false
+	show_list()
+	return true
+
+
+# Put keyboard/gamepad focus on the first selectable row of whichever page is
+# showing — called (deferred) by the host once it has revealed the Settings overlay,
+# and on every page switch, so a controller always has a live cursor.
+func focus_current_page() -> void:
+	var page := _list_page
+	if _camera_page.visible: page = _camera_page
+	elif _scheme_page.visible: page = _scheme_page
+	elif _dev_page.visible: page = _dev_page
+	_focus_first_in(page)
+
+
+func _focus_first_in(page: Control) -> void:
+	for child in page.get_children():
+		if child is Button and not (child as Button).disabled:
+			UITheme.focus_grab(child as Button)
+			return
+
+
 func show_list() -> void:
 	_show_page(_list_page)
 
@@ -119,6 +148,9 @@ func _show_page(page: Control) -> void:
 	_scheme_page.visible = page == _scheme_page
 	_dev_page.visible = page == _dev_page
 	page_changed.emit(at_root())
+	# Move the focus cursor onto the newly-shown page (deferred so it runs after the
+	# visibility change settles; no-op while the whole menu is still hidden on _ready).
+	focus_current_page.call_deferred()
 
 
 # Persist the chosen camera mode, refresh the highlight, and tell any live scene to
@@ -259,7 +291,9 @@ func _make_sub(text: String) -> Label:
 
 func _make_row_button(min_height: float) -> Button:
 	var button := Button.new()
-	button.focus_mode = Control.FOCUS_NONE
+	# Focusable so keyboard / gamepad can walk the rows (ui_up/ui_down) and fire one
+	# with ui_accept; the theme's focus stylebox paints the cursor (same look as hover).
+	button.focus_mode = Control.FOCUS_ALL
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.custom_minimum_size = Vector2(0, min_height)
 	return button

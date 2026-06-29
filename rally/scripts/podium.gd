@@ -334,7 +334,9 @@ func _build_overlay() -> void:
 	slot_col.add_child(_slot_caption)
 
 	_next_button = Button.new()
-	_next_button.focus_mode = Control.FOCUS_NONE
+	# Focusable so the reward sequence steps with a keyboard/gamepad (ui_accept); it's
+	# re-focused whenever it reappears after a reveal (_refresh_next_button).
+	_next_button.focus_mode = Control.FOCUS_ALL
 	_next_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_next_button.custom_minimum_size = Vector2(240, 48)
 	_next_button.pressed.connect(_on_next)
@@ -495,6 +497,10 @@ func _upgrade_names() -> Array:
 func _refresh_next_button() -> void:
 	_next_button.visible = _reveal_done
 	_next_button.text = UITheme.caps("Continue to HQ" if _is_last_stage() else "Next >")
+	# Whenever the button reappears (hidden during a slot spin), re-grab focus so the
+	# controller cursor follows it.
+	if _reveal_done:
+		UITheme.focus_grab.bind(_next_button).call_deferred()
 
 
 func _is_last_stage() -> bool:

@@ -60,6 +60,19 @@ func test_resume_unfreezes_and_closes() -> void:
 	assert_false(_pause.is_open(), "Resume hides the overlay")
 
 
+# Opening the menu lands the keyboard/gamepad cursor on Resume, and the buttons are
+# focusable so ui_up/ui_down + ui_accept work the menu without a pointer. The whole
+# layer is PROCESS_MODE_ALWAYS, so focus works even though the tree is paused.
+func test_pause_menu_is_keyboard_navigable() -> void:
+	_pause.open()
+	await get_tree().process_frame  # let the deferred grab_focus run
+	assert_eq(_pause._resume_button.focus_mode, Control.FOCUS_ALL, "menu buttons are focusable")
+	assert_eq(_pause._quit_button.focus_mode, Control.FOCUS_ALL, "Quit is focusable too")
+	assert_eq(_pause.get_viewport().gui_get_focus_owner(), _pause._resume_button,
+		"opening the menu focuses Resume")
+	_pause.resume()
+
+
 func test_settings_exposes_the_shared_menu() -> void:
 	_pause.open()
 	# The same SettingsMenu component as the title screen: camera + control rows.

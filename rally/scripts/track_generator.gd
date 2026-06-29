@@ -7,7 +7,8 @@ extends RefCounted
 # terrain. This file holds the geometry helpers and generate(), which drives the
 # search.
 
-const CornerLibrary = preload("res://scripts/corner_library.gd")
+# CornerLibrary is a global class (class_name in corner_library.gd) — referenced
+# directly; no preload const, which would shadow that global identifier.
 
 const CELL_M := 0.5                                  # global cell grid size
 const STRAIGHT_OPTIONS_M := [0.0, 5.0, 10.0, 20.0]   # connecting straight lengths
