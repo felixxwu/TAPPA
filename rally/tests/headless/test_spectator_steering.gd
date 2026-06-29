@@ -118,3 +118,28 @@ func test_combine_partial_budget_blends_lower_priority() -> void:
 	assert_almost_eq(out.x, 1.0, 1e-3, "flee component preserved")
 	assert_gt(out.y, 0.0, "remaining budget spent on avoidance")
 	assert_lte(out.length(), 3.0 + 1e-3, "total never exceeds max_speed")
+
+
+# --- ragdoll vertical placement -----------------------------------------------
+
+func test_ragdoll_centre_of_mass_is_mid_body() -> void:
+	# Body origin (the auto COM of a single centred capsule) sits at mid-height, so
+	# the ragdoll spins about its waist, not its head.
+	var ground := 5.0
+	var h := 1.6
+	var body_y := SpectatorGroup.ragdoll_body_y(ground, h)
+	assert_almost_eq(body_y, ground + h * 0.5, 1e-4, "COM is at the figure's middle")
+	assert_almost_eq(body_y - h * 0.5, ground, 1e-4, "capsule bottom rests on the ground")
+
+
+func test_ragdoll_mesh_feet_align_with_ground_for_any_foot_offset() -> void:
+	# Whatever the mesh's internal foot offset, its feet should land on the ground:
+	# feet_world = body_y + mesh_offset_y + aabb_min_y, where aabb_min_y = -foot_offset.
+	var ground := 0.0
+	var h := 1.6
+	for foot_offset: float in [0.0, 0.4, 0.82, 1.2]:
+		var body_y := SpectatorGroup.ragdoll_body_y(ground, h)
+		var mesh_y := SpectatorGroup.ragdoll_mesh_offset_y(foot_offset, h)
+		var feet := body_y + mesh_y + (-foot_offset)
+		assert_almost_eq(feet, ground, 1e-4,
+			"mesh feet sit on the ground (foot_offset=%s)" % foot_offset)

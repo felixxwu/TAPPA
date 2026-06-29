@@ -193,6 +193,21 @@ static func clamp_speed(v: Vector2, max_speed: float) -> Vector2:
 	return v
 
 
+# Vertical placement of a knocked ragdoll. The body origin sits at the capsule
+# centre (= figure mid-height above `ground`), so the auto centre-of-mass of the
+# single centred capsule is at the figure's middle — it tumbles about its waist,
+# not its head — and the capsule bottom rests on the ground.
+static func ragdoll_body_y(ground: float, capsule_height: float) -> float:
+	return ground + capsule_height * 0.5
+
+
+# Local Y to place the mesh inside that body so its feet meet the capsule bottom.
+# The mesh's feet sit `foot_offset` above its own origin, so from the body centre
+# (capsule_height/2 above the feet) the mesh drops by that much less the foot offset.
+static func ragdoll_mesh_offset_y(foot_offset: float, capsule_height: float) -> float:
+	return foot_offset - capsule_height * 0.5
+
+
 # Prioritised steering arbitration. Fleeing the car claims the speed budget first,
 # then static obstacle (road + tree) avoidance, then neighbour separation, then the
 # anchor pull — each tier only gets the budget the higher tiers leave under max_speed.
@@ -301,7 +316,10 @@ func _knock_over(i: int, car_xf: Transform3D) -> void:
 	body.collision_layer = int(_p["ragdoll_layer"])
 	body.collision_mask = int(_p["ragdoll_mask"])
 	add_child(body)
-	body.global_position = Vector3(x, ground + _capsule_height * 0.5 + _foot_offset, z)
+	# Body origin = capsule centre = figure mid-height, so the auto centre-of-mass
+	# (single centred capsule) sits at the body's middle and it tumbles about its
+	# waist, not its head.
+	body.global_position = Vector3(x, ragdoll_body_y(ground, _capsule_height), z)
 	# Ragdolls land on the terrain/trees (all on layer 1) but must never collide
 	# with the car — the car shares layer 1, so an explicit exception is the only
 	# way to let a crowd be driven through without bogging the vehicle down.
@@ -317,9 +335,9 @@ func _knock_over(i: int, car_xf: Transform3D) -> void:
 
 	var mi := MeshInstance3D.new()
 	mi.mesh = _mm.mesh if _mm != null else null
-	# The mesh's feet sit at +foot_offset above its origin; the body's origin is at
-	# the capsule centre, so push the mesh down half the capsule to line them up.
-	mi.position = Vector3(0, -_capsule_height * 0.5, 0)
+	# Offset the mesh within the body so its feet meet the capsule bottom on the
+	# ground (accounting for the mesh's own foot offset above its origin).
+	mi.position = Vector3(0, ragdoll_mesh_offset_y(_foot_offset, _capsule_height), 0)
 	body.add_child(mi)
 
 	# Launch along the car's travel direction, scaled by its speed, plus lift and a
