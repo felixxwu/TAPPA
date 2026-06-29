@@ -38,17 +38,45 @@ func _ready() -> void:
 		cm.set_process(false)
 		cm.set_physics_process(false)
 
-	# Frame the first sign from in front of its face (its -Z runs along the road
-	# tangent = the face normal), nudged to one side + up for a 3/4 road view.
-	var sign := field.get_child(0) as Node3D
+	# DRIVER APPROACH POV: the car travels along the sign's local -Z (= road
+	# tangent), so it comes from the +Z (up-track) side and sees that face. Sit the
+	# camera up-track + above, looking down-track past the sign, so the arrow AND the
+	# road bending beyond it are both in frame for a direct comparison.
+	var idx := int(OS.get_environment("SIGN_IDX")) if OS.has_environment("SIGN_IDX") else 0
+	idx = clampi(idx, 0, field.get_child_count() - 1)
+	# Health check: how many signs are still upright (local +Y near world up) after
+	# the settle, and how far each drifted from its spawn — toppled/flung signs would
+	# explain wrong-looking arrows and missing signs.
+	var toppled := 0
+	for c in field.get_children():
+		var up_dot := (c as Node3D).global_transform.basis.y.dot(Vector3.UP)
+		if up_dot < 0.9:
+			toppled += 1
+	print("sign-render: %d/%d signs NOT upright after settle" % [toppled, field.get_child_count()])
+
+	var sign := field.get_child(idx) as Node3D
+	var key := String(sign.get_meta("texture_key", "?"))
+	var updot := sign.global_transform.basis.y.dot(Vector3.UP)
+	print("sign-render: SIGN_IDX=%d key=%s upright_dot=%.3f pos=%s" % [idx, key, updot, sign.global_position])
 	var sp := sign.global_position
-	var b := sign.global_transform.basis
-	var fwd := -b.z
+	var bz := sign.global_transform.basis.z  # world dir of local +Z = up-track
 	var cam := Camera3D.new()
 	add_child(cam)
-	cam.global_position = sp + fwd * 1.7 + b.x * 0.25 + Vector3(0.0, 0.55, 0.0)
-	cam.look_at(sp + Vector3(0.0, 0.55, 0.0), Vector3.UP)
-	cam.fov = 46.0
+	if OS.has_environment("PLAYER_VIEW"):
+		# The real player's chase view at the start: behind + above the car, looking
+		# down the track at the first corner(s) and their signs.
+		var car := world.get_node("Car") as Node3D
+		var ct := car.global_transform
+		var carfwd := -ct.basis.z
+		cam.global_position = ct.origin - carfwd * 7.0 + Vector3(0.0, 3.2, 0.0)
+		cam.look_at(ct.origin + carfwd * 14.0 + Vector3(0.0, 0.5, 0.0), Vector3.UP)
+		cam.fov = 60.0
+	else:
+		# Up-track (+Z side) and above, looking DOWN at the sign — frames the approach
+		# face reliably plus the road bending beyond it for an arrow-vs-bend compare.
+		cam.global_position = sp + bz * 3.5 + Vector3(0.0, 1.0, 0.0)
+		cam.look_at(sp + Vector3(0.0, 0.65, 0.0), Vector3.UP)
+		cam.fov = 44.0
 	cam.current = true
 
 	for i in range(6):

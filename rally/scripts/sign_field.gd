@@ -59,6 +59,16 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 		var sign_body := RigidBody3D.new()
 		sign_body.name = "Sign%d" % sign_count
 		sign_body.mass = mass
+		# Spawn FROZEN, resting exactly at the placed road-surface pose. The terrain
+		# only has collision in a small ring streamed around the car (TerrainManager
+		# RADIUS), so a live RigidBody placed on a far part of the track would have no
+		# ground and free-fall into the void before the player ever reached it. Frozen,
+		# it stays put; the car wakes it on contact (_wake_sign) so it still scatters.
+		sign_body.freeze = true
+		sign_body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+		# Stash the placement key on the body (cheap metadata) so tools/tests can
+		# identify which arrow a built sign carries without re-running the planner.
+		sign_body.set_meta("texture_key", String(entry["texture_key"]))
 		# -Z runs along the road tangent; ridge (local X) crosses the road. This is
 		# the resting pose; physics takes over from here once the car hits it.
 		var fwd3 := Vector3(tangent.x, 0.0, tangent.y).normalized()
@@ -69,7 +79,38 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 		var mat := _material_for(String(entry["kind"]), String(entry["texture_key"]), textures)
 		_add_panels(sign_body, panel_size, thickness, splay, mat)
 		_add_collision_shape(sign_body, panel_size, base_depth)
+		_add_waker(sign_body, panel_size, base_depth)
 		sign_count += 1
+
+
+# An Area3D, slightly larger than the sign, that wakes the frozen body when the car
+# reaches it (a frozen RigidBody never reports its own contacts, so a trigger volume
+# is the reliable way to detect the hit). Sized a touch bigger than the hitbox so the
+# sign goes dynamic just before the car touches it — it scatters on contact instead
+# of briefly standing rigid. Static bodies (streamed terrain chunks, tree hitboxes)
+# share the world layer, so they are filtered out: only the dynamic car wakes a sign.
+func _add_waker(body: RigidBody3D, panel_size: Vector2, base_depth: float) -> void:
+	var waker := Area3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(panel_size.x + 0.6, panel_size.y, base_depth + 0.6)
+	shape.shape = box
+	shape.position = Vector3(0.0, panel_size.y * 0.5, 0.0)
+	waker.add_child(shape)
+	waker.body_entered.connect(_wake_sign.bind(body))
+	body.add_child(waker)
+
+
+# Wake a frozen sign the first time the car enters its trigger volume, so it tumbles
+# away under physics instead of standing rigid. The Area also overlaps the sign's OWN
+# body (its parent) — ignore that, or the sign instantly wakes itself and falls.
+# Streamed terrain and tree hitboxes are StaticBody3D, so they are ignored too: only
+# a dynamic body that is not this sign (the car) unfreezes it.
+func _wake_sign(other: Node, body: RigidBody3D) -> void:
+	if other == body or other is StaticBody3D:
+		return
+	if body.freeze:
+		body.freeze = false
 
 
 # The two splayed panels. Each is a thin, double-sided quad tilted about the ridge
