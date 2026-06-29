@@ -522,10 +522,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 1.0) var speed_lines_max_intensity := 0.8
 ## How many angular streaks ring the screen; higher = more, finer lines.
 @export_range(8.0, 256.0) var speed_lines_density := 28.0
-## Normalised screen radius where streaks begin (centre stays clear).
-@export_range(0.0, 2.0) var speed_lines_inner_radius := 0.35
-## Normalised screen radius where streaks reach full strength (toward the edges).
-@export_range(0.0, 2.0) var speed_lines_outer_radius := 1.0
+## Innermost normalised screen radius a streak can reach — higher keeps more of
+## the centre clear (shorter streaks). Streaks run solid from here out to the edge.
+@export_range(0.0, 2.0) var speed_lines_inner_radius := 0.55
+## Outermost start radius — streaks start somewhere in [inner, outer], so the gap
+## between the two sets how much the streak lengths vary.
+@export_range(0.0, 2.0) var speed_lines_outer_radius := 0.9
 ## Per-streak flicker rate (discrete steps/sec): each streak jumps to a new random
 ## brightness this many times a second, giving a choppy hand-drawn flicker rather
 ## than a smooth pulse.

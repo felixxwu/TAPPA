@@ -89,14 +89,17 @@ HUD or mobile controls.
 
 Uniforms: `intensity` (0..1 overall strength, 0 = invisible), `line_color`
 (source_color, black), `density` (angular streak count), `inner_radius` /
-`outer_radius` (the normalised-radius fade band that keeps the centre clear and
-ramps the streaks to full toward the edges), `flicker_speed` (per-streak flicker
-rate in steps/sec — time is quantised and a per-streak random is thresholded so
-each streak is either fully drawn or gone for the step: a hard on/off cut, like
-hand-inked lines blinking in and out, not a smooth opacity fade).
+`outer_radius` (each streak starts at a random radius in this band and runs SOLID
+out to the screen edge — a higher `inner_radius` keeps more of the centre clear /
+shorter streaks, and the gap between the two varies the streak lengths),
+`flicker_speed` (per-streak flicker rate in steps/sec — time is quantised and a
+per-streak random is thresholded so each streak is either fully drawn or gone for
+the step: a hard on/off cut, like hand-inked lines blinking in and out, not a
+smooth opacity fade).
 Fragment: aspect-corrected centre-origin coords → bucket the angle into `density`
-slots (one streak each) → per-slot random width + hard-cut flicker → multiply by a
-radial mask → output `line_color` with the computed alpha.
+slots (one streak each) → thin hard-edged streak (a `step`, no feathering) + a
+hard-cut flicker → mask by a hard, per-streak-varied radial start → output
+`line_color` with the computed alpha.
 
 `scripts/speed_lines.gd` (on the `SpeedLines` CanvasLayer) pushes the static
 look from config once in `_ready()`, then each frame maps the car's airspeed

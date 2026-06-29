@@ -63,8 +63,8 @@ shader = ExtResource("2_lines")
 shader_parameter/intensity = 0.0
 shader_parameter/line_color = Color(0, 0, 0, 1)
 shader_parameter/density = 28.0
-shader_parameter/inner_radius = 0.35
-shader_parameter/outer_radius = 1.0
+shader_parameter/inner_radius = 0.55
+shader_parameter/outer_radius = 0.9
 shader_parameter/flicker_speed = 14.0
 
 [node name="Main" type="Node3D" unique_id=1526314824]
