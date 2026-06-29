@@ -78,13 +78,14 @@ func _make(leaders := [], event_index := 0) -> StartLine:
 func test_reveal_shows_top_three_times_to_beat_and_context() -> void:
 	var sl := _make(_leaders(), 1)  # second event
 	assert_eq(sl._leader_rows.size(), 3, "the reveal lists the top three rivals to beat")
+	# Reveal text follows the design system: house rule 1 uppercases everything.
 	var top := sl._leader_rows[0].text
 	assert_string_contains(top, "1:15.43", "the leader's time to beat is shown (m:ss.cc)")
-	assert_string_contains(top, "Rival 3", "the leader's driver name is shown")
-	assert_string_contains(top, "Porsche 911", "the car the leader drove is shown")
-	assert_string_contains(sl._leader_rows[2].text, "Audi RS3", "third place's car is shown too")
-	assert_string_contains(sl._subtitle_label.text, "RWD Masters", "the rally is named")
-	assert_string_contains(sl._subtitle_label.text, "Event 2 of 3", "the event index is shown")
+	assert_string_contains(top, "RIVAL 3", "the leader's driver name is shown")
+	assert_string_contains(top, "PORSCHE 911", "the car the leader drove is shown")
+	assert_string_contains(sl._leader_rows[2].text, "AUDI RS3", "third place's car is shown too")
+	assert_string_contains(sl._subtitle_label.text, "RWD MASTERS", "the rally is named")
+	assert_string_contains(sl._subtitle_label.text, "EVENT 2 OF 3", "the event index is shown")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "it waits in the orbit/reveal phase")
 
 
