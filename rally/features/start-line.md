@@ -15,11 +15,12 @@ car is held locked. Three phases, driven in `_process`:
    `P{n}  Driver — Car — m:ss.cc` (`RallySession.current_event_leaders(3)`; the leader
    is the gold **time to beat**, the chasers are dimmed, the car is dropped when
    unknown, and a single `—` stands in when no rival has a time yet). The panels follow
-   the house rules (pure-black, uppercase, one font size) and **hug the top and bottom
-   edges** with an expanding gap between — so the opaque panels never cover the
-   orbiting car, which shows through the **clear centre band**. The top card is headed
-   by the `Rally — Event N of 3` line and carries the times; the bottom card holds just
-   the **Start** button. Behind it an **orbit camera** circles the car, which is queued
+   the house rules (pure-black, uppercase, one font size). The times card **hugs the top
+   edge** and a bare **Start** button (a standard house menu button at the fixed row
+   height — no wrapping panel) **hugs the bottom**, with an expanding gap between — so
+   they never cover the orbiting car, which shows through the **clear centre band**. The
+   times card is headed by the `Rally — Event N of 3` line. Behind it an **orbit camera**
+   circles the car, which is queued
    between a **leader** car ahead and a **trailing** car behind. The driving HUD +
    mobile controls are hidden. Launch with the button, `menu_select` (Enter / gamepad
    A), or a tap.

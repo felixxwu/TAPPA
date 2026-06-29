@@ -82,18 +82,25 @@ func _unhandled_input(event: InputEvent) -> void:
 func _build() -> void:
 	layer = 5  # above HUD (2) and mobile controls (3)
 
-	# Top-right Pause button, always available during gameplay.
+	# Top-right Pause button, always available during gameplay. Square, with a proper
+	# drawn pause glyph (PauseIcon) instead of a cramped "| |" string.
 	_pause_button = Button.new()
-	_pause_button.text = "| |"
 	_pause_button.focus_mode = Control.FOCUS_NONE
 	_pause_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_pause_button.offset_left = -52
+	_pause_button.offset_left = -48
 	_pause_button.offset_top = 8
 	_pause_button.offset_right = -8
-	_pause_button.offset_bottom = 36
+	_pause_button.offset_bottom = 48
 	_pause_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_pause_button.add_theme_font_size_override("font_size", 14)
 	_pause_button.pressed.connect(open)
+	var pause_icon := PauseIcon.new()
+	pause_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "top"]:
+		pause_icon.set("offset_" + side, 11)
+	for side in ["right", "bottom"]:
+		pause_icon.set("offset_" + side, -11)
+	_pause_button.add_child(pause_icon)
 	add_child(_pause_button)
 
 	# Full-screen overlay: a dim backdrop (swallows taps to the game) + the panels.

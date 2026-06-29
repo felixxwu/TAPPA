@@ -291,8 +291,11 @@ wreck cinematic and report immediately.)
 A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
 `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is frozen. It owns a
 **top-right Pause button** (always visible during gameplay; the HUD's version/timer
-labels were shifted left to clear it) that **freezes the game** (`get_tree().paused
-= true`) and shows an overlay with **Resume**, **Settings** and **Quit to HQ**.
+labels were shifted left to clear it) — a square button bearing a **proper drawn
+pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars,
+since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
+game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Settings**
+and **Quit to HQ**.
 Resume unfreezes and closes; Settings shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the title-screen page), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops an *"Abandon rally?"* confirm and, on
