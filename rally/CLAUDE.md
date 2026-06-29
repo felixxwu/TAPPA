@@ -143,3 +143,8 @@
 - All gameplay/look tuning values live in `config/game_config.tres`
   (a `GameConfig` resource) — change values there, not in scripts or
   `main.tscn`. Scene/script literals are only fallback defaults.
+- If you're running in a managed remote execution environment (Claude Code on
+  the web — an isolated cloud container, not the user's local machine), do ALL
+  work directly on `main`. Do NOT create feature branches. Commit and push
+  straight to `main` as soon as a change is ready — pushing immediately gets the
+  work back to the user and shortens the iteration cycle.
