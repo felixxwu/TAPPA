@@ -85,7 +85,14 @@ func _process(_delta: float) -> void:
 		_focus_chunk = chunk  # update now so the crossing isn't re-detected every frame
 		_pending_center = _focus.global_position
 		_rebuild_pending = true
-	if _rebuild_pending and not _building and not _terrain.is_streaming_chunks():
+	# The backdrop never shares a frame with detail-chunk streaming: it only STARTS
+	# and only STEPS on frames when nothing is queued/building, so it fills purely in
+	# the gaps between detail builds and the two heavy mesh builds never stack. Detail
+	# (the ground the car drives on) always has priority; the far, fog-softened
+	# backdrop yields and catches up in the idle window before the next crossing.
+	if _terrain.is_streaming_chunks():
+		return
+	if _rebuild_pending and not _building:
 		_rebuild_pending = false
 		_begin_rebuild(_pending_center)
 	if _building:

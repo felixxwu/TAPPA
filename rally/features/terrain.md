@@ -173,12 +173,14 @@ The coarse geometry re-centres on every focus **chunk crossing** and is a
 the loaded chunks. The rebuild is the same ~2,600-vertex, light-baked cost as a
 detail chunk, so it is **deferred AND sliced**, never run whole on the crossing
 frame: a crossing only marks the backdrop dirty (coalescing to the latest centre);
-the rebuild *starts* on a frame when `TerrainManager.is_streaming_chunks()` is false
-(no chunk queued, dispatched, awaiting integration, or mid-build) so its first rows
-don't pile onto a detail-chunk build, then fills `ROWS_PER_FRAME` (8) grid rows per
-frame and swaps the new mesh in only when complete (the previous backdrop stays
-visible until then). This keeps the heavy coarse build off the detail-ring stream
-*and* off any single frame — on the single-threaded web build those back-to-back
+the rebuild only *starts AND steps* on frames when
+`TerrainManager.is_streaming_chunks()` is false (no chunk queued, dispatched,
+awaiting integration, or mid-build), filling `ROWS_PER_FRAME` (8) grid rows per
+idle frame and swapping the new mesh in only when complete (the previous backdrop
+stays visible until then). So the backdrop and the detail-ring stream **never share
+a frame** — the backdrop fills purely in the gaps between detail builds (detail has
+priority), and no single frame does a whole coarse build. This keeps the heavy
+coarse build off the detail-ring stream *and* off any single frame — on the single-threaded web build those back-to-back
 main-thread mesh builds were the bulk of the chunk-crossing hitch. The synchronous
 `rebuild_around` (initial build at world load, behind the loading screen) runs the
 same begin/step/finish to completion in one call. The backdrop is huge and
