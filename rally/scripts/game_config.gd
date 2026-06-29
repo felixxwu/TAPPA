@@ -513,20 +513,23 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var speed_lines_enabled := true
 ## Streak colour. Black is the standard manga look.
 @export var speed_lines_color := Color(0.0, 0.0, 0.0, 1.0)
-## Speed (km/h) at which the streaks start to appear.
-@export_range(0.0, 300.0) var speed_lines_start_kmh := 70.0
-## Speed (km/h) at which the streaks reach full strength.
-@export_range(0.0, 400.0) var speed_lines_full_kmh := 180.0
+## Speed (km/h) at which the streaks start to appear. ~80 km/h is realistically
+## flat out in this game, so the ramp is tuned to fill across that band.
+@export_range(0.0, 300.0) var speed_lines_start_kmh := 30.0
+## Speed (km/h) at which the streaks reach full strength (≈ the car's top speed).
+@export_range(0.0, 400.0) var speed_lines_full_kmh := 78.0
 ## Cap on overall strength (alpha) at and above speed_lines_full_kmh.
 @export_range(0.0, 1.0) var speed_lines_max_intensity := 0.8
 ## How many angular streaks ring the screen; higher = more, finer lines.
-@export_range(8.0, 256.0) var speed_lines_density := 90.0
+@export_range(8.0, 256.0) var speed_lines_density := 44.0
 ## Normalised screen radius where streaks begin (centre stays clear).
 @export_range(0.0, 2.0) var speed_lines_inner_radius := 0.35
 ## Normalised screen radius where streaks reach full strength (toward the edges).
 @export_range(0.0, 2.0) var speed_lines_outer_radius := 1.0
-## Per-streak shimmer speed (rad/s feel) so the fan flickers rather than freezes.
-@export var speed_lines_flicker_speed := 8.0
+## Per-streak flicker rate (discrete steps/sec): each streak jumps to a new random
+## brightness this many times a second, giving a choppy hand-drawn flicker rather
+## than a smooth pulse.
+@export var speed_lines_flicker_speed := 14.0
 ## Ease rate of the intensity ramp (per second); higher snaps in/out faster.
 @export_range(0.5, 30.0) var speed_lines_response := 6.0
 
