@@ -67,6 +67,32 @@ func test_has_banners_ropes_and_anchors() -> void:
 	assert_eq(cyl_count, 4, "four guy ropes (two per side)")
 
 
+func test_flat_caps_face_outward() -> void:
+	# Regression: the flat front (+Z) / back (-Z) caps must be wound so they front-
+	# face the outside viewer, not the hollow interior. Godot treats CW (as seen by
+	# the viewer) as the front face, so a +Z-facing triangle has an RH cross-product
+	# normal pointing -Z and a -Z-facing one points +Z. A backwards cap gets culled
+	# and the arch looks see-through / concave (the bug this test guards).
+	var body := _arch.get_node("ArchBody") as MeshInstance3D
+	var faces: PackedVector3Array = body.mesh.get_faces()
+	var hz: float = _arch.depth * 0.5
+	var front_caps := 0
+	var back_caps := 0
+	for i in range(0, faces.size(), 3):
+		var a := faces[i]
+		var b := faces[i + 1]
+		var c := faces[i + 2]
+		var rh := (b - a).cross(c - a)
+		if absf(a.z - hz) < 1e-3 and absf(b.z - hz) < 1e-3 and absf(c.z - hz) < 1e-3:
+			front_caps += 1
+			assert_lt(rh.z, 0.0, "front (+Z) cap triangle front-faces the approach")
+		elif absf(a.z + hz) < 1e-3 and absf(b.z + hz) < 1e-3 and absf(c.z + hz) < 1e-3:
+			back_caps += 1
+			assert_gt(rh.z, 0.0, "back (-Z) cap triangle front-faces down-track")
+	assert_gt(front_caps, 0, "arch has flat front-cap triangles")
+	assert_gt(back_caps, 0, "arch has flat back-cap triangles")
+
+
 func test_rebuild_is_idempotent() -> void:
 	# build() clears children first, so calling it again must not duplicate parts.
 	var before := _arch.get_child_count()
