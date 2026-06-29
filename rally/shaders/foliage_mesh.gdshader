@@ -9,7 +9,7 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_opaque;
 
-uniform sampler2D albedo : source_color, filter_linear_mipmap;
+uniform sampler2D albedo : source_color, filter_nearest_mipmap;
 uniform vec4 albedo_color : source_color = vec4(1.0);
 uniform float render_distance = 80.0;
 uniform float fade_band = 15.0;
