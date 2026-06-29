@@ -25,24 +25,14 @@ uniform vec3 ground_color : source_color = vec3(0.35);  // ambient bounce from b
 varying vec3 v_light;
 
 void vertex() {
-	// light_amount == 0 is a no-op multiply (vec3(1.0)). A FROZEN car bakes this
-	// shading into its vertex COLOR once and sets light_amount to 0 (car.gd
-	// bake_shading): since a parked car never moves, its world-space normals — and
-	// therefore its shading — are constant, so there is nothing to recompute. The
-	// branch is on a uniform (coherent across every vertex), so it skips the whole
-	// per-vertex lighting calc for parked cars instead of computing then discarding
-	// it. Live cars rotate, so they keep the full per-vertex path below.
-	if (light_amount <= 0.0) {
-		v_light = vec3(1.0);
-	} else {
-		// World-space normal (uniform-scaled meshes only, which is all of ours).
-		vec3 wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-		float hemi = wn.y * 0.5 + 0.5;                       // 0 below, 1 above
-		vec3 ambient = mix(ground_color, sky_color, hemi);
-		float ndl = max(dot(wn, normalize(light_dir)), 0.0);
-		vec3 lit = ambient + sun_color * ndl;
-		v_light = mix(vec3(1.0), lit, light_amount);
-	}
+	// World-space normal (uniform-scaled meshes only, which is all of ours).
+	vec3 wn = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	float hemi = wn.y * 0.5 + 0.5;                       // 0 below, 1 above
+	vec3 ambient = mix(ground_color, sky_color, hemi);
+	float ndl = max(dot(wn, normalize(light_dir)), 0.0);
+	vec3 lit = ambient + sun_color * ndl;
+	// light_amount == 0 → exactly vec3(1.0), i.e. a no-op multiply.
+	v_light = mix(vec3(1.0), lit, light_amount);
 }
 
 void fragment() {

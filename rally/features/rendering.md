@@ -66,23 +66,6 @@ The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
 `sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
 alongside `terrain_light_amount` for the baked terrain shading.
 
-**Frozen cars bake their shading (like the terrain).** A car only needs the
-*live* per-vertex path because it rotates. A car that's parked as a static prop
-(the HQ car-park lineup and lift, the podium standings) is physics-frozen and
-never moves — so its world-space normals, and therefore its shading, are
-constant. `car.gd`'s `bake_shading()` (called at each freeze site once the car
-has settled at its parked pose) bakes the current fake lighting into each lit
-mesh's vertex **COLOUR** — exactly mirroring `terrain_manager._bake_light` — and
-sets `light_amount` to `0` on a **per-instance** copy of the material (the
-car.tscn materials are shared sub-resources, so a copy keeps the player's live
-car untouched). The shader's `vertex()` early-outs when `light_amount <= 0.0`, so
-a frozen car pays *nothing* per frame for lighting while still showing the baked
-shading (the fragment already multiplies `COLOR.rgb`). `restore_shading()`
-reverses it (original mesh + shared material). Baking is only valid while the car
-holds its orientation: pure translation (the lift rising) leaves normals
-unchanged and stays correct, but the spinning podium showroom car keeps rotating
-in world space and is deliberately **left live**.
-
 Used by: car chassis/cabin/wheels/spokes, and the MX-5's authored body model
 (see below).
 
@@ -124,8 +107,7 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
 
 - No light nodes and no engine lighting pass — the materials stay `unshaded`.
   Car meshes get cheap fake per-vertex (Gouraud) lighting from the car-only
-  `ps1_models_lit.gdshader` (computed live, since the car rotates — except parked
-  cars, which bake it; see the shader section above). The terrain
+  `ps1_models_lit.gdshader` (computed live, since the car rotates). The terrain
   gets the same hemisphere+sun look **baked into its vertex colours** once at
   generation time, so its shader keeps a pass-through vertex path and the
   heaviest geometry pays nothing per frame. Trees/bushes/signs stay flat.

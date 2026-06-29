@@ -208,59 +208,6 @@ func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
 	assert_true((_car.get_node("Cabin") as MeshInstance3D).visible, "box car shows the cabin box")
 
 
-# A parked (frozen) car bakes its fake per-vertex lighting into the mesh vertex
-# colours and switches the live shader calc off, so the shader stops recomputing
-# the shading every frame (see car.gd bake_shading / ps1_models_lit.gdshader).
-func test_bake_shading_freezes_lighting_into_vertex_colours() -> void:
-	_car.apply_car(_index_of("Ford Mustang GT"))  # box car: simple single-surface meshes
-	await get_tree().physics_frame
-	var lit := load("res://shaders/ps1_models_lit.gdshader")
-	var chassis := _car.get_node("Chassis") as MeshInstance3D
-	var shared_mat := chassis.get_surface_override_material(0) as ShaderMaterial
-	var original_mesh := chassis.mesh
-	# Before baking, the chassis box carries no per-vertex colour (the shader lights
-	# it live) and the material runs the full effect.
-	assert_eq(shared_mat.get_shader_parameter("light_amount"), Config.data.car_light_amount,
-		"live car runs the full per-vertex lighting")
-
-	_car.bake_shading()
-
-	# The mesh is now a baked copy whose vertex COLOUR carries the shading.
-	assert_ne(chassis.mesh, original_mesh, "baking swaps in a baked mesh copy")
-	var colors: PackedColorArray = chassis.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
-	assert_gt(colors.size(), 0, "baked mesh carries per-vertex colours")
-	var any_shaded := false
-	for c in colors:
-		if c.r < 0.99 or c.g < 0.99 or c.b < 0.99:
-			any_shaded = true
-	assert_true(any_shaded, "baked colours actually carry shading, not flat white")
-	# The live calc is switched off on a PER-INSTANCE material copy...
-	var flat := chassis.get_surface_override_material(0) as ShaderMaterial
-	assert_eq(flat.shader, lit, "baked mesh keeps the lit shader (now light_amount 0)")
-	assert_eq(flat.get_shader_parameter("light_amount"), 0.0, "frozen car skips the live lighting")
-	assert_ne(flat, shared_mat, "baking uses a per-instance material copy")
-	# ...so the shared sub-resource (and therefore the player's live car) is untouched.
-	assert_eq(shared_mat.get_shader_parameter("light_amount"), Config.data.car_light_amount,
-		"baking one car must not disturb the shared material's live lighting")
-
-
-# Baking is reversible: restore_shading puts the original mesh + shared material
-# back so the live lighting resumes (e.g. if a parked car ever goes live again).
-func test_restore_shading_reverts_the_bake() -> void:
-	_car.apply_car(_index_of("Ford Mustang GT"))
-	await get_tree().physics_frame
-	var chassis := _car.get_node("Chassis") as MeshInstance3D
-	var original_mesh := chassis.mesh
-	var original_mat := chassis.get_surface_override_material(0)
-
-	_car.bake_shading()
-	_car.restore_shading()
-
-	assert_eq(chassis.mesh, original_mesh, "restore puts the original mesh back")
-	assert_eq(chassis.get_surface_override_material(0), original_mat,
-		"restore puts the shared live material back")
-
-
 func _index_of(car_name: String) -> int:
 	for i in CarLibrary.CARS.size():
 		if CarLibrary.CARS[i]["name"] == car_name:
