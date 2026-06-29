@@ -1,33 +1,34 @@
 extends SceneTree
 
 # ---------------------------------------------------------------------------
-# Low-poly vegetation builder + multi-angle renderer + GLB exporter.
-# Geometry is procedural, flat-shaded (per-face normals, no shared verts).
-# Textures (bark / foliage) are loaded from disk (online-sourced, see
-# models/vegetation/README.md for provenance + licensing).
+# Low-poly LOW vegetation builder + multi-angle renderer + GLB exporter.
+# Bushes / shrubs / ground cover — no trees.
 #
-# Pure tooling — not shipped in the game. Run headlessly:
+# Two kinds of surface are combined per model:
+#   * solid faceted blobs  (foliage.jpg, flat-shaded, per-face normals)
+#   * leaf cards           (leaves.png alpha-cutout quads, double-sided) so
+#                           individual leaves are visible on the silhouette
+#
+# Textures are online-sourced (CC-BY) — see models/vegetation/README.md.
+# Pure tooling, not shipped. Run headlessly:
 #
 #   xvfb-run -a godot --path rally --rendering-driver opengl3 \
 #       --script tools/build_vegetation.gd
 #
-# Writes tree_pine.glb / tree_oak.glb / bush.glb to models/vegetation/ and a
-# 4-angle contact sheet per model to models/vegetation/previews/.
+# Writes *.glb to models/vegetation/ and a 4-angle contact sheet per model to
+# models/vegetation/previews/.
 # ---------------------------------------------------------------------------
 
 var TEX_DIR := ProjectSettings.globalize_path("res://models/vegetation/textures/")
 var OUT_DIR := ProjectSettings.globalize_path("res://models/vegetation/")
 
-var bark_mat: StandardMaterial3D
-var foliage_mat_tpl: StandardMaterial3D
+var foliage_tex: ImageTexture
+var leaf_tex: ImageTexture
 
-# ---- geometry helpers -----------------------------------------------------
+# ---- low-level geometry ---------------------------------------------------
 
-func _tex(path: String, srgb: bool) -> ImageTexture:
-	var img := Image.load_from_file(path)
-	if srgb:
-		pass
-	return ImageTexture.create_from_image(img)
+func _tex(path: String) -> ImageTexture:
+	return ImageTexture.create_from_image(Image.load_from_file(path))
 
 func add_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3,
 		ua: Vector2, ub: Vector2, uc: Vector2, outward: Vector3) -> void:
@@ -35,7 +36,6 @@ func add_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3,
 	if n.length() < 1e-9:
 		return
 	n = n.normalized()
-	# flip winding+normal so the face points outward
 	if outward != Vector3.ZERO and n.dot(outward) < 0.0:
 		var t := b; b = c; c = t
 		var tu := ub; ub = uc; uc = tu
@@ -49,29 +49,7 @@ func add_quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3,
 	add_tri(st, a, b, c, ua, ub, uc, outward)
 	add_tri(st, a, c, d, ua, uc, ud, outward)
 
-# tapered tube (frustum). r1==0 -> cone. center on (cx,cz) axis.
-func add_frustum(st: SurfaceTool, cx: float, cz: float, y0: float, y1: float,
-		r0: float, r1: float, sides: int, v0: float, v1: float) -> void:
-	for i in sides:
-		var a0 := TAU * float(i) / sides
-		var a1 := TAU * float(i + 1) / sides
-		var u0 := float(i) / sides
-		var u1 := float(i + 1) / sides
-		var b00 := Vector3(cx + cos(a0) * r0, y0, cz + sin(a0) * r0)
-		var b10 := Vector3(cx + cos(a1) * r0, y0, cz + sin(a1) * r0)
-		var out0 := Vector3(cos(a0), 0.2, sin(a0))
-		var outm := Vector3(cos((a0 + a1) * 0.5), 0.2, sin((a0 + a1) * 0.5))
-		if r1 <= 0.0001:
-			var apex := Vector3(cx, y1, cz)
-			add_tri(st, b00, b10, apex,
-				Vector2(u0, v0), Vector2(u1, v0), Vector2((u0 + u1) * 0.5, v1), outm)
-		else:
-			var t00 := Vector3(cx + cos(a0) * r1, y1, cz + sin(a0) * r1)
-			var t10 := Vector3(cx + cos(a1) * r1, y1, cz + sin(a1) * r1)
-			add_quad(st, b00, b10, t10, t00,
-				Vector2(u0, v0), Vector2(u1, v0), Vector2(u1, v1), Vector2(u0, v1), out0)
-
-# low-poly lumpy sphere centred at c. seed drives per-vertex radius jitter.
+# low-poly lumpy sphere centred at c (outward-only jitter keeps it convex).
 func add_blob(st: SurfaceTool, c: Vector3, radius: float, rings: int, sectors: int,
 		seed: int, jitter: float, squash: float) -> void:
 	var rnd := RandomNumberGenerator.new()
@@ -79,18 +57,14 @@ func add_blob(st: SurfaceTool, c: Vector3, radius: float, rings: int, sectors: i
 	var grid := []
 	for ri in range(rings + 1):
 		var row := []
-		var phi := PI * float(ri) / rings        # 0..PI top->bottom
+		var phi := PI * float(ri) / rings
 		for si in range(sectors + 1):
 			var theta := TAU * float(si) / sectors
-			# outward-only jitter keeps the blob convex (no dark inward gashes)
 			var rr := radius * (1.0 + rnd.randf() * jitter)
 			if si == sectors:
-				rr = (row[0] as Vector3).distance_to(c) # close seam exactly
-			var p := c + Vector3(
-				sin(phi) * cos(theta) * rr,
-				cos(phi) * rr * squash,
-				sin(phi) * sin(theta) * rr)
-			row.append(p)
+				rr = (row[0] as Vector3).distance_to(c)
+			row.append(c + Vector3(sin(phi) * cos(theta) * rr,
+				cos(phi) * rr * squash, sin(phi) * sin(theta) * rr))
 		grid.append(row)
 	for ri in range(rings):
 		for si in range(sectors):
@@ -98,70 +72,178 @@ func add_blob(st: SurfaceTool, c: Vector3, radius: float, rings: int, sectors: i
 			var b: Vector3 = grid[ri][si + 1]
 			var cc: Vector3 = grid[ri + 1][si + 1]
 			var d: Vector3 = grid[ri + 1][si]
-			var u0 := float(si) / sectors * 2.0
-			var u1 := float(si + 1) / sectors * 2.0
-			var v0 := float(ri) / rings * 2.0
-			var v1 := float(ri + 1) / rings * 2.0
 			var center_out := ((a + b + cc + d) * 0.25) - c
-			add_quad(st, a, b, cc, d,
-				Vector2(u0, v0), Vector2(u1, v0), Vector2(u1, v1), Vector2(u0, v1), center_out)
+			add_quad(st, a, b, cc, d, Vector2(0, 0), Vector2(2, 0), Vector2(2, 2),
+				Vector2(0, 2), center_out)
+
+# A single double-sided leaf card (quad) centred at `pos`, facing `face`.
+# `uv` selects a sub-window of the leaf atlas so each card shows a few leaves.
+func add_leaf_card(st: SurfaceTool, pos: Vector3, face: Vector3, w: float, h: float,
+		roll: float, uv: Rect2, flip: bool) -> void:
+	face = face.normalized()
+	var up_ref := Vector3.UP
+	if absf(face.dot(up_ref)) > 0.95:
+		up_ref = Vector3.RIGHT
+	var right := up_ref.cross(face).normalized()
+	var up := face.cross(right).normalized()
+	# random roll around the facing axis
+	right = (right * cos(roll) + up * sin(roll)).normalized()
+	up = face.cross(right).normalized()
+	var hw := right * (w * 0.5)
+	var hh := up * (h * 0.5)
+	var a := pos - hw - hh
+	var b := pos + hw - hh
+	var c := pos + hw + hh
+	var d := pos - hw + hh
+	var u0 := uv.position.x
+	var u1 := uv.position.x + uv.size.x
+	if flip:
+		var t := u0; u0 = u1; u1 = t
+	var v0 := uv.position.y + uv.size.y   # v grows downward in the atlas
+	var v1 := uv.position.y
+	# normals set explicitly so shading is leaf-front; material is double-sided
+	st.set_normal(face); st.set_uv(Vector2(u0, v0)); st.add_vertex(a)
+	st.set_normal(face); st.set_uv(Vector2(u1, v0)); st.add_vertex(b)
+	st.set_normal(face); st.set_uv(Vector2(u1, v1)); st.add_vertex(c)
+	st.set_normal(face); st.set_uv(Vector2(u0, v0)); st.add_vertex(a)
+	st.set_normal(face); st.set_uv(Vector2(u1, v1)); st.add_vertex(c)
+	st.set_normal(face); st.set_uv(Vector2(u0, v1)); st.add_vertex(d)
+
+func leaf_uv(rnd: RandomNumberGenerator, zoom: float) -> Rect2:
+	# sample a leafy window of the branch atlas (skip the bare stem near the top)
+	var s := zoom
+	var u0 := rnd.randf_range(0.05, 0.95 - s)
+	var v0 := rnd.randf_range(0.12, 0.92 - s)
+	return Rect2(u0, v0, s, s)
+
+# Scatter leaf cards over a squashed dome of radius (rx,ry,rz) centred at c.
+func scatter_leaves(st: SurfaceTool, c: Vector3, rx: float, ry: float, rz: float,
+		count: int, size_min: float, size_max: float, up_bias: float,
+		zoom: float, seed: int) -> void:
+	var rnd := RandomNumberGenerator.new()
+	rnd.seed = seed
+	for i in count:
+		var theta := rnd.randf_range(0.0, TAU)
+		var phi := acos(rnd.randf_range(-0.25, 1.0))   # mostly upper dome
+		var dir := Vector3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
+		var rad := rnd.randf_range(0.78, 1.0)
+		var pos := c + Vector3(dir.x * rx, dir.y * ry, dir.z * rz) * rad
+		var face := (dir + Vector3.UP * up_bias).normalized()
+		var sz := rnd.randf_range(size_min, size_max)
+		add_leaf_card(st, pos, face, sz, sz * 1.05, rnd.randf_range(0.0, TAU),
+			leaf_uv(rnd, zoom), rnd.randf() < 0.5)
 
 # ---- materials ------------------------------------------------------------
 
-func make_foliage_mat(tint: Color) -> StandardMaterial3D:
+func make_solid(tint: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
-	m.albedo_texture = foliage_mat_tpl.albedo_texture
+	m.albedo_texture = foliage_tex
 	m.albedo_color = tint
 	m.roughness = 1.0
-	m.metallic = 0.0
 	m.uv1_scale = Vector3(1.5, 1.5, 1.0)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	return m
 
-# ---- model builders -------------------------------------------------------
-# Each returns a MeshInstance3D with surface 0 = bark, surface 1 = foliage.
+func make_leaf(tint: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = leaf_tex
+	m.albedo_color = tint
+	m.roughness = 1.0
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.alpha_scissor_threshold = 0.5
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	return m
 
-func finalize(bark_st: SurfaceTool, fol_st: SurfaceTool, fol_mat: StandardMaterial3D) -> MeshInstance3D:
+func finalize(surfaces: Array) -> MeshInstance3D:
 	var mesh := ArrayMesh.new()
-	bark_st.commit(mesh)
-	fol_st.commit(mesh)
-	mesh.surface_set_material(0, bark_mat)
-	mesh.surface_set_material(1, fol_mat)
+	for s in surfaces:
+		(s["st"] as SurfaceTool).commit(mesh)
+	for i in surfaces.size():
+		mesh.surface_set_material(i, surfaces[i]["mat"])
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	return mi
 
-func build_pine() -> MeshInstance3D:
-	var bark := SurfaceTool.new(); bark.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var fol := SurfaceTool.new(); fol.begin(Mesh.PRIMITIVE_TRIANGLES)
-	add_frustum(bark, 0, 0, 0.0, 1.0, 0.16, 0.10, 6, 0.0, 1.0)
-	# three stacked cones
-	add_frustum(fol, 0, 0, 0.55, 1.55, 0.75, 0.0, 8, 0.0, 1.0)
-	add_frustum(fol, 0, 0, 1.20, 2.15, 0.58, 0.0, 8, 0.0, 1.0)
-	add_frustum(fol, 0, 0, 1.80, 2.70, 0.40, 0.0, 8, 0.0, 1.0)
-	return finalize(bark, fol, make_foliage_mat(Color(0.62, 0.82, 0.55)))
+func new_st() -> SurfaceTool:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	return st
 
-func build_oak() -> MeshInstance3D:
-	var bark := SurfaceTool.new(); bark.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var fol := SurfaceTool.new(); fol.begin(Mesh.PRIMITIVE_TRIANGLES)
-	add_frustum(bark, 0, 0, 0.0, 1.05, 0.17, 0.12, 6, 0.0, 1.0)
-	add_blob(fol, Vector3(0, 1.75, 0), 0.95, 5, 9, 11, 0.16, 1.05)
-	add_blob(fol, Vector3(0.45, 1.45, 0.15), 0.55, 4, 8, 23, 0.16, 1.0)
-	add_blob(fol, Vector3(-0.40, 1.55, -0.20), 0.55, 4, 8, 37, 0.16, 1.0)
-	return finalize(bark, fol, make_foliage_mat(Color(0.85, 0.95, 0.70)))
+# ---- models ---------------------------------------------------------------
 
-func build_bush() -> MeshInstance3D:
-	var bark := SurfaceTool.new(); bark.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var fol := SurfaceTool.new(); fol.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# tiny stub so bark surface is non-empty (buried fully below ground, hidden)
-	add_frustum(bark, 0, 0, -0.35, -0.10, 0.08, 0.05, 5, 0.0, 1.0)
-	# blobs sit into the ground (centres low) so they overlap and close the base
+# solid faceted blob bush (kept from the first pass — clean, cheap)
+func build_bush_blob() -> MeshInstance3D:
+	var fol := new_st()
 	add_blob(fol, Vector3(0, 0.30, 0), 0.48, 4, 9, 5, 0.16, 0.95)
 	add_blob(fol, Vector3(0.36, 0.20, 0.10), 0.38, 4, 8, 9, 0.16, 0.9)
 	add_blob(fol, Vector3(-0.32, 0.18, -0.12), 0.36, 4, 8, 19, 0.16, 0.9)
-	return finalize(bark, fol, make_foliage_mat(Color(0.80, 0.95, 0.62)))
+	return finalize([{"st": fol, "mat": make_solid(Color(0.80, 0.95, 0.62))}])
+
+# round leafy bush: small solid core for opacity + dense leaf cards
+func build_bush_leafy() -> MeshInstance3D:
+	var core := new_st()
+	add_blob(core, Vector3(0, 0.28, 0), 0.30, 4, 8, 3, 0.12, 0.9)
+	add_blob(core, Vector3(0.20, 0.20, 0.05), 0.22, 3, 7, 7, 0.12, 0.9)
+	var leaves := new_st()
+	scatter_leaves(leaves, Vector3(0, 0.30, 0), 0.50, 0.42, 0.50, 90,
+		0.26, 0.40, 0.15, 0.34, 101)
+	return finalize([
+		{"st": core, "mat": make_solid(Color(0.45, 0.62, 0.34))},
+		{"st": leaves, "mat": make_leaf(Color(0.95, 1.0, 0.85))},
+	])
+
+# upright shrub: taller, narrower, sparser leaf cards
+func build_shrub() -> MeshInstance3D:
+	var core := new_st()
+	add_blob(core, Vector3(0, 0.42, 0), 0.30, 4, 8, 4, 0.12, 1.4)
+	add_blob(core, Vector3(0, 0.18, 0), 0.26, 3, 7, 6, 0.12, 1.0)
+	var leaves := new_st()
+	scatter_leaves(leaves, Vector3(0, 0.50, 0), 0.34, 0.55, 0.34, 70,
+		0.24, 0.38, 0.25, 0.32, 202)
+	# denser, lower skirt leaves to close the base
+	scatter_leaves(leaves, Vector3(0, 0.18, 0), 0.40, 0.22, 0.40, 40,
+		0.22, 0.34, -0.05, 0.32, 211)
+	return finalize([
+		{"st": core, "mat": make_solid(Color(0.42, 0.58, 0.32))},
+		{"st": leaves, "mat": make_leaf(Color(0.88, 1.0, 0.78))},
+	])
+
+# low spreading ground cover: wide, very low, lots of near-flat leaf cards
+func build_groundcover() -> MeshInstance3D:
+	var leaves := new_st()
+	scatter_leaves(leaves, Vector3(0, 0.10, 0), 0.62, 0.10, 0.62, 80,
+		0.22, 0.36, 0.55, 0.30, 303)
+	return finalize([
+		{"st": leaves, "mat": make_leaf(Color(0.82, 1.0, 0.70))},
+	])
+
+# grass / fern tuft: upright narrow blades radiating from the base
+func build_grass_tuft() -> MeshInstance3D:
+	var leaves := new_st()
+	var rnd := RandomNumberGenerator.new(); rnd.seed = 404
+	for i in 42:
+		var theta := rnd.randf_range(0.0, TAU)
+		var r := rnd.randf_range(0.0, 0.22)
+		var base := Vector3(cos(theta) * r, 0.0, sin(theta) * r)
+		var lean := Vector3(cos(theta), 0.0, sin(theta)) * rnd.randf_range(0.05, 0.22)
+		var h := rnd.randf_range(0.35, 0.6)
+		var top := base + Vector3(0, h, 0) + lean
+		var mid := (base + top) * 0.5
+		var face := Vector3(cos(theta + 1.2), 0.15, sin(theta + 1.2)).normalized()
+		# tall thin vertical UV strip = a blade with a few leaves
+		var u0 := rnd.randf_range(0.1, 0.7)
+		var uv := Rect2(u0, rnd.randf_range(0.15, 0.45), 0.18, 0.45)
+		add_leaf_card(leaves, mid, face, rnd.randf_range(0.10, 0.16), h * 1.1,
+			0.0, uv, rnd.randf() < 0.5)
+	return finalize([
+		{"st": leaves, "mat": make_leaf(Color(0.80, 1.0, 0.62))},
+	])
 
 # ---- rendering ------------------------------------------------------------
+
+const TILE := 360
+const TILE_H := 380
 
 var vp: SubViewport
 var cam: Camera3D
@@ -170,7 +252,6 @@ var pivot: Node3D
 func setup_stage() -> void:
 	vp = SubViewport.new()
 	vp.size = Vector2i(TILE, TILE_H)
-	vp.transparent_bg = false
 	vp.world_3d = World3D.new()
 	vp.msaa_3d = Viewport.MSAA_4X
 	get_root().add_child(vp)
@@ -180,11 +261,11 @@ func setup_stage() -> void:
 	env.background_color = Color(0.74, 0.83, 0.92)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.55, 0.6, 0.68)
-	env.ambient_light_energy = 0.9
+	env.ambient_light_energy = 1.0
 
 	cam = Camera3D.new()
 	cam.environment = env
-	cam.fov = 38.0
+	cam.fov = 36.0
 	vp.add_child(cam)
 
 	var key := DirectionalLight3D.new()
@@ -193,11 +274,10 @@ func setup_stage() -> void:
 	vp.add_child(key)
 	var fill := DirectionalLight3D.new()
 	fill.rotation_degrees = Vector3(-20, 130, 0)
-	fill.light_energy = 0.35
+	fill.light_energy = 0.4
 	fill.light_color = Color(0.8, 0.85, 1.0)
 	vp.add_child(fill)
 
-	# ground disc
 	var ground := MeshInstance3D.new()
 	var pm := PlaneMesh.new(); pm.size = Vector2(8, 8)
 	ground.mesh = pm
@@ -210,9 +290,6 @@ func setup_stage() -> void:
 	pivot = Node3D.new()
 	vp.add_child(pivot)
 
-const TILE := 360
-const TILE_H := 440
-
 func render_one() -> Image:
 	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	await process_frame
@@ -220,20 +297,12 @@ func render_one() -> Image:
 	await process_frame
 	return vp.get_texture().get_image()
 
-# render a model from several angles into one montage row image
 func render_model(model: MeshInstance3D, top_y: float, look_y: float, dist: float) -> Image:
-	for c in pivot.get_children():
-		pivot.remove_child(c); c.queue_free()
+	for ch in pivot.get_children():
+		pivot.remove_child(ch); ch.queue_free()
 	pivot.add_child(model)
-	pivot.rotation = Vector3.ZERO
-
-	# (yaw, extra camera height) per view: front-3/4, side, back-3/4, elevated hero
-	var views := [
-		Vector2(25.0, 0.35),
-		Vector2(90.0, 0.35),
-		Vector2(200.0, 0.35),
-		Vector2(135.0, top_y * 0.9),
-	]
+	var views := [Vector2(25.0, 0.25), Vector2(90.0, 0.25),
+		Vector2(200.0, 0.25), Vector2(135.0, top_y * 0.9)]
 	var montage := Image.create(TILE * views.size(), TILE_H, false, Image.FORMAT_RGB8)
 	var idx := 0
 	for v in views:
@@ -250,38 +319,31 @@ func export_glb(model: MeshInstance3D, name: String) -> void:
 	var holder := Node3D.new()
 	holder.name = name
 	var m: MeshInstance3D = model.duplicate()
-	holder.add_child(m)
-	m.owner = holder
+	holder.add_child(m); m.owner = holder
 	get_root().add_child(holder)
 	await process_frame
 	var doc := GLTFDocument.new()
 	var state := GLTFState.new()
-	var err := doc.append_from_scene(holder, state)
-	if err == OK:
+	if doc.append_from_scene(holder, state) == OK:
 		doc.write_to_filesystem(state, OUT_DIR + name + ".glb")
 		print("  exported ", name, ".glb")
 	else:
-		print("  GLB export FAILED for ", name, " err=", err)
+		print("  GLB export FAILED for ", name)
 	get_root().remove_child(holder); holder.queue_free()
 
 func _init() -> void:
-	# materials
-	bark_mat = StandardMaterial3D.new()
-	bark_mat.albedo_texture = _tex(TEX_DIR + "bark.jpg", true)
-	bark_mat.albedo_color = Color(0.95, 0.85, 0.75)
-	bark_mat.roughness = 1.0
-	bark_mat.uv1_scale = Vector3(1.0, 1.0, 1.0)
-	foliage_mat_tpl = StandardMaterial3D.new()
-	foliage_mat_tpl.albedo_texture = _tex(TEX_DIR + "foliage.jpg", true)
-
+	foliage_tex = _tex(TEX_DIR + "foliage.jpg")
+	leaf_tex = _tex(TEX_DIR + "leaves.png")
 	setup_stage()
 	await process_frame
 	await process_frame
 
 	var specs := [
-		{"name": "tree_pine", "fn": "build_pine", "top": 2.7, "look": 1.35, "dist": 5.0},
-		{"name": "tree_oak", "fn": "build_oak", "top": 2.6, "look": 1.35, "dist": 5.2},
-		{"name": "bush", "fn": "build_bush", "top": 0.95, "look": 0.45, "dist": 2.4},
+		{"name": "bush_blob", "fn": "build_bush_blob", "top": 0.85, "look": 0.40, "dist": 2.2},
+		{"name": "bush_leafy", "fn": "build_bush_leafy", "top": 0.95, "look": 0.42, "dist": 2.3},
+		{"name": "shrub", "fn": "build_shrub", "top": 1.15, "look": 0.52, "dist": 2.5},
+		{"name": "groundcover", "fn": "build_groundcover", "top": 0.45, "look": 0.20, "dist": 2.2},
+		{"name": "grass_tuft", "fn": "build_grass_tuft", "top": 0.75, "look": 0.32, "dist": 1.9},
 	]
 	for s in specs:
 		var model: MeshInstance3D = call(s["fn"])

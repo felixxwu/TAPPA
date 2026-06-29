@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://6kyxaukjdnil"
-path="res://.godot/imported/tree_oak.glb-07a286df20ac9cbeaeae8de5f64cdd30.scn"
+uid="uid://k54dhkjboiup"
+path="res://.godot/imported/bush_blob.glb-56ad6dddd5b57bfeed34f8652e5cf2ce.scn"
 
 [deps]
 
-source_file="res://models/vegetation/tree_oak.glb"
-dest_files=["res://.godot/imported/tree_oak.glb-07a286df20ac9cbeaeae8de5f64cdd30.scn"]
+source_file="res://models/vegetation/bush_blob.glb"
+dest_files=["res://.godot/imported/bush_blob.glb-56ad6dddd5b57bfeed34f8652e5cf2ce.scn"]
 
 [params]
 

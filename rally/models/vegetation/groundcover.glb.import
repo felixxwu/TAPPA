@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://diclu4134x3yc"
-path="res://.godot/imported/bush.glb-c0ea0e398a36c47a9fbe847d4e52224f.scn"
+uid="uid://xvxv3pu14ajb"
+path="res://.godot/imported/groundcover.glb-b1cd5494c88103b3ad0b669d44094a8d.scn"
 
 [deps]
 
-source_file="res://models/vegetation/bush.glb"
-dest_files=["res://.godot/imported/bush.glb-c0ea0e398a36c47a9fbe847d4e52224f.scn"]
+source_file="res://models/vegetation/groundcover.glb"
+dest_files=["res://.godot/imported/groundcover.glb-b1cd5494c88103b3ad0b669d44094a8d.scn"]
 
 [params]
 

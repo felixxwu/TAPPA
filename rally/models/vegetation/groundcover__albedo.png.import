@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://sq4324t5m3id"
-path.s3tc="res://.godot/imported/tree_pine__albedo.png-8fc05a7a2373a84db3016de4ed267b8c.s3tc.ctex"
+uid="uid://dch3d7t0cxd5o"
+path.s3tc="res://.godot/imported/groundcover__albedo.png-f046a2e759805b0a461bdfd0f4211f23.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "545ca317c6c6a6317ad9f8928ece8744"
+"md5": "e4b1bc04bfa85b803081fedc9fee0c2d"
 }
 
 [deps]
 
-source_file="res://models/vegetation/tree_pine__albedo.png"
-dest_files=["res://.godot/imported/tree_pine__albedo.png-8fc05a7a2373a84db3016de4ed267b8c.s3tc.ctex"]
+source_file="res://models/vegetation/groundcover__albedo.png"
+dest_files=["res://.godot/imported/groundcover__albedo.png-f046a2e759805b0a461bdfd0f4211f23.s3tc.ctex"]
 
 [params]
 
