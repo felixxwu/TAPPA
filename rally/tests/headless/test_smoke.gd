@@ -440,6 +440,11 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	assert_not_null(sign0, "each sign is a RigidBody3D")
 	assert_gt(sign0.mass, 0.0, "sign body has a mass")
 	assert_lt(sign0.mass, 50.0, "sign is light enough for the car to scatter")
+	# Like a spectator ragdoll, the sign never runs real collision physics against the
+	# car: it sits on its own layer (off the car's default mask=1) and masks only the
+	# world layer (terrain/trees), so the car drives straight through it.
+	assert_eq(sign0.collision_layer, 1 << 4, "sign is on its own layer, off the car's mask")
+	assert_eq(sign0.collision_mask, 1, "sign masks only the world layer (terrain/trees)")
 	# Spawned FROZEN so it rests exactly where placed even where terrain collision
 	# isn't streamed yet (TerrainManager only loads a ring around the car) — a live
 	# body would free-fall into the void before the player reached it. The car wakes
@@ -490,11 +495,18 @@ func test_sign_wakes_only_on_dynamic_non_self_contact() -> void:
 	add_child_autofree(stat)
 	field._wake_sign(stat, sign0)
 	assert_true(sign0.freeze, "a sign ignores static bodies (terrain, trees)")
-	# A dynamic body (the car) wakes it.
+	# A dynamic body (the car) knocks it over: the sign unfreezes, is flung along the
+	# car's velocity (a fake collision — never a real one), and gains a collision
+	# exception so it can never touch the car afterwards either.
 	var dyn := RigidBody3D.new()
 	add_child_autofree(dyn)
+	dyn.linear_velocity = Vector3(0.0, 0.0, -12.0)
 	field._wake_sign(dyn, sign0)
 	assert_false(sign0.freeze, "a dynamic body (the car) unfreezes the sign")
+	assert_gt(sign0.linear_velocity.length(), 0.0,
+		"the struck sign is launched, not left to collide with the car")
+	assert_true(sign0.get_collision_exceptions().has(dyn),
+		"the sign adds a collision exception so it never collides with the car")
 
 
 func test_main_scene_generates_a_track() -> void:

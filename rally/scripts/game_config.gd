@@ -795,6 +795,20 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Map of texture_key (e.g. "sector_2", "arrow_square_left") → res://textures/signs/*.png.
 ## Empty leaves every sign on its per-kind colour fallback.
 @export var sign_textures: Dictionary = {}
+# Knock-over launch, mirroring the spectator ragdoll (todo/roadside-signs.md). On
+# contact the sign is masked off the car and flung along the car's travel direction
+# instead of colliding with it — a fake collision that lets it tumble on the terrain
+# without ever bogging the vehicle down.
+## Fraction of the car's speed imparted to a struck sign.
+@export_range(0.0, 3.0) var sign_knock_speed_factor := 1.0
+## Lower clamp (m/s) on the launch speed, so even a slow nudge scatters the sign.
+@export_range(0.0, 20.0) var sign_knock_speed_min := 4.0
+## Upper clamp (m/s) on the launch speed, so a fast hit doesn't fling it absurdly far.
+@export_range(0.0, 60.0) var sign_knock_speed_max := 26.0
+## Upward kick (m/s) added to the launch so the sign lifts and tumbles, not just slides.
+@export_range(0.0, 12.0) var sign_knock_lift_mps := 3.5
+## Random tumble rate (rad/s) applied as spin when the sign is struck.
+@export_range(0.0, 30.0) var sign_knock_spin := 11.0
 
 @export_group("Finish Arch")
 # The inflatable rally gates straddling the road (features/finish-arch.md): a
@@ -977,6 +991,16 @@ func sign_render_params() -> Dictionary:
 		"mass_kg": sign_mass_kg,
 		"textures": sign_textures,
 		"track_width": track_width,
+		"knock_speed_factor": sign_knock_speed_factor,
+		"knock_speed_min": sign_knock_speed_min,
+		"knock_speed_max": sign_knock_speed_max,
+		"knock_lift_mps": sign_knock_lift_mps,
+		"knock_spin": sign_knock_spin,
+		# Structural (mirrors the spectator ragdoll): the sign lives on its own layer,
+		# off the car's mask, and only masks the world layer (terrain + trees). The car
+		# shares the world layer, so SignField also adds an explicit exception on contact.
+		"knock_layer": 1 << 4,
+		"knock_mask": 1,
 	}
 
 

@@ -34,17 +34,21 @@
   — two splayed double-sided **quad** panels (full face texture per side) on the
   `ps1_models` shader, oriented to the road tangent and sat on the flat road surface
   (`floor.height_at(centerline pt)`), each with its own collision. Signs are
-  **knockable cosmetic props**: a kart can shove one aside without taking damage.
-  Spawned **frozen** (terrain collision is streamed only near the car, so a live
-  body on a far part of the track would free-fall into the void); a child `Area3D`
-  waker unfreezes a sign when the dynamic car reaches it. Missing texture → colour
+  **knockable cosmetic props** that behave like a knocked **spectator** rather than a
+  solid prop: they **never collide with the car** (own layer off the car's mask, world-
+  only mask + an explicit exception on contact). Spawned **frozen** (terrain collision
+  is streamed only near the car, so a live body on a far part of the track would free-
+  fall into the void); a child `Area3D` waker **launches** the sign along the car's
+  velocity when the dynamic car reaches it — a fake collision — and it then tumbles on
+  the terrain under physics without bogging the vehicle down. Missing texture → colour
   fallback. Still a kind-agnostic builder (could render a sector/start/finish
   board) though `plan` only feeds it turns.
 - **Config-first knobs.** A `Roadside Signs` `@export_group` in `game_config.gd`
   (`sign_panel_size_m`, `sign_thickness_m`, `sign_splay_deg`, `sign_edge_inset_m`,
-  `sign_base_depth_m`, `sign_mass_kg`, `sign_textures`) bundled via
-  `sign_render_params()`. (`sign_sector_count` lives here too but only feeds the
-  `sector_offsets` stage-timer hook now.)
+  `sign_base_depth_m`, `sign_mass_kg`, `sign_textures`, and the knock-over launch
+  `sign_knock_speed_factor`/`_min`/`_max`, `sign_knock_lift_mps`, `sign_knock_spin`)
+  bundled via `sign_render_params()`. (`sign_sector_count` lives here too but only
+  feeds the `sector_offsets` stage-timer hook now.)
 - **Tests + docs.** `test_sign_layout.gd` covers turns-only placement, the turn
   count, keys (incl. 5/6 unsigned), arc offsets, seed determinism and `sector_offsets`;
   `test_smoke.gd` asserts the field's node + collision counts and ground height.
