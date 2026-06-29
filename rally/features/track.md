@@ -131,6 +131,25 @@ per-wheel grip (`surface_at` → `Drivetrain.surface_grip`), so look and feel st
 in sync. Tarmac is a placeholder solid grey for now — see
 [../todo/tarmac-texture.md](../todo/tarmac-texture.md).
 
+### Road markings (`RoadMarkings`)
+
+`scripts/road_markings.gd` (`class_name RoadMarkings`, a `Node3D`) paints lane
+lines along the **tarmac** stretches so tarmac reads unmistakably as tarmac
+(gravel stays bare): two **solid edge lines** just inside the shoulders plus a
+**dashed centre line**. It is a single static unshaded `ArrayMesh`, built once by
+`world.gd._generate_track()` (after `set_track`, so the surface split is baked)
+and rebuilt on a regeneration — it never updates per frame, so the heaviest
+shader (the floor) is untouched. `build()` walks the centerline by arc length;
+at each sample it reads the tarmac weight from the terrain's `surface_at()` and
+paints only above `road_marking_tarmac_threshold`, breaking the strip in the
+gravel sections and (for the centre line) in the dash gaps. Vertices sit
+`road_marking_height_m` above the road surface (`terrain.height_at()`, since the
+road is flattened to the centerline height across its width) and carry the same
+baked terrain light (`terrain.light_at()`) in their vertex colour as the floor,
+so the lines shade with the hills instead of glowing flat white. The terrain is
+duck-typed (`surface_at`/`height_at`/`light_at`), so a null/stub terrain on flat
+test fixtures reads as ground 0 / full tarmac / unlit white.
+
 `world.gd._generate_track()` orders startup so nothing is rebuilt: run the search
 from the car's spawn pose (position + −Z forward, projected to XZ) using the
 `track_*` config knobs → `Floor.set_track(centerline, width, transition_m)`
@@ -146,7 +165,12 @@ shader change.
 `track_width`, `track_clearance`, `track_seed`, `track_turn_count`,
 `track_straightness`, `track_transition_cells`, `track_tarmac_fraction`,
 `track_surface_transition_m`, `tarmac_color` in `config/game_config.tres` (the
-`Track` group of `GameConfig`).
+`Track` group of `GameConfig`). Lane paint lives in the `Road Markings` group:
+`road_markings_enabled`, `road_marking_color`, `road_marking_width_m`,
+`road_marking_edge_inset_m`, `road_marking_center_dash_m`,
+`road_marking_center_gap_m`, `road_marking_height_m`,
+`road_marking_tarmac_threshold`, `road_marking_sample_step_m`
+(via `GameConfig.road_marking_params()`).
 
 ## Track progress & off-track reset
 
@@ -166,3 +190,8 @@ length, starts at origin) for each, the documented right-hand turn direction and
 `mirror_points`, `rasterize_cells`, `exit_heading`) and the search: determinism
 per seed, exact corner count, start at the spawn frame, no cell overlap between
 pieces, G1 continuity at joins, and both L/R flips appearing across seeds.
+
+`tests/headless/test_road_markings.gd` — `RoadMarkings.build()` against a straight
+curve + stub terrain: paint appears on tarmac and not on gravel, the disabled flag
+yields no mesh, the edge lines stay inside the road edges, the paint starts at the
+gravel→tarmac switch, and wider dash gaps remove centre-line geometry.

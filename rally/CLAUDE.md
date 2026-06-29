@@ -144,7 +144,15 @@
   (a `GameConfig` resource) — change values there, not in scripts or
   `main.tscn`. Scene/script literals are only fallback defaults.
 - If you're running in a managed remote execution environment (Claude Code on
-  the web — an isolated cloud container, not the user's local machine), do ALL
-  work directly on `main`. Do NOT create feature branches. Commit and push
-  straight to `main` as soon as a change is ready — pushing immediately gets the
-  work back to the user and shortens the iteration cycle.
+  the web — an isolated cloud container, not the user's local machine), keep
+  developing on whatever feature branch the harness assigned, but ALWAYS merge
+  that branch into `main` and push `main` when you're done working — every time,
+  as the last step before handing back. Getting the work onto `main` is what
+  shortens the iteration cycle; the feature branch alone doesn't help the user.
+  You can detect this environment deterministically: the env var
+  `CLAUDE_CODE_REMOTE` is `true` (the same signal
+  `.claude/hooks/session-start.sh` keys off). When in doubt, check it rather
+  than guessing.
+  - Do NOT merge to `main` if you're in ANY other environment (e.g. local dev,
+    where `CLAUDE_CODE_REMOTE` is not `true`). There, leave the branch as-is and
+    let the user handle merging — only the remote environment auto-merges.

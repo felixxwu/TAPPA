@@ -87,16 +87,32 @@ renderer-independent mirrors, since the MultiMesh transform buffer lives in the
 RenderingServer (a no-op stub under `--headless`, so tests read these instead).
 
 The tree mesh is extracted once from the `.glb` PackedScene by
-`world.gd._tree_mesh()` and shared by every bin's MultiMesh. Its materials are
-**unshaded** `StandardMaterial3D` — the depth shading is baked into the mesh's
-vertex colours (see the asset section below), so trees read correctly with no
-dedicated scene light and stay in the flat PS1 look. The **canopy material is
-double-sided** (`cull_mode = CULL_DISABLED`): the mesh winds correctly for
-back-face culling in software GL, but the canopy rendered concave / "front faces
-missing" on some real-device / web GL targets (a platform culling difference), so
-drawing both sides guarantees the camera-facing leaves always appear. The canopy
-is a closed shell, so from outside it looks identical — just robust everywhere.
-The trunk stays single-sided (`CULL_BACK`).
+`world.gd._tree_mesh()` and shared by every bin's MultiMesh. The **trunk** keeps
+its baked **unshaded** `StandardMaterial3D` — the depth shading is baked into the
+mesh's vertex colours (see the asset section below), so it reads correctly with no
+dedicated scene light and stays in the flat PS1 look — single-sided (`CULL_BACK`).
+
+The **canopy** is double-sided (`cull_mode = CULL_DISABLED`): the mesh winds
+correctly for back-face culling in software GL, but the canopy rendered concave /
+"front faces missing" on some real-device / web GL targets (a platform culling
+difference), so drawing both sides guarantees the camera-facing leaves always
+appear. The canopy is a closed shell, so from outside it looks identical — just
+robust everywhere.
+
+**Near-camera dissolve (`shaders/tree_canopy.gdshader`).** Double-siding the
+canopy is robust but reintroduces a problem single-sided culling used to solve for
+free: with both sides drawn, the inward-facing leaves still render when the chase
+camera pushes *inside* a tree, blocking the view. So `world.gd._tree_mesh()` swaps
+the canopy surface's material for a `ShaderMaterial` that keeps the unshaded,
+double-sided, vertex-colour-tinted leaf look (`ALBEDO = leaves × COLOR`) but
+**dither-dissolves fragments near the camera**: canopy fragments within
+`tree_near_fade_start_m` of the camera are fully discarded and ramp back to solid
+by `tree_near_fade_end_m`, via the same Bayer screen-door dither the distance cull
+uses (`billboard.gdshader`). A clear pocket opens around the camera with no
+transparency sorting and no per-frame CPU — independent of the platform's culling,
+and it works for any camera and every tree at once (no per-instance MultiMesh
+data needed). The canopy surface is identified as the textured one
+(`albedo_texture != null`); the trunk is untouched.
 
 ## Collision (`TreeMeshField`)
 
@@ -163,7 +179,9 @@ green so the ground cover reads a bit more against the grass).
 size, default 25 m — smaller = finer LOD/cull granularity but more draw calls),
 `tree_collision_radius_m` (box half-extent in X/Z), `tree_collision_height_m`
 (box height), `tree_render_distance_m` (cull distance), `tree_render_fade_m`
-(dissolve band), `bush_height_m` (height the ground-cover bush mesh is scaled to),
+(dissolve band), `tree_near_fade_start_m` / `tree_near_fade_end_m` (the
+near-camera canopy dissolve range — fragments within `start` of the camera fully
+gone, fully solid again by `end`), `bush_height_m` (height the ground-cover bush mesh is scaled to),
 `bush_tint` (albedo tint lifting the bush colour a touch against the grass).
 `GameConfig.tree_params()` packs the scalar scatter knobs for
 `TreeScatter.scatter`; the collision knobs are passed straight to
@@ -186,7 +204,9 @@ between, and every gated tree sits above the `1 - forestiness` noise threshold).
 `BillboardField` has one MultiMesh instance per position (with/without collision);
 a built `TreeMeshField` (trees) bins instances into per-cell MultiMeshes, wires
 `visibility_range_end`/`margin` to the render distance/fade, scales instances to
-the tree height, and builds one collision box per tree resting on the ground; a
+the tree height, and builds one collision box per tree resting on the ground; the
+shared tree mesh's canopy surface is the near-camera dissolve `ShaderMaterial` with
+its fade range wired from config; a
 `TreeMeshField` built for bushes (`with_collision = false`, `bake_terrain_light =
 true`) skips the collision body and enables per-instance MultiMesh colour; and the
 live world carries two `TreeMeshField`s — trees (with collision) and bushes

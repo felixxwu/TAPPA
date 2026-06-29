@@ -165,6 +165,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 	set(value):
 		engine_type = value
 		_apply_engine_preset()
+## Hidden global de-rate applied to EVERY car's drive torque. Multiplies the
+## crank torque the engine actually makes (engine.gd), so it scales acceleration
+## for all cars at once WITHOUT touching the published peak_torque — the stats
+## panel and power-to-weight still report the full, pre-scaling figure. Use it to
+## globally dial back pace without re-balancing every car. 1.0 = no scaling.
+@export_range(0.1, 1.0) var global_torque_scale := 0.6
 @export var idle_rpm := 900.0  # the no-stall floor: omega never drops below this
 ## Bouncing rev limiter width (rpm): fuel cuts at redline and only restores once
 ## the revs fall this far below it, so they oscillate across the band — an
@@ -263,10 +269,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Gap (m) between queued cars along the start heading (leader ahead, one behind).
 @export var start_queue_gap := 7.0
 ## Safety cap (s) on the launch animation: the fade-to-black normally waits for the
-## player to roll up and come to a COMPLETE stop, but won't wait longer than this.
-@export var start_drive_off_seconds := 3.5
-## Seconds a rolling-up car holds throttle before easing off (< the drive-off
-## length, so it settles under the parking brake). Applies to the player + trailer.
+## player to roll up the full gap to the line and come to a COMPLETE stop, but won't
+## wait longer than this.
+@export var start_drive_off_seconds := 5.0
+## Minimum roll-up window (s) after the player's stagger before the fade may begin, so
+## the reveal can't cut while the player is still mid-roll (the fade also waits for a
+## complete stop on top of this).
 @export var start_trailer_scoot_seconds := 0.7
 ## Stagger (s) between successive cars launching, so the queue rolls off one after
 ## another (leader, then player, then trailer) rather than all at once.
@@ -277,8 +285,8 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## has road to drive off down (the queue cars are axis-locked to a straight line).
 @export var start_lead_in_ahead_m := 22.0
 ## Straight road (m) extended BEHIND the start line on a staged run, so the player
-## (staged half a gap back) and the trailing car behind it sit on road.
-@export var start_lead_in_behind_m := 16.0
+## (staged a full gap back) and the trailing car (two gaps back) sit on road.
+@export var start_lead_in_behind_m := 20.0
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
@@ -518,8 +526,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 300.0) var speed_lines_start_kmh := 60.0
 ## Speed (km/h) at which the streaks reach full strength (≈ the car's top speed).
 @export_range(0.0, 400.0) var speed_lines_full_kmh := 78.0
-## Cap on overall strength (alpha) at and above speed_lines_full_kmh.
-@export_range(0.0, 1.0) var speed_lines_max_intensity := 0.8
+## Cap on overall strength (alpha) at and above speed_lines_full_kmh. Kept well
+## below 1.0 so the streaks stay translucent and never fully obscure the screen.
+@export_range(0.0, 1.0) var speed_lines_max_intensity := 0.2
 ## How many angular streaks ring the screen; higher = more, finer lines.
 @export_range(8.0, 256.0) var speed_lines_density := 28.0
 ## Innermost normalised screen radius a streak can reach — higher keeps more of
@@ -618,6 +627,35 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
 
+@export_group("Road Markings")
+## Painted lane lines (two solid edge lines + a dashed centre line) laid along the
+## TARMAC sections of the track so tarmac reads as tarmac (gravel stays bare). A
+## static unshaded mesh built once at generation; see scripts/road_markings.gd.
+@export var road_markings_enabled := true
+## Paint colour — a slightly weathered off-white rather than pure white so the
+## lines sit in the scene instead of glowing. Tinted per-vertex by the same baked
+## terrain light as the floor, so tune it against the lit road in-game.
+@export var road_marking_color := Color(0.82, 0.82, 0.78)
+## Width of each painted stripe, in metres.
+@export_range(0.05, 0.5) var road_marking_width_m := 0.12
+## How far inside each road edge (half the track width) the edge lines sit, in
+## metres. Keep it above road_marking_width_m * 0.5 so the stripe stays fully on
+## the road rather than spilling onto the verge.
+@export_range(0.1, 1.5) var road_marking_edge_inset_m := 0.4
+## Painted length of each centre-line dash, in metres.
+@export_range(0.2, 10.0) var road_marking_center_dash_m := 1.5
+## Unpainted gap between centre-line dashes, in metres.
+@export_range(0.2, 10.0) var road_marking_center_gap_m := 3.0
+## Height the paint is laid above the road surface, in metres — just enough to
+## avoid z-fighting with the (near-flat) road mesh without looking like it floats.
+@export_range(0.0, 0.5) var road_marking_height_m := 0.05
+## Minimum tarmac weight (0 = gravel, 1 = tarmac) a point needs before it is
+## painted, so the lines appear only on the tarmac side of the surface switch.
+@export_range(0.0, 1.0) var road_marking_tarmac_threshold := 0.5
+## Arc-length step, in metres, at which the centerline is sampled to build the
+## paint mesh. Smaller = smoother lines on tight corners at more vertices.
+@export_range(0.1, 2.0) var road_marking_sample_step_m := 0.4
+
 @export_group("Tire Marks")
 ## Gravel ruts laid behind the wheels while driving on the road (features/tire-marks.md).
 @export var tire_marks_enabled := true
@@ -708,6 +746,13 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(10.0, 500.0) var tree_render_distance_m := 80.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export_range(0.0, 100.0) var tree_render_fade_m := 15.0
+## Near-camera dissolve: canopy fragments closer than this (m) to the camera are
+## fully dithered away, so a tree the camera pushes inside stops blocking the view
+## (the canopy is double-sided for render robustness, so culling can't do this).
+@export_range(0.0, 10.0) var tree_near_fade_start_m := 0.5
+## Distance (m) by which the near-camera canopy dissolve is fully solid again.
+## Must be >= tree_near_fade_start_m; the gap is the dither band.
+@export_range(0.1, 20.0) var tree_near_fade_end_m := 3.0
 ## Grid cell size (m) trees are binned into for rendering. Each bin is its own
 ## MultiMesh, so the engine can drop far bins to the mesh's importer LODs and
 ## cull them past tree_render_distance_m. Smaller = finer LOD/cull granularity
@@ -939,6 +984,21 @@ func sign_render_params() -> Dictionary:
 # bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
 # the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
 # an explicit exception for since the car shares layer 1.
+func road_marking_params() -> Dictionary:
+	return {
+		"enabled": road_markings_enabled,
+		"half_width": track_width * 0.5,
+		"color": road_marking_color,
+		"width_m": road_marking_width_m,
+		"edge_inset_m": road_marking_edge_inset_m,
+		"center_dash_m": road_marking_center_dash_m,
+		"center_gap_m": road_marking_center_gap_m,
+		"height_m": road_marking_height_m,
+		"tarmac_threshold": road_marking_tarmac_threshold,
+		"sample_step_m": road_marking_sample_step_m,
+	}
+
+
 func spectator_params() -> Dictionary:
 	return {
 		"group_size": spectator_group_size,

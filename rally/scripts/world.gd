@@ -7,6 +7,9 @@ const BUSH_SEED_OFFSET := 1013
 # Ground-cover bush: low-poly mesh (replaces the old bush.webp billboards),
 # instanced via TreeMeshField (same renderer as trees, no collision). See features/trees.md.
 const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
+# Near-camera dither dissolve applied to the tree canopy so trees don't block the
+# chase camera when it pushes inside them (see shaders/tree_canopy.gdshader).
+const TREE_CANOPY_SHADER := preload("res://shaders/tree_canopy.gdshader")
 
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
@@ -32,13 +35,27 @@ func _tree_mesh() -> Mesh:
 		for c in n.get_children():
 			stack.append(c)
 	scene.queue_free()
-	# The GLB's baked StandardMaterials import with linear filtering, which blurs
-	# the leaf texture; force nearest (keeping mipmaps) for the flat PS1 look.
 	if _tree_mesh_cache != null:
+		var cfg: GameConfig = Config.data
 		for s in _tree_mesh_cache.get_surface_count():
 			var sm := _tree_mesh_cache.surface_get_material(s) as BaseMaterial3D
-			if sm != null:
-				sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+			if sm == null:
+				continue
+			# The GLB's baked StandardMaterials import with linear filtering, which
+			# blurs the leaf texture; force nearest (keeping mipmaps) for the flat
+			# PS1 look.
+			sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+			# The canopy is the textured (leaf-mapped) surface; the trunk has no
+			# texture. Swap the canopy to a ShaderMaterial that keeps the unshaded,
+			# double-sided, vertex-colour-tinted look but dither-dissolves near the
+			# camera so a tree the chase camera enters stops blocking the view.
+			if sm.albedo_texture != null:
+				var canopy := ShaderMaterial.new()
+				canopy.shader = TREE_CANOPY_SHADER
+				canopy.set_shader_parameter("albedo", sm.albedo_texture)
+				canopy.set_shader_parameter("near_fade_start", cfg.tree_near_fade_start_m)
+				canopy.set_shader_parameter("near_fade_end", cfg.tree_near_fade_end_m)
+				_tree_mesh_cache.surface_set_material(s, canopy)
 	return _tree_mesh_cache
 
 
@@ -310,6 +327,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		add_child(_tire_marks)
 	_tire_marks.setup(road_centerline, $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
 
+	# Road paint: solid edge lines + a dashed centre line along the tarmac sections,
+	# so tarmac reads as tarmac (features/track.md). A static mesh built once from the
+	# centerline + surface split; rebuilt on a regeneration like the managers above.
+	if _road_markings == null:
+		_road_markings = RoadMarkings.new()
+		_road_markings.name = "RoadMarkings"
+		add_child(_road_markings)
+	_road_markings.build(road_centerline, $Floor as TerrainManager, cfg.road_marking_params())
+
 	# Wheel dust: cheap gravel spray flung from the driven wheels under wheelspin
 	# (features/wheel-dust.md). Reused across regenerations like the managers above;
 	# the surface under each wheel (gravel vs grass/tarmac) is read live off the
@@ -482,6 +508,7 @@ var _stage_manager: StageManager
 
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
+var _road_markings: RoadMarkings
 
 # Flings cheap gravel dust off the driven wheels under wheelspin (re-targeted on
 # a car swap).

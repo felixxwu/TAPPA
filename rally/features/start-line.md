@@ -19,13 +19,15 @@ car is held locked. Three phases, driven in `_process`:
    **leader** car ahead and a **trailing** car behind. The driving HUD + mobile
    controls are hidden. Launch with the button, `menu_select` (Enter / gamepad A),
    or a tap.
-2. **DRIVE-OFF (launch)** — a **staggered rolling start**: the leader pulls away
-   first, then one `start_queue_stagger_seconds` later the **player rolls up** to the
-   line, then another stagger later the **trailer** rolls up behind it. Each holds
-   throttle for `start_trailer_scoot_seconds` then eases off so its parking brake
-   settles it. The overlay hides. The fade does **not** start until the player has
-   rolled up and come to a **complete stop** (`STOP_SPEED_EPS`), so the chase-cam
-   cut never happens mid-roll; `start_drive_off_seconds` is a safety cap.
+2. **DRIVE-OFF (launch)** — a **staggered rolling start**: the leader (sitting **on the
+   line**) pulls away first, then one `start_queue_stagger_seconds` later the **player
+   rolls up** to the line, then another stagger later the **trailer** rolls up to where
+   the player started (a gap behind the line). The player and trailer each drive forward
+   while well behind their slot, coast into a speed-aware brake point, then **brake to a
+   complete stop** on it (rather than flooring it for a fixed window and coasting past).
+   The overlay hides. The fade does **not** start until the player has rolled up and
+   come to a **complete stop** (`STOP_SPEED_EPS`), so the chase-cam cut never happens
+   mid-roll; `start_drive_off_seconds` is a safety cap.
 3. **FADE** — the screen **fades to black** (`start_fade_seconds`); at full black the
    player is released to normal driving, the queue cars are despawned, the camera
    hands back to the **chase camera**, the **driving UI returns**, and
@@ -44,10 +46,14 @@ gearbox, and are **axis-locked to a straight line** (`axis_lock_linear_x` latera
 `axis_lock_angular_y` yaw — the start heading is always world −Z — leaving suspension
 linear-Y and pitch angular-X free) so they can't veer.
 
-The **player** is staged half a `start_queue_gap` behind the line and rolls up to it
-with the field (so the trailer following it keeps its gap instead of rear-ending a
-stationary car); at the fade it is **released** — AI override and axis locks cleared,
-gearbox-auto restored — so the run drives normally. The `StageManager` keeps it
+The **leader** sits **on the start line** and drives off down the lead-in, so it
+actually starts from the line rather than spawning past it. The **player** is staged a
+full `start_queue_gap` behind it (directly in the leader's old slot's queue) and rolls
+the whole gap up to the line — so it travels a meaningful distance before braking —
+while the **trailer**, staged a gap behind the player (two gaps behind the line), rolls
+up to where the player started and **brakes to a stop** there too (so it doesn't coast
+through and drift). At the fade the player is **released** — AI override and axis locks
+cleared, gearbox-auto restored — so the run drives normally. The `StageManager` keeps it
 locked through the countdown, so it holds at the line until GO. The player ends near
 the line; track progress projects onto the lead-in, so the exact stop doesn't matter.
 
@@ -101,12 +107,12 @@ the countdown arms immediately.
 | `start_orbit_radius` | `7.0` | Orbit camera radius (m) from the car. |
 | `start_orbit_height` | `2.4` | Orbit camera height (m) above the car. |
 | `start_queue_gap` | `7.0` | Gap (m) between queued cars along the start heading. |
-| `start_drive_off_seconds` | `3.5` | Safety cap on the drive-off; the fade normally waits for the player to fully stop. |
-| `start_trailer_scoot_seconds` | `0.7` | How long a rolling-up car (player / trailer) holds throttle before easing off. |
+| `start_drive_off_seconds` | `5.0` | Safety cap on the drive-off; the fade normally waits for the player to roll the full gap up and fully stop. |
+| `start_trailer_scoot_seconds` | `0.7` | Minimum roll-up window after the player's stagger before the fade may begin (it also waits for a complete stop). |
 | `start_queue_stagger_seconds` | `0.35` | Delay between successive cars launching (leader → player → trailer). |
 | `start_fade_seconds` | `0.6` | Length of each half (out, back) of the fade. |
 | `start_lead_in_ahead_m` | `22.0` | Straight road forced ahead of the start line (staged runs). |
-| `start_lead_in_behind_m` | `16.0` | Straight road extended behind the start line, for the staged player + trailer. |
+| `start_lead_in_behind_m` | `20.0` | Straight road extended behind the start line, for the staged player (a gap back) + trailer (two gaps back). |
 
 See [configuration.md](configuration.md).
 
@@ -115,9 +121,10 @@ See [configuration.md](configuration.md).
 - `tests/headless/test_start_line.gd` — the reveal lists the top three rivals to beat
   with each driver's name, car and time (and a single `—` when none) + context, hides
   the HUD and takes the camera; the queue cars are scripted + axis-locked + live (not
-  frozen); the player is staged half a gap behind and scripted, `launch()` floors the
-  leader, the player rolls up after its stagger, the fade waits for the player to come
-  to a complete stop, and after the drive-off + fade the player is released to normal
+  frozen); the player is staged a full gap behind and scripted, `launch()` floors the
+  leader, the player rolls up after its stagger, the trailer rolls up after its later
+  stagger and brakes to a stop on its slot, the fade waits for the player to come to a
+  complete stop, and after the drive-off + fade the player is released to normal
   driving and `begin_countdown()` fires exactly once (idempotent).
 - `tests/headless/test_rally_session.gd` — `current_event_target_ms()` returns the
   fastest non-DNF rival's time for the current event and tracks the event index;

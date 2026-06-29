@@ -51,8 +51,14 @@ revs):
 
 ```
 friction = engine_friction_base + engine_friction_slope × rpm / 1000
-crank    = throttle × peak_torque × _torque_fraction(rpm) − friction
+crank    = throttle × peak_torque × global_torque_scale × _torque_fraction(rpm) − friction
 ```
+
+`global_torque_scale` (shipped at **0.4**) is a **hidden** global de-rate on the
+drive torque every car makes. It scales acceleration for the whole field at once
+without changing the published `peak_torque`, so the stats panel and
+`power_to_weight` still report the full, pre-scaling figure — it's a balance knob
+for overall pace, not a per-car spec. `1.0` disables it.
 
 Off throttle (and during fuel-cut/shifts) the gross term is zero, so `crank`
 is just `−friction` — that is the **engine braking**, and because friction
