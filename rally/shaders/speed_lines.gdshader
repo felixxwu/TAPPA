@@ -12,7 +12,7 @@ uniform float intensity : hint_range(0.0, 1.0) = 0.0;
 // Streak colour (black by default — the standard look).
 uniform vec4 line_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 // Number of angular slots around the circle; higher = more, finer streaks.
-uniform float density = 44.0;
+uniform float density = 28.0;
 // Radial fade band, in normalised screen radius (~0 at the centre, ~1 near the
 // short-edge midpoints): streaks are invisible inside inner_radius and ramp to
 // full strength by outer_radius, so the centre of the screen stays readable.
@@ -45,10 +45,10 @@ void fragment() {
 	float rnd = hash(idx);
 	float half_width = mix(0.10, 0.42, rnd);
 	float line = smoothstep(half_width, half_width * 0.4, abs(across));
-	// Discrete (stepped) flicker: quantise time so each streak snaps to a new
-	// random brightness `flicker_speed` times a second — a choppy, hand-drawn
-	// flicker rather than a smooth sinusoidal pulse.
-	float flicker = mix(0.35, 1.0, hash(idx * 1.7 + floor(TIME * flicker_speed)));
+	// Hard on/off flicker: quantise time and threshold a per-streak random so each
+	// streak is either fully drawn or gone for the current step — a hard cut, like
+	// hand-inked lines blinking in and out, rather than a smooth opacity fade.
+	float flicker = step(0.3, hash(idx * 1.7 + floor(TIME * flicker_speed)));
 
 	// Radial mask: clear centre, dense edges.
 	float radial = smoothstep(inner_radius, outer_radius, dist);
