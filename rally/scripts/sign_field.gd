@@ -8,11 +8,18 @@ extends Node3D
 # (unlike the foliage in todo/performance-optimisations.md); the engine frustum-
 # culls the MeshInstance3Ds and each sign carries its own face texture anyway.
 #
-# Each sign is a light RigidBody3D so the car scatters it on contact (the
-# wet-floor-board feel). Signs are deliberately NOT in the damage OBSTACLE_GROUP:
-# they are cosmetic clutter you plough through freely, with no HP penalty (unlike
-# the solid trees/bushes). A RigidBody sleeps once it settles, so the at-rest cost
-# is negligible despite there being one body per sign.
+# Each sign is a light RigidBody3D, but it behaves like a knocked spectator rather
+# than a solid prop: it never runs real collision physics against the car. It lives
+# on its own collision layer (off the car's mask) and masks only the world layer
+# (terrain + trees), so the car drives straight through it. On contact the car's
+# waker Area flings the sign along the car's travel direction — a fake collision —
+# and from there it tumbles on the terrain under physics, masked off the car (see
+# SpectatorGroup, which does the same for ragdolls). This keeps the wet-floor-board
+# scatter feel without the vehicle ever bogging down on the prop.
+# Signs are deliberately NOT in the damage OBSTACLE_GROUP: they are cosmetic clutter
+# you plough through freely, with no HP penalty (unlike the solid trees/bushes). A
+# RigidBody sleeps once it settles, so the at-rest cost is negligible despite there
+# being one body per sign.
 
 const SIGN_SHADER := preload("res://shaders/ps1_models.gdshader")
 
@@ -30,6 +37,12 @@ const FALLBACK_COLORS := {
 # explicit contract).
 var sign_count := 0
 
+# Launch params (knock_*) snapshot from sign_render_params(), used by _wake_sign to
+# fling a struck sign along the car's velocity. Stashed at build so the waker callback
+# doesn't need them threaded through.
+var _knock := {}
+var _rng := RandomNumberGenerator.new()
+
 
 # Build one sign per layout entry. `params` is GameConfig.sign_render_params().
 func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
@@ -41,6 +54,8 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 	var mass: float = params["mass_kg"]
 	var textures: Dictionary = params.get("textures", {})
 	var half_w: float = float(params["track_width"]) / 2.0
+	_knock = params
+	_rng.seed = 0
 
 	for entry in layout:
 		var pos: Vector2 = entry["pos"]
@@ -66,6 +81,12 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 		# it stays put; the car wakes it on contact (_wake_sign) so it still scatters.
 		sign_body.freeze = true
 		sign_body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+		# Live on a private layer (off the car's mask) and mask only the world layer
+		# (terrain + trees) — so the car never collides with the sign. It still rolls on
+		# the ground; the car just drives through it. The car shares the world layer, so
+		# _wake_sign also adds an explicit exception once it has the car reference.
+		sign_body.collision_layer = int(params["knock_layer"])
+		sign_body.collision_mask = int(params["knock_mask"])
 		# Stash the placement key on the body (cheap metadata) so tools/tests can
 		# identify which arrow a built sign carries without re-running the planner.
 		sign_body.set_meta("texture_key", String(entry["texture_key"]))
@@ -101,16 +122,46 @@ func _add_waker(body: RigidBody3D, panel_size: Vector2, base_depth: float) -> vo
 	body.add_child(waker)
 
 
-# Wake a frozen sign the first time the car enters its trigger volume, so it tumbles
-# away under physics instead of standing rigid. The Area also overlaps the sign's OWN
-# body (its parent) — ignore that, or the sign instantly wakes itself and falls.
-# Streamed terrain and tree hitboxes are StaticBody3D, so they are ignored too: only
-# a dynamic body that is not this sign (the car) unfreezes it.
+# Knock a frozen sign over the first time the car enters its trigger volume. The body
+# never collides with the car (different layer + an explicit exception added here); a
+# frozen RigidBody also never reports its own contacts, so the waker Area is the only
+# hit signal. Rather than let real physics push it, we fling it along the car's travel
+# direction — a fake collision — then it tumbles on the terrain on its own. The Area
+# also overlaps the sign's OWN body (its parent) — ignore that, or the sign instantly
+# knocks itself over. Streamed terrain and tree hitboxes are StaticBody3D, so they are
+# ignored too: only a dynamic body that is not this sign (the car) knocks it over.
 func _wake_sign(other: Node, body: RigidBody3D) -> void:
 	if other == body or other is StaticBody3D:
 		return
-	if body.freeze:
-		body.freeze = false
+	if not body.freeze:
+		return
+	# Mask the sign off the car for good: its world-layer mask (terrain/trees) would
+	# otherwise still pair it with the car, which shares that layer. The car's own mask
+	# never sees the sign's private layer, so this one exception fully decouples them.
+	if other is CollisionObject3D:
+		body.add_collision_exception_with(other)
+	body.freeze = false
+	_launch_sign(body, other)
+
+
+# Fling a just-knocked sign along the car's velocity (clamped), with an upward kick and
+# a random tumble — the same recipe SpectatorGroup uses for ragdolls. With the car
+# masked off, this impulse is what makes the sign scatter; physics then rolls it on the
+# terrain. Falls back to the car's forward axis when it is barely moving.
+func _launch_sign(body: RigidBody3D, car: Node) -> void:
+	var car_vel := Vector3.ZERO
+	if "linear_velocity" in car:
+		car_vel = car.linear_velocity
+	var speed := car_vel.length()
+	var dir := car_vel.normalized()
+	if speed <= 0.1 and car is Node3D:
+		dir = -(car as Node3D).global_transform.basis.z
+	var launch: float = clampf(speed * float(_knock["knock_speed_factor"]),
+		float(_knock["knock_speed_min"]), float(_knock["knock_speed_max"]))
+	body.linear_velocity = dir * launch + Vector3.UP * float(_knock["knock_lift_mps"])
+	body.angular_velocity = Vector3(
+		_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)
+	).normalized() * float(_knock["knock_spin"])
 
 
 # The two splayed panels. Each is a thin, double-sided quad tilted about the ridge

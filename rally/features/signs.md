@@ -9,8 +9,13 @@ Free-standing **A-frame ("wet-floor") boards** along the stage that read the roa
 to a driver — **turn arrows** only. The start and finish are marked by the
 inflatable arches ([finish-arch.md](finish-arch.md)), not signs, and the stage is no
 longer split into signed sectors (it is too short to carve into meaningful sector
-boards). Each board is a **light, knockable `RigidBody3D`** — the car scatters them
-on contact and they deal **no HP damage** (cosmetic clutter, deliberately *not* in
+boards). Each board is a **light, knockable `RigidBody3D`** that behaves like a
+knocked **spectator** ([spectators.md](spectators.md)) rather than a solid prop: it
+**never runs real collision physics against the car**. It lives on its own collision
+layer (off the car's mask) and masks only the world layer (terrain + trees), so the
+car drives straight through it; on contact the waker **flings it along the car's
+travel direction** — a fake collision — and it then tumbles on the terrain on its own.
+They deal **no HP damage** (cosmetic clutter, deliberately *not* in
 the damage `OBSTACLE_GROUP`, unlike the solid trees in [damage.md](damage.md)).
 (`SignField` is still a kind-agnostic builder — it can render a "sector"/"start"/
 "finish" board if ever handed one — but `plan` only emits turns.)
@@ -62,28 +67,41 @@ hitbox are **children of the body**, so the whole sign tumbles as one. Per sign:
 - **Material** — `shaders/ps1_models.gdshader`; the atlas face texture if one is
   wired in `sign_textures` for the key, otherwise a **flat per-kind colour
   fallback** so geometry is visible before the art lands.
-- **Body** — a `RigidBody3D` of mass `sign_mass_kg` (light, so the heavy car
-  scatters it) with a `BoxShape3D` child sized `panel_size × sign_base_depth_m`,
-  centred half its height up so the box bottom rests on the ground and the centre
-  of mass sits above the base (a low hit tips it over). It is **not** in the damage
-  obstacle group — clipping a sign costs no HP.
+- **Body** — a `RigidBody3D` of mass `sign_mass_kg` (light, so it scatters readily)
+  with a `BoxShape3D` child sized `panel_size × sign_base_depth_m`, centred half its
+  height up so the box bottom rests on the ground and the centre of mass sits above
+  the base (a low hit tips it over). It is **not** in the damage obstacle group —
+  clipping a sign costs no HP. **Collision is decoupled from the car:** the body sits
+  on its own layer (`knock_layer = 1 << 4`, off the car's default mask) and masks only
+  the world layer (`knock_mask = 1`, terrain + trees), so the car never collides with
+  it.
 - **Spawned frozen** — the body starts `freeze = true` (`FREEZE_MODE_STATIC`),
   resting exactly at the placed road-surface pose. **This is essential:** terrain
   collision is only streamed in a small ring around the car (`TerrainManager`
   `RADIUS`), so a live `RigidBody3D` on a far part of the track would have no ground
   and **free-fall into the void** before the player ever drove there (the cause of
   "missing / wrong" signs). A child **`Area3D` waker**, a touch larger than the
-  hitbox, unfreezes the sign when the car enters it, so it still scatters on
-  contact. The waker ignores the sign's **own** body and any **`StaticBody3D`**
-  (streamed terrain chunks + tree hitboxes share the world layer) — only the
-  dynamic car wakes a sign.
+  hitbox, knocks the sign over when the car enters it. The waker ignores the sign's
+  **own** body and any **`StaticBody3D`** (streamed terrain chunks + tree hitboxes
+  share the world layer) — only the dynamic car wakes a sign.
+- **Knocked, not collided** — when the car enters the waker, `_wake_sign` adds an
+  explicit collision exception with the car (belt-and-braces over the layer split,
+  since the sign's world-layer mask would otherwise still pair it with the car),
+  unfreezes the body, and **launches it** along the car's velocity — `clampf(speed ×
+  knock_speed_factor, knock_speed_min, knock_speed_max)` plus an upward `knock_lift_mps`
+  kick and a random `knock_spin` tumble. This is the same recipe `SpectatorGroup` uses
+  for ragdolls: the impulse fakes the collision, then physics rolls the sign over the
+  terrain without the car ever touching it.
 
 ## Config (`GameConfig` › *Roadside Signs*)
 
 `sign_panel_size_m`, `sign_thickness_m`, `sign_splay_deg`, `sign_edge_inset_m`,
-`sign_base_depth_m`, `sign_mass_kg`, `sign_textures` — bundled for the build layer by
-`sign_render_params()`. (`sign_sector_count` also lives in this group but no longer
-drives any signs; it is the stage timer's `sector_offsets` hook — see above.)
+`sign_base_depth_m`, `sign_mass_kg`, `sign_textures`, and the knock-over launch
+(`sign_knock_speed_factor`, `sign_knock_speed_min`, `sign_knock_speed_max`,
+`sign_knock_lift_mps`, `sign_knock_spin`) — bundled for the build layer by
+`sign_render_params()` (which also adds the structural `knock_layer`/`knock_mask`).
+(`sign_sector_count` also lives in this group but no longer drives any signs; it is
+the stage timer's `sector_offsets` hook — see above.)
 
 ## Assets
 
@@ -111,5 +129,7 @@ start/finish/sector boards), the turn count, keys (incl. 5/6 unsigned), left/rig
 arrow mapping, determinism, and the `sector_offsets` helper.
 `tests/headless/test_smoke.gd` — `SignField.build` creates one node per sign, two
 panels each, a collision body + an `Area3D` waker, spawned **frozen** and sitting at
-the road-surface height; and that a sign wakes only on a dynamic non-self contact
-(the car), never from its own body or a `StaticBody3D` (terrain/trees).
+the road-surface height, on its own layer + world-only mask (so the car can't collide
+with it); and that a sign wakes only on a dynamic non-self contact (the car), never
+from its own body or a `StaticBody3D` (terrain/trees) — and that waking **launches**
+it (non-zero velocity) and adds a **collision exception** with the car.
