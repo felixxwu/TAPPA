@@ -610,8 +610,14 @@ func _on_session_car_wrecked() -> void:
 
 
 # Rally over (or DNF): show the podium. Loads under the (placeholder) transition.
-func _on_session_rally_finished(_result: Dictionary) -> void:
-	get_tree().change_scene_to_file("res://podium.tscn")
+# Exception: a rally ABANDONED from the pause menu has no result to celebrate, so it
+# skips the podium and returns straight to HQ (opening on the garage view).
+func _on_session_rally_finished(result: Dictionary) -> void:
+	if result.get("abandoned", false):
+		RallySession.return_to_garage = true
+		get_tree().change_scene_to_file("res://hq.tscn")
+	else:
+		get_tree().change_scene_to_file("res://podium.tscn")
 
 
 # Swap to the next car in the library: re-instantiate a fresh car (see

@@ -1,20 +1,24 @@
 class_name PauseMenu
 extends CanvasLayer
 # In-run pause menu. A top-right Pause button freezes the game
-# (`get_tree().paused`) and opens an overlay offering Resume and Settings; Settings
-# shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
-# controls). The whole layer runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its
-# button and the menu still respond while the tree is paused. A camera pick in
-# Settings applies immediately via the scene's CameraManager (wired below); ui_cancel
-# (Esc / gamepad B) toggles the menu too. See features/menus.md.
+# (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
+# Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
+# controls). Quit to HQ abandons the current rally (no retry penalty, damage persisted,
+# no reward — RallySession.abandon) after a confirm and returns to HQ. The whole layer
+# runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
+# respond while the tree is paused. A camera pick in Settings applies immediately via the
+# scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu too.
+# See features/menus.md.
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
 @export var camera_manager: CameraManager
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
-var _menu_panel: Control       # PAUSED + Resume + Settings
+var _menu_panel: Control       # PAUSED + Resume + Settings + Quit to HQ
 var _settings_panel: Control   # the shared SettingsMenu + Back
+var _quit_button: Button       # "Quit to HQ" — abandons the rally
+var _quit_dialog: ConfirmationDialog  # "Abandon rally?" confirm before quitting
 
 var settings_menu: SettingsMenu
 
@@ -40,6 +44,22 @@ func open() -> void:
 func resume() -> void:
 	get_tree().paused = false
 	_set_open(false)
+
+
+# Pop the "Abandon rally?" confirm; quit_to_hq() runs only if the player accepts.
+func _on_quit_pressed() -> void:
+	_quit_dialog.popup_centered()
+
+
+# Leave the run for HQ: unfreeze, then abandon the active rally. RallySession.abandon
+# emits rally_finished, which world.gd routes back to HQ (the garage view). With no
+# session (a plain dev boot of main.tscn) there's nothing to abandon, so load HQ direct.
+func quit_to_hq() -> void:
+	get_tree().paused = false
+	if RallySession.is_active():
+		RallySession.abandon()
+	else:
+		get_tree().change_scene_to_file("res://hq.tscn")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -88,6 +108,15 @@ func _build() -> void:
 	_settings_panel = _build_settings_panel()
 	_overlay.add_child(_settings_panel)
 
+	# Confirm before abandoning a rally — quitting forfeits this run (no retry).
+	_quit_dialog = ConfirmationDialog.new()
+	_quit_dialog.title = "Quit to HQ?"
+	_quit_dialog.dialog_text = "Abandon this rally and return to HQ?\nYour progress in this run is lost."
+	_quit_dialog.ok_button_text = "Quit to HQ"
+	_quit_dialog.get_cancel_button().text = "Cancel"
+	_quit_dialog.confirmed.connect(quit_to_hq)
+	add_child(_quit_dialog)
+
 
 # PAUSED + Resume + Settings, centred.
 func _build_menu_panel() -> Control:
@@ -112,6 +141,12 @@ func _build_menu_panel() -> Control:
 	var settings_btn := _make_menu_button("Settings")
 	settings_btn.pressed.connect(_show_settings.bind(true))
 	col.add_child(settings_btn)
+
+	# Quit to HQ — abandons the rally (after a confirm). No retry penalty: a non-top-3
+	# rally is simply re-entered later from the map.
+	_quit_button = _make_menu_button("Quit to HQ")
+	_quit_button.pressed.connect(_on_quit_pressed)
+	col.add_child(_quit_button)
 	return center
 
 

@@ -206,13 +206,19 @@ A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
 `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is frozen. It owns a
 **top-right Pause button** (always visible during gameplay; the HUD's version/timer
 labels were shifted left to clear it) that **freezes the game** (`get_tree().paused
-= true`) and shows an overlay with **Resume** and **Settings**. Resume unfreezes and
-closes; Settings shows the **shared `SettingsMenu`** (camera angle + mobile controls,
-identical to the title-screen page), with a **◄ Back** to the Resume/Settings menu.
-`ui_cancel` (Esc / gamepad B) toggles the menu and backs out of Settings first. A
-camera pick applies **immediately** to the live `CameraManager` (wired via the
-`SettingsMenu.camera_changed` signal → `CameraManager.set_mode`), so the angle
-changes the moment you choose it. Covered by `tests/headless/test_pause_menu.gd`.
+= true`) and shows an overlay with **Resume**, **Settings** and **Quit to HQ**.
+Resume unfreezes and closes; Settings shows the **shared `SettingsMenu`** (camera
+angle + mobile controls, identical to the title-screen page), with a **◄ Back** to
+the Resume/Settings menu. **Quit to HQ** pops an *"Abandon rally?"* confirm and, on
+accept (`quit_to_hq`), unfreezes and calls `RallySession.abandon()` — the rally is
+left **incomplete with no retry penalty** (damage persisted, no reward); `abandon`
+emits `rally_finished` which `world.gd` routes **straight back to HQ** (the garage
+view) instead of the podium. (With no active session — a plain dev boot of
+`main.tscn` — it just loads `hq.tscn` directly.) `ui_cancel` (Esc / gamepad B)
+toggles the menu and backs out of Settings first. A camera pick applies
+**immediately** to the live `CameraManager` (wired via the `SettingsMenu.camera_changed`
+signal → `CameraManager.set_mode`), so the angle changes the moment you choose it.
+Covered by `tests/headless/test_pause_menu.gd`.
 
 ## Podium (`podium.gd`)
 
@@ -291,6 +297,6 @@ enriched `RallySession` result are covered in `test_rally_library.gd` /
 
 `tests/headless/test_pause_menu.gd` — the **Pause button freezes the game** and opens
 the menu; **Resume unfreezes** and closes it; **Settings exposes the shared
-`SettingsMenu`** (camera + control rows); and **picking a camera applies live** to the
-`CameraManager` (and persists). Camera cycling / `set_mode` persistence is covered in
-`test_camera_manager.gd`.
+`SettingsMenu`** (camera + control rows); **Quit to HQ abandons the active rally** and
+unfreezes the game; and **picking a camera applies live** to the `CameraManager` (and
+persists). Camera cycling / `set_mode` persistence is covered in `test_camera_manager.gd`.

@@ -38,8 +38,11 @@ func after_all() -> void:
 
 
 func after_each() -> void:
-	# Never leak a paused tree / open overlay into the next test (or test file).
+	# Never leak a paused tree / open overlay / live session into the next test (or file).
 	_pause.resume()
+	if RallySession.is_active():
+		RallySession.abandon()
+	RallySession.auto_load_scenes = true
 
 
 func test_pause_freezes_game_and_opens_menu() -> void:
@@ -65,6 +68,21 @@ func test_settings_exposes_the_shared_menu() -> void:
 		"one row per camera angle")
 	assert_eq(_pause.settings_menu.scheme_rows.size(), MobileControls.SCHEMES.size(),
 		"one row per control scheme")
+
+
+func test_quit_to_hq_abandons_the_rally_and_unfreezes() -> void:
+	# The pause menu offers a "Quit to HQ" button that abandons the active rally.
+	assert_not_null(_pause._quit_button, "the pause menu has a Quit to HQ button")
+	# A live rally (driven directly, no scene loads) is abandoned by Quit to HQ:
+	# the session ends and the tree unfreezes. world.gd handles the trip back to HQ.
+	RallySession.auto_load_scenes = false
+	var owned: Dictionary = _save.grant_car("mx5", false)
+	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, [60000, 60000, 60000])
+	assert_true(RallySession.is_active(), "a rally is running")
+	_pause.open()
+	_pause.quit_to_hq()
+	assert_false(RallySession.is_active(), "Quit to HQ abandons the rally")
+	assert_false(get_tree().paused, "Quit to HQ unfreezes the game")
 
 
 func test_picking_a_camera_in_settings_applies_live() -> void:
