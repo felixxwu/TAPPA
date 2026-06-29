@@ -262,6 +262,77 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 	assert_eq(smat.get_shader_parameter("fade_band"), 15.0, "fade_band param set")
 
 
+func _load_tree_mesh() -> Mesh:
+	var scene := (load("res://models/low_poly_tree.glb") as PackedScene).instantiate()
+	var stack: Array[Node] = [scene]
+	var mesh: Mesh = null
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D:
+			mesh = (n as MeshInstance3D).mesh
+			break
+		for c in n.get_children():
+			stack.append(c)
+	scene.free()  # immediate (not queue_free) so no orphan lingers past the test
+	return mesh
+
+
+func test_tree_mesh_field_bins_instances_with_collision_and_scale() -> void:
+	var floor := _scene.get_node("Floor") as TerrainManager
+	var mesh := _load_tree_mesh()
+	assert_not_null(mesh, "tree .glb yields a mesh")
+	var field := TreeMeshField.new()
+	add_child_autofree(field)
+	# (2,2)->bin(0,0); (40,40) & (41,41)->bin(1,1) at bin_size 25 -> 2 bins.
+	var positions := PackedVector2Array([Vector2(2, 2), Vector2(40, 40), Vector2(41, 41)])
+	field.build(positions, floor, mesh, 6.0, 0.5, 4.0, 80.0, 15.0, 25.0)
+	assert_eq(field.instance_positions.size(), positions.size(), "one placed position per tree")
+	assert_eq(field.bin_count, 2, "trees binned into per-cell MultiMeshes")
+
+	var mmis: Array[MultiMeshInstance3D] = []
+	for c in field.get_children():
+		if c is MultiMeshInstance3D:
+			mmis.append(c)
+	assert_eq(mmis.size(), 2, "one MultiMeshInstance3D per bin")
+	var total := 0
+	for m in mmis:
+		total += m.multimesh.instance_count
+		assert_eq(m.multimesh.mesh, mesh, "bins share the tree mesh")
+		assert_eq(m.visibility_range_end, 80.0, "far cull wired to render distance")
+		assert_eq(m.visibility_range_end_margin, 15.0, "fade band wired to render fade")
+	assert_eq(total, positions.size(), "every tree lands in some bin")
+
+	# Uniform scale matches the configured tree height.
+	var expected_scale := 6.0 / mesh.get_aabb().size.y
+	assert_almost_eq(field.instance_scale, expected_scale, 1e-4, "instances scaled to tree height")
+
+	# Collision: one box per tree, resting on the ground.
+	var body := field.get_node_or_null("Collision") as StaticBody3D
+	assert_not_null(body, "tree field builds a Collision StaticBody3D")
+	var rid := body.get_rid()
+	assert_eq(PhysicsServer3D.body_get_shape_count(rid), positions.size(), "one box per tree")
+	assert_eq(body.collision_layer, 1, "tree body on layer 1 like terrain")
+	var p := positions[0]
+	var expected_y := floor.height_at(p.x, p.y) + 4.0 / 2.0
+	var origin := PhysicsServer3D.body_get_shape_transform(rid, 0).origin
+	assert_almost_eq(origin, Vector3(p.x, expected_y, p.y), Vector3(1e-3, 1e-3, 1e-3),
+		"box rests on the ground at the tree position")
+
+
+func test_world_uses_tree_mesh_field_for_trees() -> void:
+	# Trees were swapped from billboards to solid low-poly meshes; the live world
+	# should carry a TreeMeshField with collision and at least one bin.
+	var field: TreeMeshField = null
+	for c in _scene.get_children():
+		if c is TreeMeshField:
+			field = c
+			break
+	assert_not_null(field, "world builds a TreeMeshField for trees")
+	if field != null:
+		assert_gt(field.bin_count, 0, "tree field has at least one bin")
+		assert_not_null(field.get_node_or_null("Collision"), "tree field has collision")
+
+
 func test_billboard_field_without_collision_has_no_body() -> void:
 	var floor := _scene.get_node("Floor") as TerrainManager
 	var tex := load("res://textures/bush.webp") as Texture2D
