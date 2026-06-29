@@ -19,18 +19,17 @@ extends RefCounted
 #                so e.g. the high-revving LFA makes its power up at 9000 rpm
 #                rather than on torque alone. The engine preset still sets the
 #                rpm where torque peaks and the curve shape.
-#   * gear_ratios / final_drive — the car's REAL published transmission ratios
-#                and final drive (GameConfig.gear_ratios / final_drive). apply_car
-#                copies them in AFTER the engine preset (which only sets torque /
-#                redline / firing). The count varies per car (the MX-5's 6-speed
-#                manual through the 911's 8-speed PDK), and EngineSim handles any
-#                number of forward gears. These are what give each car its real
-#                tractive-force curve and gearing character — and, crucially, why
-#                the cars no longer over-accelerate or spin their rear tyres in the
-#                mid gears the way the old single shared gearbox did. ONE exception:
-#                the MX-5's final_drive is game-tuned (see its entry) because its real
-#                value can't be pulled against the physics engine's rolling drag; its
-#                ratios are still real. Every other car uses fully real values.
+#   * gear_ratios / final_drive — the gearbox (GameConfig.gear_ratios /
+#                final_drive). apply_car copies them in AFTER the engine preset
+#                (which only sets torque / redline / firing), and EngineSim handles
+#                any number of forward gears. These remain a PER-CAR field so each
+#                car can be given its own box later, but right now EVERY car shares
+#                the MX-5's gearing — its real ND 6-speed ratios with the game-tuned
+#                3.5 final drive. We tried giving each car its own real published
+#                transmission, but only the MX-5's (which we'd already game-tuned to
+#                drive well) actually felt right; the real ratios on the other cars
+#                didn't make sense against the sim. So they're all modelled on the
+#                MX-5's again — kept separate so they can diverge, but uniform for now.
 #   * drag     — quadratic aero drag coefficient (GameConfig.drag_coefficient):
 #                the force is drag x speed². NOTE these are deliberately SMALL: the
 #                physics engine (Jolt VehicleBody3D) already applies a large
@@ -121,8 +120,8 @@ const CARS: Array[Dictionary] = [
 		# box's upshift point in 3rd). 3.5 is the shortest drive that still drives
 		# cleanly — gears 5/6 sit above its ~95 km/h power-limited top, so they go
 		# unused, but 1st-4th carry the real spacing that calms the mid-gear punch and
-		# stops the 4th-gear wheelspin. The other cars have the power for their real
-		# final drives; only this one is compromised. See features/drivetrain-and-tires.md.
+		# stops the 4th-gear wheelspin. This box drives well, so the whole roster now
+		# shares it (see the gear_ratios header note). See features/drivetrain-and-tires.md.
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
 		"grip_front": 1.08, "grip_rear": 1.26, "shift_time": 0.30,  # manual H-pattern roadster
 		"engine_type": 0, "drive_mode": RWD, "drag": 0.27, "downforce_rear": 0.5, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
@@ -139,11 +138,9 @@ const CARS: Array[Dictionary] = [
 		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
 		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 2,
 		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0,
-		# Real DQ500 7-speed DSG. It uses TWO final drives (4.063 on gears 1/4/5/R,
-		# 3.450 on 2/3/6/7); our model has a single final_drive, so the dual ratio is
-		# folded into the listed gears (final_drive 3.450; gears 1/4/5 pre-multiplied
-		# by 4.063/3.450) — the resulting OVERALL ratios match the real car exactly.
-		"gear_ratios": [4.196, 2.526, 1.679, 1.203, 0.928, 0.761, 0.635], "final_drive": 3.450,
+		# Shares the MX-5's gearing (see the header note): the real DSG ratios didn't
+		# make sense in-sim, so this car runs the MX-5's box for now.
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
 		"grip_front": 1.08, "grip_rear": 1.20, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
 		"engine_type": 1, "drive_mode": AWD, "drag": 0.10, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
@@ -155,8 +152,8 @@ const CARS: Array[Dictionary] = [
 		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 3,
 		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0,
-		# Real 992 8-speed PDK: 4.89/3.17/2.15/1.56/1.18/0.94/0.76/0.61, FD 3.12.
-		"gear_ratios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61], "final_drive": 3.12,
+		# Shares the MX-5's gearing (see the header note).
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
 		"grip_front": 1.14, "grip_rear": 1.26, "shift_time": 0.06,  # 8-speed PDK
 		"engine_type": 2, "drive_mode": RWD, "drag": 0.11, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
@@ -168,8 +165,8 @@ const CARS: Array[Dictionary] = [
 		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
 		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
 		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0,
-		# Real LFA 6-speed ASG: 3.231/2.188/1.609/1.233/0.970/0.795, FD 3.417.
-		"gear_ratios": [3.231, 2.188, 1.609, 1.233, 0.970, 0.795], "final_drive": 3.417,
+		# Shares the MX-5's gearing (see the header note).
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
 		"grip_front": 1.20, "grip_rear": 1.32, "shift_time": 0.16,  # automated single-clutch ASG
 		"engine_type": 5, "drive_mode": RWD, "drag": 0.05, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
@@ -181,8 +178,8 @@ const CARS: Array[Dictionary] = [
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
 		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0,
-		# Real S550 MT82 6-speed manual: 3.66/2.43/1.69/1.32/1.00/0.65, FD 3.73.
-		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 3.73,
+		# Shares the MX-5's gearing (see the header note).
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
 		"grip_front": 1.08, "grip_rear": 1.08, "shift_time": 0.22,  # 6-speed manual muscle
 		"engine_type": 4, "drive_mode": RWD, "drag": 0.78, "downforce_rear": 0.06, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
@@ -194,8 +191,8 @@ const CARS: Array[Dictionary] = [
 		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
 		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 4,
 		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0,
-		# Real Aventador Graziano ISR 7-speed: 2.937/2.412/1.926/1.580/1.336/1.135/0.971, FD 3.083.
-		"gear_ratios": [2.937, 2.412, 1.926, 1.580, 1.336, 1.135, 0.971], "final_drive": 3.083,
+		# Shares the MX-5's gearing (see the header note).
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
 		"grip_front": 1.18, "grip_rear": 1.20, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
 		"engine_type": 6, "drive_mode": AWD, "drag": 0.05, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),

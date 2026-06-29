@@ -75,7 +75,7 @@ see [configuration.md](configuration.md). Presets: i4, i5, i6, v6, v8, v10, v12.
 
 - Forward gears (`gear_ratios`), one reverse (`reverse_ratio`), and a
   `final_drive` multiplier. `EngineSim` handles ANY number of forward gears, so
-  the gear COUNT varies per car.
+  the gear COUNT can vary per car (the field is per-car, see below).
 - Clutch limited to `clutch_max_torque`; auto-clutch opens when coasting below
   `clutch_engage_speed`.
 - Manual shifting: Q (down) / E (up). Auto mode toggled with T or HUD button.
@@ -85,17 +85,16 @@ see [configuration.md](configuration.md). Presets: i4, i5, i6, v6, v8, v10, v12.
   (911, RS3, Aventador) snap through gears (0.05–0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
 - **`gear_ratios` + `final_drive` are also per-car** (`CarLibrary`, applied by
-  `Car.apply_car()` after the engine preset). Each car runs its REAL transmission:
-  the MX-5's 6-speed manual, the Mustang's 6-speed MT82, the LFA's 6-speed ASG,
-  the RS3's 7-speed DSG (its dual final drive folded into the listed ratios), the
-  Aventador's 7-speed ISR, and the 911's 8-speed PDK. This replaced a single
-  shared gearbox that was far too short for every car — see
-  [drivetrain-and-tires.md](drivetrain-and-tires.md) for why short gearing made
-  the light cars over-accelerate and spin up in the mid gears, and for the **one
-  exception**: the MX-5's `final_drive` is game-tuned (not its real 2.866) because
-  its real ~150 hp can't pull the tall real ratio against the physics engine's
-  built-in rolling resistance. The `GameConfig` `gear_ratios`/`final_drive` are
-  only the baseline before a car is selected.
+  `Car.apply_car()` after the engine preset), but **every car currently shares the
+  MX-5's box** — its real ND 6-speed ratios with the game-tuned `3.5` final drive.
+  Each car briefly ran its own *real* transmission (MX-5 manual, Mustang MT82, LFA
+  ASG, RS3 DSG, Aventador ISR, 911 PDK), but only the MX-5's made sense in-sim, so
+  the roster is modelled on the MX-5's gearing again; the field stays per-car so a
+  car can diverge later. See [drivetrain-and-tires.md](drivetrain-and-tires.md) for
+  why this box drives well and why the MX-5's `final_drive` is game-tuned (not its
+  real 2.866) — its ~150 hp can't pull the tall real ratio against the physics
+  engine's built-in rolling resistance. The `GameConfig` `gear_ratios`/`final_drive`
+  are only the baseline before a car is selected.
 
 ## Tests
 
