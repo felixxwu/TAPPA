@@ -263,10 +263,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Gap (m) between queued cars along the start heading (leader ahead, one behind).
 @export var start_queue_gap := 7.0
 ## Safety cap (s) on the launch animation: the fade-to-black normally waits for the
-## player to roll up and come to a COMPLETE stop, but won't wait longer than this.
-@export var start_drive_off_seconds := 3.5
-## Seconds a rolling-up car holds throttle before easing off (< the drive-off
-## length, so it settles under the parking brake). Applies to the player + trailer.
+## player to roll up the full gap to the line and come to a COMPLETE stop, but won't
+## wait longer than this.
+@export var start_drive_off_seconds := 5.0
+## Minimum roll-up window (s) after the player's stagger before the fade may begin, so
+## the reveal can't cut while the player is still mid-roll (the fade also waits for a
+## complete stop on top of this).
 @export var start_trailer_scoot_seconds := 0.7
 ## Stagger (s) between successive cars launching, so the queue rolls off one after
 ## another (leader, then player, then trailer) rather than all at once.
@@ -277,8 +279,8 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## has road to drive off down (the queue cars are axis-locked to a straight line).
 @export var start_lead_in_ahead_m := 22.0
 ## Straight road (m) extended BEHIND the start line on a staged run, so the player
-## (staged half a gap back) and the trailing car behind it sit on road.
-@export var start_lead_in_behind_m := 16.0
+## (staged a full gap back) and the trailing car (two gaps back) sit on road.
+@export var start_lead_in_behind_m := 20.0
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
