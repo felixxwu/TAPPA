@@ -33,5 +33,14 @@ rally/tools/pause_capture.png.import
 rally/tools/menu_*.png
 rally/tools/menu_*.png.import
 
+# Font-comparison scratch (tools/font_compare.tscn) — candidate fonts being
+# evaluated + the comparison render. Kept out of the repo until a font is chosen.
+rally/fonts/candidates/
+rally/tools/font_compare.gd
+rally/tools/font_compare.gd.uid
+rally/tools/font_compare.tscn
+rally/tools/font_compare.png
+rally/tools/font_compare.png.import
+
 # Local secrets / env
 .env
