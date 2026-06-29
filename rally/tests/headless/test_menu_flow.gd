@@ -144,6 +144,29 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
 
 
+func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var dev = hq._settings_menu
+	# The Dev category opens its own page from the list.
+	hq._open_settings(false)
+	dev.show_dev()
+	assert_false(dev.at_root(), "the Dev category opens its own page")
+	# Unlock any car: a new owned instance is added.
+	var before: int = _save.profile["cars"].size()
+	dev._grant_car("aventador", "Lamborghini Aventador")
+	assert_eq(int(_save.profile["cars"].size()), before + 1, "unlocking grants a car instance")
+	# Add any upgrade: it lands in the inventory.
+	dev._add_upgrade("engine_stage1", "Stage 1 Engine Kit")
+	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 1,
+		"adding an upgrade puts it in inventory")
+	# Wipe: everything resets to a fresh new game.
+	dev._wipe_progress()
+	assert_eq(int(_save.profile["cars"].size()), 0, "wipe clears all owned cars")
+	assert_true((_save.profile["inventory"] as Dictionary).is_empty(), "wipe clears the inventory")
+
+
 func test_hq_title_parks_all_owned_cars() -> void:
 	# The title shows the whole collection, regardless of rally eligibility — grant
 	# an AWD RS3 (which an RWD rally would exclude) and it's still parked.

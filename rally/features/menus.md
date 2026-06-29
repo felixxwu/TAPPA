@@ -79,9 +79,13 @@ into **its own sub-page**:
   ([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
   **diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
   its name and how-to.
+- **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
+  fresh new game), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
+  and per upgrade/repair-kit (`Save.add_item`, from `UpgradeLibrary.UPGRADES`) to
+  unlock anything in the game. A status line reports the last action.
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
-`show_schemes()` swap which page is visible (only the visible page contributes
+`show_schemes()` / `show_dev()` swap which page is visible (only the visible page contributes
 height, so the long schemes page scrolls while the short list/camera pages don't),
 and `page_changed(is_root)` lets the host steer its single bottom button — on a
 sub-page it reads **< Back** (returns to the list); on the list it is the host's own
