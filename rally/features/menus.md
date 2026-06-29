@@ -68,22 +68,50 @@ garage; Settings opens the SETTINGS overlay.
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
 SettingsMenu`) — the SAME component the in-run pause menu uses, so the two pages
-match. Two sections:
+match. It opens on a **category list** with one row per area, and each row drills
+into **its own sub-page**:
 
 - **Camera** — pick the **camera angle** (chase / bonnet, from `CameraManager.MODES`);
   the choice persists under `CameraManager.SETTING_KEY` and is applied on the next run
   (or live, in the pause menu, via the `camera_changed` signal). See
   [camera.md](camera.md).
+- **Key bindings** — **rebind** the keyboard and controller controls. One row per
+  driving action (`InputRemap.ACTIONS`) with a keyboard button and a controller
+  button showing the current binding; tap one and press the new key / gamepad input
+  to reassign it (Esc cancels), plus a **Reset to defaults** row. The model is the
+  `InputRemap` autoload (`scripts/input_remap.gd`), which patches the global InputMap
+  from overrides saved under `InputRemap.SETTING_KEY`. See [controls.md](controls.md).
 - **Mobile controls** — pick the **touch control scheme**. Each of the six schemes
   ([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
   **diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
   its name and how-to.
+- **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
+  fresh new game), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
+  and per upgrade/repair-kit (`Save.add_item`, from `UpgradeLibrary.UPGRADES`) to
+  unlock anything in the game. A status line reports the last action.
 
-The saved choice in each section is highlighted and persisted via `Save.set_setting`.
-Settings is also shown as a **pre-rally gate**: on mobile, if no scheme has been
-chosen yet, Start opens this page (`_open_settings(true)`) instead of launching — the
-bottom button reads **Start >** and confirms the pick (the highlighted default if
-untouched), saving it so the gate never reappears, then begins the rally.
+Navigation lives inside the component: `show_list()` / `show_camera()` /
+`show_schemes()` / `show_dev()` swap which page is visible (only the visible page contributes
+height, so the long schemes page scrolls while the short list/camera pages don't),
+and `page_changed(is_root)` lets the host steer its single bottom button — on a
+sub-page it reads **< Back** (returns to the list); on the list it is the host's own
+action. The saved choice in each section is highlighted and persisted via
+`Save.set_setting`. Settings is also shown as a **pre-rally gate**: on mobile, if no
+scheme has been chosen yet, Start opens this page (`_open_settings(true)`) instead of
+launching — on the list the bottom button reads **Start >** and confirms the pick
+(the highlighted default if untouched), saving it so the gate never reappears, then
+begins the rally.
+
+All the scrollable menu lists (Settings, the tuning lift, the standings/podium
+leaderboards) use **`TouchScrollContainer`** (`scripts/touch_scroll_container.gd`)
+in place of a plain `ScrollContainer`: it drag-scrolls under touch even when the
+finger lands **on a list-item button** (a plain `ScrollContainer`'s touch-scroll is
+swallowed by the pressed child). It watches raw input in `_input` (before the GUI
+pass) — a press arms a gesture, vertical motion past a small deadzone becomes a
+scroll, a press that never moves passes through as a normal tap, and only the
+release that ended a real drag is swallowed so the row under the finger doesn't also
+fire. Scrolling is driven from the emulated mouse events (`emulate_mouse_from_touch`,
+the same path the map-table pan uses).
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
@@ -95,20 +123,27 @@ Tapping the table drops to the map view; tapping the lift flies to the **tuning 
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
-The car is framed to one side (`hq_lift_cam_*`) so the **tuning menu** — a solid panel
-anchored to the other side of the screen (`hq_lift_menu_width_frac`) — never covers
-it. The panel holds **only** the interactive controls (change-car, the tab strip, the
-scrollable menu content, Back) so it stays short on small screens; the **bay title and
-the car's name/description** sit in a separate **bottom-left** panel beside the car.
-Two menus toggled by the tab strip: **Tune** (a slider per tuning axis — grip /
-brake-bias / aero — locked axes greyed with a "needs X kit" note, plus **Reset to
-neutral**; each change saves via `Save.set_tuning`) and **Upgrades** (per-slot
-install from inventory via `Save.install_upgrade` — fitting **fully consumes** the
-part, confirmed via a dialog first since it can't be undone — plus the **Repair Kit**
-action `Save.use_repair_kit`). A change-car
-control cycles all owned cars, updating the **selected car**
-(`Save.selected_car`/`set_selected_car`) and re-spawning it on the lift. See
-[tuning.md](tuning.md) for the underlying config pipeline.
+The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
+(`LiftPage.HUB`): a **bottom-left** panel beside the car with the **bay title + the
+car's name/description**, and UNDER it a **minimal change-car selector** (`< Car` /
+`Car >`) plus **Tuning** and **Upgrades** buttons. The change-car control cycles all
+owned cars, updating the **selected car** (`Save.selected_car`/`set_selected_car`) and
+re-spawning it on the lift. Each menu button opens that menu as its **own full-height
+page** — a solid panel anchored to the other side of the screen
+(`hq_lift_menu_width_frac`) so the car stays in view — with a **< Back** that returns
+to the hub; the hub's own Back returns to the garage. Because the change-car control
+and page chrome live on the hub, each menu page gets the **full panel height to
+itself** and doesn't need to scroll. The two pages:
+
+- **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero;
+  locked axes greyed with a "needs X kit" note) plus **Reset to neutral**; each change
+  saves via `Save.set_tuning`.
+- **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from inventory via
+  `Save.install_upgrade` (fitting **fully consumes** the part, confirmed via a dialog
+  first since it can't be undone) plus the **Repair Kit** action `Save.use_repair_kit`.
+
+`_refresh_lift_ui` toggles which face (hub vs. a menu page) is shown from `_lift_page`.
+See [tuning.md](tuning.md) for the underlying config pipeline.
 
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
 plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal in

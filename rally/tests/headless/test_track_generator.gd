@@ -4,9 +4,6 @@ extends GutTest
 # centerline Curve2D plus an occupied-cell set. These tests cover the geometry
 # helpers first, then the full search.
 
-const TrackGenerator = preload("res://scripts/track_generator.gd")
-const CornerLibrary = preload("res://scripts/corner_library.gd")
-
 
 func test_frame_transform_maps_local_axes_to_world() -> void:
 	# Local +Y is "forward" (the heading); local +X is "right" of it.

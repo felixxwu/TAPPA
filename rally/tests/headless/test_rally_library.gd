@@ -4,10 +4,6 @@ extends GutTest
 # field, progress/showdown gating, and the anti-soft-lock query. Mirrors
 # test_car_library.gd. See todo/rally-roster.md.
 
-const RallyLibrary = preload("res://scripts/rally_library.gd")
-const CarLibrary = preload("res://scripts/car_library.gd")
-const TrackGenerator = preload("res://scripts/track_generator.gd")
-
 
 # --- Roster validity (anti-soft-lock) ---------------------------------------
 

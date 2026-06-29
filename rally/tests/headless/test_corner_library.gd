@@ -4,7 +4,6 @@ extends GutTest
 # build_curve() must turn each entry into a usable Curve2D, names must be unique,
 # and the full standard set (1-6, Square, Hairpin, Straight, one compound) present.
 
-const CornerLibrary = preload("res://scripts/corner_library.gd")
 
 const EXPECTED := [
 	"1", "2", "3", "4", "5", "6",

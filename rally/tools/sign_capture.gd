@@ -54,12 +54,12 @@ func _ready() -> void:
 			toppled += 1
 	print("sign-render: %d/%d signs NOT upright after settle" % [toppled, field.get_child_count()])
 
-	var sign := field.get_child(idx) as Node3D
-	var key := String(sign.get_meta("texture_key", "?"))
-	var updot := sign.global_transform.basis.y.dot(Vector3.UP)
-	print("sign-render: SIGN_IDX=%d key=%s upright_dot=%.3f pos=%s" % [idx, key, updot, sign.global_position])
-	var sp := sign.global_position
-	var bz := sign.global_transform.basis.z  # world dir of local +Z = up-track
+	var sign_node := field.get_child(idx) as Node3D
+	var key := String(sign_node.get_meta("texture_key", "?"))
+	var updot := sign_node.global_transform.basis.y.dot(Vector3.UP)
+	print("sign-render: SIGN_IDX=%d key=%s upright_dot=%.3f pos=%s" % [idx, key, updot, sign_node.global_position])
+	var sp := sign_node.global_position
+	var bz := sign_node.global_transform.basis.z  # world dir of local +Z = up-track
 	var cam := Camera3D.new()
 	add_child(cam)
 	if OS.has_environment("PLAYER_VIEW"):

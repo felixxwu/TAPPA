@@ -152,11 +152,11 @@ func soft_clip(x: float) -> float:
 func _build_voice_bank() -> void:
 	_voice_bank.clear()
 	for k in range(VOICE_LOAD_TABLES):
-		var load := float(k) / float(VOICE_LOAD_TABLES - 1)
+		var load_level := float(k) / float(VOICE_LOAD_TABLES - 1)
 		var table := PackedFloat32Array()
 		table.resize(VOICE_TABLE_SIZE)
 		for i in range(VOICE_TABLE_SIZE):
-			table[i] = _voice(float(i) / float(VOICE_TABLE_SIZE), load)
+			table[i] = _voice(float(i) / float(VOICE_TABLE_SIZE), load_level)
 		_voice_bank.append(table)
 
 
@@ -164,8 +164,8 @@ func _build_voice_bank() -> void:
 # crank phase (wrapping the cycle) and linear across the two bracketing load
 # tables. This is the per-sample hot path — it replaces the firing_phases ×
 # harmonics sin/exp sum in _voice() with a handful of array reads.
-func _read_voice(phase: float, load: float) -> float:
-	var lf := clampf(load, 0.0, 1.0) * float(VOICE_LOAD_TABLES - 1)
+func _read_voice(phase: float, load_level: float) -> float:
+	var lf := clampf(load_level, 0.0, 1.0) * float(VOICE_LOAD_TABLES - 1)
 	var k0 := int(lf)
 	var k1 := mini(k0 + 1, VOICE_LOAD_TABLES - 1)
 	var kfrac := lf - float(k0)

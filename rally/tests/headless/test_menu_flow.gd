@@ -112,27 +112,59 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Open Settings from the title screen.
-	hq._go_to(hq.View.SETTINGS)
+	# Open Settings from the title screen — it lands on the category list.
+	hq._open_settings(false)
 	assert_true(hq._settings_layer.visible, "the settings overlay is shown")
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in settings")
+	assert_true(hq._settings_menu.at_root(), "Settings opens on the category list")
 	# The shared SettingsMenu: a camera-angle row per mode and a row per control scheme.
 	assert_eq(hq._settings_menu.camera_rows.size(), CameraManager.MODES.size(),
 		"one settings row per camera angle")
 	assert_eq(hq._settings_menu.scheme_rows.size(), MobileControls.SCHEMES.size(),
 		"one settings row per control scheme")
-	# Pick the bonnet camera; it persists to the save profile.
+	# Drill into the Camera page, then pick the bonnet camera; it persists to the save profile.
+	hq._settings_menu.show_camera()
+	assert_false(hq._settings_menu.at_root(), "tapping a category opens its own page")
+	assert_eq(hq._settings_action_button.text.to_upper(), "< BACK",
+		"the bottom button reads Back on a sub-page")
 	hq._settings_menu.select_camera(CameraManager.Mode.BONNET)
 	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)),
 		CameraManager.Mode.BONNET, "the chosen camera angle is saved")
-	# Pick the tilt scheme; it persists to the save profile.
+	# Drill into the Mobile controls page and pick the tilt scheme; it persists.
+	hq._settings_menu.show_schemes()
 	hq._settings_menu.select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
 		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
-	# Back returns to the title.
-	hq._go_to(hq.View.EXTERIOR)
-	assert_true(hq._title_layer.visible, "Back from settings returns to the title")
+	# The bottom button backs out a level at a time: sub-page → list → exterior.
+	hq._on_settings_action()
+	assert_true(hq._settings_menu.at_root(), "Back from a sub-page returns to the list")
+	assert_true(hq._settings_layer.visible, "still in Settings after backing to the list")
+	hq._on_settings_action()
+	assert_true(hq._title_layer.visible, "Back from the list returns to the title")
 	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
+
+
+func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var dev = hq._settings_menu
+	# The Dev category opens its own page from the list.
+	hq._open_settings(false)
+	dev.show_dev()
+	assert_false(dev.at_root(), "the Dev category opens its own page")
+	# Unlock any car: a new owned instance is added.
+	var before: int = _save.profile["cars"].size()
+	dev._grant_car("aventador", "Lamborghini Aventador")
+	assert_eq(int(_save.profile["cars"].size()), before + 1, "unlocking grants a car instance")
+	# Add any upgrade: it lands in the inventory.
+	dev._add_upgrade("engine_stage1", "Stage 1 Engine Kit")
+	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 1,
+		"adding an upgrade puts it in inventory")
+	# Wipe: everything resets to a fresh new game.
+	dev._wipe_progress()
+	assert_eq(int(_save.profile["cars"].size()), 0, "wipe clears all owned cars")
+	assert_true((_save.profile["inventory"] as Dictionary).is_empty(), "wipe clears the inventory")
 
 
 func test_hq_title_parks_all_owned_cars() -> void:
@@ -509,6 +541,36 @@ func test_hq_lift_raises_the_selected_car() -> void:
 	assert_false(hq._lift_raised, "the car lowers back to the ground in the garage")
 
 
+func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
+	# The bay opens on the HUB (change-car selector + Tuning/Upgrades buttons beside the
+	# car); each button opens that menu as its own page, and Back returns to the hub.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_eq(hq._lift_page, hq.LiftPage.HUB, "entering the bay lands on the hub page")
+	assert_true(hq._lift_hub_controls.visible, "the hub shows the change-car + menu buttons")
+	assert_false(hq._lift_menu_bg.visible, "no sub-menu panel is shown on the hub")
+	# Open Tuning: its page (the sliders) takes over; the hub controls hide.
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	assert_true(hq._lift_menu_bg.visible, "the sub-menu panel shows on the Tuning page")
+	assert_true(hq._lift_tune_box.visible, "the Tuning page shows the sliders")
+	assert_false(hq._lift_upgrades_box.visible, "the Upgrades menu is hidden on the Tuning page")
+	assert_false(hq._lift_hub_controls.visible, "the hub controls hide while a menu is open")
+	# Back returns to the hub (still in the bay, car still raised).
+	hq._lift_back()
+	assert_eq(hq._lift_page, hq.LiftPage.HUB, "Back from a menu returns to the hub")
+	assert_eq(hq._view, hq.View.LIFT, "still in the tuning bay")
+	# Open Upgrades the same way, then Back-from-hub leaves the bay for the garage.
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	assert_true(hq._lift_upgrades_box.visible, "the Upgrades page shows the install list")
+	assert_false(hq._lift_tune_box.visible, "the Tuning menu is hidden on the Upgrades page")
+	hq._lift_back()
+	hq._lift_back()
+	assert_eq(hq._view, hq.View.GARAGE, "Back from the hub returns to the garage")
+
+
 func test_hq_lift_tune_sliders_save_tuning_per_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -571,7 +633,7 @@ func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
 	_save.add_item("engine_stage1")
 	hq._enter_lift()
 	await get_tree().process_frame
-	hq._set_lift_tab(hq.LiftTab.UPGRADES)
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	# Installing now asks for confirmation first — nothing is fitted until accepted.
 	hq._install_upgrade(id, "engine_stage1")
 	assert_false(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),

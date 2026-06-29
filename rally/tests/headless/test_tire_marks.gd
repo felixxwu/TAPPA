@@ -3,8 +3,6 @@ extends GutTest
 # against a straight Curve2D with a stub car + stub wheels, so the gating /
 # emission / ring-buffer logic is tested without a real vehicle or rendering.
 
-const TireMarks = preload("res://scripts/tire_marks.gd")
-
 
 # Stub wheel: duck-typed like VehicleWheel3D (is_in_contact + global_position).
 class StubWheel:

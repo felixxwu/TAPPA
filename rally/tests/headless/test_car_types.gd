@@ -10,7 +10,6 @@ extends "res://tests/headless/sim_test.gd"
 # `_settled_by_index`) and restore it on later selections instead of dropping
 # every car from its spawn clearance in every test.
 
-const CarLibrary = preload("res://scripts/car_library.gd")
 
 var _spawn: Transform3D
 

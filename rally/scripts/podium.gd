@@ -299,7 +299,7 @@ func _build_overlay() -> void:
 	middle.add_child(_body_label)
 
 	# Leaderboard: a scrolling ranked field inside a solid panel.
-	_leaderboard_scroll = ScrollContainer.new()
+	_leaderboard_scroll = TouchScrollContainer.new()
 	_leaderboard_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_leaderboard_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	middle.add_child(_leaderboard_scroll)

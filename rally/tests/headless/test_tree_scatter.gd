@@ -5,8 +5,6 @@ extends GutTest
 # (1 - jitter) x cell — so there's no O(N²) neighbour scan. A point is dropped only if
 # its cell sits on the road. Reads only the in-memory track data, never the scene.
 
-const TreeScatter = preload("res://scripts/tree_scatter.gd")
-const TrackGenerator = preload("res://scripts/track_generator.gd")
 
 const PARAMS := {
 	"trees_per_turn": 10,

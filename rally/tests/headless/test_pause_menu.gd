@@ -70,6 +70,19 @@ func test_settings_exposes_the_shared_menu() -> void:
 		"one row per control scheme")
 
 
+func test_settings_opens_on_the_category_list_and_drills_in() -> void:
+	# Opening Settings shows the category list; each category opens its own sub-page.
+	_pause._show_settings(true)
+	assert_true(_pause.settings_menu.at_root(), "Settings opens on the category list")
+	_pause.settings_menu.show_camera()
+	assert_false(_pause.settings_menu.at_root(), "tapping Camera opens its own page")
+	# Back steps out of the sub-page to the list, then out of Settings to the menu.
+	_pause._on_settings_back()
+	assert_true(_pause.settings_menu.at_root(), "Back returns to the category list")
+	_pause._on_settings_back()
+	assert_false(_pause._settings_panel.visible, "Back from the list closes Settings")
+
+
 func test_quit_to_hq_abandons_the_rally_and_unfreezes() -> void:
 	# The pause menu offers a "Quit to HQ" button that abandons the active rally.
 	assert_not_null(_pause._quit_button, "the pause menu has a Quit to HQ button")
