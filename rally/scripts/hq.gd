@@ -153,7 +153,7 @@ var _scrap_button: Button
 
 # Tuning-lift overlay widgets.
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
-var _lift_hub_controls: VBoxContainer  # the HUB page: change-car + Tuning/Upgrades buttons
+var _lift_hub_controls: HBoxContainer  # the HUB page: one row of change-car + Tuning/Upgrades buttons
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_tune_box: VBoxContainer    # the TUNE menu (sliders)
@@ -962,52 +962,44 @@ func _build_lift_overlay() -> void:
 	_lift_car_label.custom_minimum_size = Vector2(360, 0)
 	info.add_child(_lift_car_label)
 
-	# The hub controls UNDER the car description: a minimal change-car selector then the
-	# Tuning / Upgrades buttons. Shown only on the HUB page (_refresh_lift_ui).
-	_lift_hub_controls = VBoxContainer.new()
+	# The hub controls UNDER the car description: a SINGLE bottom row holding Back, the
+	# change-car selector, and the Tuning / Upgrades buttons. Shown only on the HUB page
+	# (_refresh_lift_ui). Hugs content on the left so the raised car stays in clear view.
+	_lift_hub_controls = HBoxContainer.new()
 	_lift_hub_controls.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_lift_hub_controls.custom_minimum_size = Vector2(360, 0)
 	_lift_hub_controls.add_theme_constant_override("separation", 8)
 	_lift_hub_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left_col.add_child(_lift_hub_controls)
 
+	var back := Button.new()
+	back.text = "< Back to garage"
+	back.focus_mode = Control.FOCUS_NONE
+	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
+	_lift_hub_controls.add_child(back)
+
 	# Change which car is tuned (cycles all owned cars; updates the selected car).
-	var car_nav := HBoxContainer.new()
-	car_nav.add_theme_constant_override("separation", 8)
-	_lift_hub_controls.add_child(car_nav)
 	var prev_car := Button.new()
 	prev_car.text = "< Car"
 	prev_car.focus_mode = Control.FOCUS_NONE
 	prev_car.pressed.connect(_cycle_lift_car.bind(-1))
-	car_nav.add_child(prev_car)
-	var car_spacer := Control.new()
-	car_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	car_nav.add_child(car_spacer)
+	_lift_hub_controls.add_child(prev_car)
 	var next_car := Button.new()
 	next_car.text = "Car >"
 	next_car.focus_mode = Control.FOCUS_NONE
 	next_car.pressed.connect(_cycle_lift_car.bind(1))
-	car_nav.add_child(next_car)
+	_lift_hub_controls.add_child(next_car)
 
-	# The two menu buttons + Back to garage.
+	# The two menu buttons.
 	var to_tune := Button.new()
 	to_tune.text = "Tuning >"
 	to_tune.focus_mode = Control.FOCUS_NONE
-	to_tune.size_flags_horizontal = Control.SIZE_FILL
 	to_tune.pressed.connect(_open_lift_page.bind(LiftPage.TUNE))
 	_lift_hub_controls.add_child(to_tune)
 	var to_upgrades := Button.new()
 	to_upgrades.text = "Upgrades >"
 	to_upgrades.focus_mode = Control.FOCUS_NONE
-	to_upgrades.size_flags_horizontal = Control.SIZE_FILL
 	to_upgrades.pressed.connect(_open_lift_page.bind(LiftPage.UPGRADES))
 	_lift_hub_controls.add_child(to_upgrades)
-	var back := Button.new()
-	back.text = "< Back to garage"
-	back.focus_mode = Control.FOCUS_NONE
-	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN  # hug content, don't stretch
-	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
-	_lift_hub_controls.add_child(back)
 
 
 # Build the TUNE menu: one slider row per tuning axis. Static structure; gating /
