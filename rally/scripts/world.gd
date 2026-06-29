@@ -234,11 +234,21 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# renderer (TreeMeshField) — the low-poly ground-cover mesh, binned with per-bin
 	# LOD/visibility cull like the trees, but with NO collision and per-instance baked
 	# terrain light so it matches the ground. See features/trees.md.
-	var bushes := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
+	#
+	# The bush mesh is a WIDE patch, so reject it on a road footprint inflated by the
+	# bush's own world-space radius (on top of tree_road_margin_m) — that keeps the
+	# bush CENTRE far enough out that no part of the scaled mesh spills onto the road,
+	# at any per-instance yaw.
+	var bush_mesh := _bush_mesh(cfg)
+	var bush_radius := TreeMeshField.xz_radius(bush_mesh, cfg.bush_height_m)
+	var bush_footprint := cfg.track_width + 2.0 * (cfg.tree_road_margin_m + bush_radius)
+	var bush_road_cells := TrackGenerator.rasterize_cells(
+		road_centerline.tessellate(), bush_footprint)
+	var bushes := TreeScatter.scatter(result["pieces"], bush_road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
 	var bush_field := TreeMeshField.new()
 	add_child(bush_field)
-	bush_field.build(bushes, $Floor as TerrainManager, _bush_mesh(cfg),
+	bush_field.build(bushes, $Floor as TerrainManager, bush_mesh,
 		cfg.bush_height_m, 0.0, 0.0,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m,
 		false, true)

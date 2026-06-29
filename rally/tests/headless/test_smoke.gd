@@ -382,6 +382,22 @@ func test_tree_mesh_field_for_bushes_skips_collision_and_bakes_light() -> void:
 		Vector3(1e-3, 1e-3, 1e-3), "bush instance rests on the ground")
 
 
+func test_tree_mesh_field_xz_radius_scales_with_height() -> void:
+	# xz_radius (used to keep wide bushes off the road) = half the larger horizontal
+	# AABB extent, scaled by the same uniform scale build() applies for the height.
+	var box := BoxMesh.new()
+	box.size = Vector3(2.0, 1.0, 3.0)  # AABB 2 x 1 x 3
+	assert_almost_eq(TreeMeshField.uniform_scale_for(box, 2.0), 2.0, 1e-4,
+		"uniform scale = target_height / mesh height")
+	# uscale 2.0, larger horizontal extent 3.0 -> radius = 3.0/2 * 2.0 = 3.0
+	assert_almost_eq(TreeMeshField.xz_radius(box, 2.0), 3.0, 1e-4,
+		"xz radius is half the larger horizontal extent, scaled to height")
+	# Degenerate (flat) mesh height -> scale 1.0, no divide-by-zero.
+	var flat := BoxMesh.new(); flat.size = Vector3(2.0, 0.0, 2.0)
+	assert_almost_eq(TreeMeshField.uniform_scale_for(flat, 5.0), 1.0, 1e-4,
+		"zero-height mesh falls back to scale 1.0")
+
+
 func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	var floor := _scene.get_node("Floor") as TerrainManager
 	var field := SignField.new()

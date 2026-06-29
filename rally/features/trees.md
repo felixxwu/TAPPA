@@ -130,8 +130,20 @@ Differences from trees: they scatter with `track_seed + 1013` so the per-seed gr
 phase puts them on an interleaved grid (not the trees' cells), they are NOT
 forest-gated (default forestiness 1.0, so undergrowth covers the whole stage),
 they have no collision, and they scale to `bush_height_m` instead of
-`tree_size_m.y`. They reuse the trees' scatter knobs (count, radius, margin,
-jitter), bin size and render distance/fade.
+`tree_size_m.y`. They reuse the trees' scatter knobs (count, radius, jitter),
+bin size and render distance/fade.
+
+**Road keep-out (no mesh on the road).** The bush mesh is a *wide* flat patch, so
+uniform-scaling it to `bush_height_m` blows its world footprint up well past a
+tree trunk's. A bush is rejected not on the trees' `track_width + 2*tree_road_margin_m`
+footprint but on one **also inflated by the bush's own world-space radius**:
+`track_width + 2*(tree_road_margin_m + bush_radius)`, where
+`bush_radius = TreeMeshField.xz_radius(bush_mesh, bush_height_m)` (half the larger
+horizontal AABB extent × the height scale). That keeps the bush *centre* far
+enough out that no part of the scaled mesh spills onto the road at any
+per-instance yaw, while still leaving the `tree_road_margin_m` gap from the road
+edge. `world.gd` rasterizes this wider footprint into a bush-specific
+`road_cells`; the trees keep the un-inflated one.
 
 `world.gd._bush_mesh()` builds the render mesh: it takes the GLB's mesh, keeps the
 imported (tone-matched) foliage texture, and makes the `StandardMaterial3D`

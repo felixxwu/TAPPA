@@ -46,12 +46,9 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 	instance_positions = PackedVector3Array()
 	instance_positions.resize(positions.size())
 
-	# Uniform scale so the model's height matches the configured tree height
-	# (keeps proportions — a 3D tree must not be stretched like a billboard quad).
-	var uscale := 1.0
-	var ah := mesh.get_aabb().size.y
-	if ah > 0.0001:
-		uscale = target_height / ah
+	# Uniform scale so the model's height matches the configured height (keeps
+	# proportions — a 3D mesh must not be stretched like a billboard quad).
+	var uscale := uniform_scale_for(mesh, target_height)
 	instance_scale = uscale
 
 	var bin := maxf(bin_size, 1.0)
@@ -116,6 +113,21 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 			var box_xform := Transform3D(Basis.IDENTITY,
 				Vector3(pos.x, pos.y + collision_height * 0.5, pos.z))
 			PhysicsServer3D.body_add_shape(body.get_rid(), _collision_shape.get_rid(), box_xform)
+
+
+# Uniform scale that makes `mesh` stand `target_height` tall (the same scale
+# build() applies). 1.0 if the mesh has no height.
+static func uniform_scale_for(mesh: Mesh, target_height: float) -> float:
+	var ah := mesh.get_aabb().size.y
+	return target_height / ah if ah > 0.0001 else 1.0
+
+
+# World-space XZ radius of one instance once scaled to `target_height` — half the
+# larger horizontal AABB extent. Used by callers to keep a wide mesh (e.g. the
+# ground-cover bush) clear of the road at any yaw.
+static func xz_radius(mesh: Mesh, target_height: float) -> float:
+	var a := mesh.get_aabb()
+	return maxf(a.size.x, a.size.z) * 0.5 * uniform_scale_for(mesh, target_height)
 
 
 # Deterministic yaw in [0, TAU) from the world XZ position.
