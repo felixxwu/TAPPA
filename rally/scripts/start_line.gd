@@ -200,22 +200,16 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(spacer)
 
-	# --- BOTTOM card: context + launch ---------------------------------------
-	var bottom_panel := UITheme.panel(UITheme.PANEL.a)
-	bottom_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	root.add_child(bottom_panel)
-
-	var bottom_box := VBoxContainer.new()
-	bottom_box.add_theme_constant_override("separation", UITheme.GAP)
-	bottom_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom_panel.add_child(bottom_box)
-
+	# --- BOTTOM: the launch button -------------------------------------------
+	# A bare house button (no wrapping panel — the button is already a pure-black house
+	# bar) so it reads as a standard menu button at the one fixed row height, not an
+	# oversized block.
 	_start_button = UITheme.button("Start")
 	_start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_start_button.pressed.connect(launch)
-	bottom_box.add_child(_start_button)
+	root.add_child(_start_button)
 
-	UITheme.enforce(_overlay)  # house rules: uppercase + one font size
+	UITheme.enforce(_overlay)  # house rules: uppercase + one font size + fixed button height
 
 
 # A centred leaderboard row in a house role colour ("gold" for the leader, "dim"

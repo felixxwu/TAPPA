@@ -87,6 +87,10 @@ func test_reveal_shows_top_three_times_to_beat_and_context() -> void:
 	assert_string_contains(sl._subtitle_label.text, "RWD MASTERS", "the rally is named")
 	assert_string_contains(sl._subtitle_label.text, "EVENT 2 OF 3", "the event index is shown")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "it waits in the orbit/reveal phase")
+	# The launch button is a standard house menu button at the one fixed row height
+	# (not an oversized block).
+	assert_eq(sl._start_button.custom_minimum_size.y, float(UITheme.MENU_ROW_H),
+		"the Start button uses the fixed menu row height")
 
 
 func test_missing_rival_times_show_dash() -> void:
