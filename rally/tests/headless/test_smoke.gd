@@ -52,6 +52,24 @@ func test_entering_a_rally_event_generates_its_track() -> void:
 	Config.reset()  # don't leak the rally seed into other tests
 
 
+func test_spectator_groups_spawn_and_are_not_obstacles() -> void:
+	# The world places roadside spectator crowds (todo/roadside-spectators.md).
+	# At least one group should exist with standing members, and spectators must
+	# NOT be damage-dealing obstacles (people aren't trees).
+	var DamageModel = load("res://scripts/damage_model.gd")
+	var groups: Array = []
+	for child in _scene.get_children():
+		if child is SpectatorGroup:
+			groups.append(child)
+	assert_gt(groups.size(), 0, "world spawns spectator group(s)")
+	var total_upright := 0
+	for g in groups:
+		total_upright += g.upright_count()
+		assert_false(g.is_in_group(DamageModel.OBSTACLE_GROUP),
+			"a spectator group is not an obstacle")
+	assert_gt(total_upright, 0, "groups have standing spectators")
+
+
 func test_car_is_vehicle_with_four_wheels() -> void:
 	var car := _scene.get_node("Car") as VehicleBody3D
 	assert_not_null(car, "Car node must be a VehicleBody3D")
