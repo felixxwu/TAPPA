@@ -113,6 +113,17 @@ power-limited top and go unused. Fully neutralising the Jolt resistance (to make
 real drag + real gearing yield realistic top speeds game-wide) was considered and
 deferred as a larger, riskier change.
 
+Because this baseline resistance already lands the cars near their real top speeds
+on its own, the per-car `drag` coefficients are **sized to top it up to the
+realistic total, not to be the whole aero force** — so they are deliberately small
+(slippery cars like the LFA/Aventador sit near zero; only draggy bodies like the
+Mustang carry a real coefficient). They were tuned by measuring top speed in the
+sim; with them the cars top out within a couple of percent of real, except the
+LFA and Aventador, which the baseline friction caps a little under their real tops
+(≈306 vs 325, ≈319 vs 350) even at near-zero drag. Setting `drag` to a from-scratch
+aerodynamic value here would double-count the resistance and leave every car
+10–25 % slow.
+
 ## Tests
 
 `tests/headless/test_drivetrain.gd` (wheelspin, brake lockup, handbrake,
