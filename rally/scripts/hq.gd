@@ -120,6 +120,7 @@ var _map_table: MapTable        # the wooden table model the map plane sits on
 var _map_plane: MeshInstance3D  # the flat map laid on the table top
 var _pins_root: Node3D          # parent of the rally pins
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
+var _table_pin_index := -1      # keyboard/gamepad cursor into _unlocked_pins() (-1 = none)
 
 # Overlays (one CanvasLayer per station; only the active one is visible).
 var _title_layer: CanvasLayer
@@ -146,6 +147,7 @@ var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
 var _start_button: Button
+var _title_start_button: Button  # EXTERIOR title Start — default keyboard/gamepad focus
 var _no_eligible_label: Label
 # Car-park damage UI: a "too damaged" note + a Repair action for a wrecked focused car.
 var _car_warning_label: Label
@@ -161,6 +163,9 @@ var _scrap_button: Button
 # Tuning-lift overlay widgets.
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
 var _lift_hub_controls: HBoxContainer  # the HUB page: one row of change-car + Tuning/Upgrades buttons
+var _hub_tune_btn: Button       # HUB "Tuning >" — half of the up/down page cursor
+var _hub_upgrades_btn: Button   # HUB "Upgrades >" — the other half
+var _hub_focus := 0             # which hub page the cursor sits on (0 = Tune, 1 = Upgrades)
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_tune_box: VBoxContainer    # the TUNE menu (sliders)
@@ -784,17 +789,21 @@ func _build_title_overlay() -> void:
 
 	# Title screen is just the Start button (and a Settings button below it) over the
 	# parked-collection backdrop — no title/subtitle text.
+	# The title overlay is a flat two-button menu (no spatial 3D nav here), so it uses
+	# native focus: Start is focused on entry, ui_up/ui_down move between the two,
+	# ui_accept fires the focused one. (The 3D stations behind it keep menu_* nav.)
 	var start := Button.new()
 	start.text = "Start"
-	start.focus_mode = Control.FOCUS_NONE
+	start.focus_mode = Control.FOCUS_ALL
 	start.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	start.custom_minimum_size = Vector2(220, 52)
 	start.pressed.connect(_on_exterior_start)
 	root.add_child(start)
+	_title_start_button = start
 
 	var settings := Button.new()
 	settings.text = "Settings"
-	settings.focus_mode = Control.FOCUS_NONE
+	settings.focus_mode = Control.FOCUS_ALL
 	settings.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	settings.custom_minimum_size = Vector2(220, 44)
 	settings.pressed.connect(func() -> void: _open_settings(false))
@@ -1027,16 +1036,20 @@ func _build_lift_overlay() -> void:
 	_lift_hub_controls.add_child(next_car)
 
 	# The two menu buttons.
+	# The two menu buttons double as an up/down cursor (left/right is reserved for
+	# cycling the car, like the car park), painted by _refresh_hub_focus.
 	var to_tune := Button.new()
 	to_tune.text = "Tuning >"
 	to_tune.focus_mode = Control.FOCUS_NONE
 	to_tune.pressed.connect(_open_lift_page.bind(LiftPage.TUNE))
 	_lift_hub_controls.add_child(to_tune)
+	_hub_tune_btn = to_tune
 	var to_upgrades := Button.new()
 	to_upgrades.text = "Upgrades >"
 	to_upgrades.focus_mode = Control.FOCUS_NONE
 	to_upgrades.pressed.connect(_open_lift_page.bind(LiftPage.UPGRADES))
 	_lift_hub_controls.add_child(to_upgrades)
+	_hub_upgrades_btn = to_upgrades
 
 
 # Build the TUNE menu: one slider row per tuning axis. Static structure; gating /
@@ -1065,7 +1078,7 @@ func _build_lift_tune_box(parent: VBoxContainer) -> void:
 
 	var reset := Button.new()
 	reset.text = "Reset to neutral"
-	reset.focus_mode = Control.FOCUS_NONE
+	reset.focus_mode = Control.FOCUS_ALL
 	reset.pressed.connect(_reset_tuning)
 	_lift_tune_box.add_child(reset)
 
@@ -1093,6 +1106,9 @@ func _make_slider_row(spec: Dictionary) -> Control:
 	slider.min_value = -1.0
 	slider.max_value = 1.0
 	slider.step = 0.05
+	# Focusable: ui_up/ui_down walk between sliders, ui_left/ui_right nudge the focused
+	# one (the natural Range behaviour) — keyboard/gamepad tuning with no pointer.
+	slider.focus_mode = Control.FOCUS_ALL
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.value_changed.connect(_on_tune_slider_changed.bind(axis))
 	row.add_child(slider)
@@ -1347,7 +1363,8 @@ func _build_settings_overlay() -> void:
 
 	_settings_action_button = Button.new()
 	_settings_action_button.text = "< Back"
-	_settings_action_button.focus_mode = Control.FOCUS_NONE
+	# Focusable so down-nav from the last category row reaches the bottom button.
+	_settings_action_button.focus_mode = Control.FOCUS_ALL
 	_settings_action_button.pressed.connect(_on_settings_action)
 	root.add_child(_settings_action_button)
 
@@ -1435,6 +1452,13 @@ func _go_to(view: int, snap := false) -> void:
 	_view = view
 	if view != View.TABLE:
 		_detail_open = false
+	# Drop any GUI focus when changing station. HQ hides overlays by toggling their
+	# CanvasLayer, which does NOT clear a Control's focus (a CanvasLayer breaks the
+	# visibility chain), so a button on the view we just left would otherwise keep
+	# focus and silently swallow arrow keys / Enter in the next, spatially-navigated
+	# station. The native-focus views (the title, below; Settings + lift sub-pages
+	# via their own paths) re-grab a control immediately after.
+	get_viewport().gui_release_focus()
 	# The title screen shows the player's whole collection parked in the car park.
 	if view == View.EXTERIOR:
 		_build_title_lineup()
@@ -1448,6 +1472,10 @@ func _go_to(view: int, snap := false) -> void:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	else:
 		_clear_lift_car()
+	# Land the keyboard/gamepad cursor on the title's Start button (the title is the one
+	# HQ overlay driven by native focus; the rest use spatial menu_* nav).
+	if view == View.EXTERIOR:
+		UITheme.focus_grab.bind(_title_start_button).call_deferred()
 	_update_overlays()
 	if view == View.CARPARK:
 		return  # camera handled by _focus_changed once the lineup exists
@@ -1488,7 +1516,60 @@ func _enter_table() -> void:
 	_table_dragged = false
 	_table_panning = false
 	_refresh_map_pins()  # reflect any newly-earned stars / showdown unlock
+	# Seat the keyboard cursor on the first pin (highlight only) but leave the map
+	# centred — the camera follows the cursor once the player actually cycles.
+	_select_table_pin(0, false)
 	_go_to(View.TABLE)
+
+
+# The pins a keyboard/gamepad cursor can land on: the unlocked ones, in rally order
+# (the locked showdown pin is skipped — it's non-pickable until everything else is done).
+func _unlocked_pins() -> Array:
+	var out: Array = []
+	for pin in _pins:
+		if not bool(pin.get_meta("locked", false)):
+			out.append(pin)
+	return out
+
+
+# Move the table cursor to the i-th unlocked pin (wrapping) and pop it bigger. When
+# `pan` is set, also slide the map so the pin sits under the camera (used when the
+# player cycles); on first entry it's false so the map stays centred (the camera is
+# placed by _go_to).
+func _select_table_pin(i: int, pan := true) -> void:
+	var pins := _unlocked_pins()
+	if pins.is_empty():
+		_table_pin_index = -1
+		return
+	_table_pin_index = wrapi(i, 0, pins.size())
+	var selected: Node3D = pins[_table_pin_index]
+	for pin in pins:
+		pin.scale = Vector3.ONE * (1.4 if pin == selected else 1.0)
+	if not pan:
+		return
+	# Pan so the selected pin centres under the table camera's look point, clamped to
+	# the map extents exactly like a finger-drag (see _pan_table).
+	var cfg: GameConfig = Config.data
+	var half: Vector2 = cfg.hq_map_plane_size
+	_table_pan.x = clampf(selected.position.x - cfg.hq_table_cam_look.x, -half.x * 0.5, half.x * 0.5)
+	_table_pan.z = clampf(selected.position.z - cfg.hq_table_cam_look.z, -half.y * 0.5, half.y * 0.5)
+	if _view == View.TABLE:
+		_move_camera_to(_station_xform(View.TABLE), false)
+
+
+func _cycle_table_pin(step: int) -> void:
+	if _table_pin_index < 0:
+		_select_table_pin(0)
+	else:
+		_select_table_pin(_table_pin_index + step)
+
+
+# Open the rally detail for the pin the cursor is on (the keyboard/gamepad equivalent
+# of clicking it). A drag re-centres the cursor, so the index always tracks a real pin.
+func _open_selected_pin() -> void:
+	var pins := _unlocked_pins()
+	if _table_pin_index >= 0 and _table_pin_index < pins.size():
+		_on_rally_pin(String(pins[_table_pin_index].get_meta("rally_id")))
 
 
 func _on_rally_pin(rally_id: String) -> void:
@@ -1533,6 +1614,7 @@ func _hide_detail() -> void:
 func _enter_lift() -> void:
 	_ensure_lift_car()
 	_lift_page = LiftPage.HUB
+	_hub_focus = 0  # the cursor starts on Tuning each time we enter the bay
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
 	_raise_lift_car()  # slowly raise the car on the lift as we arrive
@@ -1585,16 +1667,48 @@ func _lift_back() -> void:
 		_lift_hub()
 
 
-# Open a sub-menu (TUNE / UPGRADES) as its own full-height page.
+# Open a sub-menu (TUNE / UPGRADES) as its own full-height page. These pages use
+# native focus (sliders / install buttons), so drop the cursor onto the first control.
 func _open_lift_page(page: int) -> void:
 	_lift_page = page
 	_refresh_lift_ui()
+	var box: Control = _lift_tune_box if page == LiftPage.TUNE else _lift_upgrades_box
+	_grab_first_focus.bind(box).call_deferred()
 
 
-# Return from a sub-menu to the bay hub.
+# Return from a sub-menu to the bay hub (restores the up/down hub cursor highlight).
+# The hub navigates by hand (left/right cycles the car), so release the native focus
+# the sub-page's sliders/buttons held.
 func _lift_hub() -> void:
 	_lift_page = LiftPage.HUB
+	get_viewport().gui_release_focus()
 	_refresh_lift_ui()
+
+
+# Move the HUB's up/down cursor between Tuning (0) and Upgrades (1) and repaint it.
+func _move_hub_focus(step: int) -> void:
+	_hub_focus = wrapi(_hub_focus + step, 0, 2)
+	_refresh_hub_focus()
+
+
+# Paint the manual hub cursor (left/right cycles the car, so the hub can't use native
+# focus; the Tuning/Upgrades buttons are highlighted by hand instead).
+func _refresh_hub_focus() -> void:
+	if _hub_tune_btn == null:
+		return
+	UITheme.mark_focused(_hub_tune_btn, _hub_focus == 0)
+	UITheme.mark_focused(_hub_upgrades_btn, _hub_focus == 1)
+
+
+# Grab focus on the first focusable, enabled, visible control under `root` — used to
+# seat the cursor when a native-focus page (the tuning sliders / upgrade list) opens.
+func _grab_first_focus(root: Node) -> void:
+	for c in root.find_children("*", "Control", true, false):
+		var ctrl := c as Control
+		if ctrl.focus_mode != Control.FOCUS_NONE and ctrl.is_visible_in_tree() \
+				and not (ctrl is BaseButton and (ctrl as BaseButton).disabled):
+			ctrl.grab_focus()
+			return
 
 
 # Cycle which owned car is on the lift (and is therefore the selected car). Wraps;
@@ -1680,6 +1794,7 @@ func _refresh_lift_ui() -> void:
 	_lift_menu_title.text = "TUNE" if _lift_page == LiftPage.TUNE else "UPGRADES"
 	_refresh_sliders()
 	_rebuild_upgrades_box()
+	_refresh_hub_focus()  # keep the up/down hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
 
@@ -1772,7 +1887,7 @@ func _make_slot_row(slot: String, instance_id: int, installed: Array, inventory:
 			continue
 		var install := Button.new()
 		install.text = "Install %s  (x%d)" % [UpgradeLibrary.by_id(item_id).get("name", item_id), count]
-		install.focus_mode = Control.FOCUS_NONE
+		install.focus_mode = Control.FOCUS_ALL
 		install.pressed.connect(_install_upgrade.bind(instance_id, item_id))
 		box.add_child(install)
 	return box
@@ -1804,7 +1919,7 @@ func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
 		if kits > 0:
 			var repair := Button.new()
 			repair.text = "Use Repair Kit (restore to full health)"
-			repair.focus_mode = Control.FOCUS_NONE
+			repair.focus_mode = Control.FOCUS_ALL
 			repair.pressed.connect(_use_repair_kit.bind(instance_id))
 			box.add_child(repair)
 		elif wrecked:
@@ -2249,9 +2364,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				_on_exterior_start()
 		View.SETTINGS:
 			if event.is_action_pressed("menu_back"):
-				# Cancel the pre-rally gate back to the car park; otherwise to the title.
-				_go_to(View.CARPARK if _settings_gate else View.EXTERIOR)
-				_settings_gate = false
+				# A sub-page backs out to the category list first (handled by the shared
+				# menu); from the list, cancel the pre-rally gate back to the car park,
+				# otherwise back to the title.
+				if not _settings_menu.go_back():
+					_go_to(View.CARPARK if _settings_gate else View.EXTERIOR)
+					_settings_gate = false
 		View.GARAGE:
 			if event.is_action_pressed("menu_select"):
 				_enter_table()
@@ -2261,17 +2379,23 @@ func _unhandled_input(event: InputEvent) -> void:
 				_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
-				# Hub: cycle the car, open Tuning (the primary menu), or back to garage.
+				# Hub: left/right cycle the car (like the car park); up/down move the
+				# cursor between Tuning/Upgrades; select opens it; back to the garage.
 				if event.is_action_pressed("menu_left"):
 					_cycle_lift_car(-1)
 				elif event.is_action_pressed("menu_right"):
 					_cycle_lift_car(1)
+				elif event.is_action_pressed("menu_up"):
+					_move_hub_focus(-1)
+				elif event.is_action_pressed("menu_down"):
+					_move_hub_focus(1)
 				elif event.is_action_pressed("menu_select"):
-					_open_lift_page(LiftPage.TUNE)
+					_open_lift_page(LiftPage.TUNE if _hub_focus == 0 else LiftPage.UPGRADES)
 				elif event.is_action_pressed("menu_back"):
 					_go_to(View.GARAGE)
 			elif event.is_action_pressed("menu_back"):
-				_lift_hub()  # a sub-menu page backs out to the hub
+				_lift_hub()  # a sub-menu page backs out to the hub (its controls use
+				# native focus for up/down/left-right/select)
 		View.TABLE:
 			if _detail_open:
 				if event.is_action_pressed("menu_select"):
@@ -2280,6 +2404,12 @@ func _unhandled_input(event: InputEvent) -> void:
 					_hide_detail()
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.GARAGE)
+			elif event.is_action_pressed("menu_left") or event.is_action_pressed("menu_up"):
+				_cycle_table_pin(-1)
+			elif event.is_action_pressed("menu_right") or event.is_action_pressed("menu_down"):
+				_cycle_table_pin(1)
+			elif event.is_action_pressed("menu_select"):
+				_open_selected_pin()
 			else:
 				_table_pan_input(event)
 		View.CARPARK:

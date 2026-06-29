@@ -7,7 +7,6 @@ extends RefCounted
 # terrain. This file holds the geometry helpers and generate(), which drives the
 # search.
 
-
 const CELL_M := 0.5                                  # global cell grid size
 const STRAIGHT_OPTIONS_M := [0.0, 5.0, 10.0, 20.0]   # connecting straight lengths
 const RASTER_STEP_M := 0.25                          # centerline sampling for cells

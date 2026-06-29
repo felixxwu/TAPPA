@@ -23,6 +23,53 @@ exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pi
    final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
 ```
 
+## Menu navigation (keyboard / gamepad)
+
+Every menu is fully navigable with **up / down / left / right / enter / back**, on
+keyboard *and* controller, alongside mouse / touch. There are **two regimes**, and
+which one a screen uses depends on whether its layout is a flat widget list or a 3D
+space:
+
+- **Flat / overlay menus** use **Godot's native focus** — the buttons are
+  `focus_mode = FOCUS_ALL`, one grabs focus when the menu opens, and the engine's
+  built-in `ui_up`/`ui_down`/`ui_left`/`ui_right` move focus, `ui_accept` fires the
+  focused control, `ui_cancel` backs out. Those default actions already bind arrow
+  keys + D-pad + left-stick + Enter/Space + gamepad A/B, so keyboard and controller
+  work with no extra wiring. The **focus highlight is the theme's `focus` stylebox**,
+  which `tools/build_ui_theme.gd` defines to match the **hover** look — so a focus
+  cursor and a mouse hover read identically (see [ui-design-system.md](ui-design-system.md)).
+  `UITheme.focus_grab(ctrl)` is the guarded, call-deferred grab helper menus use to
+  seat the cursor after they're shown. This covers: the **title** (Start/Settings),
+  the shared **`SettingsMenu`** (rows + bottom action button — used by both the HQ
+  settings overlay and the pause menu), the **pause** menu (Resume/Settings/Quit),
+  the **standings** Continue, the **podium** Next, and the tuning-lift **Tune**
+  (sliders — left/right nudges the focused one) and **Upgrades** (install / repair)
+  pages.
+- **Diegetic 3D HQ stations** can't be a focus graph — "left/right" means *cycle the
+  3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
+  HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
+  `menu_left`/`menu_right`/`menu_up`/`menu_down`/`menu_select`/`menu_back` actions,
+  which bind arrows + WASD + D-pad + Enter/Esc + gamepad A/B). The **car park** /
+  **overflow** cycle the focused car with left/right and Start/Scrap with select; the
+  **map table** carries a **keyboard pin cursor** (`_table_pin_index`) that cycles the
+  unlocked pins (left/right or up/down, wrapping), pops the selected pin bigger,
+  centres the camera on it, and opens its detail on select; the **tuning hub** uses
+  left/right to change car and an up/down cursor (`_hub_focus`, painted by
+  `UITheme.mark_focused`) over Tuning/Upgrades. The **garage** keeps select → table /
+  left → lift / back → exterior. Because HQ hides overlays by toggling their
+  **`CanvasLayer`** (which does *not* clear a `Control`'s focus — a CanvasLayer breaks
+  the visibility chain), `_go_to` / `_lift_hub` call `get_viewport().gui_release_focus()`
+  on every transition so a button on the view just left can't keep focus and silently
+  swallow arrow keys / Enter in the next, spatially-navigated station; the
+  native-focus views re-grab a control right after.
+
+> **When you add or change a menu, wire its navigation in the same piece of work.**
+> A flat list: make the buttons `FOCUS_ALL` and `UITheme.focus_grab` the first one
+> when it shows (handle `ui_cancel`/`menu_back` for "back"). A new HQ station:
+> add a `menu_*` branch in `hq.gd._unhandled_input` and release focus on entry. Add a
+> nav test (see `tests/headless/test_menu_nav.gd` / the nav cases in
+> `test_menu_flow.gd` / `test_pause_menu.gd`).
+
 ## HQ (`hq.gd`)
 
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no

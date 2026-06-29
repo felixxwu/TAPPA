@@ -9,6 +9,20 @@
 - Every time a feature is added or modified, update the relevant `features/`
   file(s) in the SAME piece of work — keep the docs in sync with the code, the
   same way tests are kept in sync.
+- **Menus must be keyboard + gamepad navigable.** Every menu in the game supports
+  up / down / left / right / enter / back on keyboard AND controller (not just
+  mouse / touch) — see `features/menus.md` → "Menu navigation". When you ADD a new
+  menu or CHANGE an existing one, wire its navigation in the SAME piece of work:
+  - A flat widget list (overlay / panel): make its buttons `focus_mode = FOCUS_ALL`,
+    `UITheme.focus_grab(first_button)` (deferred) when it's shown, and route "back"
+    through `ui_cancel` / `menu_back`. The theme's `focus` stylebox paints the cursor
+    (it matches hover), so there's no extra visual work.
+  - A diegetic 3D HQ station: add a `menu_*` branch in `hq.gd._unhandled_input` and
+    `get_viewport().gui_release_focus()` on entry (HQ hides overlays via CanvasLayer,
+    which does not clear Control focus).
+  Add / update a nav test (`tests/headless/test_menu_nav.gd`, or the nav cases in
+  `test_menu_flow.gd` / `test_pause_menu.gd`). Don't ship a menu reachable only by
+  pointer.
 - `gameplay.md` is the high-level gameplay design / vision doc ("Gran Turismo,
   but with rally stages") — the north star the `todo/` specs ladder up to. Read
   it for intent on progression, damage, rewards, tuning, and the final showdown.
