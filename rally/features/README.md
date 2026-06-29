@@ -68,7 +68,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Track generation | `scripts/track_generator.gd` |
 | Trees & bushes | `scripts/tree_scatter.gd`, `scripts/billboard_field.gd`, `shaders/billboard.gdshader` |
 | Roadside signs | `scripts/sign_layout.gd` (`SignLayout` planner), `scripts/sign_field.gd` (`SignField` builder) |
-| Finish arch | `scripts/finish_arch.gd` (`FinishArch`), `tools/bake_finish_banners.gd`, `tools/render_model.gd` |
+| Finish arch | `scripts/finish_arch.gd` (`FinishArch`), `tools/render_model.gd` |
 | Camera | `scripts/chase_camera.gd` |
 | HUD | `scripts/hud.gd` |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |

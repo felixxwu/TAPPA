@@ -50,8 +50,8 @@ func test_arch_spans_its_opening_and_height() -> void:
 
 
 func test_has_banners_ropes_and_anchors() -> void:
-	# Top strip (front + back) + two legs = 4 banner quads, plus seams + ropes +
-	# the two stakes. We assert the headline parts rather than exact counts.
+	# Two cream leg boards plus the leg seams give several quads; the stakes are
+	# boxes and the guy ropes cylinders. We assert the headline parts, not exact counts.
 	var quad_count := 0
 	var box_count := 0
 	var cyl_count := 0
@@ -62,9 +62,50 @@ func test_has_banners_ropes_and_anchors() -> void:
 			box_count += 1
 		elif mi.mesh is CylinderMesh:
 			cyl_count += 1
-	assert_gte(quad_count, 4, "at least the 3 beam/leg banner quads + seams present")
+	assert_gte(quad_count, 4, "leg banner boards + seam quads present")
 	assert_eq(box_count, 2, "two ground-anchor stakes")
 	assert_eq(cyl_count, 4, "four guy ropes (two per side)")
+
+
+func _label_texts() -> Array:
+	var out := []
+	for c in _arch.get_children():
+		if c is Label3D:
+			out.append((c as Label3D).text)
+	return out
+
+
+func test_banners_show_live_event_info() -> void:
+	# The banners render the event's data, not placeholder text: the FINISH/START
+	# wordmark + rally name on the beam, and the stage / time-to-beat / tier on the
+	# legs. Rebuild a START gate carrying a sample event and read the Label3D text.
+	_arch.is_start = true
+	_arch.info = {"rally_name": "Coastal Sprint", "stage_index": 1, "stage_count": 3,
+		"target_ms": 83450, "difficulty": 2}
+	_arch.build()
+	await get_tree().process_frame
+	var texts := _label_texts()
+	var joined := "\n".join(texts)
+	assert_gt(texts.size(), 0, "arch has Label3D banners")
+	assert_true(joined.contains("START"), "beam shows the START wordmark")
+	assert_true(joined.contains("COASTAL SPRINT"), "beam shows the rally name (upper-cased)")
+	assert_true(joined.contains("STAGE"), "leg shows the stage number")
+	assert_true(joined.contains("2 / 3"), "leg shows this stage of the total")
+	assert_true(joined.contains("1:23.45"), "leg shows the time-to-beat (start gate)")
+	assert_true(joined.contains("TIER 2"), "leg shows the difficulty tier")
+
+
+func test_banners_fall_back_to_wordmark_without_an_event() -> void:
+	# With no active rally (empty info) the gate shows just FINISH/START — no
+	# misleading STAGE / TIER / time placeholders.
+	_arch.is_start = false
+	_arch.info = {}
+	_arch.build()
+	await get_tree().process_frame
+	var joined := "\n".join(_label_texts())
+	assert_true(joined.contains("FINISH"), "beam still shows the FINISH wordmark")
+	assert_false(joined.contains("STAGE"), "no stage line without an event")
+	assert_false(joined.contains("TIER"), "no tier line without an event")
 
 
 func test_flat_caps_face_outward() -> void:

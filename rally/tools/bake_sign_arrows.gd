@@ -3,14 +3,14 @@ extends SceneTree
 # rally pacenote board: a bold arrow whose bend follows the REAL corner shape from
 # CornerLibrary (so the arrow literally encodes the turn intensity), with the corner
 # grade below it. One texture per turn type per direction (left/right mirror).
-# Renders Control/Node2D into a SubViewport and grabs the image, like
-# bake_finish_banners.gd. Writes PNGs to textures/signs/:
+# Renders Control/Node2D into a SubViewport and grabs the image. Writes PNGs to
+# textures/signs/:
 #
 #   xvfb-run -a godot --path rally --rendering-driver opengl3 \
 #       --script tools/bake_sign_arrows.gd
 #
 # After baking, run `godot --headless --path rally --import` so the new PNGs gain
-# their .import files (SignField loads them via load(), like the finish banners).
+# their .import files (SignField loads them via load()).
 # Re-run whenever the board art changes. Pure tooling.
 
 const CornerLibrary = preload("res://scripts/corner_library.gd")
@@ -19,7 +19,7 @@ const OUT := "res://textures/signs"
 const TEX := 256              # square face, matches the square sign panel
 const FACE_INSET := 12.0      # ink border thickness around the cream board
 
-# Palette — shared with the finish banners (bake_finish_banners.gd) for one look.
+# Palette — the shared desert-rally look (cream board, dark ink).
 const CREAM := Color("f3e9d2")
 const INK := Color("23211f")
 const ORANGE := Color("d84a26")
@@ -158,7 +158,7 @@ func _bake_contact_sheet(gallery: Array[Dictionary]) -> void:
 	vp.queue_free()
 
 
-# ---- helpers (mirror bake_finish_banners.gd) -----------------------------
+# ---- helpers -----------------------------
 func _rect(parent: Control, pos: Vector2, size: Vector2, col: Color) -> ColorRect:
 	var r := ColorRect.new()
 	r.position = pos

@@ -2,15 +2,15 @@ class_name FinishArch
 extends Node3D
 # Procedural inflatable rally gate — the fat orange "portal" seen at a stage's
 # start/finish (Dakar-style), modelled on the reference photo: two inflatable legs
-# joined by a top beam with rounded inner/outer corners, wordmark banners down each
-# leg and a sponsor strip across the top, anchored by guy ropes to ground stakes on
-# each side. The same model serves BOTH gates — world.gd builds a FINISH one at the
-# centerline end and a START one at the start line; the `*_banner` exports below
-# pick which baked banner set (FINISH vs START wordmarks) it wears.
+# joined by a top beam with rounded inner/outer corners, info banners down each
+# leg and across the top, anchored by guy ropes to ground stakes on each side. The
+# same model serves BOTH gates — world.gd builds a FINISH one at the centerline end
+# and a START one at the start line; `is_start` picks the wording and `info` carries
+# the live event data (rally name, stage, time-to-beat, difficulty) the banners show.
 #
 # Built entirely from code so it fits the project's procedural-asset style (cf.
 # SignField) and the PS1 flat-shaded look: one extruded arch mesh with the lit
-# car shader, plus thin banner quads laid just proud of the front face. All
+# car shader, plus Label3D banners laid just proud of the front/back faces. All
 # dimensions are metres; the arch spans a road of `span` width.
 
 const ARCH_SHADER := preload("res://shaders/ps1_models_lit.gdshader")
@@ -34,12 +34,19 @@ const ARCH_SHADER := preload("res://shaders/ps1_models_lit.gdshader")
 @export var sun_direction: Vector3 = Vector3(0.35, 0.85, 0.4)
 
 # --- Banners ------------------------------------------------------------------
-# Base names of the baked banner textures (textures/finish/<name>.png) for the top
-# beam (approach face), its down-track back face, and the legs. Defaults wear the
-# FINISH set; the start gate sets these to the START set (see tools/bake_finish_banners.gd).
-@export var top_banner: String = "top"
-@export var back_banner: String = "back"
-@export var leg_banner: String = "leg"
+# The banners carry live EVENT info — rendered as Label3D text laid just proud of
+# the front/back faces, no baked textures. `is_start` picks the START vs FINISH
+# wording; `info` is the event-data dict set by world.gd before build() (keys:
+# rally_name:String, stage_index:int, stage_count:int, target_ms:int, difficulty:int).
+# Empty/zero fields are skipped, so a dev boot with no active rally shows just the
+# START / FINISH wordmark.
+@export var is_start: bool = false
+var info: Dictionary = {}
+
+# Banner palette (cream panels, dark ink text, bright wordmarks).
+const _CREAM := Color(0.95, 0.91, 0.82)
+const _INK := Color(0.13, 0.12, 0.11)
+const _WHITE := Color(0.97, 0.97, 0.93)
 
 var _mat: ShaderMaterial
 
@@ -220,73 +227,100 @@ func _add_inflatable_seams() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Banners — the FINISH beam strip and the stacked sponsor panels on each leg,
-# laid just proud of the front/back faces. Textures are baked by
-# tools/bake_finish_banners.gd into textures/finish/ and loaded at runtime via
-# Image.load (no import step). Missing textures fall back to a flat panel colour.
+# Banners — live EVENT info rendered as Label3D text, laid just proud of the
+# front/back faces. The top beam carries the START / FINISH wordmark over the rally
+# name; each leg carries the stage number, the time-to-beat (start gate) and the
+# difficulty tier. All pulled from `info` (set by world.gd from RallySession);
+# empty/zero fields are skipped, so a dev boot with no active rally shows just the
+# wordmark. No baked textures — the text is generated at build time so it always
+# matches the event the player is actually driving.
 # ---------------------------------------------------------------------------
-const BANNER_DIR := "res://textures/finish"
-
 func _add_banners() -> void:
-	var hz := depth * 0.5 + 0.02
+	var hz := depth * 0.5 + 0.03
 	var beam_y := height - top_height
 	var total_w := span + 2.0 * leg_width
-	# Top beam strip, front (approach) and back (down-track) faces.
-	var top_tex := _load_banner(top_banner)
-	var back_tex := _load_banner(back_banner)
-	_add_banner_quad(top_tex, Color(0.95, 0.95, 0.92),
-		Vector3(0, beam_y + top_height * 0.5, hz),
-		Vector2(total_w * 0.99, top_height * 0.86), false)
-	_add_banner_quad(back_tex, arch_color,
-		Vector3(0, beam_y + top_height * 0.5, -hz),
-		Vector2(total_w * 0.99, top_height * 0.86), true)
-	# Leg sponsor panels, front face of each leg.
-	var leg_tex := _load_banner(leg_banner)
+	var role := "START" if is_start else "FINISH"
+	var rally_name := String(info.get("rally_name", "")).strip_edges().to_upper()
+	var stage_index := int(info.get("stage_index", 0))
+	var stage_count := int(info.get("stage_count", 0))
+	var target_ms := int(info.get("target_ms", -1))
+	var difficulty := int(info.get("difficulty", 0))
+	# Two lines so it fits the narrow leg panel without mid-word wrapping.
+	var stage_text := "STAGE\n%d / %d" % [stage_index + 1, stage_count] if stage_count > 0 else ""
+
+	# Top beam: wordmark over the rally name, on the approach (front) and down-track
+	# (back) faces of the orange beam cap (bright text reads against the orange).
+	var beam_cy := beam_y + top_height * 0.5
+	var top_text := role if rally_name == "" else "%s   %s" % [role, rally_name]
+	_add_label(top_text, Vector3(0, beam_cy, hz), top_height * 0.5, _WHITE, total_w * 0.96, false)
+	_add_label(top_text, Vector3(0, beam_cy, -hz), top_height * 0.5, _WHITE, total_w * 0.96, true)
+
+	# Leg panels: a cream board on each leg's front face carrying the stage, the
+	# time-to-beat (start gate only) and the difficulty tier, top to bottom.
+	var panel_w := leg_width * 0.84
+	var panel_h := beam_y * 0.92
+	var panel_cy := beam_y * 0.5
+	# Leg text is short and controlled (no rally name), so no auto-wrap (width 0) —
+	# explicit line breaks keep it centred on the narrow board.
 	for cx in [-(span * 0.5 + leg_width * 0.5), (span * 0.5 + leg_width * 0.5)]:
-		_add_banner_quad(leg_tex, Color(0.85, 0.78, 0.6),
-			Vector3(cx, beam_y * 0.5, hz),
-			Vector2(leg_width * 0.84, beam_y * 0.92), false)
+		_add_panel(Vector3(cx, panel_cy, hz - 0.01), Vector2(panel_w, panel_h), _CREAM, false)
+		if stage_text != "":
+			_add_label(stage_text, Vector3(cx, panel_cy + panel_h * 0.32, hz),
+				panel_h * 0.07, _INK, 0.0, false)
+		if is_start and target_ms > 0:
+			_add_label("TIME TO\nBEAT", Vector3(cx, panel_cy + panel_h * 0.02, hz),
+				panel_h * 0.05, _INK, 0.0, false)
+			_add_label(_fmt_time(target_ms), Vector3(cx, panel_cy - panel_h * 0.11, hz),
+				panel_h * 0.07, _INK, 0.0, false)
+		if difficulty > 0:
+			_add_label("TIER %d" % difficulty, Vector3(cx, panel_cy - panel_h * 0.32, hz),
+				panel_h * 0.065, _INK, 0.0, false)
 
 
-# One flat textured quad facing +Z (front) or -Z (back).
-func _add_banner_quad(tex: Texture2D, fallback: Color, pos: Vector3,
-		size: Vector2, face_back: bool) -> void:
+# A flat coloured banner board facing +Z (front) or -Z (back), lit by the arch shader.
+func _add_panel(pos: Vector3, size: Vector2, col: Color, face_back: bool) -> void:
 	var mi := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = size
 	mi.mesh = q
-	var mat := ShaderMaterial.new()
-	mat.shader = ARCH_SHADER
-	mat.set_shader_parameter("light_amount", 0.4)  # banners read flatter than the tubes
-	mat.set_shader_parameter("light_dir", sun_direction.normalized())
-	mat.set_shader_parameter("sun_color", Color(0.45, 0.43, 0.4))
-	mat.set_shader_parameter("sky_color", Color(0.6, 0.62, 0.68))
-	mat.set_shader_parameter("ground_color", Color(0.4, 0.36, 0.3))
-	if tex != null:
-		mat.set_shader_parameter("albedo_texture", tex)
-		mat.set_shader_parameter("albedo_color", Color.WHITE)
-	else:
-		mat.set_shader_parameter("albedo_color", fallback)
-	mi.material_override = mat
+	mi.material_override = _make_material(col)
 	mi.position = pos
 	if face_back:
 		mi.rotate_y(PI)
 	add_child(mi)
 
 
-# Baked banner textures, loaded as normal imported resources (committed .import
-# files, like the project's other textures) and cached across rebuilds/instances.
-# Returns null if the texture hasn't been baked yet (tools/bake_finish_banners.gd),
-# in which case the quad falls back to a flat panel colour.
-static var _banner_cache: Dictionary = {}
+# One line (or "\n"-separated lines) of banner text on the front (+Z) or back (-Z)
+# face. `height_m` is the target world height of a text line; `max_width_m` bounds
+# the width so long rally names wrap rather than overrun the beam/leg.
+func _add_label(text: String, pos: Vector3, height_m: float, col: Color,
+		max_width_m: float, face_back: bool) -> void:
+	if text.strip_edges() == "":
+		return
+	var font_size := 120
+	var l := Label3D.new()
+	l.text = text
+	l.font_size = font_size
+	l.pixel_size = height_m / float(font_size)
+	l.modulate = col
+	l.outline_modulate = _INK if col == _WHITE else _CREAM
+	l.outline_size = int(font_size * 0.08)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.position = pos
+	if max_width_m > 0.0:
+		l.width = max_width_m / l.pixel_size
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if face_back:
+		l.rotate_y(PI)
+	add_child(l)
 
-func _load_banner(tex_name: String) -> Texture2D:
-	if _banner_cache.has(tex_name):
-		return _banner_cache[tex_name]
-	var path := "%s/%s.png" % [BANNER_DIR, tex_name]
-	var tex: Texture2D = load(path) as Texture2D if ResourceLoader.exists(path) else null
-	_banner_cache[tex_name] = tex
-	return tex
+
+# m:ss.ss, matching the HUD / standings clocks (hud.gd, standings.gd).
+func _fmt_time(ms: int) -> String:
+	var s := ms / 1000.0
+	var m := int(s / 60.0)
+	return "%d:%05.2f" % [m, s - m * 60.0]
 
 
 # ---------------------------------------------------------------------------
