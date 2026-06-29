@@ -30,6 +30,8 @@ rally/tools/ui_preview.png
 rally/tools/ui_preview.png.import
 rally/tools/pause_capture.png
 rally/tools/pause_capture.png.import
+rally/tools/menu_*.png
+rally/tools/menu_*.png.import
 
 # Local secrets / env
 .env
