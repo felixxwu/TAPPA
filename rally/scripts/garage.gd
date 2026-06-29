@@ -111,6 +111,7 @@ func _tex_mat(path: String, uv := Vector3.ONE, tint := Color.WHITE, rough := 0.9
 	var tex := load(path) as Texture2D
 	if tex != null:
 		m.albedo_texture = tex
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	m.albedo_color = tint
 	m.uv1_scale = uv
 	m.roughness = rough

@@ -32,6 +32,13 @@ func _tree_mesh() -> Mesh:
 		for c in n.get_children():
 			stack.append(c)
 	scene.queue_free()
+	# The GLB's baked StandardMaterials import with linear filtering, which blurs
+	# the leaf texture; force nearest (keeping mipmaps) for the flat PS1 look.
+	if _tree_mesh_cache != null:
+		for s in _tree_mesh_cache.get_surface_count():
+			var sm := _tree_mesh_cache.surface_get_material(s) as BaseMaterial3D
+			if sm != null:
+				sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	return _tree_mesh_cache
 
 
@@ -334,7 +341,7 @@ func _bush_mesh() -> Mesh:
 	var mat: StandardMaterial3D = base.duplicate() if base is StandardMaterial3D else StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.vertex_color_use_as_albedo = true
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mesh.surface_set_material(0, mat)
 	return mesh
 

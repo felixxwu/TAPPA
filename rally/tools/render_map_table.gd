@@ -79,6 +79,7 @@ func _initialize() -> void:
 	var map_tex := load("res://textures/map_table.jpg") as Texture2D
 	if map_tex != null:
 		pmat.albedo_texture = map_tex
+	pmat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	plane.material_override = pmat
 	plane.position = Vector3(0.0, top_y + 0.01, 0.0)

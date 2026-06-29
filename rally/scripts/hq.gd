@@ -274,6 +274,7 @@ func _build_environment() -> void:
 	grass.position.y = -0.02  # just under the concrete so the apron wins where they overlap
 	var grass_mat := StandardMaterial3D.new()
 	grass_mat.albedo_texture = load("res://textures/grass.jpg")
+	grass_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	var tiles := grass_size * cfg.terrain_tile_per_meter
 	grass_mat.uv1_scale = Vector3(tiles, tiles, 1.0)
 	grass.material_override = grass_mat
@@ -461,7 +462,7 @@ func _build_carpark() -> void:
 	surface.position = Vector3(center.x, 0.012, center.z)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _carpark_bay_texture(bays)
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mat.roughness = 0.95
 	surface.material_override = mat
 	add_child(surface)
@@ -530,7 +531,7 @@ func _build_map_table() -> void:
 	# aerial colours read true under the garage lighting from the near-top-down
 	# table camera, rather than being darkened by the directional sun's angle.
 	mm.albedo_texture = load("res://textures/map_table.jpg")
-	mm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_map_plane.material_override = mm
 	_map_plane.position = Vector3(p.x, top_y + 0.01, p.z)

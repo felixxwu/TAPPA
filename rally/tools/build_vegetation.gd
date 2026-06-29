@@ -76,7 +76,7 @@ func make_opaque_leaf(tint: Color) -> StandardMaterial3D:
 	m.roughness = 1.0
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED  # 2-sided, still fully opaque
 	m.uv1_scale = Vector3(1.0, 1.0, 1.0)
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	return m
 
 func new_st() -> SurfaceTool:
@@ -153,6 +153,7 @@ func setup_stage() -> void:
 	ground.mesh = pm
 	var gm := StandardMaterial3D.new()
 	gm.albedo_texture = _tex(ProjectSettings.globalize_path("res://textures/grass.jpg"))
+	gm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	gm.uv1_scale = Vector3(6, 6, 1)
 	gm.roughness = 1.0
 	ground.material_override = gm

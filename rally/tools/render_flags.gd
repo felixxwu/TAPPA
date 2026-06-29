@@ -40,6 +40,7 @@ func _render_states() -> void:
 	plane.mesh = pm
 	var mm := StandardMaterial3D.new()
 	mm.albedo_texture = load("res://textures/map_table.jpg")
+	mm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	plane.mesh.material = mm
 	world.add_child(plane)

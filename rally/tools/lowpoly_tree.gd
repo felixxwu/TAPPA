@@ -215,7 +215,7 @@ func build_tree() -> ArrayMesh:
 	var tex := load("res://textures/leaves.png") as Texture2D
 	if tex != null:
 		leaf_mat.albedo_texture = tex
-		leaf_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		leaf_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 
 	# Commit both surfaces into one mesh: surface 0 = trunk, 1 = canopy.
 	st_trunk.set_material(trunk_mat)

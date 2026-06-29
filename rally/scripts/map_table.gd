@@ -114,7 +114,7 @@ func _wood_mat(tex: Texture2D, tint: Color, uv: Vector3) -> StandardMaterial3D:
 	m.roughness = 0.62
 	m.metallic = 0.0
 	m.metallic_specular = 0.35
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	return m
 
 
