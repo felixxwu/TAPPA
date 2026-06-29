@@ -58,7 +58,10 @@ crank    = throttle × peak_torque × global_torque_scale × _torque_fraction(rp
 drive torque every car makes. It scales acceleration for the whole field at once
 without changing the published `peak_torque`, so the stats panel and
 `power_to_weight` still report the full, pre-scaling figure — it's a balance knob
-for overall pace, not a per-car spec. `1.0` disables it.
+for overall pace, not a per-car spec. `1.0` disables it. The frozen test fixture
+(`tests/fixtures/test_config.tres`) pins it to `1.0` on purpose, so the
+drive-mode launch tests stay calibrated to full torque and don't drift when the
+shipped de-rate is retuned.
 
 Off throttle (and during fuel-cut/shifts) the gross term is zero, so `crank`
 is just `−friction` — that is the **engine braking**, and because friction
