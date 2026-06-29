@@ -743,7 +743,9 @@ func _build_title_overlay() -> void:
 	var made := _make_overlay()
 	_title_layer = made[0]
 	var root: VBoxContainer = made[1]
-	root.alignment = BoxContainer.ALIGNMENT_CENTER
+	# Sit the buttons at the BOTTOM of the screen so the HQ (garage + parked
+	# collection) stays visible above them rather than being covered by a centred menu.
+	root.alignment = BoxContainer.ALIGNMENT_END
 
 	# Title screen is just the Start button (and a Settings button below it) over the
 	# parked-collection backdrop — no title/subtitle text.
