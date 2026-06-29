@@ -116,11 +116,17 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	hq._go_to(hq.View.SETTINGS)
 	assert_true(hq._settings_layer.visible, "the settings overlay is shown")
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in settings")
-	# A row per control scheme, each with a diagram.
-	assert_eq(hq._settings_rows.size(), MobileControls.SCHEMES.size(),
+	# The shared SettingsMenu: a camera-angle row per mode and a row per control scheme.
+	assert_eq(hq._settings_menu.camera_rows.size(), CameraManager.MODES.size(),
+		"one settings row per camera angle")
+	assert_eq(hq._settings_menu.scheme_rows.size(), MobileControls.SCHEMES.size(),
 		"one settings row per control scheme")
+	# Pick the bonnet camera; it persists to the save profile.
+	hq._settings_menu.select_camera(CameraManager.Mode.BONNET)
+	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)),
+		CameraManager.Mode.BONNET, "the chosen camera angle is saved")
 	# Pick the tilt scheme; it persists to the save profile.
-	hq._select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
+	hq._settings_menu.select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
 		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
 	# Back returns to the title.

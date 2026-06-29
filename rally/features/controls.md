@@ -21,6 +21,11 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 
 All actions use a 0.2 deadzone.
 
+The camera can also be **picked directly** (rather than cycled) on the settings page —
+title-screen Settings or the in-run pause menu (see [menus.md](menus.md)); the choice
+persists. The in-run **pause menu** is opened by the top-right Pause button or
+`ui_cancel` (Esc / gamepad B), which freezes the game.
+
 ## Controller (gamepad)
 
 The standard racing layout maps to any Godot-recognised gamepad (Xbox / Steam

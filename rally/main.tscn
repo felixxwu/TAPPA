@@ -13,6 +13,7 @@
 [ext_resource type="Script" uid="uid://bx7m7rsqs3hcu" path="res://scripts/hud.gd" id="8_hud"]
 [ext_resource type="Script" uid="uid://da6jmm86ad2c" path="res://scripts/mobile_controls.gd" id="9_mobile"]
 [ext_resource type="Script" uid="uid://c1ihaadjtfrte" path="res://scripts/camera_manager.gd" id="10_cammgr"]
+[ext_resource type="Script" path="res://scripts/pause_menu.gd" id="13_pause"]
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
 [ext_resource type="Texture2D" uid="uid://bcx6lhspkcwhl" path="res://textures/sky_field.png" id="12_sky"]
 
@@ -182,9 +183,9 @@ text = "Mazda MX-5"
 [node name="VersionLabel" type="Label" parent="HUD" unique_id=1044419645]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -120.0
+offset_left = -200.0
 offset_top = 8.0
-offset_right = -8.0
+offset_right = -60.0
 offset_bottom = 24.0
 grow_horizontal = 0
 theme_override_font_sizes/font_size = 10
@@ -194,9 +195,9 @@ horizontal_alignment = 2
 [node name="ElapsedLabel" type="Label" parent="HUD" unique_id=1044419646]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -100.0
+offset_left = -160.0
 offset_top = 26.0
-offset_right = -8.0
+offset_right = -60.0
 offset_bottom = 46.0
 grow_horizontal = 0
 theme_override_font_sizes/font_size = 14
@@ -259,3 +260,9 @@ color = Color(1, 0.15, 0.1, 0)
 [node name="MobileControls" type="CanvasLayer" parent="." unique_id=1664740689]
 layer = 3
 script = ExtResource("9_mobile")
+
+[node name="PauseMenu" type="CanvasLayer" parent="." unique_id=1664740690 node_paths=PackedStringArray("camera_manager")]
+process_mode = 3
+layer = 5
+script = ExtResource("13_pause")
+camera_manager = NodePath("../CameraManager")
