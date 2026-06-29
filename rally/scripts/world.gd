@@ -220,6 +220,14 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	add_child(sign_field)
 	sign_field.build(sign_layout, $Floor as TerrainManager, cfg.sign_render_params())
 
+	# Roadside spectators: crowds that react to the car (todo/roadside-spectators.md).
+	# One group at the start, one at the end, and one at a seeded mid-stage point.
+	# Built after trees so members can avoid spawning inside foliage; reuses the
+	# centerline, road_cells and terrain already in scope.
+	if cfg.spectators_enabled and cfg.spectator_group_size > 0:
+		_spawn_spectators(road_centerline, road_cells, trees, start_pos, start_heading,
+			cfg, $Floor as TerrainManager)
+
 	# Finish + start arches: the inflatable gates straddling the road
 	# (features/finish-arch.md). The FINISH gate sits at the END of the progress
 	# centerline — i.e. exactly 100% track progress — so crossing it ends the stage
@@ -282,6 +290,66 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# regeneration, e.g. entering a rally event).
 	if loading != null:
 		loading.finish()
+
+
+# Place the three spectator crowds: one at the start line, one at the finish, and
+# one at a seeded fraction of the way along (todo/roadside-spectators.md). Builds a
+# shared tree-point grid once so members can avoid spawning inside foliage.
+func _spawn_spectators(centerline: Curve2D, road_cells: Dictionary, trees: PackedVector2Array,
+		start_pos: Vector2, start_heading: Vector2, cfg: GameConfig, terrain: TerrainManager) -> void:
+	var baked := centerline.get_baked_length()
+	if baked <= 0.0:
+		return
+	var tree_cell: float = maxf(cfg.spectator_tree_avoid_m, 0.5)
+	var tree_grid := SpectatorScatter.build_point_grid(trees, tree_cell)
+
+	# Start: at the car's spawn pose.
+	_spawn_spectator_group("SpectatorStart", start_pos, start_heading,
+		road_cells, tree_grid, cfg, terrain, cfg.track_seed + 101)
+
+	# Mid: a seeded fraction of the way along the centerline.
+	var mid_off := SpectatorScatter.mid_offset(baked,
+		cfg.spectator_mid_progress_min, cfg.spectator_mid_progress_max, cfg.track_seed)
+	var mid_pt := centerline.sample_baked(mid_off)
+	var mid_tan := centerline.sample_baked(minf(mid_off + 1.0, baked)) - mid_pt
+	_spawn_spectator_group("SpectatorMid", mid_pt, mid_tan,
+		road_cells, tree_grid, cfg, terrain, cfg.track_seed + 202)
+
+	# End: at the finish (end of the centerline).
+	var end_pt := centerline.sample_baked(baked)
+	var end_tan := end_pt - centerline.sample_baked(maxf(0.0, baked - 1.0))
+	_spawn_spectator_group("SpectatorEnd", end_pt, end_tan,
+		road_cells, tree_grid, cfg, terrain, cfg.track_seed + 303)
+
+
+# Build one crowd: its centre sits to the LEFT of the road at `anchor` (perpendicular
+# to `heading`), members scattered off-road within it by SpectatorScatter. Named so an
+# in-place regeneration replaces rather than stacks groups (cf. _place_arch).
+func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2,
+		road_cells: Dictionary, tree_grid: Dictionary, cfg: GameConfig,
+		terrain: TerrainManager, seed_value: int) -> void:
+	var existing := get_node_or_null(node_name)
+	if existing != null:
+		remove_child(existing)
+		existing.free()
+	var dir := heading
+	if dir.length() < 1e-5:
+		dir = Vector2(0.0, 1.0)
+	dir = dir.normalized()
+	var side := Vector2(-dir.y, dir.x)  # left of travel
+	var center := anchor + side * cfg.spectator_side_offset_m
+	var tree_cell: float = maxf(cfg.spectator_tree_avoid_m, 0.5)
+	var members := SpectatorScatter.members(center, cfg.spectator_group_size,
+		cfg.spectator_separation_m, cfg.spectator_spawn_radius_m, road_cells,
+		tree_grid, tree_cell, cfg.spectator_tree_avoid_m, seed_value)
+	if members.is_empty():
+		return
+	var group := SpectatorGroup.new()
+	group.name = node_name
+	add_child(group)
+	var params := cfg.spectator_params()
+	params["seed"] = seed_value
+	group.setup(members, $Car, terrain, road_cells, tree_grid, params)
 
 
 # Build and position one inflatable arch straddling the road at `pos`, facing along

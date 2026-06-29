@@ -717,6 +717,59 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 6.0) var finish_arch_road_margin_m := 1.5
 
 
+@export_group("Spectators")
+# Crowds of low-poly people trackside that react to the car (todo/roadside-spectators.md):
+# one group at the start, one at the end, and one at a random mid-stage point. While
+# upright they are pure agent data + a MultiMesh (no physics bodies, not obstacles);
+# a strike flips one to a single-capsule ragdoll launched along the car's velocity.
+## Build the spectator crowds. 0-size groups also disable them.
+@export var spectators_enabled := true
+## People per group.
+@export_range(0, 200) var spectator_group_size := 50
+## The mid-stage group spawns at a seeded progress fraction in this range.
+@export_range(0.0, 1.0) var spectator_mid_progress_min := 0.30
+@export_range(0.0, 1.0) var spectator_mid_progress_max := 0.70
+## Radius (m) of the disc a group clusters within.
+@export_range(1.0, 30.0) var spectator_spawn_radius_m := 6.0
+## How far (m) a group's centre is offset from the road centreline, to the side.
+@export_range(1.0, 30.0) var spectator_side_offset_m := 7.0
+## Extra gap (m) kept off the carriageway when placing — road footprint is inflated
+## by this before rejecting standing positions on it.
+@export_range(0.0, 10.0) var spectator_road_margin_m := 1.0
+## Minimum comfortable spacing (m) between neighbours — initial placement and the
+## separation steering both use it. ("Don't like being too close.")
+@export_range(0.1, 5.0) var spectator_separation_m := 0.5
+## How close (m) a tree must be for a spectator to avoid spawning by / steer from it.
+@export_range(0.1, 10.0) var spectator_tree_avoid_m := 1.5
+## Detection radius (m) within which spectators flee the car.
+@export_range(0.5, 30.0) var spectator_flee_radius_m := 5.0
+## Distance (m) car→spectator at which the spectator is knocked over (ragdoll).
+@export_range(0.2, 5.0) var spectator_knock_radius_m := 1.2
+## Top speed (m/s) a spectator can move while fleeing/shuffling.
+@export_range(0.5, 12.0) var spectator_max_speed_mps := 3.5
+## Acceleration (m/s^2) toward the steering target.
+@export_range(1.0, 60.0) var spectator_accel_mps2 := 18.0
+## Only the group within this distance (m) of the car runs steering (LOD); the
+## others stand still until the car approaches.
+@export_range(10.0, 400.0) var spectator_active_radius_m := 90.0
+## Steering weights (relative pull of each preference).
+@export_range(0.0, 10.0) var spectator_w_separation := 1.5
+@export_range(0.0, 10.0) var spectator_w_flee := 4.0
+@export_range(0.0, 10.0) var spectator_w_road := 3.0
+@export_range(0.0, 10.0) var spectator_w_obstacle := 2.0
+@export_range(0.0, 10.0) var spectator_w_anchor := 0.6
+## Ragdoll launch: target speed = car speed x factor, clamped to [min, max] (m/s),
+## plus a constant upward lift and a random tumble spin (rad/s).
+@export_range(0.0, 3.0) var spectator_knock_speed_factor := 0.8
+@export_range(0.0, 20.0) var spectator_knock_speed_min := 3.0
+@export_range(0.0, 60.0) var spectator_knock_speed_max := 22.0
+@export_range(0.0, 12.0) var spectator_knock_lift_mps := 3.0
+@export_range(0.0, 30.0) var spectator_knock_spin := 9.0
+@export_range(1.0, 200.0) var spectator_ragdoll_mass_kg := 65.0
+## Distance (m) behind the car at which a settled ragdoll is freed.
+@export_range(10.0, 300.0) var spectator_despawn_behind_m := 70.0
+
+
 @export_group("Performance")
 ## Render frame cap (FPS). The game is inherently low-end and ships one lean
 ## value; a steady cap avoids thermal throttling on phones. 0 = uncapped (desktop
@@ -836,4 +889,41 @@ func sign_render_params() -> Dictionary:
 		"mass_kg": sign_mass_kg,
 		"textures": sign_textures,
 		"track_width": track_width,
+	}
+
+
+# Everything SpectatorGroup.setup needs (todo/roadside-spectators.md). The collision
+# bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
+# the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
+# an explicit exception for since the car shares layer 1.
+func spectator_params() -> Dictionary:
+	return {
+		"group_size": spectator_group_size,
+		"spawn_radius_m": spectator_spawn_radius_m,
+		"side_offset_m": spectator_side_offset_m,
+		"separation_m": spectator_separation_m,
+		"tree_avoid_m": spectator_tree_avoid_m,
+		"tree_cell_m": maxf(spectator_tree_avoid_m, 0.5),
+		"flee_radius_m": spectator_flee_radius_m,
+		"knock_radius_m": spectator_knock_radius_m,
+		"max_speed_mps": spectator_max_speed_mps,
+		"accel_mps2": spectator_accel_mps2,
+		"active_radius_m": spectator_active_radius_m,
+		"road_probe_m": track_width * 0.5,
+		"anchor_dead_zone_m": spectator_separation_m,
+		"w_separation": spectator_w_separation,
+		"w_flee": spectator_w_flee,
+		"w_road": spectator_w_road,
+		"w_obstacle": spectator_w_obstacle,
+		"w_anchor": spectator_w_anchor,
+		"knock_speed_factor": spectator_knock_speed_factor,
+		"knock_speed_min": spectator_knock_speed_min,
+		"knock_speed_max": spectator_knock_speed_max,
+		"knock_lift_mps": spectator_knock_lift_mps,
+		"knock_spin": spectator_knock_spin,
+		"ragdoll_mass_kg": spectator_ragdoll_mass_kg,
+		"despawn_behind_m": spectator_despawn_behind_m,
+		"ragdoll_layer": 1 << 4,
+		"ragdoll_mask": 1,
+		"seed": 0,
 	}
