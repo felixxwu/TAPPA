@@ -45,9 +45,9 @@ func test_each_spec_is_sane() -> void:
 		# Redline must sit above where the engine preset peaks torque, or the
 		# torque curve inverts. Presets peak by ~6000 rpm, so 6500 is a safe floor.
 		assert_gt(spec["redline"], 6500.0, who + " has a sane redline")
-		# Per-car gearbox (features/drivetrain-and-tires.md): real transmission ratios
-		# + final drive. Ratios must be a non-empty, strictly DESCENDING set of
-		# positive numbers (1st is the shortest), and the final drive positive.
+		# Per-car gearbox (features/drivetrain-and-tires.md): gear_ratios + final
+		# drive. Ratios must be a non-empty, strictly DESCENDING set of positive
+		# numbers (1st is the shortest), and the final drive positive.
 		assert_true(spec.has("gear_ratios"), who + " has gear_ratios")
 		assert_true(spec.has("final_drive"), who + " has final_drive")
 		var ratios: Array = spec["gear_ratios"]
@@ -142,7 +142,7 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	# Power overrides the engine preset's torque; grip overlays tyre friction.
 	assert_almost_eq(Config.data.peak_torque, float(spec["peak_torque"]), 0.001, "power (peak_torque) overlaid")
 	assert_almost_eq(Config.data.redline_rpm, float(spec["redline"]), 0.001, "redline overlaid")
-	# Per-car gearbox overlaid onto the live config (the Mustang's 6-speed MT82).
+	# Per-car gearbox overlaid onto the live config (the shared MX-5 6-speed box).
 	assert_eq(Config.data.gear_ratios.size(), (spec["gear_ratios"] as Array).size(),
 		"gear count overlaid")
 	for g in Config.data.gear_ratios.size():
@@ -181,22 +181,27 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	assert_almost_eq(Config.data.engine_low_octave_mix, 0.5, 0.001, "LFA applies a 50/50 low octave")
 
 
-func test_per_car_gearboxes_are_real_and_varied() -> void:
-	# The whole point of per-car gearing: the roster spans different gear COUNTS
-	# (6-speed manual MX-5 .. 8-speed PDK 911), grounded in each car's real box.
-	var counts := {}
-	for spec in CarLibrary.CARS:
-		counts[(spec["gear_ratios"] as Array).size()] = true
-	assert_gte(counts.size(), 3, "a range of gear counts across the roster")
-	# Spot-check the two extremes against their real transmissions.
-	assert_eq((CarLibrary.by_id("mx5")["gear_ratios"] as Array).size(), 6, "MX-5 is a 6-speed")
-	assert_eq((CarLibrary.by_id("porsche911")["gear_ratios"] as Array).size(), 8, "911 is an 8-speed")
-	# The MX-5's ratios are its real ND values; its final drive is the one
-	# game-tuned exception (see car_library.gd) so it can pull against the sim's
-	# vehicle rolling resistance — assert the real 1st/top ratios survived.
+func test_every_car_shares_the_mx5_gearbox() -> void:
+	# gear_ratios/final_drive stay a per-car field (so cars CAN diverge later), but
+	# the whole roster currently shares the MX-5's box: trying each car's real
+	# published transmission didn't make sense in-sim, so they're all modelled on
+	# the MX-5's gearing again (see car_library.gd's gear_ratios header note).
 	var mx5_ratios: Array = CarLibrary.by_id("mx5")["gear_ratios"]
+	var mx5_fd: float = CarLibrary.by_id("mx5")["final_drive"]
+	# The MX-5's box is its real ND 6-speed; final drive is the game-tuned 3.5.
 	assert_almost_eq(float(mx5_ratios[0]), 5.087, 0.001, "MX-5 real 1st gear")
 	assert_almost_eq(float(mx5_ratios[5]), 1.000, 0.001, "MX-5 real direct-drive 6th")
+	assert_almost_eq(mx5_fd, 3.5, 0.001, "MX-5 game-tuned final drive")
+	# Every other car carries an identical copy of it.
+	for spec in CarLibrary.CARS:
+		var who: String = spec["name"]
+		var ratios: Array = spec["gear_ratios"]
+		assert_eq(ratios.size(), mx5_ratios.size(), who + " has the MX-5 gear count")
+		for g in ratios.size():
+			assert_almost_eq(float(ratios[g]), float(mx5_ratios[g]), 0.001,
+				who + " gear %d matches the MX-5" % (g + 1))
+		assert_almost_eq(float(spec["final_drive"]), mx5_fd, 0.001,
+			who + " shares the MX-5 final drive")
 
 
 func test_cycle_car_advances_and_wraps() -> void:
