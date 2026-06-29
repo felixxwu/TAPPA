@@ -40,7 +40,7 @@ func _build_ui() -> void:
 	subtitle.add_theme_font_size_override("font_size", 14)
 	root.add_child(subtitle)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
