@@ -53,7 +53,7 @@ const MAX_STARS := 3
 # (before _ready), which would stretch the "stuck at 100%" gap after Godot's boot bar.
 # Both are only needed by _build_hq, which runs behind our LoadingScreen.
 const CAR_SCENE_PATH := "res://car.tscn"
-const TREE_TEXTURE_PATH := "res://textures/tree.png"
+const TREE_MODEL_PATH := "res://models/low_poly_tree.glb"
 var _car_scene: PackedScene  # cached on first use (load() also caches engine-side)
 
 
@@ -357,11 +357,11 @@ func _build_buildings() -> void:
 
 
 # Trees framing the lot so HQ reads as an outdoor clearing under the open-field
-# skybox, instead of floating on a bare plane. Reuses the stage's billboard
-# renderer/texture (one MultiMesh, one draw call); scenery only (no collision).
-# A close-in annulus, but with the front-centre corridor kept clear so trees never
-# block the title camera's view of the car park, and the garage footprint kept
-# clear so none spawn inside it. Trees hug the garage's sides and back.
+# skybox, instead of floating on a bare plane. Reuses the stage's low-poly tree
+# mesh field (TreeMeshField); scenery only (no collision). A close-in annulus,
+# but with the front-centre corridor kept clear so trees never block the title
+# camera's view of the car park, and the garage footprint kept clear so none
+# spawn inside it. Trees hug the garage's sides and back.
 func _build_trees() -> void:
 	var cfg: GameConfig = Config.data
 	var rng := RandomNumberGenerator.new()
@@ -382,15 +382,33 @@ func _build_trees() -> void:
 			continue
 		positions.append(p)
 	# HQ ground is a flat plane at y = 0; a layerless TerrainManager returns height
-	# 0 everywhere, which is all BillboardField needs to seat the trees. Used only
+	# 0 everywhere, which is all the field needs to seat the trees. Used only
 	# during build(), then freed.
 	var flat := TerrainManager.new()
 	flat.layers = [] as Array[TerrainLayer]
-	var field := BillboardField.new()
+	var field := TreeMeshField.new()
 	add_child(field)
-	field.build(positions, flat, cfg.tree_size_m, load(TREE_TEXTURE_PATH),
-		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false, 1000.0, 0.0)
+	# render_distance 1000 (no cull — HQ is small), no collision (scenery).
+	field.build(positions, flat, _hq_tree_mesh(), cfg.tree_size_m.y,
+		cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
+		1000.0, 0.0, cfg.tree_bin_size_m, false)
 	flat.free()
+
+
+# The tree ArrayMesh, pulled once from the imported .glb scene.
+func _hq_tree_mesh() -> Mesh:
+	var scene := (load(TREE_MODEL_PATH) as PackedScene).instantiate()
+	var stack: Array[Node] = [scene]
+	var mesh: Mesh = null
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D:
+			mesh = (n as MeshInstance3D).mesh
+			break
+		for c in n.get_children():
+			stack.append(c)
+	scene.free()
+	return mesh
 
 
 # The garage shell — the two-bay service-park model (scripts/garage.gd). Open

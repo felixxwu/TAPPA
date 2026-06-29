@@ -36,7 +36,8 @@ var instance_scale: float = 1.0
 
 func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 		target_height: float, collision_radius: float, collision_height: float,
-		render_distance: float, render_fade: float, bin_size: float) -> void:
+		render_distance: float, render_fade: float, bin_size: float,
+		with_collision: bool = true) -> void:
 	instance_positions = PackedVector3Array()
 	instance_positions.resize(positions.size())
 
@@ -91,7 +92,8 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 	bin_count = bins.size()
 
 	# One StaticBody3D with a box per tree (obstacle for the car's damage model).
-	if positions.size() > 0:
+	# Skipped for scenery-only fields (e.g. the HQ ring).
+	if with_collision and positions.size() > 0:
 		var body := StaticBody3D.new()
 		body.name = "Collision"
 		body.add_to_group(DamageModel.OBSTACLE_GROUP)

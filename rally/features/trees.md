@@ -90,7 +90,13 @@ The tree mesh is extracted once from the `.glb` PackedScene by
 `world.gd._tree_mesh()` and shared by every bin's MultiMesh. Its materials are
 **unshaded** `StandardMaterial3D` — the depth shading is baked into the mesh's
 vertex colours (see the asset section below), so trees read correctly with no
-dedicated scene light and stay in the flat PS1 look.
+dedicated scene light and stay in the flat PS1 look. The **canopy material is
+double-sided** (`cull_mode = CULL_DISABLED`): the mesh winds correctly for
+back-face culling in software GL, but the canopy rendered concave / "front faces
+missing" on some real-device / web GL targets (a platform culling difference), so
+drawing both sides guarantees the camera-facing leaves always appear. The canopy
+is a closed shell, so from outside it looks identical — just robust everywhere.
+The trunk stays single-sided (`CULL_BACK`).
 
 ## Collision (`TreeMeshField`)
 

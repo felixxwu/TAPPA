@@ -70,6 +70,22 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
 
 
+func test_hq_frames_the_lot_with_tree_meshes() -> void:
+	# HQ trees were swapped from billboards to the shared low-poly mesh field,
+	# as scenery (no collision).
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var field: TreeMeshField = null
+	for c in hq.get_children():
+		if c is TreeMeshField:
+			field = c
+	assert_not_null(field, "HQ frames the lot with a TreeMeshField (3D trees, not billboards)")
+	if field != null:
+		assert_gt(field.bin_count, 0, "HQ tree field has at least one bin")
+		assert_null(field.get_node_or_null("Collision"), "HQ trees are scenery (no collision)")
+
+
 func test_hq_map_table_is_a_proper_wooden_model() -> void:
 	# The map table is a built MapTable (top + apron + legs + stretchers), not a
 	# single placeholder block, and its top surface sits at the configured height so
