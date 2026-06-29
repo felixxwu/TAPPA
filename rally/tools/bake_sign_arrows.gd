@@ -84,9 +84,9 @@ func _bake_face(poly: PackedVector2Array, label: String, flip: bool) -> Image:
 	var face_size := Vector2(TEX - 2.0 * FACE_INSET, TEX - 2.0 * FACE_INSET)
 	_rect(root, face_pos, face_size, CREAM)
 
-	# Arrow occupies the top ~62% of the board; the grade sits below.
-	var arrow_box := Rect2(face_pos + Vector2(face_size.x * 0.12, face_size.y * 0.06),
-		Vector2(face_size.x * 0.76, face_size.y * 0.56))
+	# Arrow occupies the top ~55% of the board; the grade sits below.
+	var arrow_box := Rect2(face_pos + Vector2(face_size.x * 0.12, face_size.y * 0.05),
+		Vector2(face_size.x * 0.76, face_size.y * 0.52))
 	var arrow := _ArrowDraw.new()
 	arrow.points = poly
 	arrow.box = arrow_box
@@ -95,14 +95,16 @@ func _bake_face(poly: PackedVector2Array, label: String, flip: bool) -> Image:
 	root.add_child(arrow)
 
 	# An orange rule between the arrow and the grade.
-	var rule_y := face_pos.y + face_size.y * 0.68
+	var rule_y := face_pos.y + face_size.y * 0.62
 	_rect(root, Vector2(face_pos.x + face_size.x * 0.18, rule_y),
 		Vector2(face_size.x * 0.64, 6.0), ORANGE)
 
-	# Grade label, big and bold, in the lower band.
-	var label_pos := Vector2(face_pos.x, face_pos.y + face_size.y * 0.70)
-	var label_size := Vector2(face_size.x, face_size.y * 0.30)
-	var font_size := int(face_size.y * (0.26 if label.length() > 1 else 0.34))
+	# Grade label in the lower band, kept clear of the bottom border: the band stops
+	# short of the face edge and the font is small enough that its line height fits
+	# inside the band (a centred glyph then never spills past the board).
+	var label_pos := Vector2(face_pos.x, face_pos.y + face_size.y * 0.66)
+	var label_size := Vector2(face_size.x, face_size.y * 0.28)
+	var font_size := int(face_size.y * (0.18 if label.length() > 1 else 0.24))
 	_label(root, label_pos, label_size, label, font_size, INK)
 
 	await process_frame
