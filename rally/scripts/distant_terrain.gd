@@ -35,6 +35,11 @@ var sink_m := 1.5           # drop the whole backdrop below true height so the d
 
 var _focus_chunk := Vector2i(2147483647, 0)  # force first build
 var _per_edge := 0
+# A focus chunk crossing marks the backdrop dirty; the actual rebuild is deferred
+# to a frame when the detail ring isn't streaming (see _process), so this heavy
+# coarse mesh build never lands on the same frame as a detail-chunk build.
+var _rebuild_pending := false
+var _pending_center := Vector3.ZERO
 
 
 # `terrain` supplies height_at/light_at + the shared chunk material; `focus` (the
@@ -48,14 +53,25 @@ func setup(terrain: TerrainManager, focus: Node3D) -> void:
 	rebuild_around(center)
 
 
-# Re-centre the coarse geometry on a focus chunk crossing; otherwise nothing to do
-# (the backdrop is a full uncut grid that doesn't track the detail ring's load-in).
+# Re-centre the coarse geometry on a focus chunk crossing — but DEFERRED. The
+# rebuild is the same ~2600-vertex, light-baked cost as a detail chunk; doing it on
+# the crossing frame stacks it on top of the detail-ring stream, and on the
+# single-threaded web build those back-to-back main-thread mesh builds are the
+# chunk-crossing hitch. So a crossing only marks the backdrop dirty (coalescing to
+# the latest centre); the rebuild waits for a frame when TerrainManager isn't
+# streaming any detail chunks. The backdrop is huge and fog-softened, so a few
+# frames' lag in re-centring is imperceptible.
 func _process(_delta: float) -> void:
 	if _focus == null or _terrain == null:
 		return
 	var chunk := _terrain.chunk_coord_for(_focus.global_position)
 	if chunk != _focus_chunk:
-		rebuild_around(_focus.global_position)
+		_focus_chunk = chunk  # update now so the crossing isn't re-detected every frame
+		_pending_center = _focus.global_position
+		_rebuild_pending = true
+	if _rebuild_pending and not _terrain.is_streaming_chunks():
+		_rebuild_pending = false
+		rebuild_around(_pending_center)
 
 
 # Build the coarse backdrop centred on `center`, snapped to the cell grid so the

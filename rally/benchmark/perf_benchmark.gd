@@ -54,6 +54,10 @@ func _make_manager() -> Node3D:
 		layer.amplitude_m = params[1]
 		layers.append(layer)
 	m.layers = layers
+	# The shipped config bakes terrain lighting (terrain_light_amount = 1.0), which
+	# more than doubles compute_chunk_data's cost (the per-vertex light bake). Match
+	# it here so the benchmark reflects the real chunk-build cost, not an unlit one.
+	m.light_amount = 1.0
 	return m
 
 

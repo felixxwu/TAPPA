@@ -239,24 +239,52 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 	var uvs := PackedVector2Array(); uvs.resize(count)
 	# Per-vertex baked light tint (white when light_amount is 0). Folded into the
 	# vertex colour by vertex_colors() so the flat shader multiplies it for free.
-	var lights := PackedColorArray(); lights.resize(count)
+	# Left empty when unlit — vertex_colors() treats an empty array as all-white.
+	var lights := PackedColorArray()
+
+	# Baked light needs each vertex's four 1-cell neighbours. Rather than re-sample
+	# the noise 4× per vertex (the old _bake_light did — ~5× the noise work of a
+	# bare height), sample the PURE (pre-flatten) height field ONCE over a 1-cell
+	# halo (SAMPLES+2 per edge). Every vertex — chunk edges included — then reads
+	# its own height and its four neighbours straight from this array, so the light
+	# bake costs essentially no extra noise calls. Only built when lighting is on.
+	var lit := light_amount > 0.0
+	var hs := SAMPLES + 2
+	var ph := PackedFloat32Array()
+	if lit:
+		lights.resize(count)
+		ph.resize(hs * hs)
+		for hzi in hs:
+			var pz := center.z - half + (hzi - 1) * CELL_M
+			for hxi in hs:
+				var px := center.x - half + (hxi - 1) * CELL_M
+				ph[hzi * hs + hxi] = _sample_height(noises, amplitudes, px, pz)
+
 	for zi in SAMPLES:
 		var lz := -half + zi * CELL_M
 		var wz := center.z + lz
 		for xi in SAMPLES:
 			var lx := -half + xi * CELL_M
 			var wx := center.x + lx
-			var h := _sample_height(noises, amplitudes, wx, wz)
+			var idx := zi * SAMPLES + xi
+			var h: float
+			if lit:
+				# Centre of this vertex in the halo (offset by 1 for the border ring);
+				# its neighbours are ±1 (x) and ±hs (z). Same world coords — hence the
+				# same samples — the old per-vertex _bake_light used, so bit-identical.
+				var c := (zi + 1) * hs + (xi + 1)
+				h = ph[c]
+				lights[idx] = _light_from_neighbours(ph[c - 1], ph[c + 1], ph[c - hs], ph[c + hs])
+			else:
+				h = _sample_height(noises, amplitudes, wx, wz)
 			# Blend road vertices toward the baked road height by their weight
 			# (mesh + collision): w=1 fully flat, w=0 true terrain, between ramps.
 			var vidx := Vector2i(coord.x * (SAMPLES - 1) + xi, coord.y * (SAMPLES - 1) + zi)
 			if road_blend.has(vidx):
 				h = lerpf(h, road_heights[vidx], road_blend[vidx])
-			var idx := zi * SAMPLES + xi
 			heights[idx] = h
 			vertices[idx] = Vector3(lx, h, lz)
 			uvs[idx] = Vector2(wx, wz) * tile
-			lights[idx] = _bake_light(noises, amplitudes, wx, wz)
 
 	var per_edge := SAMPLES - 1
 	var cells := per_edge * per_edge
@@ -376,6 +404,18 @@ func _bake_light(noises: Array, amplitudes: PackedFloat32Array, wx: float, wz: f
 	var hr := _sample_height(noises, amplitudes, wx + CELL_M, wz)
 	var hd := _sample_height(noises, amplitudes, wx, wz - CELL_M)
 	var hu := _sample_height(noises, amplitudes, wx, wz + CELL_M)
+	return _light_from_neighbours(hl, hr, hd, hu)
+
+
+# The lighting core: turn the four 1-cell-spaced neighbour heights of a vertex
+# into a baked light tint (hemisphere ambient + one directional sun). Split out
+# of _bake_light so compute_chunk_data can feed it neighbours read from a shared
+# pure-height halo (no per-vertex re-sampling) while light_at still samples them
+# directly. White (a no-op) when light_amount is 0. The neighbours must be the
+# PURE (pre-flatten) field for seam consistency — see _bake_light's note.
+func _light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color:
+	if light_amount <= 0.0:
+		return Color(1, 1, 1)
 	var n := Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized()
 	var hemi := n.y * 0.5 + 0.5
 	var ambient := ground_color.lerp(sky_color, hemi)
@@ -403,6 +443,20 @@ func target_coords(center: Vector2i) -> Array:
 
 func loaded_coords() -> Array:
 	return _chunks.keys()
+
+
+# True while any chunk work is still in flight: queued for the budgeted main-thread
+# pump, dispatched to a worker, or finished and awaiting integration. DistantTerrain
+# reads this to hold its (heavy, ~2600-vertex light-baked) coarse rebuild until the
+# detail ring is quiet, so the two never share a frame on the single-threaded web
+# path — the back-to-back mesh builds were the bulk of the chunk-crossing hitch.
+func is_streaming_chunks() -> bool:
+	if not _build_queue.is_empty() or not _pending.is_empty():
+		return true
+	_results_mutex.lock()
+	var has_results := not _results.is_empty()
+	_results_mutex.unlock()
+	return has_results
 
 
 # Blend weight for a feature `d` metres from the road centerline: 1 at/inside

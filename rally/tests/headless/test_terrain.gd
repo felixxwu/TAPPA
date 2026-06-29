@@ -82,6 +82,54 @@ func test_distant_terrain_is_full_uncut_grid_regardless_of_loaded_chunks() -> vo
 		"still a full uncut grid with the detail ring loaded — no holing")
 
 
+func test_is_streaming_chunks_tracks_pending_work() -> void:
+	# DistantTerrain reads this to hold its rebuild until the detail ring is quiet.
+	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
+	m.force_main_thread_budget = true
+	add_child_autofree(m)  # initial ring built synchronously (force_sync) -> idle
+	assert_false(m.is_streaming_chunks(), "idle after the initial ring is built")
+	# Drive far -> the new ring is queued for the budgeted pump -> streaming.
+	m.update_focus(Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0))
+	assert_true(m.is_streaming_chunks(), "streaming while the build queue is non-empty")
+	var guard := 0
+	while not m._build_queue.is_empty() and guard < 100:
+		m._pump_build_queue()
+		guard += 1
+	assert_false(m.is_streaming_chunks(), "idle once the queue drains")
+
+
+func test_distant_terrain_defers_rebuild_until_streaming_is_idle() -> void:
+	# A focus chunk crossing must NOT rebuild the coarse backdrop on a frame the
+	# detail ring is still streaming — those back-to-back main-thread mesh builds are
+	# the chunk-crossing hitch. The rebuild is deferred until the manager is idle.
+	var m = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
+	m.force_main_thread_budget = true
+	add_child_autofree(m)  # initial ring built; idle
+	var focus := Node3D.new()
+	add_child_autofree(focus)
+	focus.global_position = Vector3.ZERO
+	var dt := DistantTerrain.new()
+	dt.radius_m = 50.0
+	dt.cell_m = 10.0
+	autofree(dt)
+	dt.setup(m, focus)  # initial build at the origin
+	var mesh_before := dt.mesh
+	# Cross into a new chunk AND leave the manager busy streaming the new ring.
+	focus.global_position = Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0)
+	m.update_focus(focus.global_position)
+	assert_true(m.is_streaming_chunks(), "manager is streaming the new ring")
+	dt._process(0.0)
+	assert_eq(dt.mesh, mesh_before, "backdrop NOT rebuilt while the detail ring streams")
+	# Drain the detail ring -> the next _process rebuilds the backdrop.
+	var guard := 0
+	while not m._build_queue.is_empty() and guard < 100:
+		m._pump_build_queue()
+		guard += 1
+	assert_false(m.is_streaming_chunks(), "streaming finished")
+	dt._process(0.0)
+	assert_ne(dt.mesh, mesh_before, "backdrop rebuilt once the ring is idle")
+
+
 func test_height_at_is_deterministic_per_seed() -> void:
 	var a := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 42)
 	var b := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 42)
@@ -294,6 +342,35 @@ func test_terrain_bakes_static_lighting_into_vertex_colours() -> void:
 	assert_gt(hi - lo, 0.02, "baked shading varies across the sloped terrain")
 	assert_true(lo >= 0.35 - 1e-4, "darkest vertex no darker than the ambient floor")
 	assert_true(hi <= 1.0 + 1e-4, "brightest vertex stays within range")
+
+
+func test_baked_light_halo_matches_per_vertex_sampling() -> void:
+	# compute_chunk_data now reads each vertex's four light neighbours from a shared
+	# pure-height halo instead of re-sampling the noise 4× per vertex. That must stay
+	# bit-identical to the reference single-sample path (light_at -> _bake_light) at
+	# interior, corner AND edge vertices (the halo extends one cell past the chunk).
+	var m := _make_manager([_make_layer(20.0, 6.0)] as Array[TerrainLayer], 7)
+	m.default_cell_color = Color(1, 1, 1)  # white tint -> a vertex's RGB IS the baked light
+	m.light_amount = 1.0
+	m.sun_dir = Vector3(0.4, 0.9, 0.35).normalized()
+	m.sun_color = Color(0.5, 0.5, 0.5)
+	m.sky_color = Color(0.5, 0.5, 0.5)
+	m.ground_color = Color(0.35, 0.35, 0.35)
+	var coord := Vector2i(0, 0)
+	var colors: PackedColorArray = m.compute_chunk_data(coord)["colors"]
+	var samples: int = ManagerScript.SAMPLES
+	var half: float = ManagerScript.CHUNK_M / 2.0
+	var center := Vector3((coord.x + 0.5) * ManagerScript.CHUNK_M, 0.0,
+		(coord.y + 0.5) * ManagerScript.CHUNK_M)
+	for v in [Vector2i(25, 25), Vector2i(0, 0), Vector2i(samples - 1, samples - 1),
+			Vector2i(0, 30), Vector2i(samples - 1, 10)]:
+		var wx: float = center.x - half + v.x * ManagerScript.CELL_M
+		var wz: float = center.z - half + v.y * ManagerScript.CELL_M
+		var ref: Color = m.light_at(wx, wz)  # untouched 4-sample reference path
+		var c: Color = colors[v.y * samples + v.x]
+		assert_almost_eq(c.r, ref.r, 1e-5, "halo light matches reference at %s (r)" % v)
+		assert_almost_eq(c.g, ref.g, 1e-5, "halo light matches reference at %s (g)" % v)
+		assert_almost_eq(c.b, ref.b, 1e-5, "halo light matches reference at %s (b)" % v)
 
 
 func test_terrain_lighting_off_keeps_flat_tint() -> void:

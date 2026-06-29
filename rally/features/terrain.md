@@ -121,17 +121,25 @@ the true terrain across a transition band just outside the road edge, using
   `track_weights`, so the road fade is smooth over the band. `track_weights` is
   keyed by **global** cell coords, so a shared edge vertex averages the same four
   cells from either chunk → weights match exactly across seams.
-- `_bake_light(noises, amplitudes, wx, wz)` — the static terrain shading, baked
-  ONCE per vertex at generation time into the colour RGB above (the flat terrain
-  shader already multiplies RGB into ALBEDO, so this costs nothing per frame).
-  Mirrors `shaders/ps1_models_lit.gdshader` (hemisphere ambient + one directional
-  sun) but on the CPU, with the normal taken from the noise height field via
-  central differences (`_sample_height` at ±1 cell) — continuous across world
-  coords, so it matches at chunk seams with no stitching. Returns white when
-  `light_amount` is 0. Params (`light_amount`, `sun_dir`, `sun_color`,
-  `sky_color`, `ground_color`) are pushed from `GameConfig` by `world.gd`
-  (`apply_terrain_light`) before the initial build. Valid because the terrain and
-  sun never move; the car can't bake (it rotates) and lights in its shader.
+- `_light_from_neighbours(hl, hr, hd, hu)` / `_bake_light(noises, amplitudes, wx,
+  wz)` — the static terrain shading, baked ONCE per vertex at generation time into
+  the colour RGB above (the flat terrain shader already multiplies RGB into ALBEDO,
+  so this costs nothing per frame). Mirrors `shaders/ps1_models_lit.gdshader`
+  (hemisphere ambient + one directional sun) but on the CPU, with the normal taken
+  from the noise height field via central differences at ±1 cell — continuous
+  across world coords, so it matches at chunk seams with no stitching. Returns
+  white when `light_amount` is 0. **Performance:** the bake needs each vertex's four
+  ±1-cell neighbour heights; rather than re-sample the noise 4× per vertex (the old
+  `_bake_light` did — ~5× the noise work of a bare height, and `terrain_light_amount`
+  ships at `1.0`), `compute_chunk_data` samples the PURE (pre-flatten) height field
+  ONCE over a 1-cell **halo** (`SAMPLES+2` per edge) and feeds neighbours read from
+  that array to `_light_from_neighbours` — bit-identical output (covered by
+  `test_baked_light_halo_matches_per_vertex_sampling`) for ~52% off the lit chunk
+  build. `_bake_light` keeps the per-call sampling for single-point callers
+  (`light_at`, used by `DistantTerrain`). Params (`light_amount`, `sun_dir`,
+  `sun_color`, `sky_color`, `ground_color`) are pushed from `GameConfig` by
+  `world.gd` (`apply_terrain_light`) before the initial build. Valid because the
+  terrain and sun never move; the car can't bake (it rotates) and lights in its shader.
 - `set_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
   surface_feather_m)` — call
   `bake_track`, and **rebuild any currently-loaded chunks** (full `setup()`, since
@@ -162,7 +170,15 @@ horizon for the skybox instead of a cliff. See
 [rendering.md](rendering.md) and [../todo/distant-terrain-and-sky.md](../todo/distant-terrain-and-sky.md).
 The coarse geometry re-centres on every focus **chunk crossing** and is a
 **full, uncut grid** — it underlaps the entire detail ring rather than holing out
-the loaded chunks. To stop it poking through the detailed terrain, the **whole
+the loaded chunks. The rebuild is the same ~2,600-vertex, light-baked cost as a
+detail chunk, so it is **deferred**, not run on the crossing frame: a crossing only
+marks the backdrop dirty (coalescing to the latest centre), and the actual rebuild
+waits for a frame when `TerrainManager.is_streaming_chunks()` is false (no chunk
+queued, dispatched, or awaiting integration). This keeps the heavy coarse mesh
+build from stacking on top of the detail-ring stream in one frame — on the
+single-threaded web build those back-to-back main-thread builds were the bulk of
+the chunk-crossing hitch. The backdrop is huge and fog-softened, so the few frames'
+lag in re-centring is imperceptible. To stop it poking through the detailed terrain, the **whole
 backdrop is sunk `sink_m`** (default 1.5 m, `GameConfig.distant_terrain_sink_m`)
 below true height, so the detail ring always renders above it and the coarse mesh
 stays hidden beneath. At the ring's outer edge the coarse surface steps down by
