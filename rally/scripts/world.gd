@@ -212,10 +212,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if loading != null:
 		loading.set_step("Placing signs…")
 	await _yield_frame()
-	# Roadside signs: sector boards, turn arrows, and start/finish gates along the
-	# stage (todo/roadside-signs.md). Few per stage, so individual nodes (not a
-	# MultiMesh); their collision bodies are obstacles, so clipping one costs HP.
-	var sign_layout := SignLayout.plan(result["centerline"], result["pieces"], cfg.sign_params())
+	# Roadside turn-arrow signs along the stage (todo/roadside-signs.md). Few per
+	# stage, so individual nodes (not a MultiMesh); knockable cosmetic props that
+	# deal no HP damage. Start/finish are the inflatable arches, not signs.
+	var sign_layout := SignLayout.plan(result["centerline"], result["pieces"])
 	var sign_field := SignField.new()
 	add_child(sign_field)
 	sign_field.build(sign_layout, $Floor as TerrainManager, cfg.sign_render_params())

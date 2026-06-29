@@ -60,3 +60,17 @@ tree_collision_radius_m = 0.1
 bush_size_m = Vector2(2, 2)
 tire_mark_max_segments = 20
 tire_mark_ground_offset_m = 0.2
+sign_textures = {
+"arrow_1_left": "res://textures/signs/arrow_1_left.png",
+"arrow_1_right": "res://textures/signs/arrow_1_right.png",
+"arrow_2_left": "res://textures/signs/arrow_2_left.png",
+"arrow_2_right": "res://textures/signs/arrow_2_right.png",
+"arrow_3_left": "res://textures/signs/arrow_3_left.png",
+"arrow_3_right": "res://textures/signs/arrow_3_right.png",
+"arrow_4_left": "res://textures/signs/arrow_4_left.png",
+"arrow_4_right": "res://textures/signs/arrow_4_right.png",
+"arrow_square_left": "res://textures/signs/arrow_square_left.png",
+"arrow_square_right": "res://textures/signs/arrow_square_right.png",
+"arrow_uturn_left": "res://textures/signs/arrow_uturn_left.png",
+"arrow_uturn_right": "res://textures/signs/arrow_uturn_right.png"
+}

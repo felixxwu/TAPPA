@@ -14,8 +14,8 @@ func _generate(seed_value: int, turns: int = 10, width: float = 6.0) -> Dictiona
 	return TrackGenerator.generate(START_POS, START_HEADING, seed_value, turns, width)
 
 
-func _plan(result: Dictionary, sector_count: int = 4) -> Array:
-	return SignLayout.plan(result["centerline"], result["pieces"], {"sector_count": sector_count})
+func _plan(result: Dictionary) -> Array:
+	return SignLayout.plan(result["centerline"], result["pieces"])
 
 
 func _of_kind(layout: Array, kind: String) -> Array:
@@ -26,45 +26,16 @@ func _of_kind(layout: Array, kind: String) -> Array:
 	return out
 
 
-func test_finish_is_one_pair_and_no_start_boards() -> void:
+func test_only_turn_signs_are_planted() -> void:
+	# Start/finish are the inflatable arches and the stage is no longer split into
+	# signed sectors, so turn arrows are the ONLY signs planted now.
 	var r := _generate(3)
 	var layout := _plan(r)
-	# The start is now marked by the inflatable start arch, not A-frame boards.
-	assert_eq(_of_kind(layout, "start").size(), 0, "no A-frame start boards planted")
-	var finishes := _of_kind(layout, "finish")
-	assert_eq(finishes.size(), 2, "finish gate is a pair (both sides)")
-	# One per side.
-	assert_eq(finishes[0]["side"] + finishes[1]["side"], 0, "finish signs are on opposite sides")
-	assert_eq(String(finishes[0]["texture_key"]), "finish", "finish texture key")
-	# Finish sits at the far end of the curve.
-	var curve: Curve2D = r["centerline"]
-	assert_almost_eq(finishes[0]["pos"], curve.sample_baked(curve.get_baked_length()),
-		Vector2(1e-3, 1e-3), "finish gate at offset L")
-
-
-func test_sector_signs_mark_entries_2_to_n() -> void:
-	var r := _generate(3)
-	var curve: Curve2D = r["centerline"]
-	var length := curve.get_baked_length()
-	var count := 4
-	var sectors := _of_kind(_plan(r, count), "sector")
-	# count-1 boundaries, a pair each.
-	assert_eq(sectors.size(), (count - 1) * 2, "%d boundaries, two signs each" % (count - 1))
-	# Labels sector_2..sector_count, each appearing twice, at the expected offsets.
-	for k in range(1, count):
-		var expected_offset := k * length / float(count)
-		var key := "sector_%d" % (k + 1)
-		var matching: Array = []
-		for s in sectors:
-			if String(s["texture_key"]) == key:
-				matching.append(s)
-		assert_eq(matching.size(), 2, "%s is a pair" % key)
-		var off := curve.get_closest_offset(matching[0]["pos"])
-		assert_almost_eq(off, expected_offset, length * 0.02,
-			"%s sits at ~k*L/count" % key)
-	# Sector 1 is never signed (the start gate covers it).
-	for s in sectors:
-		assert_ne(String(s["texture_key"]), "sector_1", "sector 1 is not signed")
+	assert_gt(layout.size(), 0, "the track plants some turn signs")
+	assert_eq(_of_kind(layout, "start").size(), 0, "no start boards")
+	assert_eq(_of_kind(layout, "finish").size(), 0, "no finish boards (the arch covers it)")
+	assert_eq(_of_kind(layout, "sector").size(), 0, "no sector boards")
+	assert_eq(_of_kind(layout, "turn").size(), layout.size(), "every sign is a turn arrow")
 
 
 func test_turn_signs_only_for_sharp_corners_with_correct_keys() -> void:
@@ -78,8 +49,13 @@ func test_turn_signs_only_for_sharp_corners_with_correct_keys() -> void:
 	assert_gt(sharp, 0, "the generated track has at least one sharp turn to sign")
 	assert_eq(turns.size(), sharp * 2, "a sign pair per sharp turn, none for gentle/straight")
 	# Every turn key is a known arrow shape, and left/right matches some piece flip.
+	# Numbered gradients carry their grade (arrow_1/arrow_2/...) so each board shows
+	# its own number; Square and Hairpin use their named glyph.
 	var valid_keys := {
-		"arrow_curve_left": true, "arrow_curve_right": true,
+		"arrow_1_left": true, "arrow_1_right": true,
+		"arrow_2_left": true, "arrow_2_right": true,
+		"arrow_3_left": true, "arrow_3_right": true,
+		"arrow_4_left": true, "arrow_4_right": true,
 		"arrow_square_left": true, "arrow_square_right": true,
 		"arrow_uturn_left": true, "arrow_uturn_right": true,
 	}
@@ -89,10 +65,18 @@ func test_turn_signs_only_for_sharp_corners_with_correct_keys() -> void:
 
 
 func test_arrow_key_maps_shape_and_direction() -> void:
-	assert_eq(SignLayout._arrow_key("1", false), "arrow_curve_right", "gradient 1, right")
-	assert_eq(SignLayout._arrow_key("2", true), "arrow_curve_left", "gradient 2, left (flip)")
+	assert_eq(SignLayout._arrow_key("1", false), "arrow_1_right", "gradient 1, right")
+	assert_eq(SignLayout._arrow_key("2", true), "arrow_2_left", "gradient 2, left (flip)")
+	assert_eq(SignLayout._arrow_key("3", false), "arrow_3_right", "gradient 3, right")
+	assert_eq(SignLayout._arrow_key("4", true), "arrow_4_left", "gradient 4, left (flip)")
 	assert_eq(SignLayout._arrow_key("Square", false), "arrow_square_right", "square, right")
 	assert_eq(SignLayout._arrow_key("Hairpin", true), "arrow_uturn_left", "hairpin, left (flip)")
+
+
+func test_gentle_corners_5_and_6_are_unsigned() -> void:
+	# 5s and 6s are too straight to warrant a board.
+	assert_false(SignLayout.TURN_CORNERS.has("5"), "gradient 5 is unsigned")
+	assert_false(SignLayout.TURN_CORNERS.has("6"), "gradient 6 is unsigned")
 
 
 func test_tangents_are_unit_length() -> void:

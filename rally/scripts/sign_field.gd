@@ -72,25 +72,62 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 		sign_count += 1
 
 
-# The two splayed panels. Each is a thin box tilted about the ridge (local X) so
-# their top edges meet at the apex and their bottoms separate into a stable
-# footprint. Both panels share the face material (same texture both ways — the
-# arrow-correct-on-approach refinement is deferred, §4).
+# The two splayed panels. Each is a thin, double-sided quad tilted about the ridge
+# (local X) so their top edges meet at the apex and their bottoms separate into a
+# stable footprint. The quad maps the FULL face texture (UV 0..1) onto each side —
+# a BoxMesh instead unwraps its six faces into an atlas, so each face would only
+# show a zoomed-in slice of the arrow. Both panels share the face material (same
+# texture both ways — the arrow-correct-on-approach refinement is deferred, §4).
 func _add_panels(sign_root: Node3D, panel_size: Vector2, thickness: float,
 		splay: float, mat: ShaderMaterial) -> void:
 	var h := panel_size.y
-	var box := BoxMesh.new()
-	box.size = Vector3(panel_size.x, h, thickness)
+	var mesh := _panel_mesh(panel_size, thickness)
 	for d in [1, -1]:
 		var panel := MeshInstance3D.new()
-		panel.mesh = box
+		panel.mesh = mesh
 		panel.material_override = mat
-		# Bottom at (0,0,d*h*sin) leaning in to meet the apex at (0,h*cos,0); the
-		# box centre is the panel midpoint, rotated about X by -d*splay.
+		# Panel centred at its midpoint, rotated about X by -d*splay: bottom swings
+		# out to (0,0,d*h*sin) while the top meets the apex at (0,h*cos,0).
 		panel.transform = Transform3D(
 			Basis(Vector3.RIGHT, -d * splay),
 			Vector3(0.0, (h * 0.5) * cos(splay), d * (h * 0.5) * sin(splay)))
 		sign_root.add_child(panel)
+
+
+# A thin, double-sided board quad centred at the origin in the local XY plane: a
+# front face (+Z) and a back face (-Z), each carrying the full face texture (UV
+# 0..1, image top = panel top). The thin open edges are imperceptible at the sign's
+# thickness, and the unshaded shader ignores normals (winding drives the two-sided
+# visibility). One mesh is shared by both panels of a sign.
+func _panel_mesh(panel_size: Vector2, thickness: float) -> ArrayMesh:
+	var w := panel_size.x * 0.5
+	var h := panel_size.y * 0.5
+	var t := thickness * 0.5
+	var verts := PackedVector3Array([
+		# Front (+Z): BL, BR, TR, TL
+		Vector3(-w, -h, t), Vector3(w, -h, t), Vector3(w, h, t), Vector3(-w, h, t),
+		# Back (-Z): BL, TL, TR, BR
+		Vector3(-w, -h, -t), Vector3(-w, h, -t), Vector3(w, h, -t), Vector3(w, -h, -t),
+	])
+	var uvs := PackedVector2Array([
+		Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0),
+		Vector2(0, 1), Vector2(0, 0), Vector2(1, 0), Vector2(1, 1),
+	])
+	var normals := PackedVector3Array([
+		Vector3.BACK, Vector3.BACK, Vector3.BACK, Vector3.BACK,
+		Vector3.FORWARD, Vector3.FORWARD, Vector3.FORWARD, Vector3.FORWARD,
+	])
+	# Front wound CCW from +Z, back wound CCW from -Z, so each side faces outward.
+	var indices := PackedInt32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 # A single box hitbox covering the A-frame footprint, a direct child of the
