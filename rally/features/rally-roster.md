@@ -19,12 +19,16 @@ Each `RALLIES` entry:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
   `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`).
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
-  forestiness?, target_ms_override? }`. The `seed`/`turn_count`/`width` feed
-  `TrackGenerator.generate` unchanged; the showdown's events are longer.
-  `forestiness` (0–1, default 1.0 via `event_forestiness`) sets how wooded the stage
-  is — trees only spawn where the forest noise clears `1 - forestiness`, so each event
-  can read as dense forest or open clearings (bushes ignore it). See
-  [trees.md](trees.md).
+  forestiness?, surface_mix?, straightness?, target_ms_override? }`. The
+  `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; the
+  showdown's events are longer. `forestiness` (0–1, default 1.0 via
+  `event_forestiness`) sets how wooded the stage is — trees only spawn where the
+  forest noise clears `1 - forestiness`, so each event can read as dense forest or
+  open clearings (bushes ignore it). See [trees.md](trees.md). `straightness` (0–1,
+  default 0.0 via `event_straightness`) biases generation toward gentler corners +
+  longer straights for an easier, less twisty stage — **earlier, lower-tier events
+  run higher** so the start of the game is easier, the showdown stays unbiased
+  (twistiest). See [track.md](track.md).
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). Pure UI data; no effect on the sim.
 
@@ -41,7 +45,8 @@ recomputed.
 
 ## Key functions
 
-- `index_of(id)` / `by_id(id)` / `event_width(event)` — lookups.
+- `index_of(id)` / `by_id(id)` / `event_width(event)` / `event_forestiness(event)` /
+  `event_tarmac_fraction(event)` / `event_straightness(event)` — lookups.
 - `is_eligible(rally, car_meta)` — restriction match (open-class → always true).
   `car_meta` is a CarLibrary entry, resolved by the owned car's stable
   `model_id`. The menus' field-a-car rig and map pins filter on this.
@@ -80,10 +85,11 @@ rally.
 
 ## Entering a rally (integration)
 
-Selecting an event writes its `(seed, turn_count, width)` into `Config.data`
-(`track_seed` / `track_turn_count` / `track_width`) — the same `Config.data`
-mutation pattern `apply_car` uses — then `world._generate_track(cfg)` builds that
-exact track. After event 3, the combined time is compared against the opponent
+Selecting an event writes its `(seed, turn_count, straightness, width,
+forestiness, surface_mix)` into `Config.data` (`track_seed` / `track_turn_count` /
+`track_straightness` / `track_width` / `track_forestiness` /
+`track_tarmac_fraction`) — the same `Config.data` mutation pattern `apply_car`
+uses — then `world._generate_track(cfg)` builds that exact track. After event 3, the combined time is compared against the opponent
 field → placement → `Save.complete_rally(id, combined_ms)` if top-3 (which is
 idempotent for the progress flag; the *car reward* fires on every top-3 finish,
 so beaten rallies stay farmable).

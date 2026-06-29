@@ -25,6 +25,8 @@ func test_roster_is_well_formed() -> void:
 			assert_between(f, 0.0, 1.0, "%s event forestiness is in [0, 1]" % rally["id"])
 			var t := RallyLibrary.event_tarmac_fraction(ev)
 			assert_between(t, 0.0, 1.0, "%s event tarmac fraction is in [0, 1]" % rally["id"])
+			var s := RallyLibrary.event_straightness(ev)
+			assert_between(s, 0.0, 1.0, "%s event straightness is in [0, 1]" % rally["id"])
 		if rally["showdown"]:
 			showdowns += 1
 	assert_eq(showdowns, 1, "exactly one showdown rally")
@@ -46,6 +48,38 @@ func test_event_tarmac_fraction_defaults_to_all_gravel() -> void:
 	assert_almost_eq(RallyLibrary.event_tarmac_fraction({"surface_mix": 0.7}), 0.7, 0.0001, "authored value passes through")
 	assert_eq(RallyLibrary.event_tarmac_fraction({"surface_mix": 2.0}), 1.0, "clamps above 1")
 	assert_eq(RallyLibrary.event_tarmac_fraction({"surface_mix": -1.0}), 0.0, "clamps below 0")
+
+
+func test_event_straightness_defaults_to_unbiased() -> void:
+	# An event that omits straightness defaults to 0.0 (no bias); authored values
+	# pass through clamped to [0, 1].
+	assert_eq(RallyLibrary.event_straightness({}), 0.0, "missing straightness -> 0.0 (unbiased)")
+	assert_almost_eq(RallyLibrary.event_straightness({"straightness": 0.6}), 0.6, 0.0001, "authored value passes through")
+	assert_eq(RallyLibrary.event_straightness({"straightness": 2.0}), 1.0, "clamps above 1")
+	assert_eq(RallyLibrary.event_straightness({"straightness": -1.0}), 0.0, "clamps below 0")
+
+
+func test_earlier_events_favour_straighter_turns() -> void:
+	# The earlier (lower-tier, non-showdown) part of the game generates easier, less
+	# twisty tracks: the average event straightness must fall as difficulty rises.
+	var sum_by_tier := {}
+	var n_by_tier := {}
+	for rally in RallyLibrary.RALLIES:
+		if rally["showdown"]:
+			continue
+		var tier: int = rally["difficulty"]
+		for ev in rally["events"]:
+			sum_by_tier[tier] = sum_by_tier.get(tier, 0.0) + RallyLibrary.event_straightness(ev)
+			n_by_tier[tier] = n_by_tier.get(tier, 0) + 1
+	var tiers := sum_by_tier.keys()
+	tiers.sort()
+	var prev_avg := 2.0  # above any possible average so tier 1 always passes
+	for tier in tiers:
+		var avg: float = sum_by_tier[tier] / float(n_by_tier[tier])
+		assert_lt(avg, prev_avg, "tier %d is not straighter (easier) than the tier below it" % tier)
+		prev_avg = avg
+	# The very first tier is meaningfully biased toward straight (an easy intro).
+	assert_gt(sum_by_tier[1] / float(n_by_tier[1]), 0.5, "tier 1 events strongly favour straight turns")
 
 
 func test_roster_has_full_one_surface_events() -> void:

@@ -27,6 +27,12 @@ const MAX_RESTARTS := 24                             # random restarts before gi
 # same way. Restart 0 stays at the authored seed, so tracks that already generate fast
 # keep their exact layout.
 const RESTART_SEED_STRIDE := 1_000_003
+# Strength of the straightness bias (see _candidates). At straightness 1.0 the
+# straightest candidate carries this much extra sampling weight over a hairpin, so
+# the search tries gentle corners + long straights first. Tuned so the bias is
+# clearly felt without ever excluding a candidate (the DFS can still backtrack onto
+# a sharp corner when nothing gentle fits).
+const STRAIGHTNESS_BIAS := 6.0
 
 
 # Transform2D mapping local corner space (x = right, y = forward/heading) to
@@ -105,9 +111,13 @@ static func exit_heading(polyline: PackedVector2Array) -> Vector2:
 # is defined RELATIVE to the start frame, so the generated SHAPE is identical for
 # any (start_pos, start_heading) — keeping the opponents' derived target times
 # (computed at a canonical pose with the same value) in sync with the run track.
+# `straightness` (0..1) biases the search toward gentler corners + longer
+# connecting straights (see _candidates): 0 = no bias (the original layout), higher
+# = an easier, less twisty track. It changes the generated SHAPE, so the same value
+# must be passed wherever a track's target time is derived.
 static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int,
 		turn_count: int, width: float, clearance: float = 0.0,
-		reserve_behind_m: float = 0.0) -> Dictionary:
+		reserve_behind_m: float = 0.0, straightness: float = 0.0) -> Dictionary:
 	var coll_width := width + 2.0 * clearance
 	var corners := _turn_corners()
 	# Cells of the lead-in corridor behind the start (empty when not staged). Cells
@@ -124,7 +134,7 @@ static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int
 	for restart in MAX_RESTARTS:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = seed_value + restart * RESTART_SEED_STRIDE
-		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved)
+		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved, straightness)
 		if result["complete"]:
 			return result
 		if best_partial.is_empty() or result["pieces"].size() > best_partial["pieces"].size():
@@ -142,18 +152,57 @@ static func _turn_corners() -> Array:
 	return out
 
 
-# All candidate pieces for one step, shuffled deterministically.
-static func _candidates(corners: Array, rng: RandomNumberGenerator) -> Array:
+# All candidate pieces for one step, shuffled deterministically. `straightness`
+# (0..1) biases the order toward straighter pieces (gentler corners + longer
+# connecting straights), so the search TRIES them first and the placed track
+# favours easy turns; 0 leaves the order an unbiased shuffle (the original layout).
+static func _candidates(corners: Array, rng: RandomNumberGenerator,
+		straightness: float = 0.0) -> Array:
 	var list: Array = []
 	for ci in corners.size():
 		for flip in [false, true]:
 			for sl in STRAIGHT_OPTIONS_M:
 				list.append({ "corner_index": ci, "flip": flip, "straight": sl })
-	# Fisher-Yates with the seeded rng for determinism.
-	for i in range(list.size() - 1, 0, -1):
-		var j := rng.randi_range(0, i)
-		var tmp = list[i]; list[i] = list[j]; list[j] = tmp
-	return list
+	if straightness <= 0.0:
+		# Fisher-Yates with the seeded rng for determinism (unbiased).
+		for i in range(list.size() - 1, 0, -1):
+			var j := rng.randi_range(0, i)
+			var tmp = list[i]; list[i] = list[j]; list[j] = tmp
+		return list
+	# Straightness-weighted shuffle. Each candidate gets a sampling weight rising
+	# with how straight it is; ordering is an Efraimidis-Spirakis weighted draw
+	# (key = u^(1/weight), sorted high→low), which stays fully seeded → deterministic.
+	# Every candidate is still present, just reordered, so the DFS can backtrack onto
+	# a sharp corner when a gentle one won't fit and completeness is unaffected.
+	var w := clampf(straightness, 0.0, 1.0)
+	var keyed: Array = []
+	for cand in list:
+		var weight := 1.0 + w * STRAIGHTNESS_BIAS * _candidate_straightness(corners, cand)
+		var u := maxf(rng.randf(), 1e-9)  # u in (0, 1]; guard pow against 0
+		keyed.append({ "cand": cand, "key": pow(u, 1.0 / weight) })
+	keyed.sort_custom(func(a, b): return a["key"] > b["key"])
+	var out: Array = []
+	for e in keyed:
+		out.append(e["cand"])
+	return out
+
+
+# Straightness of one candidate piece in [0, 1]: 1 = dead straight (a gentle corner
+# off a long straight), 0 = a hairpin with no connecting straight. Blends the
+# corner's gentleness (most of the weight) with the length of its connecting straight.
+static func _candidate_straightness(corners: Array, cand: Dictionary) -> float:
+	var corner_score := _corner_straightness(corners[cand["corner_index"]])
+	var straight_score: float = float(cand["straight"]) / float(STRAIGHT_OPTIONS_M[STRAIGHT_OPTIONS_M.size() - 1])
+	return clampf(0.7 * corner_score + 0.3 * straight_score, 0.0, 1.0)
+
+
+# Gentleness of a library corner in [0, 1]: 1 = no turn, 0 = a 180° hairpin.
+# Derived from the corner's total heading change (entry heads +Y), so it needs no
+# hand-maintained per-corner table and tracks the authored shapes automatically.
+static func _corner_straightness(spec: Dictionary) -> float:
+	var poly := CornerLibrary.build_curve(spec).tessellate()
+	var angle := absf(Vector2(0.0, 1.0).angle_to(exit_heading(poly)))
+	return clampf(1.0 - angle / PI, 0.0, 1.0)
 
 
 # Build the world points + tessellated polyline a candidate would add, given the
@@ -261,7 +310,7 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 # DFS backtracking. Builds the world polybezier point-by-point.
 static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		width: float, corners: Array, rng: RandomNumberGenerator,
-		reserved: Dictionary = {}) -> Dictionary:
+		reserved: Dictionary = {}, straightness: float = 0.0) -> Dictionary:
 	# world_points: Array of [pos, in, out]; starts with the spawn point.
 	var world_points: Array = [[start_pos, Vector2.ZERO, Vector2.ZERO]]
 	var occupied: Dictionary = {}
@@ -281,7 +330,7 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			break
 		# Ensure the current depth has a candidate iterator (the frontier).
 		if stack.size() == pieces.size():
-			stack.append({ "cands": _candidates(corners, rng), "idx": 0 })
+			stack.append({ "cands": _candidates(corners, rng, straightness), "idx": 0 })
 		var top: Dictionary = stack[stack.size() - 1]
 		var placed := false
 		while top["idx"] < top["cands"].size():

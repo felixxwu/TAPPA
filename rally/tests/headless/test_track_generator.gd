@@ -5,6 +5,7 @@ extends GutTest
 # helpers first, then the full search.
 
 const TrackGenerator = preload("res://scripts/track_generator.gd")
+const CornerLibrary = preload("res://scripts/corner_library.gd")
 
 
 func test_frame_transform_maps_local_axes_to_world() -> void:
@@ -171,6 +172,52 @@ func test_generate_uses_both_left_and_right_flips() -> void:
 	assert_true(lefts and rights, "both left and right corners appear across seeds")
 
 
+# Gentleness (0 = hairpin, 1 = no turn) of each library corner, by name — the same
+# measure the generator biases on.
+func _corner_gentleness_by_name() -> Dictionary:
+	var m := {}
+	for spec in CornerLibrary.CORNERS:
+		m[spec["name"]] = TrackGenerator._corner_straightness(spec)
+	return m
+
+
+# Mean gentleness of the corners actually placed in a generated track.
+func _avg_gentleness(result: Dictionary, by_name: Dictionary) -> float:
+	var total := 0.0
+	var n := 0
+	for piece in result["pieces"]:
+		if by_name.has(piece["corner"]):
+			total += by_name[piece["corner"]]
+			n += 1
+	return total / float(maxi(n, 1))
+
+
+func test_straightness_bias_produces_gentler_tracks() -> void:
+	# Averaged across several seeds, a fully straightness-biased track places gentler
+	# corners (and longer straights) than an unbiased one — the "easier" track knob.
+	var by_name := _corner_gentleness_by_name()
+	var plain := 0.0
+	var biased := 0.0
+	var seeds := [1, 2, 3, 5, 7, 11]
+	for s in seeds:
+		var a := TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 0.0)
+		var b := TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 1.0)
+		plain += _avg_gentleness(a, by_name)
+		biased += _avg_gentleness(b, by_name)
+	assert_gt(biased, plain,
+		"straightness=1 yields gentler corners on average than straightness=0")
+
+
+func test_straightness_generation_is_deterministic_and_complete() -> void:
+	# A straightness-biased search is still seeded → identical run to run, and the bias
+	# only reorders candidates so the track still completes.
+	var a := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 0.0, 0.0, 0.8)
+	var b := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 0.0, 0.0, 0.8)
+	assert_eq(a["pieces"].size(), b["pieces"].size(), "same inputs + straightness -> same piece count")
+	assert_eq(a["cells"].size(), b["cells"].size(), "same inputs + straightness -> same cells")
+	assert_true(a["complete"], "a straightness-biased track still completes")
+
+
 func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 	# Regression guard for the seed-3002 blow-up: rwd_masters event 2 once spent ~8
 	# minutes (~474s) generating, because a boxed-in DFS ground its whole step budget
@@ -186,7 +233,8 @@ func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 		for event in rally["events"]:
 			var r := TrackGenerator.generate(
 				Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
-				int(event.get("turn_count", 10)), RallyLibrary.event_width(event), clearance)
+				int(event.get("turn_count", 10)), RallyLibrary.event_width(event), clearance,
+				0.0, RallyLibrary.event_straightness(event))
 			assert_true(r["complete"],
 				"rally %s seed %d generates a complete track (no partial)" % [
 					rally["id"], int(event.get("seed", 0))])

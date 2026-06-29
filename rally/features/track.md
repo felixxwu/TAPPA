@@ -42,6 +42,18 @@ to world XZ (`x → world x`, `y → world z`).
   *piece* = (straight length) + (corner type, L/R flip). Candidates are
   `CornerLibrary` corners (excluding `Straight`) × {left, right} × a fixed set of
   straight lengths (`STRAIGHT_OPTIONS_M`), shuffled with a seeded RNG.
+- **Straightness bias (easy turns):** `straightness` (0..1) weights the candidate
+  shuffle toward *straighter* pieces — gentler corners (less heading change) and
+  longer connecting straights — so the search tries them first and the placed track
+  favours easy turns. `_candidate_straightness` blends `_corner_straightness` (the
+  corner's gentleness, derived from its total heading change so it needs no table)
+  with the connecting-straight length; the ordering is an Efraimidis-Spirakis
+  weighted draw (`key = u^(1/weight)`), so it stays fully seeded → deterministic and
+  every candidate remains present (the DFS can still backtrack onto a sharp corner
+  when a gentle one won't fit — completeness is unaffected). `0` (default) is the
+  original unbiased Fisher-Yates shuffle. It changes the generated SHAPE, so the same
+  value is passed wherever a track's target time is derived. Set per rally event by
+  `RallyLibrary.event_straightness` — earlier-game events run higher (easier).
 - **Frame transform:** a `Transform2D` (`frame_transform`) maps each corner's
   local space (x = right, y = forward) onto the current end pose; a **left**
   turn is a right-hand corner with its x mirrored (`mirror_points`). Joins are
@@ -69,7 +81,7 @@ to world XZ (`x → world x`, `y → world z`).
   different searches; **restart 0 keeps the authored seed**) up to `MAX_RESTARTS`,
   returning the deepest partial if all fail. A pathological seed that once took ~8
   minutes now bails and a fresh restart completes the track in well under a second.
-  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0, reserve_behind_m=0)`
+  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0, reserve_behind_m=0, straightness=0)`
   returns `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool }`. Each
   piece dict records `corner`, `flip`, `straight`, `cells`, and its `entry_pos` /
   `entry_heading` (the pose at the start of its connecting straight — used by
@@ -130,8 +142,9 @@ shader change.
 ## Configuration
 
 `track_width`, `track_clearance`, `track_seed`, `track_turn_count`,
-`track_transition_cells`, `track_tarmac_fraction`, `track_surface_transition_m`,
-`tarmac_color` in `config/game_config.tres` (the `Track` group of `GameConfig`).
+`track_straightness`, `track_transition_cells`, `track_tarmac_fraction`,
+`track_surface_transition_m`, `tarmac_color` in `config/game_config.tres` (the
+`Track` group of `GameConfig`).
 
 ## Track progress & off-track reset
 
