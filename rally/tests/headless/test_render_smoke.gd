@@ -211,23 +211,42 @@ func test_all_shaders_sample_textures_with_nearest_filter() -> void:
 
 
 func test_tree_canopy_material_uses_nearest_filter() -> void:
-	# The tree mesh comes from a GLB whose baked StandardMaterial imports with
-	# linear filtering; world.gd._tree_mesh() overrides it to nearest. Verify the
-	# textured canopy surface ends up nearest (mipmaps kept for distance).
+	# The tree mesh comes from a GLB whose baked StandardMaterials import with
+	# linear filtering. world.gd._tree_mesh() forces nearest on every surface and
+	# swaps the textured canopy surface to the tree_canopy ShaderMaterial (so it
+	# can dither-dissolve near the camera). Verify: the canopy ends up a
+	# ShaderMaterial carrying its leaf texture and sampling nearest (via the
+	# shader's filter_nearest hint), while the untextured trunk stays a
+	# BaseMaterial3D filtered nearest-with-mipmaps.
 	var mesh := _scene._tree_mesh() as Mesh
 	assert_not_null(mesh, "tree mesh extracted from the GLB")
 	if mesh == null:
 		return
-	var saw_texture := false
+	var saw_canopy_texture := false
 	for s in mesh.get_surface_count():
-		var sm := mesh.surface_get_material(s) as BaseMaterial3D
+		var mat := mesh.surface_get_material(s)
+		var canopy := mat as ShaderMaterial
+		if canopy != null:
+			# The textured canopy surface: a ShaderMaterial wrapping tree_canopy.
+			_assert_shader_material(canopy, "tree canopy surface %d" % s)
+			var albedo := canopy.get_shader_parameter("albedo") as Texture2D
+			assert_not_null(albedo, "tree canopy surface %d carries a leaf texture" % s)
+			if albedo != null:
+				saw_canopy_texture = true
+			# Nearest filtering is enforced by the shader's sampler hint, not a
+			# BaseMaterial3D.texture_filter — assert it on the shader source.
+			assert_true(canopy.shader.code.contains("filter_nearest"),
+				"tree canopy shader samples albedo by nearest (not blurred)")
+			assert_false(canopy.shader.code.contains("filter_linear"),
+				"tree canopy shader does not use linear filtering")
+			continue
+		var sm := mat as BaseMaterial3D
 		if sm == null:
 			continue
+		# Remaining (untextured trunk) surfaces stay nearest-with-mipmaps.
 		assert_eq(sm.texture_filter, BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS,
 			"tree surface %d samples by nearest (not blurred)" % s)
-		if sm.albedo_texture != null:
-			saw_texture = true
-	assert_true(saw_texture, "the tree canopy surface carries a texture")
+	assert_true(saw_canopy_texture, "the tree canopy surface carries a texture")
 
 
 func test_canvas_default_texture_filter_is_nearest() -> void:
