@@ -65,12 +65,15 @@ func test_turn_signs_only_for_sharp_corners_with_correct_keys() -> void:
 
 
 func test_arrow_key_maps_shape_and_direction() -> void:
-	assert_eq(SignLayout._arrow_key("1", false), "arrow_1_right", "gradient 1, right")
-	assert_eq(SignLayout._arrow_key("2", true), "arrow_2_left", "gradient 2, left (flip)")
-	assert_eq(SignLayout._arrow_key("3", false), "arrow_3_right", "gradient 3, right")
-	assert_eq(SignLayout._arrow_key("4", true), "arrow_4_left", "gradient 4, left (flip)")
-	assert_eq(SignLayout._arrow_key("Square", false), "arrow_square_right", "square, right")
-	assert_eq(SignLayout._arrow_key("Hairpin", true), "arrow_uturn_left", "hairpin, left (flip)")
+	# The facing panel mirrors the arrow, so the source variant is the OPPOSITE hand
+	# of the corner: a right-hand corner (flip=false) uses the "left" art, which then
+	# reads as a right turn on the sign (and vice-versa). Keeps the grade digit correct.
+	assert_eq(SignLayout._arrow_key("1", false), "arrow_1_left", "right-hand corner uses mirror art")
+	assert_eq(SignLayout._arrow_key("2", true), "arrow_2_right", "left-hand corner (flip) uses mirror art")
+	assert_eq(SignLayout._arrow_key("3", false), "arrow_3_left", "right-hand corner uses mirror art")
+	assert_eq(SignLayout._arrow_key("4", true), "arrow_4_right", "left-hand corner (flip) uses mirror art")
+	assert_eq(SignLayout._arrow_key("Square", false), "arrow_square_left", "square, right-hand -> mirror art")
+	assert_eq(SignLayout._arrow_key("Hairpin", true), "arrow_uturn_right", "hairpin, left-hand (flip) -> mirror art")
 
 
 func test_gentle_corners_5_and_6_are_unsigned() -> void:
