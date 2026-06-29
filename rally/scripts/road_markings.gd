@@ -113,13 +113,13 @@ func _emit_line(verts: PackedVector3Array, cols: PackedColorArray, centerline: C
 # Unit left normal of the centerline at arc length `o` (perpendicular to travel).
 func _left_normal(centerline: Curve2D, o: float, length: float) -> Vector2:
 	var p := centerline.sample_baked(o)
-	var tan := centerline.sample_baked(minf(o + 1.0, length)) - p
-	if tan.length() < 0.001:
-		tan = p - centerline.sample_baked(maxf(o - 1.0, 0.0))
-	if tan.length() < 0.001:
-		tan = Vector2(0.0, 1.0)
-	tan = tan.normalized()
-	return Vector2(-tan.y, tan.x)
+	var tangent := centerline.sample_baked(minf(o + 1.0, length)) - p
+	if tangent.length() < 0.001:
+		tangent = p - centerline.sample_baked(maxf(o - 1.0, 0.0))
+	if tangent.length() < 0.001:
+		tangent = Vector2(0.0, 1.0)
+	tangent = tangent.normalized()
+	return Vector2(-tangent.y, tangent.x)
 
 
 func _tarmac_at(terrain: Node, p: Vector2) -> float:
