@@ -193,6 +193,30 @@ static func clamp_speed(v: Vector2, max_speed: float) -> Vector2:
 	return v
 
 
+# Prioritised steering arbitration. Fleeing the car claims the speed budget first,
+# then static obstacle (road + tree) avoidance, then neighbour separation, then the
+# anchor pull — each tier only gets the budget the higher tiers leave under max_speed.
+# So the crowd always commits to escaping the car BEFORE worrying about obstacles or
+# spacing, and a tight clump no longer jitters: separation can't fight a strong flee.
+static func combine(flee: Vector2, avoid: Vector2, separation: Vector2, anchor: Vector2, max_speed: float) -> Vector2:
+	var v := clamp_speed(flee, max_speed)
+	v = _add_priority(v, avoid, max_speed)
+	v = _add_priority(v, separation, max_speed)
+	v = _add_priority(v, anchor, max_speed)
+	return v
+
+
+# Add `extra` to `v`, but only up to the speed budget `v` leaves under max_speed — a
+# lower-priority force can never override a higher-priority one already at full tilt.
+static func _add_priority(v: Vector2, extra: Vector2, max_speed: float) -> Vector2:
+	var remaining := max_speed - v.length()
+	if remaining <= 0.0:
+		return v
+	if extra.length() > remaining:
+		extra = extra.normalized() * remaining
+	return v + extra
+
+
 # --- simulation ---------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
@@ -214,13 +238,14 @@ func _physics_process(delta: float) -> void:
 	for i in _pos.size():
 		if _upright[i] == 0:
 			continue
-		var desired := Vector2.ZERO
-		desired += separation_force(i, _pos, _upright, _p["separation_m"]) * _p["w_separation"]
-		desired += flee_force(_pos[i], car_xz, _p["flee_radius_m"]) * _p["w_flee"]
-		desired += road_force(_pos[i], _road_cells, _p["road_probe_m"]) * _p["w_road"]
-		desired += obstacle_force(_pos[i], _tree_grid, _p["tree_cell_m"], _p["tree_avoid_m"]) * _p["w_obstacle"]
-		desired += anchor_force(_pos[i], _home[i], _p["anchor_dead_zone_m"]) * _p["w_anchor"]
-		desired = clamp_speed(desired, max_speed)
+		# Prioritised, not a flat weighted sum: fleeing the car comes FIRST, then static
+		# obstacle (road + tree) avoidance, then neighbour separation, then the anchor.
+		var flee: Vector2 = flee_force(_pos[i], car_xz, _p["flee_radius_m"]) * _p["w_flee"]
+		var avoid: Vector2 = road_force(_pos[i], _road_cells, _p["road_probe_m"]) * _p["w_road"]
+		avoid += obstacle_force(_pos[i], _tree_grid, _p["tree_cell_m"], _p["tree_avoid_m"]) * _p["w_obstacle"]
+		var sep: Vector2 = separation_force(i, _pos, _upright, _p["separation_m"]) * _p["w_separation"]
+		var anchor: Vector2 = anchor_force(_pos[i], _home[i], _p["anchor_dead_zone_m"]) * _p["w_anchor"]
+		var desired := combine(flee, avoid, sep, anchor, max_speed)
 		# Steer current velocity toward the target, then advance.
 		_vel[i] = clamp_speed(_vel[i].move_toward(desired, accel * delta), max_speed)
 		_pos[i] += _vel[i] * delta

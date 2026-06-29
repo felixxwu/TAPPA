@@ -322,9 +322,10 @@ func _spawn_spectators(centerline: Curve2D, road_cells: Dictionary, trees: Packe
 		road_cells, tree_grid, cfg, terrain, cfg.track_seed + 303)
 
 
-# Build one crowd: its centre sits to the LEFT of the road at `anchor` (perpendicular
-# to `heading`), members scattered off-road within it by SpectatorScatter. Named so an
-# in-place regeneration replaces rather than stacks groups (cf. _place_arch).
+# Build one crowd: a band centred on the road at `anchor`, running along `heading` and
+# straddling the carriageway so members line BOTH verges (the road cells in the middle
+# are rejected). Named so an in-place regeneration replaces rather than stacks groups
+# (cf. _place_arch).
 func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2,
 		road_cells: Dictionary, tree_grid: Dictionary, cfg: GameConfig,
 		terrain: TerrainManager, seed_value: int) -> void:
@@ -336,11 +337,10 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 	if dir.length() < 1e-5:
 		dir = Vector2(0.0, 1.0)
 	dir = dir.normalized()
-	var side := Vector2(-dir.y, dir.x)  # left of travel
-	var center := anchor + side * cfg.spectator_side_offset_m
 	var tree_cell: float = maxf(cfg.spectator_tree_avoid_m, 0.5)
-	var members := SpectatorScatter.members(center, cfg.spectator_group_size,
-		cfg.spectator_separation_m, cfg.spectator_spawn_radius_m, road_cells,
+	var members := SpectatorScatter.members(anchor, dir,
+		cfg.spectator_area_length_m * 0.5, cfg.spectator_area_width_m * 0.5,
+		cfg.spectator_group_size, cfg.spectator_separation_m, road_cells,
 		tree_grid, tree_cell, cfg.spectator_tree_avoid_m, seed_value)
 	if members.is_empty():
 		return

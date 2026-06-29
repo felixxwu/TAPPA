@@ -72,33 +72,43 @@ static func _near_point(p: Vector2, grid: Dictionary, cell: float, radius: float
 	return false
 
 
-# Standing positions for one group, clustered in a disc of `radius` around
-# `anchor`. A jittered grid with cell = `separation` makes neighbours inherently
-# no closer than (1 - jitter) * separation; candidates on the road or within
-# `tree_avoid_radius` of a tree are dropped, then the survivors are seeded-shuffled
-# and the first `count` returned (an even spatial thinning, not a corner bias).
-static func members(anchor: Vector2, count: int, separation: float, radius: float,
-		road_cells: Dictionary, tree_grid: Dictionary, tree_cell: float,
-		tree_avoid_radius: float, seed_value: int) -> PackedVector2Array:
+# Standing positions for one group, scattered over an oriented band that straddles
+# the road — `half_len` along the track tangent, `half_width` to each side across it.
+# Because road cells are rejected, the carriageway in the middle stays clear and the
+# crowd lines BOTH verges over a stretch of track. A jittered grid (cell = separation)
+# makes neighbours inherently no closer than (1 - jitter) * separation; candidates on
+# the road or within `tree_avoid_radius` of a tree are dropped, then the survivors are
+# seeded-shuffled and the first `count` returned (an even thinning, not a corner bias).
+static func members(center: Vector2, tangent: Vector2, half_len: float, half_width: float,
+		count: int, separation: float, road_cells: Dictionary, tree_grid: Dictionary,
+		tree_cell: float, tree_avoid_radius: float, seed_value: int) -> PackedVector2Array:
 	var result := PackedVector2Array()
-	if count <= 0 or separation <= 0.0 or radius <= 0.0:
+	if count <= 0 or separation <= 0.0 or half_len <= 0.0 or half_width <= 0.0:
 		return result
-	var reach := int(ceil(radius / separation))
+	var fwd := tangent
+	if fwd.length() < 1e-5:
+		fwd = Vector2(0, 1)
+	fwd = fwd.normalized()
+	var nrm := Vector2(-fwd.y, fwd.x)  # across-track axis
+	var reach_a := int(ceil(half_len / separation))
+	var reach_c := int(ceil(half_width / separation))
 	var cands: Array[Vector2] = []
-	for cx in range(-reach, reach + 1):
-		for cz in range(-reach, reach + 1):
-			var jx := (_hash01(cx, cz, seed_value, 0) - 0.5) * _JITTER * separation
-			var jz := (_hash01(cx, cz, seed_value, _SALT_Z) - 0.5) * _JITTER * separation
-			var p := anchor + Vector2(cx * separation + jx, cz * separation + jz)
-			if anchor.distance_to(p) > radius:
+	for ca in range(-reach_a, reach_a + 1):
+		for cc in range(-reach_c, reach_c + 1):
+			var ja := (_hash01(ca, cc, seed_value, 0) - 0.5) * _JITTER * separation
+			var jc := (_hash01(ca, cc, seed_value, _SALT_Z) - 0.5) * _JITTER * separation
+			var along := ca * separation + ja
+			var across := cc * separation + jc
+			if absf(along) > half_len or absf(across) > half_width:
 				continue
+			var p := center + fwd * along + nrm * across
 			if _on_road(p, road_cells):
 				continue
 			if _near_point(p, tree_grid, tree_cell, tree_avoid_radius):
 				continue
 			cands.append(p)
 	# Seeded shuffle (sort by a per-point hash key) so thinning to `count` keeps an
-	# even spread across the disc rather than the row-major fill order.
+	# even spread across the band rather than the row-major fill order.
 	cands.sort_custom(func(a: Vector2, b: Vector2) -> bool:
 		return _pick_key(a, seed_value) < _pick_key(b, seed_value))
 	for i in mini(count, cands.size()):

@@ -37,16 +37,24 @@ the car is `spectator_despawn_behind_m` behind a ragdoll, it is freed.
 
 ### Steering (boids on the XZ plane)
 
-`SpectatorGroup._physics_process` batch-steers every upright member from weighted
-preferences, clamped to `spectator_max_speed_mps`. Each is a pure static function:
+`SpectatorGroup._physics_process` batch-steers every upright member, clamped to
+`spectator_max_speed_mps`. Each preference is a pure static force:
 
 | Force | Preference | Notes |
 |-------|-----------|-------|
-| `separation_force` | keep ~`separation_m` apart | within-group only; O(n²) but n≈50 |
 | `flee_force` | move away from the car within `flee_radius_m` | squared near-field falloff = the "light push": the crowd parts/jostles hard as the car arrives |
 | `road_force` | avoid the carriageway | 8-direction probe of the rasterised `road_cells` |
 | `obstacle_force` | avoid trees | probes a grid of tree points (`SpectatorScatter.build_point_grid`) |
+| `separation_force` | keep ~`separation_m` apart | within-group only; O(n²) but n≈50 |
 | `anchor_force` | drift home when idle | dead-zone'd so settled agents don't jitter |
+
+**Prioritised arbitration (`combine`), not a flat weighted sum.** Fleeing the car
+claims the speed budget first, then static obstacle (road + tree) avoidance, then
+separation, then the anchor — each tier only gets the budget the higher tiers leave
+under `max_speed` (`_add_priority`). So the crowd always commits to escaping the car
+**before** dodging obstacles, and a tight clump no longer jitters: separation can't
+fight a strong flee. With no car nearby, flee is zero and the lower tiers get the
+full budget (so they still space out and avoid the road when idle).
 
 **LOD:** only the group within `spectator_active_radius_m` of the car runs
 steering; the other two stand still until the car approaches.
@@ -54,12 +62,14 @@ steering; the other two stand still until the car approaches.
 ### Placement
 
 `mid_offset()` picks a seeded along-track distance in
-`[spectator_mid_progress_min, spectator_mid_progress_max]`. Each group's centre is
-offset `spectator_side_offset_m` to the **left** of the road (perpendicular to the
-local heading); `members()` then lays a jittered grid (cell = separation) over a
-`spectator_spawn_radius_m` disc, rejecting on-road cells and points within
-`spectator_tree_avoid_m` of a tree, thinned to `spectator_group_size`. All
-deterministic per `track_seed` (each group gets a distinct salt). Groups are named
+`[spectator_mid_progress_min, spectator_mid_progress_max]`. Each group is a band
+**centred on the road** at its anchor, oriented along the local heading:
+`members()` lays a jittered grid (cell = separation) over a
+`spectator_area_length_m` × `spectator_area_width_m` rectangle that straddles the
+carriageway, rejecting on-road cells and points within `spectator_tree_avoid_m` of a
+tree, thinned to `spectator_group_size`. Because the road cells in the middle are
+rejected, the crowd lines **both verges** over that stretch. All deterministic per
+`track_seed` (each group gets a distinct salt). Groups are named
 (`SpectatorStart` / `SpectatorMid` / `SpectatorEnd`) so an in-place regeneration
 replaces rather than stacks them (mirrors `_place_arch`).
 
@@ -73,7 +83,7 @@ replaces rather than stacks them (mirrors `_place_arch`).
 ## Config
 
 `@export_group("Spectators")` in `game_config.gd` (group size, mid-progress band,
-spawn/side radii, separation, flee/knock radii, max speed + accel, LOD radius,
+crowd-band length/width, separation, flee/knock radii, max speed + accel, LOD radius,
 the five steering weights, ragdoll launch params, despawn distance). Disable with
 `spectators_enabled = false` or `spectator_group_size = 0`.
 

@@ -90,3 +90,31 @@ func test_clamp_speed_caps_magnitude() -> void:
 func test_clamp_speed_leaves_slow_vectors() -> void:
 	var v := Vector2(1, 0)
 	assert_eq(SpectatorGroup.clamp_speed(v, 3.0), v, "below the cap is unchanged")
+
+
+# --- prioritised arbitration (combine) ----------------------------------------
+
+func test_combine_flees_car_before_avoiding_obstacles() -> void:
+	# Flee already saturates the speed budget, so a conflicting obstacle/separation
+	# push cannot bend the path — escaping the car wins.
+	var flee := Vector2(3.0, 0)      # == max_speed, pointing +x away from car
+	var avoid := Vector2(0, 3.0)     # would push +z if it had any budget
+	var sep := Vector2(0, 3.0)
+	var out := SpectatorGroup.combine(flee, avoid, sep, Vector2.ZERO, 3.0)
+	assert_almost_eq(out.x, 3.0, 1e-3, "keeps full flee speed along +x")
+	assert_almost_eq(out.y, 0.0, 1e-3, "obstacle/separation get no budget while fleeing hard")
+
+
+func test_combine_uses_avoidance_when_not_fleeing() -> void:
+	# No car (flee zero) -> obstacle avoidance gets the budget.
+	var out := SpectatorGroup.combine(Vector2.ZERO, Vector2(0, 2.0), Vector2.ZERO, Vector2.ZERO, 3.0)
+	assert_gt(out.y, 0.0, "with no car, the crowd still avoids obstacles")
+
+
+func test_combine_partial_budget_blends_lower_priority() -> void:
+	# A weak flee (1 of 3 budget) leaves room; avoidance fills the remainder but is
+	# capped so the total never exceeds max_speed.
+	var out := SpectatorGroup.combine(Vector2(1, 0), Vector2(0, 10.0), Vector2.ZERO, Vector2.ZERO, 3.0)
+	assert_almost_eq(out.x, 1.0, 1e-3, "flee component preserved")
+	assert_gt(out.y, 0.0, "remaining budget spent on avoidance")
+	assert_lte(out.length(), 3.0 + 1e-3, "total never exceeds max_speed")

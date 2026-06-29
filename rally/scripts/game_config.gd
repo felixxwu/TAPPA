@@ -729,10 +729,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## The mid-stage group spawns at a seeded progress fraction in this range.
 @export_range(0.0, 1.0) var spectator_mid_progress_min := 0.30
 @export_range(0.0, 1.0) var spectator_mid_progress_max := 0.70
-## Radius (m) of the disc a group clusters within.
-@export_range(1.0, 30.0) var spectator_spawn_radius_m := 6.0
-## How far (m) a group's centre is offset from the road centreline, to the side.
-@export_range(1.0, 30.0) var spectator_side_offset_m := 7.0
+## Length (m) of the crowd band along the track — the group spreads this far up and
+## down the road (split half ahead, half behind the anchor point).
+@export_range(2.0, 120.0) var spectator_area_length_m := 36.0
+## Total width (m) of the crowd band across the track. It straddles the road centre,
+## so the carriageway stays clear and spectators line BOTH verges.
+@export_range(2.0, 60.0) var spectator_area_width_m := 24.0
 ## Extra gap (m) kept off the carriageway when placing — road footprint is inflated
 ## by this before rejecting standing positions on it.
 @export_range(0.0, 10.0) var spectator_road_margin_m := 1.0
@@ -899,8 +901,6 @@ func sign_render_params() -> Dictionary:
 func spectator_params() -> Dictionary:
 	return {
 		"group_size": spectator_group_size,
-		"spawn_radius_m": spectator_spawn_radius_m,
-		"side_offset_m": spectator_side_offset_m,
 		"separation_m": spectator_separation_m,
 		"tree_avoid_m": spectator_tree_avoid_m,
 		"tree_cell_m": maxf(spectator_tree_avoid_m, 0.5),
