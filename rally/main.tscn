@@ -2,6 +2,8 @@
 
 [ext_resource type="Shader" uid="uid://ddlrcp8opyqg" path="res://shaders/ps1_models.gdshader" id="1_models"]
 [ext_resource type="Shader" uid="uid://cnmlit3nvwmc1" path="res://shaders/ps1_post_process.gdshader" id="2_post"]
+[ext_resource type="Shader" path="res://shaders/speed_lines.gdshader" id="2_lines"]
+[ext_resource type="Script" path="res://scripts/speed_lines.gd" id="2_lines_s"]
 [ext_resource type="Script" uid="uid://bp1qxl2gv47a8" path="res://scripts/terrain_layer.gd" id="3_5vw27"]
 [ext_resource type="Texture2D" uid="uid://buvotoc4e4cy7" path="res://textures/grass.jpg" id="3_grass"]
 [ext_resource type="PackedScene" path="res://car.tscn" id="4_car"]
@@ -56,6 +58,15 @@ shader_parameter/tarmac_color = Color(0.32, 0.32, 0.34, 1)
 shader = ExtResource("2_post")
 shader_parameter/virtual_resolution = Vector2(640, 480)
 
+[sub_resource type="ShaderMaterial" id="mat_lines"]
+shader = ExtResource("2_lines")
+shader_parameter/intensity = 0.0
+shader_parameter/line_color = Color(0, 0, 0, 1)
+shader_parameter/density = 28.0
+shader_parameter/inner_radius = 0.55
+shader_parameter/outer_radius = 0.9
+shader_parameter/flicker_speed = 14.0
+
 [node name="Main" type="Node3D" unique_id=1526314824]
 script = ExtResource("7_world")
 
@@ -92,6 +103,17 @@ material = SubResource("mat_post")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+
+[node name="SpeedLines" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+script = ExtResource("2_lines_s")
+car = NodePath("../Car")
+
+[node name="ColorRect" type="ColorRect" parent="SpeedLines"]
+material = SubResource("mat_lines")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
 
 [node name="HUD" type="CanvasLayer" parent="." unique_id=476166069 node_paths=PackedStringArray("car")]
 layer = 2

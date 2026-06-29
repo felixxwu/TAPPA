@@ -3,8 +3,10 @@ extends Node3D
 # Car handling is applied by car.gd; camera follow by chase_camera.gd.
 
 const TREE_MODEL := preload("res://models/low_poly_tree.glb")
-const BUSH_TEXTURE := preload("res://textures/bush.webp")
 const BUSH_SEED_OFFSET := 1013
+# Ground-cover bush: low-poly mesh (replaces the old bush.webp billboards),
+# instanced via TreeMeshField (same renderer as trees, no collision). See features/trees.md.
+const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
 
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
@@ -30,6 +32,13 @@ func _tree_mesh() -> Mesh:
 		for c in n.get_children():
 			stack.append(c)
 	scene.queue_free()
+	# The GLB's baked StandardMaterials import with linear filtering, which blurs
+	# the leaf texture; force nearest (keeping mipmaps) for the flat PS1 look.
+	if _tree_mesh_cache != null:
+		for s in _tree_mesh_cache.get_surface_count():
+			var sm := _tree_mesh_cache.surface_get_material(s) as BaseMaterial3D
+			if sm != null:
+				sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	return _tree_mesh_cache
 
 
@@ -220,16 +229,29 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if loading != null:
 		loading.set_step("Scattering bushes…")
 	await _yield_frame()
-	# Bushes: same scatter + render as trees, but bush.webp, no collision, and an
-	# offset seed so they interleave with the trees. They are NOT forest-gated (default
-	# forestiness 1.0), so undergrowth covers the whole stage, not just the forest.
-	var bushes := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
+	# Bushes: same scatter as trees (offset seed so they interleave; NOT forest-gated,
+	# default forestiness 1.0 so undergrowth covers the whole stage) and the SAME
+	# renderer (TreeMeshField) — the low-poly ground-cover mesh, binned with per-bin
+	# LOD/visibility cull like the trees, but with NO collision and per-instance baked
+	# terrain light so it matches the ground. See features/trees.md.
+	#
+	# The bush mesh is a WIDE patch, so reject it on a road footprint inflated by the
+	# bush's own world-space radius (on top of tree_road_margin_m) — that keeps the
+	# bush CENTRE far enough out that no part of the scaled mesh spills onto the road,
+	# at any per-instance yaw.
+	var bush_mesh := _bush_mesh(cfg)
+	var bush_radius := TreeMeshField.xz_radius(bush_mesh, cfg.bush_height_m)
+	var bush_footprint := cfg.track_width + 2.0 * (cfg.tree_road_margin_m + bush_radius)
+	var bush_road_cells := TrackGenerator.rasterize_cells(
+		road_centerline.tessellate(), bush_footprint)
+	var bushes := TreeScatter.scatter(result["pieces"], bush_road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
-	var bush_field := BillboardField.new()
+	var bush_field := TreeMeshField.new()
 	add_child(bush_field)
-	bush_field.build(bushes, $Floor as TerrainManager, cfg.bush_size_m, BUSH_TEXTURE,
-		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false,
-		cfg.tree_render_distance_m, cfg.tree_render_fade_m, -cfg.bush_sink_m)
+	bush_field.build(bushes, $Floor as TerrainManager, bush_mesh,
+		cfg.bush_height_m, 0.0, 0.0,
+		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m,
+		false, true)
 
 	if loading != null:
 		loading.set_step("Placing signs…")
@@ -313,6 +335,29 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# regeneration, e.g. entering a rally event).
 	if loading != null:
 		loading.finish()
+
+
+# Build the ground-cover bush mesh from the groundcover_opaque GLB. Keeps the
+# imported (tone-matched) foliage texture, but makes the material UNSHADED — the
+# flat PS1 look the rest of the world uses — and enables vertex_color_use_as_albedo
+# so the per-instance baked terrain light TreeMeshField writes into the MultiMesh
+# COLOR multiplies the albedo (matching the ground tint everywhere, as the old
+# foliage shader did). Duplicated so the cached scene resource is not mutated.
+func _bush_mesh(cfg: GameConfig) -> Mesh:
+	var inst := GROUNDCOVER_SCENE.instantiate()
+	var src := inst.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
+	var mesh: Mesh = src.mesh.duplicate()
+	inst.free()
+	var base := mesh.surface_get_material(0)
+	var mat: StandardMaterial3D = base.duplicate() if base is StandardMaterial3D else StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	# Lifted tint so the tone-matched ground cover reads a bit more against the grass.
+	mat.albedo_color = cfg.bush_tint
+	# Nearest filter (keep mipmaps) for the flat PS1 look, like the rest of the world.
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	mesh.surface_set_material(0, mat)
+	return mesh
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and
@@ -556,6 +601,11 @@ func cycle_car() -> void:
 	var fresh: Node = car.respawn(car, car.next_car_index(), _car_spawn)
 	mgr.retarget(fresh)
 	($HUD as CanvasLayer).car = fresh
+	# Re-point the speed-lines overlay at the fresh car too (it reads the car's
+	# velocity each frame), so it doesn't keep the freed outgoing node.
+	var lines := get_node_or_null("SpeedLines")
+	if lines != null:
+		lines.car = fresh
 	# Re-point progress tracking at the fresh car (it respawns at the start, so
 	# progress resets to the spawn offset too).
 	if _track_progress != null:

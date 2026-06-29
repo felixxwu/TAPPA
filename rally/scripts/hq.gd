@@ -53,7 +53,7 @@ const MAX_STARS := 3
 # (before _ready), which would stretch the "stuck at 100%" gap after Godot's boot bar.
 # Both are only needed by _build_hq, which runs behind our LoadingScreen.
 const CAR_SCENE_PATH := "res://car.tscn"
-const TREE_TEXTURE_PATH := "res://textures/tree.png"
+const TREE_MODEL_PATH := "res://models/low_poly_tree.glb"
 var _car_scene: PackedScene  # cached on first use (load() also caches engine-side)
 
 
@@ -274,6 +274,7 @@ func _build_environment() -> void:
 	grass.position.y = -0.02  # just under the concrete so the apron wins where they overlap
 	var grass_mat := StandardMaterial3D.new()
 	grass_mat.albedo_texture = load("res://textures/grass.jpg")
+	grass_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	var tiles := grass_size * cfg.terrain_tile_per_meter
 	grass_mat.uv1_scale = Vector3(tiles, tiles, 1.0)
 	grass.material_override = grass_mat
@@ -357,11 +358,11 @@ func _build_buildings() -> void:
 
 
 # Trees framing the lot so HQ reads as an outdoor clearing under the open-field
-# skybox, instead of floating on a bare plane. Reuses the stage's billboard
-# renderer/texture (one MultiMesh, one draw call); scenery only (no collision).
-# A close-in annulus, but with the front-centre corridor kept clear so trees never
-# block the title camera's view of the car park, and the garage footprint kept
-# clear so none spawn inside it. Trees hug the garage's sides and back.
+# skybox, instead of floating on a bare plane. Reuses the stage's low-poly tree
+# mesh field (TreeMeshField); scenery only (no collision). A close-in annulus,
+# but with the front-centre corridor kept clear so trees never block the title
+# camera's view of the car park, and the garage footprint kept clear so none
+# spawn inside it. Trees hug the garage's sides and back.
 func _build_trees() -> void:
 	var cfg: GameConfig = Config.data
 	var rng := RandomNumberGenerator.new()
@@ -382,15 +383,33 @@ func _build_trees() -> void:
 			continue
 		positions.append(p)
 	# HQ ground is a flat plane at y = 0; a layerless TerrainManager returns height
-	# 0 everywhere, which is all BillboardField needs to seat the trees. Used only
+	# 0 everywhere, which is all the field needs to seat the trees. Used only
 	# during build(), then freed.
 	var flat := TerrainManager.new()
 	flat.layers = [] as Array[TerrainLayer]
-	var field := BillboardField.new()
+	var field := TreeMeshField.new()
 	add_child(field)
-	field.build(positions, flat, cfg.tree_size_m, load(TREE_TEXTURE_PATH),
-		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false, 1000.0, 0.0)
+	# render_distance 1000 (no cull — HQ is small), no collision (scenery).
+	field.build(positions, flat, _hq_tree_mesh(), cfg.tree_size_m.y,
+		cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
+		1000.0, 0.0, cfg.tree_bin_size_m, false)
 	flat.free()
+
+
+# The tree ArrayMesh, pulled once from the imported .glb scene.
+func _hq_tree_mesh() -> Mesh:
+	var scene := (load(TREE_MODEL_PATH) as PackedScene).instantiate()
+	var stack: Array[Node] = [scene]
+	var mesh: Mesh = null
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D:
+			mesh = (n as MeshInstance3D).mesh
+			break
+		for c in n.get_children():
+			stack.append(c)
+	scene.free()
+	return mesh
 
 
 # The garage shell — the two-bay service-park model (scripts/garage.gd). Open
@@ -443,7 +462,7 @@ func _build_carpark() -> void:
 	surface.position = Vector3(center.x, 0.012, center.z)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _carpark_bay_texture(bays)
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mat.roughness = 0.95
 	surface.material_override = mat
 	add_child(surface)
@@ -512,7 +531,7 @@ func _build_map_table() -> void:
 	# aerial colours read true under the garage lighting from the near-top-down
 	# table camera, rather than being darkened by the directional sun's angle.
 	mm.albedo_texture = load("res://textures/map_table.jpg")
-	mm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_map_plane.material_override = mm
 	_map_plane.position = Vector3(p.x, top_y + 0.01, p.z)

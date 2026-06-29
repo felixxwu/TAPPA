@@ -1,16 +1,16 @@
 # Trees (low-poly mesh scatter around turns)
 
 **Source:** `scripts/tree_scatter.gd` (`class_name TreeScatter`),
-`scripts/tree_mesh_field.gd` (`class_name TreeMeshField`, trees),
-`scripts/billboard_field.gd` (`class_name BillboardField`, bushes),
+`scripts/tree_mesh_field.gd` (`class_name TreeMeshField`, trees AND bushes),
 `models/low_poly_tree.glb` + `textures/leaves.png` (tree model),
-`textures/bush.webp` (bush sprite). Wired in
+`models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired in
 `scripts/world.gd._generate_track()`.
 
 After the track is generated and baked, foliage is scattered around each turn.
-**Trees are solid low-poly 3D meshes** (`TreeMeshField`); **bushes are still
-alpha-cutout billboards** (`BillboardField`). Both share the same `TreeScatter`
-placement.
+Both **trees** and **bushes** are solid low-poly 3D meshes rendered through the
+same `TreeMeshField` — the old alpha-cutout billboards are gone. Both share the
+same `TreeScatter` placement. (`BillboardField` still exists for any future
+sprite use.)
 
 ## Placement (`TreeScatter`)
 
@@ -90,7 +90,13 @@ The tree mesh is extracted once from the `.glb` PackedScene by
 `world.gd._tree_mesh()` and shared by every bin's MultiMesh. Its materials are
 **unshaded** `StandardMaterial3D` — the depth shading is baked into the mesh's
 vertex colours (see the asset section below), so trees read correctly with no
-dedicated scene light and stay in the flat PS1 look.
+dedicated scene light and stay in the flat PS1 look. The **canopy material is
+double-sided** (`cull_mode = CULL_DISABLED`): the mesh winds correctly for
+back-face culling in software GL, but the canopy rendered concave / "front faces
+missing" on some real-device / web GL targets (a platform culling difference), so
+drawing both sides guarantees the camera-facing leaves always appear. The canopy
+is a closed shell, so from outside it looks identical — just robust everywhere.
+The trunk stays single-sided (`CULL_BACK`).
 
 ## Collision (`TreeMeshField`)
 
@@ -105,26 +111,47 @@ The body stays on `collision_layer = 1` like `TerrainChunk`, so the car collides
 with trees the same way it collides with the ground. (`BillboardField` keeps the
 identical scheme for the bush field's optional collision.)
 
-## Bushes (`BillboardField`)
+## Bushes (ground-cover mesh, same renderer as trees)
 
-Bushes are still alpha-cutout billboards. `BillboardField`
-(`scripts/billboard_field.gd`) is a `MultiMeshInstance3D` subclass: one `MultiMesh`
-of `QuadMesh` instances (one draw call), each placed at
-`(x, Floor.height_at(x,z), z)` with the quad pivot at its bottom edge
-(`center_offset`). `shaders/billboard.gdshader` is a cylindrical billboard (each
-quad yaws to face the camera but stays upright) with an alpha-scissor cutout and
-an unshaded PS1-flat look; it culls past `tree_render_distance_m` and dissolves
-over `tree_render_fade_m` via a 4×4 Bayer screen-door dither. Like `TreeMeshField`
-it records `instance_positions` for headless tests.
+Bushes are the low ground-cover patch in
+`models/vegetation/groundcover_opaque.glb` (see `models/vegetation/README.md`),
+rendered through the **same `TreeMeshField`** as the trees — same binning, the
+same per-bin importer-LOD / `visibility_range` cull, the same deterministic yaw
+and uniform height scaling. Two `build()` flags adapt it for ground cover:
 
-Bushes use the same `TreeScatter` placement as trees, with these differences: they
-use `textures/bush.webp`, they are built with `with_collision = false` (no hitbox),
-they scatter with `track_seed + 1013` so the per-seed grid phase puts them on an
-interleaved grid (not the trees' cells), they use their own (smaller) `bush_size_m`,
-and they are sunk into the ground by `bush_sink_m` (passed as a negative `y_offset`
-to `BillboardField.build`) to hide the gap at the bottom of the bush texture. They
-reuse the other `tree_*` values (count, radius, margin, jitter, render
-distance/fade). `world.gd` builds the tree field and the bush field back to back.
+- `with_collision = false` — bushes are non-colliding scenery, so no
+  `StaticBody3D`/hitboxes are built.
+- `bake_terrain_light = true` — each instance's MultiMesh colour is set to the
+  terrain's baked light at its position (`light_at`), and the bush material has
+  `vertex_color_use_as_albedo` enabled, so `ALBEDO = foliage_texture × COLOR`
+  exactly as before — the patches keep tracking the ground tint everywhere.
+
+Differences from trees: they scatter with `track_seed + 1013` so the per-seed grid
+phase puts them on an interleaved grid (not the trees' cells), they are NOT
+forest-gated (default forestiness 1.0, so undergrowth covers the whole stage),
+they have no collision, and they scale to `bush_height_m` instead of
+`tree_size_m.y`. They reuse the trees' scatter knobs (count, radius, jitter),
+bin size and render distance/fade.
+
+**Road keep-out (no mesh on the road).** The bush mesh is a *wide* flat patch, so
+uniform-scaling it to `bush_height_m` blows its world footprint up well past a
+tree trunk's. A bush is rejected not on the trees' `track_width + 2*tree_road_margin_m`
+footprint but on one **also inflated by the bush's own world-space radius**:
+`track_width + 2*(tree_road_margin_m + bush_radius)`, where
+`bush_radius = TreeMeshField.xz_radius(bush_mesh, bush_height_m)` (half the larger
+horizontal AABB extent × the height scale). That keeps the bush *centre* far
+enough out that no part of the scaled mesh spills onto the road at any
+per-instance yaw, while still leaving the `tree_road_margin_m` gap from the road
+edge. `world.gd` rasterizes this wider footprint into a bush-specific
+`road_cells`; the trees keep the un-inflated one.
+
+`world.gd._bush_mesh()` builds the render mesh: it takes the GLB's mesh, keeps the
+imported (tone-matched) foliage texture, and makes the `StandardMaterial3D`
+**unshaded** (the flat PS1 look the rest of the world uses) with
+`vertex_color_use_as_albedo` on so the baked-light instance colour multiplies in.
+Its `albedo_color` is set to `bush_tint` (lifted a touch above the model's authored
+green so the ground cover reads a bit more against the grass).
+`world.gd` builds the tree field and the bush field back to back.
 
 ## Configuration
 
@@ -136,10 +163,11 @@ distance/fade). `world.gd` builds the tree field and the bush field back to back
 size, default 25 m — smaller = finer LOD/cull granularity but more draw calls),
 `tree_collision_radius_m` (box half-extent in X/Z), `tree_collision_height_m`
 (box height), `tree_render_distance_m` (cull distance), `tree_render_fade_m`
-(dissolve band), `bush_size_m` (bush billboard size), `bush_sink_m` (how far
-bushes sink into the ground). `GameConfig.tree_params()` packs the scalar scatter
-knobs for `TreeScatter.scatter`; the render/collision knobs are passed straight to
-`TreeMeshField.build` (trees) / `BillboardField.build` (bushes).
+(dissolve band), `bush_height_m` (height the ground-cover bush mesh is scaled to),
+`bush_tint` (albedo tint lifting the bush colour a touch against the grass).
+`GameConfig.tree_params()` packs the scalar scatter knobs for
+`TreeScatter.scatter`; the collision knobs are passed straight to
+`TreeMeshField.build`.
 
 The **forest-patch** knobs live in the `Track` group instead, since they're per-stage:
 `track_forestiness` (0–1, set per rally event by `RallyLibrary.event_forestiness`) and
@@ -155,11 +183,14 @@ grid cells a disc covers, a zero target placing nothing, an all-road area placin
 nothing, and the **forestiness gate** (1.0 = unfiltered, 0 = bare, monotonic in
 between, and every gated tree sits above the `1 - forestiness` noise threshold).
 `tests/headless/test_smoke.gd` — the billboard shader loads with code; a built
-`BillboardField` (bushes) has one MultiMesh instance per position; a built
-`TreeMeshField` bins instances into per-cell MultiMeshes, wires
+`BillboardField` has one MultiMesh instance per position (with/without collision);
+a built `TreeMeshField` (trees) bins instances into per-cell MultiMeshes, wires
 `visibility_range_end`/`margin` to the render distance/fade, scales instances to
-the tree height, and builds one collision box per tree resting on the ground; and
-the live world carries a `TreeMeshField` (trees swapped from billboards to meshes).
+the tree height, and builds one collision box per tree resting on the ground; a
+`TreeMeshField` built for bushes (`with_collision = false`, `bake_terrain_light =
+true`) skips the collision body and enables per-instance MultiMesh colour; and the
+live world carries two `TreeMeshField`s — trees (with collision) and bushes
+(without).
 
 ## Low-poly 3D tree model (asset)
 

@@ -200,8 +200,14 @@ func build_tree() -> ArrayMesh:
 	trunk_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 
 	# Canopy material: tileable leaf texture, tinted/shaded by vertex colour.
+	# DOUBLE-SIDED (cull disabled): the mesh winds correctly for back-face culling
+	# in software GL, but reports of a concave / "front faces missing" canopy on
+	# real-device / web GL point at a platform culling difference. Rendering both
+	# sides guarantees the camera-facing leaves always draw — the canopy is a
+	# closed shell, so from outside it looks identical, just robust everywhere.
 	var leaf_mat := StandardMaterial3D.new()
 	leaf_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	leaf_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	leaf_mat.vertex_color_use_as_albedo = true
 	leaf_mat.roughness = 1.0
 	leaf_mat.metallic = 0.0
@@ -209,7 +215,7 @@ func build_tree() -> ArrayMesh:
 	var tex := load("res://textures/leaves.png") as Texture2D
 	if tex != null:
 		leaf_mat.albedo_texture = tex
-		leaf_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		leaf_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 
 	# Commit both surfaces into one mesh: surface 0 = trunk, 1 = canopy.
 	st_trunk.set_material(trunk_mat)
@@ -295,7 +301,7 @@ func _render(mesh: ArrayMesh, out_dir: String) -> void:
 			img.save_png(p)
 			print("RENDERED ", p)
 		else:
-			print("NO IMAGE for ", name)
+			print("NO IMAGE for ", view_name)
 
 
 func _init() -> void:

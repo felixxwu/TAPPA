@@ -83,9 +83,10 @@ func _bake_face(poly: PackedVector2Array, label: String, flip: bool) -> Image:
 	var face_size := Vector2(TEX - 2.0 * FACE_INSET, TEX - 2.0 * FACE_INSET)
 	_rect(root, face_pos, face_size, CREAM)
 
-	# Arrow occupies the top ~55% of the board; the grade sits below.
-	var arrow_box := Rect2(face_pos + Vector2(face_size.x * 0.12, face_size.y * 0.05),
-		Vector2(face_size.x * 0.76, face_size.y * 0.52))
+	# Arrow occupies the top ~57% of the board; the grade sits below. Tight margins
+	# so the arrow fills most of the board.
+	var arrow_box := Rect2(face_pos + Vector2(face_size.x * 0.05, face_size.y * 0.04),
+		Vector2(face_size.x * 0.90, face_size.y * 0.55))
 	var arrow := _ArrowDraw.new()
 	arrow.points = poly
 	arrow.box = arrow_box
@@ -207,8 +208,9 @@ class _ArrowDraw extends Node2D:
 		var radius := width * 0.5
 		# The arrowhead + round end caps overshoot the centerline, so scale the
 		# polyline into the box MINUS a uniform margin that reserves room for them —
-		# then the whole drawn shape (not just the centerline) fits.
-		var margin := width * 1.6
+		# then the whole drawn shape (not just the centerline) fits. Kept just big
+		# enough to contain the arrowhead's perpendicular spread (~1.1·width).
+		var margin := width * 1.15
 		var avail := box.size - Vector2(margin, margin) * 2.0
 		var scale: float = minf(avail.x / maxf(content.x, 0.001),
 			avail.y / maxf(content.y, 0.001))

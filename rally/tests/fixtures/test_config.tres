@@ -46,4 +46,4 @@ track_turn_count = 30
 trees_per_turn = 200
 tree_spawn_radius_m = 50.0
 tree_collision_radius_m = 0.1
-bush_size_m = Vector2(2, 2)
+bush_height_m = 0.7

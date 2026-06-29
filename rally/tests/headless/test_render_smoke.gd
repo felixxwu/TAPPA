@@ -81,8 +81,32 @@ func test_post_process_shader_wired() -> void:
 	_assert_shader_material(rect.material, "post-process ColorRect")
 
 
+func test_speed_lines_overlay_wired() -> void:
+	# Anime edge speed lines: a ColorRect on its own CanvasLayer (above the
+	# post-process, below the HUD) carrying the speed-lines shader, pointed at the car.
+	var lines := _scene.get_node_or_null("SpeedLines") as CanvasLayer
+	assert_not_null(lines, "SpeedLines overlay layer present")
+	if lines == null:
+		return
+	assert_not_null(lines.car, "speed-lines overlay is pointed at the car")
+	var rect := lines.get_node_or_null("ColorRect") as ColorRect
+	assert_not_null(rect, "speed-lines ColorRect present")
+	_assert_shader_material(rect.material, "speed-lines ColorRect")
+	# It must not eat input meant for the HUD / mobile controls underneath.
+	assert_eq(rect.mouse_filter, Control.MOUSE_FILTER_IGNORE, "speed-lines overlay ignores input")
+
+
+func test_speed_lines_shader_radial_edge_effect() -> void:
+	var src := FileAccess.get_file_as_string("res://shaders/speed_lines.gdshader")
+	assert_true(src.contains("intensity"), "speed-lines shader exposes a speed-driven intensity")
+	# Radial mask (inner/outer radius) is what keeps the screen centre clear.
+	assert_true(src.contains("inner_radius") and src.contains("outer_radius"),
+		"speed-lines shader masks the centre via inner/outer radius")
+
+
 func test_shader_sources_load() -> void:
-	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader"]:
+	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader",
+			"res://shaders/speed_lines.gdshader"]:
 		var shader := load(path) as Shader
 		assert_not_null(shader, path + " loads as a Shader")
 		if shader != null:
@@ -158,3 +182,56 @@ func test_terrain_material_enables_road_blend_with_gravel() -> void:
 	assert_not_null(mat.get_shader_parameter("road_texture"), "terrain has a road_texture wired")
 	# road tiling uniform is applied from config at startup (world.gd._ready).
 	assert_gt(mat.get_shader_parameter("road_uv_scale"), 0.0, "road_uv_scale applied (positive)")
+
+
+# --- Nearest-neighbour texture filtering (PS1 look: textures must not blur) ---
+
+func test_all_shaders_sample_textures_with_nearest_filter() -> void:
+	# Every sampler2D in every shader must use a nearest filter hint — no
+	# filter_linear*, which would blur textures and break the PS1 look.
+	var dir := DirAccess.open("res://shaders")
+	assert_not_null(dir, "shaders directory opens")
+	if dir == null:
+		return
+	var checked := 0
+	for file in dir.get_files():
+		if not file.ends_with(".gdshader"):
+			continue
+		var src := FileAccess.get_file_as_string("res://shaders/" + file)
+		# Each sampler2D uniform line must carry filter_nearest (with or without
+		# _mipmap); none may use a filter_linear* hint.
+		for line in src.split("\n"):
+			if line.contains("sampler2D"):
+				assert_false(line.contains("filter_linear"),
+					file + " sampler must not use filter_linear: " + line.strip_edges())
+				assert_true(line.contains("filter_nearest"),
+					file + " sampler uses nearest filtering: " + line.strip_edges())
+				checked += 1
+	assert_gt(checked, 0, "found sampler2D uniforms to check across the shaders")
+
+
+func test_tree_canopy_material_uses_nearest_filter() -> void:
+	# The tree mesh comes from a GLB whose baked StandardMaterial imports with
+	# linear filtering; world.gd._tree_mesh() overrides it to nearest. Verify the
+	# textured canopy surface ends up nearest (mipmaps kept for distance).
+	var mesh := _scene._tree_mesh() as Mesh
+	assert_not_null(mesh, "tree mesh extracted from the GLB")
+	if mesh == null:
+		return
+	var saw_texture := false
+	for s in mesh.get_surface_count():
+		var sm := mesh.surface_get_material(s) as BaseMaterial3D
+		if sm == null:
+			continue
+		assert_eq(sm.texture_filter, BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS,
+			"tree surface %d samples by nearest (not blurred)" % s)
+		if sm.albedo_texture != null:
+			saw_texture = true
+	assert_true(saw_texture, "the tree canopy surface carries a texture")
+
+
+func test_canvas_default_texture_filter_is_nearest() -> void:
+	# 2D / canvas textures (HUD, sign boards drawn as canvas items) default to
+	# nearest via the project setting (0 == nearest).
+	assert_eq(int(ProjectSettings.get_setting("rendering/textures/canvas_textures/default_texture_filter")), 0,
+		"canvas default_texture_filter is Nearest (0)")

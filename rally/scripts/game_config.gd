@@ -505,6 +505,36 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var wheel_color := Color(0.12, 0.12, 0.12)
 @export var wheel_spoke_color := Color(0.85, 0.85, 0.78)
 
+@export_group("Speed Lines")
+# Anime "edge speed lines" overlay (features/rendering.md): black streaks
+# radiating inward from the screen edges, ramping in with the car's speed.
+# Driven by scripts/speed_lines.gd over shaders/speed_lines.gdshader.
+## Master switch for the speed-lines overlay.
+@export var speed_lines_enabled := true
+## Streak colour. Black is the standard manga look.
+@export var speed_lines_color := Color(0.0, 0.0, 0.0, 1.0)
+## Speed (km/h) at which the streaks start to appear. ~80 km/h is realistically
+## flat out in this game, so the ramp is tuned to fill across that band.
+@export_range(0.0, 300.0) var speed_lines_start_kmh := 60.0
+## Speed (km/h) at which the streaks reach full strength (≈ the car's top speed).
+@export_range(0.0, 400.0) var speed_lines_full_kmh := 78.0
+## Cap on overall strength (alpha) at and above speed_lines_full_kmh.
+@export_range(0.0, 1.0) var speed_lines_max_intensity := 0.8
+## How many angular streaks ring the screen; higher = more, finer lines.
+@export_range(8.0, 256.0) var speed_lines_density := 28.0
+## Innermost normalised screen radius a streak can reach — higher keeps more of
+## the centre clear (shorter streaks). Streaks run solid from here out to the edge.
+@export_range(0.0, 2.0) var speed_lines_inner_radius := 0.55
+## Outermost start radius — streaks start somewhere in [inner, outer], so the gap
+## between the two sets how much the streak lengths vary.
+@export_range(0.0, 2.0) var speed_lines_outer_radius := 0.9
+## Per-streak flicker rate (discrete steps/sec): each streak jumps to a new random
+## brightness this many times a second, giving a choppy hand-drawn flicker rather
+## than a smooth pulse.
+@export var speed_lines_flicker_speed := 14.0
+## Ease rate of the intensity ramp (per second); higher snaps in/out faster.
+@export_range(0.5, 30.0) var speed_lines_response := 6.0
+
 @export_group("Lighting")
 # Fake hemisphere-ambient + single-directional-sun shading (no light nodes, no
 # shadows, no extra render pass — see features/rendering.md). The CAR computes
@@ -683,12 +713,15 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## cull them past tree_render_distance_m. Smaller = finer LOD/cull granularity
 ## but more draw calls; ~25 m balances both against the ~75 m loaded terrain.
 @export_range(5.0, 100.0) var tree_bin_size_m := 25.0
-## Billboard size (m) for bushes: width (x) by height (y). Bushes are smaller
-## than trees; everything else about their scatter/render matches the trees.
-@export var bush_size_m := Vector2(1.0, 1.5)
-## Distance (m) bushes are sunk into the ground, hiding the gap at the bottom of
-## the bush texture.
-@export_range(0.0, 5.0) var bush_sink_m := 0.5
+## Height (m) the ground-cover bush mesh (models/vegetation/groundcover_opaque.glb)
+## is scaled to. Bushes render through the same TreeMeshField as trees (binned,
+## LOD/visibility-culled) but without collision; everything else about their
+## scatter/render reuses the tree_* params.
+@export_range(0.1, 5.0) var bush_height_m := 0.6
+## Albedo tint multiplied into the bush mesh (on top of the tone-matched foliage
+## texture and the per-instance baked terrain light). Lifted a touch above the
+## model's authored green so the ground cover reads a bit more against the grass.
+@export var bush_tint := Color(0.95, 1.0, 0.7)
 
 
 @export_group("Roadside Signs")

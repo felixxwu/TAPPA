@@ -1,20 +1,25 @@
 class_name TreeMeshField
 extends Node3D
-# Renders scattered tree positions as solid low-poly 3D meshes (the opaque-mesh
+# Renders scattered foliage positions as solid low-poly 3D meshes (the opaque-mesh
 # direction from todo/performance-optimisations.md item 2), replacing the old
-# alpha-cutout billboards for trees. Bushes still use BillboardField.
+# alpha-cutout billboards. Used for BOTH trees (with collision) and the
+# ground-cover bushes (without) — see the build() flags.
 #
-# Trees are spatially BINNED into one MultiMesh per grid cell. A single
+# Instances are spatially BINNED into one MultiMesh per grid cell. A single
 # field-wide MultiMesh can't auto-LOD or visibility-cull usefully: Godot picks a
 # single mesh LOD for the whole MultiMesh (by its overall AABB) and a field-wide
-# visibility_range would gate every tree at once. Per-bin MultiMeshInstance3Ds
+# visibility_range would gate every instance at once. Per-bin MultiMeshInstance3Ds
 # each have a compact AABB centred on the bin, so the engine drops far bins to
 # the importer-generated mesh LODs and fades them out past
-# `visibility_range_end` — auto-LOD "takes place" for further trees, at one draw
+# `visibility_range_end` — auto-LOD "takes place" for further foliage, at one draw
 # call per visible bin.
 #
-# One shared StaticBody3D carries a box hitbox per tree (same scheme as
-# BillboardField): one BoxShape3D resource, N transforms via the physics server.
+# When with_collision is true a shared StaticBody3D carries a box hitbox per
+# instance: one BoxShape3D resource, N transforms via the physics server. When
+# bake_terrain_light is true each instance is tinted by the terrain's baked light
+# at its position (per-instance MultiMesh colour); the mesh's material must enable
+# vertex_color_use_as_albedo to pick it up (the bushes do, so they match the
+# ground tint everywhere, as the old foliage shader did).
 
 # Held so the shape RID added to the body stays alive for the body's lifetime.
 var _collision_shape: BoxShape3D
@@ -36,16 +41,14 @@ var instance_scale: float = 1.0
 
 func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 		target_height: float, collision_radius: float, collision_height: float,
-		render_distance: float, render_fade: float, bin_size: float) -> void:
+		render_distance: float, render_fade: float, bin_size: float,
+		with_collision: bool = true, bake_terrain_light: bool = false) -> void:
 	instance_positions = PackedVector3Array()
 	instance_positions.resize(positions.size())
 
-	# Uniform scale so the model's height matches the configured tree height
-	# (keeps proportions — a 3D tree must not be stretched like a billboard quad).
-	var uscale := 1.0
-	var ah := mesh.get_aabb().size.y
-	if ah > 0.0001:
-		uscale = target_height / ah
+	# Uniform scale so the model's height matches the configured height (keeps
+	# proportions — a 3D mesh must not be stretched like a billboard quad).
+	var uscale := uniform_scale_for(mesh, target_height)
 	instance_scale = uscale
 
 	var bin := maxf(bin_size, 1.0)
@@ -70,14 +73,18 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = bake_terrain_light  # must be set before instance_count
 		mm.mesh = mesh
 		mm.instance_count = idxs.size()
 		for j in idxs.size():
 			var pos := world_pos[idxs[j]]
-			# Deterministic per-tree yaw so the cluster doesn't look cloned.
+			# Deterministic per-instance yaw so the cluster doesn't look cloned.
 			var yaw := _yaw_for(pos)
 			var xf_basis := Basis(Vector3.UP, yaw).scaled(Vector3(uscale, uscale, uscale))
 			mm.set_instance_transform(j, Transform3D(xf_basis, pos - centre))
+			if bake_terrain_light:
+				# Tint by the terrain's baked light so ground cover matches the ground.
+				mm.set_instance_color(j, terrain.light_at(pos.x, pos.z))
 
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
@@ -90,8 +97,10 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 		add_child(mmi)
 	bin_count = bins.size()
 
-	# One StaticBody3D with a box per tree (obstacle for the car's damage model).
-	if positions.size() > 0:
+	# One StaticBody3D with a box per instance (obstacle for the car's damage
+	# model). Skipped for scenery-only fields: the HQ tree ring and the
+	# non-colliding ground-cover bushes.
+	if with_collision and positions.size() > 0:
 		var body := StaticBody3D.new()
 		body.name = "Collision"
 		body.add_to_group(DamageModel.OBSTACLE_GROUP)
@@ -104,6 +113,21 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 			var box_xform := Transform3D(Basis.IDENTITY,
 				Vector3(pos.x, pos.y + collision_height * 0.5, pos.z))
 			PhysicsServer3D.body_add_shape(body.get_rid(), _collision_shape.get_rid(), box_xform)
+
+
+# Uniform scale that makes `mesh` stand `target_height` tall (the same scale
+# build() applies). 1.0 if the mesh has no height.
+static func uniform_scale_for(mesh: Mesh, target_height: float) -> float:
+	var ah := mesh.get_aabb().size.y
+	return target_height / ah if ah > 0.0001 else 1.0
+
+
+# World-space XZ radius of one instance once scaled to `target_height` — half the
+# larger horizontal AABB extent. Used by callers to keep a wide mesh (e.g. the
+# ground-cover bush) clear of the road at any yaw.
+static func xz_radius(mesh: Mesh, target_height: float) -> float:
+	var a := mesh.get_aabb()
+	return maxf(a.size.x, a.size.z) * 0.5 * uniform_scale_for(mesh, target_height)
 
 
 # Deterministic yaw in [0, TAU) from the world XZ position.

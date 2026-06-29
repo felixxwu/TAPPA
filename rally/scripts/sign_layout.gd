@@ -94,8 +94,15 @@ static func _tangent_at(centerline: Curve2D, offset: float, length: float) -> Ve
 # (flip = left-hand corner). Numbered gradients carry their grade so each shows its
 # own number on the board (textures/signs/arrow_<grade>_<dir>.png); Square and
 # Hairpin use their named glyph. See the table in todo/roadside-signs.md §2.
+#
+# NOTE the inversion: the A-frame panel faces the oncoming driver, so the board
+# mirrors the arrow's left/right relative to the corner's mathematical handedness.
+# We compensate by choosing the OPPOSITE-handed source art (a left-hand corner gets
+# the "right" arrow, which then reads as a left turn on the facing panel). Mirroring
+# the texture itself instead would also reverse the printed grade digit, so the swap
+# is done here at selection time, where the number art stays correct.
 static func _arrow_key(corner: String, flip: bool) -> String:
-	var dir := "left" if flip else "right"
+	var dir := "right" if flip else "left"
 	match corner:
 		"Square":
 			return "arrow_square_%s" % dir
