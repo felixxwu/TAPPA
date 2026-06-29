@@ -1,7 +1,7 @@
 # UI design system
 
 **Sources:** `scripts/ui_theme.gd` (`UITheme`), `theme/ui_theme.tres` (generated),
-`tools/build_ui_theme.gd` (generator), `fonts/` (VT323 + Silkscreen), and the
+`tools/build_ui_theme.gd` (generator), `fonts/` (Syne Mono), and the
 project default-theme wiring in `project.godot` (`[gui] theme/custom`).
 
 One place that defines how every menu, panel and button looks, so the UI reads as
@@ -11,11 +11,10 @@ game: a retro arcade / terminal aesthetic.
 
 ## The look
 
-- **Monospace pixel font** (VT323) — stat read-outs and money columns line up;
-  the whole UI gets an arcade-CRT feel. Imported with antialiasing/hinting **off**
-  so the pixels stay crisp. Text is shown **verbatim** (the helpers never force
-  casing); `UITheme.caps()` is available if a specific string wants the all-caps
-  arcade look.
+- **Hand-drawn monospace font** (Syne Mono) — stat read-outs and money columns
+  line up while the lettering keeps a characterful, slightly informal feel. Text
+  is shown **verbatim** (the helpers never force casing); `UITheme.caps()` is
+  available if a specific string wants the all-caps arcade look.
 - **Pure-black, sharp-cornered panels** — no rounded corners, no gradients, no
   blur. Over the 3D world they sit ~90% opaque so text reads cleanly.
 - **Crisp white text with a hard drop shadow** (the chunky terminal look).
@@ -81,6 +80,6 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path rally \
 
 ## Fonts & licensing
 
-`fonts/VT323-Regular.ttf` and `fonts/Silkscreen-{Regular,Bold}.ttf` are bundled
-under the SIL Open Font License (`fonts/*-OFL.txt`). VT323 is the primary face;
-Silkscreen is a blockier display face kept available (swap `UITheme.DISPLAY_FONT_PATH`).
+`fonts/SyneMono.ttf` is the UI face — a hand-drawn monospace bundled under the SIL
+Open Font License (`fonts/SyneMono-OFL.txt`). To try a different face, drop a TTF
+in `fonts/`, point `UITheme.FONT_PATH` at it, and re-run the theme generator.

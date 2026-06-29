@@ -4,12 +4,12 @@ extends RefCounted
 # the game looks, so the UI reads as one polished, consistent whole instead of a
 # pile of one-off `Color(...)` literals and ad-hoc font sizes.
 #
-# The look is lifted from the previous web build of this game: a retro arcade /
-# terminal aesthetic — pure-black, sharp-cornered panels; a monospace pixel font
-# (VT323); crisp white text with a hard drop shadow; and a tight accent palette
-# (green = active/positive, gold = money/reward, red = danger/timer). No rounded
-# corners, no gradients, no blur. This is a STYLING layer only — it never changes
-# what a screen says or where its buttons are; text is rendered verbatim.
+# The look is a retro arcade / terminal aesthetic adapted from the previous web
+# build of this game: pure-black, sharp-cornered panels; a hand-drawn monospace
+# font (Syne Mono); crisp white text with a hard drop shadow; and a tight accent
+# palette (green = active/positive, gold = money/reward, red = danger/timer). No
+# rounded corners, no gradients, no blur. This is a STYLING layer only — it never
+# changes what a screen says or where its buttons are; text is rendered verbatim.
 #
 # How it's applied:
 #   * GLOBAL THEME — `theme/ui_theme.tres` (built by tools/build_ui_theme.gd from
@@ -27,12 +27,9 @@ extends RefCounted
 # don't scatter new colour/size literals through the UI scripts. See
 # features/ui-design-system.md.
 
-# --- Fonts -------------------------------------------------------------------
-# VT323 is the primary face: a monospace pixel terminal font, so stat read-outs
-# and money columns line up and the whole UI gets the arcade-CRT feel. Silkscreen
-# is a blockier display face kept for big headings if wanted (swap DISPLAY_FONT).
-const FONT_PATH := "res://fonts/VT323-Regular.ttf"
-const DISPLAY_FONT_PATH := "res://fonts/Silkscreen-Bold.ttf"
+# Syne Mono is the UI face: a hand-drawn monospace, so stat read-outs and money
+# columns line up while the lettering keeps a characterful, slightly informal feel.
+const FONT_PATH := "res://fonts/SyneMono.ttf"
 
 # --- Palette -----------------------------------------------------------------
 # Surfaces are pure black; over the 3D world panels stay nearly opaque so the

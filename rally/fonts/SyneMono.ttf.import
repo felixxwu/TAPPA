@@ -2,18 +2,18 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://b6cdiby4dfdu3"
-path="res://.godot/imported/VT323-Regular.ttf-bff42fb840215fe474048a1b5fed41ab.fontdata"
+uid="uid://c554xxx41jwgu"
+path="res://.godot/imported/SyneMono.ttf-3c7d27ca62436b6aa71d205492e0da1d.fontdata"
 
 [deps]
 
-source_file="res://fonts/VT323-Regular.ttf"
-dest_files=["res://.godot/imported/VT323-Regular.ttf-bff42fb840215fe474048a1b5fed41ab.fontdata"]
+source_file="res://fonts/SyneMono.ttf"
+dest_files=["res://.godot/imported/SyneMono.ttf-3c7d27ca62436b6aa71d205492e0da1d.fontdata"]
 
 [params]
 
 Rendering=null
-antialiasing=0
+antialiasing=1
 generate_mipmaps=false
 disable_embedded_bitmaps=true
 multichannel_signed_distance_field=false
@@ -22,8 +22,8 @@ msdf_size=48
 allow_system_fallback=true
 force_autohinter=false
 modulate_color_glyphs=false
-hinting=0
-subpixel_positioning=0
+hinting=1
+subpixel_positioning=4
 keep_rounding_remainders=true
 oversampling=0.0
 Fallbacks=null

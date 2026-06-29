@@ -35,7 +35,7 @@ func _init() -> void:
 	quit(0 if err == OK else 1)
 
 
-# Crisp white text with a hard pixel drop shadow — the chunky terminal look.
+# Crisp white text with a hard drop shadow — the chunky terminal look.
 func _build_label(theme: Theme) -> void:
 	theme.set_color("font_color", "Label", UITheme.INK)
 	theme.set_color("font_shadow_color", "Label", UITheme.SHADOW)

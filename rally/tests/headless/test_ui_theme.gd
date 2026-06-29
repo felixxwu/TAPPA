@@ -17,14 +17,14 @@ func test_project_default_theme_is_the_design_system() -> void:
 	assert_eq(path, "res://theme/ui_theme.tres", "global default theme is wired")
 
 
-func test_theme_uses_the_pixel_font() -> void:
+func test_theme_uses_the_house_font() -> void:
 	var theme := UITheme.theme()
 	assert_not_null(theme.default_font, "theme has a default font")
 	assert_eq(theme.default_font_size, UITheme.SIZE_BODY, "default size is the body size")
 
 
 func test_primary_font_loads() -> void:
-	assert_not_null(UITheme.font(), "VT323 font loads")
+	assert_not_null(UITheme.font(), "the UI font (Syne Mono) loads")
 
 
 func test_label_helper_applies_role_colour() -> void:
