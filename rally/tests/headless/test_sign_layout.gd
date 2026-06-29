@@ -78,8 +78,11 @@ func test_turn_signs_only_for_sharp_corners_with_correct_keys() -> void:
 	assert_gt(sharp, 0, "the generated track has at least one sharp turn to sign")
 	assert_eq(turns.size(), sharp * 2, "a sign pair per sharp turn, none for gentle/straight")
 	# Every turn key is a known arrow shape, and left/right matches some piece flip.
+	# Numbered gradients carry their grade (arrow_1/arrow_2/...) so each board shows
+	# its own number; Square and Hairpin use their named glyph.
 	var valid_keys := {
-		"arrow_curve_left": true, "arrow_curve_right": true,
+		"arrow_1_left": true, "arrow_1_right": true,
+		"arrow_2_left": true, "arrow_2_right": true,
 		"arrow_square_left": true, "arrow_square_right": true,
 		"arrow_uturn_left": true, "arrow_uturn_right": true,
 	}
@@ -89,8 +92,8 @@ func test_turn_signs_only_for_sharp_corners_with_correct_keys() -> void:
 
 
 func test_arrow_key_maps_shape_and_direction() -> void:
-	assert_eq(SignLayout._arrow_key("1", false), "arrow_curve_right", "gradient 1, right")
-	assert_eq(SignLayout._arrow_key("2", true), "arrow_curve_left", "gradient 2, left (flip)")
+	assert_eq(SignLayout._arrow_key("1", false), "arrow_1_right", "gradient 1, right")
+	assert_eq(SignLayout._arrow_key("2", true), "arrow_2_left", "gradient 2, left (flip)")
 	assert_eq(SignLayout._arrow_key("Square", false), "arrow_square_right", "square, right")
 	assert_eq(SignLayout._arrow_key("Hairpin", true), "arrow_uturn_left", "hairpin, left (flip)")
 

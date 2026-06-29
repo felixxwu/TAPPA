@@ -34,8 +34,10 @@ Placement rules:
 - **Turns** — for each piece whose corner ∈ `{1, 2, Square, Hairpin}` ("2 or
   sharper"; the compound `Right 4 tightens 2` is excluded), a pair at the
   **corner entry** = `entry_pos + entry_heading * straight` snapped to the curve
-  via `get_closest_offset`. The arrow `texture_key` encodes shape (curve / square
-  / uturn) + direction (`flip` → left, else right).
+  via `get_closest_offset`. The arrow `texture_key` encodes the grade + direction:
+  numbered corners use `arrow_<grade>_<dir>` (e.g. `arrow_1_right`, `arrow_2_left`)
+  so each board shows its own number; `Square` → `arrow_square_<dir>`, `Hairpin` →
+  `arrow_uturn_<dir>` (`flip` → left, else right).
 - **Finish** — a pair at offset `L`, forming the finish gate. (No start pair; the
   start arch marks the start line.)
 
@@ -70,12 +72,26 @@ hitbox are **children of the body**, so the whole sign tumbles as one. Per sign:
 `sign_edge_inset_m`, `sign_base_depth_m`, `sign_mass_kg`, `sign_textures`. Bundled
 for the two layers by `sign_params()` (layout) and `sign_render_params()` (field).
 
-## Assets (pending)
+## Assets
 
-`sign_textures` is empty by default → everything shows on its colour fallback. The
-authored PS1-look atlas (sector boards, 6 arrow variants, start/finish banners) in
-`textures/signs/` is an open art action item (todo/roadside-signs.md); wiring the
-keys into `sign_textures` is all the code needs once they exist.
+**Turn-arrow boards** are authored and wired. `tools/bake_sign_arrows.gd` renders one
+PS1-look pacenote face per turn type: a bold arrow whose bend traces the REAL corner
+shape from `CornerLibrary` (so it encodes the turn intensity), an orange rule, and the
+grade below (`1`..`6`, `SQ`, `U`). Each is baked in a left and a right (mirrored)
+variant to `textures/signs/arrow_*_<dir>.png` (cream/ink/orange palette, shared with the
+finish banners), and the full set is mapped in `sign_textures` (`config/game_config.tres`).
+By default only `{1, 2, Square, Hairpin}` are signed (`SignLayout.TURN_CORNERS`), but the
+`3`..`6` boards are baked + wired too, so widening that set needs no new art. Re-bake with:
+
+```
+xvfb-run -a godot --path rally --rendering-driver opengl3 --script tools/bake_sign_arrows.gd
+godot --headless --path rally --import   # regenerate the .import files
+```
+
+**Still pending:** sector boards (`sector_2`..) and the start/finish *A-frame* banners
+keep their per-kind colour fallback (the finish *gate* itself is the inflatable arch,
+already textured — see [finish-arch.md](finish-arch.md)). Any key absent from
+`sign_textures` simply shows its colour fallback.
 
 ## Tests
 

@@ -99,7 +99,9 @@ static func _tangent_at(centerline: Curve2D, offset: float, length: float) -> Ve
 
 
 # Atlas key for a turn arrow: shape from the corner name, direction from the flip
-# (flip = left-hand corner). See the table in todo/roadside-signs.md §2.
+# (flip = left-hand corner). Numbered gradients carry their grade so each shows its
+# own number on the board (textures/signs/arrow_<grade>_<dir>.png); Square and
+# Hairpin use their named glyph. See the table in todo/roadside-signs.md §2.
 static func _arrow_key(corner: String, flip: bool) -> String:
 	var dir := "left" if flip else "right"
 	match corner:
@@ -107,5 +109,5 @@ static func _arrow_key(corner: String, flip: bool) -> String:
 			return "arrow_square_%s" % dir
 		"Hairpin":
 			return "arrow_uturn_%s" % dir
-		_:  # "1", "2": curved arrow
-			return "arrow_curve_%s" % dir
+		_:  # numbered gradient "1".."6": grade-specific curved arrow
+			return "arrow_%s_%s" % [corner, dir]

@@ -7,8 +7,9 @@
 > `scripts/sign_layout.gd` pure planner, `scripts/sign_field.gd` meshes +
 > collision, wired in `scripts/world.gd`; config in `scripts/game_config.gd` +
 > `config/game_config.tres`; tests in `tests/headless/test_sign_layout.gd` and
-> `test_smoke.gd`). The implementation brief that drove it has been struck; only
-> the authored texture atlas and the two deferred decisions below remain.
+> `test_smoke.gd`). The implementation brief that drove it has been struck. The
+> turn-arrow boards are now authored (`tools/bake_sign_arrows.gd`); only the sector +
+> start/finish banner faces and the two deferred decisions below remain.
 
 ## What shipped
 
@@ -39,16 +40,22 @@
 
 ## Remaining / deferred
 
-- ⚠️ **Authored sign-face texture atlas** (PNGs, PS1 look, `filter_nearest`).
-  Owner: Felix. Code runs on the colour fallback until these land; once authored,
-  drop them in `textures/signs/` and map `texture_key → res://textures/signs/*.png`
-  in `sign_textures` (`config/game_config.tres`). Required set:
+- ✅ **Turn-arrow boards — DONE.** `tools/bake_sign_arrows.gd` bakes a PS1-look
+  pacenote face per turn type: a bold arrow tracing the REAL corner centerline from
+  `CornerLibrary` (so the bend = the turn intensity), an orange rule, and the grade
+  below (`1`..`6`, `SQ`, `U`). Left + right (mirrored) variants → `textures/signs/
+  arrow_*_<dir>.png`, all mapped in `sign_textures` (`config/game_config.tres`).
+  `SignLayout._arrow_key` now emits grade-specific keys (`arrow_1_*`, `arrow_2_*`, …)
+  so each numbered corner shows its own number; `Square`/`Hairpin` keep
+  `arrow_square_*` / `arrow_uturn_*`. The `3`..`6` boards are baked + wired too, so
+  widening `TURN_CORNERS` beyond `{1,2,Square,Hairpin}` needs no new art.
+- ⚠️ **Remaining sign-face textures** (PNGs, PS1 look). Code runs on the colour
+  fallback until these land; drop them in `textures/signs/` and map their
+  `texture_key` in `sign_textures` (`config/game_config.tres`). Still needed:
   - **Sector**: "SECTOR 2", "SECTOR 3", "SECTOR 4" (sector 1 is implied by the
     start gate). Add "SECTOR 1" too if you'd rather sign it as well.
-  - **Turn arrows** with **left and right variants** (mirror), keyed off
-    `piece["flip"]`: curved arrow (gradients `1` and `2`), right-angle arrow
-    (`Square`), U-turn arrow (`Hairpin`). → 3 shapes × 2 directions = 6 images.
-  - **Start** and **Finish** banners.
+  - **Start** / **Finish** A-frame banners (the finish *gate* is the inflatable
+    arch, already textured — features/finish-arch.md).
 - **`"Right 4 tightens 2"` turn arrow** — excluded by the exact-name corner set
   (`{1,2,Square,Hairpin}`). Default: stays unsigned. If wanted, add it to the set
   in `SignLayout` and give it `arrow_curve_right`.
