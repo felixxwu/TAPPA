@@ -708,6 +708,13 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(10.0, 500.0) var tree_render_distance_m := 80.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export_range(0.0, 100.0) var tree_render_fade_m := 15.0
+## Near-camera dissolve: canopy fragments closer than this (m) to the camera are
+## fully dithered away, so a tree the camera pushes inside stops blocking the view
+## (the canopy is double-sided for render robustness, so culling can't do this).
+@export_range(0.0, 10.0) var tree_near_fade_start_m := 0.5
+## Distance (m) by which the near-camera canopy dissolve is fully solid again.
+## Must be >= tree_near_fade_start_m; the gap is the dither band.
+@export_range(0.1, 20.0) var tree_near_fade_end_m := 3.0
 ## Grid cell size (m) trees are binned into for rendering. Each bin is its own
 ## MultiMesh, so the engine can drop far bins to the mesh's importer LODs and
 ## cull them past tree_render_distance_m. Smaller = finer LOD/cull granularity

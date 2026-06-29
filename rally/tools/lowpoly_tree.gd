@@ -205,6 +205,10 @@ func build_tree() -> ArrayMesh:
 	# real-device / web GL point at a platform culling difference. Rendering both
 	# sides guarantees the camera-facing leaves always draw — the canopy is a
 	# closed shell, so from outside it looks identical, just robust everywhere.
+	# NOTE: at runtime world.gd._tree_mesh() swaps this baked material for a
+	# ShaderMaterial (shaders/tree_canopy.gdshader) that keeps this exact look but
+	# dither-dissolves canopy fragments near the camera, so trees the chase camera
+	# enters don't block the view (see features/trees.md).
 	var leaf_mat := StandardMaterial3D.new()
 	leaf_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	leaf_mat.cull_mode = BaseMaterial3D.CULL_DISABLED

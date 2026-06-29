@@ -338,6 +338,30 @@ func test_world_uses_tree_mesh_field_for_trees_and_bushes() -> void:
 	assert_gt(without_collision, 0, "world builds a non-colliding TreeMeshField for bushes")
 
 
+func test_tree_canopy_uses_near_camera_dissolve_shader() -> void:
+	# The canopy surface is swapped to the near-camera dissolve ShaderMaterial
+	# (so trees the chase camera enters stop blocking the view), with its fade
+	# range wired from GameConfig. The trunk surface keeps its StandardMaterial3D.
+	var mesh := (_scene as Node).call("_tree_mesh") as Mesh
+	assert_not_null(mesh, "world exposes the shared tree mesh")
+	var cfg: GameConfig = Config.data
+	var canopy: ShaderMaterial = null
+	for s in mesh.get_surface_count():
+		var sm := mesh.surface_get_material(s)
+		if sm is ShaderMaterial:
+			canopy = sm as ShaderMaterial
+	assert_not_null(canopy, "tree mesh has a ShaderMaterial canopy surface")
+	if canopy != null:
+		assert_eq(canopy.shader, load("res://shaders/tree_canopy.gdshader"),
+			"canopy uses the near-camera dissolve shader")
+		assert_not_null(canopy.get_shader_parameter("albedo"),
+			"canopy keeps its leaf texture")
+		assert_eq(canopy.get_shader_parameter("near_fade_start"), cfg.tree_near_fade_start_m,
+			"near fade start wired from config")
+		assert_eq(canopy.get_shader_parameter("near_fade_end"), cfg.tree_near_fade_end_m,
+			"near fade end wired from config")
+
+
 func test_billboard_field_without_collision_has_no_body() -> void:
 	var floor := _scene.get_node("Floor") as TerrainManager
 	var tex := load("res://textures/bush.webp") as Texture2D
