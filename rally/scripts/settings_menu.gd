@@ -7,6 +7,11 @@ extends VBoxContainer
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately; the HQ has no camera so it just saves
 #     and the choice is applied on the next run.
+#   • Key bindings — rebind the keyboard and controller controls. Each driving
+#     action (InputRemap.ACTIONS) gets a row with a keyboard button and a controller
+#     button showing its current binding; tapping one listens for the next key /
+#     gamepad input and stores it via InputRemap. A "Reset to defaults" row clears
+#     all overrides. Esc cancels a pending listen.
 #   • Mobile controls — pick the touch control scheme (MobileControls.SCHEMES),
 #     persisted under MobileControls.SETTING_KEY. Each row carries a vector layout
 #     diagram (ControlSchemeDiagram), as on the original title-screen page.
@@ -22,16 +27,28 @@ signal camera_changed(mode: int)
 # Emitted on every page switch; is_root == the category list is showing.
 signal page_changed(is_root: bool)
 
+# Fixed width for the key-binding buttons (and their column captions), wide enough
+# for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
+const _BIND_BUTTON_W := 168.0
+
 # Selectable rows, exposed for tests / hosts: [{key: Variant, button: Button}].
 var camera_rows: Array = []
 var scheme_rows: Array = []
+# Key-binding rows, exposed for tests / hosts:
+# [{action: String, keyboard_button: Button, controller_button: Button}].
+var controls_rows: Array = []
 
 # The swappable pages (only one visible at a time).
 var _list_page: VBoxContainer
 var _camera_page: VBoxContainer
+var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
 var _dev_page: VBoxContainer
 var _dev_status: Label  # feedback line on the dev page ("Granted …", "Wiped …")
+
+# While the player is reassigning a control, the pending capture:
+# {action: String, slot: String, button: Button}; empty when not listening.
+var _listening: Dictionary = {}
 
 
 func _ready() -> void:
@@ -47,6 +64,7 @@ func _build() -> void:
 	add_child(_list_page)
 	_list_page.add_child(_make_sub("Choose a category:"))
 	_list_page.add_child(_make_nav_button("Camera", show_camera))
+	_list_page.add_child(_make_nav_button("Key bindings", show_controls))
 	_list_page.add_child(_make_nav_button("Mobile controls", show_schemes))
 	_list_page.add_child(_make_nav_button("Dev", show_dev))
 
@@ -58,6 +76,17 @@ func _build() -> void:
 	camera_rows.clear()
 	for entry in CameraManager.MODES:
 		_camera_page.add_child(_make_camera_row(int(entry["mode"]), entry))
+
+	# Key-bindings sub-page — one row per action, a keyboard + a controller button.
+	_controls_page = _make_page()
+	add_child(_controls_page)
+	_controls_page.add_child(_make_heading("Key bindings"))
+	_controls_page.add_child(_make_sub("Tap a binding, then press a key or button. Esc cancels."))
+	_controls_page.add_child(_make_controls_header())
+	controls_rows.clear()
+	for entry in InputRemap.ACTIONS:
+		_controls_page.add_child(_make_control_row(entry))
+	_controls_page.add_child(_make_action_button("Reset to defaults", _reset_bindings))
 
 	# Mobile-controls sub-page.
 	_scheme_page = _make_page()
@@ -88,6 +117,7 @@ func _build() -> void:
 
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
+	_refresh_controls_selection()
 
 
 # --- Navigation --------------------------------------------------------------
@@ -105,6 +135,10 @@ func show_camera() -> void:
 	_show_page(_camera_page)
 
 
+func show_controls() -> void:
+	_show_page(_controls_page)
+
+
 func show_schemes() -> void:
 	_show_page(_scheme_page)
 
@@ -114,8 +148,10 @@ func show_dev() -> void:
 
 
 func _show_page(page: Control) -> void:
+	cancel_listen()  # leaving a page abandons any pending key capture
 	_list_page.visible = page == _list_page
 	_camera_page.visible = page == _camera_page
+	_controls_page.visible = page == _controls_page
 	_scheme_page.visible = page == _scheme_page
 	_dev_page.visible = page == _dev_page
 	page_changed.emit(at_root())
@@ -146,6 +182,87 @@ func _refresh_scheme_selection() -> void:
 	var current := int(Save.get_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME))
 	for entry in scheme_rows:
 		_highlight(entry["button"], int(entry["key"]) == current)
+
+
+# --- Key bindings ------------------------------------------------------------
+
+# Repaint every binding button with its action's current key / controller label.
+func _refresh_controls_selection() -> void:
+	for row in controls_rows:
+		var action: String = row["action"]
+		row["keyboard_button"].text = UITheme.caps(
+			InputRemap.describe(InputRemap.current_event(action, InputRemap.SLOT_KEYBOARD)))
+		row["controller_button"].text = UITheme.caps(
+			InputRemap.describe(InputRemap.current_event(action, InputRemap.SLOT_CONTROLLER)))
+
+
+# Enter "listening" mode for one binding: the next matching input is captured and
+# assigned (see _input). The button shows a prompt while we wait.
+func _begin_listen(action: String, slot: String, button: Button) -> void:
+	cancel_listen()
+	_listening = {"action": action, "slot": slot, "button": button}
+	button.text = UITheme.caps("Press %s…" % ("a key" if slot == InputRemap.SLOT_KEYBOARD else "a button"))
+
+
+# Abandon a pending capture (navigated away, Esc, or a fresh listen) and restore the
+# button labels. No-op when not listening.
+func cancel_listen() -> void:
+	if _listening.is_empty():
+		return
+	_listening = {}
+	_refresh_controls_selection()
+
+
+# Reset every binding to its project.godot default and repaint.
+func _reset_bindings() -> void:
+	cancel_listen()
+	InputRemap.reset_defaults()
+	_refresh_controls_selection()
+
+
+# While listening, grab the first input that fits the slot and assign it. Esc aborts.
+# Runs before the GUI pass so the captured key never also triggers a button / Esc
+# never also closes the host menu.
+func _input(event: InputEvent) -> void:
+	if _listening.is_empty():
+		return
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.physical_keycode == KEY_ESCAPE:
+		get_viewport().set_input_as_handled()
+		cancel_listen()
+		return
+	var captured := _capture_for_slot(event, String(_listening["slot"]))
+	if captured == null:
+		return
+	get_viewport().set_input_as_handled()
+	var action := String(_listening["action"])
+	var slot := String(_listening["slot"])
+	_listening = {}
+	InputRemap.rebind(action, slot, captured)
+	_refresh_controls_selection()
+
+
+# Build a clean event from a raw input if it matches the slot, else null. Keyboard
+# stores the physical keycode (layout-independent, as project.godot does); controller
+# accepts a button press or a stick/trigger deflection past the deadzone (stored as a
+# sign so a half-press still maps to the full axis direction).
+func _capture_for_slot(event: InputEvent, slot: String) -> InputEvent:
+	if slot == InputRemap.SLOT_KEYBOARD:
+		if event is InputEventKey and event.pressed and not event.echo:
+			var k := InputEventKey.new()
+			k.physical_keycode = event.physical_keycode
+			return k
+		return null
+	if event is InputEventJoypadButton and event.pressed:
+		var b := InputEventJoypadButton.new()
+		b.button_index = event.button_index
+		return b
+	if event is InputEventJoypadMotion and absf(event.axis_value) >= InputRemap.AXIS_THRESHOLD:
+		var m := InputEventJoypadMotion.new()
+		m.axis = event.axis
+		m.axis_value = signf(event.axis_value)
+		return m
+	return null
 
 
 # --- Dev actions -------------------------------------------------------------
@@ -198,6 +315,61 @@ func _make_camera_row(mode: int, entry: Dictionary) -> Button:
 	var text := _make_row_text(button)
 	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
 	camera_rows.append({"key": mode, "button": button})
+	return button
+
+
+# The column captions above the key-binding rows, aligned over the two button
+# columns (a leading spacer matches the action-name column's expand).
+func _make_controls_header() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var spacer := Label.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(spacer)
+	for caption in ["Keyboard", "Controller"]:
+		var label := Label.new()
+		label.text = caption
+		label.custom_minimum_size = Vector2(_BIND_BUTTON_W, 0)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", 13)
+		row.add_child(label)
+	return row
+
+
+# A key-binding row: the action name (expanding) plus a keyboard button and a
+# controller button, each showing the current binding and listening on press.
+func _make_control_row(entry: Dictionary) -> HBoxContainer:
+	var action := String(entry["action"])
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 8)
+
+	var name_label := Label.new()
+	name_label.text = String(entry["name"])
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	name_label.add_theme_font_size_override("font_size", 16)
+	row.add_child(name_label)
+
+	var keyboard_button := _make_binding_button(action, InputRemap.SLOT_KEYBOARD)
+	var controller_button := _make_binding_button(action, InputRemap.SLOT_CONTROLLER)
+	row.add_child(keyboard_button)
+	row.add_child(controller_button)
+
+	controls_rows.append({
+		"action": action,
+		"keyboard_button": keyboard_button,
+		"controller_button": controller_button,
+	})
+	return row
+
+
+# One fixed-width binding button. Pressing it starts listening for that slot.
+func _make_binding_button(action: String, slot: String) -> Button:
+	var button := Button.new()
+	button.focus_mode = Control.FOCUS_NONE
+	button.custom_minimum_size = Vector2(_BIND_BUTTON_W, 36)
+	button.pressed.connect(func() -> void: _begin_listen(action, slot, button))
 	return button
 
 
