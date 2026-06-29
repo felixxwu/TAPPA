@@ -3,8 +3,12 @@ extends Node3D
 # Car handling is applied by car.gd; camera follow by chase_camera.gd.
 
 const TREE_TEXTURE := preload("res://textures/tree.png")
-const BUSH_TEXTURE := preload("res://textures/bush.webp")
 const BUSH_SEED_OFFSET := 1013
+# Ground-cover bush: low-poly mesh (replaces the old bush.webp billboards),
+# instanced via MeshScatterField with the flat foliage shader. See features/trees.md.
+const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
+const FOLIAGE_SHADER := preload("res://shaders/foliage_mesh.gdshader")
+const FOLIAGE_TEXTURE := preload("res://models/vegetation/textures/foliage.jpg")
 
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
@@ -198,16 +202,18 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if loading != null:
 		loading.set_step("Scattering bushes…")
 	await _yield_frame()
-	# Bushes: same scatter + render as trees, but bush.webp, no collision, and an
-	# offset seed so they interleave with the trees. They are NOT forest-gated (default
-	# forestiness 1.0), so undergrowth covers the whole stage, not just the forest.
+	# Bushes: same scatter as trees (offset seed so they interleave; NOT forest-gated,
+	# default forestiness 1.0 so undergrowth covers the whole stage), but rendered as
+	# the low-poly ground-cover MESH instead of billboards — instanced in one MultiMesh
+	# with per-instance yaw/scale and baked terrain light. No collision. Reuses the
+	# trees' render-distance dither cull (foliage_mesh.gdshader). See features/trees.md.
 	var bushes := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
-	var bush_field := BillboardField.new()
+	var bush_field := MeshScatterField.new()
 	add_child(bush_field)
-	bush_field.build(bushes, $Floor as TerrainManager, cfg.bush_size_m, BUSH_TEXTURE,
-		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, false,
-		cfg.tree_render_distance_m, cfg.tree_render_fade_m, -cfg.bush_sink_m)
+	bush_field.build(bushes, $Floor as TerrainManager, _bush_mesh(cfg),
+		-cfg.bush_sink_m, cfg.bush_scale, cfg.bush_scale_jitter,
+		cfg.track_seed + BUSH_SEED_OFFSET)
 
 	if loading != null:
 		loading.set_step("Placing signs…")
@@ -290,6 +296,25 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# regeneration, e.g. entering a rally event).
 	if loading != null:
 		loading.finish()
+
+
+# Build the ground-cover bush mesh: the groundcover_opaque GLB's mesh with the
+# flat foliage shader (render-distance dither cull + per-instance baked light)
+# swapped in for the imported StandardMaterial. Duplicated so the cached scene
+# resource is not mutated.
+func _bush_mesh(cfg: GameConfig) -> Mesh:
+	var inst := GROUNDCOVER_SCENE.instantiate()
+	var src := inst.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
+	var mesh: Mesh = src.mesh.duplicate()
+	inst.free()
+	var mat := ShaderMaterial.new()
+	mat.shader = FOLIAGE_SHADER
+	mat.set_shader_parameter("albedo", FOLIAGE_TEXTURE)
+	mat.set_shader_parameter("render_distance", cfg.tree_render_distance_m)
+	mat.set_shader_parameter("fade_band", cfg.tree_render_fade_m)
+	mat.set_shader_parameter("lod_bias", Config.data.texture_lod_bias)
+	mesh.surface_set_material(0, mat)
+	return mesh
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and

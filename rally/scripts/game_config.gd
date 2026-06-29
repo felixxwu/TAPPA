@@ -676,12 +676,15 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(10.0, 500.0) var tree_render_distance_m := 80.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export_range(0.0, 100.0) var tree_render_fade_m := 15.0
-## Billboard size (m) for bushes: width (x) by height (y). Bushes are smaller
-## than trees; everything else about their scatter/render matches the trees.
-@export var bush_size_m := Vector2(1.0, 1.5)
-## Distance (m) bushes are sunk into the ground, hiding the gap at the bottom of
-## the bush texture.
-@export_range(0.0, 5.0) var bush_sink_m := 0.5
+## Uniform scale applied to the ground-cover bush mesh (models/vegetation/
+## groundcover_opaque.glb). Bushes reuse the trees' scatter + render-distance
+## params; only this scale and the sink/jitter below are bush-specific.
+@export_range(0.1, 5.0) var bush_scale := 1.3
+## Per-instance random scale variation (± fraction of bush_scale) so the repeated
+## mesh does not read as a tiled pattern.
+@export_range(0.0, 0.9) var bush_scale_jitter := 0.25
+## Distance (m) bushes are sunk into the ground so the patch base meets the terrain.
+@export_range(0.0, 5.0) var bush_sink_m := 0.25
 
 
 @export_group("Roadside Signs")
