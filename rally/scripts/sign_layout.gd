@@ -7,38 +7,30 @@ extends RefCounted
 # (the Node3D) turns these placements into meshes + collision.
 #
 # Each placement:
-#   { "kind": "sector"|"turn"|"start"|"finish",
+#   { "kind": "turn",          # the only kind planted now (see plan())
 #     "texture_key": String,   # which atlas image (GameConfig.sign_textures key)
 #     "pos": Vector2,          # centerline point (XZ) at this sign's arc offset
 #     "tangent": Vector2,      # unit road direction there
 #     "side": int }            # +1 / -1 : which road edge (perpendicular sign)
 
-# Corners that get a turn arrow: "2 or sharper" by exact name. The compound
-# "Right 4 tightens 2" is intentionally excluded (see todo/roadside-signs.md §2).
-const TURN_CORNERS := ["1", "2", "Square", "Hairpin"]
+# Corners that get a turn arrow: "4 or sharper" by exact name, plus Square/Hairpin.
+# Gentle 5s and 6s are nearly straight, so they go unsigned; the compound
+# "Right 4 tightens 2" is also excluded (see todo/roadside-signs.md §2).
+const TURN_CORNERS := ["1", "2", "3", "4", "Square", "Hairpin"]
 
 # Small arc-distance step used to estimate the road tangent by finite difference.
 const TANGENT_EPS_M := 0.5
 
 
-# Plan every sign for a stage. `params` is GameConfig.sign_params()
-# ({ "sector_count": int }).
-static func plan(centerline: Curve2D, pieces: Array, params: Dictionary) -> Array:
+# Plan every sign for a stage. Turn arrows are the only roadside signs planted:
+# the start and finish are marked by the inflatable arches (features/finish-arch.md),
+# and the stage is no longer split into signed sectors (it is too short to carve
+# into meaningful sector boards).
+static func plan(centerline: Curve2D, pieces: Array) -> Array:
 	var out: Array = []
 	var length := centerline.get_baked_length()
 	if length <= 0.0:
 		return out
-	var sector_count := int(params.get("sector_count", 4))
-
-	# Finish gate (offset L), a pair. The start is marked by the inflatable start
-	# arch (features/finish-arch.md), so no A-frame start boards are planted.
-	_emit_pair(out, centerline, length, length, "finish", "finish")
-
-	# Sector boards: a pair at each interior boundary, marking entry into 2..N.
-	# Sector 1 is implied by the start line, so we don't sign offset 0.
-	for k in range(1, sector_count):
-		var offset := k * length / float(sector_count)
-		_emit_pair(out, centerline, length, offset, "sector", "sector_%d" % (k + 1))
 
 	# Turn arrows: a pair at the corner entry of every sharp turn.
 	for piece in pieces:
@@ -55,9 +47,9 @@ static func plan(centerline: Curve2D, pieces: Array, params: Dictionary) -> Arra
 	return out
 
 
-# The interior sector-boundary arc offsets (k*L/count for k in 1..count-1). Exposed
-# so the stage timer can reuse the exact same boundaries for per-sector splits if
-# todo/stage-start-and-end.md grows them (§5) instead of recomputing the math.
+# The interior sector-boundary arc offsets (k*L/count for k in 1..count-1). No
+# longer used for signs (sector boards were dropped), but kept as the stage timer's
+# hook for per-sector splits (todo/stage-start-and-end.md §5) instead of recomputing.
 static func sector_offsets(centerline: Curve2D, count: int) -> Array:
 	var offsets: Array = []
 	var length := centerline.get_baked_length()

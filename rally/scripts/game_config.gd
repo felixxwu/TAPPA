@@ -678,12 +678,13 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 
 
 @export_group("Roadside Signs")
-# A-frame (wet-floor) roadside signs along the stage: sector boards, turn arrows,
-# and start/finish banners (todo/roadside-signs.md). Few per stage (tens), so they
-# are individual nodes, not a MultiMesh. Authored face textures go in sign_textures;
-# until they exist, a per-kind colour fallback keeps the geometry testable.
-## Number of equal arc-length sectors the stage is split into. Signs mark
-## entering sectors 2..N (sector 1 is the start gate).
+# A-frame (wet-floor) roadside turn-arrow signs along the stage (todo/roadside-signs.md).
+# Few per stage (tens), so they are individual nodes, not a MultiMesh. Authored face
+# textures (the pacenote arrow boards) go in sign_textures. Start/finish are the
+# inflatable arches, not signs, and the stage is no longer split into signed sectors.
+## Number of equal arc-length sectors the stage is split into. No longer drives any
+## signs (sector boards were dropped); kept only as the stage timer's per-sector
+## split hook (SignLayout.sector_offsets, todo/stage-start-and-end.md §5).
 @export_range(1, 12) var sign_sector_count := 4
 ## One A-frame panel's width (x) by height (y), in metres — thin near-square boards.
 @export var sign_panel_size_m := Vector2(1.2, 1.2)
@@ -869,13 +870,6 @@ func tree_params() -> Dictionary:
 		"trees_per_turn": trees_per_turn,
 		"spawn_radius_m": tree_spawn_radius_m,
 		"jitter": tree_jitter,
-	}
-
-
-# Layout inputs for SignLayout.plan (todo/roadside-signs.md §2): what to place.
-func sign_params() -> Dictionary:
-	return {
-		"sector_count": sign_sector_count,
 	}
 
 

@@ -102,7 +102,7 @@ In `world.gd._generate_track`, after centerline + `road_cells` + `trees` exist
 ## Config (game_config.gd → game_config.tres)
 
 New `@export_group("Spectators")` + a `spectator_params()` accessor returning a
-Dictionary, mirroring `tree_params()` (line 812) / `sign_params()`:
+Dictionary, mirroring `tree_params()` / `sign_render_params()`:
 
 - `spectator_group_size := 50`
 - `spectator_mid_progress_min := 0.30`, `spectator_mid_progress_max := 0.70`
