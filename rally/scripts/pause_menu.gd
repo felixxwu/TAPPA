@@ -68,7 +68,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not is_open():
 		open()
 	elif _settings_panel.visible:
-		_show_settings(false)  # Esc backs out of Settings to the menu first
+		_on_settings_back()  # Esc steps out a level: sub-page → list → menu
 	else:
 		resume()
 	get_viewport().set_input_as_handled()
@@ -165,7 +165,7 @@ func _build_settings_panel() -> Control:
 	title.add_theme_font_size_override("font_size", 28)
 	col.add_child(title)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	col.add_child(scroll)
@@ -174,10 +174,21 @@ func _build_settings_panel() -> Control:
 	settings_menu.camera_changed.connect(_on_camera_changed)
 	scroll.add_child(settings_menu)
 
+	# Single bottom button: on a sub-page it backs out to the category list; on the
+	# list it backs out to the Resume/Settings menu.
 	var back := _make_menu_button("< Back")
-	back.pressed.connect(_show_settings.bind(false))
+	back.pressed.connect(_on_settings_back)
 	col.add_child(back)
 	return margin
+
+
+# Back from the Settings panel: step out of a sub-page to the category list first,
+# then (from the list) out to the Resume/Settings menu.
+func _on_settings_back() -> void:
+	if not settings_menu.at_root():
+		settings_menu.show_list()
+	else:
+		_show_settings(false)
 
 
 func _make_menu_button(text: String) -> Button:
@@ -197,6 +208,8 @@ func _set_open(opened: bool) -> void:
 
 
 func _show_settings(on: bool) -> void:
+	if on:
+		settings_menu.show_list()  # always open Settings on the category list
 	_settings_panel.visible = on
 	_menu_panel.visible = not on
 

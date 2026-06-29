@@ -924,7 +924,7 @@ func _build_lift_overlay() -> void:
 	tabs.add_child(_lift_tab_upgrades)
 
 	# Scrollable content area (the upgrades list can grow past the panel height).
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
@@ -1279,12 +1279,13 @@ func _build_settings_overlay() -> void:
 	_settings_sub.add_theme_font_size_override("font_size", 16)
 	root.add_child(_settings_sub)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
 	_settings_menu = SettingsMenu.new()
 	_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_settings_menu.page_changed.connect(_on_settings_page_changed)
 	scroll.add_child(_settings_menu)
 
 	_settings_action_button = Button.new()
@@ -1296,18 +1297,32 @@ func _build_settings_overlay() -> void:
 
 # Open the Settings page. `gate` = the mandatory pre-rally pick (bottom button starts
 # the rally); otherwise it's the title-screen settings (bottom button goes back).
+# Always reset to the category list so each open starts at the top level.
 func _open_settings(gate: bool) -> void:
 	_settings_gate = gate
 	_settings_sub.text = ("Choose your touch controls to start:" if gate
 		else "Camera & controls:")
-	_settings_action_button.text = "Start >" if gate else "< Back"
+	_settings_menu.show_list()  # emits page_changed → sets the bottom button label
 	_go_to(View.SETTINGS)
 
 
-# The settings bottom button: in the pre-rally gate, make sure a scheme is saved
-# (the highlighted default if the player didn't tap one) so we never ask again, then
-# start the rally. From the title screen it just returns to the exterior.
+# Keep the single bottom button in step with the page: on a sub-page it backs out
+# to the list ("< Back"); on the list it is the host's own action — "Start >" in the
+# pre-rally gate, "< Back" (to the exterior) on the title screen.
+func _on_settings_page_changed(is_root: bool) -> void:
+	if _settings_action_button == null:
+		return  # SettingsMenu._ready fires its first page_changed before the button exists
+	_settings_action_button.text = "Start >" if (is_root and _settings_gate) else "< Back"
+
+
+# The settings bottom button. On a sub-page it returns to the category list. On the
+# list, in the pre-rally gate, make sure a scheme is saved (the highlighted default
+# if the player didn't tap one) so we never ask again, then start the rally; from the
+# title screen it just returns to the exterior.
 func _on_settings_action() -> void:
+	if not _settings_menu.at_root():
+		_settings_menu.show_list()
+		return
 	if _settings_gate:
 		if Save.get_setting(MobileControls.SETTING_KEY, null) == null:
 			Save.set_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
