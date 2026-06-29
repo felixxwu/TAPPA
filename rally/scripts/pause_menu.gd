@@ -97,11 +97,12 @@ func _build_menu_panel() -> Control:
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	center.add_child(col)
 
-	var title := Label.new()
-	title.text = "PAUSED"
-	title.add_theme_font_size_override("font_size", 40)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(title)
+	# PAUSED on a solid black title plate (the house style), centred over the menu.
+	var title_plate := UITheme.panel(0.9, 14)
+	var title := UITheme.title("Paused")
+	title.custom_minimum_size = Vector2(UITheme.BUTTON_MIN.x, 0)
+	title_plate.add_child(title)
+	col.add_child(title_plate)
 
 	var resume_btn := _make_menu_button("Resume")
 	resume_btn.pressed.connect(resume)
@@ -145,7 +146,7 @@ func _build_settings_panel() -> Control:
 
 func _make_menu_button(text: String) -> Button:
 	var button := Button.new()
-	button.text = text
+	button.text = UITheme.caps(text)
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(220, 44)
 	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

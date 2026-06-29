@@ -70,6 +70,10 @@ func _ready() -> void:
 	_countdown_label.visible = false
 	_elapsed_label.visible = false
 	_stage_complete_panel.visible = false
+	# Design-system accents: the run timer reads red (urgency), the stage-complete
+	# banner green (success) — matching the house palette. See features/ui-design-system.md.
+	_elapsed_label.add_theme_color_override("font_color", UITheme.RED)
+	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 
 
 func _on_mode_pressed() -> void:

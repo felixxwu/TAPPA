@@ -100,7 +100,7 @@ func _build_overlay() -> void:
 
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.05, 0.05, 0.07, 0.55)
+	bg.color = UITheme.PANEL_DIM
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.add_child(bg)
 
@@ -114,7 +114,7 @@ func _build_overlay() -> void:
 	heading.text = "CAR WRECKED"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_theme_font_size_override("font_size", 40)
-	heading.add_theme_color_override("font_color", Color(1.0, 0.4, 0.3))
+	heading.add_theme_color_override("font_color", UITheme.RED)
 	root.add_child(heading)
 
 	var body := Label.new()

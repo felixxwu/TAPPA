@@ -36,6 +36,10 @@ window/handheld/orientation="sensor_landscape"
 
 import/blender/enabled=false
 
+[gui]
+
+theme/custom="res://theme/ui_theme.tres"
+
 [input_devices]
 
 pointing/emulate_mouse_from_touch=true

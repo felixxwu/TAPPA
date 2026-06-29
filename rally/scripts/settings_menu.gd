@@ -164,15 +164,7 @@ func _add_row_labels(text: VBoxContainer, name_text: String, desc_text: String) 
 	text.add_child(desc_label)
 
 
-# Highlight a selected row (a tinted, bordered box) and flatten the rest.
+# Highlight a selected row in the house style (green underline + green text),
+# flattening the rest. Delegates to the shared design system (UITheme).
 func _highlight(button: Button, selected: bool) -> void:
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.20, 0.34, 0.52, 0.85) if selected else Color(0.12, 0.14, 0.18, 0.6)
-	for corner in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-		box.set("corner_radius_" + corner, 6)
-	if selected:
-		for side in ["left", "top", "right", "bottom"]:
-			box.set("border_width_" + side, 2)
-		box.border_color = Color(0.55, 0.78, 1.0, 0.95)
-	for state in ["normal", "hover", "pressed", "focus"]:
-		button.add_theme_stylebox_override(state, box)
+	UITheme.mark_selected(button, selected)

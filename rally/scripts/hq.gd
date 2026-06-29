@@ -830,7 +830,7 @@ func _build_detail_overlay() -> void:
 	# A solid backing so the detail reads as a panel over the map.
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.08, 0.10, 0.14, 0.96)
+	bg.color = Color(0.0, 0.0, 0.0, 0.96)
 	_detail_layer.add_child(bg)
 	_detail_layer.move_child(bg, 0)
 
@@ -875,7 +875,7 @@ func _build_lift_overlay() -> void:
 	bg.anchor_right = 1.0
 	bg.anchor_top = 0.0
 	bg.anchor_bottom = 1.0
-	bg.color = Color(0.08, 0.10, 0.14, 0.96)
+	bg.color = Color(0.0, 0.0, 0.0, 0.96)
 	_lift_layer.add_child(bg)
 
 	var margin := MarginContainer.new()
@@ -964,15 +964,8 @@ func _build_lift_overlay() -> void:
 	var info_panel := PanelContainer.new()
 	info_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var info_style := StyleBoxFlat.new()
-	info_style.bg_color = Color(0.08, 0.10, 0.14, 0.82)
-	info_style.corner_radius_top_left = 6
-	info_style.corner_radius_top_right = 6
-	info_style.corner_radius_bottom_left = 6
-	info_style.corner_radius_bottom_right = 6
-	for side in ["left", "top", "right", "bottom"]:
-		info_style.set("content_margin_" + side, 14.0)
-	info_panel.add_theme_stylebox_override("panel", info_style)
+	# Solid black, sharp-cornered house panel (design system).
+	info_panel.add_theme_stylebox_override("panel", UITheme.panel_box(0.82, 14))
 	left_col.add_child(info_panel)
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 4)
@@ -1120,7 +1113,7 @@ func _build_car_overlay() -> void:
 	_car_warning_label = Label.new()
 	_car_warning_label.add_theme_font_size_override("font_size", 14)
 	_car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_car_warning_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.4))
+	_car_warning_label.add_theme_color_override("font_color", UITheme.RED)
 	_car_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_car_warning_label.visible = false
 	root.add_child(_car_warning_label)

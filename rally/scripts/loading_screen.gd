@@ -21,7 +21,7 @@ func _init() -> void:
 	layer = _LAYER
 
 	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.05, 0.08, 1.0)
+	bg.color = UITheme.BLACK
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 

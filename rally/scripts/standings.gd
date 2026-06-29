@@ -13,7 +13,7 @@ func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.1, 0.12, 0.14)
+	bg.color = UITheme.BLACK
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
@@ -72,7 +72,7 @@ func _standings_row(entry: Dictionary) -> Label:
 	var is_player: bool = entry.get("is_player", false)
 	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
 	if is_player:
-		l.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+		l.add_theme_color_override("font_color", UITheme.GOLD)
 	return l
 
 

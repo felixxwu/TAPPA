@@ -311,13 +311,10 @@ func _build_overlay() -> void:
 	# Slot-machine reveal card.
 	_slot_panel = PanelContainer.new()
 	_slot_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.06, 0.08, 0.12, 0.92)
-	for corner in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-		style.set("corner_radius_" + corner, 10)
-	for side in ["left", "top", "right", "bottom"]:
-		style.set("content_margin_" + side, 22.0)
-	style.border_color = Color(0.55, 0.78, 1.0, 0.9)
+	# A solid black, sharp-cornered reward card with a green accent border (a reward
+	# is a positive event — green is the design system's "positive" colour).
+	var style := UITheme.panel_box(0.92, 22)
+	style.border_color = UITheme.GREEN
 	for side in ["left", "top", "right", "bottom"]:
 		style.set("border_width_" + side, 2)
 	_slot_panel.add_theme_stylebox_override("panel", style)
@@ -578,7 +575,7 @@ func _standings_row(entry: Dictionary) -> Label:
 	var is_player: bool = entry.get("is_player", false)
 	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
 	if is_player:
-		l.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+		l.add_theme_color_override("font_color", UITheme.GOLD)
 	return l
 
 
