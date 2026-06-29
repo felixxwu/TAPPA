@@ -29,8 +29,12 @@ solver: no `MAX_CONTACTS_REPORTED` pressure, no HP damage, and they are **not** 
 
 When the car reaches a member (within `spectator_knock_radius_m`) that member
 flips to a **ragdoll**: a single `RigidBody3D` capsule (the model has no skeleton,
-so one body — not `PhysicalBone3D`) launched along the car's `linear_velocity`
-(speed-scaled, plus lift + a random tumble spin). Ragdolls collide with the
+so one body — not `PhysicalBone3D`) launched along the car's `linear_velocity`.
+The **whole impulse scales with car speed**: the launch speed is `speed ×
+spectator_knock_speed_factor` (clamped), the upward kick is a *fraction* of that
+launch (`spectator_knock_lift_ratio`, a fixed angle rather than a constant m/s), and
+the tumble spin tapers to zero as the car slows — so a slow nudge topples a spectator
+gently instead of flinging them skyward. Ragdolls collide with the
 terrain/trees (all on physics layer 1) but carry an explicit
 `add_collision_exception_with(car)`, so a crowd can never bog the car down. Once
 the car is `spectator_despawn_behind_m` behind a ragdoll, it is freed.

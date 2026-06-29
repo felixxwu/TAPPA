@@ -19,9 +19,12 @@ extends Node3D
 #
 # When the car actually reaches a member (within knock_radius_m) that member flips
 # to a knocked-over RAGDOLL: a real RigidBody3D capsule (single body — the model
-# has no armature) launched along the car's velocity. Ragdolls collide with the
-# ground but are masked off the car, so a crowd can never bog it down. Once the car
-# is well past (despawn_behind_m behind it), the ragdoll is freed.
+# has no armature) launched along the car's velocity. The whole launch impulse scales
+# with the car's speed (including the upward kick, which is a fraction of the launch,
+# not a constant), so crawling into the crowd topples them gently instead of flinging
+# them skyward. Ragdolls collide with the ground but are masked off the car, so a crowd
+# can never bog it down. Once the car is well past (despawn_behind_m behind it), the
+# ragdoll is freed.
 
 const SPECTATOR_SCENE := preload("res://blender/spectator.glb")
 const CELL_M := TrackGenerator.CELL_M
@@ -340,20 +343,41 @@ func _knock_over(i: int, car_xf: Transform3D) -> void:
 	mi.position = Vector3(0, ragdoll_mesh_offset_y(_foot_offset, _capsule_height), 0)
 	body.add_child(mi)
 
-	# Launch along the car's travel direction, scaled by its speed, plus lift and a
-	# random tumble.
+	# Launch along the car's travel direction, with the WHOLE impulse scaled by the car's
+	# speed: launch speed is `speed x factor` (clamped), the upward kick is a fraction of
+	# that launch (a fixed angle, not a constant m/s), and the spin tapers to zero as the
+	# car slows. So a slow nudge topples a spectator gently instead of flinging them up.
 	var car_vel := Vector3.ZERO
 	if _car != null and "linear_velocity" in _car:
 		car_vel = _car.linear_velocity
 	var speed := car_vel.length()
 	var dir := car_vel.normalized() if speed > 0.1 else -car_xf.basis.z
-	var launch: float = clampf(speed * float(_p["knock_speed_factor"]),
-		float(_p["knock_speed_min"]), float(_p["knock_speed_max"]))
-	body.linear_velocity = dir * launch + Vector3.UP * float(_p["knock_lift_mps"])
+	var factor := float(_p["knock_speed_factor"])
+	var speed_max := float(_p["knock_speed_max"])
+	body.linear_velocity = knock_launch_velocity(dir, speed, factor,
+		float(_p["knock_speed_min"]), speed_max, float(_p["knock_lift_ratio"]))
 	body.angular_velocity = Vector3(
 		_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)
-	).normalized() * float(_p["knock_spin"])
+	).normalized() * float(_p["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
 	_ragdolls.append(body)
+
+
+# Launch velocity for a knocked body: along `dir` at magnitude `speed x factor`
+# (clamped to [speed_min, speed_max]), tilted upward by `lift_ratio` of that launch.
+# Because the lift is a fraction of the (speed-driven) launch — a fixed angle, not a
+# constant m/s — the WHOLE impulse scales with car speed: a slow nudge stays low and
+# small, a fast hit lofts and flings. Shared launch recipe (also used by SignField).
+static func knock_launch_velocity(dir: Vector3, speed: float, factor: float,
+		speed_min: float, speed_max: float, lift_ratio: float) -> Vector3:
+	var launch := clampf(speed * factor, speed_min, speed_max)
+	var launch_dir := (dir + Vector3.UP * lift_ratio).normalized()
+	return launch_dir * launch
+
+
+# Tumble-spin scale in [0, 1], proportional to the raw (unfloored) car speed so a crawl
+# barely spins the body while a fast hit spins it fully.
+static func knock_spin_scale(speed: float, factor: float, speed_max: float) -> float:
+	return clampf(speed * factor / maxf(speed_max, 0.001), 0.0, 1.0)
 
 
 # Free ragdolls the car has left well behind, so bodies don't accumulate.

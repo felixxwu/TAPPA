@@ -87,18 +87,21 @@ hitbox are **children of the body**, so the whole sign tumbles as one. Per sign:
 - **Knocked, not collided** — when the car enters the waker, `_wake_sign` adds an
   explicit collision exception with the car (belt-and-braces over the layer split,
   since the sign's world-layer mask would otherwise still pair it with the car),
-  unfreezes the body, and **launches it** along the car's velocity — `clampf(speed ×
-  knock_speed_factor, knock_speed_min, knock_speed_max)` plus an upward `knock_lift_mps`
-  kick and a random `knock_spin` tumble. This is the same recipe `SpectatorGroup` uses
-  for ragdolls: the impulse fakes the collision, then physics rolls the sign over the
-  terrain without the car ever touching it.
+  unfreezes the body, and **launches it** along the car's velocity. The **whole impulse
+  scales with the car's speed**: launch speed is `clampf(speed × knock_speed_factor,
+  knock_speed_min, knock_speed_max)`, the upward kick is a *fraction* of that launch
+  (`knock_lift_ratio`, a fixed angle — not a constant m/s that would dominate slow
+  hits), and the `knock_spin` tumble tapers to zero as the car slows. So crawling into a
+  sign nudges it gently along the ground instead of flinging it into the air. This is
+  the same recipe `SpectatorGroup` uses for ragdolls: the impulse fakes the collision,
+  then physics rolls the sign over the terrain without the car ever touching it.
 
 ## Config (`GameConfig` › *Roadside Signs*)
 
 `sign_panel_size_m`, `sign_thickness_m`, `sign_splay_deg`, `sign_edge_inset_m`,
 `sign_base_depth_m`, `sign_mass_kg`, `sign_textures`, and the knock-over launch
 (`sign_knock_speed_factor`, `sign_knock_speed_min`, `sign_knock_speed_max`,
-`sign_knock_lift_mps`, `sign_knock_spin`) — bundled for the build layer by
+`sign_knock_lift_ratio`, `sign_knock_spin`) — bundled for the build layer by
 `sign_render_params()` (which also adds the structural `knock_layer`/`knock_mask`).
 (`sign_sector_count` also lives in this group but no longer drives any signs; it is
 the stage timer's `sector_offsets` hook — see above.)

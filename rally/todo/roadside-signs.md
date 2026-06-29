@@ -46,7 +46,7 @@
 - **Config-first knobs.** A `Roadside Signs` `@export_group` in `game_config.gd`
   (`sign_panel_size_m`, `sign_thickness_m`, `sign_splay_deg`, `sign_edge_inset_m`,
   `sign_base_depth_m`, `sign_mass_kg`, `sign_textures`, and the knock-over launch
-  `sign_knock_speed_factor`/`_min`/`_max`, `sign_knock_lift_mps`, `sign_knock_spin`)
+  `sign_knock_speed_factor`/`_min`/`_max`, `sign_knock_lift_ratio`, `sign_knock_spin`)
   bundled via `sign_render_params()`. (`sign_sector_count` lives here too but only
   feeds the `sector_offsets` stage-timer hook now.)
 - **Tests + docs.** `test_sign_layout.gd` covers turns-only placement, the turn

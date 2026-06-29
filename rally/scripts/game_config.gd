@@ -799,15 +799,19 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 # contact the sign is masked off the car and flung along the car's travel direction
 # instead of colliding with it — a fake collision that lets it tumble on the terrain
 # without ever bogging the vehicle down.
-## Fraction of the car's speed imparted to a struck sign.
+## Fraction of the car's speed imparted to a struck sign. The whole impulse scales
+## with car speed, so slowly nudging a sign barely moves it.
 @export_range(0.0, 3.0) var sign_knock_speed_factor := 1.0
-## Lower clamp (m/s) on the launch speed, so even a slow nudge scatters the sign.
-@export_range(0.0, 20.0) var sign_knock_speed_min := 4.0
+## Small lower clamp (m/s) on the launch speed, so a crawl still tips the sign rather
+## than nothing at all — kept low so slow contact stays gentle.
+@export_range(0.0, 20.0) var sign_knock_speed_min := 1.0
 ## Upper clamp (m/s) on the launch speed, so a fast hit doesn't fling it absurdly far.
 @export_range(0.0, 60.0) var sign_knock_speed_max := 26.0
-## Upward kick (m/s) added to the launch so the sign lifts and tumbles, not just slides.
-@export_range(0.0, 12.0) var sign_knock_lift_mps := 3.5
-## Random tumble rate (rad/s) applied as spin when the sign is struck.
+## Upward lift as a FRACTION of the launch speed (not a fixed m/s), so the lift scales
+## with the car's speed: a slow hit stays low, a fast hit lofts the sign. ~0.35 ≈ 19° up.
+@export_range(0.0, 2.0) var sign_knock_lift_ratio := 0.35
+## Peak tumble spin (rad/s) at full launch speed; scaled down toward zero as the car
+## slows, so a gentle bump produces a gentle tumble.
 @export_range(0.0, 30.0) var sign_knock_spin := 11.0
 
 @export_group("Finish Arch")
@@ -867,12 +871,17 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 10.0) var spectator_w_road := 3.0
 @export_range(0.0, 10.0) var spectator_w_obstacle := 2.0
 @export_range(0.0, 10.0) var spectator_w_anchor := 0.6
-## Ragdoll launch: target speed = car speed x factor, clamped to [min, max] (m/s),
-## plus a constant upward lift and a random tumble spin (rad/s).
+## Ragdoll launch: target speed = car speed x factor, clamped to [min, max] (m/s).
+## The whole impulse scales with car speed, so a slow nudge barely moves them — the
+## min is just a small floor so a crawl still topples them rather than nothing at all.
 @export_range(0.0, 3.0) var spectator_knock_speed_factor := 0.8
-@export_range(0.0, 20.0) var spectator_knock_speed_min := 3.0
+@export_range(0.0, 20.0) var spectator_knock_speed_min := 1.0
 @export_range(0.0, 60.0) var spectator_knock_speed_max := 22.0
-@export_range(0.0, 12.0) var spectator_knock_lift_mps := 3.0
+## Upward lift as a FRACTION of the launch speed (not a fixed m/s), so the lift scales
+## with the car's speed: a slow hit stays low, a fast hit lofts them. ~0.3 ≈ 17° up.
+@export_range(0.0, 2.0) var spectator_knock_lift_ratio := 0.3
+## Peak tumble spin (rad/s) at full launch speed; scaled down toward zero as the car
+## slows, so a gentle bump produces a gentle tumble.
 @export_range(0.0, 30.0) var spectator_knock_spin := 9.0
 @export_range(1.0, 200.0) var spectator_ragdoll_mass_kg := 65.0
 ## Distance (m) behind the car at which a settled ragdoll is freed.
@@ -994,7 +1003,7 @@ func sign_render_params() -> Dictionary:
 		"knock_speed_factor": sign_knock_speed_factor,
 		"knock_speed_min": sign_knock_speed_min,
 		"knock_speed_max": sign_knock_speed_max,
-		"knock_lift_mps": sign_knock_lift_mps,
+		"knock_lift_ratio": sign_knock_lift_ratio,
 		"knock_spin": sign_knock_spin,
 		# Structural (mirrors the spectator ragdoll): the sign lives on its own layer,
 		# off the car's mask, and only masks the world layer (terrain + trees). The car
@@ -1044,7 +1053,7 @@ func spectator_params() -> Dictionary:
 		"knock_speed_factor": spectator_knock_speed_factor,
 		"knock_speed_min": spectator_knock_speed_min,
 		"knock_speed_max": spectator_knock_speed_max,
-		"knock_lift_mps": spectator_knock_lift_mps,
+		"knock_lift_ratio": spectator_knock_lift_ratio,
 		"knock_spin": spectator_knock_spin,
 		"ragdoll_mass_kg": spectator_ragdoll_mass_kg,
 		"despawn_behind_m": spectator_despawn_behind_m,
