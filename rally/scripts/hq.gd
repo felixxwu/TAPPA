@@ -972,7 +972,7 @@ func _build_lift_overlay() -> void:
 	left_col.add_child(_lift_hub_controls)
 
 	var back := Button.new()
-	back.text = "< Back to garage"
+	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
 	_lift_hub_controls.add_child(back)
