@@ -9,9 +9,12 @@ extends Node3D
 #     rallies; tap the lift to tune.
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
-#   * LIFT     — the tuning bay: the selected car raised on the lift on one side, the
-#     tuning menu on the other. Two menus — TUNE (grip/brake/aero sliders) and
-#     UPGRADES (install parts + repair) — plus a control to change which car is tuned.
+#   * LIFT     — the tuning bay: the selected car raised on the lift on one side. The
+#     bay opens on a HUB page (the car's name/description, a minimal change-car
+#     selector, and Tuning / Upgrades buttons) bottom-left beside the car. Each button
+#     opens that menu as its OWN full-height page (TUNE = grip/brake/aero sliders;
+#     UPGRADES = install parts + repair) so neither needs to scroll; Back returns the
+#     page to the hub, and the hub's Back returns to the garage.
 #   * CARPARK  — the outdoor lineup of the cars ELIGIBLE for the chosen rally; pan
 #     between them and Start.
 # Flow: pick rally (table) -> choose eligible car (car park) -> Start -> RallySession.
@@ -38,9 +41,11 @@ extends Node3D
 #     cap before they can do anything else. Reuses the car-park lineup + framing.
 enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 
-# The two tuning-lift menus (todo/menus.md rig 4): TUNE = the handling sliders,
-# UPGRADES = install parts / repair. Both share the change-car control + Back.
-enum LiftTab { TUNE, UPGRADES }
+# The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
+# name/description + a minimal change-car selector + Tuning/Upgrades buttons); TUNE is
+# the handling sliders and UPGRADES is install parts / repair. Each menu is its own
+# full-height page (reached from the hub) so neither has to scroll.
+enum LiftPage { HUB, TUNE, UPGRADES }
 
 # 1st place earns 3 stars, 2nd → 2, 3rd → 1, anything else (incl. not completed) → 0.
 # Shown on the 3D map pins as small sphere meshes (gold = earned, grey = not) — a 3D
@@ -93,7 +98,7 @@ var _settle_generation := 0
 var _lift_car: Node3D
 var _lift_owned: Dictionary = {}
 var _lift_car_instance_id := -2  # what _lift_car was built for (-2 = nothing yet)
-var _lift_tab: int = LiftTab.TUNE
+var _lift_page: int = LiftPage.HUB
 # Lift animation: the car is LOWERED on the ground in the garage view and RAISED when
 # the bay is entered (tweened over hq_lift_raise_time). _lift_raised is the current
 # target pose; _lift_tween animates the car's height toward it.
@@ -146,10 +151,11 @@ var _overflow_stats_label: Label
 var _overflow_note: Label
 var _scrap_button: Button
 
-# Tuning-lift overlay widgets (the right-side menu panel).
-var _lift_car_label: Label      # selected car name + stats at the top of the panel
-var _lift_tab_tune: Button
-var _lift_tab_upgrades: Button
+# Tuning-lift overlay widgets.
+var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
+var _lift_hub_controls: VBoxContainer  # the HUB page: change-car + Tuning/Upgrades buttons
+var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
+var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_tune_box: VBoxContainer    # the TUNE menu (sliders)
 var _lift_upgrades_box: VBoxContainer  # the UPGRADES menu (install / repair)
 var _lift_sliders: Dictionary = {}     # axis -> HSlider
@@ -859,72 +865,50 @@ func _build_detail_overlay() -> void:
 	actions.add_child(enter)
 
 
-# The tuning-lift menu: a solid panel anchored to ONE side of the screen (the right
-# hq_lift_menu_width_frac of the width) so the raised car — framed to the LEFT by the
-# lift camera (hq_lift_cam_*) — stays in clear view. The panel holds only the menu
-# itself (change-car, the TUNE/UPGRADES tab + its scrollable content) so it stays short
-# enough for small screens; the Back button, the bay title and the selected car's
-# name/description sit on the LEFT (lift) side, beside the car.
+# The tuning bay. The raised car is framed to the LEFT by the lift camera
+# (hq_lift_cam_*); everything sits on top in one CanvasLayer with two faces:
+#
+#   * The HUB (default on entry) — a bottom-left column beside the car: the bay
+#     title + the selected car's name/description, then UNDER it a minimal change-car
+#     selector (< Car / Car >) and the Tuning + Upgrades buttons that open each menu.
+#   * A SUB-MENU page (TUNE or UPGRADES) — a solid panel anchored to the RIGHT
+#     (hq_lift_menu_width_frac of the width) so the car stays in view. Because the
+#     change-car control + page chrome live on the hub, each sub-menu gets the full
+#     panel height to itself and doesn't need to scroll.
+#
+# _refresh_lift_ui toggles which face is shown from _lift_page.
 func _build_lift_overlay() -> void:
 	var frac: float = Config.data.hq_lift_menu_width_frac
 	_lift_layer = CanvasLayer.new()
 	add_child(_lift_layer)
 
-	var bg := ColorRect.new()
-	bg.anchor_left = 1.0 - frac
-	bg.anchor_right = 1.0
-	bg.anchor_top = 0.0
-	bg.anchor_bottom = 1.0
-	bg.color = Color(0.0, 0.0, 0.0, 0.96)
-	_lift_layer.add_child(bg)
+	# --- The right-side sub-menu panel (shown on the TUNE / UPGRADES pages) ---
+	_lift_menu_bg = ColorRect.new()
+	_lift_menu_bg.anchor_left = 1.0 - frac
+	_lift_menu_bg.anchor_right = 1.0
+	_lift_menu_bg.anchor_top = 0.0
+	_lift_menu_bg.anchor_bottom = 1.0
+	_lift_menu_bg.color = Color(0.0, 0.0, 0.0, 0.96)
+	_lift_layer.add_child(_lift_menu_bg)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "top", "right", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, 20)
-	bg.add_child(margin)
+	_lift_menu_bg.add_child(margin)
 
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
 	margin.add_child(root)
 
-	# Change which car is tuned (cycles all owned cars; updates the selected car).
-	var car_nav := HBoxContainer.new()
-	car_nav.add_theme_constant_override("separation", 8)
-	root.add_child(car_nav)
-	var prev_car := Button.new()
-	prev_car.text = "< Car"
-	prev_car.focus_mode = Control.FOCUS_NONE
-	prev_car.pressed.connect(_cycle_lift_car.bind(-1))
-	car_nav.add_child(prev_car)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	car_nav.add_child(spacer)
-	var next_car := Button.new()
-	next_car.text = "Car >"
-	next_car.focus_mode = Control.FOCUS_NONE
-	next_car.pressed.connect(_cycle_lift_car.bind(1))
-	car_nav.add_child(next_car)
+	_lift_menu_title = Label.new()
+	_lift_menu_title.add_theme_font_size_override("font_size", 22)
+	root.add_child(_lift_menu_title)
 
-	# The two-menu tab strip.
-	var tabs := HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 6)
-	root.add_child(tabs)
-	_lift_tab_tune = Button.new()
-	_lift_tab_tune.text = "Tune"
-	_lift_tab_tune.focus_mode = Control.FOCUS_NONE
-	_lift_tab_tune.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_lift_tab_tune.pressed.connect(_set_lift_tab.bind(LiftTab.TUNE))
-	tabs.add_child(_lift_tab_tune)
-	_lift_tab_upgrades = Button.new()
-	_lift_tab_upgrades.text = "Upgrades"
-	_lift_tab_upgrades.focus_mode = Control.FOCUS_NONE
-	_lift_tab_upgrades.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_lift_tab_upgrades.pressed.connect(_set_lift_tab.bind(LiftTab.UPGRADES))
-	tabs.add_child(_lift_tab_upgrades)
-
-	# Scrollable content area (the upgrades list can grow past the panel height).
-	var scroll := ScrollContainer.new()
+	# A scroll container is kept as a safety net for very short screens, but with each
+	# menu on its own page (no change-car control or tab strip above it) the content is
+	# meant to fit without scrolling.
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
@@ -939,11 +923,15 @@ func _build_lift_overlay() -> void:
 	_lift_upgrades_box.add_theme_constant_override("separation", 8)
 	content.add_child(_lift_upgrades_box)
 
-	# The LEFT side (the lift / car side) carries the Back button and, below it, the bay
-	# title + the selected car's name & description — keeping the right-hand menu panel
-	# free of chrome so the Tune/Upgrades content gets the full panel height on small
-	# screens. A bottom-left column that grows upward (info at the very bottom, Back
-	# above it); mouse-transparent except the button.
+	var menu_back := Button.new()
+	menu_back.text = "< Back"
+	menu_back.focus_mode = Control.FOCUS_NONE
+	menu_back.pressed.connect(_lift_hub)
+	root.add_child(menu_back)
+
+	# --- The bottom-left column: info panel + (on the HUB) the change-car selector and
+	# the Tuning / Upgrades buttons. Grows upward so the info panel sits at the bottom
+	# beside the car with the hub controls above it; mouse-transparent except buttons.
 	var left_col := VBoxContainer.new()
 	left_col.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	left_col.offset_left = 20
@@ -953,13 +941,6 @@ func _build_lift_overlay() -> void:
 	left_col.add_theme_constant_override("separation", 10)
 	left_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lift_layer.add_child(left_col)
-
-	var back := Button.new()
-	back.text = "< Back to garage"
-	back.focus_mode = Control.FOCUS_NONE
-	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN  # hug content, don't stretch
-	back.pressed.connect(_lift_back)
-	left_col.add_child(back)
 
 	var info_panel := PanelContainer.new()
 	info_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -981,17 +962,64 @@ func _build_lift_overlay() -> void:
 	_lift_car_label.custom_minimum_size = Vector2(360, 0)
 	info.add_child(_lift_car_label)
 
+	# The hub controls UNDER the car description: a minimal change-car selector then the
+	# Tuning / Upgrades buttons. Shown only on the HUB page (_refresh_lift_ui).
+	_lift_hub_controls = VBoxContainer.new()
+	_lift_hub_controls.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_lift_hub_controls.custom_minimum_size = Vector2(360, 0)
+	_lift_hub_controls.add_theme_constant_override("separation", 8)
+	_lift_hub_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left_col.add_child(_lift_hub_controls)
+
+	# Change which car is tuned (cycles all owned cars; updates the selected car).
+	var car_nav := HBoxContainer.new()
+	car_nav.add_theme_constant_override("separation", 8)
+	_lift_hub_controls.add_child(car_nav)
+	var prev_car := Button.new()
+	prev_car.text = "< Car"
+	prev_car.focus_mode = Control.FOCUS_NONE
+	prev_car.pressed.connect(_cycle_lift_car.bind(-1))
+	car_nav.add_child(prev_car)
+	var car_spacer := Control.new()
+	car_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	car_nav.add_child(car_spacer)
+	var next_car := Button.new()
+	next_car.text = "Car >"
+	next_car.focus_mode = Control.FOCUS_NONE
+	next_car.pressed.connect(_cycle_lift_car.bind(1))
+	car_nav.add_child(next_car)
+
+	# The two menu buttons + Back to garage.
+	var to_tune := Button.new()
+	to_tune.text = "Tuning >"
+	to_tune.focus_mode = Control.FOCUS_NONE
+	to_tune.size_flags_horizontal = Control.SIZE_FILL
+	to_tune.pressed.connect(_open_lift_page.bind(LiftPage.TUNE))
+	_lift_hub_controls.add_child(to_tune)
+	var to_upgrades := Button.new()
+	to_upgrades.text = "Upgrades >"
+	to_upgrades.focus_mode = Control.FOCUS_NONE
+	to_upgrades.size_flags_horizontal = Control.SIZE_FILL
+	to_upgrades.pressed.connect(_open_lift_page.bind(LiftPage.UPGRADES))
+	_lift_hub_controls.add_child(to_upgrades)
+	var back := Button.new()
+	back.text = "< Back to garage"
+	back.focus_mode = Control.FOCUS_NONE
+	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN  # hug content, don't stretch
+	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
+	_lift_hub_controls.add_child(back)
+
 
 # Build the TUNE menu: one slider row per tuning axis. Static structure; gating /
 # values are refreshed per car by _refresh_lift_ui.
 func _build_lift_tune_box(parent: VBoxContainer) -> void:
 	_lift_tune_box = VBoxContainer.new()
 	_lift_tune_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_lift_tune_box.add_theme_constant_override("separation", 12)
+	_lift_tune_box.add_theme_constant_override("separation", 8)
 	parent.add_child(_lift_tune_box)
 
 	var hint := Label.new()
-	hint.text = "Free, reversible handling tweaks. Slide left/right and they save instantly."
+	hint.text = "Free & reversible."
 	hint.add_theme_font_size_override("font_size", 12)
 	hint.modulate = Color(1, 1, 1, 0.8)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1279,12 +1307,13 @@ func _build_settings_overlay() -> void:
 	_settings_sub.add_theme_font_size_override("font_size", 16)
 	root.add_child(_settings_sub)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
 	_settings_menu = SettingsMenu.new()
 	_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_settings_menu.page_changed.connect(_on_settings_page_changed)
 	scroll.add_child(_settings_menu)
 
 	_settings_action_button = Button.new()
@@ -1296,18 +1325,32 @@ func _build_settings_overlay() -> void:
 
 # Open the Settings page. `gate` = the mandatory pre-rally pick (bottom button starts
 # the rally); otherwise it's the title-screen settings (bottom button goes back).
+# Always reset to the category list so each open starts at the top level.
 func _open_settings(gate: bool) -> void:
 	_settings_gate = gate
 	_settings_sub.text = ("Choose your touch controls to start:" if gate
 		else "Camera & controls:")
-	_settings_action_button.text = "Start >" if gate else "< Back"
+	_settings_menu.show_list()  # emits page_changed → sets the bottom button label
 	_go_to(View.SETTINGS)
 
 
-# The settings bottom button: in the pre-rally gate, make sure a scheme is saved
-# (the highlighted default if the player didn't tap one) so we never ask again, then
-# start the rally. From the title screen it just returns to the exterior.
+# Keep the single bottom button in step with the page: on a sub-page it backs out
+# to the list ("< Back"); on the list it is the host's own action — "Start >" in the
+# pre-rally gate, "< Back" (to the exterior) on the title screen.
+func _on_settings_page_changed(is_root: bool) -> void:
+	if _settings_action_button == null:
+		return  # SettingsMenu._ready fires its first page_changed before the button exists
+	_settings_action_button.text = "Start >" if (is_root and _settings_gate) else "< Back"
+
+
+# The settings bottom button. On a sub-page it returns to the category list. On the
+# list, in the pre-rally gate, make sure a scheme is saved (the highlighted default
+# if the player didn't tap one) so we never ask again, then start the rally; from the
+# title screen it just returns to the exterior.
 func _on_settings_action() -> void:
+	if not _settings_menu.at_root():
+		_settings_menu.show_list()
+		return
 	if _settings_gate:
 		if Save.get_setting(MobileControls.SETTING_KEY, null) == null:
 			Save.set_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
@@ -1456,11 +1499,11 @@ func _hide_detail() -> void:
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
-# Enter the tuning bay: raise the selected car on the lift, frame it to one side,
-# and show the tuning menu on the other. Defaults to the TUNE menu.
+# Enter the tuning bay: raise the selected car on the lift, frame it to one side, and
+# show the HUB (car description + change-car selector + Tuning/Upgrades buttons).
 func _enter_lift() -> void:
 	_ensure_lift_car()
-	_lift_tab = LiftTab.TUNE
+	_lift_page = LiftPage.HUB
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
 	_raise_lift_car()  # slowly raise the car on the lift as we arrive
@@ -1504,12 +1547,24 @@ func _apply_lift_height(animate: bool) -> void:
 	_lift_tween.tween_property(_lift_car, "global_position:y", target, Config.data.hq_lift_raise_time)
 
 
+# Back out of the bay one level: a sub-menu page returns to the hub; the hub returns
+# to the garage. (The hub's own Back-to-garage button goes straight to the garage.)
 func _lift_back() -> void:
-	_go_to(View.GARAGE)
+	if _lift_page == LiftPage.HUB:
+		_go_to(View.GARAGE)
+	else:
+		_lift_hub()
 
 
-func _set_lift_tab(tab: int) -> void:
-	_lift_tab = tab
+# Open a sub-menu (TUNE / UPGRADES) as its own full-height page.
+func _open_lift_page(page: int) -> void:
+	_lift_page = page
+	_refresh_lift_ui()
+
+
+# Return from a sub-menu to the bay hub.
+func _lift_hub() -> void:
+	_lift_page = LiftPage.HUB
 	_refresh_lift_ui()
 
 
@@ -1588,10 +1643,12 @@ func _refresh_lift_ui() -> void:
 	var id := int(_lift_owned.get("instance_id", -1))
 	_lift_car_label.text = "%s  #%d\n%s" % [
 		entry.get("name", "?"), id, _car_stats_text(_lift_owned, entry)]
-	_lift_tune_box.visible = _lift_tab == LiftTab.TUNE
-	_lift_upgrades_box.visible = _lift_tab == LiftTab.UPGRADES
-	_lift_tab_tune.disabled = _lift_tab == LiftTab.TUNE
-	_lift_tab_upgrades.disabled = _lift_tab == LiftTab.UPGRADES
+	# Show the hub (car selector + menu buttons) or a sub-menu page from _lift_page.
+	_lift_hub_controls.visible = _lift_page == LiftPage.HUB
+	_lift_menu_bg.visible = _lift_page != LiftPage.HUB
+	_lift_tune_box.visible = _lift_page == LiftPage.TUNE
+	_lift_upgrades_box.visible = _lift_page == LiftPage.UPGRADES
+	_lift_menu_title.text = "TUNE" if _lift_page == LiftPage.TUNE else "UPGRADES"
 	_refresh_sliders()
 	_rebuild_upgrades_box()
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
@@ -1646,7 +1703,7 @@ func _rebuild_upgrades_box() -> void:
 	var inventory: Dictionary = Save.profile.get("inventory", {})
 
 	var heading := Label.new()
-	heading.text = "Fit parts onto this car. Fitting consumes the part for good — it can't be removed or recovered."
+	heading.text = "Fitting a part consumes it for good — it can't be removed."
 	heading.add_theme_font_size_override("font_size", 12)
 	heading.modulate = Color(1, 1, 1, 0.8)
 	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2174,14 +2231,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.EXTERIOR)
 		View.LIFT:
-			if event.is_action_pressed("menu_left"):
-				_cycle_lift_car(-1)
-			elif event.is_action_pressed("menu_right"):
-				_cycle_lift_car(1)
-			elif event.is_action_pressed("menu_select"):
-				_set_lift_tab(LiftTab.UPGRADES if _lift_tab == LiftTab.TUNE else LiftTab.TUNE)
+			if _lift_page == LiftPage.HUB:
+				# Hub: cycle the car, open Tuning (the primary menu), or back to garage.
+				if event.is_action_pressed("menu_left"):
+					_cycle_lift_car(-1)
+				elif event.is_action_pressed("menu_right"):
+					_cycle_lift_car(1)
+				elif event.is_action_pressed("menu_select"):
+					_open_lift_page(LiftPage.TUNE)
+				elif event.is_action_pressed("menu_back"):
+					_go_to(View.GARAGE)
 			elif event.is_action_pressed("menu_back"):
-				_lift_back()
+				_lift_hub()  # a sub-menu page backs out to the hub
 		View.TABLE:
 			if _detail_open:
 				if event.is_action_pressed("menu_select"):
