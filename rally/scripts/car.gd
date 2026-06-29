@@ -387,6 +387,17 @@ func apply_car(index: int) -> String:
 	cfg.engine_type = spec["engine_type"]
 	cfg.peak_torque = spec["peak_torque"]
 	cfg.redline_rpm = spec["redline"]
+	# Per-car gearbox: real transmission ratios + final drive overlay the shared
+	# defaults. Set AFTER the engine preset (which only touches torque/redline/
+	# firing) and BEFORE the drivetrain rebuild below, so EngineSim recomputes its
+	# shift speeds for the new gearing. Build a typed Array[float] (the dict value
+	# is an untyped literal), mirroring GameConfig._apply_engine_preset.
+	if spec.has("gear_ratios"):
+		var ratios: Array[float] = []
+		for gr in spec["gear_ratios"]:
+			ratios.append(float(gr))
+		cfg.gear_ratios = ratios
+	cfg.final_drive = spec.get("final_drive", cfg.final_drive)
 	cfg.wheel_friction_slip_front = spec["grip_front"]
 	cfg.wheel_friction_slip_rear = spec["grip_rear"]
 	cfg.shift_time = spec["shift_time"]

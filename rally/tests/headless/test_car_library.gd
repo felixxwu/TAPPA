@@ -45,6 +45,19 @@ func test_each_spec_is_sane() -> void:
 		# Redline must sit above where the engine preset peaks torque, or the
 		# torque curve inverts. Presets peak by ~6000 rpm, so 6500 is a safe floor.
 		assert_gt(spec["redline"], 6500.0, who + " has a sane redline")
+		# Per-car gearbox (features/drivetrain-and-tires.md): real transmission ratios
+		# + final drive. Ratios must be a non-empty, strictly DESCENDING set of
+		# positive numbers (1st is the shortest), and the final drive positive.
+		assert_true(spec.has("gear_ratios"), who + " has gear_ratios")
+		assert_true(spec.has("final_drive"), who + " has final_drive")
+		var ratios: Array = spec["gear_ratios"]
+		assert_gt(ratios.size(), 0, who + " has at least one forward gear")
+		assert_gt(spec["final_drive"], 0.0, who + " final_drive positive")
+		for g in ratios.size():
+			assert_gt(ratios[g], 0.0, who + " gear %d ratio positive" % (g + 1))
+			if g > 0:
+				assert_lt(ratios[g], ratios[g - 1],
+					who + " gear %d shorter than gear %d" % [g + 1, g])
 		assert_between(spec["grip_front"], 0.1, 2.0, who + " front grip in a sane range")
 		assert_between(spec["grip_rear"], 0.1, 2.0, who + " rear grip in a sane range")
 		assert_between(spec["engine_type"], 0, GameConfig.ENGINE_PRESETS.size() - 1,
@@ -129,6 +142,17 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	# Power overrides the engine preset's torque; grip overlays tyre friction.
 	assert_almost_eq(Config.data.peak_torque, float(spec["peak_torque"]), 0.001, "power (peak_torque) overlaid")
 	assert_almost_eq(Config.data.redline_rpm, float(spec["redline"]), 0.001, "redline overlaid")
+	# Per-car gearbox overlaid onto the live config (the Mustang's 6-speed MT82).
+	assert_eq(Config.data.gear_ratios.size(), (spec["gear_ratios"] as Array).size(),
+		"gear count overlaid")
+	for g in Config.data.gear_ratios.size():
+		assert_almost_eq(Config.data.gear_ratios[g], float(spec["gear_ratios"][g]), 0.001,
+			"gear %d ratio overlaid" % (g + 1))
+	assert_almost_eq(Config.data.final_drive, float(spec["final_drive"]), 0.001, "final_drive overlaid")
+	# The drivetrain's engine recomputed its shift speeds for the new gearing, so it
+	# has one upshift slot per gear (the top gear's is INF).
+	assert_eq(_car.drivetrain.engine.shift_up_speeds.size(), (spec["gear_ratios"] as Array).size(),
+		"shift speeds recomputed for the new gear count")
 	assert_almost_eq(Config.data.wheel_friction_slip_front, float(spec["grip_front"]), 0.001, "front grip overlaid")
 	assert_almost_eq(Config.data.wheel_friction_slip_rear, float(spec["grip_rear"]), 0.001, "rear grip overlaid")
 	assert_eq(_car.drivetrain.drive_mode, spec["drive_mode"] as int, "drive layout overlaid")
@@ -155,6 +179,24 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	_car.apply_car(_index_of("Lexus LFA"))
 	await get_tree().physics_frame
 	assert_almost_eq(Config.data.engine_low_octave_mix, 0.5, 0.001, "LFA applies a 50/50 low octave")
+
+
+func test_per_car_gearboxes_are_real_and_varied() -> void:
+	# The whole point of per-car gearing: the roster spans different gear COUNTS
+	# (6-speed manual MX-5 .. 8-speed PDK 911), grounded in each car's real box.
+	var counts := {}
+	for spec in CarLibrary.CARS:
+		counts[(spec["gear_ratios"] as Array).size()] = true
+	assert_gte(counts.size(), 3, "a range of gear counts across the roster")
+	# Spot-check the two extremes against their real transmissions.
+	assert_eq((CarLibrary.by_id("mx5")["gear_ratios"] as Array).size(), 6, "MX-5 is a 6-speed")
+	assert_eq((CarLibrary.by_id("porsche911")["gear_ratios"] as Array).size(), 8, "911 is an 8-speed")
+	# The MX-5's ratios are its real ND values; its final drive is the one
+	# game-tuned exception (see car_library.gd) so it can pull against the sim's
+	# vehicle rolling resistance — assert the real 1st/top ratios survived.
+	var mx5_ratios: Array = CarLibrary.by_id("mx5")["gear_ratios"]
+	assert_almost_eq(float(mx5_ratios[0]), 5.087, 0.001, "MX-5 real 1st gear")
+	assert_almost_eq(float(mx5_ratios[5]), 1.000, 0.001, "MX-5 real direct-drive 6th")
 
 
 func test_cycle_car_advances_and_wraps() -> void:
