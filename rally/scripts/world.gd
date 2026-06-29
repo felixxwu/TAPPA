@@ -565,6 +565,11 @@ func cycle_car() -> void:
 	var fresh: Node = car.respawn(car, car.next_car_index(), _car_spawn)
 	mgr.retarget(fresh)
 	($HUD as CanvasLayer).car = fresh
+	# Re-point the speed-lines overlay at the fresh car too (it reads the car's
+	# velocity each frame), so it doesn't keep the freed outgoing node.
+	var lines := get_node_or_null("SpeedLines")
+	if lines != null:
+		lines.car = fresh
 	# Re-point progress tracking at the fresh car (it respawns at the start, so
 	# progress resets to the spawn offset too).
 	if _track_progress != null:

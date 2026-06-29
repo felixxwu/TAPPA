@@ -96,6 +96,18 @@ func test_world_values_applied() -> void:
 	assert_eq(spoke_mat.get_shader_parameter("albedo_color"), cfg.wheel_spoke_color, "spoke color from config")
 
 
+func test_speed_lines_config_defaults_present() -> void:
+	var cfg := GameConfig.new()
+	assert_true(cfg.speed_lines_enabled, "speed lines on by default")
+	assert_eq(cfg.speed_lines_color, Color(0.0, 0.0, 0.0, 1.0), "speed lines are black by default")
+	# The effect must ramp over a real speed band (start below full).
+	assert_lt(cfg.speed_lines_start_kmh, cfg.speed_lines_full_kmh,
+		"speed lines ramp from start_kmh up to full_kmh")
+	assert_between(cfg.speed_lines_max_intensity, 0.0, 1.0, "max intensity is an alpha fraction")
+	assert_lt(cfg.speed_lines_inner_radius, cfg.speed_lines_outer_radius,
+		"inner radius (clear centre) sits inside the outer (full-strength) radius")
+
+
 func test_track_config_defaults_present() -> void:
 	var cfg := GameConfig.new()
 	assert_almost_eq(cfg.track_width, 6.0, 0.001, "default track width is 6 m")
