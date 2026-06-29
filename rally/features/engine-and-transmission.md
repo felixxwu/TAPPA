@@ -54,7 +54,7 @@ friction = engine_friction_base + engine_friction_slope × rpm / 1000
 crank    = throttle × peak_torque × global_torque_scale × _torque_fraction(rpm) − friction
 ```
 
-`global_torque_scale` (shipped at **1.0**) is a **hidden** global de-rate on the
+`global_torque_scale` (shipped at **0.5**) is a **hidden** global de-rate on the
 drive torque every car makes. It scales acceleration for the whole field at once
 without changing the published `peak_torque`, so the stats panel and
 `power_to_weight` still report the full, pre-scaling figure — it's a balance knob
