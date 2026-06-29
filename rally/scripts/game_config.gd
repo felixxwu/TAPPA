@@ -716,6 +716,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## LOD/visibility-culled) but without collision; everything else about their
 ## scatter/render reuses the tree_* params.
 @export_range(0.1, 5.0) var bush_height_m := 0.6
+## Albedo tint multiplied into the bush mesh (on top of the tone-matched foliage
+## texture and the per-instance baked terrain light). Lifted a touch above the
+## model's authored green so the ground cover reads a bit more against the grass.
+@export var bush_tint := Color(0.95, 1.0, 0.7)
 
 
 @export_group("Roadside Signs")

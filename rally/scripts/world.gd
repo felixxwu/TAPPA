@@ -238,7 +238,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		cfg.track_seed + BUSH_SEED_OFFSET)
 	var bush_field := TreeMeshField.new()
 	add_child(bush_field)
-	bush_field.build(bushes, $Floor as TerrainManager, _bush_mesh(),
+	bush_field.build(bushes, $Floor as TerrainManager, _bush_mesh(cfg),
 		cfg.bush_height_m, 0.0, 0.0,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m,
 		false, true)
@@ -332,7 +332,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 # so the per-instance baked terrain light TreeMeshField writes into the MultiMesh
 # COLOR multiplies the albedo (matching the ground tint everywhere, as the old
 # foliage shader did). Duplicated so the cached scene resource is not mutated.
-func _bush_mesh() -> Mesh:
+func _bush_mesh(cfg: GameConfig) -> Mesh:
 	var inst := GROUNDCOVER_SCENE.instantiate()
 	var src := inst.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
 	var mesh: Mesh = src.mesh.duplicate()
@@ -341,6 +341,9 @@ func _bush_mesh() -> Mesh:
 	var mat: StandardMaterial3D = base.duplicate() if base is StandardMaterial3D else StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.vertex_color_use_as_albedo = true
+	# Lifted tint so the tone-matched ground cover reads a bit more against the grass.
+	mat.albedo_color = cfg.bush_tint
+	# Nearest filter (keep mipmaps) for the flat PS1 look, like the rest of the world.
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mesh.surface_set_material(0, mat)
 	return mesh

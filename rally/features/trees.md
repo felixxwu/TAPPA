@@ -137,6 +137,8 @@ jitter), bin size and render distance/fade.
 imported (tone-matched) foliage texture, and makes the `StandardMaterial3D`
 **unshaded** (the flat PS1 look the rest of the world uses) with
 `vertex_color_use_as_albedo` on so the baked-light instance colour multiplies in.
+Its `albedo_color` is set to `bush_tint` (lifted a touch above the model's authored
+green so the ground cover reads a bit more against the grass).
 `world.gd` builds the tree field and the bush field back to back.
 
 ## Configuration
@@ -149,7 +151,8 @@ imported (tone-matched) foliage texture, and makes the `StandardMaterial3D`
 size, default 25 m — smaller = finer LOD/cull granularity but more draw calls),
 `tree_collision_radius_m` (box half-extent in X/Z), `tree_collision_height_m`
 (box height), `tree_render_distance_m` (cull distance), `tree_render_fade_m`
-(dissolve band), `bush_height_m` (height the ground-cover bush mesh is scaled to).
+(dissolve band), `bush_height_m` (height the ground-cover bush mesh is scaled to),
+`bush_tint` (albedo tint lifting the bush colour a touch against the grass).
 `GameConfig.tree_params()` packs the scalar scatter knobs for
 `TreeScatter.scatter`; the collision knobs are passed straight to
 `TreeMeshField.build`.
