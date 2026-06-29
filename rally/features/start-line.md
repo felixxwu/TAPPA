@@ -11,17 +11,17 @@ once the world is built and a [`RallySession`](rally-session.md) is active, whil
 car is held locked. Three phases, driven in `_process`:
 
 1. **REVEAL (orbit)** — **design-system** (`UITheme`) black house panels show the
-   **TIMES TO BEAT**: the **top three rivals** for this stage, fastest first, each as
+   times to beat: the **top three rivals** for this stage, fastest first, each as
    `P{n}  Driver — Car — m:ss.cc` (`RallySession.current_event_leaders(3)`; the leader
    is the gold **time to beat**, the chasers are dimmed, the car is dropped when
    unknown, and a single `—` stands in when no rival has a time yet). The panels follow
    the house rules (pure-black, uppercase, one font size) and **hug the top and bottom
    edges** with an expanding gap between — so the opaque panels never cover the
-   orbiting car, which shows through the **clear centre band**. The top card carries the
-   times; the bottom card carries the `Rally — Event N of 3` subtitle, the **Start**
-   button and the launch hint. Behind it an **orbit camera** circles the car, which is
-   queued between a **leader** car ahead and a **trailing** car behind. The driving HUD
-   + mobile controls are hidden. Launch with the button, `menu_select` (Enter / gamepad
+   orbiting car, which shows through the **clear centre band**. The top card is headed
+   by the `Rally — Event N of 3` line and carries the times; the bottom card holds just
+   the **Start** button. Behind it an **orbit camera** circles the car, which is queued
+   between a **leader** car ahead and a **trailing** car behind. The driving HUD +
+   mobile controls are hidden. Launch with the button, `menu_select` (Enter / gamepad
    A), or a tap.
 2. **DRIVE-OFF (launch)** — a **staggered rolling start**: the leader (sitting **on the
    line**) pulls away first, then one `start_queue_stagger_seconds` later the **player
