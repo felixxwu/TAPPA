@@ -99,7 +99,7 @@ func _build_menu_panel() -> Control:
 
 	# PAUSED on a solid black title plate (the house style), centred over the menu.
 	var title_plate := UITheme.panel(0.9, 14)
-	var title := UITheme.title("Paused")
+	var title := UITheme.title("PAUSED")
 	title.custom_minimum_size = Vector2(UITheme.BUTTON_MIN.x, 0)
 	title_plate.add_child(title)
 	col.add_child(title_plate)
@@ -146,7 +146,7 @@ func _build_settings_panel() -> Control:
 
 func _make_menu_button(text: String) -> Button:
 	var button := Button.new()
-	button.text = UITheme.caps(text)
+	button.text = text
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(220, 44)
 	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

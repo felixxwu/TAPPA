@@ -6,9 +6,10 @@ extends RefCounted
 #
 # The look is lifted from the previous web build of this game: a retro arcade /
 # terminal aesthetic — pure-black, sharp-cornered panels; a monospace pixel font
-# (VT323) in mostly UPPERCASE; crisp white text with a hard drop shadow; and a
-# tight accent palette (green = active/positive, gold = money/reward, red =
-# danger/timer). No rounded corners, no gradients, no blur.
+# (VT323); crisp white text with a hard drop shadow; and a tight accent palette
+# (green = active/positive, gold = money/reward, red = danger/timer). No rounded
+# corners, no gradients, no blur. This is a STYLING layer only — it never changes
+# what a screen says or where its buttons are; text is rendered verbatim.
 #
 # How it's applied:
 #   * GLOBAL THEME — `theme/ui_theme.tres` (built by tools/build_ui_theme.gd from
@@ -85,8 +86,9 @@ static func theme() -> Theme:
 
 # --- Text helpers ------------------------------------------------------------
 
-# House style is UPPERCASE; route menu/title strings through this so the look
-# stays consistent without sprinkling .to_upper() everywhere.
+# Optional uppercase helper for when a caller WANTS the all-caps arcade look on a
+# specific string. Not applied automatically — labels/buttons keep their text
+# verbatim so a screen's wording stays exactly as authored.
 static func caps(text: String) -> String:
 	return text.to_upper()
 
@@ -101,9 +103,10 @@ static func label(text: String, size: int = SIZE_BODY, role: String = "ink") -> 
 	return l
 
 
-# A screen title (big, uppercase, white).
+# A screen title (big, white, centred). Text is used verbatim — pass the wording
+# you want (e.g. "PAUSED").
 static func title(text: String) -> Label:
-	var l := label(caps(text), SIZE_TITLE)
+	var l := label(text, SIZE_TITLE)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return l
 
@@ -145,11 +148,12 @@ static func panel(alpha: float = 0.9, pad: int = 18) -> PanelContainer:
 
 # --- Buttons & selection -----------------------------------------------------
 
-# A standard menu button: uppercase label, house min-size, no keyboard focus ring
-# (menus here are tap / explicit-nav driven). Styling comes from the global theme.
+# A standard menu button: house min-size, no keyboard focus ring (menus here are
+# tap / explicit-nav driven). Text is used verbatim; styling comes from the global
+# theme.
 static func button(text: String) -> Button:
 	var b := Button.new()
-	b.text = caps(text)
+	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = BUTTON_MIN
 	return b

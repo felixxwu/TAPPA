@@ -40,9 +40,9 @@ func test_caps_uppercases() -> void:
 	assert_eq(UITheme.caps("Continue"), "CONTINUE")
 
 
-func test_button_helper_is_uppercase_and_unfocusable() -> void:
+func test_button_helper_keeps_text_verbatim_and_is_unfocusable() -> void:
 	var b := UITheme.button("Settings")
-	assert_eq(b.text, "SETTINGS", "button text is uppercased")
+	assert_eq(b.text, "Settings", "button text is used verbatim (no forced casing)")
 	assert_eq(b.focus_mode, Control.FOCUS_NONE, "menu buttons take no focus ring")
 	b.free()
 

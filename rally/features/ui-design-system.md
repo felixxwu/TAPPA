@@ -11,9 +11,11 @@ game: a retro arcade / terminal aesthetic.
 
 ## The look
 
-- **Monospace pixel font** (VT323) in mostly **UPPERCASE** — stat read-outs and
-  money columns line up; the whole UI gets an arcade-CRT feel. Imported with
-  antialiasing/hinting **off** so the pixels stay crisp.
+- **Monospace pixel font** (VT323) — stat read-outs and money columns line up;
+  the whole UI gets an arcade-CRT feel. Imported with antialiasing/hinting **off**
+  so the pixels stay crisp. Text is shown **verbatim** (the helpers never force
+  casing); `UITheme.caps()` is available if a specific string wants the all-caps
+  arcade look.
 - **Pure-black, sharp-cornered panels** — no rounded corners, no gradients, no
   blur. Over the 3D world they sit ~90% opaque so text reads cleanly.
 - **Crisp white text with a hard drop shadow** (the chunky terminal look).
@@ -59,7 +61,8 @@ Specific design-system touches:
   panels; the wrecked-car warning is red.
 - **Settings** (`settings_menu.gd`) — selected camera/scheme rows use
   `UITheme.mark_selected` (green underline) instead of the old blue tint.
-- **Pause** (`pause_menu.gd`) — `PAUSED` on a black title plate; uppercase buttons.
+- **Pause** (`pause_menu.gd`) — `PAUSED` on a black title plate (button wording
+  unchanged).
 - **Podium** (`podium.gd`) — the reward card is a black panel with a green accent
   border; the player's leaderboard row is gold.
 - **Standings** (`standings.gd`) — black background; the player's row is gold.
