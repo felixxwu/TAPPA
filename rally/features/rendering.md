@@ -11,13 +11,14 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
 - Stretch mode: viewport, `keep_height` aspect.
 - Renderer: **GL Compatibility** (D3D12 driver on Windows).
 - Texture filtering: nearest-neighbor globally. The 2D canvas default is
-  `default_texture_filter=0` (nearest); every shader sampler uses
-  `filter_nearest`/`filter_nearest_mipmap`; and every 3D `StandardMaterial3D`
-  that carries a texture sets `texture_filter = TEXTURE_FILTER_NEAREST_WITH_MIPMAPS`
-  (nearest magnification, mipmaps kept for distance — see the mipmap note below).
-  This includes GLB-baked materials (e.g. the tree canopy), whose importer-default
-  linear filter is overridden to nearest in `world.gd._tree_mesh()`. The sole
-  exception is the panorama sky, a smooth gradient where filtering is intended.
+  `default_texture_filter=0` (nearest); every shader sampler uses `filter_nearest`;
+  and every 3D `StandardMaterial3D` that carries a texture sets
+  `texture_filter = TEXTURE_FILTER_NEAREST_WITH_MIPMAPS` (nearest magnification,
+  mipmaps kept for distance — see the mipmap note below). This includes
+  GLB-baked materials whose importer-default linear filter is overridden to
+  nearest: the tree canopy in `world.gd._tree_mesh()` and the ground-cover bush
+  in `world.gd._bush_mesh()`. The sole exception is the panorama sky, a smooth
+  gradient where filtering is intended.
 
 ## Shaders (`shaders/`)
 
