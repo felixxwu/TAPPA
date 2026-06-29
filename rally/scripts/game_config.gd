@@ -518,8 +518,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 300.0) var speed_lines_start_kmh := 60.0
 ## Speed (km/h) at which the streaks reach full strength (≈ the car's top speed).
 @export_range(0.0, 400.0) var speed_lines_full_kmh := 78.0
-## Cap on overall strength (alpha) at and above speed_lines_full_kmh.
-@export_range(0.0, 1.0) var speed_lines_max_intensity := 0.8
+## Cap on overall strength (alpha) at and above speed_lines_full_kmh. Kept well
+## below 1.0 so the streaks stay translucent and never fully obscure the screen.
+@export_range(0.0, 1.0) var speed_lines_max_intensity := 0.2
 ## How many angular streaks ring the screen; higher = more, finer lines.
 @export_range(8.0, 256.0) var speed_lines_density := 28.0
 ## Innermost normalised screen radius a streak can reach — higher keeps more of
