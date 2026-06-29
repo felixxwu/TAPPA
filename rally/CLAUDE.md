@@ -40,16 +40,24 @@
 - When adding or changing functionality, add or update tests in the same piece
   of work: gameplay/logic tests in `tests/headless/`, scene/structure checks in
   `tests/headless/test_smoke.gd`.
-- After any change, run `./run_tests.sh` and make sure ALL tests pass before
-  declaring the work complete.
-- ALWAYS run `./run_tests.sh` in the background (`run_in_background: true`) and
-  keep working / wait for the completion notification rather than blocking on
-  it. Tests take a while, so never run them in the foreground.
-- Be mindful that the FULL test suite takes a while to run. During a long task,
-  avoid running the entire suite mid-stream — where you need feedback, run only
-  the relevant subset (e.g. the specific test file/script affected by your
-  change). Save the full `./run_tests.sh` run for the END of a task, as the final
-  verification before declaring the work complete.
+- After any change, run the tests that are relevant to the work before
+  declaring it complete — you do NOT need to run the entire suite after every
+  prompt. Decide which tests cover what you touched and run just those (e.g.
+  `./run_tests.sh --fast <name>` for the specific file(s)/script(s) affected).
+- When choosing which tests to run, be GENEROUS about the blast radius: think
+  about everything the change could plausibly affect — direct callers, shared
+  config/resources, physics or scene setup that depends on what you touched —
+  and include those tests too, not just the one file you edited. When in doubt,
+  pull a test in rather than leaving it out.
+- Reserve the full `./run_tests.sh` run for when it actually makes sense: a
+  change with wide or hard-to-scope blast radius (shared physics/config, core
+  scene setup, cross-cutting refactors), when you're genuinely unsure which
+  tests cover the work, or as a final pre-handoff check on a large task. For
+  small, well-contained changes a targeted subset is enough — don't run the
+  whole suite by reflex.
+- ALWAYS run tests in the background (`run_in_background: true`) and keep
+  working / wait for the completion notification rather than blocking on it.
+  Tests take a while, so never run them in the foreground.
 - **Test runtime budget (~5 minutes).** The full suite should stay under about 5
   minutes. If a full run takes longer than that, spend some effort bringing the
   runtime back down before declaring the work complete — don't just accept the
@@ -62,8 +70,8 @@
   physics tests, and bare-logic tests (no scene) where possible. Reserve full
   generation for the few files that genuinely assert on it. See
   `features/testing.md` for the cost model and the available levers.
-- For the FINAL full-suite run (and any run you expect to need failure triage),
-  prefer delegating it to a sub-agent (launched in the BACKGROUND, so the main
+- When you do run the full suite (and for any run you expect to need failure
+  triage), prefer delegating it to a sub-agent (launched in the BACKGROUND, so the main
   agent stays unblocked and is notified on completion) rather than running it
   inline. The agent runs `./run_tests.sh`, reads the verbose GUT output, and
   returns just a clean verdict (pass / fail + the failing test names and
