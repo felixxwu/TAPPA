@@ -27,8 +27,9 @@ func _ready() -> void:
 		printerr("sign-render: no signs were built")
 		get_tree().quit()
 		return
-	# Let the bodies settle on the road for a moment.
-	for i in range(40):
+	# Let the bodies settle AND the start countdown (a centre-screen 3-2-1 overlay)
+	# finish, so it doesn't sit over the sign in the shot.
+	for i in range(360):
 		await get_tree().process_frame
 
 	# Stop the camera manager forcing the chase/bonnet camera current each frame.
@@ -45,9 +46,9 @@ func _ready() -> void:
 	var fwd := -b.z
 	var cam := Camera3D.new()
 	add_child(cam)
-	cam.global_position = sp + fwd * 5.5 + b.x * 3.0 + Vector3(0.0, 2.2, 0.0)
-	cam.look_at(sp + Vector3(0.0, 0.4, 0.0), Vector3.UP)
-	cam.fov = 55.0
+	cam.global_position = sp + fwd * 1.7 + b.x * 0.25 + Vector3(0.0, 0.55, 0.0)
+	cam.look_at(sp + Vector3(0.0, 0.55, 0.0), Vector3.UP)
+	cam.fov = 46.0
 	cam.current = true
 
 	for i in range(6):
