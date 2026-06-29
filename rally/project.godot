@@ -22,6 +22,7 @@ Config="*res://scripts/config.gd"
 Save="*res://scripts/save_manager.gd"
 InputRemap="*res://scripts/input_remap.gd"
 RallySession="*res://scripts/rally_session.gd"
+DisplayStretch="*res://scripts/display_stretch.gd"
 
 [display]
 
