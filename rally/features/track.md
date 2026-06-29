@@ -20,10 +20,12 @@ terrain surface is a separate, future step.
   (pre-computed) cubic-bezier arc handles — there is no runtime generator.
 - `build_curve(spec)` — the single helper that turns one entry into a `Curve2D`.
 
-The shipped set: the **gradient 1–6** (1 ≈ 85°/~15 m radius sharpest … 6 ≈
-12°/~90 m radius gentlest — both angle and radius grow with the number),
+The shipped set: the **gradient 1–6** (1 ≈ 85°/~18 m radius sharpest … 6 ≈
+12°/~108 m radius gentlest — both angle and radius grow with the number),
 **Square** (sharp ~90°), **Hairpin** (~180°), **Straight** (50 m line), and a
 compound **"Right 4 tightens 2"** demonstrating authored multi-point corners.
+Every turn except the **Hairpin** (and the plain **Straight**) is scaled 1.2×
+larger than its original authored geometry — angles unchanged, radii grown.
 
 ## Catalog scene (`corner_catalog.tscn`)
 
