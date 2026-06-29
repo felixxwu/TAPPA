@@ -711,15 +711,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## cull them past tree_render_distance_m. Smaller = finer LOD/cull granularity
 ## but more draw calls; ~25 m balances both against the ~75 m loaded terrain.
 @export_range(5.0, 100.0) var tree_bin_size_m := 25.0
-## Uniform scale applied to the ground-cover bush mesh (models/vegetation/
-## groundcover_opaque.glb). Bushes reuse the trees' scatter + render-distance
-## params; only this scale and the sink/jitter below are bush-specific.
-@export_range(0.1, 5.0) var bush_scale := 1.3
-## Per-instance random scale variation (± fraction of bush_scale) so the repeated
-## mesh does not read as a tiled pattern.
-@export_range(0.0, 0.9) var bush_scale_jitter := 0.25
-## Distance (m) bushes are sunk into the ground so the patch base meets the terrain.
-@export_range(0.0, 5.0) var bush_sink_m := 0.25
+## Height (m) the ground-cover bush mesh (models/vegetation/groundcover_opaque.glb)
+## is scaled to. Bushes render through the same TreeMeshField as trees (binned,
+## LOD/visibility-culled) but without collision; everything else about their
+## scatter/render reuses the tree_* params.
+@export_range(0.1, 5.0) var bush_height_m := 0.6
 
 
 @export_group("Roadside Signs")
