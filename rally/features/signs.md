@@ -34,9 +34,13 @@ Placement rule — **Turns only:** for each piece whose corner ∈
 sign, and the compound `Right 4 tightens 2` is excluded), a **pair** (both sides) at
 the **corner entry** = `entry_pos + entry_heading * straight` snapped to the curve
 via `get_closest_offset`. The arrow `texture_key` encodes the grade + direction:
-numbered corners use `arrow_<grade>_<dir>` (e.g. `arrow_1_right`, `arrow_2_left`) so
-each board shows its own number; `Square` → `arrow_square_<dir>`, `Hairpin` →
-`arrow_uturn_<dir>` (`flip` → left, else right).
+numbered corners use `arrow_<grade>_<dir>`, `Square` → `arrow_square_<dir>`, `Hairpin`
+→ `arrow_uturn_<dir>`. The board is an A-frame facing the oncoming driver, which
+**mirrors** the arrow's left/right relative to the corner's mathematical handedness,
+so `_arrow_key` picks the **opposite-handed** source art (`dir = "right" if flip else
+"left"`) — a left-hand corner gets the `*_right` art, which reads as a left turn on
+the facing panel. The swap is done at selection time (not by mirroring the texture)
+so the printed grade digit stays correct.
 
 `SignLayout.sector_offsets(centerline, count)` still exposes equal arc-length
 boundary offsets, now decoupled from signs — kept only as the stage timer's hook for
