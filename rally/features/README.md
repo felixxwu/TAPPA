@@ -69,7 +69,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Trees & bushes | `scripts/tree_scatter.gd`, `scripts/billboard_field.gd`, `shaders/billboard.gdshader` |
 | Roadside signs | `scripts/sign_layout.gd` (`SignLayout` planner), `scripts/sign_field.gd` (`SignField` builder) |
 | Finish arch | `scripts/finish_arch.gd` (`FinishArch`), `tools/bake_finish_banners.gd`, `tools/render_model.gd` |
-| Camera | `scripts/chase_camera.gd` |
+| Camera | `scripts/chase_camera.gd`, `scripts/camera_manager.gd` (`CameraManager` — modes, cycle, persistence) |
 | HUD | `scripts/hud.gd` |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
@@ -81,6 +81,8 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
 | Wreck menu | `scripts/wreck_screen.gd` (`WreckScreen` — crash → orbit camera + Return to HQ) |
+| Settings page | `scripts/settings_menu.gd` (`SettingsMenu` — shared camera-angle + mobile-control picker) |
+| Pause menu | `scripts/pause_menu.gd` (`PauseMenu` — top-right freeze button → Resume / Settings) |
 | Game-loop shell | `hq.tscn`/`scripts/hq.gd`, `podium.tscn`/`scripts/podium.gd`, `scripts/world.gd` (session fielding) |
 | Garage model | `garage.tscn`/`scripts/garage.gd`, `tools/render_garage.gd`/`.sh` (multi-angle renders) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |

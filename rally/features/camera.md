@@ -1,10 +1,25 @@
 # Cameras
 
 The game has two camera modes, cycled with the **C key** (`cycle_camera`
-action). A `CameraManager` node (`scripts/camera_manager.gd`) in `main.tscn`
-owns the ordered cycle list `[CHASE, BONNET]` and makes exactly one camera
-`current` at a time. Appending another `Camera3D` + `Mode` entry to its `ORDER`
-list extends the cycle.
+action) or picked directly on the **settings page** (title-screen Settings or the
+in-run pause menu — see [menus.md](menus.md)). A `CameraManager` node
+(`scripts/camera_manager.gd`, `class_name CameraManager`) in `main.tscn` owns the
+ordered cycle list `[CHASE, BONNET]` and makes exactly one camera `current` at a
+time. Appending another `Camera3D` + `Mode` entry to its `ORDER` list extends the
+cycle.
+
+## Persistence & the settings page
+
+The chosen mode is **persisted** in the save profile under
+`CameraManager.SETTING_KEY` (`"camera_mode"`), so whatever the player last used —
+whether by cycling with C or picking it in settings — is restored on the next run
+(`_ready` reads `_saved_index()`; `cycle()`/`set_mode()` write via `_persist()`).
+`CameraManager.MODES` is the display metadata (name + how-to per mode) the shared
+`SettingsMenu` (`scripts/settings_menu.gd`) renders. `set_mode(mode)` jumps straight
+to a mode (used by the pause-menu settings, which switch the live camera the instant
+you pick it via the `SettingsMenu.camera_changed` signal); `current_mode()` reports
+the active mode. With no `Save` autoload (a bare-logic harness) it falls back to
+chase.
 
 ## Chase camera
 

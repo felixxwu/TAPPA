@@ -59,7 +59,10 @@ small (font 14 for labels, 10 for buttons) — the HUD is rendered at 1/2 scale.
 
 The `VersionLabel` is anchored to the top-right (`anchor_left/right = 1.0`,
 `grow_horizontal = 0`, `horizontal_alignment = 2`) so it sits in that corner
-regardless of viewport width. The track-progress `ProgressLabel` sits below the
+regardless of viewport width. It and the `ElapsedLabel` are inset from the right
+edge (`offset_right = -60`) to leave the **top-right corner clear for the Pause
+button**, which lives on the separate `PauseMenu` CanvasLayer (see
+[menus.md](menus.md)), not the HUD. The track-progress `ProgressLabel` sits below the
 `ModeButton`/`DriveButton`/`CarButton` stack (`offset_top = 92`) so the
 transmission/drive switchers don't obscure it.
 

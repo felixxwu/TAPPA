@@ -118,8 +118,9 @@ var _lift_layer: CanvasLayer
 var _car_layer: CanvasLayer
 var _settings_layer: CanvasLayer
 var _overflow_layer: CanvasLayer
-# Settings page: the per-scheme row buttons, so the selection highlight can refresh.
-var _settings_rows: Array = []  # [{id:int, button:Button}]
+# Settings page: the shared SettingsMenu (camera angle + mobile controls), reused by
+# the in-run pause menu so both pages match.
+var _settings_menu: SettingsMenu
 var _settings_sub: Label             # subtitle (changes wording in the pre-rally gate)
 var _settings_action_button: Button  # bottom button: "< Back" (title) or "Start >" (gate)
 # True when Settings was opened as the mandatory pre-rally control-scheme gate (vs.
@@ -1267,9 +1268,9 @@ func _refresh_overflow_ui(owned: Dictionary, entry: Dictionary, stats: String) -
 
 # --- Settings page -----------------------------------------------------------
 
-# The title-screen Settings overlay: pick the mobile control scheme. Each option is
-# a tappable row with a vector diagram of its layout (ControlSchemeDiagram), name
-# and how-to; the chosen one is highlighted and persisted via Save.set_setting.
+# The title-screen Settings overlay: the shared SettingsMenu (camera angle + mobile
+# control scheme). Choices are highlighted and persisted via Save.set_setting; the
+# same component backs the in-run pause menu, so the two pages stay identical.
 func _build_settings_overlay() -> void:
 	var made := _make_overlay()
 	_settings_layer = made[0]
@@ -1281,7 +1282,7 @@ func _build_settings_overlay() -> void:
 	root.add_child(title)
 
 	_settings_sub = Label.new()
-	_settings_sub.text = "Mobile controls — pick a layout:"
+	_settings_sub.text = "Camera & controls:"
 	_settings_sub.add_theme_font_size_override("font_size", 16)
 	root.add_child(_settings_sub)
 
@@ -1289,14 +1290,9 @@ func _build_settings_overlay() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 8)
-	scroll.add_child(list)
-
-	_settings_rows.clear()
-	for entry in MobileControls.SCHEMES:
-		list.add_child(_make_scheme_row(int(entry["id"]), entry))
+	_settings_menu = SettingsMenu.new()
+	_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_settings_menu)
 
 	_settings_action_button = Button.new()
 	_settings_action_button.text = "< Back"
@@ -1304,15 +1300,13 @@ func _build_settings_overlay() -> void:
 	_settings_action_button.pressed.connect(_on_settings_action)
 	root.add_child(_settings_action_button)
 
-	_refresh_settings_selection()
-
 
 # Open the Settings page. `gate` = the mandatory pre-rally pick (bottom button starts
 # the rally); otherwise it's the title-screen settings (bottom button goes back).
 func _open_settings(gate: bool) -> void:
 	_settings_gate = gate
 	_settings_sub.text = ("Choose your touch controls to start:" if gate
-		else "Mobile controls — pick a layout:")
+		else "Camera & controls:")
 	_settings_action_button.text = "Start >" if gate else "< Back"
 	_go_to(View.SETTINGS)
 
@@ -1328,76 +1322,6 @@ func _on_settings_action() -> void:
 		_begin_rally_start()
 	else:
 		_go_to(View.EXTERIOR)
-
-
-# One selectable scheme row: a full-width flat Button carrying a diagram + text, so
-# the whole row is the hit target (the inner controls are mouse-transparent).
-func _make_scheme_row(id: int, entry: Dictionary) -> Button:
-	var button := Button.new()
-	button.focus_mode = Control.FOCUS_NONE
-	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.custom_minimum_size = Vector2(0, 92)
-	button.pressed.connect(_select_scheme.bind(id))
-
-	var row := HBoxContainer.new()
-	row.set_anchors_preset(Control.PRESET_FULL_RECT)
-	row.offset_left = 10
-	row.offset_top = 8
-	row.offset_right = -10
-	row.offset_bottom = -8
-	row.add_theme_constant_override("separation", 14)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	button.add_child(row)
-
-	var diagram := ControlSchemeDiagram.new()
-	diagram.scheme = id
-	diagram.custom_minimum_size = Vector2(132, 76)
-	row.add_child(diagram)
-
-	var text := VBoxContainer.new()
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(text)
-	var name_label := Label.new()
-	name_label.text = String(entry["name"])
-	name_label.add_theme_font_size_override("font_size", 18)
-	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	text.add_child(name_label)
-	var desc_label := Label.new()
-	desc_label.text = String(entry["desc"])
-	desc_label.add_theme_font_size_override("font_size", 13)
-	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	text.add_child(desc_label)
-
-	_settings_rows.append({"id": id, "button": button})
-	return button
-
-
-# Persist the chosen scheme and refresh the highlight. The live MobileControls reads
-# this on the next run (it's loaded fresh with main.tscn), so no scene is poked here.
-func _select_scheme(id: int) -> void:
-	Save.set_setting(MobileControls.SETTING_KEY, id)
-	_refresh_settings_selection()
-
-
-# Highlight the persisted scheme's row (a tinted, bordered box) and flatten the rest.
-func _refresh_settings_selection() -> void:
-	var current := int(Save.get_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME))
-	for entry in _settings_rows:
-		var button: Button = entry["button"]
-		var selected: bool = int(entry["id"]) == current
-		var box := StyleBoxFlat.new()
-		box.bg_color = Color(0.20, 0.34, 0.52, 0.85) if selected else Color(0.12, 0.14, 0.18, 0.6)
-		for corner in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-			box.set("corner_radius_" + corner, 6)
-		if selected:
-			for side in ["left", "top", "right", "bottom"]:
-				box.set("border_width_" + side, 2)
-			box.border_color = Color(0.55, 0.78, 1.0, 0.95)
-		for state in ["normal", "hover", "pressed", "focus"]:
-			button.add_theme_stylebox_override(state, box)
 
 
 # --- Confirmation dialog -----------------------------------------------------

@@ -65,15 +65,25 @@ parked in the car park here (`_build_title_lineup`, rebuilt on entering EXTERIOR
 the title shows off every car. Start (or `menu_select`) flies the camera into the
 garage; Settings opens the SETTINGS overlay.
 
-**SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose) for
-picking the **mobile control scheme**. Each of the six schemes
-([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
-**diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
-its name and how-to; the saved choice is highlighted and persisted via
-`Save.set_setting`. Also shown as a **pre-rally gate**: on mobile, if no scheme has
-been chosen yet, Start opens this page (`_open_settings(true)`) instead of launching
-— the bottom button reads **Start >** and confirms the pick (the highlighted default
-if untouched), saving it so the gate never reappears, then begins the rally.
+**SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
+hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
+SettingsMenu`) — the SAME component the in-run pause menu uses, so the two pages
+match. Two sections:
+
+- **Camera** — pick the **camera angle** (chase / bonnet, from `CameraManager.MODES`);
+  the choice persists under `CameraManager.SETTING_KEY` and is applied on the next run
+  (or live, in the pause menu, via the `camera_changed` signal). See
+  [camera.md](camera.md).
+- **Mobile controls** — pick the **touch control scheme**. Each of the six schemes
+  ([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
+  **diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
+  its name and how-to.
+
+The saved choice in each section is highlighted and persisted via `Save.set_setting`.
+Settings is also shown as a **pre-rally gate**: on mobile, if no scheme has been
+chosen yet, Start opens this page (`_open_settings(true)`) instead of launching — the
+bottom button reads **Start >** and confirms the pick (the highlighted default if
+untouched), saving it so the gate never reappears, then begins the rally.
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
@@ -190,6 +200,20 @@ no session (a plain dev boot of `main.tscn`) the default car is fielded and none
 this runs — `main.tscn` is still independently runnable. (Headless runs skip the
 wreck cinematic and report immediately.)
 
+## Pause menu (`pause_menu.gd`)
+
+A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
+`PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is frozen. It owns a
+**top-right Pause button** (always visible during gameplay; the HUD's version/timer
+labels were shifted left to clear it) that **freezes the game** (`get_tree().paused
+= true`) and shows an overlay with **Resume** and **Settings**. Resume unfreezes and
+closes; Settings shows the **shared `SettingsMenu`** (camera angle + mobile controls,
+identical to the title-screen page), with a **◄ Back** to the Resume/Settings menu.
+`ui_cancel` (Esc / gamepad B) toggles the menu and backs out of Settings first. A
+camera pick applies **immediately** to the live `CameraManager` (wired via the
+`SettingsMenu.camera_changed` signal → `CameraManager.set_mode`), so the angle
+changes the moment you choose it. Covered by `tests/headless/test_pause_menu.gd`.
+
 ## Podium (`podium.gd`)
 
 A **3D reward sequence** (the scene root is a `Node3D`), stepped through with a
@@ -227,9 +251,9 @@ tests can step the stages.
 The pre-event **start-line scene** — the diegetic **briefing** panel (rally, event
 N/3, restriction, fielded car + HP bar) and the **pre-launch presence** cars — is
 built inside the run scene before the countdown; the player launches it into the
-`StageManager` countdown. See [start-line.md](start-line.md). Between-event
-**standings** (`standings.tscn`) and the **Pause** overlay remain the open parts of
-this location.
+`StageManager` countdown. See [start-line.md](start-line.md). The in-run **Pause**
+menu is covered above (`pause_menu.gd`); the between-event **standings**
+(`standings.tscn`) interstitial remains the open part of this location.
 
 ## Deferred (rest of the diegetic 3D build)
 
@@ -237,7 +261,7 @@ The diegetic HQ space (exterior / garage / 3D map table / car park / tuning lift
 with the camera flying between stations) is in. Still deferred
 ([../todo/diegetic-hq.md](../todo/diegetic-hq.md), umbrella in
 [../todo/menus.md](../todo/menus.md)): per-car paint + duplicate-model name suffixes,
-designed environment art (blocks are placeholder), a pause overlay, the 3D
+designed environment art (blocks are placeholder), the 3D
 reward-reveal rig + 3D podium, and camera fly-through transitions for the longer
 hops. The podium + between-event **standings interstitial** still ship as flat
 scenes (`podium.tscn` / `standings.tscn`); the diegetic 3D versions are later
@@ -259,6 +283,14 @@ restores it to full health and unlocks Start); **Back** steps car park → table
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
 the cumulative leaderboard; the podium renders the finish summary **and the reward
-reveal + standings**; and the run scene fields the bound session car. The pure
-`RallyLibrary.build_standings` ranking and the enriched `RallySession` result are
-covered in `test_rally_library.gd` / `test_rally_session.gd`.
+reveal + standings**; and the run scene fields the bound session car. The settings
+test also checks the shared `SettingsMenu` exposes a **camera-angle row per mode** and
+**persists the chosen angle**. The pure `RallyLibrary.build_standings` ranking and the
+enriched `RallySession` result are covered in `test_rally_library.gd` /
+`test_rally_session.gd`.
+
+`tests/headless/test_pause_menu.gd` — the **Pause button freezes the game** and opens
+the menu; **Resume unfreezes** and closes it; **Settings exposes the shared
+`SettingsMenu`** (camera + control rows); and **picking a camera applies live** to the
+`CameraManager` (and persists). Camera cycling / `set_mode` persistence is covered in
+`test_camera_manager.gd`.
