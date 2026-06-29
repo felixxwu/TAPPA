@@ -94,17 +94,33 @@ func _add_canopy_blob(st: SurfaceTool, center: Vector3, radius: float,
 		face_c /= 3.0
 		# height factor 0 (bottom of whole canopy) .. 1 (top) for fake AO/sun
 		var hf: float = clamp(inverse_lerp(bot_h, top_h, face_c.y), 0.0, 1.0)
-		var shade: float = lerp(0.62, 1.12, hf)
-		# per-face hue jitter between a few green tones
-		var jit := _h(seed * 31 + idx)
+		# The leaf TEXTURE supplies the colour now, so the vertex colour is just a
+		# (near-grey, faintly green) brightness that multiplies it — darker
+		# underside, lighter sunlit top — keeping the low-poly depth shading.
+		var shade: float = lerp(0.60, 1.10, hf)
+		var jit := (_h(seed * 31 + idx) - 0.5) * 0.10
 		var col := Color(
-			clamp(base.r * shade * (0.9 + jit * 0.22), 0, 1),
-			clamp(base.g * shade * (0.9 + jit * 0.18), 0, 1),
-			clamp(base.b * shade * (0.85 + jit * 0.30), 0, 1))
+			clamp(shade * (0.95 + jit), 0, 1),
+			clamp(shade * (1.00 + jit), 0, 1),
+			clamp(shade * (0.90 + jit), 0, 1))
 		var n := (Vector3(pts[1]) - Vector3(pts[0])).cross(Vector3(pts[2]) - Vector3(pts[0])).normalized()
+		# Baked "triplanar" UVs: project each flat face along its dominant axis so
+		# the tileable leaf texture maps over the lumpy canopy with no UV seams to
+		# author and minimal stretch (faces are flat). Scale sets the leaf size.
+		var uv_scale := 0.42
+		var an := n.abs()
 		for p in pts:
+			var w: Vector3 = p
+			var uv: Vector2
+			if an.x >= an.y and an.x >= an.z:
+				uv = Vector2(w.z, w.y)
+			elif an.y >= an.x and an.y >= an.z:
+				uv = Vector2(w.x, w.z)
+			else:
+				uv = Vector2(w.x, w.y)
 			st.set_color(col)
 			st.set_normal(n)
+			st.set_uv(uv * uv_scale)
 			st.add_vertex(p)
 
 
@@ -137,14 +153,18 @@ func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col:
 # Build the whole tree mesh.
 # ----------------------------------------------------------------------------
 func build_tree() -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
 	var trunk_col := Color(0.34, 0.25, 0.16)
 	var leaf := Color(0.30, 0.42, 0.18)
-
 	var trunk_h := 1.7
-	_add_trunk(st, 6, 0.20, 0.12, trunk_h, trunk_col)
+
+	# Trunk is its own surface with a plain bark material (no leaf texture).
+	var st_trunk := SurfaceTool.new()
+	st_trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_add_trunk(st_trunk, 6, 0.20, 0.12, trunk_h, trunk_col)
+
+	# Canopy is a second surface, textured with the leaf map.
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
 	# Canopy: a cluster of overlapping blobs forming a rounded, slightly
 	# irregular broadleaf crown sitting on top of the trunk.
@@ -167,14 +187,29 @@ func build_tree() -> ArrayMesh:
 		bi += 1
 		_add_canopy_blob(st, b[0], b[1], b[2], bi * 17 + 3, leaf, top_h, bot_h)
 
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 1.0
-	mat.metallic = 0.0
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	st.set_material(mat)
+	# Trunk material: plain bark colour from vertex colours.
+	var trunk_mat := StandardMaterial3D.new()
+	trunk_mat.vertex_color_use_as_albedo = true
+	trunk_mat.roughness = 1.0
+	trunk_mat.metallic = 0.0
+	trunk_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 
-	var mesh := st.commit()
+	# Canopy material: tileable leaf texture, tinted/shaded by vertex colour.
+	var leaf_mat := StandardMaterial3D.new()
+	leaf_mat.vertex_color_use_as_albedo = true
+	leaf_mat.roughness = 1.0
+	leaf_mat.metallic = 0.0
+	leaf_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	var tex := load("res://textures/leaves.png") as Texture2D
+	if tex != null:
+		leaf_mat.albedo_texture = tex
+		leaf_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+
+	# Commit both surfaces into one mesh: surface 0 = trunk, 1 = canopy.
+	st_trunk.set_material(trunk_mat)
+	var mesh := st_trunk.commit()
+	st.set_material(leaf_mat)
+	mesh = st.commit(mesh)
 	return mesh
 
 
@@ -190,7 +225,10 @@ func _export_glb(mesh: ArrayMesh, path: String) -> void:
 	var state := GLTFState.new()
 	doc.append_from_scene(root, state)
 	doc.write_to_filesystem(state, path)
-	print("EXPORTED ", path, " verts=", mesh.surface_get_array_len(0))
+	var total := 0
+	for s in mesh.get_surface_count():
+		total += mesh.surface_get_array_len(s)
+	print("EXPORTED ", path, " surfaces=", mesh.get_surface_count(), " verts=", total)
 
 
 # ----------------------------------------------------------------------------
