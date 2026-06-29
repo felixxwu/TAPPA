@@ -124,3 +124,33 @@ nothing, and the **forestiness gate** (1.0 = unfiltered, 0 = bare, monotonic in
 between, and every gated tree sits above the `1 - forestiness` noise threshold).
 `tests/headless/test_smoke.gd` — the billboard shader loads with code, and a built
 `BillboardField` has one MultiMesh instance per position.
+
+## Low-poly 3D tree model (asset)
+
+**Source:** `tools/lowpoly_tree.gd` (generator + render harness),
+`models/low_poly_tree.glb` (the baked model). This is a standalone asset modelled
+after the rounded broadleaf park trees visible in the skybox
+(`textures/sky_field.png`) — not yet wired into the billboard scatter above, kept
+as a 3D alternative / future LOD-0 for near trees.
+
+The mesh is fully procedural and deterministic: a tapered 6-sided trunk plus a
+crown built from a cluster of overlapping subdivided icospheres ("blobs"). It is
+flat-shaded (one face normal per triangle) with **per-face vertex colours** — a
+green base modulated by a height gradient (darker underside, lighter top) and a
+small per-face jitter — so it carries its own colour with no texture, matching the
+project's unshaded PS1-flat look. Per-vertex lumpiness is keyed on the icosphere
+vertex *direction* (`_vhash`), so triangles sharing a vertex move together and the
+surface stays watertight (no sky cracks or spikes between blobs).
+
+Regenerate / re-render:
+
+```
+# export the .glb (headless is fine)
+godot --headless -s tools/lowpoly_tree.gd -- --export
+# also save multi-angle verification PNGs (needs a GL context)
+xvfb-run -a godot --rendering-driver opengl3 -s tools/lowpoly_tree.gd -- --render
+```
+
+Renders land in `tools/tree_renders/` (gitignored, regenerable). Tune the look by
+editing the trunk dims, the `blobs` cluster (centre / radius / squash), the leaf
+colour, and the `_vhash` wobble amount in `build_tree()`.
