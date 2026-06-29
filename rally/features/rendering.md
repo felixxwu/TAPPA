@@ -77,6 +77,32 @@ Applied via the `PostProcess/ColorRect`. Uniforms: `screen_texture`
 Algorithm: sample screen → quantize to virtual resolution → apply a 4×4 ordered
 (Bayer) dither matrix → truncate to 5-bit RGB (32 levels/channel) → output.
 
+### `speed_lines.gdshader` — `canvas_item` (full-screen overlay)
+Anime "edge speed lines": black streaks radiating inward from the screen edges
+toward the centre, leaving the middle clear — the classic manga sense-of-speed
+effect, ramped in with the car's velocity. Applied to `SpeedLines/ColorRect`, a
+full-screen `ColorRect` on its **own CanvasLayer** sitting ABOVE the PS1 dither
+post-process (so the streaks stay crisp instead of being broken up by the
+quantise/dither) and BELOW the HUD layer (so the readouts stay on top). The
+overlay's `mouse_filter` is `IGNORE` so it never eats touch/clicks meant for the
+HUD or mobile controls.
+
+Uniforms: `intensity` (0..1 overall strength, 0 = invisible), `line_color`
+(source_color, black), `density` (angular streak count), `inner_radius` /
+`outer_radius` (the normalised-radius fade band that keeps the centre clear and
+ramps the streaks to full toward the edges), `flicker_speed` (per-streak shimmer).
+Fragment: aspect-corrected centre-origin coords → bucket the angle into `density`
+slots (one streak each) → per-slot random width + time flicker → multiply by a
+radial mask → output `line_color` with the computed alpha.
+
+`scripts/speed_lines.gd` (on the `SpeedLines` CanvasLayer) pushes the static
+look from config once in `_ready()`, then each frame maps the car's airspeed
+across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
+`speed_lines_max_intensity`, and eases the `intensity` uniform toward that target
+(`speed_lines_response`) so the streaks fade in/out rather than pop. `world.gd`'s
+`cycle_car()` re-points the overlay at the swapped car, like the HUD. All tunables
+live in `GameConfig` under the **Speed Lines** group.
+
 ## MX-5 authored body model
 
 The Mazda MX-5 (CarLibrary index 0) renders an authored body model

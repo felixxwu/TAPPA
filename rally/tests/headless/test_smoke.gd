@@ -169,7 +169,7 @@ func test_floor_is_terrain_manager() -> void:
 
 
 func test_shaders_load_with_code() -> void:
-	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader", "res://shaders/billboard.gdshader"]:
+	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader", "res://shaders/billboard.gdshader", "res://shaders/foliage_mesh.gdshader"]:
 		var shader := load(path) as Shader
 		assert_not_null(shader, path + " loads")
 		assert_true(shader.code.length() > 0, path + " has code")
@@ -351,6 +351,27 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 	var origin := field.instance_positions[0]
 	assert_almost_eq(origin, Vector3(p.x, floor.height_at(p.x, p.y) - 0.5, p.y),
 		Vector3(1e-3, 1e-3, 1e-3), "bush sunk into ground by the y_offset")
+
+
+func test_mesh_scatter_field_instances_mesh_at_ground_without_collision() -> void:
+	# Bushes are now the ground-cover MESH, instanced via MeshScatterField.
+	var floor := _scene.get_node("Floor") as TerrainManager
+	var field := MeshScatterField.new()
+	add_child_autofree(field)
+	var positions := PackedVector2Array([Vector2(7, 5), Vector2(-3, 11), Vector2(14, -2)])
+	var mesh := BoxMesh.new()
+	field.build(positions, floor, mesh, -0.25, 1.4, 0.25, 42)
+	assert_not_null(field.multimesh, "field has a MultiMesh")
+	assert_eq(field.multimesh.mesh, mesh, "MultiMesh renders the supplied mesh")
+	assert_true(field.multimesh.use_colors, "per-instance colour enabled for baked light")
+	assert_eq(field.multimesh.instance_count, positions.size(), "one instance per position")
+	assert_eq(field.instance_positions.size(), positions.size(), "positions mirror populated")
+	assert_null(field.get_node_or_null("Collision"), "ground cover has no collision body")
+	# Each instance sits on the terrain, sunk by the y_offset.
+	var p := positions[0]
+	assert_almost_eq(field.instance_positions[0],
+		Vector3(p.x, floor.height_at(p.x, p.y) - 0.25, p.y),
+		Vector3(1e-3, 1e-3, 1e-3), "instance rests on the ground minus the sink")
 
 
 func test_sign_field_builds_knockable_signs_at_road_height() -> void:
