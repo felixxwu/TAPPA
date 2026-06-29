@@ -20,7 +20,7 @@ func test_project_default_theme_is_the_design_system() -> void:
 func test_theme_uses_the_house_font() -> void:
 	var theme := UITheme.theme()
 	assert_not_null(theme.default_font, "theme has a default font")
-	assert_eq(theme.default_font_size, UITheme.SIZE_BODY, "default size is the body size")
+	assert_eq(theme.default_font_size, UITheme.FONT_SIZE, "default size is the one house size")
 
 
 func test_primary_font_loads() -> void:
@@ -30,7 +30,7 @@ func test_primary_font_loads() -> void:
 func test_label_helper_applies_role_colour() -> void:
 	var money := UITheme.money("$88,052")
 	assert_eq(money.get_theme_color("font_color"), UITheme.GOLD, "money is gold")
-	var danger := UITheme.label("WRECKED", UITheme.SIZE_BODY, "red")
+	var danger := UITheme.label("WRECKED", "red")
 	assert_eq(danger.get_theme_color("font_color"), UITheme.RED, "danger is red")
 	money.free()
 	danger.free()
@@ -40,11 +40,39 @@ func test_caps_uppercases() -> void:
 	assert_eq(UITheme.caps("Continue"), "CONTINUE")
 
 
-func test_button_helper_keeps_text_verbatim_and_is_unfocusable() -> void:
+func test_button_helper_uppercases_fixed_height_unfocusable() -> void:
 	var b := UITheme.button("Settings")
-	assert_eq(b.text, "Settings", "button text is used verbatim (no forced casing)")
+	assert_eq(b.text, "SETTINGS", "rule 1: button text is uppercased")
+	assert_eq(b.custom_minimum_size.y, float(UITheme.MENU_ROW_H), "rule 3: fixed compact height")
 	assert_eq(b.focus_mode, Control.FOCUS_NONE, "menu buttons take no focus ring")
 	b.free()
+
+
+func test_label_helper_uppercases_and_uses_one_size() -> void:
+	var l := UITheme.label("Continue")
+	assert_eq(l.text, "CONTINUE", "rule 1: label text is uppercased")
+	assert_eq(l.get_theme_font_size("font_size"), UITheme.FONT_SIZE, "rule 2: one font size")
+	l.free()
+
+
+func test_enforce_applies_rules_across_a_menu_tree() -> void:
+	# A menu subtree built without the helpers still gets normalised.
+	var root := VBoxContainer.new()
+	var lab := Label.new()
+	lab.text = "Standings"
+	lab.add_theme_font_size_override("font_size", 44)  # a rogue big size
+	root.add_child(lab)
+	var btn := Button.new()
+	btn.text = "Next >"
+	root.add_child(btn)
+	add_child(root)
+
+	UITheme.enforce(root)
+	assert_eq(lab.text, "STANDINGS", "rule 1: labels uppercased")
+	assert_eq(lab.get_theme_font_size("font_size"), UITheme.FONT_SIZE, "rule 2: rogue size overridden")
+	assert_eq(btn.text, "NEXT >", "rule 1: buttons uppercased")
+	assert_eq(btn.custom_minimum_size.y, float(UITheme.MENU_ROW_H), "rule 3: single-line button height")
+	root.free()
 
 
 func test_mark_selected_underlines_green_when_selected() -> void:

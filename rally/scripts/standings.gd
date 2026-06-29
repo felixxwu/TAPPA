@@ -57,6 +57,8 @@ func _build_ui() -> void:
 	cont.pressed.connect(_on_continue)
 	root.add_child(cont)
 
+	UITheme.enforce(self)  # house rules: uppercase + one font size
+
 
 # One standings row: position, name (and the car they drove), cumulative time /
 # DNF; the player's row is tinted and marked. Mirrors the podium's row format.

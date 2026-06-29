@@ -15,7 +15,8 @@ func test_set_step_updates_label() -> void:
 	var screen := LoadingScreen.new()
 	add_child_autofree(screen)
 	screen.set_step("Scattering trees…")
-	assert_eq(screen._step.text, "Scattering trees…", "step label reflects set_step()")
+	# The design system uppercases all menu text (house rule 1).
+	assert_eq(screen._step.text, "SCATTERING TREES…", "step label reflects set_step() (uppercased)")
 
 
 func test_finish_frees_overlay() -> void:

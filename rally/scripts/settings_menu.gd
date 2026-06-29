@@ -22,6 +22,7 @@ var scheme_rows: Array = []
 func _ready() -> void:
 	add_theme_constant_override("separation", 10)
 	_build()
+	UITheme.enforce(self)  # house rules: uppercase + one font size
 
 
 func _build() -> void:

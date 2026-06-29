@@ -163,7 +163,7 @@ func test_hq_opening_the_table_shows_the_map() -> void:
 	hq._enter_table()
 	assert_eq(hq._view, hq.View.TABLE, "tapping the table drops the camera to the map view")
 	assert_true(hq._table_layer.visible, "the map HUD is shown")
-	assert_string_contains(hq._map_meter.text, "Progress to the Showdown", "the progress meter is shown")
+	assert_string_contains(hq._map_meter.text, "PROGRESS TO THE SHOWDOWN", "the progress meter is shown")
 
 
 func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
@@ -202,8 +202,8 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	assert_true(hq._detail_open, "tapping a pin opens the rally detail")
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
 	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
-	assert_string_contains(hq._detail_title.text, "RWD Masters", "the detail names the rally")
-	assert_string_contains(hq._detail_body.text, "RWD cars", "the detail spells out the eligibility")
+	assert_string_contains(hq._detail_title.text, "RWD MASTERS", "the detail names the rally")
+	assert_string_contains(hq._detail_body.text, "RWD CARS", "the detail spells out the eligibility")
 
 
 func test_hq_table_drag_pans_and_clamps() -> void:
@@ -262,7 +262,7 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
 	assert_eq(hq._cars.size(), 1, "only the eligible (RWD) car is parked")
 	assert_eq(hq._cars[0].current_car_name(), "Mazda MX-5", "the AWD RS3 is filtered out of an RWD-only rally")
-	assert_string_contains(hq._rally_banner.text, "RWD cars", "the banner spells out the rally restriction")
+	assert_string_contains(hq._rally_banner.text, "RWD CARS", "the banner spells out the rally restriction")
 
 
 func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
@@ -427,7 +427,7 @@ func test_hq_overflow_cannot_scrap_immortal_starter() -> void:
 			hq._focus_changed(true)
 			break
 	assert_true(hq._scrap_button.disabled, "the immortal starter's scrap action is disabled")
-	assert_string_contains(hq._overflow_note.text, "can't be scrapped", "a note explains why")
+	assert_string_contains(hq._overflow_note.text, "CAN'T BE SCRAPPED", "a note explains why")
 	# Scrapping it anyway is a no-op (count unchanged, still overflowing).
 	hq._on_scrap_pressed()
 	assert_eq(_save.profile["cars"].size(), 2, "the starter wasn't scrapped")
@@ -678,10 +678,10 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	add_child_autofree(sc)
 	await get_tree().process_frame
 	var text := _label_texts(sc)
-	assert_string_contains(text, "after event 1", "the interstitial headers the event just finished")
-	assert_string_contains(text, "Coastal Sprint", "it names the rally")
-	assert_string_contains(text, "Quick", "the opponent field is listed")
-	assert_string_contains(text, "Slow", "the whole field is shown")
+	assert_string_contains(text, "AFTER EVENT 1", "the interstitial headers the event just finished")
+	assert_string_contains(text, "COASTAL SPRINT", "it names the rally")
+	assert_string_contains(text, "QUICK", "the opponent field is listed")
+	assert_string_contains(text, "SLOW", "the whole field is shown")
 
 
 func test_podium_shows_the_finish_summary() -> void:
@@ -722,7 +722,7 @@ func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
 	await get_tree().process_frame
 	assert_eq(pod._stage, pod.Stage.LEADERBOARD, "Next from the podium shows the leaderboard")
 	var lb := _label_texts(pod)
-	assert_string_contains(lb, "Rival 1", "the leaderboard lists the opponent field")
+	assert_string_contains(lb, "RIVAL 1", "the leaderboard lists the opponent field")
 	assert_string_contains(lb, "WRECKED", "a DNF opponent reads as WRECKED on the leaderboard")
 
 	# Next -> the car slot-machine reveal (resolves instantly headless).
@@ -732,15 +732,15 @@ func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
 	assert_true(pod._reveal_done, "the slot spin resolves instantly under headless")
 	assert_true(pod._next_button.visible, "Next reappears once the spin locks on")
 	var car := _label_texts(pod)
-	assert_string_contains(car, "Porsche 911", "the won car is revealed by name")
+	assert_string_contains(car, "PORSCHE 911", "the won car is revealed by name")
 	assert_string_contains(car, "NEW", "an un-owned car reward is flagged NEW")
 
 	# Next -> the upgrade slot-machine reveal.
 	pod._on_next()
 	await get_tree().process_frame
 	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next from the car reveal shows the upgrade reveal")
-	assert_string_contains(_label_texts(pod), "Stage 1 Engine Kit", "the won upgrade is revealed by name")
-	assert_eq(pod._next_button.text, "Continue to HQ", "the final stage's button returns to HQ")
+	assert_string_contains(_label_texts(pod), "STAGE 1 ENGINE KIT", "the won upgrade is revealed by name")
+	assert_eq(pod._next_button.text, "CONTINUE TO HQ", "the final stage's button returns to HQ")
 
 
 func test_podium_dnf_sequence_has_no_reward_stages() -> void:

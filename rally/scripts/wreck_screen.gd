@@ -136,6 +136,8 @@ func _build_overlay() -> void:
 	_return_button.pressed.connect(_on_return_pressed)
 	root.add_child(_return_button)
 
+	UITheme.enforce(self)  # house rules: uppercase + one font size + button height
+
 
 func _on_return_pressed() -> void:
 	return_requested.emit()

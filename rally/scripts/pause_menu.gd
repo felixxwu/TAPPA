@@ -21,6 +21,7 @@ var settings_menu: SettingsMenu
 
 func _ready() -> void:
 	_build()
+	UITheme.enforce(self)  # house rules: uppercase + one size + fixed button height
 	_set_open(false)
 
 
@@ -100,7 +101,7 @@ func _build_menu_panel() -> Control:
 	# PAUSED on a solid black title plate (the house style), centred over the menu.
 	var title_plate := UITheme.panel(0.9, 14)
 	var title := UITheme.title("PAUSED")
-	title.custom_minimum_size = Vector2(UITheme.BUTTON_MIN.x, 0)
+	title.custom_minimum_size = Vector2(UITheme.BUTTON_MIN_W, 0)
 	title_plate.add_child(title)
 	col.add_child(title_plate)
 

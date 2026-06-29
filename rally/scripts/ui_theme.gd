@@ -17,11 +17,19 @@ extends RefCounted
 #     (project.godot `gui/theme/custom`). Every Control inherits the font, the
 #     button/panel styleboxes, the text colour and the drop shadow automatically —
 #     this is what makes the whole game consistent without touching each widget.
-#   * THIS MODULE — the palette + type-scale constants are the single source of
-#     truth (the theme generator reads them), and the `static` helpers below build
-#     the bits a flat theme can't express on its own: solid black panel boxes,
-#     role-coloured labels (money/danger/positive), and the ▶◀ selection markers /
-#     underline used to show the focused menu option, exactly like the web build.
+#   * THIS MODULE — the palette + size constants are the single source of truth
+#     (the theme generator reads them), and the `static` helpers below build the
+#     bits a flat theme can't express: solid black panel boxes, role-coloured
+#     labels (money/danger/positive), and the ▶◀ selection markers / underline.
+#
+# HOUSE RULES (enforced, not just suggested — see `enforce`):
+#   1. ALL menu text is UPPERCASE.
+#   2. ONE fixed font size everywhere (FONT_SIZE) — no per-screen size hierarchy.
+#   3. Single-line menu buttons are a FIXED, compact height (MENU_ROW_H).
+#   4. Menu backgrounds are PURE BLACK.
+# `enforce(root)` applies 1–3 to every Label/Button under a menu root; the global
+# theme bakes in 2–4 as the defaults. Menu builders call `enforce` once after
+# building (HQ re-runs it on every view change so dynamic text obeys too).
 #
 # Tune the look HERE (then re-run tools/build_ui_theme.gd to regenerate the .tres);
 # don't scatter new colour/size literals through the UI scripts. See
@@ -49,26 +57,22 @@ const RED := Color(0.89, 0.27, 0.22, 1.0)           # danger / run timer / warni
 const MUTED := Color(0.58, 0.66, 0.54, 0.55)        # locked / disabled (olive-grey)
 const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 
-# --- Type scale (px) ---------------------------------------------------------
-# VT323 is a touch shorter than Open Sans at the same px, so these run a little
-# larger than the old ad-hoc sizes. UPPERCASE is the house style (see `caps`).
-const SIZE_DISPLAY := 80    # the big 3·2·1·GO countdown
-const SIZE_TITLE := 44      # screen titles: PAUSED, STAGE COMPLETE
-const SIZE_HEADING := 32    # section headings
-const SIZE_SUBHEADING := 24 # sub-headings / banners
-const SIZE_BODY := 20       # default body / button text
-const SIZE_LABEL := 18      # compact labels, stat rows
-const SIZE_SMALL := 15      # hints, captions, end-labels
+# --- Size (rule 2: one fixed font size everywhere) ---------------------------
+# Deliberately small. There is NO type hierarchy — titles, headings, body and
+# buttons all use this single size, the way a terminal readout is uniform.
+const FONT_SIZE := 16
+
+# --- Rule 3: fixed, compact height for single-line menu buttons --------------
+const MENU_ROW_H := 30
+# A modest min width so short buttons (BACK, QUIT) still read as a bar.
+const BUTTON_MIN_W := 180
 
 # --- Spacing -----------------------------------------------------------------
 const GAP_TIGHT := 6
-const GAP := 12
-const GAP_WIDE := 18
+const GAP := 10
+const GAP_WIDE := 16
 const MARGIN := 24
-const SHADOW_OFFSET := 3    # hard pixel shadow, x == y
-
-# Standard min size for a tappable menu button (mobile-friendly hit target).
-const BUTTON_MIN := Vector2(240, 52)
+const SHADOW_OFFSET := 2    # hard drop shadow, x == y
 
 
 # --- Resource loaders --------------------------------------------------------
@@ -83,34 +87,31 @@ static func theme() -> Theme:
 
 # --- Text helpers ------------------------------------------------------------
 
-# Optional uppercase helper for when a caller WANTS the all-caps arcade look on a
-# specific string. Not applied automatically — labels/buttons keep their text
-# verbatim so a screen's wording stays exactly as authored.
+# Uppercase a string (rule 1). Used by the helpers and `enforce`.
 static func caps(text: String) -> String:
 	return text.to_upper()
 
 
-# A label in a given role colour + size. role: "ink" | "dim" | "green" | "gold"
-# | "red". Inherits the global theme's font + drop shadow.
-static func label(text: String, size: int = SIZE_BODY, role: String = "ink") -> Label:
+# A label in a given role colour at the one house font size, uppercased.
+# role: "ink" | "dim" | "green" | "gold" | "red". Inherits the theme font + shadow.
+static func label(text: String, role: String = "ink") -> Label:
 	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
+	l.text = caps(text)
+	l.add_theme_font_size_override("font_size", FONT_SIZE)
 	l.add_theme_color_override("font_color", _role_color(role))
 	return l
 
 
-# A screen title (big, white, centred). Text is used verbatim — pass the wording
-# you want (e.g. "PAUSED").
+# A screen title — same size as everything else (rule 2), just centred.
 static func title(text: String) -> Label:
-	var l := label(text, SIZE_TITLE)
+	var l := label(text)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return l
 
 
 # A money read-out (gold), e.g. "$88,052".
 static func money(text: String) -> Label:
-	return label(text, SIZE_HEADING, "gold")
+	return label(text, "gold")
 
 
 static func _role_color(role: String) -> Color:
@@ -125,9 +126,9 @@ static func _role_color(role: String) -> Color:
 
 # --- Panels ------------------------------------------------------------------
 
-# A solid black, sharp-cornered panel box (the house surface). `alpha` lets a
-# panel over the 3D world stay slightly see-through; pass 1.0 for a solid screen.
-static func panel_box(alpha: float = 0.9, pad: int = 18) -> StyleBoxFlat:
+# A pure-black, sharp-cornered panel box (rule 4). Defaults to fully opaque;
+# `alpha` can soften a panel that floats over the 3D world.
+static func panel_box(alpha: float = 1.0, pad: int = 14) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = Color(0.0, 0.0, 0.0, alpha)
 	for side in ["left", "top", "right", "bottom"]:
@@ -137,7 +138,7 @@ static func panel_box(alpha: float = 0.9, pad: int = 18) -> StyleBoxFlat:
 
 
 # A PanelContainer wearing `panel_box`. Drop children straight in.
-static func panel(alpha: float = 0.9, pad: int = 18) -> PanelContainer:
+static func panel(alpha: float = 1.0, pad: int = 14) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", panel_box(alpha, pad))
 	return p
@@ -145,31 +146,31 @@ static func panel(alpha: float = 0.9, pad: int = 18) -> PanelContainer:
 
 # --- Buttons & selection -----------------------------------------------------
 
-# A standard menu button: house min-size, no keyboard focus ring (menus here are
-# tap / explicit-nav driven). Text is used verbatim; styling comes from the global
-# theme.
+# A standard menu button: uppercase, fixed compact height (rule 3), no keyboard
+# focus ring (menus here are tap / explicit-nav driven). Styling (pure-black face,
+# font, size) comes from the global theme.
 static func button(text: String) -> Button:
 	var b := Button.new()
-	b.text = text
+	b.text = caps(text)
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = BUTTON_MIN
+	b.custom_minimum_size = Vector2(BUTTON_MIN_W, MENU_ROW_H)
 	return b
 
 
 # Show/clear the "this option is selected" treatment used by the web build:
 # the label is underlined and tinted green while selected. Pair with `flank()`
 # for the ▶◀ triangles around the active row.
-static func mark_selected(button: Button, selected: bool) -> void:
+static func mark_selected(btn: Button, selected: bool) -> void:
 	var box := StyleBoxFlat.new()
-	box.bg_color = SURFACE_HOVER if selected else SURFACE
+	box.bg_color = SURFACE_HOVER if selected else BLACK  # pure black when idle (rule 4)
 	if selected:
 		box.border_width_bottom = 3
 		box.border_color = GREEN
 	for side in ["left", "top", "right", "bottom"]:
-		box.set("content_margin_" + side, 12.0)
+		box.set("content_margin_" + side, 10.0)
 	for state in ["normal", "hover", "pressed", "focus"]:
-		button.add_theme_stylebox_override(state, box)
-	button.add_theme_color_override("font_color", GREEN if selected else INK)
+		btn.add_theme_stylebox_override(state, box)
+	btn.add_theme_color_override("font_color", GREEN if selected else INK)
 
 
 # Wrap a control with white ▶ ◀ selection triangles (shown only when `active`),
@@ -178,8 +179,8 @@ static func flank(inner: Control, active: bool) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", GAP)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	var left := label("▶", SIZE_SUBHEADING)   # ▶
-	var right := label("◀", SIZE_SUBHEADING)  # ◀
+	var left := label("▶")   # ▶
+	var right := label("◀")  # ◀
 	left.visible = active
 	right.visible = active
 	row.add_child(left)
@@ -187,3 +188,26 @@ static func flank(inner: Control, active: bool) -> HBoxContainer:
 	row.add_child(inner)
 	row.add_child(right)
 	return row
+
+
+# --- Rule enforcement --------------------------------------------------------
+
+# Apply the house rules to every Label/Button under a menu root:
+#   1. uppercase the text,
+#   2. lock the font size to FONT_SIZE,
+#   3. give plain single-line buttons the fixed compact height.
+# Idempotent and cheap — menu builders call it once after building, and screens
+# with dynamic text (e.g. HQ) re-run it whenever that text changes so the rules
+# keep holding. Leaves layout/colour alone; only normalises text, size, height.
+static func enforce(root: Node) -> void:
+	for node in root.find_children("*", "Label", true, false):
+		var l := node as Label
+		l.text = caps(l.text)
+		l.add_theme_font_size_override("font_size", FONT_SIZE)
+	for node in root.find_children("*", "Button", true, false):
+		var b := node as Button
+		b.text = caps(b.text)
+		b.add_theme_font_size_override("font_size", FONT_SIZE)
+		# A "single-line menu" button: no embedded layout, no manual line break.
+		if b.get_child_count() == 0 and not b.text.contains("\n"):
+			b.custom_minimum_size.y = MENU_ROW_H

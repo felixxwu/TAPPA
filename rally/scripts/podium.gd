@@ -340,6 +340,8 @@ func _build_overlay() -> void:
 	_next_button.pressed.connect(_on_next)
 	root.add_child(_next_button)
 
+	UITheme.enforce(_layer)  # house rules: uppercase + one font size + button height
+
 
 # --- Stage flow --------------------------------------------------------------
 
@@ -358,7 +360,7 @@ func _enter_stage(stage: int) -> void:
 
 func _show_podium() -> void:
 	_title_label.text = "PODIUM"
-	_body_label.text = _summary_text()
+	_body_label.text = UITheme.caps(_summary_text())
 	_body_label.visible = true
 	_move_camera(_podium_cam())
 	_reveal_done = true
@@ -377,6 +379,7 @@ func _show_leaderboard() -> void:
 	for entry in standings:
 		_leaderboard_box.add_child(_standings_row(entry))
 	_leaderboard_scroll.visible = true
+	UITheme.enforce(_layer)  # uppercase the freshly-built standings rows
 	_move_camera(_podium_cam())
 	_reveal_done = true
 	_refresh_next_button()
@@ -396,8 +399,8 @@ func _show_car_reveal() -> void:
 		if is_instance_valid(_showroom_car):
 			_showroom_car.visible = true
 		var is_new: bool = bool(_result.get("car_reward_is_new", false))
-		_slot_caption.text = "%s%s — delivered to your garage" % [
-			target, "  (NEW)" if is_new else ""])
+		_slot_caption.text = UITheme.caps("%s%s — delivered to your garage" % [
+			target, "  (NEW)" if is_new else ""]))
 
 
 func _show_upgrade_reveal() -> void:
@@ -410,7 +413,7 @@ func _show_upgrade_reveal() -> void:
 	var won := String(upgrades[0]) if not upgrades.is_empty() else ""
 	var target := String(UpgradeLibrary.by_id(won).get("name", won))
 	_start_slot(_upgrade_names(), target, func() -> void:
-		_slot_caption.text = "%s — added to your inventory" % target)
+		_slot_caption.text = UITheme.caps("%s — added to your inventory" % target))
 
 
 # Spawn the won car on the turntable, frozen and silent, hidden until the slot
@@ -439,7 +442,7 @@ func _start_slot(reel_names: Array, target: String, on_done: Callable) -> void:
 		_slot_tween.kill()
 	var spin: float = Config.data.podium_slot_spin_time
 	if _headless or spin <= 0.0 or reel_names.is_empty():
-		_slot_label.text = target
+		_slot_label.text = UITheme.caps(target)
 		_finish_slot(on_done)
 		return
 	var reel := _build_reel(reel_names, target)
@@ -448,10 +451,10 @@ func _start_slot(reel_names: Array, target: String, on_done: Callable) -> void:
 	_slot_tween.tween_method(
 		func(p: float) -> void:
 			var i := clampi(int(round(p)), 0, reel.size() - 1)
-			_slot_label.text = String(reel[i]),
+			_slot_label.text = UITheme.caps(String(reel[i])),
 		0.0, float(reel.size() - 1), spin)
 	_slot_tween.tween_callback(func() -> void:
-		_slot_label.text = target
+		_slot_label.text = UITheme.caps(target)
 		_finish_slot(on_done))
 
 
@@ -491,7 +494,7 @@ func _upgrade_names() -> Array:
 
 func _refresh_next_button() -> void:
 	_next_button.visible = _reveal_done
-	_next_button.text = "Continue to HQ" if _is_last_stage() else "Next >"
+	_next_button.text = UITheme.caps("Continue to HQ" if _is_last_stage() else "Next >")
 
 
 func _is_last_stage() -> bool:

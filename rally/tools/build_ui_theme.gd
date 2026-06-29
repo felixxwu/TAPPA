@@ -18,7 +18,7 @@ func _init() -> void:
 	var theme := Theme.new()
 	var font := UITheme.font()
 	theme.default_font = font
-	theme.default_font_size = UITheme.SIZE_BODY
+	theme.default_font_size = UITheme.FONT_SIZE
 
 	_build_label(theme)
 	_build_button(theme)
@@ -44,14 +44,14 @@ func _build_label(theme: Theme) -> void:
 	theme.set_constant("shadow_outline_size", "Label", 0)
 
 
-# Solid, sharp-cornered black buttons. Hover/pressed lift the face and underline
-# it green; no focus ring (menus are tap / explicit-nav driven).
+# Pure-black, sharp-cornered buttons (rule 4). Hover/pressed lift the face a hair
+# and underline it green for feedback; no focus ring (menus are tap-driven).
 func _build_button(theme: Theme) -> void:
-	theme.set_stylebox("normal", "Button", _btn_box(UITheme.SURFACE))
+	theme.set_stylebox("normal", "Button", _btn_box(UITheme.BLACK))
 	theme.set_stylebox("hover", "Button", _btn_box(UITheme.SURFACE_HOVER, true))
 	theme.set_stylebox("pressed", "Button", _btn_box(UITheme.SURFACE_HOVER, true))
 	theme.set_stylebox("focus", "Button", _btn_box(UITheme.SURFACE_HOVER, true))
-	theme.set_stylebox("disabled", "Button", _btn_box(Color(0.04, 0.05, 0.04, 0.85)))
+	theme.set_stylebox("disabled", "Button", _btn_box(Color(0.03, 0.03, 0.03, 0.9)))
 
 	theme.set_color("font_color", "Button", UITheme.INK)
 	theme.set_color("font_hover_color", "Button", Color(1, 1, 1, 1))
@@ -60,13 +60,15 @@ func _build_button(theme: Theme) -> void:
 	theme.set_color("font_disabled_color", "Button", UITheme.MUTED)
 
 
+# Compact: small vertical padding (the fixed row height comes from the button's
+# min size — see UITheme.MENU_ROW_H / enforce).
 func _btn_box(bg: Color, selected: bool = false) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = bg
-	box.content_margin_left = 16
-	box.content_margin_right = 16
-	box.content_margin_top = 10
-	box.content_margin_bottom = 10
+	box.content_margin_left = 14
+	box.content_margin_right = 14
+	box.content_margin_top = 4
+	box.content_margin_bottom = 4
 	if selected:
 		box.border_width_bottom = 3
 		box.border_color = UITheme.GREEN
@@ -76,11 +78,11 @@ func _btn_box(bg: Color, selected: bool = false) -> StyleBoxFlat:
 
 func _build_panels(theme: Theme) -> void:
 	var box := StyleBoxFlat.new()
-	box.bg_color = UITheme.PANEL
-	box.content_margin_left = 18
-	box.content_margin_right = 18
-	box.content_margin_top = 18
-	box.content_margin_bottom = 18
+	box.bg_color = UITheme.BLACK  # pure black (rule 4)
+	box.content_margin_left = 14
+	box.content_margin_right = 14
+	box.content_margin_top = 14
+	box.content_margin_bottom = 14
 	theme.set_stylebox("panel", "PanelContainer", box)
 	theme.set_stylebox("panel", "Panel", box.duplicate())
 	# Popups / dialogs share the surface.

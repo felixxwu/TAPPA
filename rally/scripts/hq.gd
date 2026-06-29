@@ -1342,6 +1342,17 @@ func _update_overlays() -> void:
 	_car_layer.visible = _view == View.CARPARK
 	_settings_layer.visible = _view == View.SETTINGS
 	_overflow_layer.visible = _view == View.OVERFLOW
+	_normalize_menus()
+
+
+# Apply the design-system house rules (uppercase + one font size + fixed
+# single-line button height) to every overlay. Re-run on each view change and
+# after any dynamic text refresh so the rules keep holding as labels change.
+func _normalize_menus() -> void:
+	for layer in [_title_layer, _garage_layer, _table_layer, _detail_layer,
+			_lift_layer, _car_layer, _settings_layer, _overflow_layer]:
+		if layer != null:
+			UITheme.enforce(layer)
 
 
 # --- Station transitions -----------------------------------------------------
@@ -1583,6 +1594,7 @@ func _refresh_lift_ui() -> void:
 	_lift_tab_upgrades.disabled = _lift_tab == LiftTab.UPGRADES
 	_refresh_sliders()
 	_rebuild_upgrades_box()
+	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
 
 # Reflect the stored tuning + each axis's unlock state onto the sliders.
@@ -1926,6 +1938,7 @@ func _focus_changed(snap := false) -> void:
 		_car_stats_label.text = stats
 		# A wrecked focused car gates Start + offers a Repair (full restore).
 		_refresh_focus_damage(owned)
+	_normalize_menus()  # keep house rules on the just-updated car name / stats
 	_move_camera_to(_camera_target_xform(), snap)
 
 

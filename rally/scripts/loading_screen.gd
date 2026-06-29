@@ -31,15 +31,15 @@ func _init() -> void:
 	add_child(box)
 
 	_title = Label.new()
-	_title.text = "Loading stage…"
+	_title.text = UITheme.caps("Loading stage…")
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title.add_theme_font_size_override("font_size", 22)
+	_title.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	box.add_child(_title)
 
 	_step = Label.new()
 	_step.text = ""
 	_step.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_step.add_theme_font_size_override("font_size", 14)
+	_step.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	_step.modulate = Color(1, 1, 1, 0.7)
 	box.add_child(_step)
 
@@ -47,13 +47,13 @@ func _init() -> void:
 # Set the headline (defaults to "Loading stage…"; the HQ uses its own wording).
 func set_title(text: String) -> void:
 	if _title != null:
-		_title.text = text
+		_title.text = UITheme.caps(text)
 
 
 # Update the current-stage line (e.g. "Building terrain…").
 func set_step(text: String) -> void:
 	if _step != null:
-		_step.text = text
+		_step.text = UITheme.caps(text)
 
 
 # Tear the overlay down once the world is ready.

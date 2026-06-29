@@ -12,14 +12,32 @@ game: a retro arcade / terminal aesthetic.
 ## The look
 
 - **Hand-drawn monospace font** (Syne Mono) — stat read-outs and money columns
-  line up while the lettering keeps a characterful, slightly informal feel. Text
-  is shown **verbatim** (the helpers never force casing); `UITheme.caps()` is
-  available if a specific string wants the all-caps arcade look.
+  line up while the lettering keeps a characterful, slightly informal feel.
 - **Pure-black, sharp-cornered panels** — no rounded corners, no gradients, no
-  blur. Over the 3D world they sit ~90% opaque so text reads cleanly.
+  blur.
 - **Crisp white text with a hard drop shadow** (the chunky terminal look).
 - A **tight accent palette**: **green** = active / selected / positive,
   **gold** = money / reward, **red** = danger / run timer / warning.
+
+## House rules (enforced)
+
+These are hard rules, not suggestions — `UITheme.enforce(root)` applies 1–3 to
+every `Label`/`Button` under a menu root, and the global theme bakes in 2–4 as the
+defaults:
+
+1. **All menu text is UPPERCASE** (`UITheme.caps`).
+2. **One fixed font size everywhere** (`UITheme.FONT_SIZE`, deliberately small) —
+   no per-screen size hierarchy; titles, headings, body and buttons all match.
+3. **Single-line menu buttons are a fixed, compact height** (`UITheme.MENU_ROW_H`).
+   Multi-line rows (e.g. the settings option rows, which embed their own layout)
+   are left to size themselves.
+4. **Menu backgrounds are pure black** — buttons and panels alike.
+
+Menu builders call `UITheme.enforce(root)` once after building; screens with
+dynamic text re-run it whenever that text changes (HQ on every view change /
+focus / lift refresh, the podium after each reveal) so the rules keep holding.
+The HUD, mobile controls and other in-world overlays are **not** menus and are
+left alone (e.g. the big 3·2·1 countdown stays large).
 
 ## How it's applied (two layers)
 
@@ -31,11 +49,11 @@ game: a retro arcade / terminal aesthetic.
    each widget. Scripts that still call `add_theme_font_size_override(...)` only
    change the *size*; the face, colour and shadow come from the theme.
 2. **`UITheme` helpers** — the bits a flat theme can't express on its own:
-   role-coloured labels (`UITheme.money`, `UITheme.label(text, size, "green")`),
-   solid black panel boxes (`UITheme.panel` / `panel_box`), and the selection
-   treatment from the web build — a green underline + green text
-   (`UITheme.mark_selected`) and the **▶ ◀** markers around the focused option
-   (`UITheme.flank`).
+   role-coloured labels (`UITheme.money`, `UITheme.label(text, "green")`),
+   pure-black panel boxes (`UITheme.panel` / `panel_box`), the rule-enforcing
+   `UITheme.enforce(root)`, and the selection treatment from the web build — a
+   green underline + green text (`UITheme.mark_selected`) and the **▶ ◀** markers
+   around the focused option (`UITheme.flank`).
 
 ## Single source of truth
 
