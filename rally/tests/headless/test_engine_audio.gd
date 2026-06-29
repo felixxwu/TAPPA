@@ -296,6 +296,22 @@ func test_no_fuel_cut_leaves_voice_unchanged() -> void:
 		assert_almost_eq(no_cut[i].x, default[i].x, 0.0000001, "no cut = unchanged voice")
 
 
+# The per-sample hot path reads a baked wavetable bank (_read_voice) instead of
+# re-evaluating the firing-pulse sum (_voice). The bank must approximate the
+# exact voice tightly across the full phase × load range, or the engine note
+# changes character. The voice is continuous in phase, so linear interpolation
+# tracks it within a small tolerance.
+func test_wavetable_matches_direct_voice() -> void:
+	var synth := _clean_synth()
+	var max_err := 0.0
+	for li in range(21):
+		var load := float(li) / 20.0
+		for pi in range(1024):
+			var phase := float(pi) / 1024.0
+			max_err = maxf(max_err, absf(synth._read_voice(phase, load) - synth._voice(phase, load)))
+	assert_lt(max_err, 0.02, "baked wavetable approximates the direct voice within tolerance")
+
+
 func _synth_with_angles(angles: Array[float]) -> EngineAudioSynth:
 	var cfg := GameConfig.new()
 	cfg.engine_firing_angles = angles

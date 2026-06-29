@@ -18,6 +18,21 @@ const CRACKLE_DECAY := 0.99
 # so overdrive distorts symmetrically (a loud, square-ish tone). Cutoff ≈
 # (1 - R)·mix_rate / 2π ≈ 17 Hz at 22050 Hz — well below the engine fundamental.
 const DC_BLOCK_R := 0.995
+# Voice wavetable bank. The firing-pulse voice is a periodic function of crank
+# phase, parameterised only by load (throttle). Re-evaluating its
+# firing_phases × harmonics sin/exp sum EVERY sample is the synth's dominant
+# cost. Instead we bake the voice over one crank cycle into a small bank of
+# tables — one per load level — ONCE at init, then read it back per sample with
+# linear interpolation in phase and load (_read_voice). Pitch (rpm) falls out for
+# free: the crank phase still advances at the rpm-derived rate, we just sample
+# the table at that phase. This trades ~harmonics×firings transcendentals per
+# sample for a handful of array reads. The bank build is a one-time cost (well
+# under a second of the old per-sample work) paid at car load. The voice is
+# continuous in phase (at a firing the window is 1 but the harmonic sum is 0), so
+# linear interpolation tracks it tightly. See todo/performance-optimisations.md
+# item 6.
+const VOICE_TABLE_SIZE := 2048  # phase resolution of one crank cycle
+const VOICE_LOAD_TABLES := 8    # load (throttle) steps the bank is baked at
 
 var _mix_rate: float
 var _firing_phases: Array[float]
@@ -43,6 +58,7 @@ var _crackle_env := 0.0  # decaying amplitude of the current crackle burst
 var _dc_x_prev := 0.0  # DC-blocker state: previous input sample
 var _dc_y_prev := 0.0  # DC-blocker state: previous output sample
 var _rng := RandomNumberGenerator.new()
+var _voice_bank: Array[PackedFloat32Array] = []  # [VOICE_LOAD_TABLES] of [VOICE_TABLE_SIZE]
 
 
 func _init(cfg: GameConfig, mix_rate: float) -> void:
@@ -60,6 +76,7 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_soft_clip_drive = maxf(cfg.engine_soft_clip_drive, 0.001)  # >0; avoid /0-ish curves
 	_soft_clip_post_gain = cfg.engine_soft_clip_post_gain
 	_rng.seed = 1  # deterministic for tests
+	_build_voice_bank()
 
 
 func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false) -> void:
@@ -91,9 +108,9 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 		# Second voice advancing at half the rate = one octave lower. Crossfade it
 		# in by _low_octave_mix so a car can sound deeper without changing pitch.
 		_crank_phase_low = fposmod(_crank_phase_low + cycles_per_sec * 0.5 * dt, 1.0)
-		var sample := _voice(_crank_phase, _sm_throttle)
+		var sample := _read_voice(_crank_phase, _sm_throttle)
 		if _low_octave_mix > 0.0:
-			var low := _voice(_crank_phase_low, _sm_throttle)
+			var low := _read_voice(_crank_phase_low, _sm_throttle)
 			sample = lerpf(sample, low, _low_octave_mix)
 		# Volume (_master_gain) scales only the cylinder firing voice. The
 		# broadband noise is added afterwards at a constant level so a car's
@@ -128,7 +145,45 @@ func soft_clip(x: float) -> float:
 	return clampf(shaped * _soft_clip_post_gain, -1.0, 1.0)
 
 
+# Bake the firing-pulse voice over one crank cycle into a bank of load-indexed
+# tables. Called once at init; the per-sample path reads this bank via
+# _read_voice() instead of re-evaluating _voice(). Cost is VOICE_LOAD_TABLES ×
+# VOICE_TABLE_SIZE voice evaluations, one time.
+func _build_voice_bank() -> void:
+	_voice_bank.clear()
+	for k in range(VOICE_LOAD_TABLES):
+		var load := float(k) / float(VOICE_LOAD_TABLES - 1)
+		var table := PackedFloat32Array()
+		table.resize(VOICE_TABLE_SIZE)
+		for i in range(VOICE_TABLE_SIZE):
+			table[i] = _voice(float(i) / float(VOICE_TABLE_SIZE), load)
+		_voice_bank.append(table)
+
+
+# Read the baked voice at (phase, load) with bilinear interpolation: linear in
+# crank phase (wrapping the cycle) and linear across the two bracketing load
+# tables. This is the per-sample hot path — it replaces the firing_phases ×
+# harmonics sin/exp sum in _voice() with a handful of array reads.
+func _read_voice(phase: float, load: float) -> float:
+	var lf := clampf(load, 0.0, 1.0) * float(VOICE_LOAD_TABLES - 1)
+	var k0 := int(lf)
+	var k1 := mini(k0 + 1, VOICE_LOAD_TABLES - 1)
+	var kfrac := lf - float(k0)
+	var p := phase * float(VOICE_TABLE_SIZE)
+	var i0 := mini(int(p), VOICE_TABLE_SIZE - 1)  # fposmod gives [0,1); guard the float edge
+	var i1 := (i0 + 1) % VOICE_TABLE_SIZE         # wrap the last cell back to phase 0
+	var pfrac := p - float(i0)
+	var t0 := _voice_bank[k0]
+	var t1 := _voice_bank[k1]
+	var v0 := lerpf(t0[i0], t0[i1], pfrac)
+	var v1 := lerpf(t1[i0], t1[i1], pfrac)
+	return lerpf(v0, v1, kfrac)
+
+
 # Sum each firing pulse: a short harmonic burst windowed near its crank phase.
+# Now the OFFLINE table builder for _build_voice_bank() rather than a per-sample
+# call — _read_voice() serves the hot loop. Kept exact (no approximation) so the
+# baked tables carry the original sound design.
 func _voice(phase: float, load_factor: float) -> float:
 	# The per-harmonic weight depends only on the harmonic index and load_factor,
 	# not the firing phase — so compute it ONCE here and reuse across every firing

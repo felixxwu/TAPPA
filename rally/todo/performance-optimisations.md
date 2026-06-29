@@ -462,7 +462,23 @@ that's only ~3 frames of headroom).
    the inner loop ~25%. Also raised the generator `BUFFER_SECONDS` 0.1→0.15 so a
    slow web frame is less likely to underrun the buffer (the frame-coupling in the
    "Why" above). Single shipped values, per the inherently-low-end principle.
-4. **Optionally decouple from the render frame.** Consider filling the
+4. ✅ **DONE. Voice wavetable — the structural win.** The firing-pulse voice is a
+   periodic function of crank phase parameterised only by load, so `_voice()`'s
+   `firing_phases × harmonics` `sin`/`exp` sum is now baked over one crank cycle
+   into a small bank of load-indexed tables **once at init** (`_build_voice_bank`),
+   and the per-sample path reads it back with bilinear phase/load interpolation
+   (`_read_voice`). Pitch tracks rpm for free (the crank phase still advances at
+   the rpm rate; the table is sampled at that phase). Measured **3.4× (i4) → 8.1×
+   (v12)** faster on the voice, cost now *constant* in cylinder count, worst-case
+   approximation error ~`8e-5` (inaudible). Guarded by
+   `test_wavetable_matches_direct_voice` plus the existing behavioural tests.
+   **Measured dead-ends (do not retry in GDScript):** a `sin` lookup table and a
+   harmonic-recurrence rewrite both benchmarked *slower* than direct `sin` — a
+   GDScript builtin `sin` is a cheap dispatch into compiled engine math, so
+   swapping one `sin` for several interpreted ops loses. The wavetable wins only
+   because it replaces the *whole* harmonic sum (~16 transcendentals) with ~5
+   array ops, not one `sin`.
+5. **Optionally decouple from the render frame.** Consider filling the
    `AudioStreamGenerator` from a thread / on an audio cadence rather than
    `_process`, so a slow render frame can't underrun audio. **Note:** the shipped
    web build is single-threaded (item 7), so a true audio thread isn't available

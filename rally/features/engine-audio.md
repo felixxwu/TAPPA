@@ -191,21 +191,40 @@ its `soft_clip_post_gain`.
 ## Performance note
 
 The per-sample synthesis loop is the project's heaviest pure-CPU cost (run on the
-main thread at the mix rate — roughly a tenth of a CPU-second per second of audio
-on desktop, several times that under single-threaded web WASM). Optimisations in
-place, all behaviour-preserving:
-- `_voice()` computes its per-harmonic weights (`pow(0.6 + 0.4·load, h)/h`) once
-  per call and reuses them across all firing phases, instead of recomputing the
-  same `pow()` inside the firing-phase loop — removes a firing-phases-fold of
-  `pow()` calls per sample (the values don't depend on the firing phase).
+main thread at the mix rate — several times heavier under single-threaded web
+WASM than on desktop). Optimisations in place, all behaviour-preserving:
+- **Voice wavetable (the big one).** The firing-pulse voice is a periodic
+  function of crank phase, parameterised only by load (throttle), so instead of
+  re-evaluating its `firing_phases × harmonics` `sin`/`exp` sum every sample, the
+  synth bakes the voice over one crank cycle into a small bank of tables — one per
+  load level (`VOICE_LOAD_TABLES`) — **once at init** (`_build_voice_bank`), then
+  reads it back per sample with bilinear interpolation in phase and load
+  (`_read_voice`). Pitch (rpm) falls out for free: the crank phase still advances
+  at the rpm-derived rate, the table is just sampled at that phase. This trades
+  the per-sample transcendentals for a handful of array reads — measured **3.4×
+  (i4) to 8.1× (v12)** faster on the voice, with the cost now *constant* in
+  cylinder count (so big engines benefit most) and a worst-case approximation
+  error of ~`8e-5` (inaudible; guarded by `test_wavetable_matches_direct_voice`).
+  The voice is continuous in phase (at a firing the window is 1 but the harmonic
+  sum is 0), so linear interpolation tracks it tightly. `_voice()` is retained
+  unchanged as the offline table builder, so the baked sound is the original
+  design — and it still computes its per-harmonic weights (`pow(0.6 + 0.4·load,
+  h)/h`) once per call rather than per firing phase.
 - `engine_audio.gd` sizes its scratch buffer to exactly the frames available and
   pushes it directly, dropping the per-frame `slice()` allocation.
 - The shipped `engine_harmonics` is **3** (`config/game_config.tres`; code default
-  is 4) — each harmonic dropped removes `firing_phases` `sin()` calls per sample,
-  so 4→3 trims the inner loop ~25% with the note still reading well. This is a
-  config value, not a code change; the synth reads it unchanged.
+  is 4). With the wavetable this no longer affects the per-sample cost (only the
+  one-time bake), but it still shapes the baked timbre. Config value, not a code
+  change; the synth reads it unchanged.
 
-These two are guarded by the existing `test_engine_audio*` tests (which build the
+Note: a GDScript `sin`-lookup table or a harmonic-recurrence rewrite were both
+measured to be *slower* than direct `sin` here — in interpreted GDScript a builtin
+`sin` is a cheap dispatch into compiled engine math, so replacing one `sin` with
+several interpreted ops loses. The wavetable wins because it replaces the *entire*
+`firing_phases × harmonics` sum (≈16 transcendentals) with ~5 array ops, not one
+`sin` with several. See `todo/performance-optimisations.md` item 6.
+
+These are guarded by the existing `test_engine_audio*` tests (which build the
 synth from `GameConfig.new()`, i.e. the code defaults, so they are unaffected by
 the shipped `engine_harmonics` override). Because the fill is frame-coupled, a slow
 main-thread frame (e.g. a terrain chunk-crossing build on web) can underrun the
