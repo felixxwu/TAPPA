@@ -147,11 +147,13 @@ func setup_stage() -> void:
 	fill.light_color = Color(0.8, 0.85, 1.0)
 	vp.add_child(fill)
 
+	# floor uses the real terrain grass texture so the preview verifies blending
 	var ground := MeshInstance3D.new()
 	var pm := PlaneMesh.new(); pm.size = Vector2(8, 8)
 	ground.mesh = pm
 	var gm := StandardMaterial3D.new()
-	gm.albedo_color = Color(0.46, 0.52, 0.36)
+	gm.albedo_texture = _tex(ProjectSettings.globalize_path("res://textures/grass.jpg"))
+	gm.uv1_scale = Vector3(6, 6, 1)
 	gm.roughness = 1.0
 	ground.material_override = gm
 	vp.add_child(ground)
