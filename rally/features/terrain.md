@@ -171,14 +171,20 @@ horizon for the skybox instead of a cliff. See
 The coarse geometry re-centres on every focus **chunk crossing** and is a
 **full, uncut grid** — it underlaps the entire detail ring rather than holing out
 the loaded chunks. The rebuild is the same ~2,600-vertex, light-baked cost as a
-detail chunk, so it is **deferred**, not run on the crossing frame: a crossing only
-marks the backdrop dirty (coalescing to the latest centre), and the actual rebuild
-waits for a frame when `TerrainManager.is_streaming_chunks()` is false (no chunk
-queued, dispatched, or awaiting integration). This keeps the heavy coarse mesh
-build from stacking on top of the detail-ring stream in one frame — on the
-single-threaded web build those back-to-back main-thread builds were the bulk of
-the chunk-crossing hitch. The backdrop is huge and fog-softened, so the few frames'
-lag in re-centring is imperceptible. To stop it poking through the detailed terrain, the **whole
+detail chunk, so it is **deferred AND sliced**, never run whole on the crossing
+frame: a crossing only marks the backdrop dirty (coalescing to the latest centre);
+the rebuild only *starts AND steps* on frames when
+`TerrainManager.is_streaming_chunks()` is false (no chunk queued, dispatched,
+awaiting integration, or mid-build), filling `ROWS_PER_FRAME` (8) grid rows per
+idle frame and swapping the new mesh in only when complete (the previous backdrop
+stays visible until then). So the backdrop and the detail-ring stream **never share
+a frame** — the backdrop fills purely in the gaps between detail builds (detail has
+priority), and no single frame does a whole coarse build. This keeps the heavy
+coarse build off the detail-ring stream *and* off any single frame — on the single-threaded web build those back-to-back
+main-thread mesh builds were the bulk of the chunk-crossing hitch. The synchronous
+`rebuild_around` (initial build at world load, behind the loading screen) runs the
+same begin/step/finish to completion in one call. The backdrop is huge and
+fog-softened, so the few frames' lag in re-centring is imperceptible. To stop it poking through the detailed terrain, the **whole
 backdrop is sunk `sink_m`** (default 1.5 m, `GameConfig.distant_terrain_sink_m`)
 below true height, so the detail ring always renders above it and the coarse mesh
 stays hidden beneath. At the ring's outer edge the coarse surface steps down by
@@ -194,7 +200,13 @@ crossing. Tunables: `GameConfig.distant_terrain_*`.
 
 Chunk generation is split into a pure `compute_chunk_data(coord)` (noise +
 mesh arrays — all CPU math) and a cheap main-thread `apply_data` (builds the
-`ArrayMesh` + `HeightMapShape3D` and adds the node).
+`ArrayMesh` + `HeightMapShape3D` and adds the node). The per-row work lives in
+**`TerrainChunkBuilder`** (`scripts/terrain_chunk_builder.gd`), a resumable builder
+that fills the chunk arrays a few grid ROWS at a time. `compute_chunk_data` just
+runs a local builder to completion in one call, so the monolithic and incremental
+paths produce byte-identical data (guarded by
+`test_incremental_build_matches_full_build`); each builder is a local instance, so
+the threaded path's concurrent calls never share state.
 
 At runtime (`use_threaded_generation = true`), `compute_chunk_data` runs on a
 `WorkerThreadPool` task; `_process` integrates at most
@@ -218,9 +230,16 @@ isn't available, so terrain gen runs on the main thread, frame-budgeted so a
 boundary crossing doesn't generate a whole ring in one tick (a visible stutter).
 `_use_budgeted_generation()` (on whenever `OS.has_feature("web")`, or forced via
 `force_main_thread_budget` for desktop tests) routes missing coords into
-`_build_queue`; `_pump_build_queue()` generates at most `MAX_BUILDS_PER_FRAME`
-(1) of them per frame, matching the integration cap so chunk loading stays
-one-chunk-per-frame. This path keys on the `web` platform feature, not on the
+`_build_queue`; `_pump_build_queue()` then advances generation by at most
+`MAX_BUILD_ROWS_PER_FRAME` (16) grid ROWS per frame, holding one in-progress
+`TerrainChunkBuilder` (`_active_builder`) across frames and spawning it when
+complete. A whole chunk is ~206 rows lit — far more than one phone frame can
+afford — so even the old "one chunk per frame" still stalled; row-slicing spreads a
+single chunk's build across ~10-15 frames (the fog and the ring's lead distance —
+the nearest new chunk is ~0.7 s of travel away at speed — hide the lag). The active
+builder counts as "streaming" (`is_streaming_chunks()`, which `DistantTerrain` gates
+its rebuild on) and is excluded from re-queueing; a partial build whose coord leaves
+the ring is abandoned. This path keys on the `web` platform feature, not on the
 export's thread flag, so it was already in force before threads were turned off —
 the only thing the single-threaded export changes is dropping the unused engine
 thread pools (and the SAB host requirements). `build_initial` (`force_sync`)

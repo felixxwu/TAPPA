@@ -12,10 +12,15 @@ const CELL_M := 1.0                          # grid cell size (PS1 low-poly terr
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
 const RADIUS := 1                            # ring radius -> (2*RADIUS+1)^2 = 3x3
 const MAX_INTEGRATIONS_PER_FRAME := 1   # cap chunk node creation per frame
-# Cap chunk generation+spawn per frame on the budgeted (web) path, so a boundary
-# crossing never does more than one chunk's CPU work in a single tick. Matches the
-# integration cap, so both code paths stream at the same one-chunk-per-frame rate.
-const MAX_BUILDS_PER_FRAME := 1
+# Per-frame work budget for the main-thread budgeted (web) path, in grid ROWS of
+# chunk generation (see TerrainChunkBuilder). A whole chunk is ~206 rows lit, far
+# more than one frame can afford on a phone, so even "one chunk per frame" stalled;
+# slicing to a row budget spreads a single chunk's build across ~10-15 frames while
+# the fog and the ring's lead distance hide the lag. Lower for smaller per-frame
+# spikes (more frames per chunk), raise for faster fill (heavier frames). The
+# nearest new chunk has ~0.7 s of lead before the car reaches it at speed, so even
+# a low budget keeps up comfortably.
+const MAX_BUILD_ROWS_PER_FRAME := 16
 const ROAD_SAMPLE_STEP_M := 0.25        # centerline sampling density for bake_road
 
 const ChunkScript := preload("res://scripts/terrain_chunk.gd")
@@ -95,6 +100,10 @@ var _last_focus_coord: Vector2i = Vector2i(2147483647, 0)  # force first reconci
 @export var defer_initial_build: bool = false
 var _pending: Dictionary = {}          # coord -> WorkerThreadPool task id
 var _build_queue: Array[Vector2i] = [] # coords awaiting budgeted main-thread build
+# The chunk currently being built incrementally on the budgeted path (one at a
+# time, main thread only). Null when idle. Held across frames by _pump_build_queue;
+# its coord counts as "streaming" (is_streaming_chunks) and must not be re-queued.
+var _active_builder: TerrainChunkBuilder = null
 var _results: Dictionary = {}          # coord -> data Dictionary (worker-written)
 var _results_mutex: Mutex = Mutex.new()
 # Total chunk nodes spawned (mesh + collision built on the main thread). Read by
@@ -218,101 +227,14 @@ func build_heights(center: Vector3) -> PackedFloat32Array:
 
 # Pure CPU work for one chunk: heights + mesh arrays. Safe to call from a worker
 # thread — it reads only the (runtime-static) noise params and builds its own
-# FastNoiseLite instances, touching no scene state.
+# FastNoiseLite instances, touching no scene state. The actual row-by-row work
+# lives in TerrainChunkBuilder (resumable, so the budgeted web path can spread it
+# across frames); here we just run a local builder to completion in one call, so
+# this monolithic path and the incremental one produce byte-identical data.
 func compute_chunk_data(coord: Vector2i) -> Dictionary:
-	var half := CHUNK_M / 2.0
-	var center := Vector3((coord.x + 0.5) * CHUNK_M, 0.0, (coord.y + 0.5) * CHUNK_M)
-	var tile := texture_tile_per_meter
-
-	var pair := _build_noises()
-	var noises: Array = pair[0]
-	var amplitudes: PackedFloat32Array = pair[1]
-
-	var count := SAMPLES * SAMPLES
-	var heights := PackedFloat32Array()
-	heights.resize(count)
-	# Indexed mesh: one shared vertex per grid sample (1/4 the vertices of the
-	# old de-indexed mesh — the big PS1 vertex-throughput win). UVs use world
-	# coords (continuous checker). Colours are per-vertex (Gouraud), so the road
-	# tint now blends smoothly across cells instead of stepping per square.
-	var vertices := PackedVector3Array(); vertices.resize(count)
-	var uvs := PackedVector2Array(); uvs.resize(count)
-	# Per-vertex baked light tint (white when light_amount is 0). Folded into the
-	# vertex colour by vertex_colors() so the flat shader multiplies it for free.
-	# Left empty when unlit — vertex_colors() treats an empty array as all-white.
-	var lights := PackedColorArray()
-
-	# Baked light needs each vertex's four 1-cell neighbours. Rather than re-sample
-	# the noise 4× per vertex (the old _bake_light did — ~5× the noise work of a
-	# bare height), sample the PURE (pre-flatten) height field ONCE over a 1-cell
-	# halo (SAMPLES+2 per edge). Every vertex — chunk edges included — then reads
-	# its own height and its four neighbours straight from this array, so the light
-	# bake costs essentially no extra noise calls. Only built when lighting is on.
-	var lit := light_amount > 0.0
-	var hs := SAMPLES + 2
-	var ph := PackedFloat32Array()
-	if lit:
-		lights.resize(count)
-		ph.resize(hs * hs)
-		for hzi in hs:
-			var pz := center.z - half + (hzi - 1) * CELL_M
-			for hxi in hs:
-				var px := center.x - half + (hxi - 1) * CELL_M
-				ph[hzi * hs + hxi] = _sample_height(noises, amplitudes, px, pz)
-
-	for zi in SAMPLES:
-		var lz := -half + zi * CELL_M
-		var wz := center.z + lz
-		for xi in SAMPLES:
-			var lx := -half + xi * CELL_M
-			var wx := center.x + lx
-			var idx := zi * SAMPLES + xi
-			var h: float
-			if lit:
-				# Centre of this vertex in the halo (offset by 1 for the border ring);
-				# its neighbours are ±1 (x) and ±hs (z). Same world coords — hence the
-				# same samples — the old per-vertex _bake_light used, so bit-identical.
-				var c := (zi + 1) * hs + (xi + 1)
-				h = ph[c]
-				lights[idx] = _light_from_neighbours(ph[c - 1], ph[c + 1], ph[c - hs], ph[c + hs])
-			else:
-				h = _sample_height(noises, amplitudes, wx, wz)
-			# Blend road vertices toward the baked road height by their weight
-			# (mesh + collision): w=1 fully flat, w=0 true terrain, between ramps.
-			var vidx := Vector2i(coord.x * (SAMPLES - 1) + xi, coord.y * (SAMPLES - 1) + zi)
-			if road_blend.has(vidx):
-				h = lerpf(h, road_heights[vidx], road_blend[vidx])
-			heights[idx] = h
-			vertices[idx] = Vector3(lx, h, lz)
-			uvs[idx] = Vector2(wx, wz) * tile
-
-	var per_edge := SAMPLES - 1
-	var cells := per_edge * per_edge
-	var indices := PackedInt32Array(); indices.resize(cells * 6)
-	var ii := 0
-	for zi in per_edge:
-		for xi in per_edge:
-			var a := zi * SAMPLES + xi
-			var b := a + 1
-			var c := a + SAMPLES
-			var d := c + 1
-			# Clockwise winding a,b,c / b,d,c (matches the previous mesh).
-			indices[ii + 0] = a; indices[ii + 1] = b; indices[ii + 2] = c
-			indices[ii + 3] = b; indices[ii + 4] = d; indices[ii + 5] = c
-			ii += 6
-
-	var colors := vertex_colors(coord, lights)
-	var uv2s := surface_uv2(coord)
-
-	return {
-		"center": center,
-		"heights": heights,
-		"vertices": vertices,
-		"uvs": uvs,
-		"colors": colors,
-		"uv2s": uv2s,
-		"indices": indices,
-	}
+	var builder := TerrainChunkBuilder.new(self, coord)
+	builder.run_to_completion()
+	return builder.data()
 
 
 # Per-vertex colours for one chunk's indexed mesh. RGB carries default_cell_color
@@ -323,30 +245,36 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 # either chunk -> weights match exactly across seams (no stitching). Smoothly
 # ramped rather than stepped.
 func vertex_colors(coord: Vector2i, lights: PackedColorArray = PackedColorArray()) -> PackedColorArray:
-	var per_edge := SAMPLES - 1
-	var has_light := not lights.is_empty()
 	var colors := PackedColorArray()
 	colors.resize(SAMPLES * SAMPLES)
 	for zi in SAMPLES:
-		for xi in SAMPLES:
-			var gx := coord.x * per_edge + xi
-			var gz := coord.y * per_edge + zi
-			# The four cells meeting at this vertex (global cell coords).
-			var w: float = (
-				track_weights.get(Vector2i(gx - 1, gz - 1), 0.0)
-				+ track_weights.get(Vector2i(gx, gz - 1), 0.0)
-				+ track_weights.get(Vector2i(gx - 1, gz), 0.0)
-				+ track_weights.get(Vector2i(gx, gz), 0.0)
-			) / 4.0
-			# RGB = ground tint × baked light; ALPHA = road blend weight.
-			var idx := zi * SAMPLES + xi
-			var lgt := lights[idx] if has_light else Color(1, 1, 1)
-			colors[idx] = Color(
-				default_cell_color.r * lgt.r,
-				default_cell_color.g * lgt.g,
-				default_cell_color.b * lgt.b,
-				w)
+		_vertex_color_row(coord, zi, lights, colors)
 	return colors
+
+
+# One row of vertex_colors, written into `out` (shared so the incremental
+# TerrainChunkBuilder can fill the colour array a row per frame).
+func _vertex_color_row(coord: Vector2i, zi: int, lights: PackedColorArray, out: PackedColorArray) -> void:
+	var per_edge := SAMPLES - 1
+	var has_light := not lights.is_empty()
+	for xi in SAMPLES:
+		var gx := coord.x * per_edge + xi
+		var gz := coord.y * per_edge + zi
+		# The four cells meeting at this vertex (global cell coords).
+		var w: float = (
+			track_weights.get(Vector2i(gx - 1, gz - 1), 0.0)
+			+ track_weights.get(Vector2i(gx, gz - 1), 0.0)
+			+ track_weights.get(Vector2i(gx - 1, gz), 0.0)
+			+ track_weights.get(Vector2i(gx, gz), 0.0)
+		) / 4.0
+		# RGB = ground tint × baked light; ALPHA = road blend weight.
+		var idx := zi * SAMPLES + xi
+		var lgt := lights[idx] if has_light else Color(1, 1, 1)
+		out[idx] = Color(
+			default_cell_color.r * lgt.r,
+			default_cell_color.g * lgt.g,
+			default_cell_color.b * lgt.b,
+			w)
 
 
 # Per-vertex tarmac weight for one chunk's mesh, carried in UV2.x (the shader
@@ -357,25 +285,31 @@ func vertex_colors(coord: Vector2i, lights: PackedColorArray = PackedColorArray(
 # bare grass cells off the road edge. UV2.y is unused (0). Keyed by GLOBAL cell
 # coords, so a shared edge vertex averages the same cells from either chunk (seam-safe).
 func surface_uv2(coord: Vector2i) -> PackedVector2Array:
-	var per_edge := SAMPLES - 1
 	var uv2s := PackedVector2Array()
 	uv2s.resize(SAMPLES * SAMPLES)
 	for zi in SAMPLES:
-		for xi in SAMPLES:
-			var gx := coord.x * per_edge + xi
-			var gz := coord.y * per_edge + zi
-			var sum := 0.0
-			var n := 0
-			for cell in [
-				Vector2i(gx - 1, gz - 1), Vector2i(gx, gz - 1),
-				Vector2i(gx - 1, gz), Vector2i(gx, gz),
-			]:
-				if track_surface.has(cell):
-					sum += track_surface[cell]
-					n += 1
-			var tarmac := sum / float(n) if n > 0 else 0.0
-			uv2s[zi * SAMPLES + xi] = Vector2(tarmac, 0.0)
+		_surface_uv2_row(coord, zi, uv2s)
 	return uv2s
+
+
+# One row of surface_uv2, written into `out` (shared so the incremental
+# TerrainChunkBuilder can fill the tarmac-weight array a row per frame).
+func _surface_uv2_row(coord: Vector2i, zi: int, out: PackedVector2Array) -> void:
+	var per_edge := SAMPLES - 1
+	for xi in SAMPLES:
+		var gx := coord.x * per_edge + xi
+		var gz := coord.y * per_edge + zi
+		var sum := 0.0
+		var n := 0
+		for cell in [
+			Vector2i(gx - 1, gz - 1), Vector2i(gx, gz - 1),
+			Vector2i(gx - 1, gz), Vector2i(gx, gz),
+		]:
+			if track_surface.has(cell):
+				sum += track_surface[cell]
+				n += 1
+		var tarmac := sum / float(n) if n > 0 else 0.0
+		out[zi * SAMPLES + xi] = Vector2(tarmac, 0.0)
 
 
 # The surface at a world XZ as (road_weight, tarmac_weight), each in [0,1]:
@@ -451,7 +385,7 @@ func loaded_coords() -> Array:
 # detail ring is quiet, so the two never share a frame on the single-threaded web
 # path — the back-to-back mesh builds were the bulk of the chunk-crossing hitch.
 func is_streaming_chunks() -> bool:
-	if not _build_queue.is_empty() or not _pending.is_empty():
+	if _active_builder != null or not _build_queue.is_empty() or not _pending.is_empty():
 		return true
 	_results_mutex.lock()
 	var has_results := not _results.is_empty()
@@ -588,26 +522,53 @@ func _process(_delta: float) -> void:
 # cross-origin isolation -> no SharedArrayBuffer -> no real threads) runs
 # WorkerThreadPool.add_task SYNCHRONOUSLY on the main thread, so the "threaded"
 # path would still generate a whole ring's worth of chunks in one tick on every
-# boundary crossing — a visible stutter. Budgeting to MAX_BUILDS_PER_FRAME spreads
-# that work across frames. `force_main_thread_budget` lets a headless test exercise
-# the same path on desktop. Never engaged in the editor (deterministic preview).
+# boundary crossing — a visible stutter. Budgeting to MAX_BUILD_ROWS_PER_FRAME
+# (row-by-row via TerrainChunkBuilder) spreads that work across frames.
+# `force_main_thread_budget` lets a headless test exercise the same path on desktop.
+# Never engaged in the editor (deterministic preview).
 func _use_budgeted_generation() -> bool:
 	return not Engine.is_editor_hint() and (force_main_thread_budget or OS.has_feature("web"))
 
 
-# Generate + spawn up to MAX_BUILDS_PER_FRAME queued chunks this frame (budgeted
-# path). Coords that left the ring or were already built while queued are skipped.
+# Advance up to MAX_BUILD_ROWS_PER_FRAME rows of chunk generation this frame
+# (budgeted path), spreading a single chunk's build across frames. Holds one
+# in-progress TerrainChunkBuilder across frames; when it completes the chunk is
+# spawned and the next queued coord starts (using any leftover row budget the same
+# frame). Coords that left the ring or were already built are skipped, and an
+# in-flight build whose coord left the ring is abandoned.
 func _pump_build_queue() -> void:
-	if _build_queue.is_empty():
-		return
 	var wanted := target_coords(_last_focus_coord)
-	var built := 0
-	while not _build_queue.is_empty() and built < MAX_BUILDS_PER_FRAME:
+	# Abandon a partial build whose coord is no longer wanted (focus moved away).
+	if _active_builder != null and not wanted.has(_active_builder.coord):
+		_active_builder = null
+	var rows := MAX_BUILD_ROWS_PER_FRAME
+	while rows > 0:
+		if _active_builder == null:
+			var coord := _take_next_build_coord(wanted)
+			if coord == _NO_BUILD_COORD:
+				return  # nothing left to build this frame
+			_active_builder = TerrainChunkBuilder.new(self, coord)
+		rows -= _active_builder.step(rows)
+		if _active_builder.complete:
+			var c: Vector2i = _active_builder.coord
+			# Re-check: the coord may have left the ring or been built since it started.
+			if wanted.has(c) and not _chunks.has(c):
+				_spawn_chunk(c, _active_builder.data())
+			_active_builder = null
+
+
+# Sentinel for "no buildable coord left" (Vector2i has no natural null).
+const _NO_BUILD_COORD := Vector2i(2147483647, 2147483647)
+
+
+# Pop the next still-wanted, not-yet-built coord off the queue, discarding any that
+# left the ring or were already built. Returns _NO_BUILD_COORD when none remain.
+func _take_next_build_coord(wanted: Array) -> Vector2i:
+	while not _build_queue.is_empty():
 		var coord: Vector2i = _build_queue.pop_front()
-		if not wanted.has(coord) or _chunks.has(coord):
-			continue  # left the ring or already built since it was queued
-		_spawn_chunk(coord, compute_chunk_data(coord))
-		built += 1
+		if wanted.has(coord) and not _chunks.has(coord):
+			return coord
+	return _NO_BUILD_COORD
 
 
 func _focus_node() -> Node3D:
@@ -646,7 +607,9 @@ func _reconcile(center: Vector2i, force_sync: bool = false) -> void:
 			# crossing spreads its chunk work across frames instead of stalling the
 			# whole row in one tick. (force_sync — build_initial — still builds the
 			# initial ring immediately below so there's ground under the car at spawn.)
-			if not _build_queue.has(coord):
+			# Skip the coord already mid-build so it isn't queued and built twice.
+			var building: bool = _active_builder != null and _active_builder.coord == coord
+			if not building and not _build_queue.has(coord):
 				_build_queue.append(coord)
 		# Editor always previews synchronously (deterministic, no worker threads in
 		# the tool context); runtime uses the worker pool when enabled.
@@ -706,9 +669,14 @@ func _exit_tree() -> void:
 	_pending.clear()
 	_results.clear()
 	_build_queue.clear()
+	_active_builder = null
 
 
 func _rebuild_loaded() -> void:
 	_noise_cache_valid = false  # seed / layers / wavelength changed
+	# Drop any in-flight budgeted build: it captured the old noise/road fields at
+	# start, so finishing it would spawn a stale chunk. Its coord re-queues on the
+	# next reconcile if still wanted. The loaded chunks are rebuilt synchronously below.
+	_active_builder = null
 	for chunk in _chunks.values():
 		chunk.setup(self, chunk.coord)
