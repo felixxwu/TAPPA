@@ -193,19 +193,25 @@ class _ArrowDraw extends Node2D:
 	func _draw() -> void:
 		if points.size() < 2:
 			return
-		# Fit the meter-space polyline uniformly into the box (preserve angles, so
-		# the bend still reads as the true turn intensity).
+		# Fit the meter-space polyline uniformly (preserve angles, so the bend still
+		# reads as the true turn intensity).
 		var lo := points[0]
 		var hi := points[0]
 		for p in points:
 			lo = lo.min(p)
 			hi = hi.max(p)
 		var content := hi - lo
-		var pad := 0.86
-		var scale: float = minf(box.size.x / maxf(content.x, 0.001),
-			box.size.y / maxf(content.y, 0.001)) * pad
 		var content_c := (lo + hi) * 0.5
-		var box_c := box.position + box.size * 0.5
+
+		var width := maxf(box.size.x, box.size.y) * 0.11
+		var radius := width * 0.5
+		# The arrowhead + round end caps overshoot the centerline, so scale the
+		# polyline into the box MINUS a uniform margin that reserves room for them —
+		# then the whole drawn shape (not just the centerline) fits.
+		var margin := width * 1.6
+		var avail := box.size - Vector2(margin, margin) * 2.0
+		var scale: float = minf(avail.x / maxf(content.x, 0.001),
+			avail.y / maxf(content.y, 0.001))
 
 		var screen: PackedVector2Array = []
 		for p in points:
@@ -214,14 +220,7 @@ class _ArrowDraw extends Node2D:
 			if flip:
 				dx = -dx
 			# +Y up in meters -> -Y on screen, so entry sits low and exit points up.
-			screen.append(box_c + Vector2(dx, -dy))
-
-		var width := maxf(box.size.x, box.size.y) * 0.11
-		# Round-jointed stroke: a segment + a disc at each joint.
-		for i in range(1, screen.size()):
-			draw_line(screen[i - 1], screen[i], color, width)
-		for p in screen:
-			draw_circle(p, width * 0.5, color)
+			screen.append(Vector2(dx, -dy))
 
 		# Arrowhead at the exit, aligned to the last segment.
 		var tip := screen[screen.size() - 1]
@@ -229,8 +228,31 @@ class _ArrowDraw extends Node2D:
 		var perp := Vector2(-dir.y, dir.x)
 		var head := width * 1.9
 		var apex := tip + dir * head * 0.5
-		draw_colored_polygon(PackedVector2Array([
-			apex,
-			tip - dir * head * 0.5 + perp * head * 0.6,
-			tip - dir * head * 0.5 - perp * head * 0.6,
-		]), color)
+		var base1 := tip - dir * head * 0.5 + perp * head * 0.6
+		var base2 := tip - dir * head * 0.5 - perp * head * 0.6
+
+		# Centre the FULL drawn ink (shaft stroke + arrowhead), not just the
+		# centerline — otherwise the arrow leans toward its arrowhead side.
+		var ink_lo := screen[0]
+		var ink_hi := screen[0]
+		for p in screen:
+			ink_lo = ink_lo.min(p)
+			ink_hi = ink_hi.max(p)
+		for p in [apex, base1, base2]:
+			ink_lo = ink_lo.min(p)
+			ink_hi = ink_hi.max(p)
+		ink_lo -= Vector2(radius, radius)
+		ink_hi += Vector2(radius, radius)
+		var shift := box.position + box.size * 0.5 - (ink_lo + ink_hi) * 0.5
+		for i in screen.size():
+			screen[i] += shift
+		apex += shift
+		base1 += shift
+		base2 += shift
+
+		# Round-jointed stroke: a segment + a disc at each joint, then the head.
+		for i in range(1, screen.size()):
+			draw_line(screen[i - 1], screen[i], color, width)
+		for p in screen:
+			draw_circle(p, radius, color)
+		draw_colored_polygon(PackedVector2Array([apex, base1, base2]), color)
