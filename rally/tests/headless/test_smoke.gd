@@ -471,7 +471,7 @@ func test_finish_arch_straddles_the_road_at_the_stage_end() -> void:
 	if arch == null:
 		return
 	_assert_spans_road_upright(arch, "finish arch")
-	assert_eq(arch.top_banner, "top", "finish arch wears the FINISH banner set")
+	assert_false(arch.is_start, "finish arch wears the FINISH wording")
 	# It must sit at the end of the progress centerline (100%). Compare its XZ to the
 	# centerline's far end, read off the live TrackProgress.
 	var tp = _scene.get_node_or_null("TrackProgress")
@@ -489,7 +489,7 @@ func test_start_arch_straddles_the_road_at_the_start_line() -> void:
 	if arch == null:
 		return
 	_assert_spans_road_upright(arch, "start arch")
-	assert_eq(arch.top_banner, "top_start", "start arch wears the START banner set")
+	assert_true(arch.is_start, "start arch wears the START wording")
 	# It straddles the start line — the car's spawn, which on a dev boot is the
 	# start of the progress centerline (offset 0). Compare to that rather than the
 	# live car, which earlier camera tests reposition.

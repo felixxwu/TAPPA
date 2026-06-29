@@ -257,15 +257,16 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# spawns. Each opening is sized to the road width plus a margin so the legs stand
 	# clear, and each is turned so its banner face meets the driver.
 	var arch_terrain := $Floor as TerrainManager
+	var arch_info := _arch_event_info()
 	if cfg.finish_arch_enabled:
 		var fin_len := road_centerline.get_baked_length()
 		if fin_len > 0.0:
 			var fin_pos := road_centerline.sample_baked(fin_len)
 			var fin_tan := fin_pos - road_centerline.sample_baked(maxf(0.0, fin_len - 0.5))
-			_place_arch("FinishArch", fin_pos, fin_tan, "top", "back", "leg", cfg, arch_terrain)
+			_place_arch("FinishArch", fin_pos, fin_tan, false, arch_info, cfg, arch_terrain)
 	if cfg.start_arch_enabled:
 		# start_pos / start_heading is the car's real spawn pose (the start line).
-		_place_arch("StartArch", start_pos, start_heading, "top_start", "back_start", "leg_start", cfg, arch_terrain)
+		_place_arch("StartArch", start_pos, start_heading, true, arch_info, cfg, arch_terrain)
 
 	# Retain the centerline in a TrackProgress manager: tracks how far the car has
 	# driven and snaps it back onto the road if it strays too far (the Curve2D is
@@ -374,14 +375,30 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 	group.setup(members, $Car, terrain, road_cells, tree_grid, params)
 
 
+# The live event data the arch banners display (rally name, which stage, the
+# time-to-beat and the difficulty tier), read off RallySession. When no rally is
+# active (a dev boot / direct play) the fields stay empty/zero and the gate shows
+# just its START / FINISH wordmark.
+func _arch_event_info() -> Dictionary:
+	var info := {"rally_name": "", "stage_index": 0, "stage_count": 0, "target_ms": -1, "difficulty": 0}
+	if RallySession.is_active():
+		var rally := RallyLibrary.by_id(RallySession.rally_id())
+		info["rally_name"] = String(rally.get("name", ""))
+		info["stage_index"] = RallySession.event_index()
+		info["stage_count"] = RallySession.EVENTS_PER_RALLY
+		info["target_ms"] = RallySession.current_event_target_ms()
+		info["difficulty"] = int(rally.get("difficulty", 0))
+	return info
+
+
 # Build and position one inflatable arch straddling the road at `pos`, facing along
 # `heading` (the road direction there). The arch stands in its local XY plane and is
 # extruded along its local Z (depth), so Basis.looking_at(heading) points the node's
 # -Z down-track, leaving +Z (the banner face) toward the driver. The base sits at the
-# centerline (road-surface) height, like the signs. `top_banner`/`back_banner` pick
-# the FINISH vs START banner set.
+# centerline (road-surface) height, like the signs. `is_start` picks the START vs
+# FINISH wording; `info` is the event data the banners display.
 func _place_arch(node_name: String, pos: Vector2, heading: Vector2,
-		top_banner: String, back_banner: String, leg_banner: String,
+		is_start: bool, info: Dictionary,
 		cfg: GameConfig, terrain: TerrainManager) -> void:
 	if heading.length() < 1e-5:
 		heading = Vector2(0.0, 1.0)
@@ -397,9 +414,8 @@ func _place_arch(node_name: String, pos: Vector2, heading: Vector2,
 	# Clear opening spans the full road width plus a margin on each side, so the
 	# legs stand clear of the road and the car drives through the gap.
 	arch.span = cfg.track_width + 2.0 * cfg.finish_arch_road_margin_m
-	arch.top_banner = top_banner
-	arch.back_banner = back_banner
-	arch.leg_banner = leg_banner
+	arch.is_start = is_start
+	arch.info = info
 	add_child(arch)  # _ready() -> build() runs here, after the params are set
 	var fwd3 := Vector3(heading.x, 0.0, heading.y).normalized()
 	var ground_y := terrain.height_at(pos.x, pos.y)

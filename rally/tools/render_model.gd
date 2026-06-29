@@ -70,6 +70,11 @@ func _run() -> void:
 	var ArchScene = load("res://scripts/finish_arch.gd")
 	var arch = ArchScene.new()
 	arch.span = 6.0 + 2.0 * 1.5
+	# Sample event info so the banners render real-looking content (a FINISH gate
+	# for stage 2 of the Coastal Sprint).
+	arch.is_start = false
+	arch.info = {"rally_name": "Coastal Sprint", "stage_index": 1, "stage_count": 3,
+		"target_ms": 83450, "difficulty": 2}
 	world.add_child(arch)
 
 	var cam := Camera3D.new()
@@ -98,10 +103,8 @@ func _run() -> void:
 		img.save_png(path)
 		print("SAVED ", path, " ", img.get_size())
 
-	# Swap to the START banner set and re-shoot a front view, to check that variant.
-	arch.top_banner = "top_start"
-	arch.back_banner = "back_start"
-	arch.leg_banner = "leg_start"
+	# Swap to the START gate and re-shoot a front view, to check that variant.
+	arch.is_start = true
 	arch.build()
 	cam.position = shots["front"]
 	cam.look_at(target, Vector3.UP)
