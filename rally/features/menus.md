@@ -75,6 +75,12 @@ into **its own sub-page**:
   the choice persists under `CameraManager.SETTING_KEY` and is applied on the next run
   (or live, in the pause menu, via the `camera_changed` signal). See
   [camera.md](camera.md).
+- **Key bindings** — **rebind** the keyboard and controller controls. One row per
+  driving action (`InputRemap.ACTIONS`) with a keyboard button and a controller
+  button showing the current binding; tap one and press the new key / gamepad input
+  to reassign it (Esc cancels), plus a **Reset to defaults** row. The model is the
+  `InputRemap` autoload (`scripts/input_remap.gd`), which patches the global InputMap
+  from overrides saved under `InputRemap.SETTING_KEY`. See [controls.md](controls.md).
 - **Mobile controls** — pick the **touch control scheme**. Each of the six schemes
   ([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
   **diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
