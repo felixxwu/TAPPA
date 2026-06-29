@@ -144,6 +144,73 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
 
 
+# --- Keyboard / gamepad navigation -------------------------------------------
+
+# The title is a flat two-button menu driven by native focus: Start is focused on
+# entry so ui_up/ui_down + ui_accept work the menu with no pointer.
+func test_hq_title_focuses_start_for_keyboard_nav() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	await get_tree().process_frame  # let the deferred grab_focus run
+	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
+	assert_eq(hq._title_start_button.focus_mode, Control.FOCUS_ALL, "Start is focusable")
+	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
+		"the title focuses Start for keyboard / gamepad")
+
+
+# The 3D map table can't take native focus (left/right pans / the pins are spatial),
+# so it carries a keyboard cursor: a selected pin that cycles (wrapping), pops bigger,
+# and opens its rally detail on select.
+func test_hq_map_table_has_a_keyboard_pin_cursor() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_table()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.TABLE, "the map table is open")
+	var pins: Array = hq._unlocked_pins()
+	assert_gt(pins.size(), 1, "there is more than one unlocked rally to cycle between")
+	assert_eq(hq._table_pin_index, 0, "the cursor seats on the first pin")
+	assert_almost_eq(float((pins[0] as Node3D).scale.x), 1.4, 0.01, "the focused pin is enlarged")
+	assert_almost_eq(float((pins[1] as Node3D).scale.x), 1.0, 0.01, "an unfocused pin stays normal size")
+
+	hq._cycle_table_pin(1)
+	assert_eq(hq._table_pin_index, 1, "cycling advances the cursor")
+	hq._select_table_pin(0)
+	hq._cycle_table_pin(-1)
+	assert_eq(hq._table_pin_index, pins.size() - 1, "cycling back from the first wraps to the last")
+
+	hq._select_table_pin(0)
+	hq._open_selected_pin()
+	assert_true(hq._detail_open, "selecting the focused pin opens its rally detail")
+	assert_eq(hq._selected_rally_id, String((pins[0] as Node3D).get_meta("rally_id")),
+		"it opens the focused pin's rally")
+
+
+# The tuning hub keeps left/right for cycling the car, so Tuning/Upgrades are a manual
+# up/down cursor; opening a page hands off to native focus on its sliders/buttons.
+func test_hq_lift_hub_has_an_up_down_cursor() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
+	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
+	assert_eq(hq._hub_focus, 0, "the hub cursor starts on Tuning")
+	hq._move_hub_focus(1)
+	assert_eq(hq._hub_focus, 1, "down moves the cursor to Upgrades")
+	hq._move_hub_focus(1)
+	assert_eq(hq._hub_focus, 0, "it wraps back to Tuning")
+
+	# Opening the Tune page seats native focus on one of its sliders.
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	await get_tree().process_frame
+	assert_true(hq.get_viewport().gui_get_focus_owner() is HSlider,
+		"opening the Tune page focuses a tuning slider for keyboard/gamepad")
+
+
 func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -744,6 +811,11 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	assert_string_contains(text, "COASTAL SPRINT", "it names the rally")
 	assert_string_contains(text, "QUICK", "the opponent field is listed")
 	assert_string_contains(text, "SLOW", "the whole field is shown")
+	# Continue is focused on entry so a keyboard / gamepad can advance with no pointer.
+	var cont := sc.find_children("*", "Button", true, false)[0] as Button
+	assert_eq(cont.focus_mode, Control.FOCUS_ALL, "the Continue button is focusable")
+	assert_eq(sc.get_viewport().gui_get_focus_owner(), cont,
+		"Continue is focused for keyboard / gamepad")
 
 
 func test_podium_shows_the_finish_summary() -> void:
@@ -756,6 +828,11 @@ func test_podium_shows_the_finish_summary() -> void:
 	var text := _label_texts(pod)
 	assert_string_contains(text, "P2", "podium shows the placement")
 	assert_string_contains(text, "WON", "a top-3 finish reads as a win")
+	# The Next button is focused (once revealed) so the reward sequence steps with a
+	# keyboard / gamepad.
+	assert_eq(pod._next_button.focus_mode, Control.FOCUS_ALL, "the Next button is focusable")
+	assert_eq(pod.get_viewport().gui_get_focus_owner(), pod._next_button,
+		"Next is focused for keyboard / gamepad")
 
 
 func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
