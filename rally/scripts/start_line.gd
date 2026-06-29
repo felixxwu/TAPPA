@@ -5,13 +5,13 @@ extends Node3D
 # live run scene (main.tscn) once the world is built and a RallySession is active,
 # while the car is held locked by the StageManager's STAGING phase:
 #
-#   1. REVEAL  — black house-style panels show the "TIMES TO BEAT" (the top three
+#   1. REVEAL  — black house-style panels show the times to beat (the top three
 #      rivals' stage times for this event, with each driver's name and the car they
-#      drove) while an orbit camera circles the car, which is queued between a LEADER
-#      car ahead and a TRAILING car behind. The panels hug the TOP and BOTTOM edges,
-#      leaving the centre band clear so the (opaque) panels never hide the orbiting
-#      car. The driving HUD is hidden. The player launches with the Start button,
-#      menu_select or a tap.
+#      drove) under a rally/event header, while an orbit camera circles the car, which
+#      is queued between a LEADER car ahead and a TRAILING car behind. The panels hug
+#      the TOP and BOTTOM edges, leaving the centre band clear so the (opaque) panels
+#      never hide the orbiting car. The driving HUD is hidden. The player launches with
+#      the Start button, menu_select or a tap.
 #   2. LAUNCH  — the leader "drives off" ahead and the trailing car scoots up toward
 #      the line over start_drive_off_seconds.
 #   3. FADE    — the screen fades to black; at full black the camera hands back to
@@ -170,7 +170,13 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	var top_box := VBoxContainer.new()
 	top_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 	top_panel.add_child(top_box)
-	top_box.add_child(UITheme.title("Times to Beat"))
+
+	# The rally + event header titles the card (in place of a generic "times to beat").
+	var total: int = rally.get("events", []).size()
+	if total <= 0:
+		total = RallySession.EVENTS_PER_RALLY
+	_subtitle_label = UITheme.title("%s — Event %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
+	top_box.add_child(_subtitle_label)
 
 	# Top-three rivals for this event: rank, driver, car and time. The leader (the
 	# actual time to beat) is gold; if no rival set a time yet, a single dash stands in.
@@ -204,20 +210,10 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	bottom_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	bottom_panel.add_child(bottom_box)
 
-	var total: int = rally.get("events", []).size()
-	if total <= 0:
-		total = RallySession.EVENTS_PER_RALLY
-	_subtitle_label = UITheme.title("%s — Event %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
-	bottom_box.add_child(_subtitle_label)
-
 	_start_button = UITheme.button("Start")
 	_start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_start_button.pressed.connect(launch)
 	bottom_box.add_child(_start_button)
-
-	var hint := UITheme.label("Press Enter or tap to launch", "dim")
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	bottom_box.add_child(hint)
 
 	UITheme.enforce(_overlay)  # house rules: uppercase + one font size
 
