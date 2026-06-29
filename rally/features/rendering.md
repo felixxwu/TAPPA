@@ -91,10 +91,11 @@ Uniforms: `intensity` (0..1 overall strength, 0 = invisible), `line_color`
 (source_color, black), `density` (angular streak count), `inner_radius` /
 `outer_radius` (the normalised-radius fade band that keeps the centre clear and
 ramps the streaks to full toward the edges), `flicker_speed` (per-streak flicker
-rate in discrete steps/sec — time is quantised so each streak snaps to a new
-random brightness rather than pulsing smoothly, for a choppy hand-drawn look).
+rate in steps/sec — time is quantised and a per-streak random is thresholded so
+each streak is either fully drawn or gone for the step: a hard on/off cut, like
+hand-inked lines blinking in and out, not a smooth opacity fade).
 Fragment: aspect-corrected centre-origin coords → bucket the angle into `density`
-slots (one streak each) → per-slot random width + stepped flicker → multiply by a
+slots (one streak each) → per-slot random width + hard-cut flicker → multiply by a
 radial mask → output `line_color` with the computed alpha.
 
 `scripts/speed_lines.gd` (on the `SpeedLines` CanvasLayer) pushes the static
