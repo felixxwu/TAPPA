@@ -112,26 +112,35 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Open Settings from the title screen.
-	hq._go_to(hq.View.SETTINGS)
+	# Open Settings from the title screen — it lands on the category list.
+	hq._open_settings(false)
 	assert_true(hq._settings_layer.visible, "the settings overlay is shown")
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in settings")
+	assert_true(hq._settings_menu.at_root(), "Settings opens on the category list")
 	# The shared SettingsMenu: a camera-angle row per mode and a row per control scheme.
 	assert_eq(hq._settings_menu.camera_rows.size(), CameraManager.MODES.size(),
 		"one settings row per camera angle")
 	assert_eq(hq._settings_menu.scheme_rows.size(), MobileControls.SCHEMES.size(),
 		"one settings row per control scheme")
-	# Pick the bonnet camera; it persists to the save profile.
+	# Drill into the Camera page, then pick the bonnet camera; it persists to the save profile.
+	hq._settings_menu.show_camera()
+	assert_false(hq._settings_menu.at_root(), "tapping a category opens its own page")
+	assert_eq(hq._settings_action_button.text.to_upper(), "< BACK",
+		"the bottom button reads Back on a sub-page")
 	hq._settings_menu.select_camera(CameraManager.Mode.BONNET)
 	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)),
 		CameraManager.Mode.BONNET, "the chosen camera angle is saved")
-	# Pick the tilt scheme; it persists to the save profile.
+	# Drill into the Mobile controls page and pick the tilt scheme; it persists.
+	hq._settings_menu.show_schemes()
 	hq._settings_menu.select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
 		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
-	# Back returns to the title.
-	hq._go_to(hq.View.EXTERIOR)
-	assert_true(hq._title_layer.visible, "Back from settings returns to the title")
+	# The bottom button backs out a level at a time: sub-page → list → exterior.
+	hq._on_settings_action()
+	assert_true(hq._settings_menu.at_root(), "Back from a sub-page returns to the list")
+	assert_true(hq._settings_layer.visible, "still in Settings after backing to the list")
+	hq._on_settings_action()
+	assert_true(hq._title_layer.visible, "Back from the list returns to the title")
 	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
 
 

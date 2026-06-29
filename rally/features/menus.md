@@ -68,7 +68,8 @@ garage; Settings opens the SETTINGS overlay.
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
 SettingsMenu`) — the SAME component the in-run pause menu uses, so the two pages
-match. Two sections:
+match. It opens on a **category list** with one row per area, and each row drills
+into **its own sub-page**:
 
 - **Camera** — pick the **camera angle** (chase / bonnet, from `CameraManager.MODES`);
   the choice persists under `CameraManager.SETTING_KEY` and is applied on the next run
@@ -79,11 +80,28 @@ match. Two sections:
   **diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
   its name and how-to.
 
-The saved choice in each section is highlighted and persisted via `Save.set_setting`.
-Settings is also shown as a **pre-rally gate**: on mobile, if no scheme has been
-chosen yet, Start opens this page (`_open_settings(true)`) instead of launching — the
-bottom button reads **Start >** and confirms the pick (the highlighted default if
-untouched), saving it so the gate never reappears, then begins the rally.
+Navigation lives inside the component: `show_list()` / `show_camera()` /
+`show_schemes()` swap which page is visible (only the visible page contributes
+height, so the long schemes page scrolls while the short list/camera pages don't),
+and `page_changed(is_root)` lets the host steer its single bottom button — on a
+sub-page it reads **< Back** (returns to the list); on the list it is the host's own
+action. The saved choice in each section is highlighted and persisted via
+`Save.set_setting`. Settings is also shown as a **pre-rally gate**: on mobile, if no
+scheme has been chosen yet, Start opens this page (`_open_settings(true)`) instead of
+launching — on the list the bottom button reads **Start >** and confirms the pick
+(the highlighted default if untouched), saving it so the gate never reappears, then
+begins the rally.
+
+All the scrollable menu lists (Settings, the tuning lift, the standings/podium
+leaderboards) use **`TouchScrollContainer`** (`scripts/touch_scroll_container.gd`)
+in place of a plain `ScrollContainer`: it drag-scrolls under touch even when the
+finger lands **on a list-item button** (a plain `ScrollContainer`'s touch-scroll is
+swallowed by the pressed child). It watches raw input in `_input` (before the GUI
+pass) — a press arms a gesture, vertical motion past a small deadzone becomes a
+scroll, a press that never moves passes through as a normal tap, and only the
+release that ended a real drag is swallowed so the row under the finger doesn't also
+fire. Scrolling is driven from the emulated mouse events (`emulate_mouse_from_touch`,
+the same path the map-table pan uses).
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
