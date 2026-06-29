@@ -543,6 +543,13 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var track_seed := 1
 ## Number of corners chained into the track.
 @export var track_turn_count := 15
+## Bias toward straighter, easier turns during track generation, in [0, 1]. 0 = no
+## bias (corners chosen freely, the default for free-roam); higher favours gentler
+## corners and longer connecting straights, yielding a less twisty stage. Set per
+## rally event by RallyLibrary.event_straightness — earlier-game events run higher
+## so their stages are easier. Changes the generated SHAPE, so opponent target times
+## are derived with the same value (RallySession._compute_event_targets).
+@export_range(0.0, 1.0) var track_straightness := 0.0
 ## How forested this track is, in [0, 1] — the fraction of area covered by trees.
 ## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
 ## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by

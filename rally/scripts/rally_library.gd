@@ -53,9 +53,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {},  # open-class anti-soft-lock floor
 		"events": [
-			{"seed": 1001, "turn_count": 10, "forestiness": 0.7, "surface_mix": 0.0},
-			{"seed": 1002, "turn_count": 12, "forestiness": 0.4, "surface_mix": 0.0},
-			{"seed": 1003, "turn_count": 11, "forestiness": 0.85, "surface_mix": 0.3},
+			{"seed": 1001, "turn_count": 10, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.85},
+			{"seed": 1002, "turn_count": 12, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.8},
+			{"seed": 1003, "turn_count": 11, "forestiness": 0.85, "surface_mix": 0.3, "straightness": 0.8},
 		],
 	},
 	{
@@ -63,9 +63,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {},  # open-class
 		"events": [
-			{"seed": 2001, "turn_count": 14, "forestiness": 0.3, "surface_mix": 1.0},
-			{"seed": 2002, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7},
-			{"seed": 2003, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0},
+			{"seed": 2001, "turn_count": 14, "forestiness": 0.3, "surface_mix": 1.0, "straightness": 0.55},
+			{"seed": 2002, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.5},
+			{"seed": 2003, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.55},
 		],
 	},
 	{
@@ -73,9 +73,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.52, 0.64),
 		"restriction": {"drive_mode": CarLibrary.RWD},
 		"events": [
-			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5},
-			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0},
-			{"seed": 3003, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0},
+			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5},
+			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45},
+			{"seed": 3003, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5},
 		],
 	},
 	{
@@ -83,9 +83,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.82, 0.34),
 		"restriction": {"country": "JP"},
 		"events": [
-			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6},
-			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0},
-			{"seed": 4003, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0},
+			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25},
+			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2},
+			{"seed": 4003, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25},
 		],
 	},
 	{
@@ -93,9 +93,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.66, 0.28),
 		"restriction": {},  # open-class at the top reachable tier
 		"events": [
-			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0},
-			{"seed": 5002, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4},
-			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0},
+			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.15},
+			{"seed": 5002, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15},
+			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1},
 		],
 	},
 	{
@@ -143,6 +143,15 @@ static func event_forestiness(event: Dictionary) -> float:
 # gravel, 1 = all tarmac. The default (0) keeps an event that omits it all gravel.
 static func event_tarmac_fraction(event: Dictionary) -> float:
 	return clampf(float(event.get("surface_mix", 0.0)), 0.0, 1.0)
+
+
+# Bias toward straighter (easier) turns when generating this event's track, in
+# [0, 1]: 0 = no bias (corners chosen freely), 1 = strongly favour gentle corners
+# and long straights. Earlier, lower-tier events run higher so their stages are
+# gentler; the default (0) leaves generation unbiased. Fed to TrackGenerator.generate
+# (it changes the track SHAPE, so the same value is used when deriving target times).
+static func event_straightness(event: Dictionary) -> float:
+	return clampf(float(event.get("straightness", 0.0)), 0.0, 1.0)
 
 
 # --- Eligibility -------------------------------------------------------------

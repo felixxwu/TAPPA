@@ -140,7 +140,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
 	var result := TrackGenerator.generate(
 		gen_start, start_heading, cfg.track_seed, cfg.track_turn_count, cfg.track_width,
-		cfg.track_clearance, reserve_behind)
+		cfg.track_clearance, reserve_behind, cfg.track_straightness)
 	# Road/progress centerline (with the lead-in for staged runs). The raw generated
 	# centerline still feeds the signs, so the start gate sits ahead of the launch
 	# point — the cars cross it as they pull away.

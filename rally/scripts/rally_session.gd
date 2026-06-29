@@ -374,7 +374,8 @@ func _compute_event_targets(rally: Dictionary) -> Array:
 		var width := RallyLibrary.event_width(event)
 		var result := TrackGenerator.generate(
 			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
-			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind)
+			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind,
+			RallyLibrary.event_straightness(event))
 		targets.append(RallyLibrary.derive_target_ms(result, event))
 	return targets
 
@@ -386,6 +387,7 @@ func _load_event_scene(event: Dictionary) -> void:
 	var cfg: GameConfig = Config.data
 	cfg.track_seed = int(event.get("seed", cfg.track_seed))
 	cfg.track_turn_count = int(event.get("turn_count", cfg.track_turn_count))
+	cfg.track_straightness = RallyLibrary.event_straightness(event)
 	cfg.track_width = RallyLibrary.event_width(event)
 	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
 	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
