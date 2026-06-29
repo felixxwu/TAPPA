@@ -117,6 +117,11 @@ func test_lit_car_shader_has_fake_lighting() -> void:
 	assert_true(src.contains("unshaded"), "ps1_models_lit stays render_mode unshaded")
 	assert_true(src.contains("light_amount"), "ps1_models_lit gates fake lighting behind light_amount")
 	assert_true(src.contains("void vertex()"), "ps1_models_lit computes lighting per-vertex")
+	# Parked cars bake their shading and set light_amount 0; the vertex stage must
+	# skip the per-vertex lighting maths entirely for them (car.gd bake_shading),
+	# not just discard the result — so it keeps a frozen car at zero per-frame cost.
+	assert_true(src.contains("if (light_amount <= 0.0)"),
+		"ps1_models_lit skips the lighting maths when light_amount is 0 (frozen/baked cars)")
 
 
 func test_terrain_shader_has_no_vertex_stage() -> void:

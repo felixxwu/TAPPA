@@ -217,6 +217,10 @@ func _freeze_podium(generation: int) -> void:
 	for car in _podium_cars:
 		if is_instance_valid(car):
 			car.freeze = true
+			# Settled on its podium step — bake the fake lighting in so the shader
+			# stops recomputing it every frame (car.gd bake_shading). The standings
+			# cars are static (unlike the spinning showroom car, which stays live).
+			car.bake_shading()
 			car.process_mode = Node.PROCESS_MODE_DISABLED
 
 
@@ -242,6 +246,11 @@ func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = 
 		car.freeze = false
 	else:
 		car.freeze = true
+		# A frozen prop standing still (parent == null) can bake its fake lighting
+		# (car.gd bake_shading) — but the showroom car (parented to the spinning
+		# turntable) keeps rotating in world space, so its shading must stay live.
+		if parent == null:
+			car.bake_shading()
 		car.process_mode = Node.PROCESS_MODE_DISABLED
 	var audio: Variant = car.get_node_or_null("EngineAudio")
 	if audio != null:

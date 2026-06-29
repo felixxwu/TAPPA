@@ -1617,6 +1617,10 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	xform.origin = Vector3(cfg.hq_lift_pos.x, _lift_car_y(_lift_raised), cfg.hq_lift_pos.z)
 	car.global_transform = xform
 	car.freeze = true
+	# Parked on the lift — bake the fake lighting in (car.gd bake_shading). The lift
+	# only ever translates vertically (never rotates), which leaves world-space
+	# normals unchanged, so the bake stays correct as it raises/lowers.
+	car.bake_shading()
 	car.process_mode = Node.PROCESS_MODE_DISABLED
 	var audio := car.get_node_or_null("EngineAudio")
 	if audio != null:
@@ -1939,6 +1943,10 @@ func _freeze_lineup(generation: int) -> void:
 	for car in _cars:
 		if is_instance_valid(car):
 			car.freeze = true
+			# Settled at its parked pose now — bake the fake lighting into the car so
+			# the shader stops recomputing it every frame (car.gd bake_shading). Must
+			# run before disabling process; the car never moves again until freed.
+			car.bake_shading()
 			car.process_mode = Node.PROCESS_MODE_DISABLED
 
 
