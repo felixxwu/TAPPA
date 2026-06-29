@@ -619,6 +619,35 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
 
+@export_group("Road Markings")
+## Painted lane lines (two solid edge lines + a dashed centre line) laid along the
+## TARMAC sections of the track so tarmac reads as tarmac (gravel stays bare). A
+## static unshaded mesh built once at generation; see scripts/road_markings.gd.
+@export var road_markings_enabled := true
+## Paint colour — a slightly weathered off-white rather than pure white so the
+## lines sit in the scene instead of glowing. Tinted per-vertex by the same baked
+## terrain light as the floor, so tune it against the lit road in-game.
+@export var road_marking_color := Color(0.82, 0.82, 0.78)
+## Width of each painted stripe, in metres.
+@export_range(0.05, 0.5) var road_marking_width_m := 0.12
+## How far inside each road edge (half the track width) the edge lines sit, in
+## metres. Keep it above road_marking_width_m * 0.5 so the stripe stays fully on
+## the road rather than spilling onto the verge.
+@export_range(0.1, 1.5) var road_marking_edge_inset_m := 0.4
+## Painted length of each centre-line dash, in metres.
+@export_range(0.2, 10.0) var road_marking_center_dash_m := 1.5
+## Unpainted gap between centre-line dashes, in metres.
+@export_range(0.2, 10.0) var road_marking_center_gap_m := 3.0
+## Height the paint is laid above the road surface, in metres — just enough to
+## avoid z-fighting with the (near-flat) road mesh without looking like it floats.
+@export_range(0.0, 0.5) var road_marking_height_m := 0.05
+## Minimum tarmac weight (0 = gravel, 1 = tarmac) a point needs before it is
+## painted, so the lines appear only on the tarmac side of the surface switch.
+@export_range(0.0, 1.0) var road_marking_tarmac_threshold := 0.5
+## Arc-length step, in metres, at which the centerline is sampled to build the
+## paint mesh. Smaller = smoother lines on tight corners at more vertices.
+@export_range(0.1, 2.0) var road_marking_sample_step_m := 0.4
+
 @export_group("Tire Marks")
 ## Gravel ruts laid behind the wheels while driving on the road (features/tire-marks.md).
 @export var tire_marks_enabled := true
@@ -947,6 +976,21 @@ func sign_render_params() -> Dictionary:
 # bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
 # the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
 # an explicit exception for since the car shares layer 1.
+func road_marking_params() -> Dictionary:
+	return {
+		"enabled": road_markings_enabled,
+		"half_width": track_width * 0.5,
+		"color": road_marking_color,
+		"width_m": road_marking_width_m,
+		"edge_inset_m": road_marking_edge_inset_m,
+		"center_dash_m": road_marking_center_dash_m,
+		"center_gap_m": road_marking_center_gap_m,
+		"height_m": road_marking_height_m,
+		"tarmac_threshold": road_marking_tarmac_threshold,
+		"sample_step_m": road_marking_sample_step_m,
+	}
+
+
 func spectator_params() -> Dictionary:
 	return {
 		"group_size": spectator_group_size,

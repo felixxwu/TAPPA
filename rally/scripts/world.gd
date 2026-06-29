@@ -327,6 +327,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		add_child(_tire_marks)
 	_tire_marks.setup(road_centerline, $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
 
+	# Road paint: solid edge lines + a dashed centre line along the tarmac sections,
+	# so tarmac reads as tarmac (features/track.md). A static mesh built once from the
+	# centerline + surface split; rebuilt on a regeneration like the managers above.
+	if _road_markings == null:
+		_road_markings = RoadMarkings.new()
+		_road_markings.name = "RoadMarkings"
+		add_child(_road_markings)
+	_road_markings.build(road_centerline, $Floor as TerrainManager, cfg.road_marking_params())
+
 	# Wheel dust: cheap gravel spray flung from the driven wheels under wheelspin
 	# (features/wheel-dust.md). Reused across regenerations like the managers above;
 	# the surface under each wheel (gravel vs grass/tarmac) is read live off the
@@ -499,6 +508,7 @@ var _stage_manager: StageManager
 
 # Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
 var _tire_marks: TireMarks
+var _road_markings: RoadMarkings
 
 # Flings cheap gravel dust off the driven wheels under wheelspin (re-targeted on
 # a car swap).
