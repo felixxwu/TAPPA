@@ -144,10 +144,14 @@ func _wake_sign(other: Node, body: RigidBody3D) -> void:
 	_launch_sign(body, other)
 
 
-# Fling a just-knocked sign along the car's velocity (clamped), with an upward kick and
-# a random tumble — the same recipe SpectatorGroup uses for ragdolls. With the car
-# masked off, this impulse is what makes the sign scatter; physics then rolls it on the
-# terrain. Falls back to the car's forward axis when it is barely moving.
+# Fling a just-knocked sign along the car's velocity, with an upward bias and a random
+# tumble — the same recipe SpectatorGroup uses for ragdolls. The whole impulse scales
+# with the car's speed: the launch speed is `speed x factor` (clamped), the upward kick
+# is a FRACTION of that launch (a fixed angle, not a constant m/s), and the spin tapers
+# to zero as the car slows. So a slow nudge gives a gentle low scatter instead of
+# flinging the sign into the air. Falls back to the car's forward axis when it is
+# barely moving. With the car masked off, this impulse is what makes the sign scatter;
+# physics then rolls it on the terrain.
 func _launch_sign(body: RigidBody3D, car: Node) -> void:
 	var car_vel := Vector3.ZERO
 	if "linear_velocity" in car:
@@ -156,12 +160,16 @@ func _launch_sign(body: RigidBody3D, car: Node) -> void:
 	var dir := car_vel.normalized()
 	if speed <= 0.1 and car is Node3D:
 		dir = -(car as Node3D).global_transform.basis.z
-	var launch: float = clampf(speed * float(_knock["knock_speed_factor"]),
-		float(_knock["knock_speed_min"]), float(_knock["knock_speed_max"]))
-	body.linear_velocity = dir * launch + Vector3.UP * float(_knock["knock_lift_mps"])
+	var factor := float(_knock["knock_speed_factor"])
+	var speed_max := float(_knock["knock_speed_max"])
+	# Shared launch recipe with the spectator ragdoll: the whole impulse (including the
+	# upward bias, a fraction of the launch rather than a constant kick) scales with car
+	# speed, and the spin tapers to zero as the car slows.
+	body.linear_velocity = SpectatorGroup.knock_launch_velocity(dir, speed, factor,
+		float(_knock["knock_speed_min"]), speed_max, float(_knock["knock_lift_ratio"]))
 	body.angular_velocity = Vector3(
 		_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)
-	).normalized() * float(_knock["knock_spin"])
+	).normalized() * float(_knock["knock_spin"]) * SpectatorGroup.knock_spin_scale(speed, factor, speed_max)
 
 
 # The two splayed panels. Each is a thin, double-sided quad tilted about the ridge

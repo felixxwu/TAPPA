@@ -143,3 +143,39 @@ func test_ragdoll_mesh_feet_align_with_ground_for_any_foot_offset() -> void:
 		var feet := body_y + mesh_y + (-foot_offset)
 		assert_almost_eq(feet, ground, 1e-4,
 			"mesh feet sit on the ground (foot_offset=%s)" % foot_offset)
+
+
+# --- knock launch (shared by SpectatorGroup ragdolls and SignField signs) ------
+
+func test_knock_launch_impulse_scales_with_car_speed() -> void:
+	var dir := Vector3.FORWARD  # along -Z, the car's travel direction here
+	# Same launch params, only the car speed differs.
+	var slow := SpectatorGroup.knock_launch_velocity(dir, 1.0, 0.8, 1.0, 22.0, 0.3)
+	var fast := SpectatorGroup.knock_launch_velocity(dir, 20.0, 0.8, 1.0, 22.0, 0.3)
+	assert_lt(slow.length(), fast.length(), "a slower car imparts a smaller impulse")
+	assert_lt(slow.y, fast.y, "the upward kick scales with car speed, not a constant")
+	# The crux of the fix: a slow nudge must scatter the body along the ground, NOT
+	# fling it skyward — the upward component stays below the horizontal one.
+	var slow_horiz := Vector2(slow.x, slow.z).length()
+	assert_lt(slow.y, slow_horiz, "a slow hit stays low (lift < horizontal launch)")
+	# The upward angle is fixed (lift is a fraction of the launch), so slow and fast
+	# share the same trajectory shape — only the magnitude grows.
+	assert_almost_eq(slow.y / slow.length(), fast.y / fast.length(), 1e-4,
+		"launch angle is constant; only the magnitude scales with speed")
+
+
+func test_knock_launch_floor_keeps_a_crawl_from_doing_nothing() -> void:
+	# Below the speed floor the launch clamps up to speed_min so even a near-stop topples
+	# the body, but the upward bias is still only a fraction of that small launch.
+	var v := SpectatorGroup.knock_launch_velocity(Vector3.FORWARD, 0.0, 0.8, 1.0, 22.0, 0.3)
+	assert_almost_eq(v.length(), 1.0, 1e-4, "a dead stop still launches at the speed floor")
+	assert_lt(v.y, Vector2(v.x, v.z).length(), "even the floor launch stays low, not skyward")
+
+
+func test_knock_spin_scale_tapers_to_zero_at_low_speed() -> void:
+	assert_almost_eq(SpectatorGroup.knock_spin_scale(0.0, 0.8, 22.0), 0.0, 1e-4,
+		"a stopped car imparts no tumble spin")
+	assert_eq(SpectatorGroup.knock_spin_scale(100.0, 0.8, 22.0), 1.0,
+		"spin saturates at 1.0 for a fast hit")
+	var mid := SpectatorGroup.knock_spin_scale(11.0, 1.0, 22.0)
+	assert_almost_eq(mid, 0.5, 1e-4, "spin scales linearly with speed below saturation")
