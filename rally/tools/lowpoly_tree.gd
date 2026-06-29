@@ -187,8 +187,13 @@ func build_tree() -> ArrayMesh:
 		bi += 1
 		_add_canopy_blob(st, b[0], b[1], b[2], bi * 17 + 3, leaf, top_h, bot_h)
 
+	# Both materials are UNSHADED: the depth shading is already baked into the
+	# vertex colours (height gradient), so the tree reads correctly with no scene
+	# light and matches the project's flat PS1 look (and is robust in-game where
+	# the meshes get no dedicated light).
 	# Trunk material: plain bark colour from vertex colours.
 	var trunk_mat := StandardMaterial3D.new()
+	trunk_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	trunk_mat.vertex_color_use_as_albedo = true
 	trunk_mat.roughness = 1.0
 	trunk_mat.metallic = 0.0
@@ -196,6 +201,7 @@ func build_tree() -> ArrayMesh:
 
 	# Canopy material: tileable leaf texture, tinted/shaded by vertex colour.
 	var leaf_mat := StandardMaterial3D.new()
+	leaf_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	leaf_mat.vertex_color_use_as_albedo = true
 	leaf_mat.roughness = 1.0
 	leaf_mat.metallic = 0.0
@@ -273,8 +279,8 @@ func _render(mesh: ArrayMesh, out_dir: String) -> void:
 	var pitch := -0.12
 
 	var angles := {"front": 0.0, "side": PI * 0.5, "q34": PI * 0.25, "back": PI}
-	for name: String in angles:
-		var yaw: float = angles[name]
+	for view_name: String in angles:
+		var yaw: float = angles[view_name]
 		var dir := Vector3(sin(yaw) * cos(pitch), -sin(pitch), cos(yaw) * cos(pitch))
 		var eye := center + dir * radius
 		var xf := Transform3D(Basis(), eye).looking_at(center, Vector3.UP)
@@ -285,7 +291,7 @@ func _render(mesh: ArrayMesh, out_dir: String) -> void:
 		RenderingServer.force_draw()
 		var img := RenderingServer.texture_2d_get(RenderingServer.viewport_get_texture(vp))
 		if img:
-			var p := out_dir + "/tree_" + name + ".png"
+			var p := out_dir + "/tree_" + view_name + ".png"
 			img.save_png(p)
 			print("RENDERED ", p)
 		else:
