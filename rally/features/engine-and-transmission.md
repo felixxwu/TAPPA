@@ -67,8 +67,9 @@ see [configuration.md](configuration.md). Presets: i4, i5, i6, v6, v8, v10, v12.
 
 ## Transmission
 
-- 5 forward gears (`gear_ratios`), one reverse (`reverse_ratio`), common
-  `final_drive` multiplier.
+- Forward gears (`gear_ratios`), one reverse (`reverse_ratio`), and a
+  `final_drive` multiplier. `EngineSim` handles ANY number of forward gears, so
+  the gear COUNT varies per car.
 - Clutch limited to `clutch_max_torque`; auto-clutch opens when coasting below
   `clutch_engage_speed`.
 - Manual shifting: Q (down) / E (up). Auto mode toggled with T or HUD button.
@@ -77,6 +78,18 @@ see [configuration.md](configuration.md). Presets: i4, i5, i6, v6, v8, v10, v12.
   manual MX-5 shifts slowly (0.30 s) while dual-clutch / automated supercars
   (911, RS3, Aventador) snap through gears (0.05–0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
+- **`gear_ratios` + `final_drive` are also per-car** (`CarLibrary`, applied by
+  `Car.apply_car()` after the engine preset). Each car runs its REAL transmission:
+  the MX-5's 6-speed manual, the Mustang's 6-speed MT82, the LFA's 6-speed ASG,
+  the RS3's 7-speed DSG (its dual final drive folded into the listed ratios), the
+  Aventador's 7-speed ISR, and the 911's 8-speed PDK. This replaced a single
+  shared gearbox that was far too short for every car — see
+  [drivetrain-and-tires.md](drivetrain-and-tires.md) for why short gearing made
+  the light cars over-accelerate and spin up in the mid gears, and for the **one
+  exception**: the MX-5's `final_drive` is game-tuned (not its real 2.866) because
+  its real ~150 hp can't pull the tall real ratio against the physics engine's
+  built-in rolling resistance. The `GameConfig` `gear_ratios`/`final_drive` are
+  only the baseline before a car is selected.
 
 ## Tests
 

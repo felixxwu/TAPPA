@@ -85,13 +85,43 @@ handbrake torque and **locks**, while the **front spool free-rolls** and stays
 steerable — enabling handbrake rotation in AWD. Releasing the handbrake restores
 the rigid locked driveline. (RWD/FWD already brake the rear only.)
 
+## Gearing, top speed & the engine's hidden rolling resistance
+
+Each car runs its **real per-car gearbox** (`gear_ratios` + `final_drive` in
+`CarLibrary`, applied by `Car.apply_car()` — see
+[engine-and-transmission.md](engine-and-transmission.md)). This replaced a single
+shared gearbox (`[6, 4, 2.9, 2.4, 2.0] × 3.0`) that was far too short and too
+closely-stacked for every car: tractive force = `peak_torque × gear × final_drive
+÷ wheel_radius`, so the short ratios over-multiplied the light cars' torque,
+giving violent low/mid-gear acceleration (the MX-5 demanded ~1.2 g in 1st and
+~0.5 g in 4th — enough to spin its rear tyres on tarmac mid-corner). Real ratios
+space the gears out, calming the mid-gear punch and stopping the 4th-gear
+wheelspin.
+
+**Important physics caveat:** Jolt's `VehicleBody3D` applies a built-in rolling
+resistance of roughly **0.2 g, proportional to mass**, that our model does *not*
+control (it persists even coasting in neutral with the wheels rolling freely, and
+is independent of `drag_coefficient`). This — not aero drag — is what actually
+caps the cars' top speeds, and it is why the old shared gearbox was so short
+(huge wheel torque was needed to overcome it). The powerful cars have the torque
+to push through it and reach believable top speeds (≈220–270 km/h) on their real
+gearing; the **MX-5 does not** — with only ~150 hp it can't pull its real tall
+final drive (2.866) against the resistance and stalls/crawls. So the MX-5's
+`final_drive` is the **one game-tuned value** (3.5): the shortest drive that still
+pulls cleanly. Its real ratios are kept; gears 5–6 sit above its ~95 km/h
+power-limited top and go unused. Fully neutralising the Jolt resistance (to make
+real drag + real gearing yield realistic top speeds game-wide) was considered and
+deferred as a larger, riskier change.
+
 ## Tests
 
 `tests/headless/test_drivetrain.gd` (wheelspin, brake lockup, handbrake,
-parking brake), `tests/headless/test_drive_mode.gd` (per-mode torque).
+parking brake), `tests/headless/test_drive_mode.gd` (per-mode torque). Per-car
+gearing is covered by `tests/headless/test_car_library.gd` (real, descending,
+varied gear counts; overlaid onto the live config by `apply_car`).
 
 ## Related config
 
 `wheel_friction_slip_front/rear`, `grass_grip`, `gravel_grip`, `tarmac_grip`,
 `wheel_roll_influence`, `drive_mode`, `suspension_*`, `brake_torque`,
-`handbrake_torque`.
+`handbrake_torque`, `gear_ratios`, `final_drive`, `drag_coefficient`.
