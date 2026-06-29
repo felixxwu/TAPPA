@@ -6,9 +6,27 @@
 > tree/bush `.import` + `lod_bias` uniform in `billboard.gdshader` driven by
 > `GameConfig.texture_lod_bias`), **item 6** (engine-audio: per-harmonic `pow`
 > hoisted out of the firing-phase loop in `_voice`; scratch `slice()` allocation
-> dropped in `engine_audio.gd`), **item 11** (guard `downforce_readouts` behind
-> `debug_wheel_forces`), and **item 10** (HUD label string-change caching). Docs:
-> `features/rendering.md`, `features/engine-audio.md`.
+> dropped in `engine_audio.gd`; **6.3** shipped `engine_harmonics`=3; generator
+> `BUFFER_SECONDS` raised 0.1→0.15 for underrun headroom on slow web frames),
+> **item 11** (guard `downforce_readouts` behind `debug_wheel_forces`), and
+> **item 10** (HUD label string-change caching). Docs: `features/rendering.md`,
+> `features/engine-audio.md`.
+>
+> **Chunk-crossing smoothness follow-up (item 7 remainder): ADDRESSED.** Two
+> per-crossing main-thread spikes were found and cut: (a) the per-vertex terrain
+> **light bake** re-sampled the noise 4× per vertex — `compute_chunk_data` now
+> samples a 1-cell pure-height **halo** once and reads neighbours from it
+> (bit-identical; ~52% off the lit chunk build, the shipped path since
+> `terrain_light_amount`=1.0); (b) **`DistantTerrain`** rebuilt its ~2,600-vertex
+> light-baked backdrop synchronously *on the crossing frame*, stacking on the
+> detail-ring stream — it now **defers** the rebuild to a frame when
+> `TerrainManager.is_streaming_chunks()` is false. The perf benchmark
+> (`perf_benchmark.gd`) now sets `light_amount=1.0` so it measures the real lit
+> cost. Docs: `features/terrain.md`, `features/engine-audio.md`. **Still open:**
+> the deferred distant rebuild is still one heavier-than-a-frame mesh build on the
+> weakest devices (now isolated on its own frame, not stacked); time-slicing it —
+> or `compute_chunk_data` — across frames is the next lever if a real phone still
+> micro-hitches.
 >
 > **Item 7 (web-export threading): DECIDED — ship single-threaded.** Chose
 > maximum device reach over threaded chunk-streaming smoothness, consistent with
@@ -19,9 +37,12 @@
 > Terrain gen already routed web through the frame-budgeted main-thread queue
 > (`_use_budgeted_generation()` keys on `OS.has_feature("web")`, not the thread
 > flag), so no terrain code changed. Docs: `features/terrain.md`, `build_web.sh` /
-> `serve_web.sh` comments. **Remaining (not a code blocker):** confirm the
-> budgeted path stays smooth on a real mid/low-end phone driving fast across chunk
-> boundaries; tune `MAX_BUILDS_PER_FRAME` if it micro-hitches.
+> `serve_web.sh` comments. **Remaining (not a code blocker):** confirm on a real
+> mid/low-end phone — the two biggest per-crossing main-thread spikes (light-bake
+> re-sampling and the synchronous `DistantTerrain` rebuild) are now cut/deferred
+> (see the chunk-crossing follow-up note above); `MAX_BUILDS_PER_FRAME` is already
+> 1 (can't go lower), so the next lever if it still micro-hitches is time-slicing a
+> single chunk's / the distant mesh's build across frames.
 >
 > **Still open — BLOCKED ON YOUR DECISIONS / ASSETS:**
 > - **Items 2 + 3** (foliage view-cone cull + visible cap, collision-box cull):
@@ -432,22 +453,22 @@ slow frames underrun the 0.1 s buffer → audible crackle (with a 30 fps cap
 that's only ~3 frames of headroom).
 
 ### Plan
-1. **Precompute the harmonic weights.** `pow(0.6 + 0.4*load_factor, h)`
-   (`engine_audio_synth.gd:138`) depends only on harmonic index and the load
-   factor, not the sample — build a small `[harmonics]` weight table once per
-   `fill()` (load_factor is constant across the buffer) instead of calling `pow`
-   per sample. Biggest single win, no behaviour change.
-2. **Avoid the per-frame allocation.** `_scratch.slice(0, n)`
-   (`engine_audio.gd:41`) allocates a fresh `PackedVector2Array` every frame for
-   `push_buffer`; reuse a pre-sized buffer / push the scratch directly.
-3. **Lower the shipped cost.** Set `engine_harmonics` lower in
-   `config/game_config.tres` (it is currently the code default 4 — not
-   overridden) if the note still reads well at 2–3. Single shipped value, per the
-   inherently-low-end principle.
+1. ✅ **DONE. Precompute the harmonic weights.** `_voice()` builds the
+   `[harmonics]` weight table once per call and reuses it across firing phases.
+2. ✅ **DONE. Avoid the per-frame allocation.** `engine_audio.gd` sizes the scratch
+   to exactly `n` and pushes it directly — no per-frame `slice()`.
+3. ✅ **DONE. Lower the shipped cost.** `config/game_config.tres` now sets
+   `engine_harmonics = 3` (was the code default 4) — note still reads well; trims
+   the inner loop ~25%. Also raised the generator `BUFFER_SECONDS` 0.1→0.15 so a
+   slow web frame is less likely to underrun the buffer (the frame-coupling in the
+   "Why" above). Single shipped values, per the inherently-low-end principle.
 4. **Optionally decouple from the render frame.** Consider filling the
    `AudioStreamGenerator` from a thread / on an audio cadence rather than
-   `_process`, so a slow render frame can't underrun audio. Heavier change; do
-   only if 1–3 don't clear it.
+   `_process`, so a slow render frame can't underrun audio. **Note:** the shipped
+   web build is single-threaded (item 7), so a true audio thread isn't available
+   there — on web the levers are steps 1–3 plus keeping main-thread frames short
+   (the chunk-crossing terrain work above). Heavier change; do only if 1–3 don't
+   clear it on a real device.
 
 ### Files
 `scripts/engine_audio_synth.gd`, `scripts/engine_audio.gd`,

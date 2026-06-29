@@ -6,7 +6,13 @@ RPM/throttle/shift state.
 ## Components
 
 - **`scripts/engine_audio.gd`** (extends `AudioStreamPlayer`) — the bridge node.
-  - `MIX_RATE = 22050` Hz, `BUFFER_SECONDS = 0.1`.
+  - `MIX_RATE = 22050` Hz, `BUFFER_SECONDS = 0.15`. The fill runs in `_process` on
+    the main thread, so the buffer is all that keeps audio alive across a slow
+    frame — if the gap between `_process` calls exceeds it, the buffer drains and
+    the engine note crackles. On the single-threaded web build a chunk-crossing
+    frame can be tens of ms, so `0.1` left almost no headroom; `0.15` covers the
+    worst post-optimisation frame with margin while keeping throttle→rev latency
+    low. (Raise toward `0.2` if underruns persist on the weakest devices.)
   - `_ready()` creates an `AudioStreamGenerator`, builds the synth, starts play.
   - `_process(delta)` reads engine state, asks the generator playback how many
     frames it needs, fills them via the synth, and pushes the buffer.
@@ -185,12 +191,23 @@ its `soft_clip_post_gain`.
 ## Performance note
 
 The per-sample synthesis loop is the project's heaviest pure-CPU cost (run on the
-main thread at the mix rate). Two allocation/compute optimisations are in place,
-both behaviour-preserving:
+main thread at the mix rate — roughly a tenth of a CPU-second per second of audio
+on desktop, several times that under single-threaded web WASM). Optimisations in
+place, all behaviour-preserving:
 - `_voice()` computes its per-harmonic weights (`pow(0.6 + 0.4·load, h)/h`) once
   per call and reuses them across all firing phases, instead of recomputing the
   same `pow()` inside the firing-phase loop — removes a firing-phases-fold of
   `pow()` calls per sample (the values don't depend on the firing phase).
 - `engine_audio.gd` sizes its scratch buffer to exactly the frames available and
   pushes it directly, dropping the per-frame `slice()` allocation.
-Both are guarded by the existing `test_engine_audio*` tests.
+- The shipped `engine_harmonics` is **3** (`config/game_config.tres`; code default
+  is 4) — each harmonic dropped removes `firing_phases` `sin()` calls per sample,
+  so 4→3 trims the inner loop ~25% with the note still reading well. This is a
+  config value, not a code change; the synth reads it unchanged.
+
+These two are guarded by the existing `test_engine_audio*` tests (which build the
+synth from `GameConfig.new()`, i.e. the code defaults, so they are unaffected by
+the shipped `engine_harmonics` override). Because the fill is frame-coupled, a slow
+main-thread frame (e.g. a terrain chunk-crossing build on web) can underrun the
+generator buffer — hence the `BUFFER_SECONDS` headroom above and the terrain work
+to keep crossing frames short (see [terrain.md](terrain.md)).
