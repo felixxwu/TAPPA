@@ -2,7 +2,7 @@ extends Node3D
 # Applies the central GameConfig to scene-owned resources at startup.
 # Car handling is applied by car.gd; camera follow by chase_camera.gd.
 
-const TREE_TEXTURE := preload("res://textures/tree.png")
+const TREE_MODEL := preload("res://models/low_poly_tree.glb")
 const BUSH_SEED_OFFSET := 1013
 # Ground-cover bush: low-poly mesh (replaces the old bush.webp billboards),
 # instanced via MeshScatterField with the flat foliage shader. See features/trees.md.
@@ -14,6 +14,27 @@ const FOLIAGE_TEXTURE := preload("res://models/vegetation/textures/foliage.jpg")
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
 # world the instant main.tscn is instantiated, exactly as before this overlay.
 var _headless := false
+
+# The tree ArrayMesh, extracted once from TREE_MODEL (a PackedScene) and shared
+# by every per-bin MultiMesh in the TreeMeshField.
+var _tree_mesh_cache: Mesh
+
+
+# Extracts (and caches) the tree mesh from the imported .glb scene.
+func _tree_mesh() -> Mesh:
+	if _tree_mesh_cache != null:
+		return _tree_mesh_cache
+	var scene := TREE_MODEL.instantiate()
+	var stack: Array[Node] = [scene]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D:
+			_tree_mesh_cache = (n as MeshInstance3D).mesh
+			break
+		for c in n.get_children():
+			stack.append(c)
+	scene.queue_free()
+	return _tree_mesh_cache
 
 
 func _ready() -> void:
@@ -180,12 +201,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if loading != null:
 		loading.set_step("Scattering trees…")
 	await _yield_frame()
-	# Scatter billboard trees around each turn, then render them in one MultiMesh.
-	# height_at needs the terrain noise cache, which build_initial() has warmed.
-	# Reject trees on the visible road inflated by tree_road_margin_m — NOT the
-	# clearance-inflated result["cells"], which is track_width + 2*track_clearance
-	# wide and would push every tree metres back from the real road edge. The
-	# margin keeps a small, tunable gap between the nearest trees and the road.
+	# Scatter trees around each turn, then render them as solid low-poly meshes
+	# binned into per-cell MultiMeshes (TreeMeshField) so the engine LOD-/cull-s
+	# far bins. height_at needs the terrain noise cache, which build_initial() has
+	# warmed. Reject trees on the visible road inflated by tree_road_margin_m —
+	# NOT the clearance-inflated result["cells"], which is track_width +
+	# 2*track_clearance wide and would push every tree metres back from the real
+	# road edge. The margin keeps a small, tunable gap between trees and the road.
 	var road_footprint := cfg.track_width + 2.0 * cfg.tree_road_margin_m
 	var road_cells := TrackGenerator.rasterize_cells(
 		road_centerline.tessellate(), road_footprint)
@@ -193,11 +215,11 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# spawn inside the forest patches, breaking up the otherwise-continuous tree line.
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed, cfg.track_forestiness, cfg.forest_wavelength_m)
-	var tree_field := BillboardField.new()
+	var tree_field := TreeMeshField.new()
 	add_child(tree_field)
-	tree_field.build(trees, $Floor as TerrainManager, cfg.tree_size_m, TREE_TEXTURE,
-		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, true,
-		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
+	tree_field.build(trees, $Floor as TerrainManager, _tree_mesh(),
+		cfg.tree_size_m.y, cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
+		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m)
 
 	if loading != null:
 		loading.set_step("Scattering bushes…")

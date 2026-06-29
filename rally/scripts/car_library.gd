@@ -32,11 +32,17 @@ extends RefCounted
 #                value can't be pulled against the physics engine's rolling drag; its
 #                ratios are still real. Every other car uses fully real values.
 #   * drag     — quadratic aero drag coefficient (GameConfig.drag_coefficient):
-#                the force is drag x speed². Tuned per car to a realistic top
-#                speed, so it lumps the real aerodynamic drag together with the
-#                drivetrain / rolling losses that also cap a real car's top end.
-#                Bigger, draggier bodies (Mustang) carry more; slippery coupes
-#                (LFA, 911) less.
+#                the force is drag x speed². NOTE these are deliberately SMALL: the
+#                physics engine (Jolt VehicleBody3D) already applies a large
+#                baseline rolling resistance of its own (~0.2 g, mass-proportional;
+#                see features/drivetrain-and-tires.md), which on its own already
+#                lands the cars near their real top speeds. drag is therefore sized
+#                only to TOP UP that baseline to the realistic total — NOT to be the
+#                whole aero force — and was tuned per car by measuring top speed in
+#                the sim. Draggy bodies (Mustang) still need a real coefficient;
+#                slippery coupes (LFA, Aventador) sit near zero because the engine's
+#                baseline alone already meets (or slightly exceeds) the resistance
+#                for their real top speed.
 #   * grip_front / grip_rear — tyre friction (wheel_friction_slip_*), a
 #                dimensionless coefficient. The whole roster was raised ~20% over
 #                its original road-tyre baseline (which sat the road cars near
@@ -119,7 +125,7 @@ const CARS: Array[Dictionary] = [
 		# final drives; only this one is compromised. See features/drivetrain-and-tires.md.
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
 		"grip_front": 1.08, "grip_rear": 1.26, "shift_time": 0.30,  # manual H-pattern roadster
-		"engine_type": 0, "drive_mode": RWD, "drag": 0.55, "downforce_rear": 0.5, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"engine_type": 0, "drive_mode": RWD, "drag": 0.27, "downforce_rear": 0.5, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
@@ -139,7 +145,7 @@ const CARS: Array[Dictionary] = [
 		# by 4.063/3.450) — the resulting OVERALL ratios match the real car exactly.
 		"gear_ratios": [4.196, 2.526, 1.679, 1.203, 0.928, 0.761, 0.635], "final_drive": 3.450,
 		"grip_front": 1.08, "grip_rear": 1.20, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
-		"engine_type": 1, "drive_mode": AWD, "drag": 0.55, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"engine_type": 1, "drive_mode": AWD, "drag": 0.10, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
 		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
 		"wheel_radius": 0.335, "wheel_width": 0.235,
@@ -152,7 +158,7 @@ const CARS: Array[Dictionary] = [
 		# Real 992 8-speed PDK: 4.89/3.17/2.15/1.56/1.18/0.94/0.76/0.61, FD 3.12.
 		"gear_ratios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61], "final_drive": 3.12,
 		"grip_front": 1.14, "grip_rear": 1.26, "shift_time": 0.06,  # 8-speed PDK
-		"engine_type": 2, "drive_mode": RWD, "drag": 0.47, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"engine_type": 2, "drive_mode": RWD, "drag": 0.11, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
 		"wheel_radius": 0.34, "wheel_width": 0.245,
@@ -165,7 +171,7 @@ const CARS: Array[Dictionary] = [
 		# Real LFA 6-speed ASG: 3.231/2.188/1.609/1.233/0.970/0.795, FD 3.417.
 		"gear_ratios": [3.231, 2.188, 1.609, 1.233, 0.970, 0.795], "final_drive": 3.417,
 		"grip_front": 1.20, "grip_rear": 1.32, "shift_time": 0.16,  # automated single-clutch ASG
-		"engine_type": 5, "drive_mode": RWD, "drag": 0.43, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"engine_type": 5, "drive_mode": RWD, "drag": 0.05, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -178,7 +184,7 @@ const CARS: Array[Dictionary] = [
 		# Real S550 MT82 6-speed manual: 3.66/2.43/1.69/1.32/1.00/0.65, FD 3.73.
 		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 3.73,
 		"grip_front": 1.08, "grip_rear": 1.08, "shift_time": 0.22,  # 6-speed manual muscle
-		"engine_type": 4, "drive_mode": RWD, "drag": 0.90, "downforce_rear": 0.06, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"engine_type": 4, "drive_mode": RWD, "drag": 0.78, "downforce_rear": 0.06, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
 		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -191,7 +197,7 @@ const CARS: Array[Dictionary] = [
 		# Real Aventador Graziano ISR 7-speed: 2.937/2.412/1.926/1.580/1.336/1.135/0.971, FD 3.083.
 		"gear_ratios": [2.937, 2.412, 1.926, 1.580, 1.336, 1.135, 0.971], "final_drive": 3.083,
 		"grip_front": 1.18, "grip_rear": 1.20, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
-		"engine_type": 6, "drive_mode": AWD, "drag": 0.46, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"engine_type": 6, "drive_mode": AWD, "drag": 0.05, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
 		"wheel_radius": 0.35, "wheel_width": 0.30,

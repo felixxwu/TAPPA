@@ -73,7 +73,11 @@ idempotent):
   along its 2D normal by `bulge·cos θ` while `z = (depth/2)·sin θ` walks
   front→back over `depth_segments` rings — giving the inflated, rounded-tube
   silhouette from the side. Normals are generated; no UVs/tangents on the body
-  (it is flat-coloured, not textured).
+  (it is flat-coloured, not textured). **Cap winding:**
+  `Geometry2D.triangulate_polygon` emits CCW triangles, but Godot's back-face
+  culling treats CW (as seen by the viewer) as the front face, so each cap
+  triangle is reversed when emitted — otherwise both flat caps point inward, get
+  culled, and the arch reads as see-through / concave.
 - **Seams** (`_add_inflatable_seams`) — thin dark quads ringing each leg to sell
   the inflated-baffle look.
 - **Guy ropes + anchors** (`_add_guy_ropes`, `_add_anchors`) — four thin cylinders
@@ -135,8 +139,9 @@ to `tools/render_out/`. Pure tooling — not shipped in the game.
 
 `tests/headless/test_finish_arch.gd` — the arch builds a solid body mesh, spans
 its configured opening/height and stands on the ground, has the expected banner
-quads + ropes + stakes, and `build()` is idempotent (rebuild replaces rather
-than appends). `tests/headless/test_smoke.gd` —
+quads + ropes + stakes, `build()` is idempotent (rebuild replaces rather than
+appends), and the flat front/back caps are wound to face outward (guarding the
+back-face-culling bug above). `tests/headless/test_smoke.gd` —
 `test_finish_arch_straddles_the_road_at_the_stage_end` checks `world.gd` builds the
 finish gate at the centerline end (100% progress), and
 `test_start_arch_straddles_the_road_at_the_start_line` checks the start gate sits

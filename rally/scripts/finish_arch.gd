@@ -128,12 +128,17 @@ func _build_arch_mesh() -> ArrayMesh:
 	var n := profile.size()
 
 	# Flat front cap (+Z) and back cap (-Z) — kept flat so banners read cleanly.
+	# Geometry2D.triangulate_polygon emits CCW triangles, but Godot treats CW
+	# (as seen by the viewer) as the front face, so we reverse each triangle: the
+	# +Z cap is wound (c,b,a) so it front-faces the approaching driver, and the
+	# -Z cap (a,b,c) so it front-faces down-track. Without the reversal both caps
+	# point inward and get back-face culled, leaving the arch looking hollow.
 	for i in range(0, tris.size(), 3):
 		var a := tris[i]
 		var b := tris[i + 1]
 		var c := tris[i + 2]
-		_face(st, _v(profile[a], hz), _v(profile[b], hz), _v(profile[c], hz), Vector3.BACK)
-		_face(st, _v(profile[c], -hz), _v(profile[b], -hz), _v(profile[a], -hz), Vector3.FORWARD)
+		_face(st, _v(profile[c], hz), _v(profile[b], hz), _v(profile[a], hz), Vector3.BACK)
+		_face(st, _v(profile[a], -hz), _v(profile[b], -hz), _v(profile[c], -hz), Vector3.FORWARD)
 
 	# Bulged side wall: instead of a flat vertical band front->back, sweep a
 	# barrel profile so the tube bulges outward at its depth equator (inflatable

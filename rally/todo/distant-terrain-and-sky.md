@@ -13,9 +13,13 @@
 > from the sky's sun). Tests:
 > `test_terrain.gd::test_distant_terrain_*`, `test_render_smoke.gd` (skybox + fog
 > + backdrop). Docs: `features/rendering.md`, `features/terrain.md`.
-> **§2 (vegetation auto-LOD) is intentionally NOT done** — vegetation still pops
-> in at the old `tree_render_distance_m` (80 m); acceptable for now. It remains
-> gated on the billboard→opaque-model swap in `todo/performance-optimisations.md`.
+> **§2 (vegetation auto-LOD) — PARTIALLY DONE (trees).** The billboard→opaque-model
+> swap landed for trees (`scripts/tree_mesh_field.gd`, `models/low_poly_tree.glb`),
+> so trees now get auto-LOD: they are binned into per-cell MultiMeshes, each using
+> the `.glb`'s importer-generated mesh LODs and a `visibility_range_end` fade at
+> `tree_render_distance_m`. `tree_render_distance_m` is still 80 m (not raised — §1
+> view-distance work is separate). **Still open:** a bush mesh (bushes remain
+> billboards) and raising the far distance if/when §1 pushes the horizon out.
 >
 > **Follow-ups worth noting:** the sky panorama is an open green field + blue sky
 > (`rooitou_park`), chosen for a plain, treeline-free horizon (earlier tries:

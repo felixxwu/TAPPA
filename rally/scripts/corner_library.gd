@@ -3,10 +3,13 @@ extends RefCounted
 # The rally pacenote turn-type shapes. Each corner is a 2D bezier (Curve2D),
 # hand-authored as control points in meters, entry at the origin heading +Y,
 # right-hand turns. The number gradient 1-6 goes from sharpest/tightest (1, ~85
-# deg, ~15 m radius) to gentlest (6, ~12 deg, ~90 m radius); Square is a sharp
+# deg, ~18 m radius) to gentlest (6, ~12 deg, ~108 m radius); Square is a sharp
 # ~90 deg, Hairpin ~180 deg, Straight a plain 50 m line. "Right 4 tightens 2" is
-# a compound example proving authored multi-point curves work. The 2D curve is
-# the source of truth; it will later be imprinted onto the 3D terrain surface.
+# a compound example proving authored multi-point curves work. Every turn except
+# the Hairpin (and the plain Straight) is scaled 1.2x larger than its original
+# authored size: the angles are unchanged, only the radii/geometry grow. The 2D
+# curve is the source of truth; it will later be imprinted onto the 3D terrain
+# surface.
 #
 # points entries: [position, in_control, out_control] (Vector2, meters); the
 # in/out controls are relative to position, as Curve2D.add_point expects.
@@ -16,50 +19,50 @@ const CORNERS: Array[Dictionary] = [
 	{
 		"name": "1",
 		"points": [
-			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 7.778)],
-			[Vector2(13.693, 14.943), Vector2(-7.748, -0.678), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 9.334)],
+			[Vector2(16.432, 17.932), Vector2(-9.298, -0.814), Vector2(0.000, 0.000)],
 		],
 	},
 	{
 		"name": "2",
 		"points": [
-			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 9.249)],
-			[Vector2(14.476, 20.673), Vector2(-8.691, -3.163), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),    Vector2(0.000, 11.099)],
+			[Vector2(17.371, 24.808), Vector2(-10.429, -3.796), Vector2(0.000, 0.000)],
 		],
 	},
 	{
 		"name": "3",
 		"points": [
-			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 10.440)],
-			[Vector2(13.646, 26.213), Vector2(-8.552, -5.988), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),    Vector2(0.000, 12.528)],
+			[Vector2(16.375, 31.456), Vector2(-10.262, -7.186), Vector2(0.000, 0.000)],
 		],
 	},
 	{
 		"name": "4",
 		"points": [
-			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 10.580)],
-			[Vector2(10.528, 32.925), Vector2(-6.800, -8.104), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 12.696)],
+			[Vector2(12.634, 39.510), Vector2(-8.160, -9.725), Vector2(0.000, 0.000)],
 		],
 	},
 	{
 		"name": "5",
 		"points": [
-			[Vector2(0.000, 0.000),  Vector2(0.000, 0.000),   Vector2(0.000, 12.492)],
-			[Vector2(9.090, 40.470), Vector2(-6.011, -12.602), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),    Vector2(0.000, 14.990)],
+			[Vector2(10.908, 48.564), Vector2(-7.213, -15.122), Vector2(0.000, 0.000)],
 		],
 	},
 	{
 		"name": "6",
 		"points": [
-			[Vector2(0.000, 0.000),  Vector2(0.000, 0.000),   Vector2(0.000, 15.289)],
-			[Vector2(6.967, 50.712), Vector2(-4.308, -15.152), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000),  Vector2(0.000, 0.000),    Vector2(0.000, 18.347)],
+			[Vector2(8.360, 60.854), Vector2(-5.170, -18.182), Vector2(0.000, 0.000)],
 		],
 	},
 	{
 		"name": "Square",
 		"points": [
-			[Vector2(0.000, 0.000), Vector2(0.000, 0.000),  Vector2(0.000, 4.418)],
-			[Vector2(8.000, 8.000), Vector2(-4.418, 0.000), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000), Vector2(0.000, 0.000),  Vector2(0.000, 5.302)],
+			[Vector2(9.600, 9.600), Vector2(-5.302, 0.000), Vector2(0.000, 0.000)],
 		],
 	},
 	{
@@ -80,9 +83,9 @@ const CORNERS: Array[Dictionary] = [
 	{
 		"name": "Right 4 tightens 2",
 		"points": [
-			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 10.580)],
-			[Vector2(10.528, 28.925), Vector2(-6.800, -8.104), Vector2(2.482, 2.958)],
-			[Vector2(19.857, 35.457), Vector2(-3.629, -1.321), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 0.000),   Vector2(0.000, 0.000),   Vector2(0.000, 12.696)],
+			[Vector2(12.634, 34.710), Vector2(-8.160, -9.725), Vector2(2.978, 3.550)],
+			[Vector2(23.828, 42.548), Vector2(-4.355, -1.585), Vector2(0.000, 0.000)],
 		],
 	},
 ]

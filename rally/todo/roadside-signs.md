@@ -31,12 +31,15 @@
   `arrow_square_*`, `arrow_uturn_*`) so each board shows its own number. Gentle 5s/6s
   are unsigned (too straight), so no board is baked for them.
 - **`SignField`** (`scripts/sign_field.gd`): builds one A-frame sign per placement
-  — two splayed `BoxMesh` panels on the `ps1_models` shader, oriented to the road
-  tangent and sat on the flat road surface (`floor.height_at(centerline pt)`),
-  each with its own collision. Signs are **knockable cosmetic props**: a kart can
-  shove one aside without taking damage. Missing texture → colour fallback. Still a
-  kind-agnostic builder (could render a sector/start/finish board) though `plan`
-  only feeds it turns.
+  — two splayed double-sided **quad** panels (full face texture per side) on the
+  `ps1_models` shader, oriented to the road tangent and sat on the flat road surface
+  (`floor.height_at(centerline pt)`), each with its own collision. Signs are
+  **knockable cosmetic props**: a kart can shove one aside without taking damage.
+  Spawned **frozen** (terrain collision is streamed only near the car, so a live
+  body on a far part of the track would free-fall into the void); a child `Area3D`
+  waker unfreezes a sign when the dynamic car reaches it. Missing texture → colour
+  fallback. Still a kind-agnostic builder (could render a sector/start/finish
+  board) though `plan` only feeds it turns.
 - **Config-first knobs.** A `Roadside Signs` `@export_group` in `game_config.gd`
   (`sign_panel_size_m`, `sign_thickness_m`, `sign_splay_deg`, `sign_edge_inset_m`,
   `sign_base_depth_m`, `sign_mass_kg`, `sign_textures`) bundled via

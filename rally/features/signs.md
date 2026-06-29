@@ -51,17 +51,28 @@ hitbox are **children of the body**, so the whole sign tumbles as one. Per sign:
   flat road surface). This is the **resting pose**; physics takes over once the
   car hits it. Oriented so **-Z runs along the road tangent** and the ridge
   (local X) crosses the road, so the large faces point up-track / down-track.
-- **Geometry** — two thin `BoxMesh` panels tilted `±sign_splay_deg` about the
-  ridge: tops meet at the apex, bottoms splay into a stable footprint.
+- **Geometry** — two thin double-sided **quad** panels tilted `±sign_splay_deg`
+  about the ridge: tops meet at the apex, bottoms splay into a stable footprint.
+  Each quad maps the **full** face texture (UV 0..1) on both sides — a `BoxMesh`
+  would unwrap its six faces into an atlas, showing only a zoomed-in slice.
 - **Material** — `shaders/ps1_models.gdshader`; the atlas face texture if one is
   wired in `sign_textures` for the key, otherwise a **flat per-kind colour
   fallback** so geometry is visible before the art lands.
 - **Body** — a `RigidBody3D` of mass `sign_mass_kg` (light, so the heavy car
-  scatters it) with a single `BoxShape3D` child sized `panel_size ×
-  sign_base_depth_m`, centred half its height up so the box bottom rests on the
-  ground and the centre of mass sits above the base (a low hit tips it over). The
-  body sleeps once settled, so the at-rest cost is negligible. It is **not** in
-  the damage obstacle group — clipping a sign costs no HP.
+  scatters it) with a `BoxShape3D` child sized `panel_size × sign_base_depth_m`,
+  centred half its height up so the box bottom rests on the ground and the centre
+  of mass sits above the base (a low hit tips it over). It is **not** in the damage
+  obstacle group — clipping a sign costs no HP.
+- **Spawned frozen** — the body starts `freeze = true` (`FREEZE_MODE_STATIC`),
+  resting exactly at the placed road-surface pose. **This is essential:** terrain
+  collision is only streamed in a small ring around the car (`TerrainManager`
+  `RADIUS`), so a live `RigidBody3D` on a far part of the track would have no ground
+  and **free-fall into the void** before the player ever drove there (the cause of
+  "missing / wrong" signs). A child **`Area3D` waker**, a touch larger than the
+  hitbox, unfreezes the sign when the car enters it, so it still scatters on
+  contact. The waker ignores the sign's **own** body and any **`StaticBody3D`**
+  (streamed terrain chunks + tree hitboxes share the world layer) — only the
+  dynamic car wakes a sign.
 
 ## Config (`GameConfig` › *Roadside Signs*)
 
@@ -95,4 +106,6 @@ Any key absent from `sign_textures` simply shows the per-kind colour fallback.
 start/finish/sector boards), the turn count, keys (incl. 5/6 unsigned), left/right
 arrow mapping, determinism, and the `sector_offsets` helper.
 `tests/headless/test_smoke.gd` — `SignField.build` creates one node per sign, two
-panels each, a collision body, sitting at the road-surface height.
+panels each, a collision body + an `Area3D` waker, spawned **frozen** and sitting at
+the road-surface height; and that a sign wakes only on a dynamic non-self contact
+(the car), never from its own body or a `StaticBody3D` (terrain/trees).

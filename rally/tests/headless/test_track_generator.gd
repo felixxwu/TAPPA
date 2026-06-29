@@ -193,12 +193,15 @@ func _avg_gentleness(result: Dictionary, by_name: Dictionary) -> float:
 
 
 func test_straightness_bias_produces_gentler_tracks() -> void:
-	# Averaged across several seeds, a fully straightness-biased track places gentler
+	# Averaged across many seeds, a fully straightness-biased track places gentler
 	# corners (and longer straights) than an unbiased one — the "easier" track knob.
+	# The bias is probabilistic (a weighted shuffle), so the gentleness edge only
+	# emerges in aggregate; a handful of seeds is too noisy to assert on reliably
+	# (any single seed can tie or invert), hence the wide seed sweep here.
 	var by_name := _corner_gentleness_by_name()
 	var plain := 0.0
 	var biased := 0.0
-	var seeds := [1, 2, 3, 5, 7, 11]
+	var seeds := range(1, 21)
 	for s in seeds:
 		var a := TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 0.0)
 		var b := TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 1.0)

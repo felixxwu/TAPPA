@@ -665,7 +665,9 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## (0 = a rigid lattice, 1 = anywhere in the cell). Spacing is inherent: two trees are
 ## never closer than (1 - tree_jitter) x cell, so lower values look more regular.
 @export_range(0.0, 1.0) var tree_jitter := 0.6
-## Billboard size in metres: width (x) by height (y). Pivot is the bottom edge.
+## Tree size in metres: width (x) by height (y). Trees are now solid low-poly
+## meshes (TreeMeshField), scaled uniformly so the model's height matches y
+## (x is legacy from the billboard era and only informs the rough footprint).
 @export var tree_size_m := Vector2(4.0, 6.0)
 ## Half-extent (m) in X/Z of each tree's box hitbox — a square trunk footprint.
 @export_range(0.05, 5.0) var tree_collision_radius_m := 0.5
@@ -676,6 +678,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(10.0, 500.0) var tree_render_distance_m := 80.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export_range(0.0, 100.0) var tree_render_fade_m := 15.0
+## Grid cell size (m) trees are binned into for rendering. Each bin is its own
+## MultiMesh, so the engine can drop far bins to the mesh's importer LODs and
+## cull them past tree_render_distance_m. Smaller = finer LOD/cull granularity
+## but more draw calls; ~25 m balances both against the ~75 m loaded terrain.
+@export_range(5.0, 100.0) var tree_bin_size_m := 25.0
 ## Uniform scale applied to the ground-cover bush mesh (models/vegetation/
 ## groundcover_opaque.glb). Bushes reuse the trees' scatter + render-distance
 ## params; only this scale and the sink/jitter below are bush-specific.
