@@ -117,20 +117,27 @@ Tapping the table drops to the map view; tapping the lift flies to the **tuning 
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
-The car is framed to one side (`hq_lift_cam_*`) so the **tuning menu** — a solid panel
-anchored to the other side of the screen (`hq_lift_menu_width_frac`) — never covers
-it. The panel holds **only** the interactive controls (change-car, the tab strip, the
-scrollable menu content, Back) so it stays short on small screens; the **bay title and
-the car's name/description** sit in a separate **bottom-left** panel beside the car.
-Two menus toggled by the tab strip: **Tune** (a slider per tuning axis — grip /
-brake-bias / aero — locked axes greyed with a "needs X kit" note, plus **Reset to
-neutral**; each change saves via `Save.set_tuning`) and **Upgrades** (per-slot
-install from inventory via `Save.install_upgrade` — fitting **fully consumes** the
-part, confirmed via a dialog first since it can't be undone — plus the **Repair Kit**
-action `Save.use_repair_kit`). A change-car
-control cycles all owned cars, updating the **selected car**
-(`Save.selected_car`/`set_selected_car`) and re-spawning it on the lift. See
-[tuning.md](tuning.md) for the underlying config pipeline.
+The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
+(`LiftPage.HUB`): a **bottom-left** panel beside the car with the **bay title + the
+car's name/description**, and UNDER it a **minimal change-car selector** (`< Car` /
+`Car >`) plus **Tuning** and **Upgrades** buttons. The change-car control cycles all
+owned cars, updating the **selected car** (`Save.selected_car`/`set_selected_car`) and
+re-spawning it on the lift. Each menu button opens that menu as its **own full-height
+page** — a solid panel anchored to the other side of the screen
+(`hq_lift_menu_width_frac`) so the car stays in view — with a **< Back** that returns
+to the hub; the hub's own Back returns to the garage. Because the change-car control
+and page chrome live on the hub, each menu page gets the **full panel height to
+itself** and doesn't need to scroll. The two pages:
+
+- **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero;
+  locked axes greyed with a "needs X kit" note) plus **Reset to neutral**; each change
+  saves via `Save.set_tuning`.
+- **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from inventory via
+  `Save.install_upgrade` (fitting **fully consumes** the part, confirmed via a dialog
+  first since it can't be undone) plus the **Repair Kit** action `Save.use_repair_kit`.
+
+`_refresh_lift_ui` toggles which face (hub vs. a menu page) is shown from `_lift_page`.
+See [tuning.md](tuning.md) for the underlying config pipeline.
 
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
 plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal in
