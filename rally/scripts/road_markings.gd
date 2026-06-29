@@ -146,6 +146,9 @@ func triangle_count() -> int:
 	var mesh := _mesh_instance.mesh as ArrayMesh
 	if mesh == null or mesh.get_surface_count() == 0:
 		return 0
+	# The mesh is built from triangles, so the vertex count is always a multiple
+	# of 3 — the division is exact and intentionally integer.
+	@warning_ignore("integer_division")
 	return mesh.surface_get_array_len(0) / 3
 
 
