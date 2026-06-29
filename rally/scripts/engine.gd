@@ -143,7 +143,10 @@ func step(h: float, throttle_in: float, driveline_omega: float) -> float:
 	var friction := cfg.engine_friction_base + cfg.engine_friction_slope * rpm() / 1000.0
 	var crank := -friction
 	if throttle > 0.001 and shift_timer <= 0.0 and not fuel_cut:
-		crank += throttle * cfg.peak_torque * _torque_fraction(rpm())
+		# global_torque_scale is a hidden global de-rate: it scales the torque the
+		# engine actually delivers without altering cfg.peak_torque, so the stats
+		# panel still shows the full published figure while every car is dialled back.
+		crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm())
 
 	var gr := ratio()
 	var input_omega := driveline_omega * gr

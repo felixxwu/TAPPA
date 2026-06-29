@@ -165,6 +165,12 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 	set(value):
 		engine_type = value
 		_apply_engine_preset()
+## Hidden global de-rate applied to EVERY car's drive torque. Multiplies the
+## crank torque the engine actually makes (engine.gd), so it scales acceleration
+## for all cars at once WITHOUT touching the published peak_torque — the stats
+## panel and power-to-weight still report the full, pre-scaling figure. Use it to
+## globally dial back pace without re-balancing every car. 1.0 = no scaling.
+@export_range(0.1, 1.0) var global_torque_scale := 0.6
 @export var idle_rpm := 900.0  # the no-stall floor: omega never drops below this
 ## Bouncing rev limiter width (rpm): fuel cuts at redline and only restores once
 ## the revs fall this far below it, so they oscillate across the band — an
