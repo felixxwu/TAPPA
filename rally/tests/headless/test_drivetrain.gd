@@ -65,9 +65,15 @@ func test_launch_wheelspin() -> void:
 	# engine dumped ~1750 N·m instantly; the real-ish engine spins the tires
 	# at the rate the crank can rev, so slip vs tire_slip_peak is the honest
 	# wheelspin measure, not a fixed multiple of car speed.)
+	# The shipped global_torque_scale de-rate (config/game_config.tres) was dropped
+	# low enough (~0.4) that a stock launch no longer breaks the tires loose past
+	# the grip peak. This test is about whether the DRIVETRAIN can spin the wheels
+	# given enough crank torque, not about the current power balance, so restore
+	# full power (no de-rate) for the launch — test-only, gameplay tuning untouched.
+	var cfg: GameConfig = Config.data
+	cfg.global_torque_scale = 1.0
 	Input.action_press("accelerate")
 	await _wait_physics(20)
-	var cfg: GameConfig = Config.data
 	var speed := _car.linear_velocity.length()
 	var slip: float = _car.drivetrain.rear_omega * cfg.wheel_radius - speed
 	assert_gt(slip, cfg.tire_slip_peak + 0.5,
