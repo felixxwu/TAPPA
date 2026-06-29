@@ -123,13 +123,14 @@ func test_launch_floors_the_leader() -> void:
 
 func test_player_is_staged_behind_the_line_to_roll_up() -> void:
 	var sl := _make()
-	# Staged half a gap behind the line (local +Z), scripted + axis-locked so it rolls
-	# straight up with the field instead of sitting still and getting rear-ended.
+	# Staged a full gap behind the line (local +Z, directly behind the leader which sits
+	# on the line), scripted + axis-locked so it rolls straight up with the field instead
+	# of sitting still and getting rear-ended.
 	assert_true(_player.ai_controlled, "the player is scripted for the roll-up")
 	assert_true(_player.axis_lock_linear_x, "player lateral locked during the roll-up")
 	assert_true(_player.axis_lock_angular_y, "player yaw locked during the roll-up")
-	assert_almost_eq(_player.global_position.z, Config.data.start_queue_gap * 0.5, 0.01,
-		"player staged half a gap behind the start line")
+	assert_almost_eq(_player.global_position.z, Config.data.start_queue_gap, 0.01,
+		"player staged a full gap behind the start line")
 
 
 func test_player_rolls_up_on_a_stagger_after_the_leader() -> void:
@@ -139,6 +140,23 @@ func test_player_rolls_up_on_a_stagger_after_the_leader() -> void:
 	assert_eq(_player.ai_throttle, 0.0, "player holds until its stagger")
 	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
 	assert_eq(_player.ai_throttle, 1.0, "player rolls up once its stagger elapses")
+
+
+func test_trailer_rolls_up_and_brakes_to_a_stop() -> void:
+	var sl := _make()
+	sl.launch()
+	# The trailer holds on its parking brake until its (later) stagger.
+	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
+	assert_eq(sl._trailer.ai_throttle, 0.0, "trailer holds until its stagger")
+	# Once its stagger elapses it rolls up toward its slot a gap behind the line.
+	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
+	assert_eq(sl._trailer.ai_throttle, 1.0, "trailer rolls up once its stagger elapses")
+	# Sitting it on its target makes it brake to a stop there, like the player at the
+	# line, instead of coasting through and drifting.
+	sl._trailer.global_position = sl._trailer_target
+	sl._process(0.05)
+	assert_eq(sl._trailer.ai_throttle, -1.0, "trailer brakes once it reaches its slot")
+	assert_true(sl._trailer.ai_handbrake, "trailer holds the brake to settle on its slot")
 
 
 func test_fade_waits_for_the_player_to_come_to_a_stop() -> void:

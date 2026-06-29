@@ -49,8 +49,9 @@ var _leader_rows: Array[Label] = []   # one row per shown rival (or a single das
 var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
-var _leader: Node3D     # the car ahead — drives off on launch
-var _trailer: Node3D    # the car behind — rolls up on launch
+var _leader: Node3D     # the car ahead (on the line) — drives off on launch
+var _trailer: Node3D    # the car behind — rolls up to _trailer_target on launch
+var _trailer_target: Vector3  # world point the trailer rolls up to and brakes on
 
 # The player's start pose, captured at setup (the queue lays out around it). The
 # player is staged half a gap behind this line and rolls UP to it on launch.
@@ -89,14 +90,15 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_update_orbit()
 
 
-# Roll-up start: stage the player half a gap BEHIND the line so it rolls up to the
-# line with the field (instead of sitting still and getting rear-ended). Scripted +
-# axis-locked like the queue cars while staging; cleared at the hand-off so the run
-# drives normally. No-op for a non-Car player (test stubs without the hook).
+# Roll-up start: stage the player a full gap BEHIND the line (directly behind the
+# leader, which sits ON the line) so it has the whole gap to roll up with the field
+# instead of sitting still and getting rear-ended. Scripted + axis-locked like the
+# queue cars while staging; cleared at the hand-off so the run drives normally. No-op
+# for a non-Car player (test stubs without the hook).
 func _stage_player(terrain: Node) -> void:
 	if not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
 		return
-	var setback := _cfg().start_queue_gap * 0.5
+	var setback := _cfg().start_queue_gap
 	_player.global_transform = Transform3D(_start_xform.basis, _ground(_start_xform * Vector3(0, 0, setback), terrain))
 	_player.ai_controlled = true
 	_player.ai_throttle = 0.0
@@ -255,11 +257,14 @@ func _build_fade() -> void:
 func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
 	var cfg := _cfg()
 	var gap := cfg.start_queue_gap
-	# Local -Z is the car's nose. Leader is ahead of the line (negative Z); the player
-	# is staged half a gap behind (see _stage_player), so the trailer sits a full gap
-	# behind the player.
-	var leader_pos := _ground(_start_xform * Vector3(0, 0, -gap), terrain)
-	var trailer_pos := _ground(_start_xform * Vector3(0, 0, gap * 0.5 + gap), terrain)
+	# Local -Z is the car's nose. The leader sits ON the line (so it starts FROM the
+	# start line and drives off down the lead-in); the player is staged a full gap
+	# behind it (see _stage_player) and the trailer a full gap behind the player. On
+	# launch each rolls up one slot: leader off the line, player TO the line, trailer
+	# to where the player started (a gap behind the line — _trailer_target).
+	var leader_pos := _ground(_start_xform.origin, terrain)
+	var trailer_pos := _ground(_start_xform * Vector3(0, 0, gap * 2.0), terrain)
+	_trailer_target = _start_xform * Vector3(0, 0, gap)
 	var seed_base := _queue_seed(rally)
 	_leader = _spawn_prop(seed_base % CarLibrary.CARS.size(), leader_pos)
 	_trailer = _spawn_prop((seed_base + 1) % CarLibrary.CARS.size(), trailer_pos)
@@ -341,17 +346,21 @@ func _process(delta: float) -> void:
 			var cfg := _cfg()
 			# Staggered roll-off: the leader pulls away first (full throttle, set at
 			# launch); the player rolls UP TO THE LINE one stagger later (braking to a
-			# stop ON it, not coasting past); the trailer one stagger after that drives
-			# off, holding throttle for the scoot window then easing off.
+			# stop ON it, not coasting past); the trailer one stagger after that rolls up
+			# to where the player started (a gap behind the line), braking to a stop there
+			# too instead of just coasting and drifting.
 			var stagger := cfg.start_queue_stagger_seconds
 			var scoot := cfg.start_trailer_scoot_seconds
 			if _player_staged and _player is VehicleBody3D and "ai_controlled" in _player:
 				if _seq_t >= stagger:
-					_roll_player_to_line()
+					_roll_car_to(_player, _start_xform.origin)
 				else:
 					_player.ai_throttle = 0.0  # hold behind until its stagger
 			if _trailer != null and is_instance_valid(_trailer):
-				_trailer.ai_throttle = 1.0 if (_seq_t >= 2.0 * stagger and _seq_t < 2.0 * stagger + scoot) else 0.0
+				if _seq_t >= 2.0 * stagger:
+					_roll_car_to(_trailer, _trailer_target)
+				else:
+					_trailer.ai_throttle = 0.0  # hold on the parking brake until its stagger
 			# Don't cut to the chase cam until the player has rolled up to the line AND
 			# come to a COMPLETE stop, so the transition never happens mid-roll;
 			# start_drive_off_seconds is a safety cap so it can't wait forever.
@@ -383,27 +392,29 @@ func _advance_orbit(delta: float) -> void:
 	_update_orbit()
 
 
-# Roll the staged player UP TO the start line and brake to a stop ON it, instead of
-# flooring it for a fixed window and coasting past (which read as "scoots past then
-# resets"). Drives forward while well behind the line, coasts into a speed-aware
-# brake point, then brakes+holds — so it eases to a halt at the line. `_release_player`
-# still snaps the sub-decimetre residual to the exact line under the fade.
-func _roll_player_to_line() -> void:
+# Roll a scripted car UP TO `target` (a world point on the start heading) and brake to
+# a stop ON it, instead of flooring it for a fixed window and coasting past (which read
+# as "scoots past then drifts"). Drives forward while well behind the target, coasts
+# into a speed-aware brake point, then brakes+holds — so it eases to a halt at it. Used
+# for the player (target = the line) and the trailer (target = a gap behind it); for
+# the player, `_release_player` still snaps the sub-decimetre residual to the exact line
+# under the fade.
+func _roll_car_to(car, target: Vector3) -> void:
 	var fwd := (-_start_xform.basis.z).normalized()
-	var dist: float = (_start_xform.origin - _player.global_position).dot(fwd)
-	var v: float = (_player as VehicleBody3D).linear_velocity.length()
+	var dist: float = (target - car.global_position).dot(fwd)
+	var v: float = car.linear_velocity.length()
 	# Distance the car needs to brake from its current speed (decel ~14 m/s²) plus a
-	# small reaction margin — start braking once the line is within it.
+	# small reaction margin — start braking once the target is within it.
 	var brake_dist: float = v * v / 28.0 + 0.25
 	if dist <= brake_dist:
-		_player.ai_throttle = -1.0   # on/at the line: brake to a stop
-		_player.ai_handbrake = true
+		car.ai_throttle = -1.0   # on/at the target: brake to a stop
+		car.ai_handbrake = true
 	elif dist > brake_dist + 1.0:
-		_player.ai_throttle = 1.0    # well behind: roll up
-		_player.ai_handbrake = false
+		car.ai_throttle = 1.0    # well behind: roll up
+		car.ai_handbrake = false
 	else:
-		_player.ai_throttle = 0.0    # coast into the brake point
-		_player.ai_handbrake = false
+		car.ai_throttle = 0.0    # coast into the brake point
+		car.ai_handbrake = false
 
 
 # Whether the player has effectively stopped (settled at the line). Non-Car players
