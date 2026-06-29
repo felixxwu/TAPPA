@@ -91,11 +91,13 @@ func test_is_streaming_chunks_tracks_pending_work() -> void:
 	# Drive far -> the new ring is queued for the budgeted pump -> streaming.
 	m.update_focus(Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0))
 	assert_true(m.is_streaming_chunks(), "streaming while the build queue is non-empty")
+	# Slicing means the queue can empty while the last chunk is still mid-build, so
+	# pump until both the queue AND the active builder are done before asserting idle.
 	var guard := 0
-	while not m._build_queue.is_empty() and guard < 100:
+	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
 		m._pump_build_queue()
 		guard += 1
-	assert_false(m.is_streaming_chunks(), "idle once the queue drains")
+	assert_false(m.is_streaming_chunks(), "idle once the queue drains and the build finishes")
 
 
 func test_distant_terrain_defers_rebuild_until_streaming_is_idle() -> void:
@@ -120,9 +122,10 @@ func test_distant_terrain_defers_rebuild_until_streaming_is_idle() -> void:
 	assert_true(m.is_streaming_chunks(), "manager is streaming the new ring")
 	dt._process(0.0)
 	assert_eq(dt.mesh, mesh_before, "backdrop NOT rebuilt while the detail ring streams")
-	# Drain the detail ring -> the next _process rebuilds the backdrop.
+	# Drain the detail ring (queue AND the active sliced build) -> the next _process
+	# rebuilds the backdrop.
 	var guard := 0
-	while not m._build_queue.is_empty() and guard < 100:
+	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
 		m._pump_build_queue()
 		guard += 1
 	assert_false(m.is_streaming_chunks(), "streaming finished")
@@ -344,6 +347,32 @@ func test_terrain_bakes_static_lighting_into_vertex_colours() -> void:
 	assert_true(hi <= 1.0 + 1e-4, "brightest vertex stays within range")
 
 
+func test_incremental_build_matches_full_build() -> void:
+	# Stepping a TerrainChunkBuilder a few rows at a time must yield byte-identical
+	# arrays to compute_chunk_data (which runs the same builder to completion) — this
+	# is what lets the budgeted web path slice a chunk across frames without changing
+	# the terrain. Lit + a baked road so every output array carries real variation.
+	var m := _make_manager(
+		[_make_layer(60.0, 1.5), _make_layer(15.0, 0.4)] as Array[TerrainLayer], 21)
+	m.light_amount = 1.0
+	var curve := Curve2D.new()  # a straight through chunk (2,-1) so road fields apply
+	curve.add_point(Vector2(120.0, -30.0))
+	curve.add_point(Vector2(160.0, -30.0))
+	m.bake_track(curve, 6.0, 2.0, 0.5, false, 4.0)
+	var coord := Vector2i(2, -1)
+	var full: Dictionary = m.compute_chunk_data(coord)
+	# Fresh builder, stepped 3 rows at a time to force many resumes.
+	var b := TerrainChunkBuilder.new(m, coord)
+	var guard := 0
+	while not b.complete and guard < 10000:
+		b.step(3)
+		guard += 1
+	assert_true(b.complete, "stepped builder reaches completion")
+	var inc: Dictionary = b.data()
+	for key in ["center", "heights", "vertices", "uvs", "colors", "uv2s", "indices"]:
+		assert_eq(inc[key], full[key], "incremental %s matches the full build" % key)
+
+
 func test_baked_light_halo_matches_per_vertex_sampling() -> void:
 	# compute_chunk_data now reads each vertex's four light neighbours from a shared
 	# pure-height halo instead of re-sampling the noise 4× per vertex. That must stay
@@ -558,14 +587,15 @@ func test_budgeted_generation_spreads_builds_across_frames() -> void:
 	assert_eq(m.loaded_coords().size(), 0, "old ring freed; new ring not built on the crossing tick")
 	assert_eq(m._build_queue.size(), ring_count, "full new ring queued for the budgeted pump")
 
-	# The pump builds at most MAX_BUILDS_PER_FRAME chunks per frame.
+	# A chunk is many more rows than one frame's budget, so a single pump completes
+	# NO chunk — it only advances the first chunk partway (that's the slicing).
 	m._pump_build_queue()
-	assert_eq(m.loaded_coords().size(), ManagerScript.MAX_BUILDS_PER_FRAME,
-		"one pump builds at most MAX_BUILDS_PER_FRAME chunks")
+	assert_eq(m.loaded_coords().size(), 0, "one pump doesn't finish a whole chunk (row-sliced)")
+	assert_false(m._active_builder == null, "a chunk build is in progress across frames")
 
-	# Pump until drained -> the whole ring lands, no chunk left queued.
+	# Pump until the queue drains AND the active build finishes -> the whole ring lands.
 	var guard := 0
-	while not m._build_queue.is_empty() and guard < 100:
+	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
 		m._pump_build_queue()
 		guard += 1
 	assert_eq(m.loaded_coords().size(), ring_count, "all queued chunks eventually built")
@@ -587,7 +617,7 @@ func test_budgeted_pump_skips_coords_that_left_the_ring() -> void:
 	var other_pos := Vector3(0, 0, ManagerScript.CHUNK_M * 40.0)
 	m.update_focus(other_pos)
 	var guard := 0
-	while not m._build_queue.is_empty() and guard < 200:
+	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
 		m._pump_build_queue()
 		guard += 1
 	var ring: int = 2 * ManagerScript.RADIUS + 1

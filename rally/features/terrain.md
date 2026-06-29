@@ -194,7 +194,13 @@ crossing. Tunables: `GameConfig.distant_terrain_*`.
 
 Chunk generation is split into a pure `compute_chunk_data(coord)` (noise +
 mesh arrays — all CPU math) and a cheap main-thread `apply_data` (builds the
-`ArrayMesh` + `HeightMapShape3D` and adds the node).
+`ArrayMesh` + `HeightMapShape3D` and adds the node). The per-row work lives in
+**`TerrainChunkBuilder`** (`scripts/terrain_chunk_builder.gd`), a resumable builder
+that fills the chunk arrays a few grid ROWS at a time. `compute_chunk_data` just
+runs a local builder to completion in one call, so the monolithic and incremental
+paths produce byte-identical data (guarded by
+`test_incremental_build_matches_full_build`); each builder is a local instance, so
+the threaded path's concurrent calls never share state.
 
 At runtime (`use_threaded_generation = true`), `compute_chunk_data` runs on a
 `WorkerThreadPool` task; `_process` integrates at most
@@ -218,9 +224,16 @@ isn't available, so terrain gen runs on the main thread, frame-budgeted so a
 boundary crossing doesn't generate a whole ring in one tick (a visible stutter).
 `_use_budgeted_generation()` (on whenever `OS.has_feature("web")`, or forced via
 `force_main_thread_budget` for desktop tests) routes missing coords into
-`_build_queue`; `_pump_build_queue()` generates at most `MAX_BUILDS_PER_FRAME`
-(1) of them per frame, matching the integration cap so chunk loading stays
-one-chunk-per-frame. This path keys on the `web` platform feature, not on the
+`_build_queue`; `_pump_build_queue()` then advances generation by at most
+`MAX_BUILD_ROWS_PER_FRAME` (16) grid ROWS per frame, holding one in-progress
+`TerrainChunkBuilder` (`_active_builder`) across frames and spawning it when
+complete. A whole chunk is ~206 rows lit — far more than one phone frame can
+afford — so even the old "one chunk per frame" still stalled; row-slicing spreads a
+single chunk's build across ~10-15 frames (the fog and the ring's lead distance —
+the nearest new chunk is ~0.7 s of travel away at speed — hide the lag). The active
+builder counts as "streaming" (`is_streaming_chunks()`, which `DistantTerrain` gates
+its rebuild on) and is excluded from re-queueing; a partial build whose coord leaves
+the ring is abandoned. This path keys on the `web` platform feature, not on the
 export's thread flag, so it was already in force before threads were turned off —
 the only thing the single-threaded export changes is dropping the unused engine
 thread pools (and the SAB host requirements). `build_initial` (`force_sync`)

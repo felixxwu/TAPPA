@@ -23,10 +23,16 @@
 > `TerrainManager.is_streaming_chunks()` is false. The perf benchmark
 > (`perf_benchmark.gd`) now sets `light_amount=1.0` so it measures the real lit
 > cost. Docs: `features/terrain.md`, `features/engine-audio.md`. **Still open:**
-> the deferred distant rebuild is still one heavier-than-a-frame mesh build on the
-> weakest devices (now isolated on its own frame, not stacked); time-slicing it —
-> or `compute_chunk_data` — across frames is the next lever if a real phone still
-> micro-hitches.
+> (c) **detail-chunk generation is now time-sliced across frames** —
+> `TerrainChunkBuilder` (`scripts/terrain_chunk_builder.gd`) is a resumable builder;
+> the budgeted pump advances it `MAX_BUILD_ROWS_PER_FRAME` (16) grid rows per frame
+> and spawns the chunk on completion, instead of building a whole chunk (which alone
+> overruns a phone frame) in one tick. `compute_chunk_data` runs the same builder to
+> completion, so the threaded/sync paths stay byte-identical (guarded by
+> `test_incremental_build_matches_full_build`). **Still open:** the deferred
+> `DistantTerrain` rebuild is itself still one monolithic mesh build (heavier than a
+> phone frame), now isolated on its own quiet frame but not yet sliced — give it the
+> same row-budget treatment if a real device still micro-hitches on a crossing.
 >
 > **Item 7 (web-export threading): DECIDED — ship single-threaded.** Chose
 > maximum device reach over threaded chunk-streaming smoothness, consistent with
@@ -40,9 +46,10 @@
 > `serve_web.sh` comments. **Remaining (not a code blocker):** confirm on a real
 > mid/low-end phone — the two biggest per-crossing main-thread spikes (light-bake
 > re-sampling and the synchronous `DistantTerrain` rebuild) are now cut/deferred
-> (see the chunk-crossing follow-up note above); `MAX_BUILDS_PER_FRAME` is already
-> 1 (can't go lower), so the next lever if it still micro-hitches is time-slicing a
-> single chunk's / the distant mesh's build across frames.
+> (see the chunk-crossing follow-up note above), and detail-chunk generation is now
+> time-sliced row-by-row across frames (`TerrainChunkBuilder`). The remaining lever
+> if a real device still micro-hitches is row-slicing the `DistantTerrain` rebuild
+> too (it's deferred to a quiet frame but still monolithic).
 >
 > **Still open — BLOCKED ON YOUR DECISIONS / ASSETS:**
 > - **Items 2 + 3** (foliage view-cone cull + visible cap, collision-box cull):
@@ -83,7 +90,7 @@
       (`thread_support=false`) for maximum device reach. Terrain gen already uses
       the frame-budgeted main-thread queue on web, so no code change beyond the
       preset + script/doc updates. Remaining: a real on-device smoothness check
-      across chunk boundaries (tune `MAX_BUILDS_PER_FRAME` if needed). Owner: Felix.
+      across chunk boundaries (tune `MAX_BUILD_ROWS_PER_FRAME` if needed). Owner: Felix.
 
 ## Context / current state (measured from the code)
 
