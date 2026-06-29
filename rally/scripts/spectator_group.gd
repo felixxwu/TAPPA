@@ -282,8 +282,8 @@ func _write_instance(i: int) -> void:
 	var x := _pos[i].x
 	var z := _pos[i].y
 	var y := _ground(x, z) + _foot_offset
-	var basis := Basis(Vector3.UP, _yaw[i])
-	_mm.set_instance_transform(i, Transform3D(basis, Vector3(x, y, z)))
+	var yaw_basis := Basis(Vector3.UP, _yaw[i])
+	_mm.set_instance_transform(i, Transform3D(yaw_basis, Vector3(x, y, z)))
 
 
 func _refresh_all_instances() -> void:
