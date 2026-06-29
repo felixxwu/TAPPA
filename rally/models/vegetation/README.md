@@ -8,6 +8,9 @@ ground cover (no trees). Two surface styles are combined per model:
 - **Leaf cards** — double-sided alpha-cutout quads textured with `leaves.png`,
   each sampling a zoomed sub-window of the leaf sprig so **individual leaves are
   visible** on the silhouette.
+- **Solid leaf polys** — small opaque leaf-shaped diamonds whose silhouette is
+  the geometry itself (no alpha). They keep early-Z and avoid the alpha-test
+  overdraw cost of leaf cards, so they suit mobile (see `groundcover_opaque`).
 
 | Model             | File              | Surfaces        | Notes                                         |
 | ----------------- | ----------------- | --------------- | --------------------------------------------- |
@@ -15,6 +18,7 @@ ground cover (no trees). Two surface styles are combined per model:
 | Leafy bush        | `bush_leafy.glb`  | solid + leaves  | Round bush, dense leaf cards for detail        |
 | Shrub             | `shrub.glb`       | solid + leaves  | Taller upright leafy form                      |
 | Ground cover      | `groundcover.glb` | leaves          | Low, wide leafy patch of undergrowth          |
+| Ground cover (opaque) | `groundcover_opaque.glb` | solid leaf polys | Same patch, **no alpha cutout** — mobile-friendly overdraw |
 | Grass / weed tuft | `grass_tuft.glb`  | leaves          | Upright leafy blades radiating from the base  |
 
 Preview contact sheets (4 angles each: front-¾, side, back-¾, elevated hero)

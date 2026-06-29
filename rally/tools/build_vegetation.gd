@@ -109,6 +109,33 @@ func add_leaf_card(st: SurfaceTool, pos: Vector3, face: Vector3, w: float, h: fl
 	st.set_normal(face); st.set_uv(Vector2(u1, v1)); st.add_vertex(c)
 	st.set_normal(face); st.set_uv(Vector2(u0, v1)); st.add_vertex(d)
 
+# An OPAQUE leaf: a small flat diamond whose silhouette is the geometry itself
+# (no alpha cutout) so it keeps early-Z and is cheap on mobile overdraw. UVs
+# sample a small green window of the tiling foliage texture for colour variety.
+func add_leaf_poly(st: SurfaceTool, pos: Vector3, face: Vector3, w: float, h: float,
+		roll: float, rnd: RandomNumberGenerator) -> void:
+	face = face.normalized()
+	var up_ref := Vector3.UP
+	if absf(face.dot(up_ref)) > 0.95:
+		up_ref = Vector3.RIGHT
+	var right := up_ref.cross(face).normalized()
+	var up := face.cross(right).normalized()
+	right = (right * cos(roll) + up * sin(roll)).normalized()
+	up = face.cross(right).normalized()
+	var top := pos + up * (h * 0.5)
+	var bot := pos - up * (h * 0.5)
+	var lft := pos - right * (w * 0.5) + up * (h * 0.08)
+	var rgt := pos + right * (w * 0.5) + up * (h * 0.08)
+	var s := 0.12
+	var u0 := rnd.randf_range(0.2, 0.78)
+	var v0 := rnd.randf_range(0.2, 0.78)
+	var uv_t := Vector2(u0 + s * 0.5, v0)
+	var uv_b := Vector2(u0 + s * 0.5, v0 + s)
+	var uv_l := Vector2(u0, v0 + s * 0.5)
+	var uv_r := Vector2(u0 + s, v0 + s * 0.5)
+	add_tri(st, top, rgt, bot, uv_t, uv_r, uv_b, face)
+	add_tri(st, top, bot, lft, uv_t, uv_b, uv_l, face)
+
 func leaf_uv(rnd: RandomNumberGenerator, zoom: float) -> Rect2:
 	# sample a leafy window of the branch atlas (skip the bare stem near the top)
 	var s := zoom
@@ -152,6 +179,16 @@ func make_leaf(tint: Color) -> StandardMaterial3D:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 	m.alpha_scissor_threshold = 0.5
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	return m
+
+func make_opaque_leaf(tint: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = foliage_tex
+	m.albedo_color = tint
+	m.roughness = 1.0
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED  # 2-sided, still fully opaque
+	m.uv1_scale = Vector3(1.0, 1.0, 1.0)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	return m
 
@@ -216,6 +253,25 @@ func build_groundcover() -> MeshInstance3D:
 		0.22, 0.36, 0.55, 0.30, 303)
 	return finalize([
 		{"st": leaves, "mat": make_leaf(Color(0.82, 1.0, 0.70))},
+	])
+
+# opaque ground cover: same low spreading patch as `groundcover` but built
+# from solid leaf-shaped diamonds (no alpha cutout) — mobile-friendly overdraw.
+func build_groundcover_opaque() -> MeshInstance3D:
+	var leaves := new_st()
+	var rnd := RandomNumberGenerator.new(); rnd.seed = 505
+	for i in 110:
+		var theta := rnd.randf_range(0.0, TAU)
+		var r := sqrt(rnd.randf()) * 0.6           # uniform over the disc
+		var pos := Vector3(cos(theta) * r, rnd.randf_range(0.02, 0.16), sin(theta) * r)
+		# leaves point mostly up with an outward lean
+		var lean := Vector3(cos(theta + rnd.randf_range(-1.0, 1.0)), 0.0,
+			sin(theta + rnd.randf_range(-1.0, 1.0)))
+		var face := (Vector3.UP + lean * rnd.randf_range(0.3, 0.9)).normalized()
+		var sz := rnd.randf_range(0.13, 0.22)
+		add_leaf_poly(leaves, pos, face, sz, sz * 1.6, rnd.randf_range(0.0, TAU), rnd)
+	return finalize([
+		{"st": leaves, "mat": make_opaque_leaf(Color(0.74, 0.92, 0.52))},
 	])
 
 # grass / fern tuft: upright narrow blades radiating from the base
@@ -343,6 +399,7 @@ func _init() -> void:
 		{"name": "bush_leafy", "fn": "build_bush_leafy", "top": 0.95, "look": 0.42, "dist": 2.3},
 		{"name": "shrub", "fn": "build_shrub", "top": 1.15, "look": 0.52, "dist": 2.5},
 		{"name": "groundcover", "fn": "build_groundcover", "top": 0.45, "look": 0.20, "dist": 2.2},
+		{"name": "groundcover_opaque", "fn": "build_groundcover_opaque", "top": 0.45, "look": 0.20, "dist": 2.2},
 		{"name": "grass_tuft", "fn": "build_grass_tuft", "top": 0.75, "look": 0.32, "dist": 1.9},
 	]
 	for s in specs:
