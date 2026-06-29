@@ -300,18 +300,27 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	assert_not_null(sign0, "each sign is a RigidBody3D")
 	assert_gt(sign0.mass, 0.0, "sign body has a mass")
 	assert_lt(sign0.mass, 50.0, "sign is light enough for the car to scatter")
-	# Two splayed panels + a collision shape, both children of the body so the
-	# whole sign tumbles together (count directly — find_children defaults to
-	# owned=true, which excludes programmatically-built nodes).
+	# Spawned FROZEN so it rests exactly where placed even where terrain collision
+	# isn't streamed yet (TerrainManager only loads a ring around the car) — a live
+	# body would free-fall into the void before the player reached it. The car wakes
+	# it on contact (test_sign_wakes_only_on_dynamic_non_self_contact).
+	assert_true(sign0.freeze, "sign spawns frozen so it never free-falls off-terrain")
+	# Two splayed panels + a collision shape + an Area3D waker, all children of the
+	# body so the whole sign tumbles together (count directly — find_children defaults
+	# to owned=true, which excludes programmatically-built nodes).
 	var panels := 0
 	var has_shape := false
+	var has_waker := false
 	for child in sign0.get_children():
 		if child is MeshInstance3D:
 			panels += 1
 		elif child is CollisionShape3D:
 			has_shape = true
+		elif child is Area3D:
+			has_waker = true
 	assert_eq(panels, 2, "each sign has two A-frame panels")
 	assert_true(has_shape, "sign body carries a collision shape")
+	assert_true(has_waker, "sign carries an Area3D waker to unfreeze it on car contact")
 	# Knockable cosmetic clutter: deals NO HP damage, so it is NOT a damage obstacle.
 	assert_false(sign0.is_in_group(DamageModel.OBSTACLE_GROUP),
 		"signs are not in the damage OBSTACLE_GROUP (no HP penalty)")
@@ -319,6 +328,33 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	var p: Vector2 = layout[0]["pos"]
 	assert_almost_eq(sign0.position.y, floor.height_at(p.x, p.y), 1e-3,
 		"sign sits on the road surface height")
+
+
+# The frozen sign must wake (tumble) only when the dynamic car hits it — never from
+# its OWN body overlapping the waker Area, nor from streamed terrain / tree hitboxes
+# (StaticBody3D), or every sign would unfreeze and free-fall the instant it spawned.
+func test_sign_wakes_only_on_dynamic_non_self_contact() -> void:
+	var floor := _scene.get_node("Floor") as TerrainManager
+	var field := SignField.new()
+	add_child_autofree(field)
+	field.build([{"kind": "turn", "texture_key": "arrow_2_right",
+		"pos": Vector2(20, 20), "tangent": Vector2(0, 1), "side": 1}],
+		floor, Config.data.sign_render_params())
+	var sign0 := field.get_child(0) as RigidBody3D
+	assert_true(sign0.freeze, "sign starts frozen")
+	# Its own body entering the waker must NOT wake it.
+	field._wake_sign(sign0, sign0)
+	assert_true(sign0.freeze, "a sign ignores its own body in the waker")
+	# A static body (terrain chunk / tree hitbox) must NOT wake it.
+	var stat := StaticBody3D.new()
+	add_child_autofree(stat)
+	field._wake_sign(stat, sign0)
+	assert_true(sign0.freeze, "a sign ignores static bodies (terrain, trees)")
+	# A dynamic body (the car) wakes it.
+	var dyn := RigidBody3D.new()
+	add_child_autofree(dyn)
+	field._wake_sign(dyn, sign0)
+	assert_false(sign0.freeze, "a dynamic body (the car) unfreezes the sign")
 
 
 func test_main_scene_generates_a_track() -> void:
