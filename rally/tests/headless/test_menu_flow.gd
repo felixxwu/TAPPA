@@ -222,6 +222,15 @@ func test_hq_pins_stars_reflect_best_placement() -> void:
 	assert_eq(hq._stars_for("shakedown"), 3, "1st place earns 3 stars")
 	assert_eq(hq._stars_for("coastal_sprint"), 1, "3rd place earns 1 star")
 	assert_eq(hq._stars_for("rwd_masters"), 0, "an unplayed rally earns 0 stars")
+	# The readout box on the pin is the design-system black panel (a Sprite3D) carrying
+	# a StarRow lit to the earned count — and no leftover 3D sphere "stars".
+	var pin := _pin_for(hq, "shakedown")
+	assert_gt(pin.find_children("*", "Sprite3D", true, false).size(), 0,
+		"the pin carries a billboarded readout box (Sprite3D)")
+	var rows := pin.find_children("*", "StarRow", true, false)
+	assert_eq(rows.size(), 1, "the readout box holds one StarRow")
+	assert_eq((rows[0] as StarRow).earned, 3, "the StarRow is lit to the earned star count")
+	assert_eq((rows[0] as StarRow).total, hq.MAX_STARS, "out of MAX_STARS stars")
 
 
 func test_hq_tapping_a_pin_opens_its_detail() -> void:

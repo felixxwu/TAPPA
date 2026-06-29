@@ -48,10 +48,17 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 enum LiftPage { HUB, TUNE, UPGRADES }
 
 # 1st place earns 3 stars, 2nd → 2, 3rd → 1, anything else (incl. not completed) → 0.
-# Shown on the 3D map pins as small sphere meshes (gold = earned, grey = not) — a 3D
-# row sidesteps the project font's missing ★/☆ glyphs (they'd render as tofu boxes,
-# same reason the UI uses ASCII like `<`/`>` for nav).
+# Shown on the 3D map pins inside the house-style readout box as proper five-pointed
+# stars (gold = earned, dim = not) drawn by StarRow — polygons, so they need no font
+# glyph (Syne Mono has no ★/☆; same reason the UI uses ASCII like `<`/`>` for nav).
 const MAX_STARS := 3
+
+# The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
+# billboarded Sprite3D. PIN_LABEL_PX is the off-screen viewport resolution; pixel_size
+# scales it to world metres; rise is how far above the flag tip the box floats.
+const PIN_LABEL_PX := Vector2i(320, 120)
+const PIN_LABEL_PIXEL_SIZE := 0.0017
+const PIN_LABEL_RISE := 0.34
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
 # its texture and the engine-audio resources — isn't decoded at script-compile time
@@ -585,10 +592,10 @@ func _build_lift() -> void:
 # --- 3D map pins -------------------------------------------------------------
 
 # (Re)build the rally pins on the table's map plane: a state-coloured flag marker
-# (RallyFlag) at each rally's normalised map_pos, with a billboarded name and a row
-# of sphere stars (1st-place best → 3 gold, 2nd → 2, 3rd → 1, else grey). The flag
-# colour encodes the medal tier; the showdown pin is locked (grey/disabled,
-# non-pickable) until every other rally is completed.
+# (RallyFlag) at each rally's normalised map_pos, with a billboarded house-style black
+# box above it holding the rally name and a row of five-pointed stars (1st-place best →
+# 3 gold, 2nd → 2, 3rd → 1, else dim). The flag colour encodes the medal tier; the
+# showdown pin is locked (grey/disabled, non-pickable) until every other rally is done.
 func _refresh_map_pins() -> void:
 	for c in _pins_root.get_children():
 		c.queue_free()
@@ -624,29 +631,13 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	pin.add_child(flag)
 	var marker_top := RallyFlag.POLE_HEIGHT
 
-	# Stars: small sphere meshes (3D, no font glyph needed) hung above the flag as an
-	# exact readout of the medal tier the colour conveys. Earned = gold, else grey.
-	for k in MAX_STARS:
-		var star := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 0.035
-		sm.height = 0.07
-		star.mesh = sm
-		var smat := StandardMaterial3D.new()
-		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		smat.albedo_color = Color(1.0, 0.82, 0.3) if k < earned else Color(0.32, 0.34, 0.40)
-		star.material_override = smat
-		star.position = Vector3((k - (MAX_STARS - 1) * 0.5) * 0.10, marker_top + 0.10, 0.0)
-		pin.add_child(star)
-
-	var name3d := Label3D.new()
-	name3d.text = String(rally["name"])
-	name3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	name3d.font_size = 36
-	name3d.pixel_size = 0.0022
-	name3d.outline_size = 6
-	name3d.position = Vector3(0.0, marker_top + 0.25, 0.0)
-	pin.add_child(name3d)
+	# Readout: a single design-system black box floating above the flag, holding the
+	# rally name and a row of proper five-pointed stars (gold earned / dim not). Built
+	# as a 2D UITheme panel rendered to a billboarded sprite, so it gets the real house
+	# look (pure-black panel, Syne Mono, uppercase) and always faces the camera.
+	var label := _build_pin_label(String(rally["name"]), earned)
+	label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
+	pin.add_child(label)
 
 	# Pickable hit sphere (skipped for a locked pin so it can't be entered). Kept a bit
 	# larger than the marker so the pin stays easy to tap once it's small on screen.
@@ -662,6 +653,50 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 		area.input_event.connect(_on_pin_input.bind(rally_id))
 		pin.add_child(area)
 	return pin
+
+
+# Build the floating readout box for a pin: a design-system black panel holding the
+# rally name (Syne Mono, uppercase) above a row of proper StarRow stars, composited in
+# an off-screen SubViewport and shown on a billboarded Sprite3D so it always faces the
+# camera as one unit. The viewport owns the sprite as a child so it's freed with the pin.
+func _build_pin_label(rally_name: String, earned: int) -> Sprite3D:
+	var vp := SubViewport.new()
+	vp.size = PIN_LABEL_PX
+	vp.transparent_bg = true
+	vp.gui_disable_input = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+	# Centre a content-hugging house panel in the viewport; the rest stays transparent
+	# so only the black box shows.
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vp.add_child(center)
+
+	var panel := UITheme.panel(1.0, 14)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", UITheme.GAP)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(box)
+
+	box.add_child(UITheme.title(rally_name))
+
+	var stars := StarRow.new()
+	stars.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(stars)
+	stars.setup(earned, MAX_STARS)
+
+	UITheme.enforce(panel)  # house rules: uppercase + one font size
+
+	var sprite := Sprite3D.new()
+	sprite.add_child(vp)
+	sprite.texture = vp.get_texture()
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.shaded = false
+	sprite.pixel_size = PIN_LABEL_PIXEL_SIZE
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	return sprite
 
 
 # Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
