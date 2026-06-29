@@ -171,14 +171,18 @@ horizon for the skybox instead of a cliff. See
 The coarse geometry re-centres on every focus **chunk crossing** and is a
 **full, uncut grid** — it underlaps the entire detail ring rather than holing out
 the loaded chunks. The rebuild is the same ~2,600-vertex, light-baked cost as a
-detail chunk, so it is **deferred**, not run on the crossing frame: a crossing only
-marks the backdrop dirty (coalescing to the latest centre), and the actual rebuild
-waits for a frame when `TerrainManager.is_streaming_chunks()` is false (no chunk
-queued, dispatched, or awaiting integration). This keeps the heavy coarse mesh
-build from stacking on top of the detail-ring stream in one frame — on the
-single-threaded web build those back-to-back main-thread builds were the bulk of
-the chunk-crossing hitch. The backdrop is huge and fog-softened, so the few frames'
-lag in re-centring is imperceptible. To stop it poking through the detailed terrain, the **whole
+detail chunk, so it is **deferred AND sliced**, never run whole on the crossing
+frame: a crossing only marks the backdrop dirty (coalescing to the latest centre);
+the rebuild *starts* on a frame when `TerrainManager.is_streaming_chunks()` is false
+(no chunk queued, dispatched, awaiting integration, or mid-build) so its first rows
+don't pile onto a detail-chunk build, then fills `ROWS_PER_FRAME` (8) grid rows per
+frame and swaps the new mesh in only when complete (the previous backdrop stays
+visible until then). This keeps the heavy coarse build off the detail-ring stream
+*and* off any single frame — on the single-threaded web build those back-to-back
+main-thread mesh builds were the bulk of the chunk-crossing hitch. The synchronous
+`rebuild_around` (initial build at world load, behind the loading screen) runs the
+same begin/step/finish to completion in one call. The backdrop is huge and
+fog-softened, so the few frames' lag in re-centring is imperceptible. To stop it poking through the detailed terrain, the **whole
 backdrop is sunk `sink_m`** (default 1.5 m, `GameConfig.distant_terrain_sink_m`)
 below true height, so the detail ring always renders above it and the coarse mesh
 stays hidden beneath. At the ring's outer edge the coarse surface steps down by

@@ -29,10 +29,15 @@
 > and spawns the chunk on completion, instead of building a whole chunk (which alone
 > overruns a phone frame) in one tick. `compute_chunk_data` runs the same builder to
 > completion, so the threaded/sync paths stay byte-identical (guarded by
-> `test_incremental_build_matches_full_build`). **Still open:** the deferred
-> `DistantTerrain` rebuild is itself still one monolithic mesh build (heavier than a
-> phone frame), now isolated on its own quiet frame but not yet sliced — give it the
-> same row-budget treatment if a real device still micro-hitches on a crossing.
+> `test_incremental_build_matches_full_build`). (d) **The `DistantTerrain` backdrop
+> rebuild is now both deferred AND sliced** — it starts only on a non-streaming
+> frame and then fills `ROWS_PER_FRAME` (8) rows per frame, swapping the new mesh in
+> on completion (`distant_terrain.gd` `_begin_rebuild`/`_step_rebuild`/`_finish_rebuild`;
+> the synchronous `rebuild_around` runs them to completion for the initial build).
+> So no per-crossing terrain work — detail chunks or backdrop — does a whole mesh
+> build in one tick anymore. **Real-device check still wanted** to confirm the
+> crossing is smooth end-to-end and to tune the row budgets (`MAX_BUILD_ROWS_PER_FRAME`,
+> `DistantTerrain.ROWS_PER_FRAME`).
 >
 > **Item 7 (web-export threading): DECIDED — ship single-threaded.** Chose
 > maximum device reach over threaded chunk-streaming smoothness, consistent with
@@ -46,10 +51,11 @@
 > `serve_web.sh` comments. **Remaining (not a code blocker):** confirm on a real
 > mid/low-end phone — the two biggest per-crossing main-thread spikes (light-bake
 > re-sampling and the synchronous `DistantTerrain` rebuild) are now cut/deferred
-> (see the chunk-crossing follow-up note above), and detail-chunk generation is now
-> time-sliced row-by-row across frames (`TerrainChunkBuilder`). The remaining lever
-> if a real device still micro-hitches is row-slicing the `DistantTerrain` rebuild
-> too (it's deferred to a quiet frame but still monolithic).
+> (see the chunk-crossing follow-up note above), and BOTH detail-chunk generation
+> (`TerrainChunkBuilder`) and the `DistantTerrain` backdrop rebuild are now time-sliced
+> row-by-row across frames — no per-crossing terrain work does a whole mesh build in
+> one tick. Remaining: a real-device pass to confirm smoothness and tune the row
+> budgets.
 >
 > **Still open — BLOCKED ON YOUR DECISIONS / ASSETS:**
 > - **Items 2 + 3** (foliage view-cone cull + visible cap, collision-box cull):

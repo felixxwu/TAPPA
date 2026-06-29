@@ -129,8 +129,42 @@ func test_distant_terrain_defers_rebuild_until_streaming_is_idle() -> void:
 		m._pump_build_queue()
 		guard += 1
 	assert_false(m.is_streaming_chunks(), "streaming finished")
-	dt._process(0.0)
-	assert_ne(dt.mesh, mesh_before, "backdrop rebuilt once the ring is idle")
+	# The rebuild is incremental (a few rows per _process), swapping the mesh in only
+	# when complete — so step _process until the new backdrop lands.
+	var guard2 := 0
+	while dt.mesh == mesh_before and guard2 < 100:
+		dt._process(0.0)
+		guard2 += 1
+	assert_ne(dt.mesh, mesh_before, "backdrop rebuilt (incrementally) once the ring is idle")
+
+
+func test_distant_terrain_rebuild_is_incremental() -> void:
+	# A sliced backdrop rebuild (a few rows per step) must produce the same mesh as a
+	# synchronous one, and must actually take more than one step — that's what keeps a
+	# re-centre from stalling a single frame.
+	var m = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
+	m.light_amount = 1.0
+	add_child_autofree(m)
+	var dt := DistantTerrain.new()
+	dt.radius_m = 50.0  # per_edge = 10 -> 11 rows
+	dt.cell_m = 10.0
+	autofree(dt)
+	dt.setup(m, null)  # synchronous initial build at the origin
+	var sync_mesh := dt.mesh
+	# Incrementally rebuild around a new centre, 2 rows per step.
+	dt._begin_rebuild(Vector3(500.0, 0.0, 500.0))
+	var steps := 0
+	while dt._building and steps < 1000:
+		dt._step_rebuild(2)
+		steps += 1
+	assert_gt(steps, 1, "incremental rebuild takes more than one step")
+	var inc_mesh := dt.mesh
+	assert_ne(inc_mesh, sync_mesh, "a fresh mesh is built and swapped in on completion")
+	# Compare against a synchronous rebuild at the same centre.
+	dt.rebuild_around(Vector3(500.0, 0.0, 500.0))
+	var ref_verts: PackedVector3Array = dt.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var inc_verts: PackedVector3Array = inc_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	assert_eq(inc_verts, ref_verts, "incremental backdrop matches the synchronous build")
 
 
 func test_height_at_is_deterministic_per_seed() -> void:
