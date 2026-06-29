@@ -3,8 +3,6 @@ extends GutTest
 # table (hq._make_pin). Covers the state→colour medal ladder and that build()
 # yields a usable marker (pole + pennant + finial) rooted at the plane.
 
-const RallyFlag = preload("res://scripts/rally_flag.gd")
-
 
 func test_state_colour_is_the_medal_ladder() -> void:
 	# Locked wins over any star count and is a dark, desaturated charcoal.

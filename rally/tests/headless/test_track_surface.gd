@@ -3,7 +3,6 @@ extends GutTest
 # switch, oriented deterministically from the seed, with the tarmac run covering
 # the configured fraction. See features/track.md.
 
-const TrackSurface = preload("res://scripts/track_surface.gd")
 
 const TOTAL := 100.0
 const FEATHER := 6.0

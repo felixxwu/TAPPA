@@ -5,7 +5,6 @@ extends GutTest
 # verges), on a jittered grid (cell = separation), off the road and clear of trees,
 # thinned to the requested count. Reads only in-memory data, no scene.
 
-const SpectatorScatter = preload("res://scripts/spectator_scatter.gd")
 
 const CELL := 0.5  # SpectatorScatter.CELL_M
 

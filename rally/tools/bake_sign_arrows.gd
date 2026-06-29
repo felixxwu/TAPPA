@@ -13,7 +13,6 @@ extends SceneTree
 # their .import files (SignField loads them via load()).
 # Re-run whenever the board art changes. Pure tooling.
 
-const CornerLibrary = preload("res://scripts/corner_library.gd")
 
 const OUT := "res://textures/signs"
 const TEX := 256              # square face, matches the square sign panel

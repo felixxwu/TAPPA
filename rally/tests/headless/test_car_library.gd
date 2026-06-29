@@ -3,7 +3,6 @@ extends GutTest
 # entry must be sane, main.tscn must boot as the first car, and applying a car
 # must overlay its dimensions, mass, engine character and drive layout.
 
-const CarLibrary = preload("res://scripts/car_library.gd")
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 var _scene: Node3D

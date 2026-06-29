@@ -5,7 +5,6 @@ extends GutTest
 # assert the expected parts exist with sane geometry. No pixel checks (headless
 # can't read them back; visual iteration is done via tools/render_model.gd).
 
-const FinishArch = preload("res://scripts/finish_arch.gd")
 
 var _arch: Node3D
 

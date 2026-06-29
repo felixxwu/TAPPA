@@ -3,8 +3,6 @@ extends GutTest
 # reset. Driven against a Curve2D built directly here with a stub car, so the
 # math is tested without the full scene. See todo/track-progress-and-reset.md.
 
-const TrackProgress = preload("res://scripts/track_progress.gd")
-
 
 # Minimal stand-in for the Car: exposes global_transform (read for position) and
 # records reset_to() calls so the off-track reset can be asserted.

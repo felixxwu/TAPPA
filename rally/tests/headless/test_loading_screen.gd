@@ -5,9 +5,9 @@ extends GutTest
 
 # Preloaded (not load()ed) so the scene's script dependencies — world.gd and the
 # generators it pulls in — compile when THIS test script is collected, not inside
-# a test body. Otherwise their reload-time warnings (e.g. the codebase's
-# `const CornerLibrary = preload(...)` shadowing pattern) get attributed to the
-# running test as "unexpected errors" in an isolated --fast run.
+# a test body. Otherwise any reload-time warning from those scripts gets
+# attributed to the running test as an "unexpected error" in an isolated --fast
+# run (GUT blames whatever test is executing when the engine logs the warning).
 const MAIN_SCENE := preload("res://main.tscn")
 
 
