@@ -43,9 +43,9 @@ or invert a value:
 - **grip:** `front *= (1 − t·grip_authority)`, `rear *= (1 + t·grip_authority)`.
 - **aero:** same shape on `downforce_front`/`_rear`, **only** with the aero kit; a
   no-op otherwise.
-- **brake bias:** with the brakes kit, `brake_bias = 0.5 + t·brake_authority`
-  (centred on the even `0.5` split); without it, forced to the `0.4` (40 front /
-  60 rear) stock default (so a re-fielded car can't keep an unlocked bias).
+- **brake bias:** with the brakes kit, `brake_bias = 0.4 + t·brake_authority`
+  (centred on the `0.4` 40-front/60-rear default); without it, forced to that
+  same `0.4` default (so a re-fielded car can't keep an unlocked bias).
   Free-roam (`apply_car`, no `OwnedCar`) leaves `brake_bias` at the config
   default `0.4`.
 
@@ -65,7 +65,7 @@ Tuning is resolved **once at fielding**, like `apply_car` — not re-applied mid
 |-------|---------|---------|
 | `brake_bias` | `0.4` | Front share of foot-brake torque (the split; `0.4` = 40 front / 60 rear, `0.5` = even). |
 | `tuning_grip_authority` | `0.15` | Max grip fraction shifted front↔rear at slider \|1\|. |
-| `tuning_brake_authority` | `0.3` | Half-span of `brake_bias` the slider moves from `0.5`. |
+| `tuning_brake_authority` | `0.3` | Half-span of `brake_bias` the slider moves from the `0.4` default. |
 | `tuning_aero_authority` | `0.5` | Max downforce fraction shifted front↔rear at slider \|1\|. |
 
 A Repair Kit **fully restores** a car's health (`Save.use_repair_kit`) — there is no

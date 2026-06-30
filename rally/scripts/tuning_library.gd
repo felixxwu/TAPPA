@@ -36,13 +36,13 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	cfg.wheel_friction_slip_rear *= (1.0 + g * gspan)
 
 	# brake_bias: −1 rearward ↔ +1 forward. Maps to the front/rear foot-brake split
-	# (cfg.brake_bias, applied in drivetrain.gd). With the brakes kit the split centres
-	# on the even 0.5 and the slider moves it ±tuning_brake_authority. Without the kit
-	# it's forced to the 0.4 (40 front / 60 rear) stock default — so a previously-tuned
-	# car re-fielded without the kit can't keep an unlocked bias.
+	# (cfg.brake_bias, applied in drivetrain.gd). The split centres on the 0.4 (40 front
+	# / 60 rear) stock default; the brakes kit lets the slider move it
+	# ±tuning_brake_authority. Without the kit it's forced to that 0.4 default — so a
+	# previously-tuned car re-fielded without the kit can't keep an unlocked bias.
 	if UpgradeLibrary.brake_bias_unlocked(owned_car):
 		var b := clampf(float(tuning.get("brake_bias", 0.0)), -1.0, 1.0)
-		cfg.brake_bias = 0.5 + b * cfg.tuning_brake_authority
+		cfg.brake_bias = 0.4 + b * cfg.tuning_brake_authority
 	else:
 		cfg.brake_bias = 0.4
 
