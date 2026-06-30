@@ -168,7 +168,7 @@ func test_happy_path_accumulates_and_places() -> void:
 
 func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	var finish := _capture_finish()
-	_start("shakedown")  # open-class, difficulty 1
+	_start("shakedown")  # the entry rally (a low p/w cap), difficulty 1
 	# Player combined 60000; one opponent faster (50000) -> placed 2nd, top-3 win.
 	RallySession._opponent_field = _field([50000, 70000, 80000])
 	_report_events([20000, 20000, 20000])

@@ -258,7 +258,9 @@ func _build_fade() -> void:
 
 # Spawn the two atmosphere cars that bookend the player in the start queue. They are
 # LIVE, scripted, silenced car props (so they drive off with real suspension load);
-# models are picked deterministically from the rally seed so the queue is stable.
+# models are picked deterministically from the rally seed so the queue is stable, and
+# drawn ONLY from the rally's eligible car pool so the cars ahead/behind are ones that
+# could actually enter this rally (an over-powered car never lines up in a low-tier one).
 func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
 	var cfg := _cfg()
 	var gap := cfg.start_queue_gap
@@ -270,9 +272,10 @@ func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
 	var leader_pos := _ground(_start_xform.origin, terrain)
 	var trailer_pos := _ground(_start_xform * Vector3(0, 0, gap * 2.0), terrain)
 	_trailer_target = _start_xform * Vector3(0, 0, gap)
+	var pool := RallyLibrary.eligible_car_indices(rally)
 	var seed_base := _queue_seed(rally)
-	_leader = _spawn_prop(seed_base % CarLibrary.CARS.size(), leader_pos)
-	_trailer = _spawn_prop((seed_base + 1) % CarLibrary.CARS.size(), trailer_pos)
+	_leader = _spawn_prop(pool[seed_base % pool.size()], leader_pos)
+	_trailer = _spawn_prop(pool[(seed_base + 1) % pool.size()], trailer_pos)
 	# Drive on the terrain, but never shove (or get shoved by) the player or each
 	# other — they're flavour, not a real field.
 	if _player is PhysicsBody3D:

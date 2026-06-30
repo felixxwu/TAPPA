@@ -134,6 +134,18 @@ func test_queue_has_a_leader_and_a_trailer() -> void:
 	assert_eq(sl.queue_count(), 2, "the car is queued between a leader and a trailing car")
 
 
+func test_queue_cars_are_eligible_for_the_rally() -> void:
+	# The leader/trailer that bookend the player must be cars allowed in this rally
+	# (RWD Masters fields only RWD cars inside its p/w band), not arbitrary ones.
+	var sl := _make()
+	var rally := _rally()
+	for prop in [sl._leader, sl._trailer]:
+		assert_not_null(prop, "the queue car spawned")
+		var spec: Dictionary = CarLibrary.CARS[prop._car_index]
+		assert_true(RallyLibrary.is_eligible(rally, spec),
+			"%s lining up is eligible for the rally" % spec["name"])
+
+
 func test_queue_cars_are_scripted_and_axis_locked() -> void:
 	var sl := _make()
 	var leader = sl._leader

@@ -446,19 +446,19 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 	group.setup(members, $Car, terrain, road_cells, tree_grid, params)
 
 
-# The live event data the arch banners display (rally name, which stage, the
-# time-to-beat and the difficulty tier), read off RallySession. When no rally is
-# active (a dev boot / direct play) the fields stay empty/zero and the gate shows
-# just its START / FINISH wordmark.
+# The live event data the arch banners display (rally name, which stage and the
+# time-to-beat), read off RallySession. The rally's difficulty tier is a hidden
+# value, so it's deliberately not surfaced here. When no rally is active (a dev boot
+# / direct play) the fields stay empty/zero and the gate shows just its START /
+# FINISH wordmark.
 func _arch_event_info() -> Dictionary:
-	var info := {"rally_name": "", "stage_index": 0, "stage_count": 0, "target_ms": -1, "difficulty": 0}
+	var info := {"rally_name": "", "stage_index": 0, "stage_count": 0, "target_ms": -1}
 	if RallySession.is_active():
 		var rally := RallyLibrary.by_id(RallySession.rally_id())
 		info["rally_name"] = String(rally.get("name", ""))
 		info["stage_index"] = RallySession.event_index()
 		info["stage_count"] = RallySession.EVENTS_PER_RALLY
 		info["target_ms"] = RallySession.current_event_target_ms()
-		info["difficulty"] = int(rally.get("difficulty", 0))
 	return info
 
 

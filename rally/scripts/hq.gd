@@ -1615,8 +1615,9 @@ func _show_detail() -> void:
 	var best_line := "Best finish: P%d   (%d / %d stars)" % [best, _stars_for(_selected_rally_id), MAX_STARS] if best > 0 \
 		else "Not yet completed (finish top 3 to earn stars)"
 	var events: Array = rally.get("events", [])
+	# Difficulty is a hidden tier (it drives reward value, not anything the player
+	# sees) — the eligible-car requirement is the visible gate.
 	var lines: Array[String] = [
-		"Difficulty: %d" % int(rally.get("difficulty", 0)),
 		"Eligible cars: %s" % _restriction_text(rally.get("restriction", {})),
 		"%d events — combined time sets your result." % events.size(),
 	]
@@ -2001,9 +2002,9 @@ func _enter_car_screen() -> void:
 	_build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var done := Save.rally_completed(_selected_rally_id)
-	_rally_banner.text = "%s%s  (diff %d) — needs %s" % [
+	_rally_banner.text = "%s%s — needs %s" % [
 		rally.get("name", "?"), "  (done)" if done else "",
-		int(rally.get("difficulty", 0)), _restriction_text(rally.get("restriction", {}))]
+		_restriction_text(rally.get("restriction", {}))]
 	_view = View.CARPARK
 	_detail_open = false
 	_update_overlays()

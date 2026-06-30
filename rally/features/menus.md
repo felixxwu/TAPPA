@@ -228,8 +228,9 @@ opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
 `MOUSE_FILTER_IGNORE`) — otherwise the full-rect HUD container/labels/spacer (all
 default `STOP`) would swallow every touch and the 3D pins would never get a pick.
-Tapping a pin opens the **rally detail** sub-panel (name, difficulty, eligible-cars
-restriction, event count, best finish + stars); **Enter Rally** flies out to the
+Tapping a pin opens the **rally detail** sub-panel (name, eligible-cars
+restriction — the power-to-weight gate, not the hidden difficulty tier — event
+count, best finish + stars); **Enter Rally** flies out to the
 car park, **◄ Map** dismisses the panel, and the table Back returns to the garage.
 
 **CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen

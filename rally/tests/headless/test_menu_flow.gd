@@ -374,17 +374,20 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Own an AWD RS3 alongside the RWD starter, pick the RWD-only rally and enter: only
-	# the eligible (RWD) car is parked, the AWD car is filtered out.
+	# RWD Masters wants RWD cars inside a mid power-to-weight band. Own an AWD RS3 and
+	# an in-band RWD 911 alongside the low-power RWD starter, pick that rally and
+	# enter: only the 911 qualifies — the AWD RS3 (wrong drivetrain) and the
+	# under-powered MX-5 (below the band) are both filtered out.
 	_save.grant_car("rs3", false)
+	_save.grant_car("porsche911", false)
 	hq._on_rally_pin("rwd_masters")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
 	assert_true(hq._car_layer.visible, "the car-park overlay is shown")
 	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
-	assert_eq(hq._cars.size(), 1, "only the eligible (RWD) car is parked")
-	assert_eq(hq._cars[0].current_car_name(), "Mazda MX-5", "the AWD RS3 is filtered out of an RWD-only rally")
+	assert_eq(hq._cars.size(), 1, "only the eligible (RWD, in-band) car is parked")
+	assert_eq(hq._cars[0].current_car_name(), "Porsche 911", "the AWD RS3 and under-powered MX-5 are filtered out")
 	assert_string_contains(hq._rally_banner.text, "RWD CARS", "the banner spells out the rally restriction")
 
 
@@ -397,7 +400,7 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: all three are eligible
+	hq._on_rally_pin("the_showdown")  # open-class: all three are eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._cars.size(), 3, "starter + the two granted cars are all eligible + parked")
@@ -418,7 +421,7 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")
+	hq._on_rally_pin("the_showdown")  # open-class: starter + RS3 both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_gt(hq._cars.size(), 0, "the lineup is parked")
@@ -441,7 +444,7 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: both cars eligible
+	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._cars.size(), 2, "both eligible cars are parked")
@@ -462,7 +465,7 @@ func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: starter + the two granted cars
+	hq._on_rally_pin("the_showdown")  # open-class: starter + the two granted cars
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._markers.size(), 3, "three eligible cars are parked")
@@ -578,7 +581,7 @@ func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: starter + RS3 both eligible
+	hq._on_rally_pin("the_showdown")  # open-class: starter + RS3 both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# Focus the wrecked RS3 in the lineup.
