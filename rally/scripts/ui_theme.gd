@@ -205,6 +205,26 @@ static func mark_focused(btn: Button, focused: bool) -> void:
 		btn.remove_theme_color_override("font_color")
 
 
+# Show/clear the selection treatment on a billboarded MAP-PIN readout panel. The map
+# pins keep a manual cursor (left/right cycles spatial pins, not widget focus), so the
+# selected pin can't lean on Godot's focus ring; instead of scaling the pin up (which
+# made some rally boxes read as larger than others) we paint its panel like a hovered
+# menu row — the same SURFACE_HOVER face + green bottom underline `mark_focused` gives a
+# button — so a selected pin and a hovered menu option read identically. `pad` matches
+# the panel's content padding so the box doesn't resize between the two states.
+static func mark_panel_focused(panel: PanelContainer, focused: bool, pad: int = 14) -> void:
+	var box := StyleBoxFlat.new()
+	if focused:
+		box.bg_color = SURFACE_HOVER
+		box.border_width_bottom = 3
+		box.border_color = GREEN
+	else:
+		box.bg_color = BLACK  # pure black when idle (rule 4)
+	for side in ["left", "top", "right", "bottom"]:
+		box.set("content_margin_" + side, float(pad))
+	panel.add_theme_stylebox_override("panel", box)
+
+
 # Grab keyboard/gamepad focus on `ctrl`, but only when it can actually take it —
 # valid, in the tree, visible, and focusable. Call deferred so it runs after the
 # host has finished showing/laying out the menu, e.g.

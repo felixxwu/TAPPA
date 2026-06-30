@@ -643,6 +643,9 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	var label := _build_pin_label(String(rally["name"]), earned)
 	label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
 	pin.add_child(label)
+	# Keep the readout panel reachable so the keyboard/gamepad cursor can paint it with
+	# the hover-style selection look (see _select_table_pin) without resizing the pin.
+	pin.set_meta("label_panel", label.get_meta("panel"))
 
 	# Pickable hit sphere (skipped for a locked pin so it can't be entered). Kept a bit
 	# larger than the marker so the pin stays easy to tap once it's small on screen.
@@ -701,6 +704,8 @@ func _build_pin_label(rally_name: String, earned: int) -> Sprite3D:
 	sprite.shaded = false
 	sprite.pixel_size = PIN_LABEL_PIXEL_SIZE
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	# Hand the panel back so the pin (via _make_pin) can repaint it on selection.
+	sprite.set_meta("panel", panel)
 	return sprite
 
 
@@ -1532,7 +1537,8 @@ func _unlocked_pins() -> Array:
 	return out
 
 
-# Move the table cursor to the i-th unlocked pin (wrapping) and pop it bigger. When
+# Move the table cursor to the i-th unlocked pin (wrapping) and give it the hover-style
+# selection highlight (all pins stay one size — see UITheme.mark_panel_focused). When
 # `pan` is set, also slide the map so the pin sits under the camera (used when the
 # player cycles); on first entry it's false so the map stays centred (the camera is
 # placed by _go_to).
@@ -1543,8 +1549,12 @@ func _select_table_pin(i: int, pan := true) -> void:
 		return
 	_table_pin_index = wrapi(i, 0, pins.size())
 	var selected: Node3D = pins[_table_pin_index]
+	# Every pin stays the same size; the selected one is marked by the hover-style
+	# highlight on its readout box (matching a hovered menu button) plus the camera
+	# centring below — not by scaling it up, which made some rally boxes read larger.
 	for pin in pins:
-		pin.scale = Vector3.ONE * (1.4 if pin == selected else 1.0)
+		var panel: PanelContainer = pin.get_meta("label_panel")
+		UITheme.mark_panel_focused(panel, pin == selected)
 	if not pan:
 		return
 	# Pan so the selected pin centres under the table camera's look point, clamped to
