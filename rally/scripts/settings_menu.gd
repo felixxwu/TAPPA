@@ -24,6 +24,9 @@ extends VBoxContainer
 # the short list/camera pages don't.
 
 signal camera_changed(mode: int)
+# Emitted when the touch-control scheme is picked, so a live MobileControls (the
+# run's, via the pause menu) can switch the on-screen controls immediately.
+signal scheme_changed(id: int)
 # Emitted on every page switch; is_root == the category list is showing.
 signal page_changed(is_root: bool)
 
@@ -201,11 +204,14 @@ func select_camera(mode: int) -> void:
 	camera_changed.emit(mode)
 
 
-# Persist the chosen scheme and refresh the highlight. The live MobileControls reads
-# this on the next run (loaded fresh with main.tscn), so no scene is poked here.
+# Persist the chosen scheme, refresh the highlight, and tell any live scene to switch
+# (the run's MobileControls wires `scheme_changed`, so the on-screen controls update
+# the instant you pick a scheme rather than only on the next run). The HQ has no live
+# controls, so it just saves and the choice is applied when the next run boots.
 func select_scheme(id: int) -> void:
 	Save.set_setting(MobileControls.SETTING_KEY, id)
 	_refresh_scheme_selection()
+	scheme_changed.emit(id)
 
 
 func _refresh_camera_selection() -> void:

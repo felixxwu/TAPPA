@@ -15,7 +15,8 @@ extends Node3D
 #   2. LAUNCH  — the leader "drives off" ahead and the trailing car scoots up toward
 #      the line over start_drive_off_seconds.
 #   3. FADE    — the screen fades to black; at full black the camera hands back to
-#      the chase camera, the driving UI returns and StageManager.begin_countdown()
+#      the player's SELECTED camera (via the CameraManager — chase or bonnet, not
+#      forced to chase), the driving UI returns and StageManager.begin_countdown()
 #      starts the countdown; then it fades back in.
 #
 # Created and wired by world.gd (session runs only). A plain dev boot of main.tscn
@@ -38,7 +39,7 @@ var _launched := false
 # Refs handed in by world.gd (camera/HUD optional so tests can omit them).
 var _player: Node3D
 var _stage_manager: Node
-var _chase_camera: Camera3D
+var _camera_manager: CameraManager
 var _hud: CanvasLayer
 var _mobile: CanvasLayer
 
@@ -69,13 +70,14 @@ func _cfg() -> GameConfig:
 # Build the start-line sequence around the fielded car. `leaders` is the top-three
 # rivals to beat for this event (RallySession.current_event_leaders()), each
 # { name, car_name, time_ms }; `terrain` (optional) sits the queue cars on the
-# ground; `chase_camera` / `hud` / `mobile` are handed back at the fade.
+# ground; `camera_manager` / `hud` / `mobile` are handed back at the fade (the
+# camera via the manager, so the player's chosen mode — not always chase — resumes).
 func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
-		event_index: int, leaders: Array, chase_camera: Camera3D = null,
+		event_index: int, leaders: Array, camera_manager: CameraManager = null,
 		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
 	_player = player
 	_stage_manager = stage_manager
-	_chase_camera = chase_camera
+	_camera_manager = camera_manager
 	_hud = hud
 	_mobile = mobile
 	_start_xform = player.global_transform
@@ -453,13 +455,15 @@ func launch() -> void:
 	_seq_t = 0.0
 
 
-# At full black: hand the camera back to the chase camera, restore the driving UI,
-# and start the countdown. (The StageManager has been waiting in STAGING.)
+# At full black: hand the camera back to the player's selected mode, restore the
+# driving UI, and start the countdown. (The StageManager has been waiting in STAGING.)
+# The hand-off goes through the CameraManager so it restores whatever camera the
+# player chose (chase OR bonnet), instead of always snapping to chase.
 func _handoff() -> void:
 	if _orbit_cam != null:
 		_orbit_cam.current = false
-	if _chase_camera != null:
-		_chase_camera.current = true
+	if _camera_manager != null:
+		_camera_manager.activate_current()
 	if _hud != null:
 		_hud.visible = Config.data.hud_enabled
 	if _mobile != null:

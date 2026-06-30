@@ -12,6 +12,9 @@ extends CanvasLayer
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
 @export var camera_manager: CameraManager
+# The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
+# on-screen controls immediately (rather than only taking effect on the next run).
+@export var mobile_controls: MobileControls
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
@@ -182,6 +185,7 @@ func _build_settings_panel() -> Control:
 	settings_menu = SettingsMenu.new()
 	settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_menu.camera_changed.connect(_on_camera_changed)
+	settings_menu.scheme_changed.connect(_on_scheme_changed)
 	scroll.add_child(settings_menu)
 
 	# Single bottom button: on a sub-page it backs out to the category list; on the
@@ -231,3 +235,8 @@ func _show_settings(on: bool) -> void:
 func _on_camera_changed(mode: int) -> void:
 	if camera_manager != null:
 		camera_manager.set_mode(mode)
+
+
+func _on_scheme_changed(id: int) -> void:
+	if mobile_controls != null:
+		mobile_controls.set_scheme(id)
