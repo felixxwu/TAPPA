@@ -34,16 +34,32 @@ func test_effect_application_multiplies_and_adds_on_baseline() -> void:
 	var cfg := GameConfig.new()
 	cfg.peak_torque = 100.0
 	cfg.brake_torque = 1000.0
-	cfg.suspension_stiffness = 10.0
+	cfg.mass = 1000.0
 	cfg.downforce_front = 0.0
 	cfg.downforce_rear = 0.0
-	var car := {"installed_upgrades": ["engine_stage1", "brake_kit", "suspension_kit", "aero_kit"]}
+	var car := {"installed_upgrades": ["engine_stage1", "brake_kit", "weight_reduction", "aero_kit"]}
 	UpgradeLibrary.apply(car, cfg)
 	assert_almost_eq(cfg.peak_torque, 110.0, 0.001, "engine kit multiplies torque 1.10x")
 	assert_almost_eq(cfg.brake_torque, 1200.0, 0.001, "brake kit multiplies brake torque 1.20x")
-	assert_almost_eq(cfg.suspension_stiffness, 11.0, 0.001, "suspension kit multiplies stiffness 1.10x")
+	assert_almost_eq(cfg.mass, 900.0, 0.001, "weight reduction multiplies mass 0.90x")
 	assert_almost_eq(cfg.downforce_front, 0.2, 0.001, "aero kit adds front downforce")
 	assert_almost_eq(cfg.downforce_rear, 0.2, 0.001, "aero kit adds rear downforce")
+
+
+func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
+	# A copy of a roster entry; effective_meta should lighten mass and lift torque
+	# so the derived power-to-weight rises (and never mutate the source entry).
+	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0}
+	var base_pw := CarLibrary.power_to_weight(entry)
+	var car := {"installed_upgrades": ["engine_stage1", "weight_reduction"]}
+	var eff := UpgradeLibrary.effective_meta(car, entry)
+	assert_almost_eq(float(eff["mass"]), 900.0, 0.001, "weight reduction lightens the meta mass")
+	assert_almost_eq(float(eff["peak_torque"]), 220.0, 0.001, "engine kit raises the meta torque")
+	assert_gt(CarLibrary.power_to_weight(eff), base_pw, "upgrades raise the effective power-to-weight")
+	assert_almost_eq(float(entry["mass"]), 1000.0, 0.001, "source entry is left untouched")
+	# No upgrades is a faithful copy.
+	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": []}, entry)
+	assert_almost_eq(CarLibrary.power_to_weight(bare), base_pw, 0.001, "no upgrades -> baseline pw")
 
 
 func test_no_upgrades_leaves_config_untouched() -> void:

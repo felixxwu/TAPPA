@@ -16,7 +16,7 @@ const REPAIR_KIT_ID := "repair_kit"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
-const SLOTS := ["engine", "aero", "suspension", "brakes"]
+const SLOTS := ["engine", "aero", "chassis", "brakes"]
 
 
 # Each entry is an UpgradeDef. `effect` maps to GameConfig fields applied in
@@ -39,8 +39,8 @@ const UPGRADES: Array[Dictionary] = [
 		"effect": {"unlocks_aero_tuning": true, "downforce_front": 0.2, "downforce_rear": 0.2},
 	},
 	{
-		"id": "suspension_kit", "name": "Sport Suspension", "slot": "suspension",
-		"tier": 2, "consumable": false, "effect": {"suspension_stiffness_mult": 1.10},
+		"id": "weight_reduction", "name": "Weight Reduction", "slot": "chassis",
+		"tier": 2, "consumable": false, "effect": {"mass_mult": 0.90},
 	},
 	{
 		"id": "brake_kit", "name": "Big Brake Kit", "slot": "brakes",
@@ -93,14 +93,38 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 					cfg.peak_torque *= float(val)
 				"brake_torque_mult":
 					cfg.brake_torque *= float(val)
-				"suspension_stiffness_mult":
-					cfg.suspension_stiffness *= float(val)
+				"mass_mult":
+					cfg.mass *= float(val)
 				"downforce_front":
 					cfg.downforce_front += float(val)
 				"downforce_rear":
 					cfg.downforce_rear += float(val)
 				"unlocks_aero_tuning", "unlocks_brake_bias":
 					pass  # flags gate tuning sliders (features/tuning.md), not cfg
+
+
+# --- Effective car stats (display + eligibility) -----------------------------
+
+# A copy of the CarLibrary entry `meta` with the stats that drive the power-to-
+# weight figure (peak_torque, mass) adjusted by the car's installed upgrades, so
+# a fitted engine kit or weight reduction shifts the displayed kW/kg AND can
+# qualify / disqualify the car for a rally's pw band (RallyLibrary.is_eligible).
+# Pure: returns a fresh dict, never touches the authored CARS entry. Only the
+# meta-level numeric stats are adjusted here; downforce / brake / tuning gates
+# don't feed power-to-weight, so they're left to the live-config `apply` above.
+static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
+	if meta.is_empty():
+		return meta
+	var out := meta.duplicate()
+	for item_id in owned_car.get("installed_upgrades", []):
+		var effect: Dictionary = by_id(item_id).get("effect", {})
+		for key in effect:
+			match key:
+				"peak_torque_mult":
+					out["peak_torque"] = float(out.get("peak_torque", 0.0)) * float(effect[key])
+				"mass_mult":
+					out["mass"] = float(out.get("mass", 0.0)) * float(effect[key])
+	return out
 
 
 # --- Tuning gates ------------------------------------------------------------

@@ -76,7 +76,7 @@ choice settled for the rally roster)*.
 UpgradeDef
   id: String          # stable item_id (save inventory + installed_upgrades key on this)
   name: String        # display name (reward reveal + inventory overlay)
-  slot: String        # "engine" | "aero" | "suspension" | "brakes"  (consumable items below have no slot)
+  slot: String        # "engine" | "aero" | "chassis" | "brakes"  (consumable items below have no slot)
   tier: int           # reward-tier gating; higher = rarer/better
   effect: Dictionary  # config-field -> delta/multiplier (see below)
   consumable: bool     # true for repair kit: spent on use, not slotted
@@ -84,7 +84,7 @@ UpgradeDef
 # effect entries map to GameConfig fields, e.g.
 #   engine     -> { "peak_torque_mult": 1.15 }
 #   aero kit   -> { "unlocks_aero_tuning": true, "downforce_front": +0.2, "downforce_rear": +0.2 }
-#   suspension -> { "suspension_stiffness_mult": 1.1 }
+#   chassis    -> { "mass_mult": 0.9 }   # weight reduction
 #   brakes     -> { "brake_torque_mult": 1.2, "unlocks_brake_bias": true }
 ```
 

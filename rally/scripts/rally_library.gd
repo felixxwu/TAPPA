@@ -175,7 +175,10 @@ static func event_straightness(event: Dictionary) -> float:
 
 # Whether `car_meta` (a CarLibrary entry dict, resolved by the owned car's stable
 # model_id — never array index) satisfies a rally's restriction. Open-class
-# (empty restriction) always matches.
+# (empty restriction) always matches. For an OWNED car, callers pass the car's
+# effective stats (UpgradeLibrary.effective_meta) so an installed engine kit or
+# weight reduction can qualify / disqualify it via the pw_min / pw_max band; the
+# raw CARS entry is only the right input for an unmodified roster car (rivals).
 static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 	var r: Dictionary = rally.get("restriction", {})
 	if r.is_empty():

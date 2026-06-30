@@ -170,6 +170,29 @@ func test_power_to_weight_restriction_filters() -> void:
 	assert_false(RallyLibrary.is_eligible(cap, CarLibrary.by_id("porsche911")), "a stronger car is capped out")
 
 
+func test_installed_upgrades_change_rally_eligibility() -> void:
+	# An upgrade shifts a car's effective power-to-weight, so fitting one can qualify
+	# or disqualify it for a rally's pw band — the HQ passes the car's effective_meta
+	# (baseline + installed upgrades) to is_eligible, not the raw roster entry.
+	var mx5 := CarLibrary.by_id("mx5")
+	# A band whose floor the bare starter can't clear.
+	var floor_gate := {"restriction": {"pw_min": 0.18, "pw_max": 0.40}}
+	assert_false(RallyLibrary.is_eligible(floor_gate,
+		UpgradeLibrary.effective_meta({"installed_upgrades": []}, mx5)),
+		"bare MX-5 sits below the p/w floor")
+	assert_true(RallyLibrary.is_eligible(floor_gate,
+		UpgradeLibrary.effective_meta({"installed_upgrades": ["engine_stage2"]}, mx5)),
+		"a fitted engine kit qualifies the MX-5 for the band")
+	# A ceiling the bare starter clears; power + weight reduction push it over the cap.
+	var cap_gate := {"restriction": {"pw_max": 0.20}}
+	assert_true(RallyLibrary.is_eligible(cap_gate,
+		UpgradeLibrary.effective_meta({"installed_upgrades": []}, mx5)),
+		"bare MX-5 clears the ceiling gate")
+	assert_false(RallyLibrary.is_eligible(cap_gate,
+		UpgradeLibrary.effective_meta({"installed_upgrades": ["engine_stage2", "weight_reduction"]}, mx5)),
+		"engine kit + weight reduction push the MX-5 over the cap")
+
+
 # --- Determinism -------------------------------------------------------------
 
 func test_track_generation_is_deterministic() -> void:
