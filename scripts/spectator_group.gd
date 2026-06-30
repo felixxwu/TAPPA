@@ -26,7 +26,7 @@ extends Node3D
 # can never bog it down. Once the car is well past (despawn_behind_m behind it), the
 # ragdoll is freed.
 
-const SPECTATOR_SCENE := preload("res://blender/spectator.glb")
+const SPECTATOR_SCENE := preload("res://blender/spectator/spectator.glb")
 const CELL_M := TrackGenerator.CELL_M
 
 # --- agent state (parallel arrays, index = member) ----------------------------

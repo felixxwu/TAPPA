@@ -26,7 +26,7 @@ four design forks below were deferred to the recommended option.
 3. **Aftermath = stay down, then despawn.** Knocked spectators tumble, settle,
    remain as props, and are quietly freed once the car is well past them
    (distance-behind threshold). No get-back-up in v1.
-4. **Render the model.** Use `blender/spectator.glb` (the extracted low-poly
+4. **Render the model.** Use `blender/spectator/spectator.glb` (the extracted low-poly
    figure). Real material colours are placeholders for now (see that file's
    provenance); a clean re-export from Blender can replace it later without
    touching this system.

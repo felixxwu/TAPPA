@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://dpor7xrg6pda5"
-path="res://.godot/imported/mx5.glb-33721d536a83a28c4a56abc39f1d9f41.scn"
+path="res://.godot/imported/mx5.glb-4cfe7554186ccd393fb6745d4f817809.scn"
 
 [deps]
 
-source_file="res://blender/mx5.glb"
-dest_files=["res://.godot/imported/mx5.glb-33721d536a83a28c4a56abc39f1d9f41.scn"]
+source_file="res://blender/mx5/mx5.glb"
+dest_files=["res://.godot/imported/mx5.glb-4cfe7554186ccd393fb6745d4f817809.scn"]
 
 [params]
 

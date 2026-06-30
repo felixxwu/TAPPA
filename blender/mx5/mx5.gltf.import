@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://478cjcsucljs"
-path="res://.godot/imported/spectator.glb-1f61b684c1a572d1a59da5343a38eb29.scn"
+uid="uid://cgu0klu1lfwue"
+path="res://.godot/imported/mx5.gltf-c2ea2e00a3d9fd04e800f1f3e3b6b5a5.scn"
 
 [deps]
 
-source_file="res://blender/spectator.glb"
-dest_files=["res://.godot/imported/spectator.glb-1f61b684c1a572d1a59da5343a38eb29.scn"]
+source_file="res://blender/mx5/mx5.gltf"
+dest_files=["res://.godot/imported/mx5.gltf-c2ea2e00a3d9fd04e800f1f3e3b6b5a5.scn"]
 
 [params]
 

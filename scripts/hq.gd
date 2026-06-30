@@ -10,13 +10,15 @@ extends Node3D
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
 #   * LIFT     — the tuning bay: the selected car raised on the lift on one side. The
-#     bay opens on a HUB page (the car's name/description, a minimal change-car
-#     selector, and Tuning / Upgrades buttons) bottom-left beside the car. Each button
-#     opens that menu as its OWN full-height page (TUNE = grip/brake/aero sliders;
-#     UPGRADES = install parts + repair) so neither needs to scroll; Back returns the
-#     page to the hub, and the hub's Back returns to the garage.
-#   * CARPARK  — the outdoor lineup of the cars ELIGIBLE for the chosen rally; pan
-#     between them and Start.
+#     bay opens on a HUB page (the car's name/description, a Change Car button, and
+#     Tuning / Upgrades buttons) bottom-left beside the car. Change Car drops into the
+#     car park to pick a new car for the lift; each menu button opens that menu as its
+#     OWN full-height page (TUNE = grip/brake/aero sliders; UPGRADES = install parts +
+#     repair) so neither needs to scroll; Back returns the page to the hub, and the
+#     hub's Back returns to the garage.
+#   * CARPARK  — the outdoor lineup of cars: in RALLY mode the cars ELIGIBLE for the
+#     chosen rally (pan + Start); in CHANGE-CAR mode the whole collection (pan +
+#     Select a new car for the lift).
 # Flow: pick rally (table) -> choose eligible car (car park) -> Start -> RallySession.
 # It is the game's boot scene and stays lightweight (NO track gen).
 #
@@ -42,7 +44,7 @@ extends Node3D
 enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
-# name/description + a minimal change-car selector + Tuning/Upgrades buttons); TUNE is
+# name/description + a Change Car button + Tuning/Upgrades buttons); TUNE is
 # the handling sliders and UPGRADES is install parts / repair. Each menu is its own
 # full-height page (reached from the hub) so neither has to scroll.
 enum LiftPage { HUB, TUNE, UPGRADES }
@@ -51,6 +53,10 @@ enum LiftPage { HUB, TUNE, UPGRADES }
 # Shown on the 3D map pins inside the house-style readout box as proper five-pointed
 # stars (gold = earned, dim = not) drawn by StarRow — polygons, so they need no font
 # glyph (Syne Mono has no ★/☆; same reason the UI uses ASCII like `<`/`>` for nav).
+# Emitted once a car-park lineup has finished streaming its props in (the cars spawn
+# one-per-frame, see _spawn_lineup_progressive). Lets tests await a fully-parked lineup.
+signal lineup_built
+
 const MAX_STARS := 3
 
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
@@ -80,6 +86,11 @@ var _view: int = View.EXTERIOR
 var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
 var _selected_rally_id := ""
 var _selected_instance_id := -1
+# The car park serves two jobs. In RALLY mode (the default) it shows the cars eligible
+# for the chosen rally and Start launches the rally. In CHANGE-CAR mode (entered from
+# the tuning lift's "Change Car" button) it shows ALL owned cars and Select swaps the
+# car raised on the lift, returning to the bay. _carpark_change_mode picks which.
+var _carpark_change_mode := false
 # On the web build, go fullscreen on the player's first tap (browsers only allow
 # fullscreen from a user gesture). Latched so we request it once. Orientation is
 # locked to landscape via project.godot (display/window/handheld/orientation).
@@ -166,10 +177,11 @@ var _scrap_button: Button
 # Tuning-lift overlay widgets.
 var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
-var _lift_hub_controls: HBoxContainer  # the HUB page: one row of change-car + Tuning/Upgrades buttons
-var _hub_tune_btn: Button       # HUB "Tuning >" — half of the up/down page cursor
-var _hub_upgrades_btn: Button   # HUB "Upgrades >" — the other half
-var _hub_focus := 0             # which hub page the cursor sits on (0 = Tune, 1 = Upgrades)
+var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Change Car + Tuning/Upgrades buttons
+var _hub_change_btn: Button     # HUB "Change Car" — top of the up/down cursor
+var _hub_tune_btn: Button       # HUB "Tuning >" — middle of the up/down cursor
+var _hub_upgrades_btn: Button   # HUB "Upgrades >" — bottom of the up/down cursor
+var _hub_focus := 0             # which hub item the cursor sits on (0 = Change Car, 1 = Tune, 2 = Upgrades)
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_tune_box: VBoxContainer    # the TUNE menu (sliders)
@@ -960,12 +972,11 @@ func _build_detail_overlay() -> void:
 # (hq_lift_cam_*); everything sits on top in one CanvasLayer with two faces:
 #
 #   * The HUB (default on entry) — a bottom column beside/under the car: the
-#     selected car's name/description (filling the page width), then UNDER it a minimal
-#     change-car selector (< Car / Car >) and the Tuning + Upgrades buttons that open
-#     each menu.
+#     selected car's name/description (filling the page width), then UNDER it a
+#     Change Car button and the Tuning + Upgrades buttons that open each menu.
 #   * A SUB-MENU page (TUNE or UPGRADES) — a solid panel CENTRED horizontally
 #     (hq_lift_menu_centered_width_frac of the width) using most of the screen; the car
-#     description hides while it's up. Because the change-car control + page chrome live
+#     description hides while it's up. Because the hub controls + page chrome live
 #     on the hub, each sub-menu gets the full panel height to itself and needn't scroll.
 #
 # _refresh_lift_ui toggles which face is shown from _lift_page.
@@ -1055,7 +1066,7 @@ func _build_lift_overlay() -> void:
 	info.add_child(_lift_car_label)
 
 	# The hub controls UNDER the car description: a SINGLE bottom row holding Back, the
-	# change-car selector, and the Tuning / Upgrades buttons. Shown only on the HUB page
+	# Change Car button, and the Tuning / Upgrades buttons. Shown only on the HUB page
 	# (_refresh_lift_ui). Hugs content on the left so the raised car stays in clear view.
 	_lift_hub_controls = HBoxContainer.new()
 	_lift_hub_controls.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -1069,21 +1080,17 @@ func _build_lift_overlay() -> void:
 	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
 	_lift_hub_controls.add_child(back)
 
-	# Change which car is tuned (cycles all owned cars; updates the selected car).
-	var prev_car := Button.new()
-	prev_car.text = "< Car"
-	prev_car.focus_mode = Control.FOCUS_NONE
-	prev_car.pressed.connect(_cycle_lift_car.bind(-1))
-	_lift_hub_controls.add_child(prev_car)
-	var next_car := Button.new()
-	next_car.text = "Car >"
-	next_car.focus_mode = Control.FOCUS_NONE
-	next_car.pressed.connect(_cycle_lift_car.bind(1))
-	_lift_hub_controls.add_child(next_car)
+	# Change which car is on the lift: opens the car park to pick a new selected car.
+	var change_car := Button.new()
+	change_car.text = "Change Car"
+	change_car.focus_mode = Control.FOCUS_NONE
+	change_car.pressed.connect(_enter_change_car)
+	_lift_hub_controls.add_child(change_car)
+	_hub_change_btn = change_car
 
 	# The two menu buttons.
-	# The two menu buttons double as an up/down cursor (left/right is reserved for
-	# cycling the car, like the car park), painted by _refresh_hub_focus.
+	# Change Car / Tuning / Upgrades form a single up/down cursor (_hub_focus),
+	# painted by _refresh_hub_focus.
 	var to_tune := Button.new()
 	to_tune.text = "Tuning >"
 	to_tune.focus_mode = Control.FOCUS_NONE
@@ -1383,7 +1390,7 @@ func _refresh_overflow_ui(owned: Dictionary, entry: Dictionary, stats: String) -
 		_owned_count(), Config.data.max_owned_cars]
 	_overflow_car_label.text = "%s  #%d  (%d of %d)" % [
 		entry.get("name", owned.get("model_id", "?")),
-		int(owned.get("instance_id", -1)), _focus + 1, _cars.size()]
+		int(owned.get("instance_id", -1)), _focus + 1, _eligible.size()]
 	_overflow_stats_label.text = stats
 	var immortal: bool = owned.get("immortal", false)
 	_scrap_button.disabled = immortal
@@ -1674,11 +1681,11 @@ func _hide_detail() -> void:
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
 # Enter the tuning bay: raise the selected car on the lift, frame it to one side, and
-# show the HUB (car description + change-car selector + Tuning/Upgrades buttons).
+# show the HUB (car description + Change Car + Tuning/Upgrades buttons).
 func _enter_lift() -> void:
 	_ensure_lift_car()
 	_lift_page = LiftPage.HUB
-	_hub_focus = 0  # the cursor starts on Tuning each time we enter the bay
+	_hub_focus = 0  # the cursor starts on Change Car each time we enter the bay
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
 	_raise_lift_car()  # slowly raise the car on the lift as we arrive
@@ -1749,19 +1756,30 @@ func _lift_hub() -> void:
 	_refresh_lift_ui()
 
 
-# Move the HUB's up/down cursor between Tuning (0) and Upgrades (1) and repaint it.
+# Move the HUB's up/down cursor between Change Car (0), Tuning (1) and Upgrades (2)
+# and repaint it.
 func _move_hub_focus(step: int) -> void:
-	_hub_focus = wrapi(_hub_focus + step, 0, 2)
+	_hub_focus = wrapi(_hub_focus + step, 0, 3)
 	_refresh_hub_focus()
 
 
-# Paint the manual hub cursor (left/right cycles the car, so the hub can't use native
-# focus; the Tuning/Upgrades buttons are highlighted by hand instead).
+# Fire the hub item the cursor sits on: 0 opens the car park to change car, 1/2 open
+# the Tuning / Upgrades pages.
+func _activate_hub_focus() -> void:
+	match _hub_focus:
+		0: _enter_change_car()
+		1: _open_lift_page(LiftPage.TUNE)
+		2: _open_lift_page(LiftPage.UPGRADES)
+
+
+# Paint the manual hub cursor (the hub uses up/down + select, not native focus, so the
+# Change Car / Tuning / Upgrades buttons are highlighted by hand instead).
 func _refresh_hub_focus() -> void:
 	if _hub_tune_btn == null:
 		return
-	UITheme.mark_focused(_hub_tune_btn, _hub_focus == 0)
-	UITheme.mark_focused(_hub_upgrades_btn, _hub_focus == 1)
+	UITheme.mark_focused(_hub_change_btn, _hub_focus == 0)
+	UITheme.mark_focused(_hub_tune_btn, _hub_focus == 1)
+	UITheme.mark_focused(_hub_upgrades_btn, _hub_focus == 2)
 
 
 # Grab focus on the first focusable, enabled, visible control under `root` — used to
@@ -1773,24 +1791,6 @@ func _grab_first_focus(root: Node) -> void:
 				and not (ctrl is BaseButton and (ctrl as BaseButton).disabled):
 			ctrl.grab_focus()
 			return
-
-
-# Cycle which owned car is on the lift (and is therefore the selected car). Wraps;
-# re-spawns the lift car and refreshes the menus for the new car.
-func _cycle_lift_car(step: int) -> void:
-	var cars: Array = Save.profile.get("cars", [])
-	if cars.size() <= 1:
-		return
-	var idx := 0
-	for i in cars.size():
-		if int(cars[i].get("instance_id", -1)) == Save.selected_instance_id():
-			idx = i
-			break
-	idx = wrapi(idx + step, 0, cars.size())
-	Save.set_selected_car(int(cars[idx].get("instance_id", -1)))
-	_lift_car_instance_id = -2  # force a respawn for the new selection
-	_ensure_lift_car()
-	_refresh_lift_ui()
 
 
 # Spawn (or keep) the selected car raised on the lift. No-op if the right car is
@@ -2034,6 +2034,8 @@ func _use_repair_kit(instance_id: int) -> void:
 # Enter the car park for the chosen rally: park only the ELIGIBLE owned cars and
 # frame the first. With none eligible, show a hint + disable Start.
 func _enter_car_screen() -> void:
+	_carpark_change_mode = false
+	_start_button.text = "Start Rally"
 	_build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var done := Save.rally_completed(_selected_rally_id)
@@ -2058,10 +2060,36 @@ func _enter_car_screen() -> void:
 	_focus_changed(true)  # snaps the camera onto the first car
 
 
+# Enter the car park from the tuning lift to pick a new car for the lift: park the
+# WHOLE owned collection and frame the car currently on the lift. Select swaps the
+# raised car; Back returns to the bay (see _on_start_pressed / _car_back).
+func _enter_change_car() -> void:
+	_carpark_change_mode = true
+	_build_lineup(Save.profile.get("cars", []).duplicate())
+	_rally_banner.text = "Change car"
+	_no_eligible_label.visible = false
+	_start_button.text = "Select Car"
+	_view = View.CARPARK
+	_detail_open = false
+	_update_overlays()
+	# Frame the car already on the lift (the selected car), defaulting to the first.
+	_focus = 0
+	var sel := Save.selected_instance_id()
+	for i in _eligible.size():
+		if int(_eligible[i].get("instance_id", -1)) == sel:
+			_focus = i
+			break
+	_focus_changed(true)
+
+
 func _car_back() -> void:
 	_clear_lineup()
 	_selected_instance_id = -1
-	_go_to(View.TABLE)
+	if _carpark_change_mode:
+		_carpark_change_mode = false
+		_enter_lift()
+	else:
+		_go_to(View.TABLE)
 
 
 # --- Car park (the eligible lineup) ------------------------------------------
@@ -2104,12 +2132,15 @@ func _build_title_lineup() -> void:
 # then freeze (see _freeze_lineup). Shared by the rally car-select lineup (eligible
 # cars) and the title screen (all owned cars).
 func _build_lineup(cars: Array) -> void:
-	_clear_lineup()
+	_clear_lineup()  # bumps _settle_generation, cancelling any in-flight spawn/freeze
 	_eligible = cars
 	var cfg: GameConfig = Config.data
 	var n := cars.size()
 	var bays: int = max(1, cfg.max_owned_cars)
 	var center := _carpark_center()
+	# Lay out ALL the lot markers up front (cheap Marker3Ds): the camera framing and the
+	# focus cursor key off _markers / _eligible, so they work immediately even while the
+	# heavy car props are still streaming in below.
 	# Centre the occupied bays within the lot (clamped so an over-cap overflow lineup,
 	# which can briefly exceed the bay count, still starts at the first bay).
 	var start: int = max(0, floori((bays - n) / 2.0))
@@ -2120,13 +2151,29 @@ func _build_lineup(cars: Array) -> void:
 		marker.rotation.y = PI
 		add_child(marker)
 		_markers.append(marker)
-		_cars.append(_spawn_parked_car(cars[i], marker))
+	# Spawn the heavy car props ONE PER FRAME instead of all at once. Each car is a full
+	# physics scene (chassis + wheels + drivetrain + mesh duplication), so building the
+	# whole lineup in a single frame hitches; spreading it out keeps each frame cheap and
+	# lets a car that takes longer than one frame to instance spill into its own frame
+	# without piling onto the others. Guarded by _settle_generation so a rebuild (or a
+	# back-out) abandons a half-spawned lineup cleanly.
+	_spawn_lineup_progressive(cars, _settle_generation)
+
+
+# Stream the parked car props in across frames (see _build_lineup), then let them
+# settle and freeze. Bails the moment a newer lineup supersedes this one.
+func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
+	for i in cars.size():
+		if generation != _settle_generation:
+			return  # a rebuild / back-out replaced this lineup mid-stream
+		_cars.append(_spawn_parked_car(cars[i], _markers[i]))
+		await get_tree().process_frame
+	if generation != _settle_generation:
+		return
+	emit_signal("lineup_built")
 	# Let the lineup settle under physics for a moment, then freeze the settled pose.
-	# Guarded by a generation id so re-building the lineup cancels a pending freeze
-	# for the old one.
-	_settle_generation += 1
-	get_tree().create_timer(cfg.menu_car_settle_seconds).timeout.connect(
-		_freeze_lineup.bind(_settle_generation))
+	await get_tree().create_timer(Config.data.menu_car_settle_seconds).timeout
+	_freeze_lineup(generation)
 
 
 # Spawn one owned car as a live, silent car prop at a marker (raised by
@@ -2174,18 +2221,19 @@ func _dup_meshes(car: Node) -> void:
 			m.mesh = m.mesh.duplicate()
 
 
-# Pan the focus to the prev/next eligible car (wrapping).
+# Pan the focus to the prev/next eligible car (wrapping). Keyed off _eligible (set
+# up front), so panning works even while the car props are still streaming in.
 func _cycle_focus(step: int) -> void:
-	if _cars.is_empty():
+	if _eligible.is_empty():
 		return
-	_focus = wrapi(_focus + step, 0, _cars.size())
+	_focus = wrapi(_focus + step, 0, _eligible.size())
 	_focus_changed()
 
 
 # React to a focus change: make the focused car the selected car, re-aim the camera
 # + stats panel at it. No respawn — every eligible car is already parked.
 func _focus_changed(snap := false) -> void:
-	if _cars.is_empty():
+	if _eligible.is_empty():
 		return
 	var owned: Dictionary = _eligible[_focus]
 	_selected_instance_id = int(owned.get("instance_id", -1))
@@ -2197,7 +2245,7 @@ func _focus_changed(snap := false) -> void:
 		_refresh_overflow_ui(owned, entry, stats)
 	else:
 		_car_name_label.text = "%s  #%d  (%d of %d)" % [
-			entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _cars.size()]
+			entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _eligible.size()]
 		_car_stats_label.text = stats
 		# A wrecked focused car gates Start + offers a Repair (full restore).
 		_refresh_focus_damage(owned)
@@ -2208,6 +2256,13 @@ func _focus_changed(snap := false) -> void:
 # A wrecked focused car can't be entered: disable Start and explain why, offering a
 # Repair (full restore) when a kit is owned. A healthy car clears all of this.
 func _refresh_focus_damage(owned: Dictionary) -> void:
+	# Change-car mode just swaps the car on the lift, so a wrecked car is still a valid
+	# pick (it can be repaired in the bay). Never gate Select on damage there.
+	if _carpark_change_mode:
+		_start_button.disabled = false
+		_car_warning_label.visible = false
+		_car_repair_button.visible = false
+		return
 	if not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
 		_car_warning_label.visible = false
@@ -2229,7 +2284,7 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 # Start unlocks and the stats refresh. The owned dict is shared with the save, so the
 # restored HP flows straight back into the lineup.
 func _repair_focused_car() -> void:
-	if _cars.is_empty():
+	if _eligible.is_empty():
 		return
 	var id := int(_eligible[_focus].get("instance_id", -1))
 	if Save.use_repair_kit(id):
@@ -2375,6 +2430,11 @@ func _move_camera_to(xform: Transform3D, snap: bool) -> void:
 # screen with the loading overlay FIRST and let it paint a frame, then do the
 # handoff behind it (the run scene then shows its own loading screen — continuous).
 func _on_start_pressed() -> void:
+	# In change-car mode the same action SELECTS the focused car for the lift and
+	# returns to the bay, rather than launching a rally.
+	if _carpark_change_mode:
+		_select_changed_car()
+		return
 	var owned := Save.get_car(_selected_instance_id)
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
@@ -2386,6 +2446,19 @@ func _on_start_pressed() -> void:
 		_open_settings(true)
 		return
 	await _begin_rally_start()
+
+
+# Commit the focused car as the new selected car (the one raised on the lift) and
+# return to the tuning bay. Any owned car is selectable here — even a wrecked one can
+# sit on the lift to be repaired / tuned.
+func _select_changed_car() -> void:
+	if _selected_instance_id >= 0:
+		Save.set_selected_car(_selected_instance_id)
+	_clear_lineup()
+	_selected_instance_id = -1
+	_carpark_change_mode = false
+	_lift_car_instance_id = -2  # force the lift to respawn the newly-selected car
+	_enter_lift()
 
 
 # True on a touch device (or when the controls are force-enabled for testing) — the
@@ -2447,18 +2520,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
-				# Hub: left/right cycle the car (like the car park); up/down move the
-				# cursor between Tuning/Upgrades; select opens it; back to the garage.
-				if event.is_action_pressed("menu_left"):
-					_cycle_lift_car(-1)
-				elif event.is_action_pressed("menu_right"):
-					_cycle_lift_car(1)
-				elif event.is_action_pressed("menu_up"):
+				# Hub: up/down move the cursor between Change Car / Tuning / Upgrades;
+				# select fires it; back to the garage.
+				if event.is_action_pressed("menu_up"):
 					_move_hub_focus(-1)
 				elif event.is_action_pressed("menu_down"):
 					_move_hub_focus(1)
 				elif event.is_action_pressed("menu_select"):
-					_open_lift_page(LiftPage.TUNE if _hub_focus == 0 else LiftPage.UPGRADES)
+					_activate_hub_focus()
 				elif event.is_action_pressed("menu_back"):
 					_go_to(View.GARAGE)
 			elif event.is_action_pressed("menu_back"):

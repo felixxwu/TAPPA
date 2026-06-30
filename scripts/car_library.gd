@@ -139,7 +139,7 @@ const CARS: Array[Dictionary] = [
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
 		"suspension_travel": 0.42, "suspension_stiffness": 10.0,  # compliant roadster baseline
-		# Renders the authored blender/mx5.glb body (Car/Mx5Body) instead of the
+		# Renders the authored blender/mx5/mx5.glb body (Car/Mx5Body) instead of the
 		# procedural chassis+cabin boxes; see car.gd apply_car(). Wheels stay
 		# procedural. Only this car carries the flag.
 		"use_model": true,

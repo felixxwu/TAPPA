@@ -55,9 +55,10 @@ space:
   unlocked pins (left/right or up/down, wrapping), highlights the selected pin's
   readout box with the same hover-style lift a menu button gets (`UITheme.mark_panel_focused`
   — all pins stay one size, no scale-up), centres the camera on it, and opens its detail
-  on select; the **tuning hub** uses
-  left/right to change car and an up/down cursor (`_hub_focus`, painted by
-  `UITheme.mark_focused`) over Tuning/Upgrades. The **garage** keeps select → table /
+  on select; the **tuning hub** is an up/down cursor (`_hub_focus`, painted by
+  `UITheme.mark_focused`) over **Change Car / Tuning / Upgrades**, fired with select
+  (`_activate_hub_focus`) — Change Car drops into the car park in change-car mode.
+  The **garage** keeps select → table /
   left → lift / back → exterior. Because HQ hides overlays by toggling their
   **`CanvasLayer`** (which does *not* clear a `Control`'s focus — a CanvasLayer breaks
   the visibility chain), `_go_to` / `_lift_hub` call `get_viewport().gui_release_focus()`
@@ -182,14 +183,18 @@ tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
 The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
 (`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
-full page width, and UNDER it a **minimal change-car selector** (`< Car` / `Car >`)
-plus **Tuning** and **Upgrades** buttons. The change-car control cycles all
-owned cars, updating the **selected car** (`Save.selected_car`/`set_selected_car`) and
-re-spawning it on the lift. Each menu button opens that menu as its **own full-height
+full page width, and UNDER it a **Change Car** button plus **Tuning** and
+**Upgrades** buttons. **Change Car** (`_enter_change_car`) drops into the **car park**
+in **change-car mode** (`_carpark_change_mode`): the WHOLE owned collection is parked,
+framed on the car currently on the lift, and **Select Car** (`_on_start_pressed` →
+`_select_changed_car`) sets the **selected car** (`Save.set_selected_car`) and returns
+to the bay, re-spawning it on the lift; **Back** (`_car_back`) returns to the bay with
+the selection unchanged. Any owned car is pickable here — a wrecked one can sit on the
+lift to be repaired. Each menu button opens that menu as its **own full-height
 page** — a solid panel **centred horizontally** and wide
 (`hq_lift_menu_centered_width_frac`, using most of the screen); the car-description
 panel **hides** while a sub-menu is open so the page has room — with a **< Back** that
-returns to the hub; the hub's own Back returns to the garage. Because the change-car control
+returns to the hub; the hub's own Back returns to the garage. Because the hub controls
 and page chrome live on the hub, each menu page gets the **full panel height to
 itself** and doesn't need to scroll. The two pages:
 
@@ -250,11 +255,20 @@ courtyard / menu camera (+Z)** so the camera frames its front with the garage be
 each is a silenced `Car` prop (reusing `Car.apply_owned`). The exterior/title camera is
 shifted by `menu_car_park_offset` (the same lot-centre offset) so it stays centred on
 the row. Parking is shared with the title via `_build_lineup(cars)` — the car-select
-screen passes the eligible cars, the title passes all owned. The props **drop in live**
+screen passes the eligible cars, the title passes all owned. Each `Car` prop is a full
+physics scene (chassis + wheels + drivetrain + per-instance mesh duplication), so
+`_build_lineup` lays out all the lot **markers up front** (cheap `Marker3D`s — the
+camera framing and focus cursor key off `_markers`/`_eligible`, not the props) and then
+streams the heavy car props in **one-per-frame** via `_spawn_lineup_progressive`,
+rather than instantiating the whole lineup in a single frame (which hitched on every
+rebuild — notably the new Change-Car lineup). A `lineup_built` signal fires once the
+stream finishes. The props **drop in live**
 (raised by `menu_car_drop_height` onto a collision floor under the lot) so they
 **settle onto their suspension**, then `_freeze_lineup` freezes the settled pose after
-`menu_car_settle_seconds` (guarded by a generation id so re-entering the lot cancels a
-stale freeze) — so a full car park costs nothing to keep parked. `◄ ►` (or
+`menu_car_settle_seconds` (both the per-frame stream and the freeze are guarded by the
+same `_settle_generation` id so re-entering the lot — or backing out — abandons a
+half-spawned lineup and cancels a stale freeze) — so a full car park costs nothing to
+keep parked. `◄ ►` (or
 `menu_left`/`menu_right`) move the focus and the camera eases to a **front 3/4 hero
 shot from in front of the car** (`menu_camera_offset` is added in world space; +Z sits
 the eye ahead of the nose-out car, looking back past it at the garage) over

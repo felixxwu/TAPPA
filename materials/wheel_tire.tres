@@ -1,0 +1,10 @@
+[gd_resource type="ShaderMaterial"]
+
+[ext_resource type="Shader" path="res://shaders/ps1_wheel_tire.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://blender/mx5/wheel.png" id="2_wheel_texture"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/albedo_texture = ExtResource("2_wheel_texture")
+shader_parameter/albedo_color = Color(0.12, 0.12, 0.12, 1)
+shader_parameter/light_amount = 1.0

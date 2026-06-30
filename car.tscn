@@ -3,7 +3,8 @@
 [ext_resource type="Shader" path="res://shaders/ps1_models_lit.gdshader" id="1_models"]
 [ext_resource type="Script" path="res://scripts/car.gd" id="2_car"]
 [ext_resource type="Script" path="res://scripts/engine_audio.gd" id="3_engaud"]
-[ext_resource type="PackedScene" path="res://blender/mx5.glb" id="4_mx5model"]
+[ext_resource type="PackedScene" path="res://blender/mx5/mx5.glb" id="4_mx5model"]
+[ext_resource type="Material" path="res://materials/wheel_tire.tres" id="5_wheel_mat"]
 
 [sub_resource type="BoxMesh" id="mesh_chassis"]
 size = Vector3(1.6, 0.5, 3)
@@ -78,7 +79,7 @@ use_as_steering = true
 [node name="Tire" type="MeshInstance3D" parent="WheelFL/Visual"]
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
-surface_material_override/0 = SubResource("mat_wheel")
+surface_material_override/0 = ExtResource("5_wheel_mat")
 
 [node name="Spoke1" type="MeshInstance3D" parent="WheelFL/Visual"]
 mesh = SubResource("mesh_spoke")
@@ -98,7 +99,7 @@ use_as_steering = true
 [node name="Tire" type="MeshInstance3D" parent="WheelFR/Visual"]
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
-surface_material_override/0 = SubResource("mat_wheel")
+surface_material_override/0 = ExtResource("5_wheel_mat")
 
 [node name="Spoke1" type="MeshInstance3D" parent="WheelFR/Visual"]
 mesh = SubResource("mesh_spoke")
@@ -118,7 +119,7 @@ use_as_traction = true
 [node name="Tire" type="MeshInstance3D" parent="WheelRL/Visual"]
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
-surface_material_override/0 = SubResource("mat_wheel")
+surface_material_override/0 = ExtResource("5_wheel_mat")
 
 [node name="Spoke1" type="MeshInstance3D" parent="WheelRL/Visual"]
 mesh = SubResource("mesh_spoke")
@@ -138,7 +139,7 @@ use_as_traction = true
 [node name="Tire" type="MeshInstance3D" parent="WheelRR/Visual"]
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
-surface_material_override/0 = SubResource("mat_wheel")
+surface_material_override/0 = ExtResource("5_wheel_mat")
 
 [node name="Spoke1" type="MeshInstance3D" parent="WheelRR/Visual"]
 mesh = SubResource("mesh_spoke")

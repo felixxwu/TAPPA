@@ -143,11 +143,11 @@ live in `GameConfig` under the **Speed Lines** group.
 ## MX-5 authored body model
 
 The Mazda MX-5 (CarLibrary index 0) renders an authored body model
-(`blender/mx5.glb`, instanced as `Car/Mx5Body`) instead of the procedural
+(`blender/mx5/mx5.glb`, instanced as `Car/Mx5Body`) instead of the procedural
 chassis+cabin boxes; every other car still uses the boxes. `car.gd`'s
 `apply_car()` toggles visibility (`use_model` flag on the spec) and assigns the
 `ps1_models_lit.gdshader` material to the model's mesh — `albedo_texture` set to the
-baked `blender/mx5_texture.png`, `albedo_color` white — so the model's painted
+baked `blender/mx5/mx5_texture.png`, `albedo_color` white — so the model's painted
 detail (glass, lights, panels) renders through the same quantize/dither/fog
 pipeline as the rest of the scene. The four wheels stay procedural; the
 collision box is unchanged (and invisible). The model is used at 1:1 scale.

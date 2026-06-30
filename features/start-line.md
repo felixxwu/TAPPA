@@ -43,6 +43,14 @@ per-seed roster, surfaced in the standings).
 
 ## Physically-simulated cars (rolling start)
 
+To avoid placing the queue against unfinished ground, `world.gd` waits **one rendered
+frame** after the terrain is generated before building the `StartLine` — so the
+fielded car has dropped onto the settled terrain and the staged cars seat against it
+rather than mid-build (skipped under headless, where generation is synchronous). The
+**loading overlay is held up across that frame** (for staged runs `_generate_track`
+leaves it on screen and `world.gd._ready` calls `loading.finish()` only after the
+queue is laid out), so the car is never flashed at its un-staged spot before staging.
+
 The leader, trailer **and the player** drive under real physics during the roll-up,
 so they load their suspension (squat / weight transfer) instead of sliding. They run
 full physics but read **scripted control** instead of player Input via the `car.gd`

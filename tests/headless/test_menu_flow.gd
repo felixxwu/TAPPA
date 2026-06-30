@@ -37,6 +37,16 @@ func _clean() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
+# Car-park props now stream in one-per-frame (hq.gd._spawn_lineup_progressive), so wait
+# until the whole lineup is parked before asserting on _cars. Pumps frames until the
+# spawned count catches up to the eligible list (bounded so a stuck build can't hang).
+func _await_lineup(hq: Node3D) -> void:
+	for _i in 600:
+		if hq._cars.size() >= hq._eligible.size():
+			return
+		await get_tree().process_frame
+
+
 func _label_texts(root: Node) -> String:
 	var parts: Array[String] = []
 	for label in root.find_children("*", "Label", true, false):
@@ -70,6 +80,7 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	assert_eq(hq._view, hq.View.EXTERIOR, "HQ boots to the exterior title station")
 	assert_true(hq._title_layer.visible, "the title overlay is shown")
 	assert_false(hq._car_layer.visible, "the car-park overlay is hidden at the title")
+	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 1, "the player's whole collection is parked on the title (the starter so far)")
 	# The 3D map table is populated with one pin per rally.
 	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
@@ -237,8 +248,8 @@ func test_hq_map_table_has_a_keyboard_pin_cursor() -> void:
 		"it opens the focused pin's rally")
 
 
-# The tuning hub keeps left/right for cycling the car, so Tuning/Upgrades are a manual
-# up/down cursor; opening a page hands off to native focus on its sliders/buttons.
+# The tuning hub is a manual up/down cursor over Change Car / Tuning / Upgrades;
+# select fires the focused item, opening a page (native focus) or the car park.
 func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -247,11 +258,24 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
-	assert_eq(hq._hub_focus, 0, "the hub cursor starts on Tuning")
+	assert_eq(hq._hub_focus, 0, "the hub cursor starts on Change Car")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 1, "down moves the cursor to Upgrades")
+	assert_eq(hq._hub_focus, 1, "down moves the cursor to Tuning")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 0, "it wraps back to Tuning")
+	assert_eq(hq._hub_focus, 2, "down again moves the cursor to Upgrades")
+	hq._move_hub_focus(1)
+	assert_eq(hq._hub_focus, 0, "it wraps back to Change Car")
+	hq._move_hub_focus(-1)
+	assert_eq(hq._hub_focus, 2, "up from the top wraps to Upgrades")
+
+	# Select on the Change Car item drops into the car park.
+	hq._hub_focus = 0
+	hq._activate_hub_focus()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.CARPARK, "select on Change Car opens the car park")
+	assert_true(hq._carpark_change_mode, "in change-car mode")
+	hq._car_back()
+	await get_tree().process_frame
 
 	# Opening the Tune page seats native focus on one of its sliders.
 	hq._open_lift_page(hq.LiftPage.TUNE)
@@ -290,6 +314,7 @@ func test_hq_title_parks_all_owned_cars() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 2, "the title parks every owned car (starter + RS3)")
 
 
@@ -451,6 +476,7 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	for model_id in ["mx5", "rs3", "porsche911"]:  # the player's owned roster here
 		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(model_id)):
 			expected[CarLibrary.by_id(model_id)["name"]] = true
+	await _await_lineup(hq)
 	var parked := {}
 	for car in hq._cars:
 		parked[car.current_car_name()] = true
@@ -471,6 +497,7 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	hq._on_rally_pin("the_showdown")  # open-class: all three are eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
+	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 3, "starter + the two granted cars are all eligible + parked")
 	var size_by_name := {}
 	for car in hq._cars:
@@ -492,6 +519,7 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	hq._on_rally_pin("the_showdown")  # open-class: starter + RS3 both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
+	await _await_lineup(hq)
 	assert_gt(hq._cars.size(), 0, "the lineup is parked")
 	for car in hq._cars:
 		assert_false(car.freeze, "parked cars start live so they settle on their suspension")
@@ -502,6 +530,7 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	# A stale freeze (old generation) must not touch a freshly-rebuilt lineup.
 	hq._enter_car_screen()
 	await get_tree().process_frame
+	await _await_lineup(hq)
 	hq._freeze_lineup(hq._settle_generation - 1)
 	for car in hq._cars:
 		assert_false(car.freeze, "a superseded freeze leaves the new lineup live")
@@ -515,6 +544,7 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
+	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 2, "both eligible cars are parked")
 	assert_eq(hq._selected_instance_id, int(hq._eligible[0]["instance_id"]), "the first car is selected on entry")
 	hq._cycle_focus(1)
@@ -583,6 +613,7 @@ func test_hq_over_car_limit_boots_to_the_scrap_prompt() -> void:
 	assert_eq(hq._view, hq.View.OVERFLOW, "over the cap, HQ boots to the scrap prompt")
 	assert_true(hq._overflow_layer.visible, "the overflow overlay is shown")
 	assert_false(hq._title_layer.visible, "the title overlay is hidden while overflowing")
+	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 3, "the whole collection is parked to choose from")
 	assert_string_contains(hq._overflow_banner.text, "3 / 2", "the banner shows owned vs the cap")
 
@@ -704,8 +735,8 @@ func test_hq_lift_raises_the_selected_car() -> void:
 
 
 func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
-	# The bay opens on the HUB (change-car selector + Tuning/Upgrades buttons beside the
-	# car); each button opens that menu as its own page, and Back returns to the hub.
+	# The bay opens on the HUB (Change Car + Tuning/Upgrades buttons beside the
+	# car); each menu button opens that menu as its own page, and Back returns to the hub.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -773,18 +804,49 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	assert_false(hq._lift_sliders["aero_balance"].editable, "aero still locked (no aero kit)")
 
 
-func test_hq_lift_change_car_updates_the_selection() -> void:
+func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	_save.grant_car("rs3", false)  # now two owned cars
+	var other: Dictionary = _save.grant_car("rs3", false)  # now two owned cars
 	hq._enter_lift()
 	await get_tree().process_frame
 	var before: int = _save.selected_instance_id()
-	hq._cycle_lift_car(1)
-	assert_ne(_save.selected_instance_id(), before, "cycling the lift car changes the selected car")
+	# "Change Car" drops into the car park (change-car mode) showing the whole collection.
+	hq._enter_change_car()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.CARPARK, "Change Car opens the car park")
+	assert_true(hq._carpark_change_mode, "the car park is in change-car mode")
+	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
+		"every owned car is parked to pick from")
+	# It frames the car already on the lift; pan to the other car and Select it.
+	assert_eq(hq._selected_instance_id, before, "it opens framed on the current lift car")
+	hq._cycle_focus(1)  # two cars — pan to the other one
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.LIFT, "selecting a car returns to the tuning bay")
+	assert_false(hq._carpark_change_mode, "change-car mode is cleared on the way back")
+	assert_ne(_save.selected_instance_id(), before, "picking a car changes the selected car")
+	assert_eq(_save.selected_instance_id(), int(other["instance_id"]), "the picked car is now selected")
 	assert_eq(hq._lift_car_instance_id, _save.selected_instance_id(),
 		"the raised car follows the new selection")
+
+
+func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	_save.grant_car("rs3", false)
+	hq._enter_lift()
+	await get_tree().process_frame
+	var before: int = _save.selected_instance_id()
+	hq._enter_change_car()
+	await get_tree().process_frame
+	hq._car_back()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.LIFT, "Back from change-car returns to the tuning bay")
+	assert_false(hq._carpark_change_mode, "change-car mode is cleared")
+	assert_eq(_save.selected_instance_id(), before, "backing out leaves the selection unchanged")
 
 
 func test_hq_lift_installs_an_upgrade_from_inventory() -> void:

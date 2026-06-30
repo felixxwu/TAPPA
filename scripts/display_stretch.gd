@@ -31,6 +31,9 @@ extends Node
 const DESIGN_HEIGHT := 360.0
 
 
+var _last_window_size := Vector2i.ZERO
+
+
 func _ready() -> void:
 	var window := get_window()
 	# Per-axis scaling: let horizontal and vertical fit the window independently.
@@ -49,6 +52,16 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_SIZE_CHANGED:
+		_apply()
+
+
+# Poll every frame so live-drag resizing updates the viewport continuously
+# rather than waiting for size_changed (which may only fire on drag-complete
+# on some platforms/configurations).
+func _process(_delta: float) -> void:
+	var size := get_window().size
+	if size != _last_window_size:
+		_last_window_size = size
 		_apply()
 
 

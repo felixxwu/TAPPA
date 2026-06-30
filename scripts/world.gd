@@ -138,7 +138,16 @@ func _ready() -> void:
 		# (todo/menus.md location 2). Only when staged (start_line_enabled + a real
 		# rally); the StageManager is already waiting in STAGING for its launch.
 		if _should_stage():
+			# Let the freshly-built terrain render one frame before laying out the
+			# start-line queue, so the cars are placed against the settled ground (and
+			# the fielded car has dropped onto it) rather than mid-build. Skipped under
+			# headless, where generation is synchronous and tests run within _ready.
+			# The loading overlay (kept up by _generate_track for staged runs) hides
+			# this frame, so the car is never seen at its pre-staged position.
+			if not _headless:
+				await get_tree().process_frame
 			_build_start_line()
+			loading.finish()
 
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
 	# wheel-force debug overlay; harmless and idle until toggled on.
@@ -360,8 +369,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	_setup_stage_splits(result, staged, cfg)
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
-	# regeneration, e.g. entering a rally event).
-	if loading != null:
+	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment
+	# longer: _ready drops it only AFTER the start-line queue is laid out, so the
+	# black overlay hides the car at its pre-staged spot instead of flashing it.
+	if loading != null and not staged:
 		loading.finish()
 
 

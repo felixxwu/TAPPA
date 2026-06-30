@@ -574,7 +574,7 @@ func _sync_suspension_to_wheels() -> void:
 # instead of using its imported Blender material. albedo_color is left white so
 # the texture's own colours show through (ALBEDO = texture × albedo_color).
 # Idempotent: the material is built once per mesh.
-const MX5_TEXTURE := preload("res://blender/mx5_texture.png")
+const MX5_TEXTURE := preload("res://blender/mx5/mx5_texture.png")
 
 func _apply_model_material(model: Node3D) -> void:
 	var shader: Shader = load("res://shaders/ps1_models_lit.gdshader")
