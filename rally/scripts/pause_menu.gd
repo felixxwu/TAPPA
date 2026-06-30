@@ -12,11 +12,16 @@ extends CanvasLayer
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
 @export var camera_manager: CameraManager
+# The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
+# on-screen controls immediately (rather than only taking effect on the next run).
+@export var mobile_controls: MobileControls
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
 var _menu_panel: Control       # PAUSED + Resume + Settings + Quit to HQ
 var _settings_panel: Control   # the shared SettingsMenu + Back
+var _resume_button: Button     # default keyboard/gamepad focus when the menu opens
+var _settings_button: Button   # focus returns here when backing out of Settings
 var _quit_button: Button       # "Quit to HQ" — abandons the rally
 var _quit_dialog: ConfirmationDialog  # "Abandon rally?" confirm before quitting
 
@@ -38,6 +43,7 @@ func open() -> void:
 	get_tree().paused = true
 	_set_open(true)
 	_show_settings(false)
+	UITheme.focus_grab.bind(_resume_button).call_deferred()  # land the cursor on Resume
 
 
 # Unfreeze and hide the whole overlay.
@@ -68,7 +74,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not is_open():
 		open()
 	elif _settings_panel.visible:
-		_show_settings(false)  # Esc backs out of Settings to the menu first
+		_on_settings_back()  # Esc steps out a level: sub-page → list → menu
 	else:
 		resume()
 	get_viewport().set_input_as_handled()
@@ -79,18 +85,25 @@ func _unhandled_input(event: InputEvent) -> void:
 func _build() -> void:
 	layer = 5  # above HUD (2) and mobile controls (3)
 
-	# Top-right Pause button, always available during gameplay.
+	# Top-right Pause button, always available during gameplay. Square, with a proper
+	# drawn pause glyph (PauseIcon) instead of a cramped "| |" string.
 	_pause_button = Button.new()
-	_pause_button.text = "| |"
 	_pause_button.focus_mode = Control.FOCUS_NONE
 	_pause_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_pause_button.offset_left = -52
+	_pause_button.offset_left = -48
 	_pause_button.offset_top = 8
 	_pause_button.offset_right = -8
-	_pause_button.offset_bottom = 36
+	_pause_button.offset_bottom = 48
 	_pause_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_pause_button.add_theme_font_size_override("font_size", 14)
 	_pause_button.pressed.connect(open)
+	var pause_icon := PauseIcon.new()
+	pause_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "top"]:
+		pause_icon.set("offset_" + side, 11)
+	for side in ["right", "bottom"]:
+		pause_icon.set("offset_" + side, -11)
+	_pause_button.add_child(pause_icon)
 	add_child(_pause_button)
 
 	# Full-screen overlay: a dim backdrop (swallows taps to the game) + the panels.
@@ -134,13 +147,13 @@ func _build_menu_panel() -> Control:
 	title_plate.add_child(title)
 	col.add_child(title_plate)
 
-	var resume_btn := _make_menu_button("Resume")
-	resume_btn.pressed.connect(resume)
-	col.add_child(resume_btn)
+	_resume_button = _make_menu_button("Resume")
+	_resume_button.pressed.connect(resume)
+	col.add_child(_resume_button)
 
-	var settings_btn := _make_menu_button("Settings")
-	settings_btn.pressed.connect(_show_settings.bind(true))
-	col.add_child(settings_btn)
+	_settings_button = _make_menu_button("Settings")
+	_settings_button.pressed.connect(_show_settings.bind(true))
+	col.add_child(_settings_button)
 
 	# Quit to HQ — abandons the rally (after a confirm). No retry penalty: a non-top-3
 	# rally is simply re-entered later from the map.
@@ -165,25 +178,38 @@ func _build_settings_panel() -> Control:
 	title.add_theme_font_size_override("font_size", 28)
 	col.add_child(title)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	col.add_child(scroll)
 	settings_menu = SettingsMenu.new()
 	settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_menu.camera_changed.connect(_on_camera_changed)
+	settings_menu.scheme_changed.connect(_on_scheme_changed)
 	scroll.add_child(settings_menu)
 
+	# Single bottom button: on a sub-page it backs out to the category list; on the
+	# list it backs out to the Resume/Settings menu.
 	var back := _make_menu_button("< Back")
-	back.pressed.connect(_show_settings.bind(false))
+	back.pressed.connect(_on_settings_back)
 	col.add_child(back)
 	return margin
+
+
+# Back from the Settings panel: step out of a sub-page to the category list first
+# (handled inside the shared menu), then (from the list) out to the Resume/Settings
+# menu. Same path for the bottom button and for menu_back / ui_cancel.
+func _on_settings_back() -> void:
+	if not settings_menu.go_back():
+		_show_settings(false)
 
 
 func _make_menu_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.focus_mode = Control.FOCUS_NONE
+	# Focusable so the pause menu is fully keyboard / gamepad navigable (ui_up/ui_down
+	# walk Resume/Settings/Quit, ui_accept fires the focused one).
+	button.focus_mode = Control.FOCUS_ALL
 	button.custom_minimum_size = Vector2(220, 44)
 	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	return button
@@ -197,10 +223,20 @@ func _set_open(opened: bool) -> void:
 
 
 func _show_settings(on: bool) -> void:
+	if on:
+		settings_menu.show_list()  # always open Settings on the category list (focuses it)
 	_settings_panel.visible = on
 	_menu_panel.visible = not on
+	if not on:
+		# Returning to the Resume/Settings menu — put the cursor back on Settings.
+		UITheme.focus_grab.bind(_settings_button).call_deferred()
 
 
 func _on_camera_changed(mode: int) -> void:
 	if camera_manager != null:
 		camera_manager.set_mode(mode)
+
+
+func _on_scheme_changed(id: int) -> void:
+	if mobile_controls != null:
+		mobile_controls.set_scheme(id)

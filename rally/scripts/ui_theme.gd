@@ -160,6 +160,13 @@ static func button(text: String) -> Button:
 # Show/clear the "this option is selected" treatment used by the web build:
 # the label is underlined and tinted green while selected. Pair with `flank()`
 # for the ▶◀ triangles around the active row.
+#
+# The `focus` state is deliberately LEFT to the global theme (a SURFACE_HOVER box
+# with a green underline, white text — see tools/build_ui_theme.gd) so that a
+# keyboard/gamepad focus cursor stays visible ON a selected row: a focused row
+# reads as white text, a merely-selected row as green text. (Menus drive nav by
+# native focus — focus_mode = FOCUS_ALL — and the theme's focus look is the same
+# lift a mouse hover shows, so the two read identically.)
 static func mark_selected(btn: Button, selected: bool) -> void:
 	var box := StyleBoxFlat.new()
 	box.bg_color = SURFACE_HOVER if selected else BLACK  # pure black when idle (rule 4)
@@ -168,9 +175,74 @@ static func mark_selected(btn: Button, selected: bool) -> void:
 		box.border_color = GREEN
 	for side in ["left", "top", "right", "bottom"]:
 		box.set("content_margin_" + side, 10.0)
-	for state in ["normal", "hover", "pressed", "focus"]:
+	for state in ["normal", "hover", "pressed"]:
 		btn.add_theme_stylebox_override(state, box)
 	btn.add_theme_color_override("font_color", GREEN if selected else INK)
+
+
+# Show/clear a keyboard/gamepad CURSOR highlight on a button whose focus is driven
+# MANUALLY rather than by Godot's focus system. The diegetic HQ stations keep
+# focus_mode = FOCUS_NONE so left/right can mean "cycle the 3D car / map pin"
+# instead of "move focus to the neighbour widget", so they track a cursor index by
+# hand and paint it here. Mirrors the theme's focus look — the same SURFACE_HOVER
+# lift + green underline a mouse hover (or a native-focus menu) shows — so a manual
+# cursor and a real focus ring read identically. Flat menus don't need this; their
+# highlight comes from the theme `focus` stylebox via grab_focus().
+static func mark_focused(btn: Button, focused: bool) -> void:
+	if focused:
+		var box := StyleBoxFlat.new()
+		box.bg_color = SURFACE_HOVER
+		box.border_width_bottom = 3
+		box.border_color = GREEN
+		box.content_margin_left = 14
+		box.content_margin_right = 14
+		box.content_margin_top = 4
+		box.content_margin_bottom = 4
+		btn.add_theme_stylebox_override("normal", box)
+		btn.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	else:
+		btn.remove_theme_stylebox_override("normal")
+		btn.remove_theme_color_override("font_color")
+
+
+# Show/clear the selection treatment on a billboarded MAP-PIN readout panel. The map
+# pins keep a manual cursor (left/right cycles spatial pins, not widget focus), so the
+# selected pin can't lean on Godot's focus ring; instead of scaling the pin up (which
+# made some rally boxes read as larger than others) we paint its panel like a hovered
+# menu row — the same SURFACE_HOVER face + green bottom underline `mark_focused` gives a
+# button — so a selected pin and a hovered menu option read identically. `pad` matches
+# the panel's content padding so the box doesn't resize between the two states.
+static func mark_panel_focused(container: PanelContainer, focused: bool, pad: int = 14) -> void:
+	var box := StyleBoxFlat.new()
+	if focused:
+		box.bg_color = SURFACE_HOVER
+		box.border_width_bottom = 3
+		box.border_color = GREEN
+	else:
+		box.bg_color = BLACK  # pure black when idle (rule 4)
+	for side in ["left", "top", "right", "bottom"]:
+		box.set("content_margin_" + side, float(pad))
+	container.add_theme_stylebox_override("panel", box)
+
+
+# Grab keyboard/gamepad focus on `ctrl`, but only when it can actually take it —
+# valid, in the tree, visible, and focusable. Call deferred so it runs after the
+# host has finished showing/laying out the menu, e.g.
+#   UITheme.focus_grab.bind(my_button).call_deferred()
+# Guards against the errors grab_focus() pushes when a control isn't visible yet
+# (a menu built while its layer is still hidden, a podium button mid-spin, ...).
+# `ctrl` is left untyped on purpose: a typed `Control` param breaks the bound-and-
+# deferred Callable path (`UITheme.focus_grab.bind(btn).call_deferred()`) — the
+# deferred queue stores the arg as a generic Object and the typed conversion fails.
+static func focus_grab(ctrl) -> void:
+	# Check validity BEFORE casting: a deferred grab can fire after its menu was freed
+	# (e.g. a scene torn down in a test), and `as Control` on a freed object errors.
+	if not is_instance_valid(ctrl):
+		return
+	var c := ctrl as Control
+	if c != null and c.is_inside_tree() \
+			and c.is_visible_in_tree() and c.focus_mode != Control.FOCUS_NONE:
+		c.grab_focus()
 
 
 # Wrap a control with white ▶ ◀ selection triangles (shown only when `active`),

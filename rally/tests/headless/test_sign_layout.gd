@@ -3,8 +3,6 @@ extends GutTest
 # (centerline + pieces) into roadside-sign placements (todo/roadside-signs.md §2).
 # Sectors, turn arrows, and start/finish gates — each a pair, one per road edge.
 
-const TrackGenerator = preload("res://scripts/track_generator.gd")
-const SignLayout = preload("res://scripts/sign_layout.gd")
 
 const START_POS := Vector2(0.0, 0.0)
 const START_HEADING := Vector2(0.0, 1.0)

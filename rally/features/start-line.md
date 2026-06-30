@@ -10,15 +10,20 @@ The diegetic sequence between picking a car in HQ and the `3·2·1·GO` countdow
 once the world is built and a [`RallySession`](rally-session.md) is active, while the
 car is held locked. Three phases, driven in `_process`:
 
-1. **REVEAL (orbit)** — a flat overlay shows the **TIMES TO BEAT**: the **top three
-   rivals** for this stage, fastest first, each as `P{n}  Driver — Car — m:ss.cc`
-   (`RallySession.current_event_leaders(3)`; the leader is highlighted, the car is
-   dropped when unknown, and a single `—` stands in when no rival has a time yet).
-   Below it a `Rally — Event N of 3` subtitle and a **Start** button.
-   Behind it an **orbit camera** circles the car, which is queued between a
-   **leader** car ahead and a **trailing** car behind. The driving HUD + mobile
-   controls are hidden. Launch with the button, `menu_select` (Enter / gamepad A),
-   or a tap.
+1. **REVEAL (orbit)** — **design-system** (`UITheme`) black house panels show the
+   times to beat: the **top three rivals** for this stage, fastest first, each as
+   `P{n}  Driver — Car — m:ss.cc` (`RallySession.current_event_leaders(3)`; the leader
+   is the gold **time to beat**, the chasers are dimmed, the car is dropped when
+   unknown, and a single `—` stands in when no rival has a time yet). The panels follow
+   the house rules (pure-black, uppercase, one font size). The times card **hugs the top
+   edge** and a bare **Start** button (a standard house menu button at the fixed row
+   height — no wrapping panel) **hugs the bottom**, with an expanding gap between — so
+   they never cover the orbiting car, which shows through the **clear centre band**. The
+   times card is headed by the `Rally — Event N of 3` line. Behind it an **orbit camera**
+   circles the car, which is queued
+   between a **leader** car ahead and a **trailing** car behind. The driving HUD +
+   mobile controls are hidden. Launch with the button, `menu_select` (Enter / gamepad
+   A), or a tap.
 2. **DRIVE-OFF (launch)** — a **staggered rolling start**: the leader (sitting **on the
    line**) pulls away first, then one `start_queue_stagger_seconds` later the **player
    rolls up** to the line, then another stagger later the **trailer** rolls up to where

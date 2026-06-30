@@ -4,10 +4,6 @@ extends GutTest
 # field, progress/showdown gating, and the anti-soft-lock query. Mirrors
 # test_car_library.gd. See todo/rally-roster.md.
 
-const RallyLibrary = preload("res://scripts/rally_library.gd")
-const CarLibrary = preload("res://scripts/car_library.gd")
-const TrackGenerator = preload("res://scripts/track_generator.gd")
-
 
 # --- Roster validity (anti-soft-lock) ---------------------------------------
 
@@ -94,42 +90,84 @@ func test_roster_has_full_one_surface_events() -> void:
 	assert_gt(full, 5, "several events are fully one surface (all gravel or all tarmac)")
 
 
-func test_open_class_floor_at_each_reachable_tier() -> void:
-	# Every difficulty tier reachable by the (immortal) starter — i.e. every tier
-	# with a non-showdown rally — must offer at least one open-class rally.
-	var tiers_seen := {}
-	var open_at_tier := {}
+func test_starter_always_has_an_enterable_rally() -> void:
+	# Anti-soft-lock floor: now that progression is gated on power-to-weight (not an
+	# open-class pool at every tier), the guarantee is that the immortal starter —
+	# the lowest-power car, mx5 — can always enter at least one NON-showdown rally,
+	# and the showdown stays open-class so it can finish the game even if it never
+	# earns another car.
+	var starter := CarLibrary.by_id("mx5")
+	var enterable_non_showdown := 0
+	var showdown_seen := false
+	for rally in RallyLibrary.RALLIES:
+		if rally["showdown"]:
+			showdown_seen = true
+			assert_true(rally["restriction"].is_empty(), "the showdown is open-class")
+			assert_true(RallyLibrary.is_eligible(rally, starter), "the starter can enter the showdown")
+			continue
+		if RallyLibrary.is_eligible(rally, starter):
+			enterable_non_showdown += 1
+	assert_gt(enterable_non_showdown, 0, "the starter has at least one non-showdown rally to race")
+	assert_true(showdown_seen, "there is a showdown rally")
+
+
+func test_rallies_are_gated_by_power_to_weight() -> void:
+	# Progression is PRIMARILY gated on power-to-weight: every non-showdown rally
+	# carries a p/w cap, the easiest rallies are gated only from above (a ceiling, no
+	# floor), and the harder rallies tighten to a band that also sets a floor.
+	var cap_only := 0  # gated below only (pw_max, no pw_min)
+	var banded := 0    # a range (both pw_min and pw_max)
 	for rally in RallyLibrary.RALLIES:
 		if rally["showdown"]:
 			continue
-		var t: int = rally["difficulty"]
-		tiers_seen[t] = true
-		if rally["restriction"].is_empty():
-			open_at_tier[t] = true
-	for t in tiers_seen:
-		assert_true(open_at_tier.has(t), "tier %d has an open-class rally" % t)
+		var r: Dictionary = rally["restriction"]
+		assert_true(r.has("pw_max"), "%s caps power-to-weight from above" % rally["id"])
+		if int(rally["difficulty"]) <= 1:
+			assert_false(r.has("pw_min"), "tier-1 %s is gated below only (no p/w floor)" % rally["id"])
+		if int(rally["difficulty"]) >= 3:
+			assert_true(r.has("pw_min"), "tier-3+ %s gates on a band (has a p/w floor)" % rally["id"])
+		if r.has("pw_min"):
+			banded += 1
+		else:
+			cap_only += 1
+	assert_gt(cap_only, 0, "some early rallies are gated below (a p/w ceiling only)")
+	assert_gt(banded, 0, "some later rallies gate on a p/w range")
 
 
 # --- Eligibility -------------------------------------------------------------
 
 func test_open_class_matches_every_car() -> void:
-	var shakedown := RallyLibrary.by_id("shakedown")
+	# The showdown is the open-class rally (empty restriction) — it accepts every car.
+	var showdown := RallyLibrary.by_id("the_showdown")
 	for spec in CarLibrary.CARS:
-		assert_true(RallyLibrary.is_eligible(shakedown, spec),
+		assert_true(RallyLibrary.is_eligible(showdown, spec),
 			"open-class accepts %s" % spec["name"])
 
 
 func test_drive_mode_restriction_filters() -> void:
-	var rwd_rally := RallyLibrary.by_id("rwd_masters")
-	# The MX-5 is RWD (eligible); the RS3 is AWD (not).
-	assert_true(RallyLibrary.is_eligible(rwd_rally, CarLibrary.by_id("mx5")), "RWD MX-5 eligible")
-	assert_false(RallyLibrary.is_eligible(rwd_rally, CarLibrary.by_id("rs3")), "AWD RS3 excluded")
+	# is_eligible honours a drive_mode restriction regardless of the roster: the MX-5
+	# is RWD (eligible); the RS3 is AWD (not).
+	var rwd_only := {"restriction": {"drive_mode": CarLibrary.RWD}}
+	assert_true(RallyLibrary.is_eligible(rwd_only, CarLibrary.by_id("mx5")), "RWD MX-5 eligible")
+	assert_false(RallyLibrary.is_eligible(rwd_only, CarLibrary.by_id("rs3")), "AWD RS3 excluded")
 
 
 func test_country_restriction_filters() -> void:
-	var jp_rally := RallyLibrary.by_id("rising_sun")
-	assert_true(RallyLibrary.is_eligible(jp_rally, CarLibrary.by_id("mx5")), "JP MX-5 eligible")
-	assert_false(RallyLibrary.is_eligible(jp_rally, CarLibrary.by_id("mustang")), "US Mustang excluded")
+	var jp_only := {"restriction": {"country": "JP"}}
+	assert_true(RallyLibrary.is_eligible(jp_only, CarLibrary.by_id("mx5")), "JP MX-5 eligible")
+	assert_false(RallyLibrary.is_eligible(jp_only, CarLibrary.by_id("mustang")), "US Mustang excluded")
+
+
+func test_power_to_weight_restriction_filters() -> void:
+	# A p/w band admits only cars whose power-to-weight sits inside [pw_min, pw_max].
+	var band := {"restriction": {"pw_min": 0.22, "pw_max": 0.30}}
+	assert_false(RallyLibrary.is_eligible(band, CarLibrary.by_id("mx5")), "low-p/w MX-5 below the floor")
+	assert_true(RallyLibrary.is_eligible(band, CarLibrary.by_id("porsche911")), "mid-p/w 911 inside the band")
+	assert_false(RallyLibrary.is_eligible(band, CarLibrary.by_id("aventador")), "high-p/w Aventador above the cap")
+	# A ceiling-only gate (pw_max, no floor) lets the weakest car in but caps the strong.
+	var cap := {"restriction": {"pw_max": 0.20}}
+	assert_true(RallyLibrary.is_eligible(cap, CarLibrary.by_id("mx5")), "the low-power starter clears a ceiling gate")
+	assert_false(RallyLibrary.is_eligible(cap, CarLibrary.by_id("porsche911")), "a stronger car is capped out")
 
 
 # --- Determinism -------------------------------------------------------------
@@ -154,6 +192,21 @@ func test_target_time_is_positive_and_seed_stable() -> void:
 	# Override wins when present.
 	assert_eq(RallyLibrary.derive_target_ms(track, {"target_ms_override": 42000}), 42000,
 		"target_ms_override is honoured")
+
+
+func test_tarmac_fraction_tightens_target_time() -> void:
+	# Same track, varying only the tarmac fraction: more tarmac = quicker target,
+	# because tarmac is priced at the faster TARMAC_SPEED_MPS / corner penalty.
+	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
+	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
+	var all_gravel := RallyLibrary.derive_target_ms(track, {"surface_mix": 0.0})
+	var half := RallyLibrary.derive_target_ms(track, {"surface_mix": 0.5})
+	var all_tarmac := RallyLibrary.derive_target_ms(track, {"surface_mix": 1.0})
+	assert_lt(all_tarmac, all_gravel, "all-tarmac target is quicker than all-gravel")
+	assert_between(half, all_tarmac, all_gravel, "half-tarmac target sits between the two")
+	# Tarmac should be a lot quicker, not a rounding-error nudge.
+	assert_lt(all_tarmac, int(all_gravel * 0.9), "all-tarmac is at least 10% quicker")
 
 
 # --- Opponent field ----------------------------------------------------------
@@ -280,7 +333,8 @@ func test_showdown_unlocks_only_when_all_others_complete() -> void:
 
 func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 	var profile := {"rallies": {}}
-	# An AWD car (RS3) can't enter rwd_masters, and the showdown is locked.
+	# An AWD car (RS3) can't enter rwd_masters (RWD-only), and the showdown is locked,
+	# but it does qualify for a rally inside its power band (coastal_sprint).
 	var rs3 := CarLibrary.by_id("rs3")
 	var enterable := RallyLibrary.incomplete_rallies_enterable_by(rs3, profile)
 	var ids := {}
@@ -288,4 +342,4 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 		ids[r["id"]] = true
 	assert_false(ids.has("rwd_masters"), "AWD car excluded from RWD-only rally")
 	assert_false(ids.has("the_showdown"), "showdown excluded while locked")
-	assert_true(ids.has("shakedown"), "open-class rally is enterable")
+	assert_true(ids.has("coastal_sprint"), "a rally inside the car's power band is enterable")

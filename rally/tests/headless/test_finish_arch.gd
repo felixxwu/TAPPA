@@ -5,7 +5,6 @@ extends GutTest
 # assert the expected parts exist with sane geometry. No pixel checks (headless
 # can't read them back; visual iteration is done via tools/render_model.gd).
 
-const FinishArch = preload("res://scripts/finish_arch.gd")
 
 var _arch: Node3D
 
@@ -77,8 +76,9 @@ func _label_texts() -> Array:
 
 func test_banners_show_live_event_info() -> void:
 	# The banners render the event's data, not placeholder text: the FINISH/START
-	# wordmark + rally name on the beam, and the stage / time-to-beat / tier on the
-	# legs. Rebuild a START gate carrying a sample event and read the Label3D text.
+	# wordmark + rally name on the beam, and the stage / time-to-beat on the legs. The
+	# difficulty tier is a hidden value and must NEVER appear. Rebuild a START gate
+	# carrying a sample event and read the Label3D text.
 	_arch.is_start = true
 	_arch.info = {"rally_name": "Coastal Sprint", "stage_index": 1, "stage_count": 3,
 		"target_ms": 83450, "difficulty": 2}
@@ -92,7 +92,7 @@ func test_banners_show_live_event_info() -> void:
 	assert_true(joined.contains("STAGE"), "leg shows the stage number")
 	assert_true(joined.contains("2 / 3"), "leg shows this stage of the total")
 	assert_true(joined.contains("1:23.45"), "leg shows the time-to-beat (start gate)")
-	assert_true(joined.contains("TIER 2"), "leg shows the difficulty tier")
+	assert_false(joined.contains("TIER"), "the hidden difficulty tier is never shown, even when supplied")
 
 
 func test_banners_fall_back_to_wordmark_without_an_event() -> void:

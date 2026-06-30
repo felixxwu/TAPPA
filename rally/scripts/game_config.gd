@@ -508,6 +508,10 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 
 @export_group("PS1 Look")
 @export var virtual_resolution := Vector2(480, 360)  # keep matching [display] in project.godot
+## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
+## and UI alike. 1.0 = off; 1.1 draws everything 10% wider than reality. Applied
+## globally by the DisplayStretch autoload (scripts/display_stretch.gd).
+@export_range(0.5, 2.0) var horizontal_stretch := 1.1
 @export var chassis_color := Color(0.85, 0.2, 0.15)
 @export var cabin_color := Color(0.25, 0.3, 0.4)
 @export var wheel_color := Color(0.12, 0.12, 0.12)

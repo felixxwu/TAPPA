@@ -4,11 +4,6 @@ extends GutTest
 # behaviour. Pure functions, driven with an injected seeded RNG. See
 # todo/reward-system.md.
 
-const RewardSystem = preload("res://scripts/reward_system.gd")
-const RallyLibrary = preload("res://scripts/rally_library.gd")
-const UpgradeLibrary = preload("res://scripts/upgrade_library.gd")
-const CarLibrary = preload("res://scripts/car_library.gd")
-
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
 	var r := RandomNumberGenerator.new()
@@ -35,11 +30,11 @@ func _profile(completed: Array, owned: Array) -> Dictionary:
 func test_tier_ceiling_is_monotonic_and_clamped() -> void:
 	var prev := 0
 	for c in range(0, 20):
-		var ceil := RewardSystem.tier_ceiling(c)
-		assert_gte(ceil, prev, "ceiling never decreases as completion rises")
-		assert_lte(ceil, RewardSystem.MAX_TIER, "ceiling never exceeds MAX_TIER")
-		assert_gte(ceil, 1, "ceiling is at least 1")
-		prev = ceil
+		var ceiling := RewardSystem.tier_ceiling(c)
+		assert_gte(ceiling, prev, "ceiling never decreases as completion rises")
+		assert_lte(ceiling, RewardSystem.MAX_TIER, "ceiling never exceeds MAX_TIER")
+		assert_gte(ceiling, 1, "ceiling is at least 1")
+		prev = ceiling
 
 
 func test_target_tier_never_exceeds_ceiling() -> void:

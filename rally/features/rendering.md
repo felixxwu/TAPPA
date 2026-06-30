@@ -8,7 +8,9 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
 - Internal viewport: **480×360**, window **1280×960** (upscaled). Lower than
   the old 640×480 — fewer fragments to shade (the full-screen post-process runs
   per internal pixel), and closer to the PS1's ~320×240.
-- Stretch mode: viewport, `keep_height` aspect.
+- Stretch mode: viewport, `keep_height` aspect — but the `DisplayStretch`
+  autoload (below) overrides the aspect at runtime to apply the stylistic
+  horizontal stretch.
 - Renderer: **GL Compatibility** (D3D12 driver on Windows).
 - Texture filtering: nearest-neighbor globally. The 2D canvas default is
   `default_texture_filter=0` (nearest); every shader sampler uses `filter_nearest`;
@@ -19,6 +21,27 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
   nearest: the tree canopy in `world.gd._tree_mesh()` and the ground-cover bush
   in `world.gd._bush_mesh()`. The sole exception is the panorama sky, a smooth
   gradient where filtering is intended.
+
+## Horizontal stretch (`scripts/display_stretch.gd`)
+
+A purely stylistic anamorphic widening of the **entire** frame — the 3D world
+and every UI CanvasLayer on top of it, in every scene. The `DisplayStretch`
+autoload draws everything `Config.data.horizontal_stretch`× wider than reality
+(default **1.1**, set in the "PS1 Look" group of `config/game_config.tres`;
+`1.0` disables it).
+
+It works through the stretch system rather than a post-process shader,
+precisely so it reaches the UI: the post-process pass only sees the 3D
+viewport, while the HUD/menus live on higher CanvasLayers drawn after it. On
+boot (and every window resize) the autoload switches the root window's aspect to
+`IGNORE` (per-axis scaling) and drives `content_scale_size`: the logical height
+stays the design height (360, so vertical is never distorted) while the logical
+width is shrunk by the stretch factor, forcing the window to scale it back out
+horizontally by exactly that factor. Because the width is derived from
+`360 / stretch` and not the raw window width, the stretch stays constant on any
+device aspect, and wider screens still reveal more world width — just fatter.
+The width math is the pure static `DisplayStretch.logical_size()`, unit-tested in
+`tests/headless/test_display_stretch.gd`.
 
 ## Shaders (`shaders/`)
 

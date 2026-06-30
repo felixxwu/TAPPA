@@ -23,6 +23,55 @@ exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pi
    final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
 ```
 
+## Menu navigation (keyboard / gamepad)
+
+Every menu is fully navigable with **up / down / left / right / enter / back**, on
+keyboard *and* controller, alongside mouse / touch. There are **two regimes**, and
+which one a screen uses depends on whether its layout is a flat widget list or a 3D
+space:
+
+- **Flat / overlay menus** use **Godot's native focus** — the buttons are
+  `focus_mode = FOCUS_ALL`, one grabs focus when the menu opens, and the engine's
+  built-in `ui_up`/`ui_down`/`ui_left`/`ui_right` move focus, `ui_accept` fires the
+  focused control, `ui_cancel` backs out. Those default actions already bind arrow
+  keys + D-pad + left-stick + Enter/Space + gamepad A/B, so keyboard and controller
+  work with no extra wiring. The **focus highlight is the theme's `focus` stylebox**,
+  which `tools/build_ui_theme.gd` defines to match the **hover** look — so a focus
+  cursor and a mouse hover read identically (see [ui-design-system.md](ui-design-system.md)).
+  `UITheme.focus_grab(ctrl)` is the guarded, call-deferred grab helper menus use to
+  seat the cursor after they're shown. This covers: the **title** (Start/Settings),
+  the shared **`SettingsMenu`** (rows + bottom action button — used by both the HQ
+  settings overlay and the pause menu), the **pause** menu (Resume/Settings/Quit),
+  the **standings** Continue, the **podium** Next, and the tuning-lift **Tune**
+  (sliders — left/right nudges the focused one) and **Upgrades** (install / repair)
+  pages.
+- **Diegetic 3D HQ stations** can't be a focus graph — "left/right" means *cycle the
+  3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
+  HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
+  `menu_left`/`menu_right`/`menu_up`/`menu_down`/`menu_select`/`menu_back` actions,
+  which bind arrows + WASD + D-pad + Enter/Esc + gamepad A/B). The **car park** /
+  **overflow** cycle the focused car with left/right and Start/Scrap with select; the
+  **map table** carries a **keyboard pin cursor** (`_table_pin_index`) that cycles the
+  unlocked pins (left/right or up/down, wrapping), highlights the selected pin's
+  readout box with the same hover-style lift a menu button gets (`UITheme.mark_panel_focused`
+  — all pins stay one size, no scale-up), centres the camera on it, and opens its detail
+  on select; the **tuning hub** uses
+  left/right to change car and an up/down cursor (`_hub_focus`, painted by
+  `UITheme.mark_focused`) over Tuning/Upgrades. The **garage** keeps select → table /
+  left → lift / back → exterior. Because HQ hides overlays by toggling their
+  **`CanvasLayer`** (which does *not* clear a `Control`'s focus — a CanvasLayer breaks
+  the visibility chain), `_go_to` / `_lift_hub` call `get_viewport().gui_release_focus()`
+  on every transition so a button on the view just left can't keep focus and silently
+  swallow arrow keys / Enter in the next, spatially-navigated station; the
+  native-focus views re-grab a control right after.
+
+> **When you add or change a menu, wire its navigation in the same piece of work.**
+> A flat list: make the buttons `FOCUS_ALL` and `UITheme.focus_grab` the first one
+> when it shows (handle `ui_cancel`/`menu_back` for "back"). A new HQ station:
+> add a `menu_*` branch in `hq.gd._unhandled_input` and release focus on entry. Add a
+> nav test (see `tests/headless/test_menu_nav.gd` / the nav cases in
+> `test_menu_flow.gd` / `test_pause_menu.gd`).
+
 ## HQ (`hq.gd`)
 
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no
@@ -68,22 +117,52 @@ garage; Settings opens the SETTINGS overlay.
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
 SettingsMenu`) — the SAME component the in-run pause menu uses, so the two pages
-match. Two sections:
+match. It opens on a **category list** with one row per area, and each row drills
+into **its own sub-page**:
 
 - **Camera** — pick the **camera angle** (chase / bonnet, from `CameraManager.MODES`);
   the choice persists under `CameraManager.SETTING_KEY` and is applied on the next run
   (or live, in the pause menu, via the `camera_changed` signal). See
   [camera.md](camera.md).
+- **Key bindings** — **rebind** the keyboard and controller controls. One row per
+  driving action (`InputRemap.ACTIONS`) with a keyboard button and a controller
+  button showing the current binding; tap one and press the new key / gamepad input
+  to reassign it (Esc cancels), plus a **Reset to defaults** row. The model is the
+  `InputRemap` autoload (`scripts/input_remap.gd`), which patches the global InputMap
+  from overrides saved under `InputRemap.SETTING_KEY`. See [controls.md](controls.md).
 - **Mobile controls** — pick the **touch control scheme**. Each of the six schemes
   ([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
   **diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
-  its name and how-to.
+  its name and how-to. The choice persists under `MobileControls.SETTING_KEY` and is
+  applied on the next run (or **live**, in the pause menu, via the `scheme_changed`
+  signal — the on-screen controls rebuild the instant you pick a scheme).
+- **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
+  fresh new game), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
+  and per upgrade/repair-kit (`Save.add_item`, from `UpgradeLibrary.UPGRADES`) to
+  unlock anything in the game. A status line reports the last action.
 
-The saved choice in each section is highlighted and persisted via `Save.set_setting`.
-Settings is also shown as a **pre-rally gate**: on mobile, if no scheme has been
-chosen yet, Start opens this page (`_open_settings(true)`) instead of launching — the
-bottom button reads **Start >** and confirms the pick (the highlighted default if
-untouched), saving it so the gate never reappears, then begins the rally.
+Navigation lives inside the component: `show_list()` / `show_camera()` /
+`show_schemes()` / `show_dev()` swap which page is visible (only the visible page contributes
+height, so the long schemes page scrolls while the short list/camera pages don't),
+and `page_changed(is_root)` lets the host steer its single bottom button — on a
+sub-page it reads **< Back** (returns to the list); on the list it is the host's own
+action. The saved choice in each section is highlighted and persisted via
+`Save.set_setting`. Settings is also shown as a **pre-rally gate**: on mobile, if no
+scheme has been chosen yet, Start opens this page (`_open_settings(true)`) instead of
+launching — on the list the bottom button reads **Start >** and confirms the pick
+(the highlighted default if untouched), saving it so the gate never reappears, then
+begins the rally.
+
+All the scrollable menu lists (Settings, the tuning lift, the standings/podium
+leaderboards) use **`TouchScrollContainer`** (`scripts/touch_scroll_container.gd`)
+in place of a plain `ScrollContainer`: it drag-scrolls under touch even when the
+finger lands **on a list-item button** (a plain `ScrollContainer`'s touch-scroll is
+swallowed by the pressed child). It watches raw input in `_input` (before the GUI
+pass) — a press arms a gesture, vertical motion past a small deadzone becomes a
+scroll, a press that never moves passes through as a normal tap, and only the
+release that ended a real drag is swallowed so the row under the finger doesn't also
+fire. Scrolling is driven from the emulated mouse events (`emulate_mouse_from_touch`,
+the same path the map-table pan uses).
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
@@ -95,37 +174,53 @@ Tapping the table drops to the map view; tapping the lift flies to the **tuning 
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
-The car is framed to one side (`hq_lift_cam_*`) so the **tuning menu** — a solid panel
-anchored to the other side of the screen (`hq_lift_menu_width_frac`) — never covers
-it. The panel holds **only** the interactive controls (change-car, the tab strip, the
-scrollable menu content, Back) so it stays short on small screens; the **bay title and
-the car's name/description** sit in a separate **bottom-left** panel beside the car.
-Two menus toggled by the tab strip: **Tune** (a slider per tuning axis — grip /
-brake-bias / aero — locked axes greyed with a "needs X kit" note, plus **Reset to
-neutral**; each change saves via `Save.set_tuning`) and **Upgrades** (per-slot
-install from inventory via `Save.install_upgrade` — fitting **fully consumes** the
-part, confirmed via a dialog first since it can't be undone — plus the **Repair Kit**
-action `Save.use_repair_kit`). A change-car
-control cycles all owned cars, updating the **selected car**
-(`Save.selected_car`/`set_selected_car`) and re-spawning it on the lift. See
-[tuning.md](tuning.md) for the underlying config pipeline.
+The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
+(`LiftPage.HUB`): a **bottom-left** panel beside the car with the **bay title + the
+car's name/description**, and UNDER it a **minimal change-car selector** (`< Car` /
+`Car >`) plus **Tuning** and **Upgrades** buttons. The change-car control cycles all
+owned cars, updating the **selected car** (`Save.selected_car`/`set_selected_car`) and
+re-spawning it on the lift. Each menu button opens that menu as its **own full-height
+page** — a solid panel anchored to the other side of the screen
+(`hq_lift_menu_width_frac`) so the car stays in view — with a **< Back** that returns
+to the hub; the hub's own Back returns to the garage. Because the change-car control
+and page chrome live on the hub, each menu page gets the **full panel height to
+itself** and doesn't need to scroll. The two pages:
+
+- **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero;
+  locked axes greyed with a "needs X kit" note) plus **Reset to neutral**; each change
+  saves via `Save.set_tuning`.
+- **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from inventory via
+  `Save.install_upgrade` (fitting **fully consumes** the part, confirmed via a dialog
+  first since it can't be undone) plus the **Repair Kit** action `Save.use_repair_kit`.
+
+`_refresh_lift_ui` toggles which face (hub vs. a menu page) is shown from `_lift_page`.
+See [tuning.md](tuning.md) for the underlying config pipeline.
 
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
 plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal in
 X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
 albedo texture so the aerial colours read true under the garage lighting). Every
 rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
-**state-coloured flag marker** (`RallyFlag` — a pole + waving pennant + finial
-bead), a billboarded `Label3D` name, and a row of small **sphere stars** above it
-— 1st-place best = 3 gold, 2nd = 2, 3rd = 1, else grey (`_stars_for`). The flag's
-pennant colour is the medal ladder (`RallyFlag.state_color`): locked = charcoal
-grey (with a grey finial, so it reads as disabled), 0 stars = race red, then
-bronze / silver / gold for 1 / 2 / 3 stars — so the colour alone conveys the best
-result, with the sphere stars as the exact readout. (3D sphere stars sidestep the
-font's missing ★/☆ glyphs — same reason the UI uses ASCII `<`/`>` for nav.) Each
-unlocked pin carries a pickable `Area3D` (rally id bound to the handler) and its
-`rally_id`/`locked` in metadata; the **showdown** pin is grey + **non-pickable**
-until every other rally is completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
+**state-driven flag marker** (`RallyFlag` — a small **base disk** the pin
+stands on + a pole + waving pennant + finial bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
+holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
+gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` panel
+(pure-black, Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
+on a `Sprite3D`, so text and stars live in **one box** that always faces the camera;
+the stars are drawn by **`StarRow`** (`scripts/star_row.gd`) as polygons, sidestepping
+the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav). The
+flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
+`RallyFlag.accent_color`). **Pennant:** placed 3rd or better → a **black-and-white
+checkered** racing flag; else **light green** when the player owns a car eligible to
+enter (`_has_eligible_car`); else **dark grey** (no qualifying car — also the locked
+showdown). **Tip + base** (the finial bead and base disk, always one colour): **warm
+gold** once the rally is **won** (1st place, 3 stars), **metal grey** otherwise. The
+stars in the box remain the exact readout. Each
+unlocked pin carries **two** pickable `Area3D` hit spheres bound to the same handler
+(`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the floating
+**readout box itself**, so a click on the menu enters the rally just like a click on
+the flag — plus its `rally_id`/`locked` in metadata; the **showdown** pin is grey +
+**non-pickable** until every other rally is completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
 **release** and only if the press wasn't a drag (`_table_dragged`), so panning never
@@ -133,8 +228,9 @@ opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
 `MOUSE_FILTER_IGNORE`) — otherwise the full-rect HUD container/labels/spacer (all
 default `STOP`) would swallow every touch and the 3D pins would never get a pick.
-Tapping a pin opens the **rally detail** sub-panel (name, difficulty, eligible-cars
-restriction, event count, best finish + stars); **Enter Rally** flies out to the
+Tapping a pin opens the **rally detail** sub-panel (name, eligible-cars
+restriction — the power-to-weight gate, not the hidden difficulty tier — event
+count, best finish + stars); **Enter Rally** flies out to the
 car park, **◄ Map** dismisses the panel, and the table Back returns to the garage.
 
 **CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
@@ -205,8 +301,11 @@ wreck cinematic and report immediately.)
 A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
 `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is frozen. It owns a
 **top-right Pause button** (always visible during gameplay; the HUD's version/timer
-labels were shifted left to clear it) that **freezes the game** (`get_tree().paused
-= true`) and shows an overlay with **Resume**, **Settings** and **Quit to HQ**.
+labels were shifted left to clear it) — a square button bearing a **proper drawn
+pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars,
+since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
+game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Settings**
+and **Quit to HQ**.
 Resume unfreezes and closes; Settings shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the title-screen page), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops an *"Abandon rally?"* confirm and, on
@@ -218,7 +317,10 @@ view) instead of the podium. (With no active session — a plain dev boot of
 toggles the menu and backs out of Settings first. A camera pick applies
 **immediately** to the live `CameraManager` (wired via the `SettingsMenu.camera_changed`
 signal → `CameraManager.set_mode`), so the angle changes the moment you choose it.
-Covered by `tests/headless/test_pause_menu.gd`.
+A **mobile-control** pick applies just as immediately to the live `MobileControls`
+(the `SettingsMenu.scheme_changed` signal → `MobileControls.set_scheme`), so the
+on-screen touch layout rebuilds the instant you choose it rather than only on the next
+run. Covered by `tests/headless/test_pause_menu.gd`.
 
 ## Podium (`podium.gd`)
 

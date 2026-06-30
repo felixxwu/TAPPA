@@ -25,8 +25,16 @@ const DEFAULT_WIDTH := 6.0
 # function and its difficulty weights are a calibration pass (gameplay.md / the
 # rally-roster spec); these live here as authored defaults until that lands, at
 # which point the weights move to GameConfig.
-const REF_SPEED_MPS := 28.0      # ~100 km/h reference pace over the centerline
-const CORNER_PENALTY_S := 1.1    # seconds added per non-straight piece
+const REF_SPEED_MPS := 28.0      # ~100 km/h reference pace over the centerline (gravel)
+const CORNER_PENALTY_S := 1.1    # seconds added per non-straight piece (gravel)
+
+# Tarmac pace, used for the tarmac share of a track. Tarmac has more grip
+# (GameConfig.tarmac_grip 1.3 vs gravel_grip 1.0), so it's driven a lot quicker —
+# both a higher cruising pace and quicker corners (less scrubbing / sliding). The
+# target time splits the track by its tarmac fraction (event `surface_mix`) and
+# prices each surface separately, so a tarmac-heavy event gets a tighter target.
+const TARMAC_SPEED_MPS := 36.0   # ~130 km/h reference pace over tarmac
+const TARMAC_CORNER_PENALTY_S := 0.7  # seconds added per non-straight piece on tarmac
 
 # Opponent-field shape (gameplay.md): 10–15 rivals, some DNF (a DNF in any event
 # disqualifies the rally).
@@ -45,13 +53,21 @@ const RIVAL_PACE_SPREAD := 1.0
 
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
 # (every car eligible); otherwise every present field must match the car's
-# CarLibrary metadata. `events` is exactly 3 EventDefs (the showdown's are
-# longer). Exactly one entry has `showdown = true`.
+# CarLibrary metadata. Progression is PRIMARILY gated on power-to-weight: the
+# earliest rallies are gated only from above (a `pw_max` ceiling, so the low-power
+# starter qualifies), and the harder rallies tighten to a band (`pw_min` +
+# `pw_max`) so an over-powered car can't walk them either. A rally may layer a
+# secondary theme on top of its p/w band (e.g. RWD Masters also wants `drive_mode`
+# RWD). `difficulty` is a HIDDEN tier (never shown to the player) that drives the
+# reward tier (clamped by progress) and sort order — the p/w gate is the visible
+# requirement. `events` is exactly 3 EventDefs (the showdown's are longer). Exactly
+# one entry has `showdown = true` and stays open-class so the immortal starter can
+# always finish the game.
 const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Shakedown", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
-		"restriction": {},  # open-class anti-soft-lock floor
+		"restriction": {"pw_max": 0.20},  # gated below: a low p/w ceiling — the starter's home
 		"events": [
 			{"seed": 1001, "turn_count": 10, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.85},
 			{"seed": 1002, "turn_count": 12, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.8},
@@ -61,7 +77,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.34, 0.5),
-		"restriction": {},  # open-class
+		"restriction": {"pw_max": 0.25},  # gated below: a slightly higher p/w ceiling
 		"events": [
 			{"seed": 2001, "turn_count": 14, "forestiness": 0.3, "surface_mix": 1.0, "straightness": 0.55},
 			{"seed": 2002, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.5},
@@ -71,7 +87,8 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "rwd_masters", "name": "RWD Masters", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.52, 0.64),
-		"restriction": {"drive_mode": CarLibrary.RWD},
+		# p/w band (primary gate) + an RWD theme: a mid-power rear-driven field.
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 0.22, "pw_max": 0.30},
 		"events": [
 			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5},
 			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45},
@@ -81,7 +98,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "rising_sun", "name": "Rising Sun Rally", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.82, 0.34),
-		"restriction": {"country": "JP"},
+		"restriction": {"pw_min": 0.23, "pw_max": 0.32},  # a mid-upper p/w band
 		"events": [
 			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25},
 			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2},
@@ -91,7 +108,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "grand_tour", "name": "Grand Tour", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.66, 0.28),
-		"restriction": {},  # open-class at the top reachable tier
+		"restriction": {"pw_min": 0.28, "pw_max": 0.40},  # the top non-showdown p/w band
 		"events": [
 			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.15},
 			{"seed": 5002, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15},
@@ -184,8 +201,13 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 # --- Target time (derived from the seeded track, not stored) -----------------
 
 # Per-event target time in milliseconds, derived from a TrackGenerator result
-# (its `centerline` length + the corner mix in `pieces`). An event may override
-# this with `target_ms_override`. Deterministic for a given track.
+# (its `centerline` length + the corner mix in `pieces`) AND the event's tarmac
+# fraction (`surface_mix`): the tarmac share of the track is priced at the quicker
+# tarmac pace, so a tarmac-heavy event yields a tighter target. The tarmac run is
+# one contiguous stretch covering `tarmac_fraction` of the length (TrackSurface),
+# so that same fraction of the length and (on average) of the corners runs on
+# tarmac. An event may override the whole thing with `target_ms_override`.
+# Deterministic for a given track.
 static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -> int:
 	if event.has("target_ms_override"):
 		return int(event["target_ms_override"])
@@ -195,7 +217,11 @@ static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -
 	for piece in track_result.get("pieces", []):
 		if String(piece.get("corner", "")) != "Straight":
 			corner_count += 1
-	var target_s := length / REF_SPEED_MPS + corner_count * CORNER_PENALTY_S
+	var tarmac := event_tarmac_fraction(event)
+	var gravel := 1.0 - tarmac
+	var target_s := \
+		length * gravel / REF_SPEED_MPS + length * tarmac / TARMAC_SPEED_MPS \
+		+ corner_count * gravel * CORNER_PENALTY_S + corner_count * tarmac * TARMAC_CORNER_PENALTY_S
 	return int(round(target_s * 1000.0))
 
 
@@ -254,6 +280,21 @@ static func _eligible_cars(rally: Dictionary) -> Array:
 		if is_eligible(rally, entry):
 			pool.append(entry)
 	return pool if not pool.is_empty() else CarLibrary.CARS
+
+
+# CarLibrary.CARS indices a rally's restriction admits — the pool an index-based
+# spawner (the start-line queue props, start_line.gd) draws its cars from, so the
+# cars bookending the player are always eligible for the rally. Falls back to every
+# index if a restriction somehow admits none (it never should; open-class admits all).
+static func eligible_car_indices(rally: Dictionary) -> Array:
+	var pool: Array = []
+	for i in CarLibrary.CARS.size():
+		if is_eligible(rally, CarLibrary.CARS[i]):
+			pool.append(i)
+	if pool.is_empty():
+		for i in CarLibrary.CARS.size():
+			pool.append(i)
+	return pool
 
 
 # Player's 1-based placement on combined time among the non-DNF field (the

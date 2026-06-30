@@ -21,6 +21,31 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 
 All actions use a 0.2 deadzone.
 
+## Rebinding (settings → Key bindings)
+
+Every action in the table above (the driving controls + the toggles, **not** the
+keyboard-only debug overlays or the `ui_*`/`menu_*` navigation) can be **rebound** on
+the **Key bindings** page of the shared settings menu (`scripts/settings_menu.gd`) —
+reachable from the title-screen Settings and the in-run pause menu alike. Each action
+gets a row with a **keyboard** button and a **controller** button showing its current
+binding; tap one and press the new key / gamepad input to reassign it (Esc cancels).
+A **Reset to defaults** row clears all overrides.
+
+The model is the `InputRemap` autoload (`scripts/input_remap.gd`):
+
+- At boot it **snapshots** the pristine `project.godot` bindings, then applies the
+  player's saved overrides on top of them (`apply_saved`). Because the InputMap is
+  global, this must run before any scene reads input — hence an autoload (ordered
+  after `Save`, which it reads).
+- Overrides are persisted in the Save profile under `InputRemap.SETTING_KEY`
+  (`"input_bindings"`) as `{ action: { keyboard: <event>, controller: <event> } }`.
+  Each action keeps **two editable slots** — a keyboard key and a controller
+  button/axis — and an override touches only its slot, so the untouched slot keeps
+  its default (rebinding the keyboard key leaves the controller binding alone, and
+  vice-versa). Keys are stored by **physical keycode** (layout-independent, as
+  `project.godot` does); a stick/trigger is stored as an axis + sign.
+- `reset_defaults()` drops all overrides and restores the captured defaults.
+
 The camera can also be **picked directly** (rather than cycled) on the settings page —
 title-screen Settings or the in-run pause menu (see [menus.md](menus.md)); the choice
 persists. The in-run **pause menu** is opened by the top-right Pause button or

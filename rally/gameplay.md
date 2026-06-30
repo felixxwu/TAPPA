@@ -115,10 +115,14 @@ roguelike**: do you risk your best car to win, or play it safe?
   — "complete them all" must be a reachable goal), each **generated from an RNG
   seed** (the track generator is already seeded — `track_seed`). Curated = a
   fixed list of seeds + restrictions, not an endless stream.
-- Each rally has a **restriction** (engine size, drivetrain layout, country, car
-  type, p/w ratio, …). The player must **own a matching car** to enter. An
-  **open-class** pool (no restriction) is always present so the starter always
-  has somewhere to race.
+- Each rally is **primarily gated on power-to-weight**: the earliest rallies set a
+  ceiling only (so the low-power starter qualifies and a strong car can't trivially
+  dominate them), and the harder rallies tighten to a **band** (a floor *and* a
+  ceiling). A rally may layer a secondary restriction (drivetrain layout, country,
+  engine size, car type, …) on top of its p/w gate. The player must **own a
+  matching car** to enter. The **difficulty tier is hidden** — the p/w requirement
+  is the visible gate. The starter always keeps at least one banded entry rally plus
+  the **open-class showdown**, so it always has somewhere to race.
 - A rally = **3 events**. **Combined time across all 3** sets the final rally
   time and finishing position. A rally is **completed** by finishing **top 3**.
 - After **each event** the player sees a **leaderboard**: their time vs. the AI

@@ -112,27 +112,132 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Open Settings from the title screen.
-	hq._go_to(hq.View.SETTINGS)
+	# Open Settings from the title screen — it lands on the category list.
+	hq._open_settings(false)
 	assert_true(hq._settings_layer.visible, "the settings overlay is shown")
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in settings")
+	assert_true(hq._settings_menu.at_root(), "Settings opens on the category list")
 	# The shared SettingsMenu: a camera-angle row per mode and a row per control scheme.
 	assert_eq(hq._settings_menu.camera_rows.size(), CameraManager.MODES.size(),
 		"one settings row per camera angle")
 	assert_eq(hq._settings_menu.scheme_rows.size(), MobileControls.SCHEMES.size(),
 		"one settings row per control scheme")
-	# Pick the bonnet camera; it persists to the save profile.
+	# Drill into the Camera page, then pick the bonnet camera; it persists to the save profile.
+	hq._settings_menu.show_camera()
+	assert_false(hq._settings_menu.at_root(), "tapping a category opens its own page")
+	assert_eq(hq._settings_action_button.text.to_upper(), "< BACK",
+		"the bottom button reads Back on a sub-page")
 	hq._settings_menu.select_camera(CameraManager.Mode.BONNET)
 	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)),
 		CameraManager.Mode.BONNET, "the chosen camera angle is saved")
-	# Pick the tilt scheme; it persists to the save profile.
+	# Drill into the Mobile controls page and pick the tilt scheme; it persists.
+	hq._settings_menu.show_schemes()
 	hq._settings_menu.select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
 		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
-	# Back returns to the title.
-	hq._go_to(hq.View.EXTERIOR)
-	assert_true(hq._title_layer.visible, "Back from settings returns to the title")
+	# The bottom button backs out a level at a time: sub-page → list → exterior.
+	hq._on_settings_action()
+	assert_true(hq._settings_menu.at_root(), "Back from a sub-page returns to the list")
+	assert_true(hq._settings_layer.visible, "still in Settings after backing to the list")
+	hq._on_settings_action()
+	assert_true(hq._title_layer.visible, "Back from the list returns to the title")
 	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
+
+
+# --- Keyboard / gamepad navigation -------------------------------------------
+
+# The title is a flat two-button menu driven by native focus: Start is focused on
+# entry so ui_up/ui_down + ui_accept work the menu with no pointer.
+func test_hq_title_focuses_start_for_keyboard_nav() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	await get_tree().process_frame  # let the deferred grab_focus run
+	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
+	assert_eq(hq._title_start_button.focus_mode, Control.FOCUS_ALL, "Start is focusable")
+	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
+		"the title focuses Start for keyboard / gamepad")
+
+
+# The 3D map table can't take native focus (left/right pans / the pins are spatial),
+# so it carries a keyboard cursor: a selected pin that cycles (wrapping), gets the
+# hover-style highlight (all pins stay one size), and opens its rally detail on select.
+func test_hq_map_table_has_a_keyboard_pin_cursor() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_table()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.TABLE, "the map table is open")
+	var pins: Array = hq._unlocked_pins()
+	assert_gt(pins.size(), 1, "there is more than one unlocked rally to cycle between")
+	assert_eq(hq._table_pin_index, 0, "the cursor seats on the first pin")
+	# Selection is shown by the hover-style highlight on the readout box, not by size:
+	# every pin keeps scale 1, and only the selected one gets the green underline.
+	assert_almost_eq(float((pins[0] as Node3D).scale.x), 1.0, 0.01, "the selected pin is NOT scaled up")
+	assert_almost_eq(float((pins[1] as Node3D).scale.x), 1.0, 0.01, "an unselected pin is the same size")
+	var sel_box: StyleBoxFlat = (pins[0] as Node3D).get_meta("label_panel").get_theme_stylebox("panel")
+	var idle_box: StyleBoxFlat = (pins[1] as Node3D).get_meta("label_panel").get_theme_stylebox("panel")
+	assert_eq(sel_box.border_width_bottom, 3, "the selected pin gets the hover-style underline")
+	assert_eq(idle_box.border_width_bottom, 0, "an unselected pin has no underline")
+
+	hq._cycle_table_pin(1)
+	assert_eq(hq._table_pin_index, 1, "cycling advances the cursor")
+	hq._select_table_pin(0)
+	hq._cycle_table_pin(-1)
+	assert_eq(hq._table_pin_index, pins.size() - 1, "cycling back from the first wraps to the last")
+
+	hq._select_table_pin(0)
+	hq._open_selected_pin()
+	assert_true(hq._detail_open, "selecting the focused pin opens its rally detail")
+	assert_eq(hq._selected_rally_id, String((pins[0] as Node3D).get_meta("rally_id")),
+		"it opens the focused pin's rally")
+
+
+# The tuning hub keeps left/right for cycling the car, so Tuning/Upgrades are a manual
+# up/down cursor; opening a page hands off to native focus on its sliders/buttons.
+func test_hq_lift_hub_has_an_up_down_cursor() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
+	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
+	assert_eq(hq._hub_focus, 0, "the hub cursor starts on Tuning")
+	hq._move_hub_focus(1)
+	assert_eq(hq._hub_focus, 1, "down moves the cursor to Upgrades")
+	hq._move_hub_focus(1)
+	assert_eq(hq._hub_focus, 0, "it wraps back to Tuning")
+
+	# Opening the Tune page seats native focus on one of its sliders.
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	await get_tree().process_frame
+	assert_true(hq.get_viewport().gui_get_focus_owner() is HSlider,
+		"opening the Tune page focuses a tuning slider for keyboard/gamepad")
+
+
+func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var dev = hq._settings_menu
+	# The Dev category opens its own page from the list.
+	hq._open_settings(false)
+	dev.show_dev()
+	assert_false(dev.at_root(), "the Dev category opens its own page")
+	# Unlock any car: a new owned instance is added.
+	var before: int = _save.profile["cars"].size()
+	dev._grant_car("aventador", "Lamborghini Aventador")
+	assert_eq(int(_save.profile["cars"].size()), before + 1, "unlocking grants a car instance")
+	# Add any upgrade: it lands in the inventory.
+	dev._add_upgrade("engine_stage1", "Stage 1 Engine Kit")
+	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 1,
+		"adding an upgrade puts it in inventory")
+	# Wipe: everything resets to a fresh new game.
+	dev._wipe_progress()
+	assert_eq(int(_save.profile["cars"].size()), 0, "wipe clears all owned cars")
+	assert_true((_save.profile["inventory"] as Dictionary).is_empty(), "wipe clears the inventory")
 
 
 func test_hq_title_parks_all_owned_cars() -> void:
@@ -177,7 +282,16 @@ func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 		"a locked pin is not pickable (no hit area)")
 	var normal := _pin_for(hq, "shakedown")
 	assert_false(bool(normal.get_meta("locked")), "a normal rally pin is unlocked")
-	assert_gt(normal.find_children("*", "Area3D", true, false).size(), 0, "an unlocked pin is pickable")
+	var areas := normal.find_children("*", "Area3D", true, false)
+	assert_eq(areas.size(), 2, "an unlocked pin is pickable on BOTH the flag and its menu box")
+	# One hit target sits up at the readout box (flag pole + label rise), so a click on
+	# the menu itself enters the rally just like a click on the flag.
+	var label_y: float = RallyFlag.POLE_HEIGHT + hq.PIN_LABEL_RISE
+	var menu_targets := 0
+	for a in areas:
+		if absf((a as Area3D).position.y - label_y) < 0.01:
+			menu_targets += 1
+	assert_eq(menu_targets, 1, "the floating menu box is itself a click target")
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:
@@ -190,6 +304,15 @@ func test_hq_pins_stars_reflect_best_placement() -> void:
 	assert_eq(hq._stars_for("shakedown"), 3, "1st place earns 3 stars")
 	assert_eq(hq._stars_for("coastal_sprint"), 1, "3rd place earns 1 star")
 	assert_eq(hq._stars_for("rwd_masters"), 0, "an unplayed rally earns 0 stars")
+	# The readout box on the pin is the design-system black panel (a Sprite3D) carrying
+	# a StarRow lit to the earned count — and no leftover 3D sphere "stars".
+	var pin := _pin_for(hq, "shakedown")
+	assert_gt(pin.find_children("*", "Sprite3D", true, false).size(), 0,
+		"the pin carries a billboarded readout box (Sprite3D)")
+	var rows := pin.find_children("*", "StarRow", true, false)
+	assert_eq(rows.size(), 1, "the readout box holds one StarRow")
+	assert_eq((rows[0] as StarRow).earned, 3, "the StarRow is lit to the earned star count")
+	assert_eq((rows[0] as StarRow).total, hq.MAX_STARS, "out of MAX_STARS stars")
 
 
 func test_hq_tapping_a_pin_opens_its_detail() -> void:
@@ -251,17 +374,20 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Own an AWD RS3 alongside the RWD starter, pick the RWD-only rally and enter: only
-	# the eligible (RWD) car is parked, the AWD car is filtered out.
+	# RWD Masters wants RWD cars inside a mid power-to-weight band. Own an AWD RS3 and
+	# an in-band RWD 911 alongside the low-power RWD starter, pick that rally and
+	# enter: only the 911 qualifies — the AWD RS3 (wrong drivetrain) and the
+	# under-powered MX-5 (below the band) are both filtered out.
 	_save.grant_car("rs3", false)
+	_save.grant_car("porsche911", false)
 	hq._on_rally_pin("rwd_masters")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
 	assert_true(hq._car_layer.visible, "the car-park overlay is shown")
 	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
-	assert_eq(hq._cars.size(), 1, "only the eligible (RWD) car is parked")
-	assert_eq(hq._cars[0].current_car_name(), "Mazda MX-5", "the AWD RS3 is filtered out of an RWD-only rally")
+	assert_eq(hq._cars.size(), 1, "only the eligible (RWD, in-band) car is parked")
+	assert_eq(hq._cars[0].current_car_name(), "Porsche 911", "the AWD RS3 and under-powered MX-5 are filtered out")
 	assert_string_contains(hq._rally_banner.text, "RWD CARS", "the banner spells out the rally restriction")
 
 
@@ -274,7 +400,7 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: all three are eligible
+	hq._on_rally_pin("the_showdown")  # open-class: all three are eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._cars.size(), 3, "starter + the two granted cars are all eligible + parked")
@@ -295,7 +421,7 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")
+	hq._on_rally_pin("the_showdown")  # open-class: starter + RS3 both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_gt(hq._cars.size(), 0, "the lineup is parked")
@@ -318,7 +444,7 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: both cars eligible
+	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._cars.size(), 2, "both eligible cars are parked")
@@ -339,7 +465,7 @@ func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: starter + the two granted cars
+	hq._on_rally_pin("the_showdown")  # open-class: starter + the two granted cars
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._markers.size(), 3, "three eligible cars are parked")
@@ -455,7 +581,7 @@ func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("shakedown")  # open-class: starter + RS3 both eligible
+	hq._on_rally_pin("the_showdown")  # open-class: starter + RS3 both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	# Focus the wrecked RS3 in the lineup.
@@ -507,6 +633,36 @@ func test_hq_lift_raises_the_selected_car() -> void:
 	hq._lift_back()
 	assert_eq(hq._view, hq.View.GARAGE, "Back returns to the garage")
 	assert_false(hq._lift_raised, "the car lowers back to the ground in the garage")
+
+
+func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
+	# The bay opens on the HUB (change-car selector + Tuning/Upgrades buttons beside the
+	# car); each button opens that menu as its own page, and Back returns to the hub.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_eq(hq._lift_page, hq.LiftPage.HUB, "entering the bay lands on the hub page")
+	assert_true(hq._lift_hub_controls.visible, "the hub shows the change-car + menu buttons")
+	assert_false(hq._lift_menu_bg.visible, "no sub-menu panel is shown on the hub")
+	# Open Tuning: its page (the sliders) takes over; the hub controls hide.
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	assert_true(hq._lift_menu_bg.visible, "the sub-menu panel shows on the Tuning page")
+	assert_true(hq._lift_tune_box.visible, "the Tuning page shows the sliders")
+	assert_false(hq._lift_upgrades_box.visible, "the Upgrades menu is hidden on the Tuning page")
+	assert_false(hq._lift_hub_controls.visible, "the hub controls hide while a menu is open")
+	# Back returns to the hub (still in the bay, car still raised).
+	hq._lift_back()
+	assert_eq(hq._lift_page, hq.LiftPage.HUB, "Back from a menu returns to the hub")
+	assert_eq(hq._view, hq.View.LIFT, "still in the tuning bay")
+	# Open Upgrades the same way, then Back-from-hub leaves the bay for the garage.
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	assert_true(hq._lift_upgrades_box.visible, "the Upgrades page shows the install list")
+	assert_false(hq._lift_tune_box.visible, "the Tuning menu is hidden on the Upgrades page")
+	hq._lift_back()
+	hq._lift_back()
+	assert_eq(hq._view, hq.View.GARAGE, "Back from the hub returns to the garage")
 
 
 func test_hq_lift_tune_sliders_save_tuning_per_car() -> void:
@@ -571,7 +727,7 @@ func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
 	_save.add_item("engine_stage1")
 	hq._enter_lift()
 	await get_tree().process_frame
-	hq._set_lift_tab(hq.LiftTab.UPGRADES)
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	# Installing now asks for confirmation first — nothing is fitted until accepted.
 	hq._install_upgrade(id, "engine_stage1")
 	assert_false(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),
@@ -682,6 +838,11 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	assert_string_contains(text, "COASTAL SPRINT", "it names the rally")
 	assert_string_contains(text, "QUICK", "the opponent field is listed")
 	assert_string_contains(text, "SLOW", "the whole field is shown")
+	# Continue is focused on entry so a keyboard / gamepad can advance with no pointer.
+	var cont := sc.find_children("*", "Button", true, false)[0] as Button
+	assert_eq(cont.focus_mode, Control.FOCUS_ALL, "the Continue button is focusable")
+	assert_eq(sc.get_viewport().gui_get_focus_owner(), cont,
+		"Continue is focused for keyboard / gamepad")
 
 
 func test_podium_shows_the_finish_summary() -> void:
@@ -694,6 +855,11 @@ func test_podium_shows_the_finish_summary() -> void:
 	var text := _label_texts(pod)
 	assert_string_contains(text, "P2", "podium shows the placement")
 	assert_string_contains(text, "WON", "a top-3 finish reads as a win")
+	# The Next button is focused (once revealed) so the reward sequence steps with a
+	# keyboard / gamepad.
+	assert_eq(pod._next_button.focus_mode, Control.FOCUS_ALL, "the Next button is focusable")
+	assert_eq(pod.get_viewport().gui_get_focus_owner(), pod._next_button,
+		"Next is focused for keyboard / gamepad")
 
 
 func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:

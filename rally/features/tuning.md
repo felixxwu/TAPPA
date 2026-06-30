@@ -43,10 +43,11 @@ or invert a value:
 - **grip:** `front *= (1 − t·grip_authority)`, `rear *= (1 + t·grip_authority)`.
 - **aero:** same shape on `downforce_front`/`_rear`, **only** with the aero kit; a
   no-op otherwise.
-- **brake bias:** with the brakes kit, `brake_bias = 0.5 + t·brake_authority`;
-  without it, forced to the neutral `0.5` (so a re-fielded car can't keep an
-  unlocked bias). Free-roam (`apply_car`, no `OwnedCar`) leaves `brake_bias` at the
-  config default `0.5`.
+- **brake bias:** with the brakes kit, `brake_bias = 0.4 + t·brake_authority`
+  (centred on the `0.4` 40-front/60-rear default); without it, forced to that
+  same `0.4` default (so a re-fielded car can't keep an unlocked bias).
+  Free-roam (`apply_car`, no `OwnedCar`) leaves `brake_bias` at the config
+  default `0.4`.
 
 Tuning is resolved **once at fielding**, like `apply_car` — not re-applied mid-run.
 
@@ -62,9 +63,9 @@ Tuning is resolved **once at fielding**, like `apply_car` — not re-applied mid
 
 | Field | Default | Purpose |
 |-------|---------|---------|
-| `brake_bias` | `0.5` | Front share of foot-brake torque (the split; `0.5` = even). |
+| `brake_bias` | `0.4` | Front share of foot-brake torque (the split; `0.4` = 40 front / 60 rear, `0.5` = even). |
 | `tuning_grip_authority` | `0.15` | Max grip fraction shifted front↔rear at slider \|1\|. |
-| `tuning_brake_authority` | `0.3` | Half-span of `brake_bias` the slider moves from `0.5`. |
+| `tuning_brake_authority` | `0.3` | Half-span of `brake_bias` the slider moves from the `0.4` default. |
 | `tuning_aero_authority` | `0.5` | Max downforce fraction shifted front↔rear at slider \|1\|. |
 
 A Repair Kit **fully restores** a car's health (`Save.use_repair_kit`) — there is no
@@ -78,21 +79,22 @@ player always has one owned car **selected** (`Save.selected_car` /
 `set_selected_car`); it is the car on the lift — resting lowered on the ground in the
 garage and **raised slowly by the lift** when the bay is entered (`hq_lift_raise_time`,
 between `hq_lift_car_lowered_height` and `hq_lift_car_height`). Clicking the lift flies
-the camera to the bay, framing the car to one side (`hq_lift_cam_*`) so the menu panel
-— anchored to the other side (`hq_lift_menu_width_frac`) — never covers it; the bay
-title and car name/description sit bottom-left, beside the car, keeping the menu panel
-compact on small screens. Two menus:
+the camera to the bay, framing the car to one side (`hq_lift_cam_*`). The bay opens on
+a **hub** (`LiftPage.HUB`): the car's name/description bottom-left beside the car, with
+a **minimal change-car selector** (cycles all owned cars, updating the selection) and
+**Tuning** / **Upgrades** buttons under it. Each button opens that menu as its own
+full-height page (a panel on the other side, `hq_lift_menu_width_frac`, so the car
+stays in view); a **< Back** returns to the hub, and the hub's Back returns to the
+garage. Splitting the menus onto their own pages keeps each one from needing to scroll.
 
-- **Tune** — one slider per axis (locked axes greyed with a "needs X kit" note) plus
-  **Reset to neutral**. Each change saves immediately via `Save.set_tuning`.
-- **Upgrades** — per-slot install from the inventory (`Save.install_upgrade`); fitting
-  **fully consumes** the part (confirmed via a dialog first, since it can't be undone)
-  and a swap scraps the incumbent. Plus the **Repair Kit** action — shows Health as a
-  percentage and, when a kit is owned and the car isn't full, a **restore-to-full**
-  button (`Save.use_repair_kit`). Re-spawns the raised car so its body reflects the change.
-
-A change-car control cycles all owned cars (updating the selection), shared by both
-menus.
+- **Tune** (`LiftPage.TUNE`) — one slider per axis (locked axes greyed with a "needs X
+  kit" note) plus **Reset to neutral**. Each change saves immediately via `Save.set_tuning`.
+- **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from the inventory
+  (`Save.install_upgrade`); fitting **fully consumes** the part (confirmed via a dialog
+  first, since it can't be undone) and a swap scraps the incumbent. Plus the **Repair
+  Kit** action — shows Health as a percentage and, when a kit is owned and the car isn't
+  full, a **restore-to-full** button (`Save.use_repair_kit`). Re-spawns the raised car
+  so its body reflects the change.
 
 ## Tests
 

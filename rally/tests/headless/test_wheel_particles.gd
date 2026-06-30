@@ -4,8 +4,6 @@ extends GutTest
 # wheels + a stub terrain surface, so the gating / emission / ring-buffer logic is
 # exercised without a real vehicle or rendering.
 
-const WheelParticles = preload("res://scripts/wheel_particles.gd")
-
 
 # Stub wheel: the bits WheelParticles reads off a wheel.
 class StubWheel:

@@ -94,21 +94,22 @@ sets the light params.
 
 The banners show the **live event** the player is driving, not placeholder art.
 `world.gd._arch_event_info()` reads `RallySession` into an `info` dict — `rally_name`,
-`stage_index`, `stage_count`, `target_ms` (the time-to-beat), `difficulty` — and
-sets it (plus `is_start`) on the gate before `build()`. `_add_banners()` renders
-that as `Label3D` text laid just proud of the orange faces (no baked textures, so
+`stage_index`, `stage_count`, `target_ms` (the time-to-beat) — and sets it (plus
+`is_start`) on the gate before `build()`. The rally's `difficulty` is a **hidden**
+tier and is deliberately **not** included or rendered. `_add_banners()` renders the
+info as `Label3D` text laid just proud of the orange faces (no baked textures, so
 it always matches the event):
 
 - **Top beam** (front approach + back down-track) — the `START` / `FINISH`
   wordmark followed by the rally name, in bright text on the orange cap. Long
   names auto-wrap to the beam width.
-- **Legs** (a cream board on each leg's front face) — `STAGE n/3` at the top, the
-  `TIME TO BEAT m:ss.ss` (start gate only, from the fastest rival's time for this
-  event), and the difficulty `TIER d` at the bottom. `_fmt_time()` matches the HUD
-  / standings clocks.
+- **Legs** (a cream board on each leg's front face) — `STAGE n/3` at the top and
+  the `TIME TO BEAT m:ss.ss` (start gate only, from the fastest rival's time for
+  this event) below it. No difficulty tier is shown (it's hidden). `_fmt_time()`
+  matches the HUD / standings clocks.
 
 Empty/zero `info` fields are skipped, so a dev boot or direct play with no active
-rally shows just the `START` / `FINISH` wordmark — no misleading stage/tier text.
+rally shows just the `START` / `FINISH` wordmark — no misleading stage text.
 
 ## Visual iteration (`tools/render_model.gd`)
 

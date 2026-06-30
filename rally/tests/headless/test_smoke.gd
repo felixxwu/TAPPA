@@ -39,7 +39,6 @@ func test_entering_a_rally_event_generates_its_track() -> void:
 	# Entering a rally event = writing its (seed, turn_count, width) into
 	# Config.data, then generating — the same Config mutation pattern apply_car
 	# uses. Assert that flow builds a track without error (rally-roster.md).
-	var RallyLibrary = load("res://scripts/rally_library.gd")
 	var event: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
 	Config.data.track_seed = int(event["seed"])
 	Config.data.track_turn_count = int(event["turn_count"])
@@ -56,7 +55,6 @@ func test_spectator_groups_spawn_and_are_not_obstacles() -> void:
 	# The world places roadside spectator crowds (todo/roadside-spectators.md).
 	# At least one group should exist with standing members, and spectators must
 	# NOT be damage-dealing obstacles (people aren't trees).
-	var DamageModel = load("res://scripts/damage_model.gd")
 	var groups: Array = []
 	for child in _scene.get_children():
 		if child is SpectatorGroup:
@@ -234,12 +232,12 @@ func test_car_has_engine_audio_player() -> void:
 
 
 func test_billboard_field_builds_instances_and_collision() -> void:
-	var floor := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var tex := load("res://textures/tree.png") as Texture2D
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(10, 10), Vector2(20, 12), Vector2(-5, 8)])
-	field.build(positions, floor, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0)
+	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0)
 	assert_not_null(field.multimesh, "field has a MultiMesh")
 	assert_eq(field.multimesh.instance_count, positions.size(),
 		"one instance per scattered position")
@@ -251,7 +249,7 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 		"one box shape per tree")
 	assert_eq(body.collision_layer, 1, "tree body on layer 1 like terrain")
 	var p := positions[0]
-	var expected_y := floor.height_at(p.x, p.y) + 4.0 / 2.0
+	var expected_y := floor_node.height_at(p.x, p.y) + 4.0 / 2.0
 	var origin := PhysicsServer3D.body_get_shape_transform(rid, 0).origin
 	assert_almost_eq(origin, Vector3(p.x, expected_y, p.y), Vector3(1e-3, 1e-3, 1e-3),
 		"box rests on the ground at the tree position")
@@ -278,14 +276,14 @@ func _load_tree_mesh() -> Mesh:
 
 
 func test_tree_mesh_field_bins_instances_with_collision_and_scale() -> void:
-	var floor := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var mesh := _load_tree_mesh()
 	assert_not_null(mesh, "tree .glb yields a mesh")
 	var field := TreeMeshField.new()
 	add_child_autofree(field)
 	# (2,2)->bin(0,0); (40,40) & (41,41)->bin(1,1) at bin_size 25 -> 2 bins.
 	var positions := PackedVector2Array([Vector2(2, 2), Vector2(40, 40), Vector2(41, 41)])
-	field.build(positions, floor, mesh, 6.0, 0.5, 4.0, 80.0, 15.0, 25.0)
+	field.build(positions, floor_node, mesh, 6.0, 0.5, 4.0, 80.0, 15.0, 25.0)
 	assert_eq(field.instance_positions.size(), positions.size(), "one placed position per tree")
 	assert_eq(field.bin_count, 2, "trees binned into per-cell MultiMeshes")
 
@@ -313,7 +311,7 @@ func test_tree_mesh_field_bins_instances_with_collision_and_scale() -> void:
 	assert_eq(PhysicsServer3D.body_get_shape_count(rid), positions.size(), "one box per tree")
 	assert_eq(body.collision_layer, 1, "tree body on layer 1 like terrain")
 	var p := positions[0]
-	var expected_y := floor.height_at(p.x, p.y) + 4.0 / 2.0
+	var expected_y := floor_node.height_at(p.x, p.y) + 4.0 / 2.0
 	var origin := PhysicsServer3D.body_get_shape_transform(rid, 0).origin
 	assert_almost_eq(origin, Vector3(p.x, expected_y, p.y), Vector3(1e-3, 1e-3, 1e-3),
 		"box rests on the ground at the tree position")
@@ -363,12 +361,12 @@ func test_tree_canopy_uses_near_camera_dissolve_shader() -> void:
 
 
 func test_billboard_field_without_collision_has_no_body() -> void:
-	var floor := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var tex := load("res://textures/bush.webp") as Texture2D
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(3, 4), Vector2(6, 9)])
-	field.build(positions, floor, Vector2(1, 1.5), tex, 0.5, 4.0, false, 80.0, 15.0, -0.5)
+	field.build(positions, floor_node, Vector2(1, 1.5), tex, 0.5, 4.0, false, 80.0, 15.0, -0.5)
 	assert_eq(field.multimesh.instance_count, positions.size(),
 		"bush field still renders one instance per position")
 	assert_null(field.get_node_or_null("Collision"),
@@ -378,19 +376,19 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 	# buffer lives in the RenderingServer, which is a no-op stub under --headless.
 	var p := positions[0]
 	var origin := field.instance_positions[0]
-	assert_almost_eq(origin, Vector3(p.x, floor.height_at(p.x, p.y) - 0.5, p.y),
+	assert_almost_eq(origin, Vector3(p.x, floor_node.height_at(p.x, p.y) - 0.5, p.y),
 		Vector3(1e-3, 1e-3, 1e-3), "bush sunk into ground by the y_offset")
 
 
 func test_tree_mesh_field_for_bushes_skips_collision_and_bakes_light() -> void:
 	# Bushes use the SAME TreeMeshField as trees, but with_collision = false and
 	# bake_terrain_light = true (ground cover that matches the ground tint).
-	var floor := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var mesh := BoxMesh.new()
 	var field := TreeMeshField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(7, 5), Vector2(-3, 11), Vector2(40, 41)])
-	field.build(positions, floor, mesh, 0.6, 0.0, 0.0, 80.0, 15.0, 25.0, false, true)
+	field.build(positions, floor_node, mesh, 0.6, 0.0, 0.0, 80.0, 15.0, 25.0, false, true)
 	assert_eq(field.instance_positions.size(), positions.size(), "one placed position per bush")
 	assert_gt(field.bin_count, 0, "bushes binned into per-cell MultiMeshes")
 	assert_null(field.get_node_or_null("Collision"),
@@ -402,7 +400,7 @@ func test_tree_mesh_field_for_bushes_skips_collision_and_bakes_light() -> void:
 				"bake_terrain_light enables per-instance MultiMesh colour")
 	# Instances rest on the terrain (no sink/offset for the mesh ground cover).
 	var p := positions[0]
-	assert_almost_eq(field.instance_positions[0], Vector3(p.x, floor.height_at(p.x, p.y), p.y),
+	assert_almost_eq(field.instance_positions[0], Vector3(p.x, floor_node.height_at(p.x, p.y), p.y),
 		Vector3(1e-3, 1e-3, 1e-3), "bush instance rests on the ground")
 
 
@@ -423,7 +421,7 @@ func test_tree_mesh_field_xz_radius_scales_with_height() -> void:
 
 
 func test_sign_field_builds_knockable_signs_at_road_height() -> void:
-	var floor := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var field := SignField.new()
 	add_child_autofree(field)
 	# A hand-made layout (no full track needed): one of each kind, both sides.
@@ -432,7 +430,7 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 		{"kind": "sector", "texture_key": "sector_2", "pos": Vector2(12, 8), "tangent": Vector2(1, 0), "side": -1},
 		{"kind": "turn", "texture_key": "arrow_square_left", "pos": Vector2(-5, 9), "tangent": Vector2(0, 1), "side": 1},
 	]
-	field.build(layout, floor, Config.data.sign_render_params())
+	field.build(layout, floor_node, Config.data.sign_render_params())
 	assert_eq(field.sign_count, layout.size(), "one sign built per layout entry")
 	assert_eq(field.get_child_count(), layout.size(), "one node per sign")
 	# Each sign is a light, knockable RigidBody3D (the wet-floor-board feel).
@@ -471,7 +469,7 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 		"signs are not in the damage OBSTACLE_GROUP (no HP penalty)")
 	# The sign starts at the centerline road-surface height for its position.
 	var p: Vector2 = layout[0]["pos"]
-	assert_almost_eq(sign0.position.y, floor.height_at(p.x, p.y), 1e-3,
+	assert_almost_eq(sign0.position.y, floor_node.height_at(p.x, p.y), 1e-3,
 		"sign sits on the road surface height")
 
 
@@ -479,12 +477,12 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 # its OWN body overlapping the waker Area, nor from streamed terrain / tree hitboxes
 # (StaticBody3D), or every sign would unfreeze and free-fall the instant it spawned.
 func test_sign_wakes_only_on_dynamic_non_self_contact() -> void:
-	var floor := _scene.get_node("Floor") as TerrainManager
+	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var field := SignField.new()
 	add_child_autofree(field)
 	field.build([{"kind": "turn", "texture_key": "arrow_2_right",
 		"pos": Vector2(20, 20), "tangent": Vector2(0, 1), "side": 1}],
-		floor, Config.data.sign_render_params())
+		floor_node, Config.data.sign_render_params())
 	var sign0 := field.get_child(0) as RigidBody3D
 	assert_true(sign0.freeze, "sign starts frozen")
 	# Its own body entering the waker must NOT wake it.

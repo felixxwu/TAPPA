@@ -12,6 +12,7 @@ const TEST_PATH := "user://test_pause_profile.json"
 var _scene: Node3D
 var _pause: PauseMenu
 var _mgr: CameraManager
+var _mobile: MobileControls
 var _save: Node
 
 
@@ -26,6 +27,7 @@ func before_all() -> void:
 	await get_tree().physics_frame  # let world._ready() build the scene
 	_pause = _scene.get_node("PauseMenu")
 	_mgr = _scene.get_node("CameraManager")
+	_mobile = _scene.get_node("MobileControls")
 
 
 func after_all() -> void:
@@ -60,6 +62,26 @@ func test_resume_unfreezes_and_closes() -> void:
 	assert_false(_pause.is_open(), "Resume hides the overlay")
 
 
+# The Pause button shows a proper drawn pause glyph (PauseIcon), not a text stand-in.
+func test_pause_button_uses_a_drawn_icon() -> void:
+	assert_eq(_pause._pause_button.text, "", "the Pause button carries no text stand-in")
+	assert_eq(_pause._pause_button.find_children("*", "PauseIcon", true, false).size(), 1,
+		"the Pause button shows a drawn PauseIcon glyph")
+
+
+# Opening the menu lands the keyboard/gamepad cursor on Resume, and the buttons are
+# focusable so ui_up/ui_down + ui_accept work the menu without a pointer. The whole
+# layer is PROCESS_MODE_ALWAYS, so focus works even though the tree is paused.
+func test_pause_menu_is_keyboard_navigable() -> void:
+	_pause.open()
+	await get_tree().process_frame  # let the deferred grab_focus run
+	assert_eq(_pause._resume_button.focus_mode, Control.FOCUS_ALL, "menu buttons are focusable")
+	assert_eq(_pause._quit_button.focus_mode, Control.FOCUS_ALL, "Quit is focusable too")
+	assert_eq(_pause.get_viewport().gui_get_focus_owner(), _pause._resume_button,
+		"opening the menu focuses Resume")
+	_pause.resume()
+
+
 func test_settings_exposes_the_shared_menu() -> void:
 	_pause.open()
 	# The same SettingsMenu component as the title screen: camera + control rows.
@@ -68,6 +90,19 @@ func test_settings_exposes_the_shared_menu() -> void:
 		"one row per camera angle")
 	assert_eq(_pause.settings_menu.scheme_rows.size(), MobileControls.SCHEMES.size(),
 		"one row per control scheme")
+
+
+func test_settings_opens_on_the_category_list_and_drills_in() -> void:
+	# Opening Settings shows the category list; each category opens its own sub-page.
+	_pause._show_settings(true)
+	assert_true(_pause.settings_menu.at_root(), "Settings opens on the category list")
+	_pause.settings_menu.show_camera()
+	assert_false(_pause.settings_menu.at_root(), "tapping Camera opens its own page")
+	# Back steps out of the sub-page to the list, then out of Settings to the menu.
+	_pause._on_settings_back()
+	assert_true(_pause.settings_menu.at_root(), "Back returns to the category list")
+	_pause._on_settings_back()
+	assert_false(_pause._settings_panel.visible, "Back from the list closes Settings")
 
 
 func test_quit_to_hq_abandons_the_rally_and_unfreezes() -> void:
@@ -99,3 +134,17 @@ func test_picking_a_camera_in_settings_applies_live() -> void:
 		CameraManager.Mode.BONNET, "the chosen camera angle is saved")
 	# Restore chase so the shared scene starts the next test from the default.
 	_pause.settings_menu.select_camera(CameraManager.Mode.CHASE)
+
+
+func test_picking_a_scheme_in_settings_applies_live() -> void:
+	# The pause menu is wired to the live MobileControls, so picking a touch scheme in
+	# Settings switches the on-screen controls immediately (not only on the next run).
+	assert_eq(_pause.mobile_controls, _mobile, "the pause menu knows the live MobileControls")
+	_pause.open()
+	_pause.settings_menu.select_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
+	assert_eq(_mobile._scheme, MobileControls.SCHEME_BUTTONS_GAS_BRAKE,
+		"the live touch controls switch to the chosen scheme")
+	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
+		MobileControls.SCHEME_BUTTONS_GAS_BRAKE, "the chosen scheme is saved")
+	# Restore the default so the shared scene starts the next test clean.
+	_pause.settings_menu.select_scheme(MobileControls.DEFAULT_SCHEME)

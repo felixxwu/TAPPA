@@ -4,8 +4,6 @@ extends GutTest
 # Curve2D with a stub terrain, so the surface gating / geometry is checked without
 # a real track or rendering. See features/track.md.
 
-const RoadMarkings = preload("res://scripts/road_markings.gd")
-
 
 # Stub terrain: reports (road_weight, tarmac_weight) like TerrainManager.surface_at.
 # `tarmac_from_z` lets a test paint only part of the road (tarmac past a z line) so

@@ -12,12 +12,21 @@ Each `RALLIES` entry:
 
 - `id` — stable key the save's `rallies` map keys on.
 - `name` — display name (map-pin label).
-- `difficulty` — tier; drives reward tier (clamped by progress) and sort order.
+- `difficulty` — a **hidden** tier; drives reward tier (clamped by progress) and
+  sort order. It is **never shown to the player** (no "Difficulty: N" / "TIER N" in
+  the detail panel, car-park banner, or finish arch) — the power-to-weight gate is
+  the only visible requirement.
 - `showdown` — exactly one rally has this `true`: the locked finale.
 - `restriction` — a `Dictionary`; **empty = open-class** (every car eligible).
   Otherwise every present field must match the car's CarLibrary metadata:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
   `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`).
+  **Progression is primarily gated on power-to-weight:** the earliest rallies are
+  gated only from above (a `pw_max` ceiling and no floor, so the low-power immortal
+  starter qualifies), and the harder rallies tighten to a **band** (`pw_min` +
+  `pw_max`) so an over-powered car can't walk them either. A rally may layer a
+  secondary theme on top of its band (e.g. RWD Masters also wants `drive_mode` RWD).
+  The single open-class rally is the showdown.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   forestiness?, surface_mix?, straightness?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; the
@@ -51,8 +60,12 @@ recomputed.
   `car_meta` is a CarLibrary entry, resolved by the owned car's stable
   `model_id`. The menus' field-a-car rig and map pins filter on this.
 - `derive_target_ms(track_result, event)` — per-event target time from the baked
-  centerline length + corner mix (a placeholder formula pending a calibration
-  pass; `REF_SPEED_MPS` / `CORNER_PENALTY_S` move to `GameConfig` then). An
+  centerline length + corner mix, **split by the event's tarmac fraction**
+  (`surface_mix`): the tarmac share of the length/corners is priced at the quicker
+  `TARMAC_SPEED_MPS` / `TARMAC_CORNER_PENALTY_S` (tarmac has more grip, so it's
+  driven a lot quicker), the gravel share at `REF_SPEED_MPS` / `CORNER_PENALTY_S`.
+  So a tarmac-heavy event gets a tighter target. (A placeholder formula pending a
+  calibration pass; these weights move to `GameConfig` then.) An
   `event.target_ms_override` wins when present.
 - `generate_opponent_field(rally, event_target_ms)` — the fixed field:
   10–15 rivals, each clean event time in `[target × RIVAL_PACE_MIN, target ×
@@ -60,9 +73,16 @@ recomputed.
   rivals always run slower than target pace — beatable by design), some **DNF**;
   a DNF in any event disqualifies the opponent (`combined_ms = -1`, doesn't rank).
   Each rival is also assigned a **car** (`car_id` / `car_name`) drawn from the
-  rally's eligible roster (`_eligible_cars` filters by the restriction, so an
-  RWD-only rally fields RWD rivals) using the same seeded RNG — so the line-up is
-  stable across re-attempts and shows up on the start-line reveal + leaderboards.
+  rally's eligible roster (`_eligible_cars` filters by the restriction, so a
+  p/w-banded rally fields cars inside that band and an RWD-only rally fields RWD
+  rivals) using the same seeded RNG — so the line-up is stable across re-attempts
+  and shows up on the start-line reveal + leaderboards.
+- `eligible_car_indices(rally)` — the `CarLibrary.CARS` **indices** the restriction
+  admits (vs `_eligible_cars`, which returns entries). The start-line queue props
+  (`start_line.gd`) draw the leader/trailer cars from this so the cars lining up
+  ahead of and behind the player are always eligible for the rally — never an
+  over-powered car in a low-tier event. Falls back to every index if a restriction
+  somehow admits none (open-class admits all).
 - `build_standings(field, player_combined_ms, player_dnf, player_name, player_car_name)`
   — the ranked table (field + player, DNFs sink). Each entry carries the
   `car_name` that entrant drove (empty when unknown) so the leaderboards can show it.
@@ -77,11 +97,13 @@ recomputed.
 
 ## Anti-soft-lock guarantees
 
-The roster underwrites two guards (asserted by tests): an **open-class floor** —
-at least one open-class rally at every difficulty tier the starter can reach (so
-the immortal starter always has somewhere to race) — and the **reward-eligibility
+The roster underwrites two guards (asserted by tests): a **starter floor** — the
+immortal starter (`mx5`, the lowest-power car) always has at least one non-showdown
+rally inside its power band to race, and the showdown stays open-class so it can
+finish the game even if it never earns another car — and the **reward-eligibility
 query** above, so the reward system never grants a car stranded with no enterable
-rally.
+rally. (Before the p/w gating this floor was an open-class rally at every reachable
+tier; with the power ladder it's the starter-enterable guarantee instead.)
 
 ## Entering a rally (integration)
 
@@ -103,9 +125,11 @@ formula weights and the opponent name pool are deferred (calibration / cosmetic)
 ## Tests
 
 `tests/headless/test_rally_library.gd` — roster validity (unique ids, 3 events
-each, single showdown, open-class floor per tier), eligibility (open + drive_mode
-+ country filters), track-gen determinism, target-time positivity + override,
-opponent-field shape/bounds/determinism + DNF semantics, placement/top-3,
-progress count, and showdown unlock + the enterable query. An integration smoke
-(write a rally seed into `Config.data` → `_generate_track`) lives in
-`test_smoke.gd`.
+each, single showdown, the **starter floor**, and the **p/w gating** shape: every
+non-showdown rally caps p/w, tier-1 has no floor, tier-3+ uses a band), eligibility
+(open-class + drive_mode + country + power-to-weight filters), track-gen
+determinism, target-time positivity + override, opponent-field
+shape/bounds/determinism + DNF semantics, placement/top-3, progress count, and
+showdown unlock + the enterable query. The start-line queue cars being eligible for
+the rally is asserted in `test_start_line.gd`. An integration smoke (write a rally
+seed into `Config.data` → `_generate_track`) lives in `test_smoke.gd`.

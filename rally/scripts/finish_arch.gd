@@ -37,9 +37,10 @@ const ARCH_SHADER := preload("res://shaders/ps1_models_lit.gdshader")
 # The banners carry live EVENT info — rendered as Label3D text laid just proud of
 # the front/back faces, no baked textures. `is_start` picks the START vs FINISH
 # wording; `info` is the event-data dict set by world.gd before build() (keys:
-# rally_name:String, stage_index:int, stage_count:int, target_ms:int, difficulty:int).
-# Empty/zero fields are skipped, so a dev boot with no active rally shows just the
-# START / FINISH wordmark.
+# rally_name:String, stage_index:int, stage_count:int, target_ms:int). The rally's
+# difficulty tier is intentionally absent — it's a hidden value, not shown to the
+# player. Empty/zero fields are skipped, so a dev boot with no active rally shows
+# just the START / FINISH wordmark.
 @export var is_start: bool = false
 var info: Dictionary = {}
 
@@ -229,9 +230,10 @@ func _add_inflatable_seams() -> void:
 # ---------------------------------------------------------------------------
 # Banners — live EVENT info rendered as Label3D text, laid just proud of the
 # front/back faces. The top beam carries the START / FINISH wordmark over the rally
-# name; each leg carries the stage number, the time-to-beat (start gate) and the
-# difficulty tier. All pulled from `info` (set by world.gd from RallySession);
-# empty/zero fields are skipped, so a dev boot with no active rally shows just the
+# name; each leg carries the stage number and the time-to-beat (start gate). All
+# pulled from `info` (set by world.gd from RallySession); the difficulty tier is a
+# hidden value and is not among them. Empty/zero fields are skipped, so a dev boot
+# with no active rally shows just the
 # wordmark. No baked textures — the text is generated at build time so it always
 # matches the event the player is actually driving.
 # ---------------------------------------------------------------------------
@@ -244,7 +246,6 @@ func _add_banners() -> void:
 	var stage_index := int(info.get("stage_index", 0))
 	var stage_count := int(info.get("stage_count", 0))
 	var target_ms := int(info.get("target_ms", -1))
-	var difficulty := int(info.get("difficulty", 0))
 	# Two lines so it fits the narrow leg panel without mid-word wrapping.
 	var stage_text := "STAGE\n%d / %d" % [stage_index + 1, stage_count] if stage_count > 0 else ""
 
@@ -255,8 +256,9 @@ func _add_banners() -> void:
 	_add_label(top_text, Vector3(0, beam_cy, hz), top_height * 0.5, _WHITE, total_w * 0.96, false)
 	_add_label(top_text, Vector3(0, beam_cy, -hz), top_height * 0.5, _WHITE, total_w * 0.96, true)
 
-	# Leg panels: a cream board on each leg's front face carrying the stage, the
-	# time-to-beat (start gate only) and the difficulty tier, top to bottom.
+	# Leg panels: a cream board on each leg's front face carrying the stage and the
+	# time-to-beat (start gate only), top to bottom. The rally's difficulty tier is a
+	# hidden value, so it is deliberately NOT shown here.
 	var panel_w := leg_width * 0.84
 	var panel_h := beam_y * 0.92
 	var panel_cy := beam_y * 0.5
@@ -272,9 +274,6 @@ func _add_banners() -> void:
 				panel_h * 0.05, _INK, 0.0, false)
 			_add_label(_fmt_time(target_ms), Vector3(cx, panel_cy - panel_h * 0.11, hz),
 				panel_h * 0.07, _INK, 0.0, false)
-		if difficulty > 0:
-			_add_label("TIER %d" % difficulty, Vector3(cx, panel_cy - panel_h * 0.32, hz),
-				panel_h * 0.065, _INK, 0.0, false)
 
 
 # A flat coloured banner board facing +Z (front) or -Z (back), lit by the arch shader.

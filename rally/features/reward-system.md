@@ -56,8 +56,10 @@ reachable despite permanent car destruction. Steps:
    eligible car exists at any tier, return `null` (the caller pays out a
    high-tier upgrade instead).
 
-The roster's open-class floor independently guarantees the player always has an
-enterable rally, so this filter optimises grant *quality*, not reachability.
+The roster's starter floor (the immortal `mx5` always has a non-showdown rally in
+its power band, plus the open-class showdown) independently guarantees the player
+always has an enterable rally, so this filter optimises grant *quality*, not
+reachability.
 
 ## Showdown
 

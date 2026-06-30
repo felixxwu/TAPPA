@@ -305,10 +305,10 @@ func test_wavetable_matches_direct_voice() -> void:
 	var synth := _clean_synth()
 	var max_err := 0.0
 	for li in range(21):
-		var load := float(li) / 20.0
+		var load_frac := float(li) / 20.0
 		for pi in range(1024):
 			var phase := float(pi) / 1024.0
-			max_err = maxf(max_err, absf(synth._read_voice(phase, load) - synth._voice(phase, load)))
+			max_err = maxf(max_err, absf(synth._read_voice(phase, load_frac) - synth._voice(phase, load_frac)))
 	assert_lt(max_err, 0.02, "baked wavetable approximates the direct voice within tolerance")
 
 

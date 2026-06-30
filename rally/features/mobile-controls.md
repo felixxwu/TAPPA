@@ -26,7 +26,11 @@ The chosen scheme is stored in the **save profile** under
 `MobileControls.SETTING_KEY` (`"mobile_control_scheme"`) via `Save.set_setting`, and
 read in `_ready` (`_scheme_from_save`, clamped to a valid id). It's a per-player
 preference, **not** a `GameConfig` field. `set_scheme(id)` switches at runtime
-(releasing anything held first) and rebuilds the overlay.
+(releasing anything held first) and rebuilds the overlay. Picking a scheme in the
+**in-run pause menu** calls this **live**: the `SettingsMenu.scheme_changed` signal is
+wired (in `main.tscn`) to the scene's `MobileControls.set_scheme`, so the on-screen
+controls rebuild the instant you choose a layout rather than only on the next run. (The
+title-screen Settings page has no live controls, so there it just saves.)
 
 ## Behavior
 
