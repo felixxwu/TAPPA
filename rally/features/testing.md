@@ -99,8 +99,10 @@ without pixels.
 ## Commands
 
 ```bash
-./run_tests.sh               # full headless suite (with class-cache warmup)
-./run_tests.sh --fast engine # only files matching "engine" (quick iteration)
+./run_tests.sh                       # full headless suite (with class-cache warmup)
+./run_tests.sh --fast engine         # only files matching "engine" (quick iteration)
+./run_tests.sh --fast menu_flow rally_flag   # multiple names -> one selection pass each
+./run_tests.sh --fast "menu_flow rally_flag" # same, as one whitespace-separated string
 ```
 
 Performance benchmarking is **separate** from the test suite — it's an on-demand
