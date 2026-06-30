@@ -17,6 +17,7 @@ On-screen readout plus two interactive mode buttons.
 | `VersionLabel` | `"v0.<n> (<sha>)"` | `application/config/version` (read once) |
 | `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
 | `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top-right) |
+| `StageDeltaLabel` | `P1 ±n.ns` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | placeholder result panel | driven by `StageManager` |
 | `HPBar` (+ `HPLabel`) | `Health NN%` over a bar | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
@@ -36,11 +37,21 @@ immortal starter (which never takes damage).
 
 The `CountdownLabel`, `ElapsedLabel` and `StageCompletePanel` are hidden at
 `_ready()` and driven by the `StageManager` (see [stage.md](stage.md)) through
-four methods: `show_countdown(seconds_left)` (big centered `3·2·1·GO`;
+these methods: `show_countdown(seconds_left)` (big centered `3·2·1·GO`;
 `ceili` maps the remaining time to the digit, `0` → `GO`), `hide_countdown()`,
 `show_elapsed(seconds)` (top-right `m:ss.cc`, gated by `hud_elapsed_enabled`),
 and `show_stage_complete(seconds)` (the placeholder result panel). `_format_time`
 is the shared `m:ss.cc` formatter.
+
+The **`StageDeltaLabel`** is the in-run *"vs P1" pace popup*: a fifth method,
+`show_stage_delta(delta_ms)`, the `StageManager` pulses **every few turns** with the
+player's time delta to the leading rival at that point. It's built in code (not the
+scene) by `_build_stage_delta_label()`, anchored top-centre so it clears the
+top-right timer/version and top-left switchers. The sign is explicit and colour-coded
+— **negative = ahead** (green, shown as `P1 -1.3s`), **positive = behind** (red, shown
+as `P1 +2.1s`) — matching the design-system palette (`UITheme.GREEN`/`RED`). Gated by
+`hud_stage_delta_enabled`; it auto-hides after `stage_delta_show_seconds` (a countdown
+in `_process`). How the delta itself is computed lives in [stage.md](stage.md).
 
 ## Behavior
 
@@ -77,5 +88,6 @@ test runs fall back to the committed default `config/version="0.0-dev"`.
 
 ## Related config
 
-`hud_enabled`, `hud_elapsed_enabled`, `hud_hp_enabled`, `hud_low_hp_warn_frac`.
+`hud_enabled`, `hud_elapsed_enabled`, `hud_hp_enabled`, `hud_low_hp_warn_frac`,
+`hud_stage_delta_enabled`, `stage_delta_interval_turns`, `stage_delta_show_seconds`.
 See [configuration.md](configuration.md) and [damage.md](damage.md).

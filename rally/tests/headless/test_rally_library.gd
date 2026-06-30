@@ -209,6 +209,32 @@ func test_tarmac_fraction_tightens_target_time() -> void:
 	assert_lt(all_tarmac, int(all_gravel * 0.9), "all-tarmac is at least 10% quicker")
 
 
+# --- Turn splits (the in-stage "vs P1" pace popup) ---------------------------
+
+func test_turn_splits_are_monotonic_and_total_matches_target() -> void:
+	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
+	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
+	var splits := RallyLibrary.derive_turn_splits(track, ev)
+	assert_eq(splits.size(), track["pieces"].size(), "one split per placed turn")
+	var prev_off := -1.0
+	var prev_ms := -1
+	for s in splits:
+		assert_gt(float(s["end_offset_m"]), prev_off, "arc offset rises each turn")
+		assert_gt(int(s["cum_ms"]), prev_ms, "cumulative time rises each turn")
+		prev_off = float(s["end_offset_m"])
+		prev_ms = int(s["cum_ms"])
+	# The final turn's cumulative time is the whole-track target (same pricing).
+	var last_ms := int(splits[splits.size() - 1]["cum_ms"])
+	assert_almost_eq(float(last_ms), float(RallyLibrary.derive_target_ms(track, ev)), 2.0,
+		"last split equals the derived target time")
+
+
+func test_turn_splits_empty_without_pieces() -> void:
+	assert_eq(RallyLibrary.derive_turn_splits({}), [], "no track -> no splits")
+	assert_eq(RallyLibrary.derive_turn_splits({"pieces": []}), [], "no pieces -> no splits")
+
+
 # --- Opponent field ----------------------------------------------------------
 
 func test_opponent_field_shape_and_bounds() -> void:

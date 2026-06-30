@@ -37,6 +37,18 @@ var _hud: Node          # the HUD CanvasLayer — countdown / timer / complete p
 var _progress: Node     # a TrackProgress — progress_percent() drives the end edge
 var _armed := false     # true once setup() has wired the refs and locked the car
 
+# In-stage "vs P1" pace popup (HUD), wired by setup_splits() for a session run that
+# has a P1 rival; empty for a plain dev boot (no popup). _turn_progress[i] is the
+# progress fraction (0..1) at the end of turn i; _turn_time_frac[i] is the rival's
+# cumulative time fraction at that turn (so the rival's time there ≈ p1 total ×
+# that). The popup fires every _split_interval turns; _split_cursor counts how many
+# turn boundaries the player has crossed so far. See RallyLibrary.derive_turn_splits.
+var _turn_progress: Array = []
+var _turn_time_frac: Array = []
+var _p1_total_ms := 0
+var _split_cursor := 0
+var _split_interval := 5
+
 signal stage_started                            # countdown finished, timer running
 signal stage_completed(elapsed_seconds: float)  # finish line reached
 
@@ -59,6 +71,12 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_progress = progress
 	_elapsed = 0.0
 	_go_flash_left = 0.0
+	# Clear any pace-popup splits from a previous arm (a car swap / new event); a
+	# session run re-wires them via setup_splits() after this.
+	_turn_progress = []
+	_turn_time_frac = []
+	_p1_total_ms = 0
+	_split_cursor = 0
 	if _car != null:
 		_car.controls_locked = true
 	if staged:
@@ -86,6 +104,19 @@ func begin_countdown() -> void:
 	_mark_progress_start()
 	if _hud != null and _hud.has_method("show_countdown"):
 		_hud.show_countdown(_countdown_left)
+
+
+# Wire the in-stage "vs P1" pace popup: the per-turn progress thresholds + the
+# rival's cumulative time fraction at each turn (both from RallyLibrary.derive_turn_splits,
+# converted to fractions by world.gd) and the P1 rival's total event time (ms). Called
+# by world.gd only for a session run that has a classified P1 rival. With these wired,
+# RUNNING fires hud.show_stage_delta() every stage_delta_interval_turns turns.
+func setup_splits(turn_progress: Array, turn_time_frac: Array, p1_total_ms: int) -> void:
+	_turn_progress = turn_progress
+	_turn_time_frac = turn_time_frac
+	_p1_total_ms = p1_total_ms
+	_split_cursor = 0
+	_split_interval = maxi(1, _cfg().stage_delta_interval_turns)
 
 
 # Re-anchor track progress to 0% at the car's current (on-the-line) position, so
@@ -132,6 +163,7 @@ func _tick_running(delta: float) -> void:
 	_elapsed += delta
 	if _hud != null and _hud.has_method("show_elapsed"):
 		_hud.show_elapsed(_elapsed)
+	_maybe_show_split()
 	# Hold the "GO" flash a moment, then clear it.
 	if _go_flash_left > 0.0:
 		_go_flash_left -= delta
@@ -148,6 +180,29 @@ func _tick_running(delta: float) -> void:
 		if _hud != null and _hud.has_method("show_stage_complete"):
 			_hud.show_stage_complete(_elapsed)
 		stage_completed.emit(_elapsed)
+
+
+# Drive the "vs P1" pace popup. Advance past every turn boundary the player has now
+# crossed (progress is monotonic, so each is crossed once); when the count reaches a
+# whole interval (every Nth turn) fire the popup, showing the latest crossed turn.
+# The rival's estimated time AT that turn is its total event time scaled by the par
+# time fraction reached there — the same turn-based estimate the targets come from.
+func _maybe_show_split() -> void:
+	if _turn_progress.is_empty() or _p1_total_ms <= 0:
+		return
+	var frac := 0.0
+	if _progress != null and _progress.has_method("progress_percent"):
+		frac = _progress.progress_percent()
+	var fire_idx := -1
+	while _split_cursor < _turn_progress.size() and frac >= float(_turn_progress[_split_cursor]):
+		_split_cursor += 1  # _split_cursor now equals the number of turns passed
+		if _split_cursor % _split_interval == 0:
+			fire_idx = _split_cursor - 1
+	if fire_idx < 0 or _hud == null or not _hud.has_method("show_stage_delta"):
+		return
+	var player_ms := int(round(_elapsed * 1000.0))
+	var p1_est_ms := int(round(_p1_total_ms * float(_turn_time_frac[fire_idx])))
+	_hud.show_stage_delta(player_ms - p1_est_ms)
 
 
 # --- Readouts (for tests / a future rally layer) -----------------------------

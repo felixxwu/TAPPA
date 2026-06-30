@@ -251,6 +251,16 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 100.0) var stage_complete_percent := 100.0
 ## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
 @export var hud_elapsed_enabled := true
+## Show the in-run "vs P1" pace popup that appears every few turns (mirrors
+## hud_enabled). It compares the player's elapsed time to the leading rival's
+## estimated time at that point (− green = ahead, + red = behind). Only inside an
+## active rally session, which is where a P1 rival time exists.
+@export var hud_stage_delta_enabled := true
+## How many turns between in-run pace popups (the "vs P1" delta): 5 = every fifth
+## turn the player drives through. Read by StageManager. Minimum 1.
+@export_range(1, 50) var stage_delta_interval_turns := 5
+## How long (seconds) the in-run pace popup stays on screen before it fades out.
+@export var stage_delta_show_seconds := 3.0
 
 @export_group("Start Line")
 ## The pre-event start-line sequence (todo/menus.md location 2): on track load the

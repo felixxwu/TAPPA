@@ -356,6 +356,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Staged runs hold the car in the start-line sequence until the player launches;
 	# otherwise the countdown arms immediately, as before. (`staged` computed above.)
 	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
+	# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
+	# elapsed time compares to the leading rival's estimated time at that point.
+	_setup_stage_splits(result, staged, cfg)
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
 	# regeneration, e.g. entering a rally event).
@@ -528,6 +531,39 @@ var _wreck_screen: WreckScreen
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
+
+
+# Wire the StageManager's in-stage "vs P1" pace popup for a session run. Builds the
+# per-turn split table from the generated track (RallyLibrary.derive_turn_splits) and
+# the leading rival's event time, converting each turn's arc offset to a progress
+# fraction (matching TrackProgress.progress_percent) and its par time to a fraction of
+# the stage total. No-op without an active session, a classified P1 rival, or pieces.
+func _setup_stage_splits(track_result: Dictionary, staged: bool, cfg: GameConfig) -> void:
+	if _stage_manager == null or not RallySession.is_active():
+		return
+	var p1_ms := RallySession.current_event_target_ms()
+	if p1_ms <= 0:
+		return
+	var splits := RallyLibrary.derive_turn_splits(track_result, RallySession.current_event())
+	if splits.is_empty():
+		return
+	var total_ms := int(splits[splits.size() - 1]["cum_ms"])
+	if total_ms <= 0:
+		return
+	# Progress is measured from the start line to the finish. A staged run prepends a
+	# straight lead-in of start_lead_in_ahead_m ahead of the generated track, so the
+	# drivable span (and thus the progress denominator) is that plus the track length.
+	var ahead := cfg.start_lead_in_ahead_m if staged else 0.0
+	var raw_len: float = (track_result.get("centerline") as Curve2D).get_baked_length()
+	var span := ahead + raw_len
+	if span <= 0.0:
+		return
+	var turn_progress: Array[float] = []
+	var turn_time_frac: Array[float] = []
+	for s in splits:
+		turn_progress.append(clampf((ahead + float(s["end_offset_m"])) / span, 0.0, 1.0))
+		turn_time_frac.append(clampf(float(s["cum_ms"]) / float(total_ms), 0.0, 1.0))
+	_stage_manager.setup_splits(turn_progress, turn_time_frac, p1_ms)
 
 
 # --- RallySession run-scene integration (features/rally-session.md) ------------

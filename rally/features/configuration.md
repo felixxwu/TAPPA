@@ -85,6 +85,9 @@ the `.tres` requires a scene reload to take effect.
 | `stage_countdown_seconds` | 3.0 | Countdown before controls unlock at the start of a stage |
 | `stage_complete_percent` | 99.0 | Track-progress % (0..100) that ends the stage |
 | `hud_elapsed_enabled` | true | Show the top-right run timer |
+| `hud_stage_delta_enabled` | true | Show the in-run "vs P1" pace popup (needs a session P1) |
+| `stage_delta_interval_turns` | 5 | Turns between pace popups (every Nth turn) |
+| `stage_delta_show_seconds` | 3.0 | How long the pace popup stays before fading |
 
 See [stage.md](stage.md).
 

@@ -23,6 +23,11 @@ var track_progress: Node
 @onready var _elapsed_label: Label = $ElapsedLabel
 @onready var _stage_complete_panel: Control = $StageCompletePanel
 @onready var _stage_complete_label: Label = $StageCompletePanel/StageCompleteLabel
+# In-run "vs P1" pace popup: a small top-centre readout the StageManager pulses every
+# few turns, showing the player's time delta to the leading rival (− green = ahead,
+# + red = behind). Built in code (not the scene) and auto-hides after a moment.
+var _stage_delta_label: Label
+var _stage_delta_left := 0.0
 # In-run damage readout (features/damage.md): a colour-graded HP bar that
 # flashes a warning when low, plus a red screen flash on each HP-losing impact.
 @onready var _hp_label: Label = $HPLabel
@@ -74,6 +79,26 @@ func _ready() -> void:
 	# banner green (success) — matching the house palette. See features/ui-design-system.md.
 	_elapsed_label.add_theme_color_override("font_color", UITheme.RED)
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
+	_build_stage_delta_label()
+
+
+# Build the top-centre pace-popup label in code (it has no scene node). Anchored to
+# the top centre so it clears the top-right timer/version + top-left switchers, and
+# hidden until the StageManager pulses it via show_stage_delta().
+func _build_stage_delta_label() -> void:
+	_stage_delta_label = Label.new()
+	_stage_delta_label.name = "StageDeltaLabel"
+	_stage_delta_label.anchor_left = 0.5
+	_stage_delta_label.anchor_right = 0.5
+	_stage_delta_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_stage_delta_label.offset_left = -80.0
+	_stage_delta_label.offset_right = 80.0
+	_stage_delta_label.offset_top = 30.0
+	_stage_delta_label.offset_bottom = 54.0
+	_stage_delta_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_stage_delta_label.add_theme_font_size_override("font_size", 20)
+	_stage_delta_label.visible = false
+	add_child(_stage_delta_label)
 
 
 func _on_mode_pressed() -> void:
@@ -121,6 +146,11 @@ func _process(_delta: float) -> void:
 			_last_progress = pct
 			_progress_label.text = "%d%%" % pct
 	_update_damage(_delta)
+	# Fade the pace popup out after its on-screen time elapses.
+	if _stage_delta_left > 0.0:
+		_stage_delta_left -= _delta
+		if _stage_delta_left <= 0.0:
+			_stage_delta_label.visible = false
 
 
 # Drive the HP gauge + impact flash off the car's damage model. Hidden when
@@ -197,6 +227,21 @@ func show_elapsed(seconds: float) -> void:
 func show_stage_complete(seconds: float) -> void:
 	_stage_complete_panel.visible = true
 	_stage_complete_label.text = "STAGE COMPLETE\n%s" % _format_time(seconds)
+
+
+# Top-centre pace popup, pulsed by the StageManager every few turns: the player's
+# time delta (ms) to the leading (P1) rival at this point. Negative = ahead (green,
+# shown with "−"), positive = behind (red, shown with "+"). Gated by
+# hud_stage_delta_enabled; auto-hides after stage_delta_show_seconds.
+func show_stage_delta(delta_ms: int) -> void:
+	if not Config.data.hud_stage_delta_enabled:
+		return
+	var ahead := delta_ms < 0
+	var secs := absf(delta_ms / 1000.0)
+	_stage_delta_label.text = "P1 %s%.1fs" % ["-" if ahead else "+", secs]
+	_stage_delta_label.add_theme_color_override("font_color", UITheme.GREEN if ahead else UITheme.RED)
+	_stage_delta_label.visible = true
+	_stage_delta_left = Config.data.stage_delta_show_seconds
 
 
 # m:ss.cc, e.g. 1:07.43.

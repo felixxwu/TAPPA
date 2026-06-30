@@ -154,6 +154,40 @@ func test_stage_complete_panel_shows_final_time() -> void:
 	assert_string_contains(label.text, "1:07.43", "panel shows the final time")
 
 
+# --- "vs P1" pace popup (todo/stage-start-and-end.md) ------------------------
+
+func test_stage_delta_popup_ahead_is_green_and_signed() -> void:
+	var hud := _scene.get_node("HUD")
+	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
+	assert_not_null(label, "HUD builds the pace-popup label")
+	assert_false(label.visible, "popup hidden until pulsed")
+	Config.data.hud_stage_delta_enabled = true
+	hud.show_stage_delta(-1340)  # 1.34 s ahead
+	assert_true(label.visible, "popup shown when pulsed")
+	assert_string_contains(label.text, "-1.3", "ahead reads with a minus sign")
+	assert_eq(label.get_theme_color("font_color"), UITheme.GREEN, "ahead is green")
+
+
+func test_stage_delta_popup_behind_is_red_and_signed() -> void:
+	var hud := _scene.get_node("HUD")
+	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
+	Config.data.hud_stage_delta_enabled = true
+	hud.show_stage_delta(2100)  # 2.1 s behind
+	assert_true(label.visible, "popup shown when pulsed")
+	assert_string_contains(label.text, "+2.1", "behind reads with a plus sign")
+	assert_eq(label.get_theme_color("font_color"), UITheme.RED, "behind is red")
+
+
+func test_stage_delta_popup_respects_config() -> void:
+	var hud := _scene.get_node("HUD")
+	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
+	label.visible = false
+	Config.data.hud_stage_delta_enabled = false
+	hud.show_stage_delta(-500)
+	assert_false(label.visible, "popup suppressed when hud_stage_delta_enabled is off")
+	Config.data.hud_stage_delta_enabled = true
+
+
 # --- HP gauge (features/damage.md) --------------------------------------
 # The HUD reads the car's DamageModel each frame; these set it directly and await
 # a frame, then assert the bar (the same pattern as the speed/gear labels above).
