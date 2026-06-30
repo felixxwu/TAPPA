@@ -5,7 +5,8 @@
 [resource]
 script = ExtResource("1")
 hq_table_cam_eye = Vector3(-3, 2.15, 0.2)
-brake_torque = 1000.0
+brake_torque = 500.0
+brake_bias = 0.4
 drag_coefficient = 2.645
 steer_limit = 0.5
 steer_assist_torque = 4000.0
