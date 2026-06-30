@@ -7,7 +7,6 @@ extends RefCounted
 #
 # This file is also the home of the pure functions the rest of the game needs:
 #   * is_eligible(rally, car_meta)            — can this car enter?
-#   * derive_target_ms(track_result)          — per-event target time from a track
 #   * generate_opponent_field(rally, event_results, events) — the deterministic opponent field
 #   * completed_count / showdown_unlocked      — progress + end-game gate
 #   * incomplete_rallies_enterable_by(...)     — the anti-soft-lock query
@@ -30,10 +29,11 @@ const DNF_CHANCE := 0.18         # per-opponent, per-event
 # Rival pace band, as multiples of each rival's OWN physics floor (optimum_ms for
 # THEIR car on the event track): each clean rival's event time is uniform in
 # [floor × RIVAL_PACE_MIN, floor × (RIVAL_PACE_MIN + RIVAL_PACE_SPREAD)].
-# The floor sits above the (driver_factor-scaled) par because the best eligible car
-# sets the par floor and RIVAL_PACE_MIN > driver_factor, keeping the field beatable;
-# raise the floor to make rivals easier, lower it to make them tougher.
-const RIVAL_PACE_MIN := 1.35
+# Raise RIVAL_PACE_MIN to make rivals easier (their times inflate further above
+# their floor); lower it to make them tougher. At 1.0 the quickest possible rival
+# drives a flawless lap (exactly their car's physics floor). RIVAL_PACE_SPREAD
+# controls how spread out the field is.
+const RIVAL_PACE_MIN := 1.3
 const RIVAL_PACE_SPREAD := 1.0
 
 
@@ -188,23 +188,8 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 	return true
 
 
-# --- Target time (derived from the seeded track, not stored) -----------------
-
-# Per-event target time (ms): the physics-optimum floor of the BEST eligible car
-# for the rally, scaled by GameConfig.driver_factor to a beatable human par. An
-# event may override the whole thing with `target_ms_override`. Deterministic for
-# a given track + roster.
-static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}, rally: Dictionary = {}) -> int:
-	if event.has("target_ms_override"):
-		return int(event["target_ms_override"])
-	var par_car := _best_eligible_car(rally)
-	var floor_ms := LapTimeModel.optimum_ms(track_result, par_car, event)
-	return int(round(floor_ms * Config.data.driver_factor))
-
-
-# The eligible car with the highest power-to-weight for a rally (the "par car" the
-# event target is computed against). Falls back to the best car in the whole roster
-# when `rally` is empty (legacy/test callers).
+# The eligible car with the highest power-to-weight for a rally. Falls back to the
+# best car in the whole roster when `rally` is empty (legacy/test callers).
 static func _best_eligible_car(rally: Dictionary) -> Dictionary:
 	var pool: Array = _eligible_cars(rally) if not rally.is_empty() else CarLibrary.CARS
 	var best: Dictionary = {}

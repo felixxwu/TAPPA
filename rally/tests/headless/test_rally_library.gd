@@ -206,31 +206,6 @@ func test_track_generation_is_deterministic() -> void:
 	assert_eq(a["pieces"].size(), b["pieces"].size(), "same seed -> same piece count")
 
 
-func test_target_time_is_positive_and_seed_stable() -> void:
-	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
-	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
-		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
-	var t1 := RallyLibrary.derive_target_ms(track, ev)
-	assert_gt(t1, 0, "derived target time is positive")
-	# Override wins when present.
-	assert_eq(RallyLibrary.derive_target_ms(track, {"target_ms_override": 42000}), 42000,
-		"target_ms_override is honoured")
-
-
-func test_tarmac_fraction_tightens_target_time() -> void:
-	# Same track, varying only the tarmac fraction: more tarmac = quicker target,
-	# because tarmac is priced at the faster TARMAC_SPEED_MPS / corner penalty.
-	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
-	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
-		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
-	var all_gravel := RallyLibrary.derive_target_ms(track, {"surface_mix": 0.0})
-	var half := RallyLibrary.derive_target_ms(track, {"surface_mix": 0.5})
-	var all_tarmac := RallyLibrary.derive_target_ms(track, {"surface_mix": 1.0})
-	assert_lt(all_tarmac, all_gravel, "all-tarmac target is quicker than all-gravel")
-	assert_between(half, all_tarmac, all_gravel, "half-tarmac target sits between the two")
-	# Tarmac should be a lot quicker, not a rounding-error nudge.
-	assert_lt(all_tarmac, int(all_gravel * 0.9), "all-tarmac is at least 10% quicker")
-
 
 # --- Turn splits (the in-stage "vs P1" pace popup) ---------------------------
 
@@ -263,7 +238,7 @@ func test_turn_splits_honour_target_override() -> void:
 	var car := CarLibrary.by_id("mx5")
 	var natural := RallyLibrary.derive_turn_splits(track, car)
 	var overridden := RallyLibrary.derive_turn_splits(track, car, {"target_ms_override": 42000})
-	# The final cumulative time lands exactly on the override (matches derive_target_ms).
+	# The final cumulative time lands exactly on the override.
 	assert_eq(int(overridden[overridden.size() - 1]["cum_ms"]), 42000,
 		"override rescales the total to the hand-set value")
 	# The per-turn fractions (what the popup uses) are preserved by the rescale.
@@ -392,16 +367,6 @@ func test_opponent_faster_car_posts_faster_time():
 	assert_lt(fast_floor, slow_floor, "fast car has a lower floor on the same track")
 
 
-func test_opponent_field_times_above_par():
-	var track := _track_with_pieces()
-	var rally := {"id": "r1", "events": [{"seed": 1}], "restriction": {}}
-	var field := RallyLibrary.generate_opponent_field(rally, [track], rally["events"])
-	var par := RallyLibrary.derive_target_ms(track, {}, rally)
-	for opp in field:
-		if not opp["dnf"]:
-			assert_gt(int(opp["event_times_ms"][0]), par, "every rival is slower than par")
-
-
 func test_opponent_field_deterministic_for_seed():
 	var track := _track_with_pieces()
 	var rally := {"id": "r1", "events": [{"seed": 1}], "restriction": {}}
@@ -458,44 +423,6 @@ func test_build_standings_handles_a_wrecked_player() -> void:
 	assert_true(standings[0]["is_player"] == false, "the classified opponent ranks above a wrecked player")
 	assert_true(standings[1]["is_player"], "the wrecked player sinks to the bottom")
 	assert_eq(standings[1]["placed"], -1, "a wrecked player does not place")
-
-
-# --- Physics-based target time (Task 3) --------------------------------------
-
-# Cheap synthetic track: a Curve2D with a few points, no world generation.
-func _simple_track() -> Dictionary:
-	var c := Curve2D.new()
-	c.add_point(Vector2(0, 0))
-	c.add_point(Vector2(0, 200))
-	c.add_point(Vector2(0, 400))
-	c.add_point(Vector2(0, 600))
-	return {"centerline": c, "pieces": []}
-
-
-func test_target_uses_physics_floor_and_driver_factor() -> void:
-	var track := _simple_track()
-	var rally := {"id": "r1", "events": [], "restriction": {}}  # open class
-	var ms := RallyLibrary.derive_target_ms(track, {}, rally)
-	var best := RallyLibrary._best_eligible_car(rally)
-	var floor := LapTimeModel.optimum_ms(track, best, {})
-	assert_almost_eq(ms, int(round(floor * Config.data.driver_factor)), 2,
-		"target = floor * driver_factor")
-
-
-func test_target_override_still_short_circuits() -> void:
-	var track := _simple_track()
-	assert_eq(RallyLibrary.derive_target_ms(track, {"target_ms_override": 90000}, {}), 90000)
-
-
-func test_faster_roster_yields_faster_par() -> void:
-	# A rally whose eligible roster includes a quicker car gets a tighter par on the
-	# same track than one restricted to a slower car.
-	var track := _simple_track()
-	var open_rally := {"id": "a", "events": [], "restriction": {}}
-	var slow_rally := {"id": "b", "events": [], "restriction": {"pw_max": 0.05}}  # admits only slow cars
-	assert_lte(RallyLibrary.derive_target_ms(track, {}, open_rally),
-			RallyLibrary.derive_target_ms(track, {}, slow_rally),
-			"a faster eligible roster yields an equal-or-faster par")
 
 
 # --- Progress / showdown -----------------------------------------------------

@@ -55,11 +55,11 @@ func _total_items() -> int:
 	return n
 
 
-# Start a rally with a fielded car and fixed per-event targets; return the owned
-# car dict. Caller may overwrite RallySession._opponent_field for determinism.
+# Start a rally skipping track generation; return the owned car dict.
+# Caller may overwrite RallySession._opponent_field for determinism.
 func _start(rally_id: String, model := "mx5") -> Dictionary:
 	var owned: Dictionary = _save.grant_car(model, false)
-	RallySession.start_rally(RallyLibrary.by_id(rally_id), owned, [60000, 60000, 60000])
+	RallySession.start_rally(RallyLibrary.by_id(rally_id), owned, true)
 	return owned
 
 
@@ -275,7 +275,7 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 
 	# Re-enter from the map: state resets, the opponent field is unchanged (fixed
 	# per rally seed), and persisted HP is untouched.
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), _save.get_car(id), [60000, 60000, 60000])
+	RallySession.start_rally(RallyLibrary.by_id("shakedown"), _save.get_car(id), true)
 	assert_eq(RallySession.event_index(), 0, "event index resets on re-entry")
 	assert_true(RallySession.event_times_ms().is_empty(), "event times reset on re-entry")
 	assert_eq(RallySession.opponent_field(), field1, "the opponent field is identical across re-attempts")
@@ -300,7 +300,7 @@ func test_farming_rewin_grants_car_without_new_completion() -> void:
 	var cars_before: int = _save.profile["cars"].size()
 	var rewards: Array = [0]
 	RallySession.car_rewarded.connect(func(_m: String) -> void: rewards[0] += 1, CONNECT_ONE_SHOT)
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, [60000, 60000, 60000])
+	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
 	RallySession._opponent_field = _field([90000])  # top-3 re-win
 	_report_events([10000, 10000, 10000])
 	assert_eq(_save.completed_rally_count(), completed_before, "a re-win records no new completion")

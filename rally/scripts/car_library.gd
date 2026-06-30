@@ -133,7 +133,7 @@ const CARS: Array[Dictionary] = [
 		# stops the 4th-gear wheelspin. This box drives well, so the whole roster now
 		# shares it (see the gear_ratios header note). See features/drivetrain-and-tires.md.
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
-		"grip_front": 1.08, "grip_rear": 1.1, "shift_time": 0.30,  # manual H-pattern roadster
+		"grip_front": 1, "grip_rear": 1, "shift_time": 0.30,  # manual H-pattern roadster
 		"engine_type": 0, "drive_mode": RWD, "drag": 0.27, "downforce_rear": 0, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
@@ -151,7 +151,7 @@ const CARS: Array[Dictionary] = [
 		# Shares the MX-5's gearing (see the header note): the real DSG ratios didn't
 		# make sense in-sim, so this car runs the MX-5's box for now.
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
-		"grip_front": 1.08, "grip_rear": 1, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
+		"grip_front": 1, "grip_rear": 0.8, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
 		"engine_type": 1, "drive_mode": AWD, "drag": 0.10, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
 		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
@@ -164,7 +164,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0, "engine_inertia": 0.18,  # light flat-6
 		# Shares the MX-5's gearing (see the header note).
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
-		"grip_front": 1.14, "grip_rear": 1.26, "shift_time": 0.06,  # 8-speed PDK
+		"grip_front": 1.1, "grip_rear": 1, "shift_time": 0.06,  # 8-speed PDK
 		"engine_type": 2, "drive_mode": RWD, "drag": 0.11, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
@@ -177,7 +177,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0, "engine_inertia": 0.10,  # ultra-light V10, 0→9000 in ~0.6 s
 		# Shares the MX-5's gearing (see the header note).
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
-		"grip_front": 1.20, "grip_rear": 1.32, "shift_time": 0.16,  # automated single-clutch ASG
+		"grip_front": 1.20, "grip_rear": 1, "shift_time": 0.16,  # automated single-clutch ASG
 		"engine_type": 5, "drive_mode": RWD, "drag": 0.05, "downforce_rear": 0, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
@@ -190,7 +190,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0, "engine_inertia": 0.32,  # heavy 5.0 V8 muscle, slow-revving
 		# Shares the MX-5's gearing (see the header note).
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
-		"grip_front": 1.08, "grip_rear": 0.90, "shift_time": 0.22,  # 6-speed manual muscle
+		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.22,  # 6-speed manual muscle
 		"engine_type": 4, "drive_mode": RWD, "drag": 0.78, "downforce_rear": 0, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
 		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
@@ -203,7 +203,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0, "engine_inertia": 0.26,  # big 6.5 V12
 		# Shares the MX-5's gearing (see the header note).
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7.5,
-		"grip_front": 1.18, "grip_rear": 0.95, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
+		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
 		"engine_type": 6, "drive_mode": AWD, "drag": 0.05, "downforce_rear": 0, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,

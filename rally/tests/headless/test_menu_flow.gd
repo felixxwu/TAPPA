@@ -894,7 +894,7 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	# After a non-final event the rally pauses on the standings; the scene shows the
 	# cumulative leaderboard so far. (auto_load_scenes is off, so no scene loads.)
 	var owned: Dictionary = _save.grant_car("rs3", false)
-	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, [60000, 60000, 60000])
+	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
 	RallySession._opponent_field = [
 		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 		{"name": "Slow", "event_times_ms": [80000, 80000, 80000], "dnf": false, "combined_ms": 240000},
@@ -1000,7 +1000,7 @@ func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 func test_run_scene_fields_the_bound_session_car() -> void:
 	var owned: Dictionary = _save.grant_car("rs3", false)
 	var id := int(owned["instance_id"])
-	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, [60000, 60000, 60000])
+	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
 	# Boot the run scene with a session active: world.gd fields the OwnedCar.
 	SceneHelpers.minimal_world()
 	var scene: Node3D = load("res://main.tscn").instantiate()

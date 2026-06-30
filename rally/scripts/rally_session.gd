@@ -45,7 +45,6 @@ var _car_instance_id := -1             # the fielded OwnedCar instance
 var _car_model_id := ""                # the fielded car's CarLibrary model id (for the player's standings car)
 var _event_index := 0                  # 0..2
 var _event_times_ms: Array[int] = []   # accumulated, one per completed event
-var _event_targets_ms: Array = []      # per-event target time (drives the field)
 var _opponent_field: Array = []        # fixed per rally seed (never saved)
 var _dnf := false
 var _upgrades_won: Array[String] = []  # the single upgrade id drawn this rally (reveal)
@@ -64,12 +63,13 @@ var auto_load_scenes := true
 
 # --- Public API --------------------------------------------------------------
 
-# Begin a rally with the given RallyDef and fielded OwnedCar. `event_targets_ms`
-# is optional precomputed per-event target times (ms); when omitted, real play
-# derives them by generating each event's track. Resets all per-rally state, so
-# re-entering a rally from the map runs fresh (no retry — the opponent field and
-# persisted HP are unchanged). Kicks the first event.
-func start_rally(rally: Dictionary, owned_car: Dictionary, event_targets_ms: Array = []) -> void:
+# Begin a rally with the given RallyDef and fielded OwnedCar. `skip_track_gen`
+# skips expensive per-event track generation (tests set it true and overwrite
+# _opponent_field themselves before making assertions). When false (real play),
+# tracks are generated and the real opponent field is built. Resets all per-rally
+# state so re-entering a rally from the map runs fresh (no retry — the opponent
+# field and persisted HP are unchanged). Kicks the first event.
+func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := false) -> void:
 	_rally = rally
 	_car_instance_id = int(owned_car.get("instance_id", -1))
 	_car_model_id = String(owned_car.get("model_id", ""))
@@ -77,18 +77,14 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, event_targets_ms: Arr
 	_event_times_ms = []
 	_dnf = false
 	_upgrades_won = []
-	if event_targets_ms.is_empty():
-		var data := _compute_event_data(rally)
-		_event_targets_ms = data["targets"]
-		_opponent_field = RallyLibrary.generate_opponent_field(rally, data["results"], rally.get("events", []))
-	else:
-		_event_targets_ms = event_targets_ms
-		# TEST-ONLY path: precomputed targets mean no real track results are available;
-		# generate_opponent_field gets empty lists so rivals have empty event_times_ms
-		# and combined_ms=0 (placeholder). Tests MUST overwrite _opponent_field before
-		# making assertions. Real play always takes the if-branch above (_compute_event_data)
-		# which supplies genuine per-event track results to generate_opponent_field.
+	if skip_track_gen:
+		# TEST-ONLY path: no real track results are available; generate_opponent_field
+		# gets empty lists so rivals have empty event_times_ms and combined_ms=0
+		# (placeholder). Tests MUST overwrite _opponent_field before making assertions.
 		_opponent_field = RallyLibrary.generate_opponent_field(rally, [], [])
+	else:
+		var results := _generate_event_tracks(rally)
+		_opponent_field = RallyLibrary.generate_opponent_field(rally, results, rally.get("events", []))
 	_enter_event()
 
 
@@ -373,7 +369,6 @@ func _reset_to_idle() -> void:
 	_car_model_id = ""
 	_event_index = 0
 	_event_times_ms = []
-	_event_targets_ms = []
 	_opponent_field = []
 	_dnf = false
 	_upgrades_won = []
@@ -385,19 +380,16 @@ func _set_phase(p: int) -> void:
 	phase_changed.emit(p)
 
 
-# Per-event { targets: Array[int], results: Array[Dictionary] } for the opponent
-# field, derived by generating each event's seeded track (deterministic for the seed).
-# Only used in real play; tests pass precomputed targets to start_rally so no track
-# generation happens.
-func _compute_event_data(rally: Dictionary) -> Dictionary:
+# Per-event track results for the opponent field, derived by generating each event's
+# seeded track (deterministic for the seed). Only used in real play; tests pass
+# skip_track_gen=true to start_rally so no track generation happens.
+func _generate_event_tracks(rally: Dictionary) -> Array:
 	var cfg: GameConfig = Config.data
-	# Match the run scene's start-line lead-in reservation (world.gd) so the target
-	# track shape — and thus the derived times — equal what the player drives. The
-	# reservation is relative to the start frame, so the canonical pose here is fine.
+	# Match the run scene's start-line lead-in reservation (world.gd) so the
+	# track shape — and thus the rival times — equal what the player drives.
 	var reserve_behind := 0.0
 	if cfg.start_line_enabled:
 		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
-	var targets: Array = []
 	var results: Array = []
 	for event in rally.get("events", []):
 		var width := RallyLibrary.event_width(event)
@@ -406,8 +398,7 @@ func _compute_event_data(rally: Dictionary) -> Dictionary:
 			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind,
 			RallyLibrary.event_straightness(event))
 		results.append(result)
-		targets.append(RallyLibrary.derive_target_ms(result, event, rally))
-	return {"targets": targets, "results": results}
+	return results
 
 
 # Write the event's track parameters into the live config and reload the run

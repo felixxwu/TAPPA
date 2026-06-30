@@ -261,11 +261,6 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(1, 50) var stage_delta_interval_turns := 5
 ## How long (seconds) the in-run pace popup stays on screen before it fades out.
 @export var stage_delta_show_seconds := 3.0
-## Driver-imperfection multiplier applied to the physics-optimum lap time to get a
-## beatable human PAR (the event target). 1.0 = flawless; ~1.08 = a strong human.
-## Read by RallyLibrary.derive_target_ms (LapTimeModel gives the floor).
-@export_range(1.0, 1.5) var driver_factor := 1.08
-
 @export_group("Start Line")
 ## The pre-event start-line sequence (todo/menus.md location 2): on track load the
 ## "time to beat" is shown while an orbit camera circles the car queued between a
