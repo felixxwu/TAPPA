@@ -752,7 +752,7 @@ func test_hq_lift_raises_the_selected_car() -> void:
 	assert_true(hq._lift_layer.visible, "the tuning menu is shown")
 	assert_true(is_instance_valid(hq._lift_car), "the selected car is raised on the lift")
 	assert_true(hq._lift_raised, "entering the bay raises the car on the lift")
-	assert_eq(hq._lift_car.current_car_name(), "Mazda MX-5", "the lift shows the selected car")
+	assert_eq(hq._lift_car.current_car_name(), "MX-5", "the lift shows the selected car")
 	# Going back to the garage lowers it again.
 	hq._lift_back()
 	assert_eq(hq._view, hq.View.GARAGE, "Back returns to the garage")
@@ -1111,7 +1111,7 @@ func test_first_run_start_opens_starter_pick_then_grants_immortal() -> void:
 	await _await_lineup(hq)
 	assert_eq(hq._view, hq.View.CARPARK, "first run lands in the car park")
 	assert_true(hq._carpark_starter_mode, "in starter-pick mode")
-	assert_eq(hq._eligible.size(), 2, "two starter cars parked (mx5 + focus)")
+	assert_eq(hq._eligible.size(), 3, "three starter cars parked (mx5 + focus + twingo)")
 	# Pick the focus.
 	for i in hq._eligible.size():
 		if String(hq._eligible[i].get("model_id", "")) == "focus":

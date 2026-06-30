@@ -78,8 +78,8 @@ space:
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no
 track generation). A first-time player (no `starter_picked`) is **not** auto-granted
 a car: pressing **Start** on the title routes them into the car park's
-**starter picker** (`_enter_starter_pick`, `_carpark_starter_mode`) showing the two
-authored-body cars (MX-5, Focus) as preview cars from `CarLibrary`; choosing one
+**starter picker** (`_enter_starter_pick`, `_carpark_starter_mode`) showing the three
+authored-body cars (MX-5, Focus, Twingo) as preview cars from `CarLibrary`; choosing one
 (`_confirm_starter`) grants it **immortal** (the anti-soft-lock floor), records
 `starter_picked` / `starter_model_id` / the selection, and enters the garage. Back
 returns to the title. Returning players skip the picker and Start goes straight to

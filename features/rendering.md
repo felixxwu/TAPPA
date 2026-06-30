@@ -92,12 +92,12 @@ vertex, interpolated for free by the rasteriser. `light_amount`
 1 = full. Uniforms `albedo_texture`, `albedo_color`, `texture_tile`,
 `light_amount`, `light_dir`, `sun_color`, `sky_color`, `ground_color`.
 `world.gd` calls `cfg.apply_car_light()` on the chassis/cabin/wheel/spoke
-materials, and `car.gd._apply_model_material()` does the same for the authored bodies (MX-5, Focus).
+materials, and `car.gd._apply_model_material()` does the same for the authored bodies (MX-5, Focus, Twingo).
 The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
 `sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
 alongside `terrain_light_amount` for the baked terrain shading.
 
-Used by: car chassis/cabin/wheels/spokes, and the authored body models (MX-5, Focus)
+Used by: car chassis/cabin/wheels/spokes, and the authored body models (MX-5, Focus, Twingo)
 (see below).
 
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
@@ -140,20 +140,22 @@ across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
 `cycle_car()` re-points the overlay at the swapped car, like the HUD. All tunables
 live in `GameConfig` under the **Speed Lines** group.
 
-## Authored body models (MX-5, Focus)
+## Authored body models (MX-5, Focus, Twingo)
 
 Cars with `use_model` on their CarLibrary spec render an authored glb body
 instead of the procedural chassis+cabin boxes; every other car still uses the
-boxes. Two cars carry a model today: the **Mazda MX-5**
-(`blender/mx5/mx5.glb`, node `Car/Mx5Body`) and the **Ford Focus RS**
-(`blender/focus/focus.glb`, node `Car/FocusBody`). Both bodies are instanced in
-`car.tscn`, hidden by default.
+boxes. Three cars carry a model today: the **MX-5**
+(`blender/mx5/mx5.glb`, node `Car/Mx5Body`), the **Focus ST**
+(`blender/focus/focus.glb`, node `Car/FocusBody`) and the **Renault Twingo**
+(`blender/twingo/twingo.glb`, node `Car/TwingoBody`). All three bodies are
+instanced in `car.tscn`, hidden by default.
 
 The mapping is spec-driven (not hard-coded per car): each model car names its
 `model_node` (the body node to show) and `model_texture` (the baked albedo). The
-glb axes match across both exports (X = length, Y = up, Z = width); the
-`FocusBody` transform additionally flips 180° about Y vs the MX-5 because the
-Focus glb's length axis points the opposite way. `car.gd`'s `apply_car()` hides
+glb axes match across the exports (X = length, Y = up, Z = width); the
+`FocusBody` and `TwingoBody` transforms additionally flip 180° about Y vs the
+MX-5 because those glbs' length axes point the opposite way (each body's vertical
+offset is tuned per model so it seats on the wheels). `car.gd`'s `apply_car()` hides
 **all** model bodies (`_model_node_names()`) and the boxes, shows the spec's
 `model_node`, and assigns the `ps1_models_lit.gdshader` material to its mesh —
 `albedo_texture` = the spec's `model_texture`, `albedo_color` white — so the
@@ -167,7 +169,8 @@ The four wheels are procedural cylinders; the flat cap faces (the disc seen from
 the side) take a per-car texture via `ps1_wheel_tire.gdshader`. `apply_car()`
 assigns each tire a `ShaderMaterial` from `car.gd:_wheel_material()`, keyed by the
 spec's optional `wheel_texture`: the MX-5 uses `blender/mx5/wheel.png`, the Focus
-`blender/focus/wheel.png`. A car **without** a `wheel_texture` (the cars that
+`blender/focus/wheel.png`, the Twingo `blender/twingo/wheel.png`. A car **without**
+a `wheel_texture` (the cars that
 still render boxes) gets a **blank dark disc** — a shared 1×1 near-black
 `ImageTexture` — so the cap reads as a plain hubcap until that car gets a real
 model. Each per-car material also carries the tread `albedo_color`

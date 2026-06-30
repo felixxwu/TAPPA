@@ -137,7 +137,7 @@ func test_standings_carry_the_player_and_rival_cars() -> void:
 		else:
 			rival = e
 	assert_eq(String(rival["car_name"]), "Porsche 911", "the rival's car is in the standings")
-	assert_eq(String(player["car_name"]), "Mazda MX-5", "the player's fielded car is in the standings")
+	assert_eq(String(player["car_name"]), "MX-5", "the player's fielded car is in the standings")
 
 
 func test_idle_when_no_rally() -> void:

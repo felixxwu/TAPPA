@@ -46,7 +46,7 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 # The cars offered on first run (the two authored-body cars). The player picks one in
 # the car park (see _enter_starter_pick); the chosen one becomes the immortal starter.
 # Generalises over this list, so a third starter is a one-line add.
-const STARTER_MODEL_IDS := ["mx5", "focus"]
+const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
 
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
 # name/description + a Change Car button + Tuning/Upgrades buttons); TUNE is

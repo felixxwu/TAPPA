@@ -411,10 +411,10 @@ func test_build_standings_ranks_field_and_sinks_dnfs() -> void:
 func test_build_standings_carries_the_car_each_entrant_drove() -> void:
 	var field := [{"name": "A", "car_name": "Porsche 911", "dnf": false, "combined_ms": 100}]
 	# Player runs 200ms (behind A), driving the MX-5.
-	var standings := RallyLibrary.build_standings(field, 200, false, "You", "Mazda MX-5")
+	var standings := RallyLibrary.build_standings(field, 200, false, "You", "MX-5")
 	assert_eq(String(standings[0]["car_name"]), "Porsche 911", "the opponent's car is carried into the standings")
 	assert_true(standings[1]["is_player"], "the player ranks 2nd")
-	assert_eq(String(standings[1]["car_name"]), "Mazda MX-5", "the player's car is carried into the standings")
+	assert_eq(String(standings[1]["car_name"]), "MX-5", "the player's car is carried into the standings")
 
 
 func test_build_standings_handles_a_wrecked_player() -> void:

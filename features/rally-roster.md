@@ -26,8 +26,9 @@ Each `RALLIES` entry:
   starter qualifies), and the harder rallies tighten to a **band** (`pw_min` +
   `pw_max`) so an over-powered car can't walk them either. A rally may layer a
   secondary theme on top of its band (e.g. RWD Masters also wants `drive_mode` RWD,
-  and **Front Runners** — the Focus's home — wants `drive_mode` FWD under a
-  `pw_max` ceiling, an intro-tier FWD rally parallel to the Shakedown for the MX-5).
+  and **Front Runners** — the home of the FWD starters (Focus, Twingo) — wants
+  `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally parallel to the
+  Shakedown for the MX-5).
   The single open-class rally is the showdown.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   forestiness?, surface_mix?, straightness?, target_ms_override? }`. The

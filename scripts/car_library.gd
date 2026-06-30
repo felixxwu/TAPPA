@@ -234,6 +234,25 @@ const CARS: Array[Dictionary] = [
 		"model_texture": "res://blender/focus/focus_texture.png",
 		"wheel_texture": "res://blender/focus/wheel.png",
 	},
+	{
+		"name": "Twingo",  # Mk1 (C06) 1.2 16V: ~890 kg, 75 PS, light FWD city car
+		"id": "twingo", "country": "FR", "car_type": "hatch", "max_hp": 700.0, "reward_tier": 1,
+		"mass": 890.0, "peak_torque": 105.0, "redline": 6800.0, "engine_inertia": 0.13,  # small light 1.2 i4, ~6.8k limiter
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286], "final_drive": 6,
+		"grip_front": 1.0, "grip_rear": 1.0, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
+		"engine_type": 0, "drive_mode": FWD, "drag": 0.10, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
+		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
+		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
+		"wheel_radius": 0.28, "wheel_width": 0.165,
+		"suspension_travel": 0.4, "suspension_stiffness": 9.0,  # soft, tall city car
+		# Renders blender/twingo/twingo.glb (Car/TwingoBody) with its baked texture; see
+		# car.gd apply_car(). Wheels use the Twingo's own wheel.png.
+		"use_model": true,
+		"model_node": "TwingoBody",
+		"model_texture": "res://blender/twingo/twingo_texture.png",
+		"wheel_texture": "res://blender/twingo/wheel.png",
+	},
 ]
 
 

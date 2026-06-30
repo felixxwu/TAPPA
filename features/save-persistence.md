@@ -22,7 +22,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   forward on load, newer files are refused (not truncated).
 - `starter_picked` / `starter_model_id` — first-run starter state. The starter is
   **chosen by the player**, not auto-granted: on a first run (no `starter_picked`)
-  the HQ title's Start opens the car park's starter picker (MX-5 vs Focus, the two
+  the HQ title's Start opens the car park's starter picker (MX-5, Focus or Twingo, the three
   authored-body cars); picking one calls `grant_car(model_id, immortal=true)`, sets
   these fields + the selection, and enters the garage. See `features/menus.md`.
 - `next_instance_id` — monotonic counter minting unique owned-car ids.
