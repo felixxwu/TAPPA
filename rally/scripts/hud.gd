@@ -4,18 +4,9 @@ extends CanvasLayer
 
 @export var car: VehicleBody3D
 
-# Temporary on-screen track-progress readout. Set by world.gd once the
-# TrackProgress manager exists; null in scenes that don't generate a track.
-var track_progress: Node
-
 @onready var _speed_label: Label = $SpeedLabel
 @onready var _gear_label: Label = $GearLabel
 @onready var _rpm_label: Label = $RPMLabel
-@onready var _progress_label: Label = $ProgressLabel
-@onready var _mode_button: Button = $ModeButton
-@onready var _drive_button: Button = $DriveButton
-@onready var _car_button: Button = $CarButton
-@onready var _version_label: Label = $VersionLabel
 # Stage flow widgets, driven by StageManager (todo/stage-start-and-end.md):
 # the big centered 3·2·1·GO, the small top-right run timer, and the placeholder
 # stage-complete panel. Hidden until the stage flow calls the methods below.
@@ -34,8 +25,6 @@ var _stage_delta_left := 0.0
 @onready var _hp_bar: ProgressBar = $HPBar
 @onready var _impact_flash: ColorRect = $ImpactFlash
 
-const _DRIVE_NAMES := ["RWD", "AWD", "FWD"]
-
 # Low-HP warning pulse speed (rad/s) and the impact-flash response curve: each
 # HP-losing hit bumps the red overlay's alpha by (loss fraction) * GAIN, capped at
 # MAX, and the overlay fades back out at DECAY alpha/sec.
@@ -49,10 +38,6 @@ const _IMPACT_FLASH_DECAY := 2.0
 var _last_speed := -1
 var _last_gear := -999
 var _last_rpm := -1
-var _last_auto := false
-var _last_drive := -1
-var _last_car := ""
-var _last_progress := -1
 # Working HP last frame, to detect HP-losing impacts (fire the flash); -1 = no
 # reading yet / gauge hidden. _hp_pulse_t advances the low-HP warning oscillation.
 var _last_hp := -1.0
@@ -63,27 +48,19 @@ var _last_hp_pct := -1
 
 func _ready() -> void:
 	visible = Config.data.hud_enabled
-	_mode_button.pressed.connect(_on_mode_pressed)
-	_drive_button.pressed.connect(_on_drive_pressed)
-	_car_button.pressed.connect(_on_car_pressed)
-	# Build version is stamped into application/config/version by build_web.sh
-	# (0.<git commit count> + short SHA); falls back to the project default on
-	# editor/dev runs. Set once here — it never changes at runtime.
-	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
-	_version_label.text = "v" + ver if ver != "" else "dev"
 	# Stage widgets start hidden; StageManager reveals them at the right moments.
 	_countdown_label.visible = false
 	_elapsed_label.visible = false
 	_stage_complete_panel.visible = false
-	# Design-system accents: the run timer reads red (urgency), the stage-complete
-	# banner green (success) — matching the house palette. See features/ui-design-system.md.
-	_elapsed_label.add_theme_color_override("font_color", UITheme.RED)
+	# Design-system accents: the run timer reads white (neutral primary text), the
+	# stage-complete banner green (success) — matching the house palette. See features/ui-design-system.md.
+	_elapsed_label.add_theme_color_override("font_color", UITheme.INK)
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_build_stage_delta_label()
 
 
 # Build the top-centre pace-popup label in code (it has no scene node). Anchored to
-# the top centre so it clears the top-right timer/version + top-left switchers, and
+# the top centre, sitting just below the run timer, and
 # hidden until the StageManager pulses it via show_stage_delta().
 func _build_stage_delta_label() -> void:
 	_stage_delta_label = Label.new()
@@ -93,27 +70,12 @@ func _build_stage_delta_label() -> void:
 	_stage_delta_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_stage_delta_label.offset_left = -80.0
 	_stage_delta_label.offset_right = 80.0
-	_stage_delta_label.offset_top = 30.0
-	_stage_delta_label.offset_bottom = 54.0
+	_stage_delta_label.offset_top = 40.0
+	_stage_delta_label.offset_bottom = 64.0
 	_stage_delta_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_stage_delta_label.add_theme_font_size_override("font_size", 20)
 	_stage_delta_label.visible = false
 	add_child(_stage_delta_label)
-
-
-func _on_mode_pressed() -> void:
-	var engine: EngineSim = car.drivetrain.engine
-	engine.auto = not engine.auto
-
-
-func _on_drive_pressed() -> void:
-	car.drivetrain.cycle_drive_mode()
-
-
-func _on_car_pressed() -> void:
-	# World owns the swap: it re-instantiates the car and re-points us (and the
-	# camera) at the new node. _process keeps the button label in sync.
-	(get_parent() as Node).cycle_car()
 
 
 func _process(_delta: float) -> void:
@@ -129,22 +91,6 @@ func _process(_delta: float) -> void:
 	if rpm != _last_rpm:
 		_last_rpm = rpm
 		_rpm_label.text = "%d rpm" % rpm
-	if engine.auto != _last_auto:
-		_last_auto = engine.auto
-		_mode_button.text = "AUTO" if engine.auto else "MANUAL"
-	var drive: int = car.drivetrain.drive_mode
-	if drive != _last_drive:
-		_last_drive = drive
-		_drive_button.text = _DRIVE_NAMES[drive]
-	var car_name: String = car.current_car_name()
-	if car_name != _last_car:
-		_last_car = car_name
-		_car_button.text = car_name
-	if track_progress != null:
-		var pct := roundi(track_progress.progress_percent() * 100.0)
-		if pct != _last_progress:
-			_last_progress = pct
-			_progress_label.text = "%d%%" % pct
 	_update_damage(_delta)
 	# Fade the pace popup out after its on-screen time elapses.
 	if _stage_delta_left > 0.0:

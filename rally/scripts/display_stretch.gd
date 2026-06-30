@@ -37,7 +37,19 @@ func _ready() -> void:
 	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
 	window.size_changed.connect(_apply)
+	# Apply once now AND again deferred: at _ready the window may still report its
+	# pre-maximize override size, and the OS resize that maximizes/snaps it can land
+	# before our signal is connected, leaving a stale logical frame that just gets
+	# stretched to fill (width stops following the window). The deferred pass re-reads
+	# the settled size; _notification keeps us correct on every later resize even if a
+	# given size_changed is missed (e.g. some embedded-window cases).
 	_apply()
+	_apply.call_deferred()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_SIZE_CHANGED:
+		_apply()
 
 
 func _apply() -> void:

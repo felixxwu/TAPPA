@@ -85,6 +85,12 @@ handbrake torque and **locks**, while the **front spool free-rolls** and stays
 steerable — enabling handbrake rotation in AWD. Releasing the handbrake restores
 the rigid locked driveline. (RWD/FWD already brake the rear only.)
 
+**Handbrake opens the clutch:** whenever the handbrake is held (any drive mode),
+`step` passes it to `EngineSim.step` as `declutch`, which forces the clutch fully
+open like neutral. The engine revs freely against the throttle (handbrake-rev /
+flat-shift launch feel) and delivers **no** drive torque to the wheels while the
+handbrake locks the driven axle.
+
 ## Gearing, top speed & the engine's hidden rolling resistance
 
 Gearing (`gear_ratios` + `final_drive`) is a **per-car** field in `CarLibrary`,

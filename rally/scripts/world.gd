@@ -316,7 +316,6 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		_track_progress.name = "TrackProgress"
 		add_child(_track_progress)
 	_track_progress.setup(road_centerline, $Car, $Floor as TerrainManager)
-	($HUD as CanvasLayer).track_progress = _track_progress
 
 	# Tire marks: gravel ruts laid behind the wheels while on the road
 	# (features/tire-marks.md). Reuse the node across regenerations like the managers
@@ -544,7 +543,10 @@ func _setup_stage_splits(track_result: Dictionary, staged: bool, cfg: GameConfig
 	var p1_ms := RallySession.current_event_target_ms()
 	if p1_ms <= 0:
 		return
-	var splits := RallyLibrary.derive_turn_splits(track_result, RallySession.current_event())
+	var p1_car := RallySession.current_event_p1_car()
+	if p1_car.is_empty():
+		return
+	var splits := RallyLibrary.derive_turn_splits(track_result, p1_car, RallySession.current_event())
 	if splits.is_empty():
 		return
 	var total_ms := int(splits[splits.size() - 1]["cum_ms"])

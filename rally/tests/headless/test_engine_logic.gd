@@ -99,3 +99,28 @@ func test_step_records_throttle() -> void:
 	_engine.gear = 1
 	_engine.step(0.016, 0.7, 0.0)
 	assert_almost_eq(_engine.throttle, 0.7, 0.0001, "step() records its throttle arg")
+
+
+func test_handbrake_declutches_so_the_engine_revs() -> void:
+	# Holding the handbrake locks the driven axle near zero, but the clutch must
+	# open so the engine still revs against the throttle (no wheel torque) instead
+	# of being dragged down to the stationary driveline.
+	_engine.gear = 1
+	_engine.omega = _engine.idle_omega()
+	var h := 0.001
+	# Without declutch, the engaged clutch couples the engine to the near-stopped
+	# driveline and the revs go nowhere.
+	for i in range(500):
+		_engine.step(h, 1.0, 0.0)
+	var engaged_rpm := _engine.rpm()
+
+	_engine.omega = _engine.idle_omega()
+	var wheel_torque := 0.0
+	for i in range(500):
+		wheel_torque = _engine.step(h, 1.0, 0.0, true)  # handbrake declutch
+	var declutched_rpm := _engine.rpm()
+
+	assert_gt(declutched_rpm, engaged_rpm + 1000.0,
+		"declutched, full throttle climbs the revs free of the locked driveline")
+	assert_almost_eq(wheel_torque, 0.0, 0.0001,
+		"an open clutch delivers no torque to the wheels")

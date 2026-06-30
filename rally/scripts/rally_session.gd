@@ -77,8 +77,18 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, event_targets_ms: Arr
 	_event_times_ms = []
 	_dnf = false
 	_upgrades_won = []
-	_event_targets_ms = event_targets_ms if not event_targets_ms.is_empty() else _compute_event_targets(rally)
-	_opponent_field = RallyLibrary.generate_opponent_field(rally, _event_targets_ms)
+	if event_targets_ms.is_empty():
+		var data := _compute_event_data(rally)
+		_event_targets_ms = data["targets"]
+		_opponent_field = RallyLibrary.generate_opponent_field(rally, data["results"], rally.get("events", []))
+	else:
+		_event_targets_ms = event_targets_ms
+		# TEST-ONLY path: precomputed targets mean no real track results are available;
+		# generate_opponent_field gets empty lists so rivals have empty event_times_ms
+		# and combined_ms=0 (placeholder). Tests MUST overwrite _opponent_field before
+		# making assertions. Real play always takes the if-branch above (_compute_event_data)
+		# which supplies genuine per-event track results to generate_opponent_field.
+		_opponent_field = RallyLibrary.generate_opponent_field(rally, [], [])
 	_enter_event()
 
 
@@ -243,6 +253,23 @@ func current_event_target_ms() -> int:
 	return best
 
 
+# The car_meta of the opponent posting the fastest non-DNF time for the CURRENT
+# event (the rival the "vs P1" popup tracks). {} if no classified rival has a time.
+func current_event_p1_car() -> Dictionary:
+	if _event_index < 0:
+		return {}
+	var best := -1
+	var best_id := ""
+	for opp in _opponent_field:
+		var times: Array = opp.get("event_times_ms", [])
+		if _event_index < times.size():
+			var tm := int(times[_event_index])
+			if tm >= 0 and (best < 0 or tm < best):
+				best = tm
+				best_id = String(opp.get("car_id", ""))
+	return CarLibrary.by_id(best_id) if best_id != "" else {}
+
+
 # The most recent rally's finish summary (for the podium scene). {} before any.
 func last_result() -> Dictionary:
 	return _last_result
@@ -358,10 +385,11 @@ func _set_phase(p: int) -> void:
 	phase_changed.emit(p)
 
 
-# Per-event target times (ms) for the opponent field, derived by generating each
-# event's seeded track (deterministic for the seed). Only used in real play; tests
-# pass precomputed targets to start_rally so no track generation happens.
-func _compute_event_targets(rally: Dictionary) -> Array:
+# Per-event { targets: Array[int], results: Array[Dictionary] } for the opponent
+# field, derived by generating each event's seeded track (deterministic for the seed).
+# Only used in real play; tests pass precomputed targets to start_rally so no track
+# generation happens.
+func _compute_event_data(rally: Dictionary) -> Dictionary:
 	var cfg: GameConfig = Config.data
 	# Match the run scene's start-line lead-in reservation (world.gd) so the target
 	# track shape — and thus the derived times — equal what the player drives. The
@@ -370,14 +398,16 @@ func _compute_event_targets(rally: Dictionary) -> Array:
 	if cfg.start_line_enabled:
 		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
 	var targets: Array = []
+	var results: Array = []
 	for event in rally.get("events", []):
 		var width := RallyLibrary.event_width(event)
 		var result := TrackGenerator.generate(
 			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
 			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind,
 			RallyLibrary.event_straightness(event))
-		targets.append(RallyLibrary.derive_target_ms(result, event))
-	return targets
+		results.append(result)
+		targets.append(RallyLibrary.derive_target_ms(result, event, rally))
+	return {"targets": targets, "results": results}
 
 
 # Write the event's track parameters into the live config and reload the run

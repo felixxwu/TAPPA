@@ -91,6 +91,13 @@ the `.tres` requires a scene reload to take effect.
 
 See [stage.md](stage.md).
 
+### Lap-time model
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `gravel_grip` | 1.0 | Surface grip multiplier for gravel in `LapTimeModel` (`scripts/lap_time_model.gd`); blended with `tarmac_grip` by the event's tarmac fraction to get the effective µ |
+| `tarmac_grip` | 1.3 | Surface grip multiplier for tarmac (higher → faster tarmac-heavy events) |
+| `driver_factor` | 1.08 | Driver-imperfection multiplier applied to the physics floor from `LapTimeModel`; turns the theoretical optimum into a beatable human PAR |
+
 ### Damage
 | Property | Default | Purpose |
 |----------|---------|---------|

@@ -274,8 +274,16 @@ func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
 	_trailer_target = _start_xform * Vector3(0, 0, gap)
 	var pool := RallyLibrary.eligible_car_indices(rally)
 	var seed_base := _queue_seed(rally)
+	# Each prop's apply_car() mutates the SHARED global Config.data (gearbox, mass,
+	# grip, …). The player is already fielded, so its drivetrain holds a shift table
+	# built from ITS gearbox; letting a prop's spec leak into Config.data would
+	# corrupt the player's live ratio() (e.g. a final_drive mismatch makes the auto
+	# box shift at the wrong revs). Snapshot the player's config and restore it after
+	# the props are built — they're scripted flavour, so reading it back is harmless.
+	var player_cfg: GameConfig = Config.data.duplicate(true)
 	_leader = _spawn_prop(pool[seed_base % pool.size()], leader_pos)
 	_trailer = _spawn_prop(pool[(seed_base + 1) % pool.size()], trailer_pos)
+	Config.data = player_cfg
 	# Drive on the terrain, but never shove (or get shoved by) the player or each
 	# other — they're flavour, not a real field.
 	if _player is PhysicsBody3D:

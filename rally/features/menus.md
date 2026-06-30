@@ -111,8 +111,14 @@ its own marked bay.
 establishing shot of the outdoor car park, with a block skyline **behind the
 garage** and trees framing the lot. The player's **whole owned collection** is
 parked in the car park here (`_build_title_lineup`, rebuilt on entering EXTERIOR) so
-the title shows off every car. Start (or `menu_select`) flies the camera into the
-garage; Settings opens the SETTINGS overlay.
+the title shows off every car. The **build version** (`v0.<n> (<sha>)`) is shown in
+the bottom-right corner here only — not on the in-run HUD (see [hud.md](hud.md) →
+Build version). This is a flat two-button menu driven by **native focus** —
+`menu_select`/`ui_accept` fires whichever button is focused (Start grabs focus on
+entry; `menu_up`/`menu_down` move between the two). Start flies the camera into the
+garage; Settings opens the SETTINGS overlay. (The EXTERIOR branch in
+`_unhandled_input` deliberately does *not* route `menu_select` to Start, or accepting
+on Settings would start the run instead.)
 
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
@@ -175,14 +181,15 @@ Tapping the table drops to the map view; tapping the lift flies to the **tuning 
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
 The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
-(`LiftPage.HUB`): a **bottom-left** panel beside the car with the **bay title + the
-car's name/description**, and UNDER it a **minimal change-car selector** (`< Car` /
-`Car >`) plus **Tuning** and **Upgrades** buttons. The change-car control cycles all
+(`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
+full page width, and UNDER it a **minimal change-car selector** (`< Car` / `Car >`)
+plus **Tuning** and **Upgrades** buttons. The change-car control cycles all
 owned cars, updating the **selected car** (`Save.selected_car`/`set_selected_car`) and
 re-spawning it on the lift. Each menu button opens that menu as its **own full-height
-page** — a solid panel anchored to the other side of the screen
-(`hq_lift_menu_width_frac`) so the car stays in view — with a **< Back** that returns
-to the hub; the hub's own Back returns to the garage. Because the change-car control
+page** — a solid panel **centred horizontally** and wide
+(`hq_lift_menu_centered_width_frac`, using most of the screen); the car-description
+panel **hides** while a sub-menu is open so the page has room — with a **< Back** that
+returns to the hub; the hub's own Back returns to the garage. Because the change-car control
 and page chrome live on the hub, each menu page gets the **full panel height to
 itself** and doesn't need to scroll. The two pages:
 
@@ -251,10 +258,9 @@ stale freeze) — so a full car park costs nothing to keep parked. `◄ ►` (or
 `menu_left`/`menu_right`) move the focus and the camera eases to a **front 3/4 hero
 shot from in front of the car** (`menu_camera_offset` is added in world space; +Z sits
 the eye ahead of the nose-out car, looking back past it at the garage) over
-`menu_camera_move_time`; the focused car **is** the selected car. A billboarded
-`Label3D` shows its name +
-stats beside it (drive / country / type / tier / power-to-weight / **Health %**),
-mirrored into the overlay. A **wrecked** focused car (`Save.car_is_wrecked`) is
+`menu_camera_move_time`; the focused car **is** the selected car. The overlay shows
+its name + stats (drive / country / type / power-to-weight / **Health %**); there is
+no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
 Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_kit`)
 and unlocks Start. A **banner** names the rally + restriction; **Start** shows the

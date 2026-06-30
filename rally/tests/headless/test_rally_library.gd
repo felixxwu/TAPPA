@@ -235,35 +235,34 @@ func test_tarmac_fraction_tightens_target_time() -> void:
 # --- Turn splits (the in-stage "vs P1" pace popup) ---------------------------
 
 func test_turn_splits_are_monotonic_and_total_matches_target() -> void:
-	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
-	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
-		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
-	var splits := RallyLibrary.derive_turn_splits(track, ev)
+	var track := _track_with_pieces()
+	var car := CarLibrary.by_id("mx5")
+	var splits := RallyLibrary.derive_turn_splits(track, car, {})
 	assert_eq(splits.size(), track["pieces"].size(), "one split per placed turn")
 	var prev_off := -1.0
 	var prev_ms := -1
 	for s in splits:
 		assert_gt(float(s["end_offset_m"]), prev_off, "arc offset rises each turn")
-		assert_gt(int(s["cum_ms"]), prev_ms, "cumulative time rises each turn")
+		assert_gte(int(s["cum_ms"]), prev_ms, "cumulative time rises each turn")
 		prev_off = float(s["end_offset_m"])
 		prev_ms = int(s["cum_ms"])
-	# The final turn's cumulative time is the whole-track target (same pricing).
+	# Final split must equal the physics-optimum time for this car (Task 4 invariant).
 	var last_ms := int(splits[splits.size() - 1]["cum_ms"])
-	assert_almost_eq(float(last_ms), float(RallyLibrary.derive_target_ms(track, ev)), 2.0,
-		"last split equals the derived target time")
+	assert_almost_eq(last_ms, LapTimeModel.optimum_ms(track, car, {}), 2,
+		"last split cum_ms equals LapTimeModel.optimum_ms")
 
 
 func test_turn_splits_empty_without_pieces() -> void:
-	assert_eq(RallyLibrary.derive_turn_splits({}), [], "no track -> no splits")
-	assert_eq(RallyLibrary.derive_turn_splits({"pieces": []}), [], "no pieces -> no splits")
+	var car := CarLibrary.by_id("mx5")
+	assert_eq(RallyLibrary.derive_turn_splits({}, car), [], "no track -> no splits")
+	assert_eq(RallyLibrary.derive_turn_splits({"pieces": []}, car), [], "no pieces -> no splits")
 
 
 func test_turn_splits_honour_target_override() -> void:
-	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
-	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
-		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
-	var natural := RallyLibrary.derive_turn_splits(track)
-	var overridden := RallyLibrary.derive_turn_splits(track, {"target_ms_override": 42000})
+	var track := _track_with_pieces()
+	var car := CarLibrary.by_id("mx5")
+	var natural := RallyLibrary.derive_turn_splits(track, car)
+	var overridden := RallyLibrary.derive_turn_splits(track, car, {"target_ms_override": 42000})
 	# The final cumulative time lands exactly on the override (matches derive_target_ms).
 	assert_eq(int(overridden[overridden.size() - 1]["cum_ms"]), 42000,
 		"override rescales the total to the hand-set value")
@@ -276,12 +275,60 @@ func test_turn_splits_honour_target_override() -> void:
 			"turn %d keeps its share of the total under the override" % i)
 
 
+# --- Synthetic track helper (cheap, no world generation) --------------------
+
+# A Curve2D with a handful of collinear points plus a pieces array whose
+# entry_pos values lie exactly on the curve. Sufficient to exercise the
+# optimum_profile / derive_turn_splits path without generating a full world.
+func _track_with_pieces() -> Dictionary:
+	var c := Curve2D.new()
+	c.add_point(Vector2(0, 0))
+	c.add_point(Vector2(0, 100))
+	c.add_point(Vector2(0, 200))
+	c.add_point(Vector2(0, 300))
+	c.add_point(Vector2(0, 400))
+	c.add_point(Vector2(0, 500))
+	# Three pieces whose entry_pos points sit on the curve.
+	var pieces: Array = [
+		{"entry_pos": Vector2(0, 0)},
+		{"entry_pos": Vector2(0, 150)},
+		{"entry_pos": Vector2(0, 350)},
+	]
+	return {"centerline": c, "pieces": pieces}
+
+
+# --- Physics-based turn splits (Task 4) -------------------------------------
+
+func test_turn_splits_final_equals_optimum_ms() -> void:
+	var track := _track_with_pieces()
+	var car := CarLibrary.by_id("mx5")
+	var splits := RallyLibrary.derive_turn_splits(track, car, {})
+	assert_false(splits.is_empty(), "splits are non-empty")
+	assert_almost_eq(int(splits[splits.size() - 1]["cum_ms"]),
+		LapTimeModel.optimum_ms(track, car, {}), 2, "last split == optimum_ms")
+
+
+func test_turn_splits_monotonic() -> void:
+	var track := _track_with_pieces()
+	var splits := RallyLibrary.derive_turn_splits(track, CarLibrary.by_id("mx5"), {})
+	for i in range(1, splits.size()):
+		assert_gte(int(splits[i]["cum_ms"]), int(splits[i - 1]["cum_ms"]), "cum_ms monotonic")
+
+
+func test_turn_splits_override_rescales_to_total() -> void:
+	var track := _track_with_pieces()
+	var splits := RallyLibrary.derive_turn_splits(track, CarLibrary.by_id("mx5"), {"target_ms_override": 60000})
+	assert_almost_eq(int(splits[splits.size() - 1]["cum_ms"]), 60000, 2, "rescaled to override total")
+
+
 # --- Opponent field ----------------------------------------------------------
 
 func test_opponent_field_shape_and_bounds() -> void:
 	var rally := RallyLibrary.by_id("coastal_sprint")
-	var targets := [60000, 60000, 60000]
-	var field := RallyLibrary.generate_opponent_field(rally, targets)
+	var track := _track_with_pieces()
+	var events: Array = (rally["events"] as Array).slice(0, 3)
+	var event_results := [track, track, track]
+	var field := RallyLibrary.generate_opponent_field(rally, event_results, events)
 	assert_between(field.size(), RallyLibrary.FIELD_MIN, RallyLibrary.FIELD_MAX,
 		"field has 10-15 opponents")
 	for opp in field:
@@ -289,20 +336,21 @@ func test_opponent_field_shape_and_bounds() -> void:
 			assert_eq(int(opp["combined_ms"]), -1, "a DNF opponent does not rank")
 		else:
 			var sum := 0
-			for i in targets.size():
+			for i in event_results.size():
 				var t: int = opp["event_times_ms"][i]
-				var lo := int(floor(targets[i] * RallyLibrary.RIVAL_PACE_MIN))
-				var hi := int(ceil(targets[i] * (RallyLibrary.RIVAL_PACE_MIN + RallyLibrary.RIVAL_PACE_SPREAD)))
-				assert_between(t, lo, hi, "event time within the rival pace band (slower than target)")
+				var best_car := RallyLibrary._best_eligible_car(rally)
+				var floor_ms := int(LapTimeModel.optimum_ms(event_results[i], best_car, events[i]) * RallyLibrary.RIVAL_PACE_MIN)
+				assert_gte(t, floor_ms - 1, "event time >= best eligible car floor * RIVAL_PACE_MIN")
 				sum += t
 			assert_eq(int(opp["combined_ms"]), sum, "combined time is the sum of event times")
 
 
 func test_opponent_field_is_deterministic() -> void:
 	var rally := RallyLibrary.by_id("rwd_masters")
-	var targets := [50000, 55000, 52000]
-	var a := RallyLibrary.generate_opponent_field(rally, targets)
-	var b := RallyLibrary.generate_opponent_field(rally, targets)
+	var track := _track_with_pieces()
+	var events: Array = (rally["events"] as Array).slice(0, 3)
+	var a := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)
+	var b := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)
 	assert_eq(a, b, "same rally seed -> identical opponent field")
 
 
@@ -310,7 +358,9 @@ func test_opponents_drive_eligible_cars() -> void:
 	# Every rival is assigned an identified car; in a restricted rally the car must
 	# satisfy the restriction (RWD Masters fields only RWD rivals).
 	var rally := RallyLibrary.by_id("rwd_masters")
-	var field := RallyLibrary.generate_opponent_field(rally, [60000, 60000, 60000])
+	var track := _track_with_pieces()
+	var events: Array = (rally["events"] as Array).slice(0, 3)
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)
 	for opp in field:
 		var car_id := String(opp.get("car_id", ""))
 		assert_ne(car_id, "", "%s drives an identified car" % opp["name"])
@@ -323,10 +373,42 @@ func test_opponents_drive_eligible_cars() -> void:
 func test_dnfs_occur_somewhere_in_the_roster() -> void:
 	var any_dnf := false
 	for rally in RallyLibrary.RALLIES:
-		for opp in RallyLibrary.generate_opponent_field(rally, [60000, 60000, 60000]):
+		var track := _track_with_pieces()
+		var events := [{"seed": 1}]
+		var rally_with_events: Dictionary = rally.duplicate()
+		rally_with_events["events"] = events
+		for opp in RallyLibrary.generate_opponent_field(rally_with_events, [track], events):
 			if opp["dnf"]:
 				any_dnf = true
 	assert_true(any_dnf, "some opponents DNF across the roster")
+
+
+func test_opponent_faster_car_posts_faster_time():
+	# Two synthetic fields on the same track: a rival in a fast car beats a rival in
+	# a slow car (holding the driver-factor draw fixed via the deterministic seed).
+	var track := _track_with_pieces()
+	var fast_floor := LapTimeModel.optimum_ms(track, CarLibrary.by_id("aventador"), {})
+	var slow_floor := LapTimeModel.optimum_ms(track, CarLibrary.by_id("mx5"), {})
+	assert_lt(fast_floor, slow_floor, "fast car has a lower floor on the same track")
+
+
+func test_opponent_field_times_above_par():
+	var track := _track_with_pieces()
+	var rally := {"id": "r1", "events": [{"seed": 1}], "restriction": {}}
+	var field := RallyLibrary.generate_opponent_field(rally, [track], rally["events"])
+	var par := RallyLibrary.derive_target_ms(track, {}, rally)
+	for opp in field:
+		if not opp["dnf"]:
+			assert_gt(int(opp["event_times_ms"][0]), par, "every rival is slower than par")
+
+
+func test_opponent_field_deterministic_for_seed():
+	var track := _track_with_pieces()
+	var rally := {"id": "r1", "events": [{"seed": 1}], "restriction": {}}
+	var a := RallyLibrary.generate_opponent_field(rally, [track], rally["events"])
+	var b := RallyLibrary.generate_opponent_field(rally, [track], rally["events"])
+	assert_eq(a.size(), b.size())
+	assert_eq(int(a[0]["event_times_ms"][0]), int(b[0]["event_times_ms"][0]), "stable per seed")
 
 
 func test_placement_and_top3() -> void:
@@ -376,6 +458,44 @@ func test_build_standings_handles_a_wrecked_player() -> void:
 	assert_true(standings[0]["is_player"] == false, "the classified opponent ranks above a wrecked player")
 	assert_true(standings[1]["is_player"], "the wrecked player sinks to the bottom")
 	assert_eq(standings[1]["placed"], -1, "a wrecked player does not place")
+
+
+# --- Physics-based target time (Task 3) --------------------------------------
+
+# Cheap synthetic track: a Curve2D with a few points, no world generation.
+func _simple_track() -> Dictionary:
+	var c := Curve2D.new()
+	c.add_point(Vector2(0, 0))
+	c.add_point(Vector2(0, 200))
+	c.add_point(Vector2(0, 400))
+	c.add_point(Vector2(0, 600))
+	return {"centerline": c, "pieces": []}
+
+
+func test_target_uses_physics_floor_and_driver_factor() -> void:
+	var track := _simple_track()
+	var rally := {"id": "r1", "events": [], "restriction": {}}  # open class
+	var ms := RallyLibrary.derive_target_ms(track, {}, rally)
+	var best := RallyLibrary._best_eligible_car(rally)
+	var floor := LapTimeModel.optimum_ms(track, best, {})
+	assert_almost_eq(ms, int(round(floor * Config.data.driver_factor)), 2,
+		"target = floor * driver_factor")
+
+
+func test_target_override_still_short_circuits() -> void:
+	var track := _simple_track()
+	assert_eq(RallyLibrary.derive_target_ms(track, {"target_ms_override": 90000}, {}), 90000)
+
+
+func test_faster_roster_yields_faster_par() -> void:
+	# A rally whose eligible roster includes a quicker car gets a tighter par on the
+	# same track than one restricted to a slower car.
+	var track := _simple_track()
+	var open_rally := {"id": "a", "events": [], "restriction": {}}
+	var slow_rally := {"id": "b", "events": [], "restriction": {"pw_max": 0.05}}  # admits only slow cars
+	assert_lte(RallyLibrary.derive_target_ms(track, {}, open_rally),
+			RallyLibrary.derive_target_ms(track, {}, slow_rally),
+			"a faster eligible roster yields an equal-or-faster par")
 
 
 # --- Progress / showdown -----------------------------------------------------

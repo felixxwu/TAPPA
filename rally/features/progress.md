@@ -69,9 +69,9 @@ anchored at `_origin_offset` — seeded at the spawn in `setup()` and re-anchore
 the car's on-the-line position by `mark_start()`, which `StageManager` calls at the
 off — so the start reads exactly **0%**. The windowed search also samples its **far
 edge exactly**, so the very end of the curve is reachable and `progress_percent()`
-can hit 1.0 (a 1 m step would otherwise cap it ~1 m short). A **temporary** percentage readout is wired into the
-HUD (`HUD/ProgressLabel`, fed by `world.gd` setting `HUD.track_progress`); it's a
-placeholder until the real stage UI lands.
+can hit 1.0 (a 1 m step would otherwise cap it ~1 m short). The `TrackProgress`
+node feeds the `StageManager` (pace deltas, stage completion); there is no
+longer an on-screen percentage readout on the HUD.
 
 ## Tests
 

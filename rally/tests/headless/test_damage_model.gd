@@ -60,14 +60,14 @@ func test_hp_loss_grows_with_square_of_speed() -> void:
 
 
 # The behaviour the design calls for: a ~60 km/h hit lets most cars (max HP
-# 800-1100) survive 4-5 hits, while a ~20 km/h hit barely scratches them.
+# 800-1100) survive ~3 hits, while a ~20 km/h hit barely scratches them.
 func test_speed_damage_calibration() -> void:
 	var cfg: GameConfig = Config.data
 	var loss_60 := DamageModel.hp_loss_for_speed(_mps(60.0), cfg)
-	assert_between(int(ceil(800.0 / loss_60)), 4, 5,
-		"a ~800 HP car survives 4-5 hits at 60 km/h")
-	assert_between(int(ceil(1000.0 / loss_60)), 4, 5,
-		"a ~1000 HP car survives 4-5 hits at 60 km/h")
+	assert_between(int(ceil(800.0 / loss_60)), 3, 4,
+		"a ~800 HP car survives ~3 hits at 60 km/h")
+	assert_between(int(ceil(1000.0 / loss_60)), 3, 4,
+		"a ~1000 HP car survives ~3 hits at 60 km/h")
 	var loss_20 := DamageModel.hp_loss_for_speed(_mps(20.0), cfg)
 	assert_lt(loss_20 / 800.0, 0.05,
 		"a 20 km/h hit costs under 5% of the smallest car's HP (barely any damage)")

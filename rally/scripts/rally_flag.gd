@@ -6,7 +6,7 @@ extends RefCounted
 # the rally's state across two independent axes:
 #
 # Pennant (the flag itself):
-#   placed 3rd or better  → black-and-grey CHECKERED racing flag (a result earned)
+#   placed 3rd or better  → black-and-white CHECKERED racing flag (a result earned)
 #   has an eligible car    → light green   (raceable now, not yet podiumed)
 #   no eligible car         → dark grey      (can't field a qualifying car — also
 #                                            the look of the still-locked showdown)
@@ -41,9 +41,9 @@ const PENNANT_GREEN := Color(0.30, 0.95, 0.32)   # raceable: eligible car owned 
 const PENNANT_GREY := Color(0.30, 0.32, 0.36)    # no eligible car / locked showdown
 
 # Checkered racing-flag swatches (generated into a tiny checker texture, cached).
-# Black and grey (not white) so the flag reads muted against the bright map.
+# Black and white, the classic racing checkered flag.
 const CHECKER_DARK := Color(0.08, 0.08, 0.08)
-const CHECKER_LIGHT := Color(0.52, 0.52, 0.52)
+const CHECKER_LIGHT := Color(0.95, 0.95, 0.95)
 const CHECKER_COLS := 5    # visible squares along the pennant length
 const CHECKER_ROWS := 3    # visible squares across the pennant height
 

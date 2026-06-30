@@ -53,15 +53,17 @@ that point — `−` (green) when ahead, `+` (red) when behind (see [hud.md](hud
 runs on rather than inventing a new one:
 
 - `world.gd._setup_stage_splits()` builds a per-turn split table with
-  `RallyLibrary.derive_turn_splits(track_result, event)` — for each placed turn, the
-  arc length reached and the cumulative target time to there, priced exactly as
-  `derive_target_ms` totals the whole track. It converts each turn's offset to a
-  **progress fraction** (matching `TrackProgress.progress_percent`, accounting for the
-  staged lead-in) and its time to a **fraction of the stage total**, then hands them to
+  `RallyLibrary.derive_turn_splits(track_result, car_meta, event)` — for each placed
+  turn, the arc length reached and the cumulative optimum time to there, derived from
+  that car's `LapTimeModel.optimum_profile` (see [rally-roster.md](rally-roster.md)).
+  `car_meta` is the P1 rival's own car, obtained via
+  `RallySession.current_event_p1_car()` (the car of the fastest non-DNF rival). It
+  converts each turn's offset to a **progress fraction** (matching
+  `TrackProgress.progress_percent`, accounting for the staged lead-in) and its time
+  to a **fraction of the stage total**, then hands them to
   `StageManager.setup_splits(turn_progress, turn_time_frac, p1_total_ms)`. `p1_total_ms`
-  is `RallySession.current_event_target_ms()` (the fastest classified rival's event
-  time). Only wired for a session run that has a P1 rival; a plain dev boot shows no
-  popup.
+  is that P1 rival's own event time. Only wired for a session run that has a P1
+  rival; a plain dev boot shows no popup.
 - Each RUNNING frame, `_maybe_show_split()` advances past every turn boundary the
   player has now crossed (progress is monotonic) and, when the count reaches a whole
   `stage_delta_interval_turns`, fires the popup for the latest crossed turn. The rival's

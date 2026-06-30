@@ -84,7 +84,7 @@ Specific design-system touches:
   border; the player's leaderboard row is gold.
 - **Standings** (`standings.gd`) — black background; the player's row is gold.
 - **Wreck screen** (`wreck_screen.gd`) — red heading on a dim black backdrop.
-- **HUD** (`hud.gd`) — the run timer is red, the stage-complete banner green.
+- **HUD** (`hud.gd`) — the run timer is white (neutral ink), the stage-complete banner green.
 
 ## Visual proof sheet
 

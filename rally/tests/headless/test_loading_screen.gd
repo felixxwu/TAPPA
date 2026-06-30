@@ -28,14 +28,13 @@ func test_finish_frees_overlay() -> void:
 
 func test_world_generation_completes_synchronously_when_headless() -> void:
 	# In headless the _yield_frame() awaits collapse to no-ops, so the entire
-	# staged generation chain runs within instantiate()+add_child. HUD.track_progress
-	# is wired at the very end of that chain, so its presence proves the whole
+	# staged generation chain runs within instantiate()+add_child. The TrackProgress
+	# node is wired at the very end of that chain, so its presence proves the whole
 	# chain ran — i.e. staging didn't accidentally defer world-gen across frames.
 	var scene: Node3D = MAIN_SCENE.instantiate()
 	add_child_autofree(scene)
-	var hud = scene.get_node("HUD")
-	assert_not_null(hud.track_progress,
-		"world finished generating synchronously (HUD.track_progress is set)")
+	assert_not_null(scene.get_node_or_null("TrackProgress"),
+		"world finished generating synchronously (TrackProgress node is set up)")
 
 
 func test_loading_overlay_removed_after_generation() -> void:

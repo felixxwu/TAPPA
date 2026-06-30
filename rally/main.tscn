@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://ck6fetrvswmhf"]
 
 [ext_resource type="Shader" uid="uid://ddlrcp8opyqg" path="res://shaders/ps1_models.gdshader" id="1_models"]
+[ext_resource type="Shader" uid="uid://is4tnog0yjlb" path="res://shaders/speed_lines.gdshader" id="2_lines"]
+[ext_resource type="Script" uid="uid://ccn420jim2dya" path="res://scripts/speed_lines.gd" id="2_lines_s"]
 [ext_resource type="Shader" uid="uid://cnmlit3nvwmc1" path="res://shaders/ps1_post_process.gdshader" id="2_post"]
-[ext_resource type="Shader" path="res://shaders/speed_lines.gdshader" id="2_lines"]
-[ext_resource type="Script" path="res://scripts/speed_lines.gd" id="2_lines_s"]
 [ext_resource type="Script" uid="uid://bp1qxl2gv47a8" path="res://scripts/terrain_layer.gd" id="3_5vw27"]
 [ext_resource type="Texture2D" uid="uid://buvotoc4e4cy7" path="res://textures/grass.jpg" id="3_grass"]
 [ext_resource type="PackedScene" path="res://car.tscn" id="4_car"]
@@ -13,9 +13,9 @@
 [ext_resource type="Script" uid="uid://bx7m7rsqs3hcu" path="res://scripts/hud.gd" id="8_hud"]
 [ext_resource type="Script" uid="uid://da6jmm86ad2c" path="res://scripts/mobile_controls.gd" id="9_mobile"]
 [ext_resource type="Script" uid="uid://c1ihaadjtfrte" path="res://scripts/camera_manager.gd" id="10_cammgr"]
-[ext_resource type="Script" path="res://scripts/pause_menu.gd" id="13_pause"]
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
 [ext_resource type="Texture2D" uid="uid://bcx6lhspkcwhl" path="res://textures/sky_field.png" id="12_sky"]
+[ext_resource type="Script" uid="uid://detelg2t5mcwj" path="res://scripts/pause_menu.gd" id="13_pause"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("12_sky")
@@ -105,11 +105,11 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
-[node name="SpeedLines" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+[node name="SpeedLines" type="CanvasLayer" parent="." unique_id=289473973 node_paths=PackedStringArray("car")]
 script = ExtResource("2_lines_s")
 car = NodePath("../Car")
 
-[node name="ColorRect" type="ColorRect" parent="SpeedLines"]
+[node name="ColorRect" type="ColorRect" parent="SpeedLines" unique_id=1280705912]
 material = SubResource("mat_lines")
 anchors_preset = 15
 anchor_right = 1.0
@@ -145,64 +145,18 @@ offset_bottom = 48.0
 theme_override_font_sizes/font_size = 14
 text = "0 rpm"
 
-[node name="ProgressLabel" type="Label" parent="HUD" unique_id=1261069771]
-offset_left = 8.0
-offset_top = 92.0
-offset_right = 208.0
-offset_bottom = 112.0
-theme_override_font_sizes/font_size = 14
-text = "0%"
-
-[node name="ModeButton" type="Button" parent="HUD" unique_id=1927145416]
-offset_left = 8.0
-offset_top = 48.0
-offset_right = 78.0
-offset_bottom = 66.0
-focus_mode = 0
-theme_override_font_sizes/font_size = 10
-text = "MANUAL"
-
-[node name="DriveButton" type="Button" parent="HUD" unique_id=1044419643]
-offset_left = 82.0
-offset_top = 48.0
-offset_right = 132.0
-offset_bottom = 66.0
-focus_mode = 0
-theme_override_font_sizes/font_size = 10
-text = "RWD"
-
-[node name="CarButton" type="Button" parent="HUD" unique_id=1044419644]
-offset_left = 8.0
-offset_top = 70.0
-offset_right = 132.0
-offset_bottom = 88.0
-focus_mode = 0
-theme_override_font_sizes/font_size = 10
-text = "Mazda MX-5"
-
-[node name="VersionLabel" type="Label" parent="HUD" unique_id=1044419645]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -200.0
-offset_top = 8.0
-offset_right = -60.0
-offset_bottom = 24.0
-grow_horizontal = 0
-theme_override_font_sizes/font_size = 10
-text = "v0.0"
-horizontal_alignment = 2
-
 [node name="ElapsedLabel" type="Label" parent="HUD" unique_id=1044419646]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -160.0
-offset_top = 26.0
-offset_right = -60.0
-offset_bottom = 46.0
-grow_horizontal = 0
-theme_override_font_sizes/font_size = 14
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
+offset_top = 8.0
+offset_right = 80.0
+offset_bottom = 32.0
+grow_horizontal = 2
+theme_override_font_sizes/font_size = 20
 text = "0:00.00"
-horizontal_alignment = 2
+horizontal_alignment = 1
 
 [node name="CountdownLabel" type="Label" parent="HUD" unique_id=1044419647]
 anchors_preset = 15
@@ -227,24 +181,40 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="StageCompleteLabel" type="Label" parent="HUD/StageCompletePanel" unique_id=1044419649]
+layout_mode = 2
 theme_override_font_sizes/font_size = 20
 text = "STAGE COMPLETE"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="HPLabel" type="Label" parent="HUD" unique_id=1044419650]
-offset_left = 8.0
-offset_top = 98.0
-offset_right = 132.0
-offset_bottom = 112.0
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -50.0
+offset_top = -34.0
+offset_right = 50.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
 theme_override_font_sizes/font_size = 10
 text = "Health"
+horizontal_alignment = 1
 
 [node name="HPBar" type="ProgressBar" parent="HUD" unique_id=1044419651]
-offset_left = 30.0
-offset_top = 114.0
-offset_right = 132.0
-offset_bottom = 126.0
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -50.0
+offset_top = -18.0
+offset_right = 50.0
+offset_bottom = -6.0
+grow_horizontal = 2
+grow_vertical = 0
 max_value = 1.0
 step = 0.001
 value = 1.0

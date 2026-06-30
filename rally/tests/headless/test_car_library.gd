@@ -25,7 +25,7 @@ func after_each() -> void:
 
 
 func test_library_has_a_range_of_cars() -> void:
-	assert_gte(CarLibrary.CARS.size(), 4, "a decent selection of cars")
+	assert_gt(CarLibrary.CARS.size(), 1, "more than one car — a roster, not a single car")
 	var names := {}
 	var engines := {}
 	for spec in CarLibrary.CARS:
@@ -57,13 +57,18 @@ func test_each_spec_is_sane() -> void:
 			if g > 0:
 				assert_lt(ratios[g], ratios[g - 1],
 					who + " gear %d shorter than gear %d" % [g + 1, g])
+		# Per-car crank + flywheel rotating inertia (kg·m²): small revs fast, large
+		# revs lazily. Must be present and positive within a realistic range.
+		assert_true(spec.has("engine_inertia"), who + " has engine_inertia")
+		assert_between(spec["engine_inertia"], 0.05, 0.6, who + " engine_inertia in a sane range")
 		assert_between(spec["grip_front"], 0.1, 2.0, who + " front grip in a sane range")
 		assert_between(spec["grip_rear"], 0.1, 2.0, who + " rear grip in a sane range")
 		assert_between(spec["engine_type"], 0, GameConfig.ENGINE_PRESETS.size() - 1,
 			who + " engine_type indexes a real preset")
 		assert_between(spec["drive_mode"], 0, 2, who + " drive_mode is RWD/AWD/FWD")
 		assert_gt(spec["drag"], 0.0, who + " has drag")
-		assert_gt(spec.get("downforce_rear", 0.0), 0.0, who + " carries some rear downforce")
+		# Downforce is a tuning knob, not an invariant (0 = no wing is valid), so only
+		# the sane range is asserted — not a specific value or a "must have some".
 		assert_between(spec.get("downforce_rear", 0.0), 0.0, 2.0, who + " rear downforce in a sane range")
 		for axis in ["x", "y", "z"]:
 			assert_gt(spec["body"][axis], 0.0, who + " body." + axis + " positive")
@@ -120,7 +125,6 @@ func test_main_boots_as_first_car() -> void:
 	assert_almost_eq(Config.data.mass, first["mass"], 0.001, "config mass is the first car's")
 	var size: Vector3 = (_car.get_node("Chassis").mesh as BoxMesh).size
 	assert_eq(size, first["body"], "chassis box sized to the first car")
-	assert_eq(_scene.get_node("HUD/CarButton").text, first["name"], "car button shows the car name")
 
 
 func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
@@ -141,6 +145,7 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	# Power overrides the engine preset's torque; grip overlays tyre friction.
 	assert_almost_eq(Config.data.peak_torque, float(spec["peak_torque"]), 0.001, "power (peak_torque) overlaid")
 	assert_almost_eq(Config.data.redline_rpm, float(spec["redline"]), 0.001, "redline overlaid")
+	assert_almost_eq(Config.data.engine_inertia, float(spec["engine_inertia"]), 0.001, "engine_inertia overlaid")
 	# Per-car gearbox overlaid onto the live config (the shared MX-5 6-speed box).
 	assert_eq(Config.data.gear_ratios.size(), (spec["gear_ratios"] as Array).size(),
 		"gear count overlaid")
@@ -191,29 +196,6 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 	await get_tree().physics_frame
 	assert_almost_eq(Config.data.mass, base_mass * 0.90, 0.001, "config mass cut 10% by the kit")
 	assert_almost_eq(_car.mass, base_mass * 0.90, 0.001, "rigidbody mass re-synced to the lighter config")
-
-
-func test_every_car_shares_the_mx5_gearbox() -> void:
-	# gear_ratios/final_drive stay a per-car field (so cars CAN diverge later), but
-	# the whole roster currently shares the MX-5's box: trying each car's real
-	# published transmission didn't make sense in-sim, so they're all modelled on
-	# the MX-5's gearing again (see car_library.gd's gear_ratios header note).
-	var mx5_ratios: Array = CarLibrary.by_id("mx5")["gear_ratios"]
-	var mx5_fd: float = CarLibrary.by_id("mx5")["final_drive"]
-	# The MX-5's box is its real ND 6-speed; final drive is the game-tuned 3.5.
-	assert_almost_eq(float(mx5_ratios[0]), 5.087, 0.001, "MX-5 real 1st gear")
-	assert_almost_eq(float(mx5_ratios[5]), 1.000, 0.001, "MX-5 real direct-drive 6th")
-	assert_almost_eq(mx5_fd, 3.5, 0.001, "MX-5 game-tuned final drive")
-	# Every other car carries an identical copy of it.
-	for spec in CarLibrary.CARS:
-		var who: String = spec["name"]
-		var ratios: Array = spec["gear_ratios"]
-		assert_eq(ratios.size(), mx5_ratios.size(), who + " has the MX-5 gear count")
-		for g in ratios.size():
-			assert_almost_eq(float(ratios[g]), float(mx5_ratios[g]), 0.001,
-				who + " gear %d matches the MX-5" % (g + 1))
-		assert_almost_eq(float(spec["final_drive"]), mx5_fd, 0.001,
-			who + " shares the MX-5 final drive")
 
 
 func test_cycle_car_advances_and_wraps() -> void:

@@ -361,7 +361,24 @@ func test_apply_car_sets_downforce_from_spec_overwriting_stale() -> void:
 		"apply_car sets rear downforce from the spec, overwriting the stale value")
 	assert_almost_eq(cfg.downforce_front, float(spec.get("downforce_front", 0.0)), 1e-6,
 		"front downforce comes from the spec (0 when unspecified)")
-	assert_gt(cfg.downforce_rear, 0.0, "the MX-5 carries a small baseline rear downforce")
+
+
+func test_aero_kit_upgrade_adds_downforce() -> void:
+	# Downforce IS applied to the live config via the aero_kit upgrade, layered
+	# ON TOP of whatever the car's spec baseline is (apply_owned, step 2). Asserts
+	# the upgrade's DELTA, not a hardcoded per-car value, so it can't go stale when
+	# the CarLibrary tuning data changes.
+	var cfg: GameConfig = Config.data
+	_car.apply_car(0)  # MX-5 — establishes the spec baseline (step 1)
+	var baseline_front := cfg.downforce_front
+	var baseline_rear := cfg.downforce_rear
+	var aero: Dictionary = UpgradeLibrary.by_id("aero_kit")["effect"]
+	UpgradeLibrary.apply({"installed_upgrades": ["aero_kit"]}, cfg)
+	assert_almost_eq(cfg.downforce_front, baseline_front + float(aero["downforce_front"]), 1e-6,
+		"aero_kit adds its front downforce on top of the spec baseline")
+	assert_almost_eq(cfg.downforce_rear, baseline_rear + float(aero["downforce_rear"]), 1e-6,
+		"aero_kit adds its rear downforce on top of the spec baseline")
+	assert_gt(cfg.downforce_rear, 0.0, "a car fitted with the aero kit carries positive rear downforce")
 
 
 # --- Self-righting (level) assist -------------------------------------------
@@ -449,3 +466,37 @@ func test_power_scale_tracks_damage() -> void:
 	await _wait_physics(2)
 	assert_almost_eq(_car.drivetrain.power_scale, 1.0 - 0.5 * cfg.damage_power_loss_max, 0.001,
 		"power scale follows the damage fraction each tick")
+
+
+# Regression: a head-on collision must cost HP. Godot only reports a contact in
+# _integrate_forces AFTER the solver has arrested the car, so reading the
+# post-solve state.linear_velocity floored the impact speed to ~0 on exactly the
+# hardest (head-on) hits and they dealt no damage. car.gd keys damage off the
+# pre-solve _approach_speed cached in _physics_process instead. See features/damage.md.
+func test_head_on_collision_costs_hp() -> void:
+	_car.damage.field(1000.0, 1000.0, false)
+	var impacts: Array = []
+	_car.damage.damaged.connect(func(loss, _pt): impacts.append(loss))
+
+	var fwd := -_car.global_transform.basis.z
+	var obstacle_pos := _car.global_position + fwd * 12.0
+	obstacle_pos.y = _car.global_position.y
+	var body := StaticBody3D.new()
+	body.add_to_group(DamageModel.OBSTACLE_GROUP)
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4, 4, 1)
+	col.shape = box
+	body.add_child(col)
+	_scene.add_child(body)
+	body.global_position = obstacle_pos
+
+	# Launch the car straight at the obstacle (~30 m/s); re-assert velocity until
+	# it's close so drag doesn't bleed off the approach speed before contact.
+	for i in 120:
+		if _car.global_position.distance_to(obstacle_pos) > 4.0:
+			_car.linear_velocity = fwd * 30.0
+		await get_tree().physics_frame
+
+	assert_gt(impacts.size(), 0, "a head-on collision must register at least one impact")
+	assert_lt(_car.damage.hp, 1000.0, "a head-on collision must cost HP")

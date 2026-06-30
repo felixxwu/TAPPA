@@ -68,12 +68,20 @@ func test_draw_upgrade_returns_parts_at_target_tier_with_rare_repair() -> void:
 # --- Car draw ----------------------------------------------------------------
 
 func test_draw_car_prefers_unowned_at_tier() -> void:
-	# Completed 2 open rallies → ceiling 2; tier-2 cars are RS3 and Mustang, both
-	# still eligible for an incomplete rally. Own the RS3, not the Mustang.
-	var profile := _profile(["shakedown", "coastal_sprint"], ["rs3"])
+	# Completed 2 open rallies → ceiling 2. Derive the eligible tier-2 cars from the
+	# library, own every one except a target, and assert the draw always returns that
+	# remaining un-owned car — robust to roster changes (no hardcoded model id). When
+	# >1 car is eligible this also proves the unowned PREFERENCE (an owned alternative
+	# exists yet is never picked).
+	var completed := ["shakedown", "coastal_sprint"]
+	var eligible: Array = RewardSystem._eligible_candidates_at_tier(2, _profile(completed, []))
+	assert_false(eligible.is_empty(), "tier 2 has at least one eligible reward car to draw")
+	var target: String = eligible[0]
+	var owned: Array = eligible.slice(1)  # own every eligible tier-2 car but the target
+	var profile := _profile(completed, owned)
 	for i in 30:
 		var model: Variant = RewardSystem.draw_car(2, profile, _rng(i))
-		assert_eq(model, "mustang", "draws the un-owned tier-2 car, never the owned one")
+		assert_eq(model, target, "draws the un-owned tier-2 car, never an owned one")
 
 
 func test_draw_car_grants_duplicate_when_all_eligible_owned() -> void:

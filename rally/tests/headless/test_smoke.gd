@@ -134,12 +134,6 @@ func test_hud_speed_label_present() -> void:
 	assert_string_contains(label.text, "km/h", "speed label reads in km/h")
 
 
-func test_hud_car_button_present() -> void:
-	# The car-selector button cycles between the CarLibrary entries.
-	var button := _scene.get_node_or_null("HUD/CarButton") as Button
-	assert_not_null(button, "HUD has a car-selector button")
-
-
 func test_stage_flow_wired() -> void:
 	# The per-stage flow (todo/stage-start-and-end.md): a StageManager node plus
 	# the HUD widgets it drives (countdown, run timer, complete panel).

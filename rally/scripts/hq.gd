@@ -60,7 +60,7 @@ const PIN_LABEL_PX := Vector2i(320, 120)
 const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
 const PIN_LABEL_RISE := 0.16
 # Sprite modulate for a readout box whose rally isn't available yet (greyed out).
-const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.75)
+const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.4)
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
 # its texture and the engine-audio resources — isn't decoded at script-compile time
@@ -116,7 +116,6 @@ var _lift_tween: Tween
 
 # 3D staging.
 var _camera: Camera3D
-var _stats_label: Label3D       # billboarded car stats beside the focused parked car
 var _cam_tween: Tween
 var _map_table: MapTable        # the wooden table model the map plane sits on
 var _map_plane: MeshInstance3D  # the flat map laid on the table top
@@ -150,6 +149,8 @@ var _car_name_label: Label
 var _car_stats_label: Label
 var _start_button: Button
 var _title_start_button: Button  # EXTERIOR title Start — default keyboard/gamepad focus
+var _title_settings_button: Button  # EXTERIOR title Settings (below Start)
+var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
 var _no_eligible_label: Label
 # Car-park damage UI: a "too damaged" note + a Repair action for a wrecked focused car.
 var _car_warning_label: Label
@@ -163,6 +164,7 @@ var _overflow_note: Label
 var _scrap_button: Button
 
 # Tuning-lift overlay widgets.
+var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
 var _lift_hub_controls: HBoxContainer  # the HUB page: one row of change-car + Tuning/Upgrades buttons
 var _hub_tune_btn: Button       # HUB "Tuning >" — half of the up/down page cursor
@@ -329,16 +331,6 @@ func _build_environment() -> void:
 	_build_carpark()
 	_build_map_table()
 	_build_lift()
-
-	# Billboarded stats panel beside the focused car (Label3D for now; the richer
-	# SubViewport panel of menus.md rig 2 is deferred).
-	_stats_label = Label3D.new()
-	_stats_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_stats_label.outline_size = 12
-	_stats_label.font_size = 64
-	_stats_label.pixel_size = 0.006
-	_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	add_child(_stats_label)
 
 	_camera = Camera3D.new()
 	_camera.current = true
@@ -843,6 +835,29 @@ func _build_title_overlay() -> void:
 	settings.custom_minimum_size = Vector2(220, 44)
 	settings.pressed.connect(func() -> void: _open_settings(false))
 	root.add_child(settings)
+	_title_settings_button = settings
+
+	# Build version, shown only on the title screen (bottom-right corner). It is
+	# stamped into application/config/version by build_web.sh (0.<git commit count>
+	# + short SHA) and falls back to the project default on editor/dev runs.
+	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
+	var version_label := Label.new()
+	version_label.text = ("v" + ver) if ver != "" else "dev"
+	version_label.add_theme_font_size_override("font_size", 12)
+	version_label.anchor_left = 1.0
+	version_label.anchor_right = 1.0
+	version_label.anchor_top = 1.0
+	version_label.anchor_bottom = 1.0
+	version_label.offset_left = -120.0
+	version_label.offset_top = -28.0
+	version_label.offset_right = -12.0
+	version_label.offset_bottom = -8.0
+	version_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	version_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	version_label.modulate = Color(1, 1, 1, 0.6)
+	_title_layer.add_child(version_label)
+	_title_version_label = version_label
 
 
 func _build_garage_overlay() -> void:
@@ -867,17 +882,17 @@ func _build_garage_overlay() -> void:
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(func() -> void: _go_to(View.EXTERIOR))
 	actions.add_child(back)
-	# Convenience buttons mirroring the clickable 3D lift / table.
-	var to_lift := Button.new()
-	to_lift.text = "Tune car (lift) >"
-	to_lift.focus_mode = Control.FOCUS_NONE
-	to_lift.pressed.connect(_enter_lift)
-	actions.add_child(to_lift)
+	# Convenience buttons mirroring the clickable 3D table / lift.
 	var to_table := Button.new()
 	to_table.text = "Open map table >"
 	to_table.focus_mode = Control.FOCUS_NONE
 	to_table.pressed.connect(_enter_table)
 	actions.add_child(to_table)
+	var to_lift := Button.new()
+	to_lift.text = "Tune car (lift) >"
+	to_lift.focus_mode = Control.FOCUS_NONE
+	to_lift.pressed.connect(_enter_lift)
+	actions.add_child(to_lift)
 
 	_passthrough_overlay(root)  # let taps reach the 3D table / lift behind the HUD
 
@@ -886,11 +901,6 @@ func _build_table_overlay() -> void:
 	var made := _make_overlay()
 	_table_layer = made[0]
 	var root: VBoxContainer = made[1]
-
-	var hint := Label.new()
-	hint.text = "WORLD MAP — tap a rally to see its details"
-	hint.add_theme_font_size_override("font_size", 22)
-	root.add_child(hint)
 
 	_map_meter = Label.new()
 	_map_meter.add_theme_font_size_override("font_size", 14)
@@ -949,24 +959,27 @@ func _build_detail_overlay() -> void:
 # The tuning bay. The raised car is framed to the LEFT by the lift camera
 # (hq_lift_cam_*); everything sits on top in one CanvasLayer with two faces:
 #
-#   * The HUB (default on entry) — a bottom-left column beside the car: the bay
-#     title + the selected car's name/description, then UNDER it a minimal change-car
-#     selector (< Car / Car >) and the Tuning + Upgrades buttons that open each menu.
-#   * A SUB-MENU page (TUNE or UPGRADES) — a solid panel anchored to the RIGHT
-#     (hq_lift_menu_width_frac of the width) so the car stays in view. Because the
-#     change-car control + page chrome live on the hub, each sub-menu gets the full
-#     panel height to itself and doesn't need to scroll.
+#   * The HUB (default on entry) — a bottom column beside/under the car: the
+#     selected car's name/description (filling the page width), then UNDER it a minimal
+#     change-car selector (< Car / Car >) and the Tuning + Upgrades buttons that open
+#     each menu.
+#   * A SUB-MENU page (TUNE or UPGRADES) — a solid panel CENTRED horizontally
+#     (hq_lift_menu_centered_width_frac of the width) using most of the screen; the car
+#     description hides while it's up. Because the change-car control + page chrome live
+#     on the hub, each sub-menu gets the full panel height to itself and needn't scroll.
 #
 # _refresh_lift_ui toggles which face is shown from _lift_page.
 func _build_lift_overlay() -> void:
-	var frac: float = Config.data.hq_lift_menu_width_frac
+	var frac: float = Config.data.hq_lift_menu_centered_width_frac
 	_lift_layer = CanvasLayer.new()
 	add_child(_lift_layer)
 
-	# --- The right-side sub-menu panel (shown on the TUNE / UPGRADES pages) ---
+	# --- The sub-menu panel (shown on the TUNE / UPGRADES pages) ---
+	# Centred horizontally and wide (hq_lift_menu_centered_width_frac) so an open page
+	# uses most of the screen; the car description hides while it's up (_refresh_lift_ui).
 	_lift_menu_bg = ColorRect.new()
-	_lift_menu_bg.anchor_left = 1.0 - frac
-	_lift_menu_bg.anchor_right = 1.0
+	_lift_menu_bg.anchor_left = (1.0 - frac) * 0.5
+	_lift_menu_bg.anchor_right = 1.0 - (1.0 - frac) * 0.5
 	_lift_menu_bg.anchor_top = 0.0
 	_lift_menu_bg.anchor_bottom = 1.0
 	_lift_menu_bg.color = Color(0.0, 0.0, 0.0, 0.96)
@@ -1010,21 +1023,23 @@ func _build_lift_overlay() -> void:
 	menu_back.pressed.connect(_lift_hub)
 	root.add_child(menu_back)
 
-	# --- The bottom-left column: info panel + (on the HUB) the change-car selector and
-	# the Tuning / Upgrades buttons. Grows upward so the info panel sits at the bottom
-	# beside the car with the hub controls above it; mouse-transparent except buttons.
+	# --- The bottom column: car-description info panel + (on the HUB) the change-car
+	# selector and the Tuning / Upgrades buttons. Spans the full page width (the sub-menu
+	# no longer needs room on the right) and grows upward so the info panel sits at the
+	# bottom with the hub controls above it; mouse-transparent except buttons.
 	var left_col := VBoxContainer.new()
-	left_col.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	left_col.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	left_col.offset_left = 20
+	left_col.offset_right = -20
 	left_col.offset_bottom = -20
-	left_col.grow_horizontal = Control.GROW_DIRECTION_END
 	left_col.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	left_col.add_theme_constant_override("separation", 10)
 	left_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lift_layer.add_child(left_col)
 
-	var info_panel := PanelContainer.new()
-	info_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_lift_info_panel = PanelContainer.new()
+	var info_panel := _lift_info_panel
+	info_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Solid black, sharp-cornered house panel (design system).
 	info_panel.add_theme_stylebox_override("panel", UITheme.panel_box(0.82, 14))
@@ -1033,14 +1048,10 @@ func _build_lift_overlay() -> void:
 	info.add_theme_constant_override("separation", 4)
 	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_panel.add_child(info)
-	var title := Label.new()
-	title.text = "TUNING BAY"
-	title.add_theme_font_size_override("font_size", 22)
-	info.add_child(title)
 	_lift_car_label = Label.new()
 	_lift_car_label.add_theme_font_size_override("font_size", 14)
 	_lift_car_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_lift_car_label.custom_minimum_size = Vector2(360, 0)
+	_lift_car_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_child(_lift_car_label)
 
 	# The hub controls UNDER the car description: a SINGLE bottom row holding Back, the
@@ -1120,22 +1131,34 @@ func _build_lift_tune_box(parent: VBoxContainer) -> void:
 
 func _make_slider_row(spec: Dictionary) -> Control:
 	var axis := String(spec["axis"])
-	var row := VBoxContainer.new()
+	# Use horizontal space: a left column (name above value) sits beside a right
+	# column (the slider above its extremity labels).
+	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 2)
+	row.add_theme_constant_override("separation", 16)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	var header := HBoxContainer.new()
-	row.add_child(header)
+	# Left column: name on top of the current value.
+	var label_col := VBoxContainer.new()
+	label_col.add_theme_constant_override("separation", 2)
+	label_col.custom_minimum_size = Vector2(140, 0)
+	row.add_child(label_col)
 	var name_label := Label.new()
 	name_label.text = String(spec["name"])
 	name_label.add_theme_font_size_override("font_size", 16)
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(name_label)
+	label_col.add_child(name_label)
 	var value := Label.new()
 	value.add_theme_font_size_override("font_size", 14)
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	header.add_child(value)
+	value.modulate = Color(1, 1, 1, 0.8)
+	label_col.add_child(value)
 	_lift_slider_values[axis] = value
+
+	# Right column: the slider with its extremity labels beneath.
+	var slider_col := VBoxContainer.new()
+	slider_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider_col.add_theme_constant_override("separation", 2)
+	row.add_child(slider_col)
 
 	var slider := HSlider.new()
 	slider.min_value = -1.0
@@ -1146,11 +1169,11 @@ func _make_slider_row(spec: Dictionary) -> Control:
 	slider.focus_mode = Control.FOCUS_ALL
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.value_changed.connect(_on_tune_slider_changed.bind(axis))
-	row.add_child(slider)
+	slider_col.add_child(slider)
 	_lift_sliders[axis] = slider
 
 	var ends := HBoxContainer.new()
-	row.add_child(ends)
+	slider_col.add_child(ends)
 	var lo := Label.new()
 	lo.text = String(spec["lo"])
 	lo.add_theme_font_size_override("font_size", 11)
@@ -1828,7 +1851,9 @@ func _refresh_lift_ui() -> void:
 	_lift_car_label.text = "%s  #%d\n%s" % [
 		entry.get("name", "?"), id, _car_stats_text(_lift_owned, entry)]
 	# Show the hub (car selector + menu buttons) or a sub-menu page from _lift_page.
+	# The car description hides while a sub-menu is open so the centred page has room.
 	_lift_hub_controls.visible = _lift_page == LiftPage.HUB
+	_lift_info_panel.visible = _lift_page == LiftPage.HUB
 	_lift_menu_bg.visible = _lift_page != LiftPage.HUB
 	_lift_tune_box.visible = _lift_page == LiftPage.TUNE
 	_lift_upgrades_box.visible = _lift_page == LiftPage.UPGRADES
@@ -2023,7 +2048,6 @@ func _enter_car_screen() -> void:
 		_no_eligible_label.text = "No eligible car for this rally — win or pick a qualifying car."
 		_car_name_label.text = ""
 		_car_stats_label.text = ""
-		_stats_label.text = ""
 		_car_warning_label.visible = false
 		_car_repair_button.visible = false
 		_start_button.disabled = true
@@ -2167,10 +2191,6 @@ func _focus_changed(snap := false) -> void:
 	_selected_instance_id = int(owned.get("instance_id", -1))
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var stats := _car_stats_text(owned, entry)
-	_stats_label.text = "%s\n%s" % [entry.get("name", "?"), stats]
-	# Float the billboarded stats above the focused car (toward the +Z camera) so the
-	# row-along-X lineup keeps it clear of the neighbouring bays.
-	_stats_label.global_position = (_markers[_focus] as Marker3D).global_position + Vector3(-1.4, 2.6, 1.6)
 	# The same lineup + focus machinery drives both the rally car-select (CARPARK)
 	# and the scrap prompt (OVERFLOW); update whichever overlay is up.
 	if _view == View.OVERFLOW:
@@ -2216,7 +2236,7 @@ func _repair_focused_car() -> void:
 		_focus_changed()
 
 
-# One-line car summary shared by the overlay and the 3D Label3D. Health reads as a
+# One-line car summary shown in the car-select / overflow overlays. Health reads as a
 # percentage (a raw HP number is misleading — it can read as horsepower); a wrecked
 # (0 HP) car is flagged so the lineup makes clear why it can't be entered.
 func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
@@ -2230,11 +2250,10 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 		hp_text = "WRECKED"
 	else:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
-	return "%s | %s | %s | tier %d | %.2f kW/kg | %s" % [
+	return "%s | %s | %s | %.2f kW/kg | %s" % [
 		_drive_text(int(entry.get("drive_mode", -1))),
 		String(entry.get("country", "?")),
 		String(entry.get("car_type", "?")),
-		int(entry.get("reward_tier", 0)),
 		CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)),
 		hp_text,
 	]
@@ -2263,9 +2282,13 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	if restriction.has("pw_min"):
+	# A min+max pair reads as a single range ("power-to-weight 0.23-0.32"); a lone
+	# floor or ceiling keeps its >= / <= form.
+	if restriction.has("pw_min") and restriction.has("pw_max"):
+		parts.append("power-to-weight %.2f-%.2f" % [float(restriction["pw_min"]), float(restriction["pw_max"])])
+	elif restriction.has("pw_min"):
 		parts.append("power-to-weight >= %.2f" % float(restriction["pw_min"]))
-	if restriction.has("pw_max"):
+	elif restriction.has("pw_max"):
 		parts.append("power-to-weight <= %.2f" % float(restriction["pw_max"]))
 	return ", ".join(parts)
 
@@ -2402,8 +2425,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_maybe_enter_web_fullscreen()
 	match _view:
 		View.EXTERIOR:
-			if event.is_action_pressed("menu_select"):
-				_on_exterior_start()
+			# The title is a flat two-button menu (Start / Settings) driven by native
+			# focus — ui_accept fires whichever button is focused (see _build_title_overlay).
+			# Don't hard-route menu_select to Start here, or pressing accept on Settings
+			# would fire Start instead.
+			pass
 		View.SETTINGS:
 			if event.is_action_pressed("menu_back"):
 				# A sub-page backs out to the category list first (handled by the shared

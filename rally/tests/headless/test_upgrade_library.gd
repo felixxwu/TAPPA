@@ -38,12 +38,19 @@ func test_effect_application_multiplies_and_adds_on_baseline() -> void:
 	cfg.downforce_front = 0.0
 	cfg.downforce_rear = 0.0
 	var car := {"installed_upgrades": ["engine_stage1", "brake_kit", "weight_reduction", "aero_kit"]}
+	# Expected values are derived from each upgrade's configured effect, so this tests
+	# the apply PIPELINE (right field, multiply vs add) without pinning the tunable
+	# multipliers/amounts — retuning a kit's strength won't break the test.
+	var eng: Dictionary = UpgradeLibrary.by_id("engine_stage1")["effect"]
+	var brk: Dictionary = UpgradeLibrary.by_id("brake_kit")["effect"]
+	var wgt: Dictionary = UpgradeLibrary.by_id("weight_reduction")["effect"]
+	var aero: Dictionary = UpgradeLibrary.by_id("aero_kit")["effect"]
 	UpgradeLibrary.apply(car, cfg)
-	assert_almost_eq(cfg.peak_torque, 110.0, 0.001, "engine kit multiplies torque 1.10x")
-	assert_almost_eq(cfg.brake_torque, 1200.0, 0.001, "brake kit multiplies brake torque 1.20x")
-	assert_almost_eq(cfg.mass, 900.0, 0.001, "weight reduction multiplies mass 0.90x")
-	assert_almost_eq(cfg.downforce_front, 0.2, 0.001, "aero kit adds front downforce")
-	assert_almost_eq(cfg.downforce_rear, 0.2, 0.001, "aero kit adds rear downforce")
+	assert_almost_eq(cfg.peak_torque, 100.0 * float(eng["peak_torque_mult"]), 0.001, "engine kit multiplies torque")
+	assert_almost_eq(cfg.brake_torque, 1000.0 * float(brk["brake_torque_mult"]), 0.001, "brake kit multiplies brake torque")
+	assert_almost_eq(cfg.mass, 1000.0 * float(wgt["mass_mult"]), 0.001, "weight reduction multiplies mass")
+	assert_almost_eq(cfg.downforce_front, float(aero["downforce_front"]), 0.001, "aero kit adds front downforce")
+	assert_almost_eq(cfg.downforce_rear, float(aero["downforce_rear"]), 0.001, "aero kit adds rear downforce")
 
 
 func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
@@ -53,8 +60,10 @@ func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
 	var base_pw := CarLibrary.power_to_weight(entry)
 	var car := {"installed_upgrades": ["engine_stage1", "weight_reduction"]}
 	var eff := UpgradeLibrary.effective_meta(car, entry)
-	assert_almost_eq(float(eff["mass"]), 900.0, 0.001, "weight reduction lightens the meta mass")
-	assert_almost_eq(float(eff["peak_torque"]), 220.0, 0.001, "engine kit raises the meta torque")
+	var eng_mult: float = float(UpgradeLibrary.by_id("engine_stage1")["effect"]["peak_torque_mult"])
+	var mass_mult: float = float(UpgradeLibrary.by_id("weight_reduction")["effect"]["mass_mult"])
+	assert_almost_eq(float(eff["mass"]), 1000.0 * mass_mult, 0.001, "weight reduction lightens the meta mass")
+	assert_almost_eq(float(eff["peak_torque"]), 200.0 * eng_mult, 0.001, "engine kit raises the meta torque")
 	assert_gt(CarLibrary.power_to_weight(eff), base_pw, "upgrades raise the effective power-to-weight")
 	assert_almost_eq(float(entry["mass"]), 1000.0, 0.001, "source entry is left untouched")
 	# No upgrades is a faithful copy.

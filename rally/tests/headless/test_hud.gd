@@ -69,43 +69,22 @@ func test_gear_and_rpm_labels_track_engine() -> void:
 	assert_eq((_scene.get_node("HUD/GearLabel") as Label).text, "N", "neutral shows N")
 
 
-func test_version_label_shows_project_version() -> void:
-	# build_web.sh stamps application/config/version (0.<commits> + SHA) into the
-	# export; the HUD mirrors it with a "v" prefix. In editor/test runs it reads
-	# the project default ("0.0-dev").
-	var label := _scene.get_node("HUD/VersionLabel") as Label
-	assert_not_null(label, "HUD has a version label")
-	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
-	assert_ne(ver, "", "project.godot defines application/config/version")
-	assert_eq(label.text, "v" + ver, "version label mirrors application/config/version")
+func test_hud_has_no_version_label() -> void:
+	# The build version now lives on the title screen only (see test_hq.gd); the
+	# in-run HUD must not carry it.
+	assert_null(_scene.get_node_or_null("HUD/VersionLabel"),
+		"driving HUD no longer shows the build version")
 
 
-func test_mode_button_toggles_gearbox() -> void:
-	var car: VehicleBody3D = _scene.get_node("Car")
-	var engine: EngineSim = car.drivetrain.engine
-	var button := _scene.get_node("HUD/ModeButton") as Button
-	assert_eq(button.focus_mode, Control.FOCUS_NONE,
-		"mode button must not grab keyboard focus (would steal the handbrake key)")
-	var was := engine.auto
-	button.pressed.emit()
-	await get_tree().process_frame
-	assert_ne(engine.auto, was, "clicking the mode button toggles auto/manual")
-	assert_eq(button.text, "AUTO" if engine.auto else "MANUAL", "button text reflects the mode")
-
-
-func test_drive_button_cycles_layout() -> void:
-	var car: VehicleBody3D = _scene.get_node("Car")
-	var dt: Drivetrain = car.drivetrain
-	var button := _scene.get_node("HUD/DriveButton") as Button
-	assert_eq(button.focus_mode, Control.FOCUS_NONE,
-		"drive button must not grab keyboard focus")
-	dt.drive_mode = Drivetrain.DriveMode.RWD
-	await get_tree().process_frame
-	assert_eq(button.text, "RWD", "button shows the current layout")
-	button.pressed.emit()
-	await get_tree().process_frame
-	assert_eq(dt.drive_mode, Drivetrain.DriveMode.AWD, "clicking cycles RWD -> AWD")
-	assert_eq(button.text, "AWD", "button text follows the layout")
+func test_elapsed_timer_anchored_top_centre() -> void:
+	# The run timer sits at the top middle of the screen (centre anchors), not the
+	# old top-right corner.
+	var label := _scene.get_node("HUD/ElapsedLabel") as Label
+	assert_not_null(label, "HUD has the run timer")
+	assert_almost_eq(label.anchor_left, 0.5, 0.001, "timer anchored to horizontal centre")
+	assert_almost_eq(label.anchor_right, 0.5, 0.001, "timer anchored to horizontal centre")
+	assert_eq(label.horizontal_alignment, HORIZONTAL_ALIGNMENT_CENTER,
+		"timer text is centre-aligned")
 
 
 # --- Stage flow widgets (todo/stage-start-and-end.md) ------------------------

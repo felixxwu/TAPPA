@@ -164,6 +164,44 @@ func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 		"the title focuses Start for keyboard / gamepad")
 
 
+# Regression: menu_select on the title must fire the FOCUSED button (native focus),
+# not hard-route to Start. menu_select shares Enter with ui_accept, so a stray
+# EXTERIOR menu_select handler used to start the run even when Settings was focused.
+func test_hq_title_accept_does_not_force_start() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	await get_tree().process_frame  # let the deferred grab_focus run
+	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
+	# Focus Settings, then feed a menu_select action as the engine would. The title's
+	# input handler must NOT start the run (which would leave EXTERIOR for GARAGE).
+	hq._title_settings_button.grab_focus()
+	var ev := InputEventAction.new()
+	ev.action = "menu_select"
+	ev.pressed = true
+	hq._unhandled_input(ev)
+	assert_eq(hq._view, hq.View.EXTERIOR,
+		"menu_select on the title doesn't force Start; the focused button drives accept")
+
+
+# The build version is shown on the title screen only (it was removed from the
+# in-run HUD). build_web.sh stamps application/config/version; editor/test runs
+# fall back to the project default ("0.0-dev").
+func test_hq_title_shows_build_version() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var ver := str(ProjectSettings.get_setting("application/config/version", ""))
+	assert_ne(ver, "", "project.godot defines application/config/version")
+	assert_not_null(hq._title_version_label, "the title overlay has a version label")
+	# UITheme.enforce() uppercases every overlay label (house style), so the
+	# version renders capped (e.g. "V0.0-DEV").
+	assert_eq(hq._title_version_label.text, UITheme.caps("v" + ver),
+		"the title version label mirrors application/config/version")
+	assert_eq(hq._title_version_label.get_parent(), hq._title_layer,
+		"the version label lives on the title overlay (shown only there)")
+
+
 # The 3D map table can't take native focus (left/right pans / the pins are spatial),
 # so it carries a keyboard cursor: a selected pin that cycles (wrapping), gets the
 # hover-style highlight (all pins stay one size), and opens its rally detail on select.
@@ -404,8 +442,20 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
 	assert_true(hq._car_layer.visible, "the car-park overlay is shown")
 	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
-	assert_eq(hq._cars.size(), 1, "only the eligible (RWD, in-band) car is parked")
-	assert_eq(hq._cars[0].current_car_name(), "Porsche 911", "the AWD RS3 and under-powered MX-5 are filtered out")
+	# Expected = exactly the owned cars RallyLibrary deems eligible. Derived from the
+	# eligibility rule + owned roster (not a pinned model name), so it stays correct
+	# if cars or the rally's p/w band are retuned — what it really asserts is that HQ
+	# parks the library's eligible set, no more, no less.
+	var rally := RallyLibrary.by_id("rwd_masters")
+	var expected := {}
+	for model_id in ["mx5", "rs3", "porsche911"]:  # the player's owned roster here
+		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(model_id)):
+			expected[CarLibrary.by_id(model_id)["name"]] = true
+	var parked := {}
+	for car in hq._cars:
+		parked[car.current_car_name()] = true
+	assert_eq(parked, expected, "HQ parks exactly the cars RallyLibrary deems eligible")
+	assert_gt(expected.size(), 0, "at least one owned car qualifies (else the test proves nothing)")
 	assert_string_contains(hq._rally_banner.text, "RWD CARS", "the banner spells out the rally restriction")
 
 
@@ -663,13 +713,15 @@ func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
 	await get_tree().process_frame
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "entering the bay lands on the hub page")
 	assert_true(hq._lift_hub_controls.visible, "the hub shows the change-car + menu buttons")
+	assert_true(hq._lift_info_panel.visible, "the car description shows on the hub")
 	assert_false(hq._lift_menu_bg.visible, "no sub-menu panel is shown on the hub")
-	# Open Tuning: its page (the sliders) takes over; the hub controls hide.
+	# Open Tuning: its page (the sliders) takes over; the hub controls + car desc hide.
 	hq._open_lift_page(hq.LiftPage.TUNE)
 	assert_true(hq._lift_menu_bg.visible, "the sub-menu panel shows on the Tuning page")
 	assert_true(hq._lift_tune_box.visible, "the Tuning page shows the sliders")
 	assert_false(hq._lift_upgrades_box.visible, "the Upgrades menu is hidden on the Tuning page")
 	assert_false(hq._lift_hub_controls.visible, "the hub controls hide while a menu is open")
+	assert_false(hq._lift_info_panel.visible, "the car description hides while a menu is open")
 	# Back returns to the hub (still in the bay, car still raised).
 	hq._lift_back()
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "Back from a menu returns to the hub")

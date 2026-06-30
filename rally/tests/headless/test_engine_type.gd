@@ -18,9 +18,10 @@ func test_default_is_inline4() -> void:
 	assert_eq(cfg.engine_type, I4, "defaults to i4")
 	assert_eq(cfg.engine_cylinders, 4, "i4 has four cylinders")
 	assert_eq(cfg.engine_firing_angles, [0.0, 180.0, 360.0, 540.0], "i4 even 180 deg")
-	# Real-unit baseline: the i4 preset's peak crank torque in N·m (the old
-	# abstract 24 scaled by the sim's kg conversion factor S = 1058/120).
-	assert_almost_eq(cfg.peak_torque, 211.6, 0.001, "i4 baseline peak torque (N·m)")
+	# The setter copies the preset's torque, so assert it matches the preset entry
+	# (a tunable value) rather than pinning a literal that churns when it's rebalanced.
+	assert_almost_eq(cfg.peak_torque, float(GameConfig.ENGINE_PRESETS[I4]["peak_torque"]), 0.001,
+		"i4 peak torque matches its preset")
 
 
 func test_selecting_v8_applies_eight_cylinders() -> void:
@@ -28,7 +29,10 @@ func test_selecting_v8_applies_eight_cylinders() -> void:
 	cfg.engine_type = V8
 	assert_eq(cfg.engine_cylinders, 8, "v8 has eight cylinders")
 	assert_eq(cfg.engine_firing_angles.size(), 8, "eight firing angles")
-	assert_gt(cfg.peak_torque, 211.6, "v8 makes more torque than the i4")
+	# Compare against the i4 preset read live (not a literal) so this stays true
+	# through torque rebalancing — same robustness as the i4 check above.
+	assert_gt(cfg.peak_torque, float(GameConfig.ENGINE_PRESETS[I4]["peak_torque"]),
+		"v8 makes more torque than the i4")
 
 
 func test_each_preset_sets_a_full_sane_profile() -> void:

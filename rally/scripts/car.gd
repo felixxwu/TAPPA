@@ -22,6 +22,11 @@ var drivetrain: Drivetrain
 # Per-car HP / attrition state + the handling/power degradation maths
 # (features/damage.md). Built in _ready, (re)configured per car in apply_car.
 var damage: DamageModel
+# Travel speed (m/s) captured at the top of each _physics_process, BEFORE the
+# solver runs. _integrate_forces uses THIS as the impact speed, not the post-solve
+# state.linear_velocity (which a head-on hit has already arrested to ~0). See
+# _integrate_forces for the full rationale.
+var _approach_speed := 0.0
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
@@ -136,6 +141,10 @@ func _recompute_axles() -> void:
 
 func _physics_process(delta: float) -> void:
 	var cfg: GameConfig = Config.data
+	# Capture the pre-solve travel speed for _integrate_forces' damage keying — this
+	# runs before the physics solver, so it still holds the true approach speed even
+	# on a head-on hit the solver is about to arrest. See _integrate_forces.
+	_approach_speed = linear_velocity.length()
 	# Decay the damage model's post-hit impact cooldown (groups a sustained crash
 	# into one hit; see DamageModel.register_impact).
 	if damage != null:
@@ -281,21 +290,28 @@ func _physics_process(delta: float) -> void:
 
 
 # Read solid contacts each physics tick and feed obstacle hits to the damage
-# model, keyed to the speed the car was travelling at. Only contacts against bodies
-# in the obstacle group count (trees / bushes / signs); ground and road contacts
-# are ignored, so normal driving never chips HP. The post-hit cooldown in
-# register_impact means a crash registers on its FIRST contact, so this speed is
-# the approach speed. contact_monitor + max_contacts_reported are enabled in _ready.
+# model. Only contacts against bodies in the obstacle group count (trees / bushes
+# / signs); ground and road contacts are ignored, so normal driving never chips HP.
+#
+# CRITICAL: damage is keyed to `_approach_speed` — the speed cached at the top of
+# _physics_process, BEFORE the solver runs — NOT to state.linear_velocity here.
+# Godot only reports a contact in _integrate_forces AFTER the constraint solver has
+# already resolved (and, in a head-on hit, arrested) it, so state.linear_velocity
+# at this point is near zero on exactly the hardest crashes. Reading it directly
+# made head-on collisions deal no damage (the square law floored to 0 below
+# impact_min_speed_kmh) while glancing hits, which keep their speed, still chipped
+# HP. The cached pre-solve speed is the true approach speed. The post-hit cooldown
+# in register_impact still groups the rest of the crash into that one hit.
+# contact_monitor + max_contacts_reported are enabled in _ready.
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if damage == null:
 		return
 	var cfg: GameConfig = Config.data
-	var speed := state.linear_velocity.length()
 	for i in state.get_contact_count():
 		var collider := state.get_contact_collider_object(i) as Node
 		if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
 			continue
-		damage.register_impact(speed, state.get_contact_local_position(i), cfg)
+		damage.register_impact(_approach_speed, state.get_contact_local_position(i), cfg)
 
 
 # DamageModel reached 0 HP. Re-emit for the rally/menu layer. In free-roam (an
@@ -406,6 +422,9 @@ func apply_car(index: int) -> String:
 	# value. apply_owned applies the aero_kit upgrade ON TOP of this afterwards.
 	cfg.downforce_front = spec.get("downforce_front", 0.0)
 	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
+	# Per-car crank + flywheel rotating inertia (kg·m²): small revs fast, large
+	# revs lazily. Cars that omit it keep the config fallback.
+	cfg.engine_inertia = spec.get("engine_inertia", cfg.engine_inertia)
 	cfg.engine_low_octave_mix = spec.get("low_octave_mix", 0.0)
 	cfg.engine_volume_db = spec.get("volume_db", cfg.engine_volume_db)
 	# Per-car noise floor authored in dB; convert to the linear amplitude the

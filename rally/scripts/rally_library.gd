@@ -8,7 +8,7 @@ extends RefCounted
 # This file is also the home of the pure functions the rest of the game needs:
 #   * is_eligible(rally, car_meta)            — can this car enter?
 #   * derive_target_ms(track_result)          — per-event target time from a track
-#   * generate_opponent_field(rally, targets) — the deterministic opponent field
+#   * generate_opponent_field(rally, event_results, events) — the deterministic opponent field
 #   * completed_count / showdown_unlocked      — progress + end-game gate
 #   * incomplete_rallies_enterable_by(...)     — the anti-soft-lock query
 #
@@ -21,32 +21,18 @@ extends RefCounted
 # (game_config.gd) — the authored baseline track width.
 const DEFAULT_WIDTH := 6.0
 
-# Placeholder target-time formula constants. The real length/corner-mix → seconds
-# function and its difficulty weights are a calibration pass (gameplay.md / the
-# rally-roster spec); these live here as authored defaults until that lands, at
-# which point the weights move to GameConfig.
-const REF_SPEED_MPS := 28.0      # ~100 km/h reference pace over the centerline (gravel)
-const CORNER_PENALTY_S := 1.1    # seconds added per non-straight piece (gravel)
-
-# Tarmac pace, used for the tarmac share of a track. Tarmac has more grip
-# (GameConfig.tarmac_grip 1.3 vs gravel_grip 1.0), so it's driven a lot quicker —
-# both a higher cruising pace and quicker corners (less scrubbing / sliding). The
-# target time splits the track by its tarmac fraction (event `surface_mix`) and
-# prices each surface separately, so a tarmac-heavy event gets a tighter target.
-const TARMAC_SPEED_MPS := 36.0   # ~130 km/h reference pace over tarmac
-const TARMAC_CORNER_PENALTY_S := 0.7  # seconds added per non-straight piece on tarmac
-
 # Opponent-field shape (gameplay.md): 10–15 rivals, some DNF (a DNF in any event
 # disqualifies the rally).
 const FIELD_MIN := 10
 const FIELD_MAX := 15
 const DNF_CHANCE := 0.18         # per-opponent, per-event
 
-# Rival pace band, as multiples of the event target time: each clean rival's
-# event time is uniform in [target × RIVAL_PACE_MIN, target × (RIVAL_PACE_MIN +
-# RIVAL_PACE_SPREAD)]. The floor sits above the target so even the quickest
-# rival runs slower than the target pace, keeping the field beatable; raise the
-# floor to make rivals easier, lower it to make them tougher.
+# Rival pace band, as multiples of each rival's OWN physics floor (optimum_ms for
+# THEIR car on the event track): each clean rival's event time is uniform in
+# [floor × RIVAL_PACE_MIN, floor × (RIVAL_PACE_MIN + RIVAL_PACE_SPREAD)].
+# The floor sits above the (driver_factor-scaled) par because the best eligible car
+# sets the par floor and RIVAL_PACE_MIN > driver_factor, keeping the field beatable;
+# raise the floor to make rivals easier, lower it to make them tougher.
 const RIVAL_PACE_MIN := 1.35
 const RIVAL_PACE_SPREAD := 1.0
 
@@ -98,7 +84,8 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "rising_sun", "name": "Rising Sun Rally", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.82, 0.34),
-		"restriction": {"pw_min": 0.23, "pw_max": 0.32},  # a mid-upper p/w band
+		# JP-only AND a mid-upper p/w band — both must hold (is_eligible ANDs all fields).
+		"restriction": {"country": "JP", "pw_min": 0.23, "pw_max": 0.32},
 		"events": [
 			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25},
 			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2},
@@ -203,117 +190,124 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 
 # --- Target time (derived from the seeded track, not stored) -----------------
 
-# Per-event target time in milliseconds, derived from a TrackGenerator result
-# (its `centerline` length + the corner mix in `pieces`) AND the event's tarmac
-# fraction (`surface_mix`): the tarmac share of the track is priced at the quicker
-# tarmac pace, so a tarmac-heavy event yields a tighter target. The tarmac run is
-# one contiguous stretch covering `tarmac_fraction` of the length (TrackSurface),
-# so that same fraction of the length and (on average) of the corners runs on
-# tarmac. An event may override the whole thing with `target_ms_override`.
-# Deterministic for a given track.
-static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -> int:
+# Per-event target time (ms): the physics-optimum floor of the BEST eligible car
+# for the rally, scaled by GameConfig.driver_factor to a beatable human par. An
+# event may override the whole thing with `target_ms_override`. Deterministic for
+# a given track + roster.
+static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}, rally: Dictionary = {}) -> int:
 	if event.has("target_ms_override"):
 		return int(event["target_ms_override"])
-	var centerline := track_result.get("centerline") as Curve2D
-	var length: float = centerline.get_baked_length() if centerline != null else 0.0
-	var corner_count := 0
-	for piece in track_result.get("pieces", []):
-		if String(piece.get("corner", "")) != "Straight":
-			corner_count += 1
-	var tarmac := event_tarmac_fraction(event)
-	var gravel := 1.0 - tarmac
-	var target_s := \
-		length * gravel / REF_SPEED_MPS + length * tarmac / TARMAC_SPEED_MPS \
-		+ corner_count * gravel * CORNER_PENALTY_S + corner_count * tarmac * TARMAC_CORNER_PENALTY_S
-	return int(round(target_s * 1000.0))
+	var par_car := _best_eligible_car(rally)
+	var floor_ms := LapTimeModel.optimum_ms(track_result, par_car, event)
+	return int(round(floor_ms * Config.data.driver_factor))
+
+
+# The eligible car with the highest power-to-weight for a rally (the "par car" the
+# event target is computed against). Falls back to the best car in the whole roster
+# when `rally` is empty (legacy/test callers).
+static func _best_eligible_car(rally: Dictionary) -> Dictionary:
+	var pool: Array = _eligible_cars(rally) if not rally.is_empty() else CarLibrary.CARS
+	var best: Dictionary = {}
+	var best_pw := -1.0
+	for car in pool:
+		var pw := CarLibrary.power_to_weight(car)
+		if pw > best_pw:
+			best_pw = pw
+			best = car
+	return best
 
 
 # --- In-stage turn splits (for the live "vs P1" pace popup) ------------------
 
-# Per-turn cumulative split table, used by the run scene to tell the player how
-# their pace compares to a rival every few turns (the HUD popup). For each placed
-# piece — every piece is a "turn" (TrackGenerator never emits a plain Straight) —
-# returns the arc length reached at the END of that turn and the cumulative target
-# time (ms) to there, priced exactly as derive_target_ms totals the whole track
-# (length / reference pace + a per-corner penalty, split by the tarmac fraction).
-# So the final entry's `cum_ms` equals derive_target_ms(track_result, event), including
-# an event's target_ms_override (the times are rescaled to land on it, preserving the
-# per-turn par profile). The popup itself only compares FRACTIONS of the total, where
-# any such rescaling cancels, so the override changes nothing there — but it keeps the
-# absolute cum_ms honest for any other consumer. Deterministic for a given track.
+# Per-turn cumulative split table off a SPECIFIC car's optimum velocity profile —
+# used by the run scene's "vs P1" pace popup (so the popup tracks P1's real car).
+# For each placed piece returns the arc length at the END of that turn and the
+# cumulative time (ms) to there, read off LapTimeModel.optimum_profile(car). The
+# final entry's cum_ms equals optimum_ms(track, car, event). An event's
+# target_ms_override rescales the cumulative times to land on it, preserving the
+# per-turn profile (the popup only uses fractions, so the rescale cancels there).
 # Returns Array of { "end_offset_m": float, "cum_ms": int }; empty if no pieces.
-static func derive_turn_splits(track_result: Dictionary, event: Dictionary = {}) -> Array:
+static func derive_turn_splits(track_result: Dictionary, car_meta: Dictionary, event: Dictionary = {}) -> Array:
 	var centerline := track_result.get("centerline") as Curve2D
 	var pieces: Array = track_result.get("pieces", [])
 	if centerline == null or pieces.is_empty():
 		return []
+	var prof := LapTimeModel.optimum_profile(track_result, car_meta, event)
+	var s: PackedFloat32Array = prof["s"]
+	var t: PackedFloat32Array = prof["t"]
+	if s.size() < 2:
+		return []
 	var baked := centerline.get_baked_length()
-	var tarmac := event_tarmac_fraction(event)
-	var gravel := 1.0 - tarmac
-	# Per-metre and per-corner second costs, blended across the surface mix — the same
-	# decomposition derive_target_ms sums as (length * m_cost + corner_count * c_cost).
-	var m_cost := gravel / REF_SPEED_MPS + tarmac / TARMAC_SPEED_MPS
-	var c_cost := gravel * CORNER_PENALTY_S + tarmac * TARMAC_CORNER_PENALTY_S
 	var splits: Array = []
 	for i in pieces.size():
-		# End of turn i = the entry of the next piece (the start of its connecting
-		# straight), or the centerline end for the final turn. Entry points are exact
-		# control points on the curve, so their offsets are monotonic along it.
 		var end_off := baked
 		if i + 1 < pieces.size():
 			var next_entry: Vector2 = pieces[i + 1].get("entry_pos", Vector2.ZERO)
 			end_off = centerline.get_closest_offset(next_entry)
-		var secs := end_off * m_cost + float(i + 1) * c_cost
+		var secs := _time_at_offset(s, t, end_off)
 		splits.append({"end_offset_m": end_off, "cum_ms": int(round(secs * 1000.0))})
-	# Honour an event's hand-set total (target_ms_override) by rescaling the cumulative
-	# times so the final turn lands exactly on it, preserving the par PROFILE across
-	# turns. The per-turn FRACTIONS are unchanged by this (so the popup, which only uses
-	# fractions, is unaffected — P1's real time already carries the override) — it just
-	# keeps the absolute cum_ms honest, matching derive_target_ms's final value.
 	if event.has("target_ms_override"):
 		var natural_total := float(splits[splits.size() - 1]["cum_ms"])
 		if natural_total > 0.0:
 			var override_total := float(int(event["target_ms_override"]))
-			for s in splits:
-				s["cum_ms"] = int(round(float(s["cum_ms"]) / natural_total * override_total))
+			for sp in splits:
+				sp["cum_ms"] = int(round(float(sp["cum_ms"]) / natural_total * override_total))
 	return splits
+
+
+# Linear-interpolate the cumulative time (s) at an arc offset within the profile's
+# monotonic s[] / t[] arrays.
+static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: float) -> float:
+	var n := s.size()
+	if off <= s[0]:
+		return t[0]
+	if off >= s[n - 1]:
+		return t[n - 1]
+	for i in range(1, n):
+		if s[i] >= off:
+			var span := s[i] - s[i - 1]
+			var f := (off - s[i - 1]) / span if span > 0.0 else 0.0
+			return lerpf(t[i - 1], t[i], f)
+	return t[n - 1]
 
 
 # --- Opponent field (recomputed from the rally seed, never saved) ------------
 
-# The fixed opponent field for a rally, given each event's target time (ms).
-# Reseeded from the rally id so the leaderboard is identical across re-attempts.
+# The fixed opponent field for a rally, given each event's track result and event
+# dict. Reseeded from the rally id so the leaderboard is identical across re-attempts.
 # Returns an Array of opponents:
 #   { name: String, car_id: String, car_name: String,
 #     event_times_ms: Array[int], dnf: bool, combined_ms: int }
 # Each rival is assigned a car from the rally's eligible roster (so e.g. an
 # RWD-only rally fields RWD rivals), drawn from the same seeded RNG so the line-up
-# is stable across re-attempts. A DNF in any event disqualifies the opponent
+# is stable across re-attempts. Each rival's event time is derived from their OWN
+# car's physics floor (optimum_ms) scaled by a per-rival factor in the pace band,
+# so a faster car fields a faster time. A DNF in any event disqualifies the opponent
 # (combined_ms = -1, doesn't rank).
-static func generate_opponent_field(rally: Dictionary, event_target_ms: Array) -> Array:
+static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
 	var car_pool := _eligible_cars(rally)
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
 	var field: Array = []
 	for i in count:
-		# Pick the rival's car first so the draw order is stable; the time/DNF rolls
-		# below follow it in the same RNG stream.
 		var car: Dictionary = car_pool[rng.randi_range(0, car_pool.size() - 1)]
 		var times: Array = []
 		var dnf := false
-		for target in event_target_ms:
+		for k in event_results.size():
 			if rng.randf() < DNF_CHANCE:
 				dnf = true
 				times.append(-1)
 			else:
-				# Slower than target pace by a random margin within the band.
-				times.append(int(round(target * (RIVAL_PACE_MIN + rng.randf() * RIVAL_PACE_SPREAD))))
+				var ev: Dictionary = events[k] if k < events.size() else {}
+				var floor_ms := LapTimeModel.optimum_ms(event_results[k], car, ev)
+				var factor := RIVAL_PACE_MIN + rng.randf() * RIVAL_PACE_SPREAD
+				times.append(int(round(floor_ms * factor)))
 		var combined := -1
 		if not dnf:
 			combined = 0
-			for t in times:
-				combined += int(t)
+			for tm in times:
+				combined += int(tm)
 		field.append({
 			"name": "Rival %d" % (i + 1),
 			"car_id": String(car.get("id", "")),

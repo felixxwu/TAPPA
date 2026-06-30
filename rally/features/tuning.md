@@ -87,8 +87,10 @@ full-height page (a panel on the other side, `hq_lift_menu_width_frac`, so the c
 stays in view); a **< Back** returns to the hub, and the hub's Back returns to the
 garage. Splitting the menus onto their own pages keeps each one from needing to scroll.
 
-- **Tune** (`LiftPage.TUNE`) — one slider per axis (locked axes greyed with a "needs X
-  kit" note) plus **Reset to neutral**. Each change saves immediately via `Save.set_tuning`.
+- **Tune** (`LiftPage.TUNE`) — one row per axis (locked axes greyed with a "needs X
+  kit" note) plus **Reset to neutral**. Each row uses horizontal space: a left column
+  with the axis name above its current value, beside a right column with the slider above
+  its two extremity labels. Each change saves immediately via `Save.set_tuning`.
 - **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from the inventory
   (`Save.install_upgrade`); fitting **fully consumes** the part (confirmed via a dialog
   first, since it can't be undone) and a swap scraps the incumbent. Plus the **Repair

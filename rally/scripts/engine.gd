@@ -129,7 +129,7 @@ func reset() -> void:
 # torque and returns the clutch torque as seen at the wheels (N·m). throttle
 # is the 0..1 drive request; reverse comes from the gear's sign. driveline_omega
 # is the driven axle(s)' spin (rear for RWD, front for FWD, mean for AWD).
-func step(h: float, throttle_in: float, driveline_omega: float) -> float:
+func step(h: float, throttle_in: float, driveline_omega: float, declutch := false) -> float:
 	throttle = throttle_in
 	var cfg: GameConfig = Config.data
 	shift_timer = maxf(shift_timer - h, 0.0)
@@ -152,6 +152,7 @@ func step(h: float, throttle_in: float, driveline_omega: float) -> float:
 	var input_omega := driveline_omega * gr
 	var engaged := (
 		gear != 0  # neutral: clutch fully open, the engine revs freely
+		and not declutch  # handbrake held: open the clutch so the engine can rev
 		and shift_timer <= 0.0
 		and absf(input_omega) < redline_omega() * 1.05
 		and (throttle_in > 0.001 or absf(driveline_omega) * cfg.wheel_radius > cfg.clutch_engage_speed)

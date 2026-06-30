@@ -1,6 +1,6 @@
-[gd_resource type="Theme" format=3]
+[gd_resource type="Theme" format=3 uid="uid://c7p0oxvyfdfjg"]
 
-[ext_resource type="FontFile" path="res://fonts/SyneMono.ttf" id="1_27v6b"]
+[ext_resource type="FontFile" uid="uid://c554xxx41jwgu" path="res://fonts/SyneMono.ttf" id="1_27v6b"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_27v6b"]
 content_margin_left = 14.0

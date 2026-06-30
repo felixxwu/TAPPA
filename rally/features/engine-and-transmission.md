@@ -29,8 +29,11 @@ selection, automatic upshift/downshift, and a bouncing rev limiter.
   a hysteresis dead band to avoid hunting.
 - `select_reverse / select_forward` — engage R / 1st from neutral below ~1 m/s.
 - `reset()` — back to idle + 1st gear.
-- `step(h, throttle_in, driveline_omega)` — integrate flywheel; return clutch
-  torque delivered to the wheels.
+- `step(h, throttle_in, driveline_omega, declutch := false)` — integrate
+  flywheel; return clutch torque delivered to the wheels. `declutch` (the
+  drivetrain passes `handbrake`) forces the clutch fully open, like neutral, so
+  the engine revs freely against the throttle while the handbrake locks the
+  driven axle — and delivers no wheel torque.
 - `_update_limiter(cfg)` — latch fuel cut ON at redline, OFF below
   redline − `rev_limiter_band` (the "bounce").
 - `_torque_fraction(at_rpm)` — torque curve (below).
@@ -87,6 +90,14 @@ see [configuration.md](configuration.md). Presets: i4, i5, i6, v6, v8, v10, v12.
   manual MX-5 shifts slowly (0.30 s) while dual-clutch / automated supercars
   (911, RS3, Aventador) snap through gears (0.05–0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
+- **`engine_inertia` (crank + flywheel rotating inertia, kg·m²) is per-car**
+  (`CarLibrary`, applied by `Car.apply_car()`). Small = fast revving, large =
+  a heavy, lazy flywheel. Anchored to the MX-5's light 2.0 i4 (`0.15`) and
+  scaled by each car's real rotating character: the LFA's famously ultra-light
+  V10 sits lowest (`0.10`, 0→9000 rpm in ~0.6 s) despite its cylinder count,
+  while the heavy V8 Mustang (`0.32`) and big V12 Aventador (`0.26`) carry the
+  most spinning mass and rev slowest. Cars that omit it keep the `GameConfig`
+  fallback.
 - **`gear_ratios` + `final_drive` are also per-car** (`CarLibrary`, applied by
   `Car.apply_car()` after the engine preset), but **every car currently shares the
   MX-5's box** — its real ND 6-speed ratios with the game-tuned `3.5` final drive.

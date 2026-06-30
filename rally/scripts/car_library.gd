@@ -86,6 +86,16 @@ extends RefCounted
 # synth rebuilds; engine_noise_level is the fallback default for cars that omit
 # noise_db. All cars start at the same value (≈ the prior global noise floor).
 #
+# engine_inertia (GameConfig.engine_inertia, kg·m²) is the per-car crank +
+# flywheel rotating inertia — how much spinning mass the engine has to accelerate.
+# Small = fast revving (the engine snaps up and down rpm); large = a heavy, lazy
+# flywheel that revs slowly and holds revs between shifts. apply_car() copies it
+# into GameConfig before the engine model runs; cars that omit it keep the config
+# fallback. Anchored to the MX-5's light 2.0 i4 (0.15) and scaled by each car's
+# real rotating character: the LFA's famously ultra-light V10 (0→9000 rpm in
+# ~0.6 s) sits LOWEST despite its cylinder count, while the heavy V8 Mustang and
+# big V12 Aventador carry the most spinning mass and rev slowest.
+#
 # soft_clip_post_gain (GameConfig.engine_soft_clip_post_gain) is the per-car
 # post-amp applied after the sine soft clipper, trimming each car's shaped
 # output level (1.0 = transparent). apply_car() copies it into GameConfig before
@@ -112,7 +122,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Mazda MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
-		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0,
+		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0, "engine_inertia": 0.15,  # light 2.0 i4 (anchor)
 		# Real ND 6-speed manual ratios: 5.087/2.991/2.035/1.594/1.286/1.000.
 		# final_drive is game-tuned to 3.5, NOT the real 2.866: the MX-5's real ~150 hp
 		# (in-sim) can't pull the tall real final drive against the Jolt VehicleBody3D's
@@ -122,9 +132,9 @@ const CARS: Array[Dictionary] = [
 		# unused, but 1st-4th carry the real spacing that calms the mid-gear punch and
 		# stops the 4th-gear wheelspin. This box drives well, so the whole roster now
 		# shares it (see the gear_ratios header note). See features/drivetrain-and-tires.md.
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
-		"grip_front": 1.08, "grip_rear": 1.26, "shift_time": 0.30,  # manual H-pattern roadster
-		"engine_type": 0, "drive_mode": RWD, "drag": 0.27, "downforce_rear": 0.5, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"grip_front": 1.08, "grip_rear": 1.1, "shift_time": 0.30,  # manual H-pattern roadster
+		"engine_type": 0, "drive_mode": RWD, "drag": 0.27, "downforce_rear": 0, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
@@ -137,12 +147,12 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
 		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 2,
-		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0,
+		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0, "engine_inertia": 0.22,  # turbo i5, dual-mass flywheel
 		# Shares the MX-5's gearing (see the header note): the real DSG ratios didn't
 		# make sense in-sim, so this car runs the MX-5's box for now.
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
-		"grip_front": 1.08, "grip_rear": 1.20, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
-		"engine_type": 1, "drive_mode": AWD, "drag": 0.10, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"grip_front": 1.08, "grip_rear": 1, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
+		"engine_type": 1, "drive_mode": AWD, "drag": 0.10, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
 		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
 		"wheel_radius": 0.335, "wheel_width": 0.235,
@@ -151,11 +161,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 3,
-		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0,
+		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0, "engine_inertia": 0.18,  # light flat-6
 		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
 		"grip_front": 1.14, "grip_rear": 1.26, "shift_time": 0.06,  # 8-speed PDK
-		"engine_type": 2, "drive_mode": RWD, "drag": 0.11, "downforce_rear": 0.06, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"engine_type": 2, "drive_mode": RWD, "drag": 0.11, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
 		"wheel_radius": 0.34, "wheel_width": 0.245,
@@ -164,11 +174,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
 		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
-		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0,
+		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0, "engine_inertia": 0.10,  # ultra-light V10, 0→9000 in ~0.6 s
 		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
 		"grip_front": 1.20, "grip_rear": 1.32, "shift_time": 0.16,  # automated single-clutch ASG
-		"engine_type": 5, "drive_mode": RWD, "drag": 0.05, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"engine_type": 5, "drive_mode": RWD, "drag": 0.05, "downforce_rear": 0, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -177,11 +187,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
 		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
-		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0,
+		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0, "engine_inertia": 0.32,  # heavy 5.0 V8 muscle, slow-revving
 		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
-		"grip_front": 1.08, "grip_rear": 1.08, "shift_time": 0.22,  # 6-speed manual muscle
-		"engine_type": 4, "drive_mode": RWD, "drag": 0.78, "downforce_rear": 0.06, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"grip_front": 1.08, "grip_rear": 0.90, "shift_time": 0.22,  # 6-speed manual muscle
+		"engine_type": 4, "drive_mode": RWD, "drag": 0.78, "downforce_rear": 0, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
 		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -190,11 +200,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
 		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 4,
-		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0,
+		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0, "engine_inertia": 0.26,  # big 6.5 V12
 		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.5,
-		"grip_front": 1.18, "grip_rear": 1.20, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
-		"engine_type": 6, "drive_mode": AWD, "drag": 0.05, "downforce_rear": 0.06, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7.5,
+		"grip_front": 1.18, "grip_rear": 0.95, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
+		"engine_type": 6, "drive_mode": AWD, "drag": 0.05, "downforce_rear": 0, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
 		"wheel_radius": 0.35, "wheel_width": 0.30,

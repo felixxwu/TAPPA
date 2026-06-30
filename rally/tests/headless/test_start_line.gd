@@ -146,6 +146,19 @@ func test_queue_cars_are_eligible_for_the_rally() -> void:
 			"%s lining up is eligible for the rally" % spec["name"])
 
 
+# Each queue prop's apply_car() mutates the SHARED global Config.data. The player
+# is fielded BEFORE the queue spawns, so a prop leaking its gearbox into Config.data
+# would corrupt the player's live gearing (its shift table is already built) — e.g.
+# the auto box would then shift at the wrong revs. Regression: spawning the queue
+# must leave the player's config (here a distinctive final_drive) untouched.
+func test_queue_spawn_does_not_clobber_the_players_config() -> void:
+	Config.data.final_drive = 7.77  # a sentinel no CarLibrary entry uses
+	var sl := _make()
+	assert_eq(sl.queue_count(), 2, "the queue actually spawned props (so the test isn't vacuous)")
+	assert_almost_eq(Config.data.final_drive, 7.77, 0.001,
+		"the player's final_drive survives the queue spawn (props don't leak into the shared config)")
+
+
 func test_queue_cars_are_scripted_and_axis_locked() -> void:
 	var sl := _make()
 	var leader = sl._leader

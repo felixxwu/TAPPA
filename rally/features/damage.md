@@ -40,12 +40,23 @@ hp_loss = impact_ref_hp_loss * (v² - impact_min_speed_kmh²)
 ```
 
 A **square law** (kinetic energy): a hit at the reference speed
-(`impact_ref_speed_kmh`, ~60 km/h) costs `impact_ref_hp_loss` (~200 HP), so with
-per-car max HP of 800-1100 most cars survive **4-5 moderate hits**; the square
+(`impact_ref_speed_kmh`, ~60 km/h) costs `impact_ref_hp_loss` (320 HP in
+`game_config.tres`, up from the 200 default — objects hit harder), so with
+per-car max HP of 800-1100 most cars survive **~3 moderate hits**; the square
 then makes a 20 km/h hit cost only a small fraction of that, so the car **barely
-takes damage at low speed**. The post-hit cooldown (below) means a crash registers
-on its FIRST contact, so this is the approach speed, not a decelerated one.
-`hp_loss_for_speed()` is a pure static so the conversion is unit-testable.
+takes damage at low speed**. `hp_loss_for_speed()` is a pure static so the
+conversion is unit-testable.
+
+**Approach speed, not the arrested one.** The impact speed fed to
+`register_impact` is `car.gd._approach_speed` — the chassis speed cached at the
+top of `_physics_process`, *before* the physics solver runs — **not** the
+`state.linear_velocity` available inside `_integrate_forces`. Godot only surfaces
+a contact in `_integrate_forces` *after* the constraint solver has already
+resolved (and, in a head-on hit, arrested) it, so the post-solve velocity is
+near zero on exactly the hardest crashes. Reading it directly made head-on
+collisions deal **no** damage (the square law floored to 0 below
+`impact_min_speed_kmh`) while glancing hits — which keep their speed — still
+chipped HP. Keying off the cached pre-solve speed gives the true approach speed.
 
 Two guards stop a single crash from instantly wrecking the car (cars should survive
 2-3 big hits):
@@ -126,5 +137,6 @@ values are not).
 cooldown grouping a crash into one hit / needing several hits to wreck, effect
 scaling, bound/unbound wreck **keeping the car at 0 HP with its upgrades**,
 immortal, persistence round-trip), `test_car.gd` (contact monitor + power-scale
-wiring), `test_hud.gd` (health gauge), `test_wreck_screen.gd` (crash → orbit/menu →
+wiring, plus a **head-on collision costs HP** regression that drives the car into
+an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge), `test_wreck_screen.gd` (crash → orbit/menu →
 `return_requested`).

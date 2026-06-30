@@ -125,7 +125,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 		# (drive, engine braking and shift cuts all live in EngineSim).
 		# Brakes move omega toward zero but never reverse it (no sign flip-flop).
 		# power_scale fades the driven torque as the car takes damage (1.0 healthy).
-		var drive_torque := engine.step(h, throttle, driveline_omega()) * power_scale
+		var drive_torque := engine.step(h, throttle, driveline_omega(), handbrake) * power_scale
 		match drive_mode:
 			DriveMode.AWD:
 				if handbrake:

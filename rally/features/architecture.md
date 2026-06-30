@@ -32,8 +32,7 @@ Main [Node3D]                       script: world.gd
 ├── PostProcess [CanvasLayer]
 │   └── ColorRect                   shader: ps1_post_process.gdshader (dither)
 └── HUD [CanvasLayer]               script: hud.gd, layer 2
-    ├── SpeedLabel / GearLabel / RPMLabel
-    └── ModeButton / DriveButton
+    └── SpeedLabel / GearLabel / RPMLabel
 ```
 
 ## Car scene tree (`car.tscn`)
@@ -54,8 +53,15 @@ Car [VehicleBody3D]                 script: car.gd, mass 120
 Declared in `project.godot` `[autoload]`:
 
 - **`Config`** → `scripts/config.gd`. Loads `config/game_config.tres` at startup
-  into `Config.data` (a `GameConfig`). Read-only at runtime; every gameplay
-  system reads from it. See [configuration.md](configuration.md).
+  into `Config.data` (a `GameConfig`). Every gameplay system reads from it.
+  ⚠️ It is a **single shared instance that `car.gd`'s `apply_car()`/`apply_owned()`
+  MUTATE in place** to reshape the live car (gearbox, mass, grip, engine, …) —
+  it is NOT read-only. Because it is global, the **last car applied wins**: if a
+  second car instance is fielded after the player (e.g. the start-line queue
+  props in `start_line.gd._spawn_queue`, or the HQ lineup), its spec overwrites
+  the player's. A car whose shift table / drivetrain was already built then keeps
+  reading the clobbered values — snapshot + restore `Config.data` around any
+  secondary `apply_car()` (as `_spawn_queue` does). See [configuration.md](configuration.md).
 - **`Save`** → `scripts/save_manager.gd`. Loads the player profile (owned cars,
   HP, inventory, rally completion) from `user://profile.json` at boot and
   autosaves on every meaningful change. Per-player *mutable progress*, kept

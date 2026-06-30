@@ -175,11 +175,19 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	var r: Dictionary = finish[0]
 	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
 	assert_eq(r["upgrades"].size(), 1, "a single per-rally upgrade id is captured for the reveal")
-	# Difficulty 1 clamps to tier 1, whose only car is the mx5 the player already
-	# owns — so the reward is the mx5 and correctly flagged NOT new (exercises the
-	# is_new=false path).
-	assert_eq(String(r["car_reward"]), "mx5", "a top-3 finish records the won car model for the reveal")
-	assert_false(r["car_reward_is_new"], "the won car is already owned, so not flagged new")
+	# Difficulty 1 clamps to tier 1: the reward must be a real eligible tier-1 car,
+	# and the is_new flag must reflect whether the player already owns it. Derive
+	# both from the library/profile rather than pinning a specific model id, so this
+	# survives roster changes (e.g. a second tier-1 car being added).
+	var reward := String(r["car_reward"])
+	assert_true(RewardSystem._eligible_candidates_at_tier(1, _save.profile).has(reward),
+		"a top-3 finish records a real eligible tier-1 car for the reveal")
+	var owns_reward := false
+	for c in _save.profile.get("cars", []):
+		if String(c.get("model_id", "")) == reward:
+			owns_reward = true
+	assert_eq(bool(r["car_reward_is_new"]), not owns_reward,
+		"the is_new flag matches whether the player already owns the won car")
 	assert_false(r["showdown_won"], "the shakedown is not the showdown")
 	# A 2nd-place finish records best placement 2 (drives the world-map stars).
 	assert_eq(_save.best_placement("shakedown"), 2, "the best finishing position is recorded")
@@ -298,3 +306,21 @@ func test_farming_rewin_grants_car_without_new_completion() -> void:
 	assert_eq(_save.completed_rally_count(), completed_before, "a re-win records no new completion")
 	assert_eq(rewards[0], 1, "a top-3 re-win still draws a car (renewable supply)")
 	assert_eq(_save.profile["cars"].size(), cars_before + 1, "the re-won car is granted")
+
+
+# --- current_event_p1_car (Task 4) ------------------------------------------
+
+func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
+	# Idle: no car.
+	assert_true(RallySession.current_event_p1_car().is_empty(), "idle: no P1 car")
+	_start("coastal_sprint")
+	# Inject a field with known car_ids and event times for event 0.
+	RallySession._opponent_field = [
+		{"name": "A", "car_id": "mx5",      "event_times_ms": [55000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "B", "car_id": "porsche911","event_times_ms": [48000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "C", "car_id": "rs3",       "event_times_ms": [-1,    0, 0], "dnf": true,  "combined_ms": -1},
+	]
+	# Event 0: C DNF'd (time -1), so P1 is B with 48000 driving a porsche911.
+	var p1: Dictionary = RallySession.current_event_p1_car()
+	assert_false(p1.is_empty(), "a classified P1 rival returns a car dict")
+	assert_eq(String(p1.get("id", "")), "porsche911", "P1 is the rival with the fastest non-DNF time")

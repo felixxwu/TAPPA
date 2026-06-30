@@ -52,6 +52,27 @@ re-attempting a rally chases the *same* leaderboard — damage sticks, opponents
 never re-roll. Nothing about opponents or target times is stored; it's all
 recomputed.
 
+## Lap-time model (`LapTimeModel`)
+
+`scripts/lap_time_model.gd` (`class_name LapTimeModel`) is a pure-static
+quasi-steady-state (QSS) lap-time model — no scene nodes, no randomness. It
+computes a car's **physics-optimal velocity profile** over a track centerline:
+
+- `optimum_profile(track_result, car_meta, event := {}) -> { s, v, t, total_ms }` —
+  three-pass velocity sweep over the sampled centerline:
+  1. **Cornering ceiling** — `v = sqrt(µg/κ)` at each sample (curvature `κ`,
+     combined grip `µ`).
+  2. **Forward accel pass** — power-limited `F = P_peak / v` (from `peak_torque ×
+     redline`), friction-circle limited, drag `= drag·v²`, rolling resistance ≈ 0.2 g.
+  3. **Backward braking pass** — friction-circle limited.
+  Grip `µ` is the average of front + rear tyre grip coefficients, blended by the
+  event's surface mix via `GameConfig.gravel_grip` / `tarmac_grip`.
+- `optimum_ms(track_result, car_meta, event) -> int` — convenience wrapper
+  returning only `total_ms`.
+
+`derive_target_ms` and `derive_turn_splits` both call into this model; the opponent
+generator also uses it per-rival.
+
 ## Key functions
 
 - `index_of(id)` / `by_id(id)` / `event_width(event)` / `event_forestiness(event)` /
@@ -59,24 +80,23 @@ recomputed.
 - `is_eligible(rally, car_meta)` — restriction match (open-class → always true).
   `car_meta` is a CarLibrary entry, resolved by the owned car's stable
   `model_id`. The menus' field-a-car rig and map pins filter on this.
-- `derive_target_ms(track_result, event)` — per-event target time from the baked
-  centerline length + corner mix, **split by the event's tarmac fraction**
-  (`surface_mix`): the tarmac share of the length/corners is priced at the quicker
-  `TARMAC_SPEED_MPS` / `TARMAC_CORNER_PENALTY_S` (tarmac has more grip, so it's
-  driven a lot quicker), the gravel share at `REF_SPEED_MPS` / `CORNER_PENALTY_S`.
-  So a tarmac-heavy event gets a tighter target. (A placeholder formula pending a
-  calibration pass; these weights move to `GameConfig` then.) An
-  `event.target_ms_override` wins when present.
-- `generate_opponent_field(rally, event_target_ms)` — the fixed field:
-  10–15 rivals, each clean event time in `[target × RIVAL_PACE_MIN, target ×
-  (RIVAL_PACE_MIN + RIVAL_PACE_SPREAD)]` (the band sits above the target, so
-  rivals always run slower than target pace — beatable by design), some **DNF**;
-  a DNF in any event disqualifies the opponent (`combined_ms = -1`, doesn't rank).
-  Each rival is also assigned a **car** (`car_id` / `car_name`) drawn from the
-  rally's eligible roster (`_eligible_cars` filters by the restriction, so a
-  p/w-banded rally fields cars inside that band and an RWD-only rally fields RWD
-  rivals) using the same seeded RNG — so the line-up is stable across re-attempts
-  and shows up on the start-line reveal + leaderboards.
+- `derive_target_ms(track_result, car_meta, event)` — per-event PAR time: physics
+  floor of the **best eligible car** (see `LapTimeModel` below) × `GameConfig.driver_factor`
+  (default 1.08, the driver-imperfection multiplier that turns the physics floor into a
+  beatable human PAR). An `event.target_ms_override` wins when present.
+- `derive_turn_splits(track_result, car_meta, event)` — per-turn cumulative split
+  table derived from that car's `LapTimeModel.optimum_profile`; used for the
+  in-run "vs P1" pace popup (see [stage.md](stage.md)).
+- `generate_opponent_field(rally, event)` — the fixed field: 10–15 rivals, each
+  rival's time = physics floor of **their own assigned car** (from `LapTimeModel`)
+  × a seeded pace factor in `[1.35, 2.35]`, so rivals are always slower than the
+  physics optimum of their car and thus beatable by design. Some **DNF**; a DNF in
+  any event disqualifies the opponent (`combined_ms = -1`, doesn't rank). Each
+  rival is also assigned a **car** (`car_id` / `car_name`) drawn from the rally's
+  eligible roster (`_eligible_cars` filters by the restriction, so a p/w-banded
+  rally fields cars inside that band and an RWD-only rally fields RWD rivals) using
+  the same seeded RNG — so the line-up is stable across re-attempts and shows up on
+  the start-line reveal + leaderboards.
 - `eligible_car_indices(rally)` — the `CarLibrary.CARS` **indices** the restriction
   admits (vs `_eligible_cars`, which returns entries). The start-line queue props
   (`start_line.gd`) draw the leader/trailer cars from this so the cars lining up
@@ -119,8 +139,8 @@ so beaten rallies stay farmable).
 ## Not yet wired
 
 `Save._recompute_showdown()` is still a no-op — once a menu/flow layer exists it
-should call `RallyLibrary.showdown_unlocked(Save.profile)`. The target-time
-formula weights and the opponent name pool are deferred (calibration / cosmetic).
+should call `RallyLibrary.showdown_unlocked(Save.profile)`. The opponent name pool
+is deferred (cosmetic).
 
 ## Tests
 
