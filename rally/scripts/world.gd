@@ -549,7 +549,7 @@ func _build_start_line() -> void:
 	_start_line.name = "StartLine"
 	add_child(_start_line)
 	_start_line.setup($Car, $Floor, _stage_manager, rally, RallySession.event_index(),
-		RallySession.current_event_leaders(3), $ChaseCamera as Camera3D,
+		RallySession.current_event_leaders(3), $CameraManager as CameraManager,
 		$HUD as CanvasLayer, $MobileControls as CanvasLayer)
 
 

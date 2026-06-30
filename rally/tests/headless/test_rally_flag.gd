@@ -3,8 +3,6 @@ extends GutTest
 # table (hq._make_pin). Covers the state→colour medal ladder and that build()
 # yields a usable marker (pole + pennant + finial) rooted at the plane.
 
-const RallyFlag = preload("res://scripts/rally_flag.gd")
-
 
 func test_state_colour_is_the_medal_ladder() -> void:
 	# Locked wins over any star count and is a dark, desaturated charcoal.
@@ -29,10 +27,38 @@ func test_build_yields_a_marker_rooted_at_the_plane() -> void:
 	autofree(flag)
 	assert_true(flag is Node3D, "build returns a Node3D marker")
 	var meshes := flag.find_children("*", "MeshInstance3D", true, false)
-	assert_gte(meshes.size(), 3, "marker has at least pole + pennant + finial meshes")
+	assert_gte(meshes.size(), 4, "marker has at least disk + pole + pennant + finial meshes")
 	# Base sits on the plane (y = 0) and the marker stands up to the pole height.
 	assert_eq(flag.position, Vector3.ZERO, "marker root sits at its own origin")
 	assert_gt(RallyFlag.POLE_HEIGHT, 0.0, "the pole has positive height")
+
+
+func test_marker_has_a_golden_base_disk_on_the_plane() -> void:
+	# A short, wide golden disk sits flush on the map (its underside at y = 0) and
+	# is wider than the pole so the flag visibly stands on a pedestal.
+	var flag := RallyFlag.build(false, 3)
+	autofree(flag)
+	var disk: MeshInstance3D = null
+	for mi in flag.find_children("*", "MeshInstance3D", true, false):
+		var cyl := mi.mesh as CylinderMesh
+		# The disk is the wide, short cylinder; the pole is the thin tall one.
+		if cyl != null and cyl.top_radius > RallyFlag.POLE_RADIUS * 2.0:
+			disk = mi
+	assert_not_null(disk, "marker has a disk-shaped base")
+	assert_almost_eq(disk.position.y, RallyFlag.DISK_HEIGHT * 0.5, 0.0001,
+		"disk rests with its underside on the plane")
+	assert_gt(RallyFlag.DISK_RADIUS, RallyFlag.POLE_RADIUS, "disk is wider than the pole")
+	# The disk is gold even on a locked flag (state-independent anchor).
+	var locked := RallyFlag.build(true, 0)
+	autofree(locked)
+	var locked_disk: MeshInstance3D = null
+	for mi in locked.find_children("*", "MeshInstance3D", true, false):
+		var cyl := mi.mesh as CylinderMesh
+		# The disk is the wide, short cylinder; the pole is the thin tall one.
+		if cyl != null and cyl.top_radius > RallyFlag.POLE_RADIUS * 2.0:
+			locked_disk = mi
+	var col := (locked_disk.material_override as StandardMaterial3D).albedo_color
+	assert_gt(col.r, col.b, "the base disk stays warm gold even when locked")
 
 
 func test_locked_flag_dims_its_finial() -> void:

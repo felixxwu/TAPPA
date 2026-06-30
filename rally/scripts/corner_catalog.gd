@@ -9,7 +9,6 @@ extends Node2D
 # the current viewport so it never overflows regardless of the window/stretch
 # settings inherited from project.godot.
 
-const CornerLibrary = preload("res://scripts/corner_library.gd")
 
 const GUTTER_M := 6.0          # meters of gap between corners
 const MARGIN_PX := 48.0        # screen-space margin around the whole row

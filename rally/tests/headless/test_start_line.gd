@@ -32,26 +32,50 @@ class StubPlayer:
 	var drivetrain := StubDrivetrain.new()
 
 
+const TEST_PATH := "user://test_start_line_profile.json"
+
 var _player: StubPlayer
 var _stage: StubStage
 var _chase: Camera3D
+var _bonnet: Camera3D
+var _cam_mgr: CameraManager
 var _hud: CanvasLayer
+var _save: Node
 
 
 func before_each() -> void:
 	Config.reset()
+	# A throwaway save profile so the camera mode the manager restores is deterministic
+	# (a fresh profile has no camera_mode → defaults to chase) and the real profile is
+	# left untouched.
+	_save = get_node("/root/Save")
+	_save.profile_path = TEST_PATH
+	_save.save_disabled = false
+	_save.load_or_new()
 	_player = StubPlayer.new()
 	add_child_autofree(_player)
 	_stage = StubStage.new()
 	add_child_autofree(_stage)
+	# A real CameraManager (chase + bonnet) so the hand-off restores the player's
+	# SELECTED camera — the start line no longer force-snaps to chase.
 	_chase = Camera3D.new()
+	_bonnet = Camera3D.new()
 	add_child_autofree(_chase)
+	add_child_autofree(_bonnet)
+	_cam_mgr = CameraManager.new()
+	_cam_mgr.chase_camera = _chase
+	_cam_mgr.bonnet_camera = _bonnet
+	add_child_autofree(_cam_mgr)  # _ready() applies the saved (chase) mode
 	_hud = CanvasLayer.new()
 	add_child_autofree(_hud)
 
 
 func after_each() -> void:
 	Config.reset()
+	_save.profile_path = _save.DEFAULT_PROFILE_PATH
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(TEST_PATH + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
 # RWD Masters: a real rally with an event count for the subtitle.
@@ -71,21 +95,26 @@ func _make(leaders := [], event_index := 0) -> StartLine:
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)  # drive the sequence manually for deterministic timing
-	sl.setup(_player, null, _stage, _rally(), event_index, leaders, _chase, _hud)
+	sl.setup(_player, null, _stage, _rally(), event_index, leaders, _cam_mgr, _hud)
 	return sl
 
 
 func test_reveal_shows_top_three_times_to_beat_and_context() -> void:
 	var sl := _make(_leaders(), 1)  # second event
 	assert_eq(sl._leader_rows.size(), 3, "the reveal lists the top three rivals to beat")
+	# Reveal text follows the design system: house rule 1 uppercases everything.
 	var top := sl._leader_rows[0].text
 	assert_string_contains(top, "1:15.43", "the leader's time to beat is shown (m:ss.cc)")
-	assert_string_contains(top, "Rival 3", "the leader's driver name is shown")
-	assert_string_contains(top, "Porsche 911", "the car the leader drove is shown")
-	assert_string_contains(sl._leader_rows[2].text, "Audi RS3", "third place's car is shown too")
-	assert_string_contains(sl._subtitle_label.text, "RWD Masters", "the rally is named")
-	assert_string_contains(sl._subtitle_label.text, "Event 2 of 3", "the event index is shown")
+	assert_string_contains(top, "RIVAL 3", "the leader's driver name is shown")
+	assert_string_contains(top, "PORSCHE 911", "the car the leader drove is shown")
+	assert_string_contains(sl._leader_rows[2].text, "AUDI RS3", "third place's car is shown too")
+	assert_string_contains(sl._subtitle_label.text, "RWD MASTERS", "the rally is named")
+	assert_string_contains(sl._subtitle_label.text, "EVENT 2 OF 3", "the event index is shown")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "it waits in the orbit/reveal phase")
+	# The launch button is a standard house menu button at the one fixed row height
+	# (not an oversized block).
+	assert_eq(sl._start_button.custom_minimum_size.y, float(UITheme.MENU_ROW_H),
+		"the Start button uses the fixed menu row height")
 
 
 func test_missing_rival_times_show_dash() -> void:
@@ -205,6 +234,19 @@ func test_fade_hands_back_camera_ui_and_starts_countdown() -> void:
 	assert_true(_chase.current, "the chase camera is handed control back")
 	assert_false(sl._orbit_cam.current, "the orbit camera releases control")
 	assert_true(_hud.visible, "the driving UI returns")
+
+
+# The hand-off restores the player's SELECTED camera (via the CameraManager), not a
+# hard-coded chase camera: a player who picked bonnet keeps it through the start line.
+func test_fade_restores_the_selected_camera_not_always_chase() -> void:
+	_cam_mgr.set_mode(CameraManager.Mode.BONNET)
+	var sl := _make()
+	sl.launch()
+	sl._process(Config.data.start_drive_off_seconds)
+	sl._process(Config.data.start_fade_seconds)
+	assert_true(_bonnet.current, "the selected (bonnet) camera is restored at hand-off")
+	assert_false(_chase.current, "the start line does not force chase over the chosen mode")
+	assert_false(sl._orbit_cam.current, "the orbit camera releases control")
 
 
 func test_launch_is_idempotent() -> void:

@@ -5,15 +5,18 @@ extends Node3D
 # live run scene (main.tscn) once the world is built and a RallySession is active,
 # while the car is held locked by the StageManager's STAGING phase:
 #
-#   1. REVEAL  — a flat overlay shows the "TIMES TO BEAT" (the top three rivals'
-#      stage times for this event, with each driver's name and the car they drove)
-#      while an orbit camera circles the car, which is queued between a LEADER car
-#      ahead and a TRAILING car behind. The driving HUD is hidden. The player
-#      launches with the Start button, menu_select or a tap.
+#   1. REVEAL  — black house-style panels show the times to beat (the top three
+#      rivals' stage times for this event, with each driver's name and the car they
+#      drove) under a rally/event header, while an orbit camera circles the car, which
+#      is queued between a LEADER car ahead and a TRAILING car behind. The panels hug
+#      the TOP and BOTTOM edges, leaving the centre band clear so the (opaque) panels
+#      never hide the orbiting car. The driving HUD is hidden. The player launches with
+#      the Start button, menu_select or a tap.
 #   2. LAUNCH  — the leader "drives off" ahead and the trailing car scoots up toward
 #      the line over start_drive_off_seconds.
 #   3. FADE    — the screen fades to black; at full black the camera hands back to
-#      the chase camera, the driving UI returns and StageManager.begin_countdown()
+#      the player's SELECTED camera (via the CameraManager — chase or bonnet, not
+#      forced to chase), the driving UI returns and StageManager.begin_countdown()
 #      starts the countdown; then it fades back in.
 #
 # Created and wired by world.gd (session runs only). A plain dev boot of main.tscn
@@ -36,7 +39,7 @@ var _launched := false
 # Refs handed in by world.gd (camera/HUD optional so tests can omit them).
 var _player: Node3D
 var _stage_manager: Node
-var _chase_camera: Camera3D
+var _camera_manager: CameraManager
 var _hud: CanvasLayer
 var _mobile: CanvasLayer
 
@@ -67,13 +70,14 @@ func _cfg() -> GameConfig:
 # Build the start-line sequence around the fielded car. `leaders` is the top-three
 # rivals to beat for this event (RallySession.current_event_leaders()), each
 # { name, car_name, time_ms }; `terrain` (optional) sits the queue cars on the
-# ground; `chase_camera` / `hud` / `mobile` are handed back at the fade.
+# ground; `camera_manager` / `hud` / `mobile` are handed back at the fade (the
+# camera via the manager, so the player's chosen mode — not always chase — resumes).
 func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
-		event_index: int, leaders: Array, chase_camera: Camera3D = null,
+		event_index: int, leaders: Array, camera_manager: CameraManager = null,
 		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
 	_player = player
 	_stage_manager = stage_manager
-	_chase_camera = chase_camera
+	_camera_manager = camera_manager
 	_hud = hud
 	_mobile = mobile
 	_start_xform = player.global_transform
@@ -135,84 +139,85 @@ func _update_orbit() -> void:
 	_orbit_cam.look_at_from_position(eye, center, Vector3.UP)
 
 
-# --- Overlay (flat "times to beat" card over the orbiting scene) -------------
+# --- Overlay (house-style "times to beat" panels over the orbiting scene) ----
 
+# The reveal UI follows the design system (UITheme): pure-black, sharp-cornered
+# panels, the one house font size, uppercase text and the accent palette (gold for
+# the time to beat). It deliberately hugs the TOP and BOTTOM of the screen with an
+# expanding gap between, so the opaque panels never sit over the orbiting car in the
+# centre band.
 func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void:
 	_overlay = CanvasLayer.new()
 	_overlay.layer = 5  # above the HUD (2) / mobile (3), below the fade
 	add_child(_overlay)
 
+	# Full-rect column: top card, an expanding spacer (the clear band the car shows
+	# through), then the bottom card. mouse_filter IGNORE so taps on the empty middle
+	# fall through to _unhandled_input and launch.
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.alignment = BoxContainer.ALIGNMENT_CENTER
-	root.add_theme_constant_override("separation", 6)
+	root.offset_left = UITheme.MARGIN
+	root.offset_top = UITheme.MARGIN
+	root.offset_right = -UITheme.MARGIN
+	root.offset_bottom = -UITheme.MARGIN
+	root.add_theme_constant_override("separation", UITheme.GAP)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.add_child(root)
 
-	var heading := Label.new()
-	heading.text = "TIMES TO BEAT"
-	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	heading.add_theme_font_size_override("font_size", 20)
-	heading.modulate = Color(1, 1, 1, 0.85)
-	root.add_child(heading)
+	# --- TOP card: the times to beat -----------------------------------------
+	var top_panel := UITheme.panel(UITheme.PANEL.a)
+	top_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	root.add_child(top_panel)
+
+	var top_box := VBoxContainer.new()
+	top_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
+	top_panel.add_child(top_box)
+
+	# The rally + event header titles the card (in place of a generic "times to beat").
+	var total: int = rally.get("events", []).size()
+	if total <= 0:
+		total = RallySession.EVENTS_PER_RALLY
+	_subtitle_label = UITheme.title("%s — Event %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
+	top_box.add_child(_subtitle_label)
 
 	# Top-three rivals for this event: rank, driver, car and time. The leader (the
-	# actual time to beat) is highlighted; if no rival set a time yet, a single dash
-	# stands in.
+	# actual time to beat) is gold; if no rival set a time yet, a single dash stands in.
 	_leaders_box = VBoxContainer.new()
-	_leaders_box.add_theme_constant_override("separation", 2)
-	root.add_child(_leaders_box)
+	_leaders_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
+	top_box.add_child(_leaders_box)
 	_leader_rows = []
 	if leaders.is_empty():
-		var dash := _leader_row_label("—")
-		dash.add_theme_font_size_override("font_size", 44)
-		dash.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+		var dash := _leader_row_label("—", "gold")
 		_leaders_box.add_child(dash)
 		_leader_rows.append(dash)
 	else:
 		for i in leaders.size():
-			var row := _leader_row_label(_format_leader(i + 1, leaders[i]))
-			if i == 0:
-				row.add_theme_font_size_override("font_size", 30)
-				row.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
-			else:
-				row.add_theme_font_size_override("font_size", 22)
-				row.modulate = Color(1, 1, 1, 0.9)
+			var row := _leader_row_label(_format_leader(i + 1, leaders[i]), "gold" if i == 0 else "dim")
 			_leaders_box.add_child(row)
 			_leader_rows.append(row)
 
-	var total: int = rally.get("events", []).size()
-	if total <= 0:
-		total = RallySession.EVENTS_PER_RALLY
-	_subtitle_label = Label.new()
-	_subtitle_label.text = "%s — Event %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total]
-	_subtitle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_subtitle_label.add_theme_font_size_override("font_size", 16)
-	root.add_child(_subtitle_label)
-
+	# --- Clear band: lets the orbiting car show between the cards -------------
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 20)
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(spacer)
 
-	_start_button = Button.new()
-	_start_button.text = "Start"
-	_start_button.focus_mode = Control.FOCUS_NONE
+	# --- BOTTOM: the launch button -------------------------------------------
+	# A bare house button (no wrapping panel — the button is already a pure-black house
+	# bar) so it reads as a standard menu button at the one fixed row height, not an
+	# oversized block.
+	_start_button = UITheme.button("Start")
 	_start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_start_button.custom_minimum_size = Vector2(220, 52)
 	_start_button.pressed.connect(launch)
 	root.add_child(_start_button)
 
-	var hint := Label.new()
-	hint.text = "Press ENTER or tap to launch"
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.add_theme_font_size_override("font_size", 14)
-	hint.modulate = Color(0.7, 0.9, 1.0)
-	root.add_child(hint)
+	UITheme.enforce(_overlay)  # house rules: uppercase + one font size + fixed button height
 
 
-# A centered leaderboard row label (styling applied by the caller).
-func _leader_row_label(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
+# A centred leaderboard row in a house role colour ("gold" for the leader, "dim"
+# for the chasers / placeholder dash).
+func _leader_row_label(text: String, role: String = "ink") -> Label:
+	var l := UITheme.label(text, role)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return l
 
@@ -450,13 +455,15 @@ func launch() -> void:
 	_seq_t = 0.0
 
 
-# At full black: hand the camera back to the chase camera, restore the driving UI,
-# and start the countdown. (The StageManager has been waiting in STAGING.)
+# At full black: hand the camera back to the player's selected mode, restore the
+# driving UI, and start the countdown. (The StageManager has been waiting in STAGING.)
+# The hand-off goes through the CameraManager so it restores whatever camera the
+# player chose (chase OR bonnet), instead of always snapping to chase.
 func _handoff() -> void:
 	if _orbit_cam != null:
 		_orbit_cam.current = false
-	if _chase_camera != null:
-		_chase_camera.current = true
+	if _camera_manager != null:
+		_camera_manager.activate_current()
 	if _hud != null:
 		_hud.visible = Config.data.hud_enabled
 	if _mobile != null:

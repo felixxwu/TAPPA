@@ -3,7 +3,6 @@ extends GutTest
 # obstacle-avoid, anchor-return, and the speed clamp. Tested directly without a
 # scene — the functions take plain arrays/dicts and return XZ Vector2s.
 
-const SpectatorGroup = preload("res://scripts/spectator_group.gd")
 
 const CELL := 0.5  # SpectatorGroup.CELL_M
 

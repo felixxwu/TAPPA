@@ -40,7 +40,7 @@ func _build_ui() -> void:
 	subtitle.add_theme_font_size_override("font_size", 14)
 	root.add_child(subtitle)
 
-	var scroll := ScrollContainer.new()
+	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
@@ -53,11 +53,14 @@ func _build_ui() -> void:
 
 	var cont := Button.new()
 	cont.text = "Continue to next event >"
-	cont.focus_mode = Control.FOCUS_NONE
+	# Focusable + focused on entry so a keyboard/gamepad can Continue (ui_accept) with
+	# no pointer — the only action on this interstitial.
+	cont.focus_mode = Control.FOCUS_ALL
 	cont.pressed.connect(_on_continue)
 	root.add_child(cont)
 
 	UITheme.enforce(self)  # house rules: uppercase + one font size
+	UITheme.focus_grab.bind(cont).call_deferred()
 
 
 # One standings row: position, name (and the car they drove), cumulative time /

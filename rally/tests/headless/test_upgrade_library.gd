@@ -4,8 +4,6 @@ extends GutTest
 # Slot-replacement and repair-kit behaviour (which need the Save profile) live in
 # test_save_manager.gd. See todo/upgrade-catalogue.md.
 
-const UpgradeLibrary = preload("res://scripts/upgrade_library.gd")
-
 
 func test_catalogue_is_well_formed() -> void:
 	var ids := {}

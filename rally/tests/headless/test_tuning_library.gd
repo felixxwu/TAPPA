@@ -4,8 +4,6 @@ extends GutTest
 # brake-split drivetrain change this drives is covered in test_drivetrain.gd; the
 # lift UI that sets these sliders is in test_menu_flow.gd. See features/tuning.md.
 
-const TuningLibrary = preload("res://scripts/tuning_library.gd")
-
 
 func _cfg() -> GameConfig:
 	var cfg := GameConfig.new()

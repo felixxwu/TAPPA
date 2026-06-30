@@ -1,8 +1,9 @@
 class_name RallyFlag
 extends RefCounted
 # Procedural flag marker for the HQ map-table rally pins (hq.gd). Replaces the
-# old plain cone marker: a thin pole topped by a waving triangular pennant whose
-# COLOUR encodes the rally's state, plus a small finial bead. The state palette
+# old plain cone marker: a small golden base disk that sits on the map, a thin
+# pole standing on it topped by a waving triangular pennant whose COLOUR encodes
+# the rally's state, plus a small finial bead. The state palette
 # is a medal ladder so the colour alone reads the player's best result:
 #
 #   locked  → slate grey   (showdown, not yet unlocked — also non-pickable)
@@ -18,6 +19,8 @@ extends RefCounted
 
 const POLE_HEIGHT := 0.30
 const POLE_RADIUS := 0.0075
+const DISK_RADIUS := 0.055    # small golden base disk the pole stands on
+const DISK_HEIGHT := 0.012    # disk thickness (a low coin sitting on the map)
 const PENNANT_LENGTH := 0.22   # how far the flag flies out from the pole (+X)
 const PENNANT_HEIGHT := 0.13   # height of the pennant at the hoist (pole) edge
 const PENNANT_SEGMENTS := 12   # along-length tessellation for the wave
@@ -29,6 +32,10 @@ const PENNANT_WAVE_AMP := 0.045  # peak furl displacement (grows toward the fly)
 const POLE_COLOR := Color(0.16, 0.15, 0.14)
 const FINIAL_COLOR := Color(0.95, 0.86, 0.45)
 const FINIAL_LOCKED_COLOR := Color(0.42, 0.44, 0.48)
+
+# The base disk is a warm polished gold on every flag (state-independent) — a small
+# pedestal that lifts the marker off the map and reads as a consistent "pin" anchor.
+const DISK_COLOR := Color(0.96, 0.78, 0.32)
 
 
 # Map a rally's state to its pennant colour. `stars` is 0..3 (hq._stars_for);
@@ -51,7 +58,24 @@ static func build(locked: bool, stars: int) -> Node3D:
 	root.name = "RallyFlag"
 	var color := state_color(locked, stars)
 
-	# Pole: a thin cylinder standing on the plane.
+	# Base disk: a small golden coin sitting flat on the map plane that the pole
+	# stands on. Built first so everything above is lifted to rest on its top face.
+	var disk := MeshInstance3D.new()
+	var disk_mesh := CylinderMesh.new()
+	disk_mesh.top_radius = DISK_RADIUS
+	disk_mesh.bottom_radius = DISK_RADIUS
+	disk_mesh.height = DISK_HEIGHT
+	disk_mesh.radial_segments = 24
+	disk.mesh = disk_mesh
+	disk.position = Vector3(0.0, DISK_HEIGHT * 0.5, 0.0)
+	var dmat := StandardMaterial3D.new()
+	dmat.albedo_color = DISK_COLOR
+	dmat.metallic = 0.85
+	dmat.roughness = 0.3
+	disk.material_override = dmat
+	root.add_child(disk)
+
+	# Pole: a thin cylinder standing on the disk top.
 	var pole := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = POLE_RADIUS
@@ -59,7 +83,7 @@ static func build(locked: bool, stars: int) -> Node3D:
 	cyl.height = POLE_HEIGHT
 	cyl.radial_segments = 8
 	pole.mesh = cyl
-	pole.position = Vector3(0.0, POLE_HEIGHT * 0.5, 0.0)
+	pole.position = Vector3(0.0, DISK_HEIGHT + POLE_HEIGHT * 0.5, 0.0)
 	var pmat := StandardMaterial3D.new()
 	pmat.albedo_color = POLE_COLOR
 	pmat.metallic = 0.4
@@ -72,7 +96,7 @@ static func build(locked: bool, stars: int) -> Node3D:
 	var flag := MeshInstance3D.new()
 	flag.mesh = _pennant_mesh()
 	# Centre the hoist edge so its top sits just below the pole tip.
-	flag.position = Vector3(POLE_RADIUS, POLE_HEIGHT - PENNANT_HEIGHT * 0.5 - 0.015, 0.0)
+	flag.position = Vector3(POLE_RADIUS, DISK_HEIGHT + POLE_HEIGHT - PENNANT_HEIGHT * 0.5 - 0.015, 0.0)
 	var fmat := StandardMaterial3D.new()
 	fmat.albedo_color = color
 	fmat.roughness = 0.85
@@ -89,7 +113,7 @@ static func build(locked: bool, stars: int) -> Node3D:
 	bead.radial_segments = 8
 	bead.rings = 4
 	finial.mesh = bead
-	finial.position = Vector3(0.0, POLE_HEIGHT + 0.008, 0.0)
+	finial.position = Vector3(0.0, DISK_HEIGHT + POLE_HEIGHT + 0.008, 0.0)
 	var bmat := StandardMaterial3D.new()
 	bmat.albedo_color = FINIAL_LOCKED_COLOR if locked else FINIAL_COLOR
 	bmat.metallic = 0.6
