@@ -258,6 +258,24 @@ func test_turn_splits_empty_without_pieces() -> void:
 	assert_eq(RallyLibrary.derive_turn_splits({"pieces": []}), [], "no pieces -> no splits")
 
 
+func test_turn_splits_honour_target_override() -> void:
+	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
+	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
+	var natural := RallyLibrary.derive_turn_splits(track)
+	var overridden := RallyLibrary.derive_turn_splits(track, {"target_ms_override": 42000})
+	# The final cumulative time lands exactly on the override (matches derive_target_ms).
+	assert_eq(int(overridden[overridden.size() - 1]["cum_ms"]), 42000,
+		"override rescales the total to the hand-set value")
+	# The per-turn fractions (what the popup uses) are preserved by the rescale.
+	var n_total := float(natural[natural.size() - 1]["cum_ms"])
+	var o_total := float(overridden[overridden.size() - 1]["cum_ms"])
+	for i in natural.size():
+		assert_almost_eq(float(overridden[i]["cum_ms"]) / o_total,
+			float(natural[i]["cum_ms"]) / n_total, 0.001,
+			"turn %d keeps its share of the total under the override" % i)
+
+
 # --- Opponent field ----------------------------------------------------------
 
 func test_opponent_field_shape_and_bounds() -> void:

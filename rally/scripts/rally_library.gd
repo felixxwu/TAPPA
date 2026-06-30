@@ -236,9 +236,11 @@ static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -
 # returns the arc length reached at the END of that turn and the cumulative target
 # time (ms) to there, priced exactly as derive_target_ms totals the whole track
 # (length / reference pace + a per-corner penalty, split by the tarmac fraction).
-# So the final entry's `cum_ms` equals derive_target_ms(track_result, event) bar a
-# target_ms_override (which only rescales the absolute total — the popup compares
-# FRACTIONS of it, where any such scaling cancels). Deterministic for a given track.
+# So the final entry's `cum_ms` equals derive_target_ms(track_result, event), including
+# an event's target_ms_override (the times are rescaled to land on it, preserving the
+# per-turn par profile). The popup itself only compares FRACTIONS of the total, where
+# any such rescaling cancels, so the override changes nothing there — but it keeps the
+# absolute cum_ms honest for any other consumer. Deterministic for a given track.
 # Returns Array of { "end_offset_m": float, "cum_ms": int }; empty if no pieces.
 static func derive_turn_splits(track_result: Dictionary, event: Dictionary = {}) -> Array:
 	var centerline := track_result.get("centerline") as Curve2D
@@ -263,6 +265,17 @@ static func derive_turn_splits(track_result: Dictionary, event: Dictionary = {})
 			end_off = centerline.get_closest_offset(next_entry)
 		var secs := end_off * m_cost + float(i + 1) * c_cost
 		splits.append({"end_offset_m": end_off, "cum_ms": int(round(secs * 1000.0))})
+	# Honour an event's hand-set total (target_ms_override) by rescaling the cumulative
+	# times so the final turn lands exactly on it, preserving the par PROFILE across
+	# turns. The per-turn FRACTIONS are unchanged by this (so the popup, which only uses
+	# fractions, is unaffected — P1's real time already carries the override) — it just
+	# keeps the absolute cum_ms honest, matching derive_target_ms's final value.
+	if event.has("target_ms_override"):
+		var natural_total := float(splits[splits.size() - 1]["cum_ms"])
+		if natural_total > 0.0:
+			var override_total := float(int(event["target_ms_override"]))
+			for s in splits:
+				s["cum_ms"] = int(round(float(s["cum_ms"]) / natural_total * override_total))
 	return splits
 
 
