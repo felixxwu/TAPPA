@@ -54,6 +54,11 @@ func _pin_for(hq: Node3D, rally_id: String) -> Node3D:
 	return null
 
 
+# The billboarded readout-box sprite a pin floats above its flag.
+func _pin_label_sprite(pin: Node3D) -> Sprite3D:
+	return pin.find_children("*", "Sprite3D", true, false)[0]
+
+
 func test_hq_boots_to_the_exterior_title() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -292,6 +297,19 @@ func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 		if absf((a as Area3D).position.y - label_y) < 0.01:
 			menu_targets += 1
 	assert_eq(menu_targets, 1, "the floating menu box is itself a click target")
+
+
+func test_hq_unavailable_rally_dims_its_floating_readout() -> void:
+	# A rally that can't be entered yet (the locked showdown) greys out its floating
+	# readout box; an available rally (open-class shakedown, starter eligible) is
+	# shown at full brightness.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var showdown_sprite := _pin_label_sprite(_pin_for(hq, "the_showdown"))
+	var shakedown_sprite := _pin_label_sprite(_pin_for(hq, "shakedown"))
+	assert_eq(showdown_sprite.modulate, hq.PIN_LABEL_DIM, "the locked showdown's readout is dimmed")
+	assert_eq(shakedown_sprite.modulate, Color.WHITE, "an available rally's readout is full brightness")
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:

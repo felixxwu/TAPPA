@@ -210,11 +210,13 @@ on a `Sprite3D`, so text and stars live in **one box** that always faces the cam
 the stars are drawn by **`StarRow`** (`scripts/star_row.gd`) as polygons, sidestepping
 the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav). The
 flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
-`RallyFlag.accent_color`). **Pennant:** placed 3rd or better → a **black-and-white
-checkered** racing flag; else **light green** when the player owns a car eligible to
+`RallyFlag.accent_color`). **Pennant:** placed 3rd or better → a **black-and-grey
+checkered** racing flag; else **bright green** when the player owns a car eligible to
 enter (`_has_eligible_car`); else **dark grey** (no qualifying car — also the locked
 showdown). **Tip + base** (the finial bead and base disk, always one colour): **warm
-gold** once the rally is **won** (1st place, 3 stars), **metal grey** otherwise. The
+gold** once the rally is **won** (1st place, 3 stars), **metal grey** otherwise. A
+rally that isn't available yet (locked, or no eligible car) also **dims its floating
+readout box** (`PIN_LABEL_DIM`) so the whole pin reads as disabled. The
 stars in the box remain the exact readout. Each
 unlocked pin carries **two** pickable `Area3D` hit spheres bound to the same handler
 (`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the floating

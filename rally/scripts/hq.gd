@@ -59,6 +59,8 @@ const MAX_STARS := 3
 const PIN_LABEL_PX := Vector2i(320, 120)
 const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
 const PIN_LABEL_RISE := 0.16
+# Sprite modulate for a readout box whose rally isn't available yet (greyed out).
+const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.75)
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
 # its texture and the engine-audio resources — isn't decoded at script-compile time
@@ -632,15 +634,18 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	# pennant once podiumed, else green (an eligible car is owned) or grey (none /
 	# locked), with a gold tip+base once won. See RallyFlag / features/menus.md.
 	var earned := _stars_for(rally_id)
-	var flag := RallyFlag.build(locked, earned, _has_eligible_car(rally))
+	var has_eligible := _has_eligible_car(rally)
+	var flag := RallyFlag.build(locked, earned, has_eligible)
 	pin.add_child(flag)
 	var marker_top := RallyFlag.POLE_HEIGHT
 
 	# Readout: a single design-system black box floating above the flag, holding the
 	# rally name and a row of proper five-pointed stars (gold earned / dim not). Built
 	# as a 2D UITheme panel rendered to a billboarded sprite, so it gets the real house
-	# look (pure-black panel, Syne Mono, uppercase) and always faces the camera.
-	var label := _build_pin_label(String(rally["name"]), earned)
+	# look (pure-black panel, Syne Mono, uppercase) and always faces the camera. The box
+	# is dimmed for a rally that isn't available yet — locked, or with no eligible car.
+	var available := not locked and has_eligible
+	var label := _build_pin_label(String(rally["name"]), earned, available)
 	label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
 	pin.add_child(label)
 	# Keep the readout panel reachable so the keyboard/gamepad cursor can paint it with
@@ -677,7 +682,7 @@ func _add_pin_hit(pin: Node3D, rally_id: String, pos: Vector3, r: float) -> void
 # rally name (Syne Mono, uppercase) above a row of proper StarRow stars, composited in
 # an off-screen SubViewport and shown on a billboarded Sprite3D so it always faces the
 # camera as one unit. The viewport owns the sprite as a child so it's freed with the pin.
-func _build_pin_label(rally_name: String, earned: int) -> Sprite3D:
+func _build_pin_label(rally_name: String, earned: int, available := true) -> Sprite3D:
 	var vp := SubViewport.new()
 	vp.size = PIN_LABEL_PX
 	vp.transparent_bg = true
@@ -714,6 +719,10 @@ func _build_pin_label(rally_name: String, earned: int) -> Sprite3D:
 	sprite.shaded = false
 	sprite.pixel_size = PIN_LABEL_PIXEL_SIZE
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	# Grey the whole readout out for a rally that can't be entered yet (locked / no
+	# eligible car), so it reads as disabled to match its grey flag.
+	if not available:
+		sprite.modulate = PIN_LABEL_DIM
 	# Hand the panel back so the pin (via _make_pin) can repaint it on selection.
 	sprite.set_meta("panel", panel)
 	return sprite
