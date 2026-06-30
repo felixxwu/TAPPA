@@ -44,3 +44,6 @@ sign_controlled.png
 
 # Local secrets / env
 .env
+
+# Superpowers brainstorm/session scratch artifacts
+/.superpowers/
