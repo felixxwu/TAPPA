@@ -216,6 +216,44 @@ static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -
 	return int(round(target_s * 1000.0))
 
 
+# --- In-stage turn splits (for the live "vs P1" pace popup) ------------------
+
+# Per-turn cumulative split table, used by the run scene to tell the player how
+# their pace compares to a rival every few turns (the HUD popup). For each placed
+# piece — every piece is a "turn" (TrackGenerator never emits a plain Straight) —
+# returns the arc length reached at the END of that turn and the cumulative target
+# time (ms) to there, priced exactly as derive_target_ms totals the whole track
+# (length / reference pace + a per-corner penalty, split by the tarmac fraction).
+# So the final entry's `cum_ms` equals derive_target_ms(track_result, event) bar a
+# target_ms_override (which only rescales the absolute total — the popup compares
+# FRACTIONS of it, where any such scaling cancels). Deterministic for a given track.
+# Returns Array of { "end_offset_m": float, "cum_ms": int }; empty if no pieces.
+static func derive_turn_splits(track_result: Dictionary, event: Dictionary = {}) -> Array:
+	var centerline := track_result.get("centerline") as Curve2D
+	var pieces: Array = track_result.get("pieces", [])
+	if centerline == null or pieces.is_empty():
+		return []
+	var baked := centerline.get_baked_length()
+	var tarmac := event_tarmac_fraction(event)
+	var gravel := 1.0 - tarmac
+	# Per-metre and per-corner second costs, blended across the surface mix — the same
+	# decomposition derive_target_ms sums as (length * m_cost + corner_count * c_cost).
+	var m_cost := gravel / REF_SPEED_MPS + tarmac / TARMAC_SPEED_MPS
+	var c_cost := gravel * CORNER_PENALTY_S + tarmac * TARMAC_CORNER_PENALTY_S
+	var splits: Array = []
+	for i in pieces.size():
+		# End of turn i = the entry of the next piece (the start of its connecting
+		# straight), or the centerline end for the final turn. Entry points are exact
+		# control points on the curve, so their offsets are monotonic along it.
+		var end_off := baked
+		if i + 1 < pieces.size():
+			var next_entry: Vector2 = pieces[i + 1].get("entry_pos", Vector2.ZERO)
+			end_off = centerline.get_closest_offset(next_entry)
+		var secs := end_off * m_cost + float(i + 1) * c_cost
+		splits.append({"end_offset_m": end_off, "cum_ms": int(round(secs * 1000.0))})
+	return splits
+
+
 # --- Opponent field (recomputed from the rally seed, never saved) ------------
 
 # The fixed opponent field for a rally, given each event's target time (ms).

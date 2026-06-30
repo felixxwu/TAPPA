@@ -32,6 +32,9 @@ class StubHud:
 		last_elapsed = seconds
 	func show_stage_complete(seconds: float) -> void:
 		complete_time = seconds
+	var stage_deltas: Array = []
+	func show_stage_delta(delta_ms: int) -> void:
+		stage_deltas.append(delta_ms)
 
 
 # Stand-in for TrackProgress: progress_percent() returns a settable 0..1 fraction.
@@ -157,6 +160,68 @@ func test_completion_uses_configured_percent() -> void:
 	_progress.pct = 0.6  # 60% >= 50% -> complete
 	sm._process(0.1)
 	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "crossing the configured percent completes")
+
+
+# --- In-stage "vs P1" pace popup (every N turns) -----------------------------
+
+# Twelve turns at evenly-spaced progress / time fractions, so the default interval
+# of 5 fires at turn 5 (index 4) and turn 10 (index 9). p1 total = 120 s, so the
+# rival's estimate at turn t is 120 s × t/12 = t × 10 s.
+func _wire_even_splits(sm: StageManager) -> void:
+	var prog: Array[float] = []
+	var tfrac: Array[float] = []
+	for i in 12:
+		prog.append(float(i + 1) / 12.0)
+		tfrac.append(float(i + 1) / 12.0)
+	sm.setup_splits(prog, tfrac, 120000)
+
+
+func test_no_popup_without_splits() -> void:
+	var sm := _make()
+	_to_running(sm)
+	_progress.pct = 1.0
+	sm._process(30.0)
+	assert_eq(_hud.stage_deltas.size(), 0, "a plain run (no splits wired) shows no popup")
+
+
+func test_popup_fires_every_five_turns_with_ahead_delta() -> void:
+	var sm := _make()
+	_to_running(sm)
+	_wire_even_splits(sm)
+	# Past turn 5 (frac 5/12) but short of turn 10: one popup, player 30 s vs P1 50 s.
+	_progress.pct = 0.5
+	sm._process(30.0)
+	assert_eq(_hud.stage_deltas.size(), 1, "crossing turn 5 fires one popup")
+	assert_eq(int(_hud.stage_deltas[0]), -20000, "ahead by 20 s reads negative (30 s − 50 s)")
+	# Past turn 10 (frac 10/12): a second popup, player 60 s vs P1 100 s.
+	_progress.pct = 0.9
+	sm._process(30.0)
+	assert_eq(_hud.stage_deltas.size(), 2, "crossing turn 10 fires the second popup")
+	assert_eq(int(_hud.stage_deltas[1]), -40000, "still ahead (60 s − 100 s)")
+
+
+func test_popup_behind_reads_positive() -> void:
+	var sm := _make()
+	_to_running(sm)
+	_wire_even_splits(sm)
+	# Reach turn 5 (P1 estimate 50 s) having taken 70 s: 20 s behind -> positive.
+	_progress.pct = 0.5
+	sm._process(70.0)
+	assert_eq(_hud.stage_deltas.size(), 1, "one popup at turn 5")
+	assert_eq(int(_hud.stage_deltas[0]), 20000, "behind by 20 s reads positive (70 s − 50 s)")
+
+
+func test_popup_interval_is_configurable() -> void:
+	Config.data.stage_delta_interval_turns = 3
+	var sm := _make()
+	_to_running(sm)
+	_wire_even_splits(sm)
+	# Interval 3 over 12 turns -> turns 3, 6, 9, 12. Advance one interval per frame
+	# (as real progress does) so each boundary fires its own popup.
+	for boundary in [3, 6, 9, 12]:
+		_progress.pct = float(boundary) / 12.0
+		sm._process(1.0)
+	assert_eq(_hud.stage_deltas.size(), 4, "interval 3 fires at turns 3/6/9/12")
 
 
 # --- Staged mode (the pre-event start-line scene holds before the countdown) --
