@@ -12,6 +12,7 @@ const TEST_PATH := "user://test_pause_profile.json"
 var _scene: Node3D
 var _pause: PauseMenu
 var _mgr: CameraManager
+var _mobile: MobileControls
 var _save: Node
 
 
@@ -26,6 +27,7 @@ func before_all() -> void:
 	await get_tree().physics_frame  # let world._ready() build the scene
 	_pause = _scene.get_node("PauseMenu")
 	_mgr = _scene.get_node("CameraManager")
+	_mobile = _scene.get_node("MobileControls")
 
 
 func after_all() -> void:
@@ -132,3 +134,17 @@ func test_picking_a_camera_in_settings_applies_live() -> void:
 		CameraManager.Mode.BONNET, "the chosen camera angle is saved")
 	# Restore chase so the shared scene starts the next test from the default.
 	_pause.settings_menu.select_camera(CameraManager.Mode.CHASE)
+
+
+func test_picking_a_scheme_in_settings_applies_live() -> void:
+	# The pause menu is wired to the live MobileControls, so picking a touch scheme in
+	# Settings switches the on-screen controls immediately (not only on the next run).
+	assert_eq(_pause.mobile_controls, _mobile, "the pause menu knows the live MobileControls")
+	_pause.open()
+	_pause.settings_menu.select_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
+	assert_eq(_mobile._scheme, MobileControls.SCHEME_BUTTONS_GAS_BRAKE,
+		"the live touch controls switch to the chosen scheme")
+	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
+		MobileControls.SCHEME_BUTTONS_GAS_BRAKE, "the chosen scheme is saved")
+	# Restore the default so the shared scene starts the next test clean.
+	_pause.settings_menu.select_scheme(MobileControls.DEFAULT_SCHEME)

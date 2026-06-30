@@ -60,6 +60,14 @@ func set_mode(mode: int) -> void:
 	_persist()
 
 
+# Re-assert the player's chosen camera as the active one. Used when another system
+# temporarily took over the viewport with its own Camera3D (the start-line reveal's
+# orbit camera) and must hand control back to the SELECTED mode — which isn't always
+# chase — rather than forcing one specific camera.
+func activate_current() -> void:
+	_apply()
+
+
 func active_index() -> int:
 	return _index
 

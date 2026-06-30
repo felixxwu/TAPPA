@@ -133,7 +133,9 @@ into **its own sub-page**:
 - **Mobile controls** — pick the **touch control scheme**. Each of the six schemes
   ([mobile-controls.md](mobile-controls.md)) is a tappable row with a vector
   **diagram** of its layout (`ControlSchemeDiagram`, `scripts/control_scheme_diagram.gd`),
-  its name and how-to.
+  its name and how-to. The choice persists under `MobileControls.SETTING_KEY` and is
+  applied on the next run (or **live**, in the pause menu, via the `scheme_changed`
+  signal — the on-screen controls rebuild the instant you pick a scheme).
 - **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
   fresh new game), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
   and per upgrade/repair-kit (`Save.add_item`, from `UpgradeLibrary.UPGRADES`) to
@@ -199,8 +201,8 @@ plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal 
 X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
 albedo texture so the aerial colours read true under the garage lighting). Every
 rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
-**state-coloured flag marker** (`RallyFlag` — a pole + waving pennant + finial
-bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
+**state-coloured flag marker** (`RallyFlag` — a small **golden base disk** the pin
+stands on + a pole + waving pennant + finial bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
 gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` panel
 (pure-black, Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
@@ -309,7 +311,10 @@ view) instead of the podium. (With no active session — a plain dev boot of
 toggles the menu and backs out of Settings first. A camera pick applies
 **immediately** to the live `CameraManager` (wired via the `SettingsMenu.camera_changed`
 signal → `CameraManager.set_mode`), so the angle changes the moment you choose it.
-Covered by `tests/headless/test_pause_menu.gd`.
+A **mobile-control** pick applies just as immediately to the live `MobileControls`
+(the `SettingsMenu.scheme_changed` signal → `MobileControls.set_scheme`), so the
+on-screen touch layout rebuilds the instant you choose it rather than only on the next
+run. Covered by `tests/headless/test_pause_menu.gd`.
 
 ## Podium (`podium.gd`)
 

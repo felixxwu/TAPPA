@@ -261,8 +261,9 @@ color = Color(1, 0.15, 0.1, 0)
 layer = 3
 script = ExtResource("9_mobile")
 
-[node name="PauseMenu" type="CanvasLayer" parent="." unique_id=1664740690 node_paths=PackedStringArray("camera_manager")]
+[node name="PauseMenu" type="CanvasLayer" parent="." unique_id=1664740690 node_paths=PackedStringArray("camera_manager", "mobile_controls")]
 process_mode = 3
 layer = 5
 script = ExtResource("13_pause")
 camera_manager = NodePath("../CameraManager")
+mobile_controls = NodePath("../MobileControls")
