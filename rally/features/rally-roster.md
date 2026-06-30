@@ -51,8 +51,12 @@ recomputed.
   `car_meta` is a CarLibrary entry, resolved by the owned car's stable
   `model_id`. The menus' field-a-car rig and map pins filter on this.
 - `derive_target_ms(track_result, event)` — per-event target time from the baked
-  centerline length + corner mix (a placeholder formula pending a calibration
-  pass; `REF_SPEED_MPS` / `CORNER_PENALTY_S` move to `GameConfig` then). An
+  centerline length + corner mix, **split by the event's tarmac fraction**
+  (`surface_mix`): the tarmac share of the length/corners is priced at the quicker
+  `TARMAC_SPEED_MPS` / `TARMAC_CORNER_PENALTY_S` (tarmac has more grip, so it's
+  driven a lot quicker), the gravel share at `REF_SPEED_MPS` / `CORNER_PENALTY_S`.
+  So a tarmac-heavy event gets a tighter target. (A placeholder formula pending a
+  calibration pass; these weights move to `GameConfig` then.) An
   `event.target_ms_override` wins when present.
 - `generate_opponent_field(rally, event_target_ms)` — the fixed field:
   10–15 rivals, each clean event time in `[target × RIVAL_PACE_MIN, target ×

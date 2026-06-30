@@ -628,11 +628,11 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	pin.set_meta("rally_id", rally_id)
 	pin.set_meta("locked", locked)
 
-	# The marker: a procedural flag whose colour encodes the rally's state — locked
-	# (grey/disabled) or its earned-star medal tier (red→bronze→silver→gold). See
-	# RallyFlag / features/menus.md.
+	# The marker: a procedural flag whose look encodes the rally's state — a checkered
+	# pennant once podiumed, else green (an eligible car is owned) or grey (none /
+	# locked), with a gold tip+base once won. See RallyFlag / features/menus.md.
 	var earned := _stars_for(rally_id)
-	var flag := RallyFlag.build(locked, earned)
+	var flag := RallyFlag.build(locked, earned, _has_eligible_car(rally))
 	pin.add_child(flag)
 	var marker_top := RallyFlag.POLE_HEIGHT
 
@@ -726,6 +726,16 @@ func _stars_for(rally_id: String) -> int:
 	if placed >= 1 and placed <= MAX_STARS:
 		return MAX_STARS + 1 - placed
 	return 0
+
+
+# Whether the player owns at least one car eligible to enter `rally` — drives the
+# pin flag's green (raceable) vs grey (no qualifying car) pennant. Mirrors the
+# eligibility filter used to build the car-park lineup (_build_eligible_lineup).
+func _has_eligible_car(rally: Dictionary) -> bool:
+	for car in Save.profile.get("cars", []):
+		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(String(car.get("model_id", "")))):
+			return true
+	return false
 
 
 func _refresh_meter() -> void:
