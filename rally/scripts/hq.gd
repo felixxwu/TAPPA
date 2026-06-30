@@ -58,7 +58,7 @@ const MAX_STARS := 3
 # scales it to world metres; rise is how far above the flag tip the box floats.
 const PIN_LABEL_PX := Vector2i(320, 120)
 const PIN_LABEL_PIXEL_SIZE := 0.0017
-const PIN_LABEL_RISE := 0.34
+const PIN_LABEL_RISE := 0.16
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
 # its texture and the engine-audio resources — isn't decoded at script-compile time
