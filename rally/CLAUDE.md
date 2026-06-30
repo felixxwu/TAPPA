@@ -72,6 +72,21 @@
 - ALWAYS run tests in the background (`run_in_background: true`) and keep
   working / wait for the completion notification rather than blocking on it.
   Tests take a while, so never run them in the foreground.
+- **Don't blindly `cd rally` — the Bash working directory PERSISTS between calls.**
+  After the first `cd rally` (or if you were launched inside `rally/`), the shell is
+  already there, so a second `cd rally` errors with "No such file or directory" and
+  the rest of the `&&` chain silently never runs — the classic symptom is a test
+  command that "passes" instantly with an empty log. Before prepending `cd`, check
+  where you are (`pwd` / look for `run_tests.sh` in `.`), or just invoke the runner
+  by its path and skip the `cd`. The repo root is one level up from `rally/`, but
+  git auto-finds the root, so git commands work from either.
+- **To wait for a background command, rely on its completion notification — do NOT
+  write an `until grep ...; do sleep; done` poll loop.** The harness re-invokes you
+  automatically when the task finishes (and `sleep`-chaining is blocked anyway), so
+  a manual poll loop is redundant; worse, if it's watching a log that never gets
+  written (see the `cd` trap above) it spins until timeout. Start the run with
+  `run_in_background: true`, end your turn, and read the result when notified. Keep
+  the `... 2>&1 | tee /tmp/run.log` so the full log survives on disk for inspection.
 - **Test runtime budget (~5 minutes).** The full suite should stay under about 5
   minutes. If a full run takes longer than that, spend some effort bringing the
   runtime back down before declaring the work complete — don't just accept the
