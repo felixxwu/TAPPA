@@ -69,7 +69,7 @@ func _pin(rally_name: String, locked: bool, earned: int, has_eligible: bool, pos
 	add_child(pin)
 	pin.add_child(RallyFlag.build(locked, earned, has_eligible))
 	var label := _build_pin_label(rally_name, earned)
-	label.position = Vector3(0.0, RallyFlag.POLE_HEIGHT + 0.34, 0.0)
+	label.position = Vector3(0.0, RallyFlag.POLE_HEIGHT + 0.16, 0.0)
 	pin.add_child(label)
 
 
