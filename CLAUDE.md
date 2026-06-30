@@ -69,14 +69,9 @@
   tests cover the work, or as a final pre-handoff check on a large task. For
   small, well-contained changes a targeted subset is enough — don't run the
   whole suite by reflex.
-- **Don't blindly `cd rally` — the Bash working directory PERSISTS between calls.**
-  After the first `cd rally` (or if you were launched inside `rally/`), the shell is
-  already there, so a second `cd rally` errors with "No such file or directory" and
-  the rest of the `&&` chain silently never runs — the classic symptom is a test
-  command that "passes" instantly with an empty log. Before prepending `cd`, check
-  where you are (`pwd` / look for `run_tests.sh` in `.`), or just invoke the runner
-  by its path and skip the `cd`. The repo root is one level up from `rally/`, but
-  git auto-finds the root, so git commands work from either.
+- The Godot project lives at the repository root — `project.godot`, `run_tests.sh`,
+  `build_web.sh`, etc. are all directly in the repo root, so there's no subdirectory
+  to `cd` into. Invoke the runners by path (`./run_tests.sh`) from the root.
 - **Test runtime budget (~5 minutes).** The full suite should stay under about 5
   minutes. If a full run takes longer than that, spend some effort bringing the
   runtime back down before declaring the work complete — don't just accept the

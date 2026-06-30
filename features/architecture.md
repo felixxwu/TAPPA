@@ -3,7 +3,7 @@
 ## Directory layout
 
 ```
-rally/
+.                          # repository root = Godot project root
 ├── hq.tscn                # Boot scene — the HQ hub (set in project.godot); see menus.md
 ├── podium.tscn            # End-of-rally result scene
 ├── main.tscn              # The run scene (a rally event / dev free-roam)

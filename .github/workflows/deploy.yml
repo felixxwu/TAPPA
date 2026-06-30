@@ -9,7 +9,7 @@ env:
   GODOT_VERSION: "4.6"
   ITCH_USER: felixxwu        # <-- your itch.io username
   ITCH_GAME: rally           # itch.io game slug -> https://felixxwu.itch.io/rally
-  EXPORT_DIR: rally/build/web
+  EXPORT_DIR: build/web
 
 jobs:
   export-web:
@@ -39,11 +39,9 @@ jobs:
           godot --version
 
       - name: Import project (build resource cache)
-        working-directory: rally
         run: godot --headless --import --quit || true
 
       - name: Export web build (via build_web.sh)
-        working-directory: rally
         env:
           GODOT: /usr/local/bin/godot
         run: |
