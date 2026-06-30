@@ -199,8 +199,8 @@ plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal 
 X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
 albedo texture so the aerial colours read true under the garage lighting). Every
 rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
-**state-coloured flag marker** (`RallyFlag` — a pole + waving pennant + finial
-bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
+**state-coloured flag marker** (`RallyFlag` — a small **golden base disk** the pin
+stands on + a pole + waving pennant + finial bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
 gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` panel
 (pure-black, Syne Mono, uppercase) composited in an off-screen `SubViewport` and shown
