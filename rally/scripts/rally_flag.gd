@@ -1,16 +1,19 @@
 class_name RallyFlag
 extends RefCounted
-# Procedural flag marker for the HQ map-table rally pins (hq.gd). Replaces the
-# old plain cone marker: a small golden base disk that sits on the map, a thin
-# pole standing on it topped by a waving triangular pennant whose COLOUR encodes
-# the rally's state, plus a small finial bead. The state palette
-# is a medal ladder so the colour alone reads the player's best result:
+# Procedural flag marker for the HQ map-table rally pins (hq.gd). A small golden /
+# metal base disk that sits on the map, a thin pole standing on it topped by a
+# waving triangular pennant, plus a small finial bead. The marker's look encodes
+# the rally's state across two independent axes:
 #
-#   locked  → slate grey   (showdown, not yet unlocked — also non-pickable)
-#   0 stars → race red     (unlocked, not yet finished top-3)
-#   1 star  → bronze        (best finish P3)
-#   2 stars → silver        (best finish P2)
-#   3 stars → gold          (best finish P1)
+# Pennant (the flag itself):
+#   placed 3rd or better  → black-and-white CHECKERED racing flag (a result earned)
+#   has an eligible car    → light green   (raceable now, not yet podiumed)
+#   no eligible car         → dark grey      (can't field a qualifying car — also
+#                                            the look of the still-locked showdown)
+#
+# Tip + base (finial bead and base disk, which always share one colour):
+#   finished 1st (3 stars) → warm gold      (the rally is won)
+#   otherwise               → metal grey
 #
 # All geometry is built procedurally (no .glb asset) so the marker stays a few
 # small meshes that scale with the table — matching how the rest of the HQ props
@@ -19,47 +22,68 @@ extends RefCounted
 
 const POLE_HEIGHT := 0.30
 const POLE_RADIUS := 0.0075
-const DISK_RADIUS := 0.055    # small golden base disk the pole stands on
+const DISK_RADIUS := 0.055    # small base disk the pole stands on
 const DISK_HEIGHT := 0.012    # disk thickness (a low coin sitting on the map)
 const PENNANT_LENGTH := 0.22   # how far the flag flies out from the pole (+X)
 const PENNANT_HEIGHT := 0.13   # height of the pennant at the hoist (pole) edge
 const PENNANT_SEGMENTS := 12   # along-length tessellation for the wave
 const PENNANT_WAVE_AMP := 0.045  # peak furl displacement (grows toward the fly)
 
-# Pole is a state-independent dark metal. The finial bead is a warm gold accent
-# on every ACTIVE flag, but goes grey on a locked one so "locked" reads as fully
-# greyed-out / disabled rather than just another colour.
+# Pole is a state-independent dark metal.
 const POLE_COLOR := Color(0.16, 0.15, 0.14)
-const FINIAL_COLOR := Color(0.95, 0.86, 0.45)
-const FINIAL_LOCKED_COLOR := Color(0.42, 0.44, 0.48)
 
-# The base disk is a warm polished gold on every flag (state-independent) — a small
-# pedestal that lifts the marker off the map and reads as a consistent "pin" anchor.
-const DISK_COLOR := Color(0.96, 0.78, 0.32)
+# Tip + base accent palette. Gold marks a won rally; metal grey is everything else.
+const ACCENT_GOLD := Color(0.96, 0.80, 0.34)
+const ACCENT_METAL := Color(0.60, 0.62, 0.66)
+
+# Solid pennant colours (the non-checkered cases).
+const PENNANT_GREEN := Color(0.46, 0.78, 0.40)   # raceable: eligible car owned
+const PENNANT_GREY := Color(0.30, 0.32, 0.36)    # no eligible car / locked showdown
+
+# Checkered racing-flag swatches (generated into a tiny checker texture, cached).
+const CHECKER_DARK := Color(0.08, 0.08, 0.08)
+const CHECKER_LIGHT := Color(0.90, 0.90, 0.90)
+const CHECKER_COLS := 5    # visible squares along the pennant length
+const CHECKER_ROWS := 3    # visible squares across the pennant height
+
+# Pennant kinds (which appearance the flag takes).
+enum { PENNANT_CHECKERED, PENNANT_SOLID_GREEN, PENNANT_SOLID_GREY }
+
+# One shared checkerboard texture for the whole game (deterministic, generated once).
+static var _checker_tex: Texture2D
 
 
-# Map a rally's state to its pennant colour. `stars` is 0..3 (hq._stars_for);
-# `locked` wins over stars (a locked showdown shows no progress yet). Locked is a
-# dark, desaturated charcoal that sits clearly below the bright metallic silver.
-static func state_color(locked: bool, stars: int) -> Color:
-	if locked:
-		return Color(0.30, 0.32, 0.36)        # charcoal slate (disabled)
-	match clampi(stars, 0, 3):
-		1: return Color(0.80, 0.50, 0.27)     # bronze
-		2: return Color(0.86, 0.89, 0.94)     # silver (bright metal)
-		3: return Color(1.00, 0.82, 0.28)     # gold
-		_: return Color(0.83, 0.26, 0.24)     # race red (0 stars)
+# Which pennant a rally shows. A podium result (placed 3rd or better → stars >= 1)
+# always wins and shows the checkered flag; otherwise green when the player owns a
+# car eligible to enter, else grey. A locked rally can never be podiumed and is
+# treated as having no eligible car, so it reads grey/disabled.
+static func pennant_kind(locked: bool, stars: int, has_eligible_car: bool) -> int:
+	if not locked and clampi(stars, 0, 3) >= 1:
+		return PENNANT_CHECKERED
+	if not locked and has_eligible_car:
+		return PENNANT_SOLID_GREEN
+	return PENNANT_SOLID_GREY
 
 
-# Build a complete flag marker (pole + pennant + finial). The pennant is tinted
-# by `state_color(locked, stars)`. Returns a Node3D rooted at the pole base.
-static func build(locked: bool, stars: int) -> Node3D:
+# The tip + base colour: warm gold once the rally is WON (3 stars = finished 1st),
+# metal grey otherwise (including locked).
+static func accent_color(locked: bool, stars: int) -> Color:
+	if not locked and clampi(stars, 0, 3) == 3:
+		return ACCENT_GOLD
+	return ACCENT_METAL
+
+
+# Build a complete flag marker (disk + pole + pennant + finial). Returns a Node3D
+# rooted at the disk base (local y = 0). `stars` is the rally's best-finish medal
+# count (0..3, hq._stars_for); `has_eligible_car` is whether the player owns a car
+# that may enter the rally; `locked` forces the disabled grey/metal look.
+static func build(locked: bool, stars: int, has_eligible_car: bool) -> Node3D:
 	var root := Node3D.new()
 	root.name = "RallyFlag"
-	var color := state_color(locked, stars)
+	var accent := accent_color(locked, stars)
 
-	# Base disk: a small golden coin sitting flat on the map plane that the pole
-	# stands on. Built first so everything above is lifted to rest on its top face.
+	# Base disk: a small coin sitting flat on the map plane that the pole stands on.
+	# Built first so everything above is lifted to rest on its top face.
 	var disk := MeshInstance3D.new()
 	var disk_mesh := CylinderMesh.new()
 	disk_mesh.top_radius = DISK_RADIUS
@@ -68,11 +92,7 @@ static func build(locked: bool, stars: int) -> Node3D:
 	disk_mesh.radial_segments = 24
 	disk.mesh = disk_mesh
 	disk.position = Vector3(0.0, DISK_HEIGHT * 0.5, 0.0)
-	var dmat := StandardMaterial3D.new()
-	dmat.albedo_color = DISK_COLOR
-	dmat.metallic = 0.85
-	dmat.roughness = 0.3
-	disk.material_override = dmat
+	disk.material_override = _accent_mat(accent)
 	root.add_child(disk)
 
 	# Pole: a thin cylinder standing on the disk top.
@@ -97,15 +117,10 @@ static func build(locked: bool, stars: int) -> Node3D:
 	flag.mesh = _pennant_mesh()
 	# Centre the hoist edge so its top sits just below the pole tip.
 	flag.position = Vector3(POLE_RADIUS, DISK_HEIGHT + POLE_HEIGHT - PENNANT_HEIGHT * 0.5 - 0.015, 0.0)
-	var fmat := StandardMaterial3D.new()
-	fmat.albedo_color = color
-	fmat.roughness = 0.85
-	fmat.cull_mode = BaseMaterial3D.CULL_DISABLED  # visible from both faces
-	flag.material_override = fmat
+	flag.material_override = _pennant_mat(pennant_kind(locked, stars, has_eligible_car))
 	root.add_child(flag)
 
-	# Finial: a small bead capping the pole tip — a warm accent so the pole top
-	# never reads as a cut-off stick.
+	# Finial: a small bead capping the pole tip — shares the tip/base accent colour.
 	var finial := MeshInstance3D.new()
 	var bead := SphereMesh.new()
 	bead.radius = 0.018
@@ -114,25 +129,52 @@ static func build(locked: bool, stars: int) -> Node3D:
 	bead.rings = 4
 	finial.mesh = bead
 	finial.position = Vector3(0.0, DISK_HEIGHT + POLE_HEIGHT + 0.008, 0.0)
-	var bmat := StandardMaterial3D.new()
-	bmat.albedo_color = FINIAL_LOCKED_COLOR if locked else FINIAL_COLOR
-	bmat.metallic = 0.6
-	bmat.roughness = 0.4
-	finial.material_override = bmat
+	finial.material_override = _accent_mat(accent)
 	root.add_child(finial)
 
 	return root
 
 
+# A glossy metal material for the tip/base accent (gold or grey).
+static func _accent_mat(color: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.metallic = 0.85
+	m.roughness = 0.3
+	return m
+
+
+# The pennant material for a given kind: a double-sided cloth that's either a solid
+# tint (green / grey) or the shared black-and-white checker texture.
+static func _pennant_mat(kind: int) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.roughness = 0.85
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED  # visible from both faces
+	match kind:
+		PENNANT_CHECKERED:
+			m.albedo_texture = _checker_texture()
+			m.albedo_color = Color.WHITE
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		PENNANT_SOLID_GREEN:
+			m.albedo_color = PENNANT_GREEN
+		_:
+			m.albedo_color = PENNANT_GREY
+	return m
+
+
 # A triangular pennant frozen mid-wave: vertices march along +X from the hoist
 # edge to a point at the fly, the half-height tapering linearly to zero and a
 # sinusoidal furl (in Z) whose amplitude grows toward the free end. Local origin
-# is the hoist-edge centre; the surface is double-sided via the material.
+# is the hoist-edge centre; the surface is double-sided via the material. UVs run
+# u = 0..1 along the length and v = 0..1 across the height (collapsing to the
+# centreline at the fly point), so the checker texture tiles cleanly over it.
 static func _pennant_mesh() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var tops: Array[Vector3] = []
 	var bots: Array[Vector3] = []
+	var top_uv: Array[Vector2] = []
+	var bot_uv: Array[Vector2] = []
 	for i in PENNANT_SEGMENTS + 1:
 		var t := float(i) / float(PENNANT_SEGMENTS)
 		var x := PENNANT_LENGTH * t
@@ -140,9 +182,34 @@ static func _pennant_mesh() -> ArrayMesh:
 		var z := PENNANT_WAVE_AMP * t * sin(t * PI * 2.4 + 0.6)  # furl grows outward
 		tops.append(Vector3(x, half, z))
 		bots.append(Vector3(x, -half, z))
+		# v maps the full hoist height to 0..1; both edges converge to 0.5 at the fly.
+		top_uv.append(Vector2(t, 0.5 - (half / PENNANT_HEIGHT)))
+		bot_uv.append(Vector2(t, 0.5 + (half / PENNANT_HEIGHT)))
 	for i in PENNANT_SEGMENTS:
 		# Two triangles per quad strip between segment i and i+1.
-		st.add_vertex(tops[i]); st.add_vertex(bots[i]); st.add_vertex(tops[i + 1])
-		st.add_vertex(bots[i]); st.add_vertex(bots[i + 1]); st.add_vertex(tops[i + 1])
+		st.set_uv(top_uv[i]); st.add_vertex(tops[i])
+		st.set_uv(bot_uv[i]); st.add_vertex(bots[i])
+		st.set_uv(top_uv[i + 1]); st.add_vertex(tops[i + 1])
+		st.set_uv(bot_uv[i]); st.add_vertex(bots[i])
+		st.set_uv(bot_uv[i + 1]); st.add_vertex(bots[i + 1])
+		st.set_uv(top_uv[i + 1]); st.add_vertex(tops[i + 1])
 	st.generate_normals()
 	return st.commit()
+
+
+# A tiny black-and-white checkerboard texture (CHECKER_COLS × CHECKER_ROWS cells),
+# nearest-filtered so the squares stay crisp. Generated once and cached.
+static func _checker_texture() -> Texture2D:
+	if _checker_tex != null:
+		return _checker_tex
+	var cell := 16
+	var w := CHECKER_COLS * cell
+	var h := CHECKER_ROWS * cell
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in range(h):
+		for x in range(w):
+			var cx := int(x / cell)
+			var cy := int(y / cell)
+			img.set_pixel(x, y, CHECKER_DARK if (cx + cy) % 2 == 0 else CHECKER_LIGHT)
+	_checker_tex = ImageTexture.create_from_image(img)
+	return _checker_tex

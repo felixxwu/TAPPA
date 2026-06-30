@@ -199,7 +199,7 @@ plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal 
 X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
 albedo texture so the aerial colours read true under the garage lighting). Every
 rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
-**state-coloured flag marker** (`RallyFlag` — a small **golden base disk** the pin
+**state-driven flag marker** (`RallyFlag` — a small **base disk** the pin
 stands on + a pole + waving pennant + finial bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
 gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` panel
@@ -207,10 +207,13 @@ gold, 2nd = 2, 3rd = 1, else dim (`_stars_for`). The box is a real `UITheme` pan
 on a `Sprite3D`, so text and stars live in **one box** that always faces the camera;
 the stars are drawn by **`StarRow`** (`scripts/star_row.gd`) as polygons, sidestepping
 the font's missing ★/☆ glyphs (same reason the UI uses ASCII `<`/`>` for nav). The
-flag's pennant colour is the medal ladder (`RallyFlag.state_color`): locked = charcoal
-grey (with a grey finial, so it reads as disabled), 0 stars = race red, then
-bronze / silver / gold for 1 / 2 / 3 stars — so the colour alone conveys the best
-result, with the stars as the exact readout. Each
+flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
+`RallyFlag.accent_color`). **Pennant:** placed 3rd or better → a **black-and-white
+checkered** racing flag; else **light green** when the player owns a car eligible to
+enter (`_has_eligible_car`); else **dark grey** (no qualifying car — also the locked
+showdown). **Tip + base** (the finial bead and base disk, always one colour): **warm
+gold** once the rally is **won** (1st place, 3 stars), **metal grey** otherwise. The
+stars in the box remain the exact readout. Each
 unlocked pin carries a pickable `Area3D` (rally id bound to the handler) and its
 `rally_id`/`locked` in metadata; the **showdown** pin is grey + **non-pickable**
 until every other rally is completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or

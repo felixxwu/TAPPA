@@ -41,10 +41,13 @@ func _ready() -> void:
 	plane.material_override = gmat
 	add_child(plane)
 
-	# Three pins to show the range: gold (3 stars), bronze (1 star), locked.
-	_pin("Rising Sun Rally", false, 3, Vector3(-0.7, 0, 0.25))
-	_pin("RWD Masters", false, 1, Vector3(0.0, 0, -0.1))
-	_pin("The Showdown", true, 0, Vector3(0.7, 0, 0.25))
+	# Pins to show the range: won (gold tip + checkered), podiumed (metal + checkered),
+	# raceable (green), no eligible car (grey), and the locked showdown (grey).
+	_pin("Rising Sun Rally", false, 3, true, Vector3(-1.0, 0, 0.25))
+	_pin("RWD Masters", false, 1, true, Vector3(-0.5, 0, -0.1))
+	_pin("Coastal Sprint", false, 0, true, Vector3(0.0, 0, 0.25))
+	_pin("Grand Tour", false, 0, false, Vector3(0.5, 0, -0.1))
+	_pin("The Showdown", true, 0, false, Vector3(1.0, 0, 0.25))
 
 	var cam := Camera3D.new()
 	cam.fov = 50.0
@@ -60,11 +63,11 @@ func _ready() -> void:
 	get_tree().quit()
 
 
-func _pin(rally_name: String, locked: bool, earned: int, pos: Vector3) -> void:
+func _pin(rally_name: String, locked: bool, earned: int, has_eligible: bool, pos: Vector3) -> void:
 	var pin := Node3D.new()
 	pin.position = pos
 	add_child(pin)
-	pin.add_child(RallyFlag.build(locked, earned))
+	pin.add_child(RallyFlag.build(locked, earned, has_eligible))
 	var label := _build_pin_label(rally_name, earned)
 	label.position = Vector3(0.0, RallyFlag.POLE_HEIGHT + 0.34, 0.0)
 	pin.add_child(label)
