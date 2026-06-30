@@ -52,8 +52,10 @@ space:
   which bind arrows + WASD + D-pad + Enter/Esc + gamepad A/B). The **car park** /
   **overflow** cycle the focused car with left/right and Start/Scrap with select; the
   **map table** carries a **keyboard pin cursor** (`_table_pin_index`) that cycles the
-  unlocked pins (left/right or up/down, wrapping), pops the selected pin bigger,
-  centres the camera on it, and opens its detail on select; the **tuning hub** uses
+  unlocked pins (left/right or up/down, wrapping), highlights the selected pin's
+  readout box with the same hover-style lift a menu button gets (`UITheme.mark_panel_focused`
+  — all pins stay one size, no scale-up), centres the camera on it, and opens its detail
+  on select; the **tuning hub** uses
   left/right to change car and an up/down cursor (`_hub_focus`, painted by
   `UITheme.mark_focused`) over Tuning/Upgrades. The **garage** keeps select → table /
   left → lift / back → exterior. Because HQ hides overlays by toggling their

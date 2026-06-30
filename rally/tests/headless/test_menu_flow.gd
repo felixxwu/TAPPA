@@ -160,8 +160,8 @@ func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 
 
 # The 3D map table can't take native focus (left/right pans / the pins are spatial),
-# so it carries a keyboard cursor: a selected pin that cycles (wrapping), pops bigger,
-# and opens its rally detail on select.
+# so it carries a keyboard cursor: a selected pin that cycles (wrapping), gets the
+# hover-style highlight (all pins stay one size), and opens its rally detail on select.
 func test_hq_map_table_has_a_keyboard_pin_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -172,8 +172,14 @@ func test_hq_map_table_has_a_keyboard_pin_cursor() -> void:
 	var pins: Array = hq._unlocked_pins()
 	assert_gt(pins.size(), 1, "there is more than one unlocked rally to cycle between")
 	assert_eq(hq._table_pin_index, 0, "the cursor seats on the first pin")
-	assert_almost_eq(float((pins[0] as Node3D).scale.x), 1.4, 0.01, "the focused pin is enlarged")
-	assert_almost_eq(float((pins[1] as Node3D).scale.x), 1.0, 0.01, "an unfocused pin stays normal size")
+	# Selection is shown by the hover-style highlight on the readout box, not by size:
+	# every pin keeps scale 1, and only the selected one gets the green underline.
+	assert_almost_eq(float((pins[0] as Node3D).scale.x), 1.0, 0.01, "the selected pin is NOT scaled up")
+	assert_almost_eq(float((pins[1] as Node3D).scale.x), 1.0, 0.01, "an unselected pin is the same size")
+	var sel_box: StyleBoxFlat = (pins[0] as Node3D).get_meta("label_panel").get_theme_stylebox("panel")
+	var idle_box: StyleBoxFlat = (pins[1] as Node3D).get_meta("label_panel").get_theme_stylebox("panel")
+	assert_eq(sel_box.border_width_bottom, 3, "the selected pin gets the hover-style underline")
+	assert_eq(idle_box.border_width_bottom, 0, "an unselected pin has no underline")
 
 	hq._cycle_table_pin(1)
 	assert_eq(hq._table_pin_index, 1, "cycling advances the cursor")
