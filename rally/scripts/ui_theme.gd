@@ -212,7 +212,7 @@ static func mark_focused(btn: Button, focused: bool) -> void:
 # menu row — the same SURFACE_HOVER face + green bottom underline `mark_focused` gives a
 # button — so a selected pin and a hovered menu option read identically. `pad` matches
 # the panel's content padding so the box doesn't resize between the two states.
-static func mark_panel_focused(panel: PanelContainer, focused: bool, pad: int = 14) -> void:
+static func mark_panel_focused(container: PanelContainer, focused: bool, pad: int = 14) -> void:
 	var box := StyleBoxFlat.new()
 	if focused:
 		box.bg_color = SURFACE_HOVER
@@ -222,7 +222,7 @@ static func mark_panel_focused(panel: PanelContainer, focused: bool, pad: int = 
 		box.bg_color = BLACK  # pure black when idle (rule 4)
 	for side in ["left", "top", "right", "bottom"]:
 		box.set("content_margin_" + side, float(pad))
-	panel.add_theme_stylebox_override("panel", box)
+	container.add_theme_stylebox_override("panel", box)
 
 
 # Grab keyboard/gamepad focus on `ctrl`, but only when it can actually take it —

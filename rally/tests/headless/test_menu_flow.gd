@@ -282,7 +282,16 @@ func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 		"a locked pin is not pickable (no hit area)")
 	var normal := _pin_for(hq, "shakedown")
 	assert_false(bool(normal.get_meta("locked")), "a normal rally pin is unlocked")
-	assert_gt(normal.find_children("*", "Area3D", true, false).size(), 0, "an unlocked pin is pickable")
+	var areas := normal.find_children("*", "Area3D", true, false)
+	assert_eq(areas.size(), 2, "an unlocked pin is pickable on BOTH the flag and its menu box")
+	# One hit target sits up at the readout box (flag pole + label rise), so a click on
+	# the menu itself enters the rally just like a click on the flag.
+	var label_y: float = RallyFlag.POLE_HEIGHT + hq.PIN_LABEL_RISE
+	var menu_targets := 0
+	for a in areas:
+		if absf((a as Area3D).position.y - label_y) < 0.01:
+			menu_targets += 1
+	assert_eq(menu_targets, 1, "the floating menu box is itself a click target")
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:

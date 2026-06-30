@@ -10,7 +10,7 @@ extends Node3D
 
 const OUT := "res://tools/map_pin_capture.png"
 const PIN_LABEL_PX := Vector2i(320, 120)
-const PIN_LABEL_PIXEL_SIZE := 0.0017
+const PIN_LABEL_PIXEL_SIZE := 0.00255
 const MAX_STARS := 3
 
 

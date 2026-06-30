@@ -213,9 +213,11 @@ flag's pennant colour is the medal ladder (`RallyFlag.state_color`): locked = ch
 grey (with a grey finial, so it reads as disabled), 0 stars = race red, then
 bronze / silver / gold for 1 / 2 / 3 stars — so the colour alone conveys the best
 result, with the stars as the exact readout. Each
-unlocked pin carries a pickable `Area3D` (rally id bound to the handler) and its
-`rally_id`/`locked` in metadata; the **showdown** pin is grey + **non-pickable**
-until every other rally is completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
+unlocked pin carries **two** pickable `Area3D` hit spheres bound to the same handler
+(`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the floating
+**readout box itself**, so a click on the menu enters the rally just like a click on
+the flag — plus its `rally_id`/`locked` in metadata; the **showdown** pin is grey +
+**non-pickable** until every other rally is completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
 **release** and only if the press wasn't a drag (`_table_dragged`), so panning never
