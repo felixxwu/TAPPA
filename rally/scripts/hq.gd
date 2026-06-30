@@ -733,7 +733,8 @@ func _stars_for(rally_id: String) -> int:
 # eligibility filter used to build the car-park lineup (_build_eligible_lineup).
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get("cars", []):
-		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(String(car.get("model_id", "")))):
+		var meta := UpgradeLibrary.effective_meta(car, CarLibrary.by_id(String(car.get("model_id", ""))))
+		if RallyLibrary.is_eligible(rally, meta):
 			return true
 	return false
 
@@ -2050,7 +2051,8 @@ func _build_eligible_lineup() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var eligible: Array = []
 	for car in Save.profile.get("cars", []):
-		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(String(car.get("model_id", "")))):
+		var meta := UpgradeLibrary.effective_meta(car, CarLibrary.by_id(String(car.get("model_id", ""))))
+		if RallyLibrary.is_eligible(rally, meta):
 			eligible.append(car)
 	_build_lineup(eligible)
 
@@ -2224,7 +2226,7 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 		String(entry.get("country", "?")),
 		String(entry.get("car_type", "?")),
 		int(entry.get("reward_tier", 0)),
-		CarLibrary.power_to_weight(entry),
+		CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)),
 		hp_text,
 	]
 

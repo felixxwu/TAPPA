@@ -180,6 +180,19 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	assert_almost_eq(Config.data.engine_low_octave_mix, 0.5, 0.001, "LFA applies a 50/50 low octave")
 
 
+func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
+	# apply_car sets the RigidBody mass from the spec; apply_owned then runs the
+	# installed upgrades, so a weight-reduction upgrade must flow through to both
+	# the live config AND the physics body (apply_owned re-syncs car.mass after it).
+	var spec := CarLibrary.by_id("mx5")
+	var base_mass: float = float(spec["mass"])
+	_car.apply_owned({"model_id": "mx5", "installed_upgrades": ["weight_reduction"],
+		"hp": float(spec.get("max_hp", 100.0)), "instance_id": -1})
+	await get_tree().physics_frame
+	assert_almost_eq(Config.data.mass, base_mass * 0.90, 0.001, "config mass cut 10% by the kit")
+	assert_almost_eq(_car.mass, base_mass * 0.90, 0.001, "rigidbody mass re-synced to the lighter config")
+
+
 func test_every_car_shares_the_mx5_gearbox() -> void:
 	# gear_ratios/final_drive stay a per-car field (so cars CAN diverge later), but
 	# the whole roster currently shares the MX-5's box: trying each car's real

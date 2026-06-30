@@ -520,14 +520,15 @@ func apply_owned(owned: Dictionary) -> String:
 		idx = 0
 	var car_name := apply_car(idx)
 	# Step 2: installed upgrades multiply/extend the live config. apply_car already
-	# pushed the baseline suspension onto the wheels, so re-sync after a stiffness
-	# upgrade mutates cfg (other upgraded fields are read live each physics step).
+	# copied the baseline mass onto the RigidBody, so re-sync after a weight-reduction
+	# upgrade mutates cfg.mass (other upgraded fields are read live each physics step).
 	UpgradeLibrary.apply(owned, Config.data)
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
 	# installed upgrades, so it must run after step 2.
 	TuningLibrary.apply(owned, Config.data)
 	_sync_suspension_to_wheels()
+	mass = Config.data.mass
 	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
 	# removes it from the save (the immortal starter skips depletion).
 	var entry := CarLibrary.by_id(model_id)
