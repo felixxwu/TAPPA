@@ -2,9 +2,12 @@
 # Test runner for the rally project:
 #   headless: smoke + gameplay tests (tests/headless/)
 # Flags:
-#   --fast <name>   run only test files whose name matches <name>
-#                   (substring, e.g. --fast engine -> test_engine*.gd),
-#                   for quick iteration. Final checks should run the full suite.
+#   --fast <name>...  run only test files whose name matches <name>
+#                     (substring, e.g. --fast engine -> test_engine*.gd),
+#                     for quick iteration. Accepts MULTIPLE names — as separate
+#                     args (--fast menu_flow rally_flag) or one whitespace-
+#                     separated string (--fast "menu_flow rally_flag") — and runs
+#                     each as its own selection. Final checks should run the full suite.
 # Env:
 #   TEST_TIMEOUT    hard wall-clock cap for the test run, seconds (default 1800 = 30 min).
 #   WARMUP_TIMEOUT  hard cap for the class-cache warmup, seconds (default 300 = 5 min).
@@ -55,15 +58,22 @@ with_timeout() {
   fi
 }
 
-SELECT=""
+SELECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --fast)
       shift
-      [[ $# -gt 0 ]] || { echo "error: --fast needs a name (e.g. --fast engine)" >&2; exit 2; }
-      SELECT="$1"
+      [[ $# -gt 0 ]] || { echo "error: --fast needs at least one name (e.g. --fast engine, or --fast 'menu_flow rally_flag')" >&2; exit 2; }
+      # Everything after --fast is a test-name pattern. Split each arg on whitespace
+      # (without glob expansion, via read -ra) so both `--fast a b` and `--fast "a b"`
+      # yield the same list of selections.
+      for arg in "$@"; do
+        read -ra parts <<<"$arg"
+        [[ ${#parts[@]} -gt 0 ]] && SELECTS+=("${parts[@]}")
+      done
+      break
       ;;
-    *) echo "error: unknown flag $1 (known: --fast <name>)" >&2; exit 2 ;;
+    *) echo "error: unknown flag $1 (known: --fast <name>...)" >&2; exit 2 ;;
   esac
   shift
 done
@@ -99,22 +109,39 @@ with_timeout "$WARMUP_TIMEOUT" "$GODOT" --headless --import >/dev/null 2>&1 || t
 # delta is unchanged, so the sim is bit-for-bit identical to a real-time run — it
 # just stops costing ~1/60 s of wall-clock per awaited frame. Must equal the
 # physics tick rate so exactly one physics tick fires per frame.
-GUT_ARGS=(--headless --fixed-fps 60 -d -s addons/gut/gut_cmdln.gd -gdir=res://tests/headless -ginclude_subdirs -gexit)
-if [[ -n "$SELECT" ]]; then
-  echo "=== headless (--fast: matching '$SELECT') ==="
-  GUT_ARGS+=(-gselect="$SELECT")
+GUT_BASE=(--headless --fixed-fps 60 -d -s addons/gut/gut_cmdln.gd -gdir=res://tests/headless -ginclude_subdirs -gexit)
+
+# Run one GUT pass; pass a non-empty selection to restrict to matching scripts.
+# Returns the run's exit status (timeout-kill codes flagged distinctly).
+run_selection() {
+  local sel="$1"
+  local args=("${GUT_BASE[@]}")
+  if [[ -n "$sel" ]]; then
+    echo "=== headless (--fast: matching '$sel') ==="
+    args+=(-gselect="$sel")
+  else
+    echo "=== headless (smoke + gameplay) ==="
+  fi
+  run_pass with_timeout "$TEST_TIMEOUT" "$GODOT" "${args[@]}"
+  local status=$?
+  # timeout exits 124 (SIGTERM at the deadline) or 128+9 = 137 (SIGKILL after the
+  # grace). Either means the run was killed for exceeding the cap, not a test
+  # failure — call it out distinctly.
+  if [[ $status -eq 124 || $status -eq 137 ]]; then
+    echo "error: tests exceeded the hard timeout of ${TEST_TIMEOUT}s and were killed" >&2
+  fi
+  return $status
+}
+
+# No selection -> one full run. One or more --fast names -> one pass each, so a
+# failure in any selection fails the whole invocation.
+if [[ ${#SELECTS[@]} -eq 0 ]]; then
+  run_selection "" || FAIL=1
 else
-  echo "=== headless (smoke + gameplay) ==="
+  for sel in "${SELECTS[@]}"; do
+    run_selection "$sel" || FAIL=1
+  done
 fi
-run_pass with_timeout "$TEST_TIMEOUT" "$GODOT" "${GUT_ARGS[@]}"
-status=$?
-# timeout exits 124 (SIGTERM at the deadline) or 128+9 = 137 (SIGKILL after the
-# grace). Either means the run was killed for exceeding the cap, not a test
-# failure — call it out distinctly.
-if [[ $status -eq 124 || $status -eq 137 ]]; then
-  echo "error: tests exceeded the hard timeout of ${TEST_TIMEOUT}s and were killed" >&2
-fi
-[[ $status -ne 0 ]] && FAIL=1
 
 if [[ $FAIL -eq 0 ]]; then
   echo "ALL TESTS PASSED"
