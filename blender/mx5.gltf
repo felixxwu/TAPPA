@@ -8,7 +8,8 @@
 		{
 			"name":"Scene",
 			"nodes":[
-				0
+				0,
+				1
 			]
 		}
 	],
@@ -22,6 +23,10 @@
 				0,
 				1.6292068494294654e-07
 			]
+		},
+		{
+			"mesh":1,
+			"name":"Cube.004"
 		}
 	],
 	"materials":[
@@ -33,6 +38,20 @@
 					"index":0
 				},
 				"metallicFactor":0
+			}
+		},
+		{
+			"doubleSided":true,
+			"name":"Material.005",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0,
+					0,
+					0,
+					1
+				],
+				"metallicFactor":0,
+				"roughnessFactor":0.5
 			}
 		}
 	],
@@ -50,6 +69,20 @@
 					"material":0
 				}
 			]
+		},
+		{
+			"name":"Cube.004",
+			"primitives":[
+				{
+					"attributes":{
+						"POSITION":4,
+						"NORMAL":5,
+						"TEXCOORD_0":6
+					},
+					"indices":7,
+					"material":1
+				}
+			]
 		}
 	],
 	"textures":[
@@ -61,8 +94,8 @@
 	"images":[
 		{
 			"mimeType":"image/png",
-			"name":"texture",
-			"uri":"texture.png"
+			"name":"Untitled",
+			"uri":"Untitled.png"
 		}
 	],
 	"accessors":[
@@ -99,6 +132,40 @@
 			"componentType":5123,
 			"count":540,
 			"type":"SCALAR"
+		},
+		{
+			"bufferView":4,
+			"componentType":5126,
+			"count":24,
+			"max":[
+				1.667461633682251,
+				0.7076649069786072,
+				0.4654572308063507
+			],
+			"min":[
+				-1.608902096748352,
+				0.1820458173751831,
+				-0.4654572308063507
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":5,
+			"componentType":5126,
+			"count":24,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":6,
+			"componentType":5126,
+			"count":24,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":7,
+			"componentType":5123,
+			"count":36,
+			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
@@ -125,6 +192,30 @@
 			"byteLength":1080,
 			"byteOffset":10944,
 			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":288,
+			"byteOffset":12024,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":288,
+			"byteOffset":12312,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":192,
+			"byteOffset":12600,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":72,
+			"byteOffset":12792,
+			"target":34963
 		}
 	],
 	"samplers":[
@@ -135,7 +226,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":12024,
+			"byteLength":12864,
 			"uri":"mx5.bin"
 		}
 	]
