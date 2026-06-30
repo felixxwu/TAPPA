@@ -2,6 +2,15 @@ extends VehicleBody3D
 
 const CAR_SCENE := preload("res://car.tscn")
 
+# Wheel-cap material: each car's Visual/Tire shows its own wheel.png on the cylinder
+# caps (ps1_wheel_tire.gdshader), or a blank dark disc for cars without an authored
+# wheel. Built lazily and cached per texture path so a lineup of cars sharing a
+# texture reuses one material.
+const WHEEL_SHADER := preload("res://shaders/ps1_wheel_tire.gdshader")
+var _wheel_mats: Dictionary = {}
+# Shared 1×1 near-black texture for the blank hubcap (built once, reused).
+static var _blank_wheel_tex: ImageTexture
+
 # Roll+pitch damping for the self-righting assist, as a fraction of
 # level_assist_torque per rad/s of tilt rate. Scales off the same knob so the
 # inspector keeps a single strength control while the aid still settles to level
@@ -80,6 +89,37 @@ func _ready() -> void:
 		# (the body overwrites origin with connection-point + suspension travel),
 		# so car swaps relocate from a clean rest pose, not a drifted one.
 		_wheel_mounts[wheel] = wheel.position
+		# car.tscn shares ONE Spoke mesh across Spoke1 + Spoke2 of a wheel (so
+		# resizing one resizes both); duplicate it ONCE per wheel and reassign to
+		# both, so the pair stays in sync but no longer shares the resource with
+		# any other car.tscn instance (see the Chassis/Cabin note below).
+		var spoke_mesh: Mesh = null
+		for spoke_name in ["Visual/Spoke1", "Visual/Spoke2"]:
+			var spoke := wheel.get_node_or_null(spoke_name) as MeshInstance3D
+			if spoke == null or spoke.mesh == null:
+				continue
+			if spoke_mesh == null:
+				spoke_mesh = spoke.mesh.duplicate()
+			spoke.mesh = spoke_mesh
+		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
+		if tire != null and tire.mesh != null:
+			tire.mesh = tire.mesh.duplicate()
+	# Chassis/Cabin boxes and each wheel's Tire/Spoke are authored as shared
+	# sub-resources in car.tscn (so apply_car's resize covers, e.g., all four
+	# wheels or both spokes on a wheel at once) — but that sharing also spans
+	# every INSTANCE of car.tscn by default. In an event, start_line.gd spawns
+	# extra car instances (queue props) that call apply_car() too; without the
+	# per-instance copies above/below, whichever car resizes last corrupts every
+	# other instance's chassis/cabin/wheel visuals (size, radius, width — and the
+	# spoke length, which scales off radius) until that instance happens to get
+	# its own copy too. Duplicate Chassis/Cabin meshes here as well, once per
+	# instance, before anyone can mutate the shared originals.
+	var chassis_mesh := $Chassis as MeshInstance3D
+	if chassis_mesh.mesh != null:
+		chassis_mesh.mesh = chassis_mesh.mesh.duplicate()
+	var cabin_mesh := $Cabin as MeshInstance3D
+	if cabin_mesh.mesh != null:
+		cabin_mesh.mesh = cabin_mesh.mesh.duplicate()
 	drivetrain = Drivetrain.new(self)
 	drivetrain.terrain = _resolve_terrain()
 	# Read per-contact impulses in _integrate_forces (used by the damage model to
@@ -450,21 +490,27 @@ func apply_car(index: int) -> String:
 	(cabin_mesh.mesh as BoxMesh).size = cabin
 	cabin_mesh.position = Vector3(0.0, body.y * 0.5 + cabin.y * 0.45, spec["cabin_z"])
 
-	# Authored-model cars (the MX-5) hide the procedural chassis/cabin boxes and
-	# show the glb body instead; every other car does the reverse. The collision
-	# box above is shared by both paths. Wheels stay procedural either way.
+	# Authored-model cars hide the procedural chassis/cabin boxes and show ONE glb body
+	# (spec["model_node"]); every other body + the boxes are hidden. The collision box
+	# above is shared by both paths. Wheels stay procedural either way.
 	var use_model: bool = spec.get("use_model", false)
-	var model := get_node_or_null("Mx5Body") as Node3D
-	if model != null:
-		model.visible = use_model
-		if use_model:
-			_apply_model_material(model)
+	var active_node := String(spec.get("model_node", ""))
+	for node_name in _model_node_names():
+		var model_body := get_node_or_null(NodePath(node_name)) as Node3D
+		if model_body == null:
+			continue
+		var is_active := use_model and node_name == active_node
+		model_body.visible = is_active
+		if is_active:
+			_apply_model_material(model_body, load(String(spec.get("model_texture", ""))))
 	($Chassis as MeshInstance3D).visible = not use_model
 	cabin_mesh.visible = not use_model
 
-	# Tyre + spoke meshes are shared sub-resources, so sizing one wheel's covers
-	# all four. Reposition each wheel to the new track/wheelbase (origin only,
-	# preserving the scene's axle-flip basis) and set its physics radius.
+	# Tyre + spoke meshes are duplicated per-instance in _ready() (so multiple
+	# car.tscn instances, e.g. the start-line queue props, can't stomp each
+	# other's wheel visuals); resize each wheel's own copy here. Reposition each
+	# wheel to the new track/wheelbase (origin only, preserving the scene's
+	# axle-flip basis) and set its physics radius.
 	var radius: float = spec["wheel_radius"]
 	var width: float = spec["wheel_width"]
 	var half_track: float = spec["track"] * 0.5
@@ -490,6 +536,8 @@ func apply_car(index: int) -> String:
 			cyl.top_radius = radius
 			cyl.bottom_radius = radius
 			cyl.height = width
+			# Per-car wheel cap: the car's own wheel.png, or a blank dark disc.
+			tire.set_surface_override_material(0, _wheel_material(String(spec.get("wheel_texture", ""))))
 		var spoke := wheel.get_node_or_null("Visual/Spoke1") as MeshInstance3D
 		if spoke != null:
 			(spoke.mesh as BoxMesh).size = Vector3(width * 0.85, radius * 1.76, 0.06)
@@ -574,9 +622,12 @@ func _sync_suspension_to_wheels() -> void:
 # instead of using its imported Blender material. albedo_color is left white so
 # the texture's own colours show through (ALBEDO = texture × albedo_color).
 # Idempotent: the material is built once per mesh.
-const MX5_TEXTURE := preload("res://blender/mx5/mx5_texture.png")
+# Names of the authored glb body nodes in car.tscn (hidden unless a spec selects one).
+func _model_node_names() -> PackedStringArray:
+	return PackedStringArray(["Mx5Body", "FocusBody"])
 
-func _apply_model_material(model: Node3D) -> void:
+
+func _apply_model_material(model: Node3D, texture: Texture2D) -> void:
 	var shader: Shader = load("res://shaders/ps1_models_lit.gdshader")
 	for mesh in model.find_children("*", "MeshInstance3D", true):
 		var mi := mesh as MeshInstance3D
@@ -586,8 +637,34 @@ func _apply_model_material(model: Node3D) -> void:
 			mat.shader = shader
 			mat.set_shader_parameter("texture_tile", Vector2(1, 1))
 			mat.set_shader_parameter("albedo_color", Color.WHITE)
-			mat.set_shader_parameter("albedo_texture", MX5_TEXTURE)
+			mat.set_shader_parameter("albedo_texture", texture)
 			# Same fake per-vertex lighting as the procedural car meshes (see
 			# world.gd) so the authored body gets shape too, not just flat colour.
 			Config.data.apply_car_light(mat)
 			mi.set_surface_override_material(0, mat)
+
+
+# A ShaderMaterial for the tire caps using `tex_path` (a wheel.png), or a blank dark
+# disc when empty. albedo_color (the rubber tread) is left at the shader default;
+# world.gd repaints it live, same as before.
+func _wheel_material(tex_path: String) -> ShaderMaterial:
+	if _wheel_mats.has(tex_path):
+		return _wheel_mats[tex_path]
+	var mat := ShaderMaterial.new()
+	mat.shader = WHEEL_SHADER
+	mat.set_shader_parameter("albedo_texture", _blank_wheel_texture() if tex_path == "" else load(tex_path))
+	# The tread colour + PS1 fake lighting that world.gd used to push onto the shared
+	# tire material — now carried by each per-car material (world.gd's push lands on the
+	# scene's default .tres, which apply_car replaces with this).
+	mat.set_shader_parameter("albedo_color", Config.data.wheel_color)
+	Config.data.apply_car_light(mat)
+	_wheel_mats[tex_path] = mat
+	return mat
+
+
+static func _blank_wheel_texture() -> ImageTexture:
+	if _blank_wheel_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGB8)
+		img.set_pixel(0, 0, Color(0.10, 0.10, 0.10))
+		_blank_wheel_tex = ImageTexture.create_from_image(img)
+	return _blank_wheel_tex

@@ -43,6 +43,11 @@ extends Node3D
 #     cap before they can do anything else. Reuses the car-park lineup + framing.
 enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 
+# The cars offered on first run (the two authored-body cars). The player picks one in
+# the car park (see _enter_starter_pick); the chosen one becomes the immortal starter.
+# Generalises over this list, so a third starter is a one-line add.
+const STARTER_MODEL_IDS := ["mx5", "focus"]
+
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
 # name/description + a Change Car button + Tuning/Upgrades buttons); TUNE is
 # the handling sliders and UPGRADES is install parts / repair. Each menu is its own
@@ -91,6 +96,10 @@ var _selected_instance_id := -1
 # the tuning lift's "Change Car" button) it shows ALL owned cars and Select swaps the
 # car raised on the lift, returning to the bay. _carpark_change_mode picks which.
 var _carpark_change_mode := false
+# True while the car park is showing the first-run starter picker (preview cars from
+# CarLibrary, not owned cars — the garage is empty). Select grants the immortal
+# starter; see _enter_starter_pick / _confirm_starter.
+var _carpark_starter_mode := false
 # On the web build, go fullscreen on the player's first tap (browsers only allow
 # fullscreen from a user gesture). Latched so we request it once. Orientation is
 # locked to landscape via project.godot (display/window/handheld/orientation).
@@ -256,15 +265,12 @@ func _build_hq() -> void:
 		_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
 
 
-# First run: grant the immortal starter (the anti-soft-lock floor — it can never
-# be wrecked, so the player can always field something). Recorded in the profile.
+# First run no longer auto-grants a car: the player picks their starter (MX-5 vs
+# Focus) in the car park on pressing Start (see _enter_starter_pick / _confirm_starter).
+# The chosen car becomes the immortal anti-soft-lock floor. Kept as a hook in case a
+# future migration needs to backfill; currently a no-op.
 func _ensure_starter() -> void:
-	if Save.profile.get("starter_picked", false):
-		return
-	Save.grant_car("mx5", true)
-	Save.profile["starter_picked"] = true
-	Save.profile["starter_model_id"] = "mx5"
-	Save.save()
+	pass
 
 
 # Make sure a valid car is selected (the one raised on the lift). Save.selected_car
@@ -1549,7 +1555,12 @@ func _go_to(view: int, snap := false) -> void:
 
 func _on_exterior_start() -> void:
 	_maybe_enter_web_fullscreen()
-	_go_to(View.GARAGE)
+	# First-time players (no starter chosen yet) pick a starter car in the car park;
+	# returning players go straight to the garage.
+	if not bool(Save.profile.get("starter_picked", false)):
+		_enter_starter_pick()
+	else:
+		_go_to(View.GARAGE)
 
 
 # Take the web/mobile build fullscreen on the first user gesture, but ONLY when we're
@@ -2085,11 +2096,66 @@ func _enter_change_car() -> void:
 func _car_back() -> void:
 	_clear_lineup()
 	_selected_instance_id = -1
-	if _carpark_change_mode:
+	if _carpark_starter_mode:
+		_carpark_starter_mode = false
+		_go_to(View.EXTERIOR)
+	elif _carpark_change_mode:
 		_carpark_change_mode = false
 		_enter_lift()
 	else:
 		_go_to(View.TABLE)
+
+
+# First-run starter picker: park one PREVIEW car per STARTER_MODEL_IDS (not owned
+# cars — the garage is empty) and let the player choose. Select grants that model as
+# the immortal starter (see _confirm_starter); Back returns to the title.
+func _enter_starter_pick() -> void:
+	_carpark_starter_mode = true
+	_carpark_change_mode = false
+	var previews: Array = []
+	var idx := -1
+	for id in STARTER_MODEL_IDS:
+		var entry := CarLibrary.by_id(id)
+		if entry.is_empty():
+			continue
+		previews.append({
+			"instance_id": idx,  # negative: a preview, not an owned car
+			"model_id": id,
+			"hp": float(entry.get("max_hp", 1000.0)),
+			"immortal": true,  # the chosen one becomes immortal; the stat reads right
+			"installed_upgrades": [],
+			"tuning": {},
+		})
+		idx -= 1
+	_build_lineup(previews)
+	_rally_banner.text = "Choose your starter car"
+	_no_eligible_label.visible = false
+	_start_button.text = "Choose This Car"
+	_start_button.disabled = false
+	_view = View.CARPARK
+	_detail_open = false
+	_update_overlays()
+	_focus = 0
+	_focus_changed(true)
+
+
+# Commit the focused preview as the immortal starter: grant it, record the choice,
+# select it, then enter the garage.
+func _confirm_starter() -> void:
+	if _eligible.is_empty():
+		return
+	var model_id := String(_eligible[_focus].get("model_id", ""))
+	if model_id == "":
+		return
+	var car := Save.grant_car(model_id, true)
+	Save.profile["starter_picked"] = true
+	Save.profile["starter_model_id"] = model_id
+	Save.set_selected_car(int(car.get("instance_id", -1)))
+	Save.save()
+	_clear_lineup()
+	_selected_instance_id = -1
+	_carpark_starter_mode = false
+	_go_to(View.GARAGE)
 
 
 # --- Car park (the eligible lineup) ------------------------------------------
@@ -2430,6 +2496,10 @@ func _move_camera_to(xform: Transform3D, snap: bool) -> void:
 # screen with the loading overlay FIRST and let it paint a frame, then do the
 # handoff behind it (the run scene then shows its own loading screen — continuous).
 func _on_start_pressed() -> void:
+	# On first run the same action COMMITS the focused preview as the immortal starter.
+	if _carpark_starter_mode:
+		_confirm_starter()
+		return
 	# In change-car mode the same action SELECTS the focused car for the lift and
 	# returns to the bay, rather than launching a rally.
 	if _carpark_change_mode:

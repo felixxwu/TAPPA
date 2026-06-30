@@ -500,3 +500,34 @@ func test_head_on_collision_costs_hp() -> void:
 
 	assert_gt(impacts.size(), 0, "a head-on collision must register at least one impact")
 	assert_lt(_car.damage.hp, 1000.0, "a head-on collision must cost HP")
+
+
+func test_mx5_wheels_use_its_own_wheel_texture() -> void:
+	_car.apply_car(CarLibrary.index_of("mx5"))
+	var tire := _car.get_node("WheelFL/Visual/Tire") as MeshInstance3D
+	var mat := tire.get_surface_override_material(0) as ShaderMaterial
+	assert_not_null(mat, "tire has a ShaderMaterial override")
+	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
+	assert_not_null(tex, "mx5 wheel cap has a texture")
+	assert_true(str(tex.resource_path).ends_with("mx5/wheel.png"),
+		"mx5 uses its own wheel.png, got %s" % tex.resource_path)
+
+
+func test_modelless_car_gets_blank_wheel_texture() -> void:
+	# rs3 has no wheel_texture spec -> blank dark disc, NOT the mx5 photo.
+	_car.apply_car(CarLibrary.index_of("rs3"))
+	var tire := _car.get_node("WheelFL/Visual/Tire") as MeshInstance3D
+	var mat := tire.get_surface_override_material(0) as ShaderMaterial
+	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
+	assert_false(str(tex.resource_path).ends_with("wheel.png"),
+		"a model-less car must not borrow a car's wheel photo")
+
+
+func test_mx5_model_node_shown_via_spec_fields() -> void:
+	_car.apply_car(CarLibrary.index_of("mx5"))
+	assert_true((_car.get_node("Mx5Body") as Node3D).visible, "Mx5Body shown for the mx5")
+	assert_false((_car.get_node("Chassis") as MeshInstance3D).visible, "boxes hidden for a model car")
+	var mi := _car.get_node("Mx5Body").find_children("*", "MeshInstance3D", true)[0] as MeshInstance3D
+	var mat := mi.get_surface_override_material(0) as ShaderMaterial
+	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
+	assert_true(str(tex.resource_path).ends_with("mx5_texture.png"), "mx5 body uses its own texture")

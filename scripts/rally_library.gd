@@ -61,6 +61,17 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
+		"id": "front_runners", "name": "Front Runners", "difficulty": 1, "showdown": false,
+		"map_pos": Vector2(0.26, 0.6),
+		# FWD intro rally + a p/w ceiling: the Focus's home (parallels Shakedown for the MX-5).
+		"restriction": {"drive_mode": CarLibrary.FWD, "pw_max": 0.24},
+		"events": [
+			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85},
+			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8},
+			{"seed": 1103, "turn_count": 11, "forestiness": 0.75, "surface_mix": 0.3, "straightness": 0.8},
+		],
+	},
+	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {"pw_max": 0.25},  # gated below: a slightly higher p/w ceiling

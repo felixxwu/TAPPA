@@ -5,6 +5,7 @@
 [ext_resource type="Script" path="res://scripts/engine_audio.gd" id="3_engaud"]
 [ext_resource type="PackedScene" path="res://blender/mx5/mx5.glb" id="4_mx5model"]
 [ext_resource type="Material" path="res://materials/wheel_tire.tres" id="5_wheel_mat"]
+[ext_resource type="PackedScene" path="res://blender/focus/focus.glb" id="6_focusmodel"]
 
 [sub_resource type="BoxMesh" id="mesh_chassis"]
 size = Vector3(1.6, 0.5, 3)
@@ -65,6 +66,10 @@ surface_material_override/0 = SubResource("mat_cabin")
 
 [node name="Mx5Body" parent="." instance=ExtResource("4_mx5model")]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, -0.5, 0)
+visible = false
+
+[node name="FocusBody" parent="." instance=ExtResource("6_focusmodel")]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0, -0.5, 0)
 visible = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

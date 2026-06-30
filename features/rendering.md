@@ -92,12 +92,12 @@ vertex, interpolated for free by the rasteriser. `light_amount`
 1 = full. Uniforms `albedo_texture`, `albedo_color`, `texture_tile`,
 `light_amount`, `light_dir`, `sun_color`, `sky_color`, `ground_color`.
 `world.gd` calls `cfg.apply_car_light()` on the chassis/cabin/wheel/spoke
-materials, and `car.gd._apply_model_material()` does the same for the MX-5 body.
+materials, and `car.gd._apply_model_material()` does the same for the authored bodies (MX-5, Focus).
 The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
 `sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
 alongside `terrain_light_amount` for the baked terrain shading.
 
-Used by: car chassis/cabin/wheels/spokes, and the MX-5's authored body model
+Used by: car chassis/cabin/wheels/spokes, and the authored body models (MX-5, Focus)
 (see below).
 
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
@@ -140,17 +140,39 @@ across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
 `cycle_car()` re-points the overlay at the swapped car, like the HUD. All tunables
 live in `GameConfig` under the **Speed Lines** group.
 
-## MX-5 authored body model
+## Authored body models (MX-5, Focus)
 
-The Mazda MX-5 (CarLibrary index 0) renders an authored body model
-(`blender/mx5/mx5.glb`, instanced as `Car/Mx5Body`) instead of the procedural
-chassis+cabin boxes; every other car still uses the boxes. `car.gd`'s
-`apply_car()` toggles visibility (`use_model` flag on the spec) and assigns the
-`ps1_models_lit.gdshader` material to the model's mesh — `albedo_texture` set to the
-baked `blender/mx5/mx5_texture.png`, `albedo_color` white — so the model's painted
-detail (glass, lights, panels) renders through the same quantize/dither/fog
-pipeline as the rest of the scene. The four wheels stay procedural; the
-collision box is unchanged (and invisible). The model is used at 1:1 scale.
+Cars with `use_model` on their CarLibrary spec render an authored glb body
+instead of the procedural chassis+cabin boxes; every other car still uses the
+boxes. Two cars carry a model today: the **Mazda MX-5**
+(`blender/mx5/mx5.glb`, node `Car/Mx5Body`) and the **Ford Focus RS**
+(`blender/focus/focus.glb`, node `Car/FocusBody`). Both bodies are instanced in
+`car.tscn`, hidden by default.
+
+The mapping is spec-driven (not hard-coded per car): each model car names its
+`model_node` (the body node to show) and `model_texture` (the baked albedo). The
+glb axes match across both exports (X = length, Y = up, Z = width); the
+`FocusBody` transform additionally flips 180° about Y vs the MX-5 because the
+Focus glb's length axis points the opposite way. `car.gd`'s `apply_car()` hides
+**all** model bodies (`_model_node_names()`) and the boxes, shows the spec's
+`model_node`, and assigns the `ps1_models_lit.gdshader` material to its mesh —
+`albedo_texture` = the spec's `model_texture`, `albedo_color` white — so the
+painted detail renders through the same quantize/dither/fog pipeline as the rest
+of the scene. The four wheels stay procedural; the collision box is unchanged
+(and invisible). Models are used at 1:1 scale.
+
+## Per-car wheel-cap textures
+
+The four wheels are procedural cylinders; the flat cap faces (the disc seen from
+the side) take a per-car texture via `ps1_wheel_tire.gdshader`. `apply_car()`
+assigns each tire a `ShaderMaterial` from `car.gd:_wheel_material()`, keyed by the
+spec's optional `wheel_texture`: the MX-5 uses `blender/mx5/wheel.png`, the Focus
+`blender/focus/wheel.png`. A car **without** a `wheel_texture` (the cars that
+still render boxes) gets a **blank dark disc** — a shared 1×1 near-black
+`ImageTexture` — so the cap reads as a plain hubcap until that car gets a real
+model. Each per-car material also carries the tread `albedo_color`
+(`cfg.wheel_color`) and the fake-light uniforms (`cfg.apply_car_light`), which
+`world.gd` previously set on the single shared tire material.
 
 ## Materials & colors
 
@@ -160,9 +182,9 @@ collision box is unchanged (and invisible). The model is used at 1:1 scale.
 |------|-------|--------|
 | Car/Chassis | `albedo_color` | `chassis_color` (red) |
 | Car/Cabin | `albedo_color` | `cabin_color` (dark blue) |
-| Wheels (all 4) | `albedo_color` | `wheel_color` (black) |
+| Wheels (all 4) | `albedo_color` | `wheel_color` (black) — now carried by each per-car tire material (see "Per-car wheel-cap textures") |
 | Spokes (all 8) | `albedo_color` | `wheel_spoke_color` (silver) |
-| Car meshes + MX-5 body | fake-light uniforms | Lighting group (`cfg.apply_car_light`) |
+| Car meshes + authored body | fake-light uniforms | Lighting group (`cfg.apply_car_light`) |
 | Floor (terrain) | baked vertex-colour shading | Lighting group (`cfg.apply_terrain_light`) |
 | PostProcess/ColorRect | `virtual_resolution` | `virtual_resolution` [480,360] |
 

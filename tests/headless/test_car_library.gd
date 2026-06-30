@@ -214,13 +214,16 @@ func test_cycle_car_advances_and_wraps() -> void:
 
 
 func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
-	# Only the MX-5 carries the use_model flag.
-	var flagged := 0
+	# The authored-body cars (use_model) are the MX-5 and the Ford Focus RS; every
+	# flagged car must name a model_node + model_texture so apply_car can render it.
+	var model_cars := {}
 	for spec in CarLibrary.CARS:
 		if spec.get("use_model", false):
-			flagged += 1
-			assert_eq(spec["name"], "Mazda MX-5", "use_model is the MX-5's flag")
-	assert_eq(flagged, 1, "exactly one car uses the authored model")
+			model_cars[String(spec["name"])] = true
+			assert_ne(String(spec.get("model_node", "")), "", spec["name"] + " names its model_node")
+			assert_ne(String(spec.get("model_texture", "")), "", spec["name"] + " names its model_texture")
+	assert_true(model_cars.has("Mazda MX-5"), "MX-5 uses an authored model")
+	assert_true(model_cars.has("Ford Focus RS"), "Focus uses an authored model")
 
 	# The model node exists and instances the glb body.
 	var model: Node3D = _car.get_node("Mx5Body")
@@ -255,3 +258,27 @@ func _index_of(car_name: String) -> int:
 			return i
 	fail_test("car not found: " + car_name)
 	return 0
+
+
+func test_focus_is_a_fwd_model_car() -> void:
+	var i := CarLibrary.index_of("focus")
+	assert_gte(i, 0, "Focus is in the roster")
+	var spec := CarLibrary.CARS[i]
+	assert_eq(int(spec["drive_mode"]), CarLibrary.FWD, "Focus is FWD")
+	assert_true(spec.get("use_model", false), "Focus uses an authored body")
+	assert_eq(String(spec.get("model_node", "")), "FocusBody")
+	assert_true(spec.has("wheel_texture"), "Focus has its own wheel texture")
+	# Hitbox from the model: ~4.3 m long, ~1.84 m wide.
+	var body: Vector3 = spec["body"]
+	assert_almost_eq(body.z, 4.30, 0.25, "Focus length from the model")
+	assert_almost_eq(body.x, 1.84, 0.20, "Focus width from the model")
+
+
+func test_focus_collision_box_matches_body() -> void:
+	_car.apply_car(CarLibrary.index_of("focus"))
+	var shape := (_car.get_node("CollisionShape3D") as CollisionShape3D).shape as BoxShape3D
+	var body: Vector3 = CarLibrary.CARS[CarLibrary.index_of("focus")]["body"]
+	assert_almost_eq(shape.size.z, body.z, 0.01)
+	assert_almost_eq(shape.size.y, body.y - 0.3, 0.01)
+	assert_true((_car.get_node("FocusBody") as Node3D).visible, "FocusBody shown")
+	assert_false((_car.get_node("Mx5Body") as Node3D).visible, "Mx5Body hidden for the Focus")

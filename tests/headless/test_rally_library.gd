@@ -457,3 +457,14 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 	assert_false(ids.has("rwd_masters"), "AWD car excluded from RWD-only rally")
 	assert_false(ids.has("the_showdown"), "showdown excluded while locked")
 	assert_true(ids.has("coastal_sprint"), "a rally inside the car's power band is enterable")
+
+
+func test_front_runners_is_fwd_and_admits_the_focus() -> void:
+	var rally := RallyLibrary.by_id("front_runners")
+	assert_false(rally.is_empty(), "Front Runners exists")
+	assert_eq(int(rally["restriction"]["drive_mode"]), CarLibrary.FWD)
+	var focus := CarLibrary.by_id("focus")
+	assert_true(RallyLibrary.is_eligible(rally, focus), "stock Focus qualifies")
+	assert_false(RallyLibrary.is_eligible(rally, CarLibrary.by_id("mx5")), "RWD mx5 excluded")
+	assert_false(RallyLibrary.is_eligible(rally, CarLibrary.by_id("rs3")), "AWD rs3 excluded")
+	assert_eq(rally["events"].size(), 3, "exactly 3 events")

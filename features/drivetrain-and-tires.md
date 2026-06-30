@@ -75,7 +75,10 @@ road colour uses (grass↔road and gravel↔tarmac — see [terrain.md](terrain.
 | **FWD** | front spool | rear | understeer bias |
 | **AWD** | front+rear locked (no center diff) | — | most grip, least drama |
 
-Switch live with **Y** or the HUD drive button.
+Switch live with **Y** or the HUD drive button. The roster now ships a stock **FWD**
+car — the **Ford Focus RS** (`CarLibrary` `id: "focus"`, the home entrant of the
+Front Runners rally, see `features/rally-roster.md`) — so the FWD path is exercised by
+a real car, not just the live toggle. The MX-5 is RWD; the RS3/Aventador are AWD.
 
 **AWD handbrake exception:** AWD is normally one rigid locked driveline, so a
 foot-brake lockup takes all four wheels together. The handbrake is the one

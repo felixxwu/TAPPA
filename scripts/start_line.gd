@@ -302,9 +302,10 @@ func _ground(pos: Vector3, terrain: Node) -> Vector3:
 	return pos
 
 
-# A live, scripted, silent car prop facing the start heading, with its own mesh
-# copies so a mixed queue keeps each body at its true size (car.tscn shares mesh
-# sub-resources between instances). It runs full physics (real suspension load /
+# A live, scripted, silent car prop facing the start heading. car.gd._ready()
+# already gives each car.tscn instance its own mesh copies (so a mixed queue
+# keeps each body at its true size instead of stomping the player's), so no
+# extra duplication is needed here. It runs full physics (real suspension load /
 # squat) but reads scripted throttle/steer instead of player Input, and is axis-
 # locked to a straight line so it can't veer (the start heading is world -Z, so
 # lock lateral world-X + yaw world-Y; suspension world-Y and pitch world-X stay free).
@@ -313,7 +314,6 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 	add_child(car)
 	if car.has_method("apply_car"):
 		car.apply_car(model_index)
-	_dup_meshes(car)
 	car.global_transform = Transform3D(_start_xform.basis, pos)
 	car.freeze = false
 	car.ai_controlled = true
@@ -333,13 +333,6 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 			audio.playing = false
 			audio.volume_db = -80.0
 	return car
-
-
-func _dup_meshes(car: Node) -> void:
-	for mi in car.find_children("*", "MeshInstance3D", true, false):
-		var m := mi as MeshInstance3D
-		if m.mesh != null:
-			m.mesh = m.mesh.duplicate()
 
 
 # Deterministic per-rally seed for the queue line-up (stable across re-entries).

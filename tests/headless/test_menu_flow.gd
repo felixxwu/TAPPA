@@ -17,6 +17,10 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
+	# Most HQ tests exercise a player who has already chosen their starter (the normal
+	# state), so grant the immortal starter here. The first-run tests that cover the
+	# starter-pick flow call _reset_to_first_run() to clear it back to an empty garage.
+	_pick_starter()
 	RallySession.auto_load_scenes = false
 	if RallySession.is_active():
 		RallySession.abandon()
@@ -35,6 +39,25 @@ func _clean() -> void:
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
+
+
+# Simulate a completed first-run starter pick: grant the immortal starter and flag the
+# profile so Start goes straight to the garage (the first run now picks a starter in the
+# car park — see test_first_run_start_opens_starter_pick_then_grants_immortal). Tests that
+# need an existing garage call this before booting HQ.
+func _pick_starter(model_id := "mx5") -> void:
+	_save.profile["starter_picked"] = true
+	_save.profile["starter_model_id"] = model_id
+	_save.grant_car(model_id, true)
+
+
+# Undo the before_each starter grant: a fresh first-run profile with an empty garage.
+# Used by the tests that cover the first-run starter-pick flow itself.
+func _reset_to_first_run() -> void:
+	_save.profile["cars"] = []
+	_save.profile["starter_picked"] = false
+	_save.profile["starter_model_id"] = ""
+	_save.profile["selected_instance_id"] = -1
 
 
 # Car-park props now stream in one-per-frame (hq.gd._spawn_lineup_progressive), so wait
@@ -70,18 +93,20 @@ func _pin_label_sprite(pin: Node3D) -> Sprite3D:
 
 
 func test_hq_boots_to_the_exterior_title() -> void:
+	_reset_to_first_run()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_eq(_save.profile["cars"].size(), 1, "the immortal starter is granted on the first HQ visit")
-	assert_true(_save.profile["cars"][0]["immortal"], "the starter is immortal")
-	# Boots to the exterior/title station: the title overlay is up, and the player's
-	# whole collection is parked in the car park (just the starter so far).
+	# First run no longer auto-grants a car — the player picks a starter on Start
+	# (see test_first_run_start_opens_starter_pick_then_grants_immortal). The garage
+	# is empty until then.
+	assert_eq(_save.profile["cars"].size(), 0, "no car granted before the starter is picked")
+	# Boots to the exterior/title station: the title overlay is up.
 	assert_eq(hq._view, hq.View.EXTERIOR, "HQ boots to the exterior title station")
 	assert_true(hq._title_layer.visible, "the title overlay is shown")
 	assert_false(hq._car_layer.visible, "the car-park overlay is hidden at the title")
 	await _await_lineup(hq)
-	assert_eq(hq._cars.size(), 1, "the player's whole collection is parked on the title (the starter so far)")
+	assert_eq(hq._cars.size(), 0, "an empty garage parks no cars on the title")
 	# The 3D map table is populated with one pin per rally.
 	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
 
@@ -1072,3 +1097,56 @@ func test_run_scene_fields_the_bound_session_car() -> void:
 	assert_eq(car.damage.instance_id, id, "the car's damage model is bound to the fielded instance")
 	assert_false(car.damage.immortal, "a non-immortal owned car")
 	assert_eq(car.current_car_name(), "Audi RS3", "the owned car's model is fielded, not the default")
+
+
+func test_first_run_start_opens_starter_pick_then_grants_immortal() -> void:
+	_reset_to_first_run()
+	# Fresh profile has no starter picked and an empty garage.
+	assert_false(bool(_save.profile.get("starter_picked", false)), "fresh profile: no starter yet")
+	assert_eq(_save.profile["cars"].size(), 0, "fresh profile: empty garage")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	await _await_lineup(hq)
+	assert_eq(hq._view, hq.View.CARPARK, "first run lands in the car park")
+	assert_true(hq._carpark_starter_mode, "in starter-pick mode")
+	assert_eq(hq._eligible.size(), 2, "two starter cars parked (mx5 + focus)")
+	# Pick the focus.
+	for i in hq._eligible.size():
+		if String(hq._eligible[i].get("model_id", "")) == "focus":
+			hq._focus = i
+			hq._focus_changed(true)
+			break
+	hq._on_start_pressed()
+	assert_true(bool(_save.profile["starter_picked"]), "starter recorded")
+	assert_eq(String(_save.profile["starter_model_id"]), "focus")
+	var cars: Array = _save.profile["cars"]
+	assert_eq(cars.size(), 1, "exactly one car granted")
+	assert_eq(String(cars[0]["model_id"]), "focus")
+	assert_true(bool(cars[0]["immortal"]), "the chosen starter is immortal")
+	assert_eq(_save.selected_instance_id(), int(cars[0]["instance_id"]), "the starter is selected")
+	assert_eq(hq._view, hq.View.GARAGE, "lands in the garage after picking")
+
+
+func test_returning_player_start_goes_straight_to_garage() -> void:
+	# before_each already granted a starter (a returning player).
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	assert_false(hq._carpark_starter_mode, "not in starter-pick mode")
+	assert_eq(hq._view, hq.View.GARAGE, "existing player skips the picker")
+
+
+func test_starter_pick_back_returns_to_title() -> void:
+	_reset_to_first_run()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	await _await_lineup(hq)
+	hq._car_back()
+	assert_false(hq._carpark_starter_mode, "starter mode cleared on back")
+	assert_eq(hq._view, hq.View.EXTERIOR, "back from the picker returns to the title")
+	assert_eq(_save.profile["cars"].size(), 0, "backing out grants nothing")

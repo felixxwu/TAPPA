@@ -68,6 +68,38 @@ func test_every_car_places_its_wheels_at_track_and_wheelbase() -> void:
 				"%s: %s sits at half-wheelbase" % [spec["name"], wheel.name])
 
 
+# Regression for a bug where wheel radius/track looked wrong only in events:
+# car.tscn's wheel Tire/Spoke meshes are shared sub-resources across ALL
+# car.tscn instances (not just the four wheels within one car), and apply_car
+# used to resize them in place. start_line.gd's queue spawns extra car
+# instances (leader/trailer) and calls apply_car on THEM too, after the
+# player's own car was already sized — corrupting the player's wheel visuals
+# to the last-applied car's dimensions. car.gd._ready() now gives every
+# instance its own mesh copies up front so apply_car can never leak across
+# instances; simulate the queue (two cars, two different specs) and assert
+# the first car's wheel meshes keep ITS OWN radius/width, not the second's.
+func test_apply_car_on_a_second_instance_does_not_resize_the_first(
+		) -> void:
+	var i_first := 0
+	var i_second := 1 if CarLibrary.CARS.size() > 1 else 0
+	assert_ne(i_first, i_second, "fixture needs at least two distinct car specs")
+	_select(i_first)
+	var first := _car
+	var second: Node = load("res://car.tscn").instantiate()
+	add_child_autofree(second)
+	second.apply_car(i_second)
+
+	var first_spec: Dictionary = CarLibrary.CARS[i_first]
+	for wheel in first.find_children("*", "VehicleWheel3D", false):
+		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
+		var cyl := tire.mesh as CylinderMesh
+		assert_almost_eq(cyl.top_radius, float(first_spec["wheel_radius"]), 0.001,
+			"%s: %s tire mesh keeps its own radius after a second car is spawned"
+				% [first_spec["name"], wheel.name])
+		assert_almost_eq(wheel.wheel_radius, float(first_spec["wheel_radius"]), 0.001,
+			"%s: %s physics radius keeps its own value" % [first_spec["name"], wheel.name])
+
+
 func test_every_car_sits_on_the_ground() -> void:
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]

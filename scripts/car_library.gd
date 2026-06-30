@@ -120,7 +120,7 @@ const FWD := 2
 # (911, LFA, Aventador).
 const CARS: Array[Dictionary] = [
 	{
-		"name": "Mazda MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
+		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
 		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0, "engine_inertia": 0.15,  # light 2.0 i4 (anchor)
 		# Real ND 6-speed manual ratios: 5.087/2.991/2.035/1.594/1.286/1.000.
@@ -143,6 +143,9 @@ const CARS: Array[Dictionary] = [
 		# procedural chassis+cabin boxes; see car.gd apply_car(). Wheels stay
 		# procedural. Only this car carries the flag.
 		"use_model": true,
+		"model_node": "Mx5Body",
+		"model_texture": "res://blender/mx5/mx5_texture.png",
+		"wheel_texture": "res://blender/mx5/wheel.png",
 	},
 	{
 		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
@@ -209,6 +212,27 @@ const CARS: Array[Dictionary] = [
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
 		"wheel_radius": 0.35, "wheel_width": 0.30,
 		"suspension_travel": 0.38, "suspension_stiffness": 18.0,  # very stiff supercar, lowest ride
+	},
+	{
+		"name": "Focus ST",  # Mk2 2009: ~1467 kg, 225 PS, 2.5 turbo i5, FWD hot hatch
+		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
+		"mass": 1467.0, "peak_torque": 320.0, "redline": 6800.0, "engine_inertia": 0.22,  # turbo i5, ~6.8k limiter
+		# Shares the MX-5's gearing (see the header note).
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"grip_front": 1.05, "grip_rear": 0.8, "shift_time": 0.30,  # 6-speed manual, FWD
+		"engine_type": 1, "drive_mode": FWD, "drag": 0.18, "downforce_rear": 0, "low_octave_mix": 0.1, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
+		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
+		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
+		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.7,
+		"wheel_radius": 0.35, "wheel_width": 0.235,
+		"suspension_travel": 0.45, "suspension_stiffness": 10.0,  # firm hot hatch
+		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see
+		# car.gd apply_car(). Wheels use the Focus's own wheel.png.
+		"use_model": true,
+		"model_node": "FocusBody",
+		"model_texture": "res://blender/focus/focus_texture.png",
+		"wheel_texture": "res://blender/focus/wheel.png",
 	},
 ]
 

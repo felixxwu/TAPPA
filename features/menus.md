@@ -76,8 +76,15 @@ space:
 ## HQ (`hq.gd`)
 
 The boot scene (`project.godot` `run/main_scene`), a lightweight **`Node3D`** (no
-track generation). On first visit it grants the **immortal starter** (`mx5`) — the
-anti-soft-lock floor. Building the HQ (ground, buildings, the billboard tree ring, the
+track generation). A first-time player (no `starter_picked`) is **not** auto-granted
+a car: pressing **Start** on the title routes them into the car park's
+**starter picker** (`_enter_starter_pick`, `_carpark_starter_mode`) showing the two
+authored-body cars (MX-5, Focus) as preview cars from `CarLibrary`; choosing one
+(`_confirm_starter`) grants it **immortal** (the anti-soft-lock floor), records
+`starter_picked` / `starter_model_id` / the selection, and enters the garage. Back
+returns to the title. Returning players skip the picker and Start goes straight to
+the garage. The picker reuses the car park's keyboard/gamepad nav (`_cars_input`:
+left/right/select/back). Building the HQ (ground, buildings, the billboard tree ring, the
 garage, the parked lineup) is synchronous and takes a beat, so on a real display
 `_ready` shows a **`LoadingScreen` cover** the moment the scene starts, builds behind
 it (`_build_hq`), then reveals — bridging the gap after Godot's boot bar so the load
