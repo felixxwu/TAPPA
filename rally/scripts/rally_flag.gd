@@ -203,13 +203,11 @@ static func _checker_texture() -> Texture2D:
 	if _checker_tex != null:
 		return _checker_tex
 	var cell := 16
-	var w := CHECKER_COLS * cell
-	var h := CHECKER_ROWS * cell
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	for y in range(h):
-		for x in range(w):
-			var cx := int(x / cell)
-			var cy := int(y / cell)
-			img.set_pixel(x, y, CHECKER_DARK if (cx + cy) % 2 == 0 else CHECKER_LIGHT)
+	var img := Image.create(CHECKER_COLS * cell, CHECKER_ROWS * cell, false, Image.FORMAT_RGBA8)
+	# Fill one solid block per checker cell (alternating), so no per-pixel divide.
+	for cy in range(CHECKER_ROWS):
+		for cx in range(CHECKER_COLS):
+			var col := CHECKER_DARK if (cx + cy) % 2 == 0 else CHECKER_LIGHT
+			img.fill_rect(Rect2i(cx * cell, cy * cell, cell, cell), col)
 	_checker_tex = ImageTexture.create_from_image(img)
 	return _checker_tex
