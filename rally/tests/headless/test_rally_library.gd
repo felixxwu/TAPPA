@@ -152,6 +152,21 @@ func test_target_time_is_positive_and_seed_stable() -> void:
 		"target_ms_override is honoured")
 
 
+func test_tarmac_fraction_tightens_target_time() -> void:
+	# Same track, varying only the tarmac fraction: more tarmac = quicker target,
+	# because tarmac is priced at the faster TARMAC_SPEED_MPS / corner penalty.
+	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
+	var track := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
+	var all_gravel := RallyLibrary.derive_target_ms(track, {"surface_mix": 0.0})
+	var half := RallyLibrary.derive_target_ms(track, {"surface_mix": 0.5})
+	var all_tarmac := RallyLibrary.derive_target_ms(track, {"surface_mix": 1.0})
+	assert_lt(all_tarmac, all_gravel, "all-tarmac target is quicker than all-gravel")
+	assert_between(half, all_tarmac, all_gravel, "half-tarmac target sits between the two")
+	# Tarmac should be a lot quicker, not a rounding-error nudge.
+	assert_lt(all_tarmac, int(all_gravel * 0.9), "all-tarmac is at least 10% quicker")
+
+
 # --- Opponent field ----------------------------------------------------------
 
 func test_opponent_field_shape_and_bounds() -> void:

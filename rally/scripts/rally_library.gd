@@ -25,8 +25,16 @@ const DEFAULT_WIDTH := 6.0
 # function and its difficulty weights are a calibration pass (gameplay.md / the
 # rally-roster spec); these live here as authored defaults until that lands, at
 # which point the weights move to GameConfig.
-const REF_SPEED_MPS := 28.0      # ~100 km/h reference pace over the centerline
-const CORNER_PENALTY_S := 1.1    # seconds added per non-straight piece
+const REF_SPEED_MPS := 28.0      # ~100 km/h reference pace over the centerline (gravel)
+const CORNER_PENALTY_S := 1.1    # seconds added per non-straight piece (gravel)
+
+# Tarmac pace, used for the tarmac share of a track. Tarmac has more grip
+# (GameConfig.tarmac_grip 1.3 vs gravel_grip 1.0), so it's driven a lot quicker —
+# both a higher cruising pace and quicker corners (less scrubbing / sliding). The
+# target time splits the track by its tarmac fraction (event `surface_mix`) and
+# prices each surface separately, so a tarmac-heavy event gets a tighter target.
+const TARMAC_SPEED_MPS := 36.0   # ~130 km/h reference pace over tarmac
+const TARMAC_CORNER_PENALTY_S := 0.7  # seconds added per non-straight piece on tarmac
 
 # Opponent-field shape (gameplay.md): 10–15 rivals, some DNF (a DNF in any event
 # disqualifies the rally).
@@ -184,8 +192,13 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 # --- Target time (derived from the seeded track, not stored) -----------------
 
 # Per-event target time in milliseconds, derived from a TrackGenerator result
-# (its `centerline` length + the corner mix in `pieces`). An event may override
-# this with `target_ms_override`. Deterministic for a given track.
+# (its `centerline` length + the corner mix in `pieces`) AND the event's tarmac
+# fraction (`surface_mix`): the tarmac share of the track is priced at the quicker
+# tarmac pace, so a tarmac-heavy event yields a tighter target. The tarmac run is
+# one contiguous stretch covering `tarmac_fraction` of the length (TrackSurface),
+# so that same fraction of the length and (on average) of the corners runs on
+# tarmac. An event may override the whole thing with `target_ms_override`.
+# Deterministic for a given track.
 static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -> int:
 	if event.has("target_ms_override"):
 		return int(event["target_ms_override"])
@@ -195,7 +208,11 @@ static func derive_target_ms(track_result: Dictionary, event: Dictionary = {}) -
 	for piece in track_result.get("pieces", []):
 		if String(piece.get("corner", "")) != "Straight":
 			corner_count += 1
-	var target_s := length / REF_SPEED_MPS + corner_count * CORNER_PENALTY_S
+	var tarmac := event_tarmac_fraction(event)
+	var gravel := 1.0 - tarmac
+	var target_s := \
+		length * gravel / REF_SPEED_MPS + length * tarmac / TARMAC_SPEED_MPS \
+		+ corner_count * gravel * CORNER_PENALTY_S + corner_count * tarmac * TARMAC_CORNER_PENALTY_S
 	return int(round(target_s * 1000.0))
 
 

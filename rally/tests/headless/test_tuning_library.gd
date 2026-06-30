@@ -67,10 +67,10 @@ func test_aero_balance_is_gated_by_the_aero_upgrade() -> void:
 
 
 func test_brake_bias_is_gated_by_the_brakes_upgrade() -> void:
-	# No brake kit → brake_bias forced to the neutral even split, ignoring the slider.
+	# No brake kit → brake_bias forced to the 0.4 (40/60) stock default, ignoring the slider.
 	var locked := _cfg()
 	TuningLibrary.apply({"installed_upgrades": [], "tuning": {"brake_bias": 1.0}}, locked)
-	assert_almost_eq(locked.brake_bias, 0.5, 0.0001, "no brake kit: bias pinned at 0.5")
+	assert_almost_eq(locked.brake_bias, 0.4, 0.0001, "no brake kit: bias pinned at the 40/60 default")
 	# With the brake kit, +1 moves the split forward by tuning_brake_authority.
 	var unlocked := _cfg()
 	TuningLibrary.apply({"installed_upgrades": ["brake_kit"], "tuning": {"brake_bias": 1.0}}, unlocked)

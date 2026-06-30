@@ -57,7 +57,7 @@ const MAX_STARS := 3
 # billboarded Sprite3D. PIN_LABEL_PX is the off-screen viewport resolution; pixel_size
 # scales it to world metres; rise is how far above the flag tip the box floats.
 const PIN_LABEL_PX := Vector2i(320, 120)
-const PIN_LABEL_PIXEL_SIZE := 0.0017
+const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
 const PIN_LABEL_RISE := 0.16
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
@@ -628,11 +628,11 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	pin.set_meta("rally_id", rally_id)
 	pin.set_meta("locked", locked)
 
-	# The marker: a procedural flag whose colour encodes the rally's state — locked
-	# (grey/disabled) or its earned-star medal tier (red→bronze→silver→gold). See
-	# RallyFlag / features/menus.md.
+	# The marker: a procedural flag whose look encodes the rally's state — a checkered
+	# pennant once podiumed, else green (an eligible car is owned) or grey (none /
+	# locked), with a gold tip+base once won. See RallyFlag / features/menus.md.
 	var earned := _stars_for(rally_id)
-	var flag := RallyFlag.build(locked, earned)
+	var flag := RallyFlag.build(locked, earned, _has_eligible_car(rally))
 	pin.add_child(flag)
 	var marker_top := RallyFlag.POLE_HEIGHT
 
@@ -647,20 +647,30 @@ func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_s
 	# the hover-style selection look (see _select_table_pin) without resizing the pin.
 	pin.set_meta("label_panel", label.get_meta("panel"))
 
-	# Pickable hit sphere (skipped for a locked pin so it can't be entered). Kept a bit
-	# larger than the marker so the pin stays easy to tap once it's small on screen.
+	# Pickable hit spheres (skipped for a locked pin so it can't be entered), both bound
+	# to the same handler so a click on EITHER the flag/pole OR the floating readout box
+	# enters the rally. The box target makes the menu itself tappable (a bigger, easier
+	# target than the slim flag); its radius is kept under half the closest pin spacing
+	# (~0.72 m) so neighbouring menus' targets don't overlap.
 	if not locked:
-		var area := Area3D.new()
-		var cs := CollisionShape3D.new()
-		var sph := SphereShape3D.new()
-		sph.radius = 0.28
-		cs.shape = sph
-		area.add_child(cs)
-		area.position = Vector3(0.0, marker_top * 0.5, 0.0)
-		area.input_ray_pickable = true
-		area.input_event.connect(_on_pin_input.bind(rally_id))
-		pin.add_child(area)
+		_add_pin_hit(pin, rally_id, Vector3(0.0, marker_top * 0.5, 0.0), 0.28)
+		_add_pin_hit(pin, rally_id, Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0), 0.32)
 	return pin
+
+
+# Add a pickable sphere Area3D (radius `r`, at local `pos`) to `pin`, routing clicks to
+# the rally-pin handler for `rally_id`.
+func _add_pin_hit(pin: Node3D, rally_id: String, pos: Vector3, r: float) -> void:
+	var area := Area3D.new()
+	var cs := CollisionShape3D.new()
+	var sph := SphereShape3D.new()
+	sph.radius = r
+	cs.shape = sph
+	area.add_child(cs)
+	area.position = pos
+	area.input_ray_pickable = true
+	area.input_event.connect(_on_pin_input.bind(rally_id))
+	pin.add_child(area)
 
 
 # Build the floating readout box for a pin: a design-system black panel holding the
@@ -716,6 +726,16 @@ func _stars_for(rally_id: String) -> int:
 	if placed >= 1 and placed <= MAX_STARS:
 		return MAX_STARS + 1 - placed
 	return 0
+
+
+# Whether the player owns at least one car eligible to enter `rally` — drives the
+# pin flag's green (raceable) vs grey (no qualifying car) pennant. Mirrors the
+# eligibility filter used to build the car-park lineup (_build_eligible_lineup).
+func _has_eligible_car(rally: Dictionary) -> bool:
+	for car in Save.profile.get("cars", []):
+		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(String(car.get("model_id", "")))):
+			return true
+	return false
 
 
 func _refresh_meter() -> void:
