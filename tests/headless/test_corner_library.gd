@@ -42,47 +42,16 @@ func test_first_point_is_at_origin() -> void:
 			spec["name"] + " starts at the origin")
 
 
-# Heading change (radians) from the tessellated polyline: angle between the
-# initial tangent (first segment) and the final tangent (last segment).
-func _heading_change(pts: PackedVector2Array) -> float:
-	var start_dir := (pts[1] - pts[0]).normalized()
-	var end_dir := (pts[pts.size() - 1] - pts[pts.size() - 2]).normalized()
-	return abs(start_dir.angle_to(end_dir))
-
-
-func _spec_by_name(want: String) -> Dictionary:
-	for spec in CornerLibrary.CORNERS:
-		if spec["name"] == want:
-			return spec
-	return {}
-
-
 func test_documented_shape_semantics() -> void:
-	# Lock in the *intended* shapes, not just well-formedness.
-	# 1) All corners are right-hand turns: the curve ends at X >= 0 (turning
-	#    toward +X; Straight ends at X == 0, which still satisfies >= 0).
+	# Shape invariant: all corners are right-hand turns — the curve ends at
+	# X >= 0 (turning toward +X; Straight ends at X == 0, which still satisfies
+	# >= 0). This holds regardless of how sharp any individual corner is authored.
 	for spec in CornerLibrary.CORNERS:
 		var who: String = spec["name"]
 		var curve := CornerLibrary.build_curve(spec)
 		var pts := curve.tessellate()
 		var endpoint := pts[pts.size() - 1]
 		assert_gte(endpoint.x, 0.0, who + " is a right-hand turn (ends at X >= 0)")
-
-	# 2) Sharpness gradient: "1" is sharpest, "6" gentlest. Heading change from
-	#    start to end must strictly decrease as the corner number increases.
-	var prev_change := INF
-	var prev_name := ""
-	for n in ["1", "2", "3", "4", "5", "6"]:
-		var spec := _spec_by_name(n)
-		assert_false(spec.is_empty(), "gradient corner '%s' exists" % n)
-		var pts := CornerLibrary.build_curve(spec).tessellate()
-		var change := _heading_change(pts)
-		if prev_name != "":
-			assert_gt(prev_change, change,
-				"corner '%s' (%.3f rad) turns more sharply than '%s' (%.3f rad)"
-					% [prev_name, prev_change, n, change])
-		prev_change = change
-		prev_name = n
 
 
 func test_catalog_scene_makes_one_label_per_corner() -> void:

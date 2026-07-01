@@ -31,7 +31,7 @@ func _ready() -> void:
 
 
 # Rebuild the synth from the current config — call after a car swap changes the
-# engine_type (cylinder count + firing order), which the synth caches at init.
+# engine (cylinder count + firing order), which the synth caches at init.
 func reconfigure() -> void:
 	_synth = EngineAudioSynth.new(Config.data, MIX_RATE)
 

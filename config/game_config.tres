@@ -16,7 +16,6 @@ wheel_roll_influence = 0.4
 wheel_friction_slip_front = 0.5
 suspension_travel = 0.6
 brake_bias = 0.4
-engine_type = 1
 rev_limiter_band = 700.0
 engine_inertia = 0.15
 gear_ratios = Array[float]([6.0, 4.0, 2.9, 2.4, 2.0])

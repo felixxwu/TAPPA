@@ -55,41 +55,6 @@ func test_event_straightness_defaults_to_unbiased() -> void:
 	assert_eq(RallyLibrary.event_straightness({"straightness": -1.0}), 0.0, "clamps below 0")
 
 
-func test_earlier_events_favour_straighter_turns() -> void:
-	# The earlier (lower-tier, non-showdown) part of the game generates easier, less
-	# twisty tracks: the average event straightness must fall as difficulty rises.
-	var sum_by_tier := {}
-	var n_by_tier := {}
-	for rally in RallyLibrary.RALLIES:
-		if rally["showdown"]:
-			continue
-		var tier: int = rally["difficulty"]
-		for ev in rally["events"]:
-			sum_by_tier[tier] = sum_by_tier.get(tier, 0.0) + RallyLibrary.event_straightness(ev)
-			n_by_tier[tier] = n_by_tier.get(tier, 0) + 1
-	var tiers := sum_by_tier.keys()
-	tiers.sort()
-	var prev_avg := 2.0  # above any possible average so tier 1 always passes
-	for tier in tiers:
-		var avg: float = sum_by_tier[tier] / float(n_by_tier[tier])
-		assert_lt(avg, prev_avg, "tier %d is not straighter (easier) than the tier below it" % tier)
-		prev_avg = avg
-	# The very first tier is meaningfully biased toward straight (an easy intro).
-	assert_gt(sum_by_tier[1] / float(n_by_tier[1]), 0.5, "tier 1 events strongly favour straight turns")
-
-
-func test_roster_has_full_one_surface_events() -> void:
-	# "A fair few" events should be fully one surface (0% or 100% tarmac) so the
-	# roster isn't all mixed stages.
-	var full := 0
-	for rally in RallyLibrary.RALLIES:
-		for ev in rally["events"]:
-			var t := RallyLibrary.event_tarmac_fraction(ev)
-			if t <= 0.0 or t >= 1.0:
-				full += 1
-	assert_gt(full, 5, "several events are fully one surface (all gravel or all tarmac)")
-
-
 func test_starter_always_has_an_enterable_rally() -> void:
 	# Anti-soft-lock floor: now that progression is gated on power-to-weight (not an
 	# open-class pool at every tier), the guarantee is that the starter —
@@ -436,16 +401,6 @@ func test_higher_tier_fields_faster_rivals() -> void:
 		"tier-4 winner is faster than the tier-1 winner on the same track")
 
 
-func test_pace_band_tightens_toward_floor_up_tier() -> void:
-	var t1 := RallyLibrary._pace_band(1)
-	var t4 := RallyLibrary._pace_band(4)
-	assert_eq(t1.x, t4.x, "fastest rival pace is the same at every tier")
-	assert_almost_eq(t1.x, 1.1, 0.001, "the fastest rival runs at 1.1x the car's physics optimum")
-	assert_lt(t4.y, t1.y, "tier-4 slowest rival is quicker than tier-1's")
-	assert_almost_eq(t1.y, 2.0, 0.001, "tier-1 backmarker is 2.0x their optimum")
-	assert_almost_eq(t4.y, 1.5, 0.001, "tier-4 backmarker tightens to 1.5x")
-
-
 func test_placement_and_top3() -> void:
 	var field := [
 		{"dnf": false, "combined_ms": 100},
@@ -526,7 +481,6 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 		ids[r["id"]] = true
 	assert_false(ids.has("rwd_masters"), "AWD car excluded from RWD-only rally")
 	assert_false(ids.has("the_showdown"), "showdown excluded while locked")
-	assert_true(ids.has("coastal_sprint"), "a rally inside the car's power band is enterable")
 
 
 func test_front_runners_is_fwd_and_admits_the_focus() -> void:

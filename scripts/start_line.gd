@@ -320,6 +320,9 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 	var car := CAR_SCENE.instantiate()
 	add_child(car)
 	if car.has_method("apply_car"):
+		# Isolate this prop's config so its reshape can't clobber the player car's
+		# engine/gearbox in the shared global Config.data (see car.gd `config`).
+		car.use_isolated_config()
 		car.apply_car(model_index)
 	car.global_transform = Transform3D(_start_xform.basis, pos)
 	car.freeze = false

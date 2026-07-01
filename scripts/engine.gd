@@ -21,19 +21,25 @@ var limiting := false  # rev-limiter fuel cut latched on (see _update_limiter)
 # on reaching it. The top gear's slot is INF.
 var shift_up_speeds: Array[float] = []
 
+# The car's config (config for the active car, an isolated copy for prop cars),
+# injected by Drivetrain so a second car instance can't clobber this engine's tuning
+# through the shared global. See car.gd `config`.
+var config: GameConfig
 
-func _init() -> void:
+
+func _init(p_config: GameConfig) -> void:
+	config = p_config
 	omega = idle_omega()
-	auto = Config.data.auto_gearbox
+	auto = config.auto_gearbox
 	_compute_shift_speeds()
 
 
 func idle_omega() -> float:
-	return Config.data.idle_rpm * TAU / 60.0
+	return config.idle_rpm * TAU / 60.0
 
 
 func redline_omega() -> float:
-	return Config.data.redline_rpm * TAU / 60.0
+	return config.redline_rpm * TAU / 60.0
 
 
 func rpm() -> float:
@@ -43,7 +49,7 @@ func rpm() -> float:
 # Total drive ratio engine -> rear axle: negative in reverse, zero in neutral
 # (where the clutch is open and no torque reaches the wheels).
 func ratio() -> float:
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 	if gear < 0:
 		return -cfg.reverse_ratio * cfg.final_drive
 	if gear == 0:
@@ -55,11 +61,11 @@ func ratio() -> float:
 func request_shift(direction: int) -> void:
 	if shift_timer > 0.0:
 		return
-	var target := clampi(gear + direction, -1, Config.data.gear_ratios.size())
+	var target := clampi(gear + direction, -1, config.gear_ratios.size())
 	if target == gear:
 		return
 	gear = target
-	shift_timer = Config.data.shift_time
+	shift_timer = config.shift_time
 
 
 # Automatic gearbox: keep a sensible forward gear for the vehicle's forward
@@ -75,7 +81,7 @@ func update_auto(throttle_in: float, airspeed: float) -> void:
 		return
 	if gear < 1:
 		return  # reverse holds until select_forward swaps it
-	var n: int = Config.data.gear_ratios.size()
+	var n: int = config.gear_ratios.size()
 	if gear < n and airspeed > shift_up_speeds[gear - 1] and throttle_in > 0.1:
 		request_shift(1)
 	elif gear > 1 and airspeed < _downshift_speed(gear):
@@ -85,7 +91,7 @@ func update_auto(throttle_in: float, airspeed: float) -> void:
 # The airspeed below which gear g drops to g-1: the lower pair's upshift
 # crossover, pulled down by the hysteresis fraction to open a dead band.
 func _downshift_speed(g: int) -> float:
-	return shift_up_speeds[g - 2] * (1.0 - Config.data.shift_hysteresis)
+	return shift_up_speeds[g - 2] * (1.0 - config.shift_hysteresis)
 
 
 # Precompute each gear's upshift airspeed: the ground speed at which the gear
@@ -93,7 +99,7 @@ func _downshift_speed(g: int) -> float:
 # rev-limiter speed so the car always reaches it despite wheel slip; the top
 # gear never upshifts, so its slot is INF.
 func _compute_shift_speeds() -> void:
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 	var n: int = cfg.gear_ratios.size()
 	shift_up_speeds = []
 	shift_up_speeds.resize(n)
@@ -107,13 +113,13 @@ func _compute_shift_speeds() -> void:
 # Gear direction changes only happen near standstill. Returns whether the
 # requested direction is selected (drive torque must not flow otherwise).
 func select_reverse(rear_omega: float) -> bool:
-	if gear >= 0 and absf(rear_omega) * Config.data.wheel_radius < 1.0:
+	if gear >= 0 and absf(rear_omega) * config.wheel_radius < 1.0:
 		gear = -1
 	return gear < 0
 
 
 func select_forward(rear_omega: float) -> bool:
-	if gear < 1 and absf(rear_omega) * Config.data.wheel_radius < 1.0:
+	if gear < 1 and absf(rear_omega) * config.wheel_radius < 1.0:
 		gear = 1
 	return gear >= 1
 
@@ -131,7 +137,7 @@ func reset() -> void:
 # is the driven axle(s)' spin (rear for RWD, front for FWD, mean for AWD).
 func step(h: float, throttle_in: float, driveline_omega: float, declutch := false) -> float:
 	throttle = throttle_in
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 	shift_timer = maxf(shift_timer - h, 0.0)
 	var fuel_cut := _update_limiter(cfg)
 	# Always-on engine friction (pumping/viscous losses), affine in RPM the way
@@ -195,7 +201,7 @@ func _update_limiter(cfg: GameConfig) -> bool:
 # Fraction of peak_torque available at the given RPM: 70% at zero, full at
 # the peak, tapering to 70% at redline, hard cut (rev limiter) above.
 func _torque_fraction(at_rpm: float) -> float:
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 	if at_rpm >= cfg.redline_rpm:
 		return 0.0
 	if at_rpm <= cfg.peak_torque_rpm:

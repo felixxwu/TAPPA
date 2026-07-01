@@ -116,6 +116,17 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 	if meta.is_empty():
 		return meta
 	var out := meta.duplicate()
+	# The CarLibrary entry no longer carries peak_torque/redline — they live in
+	# EngineLibrary. Seed the power-to-weight inputs from the referenced engine so
+	# the upgrade multipliers below compound on the real base (and power_to_weight
+	# reads the adjusted values off this dict). Only fill what's absent, so a meta
+	# that already carries explicit peak_torque/redline (e.g. a synthetic fixture)
+	# keeps its own values.
+	var eng := EngineLibrary.by_id(out.get("engine", ""))
+	if not out.has("peak_torque"):
+		out["peak_torque"] = eng.get("peak_torque", 0.0)
+	if not out.has("redline"):
+		out["redline"] = eng.get("redline_rpm", 0.0)
 	for item_id in owned_car.get("installed_upgrades", []):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:

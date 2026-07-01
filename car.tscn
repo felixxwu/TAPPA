@@ -7,6 +7,8 @@
 [ext_resource type="Material" path="res://materials/wheel_tire.tres" id="5_wheel_mat"]
 [ext_resource type="PackedScene" path="res://blender/focus/focus.glb" id="6_focusmodel"]
 [ext_resource type="PackedScene" path="res://blender/twingo/twingo.glb" id="7_twingomodel"]
+[ext_resource type="PackedScene" path="res://blender/acty/acty.glb" id="8_actymodel"]
+[ext_resource type="PackedScene" path="res://blender/charger/charger.glb" id="9_chargermodel"]
 
 [sub_resource type="BoxMesh" id="mesh_chassis"]
 size = Vector3(1.6, 0.5, 3)
@@ -75,6 +77,14 @@ visible = false
 
 [node name="TwingoBody" parent="." instance=ExtResource("7_twingomodel")]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0, -0.4, 0)
+visible = false
+
+[node name="ActyBody" parent="." instance=ExtResource("8_actymodel")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, -0.5, 0)
+visible = false
+
+[node name="ChargerBody" parent="." instance=ExtResource("9_chargermodel")]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0, -0.5, 0)
 visible = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

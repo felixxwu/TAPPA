@@ -63,11 +63,15 @@ space:
   unlocked pins (left/right or up/down, wrapping), highlights the selected pin's
   readout box with the same hover-style lift a menu button gets (`UITheme.mark_panel_focused`
   — all pins stay one size, no scale-up), centres the camera on it, and opens its detail
-  on select; the **tuning hub** is an up/down cursor (`_hub_focus`, painted by
-  `UITheme.mark_focused`) over **Change Car / Tuning / Upgrades**, fired with select
-  (`_activate_hub_focus`) — Change Car drops into the car park in change-car mode.
-  The **garage** keeps select → table /
-  left → lift / back → exterior. Because HQ hides overlays by toggling their
+  on select; the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
+  `UITheme.mark_focused`) over **Back / Change Car / Tuning / Upgrades** (its buttons
+  sit side by side in one row), fired with select (`_activate_hub_focus`) — Change Car
+  drops into the car park in change-car mode; the cursor seats on Change Car on entry
+  (`menu_back` is also a shortcut back to the garage). The **garage** is likewise a
+  left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
+  `_activate_garage_focus`) over its side-by-side **Back / Open map table / Tune car**
+  row, seated on Open map table on entry (`menu_back` shortcuts to the exterior).
+  Because HQ hides overlays by toggling their
   **`CanvasLayer`** (which does *not* clear a `Control`'s focus — a CanvasLayer breaks
   the visibility chain), `_go_to` / `_lift_hub` call `get_viewport().gui_release_focus()`
   on every transition so a button on the view just left can't keep focus and silently

@@ -179,6 +179,15 @@ var _no_eligible_label: Label
 var _car_warning_label: Label
 var _car_repair_button: Button
 
+# Garage overlay cursor: a single left/right cursor over the bottom action row
+# (Back / Open map table / Tune car), painted by _refresh_garage_focus and fired by
+# _activate_garage_focus. Buttons are FOCUS_NONE and highlighted by hand (like the
+# tuning hub) since the garage is a spatially-navigated 3D station, not a focus graph.
+var _garage_back_btn: Button    # "< Back" — index 0
+var _garage_table_btn: Button   # "Open map table >" — index 1
+var _garage_lift_btn: Button    # "Tune car (lift) >" — index 2
+var _garage_focus := 1          # which garage action the cursor sits on (defaults to Open map)
+
 # Garage-overflow overlay widgets (the OVERFLOW station — scrap a car to make room).
 var _overflow_banner: Label
 var _overflow_car_label: Label
@@ -189,11 +198,12 @@ var _scrap_button: Button
 # Tuning-lift overlay widgets.
 var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
-var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Change Car + Tuning/Upgrades buttons
-var _hub_change_btn: Button     # HUB "Change Car" — top of the up/down cursor
-var _hub_tune_btn: Button       # HUB "Tuning >" — middle of the up/down cursor
-var _hub_upgrades_btn: Button   # HUB "Upgrades >" — bottom of the up/down cursor
-var _hub_focus := 0             # which hub item the cursor sits on (0 = Change Car, 1 = Tune, 2 = Upgrades)
+var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Change Car + Tuning/Upgrades buttons
+var _hub_back_btn: Button       # HUB "< Back" — left of the left/right cursor (index 0)
+var _hub_change_btn: Button     # HUB "Change Car" — index 1 of the left/right cursor
+var _hub_tune_btn: Button       # HUB "Tuning >" — index 2 of the left/right cursor
+var _hub_upgrades_btn: Button   # HUB "Upgrades >" — right of the left/right cursor (index 3)
+var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Change Car, 2 = Tune, 3 = Upgrades)
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_tune_box: VBoxContainer    # the TUNE menu (sliders)
@@ -899,22 +909,28 @@ func _build_garage_overlay() -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
+	# Back / Open map table / Tune car form a single left/right cursor (_garage_focus),
+	# painted by _refresh_garage_focus. FOCUS_NONE + hand-painted like the tuning hub,
+	# since the garage is a spatially-navigated 3D station, not a native focus graph.
 	var back := Button.new()
 	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(func() -> void: _go_to(View.EXTERIOR))
 	actions.add_child(back)
+	_garage_back_btn = back
 	# Convenience buttons mirroring the clickable 3D table / lift.
 	var to_table := Button.new()
 	to_table.text = "Open map table >"
 	to_table.focus_mode = Control.FOCUS_NONE
 	to_table.pressed.connect(_enter_table)
 	actions.add_child(to_table)
+	_garage_table_btn = to_table
 	var to_lift := Button.new()
 	to_lift.text = "Tune car (lift) >"
 	to_lift.focus_mode = Control.FOCUS_NONE
 	to_lift.pressed.connect(_enter_lift)
 	actions.add_child(to_lift)
+	_garage_lift_btn = to_lift
 
 	_passthrough_overlay(root)  # let taps reach the 3D table / lift behind the HUD
 
@@ -1084,11 +1100,14 @@ func _build_lift_overlay() -> void:
 	_lift_hub_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left_col.add_child(_lift_hub_controls)
 
+	# Back / Change Car / Tuning / Upgrades form a single left/right cursor (_hub_focus),
+	# painted by _refresh_hub_focus.
 	var back := Button.new()
 	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
 	_lift_hub_controls.add_child(back)
+	_hub_back_btn = back
 
 	# Change which car is on the lift: opens the car park to pick a new selected car.
 	var change_car := Button.new()
@@ -1099,8 +1118,6 @@ func _build_lift_overlay() -> void:
 	_hub_change_btn = change_car
 
 	# The two menu buttons.
-	# Change Car / Tuning / Upgrades form a single up/down cursor (_hub_focus),
-	# painted by _refresh_hub_focus.
 	var to_tune := Button.new()
 	to_tune.text = "Tuning >"
 	to_tune.focus_mode = Control.FOCUS_NONE
@@ -1541,6 +1558,8 @@ func _go_to(view: int, snap := false) -> void:
 	if view == View.GARAGE:
 		_ensure_lift_car()
 		_lower_lift_car()
+		_garage_focus = 1  # seat the cursor on Open map table each time we enter the garage
+		_refresh_garage_focus()
 	elif view == View.LIFT:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	else:
@@ -1698,7 +1717,7 @@ func _hide_detail() -> void:
 func _enter_lift() -> void:
 	_ensure_lift_car()
 	_lift_page = LiftPage.HUB
-	_hub_focus = 0  # the cursor starts on Change Car each time we enter the bay
+	_hub_focus = 1  # the cursor starts on Change Car each time we enter the bay
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
 	_raise_lift_car()  # slowly raise the car on the lift as we arrive
@@ -1769,30 +1788,58 @@ func _lift_hub() -> void:
 	_refresh_lift_ui()
 
 
-# Move the HUB's up/down cursor between Change Car (0), Tuning (1) and Upgrades (2)
-# and repaint it.
+# Move the garage's left/right cursor between Back (0), Open map table (1) and Tune car
+# (2), wrapping at the ends, and repaint it.
+func _move_garage_focus(step: int) -> void:
+	_garage_focus = wrapi(_garage_focus + step, 0, 3)
+	_refresh_garage_focus()
+
+
+# Fire the garage action the cursor sits on: 0 backs out to the exterior, 1 opens the
+# map table, 2 opens the tuning lift.
+func _activate_garage_focus() -> void:
+	match _garage_focus:
+		0: _go_to(View.EXTERIOR)
+		1: _enter_table()
+		2: _enter_lift()
+
+
+# Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Open
+# map / Tune buttons are highlighted by hand rather than via native focus).
+func _refresh_garage_focus() -> void:
+	if _garage_table_btn == null:
+		return
+	UITheme.mark_focused(_garage_back_btn, _garage_focus == 0)
+	UITheme.mark_focused(_garage_table_btn, _garage_focus == 1)
+	UITheme.mark_focused(_garage_lift_btn, _garage_focus == 2)
+
+
+# Move the HUB's left/right cursor between Back (0), Change Car (1), Tuning (2) and
+# Upgrades (3), wrapping at the ends, and repaint it.
 func _move_hub_focus(step: int) -> void:
-	_hub_focus = wrapi(_hub_focus + step, 0, 3)
+	_hub_focus = wrapi(_hub_focus + step, 0, 4)
 	_refresh_hub_focus()
 
 
-# Fire the hub item the cursor sits on: 0 opens the car park to change car, 1/2 open
-# the Tuning / Upgrades pages.
+# Fire the hub item the cursor sits on: 0 backs out to the garage, 1 opens the car park
+# to change car, 2/3 open the Tuning / Upgrades pages.
 func _activate_hub_focus() -> void:
 	match _hub_focus:
-		0: _enter_change_car()
-		1: _open_lift_page(LiftPage.TUNE)
-		2: _open_lift_page(LiftPage.UPGRADES)
+		0: _go_to(View.GARAGE)
+		1: _enter_change_car()
+		2: _open_lift_page(LiftPage.TUNE)
+		3: _open_lift_page(LiftPage.UPGRADES)
 
 
-# Paint the manual hub cursor (the hub uses up/down + select, not native focus, so the
-# Change Car / Tuning / Upgrades buttons are highlighted by hand instead).
+# Paint the manual hub cursor (the hub uses left/right + select, not native focus, so the
+# Back / Change Car / Tuning / Upgrades buttons are highlighted by hand instead).
 func _refresh_hub_focus() -> void:
 	if _hub_tune_btn == null:
 		return
-	UITheme.mark_focused(_hub_change_btn, _hub_focus == 0)
-	UITheme.mark_focused(_hub_tune_btn, _hub_focus == 1)
-	UITheme.mark_focused(_hub_upgrades_btn, _hub_focus == 2)
+	UITheme.mark_focused(_hub_back_btn, _hub_focus == 0)
+	UITheme.mark_focused(_hub_change_btn, _hub_focus == 1)
+	UITheme.mark_focused(_hub_tune_btn, _hub_focus == 2)
+	UITheme.mark_focused(_hub_upgrades_btn, _hub_focus == 3)
 
 
 # Grab focus on the first focusable, enabled, visible control under `root` — used to
@@ -1839,6 +1886,9 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	var cfg: GameConfig = Config.data
 	var car := _car_scene_res().instantiate()
 	add_child(car)
+	# Isolated config so this parked/display car's apply_owned can't clobber the
+	# player car's tuning in the shared global Config.data (see car.gd `config`).
+	car.use_isolated_config()
 	car.apply_owned(owned)
 	_dup_meshes(car)
 	var xform := Transform3D.IDENTITY
@@ -1877,7 +1927,7 @@ func _refresh_lift_ui() -> void:
 	_lift_menu_title.text = "TUNE" if _lift_page == LiftPage.TUNE else "UPGRADES"
 	_refresh_sliders()
 	_rebuild_upgrades_box()
-	_refresh_hub_focus()  # keep the up/down hub cursor highlight in step
+	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
 
@@ -2258,6 +2308,9 @@ func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
 func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	var car := _car_scene_res().instantiate()
 	add_child(car)
+	# Isolated config so this parked/display car's apply_owned can't clobber the
+	# player car's tuning in the shared global Config.data (see car.gd `config`).
+	car.use_isolated_config()
 	car.apply_owned(owned)
 	_dup_meshes(car)
 	var xform := marker.global_transform
@@ -2588,19 +2641,23 @@ func _unhandled_input(event: InputEvent) -> void:
 					_go_to(View.CARPARK if _settings_gate else View.EXTERIOR)
 					_settings_gate = false
 		View.GARAGE:
-			if event.is_action_pressed("menu_select"):
-				_enter_table()
-			elif event.is_action_pressed("menu_left"):
-				_enter_lift()
+			# The bottom action row (Back / Open map / Tune car) is a single left/right
+			# cursor; select fires it. menu_back is a shortcut straight to the exterior.
+			if event.is_action_pressed("menu_left"):
+				_move_garage_focus(-1)
+			elif event.is_action_pressed("menu_right"):
+				_move_garage_focus(1)
+			elif event.is_action_pressed("menu_select"):
+				_activate_garage_focus()
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
-				# Hub: up/down move the cursor between Change Car / Tuning / Upgrades;
-				# select fires it; back to the garage.
-				if event.is_action_pressed("menu_up"):
+				# Hub: left/right move the cursor between Back / Change Car / Tuning /
+				# Upgrades; select fires it; menu_back is a shortcut to the garage.
+				if event.is_action_pressed("menu_left"):
 					_move_hub_focus(-1)
-				elif event.is_action_pressed("menu_down"):
+				elif event.is_action_pressed("menu_right"):
 					_move_hub_focus(1)
 				elif event.is_action_pressed("menu_select"):
 					_activate_hub_focus()

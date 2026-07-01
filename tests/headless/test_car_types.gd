@@ -224,9 +224,10 @@ func test_every_car_applies_its_own_engine_volume() -> void:
 		var spec: Dictionary = CarLibrary.CARS[i]
 		_select(i)
 		await _wait(5)
-		assert_almost_eq(Config.data.engine_volume_db, float(spec["volume_db"]), 0.0001,
+		var eng := EngineLibrary.by_id(spec["engine"])
+		assert_almost_eq(Config.data.engine_volume_db, float(eng["volume_db"]), 0.0001,
 			"%s: applies its own engine volume_db" % spec["name"])
-		seen[float(spec["volume_db"])] = true
+		seen[float(eng["volume_db"])] = true
 	assert_gt(seen.size(), 1, "cars use a range of engine volumes, not one shared value")
 
 
@@ -239,7 +240,8 @@ func test_every_car_applies_its_own_noise_level() -> void:
 		var spec: Dictionary = CarLibrary.CARS[i]
 		_select(i)
 		await _wait(5)
-		assert_almost_eq(Config.data.engine_noise_level, db_to_linear(float(spec["noise_db"])), 0.0001,
+		var eng := EngineLibrary.by_id(spec["engine"])
+		assert_almost_eq(Config.data.engine_noise_level, db_to_linear(float(eng["noise_db"])), 0.0001,
 			"%s: applies its own noise_db as a linear noise level" % spec["name"])
 
 
@@ -250,5 +252,6 @@ func test_every_car_applies_its_own_soft_clip_post_gain() -> void:
 		var spec: Dictionary = CarLibrary.CARS[i]
 		_select(i)
 		await _wait(5)
-		assert_almost_eq(Config.data.engine_soft_clip_post_gain, float(spec["soft_clip_post_gain"]), 0.0001,
+		var eng := EngineLibrary.by_id(spec["engine"])
+		assert_almost_eq(Config.data.engine_soft_clip_post_gain, float(eng["soft_clip_post_gain"]), 0.0001,
 			"%s: applies its own soft_clip_post_gain" % spec["name"])

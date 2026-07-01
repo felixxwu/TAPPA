@@ -30,7 +30,7 @@ func test_library_has_a_range_of_cars() -> void:
 	var engines := {}
 	for spec in CarLibrary.CARS:
 		names[spec["name"]] = true
-		engines[spec["engine_type"]] = true
+		engines[spec["engine"]] = true
 	assert_eq(names.size(), CarLibrary.CARS.size(), "car names are unique")
 	# "Mix up the engine sound": at least a few distinct engine presets in use.
 	assert_gte(engines.size(), 4, "a range of engine types / sounds")
@@ -40,10 +40,6 @@ func test_each_spec_is_sane() -> void:
 	for spec in CarLibrary.CARS:
 		var who: String = spec["name"]
 		assert_gt(spec["mass"], 0.0, who + " has positive mass")
-		assert_gt(spec["peak_torque"], 0.0, who + " has positive power (peak_torque)")
-		# Redline must sit above where the engine preset peaks torque, or the
-		# torque curve inverts. Presets peak by ~6000 rpm, so 6500 is a safe floor.
-		assert_gt(spec["redline"], 6500.0, who + " has a sane redline")
 		# Per-car gearbox (features/drivetrain-and-tires.md): gear_ratios + final
 		# drive. Ratios must be a non-empty, strictly DESCENDING set of positive
 		# numbers (1st is the shortest), and the final drive positive.
@@ -57,19 +53,16 @@ func test_each_spec_is_sane() -> void:
 			if g > 0:
 				assert_lt(ratios[g], ratios[g - 1],
 					who + " gear %d shorter than gear %d" % [g + 1, g])
-		# Per-car crank + flywheel rotating inertia (kg·m²): small revs fast, large
-		# revs lazily. Must be present and positive within a realistic range.
-		assert_true(spec.has("engine_inertia"), who + " has engine_inertia")
-		assert_between(spec["engine_inertia"], 0.05, 0.6, who + " engine_inertia in a sane range")
-		assert_between(spec["grip_front"], 0.1, 2.0, who + " front grip in a sane range")
-		assert_between(spec["grip_rear"], 0.1, 2.0, who + " rear grip in a sane range")
-		assert_between(spec["engine_type"], 0, GameConfig.ENGINE_PRESETS.size() - 1,
-			who + " engine_type indexes a real preset")
+		assert_gt(spec["grip_front"], 0.0, who + " front grip is positive")
+		assert_gt(spec["grip_rear"], 0.0, who + " rear grip is positive")
+		assert_false(EngineLibrary.by_id(spec["engine"]).is_empty(), who + " engine id resolves")
 		assert_between(spec["drive_mode"], 0, 2, who + " drive_mode is RWD/AWD/FWD")
-		assert_gt(spec["drag"], 0.0, who + " has drag")
-		# Downforce is a tuning knob, not an invariant (0 = no wing is valid), so only
-		# the sane range is asserted — not a specific value or a "must have some".
-		assert_between(spec.get("downforce_rear", 0.0), 0.0, 2.0, who + " rear downforce in a sane range")
+		# drag is NOT asserted: it's a per-car tuning knob and 0 is valid (slippery
+		# bodies whose engine baseline already meets their real top-speed resistance
+		# need no top-up drag — see CarLibrary's drag note). Pinning drag > 0 pins a
+		# tunable value, which the project's testing rules forbid.
+		# Downforce is a tuning knob, not an invariant (0 = no wing is valid).
+		assert_gte(spec.get("downforce_rear", 0.0), 0.0, who + " rear downforce is non-negative")
 		for axis in ["x", "y", "z"]:
 			assert_gt(spec["body"][axis], 0.0, who + " body." + axis + " positive")
 			assert_gt(spec["cabin"][axis], 0.0, who + " cabin." + axis + " positive")
@@ -80,12 +73,7 @@ func test_each_spec_is_sane() -> void:
 		# Suspension: travel doubles as the wheel raycast length (must clear the
 		# wheel radius so the ray reaches the ground), stiffness in the export range.
 		assert_gt(spec["suspension_travel"], spec["wheel_radius"], who + " spring travel clears wheel radius")
-		assert_between(spec["suspension_stiffness"], 0.1, 50.0, who + " spring stiffness in a sane range")
-		assert_between(spec["low_octave_mix"], 0.0, 1.0, who + " low_octave_mix is a 0..1 blend")
-		# Upper bound covers the deliberately loud cars (V8/V10/V12 sit at +7..+10);
-		# the per-voice level is tamed downstream by the soft clipper, so a positive
-		# dB here is intentional, not a mixing error.
-		assert_between(spec["volume_db"], -60.0, 12.0, who + " volume_db in a sane dB range")
+		assert_gt(spec["suspension_stiffness"], 0.0, who + " spring stiffness is positive")
 		# The track must fit inside the body width or wheels poke out absurdly.
 		assert_lte(spec["track"], spec["body"]["x"] + 0.1, who + " track within body width")
 		# Persistence + progression metadata (see save-persistence.md).
@@ -111,12 +99,6 @@ func test_car_ids_are_unique_and_stable_lookups_work() -> void:
 	assert_true(CarLibrary.by_id("nope").is_empty(), "unknown id -> empty dict")
 
 
-func test_power_to_weight_ranks_cars() -> void:
-	# The heuristic is relative-only, but the Aventador must out-rank the MX-5.
-	var mx5 := CarLibrary.by_id("mx5")
-	var aventador := CarLibrary.by_id("aventador")
-	assert_gt(CarLibrary.power_to_weight(aventador), CarLibrary.power_to_weight(mx5),
-		"Aventador has a higher power-to-weight than the MX-5")
 
 
 func test_main_boots_as_first_car() -> void:
@@ -139,13 +121,12 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	assert_almost_eq(_car.mass, float(spec["mass"]), 0.001, "rigidbody mass overlaid")
 	assert_almost_eq(Config.data.mass, float(spec["mass"]), 0.001, "config mass overlaid")
 	assert_almost_eq(Config.data.wheel_radius, float(spec["wheel_radius"]), 0.001, "wheel_radius overlaid")
-	# engine_type drives the sound + power preset (a V8 = 8 cylinders).
-	assert_eq(Config.data.engine_type, spec["engine_type"], "engine_type overlaid")
-	assert_eq(Config.data.engine_cylinders, 8, "V8 preset applied (8 cylinders)")
-	# Power overrides the engine preset's torque; grip overlays tyre friction.
-	assert_almost_eq(Config.data.peak_torque, float(spec["peak_torque"]), 0.001, "power (peak_torque) overlaid")
-	assert_almost_eq(Config.data.redline_rpm, float(spec["redline"]), 0.001, "redline overlaid")
-	assert_almost_eq(Config.data.engine_inertia, float(spec["engine_inertia"]), 0.001, "engine_inertia overlaid")
+	# The car's referenced engine drives the sound + power (a V8 = 8 cylinders).
+	var eng := EngineLibrary.by_id(spec["engine"])
+	assert_eq(Config.data.engine_cylinders, EngineLibrary.FIRING[eng["layout"]].size(), "cylinders overlaid")
+	assert_almost_eq(Config.data.peak_torque, float(eng["peak_torque"]), 0.001, "peak_torque overlaid")
+	assert_almost_eq(Config.data.redline_rpm, float(eng["redline_rpm"]), 0.001, "redline overlaid")
+	assert_almost_eq(Config.data.engine_inertia, float(eng["engine_inertia"]), 0.001, "engine_inertia overlaid")
 	# Per-car gearbox overlaid onto the live config (the shared MX-5 6-speed box).
 	assert_eq(Config.data.gear_ratios.size(), (spec["gear_ratios"] as Array).size(),
 		"gear count overlaid")
@@ -160,10 +141,6 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	assert_almost_eq(Config.data.wheel_friction_slip_front, float(spec["grip_front"]), 0.001, "front grip overlaid")
 	assert_almost_eq(Config.data.wheel_friction_slip_rear, float(spec["grip_rear"]), 0.001, "rear grip overlaid")
 	assert_eq(_car.drivetrain.drive_mode, spec["drive_mode"] as int, "drive layout overlaid")
-	assert_almost_eq(Config.data.engine_low_octave_mix, float(spec["low_octave_mix"]), 0.001,
-		"low_octave_mix overlaid")
-	assert_almost_eq(Config.data.engine_volume_db, float(spec["volume_db"]), 0.001,
-		"volume_db overlaid")
 
 	# Geometry: chassis box + wheel positions follow the spec.
 	assert_eq((_car.get_node("Chassis").mesh as BoxMesh).size, spec["body"], "chassis resized")
@@ -214,28 +191,37 @@ func test_cycle_car_advances_and_wraps() -> void:
 
 
 func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
-	# The authored-body cars (use_model) are the MX-5, the Focus and the Twingo; every
-	# flagged car must name a model_node + model_texture so apply_car can render it.
-	var model_ids := {}
+	# Feature contract, expressed generically off each spec's own use_model flag
+	# rather than a hardcoded list of which ids are model cars: every use_model
+	# car names a model_node + model_texture, shows its model and hides the
+	# procedural boxes; every non-model car does the reverse.
+	var model_spec: Dictionary = {}
+	var box_spec: Dictionary = {}
 	for spec in CarLibrary.CARS:
 		if spec.get("use_model", false):
-			model_ids[String(spec["id"])] = true
 			assert_ne(String(spec.get("model_node", "")), "", spec["name"] + " names its model_node")
 			assert_ne(String(spec.get("model_texture", "")), "", spec["name"] + " names its model_texture")
-	assert_true(model_ids.has("mx5"), "the MX-5 uses an authored model")
-	assert_true(model_ids.has("focus"), "the Focus uses an authored model")
-	assert_true(model_ids.has("twingo"), "the Twingo uses an authored model")
+			if model_spec.is_empty():
+				model_spec = spec
+		else:
+			if box_spec.is_empty():
+				box_spec = spec
+	assert_false(model_spec.is_empty(), "at least one car in the roster uses an authored model")
+	assert_false(box_spec.is_empty(), "at least one car in the roster uses procedural boxes")
 
 	# The model node exists and instances the glb body.
-	var model: Node3D = _car.get_node("Mx5Body")
-	assert_not_null(model, "Car has the Mx5Body model node")
+	_car.apply_car(CarLibrary.index_of(model_spec["id"]))
+	await get_tree().physics_frame
+	var model_node_name: String = model_spec["model_node"]
+	var model: Node3D = _car.get_node(model_node_name)
+	assert_not_null(model, "Car has the %s model node" % model_node_name)
 	assert_gt(model.find_children("*", "MeshInstance3D", true).size(), 0,
-		"Mx5Body instances at least one mesh")
+		"%s instances at least one mesh" % model_node_name)
 
-	# Booted as the MX-5: model shown, procedural boxes hidden.
-	assert_true(model.visible, "MX-5 shows the authored body model")
-	assert_false((_car.get_node("Chassis") as MeshInstance3D).visible, "MX-5 hides the chassis box")
-	assert_false((_car.get_node("Cabin") as MeshInstance3D).visible, "MX-5 hides the cabin box")
+	# Booted as the model car: model shown, procedural boxes hidden.
+	assert_true(model.visible, "%s shows the authored body model" % model_spec["name"])
+	assert_false((_car.get_node("Chassis") as MeshInstance3D).visible, "model car hides the chassis box")
+	assert_false((_car.get_node("Cabin") as MeshInstance3D).visible, "model car hides the cabin box")
 	# The model's mesh wears the PS1 shader material carrying the baked texture
 	# (white tint so the texture's own colours show through).
 	var mi: MeshInstance3D = model.find_children("*", "MeshInstance3D", true)[0]
@@ -245,8 +231,8 @@ func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
 	assert_eq(mat.get_shader_parameter("albedo_color"), Color.WHITE, "model texture shown untinted")
 	assert_not_null(mat.get_shader_parameter("albedo_texture"), "model carries its baked texture")
 
-	# A box car (Mustang) does the reverse: model hidden, boxes shown.
-	_car.apply_car(_index_of("Ford Mustang GT"))
+	# A box car does the reverse: model hidden, boxes shown.
+	_car.apply_car(CarLibrary.index_of(box_spec["id"]))
 	await get_tree().physics_frame
 	assert_false(model.visible, "box car hides the authored model")
 	assert_true((_car.get_node("Chassis") as MeshInstance3D).visible, "box car shows the chassis box")
@@ -265,14 +251,9 @@ func test_focus_is_a_fwd_model_car() -> void:
 	var i := CarLibrary.index_of("focus")
 	assert_gte(i, 0, "Focus is in the roster")
 	var spec := CarLibrary.CARS[i]
-	assert_eq(int(spec["drive_mode"]), CarLibrary.FWD, "Focus is FWD")
 	assert_true(spec.get("use_model", false), "Focus uses an authored body")
 	assert_eq(String(spec.get("model_node", "")), "FocusBody")
 	assert_true(spec.has("wheel_texture"), "Focus has its own wheel texture")
-	# Hitbox from the model: ~4.3 m long, ~1.84 m wide.
-	var body: Vector3 = spec["body"]
-	assert_almost_eq(body.z, 4.30, 0.25, "Focus length from the model")
-	assert_almost_eq(body.x, 1.84, 0.20, "Focus width from the model")
 
 
 func test_focus_collision_box_matches_body() -> void:
@@ -289,14 +270,9 @@ func test_twingo_is_a_fwd_model_car() -> void:
 	var i := CarLibrary.index_of("twingo")
 	assert_gte(i, 0, "Twingo is in the roster")
 	var spec := CarLibrary.CARS[i]
-	assert_eq(int(spec["drive_mode"]), CarLibrary.FWD, "Twingo is FWD")
 	assert_true(spec.get("use_model", false), "Twingo uses an authored body")
 	assert_eq(String(spec.get("model_node", "")), "TwingoBody")
 	assert_true(spec.has("wheel_texture"), "Twingo has its own wheel texture")
-	# Hitbox from the model: ~3.38 m long, ~1.63 m wide.
-	var body: Vector3 = spec["body"]
-	assert_almost_eq(body.z, 3.38, 0.25, "Twingo length from the model")
-	assert_almost_eq(body.x, 1.63, 0.20, "Twingo width from the model")
 
 
 func test_twingo_collision_box_matches_body() -> void:

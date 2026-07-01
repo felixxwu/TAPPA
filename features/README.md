@@ -32,7 +32,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, wreck at 0 HP |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
-| [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift |
+| [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift; `EngineLibrary` (`scripts/engine_library.gd`) — the catalog of real engines cars reference by id |
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
@@ -62,7 +62,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 |---------|----------------|
 | Car control | `scripts/car.gd`, `car.tscn` |
 | Tire forces | `scripts/drivetrain.gd` |
-| Engine/gearbox | `scripts/engine.gd` |
+| Engine/gearbox | `scripts/engine.gd`, `scripts/engine_library.gd` (`EngineLibrary` — engine catalog) |
 | Engine sound | `scripts/engine_audio.gd`, `scripts/engine_audio_synth.gd` |
 | Terrain | `scripts/terrain_manager.gd`, `scripts/terrain_chunk.gd`, `scripts/terrain_layer.gd` |
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |

@@ -286,18 +286,20 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
-	assert_eq(hq._hub_focus, 0, "the hub cursor starts on Change Car")
+	# The hub is a left/right cursor over Back (0) / Change Car (1) / Tuning (2) /
+	# Upgrades (3), wrapping at both ends.
+	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Change Car")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 1, "down moves the cursor to Tuning")
+	assert_eq(hq._hub_focus, 2, "right moves the cursor to Tuning")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 2, "down again moves the cursor to Upgrades")
+	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Upgrades")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 0, "it wraps back to Change Car")
+	assert_eq(hq._hub_focus, 0, "right from the end wraps to Back")
 	hq._move_hub_focus(-1)
-	assert_eq(hq._hub_focus, 2, "up from the top wraps to Upgrades")
+	assert_eq(hq._hub_focus, 3, "left from Back wraps to Upgrades")
 
 	# Select on the Change Car item drops into the car park.
-	hq._hub_focus = 0
+	hq._hub_focus = 1
 	hq._activate_hub_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "select on Change Car opens the car park")
@@ -354,6 +356,36 @@ func test_hq_start_flies_into_the_garage() -> void:
 	assert_eq(hq._view, hq.View.GARAGE, "Start flies the camera into the garage")
 	assert_true(hq._garage_layer.visible, "the garage overlay is shown")
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in the garage")
+
+
+# The garage overlay is a left/right cursor over Back (0) / Open map table (1) /
+# Tune car (2), wrapping at both ends, with select firing the item under the cursor.
+func test_hq_garage_is_a_left_right_cursor() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	assert_eq(hq._view, hq.View.GARAGE, "start lands in the garage")
+	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Open map table")
+	hq._move_garage_focus(1)
+	assert_eq(hq._garage_focus, 2, "right moves the cursor to Tune car")
+	hq._move_garage_focus(1)
+	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
+	hq._move_garage_focus(-1)
+	assert_eq(hq._garage_focus, 2, "left from Back wraps to Tune car")
+
+	# Select on the map-table item opens the map.
+	hq._garage_focus = 1
+	hq._activate_garage_focus()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.TABLE, "select on Open map table opens the map")
+
+	# Back-to-garage, then select on the Back item leaves for the exterior.
+	hq._go_to(hq.View.GARAGE)
+	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Open map")
+	hq._garage_focus = 0
+	hq._activate_garage_focus()
+	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
 
 
 func test_hq_opening_the_table_shows_the_map() -> void:

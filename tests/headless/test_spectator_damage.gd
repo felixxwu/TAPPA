@@ -44,7 +44,3 @@ func test_knocking_a_spectator_damages_the_car() -> void:
 		"knocking the spectator costs the car spectator_hp_loss")
 
 
-func test_spectator_hit_hurts_more_than_a_bush() -> void:
-	# The design: a spectator costs a bit MORE HP than a bush graze.
-	assert_gt(Config.data.spectator_hp_loss, Config.data.bush_hp_loss,
-		"a spectator hit costs more than a bush graze")

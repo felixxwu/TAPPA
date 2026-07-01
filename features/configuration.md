@@ -45,7 +45,6 @@ the `.tres` requires a scene reload to take effect.
 ### Engine & Transmission
 | Property | Default | Purpose |
 |----------|---------|---------|
-| `engine_type` | 0 (i4) | Preset: i4, i5, i6, v6, v8, v10, v12 — setter applies preset |
 | `idle_rpm` | 900.0 | No-stall minimum |
 | `rev_limiter_band` | 100.0 | Bouncing limiter width (rpm) |
 | `gear_ratios` | [6,4,2.9,2.4,2] | Forward gear ratios |
@@ -119,12 +118,22 @@ Three (wavelength, amplitude) pairs — `terrain_layerN_wavelength` /
 `terrain_layerN_amplitude` for N = 1,2,3 (large hills → fine bumps). See
 [terrain.md](terrain.md).
 
-## Engine preset system
+## Engine data
 
-`ENGINE_PRESETS` (in `game_config.gd`) is an array of 7 dictionaries (i4, i5,
-i6, v6, v8, v10, v12). Each defines `cylinders`, `firing_angles` (crank
-degrees), `redline_rpm`, `peak_torque`, `peak_torque_rpm`. Setting `engine_type`
-calls `_apply_engine_preset()`, which copies the preset into the engine fields.
+`GameConfig` no longer owns an engine preset system — it has no
+`ENGINE_PRESETS` array and no `engine_type` export. The `engine_*` fields
+(`engine_cylinders`, `engine_firing_angles`, `redline_rpm`, `peak_torque`,
+`peak_torque_rpm`, `engine_inertia`, `engine_low_octave_mix`,
+`engine_volume_db`, `engine_noise_level`, `engine_soft_clip_post_gain`) are
+just live fields with neutral defaults; the real catalog of engines now lives
+in `scripts/engine_library.gd` (`class_name EngineLibrary`), one entry per
+real powerplant keyed by a stable string `id`. Each `CarLibrary` car
+references exactly one engine by that id (`"engine": "<engine_id>"`), and
+`car.gd`'s `apply_car()` resolves it (`EngineLibrary.by_id`) and writes the
+whole profile onto the fielded `GameConfig` via `EngineLibrary.apply()` — the
+only writer of these fields. See
+[engine-and-transmission.md](engine-and-transmission.md) and
+[engine-audio.md](engine-audio.md).
 
 ## Derived-value helpers
 
@@ -135,7 +144,7 @@ calls `_apply_engine_preset()`, which copies the preset into the engine fields.
 
 ## Current overrides in `game_config.tres`
 
-The committed `.tres` differs from script defaults in places, e.g. `engine_type
-= 1` (i5), `auto_gearbox = true`, `drag_coefficient = 0.3`, `steer_limit = 0.5`,
-`steer_assist_torque = 4000.0`, `upshift_redline_fraction = 0.75`. Check the file
+The committed `.tres` differs from script defaults in places, e.g.
+`auto_gearbox = true`, `drag_coefficient = 2.645`, `steer_limit = 0.5`,
+`steer_assist_torque = 5000.0`, `upshift_redline_fraction = 0.7`. Check the file
 for the authoritative values.

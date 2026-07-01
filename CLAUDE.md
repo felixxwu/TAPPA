@@ -51,6 +51,25 @@
 
 ## Testing (mandatory)
 
+- **Never test tunable/balance VALUES.** If a value can be changed in the
+  inspector / a config resource / an authored data table (`GameConfig` /
+  `game_config.tres`, and the authored `CARS` / `ENGINES` / `RALLIES` /
+  `UPGRADES` tables in `CarLibrary` / `EngineLibrary` / `RallyLibrary` /
+  `UpgradeLibrary`), and changing that value to another reasonable setting would
+  make the test fail, DO NOT write that test — it pins a moving number and adds
+  no value. This includes: asserting a specific stat (torque, redline, mass,
+  grip, straightness, a reward tier, a power-to-weight band), asserting a
+  monotonic/ordering relationship across authored entries ("tier 3 is twistier
+  than tier 2", "car A out-ranks car B"), asserting a particular authored entry
+  exists or lands in a particular bucket ("a tier-2 part exists", "rally X is in
+  the car's band"), and asserting an exported enum's exact hint string. Test the
+  LOGIC/behaviour that must hold for ANY reasonable values instead — e.g. "a
+  drawn part is a real catalogue item", "the eligibility query excludes locked
+  rallies", "applying a car copies its engine's torque onto the config",
+  "W drives the car forward", "reset returns to the start". Sanity guards that
+  only rule out truly broken values (mass > 0, a grip coefficient is finite) are
+  fine; pinning the *chosen* value is not. When in doubt, ask: "would a designer
+  retuning this in the inspector break my test?" If yes, delete the assertion.
 - When adding or changing functionality, add or update tests in the same piece
   of work: gameplay/logic tests in `tests/headless/`, scene/structure checks in
   `tests/headless/test_smoke.gd`.

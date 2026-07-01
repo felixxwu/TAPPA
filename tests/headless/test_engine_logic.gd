@@ -10,10 +10,10 @@ var _engine: EngineSim
 
 
 func before_each() -> void:
-	# Same authored baseline the scene tests assume; EngineSim reads Config in
-	# _init, so reset first.
+	# Same authored baseline the scene tests assume; EngineSim reads the config it
+	# is handed in _init, so reset first and pass the live global config.
 	Config.reset()
-	_engine = EngineSim.new()
+	_engine = EngineSim.new(Config.data)
 
 
 func test_rev_limiter_bounces_within_a_band() -> void:

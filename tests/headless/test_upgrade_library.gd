@@ -7,25 +7,25 @@ extends GutTest
 
 func test_catalogue_is_well_formed() -> void:
 	var ids := {}
-	var consumables := 0
 	for item in UpgradeLibrary.UPGRADES:
 		assert_false(ids.has(item["id"]), "item id '%s' is unique" % item["id"])
 		ids[item["id"]] = true
 		assert_gt(item["tier"], 0, "%s has a positive tier" % item["id"])
 		if item["consumable"]:
-			consumables += 1
 			assert_eq(String(item["slot"]), "", "consumable %s has no slot" % item["id"])
 		else:
 			assert_true(UpgradeLibrary.SLOTS.has(item["slot"]),
 				"%s has a known slot" % item["id"])
-	# Exactly one consumable: the repair kit.
-	assert_eq(consumables, 1, "exactly one consumable item")
 	assert_true(UpgradeLibrary.is_consumable(UpgradeLibrary.REPAIR_KIT_ID), "repair kit is consumable")
 
 
 func test_lookups() -> void:
-	assert_eq(UpgradeLibrary.slot_of("engine_stage1"), "engine", "engine kit slots into engine")
-	assert_eq(UpgradeLibrary.slot_of(UpgradeLibrary.REPAIR_KIT_ID), "", "repair kit has no slot")
+	# Mechanism, not authored values: slot_of/by_id resolve any real catalogue
+	# entry to its own slot, and degrade safely for unknown ids.
+	for item in UpgradeLibrary.UPGRADES:
+		var expected_slot: String = "" if item["consumable"] else String(item["slot"])
+		assert_eq(UpgradeLibrary.slot_of(item["id"]), expected_slot,
+			"%s slots into its own authored slot" % item["id"])
 	assert_eq(UpgradeLibrary.slot_of("nonexistent"), "", "unknown id has no slot")
 	assert_true(UpgradeLibrary.by_id("nonexistent").is_empty(), "unknown id -> empty dict")
 

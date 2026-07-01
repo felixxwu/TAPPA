@@ -35,7 +35,7 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 | `test_drive_mode.gd` | RWD/AWD/FWD torque distribution |
 | `test_config_applied.gd` | config → scene propagation |
 | `test_engine_audio.gd` | synth firing phases, `fill()`, clamping |
-| `test_engine_type.gd` | all 7 engine presets load |
+| `test_engine_library.gd` | every `EngineLibrary` catalog entry loads and `apply()` writes the expected fields |
 | `test_terrain.gd` | `height_at`, seed determinism |
 | `test_car_terrain.gd` | suspension on slopes |
 | `test_debug_arrows.gd` | force overlay updates |

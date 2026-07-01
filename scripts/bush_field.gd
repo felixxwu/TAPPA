@@ -35,12 +35,12 @@ var _inside: Dictionary = {}
 # renderer; `hit_radius` is already the leeway-reduced radius (a fraction of the
 # bush's visual width — computed by the caller from TreeMeshField.xz_radius).
 func setup(positions: PackedVector2Array, car: Node, hit_radius: float,
-		hp_loss: float, drag_torque: float, min_speed_mps: float, cooldown_s: float) -> void:
+		hp_loss: float, drag_torque_magnitude: float, min_speed_mps: float, cooldown_s: float) -> void:
 	_car = car
 	_points = positions
 	_hit_radius = maxf(hit_radius, 0.01)
 	_hp_loss = hp_loss
-	_drag_torque = drag_torque
+	_drag_torque = drag_torque_magnitude
 	_min_speed_mps = min_speed_mps
 	_cooldown = cooldown_s
 	_cell = _hit_radius

@@ -17,11 +17,9 @@ func test_config_resource_loads() -> void:
 	var cfg := load("res://config/game_config.tres") as GameConfig
 	assert_not_null(cfg, "game_config.tres loads as a GameConfig")
 	assert_gt(cfg.peak_torque, 0.0, "peak_torque sane")
-	# peak_torque, redline_rpm, etc. are no longer individual sliders — they are
-	# driven by the engine_type preset, which IS the Inspector control now.
-	var et_hint := _export_hint("engine_type", cfg)
-	assert_eq(et_hint.hint, PROPERTY_HINT_ENUM, "engine_type is an enum selector")
-	assert_eq(et_hint.hint_string, "i4,i5,i6,v6,v8,v10,v12", "engine_type lists every preset")
+	# peak_torque / redline_rpm / firing etc. are the LIVE engine fields, written by
+	# EngineLibrary.apply() when a car is fielded (scripts/engine_library.gd); the
+	# resource just carries neutral defaults. There is no engine_type selector.
 	assert_gt(cfg.redline_rpm, cfg.idle_rpm, "redline above idle")
 	assert_gt(cfg.gear_ratios.size(), 0, "at least one forward gear")
 	assert_gt(cfg.final_drive, 0.0, "final_drive sane")

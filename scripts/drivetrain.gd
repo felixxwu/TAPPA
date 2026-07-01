@@ -48,8 +48,11 @@ var readouts: Dictionary = {}
 
 func _init(p_car: VehicleBody3D) -> void:
 	car = p_car
-	engine = EngineSim.new()
-	drive_mode = Config.data.drive_mode as DriveMode
+	# EngineSim + this drivetrain read the CAR's own config (Config.data for the active
+	# car, an isolated copy for prop/display cars) so a second car instance's apply_car
+	# can't clobber this car's engine/gearbox. See car.gd `config`.
+	engine = EngineSim.new(car.config)
+	drive_mode = car.config.drive_mode as DriveMode
 	for wheel in car.find_children("*", "VehicleWheel3D", false):
 		hardpoints[wheel] = wheel.position
 		spin_angle[wheel] = 0.0
@@ -64,7 +67,7 @@ func _init(p_car: VehicleBody3D) -> void:
 # throttle: 0..1 drive request (reverse comes from the engine's gear).
 # brake: 0..1 foot brake. handbrake: bool.
 func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = car.config
 	readouts.clear()
 	var r := cfg.wheel_radius
 

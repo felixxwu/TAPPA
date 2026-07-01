@@ -20,7 +20,9 @@ Each `RALLIES` entry:
 - `restriction` — a `Dictionary`; **empty = open-class** (every car eligible).
   Otherwise every present field must match the car's CarLibrary metadata:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
-  `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`).
+  `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`,
+  which resolves torque/redline from the car's referenced `EngineLibrary` engine —
+  see [engine-and-transmission.md](engine-and-transmission.md)).
   **Progression is primarily gated on power-to-weight:** the earliest rallies are
   gated only from above (a `pw_max` ceiling and no floor, so the low-power
   starter qualifies), and the harder rallies tighten to a **band** (`pw_min` +

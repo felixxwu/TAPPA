@@ -4,32 +4,30 @@ extends RefCounted
 # (see hud.gd) and applied by car.gd's apply_car(). Each entry overlays the
 # neutral baseline tuning (car.tscn + game_config.tres) with one real car's
 # character: body/cabin box dimensions, wheelbase and track, wheel/tyre size,
-# mass, power, tyre grip, aero drag, shift_time (gearbox shift speed),
-# engine_type (the engine sound preset) and the driven axle layout.
+# mass, tyre grip, aero drag, shift_time (gearbox shift speed), the driven
+# axle layout, and an "engine" id naming its powerplant in EngineLibrary
+# (scripts/engine_library.gd) — the single source of truth for ALL engine
+# data (cylinders/firing, torque, redline, inertia, and the voicing fields
+# low_octave_mix/volume_db/noise_db/soft_clip_post_gain). See
+# EngineLibrary.apply(), which car.gd's apply_car() calls with the resolved
+# engine.
 #
 # Dimensions (length / width / wheelbase / track) come from manufacturer spec
 # data and are used directly in metres (Godot units = metres).
 #
-# Dynamics values are in real SI units, matching GameConfig (mass in kg, torque
-# in N·m), anchored to the Mazda MX-5:
+# Dynamics values are in real SI units, matching GameConfig (mass in kg),
+# anchored to the Mazda MX-5:
 #   * mass     — the car's real kerb mass in kg.
-#   * peak_torque — the car's REAL published peak crank torque in N·m (the sim
-#                models crank torque directly). redline is its real rev limit;
-#                together (torque x revs) they give a realistic power character,
-#                so e.g. the high-revving LFA makes its power up at 9000 rpm
-#                rather than on torque alone. The engine preset still sets the
-#                rpm where torque peaks and the curve shape.
 #   * gear_ratios / final_drive — the gearbox (GameConfig.gear_ratios /
-#                final_drive). apply_car copies them in AFTER the engine preset
+#                final_drive). apply_car copies them in AFTER EngineLibrary.apply
 #                (which only sets torque / redline / firing), and EngineSim handles
-#                any number of forward gears. These remain a PER-CAR field so each
-#                car can be given its own box later, but right now EVERY car shares
-#                the MX-5's gearing — its real ND 6-speed ratios with the game-tuned
-#                3.5 final drive. We tried giving each car its own real published
-#                transmission, but only the MX-5's (which we'd already game-tuned to
-#                drive well) actually felt right; the real ratios on the other cars
-#                didn't make sense against the sim. So they're all modelled on the
-#                MX-5's again — kept separate so they can diverge, but uniform for now.
+#                any number of forward gears. Each car now carries its OWN real
+#                published transmission ratios (per-car; see each entry's comment for
+#                the box modelled), so gearing character differs across the roster —
+#                a 3-speed TorqueFlite Charger vs an 8-speed PDK 911. Only the
+#                final_drive is a game value, kept deliberately higher than the real
+#                ~3-4 (tuned per car) so each pulls cleanly against Jolt's built-in
+#                rolling resistance (see the drag note below); the internal ratios are real.
 #   * drag     — quadratic aero drag coefficient (GameConfig.drag_coefficient):
 #                the force is drag x speed². NOTE these are deliberately SMALL: the
 #                physics engine (Jolt VehicleBody3D) already applies a large
@@ -62,45 +60,7 @@ extends RefCounted
 #                upgrade adds on top. All cars carry a small rear value to keep the
 #                tail planted under power; front defaults to 0 when omitted.
 #
-# engine_type indexes GameConfig.ENGINE_PRESETS: 0 i4, 1 i5, 2 i6, 3 v6,
-# 4 v8, 5 v10, 6 v12. drive_mode matches Drivetrain.DriveMode: 0 RWD, 1 AWD,
-# 2 FWD.
-#
-# low_octave_mix (GameConfig.engine_low_octave_mix) crossfades the engine voice
-# toward a copy one octave lower (half the firing frequency), for cars whose
-# synthesized note sits too high. 0 = normal voice only; 0.5 = a 50/50 blend of
-# the normal and low-octave voices. Tuned per car to taste; e.g. the high-revving
-# Lexus LFA V10 blends in the lower octave to drop its scream into a fuller register.
-#
-# volume_db (GameConfig.engine_volume_db) is the per-car master level of the
-# engine voice, in decibels. apply_car() copies it into GameConfig before the
-# synth rebuilds. All cars start at -6.0 (the GameConfig fallback default), a
-# placeholder for per-car balancing — raise a car to make it louder, lower it
-# to make it quieter relative to the others.
-#
-# noise_db is the per-car broadband-noise level, in decibels. The two inputs to
-# the engine soft clipper — the cylinder voice and the white noise — are each
-# controlled independently before the waveshaper: the voice by volume_db, the
-# noise by noise_db. apply_car() converts noise_db to a linear amplitude
-# (db_to_linear) and writes it into GameConfig.engine_noise_level before the
-# synth rebuilds; engine_noise_level is the fallback default for cars that omit
-# noise_db. All cars start at the same value (≈ the prior global noise floor).
-#
-# engine_inertia (GameConfig.engine_inertia, kg·m²) is the per-car crank +
-# flywheel rotating inertia — how much spinning mass the engine has to accelerate.
-# Small = fast revving (the engine snaps up and down rpm); large = a heavy, lazy
-# flywheel that revs slowly and holds revs between shifts. apply_car() copies it
-# into GameConfig before the engine model runs; cars that omit it keep the config
-# fallback. Anchored to the MX-5's light 2.0 i4 (0.15) and scaled by each car's
-# real rotating character: the LFA's famously ultra-light V10 (0→9000 rpm in
-# ~0.6 s) sits LOWEST despite its cylinder count, while the heavy V8 Mustang and
-# big V12 Aventador carry the most spinning mass and rev slowest.
-#
-# soft_clip_post_gain (GameConfig.engine_soft_clip_post_gain) is the per-car
-# post-amp applied after the sine soft clipper, trimming each car's shaped
-# output level (1.0 = transparent). apply_car() copies it into GameConfig before
-# the synth rebuilds; the config value is the fallback default. The clipper's
-# pre-amp (engine_soft_clip_drive) stays a single global value.
+# drive_mode matches Drivetrain.DriveMode: 0 RWD, 1 AWD, 2 FWD.
 
 const RWD := 0
 const AWD := 1
@@ -122,7 +82,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
-		"mass": 1058.0, "peak_torque": 205.0, "redline": 7500.0, "engine_inertia": 0.15,  # light 2.0 i4 (anchor)
+		"mass": 1058.0, "engine": "mazda_20_i4",
 		# Real ND 6-speed manual ratios: 5.087/2.991/2.035/1.594/1.286/1.000.
 		# final_drive is game-tuned to 3.5, NOT the real 2.866: the MX-5's real ~150 hp
 		# (in-sim) can't pull the tall real final drive against the Jolt VehicleBody3D's
@@ -134,7 +94,7 @@ const CARS: Array[Dictionary] = [
 		# shares it (see the gear_ratios header note). See features/drivetrain-and-tires.md.
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
 		"grip_front": 1, "grip_rear": 1, "shift_time": 0.30,  # manual H-pattern roadster
-		"engine_type": 0, "drive_mode": RWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
@@ -150,11 +110,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Focus ST",  # Mk2 2009: ~1467 kg, 225 PS, 2.5 turbo i5, FWD hot hatch
 		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
-		"mass": 1467.0, "peak_torque": 320.0, "redline": 6800.0, "engine_inertia": 0.22,  # turbo i5, ~6.8k limiter
-		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"mass": 1467.0, "engine": "ford_25t_i5",
+		# Real Getrag M66 6-speed ratios (Focus ST Mk2 2.5T).
+		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 10,
 		"grip_front": 1.05, "grip_rear": 0.8, "shift_time": 0.30,  # 6-speed manual, FWD
-		"engine_type": 1, "drive_mode": FWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.1, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
@@ -171,10 +131,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Twingo",  # Mk1 (C06) 1.2 16V: ~890 kg, 75 PS, light FWD city car
 		"id": "twingo", "country": "FR", "car_type": "hatch", "max_hp": 700.0, "reward_tier": 1,
-		"mass": 890.0, "peak_torque": 105.0, "redline": 6800.0, "engine_inertia": 0.13,  # small light 1.2 i4, ~6.8k limiter
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286], "final_drive": 6,
+		"mass": 890.0, "engine": "renault_12_i4",
+		# Real Renault JB1 5-speed ratios (Twingo Mk1 1.2 16V).
+		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 9,
 		"grip_front": 1.0, "grip_rear": 1.0, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
-		"engine_type": 0, "drive_mode": FWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
 		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
@@ -190,25 +151,67 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
 		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 1,
-		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0, "engine_inertia": 0.22,  # turbo i5, dual-mass flywheel
-		# Shares the MX-5's gearing (see the header note): the real DSG ratios didn't
-		# make sense in-sim, so this car runs the MX-5's box for now.
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"mass": 1575.0, "engine": "audi_25t_i5",
+		# Real 7-speed S tronic (DQ500-class) ratios (Audi RS3 8Y).
+		"gear_ratios": [3.563, 2.526, 1.679, 1.022, 0.788, 0.761, 0.635], "final_drive": 12,
 		"grip_front": 1, "grip_rear": 0.8, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
-		"engine_type": 1, "drive_mode": AWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
 		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
 		"wheel_radius": 0.335, "wheel_width": 0.235,
 		"suspension_travel": 0.45, "suspension_stiffness": 13.0,  # firm AWD hot hatch
 	},
 	{
+		"name": "Honda Acty",  # HA4 kei truck: ~740 kg, 656cc mid-engine triple, RWD
+		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
+		"mass": 740.0, "engine": "honda_066_i3",
+		# Real Honda Acty HA4 5-speed ratios; kept on the high final_drive so its ~44 hp
+		# still pulls (see the gear_ratios header note).
+		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9,
+		"grip_front": 1.0, "grip_rear": 1.1, "shift_time": 0.35,  # 5-speed manual, skinny tyres, mid-engine RWD
+		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
+		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
+		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),
+		"cabin_z": -0.95, "track": 1.21, "wheelbase": 1.90,
+		"wheel_radius": 0.27, "wheel_width": 0.145,
+		"suspension_travel": 0.40, "suspension_stiffness": 9.0,  # soft, tall little truck
+		# Renders blender/acty/acty.glb (Car/ActyBody) with the texture extracted from
+		# the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
+		"use_model": true,
+		"model_node": "ActyBody",
+		"model_texture": "res://blender/acty/acty_texture.png",
+		"wheel_texture": "res://blender/acty/wheel.png",
+	},
+	{
+		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1750 kg, 440 Magnum V8, RWD muscle
+		"id": "charger", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
+		"mass": 1750.0, "engine": "mopar_440_v8",
+		# Real 3-speed TorqueFlite A727 automatic ratios ('69 Charger R/T 440).
+		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4,
+		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.30,  # 3-speed TorqueFlite auto, RWD
+		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
+		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
+		# 5.28 m x 1.95 m). Long, low, heavy coupe.
+		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
+		"cabin_z": 0.35, "track": 1.6, "wheelbase": 3,
+		"wheel_radius": 0.36, "wheel_width": 0.225,
+		"suspension_travel": 0.45, "suspension_stiffness": 10.0,  # soft, heavy muscle car
+		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
+		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
+		"use_model": true,
+		"model_node": "ChargerBody",
+		"model_texture": "res://blender/charger/charger_texture.png",
+		"wheel_texture": "res://blender/charger/wheel.png",
+	},
+	{
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
 		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 1,
-		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0, "engine_inertia": 0.32,  # heavy 5.0 V8 muscle, slow-revving
-		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"mass": 1720.0, "engine": "ford_50_v8",
+		# Real Getrag MT82 6-speed ratios (Mustang GT S550, 2015-17).
+		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.22,  # 6-speed manual muscle
-		"engine_type": 4, "drive_mode": RWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
 		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -217,11 +220,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 2,
-		"mass": 1505.0, "peak_torque": 450.0, "redline": 7500.0, "engine_inertia": 0.18,  # light flat-6
-		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"mass": 1505.0, "engine": "porsche_30_flat6",
+		# Real 8-speed PDK ratios (Porsche 911 992 Carrera).
+		"gear_ratios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.06,  # 8-speed PDK
-		"engine_type": 2, "drive_mode": RWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
 		"wheel_radius": 0.34, "wheel_width": 0.245,
@@ -230,11 +233,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
 		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
-		"mass": 1580.0, "peak_torque": 480.0, "redline": 9000.0, "engine_inertia": 0.10,  # ultra-light V10, 0→9000 in ~0.6 s
-		# Shares the MX-5's gearing (see the header note).
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"mass": 1580.0, "engine": "toyota_48_v10",
+		# Real 6-speed ASG ratios (Lexus LFA).
+		"gear_ratios": [3.231, 2.188, 1.609, 1.233, 0.970, 0.795], "final_drive": 7,
 		"grip_front": 1.20, "grip_rear": 1, "shift_time": 0.16,  # automated single-clutch ASG
-		"engine_type": 5, "drive_mode": RWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -243,10 +246,11 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
 		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 3,
-		"mass": 1731.0, "peak_torque": 690.0, "redline": 8350.0, "engine_inertia": 0.26,  # big 6.5 V12
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"mass": 1731.0, "engine": "lambo_65_v12",
+		# Real 7-speed ISR ratios (Lamborghini Aventador LP 700-4).
+		"gear_ratios": [3.909, 2.438, 1.810, 1.458, 1.185, 0.967, 0.844], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
-		"engine_type": 6, "drive_mode": AWD, "drag": 0, "downforce_rear": 0, "low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
 		"wheel_radius": 0.35, "wheel_width": 0.30,
@@ -279,9 +283,17 @@ static func by_id(id: String) -> Dictionary:
 # redline and mass — NOT stored, recomputed on demand for reward-tier defaults
 # and the stats panel. Peak power ~ torque x angular speed at redline; the exact
 # constant is a tuning detail, this is only a relative ranking heuristic.
+#
+# torque/redline resolve from the referenced engine (EngineLibrary) UNLESS the
+# entry carries its own "peak_torque"/"redline" — which is how upgrade-adjusted
+# stats flow through: UpgradeLibrary.effective_meta() seeds those keys from the
+# engine and multiplies them by the installed engine kits, so an upgraded meta
+# ranks above the base car. A raw CarLibrary entry has neither key and falls back
+# to its engine's published figures.
 static func power_to_weight(entry: Dictionary) -> float:
-	var torque: float = entry.get("peak_torque", 0.0)
-	var redline: float = entry.get("redline", 0.0)
+	var eng := EngineLibrary.by_id(entry.get("engine", ""))
+	var torque: float = float(entry.get("peak_torque", eng.get("peak_torque", 0.0)))
+	var redline: float = float(entry.get("redline", eng.get("redline_rpm", 0.0)))
 	var mass: float = entry.get("mass", 1.0)
 	if mass <= 0.0:
 		return 0.0

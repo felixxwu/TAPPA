@@ -27,6 +27,17 @@ const MAX_CONTACTS_REPORTED := 8
 signal wrecked()
 
 var _start_transform: Transform3D
+# The GameConfig this car's physics reads/writes. DEFAULTS to the global Config.data
+# (so the single active/player car stays wired to the HUD, tuning lift, audio synth
+# and save system, which all read Config.data). Non-simulating PROP/display cars (HQ
+# car-park lineup, start-line queue, podium) are handed an ISOLATED duplicate via
+# use_isolated_config() BEFORE apply_car, so their reshape mutates their own copy and
+# can't clobber the active car's engine/gearbox in the shared global. car.gd,
+# Drivetrain and EngineSim all read THIS, not Config.data directly. Set before _ready
+# builds the drivetrain (or before apply_car, which rebuilds it) so the physics
+# captures the right config object; apply_car only mutates fields on it, never
+# reassigns, so captured references stay valid.
+var config: GameConfig
 var drivetrain: Drivetrain
 # Per-car HP / attrition state + the handling/power degradation maths
 # (features/damage.md). Built in _ready, (re)configured per car in apply_car.
@@ -68,7 +79,11 @@ var _handbrake_locked := false
 
 
 func _ready() -> void:
-	var cfg: GameConfig = Config.data
+	# Default to the shared global config unless a spawner already handed this
+	# instance an isolated one (see `config` above / use_isolated_config).
+	if config == null:
+		config = Config.data
+	var cfg: GameConfig = config
 	# Spawn the car spawn_clearance metres above the ground at its xz, so the
 	# wheels never start clipping under the terrain regardless of how high the
 	# surface is there. This transform is also what reset / car swaps restore.
@@ -187,7 +202,7 @@ func _recompute_axles() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 	# Capture the pre-solve travel speed for _integrate_forces' damage keying — this
 	# runs before the physics solver, so it still holds the true approach speed even
 	# on a head-on hit the solver is about to arrest. See _integrate_forces.
@@ -354,7 +369,7 @@ func _physics_process(delta: float) -> void:
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if damage == null:
 		return
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 	for i in state.get_contact_count():
 		var collider := state.get_contact_collider_object(i) as Node
 		if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
@@ -459,6 +474,17 @@ func current_car_name() -> String:
 	return CarLibrary.CARS[_car_index]["name"]
 
 
+# Give this car its OWN private GameConfig (a deep copy of the current global
+# baseline) so its apply_car / apply_owned reshape mutates that copy instead of the
+# shared Config.data. Call on a non-simulating PROP/display car BEFORE apply_car so
+# it can't clobber the active car's engine/gearbox in the global config. The active
+# player car does NOT call this — it keeps config == Config.data so the HUD, tuning
+# lift, audio synth and save system (all of which read Config.data) reflect it.
+func use_isolated_config() -> void:
+	var base: GameConfig = config if config != null else Config.data
+	config = base.duplicate(true) if base != null else GameConfig.new()
+
+
 # Reshape and retune the car to a CarLibrary entry: overlays its dimensions,
 # mass, drag, engine character and drive layout onto the live config and scene,
 # then rebuilds the drivetrain (fresh hardpoints + shift speeds) and engine
@@ -466,24 +492,21 @@ func current_car_name() -> String:
 func apply_car(index: int) -> String:
 	var spec: Dictionary = CarLibrary.CARS[index]
 	_car_index = index
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 
-	# Physics/config overlay. engine_type's setter re-applies the sound + power
-	# preset; everything else is read live from cfg each physics step.
+	# Physics/config overlay; everything is read live from cfg each physics step.
 	cfg.mass = spec["mass"]
 	cfg.drag_coefficient = spec["drag"]
 	cfg.wheel_radius = spec["wheel_radius"]
-	# engine_type's setter overwrites peak_torque + redline from the preset, so
-	# apply the car's real published power figures AFTER it. Tyre grip is the
-	# front/rear friction.
-	cfg.engine_type = spec["engine_type"]
-	cfg.peak_torque = spec["peak_torque"]
-	cfg.redline_rpm = spec["redline"]
+	# All engine data (sound + performance + voicing) comes from the referenced
+	# engine in EngineLibrary — the single source of truth. apply() writes every
+	# engine_* field onto cfg before the drivetrain/audio rebuild below.
+	EngineLibrary.apply(EngineLibrary.by_id(spec["engine"]), cfg)
 	# Per-car gearbox: real transmission ratios + final drive overlay the shared
-	# defaults. Set AFTER the engine preset (which only touches torque/redline/
+	# defaults. Set AFTER EngineLibrary.apply (which only touches torque/redline/
 	# firing) and BEFORE the drivetrain rebuild below, so EngineSim recomputes its
 	# shift speeds for the new gearing. Build a typed Array[float] (the dict value
-	# is an untyped literal), mirroring GameConfig._apply_engine_preset.
+	# is an untyped literal).
 	if spec.has("gear_ratios"):
 		var ratios: Array[float] = []
 		for gr in spec["gear_ratios"]:
@@ -498,16 +521,6 @@ func apply_car(index: int) -> String:
 	# value. apply_owned applies the aero_kit upgrade ON TOP of this afterwards.
 	cfg.downforce_front = spec.get("downforce_front", 0.0)
 	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
-	# Per-car crank + flywheel rotating inertia (kg·m²): small revs fast, large
-	# revs lazily. Cars that omit it keep the config fallback.
-	cfg.engine_inertia = spec.get("engine_inertia", cfg.engine_inertia)
-	cfg.engine_low_octave_mix = spec.get("low_octave_mix", 0.0)
-	cfg.engine_volume_db = spec.get("volume_db", cfg.engine_volume_db)
-	# Per-car noise floor authored in dB; convert to the linear amplitude the
-	# synth uses. Cars that omit noise_db keep the config's engine_noise_level.
-	if spec.has("noise_db"):
-		cfg.engine_noise_level = db_to_linear(spec["noise_db"])
-	cfg.engine_soft_clip_post_gain = spec.get("soft_clip_post_gain", cfg.engine_soft_clip_post_gain)
 	# Per-car suspension: spring travel + rate. Dampers stay derived from
 	# stiffness (see GameConfig.suspension_damping_*). Pushed onto the wheels in
 	# the relocation loop below; Drivetrain reads stiffness live off the wheel.
@@ -625,13 +638,13 @@ func apply_owned(owned: Dictionary) -> String:
 	# Step 2: installed upgrades multiply/extend the live config. apply_car already
 	# copied the baseline mass onto the RigidBody, so re-sync after a weight-reduction
 	# upgrade mutates cfg.mass (other upgraded fields are read live each physics step).
-	UpgradeLibrary.apply(owned, Config.data)
+	UpgradeLibrary.apply(owned, config)
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
 	# installed upgrades, so it must run after step 2.
-	TuningLibrary.apply(owned, Config.data)
+	TuningLibrary.apply(owned, config)
 	_sync_suspension_to_wheels()
-	mass = Config.data.mass
+	mass = config.mass
 	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
 	# removes it from the save.
 	var entry := CarLibrary.by_id(model_id)
@@ -644,7 +657,7 @@ func apply_owned(owned: Dictionary) -> String:
 # (apply_car does this inline while relocating wheels; this is the standalone
 # version for when an upgrade changes cfg.suspension_stiffness after apply_car).
 func _sync_suspension_to_wheels() -> void:
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = config
 	for wheel in find_children("*", "VehicleWheel3D", false):
 		wheel.suspension_stiffness = cfg.suspension_stiffness
 		wheel.damping_compression = cfg.suspension_damping_compression()
@@ -659,7 +672,7 @@ func _sync_suspension_to_wheels() -> void:
 # Idempotent: the material is built once per mesh.
 # Names of the authored glb body nodes in car.tscn (hidden unless a spec selects one).
 func _model_node_names() -> PackedStringArray:
-	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody"])
+	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody", "ActyBody", "ChargerBody"])
 
 
 func _apply_model_material(model: Node3D, texture: Texture2D) -> void:
@@ -675,7 +688,7 @@ func _apply_model_material(model: Node3D, texture: Texture2D) -> void:
 			mat.set_shader_parameter("albedo_texture", texture)
 			# Same fake per-vertex lighting as the procedural car meshes (see
 			# world.gd) so the authored body gets shape too, not just flat colour.
-			Config.data.apply_car_light(mat)
+			config.apply_car_light(mat)
 			mi.set_surface_override_material(0, mat)
 
 
@@ -691,8 +704,8 @@ func _wheel_material(tex_path: String) -> ShaderMaterial:
 	# The tread colour + PS1 fake lighting that world.gd used to push onto the shared
 	# tire material — now carried by each per-car material (world.gd's push lands on the
 	# scene's default .tres, which apply_car replaces with this).
-	mat.set_shader_parameter("albedo_color", Config.data.wheel_color)
-	Config.data.apply_car_light(mat)
+	mat.set_shader_parameter("albedo_color", config.wheel_color)
+	config.apply_car_light(mat)
 	_wheel_mats[tex_path] = mat
 	return mat
 

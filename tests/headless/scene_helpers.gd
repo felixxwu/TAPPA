@@ -38,6 +38,20 @@ static func use_test_config() -> void:
 		Config.reset()
 		return
 	Config.data = base.duplicate(true)
+	# The frozen test baseline used engine_type=1 (the old generic i5 preset) for its
+	# calibrated launch / drivetrain assertions. The engine_type→preset mechanism is
+	# gone (engine data lives in EngineLibrary now) and the live engine fields aren't
+	# @export-serialized, so reproduce that exact i5 baseline here rather than in the
+	# .tres: cylinders 5, i5 firing, 264.5 N·m @ 4200 rpm, 7500 redline.
+	var cfg: GameConfig = Config.data
+	cfg.engine_cylinders = 5
+	var i5_firing: Array[float] = []
+	for angle in EngineLibrary.FIRING["i5"]:
+		i5_firing.append(float(angle))
+	cfg.engine_firing_angles = i5_firing
+	cfg.redline_rpm = 7500.0
+	cfg.peak_torque = 264.5
+	cfg.peak_torque_rpm = 4200.0
 
 
 # Reset Config to the authored baseline, then strip world generation down to the

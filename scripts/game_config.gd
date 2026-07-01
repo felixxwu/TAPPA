@@ -4,9 +4,10 @@ extends Resource
 # (Inspector or text), not the per-node values in main.tscn — runtime
 # config overrides those defaults at startup.
 
-# Engine character, set from the engine_type preset (see ENGINE_PRESETS). These
-# are not Inspector sliders: pick the engine via engine_type and the preset
-# fills them in. Tests and gameplay read them as ordinary properties.
+# Engine character. These are the LIVE engine fields: EngineLibrary.apply()
+# (scripts/engine_library.gd) writes them from the fielded car's referenced
+# engine. Their initializers below are only the neutral default for an unfielded
+# GameConfig. Tests and gameplay read them as ordinary properties.
 var engine_cylinders := 4  # firings per cycle = cylinders (4-stroke)
 # Crank angles (degrees over the 720° four-stroke cycle) at which cylinders fire.
 # Even spacing → smooth; uneven → burble.
@@ -14,43 +15,6 @@ var engine_firing_angles: Array[float] = [0.0, 180.0, 360.0, 540.0]
 var redline_rpm := 8000.0  # rev limiter; top speed is redline in top gear
 var peak_torque := 211.6  # peak crank torque (N·m), reached at peak_torque_rpm
 var peak_torque_rpm := 4500.0
-
-# One profile per engine_type, in the same order as the @export_enum below.
-# firing: crank angles over the 720° cycle — even spacing sounds smooth, uneven
-# burbles. Performance values (redline/torque/rpm) are balanced starting points.
-const ENGINE_PRESETS: Array[Dictionary] = [
-	{  # i4 — even 180°; preserves the car's original feel
-		"cylinders": 4, "firing": [0.0, 180.0, 360.0, 540.0],
-		"redline_rpm": 8000.0, "peak_torque": 211.6, "peak_torque_rpm": 4500.0,
-	},
-	{  # i5 — even 144°; off-beat warble
-		"cylinders": 5, "firing": [0.0, 144.0, 288.0, 432.0, 576.0],
-		"redline_rpm": 7500.0, "peak_torque": 264.5, "peak_torque_rpm": 4200.0,
-	},
-	{  # i6 — even 120°; silky smooth
-		"cylinders": 6, "firing": [0.0, 120.0, 240.0, 360.0, 480.0, 600.0],
-		"redline_rpm": 7500.0, "peak_torque": 317.4, "peak_torque_rpm": 4800.0,
-	},
-	{  # v6 — uneven (90° bank, shared crankpins); lumpy burble
-		"cylinders": 6, "firing": [0.0, 90.0, 240.0, 330.0, 480.0, 570.0],
-		"redline_rpm": 7000.0, "peak_torque": 299.8, "peak_torque_rpm": 4000.0,
-	},
-	{  # v8 — uneven (cross-plane); muscle-car lope
-		"cylinders": 8, "firing": [0.0, 80.0, 180.0, 260.0, 360.0, 440.0, 540.0, 620.0],
-		"redline_rpm": 7000.0, "peak_torque": 440.8, "peak_torque_rpm": 4200.0,
-	},
-	{  # v10 — even 72°; high-revving scream
-		"cylinders": 10,
-		"firing": [0.0, 72.0, 144.0, 216.0, 288.0, 360.0, 432.0, 504.0, 576.0, 648.0],
-		"redline_rpm": 8500.0, "peak_torque": 396.8, "peak_torque_rpm": 6000.0,
-	},
-	{  # v12 — even 60°; smooth and high
-		"cylinders": 12,
-		"firing": [0.0, 60.0, 120.0, 180.0, 240.0, 300.0,
-			360.0, 420.0, 480.0, 540.0, 600.0, 660.0],
-		"redline_rpm": 8000.0, "peak_torque": 529.0, "peak_torque_rpm": 5500.0,
-	},
-]
 
 @export_group("Car")
 # Units are real-world SI: mass in kg, torques in N·m, inertias in kg·m². The
@@ -157,14 +121,6 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export_range(0.0, 1.0) var tuning_aero_authority := 0.5
 
 @export_group("Engine & Transmission")
-## Engine type. Selecting a preset drives the whole engine character — cylinder
-## count and firing angles (the sound) plus redline, peak torque and the rpm it
-## peaks at (the performance). Even-firing presets (i4/i5/i6/v10/v12) sound
-## smooth; the uneven v6/v8 burble. The values it sets live in ENGINE_PRESETS.
-@export_enum("i4", "i5", "i6", "v6", "v8", "v10", "v12") var engine_type := 0:
-	set(value):
-		engine_type = value
-		_apply_engine_preset()
 ## Hidden global de-rate applied to EVERY car's drive torque. Multiplies the
 ## crank torque the engine actually makes (engine.gd), so it scales acceleration
 ## for all cars at once WITHOUT touching the published peak_torque — the stats
@@ -965,25 +921,6 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
 @export_range(0.0, 4.0) var texture_lod_bias := 0.75
-
-
-func _init() -> void:
-	# Populate the engine-character fields before the resource loader assigns
-	# engine_type (which re-applies via its setter). Keeps GameConfig.new() sane.
-	_apply_engine_preset()
-
-
-# Copy the selected engine_type's profile into the character fields.
-func _apply_engine_preset() -> void:
-	var preset: Dictionary = ENGINE_PRESETS[clampi(engine_type, 0, ENGINE_PRESETS.size() - 1)]
-	engine_cylinders = preset["cylinders"]
-	var firing: Array[float] = []
-	for angle in preset["firing"]:
-		firing.append(angle)
-	engine_firing_angles = firing
-	redline_rpm = preset["redline_rpm"]
-	peak_torque = preset["peak_torque"]
-	peak_torque_rpm = preset["peak_torque_rpm"]
 
 
 # Critically damped for the spring rate. Godot scales each wheel's

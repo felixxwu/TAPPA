@@ -74,8 +74,16 @@ the limiter). The no-stall idle clamp still holds the bottom. Defaults
 drag at the 4500-rpm peak and ≈42 N·m at 8000 rpm.
 
 `peak_torque`, `peak_torque_rpm`, `redline_rpm`, `cylinders`, and
-`firing_angles` all come from the selected **engine preset** (`engine_type`) —
-see [configuration.md](configuration.md). Presets: i4, i5, i6, v6, v8, v10, v12.
+`firing_angles` all come from the fielded car's referenced **engine** in
+`EngineLibrary` (`scripts/engine_library.gd`, `const ENGINES`) — see
+[configuration.md](configuration.md). Each `CarLibrary` entry carries an
+`"engine": "<engine_id>"` key; `car.gd`'s `apply_car()` resolves it
+(`EngineLibrary.by_id`) and writes the whole profile onto `GameConfig` via
+`EngineLibrary.apply()`. `peak_torque_rpm` is per-engine (not a fixed 4500 for
+every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its real
+~5500 redline still sits comfortably above that. Layout (`i3`/`i4`/`i5`/`i6`/
+`v6`/`v8`/`v10`/`v12`) fixes both the cylinder count and the firing table
+(`EngineLibrary.FIRING`) together.
 
 ## Transmission
 
@@ -99,25 +107,29 @@ see [configuration.md](configuration.md). Presets: i4, i5, i6, v6, v8, v10, v12.
   most spinning mass and rev slowest. Cars that omit it keep the `GameConfig`
   fallback.
 - **`gear_ratios` + `final_drive` are also per-car** (`CarLibrary`, applied by
-  `Car.apply_car()` after the engine preset), but **every car currently shares the
-  MX-5's box** — its real ND 6-speed ratios with the game-tuned `3.5` final drive.
-  Each car briefly ran its own *real* transmission (MX-5 manual, Mustang MT82, LFA
-  ASG, RS3 DSG, Aventador ISR, 911 PDK), but only the MX-5's made sense in-sim, so
-  the roster is modelled on the MX-5's gearing again; the field stays per-car so a
-  car can diverge later. See [drivetrain-and-tires.md](drivetrain-and-tires.md) for
-  why this box drives well and why the MX-5's `final_drive` is game-tuned (not its
-  real 2.866) — its ~150 hp can't pull the tall real ratio against the physics
-  engine's built-in rolling resistance. The `GameConfig` `gear_ratios`/`final_drive`
-  are only the baseline before a car is selected.
+  `Car.apply_car()` after the engine is resolved), and **each car now carries its
+  own real published transmission** — e.g. the Charger runs a 3-speed TorqueFlite
+  A727 (`2.45 / 1.45 / 1.00`), the 911 an 8-speed PDK, the Focus ST a Getrag M66
+  6-speed, the Acty its real HA4 5-speed. Only `final_drive` remains a
+  game-tuned value, kept deliberately HIGH (mostly ~6–7, but tuned per car
+  across a wider band — e.g. 4 on the torquey Charger up to 12 on the Focus ST)
+  so the
+  cars pull against Jolt's built-in rolling resistance rather than stalling
+  against a tall real final drive; the internal gear ratios themselves are real.
+  See [drivetrain-and-tires.md](drivetrain-and-tires.md) for why the baseline
+  rolling resistance forces `final_drive` this high. The `GameConfig`
+  `gear_ratios`/`final_drive` are only the baseline before a car is selected.
 
 ## Tests
 
 `tests/headless/test_engine.gd` (idle, redline, limiter bounce, shift, stall
-resistance), `tests/headless/test_engine_type.gd` (all 7 presets load).
+resistance), `tests/headless/test_engine_library.gd` (every catalog entry
+loads and `apply()` writes the expected fields), `tests/headless/test_engine_logic.gd`.
 
 ## Related config
 
-`engine_type`, `idle_rpm`, `rev_limiter_band`, `engine_friction_base`,
+`idle_rpm`, `rev_limiter_band`, `engine_friction_base`,
 `engine_friction_slope`, `gear_ratios`, `reverse_ratio`, `final_drive`,
 `clutch_max_torque`, `clutch_engage_speed`, `auto_gearbox`,
-`upshift_redline_fraction`.
+`upshift_redline_fraction`. Engine catalog: `scripts/engine_library.gd`
+(`EngineLibrary`).

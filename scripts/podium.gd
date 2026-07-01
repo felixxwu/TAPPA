@@ -426,6 +426,9 @@ func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = 
 	# the whole script). Runtime behaviour is unchanged (dynamic dispatch).
 	var car: Variant = load(CAR_SCENE_PATH).instantiate()
 	(parent if parent != null else self).add_child(car)
+	# Isolated config so this display car's reshape can't clobber the player car's
+	# engine/gearbox in the shared global Config.data (see car.gd `config`).
+	car.use_isolated_config()
 	car.apply_car(library_index)
 	_dup_meshes(car)
 	var xform := Transform3D.IDENTITY

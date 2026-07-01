@@ -98,30 +98,31 @@ handbrake locks the driven axle.
 
 Gearing (`gear_ratios` + `final_drive`) is a **per-car** field in `CarLibrary`,
 applied by `Car.apply_car()` (see
-[engine-and-transmission.md](engine-and-transmission.md)), but **every car
-currently shares the MX-5's box** — its real ND 6-speed ratios (`5.087 / 2.991 /
-2.035 / 1.594 / 1.286 / 1.000`) with the game-tuned `3.5` final drive. We briefly
-gave each car its own *real published* transmission, but only the MX-5's (already
-game-tuned to drive well, below) actually made sense in-sim; the real ratios on
-the other cars felt wrong, so the whole roster is modelled on the MX-5's gearing
-again. The field stays per-car so a car can be given its own box later. (This had
-itself replaced a single shared gearbox, `[6, 4, 2.9, 2.4, 2.0] × 3.0`, that was
-far too short — tractive force = `peak_torque × gear × final_drive ÷ wheel_radius`,
-so its short ratios over-multiplied the light cars' torque into violent low/mid-gear
-acceleration; the MX-5 box spaces the gears out and calms that.)
+[engine-and-transmission.md](engine-and-transmission.md)), and **each car now
+carries its own real published transmission** — e.g. the MX-5's real ND 6-speed
+ratios (`5.087 / 2.991 / 2.035 / 1.594 / 1.286 / 1.000`), the Charger's 3-speed
+TorqueFlite (`2.45 / 1.45 / 1.00`), the 911's 8-speed PDK, the Focus ST's Getrag
+M66 6-speed. Only `final_drive` is a game-tuned value (see below); the internal
+ratios are real and differ per car, so gearing character now varies across the
+roster instead of every car sharing one box. (An earlier iteration had every
+car share the MX-5's box outright, and before that a single fictional shared
+gearbox, `[6, 4, 2.9, 2.4, 2.0] × 3.0`, that was far too short — tractive force
+= `peak_torque × gear × final_drive ÷ wheel_radius`, so its short ratios
+over-multiplied the light cars' torque into violent low/mid-gear acceleration.)
 
 **Important physics caveat:** Jolt's `VehicleBody3D` applies a built-in rolling
 resistance of roughly **0.2 g, proportional to mass**, that our model does *not*
 control (it persists even coasting in neutral with the wheels rolling freely, and
 is independent of `drag_coefficient`). This — not aero drag — is what actually
-caps the cars' top speeds, and it is why the gearing has to stay fairly short
-(huge wheel torque is needed to overcome it). The powerful cars have the torque
-to push through it on the MX-5's box and reach high gears the MX-5 can't; the
-**MX-5 itself** — with only ~150 hp — can't pull its *real* tall final drive
-(2.866) against the resistance and stalls/crawls. So the MX-5's `final_drive` is
-game-tuned to **3.5**: the shortest drive that still pulls cleanly. Its real ratios
-are kept; gears 5–6 sit above its ~95 km/h power-limited top and go unused (the
-more powerful cars do use them). This is the box the whole roster now shares.
+caps the cars' top speeds, and it is why every car's `final_drive` is kept deliberately HIGH (tuned per car,
+mostly ~6–7 but ranging from 4 on the torquey Charger to 12 on the Focus ST, not
+the real ~3–4) — a car needs enough wheel torque multiplication to overcome it.
+The **MX-5**, with only ~150 hp, can't pull its *real* tall final drive (2.866)
+against the resistance and stalls/crawls, so its `final_drive` is game-tuned to
+**7**: short enough to pull cleanly. Its real gear ratios are kept as-is; gears
+5–6 sit above its ~95 km/h power-limited top and go unused. Every other car
+follows the same pattern — real internal gear ratios, but a final drive raised
+above the real value to keep it pulling against the baseline resistance.
 Fully neutralising the Jolt resistance (to make real drag + real gearing yield
 realistic top speeds game-wide) was considered and deferred as a larger, riskier
 change.
@@ -142,7 +143,7 @@ aerodynamic value here would double-count the resistance and leave every car
 `tests/headless/test_drivetrain.gd` (wheelspin, brake lockup, handbrake,
 parking brake), `tests/headless/test_drive_mode.gd` (per-mode torque). Per-car
 gearing is covered by `tests/headless/test_car_library.gd` (descending positive
-ratios; every car shares the MX-5's box; overlaid onto the live config by
+ratios, each car's own real gear_ratios; overlaid onto the live config by
 `apply_car`).
 
 ## Related config
