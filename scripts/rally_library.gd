@@ -128,7 +128,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"pw_min": 0.28, "pw_max": 0.40},  # the top non-showdown p/w band
 		"events": [
 			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.15},
-			{"seed": 5002, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15},
+			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15},
 			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1},
 		],
 	},
