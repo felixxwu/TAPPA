@@ -189,7 +189,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
-		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 2,
+		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 1,
 		"mass": 1575.0, "peak_torque": 500.0, "redline": 7000.0, "engine_inertia": 0.22,  # turbo i5, dual-mass flywheel
 		# Shares the MX-5's gearing (see the header note): the real DSG ratios didn't
 		# make sense in-sim, so this car runs the MX-5's box for now.
@@ -203,7 +203,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
-		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
+		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 1,
 		"mass": 1720.0, "peak_torque": 569.0, "redline": 7500.0, "engine_inertia": 0.32,  # heavy 5.0 V8 muscle, slow-revving
 		# Shares the MX-5's gearing (see the header note).
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
