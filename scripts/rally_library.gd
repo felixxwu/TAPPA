@@ -74,7 +74,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.34, 0.5),
-		"restriction": {"pw_max": 0.25},  # gated below: a slightly higher p/w ceiling
+		"restriction": {"pw_min": 0.18, "pw_max": 0.25},  # gated below: a slightly higher p/w ceiling
 		"events": [
 			{"seed": 2001, "turn_count": 14, "forestiness": 0.3, "surface_mix": 1.0, "straightness": 0.55},
 			{"seed": 2002, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.5},
@@ -82,7 +82,7 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "rwd_masters", "name": "RWD Masters", "difficulty": 2, "showdown": false,
+		"id": "rwd_masters", "name": "RWD Masters", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.52, 0.64),
 		# p/w band (primary gate) + an RWD theme: a mid-power rear-driven field.
 		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 0.22, "pw_max": 0.30},
