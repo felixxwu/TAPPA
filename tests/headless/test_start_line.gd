@@ -32,6 +32,15 @@ class StubPlayer:
 	var drivetrain := StubDrivetrain.new()
 
 
+# A flat terrain stub at a raised elevation, so the spawn-clearance seating is testable
+# (the real _make passes null terrain, which skips the height lookup).
+class StubTerrain:
+	extends Node
+	const GROUND_Y := 3.0
+	func height_at(_x: float, _z: float) -> float:
+		return GROUND_Y
+
+
 const TEST_PATH := "user://test_start_line_profile.json"
 
 var _player: StubPlayer
@@ -187,6 +196,27 @@ func test_player_is_staged_behind_the_line_to_roll_up() -> void:
 		"player staged a full gap behind the start line")
 
 
+func test_start_line_cars_spawn_a_clearance_above_the_road() -> void:
+	# The player and both queue cars are seated start_spawn_clearance above the road at
+	# spawn so they settle onto their wheels instead of clipping into the ground. Uses a
+	# raised flat terrain stub so the clearance is observable.
+	var terrain := StubTerrain.new()
+	add_child_autofree(terrain)
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, terrain, _stage, _rally(), 0, [], _cam_mgr, _hud)
+	var seated := StubTerrain.GROUND_Y + Config.data.start_spawn_clearance
+	assert_almost_eq(sl._start_xform.origin.y, seated, 0.001,
+		"the start pose (countdown / reset target) sits a clearance above the road")
+	assert_almost_eq(_player.global_position.y, seated, 0.001,
+		"the staged player is seated a clearance above the ground")
+	assert_almost_eq(sl._leader.global_position.y, seated, 0.01,
+		"the leader ahead spawns a clearance above the ground")
+	assert_almost_eq(sl._trailer.global_position.y, seated, 0.01,
+		"the trailer behind spawns a clearance above the ground")
+
+
 func test_player_rolls_up_on_a_stagger_after_the_leader() -> void:
 	var sl := _make()
 	sl.launch()
@@ -205,12 +235,20 @@ func test_trailer_rolls_up_and_brakes_to_a_stop() -> void:
 	# Once its stagger elapses it rolls up toward its slot a gap behind the line.
 	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
 	assert_eq(sl._trailer.ai_throttle, 1.0, "trailer rolls up once its stagger elapses")
-	# Sitting it on its target makes it brake to a stop there, like the player at the
-	# line, instead of coasting through and drifting.
+	# Reaching its slot while still rolling fast makes it brake (throttle -1.0), like
+	# the player at the line, instead of coasting through and drifting.
 	sl._trailer.global_position = sl._trailer_target
+	sl._trailer.linear_velocity = Vector3(0, 0, -5)  # still moving well above the stop threshold
 	sl._process(0.05)
-	assert_eq(sl._trailer.ai_throttle, -1.0, "trailer brakes once it reaches its slot")
+	assert_eq(sl._trailer.ai_throttle, -1.0, "trailer brakes while still rolling into its slot")
 	assert_true(sl._trailer.ai_handbrake, "trailer holds the brake to settle on its slot")
+	# Once nearly stopped it drops to zero throttle (handbrake still on) rather than
+	# holding the brake/gas axis — the auto box mustn't grab reverse and rev against
+	# the handbrake as it settles.
+	sl._trailer.linear_velocity = Vector3.ZERO
+	sl._process(0.05)
+	assert_eq(sl._trailer.ai_throttle, 0.0, "trailer cuts throttle once stopped (no reverse-gas rev)")
+	assert_true(sl._trailer.ai_handbrake, "trailer holds on the handbrake once settled")
 
 
 func test_fade_waits_for_the_player_to_come_to_a_stop() -> void:

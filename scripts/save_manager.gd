@@ -84,6 +84,9 @@ func load_or_new() -> void:
 		save_disabled = true
 		return
 	profile = _sanitise(migrated)
+	# Recover a wrecked-out player: a free repair kit when every owned car is
+	# wrecked and none is held (also checked on garage view). See features/damage.md.
+	ensure_repair_safety_net()
 
 
 # Read + JSON-parse a profile file. Returns {} on any failure (missing,
@@ -212,17 +215,15 @@ const _MIGRATIONS := {}
 
 # --- Owned-car mutators ------------------------------------------------------
 
-# Grant a new owned-car instance referencing a CarLibrary model id. `immortal`
-# is true only for the chosen starter (which can never be wrecked). Returns the
+# Grant a new owned-car instance referencing a CarLibrary model id. Returns the
 # new OwnedCar dict.
-func grant_car(model_id: String, immortal := false) -> Dictionary:
+func grant_car(model_id: String) -> Dictionary:
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", 1000.0) if not entry.is_empty() else 1000.0
 	var car := {
 		"instance_id": int(profile["next_instance_id"]),
 		"model_id": model_id,
 		"hp": max_hp,
-		"immortal": immortal,
 		"installed_upgrades": [],
 		"tuning": {},
 	}
@@ -242,17 +243,12 @@ func get_car(instance_id: int) -> Dictionary:
 	return {}
 
 
-# Apply impact damage. Clamps HP at 0; reaching 0 wrecks the car (unless it is
-# the immortal starter, which floors at 1 HP and is never removed).
+# Apply impact damage. Clamps HP at 0; reaching 0 wrecks the car.
 func apply_damage(instance_id: int, amount: float) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return
 	var hp := float(car["hp"]) - amount
-	if car.get("immortal", false):
-		car["hp"] = maxf(1.0, hp)
-		save()
-		return
 	if hp <= 0.0:
 		wreck_car(instance_id)
 		return
@@ -262,30 +258,49 @@ func apply_damage(instance_id: int, amount: float) -> void:
 
 # Wreck a car: leave it OWNED but at 0 HP — too damaged to enter a rally until a
 # Repair Kit restores it (use_repair_kit). The car is NOT deleted; its installed
-# upgrades stay fitted (parts are consumed on fit, so they're never returned). The
-# immortal starter is never wrecked (no-op).
+# upgrades stay fitted (parts are consumed on fit, so they're never returned).
 func wreck_car(instance_id: int) -> void:
 	var car := get_car(instance_id)
-	if car.is_empty() or car.get("immortal", false):
+	if car.is_empty():
 		return
 	car["hp"] = 0.0
 	save()
 
 
-# Whether an owned car is wrecked: a non-immortal car sitting at 0 HP. A wrecked
-# car stays in the garage but can't be fielded until a Repair Kit restores it.
+# Whether an owned car is wrecked: a car sitting at 0 HP. A wrecked car stays in
+# the garage but can't be fielded until a Repair Kit restores it.
 func car_is_wrecked(car: Dictionary) -> bool:
-	return not car.is_empty() and not bool(car.get("immortal", false)) and float(car.get("hp", 0.0)) <= 0.0
+	return not car.is_empty() and float(car.get("hp", 0.0)) <= 0.0
+
+
+# Anti-soft-lock safety net: if the player owns cars, EVERY owned car is wrecked,
+# and no Repair Kit is held, grant one free kit so a wrecked-out player can always
+# bring a car back into service. Returns true if a kit was granted. Call this on
+# save load and whenever the garage is shown.
+func ensure_repair_safety_net() -> bool:
+	var cars: Array = profile.get("cars", [])
+	if cars.is_empty():
+		return false
+	for car in cars:
+		if not car_is_wrecked(car):
+			return false
+	var inv: Dictionary = profile.get("inventory", {})
+	if int(inv.get(UpgradeLibrary.REPAIR_KIT_ID, 0)) > 0:
+		return false
+	add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
+	return true
 
 
 # Permanently scrap an owned car the player chose to remove (e.g. to make room
 # under max_owned_cars). A deliberate player action: the instance is erased and its
 # installed upgrades are NOT returned — upgrades are consumed for good when applied
-# (see install_upgrade), so they're lost with the car. The immortal starter can
-# never be scrapped. Returns true if a car was actually removed.
+# (see install_upgrade), so they're lost with the car. The player's LAST owned car
+# can never be scrapped — always keep at least one car so the repair-kit safety
+# net (ensure_repair_safety_net) always has something to bring back. Returns true
+# if a car was actually removed.
 func scrap_car(instance_id: int) -> bool:
 	var car := get_car(instance_id)
-	if car.is_empty() or car.get("immortal", false):
+	if car.is_empty() or profile.get("cars", []).size() <= 1:
 		return false
 	profile["cars"].erase(car)
 	save()

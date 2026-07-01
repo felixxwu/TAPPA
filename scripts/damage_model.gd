@@ -16,13 +16,14 @@ extends RefCounted
 # still depletes and degrades and emits `wrecked`, but never touches the save —
 # the car self-heals and respawns so play continues (car.gd handles that).
 #
-# The immortal starter (OwnedCar.immortal) is the anti-soft-lock floor: it never
-# loses HP, shows no effects and is never wrecked.
+# There is no in-run anti-soft-lock floor: every car can be wrecked. A wrecked-out
+# player is recovered between runs by Save.ensure_repair_safety_net (a free repair
+# kit when all owned cars are wrecked and none is held).
 
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
 # (todo/audio.md). Emitted only for hits that actually cost HP.
 signal damaged(hp_loss: float, contact_point: Vector3)
-# HP reached 0 on a non-immortal car: the run is a DNF. A fielded car has already
+# HP reached 0: the run is a DNF. A fielded car has already
 # had Save.wreck_car called; listeners (the rally flow) react to the signal.
 signal wrecked()
 
@@ -37,7 +38,6 @@ const MPS_TO_KMH := 3.6
 
 var max_hp := 1000.0
 var hp := 1000.0
-var immortal := false
 # OwnedCar binding; -1 = unbound (free-roam / dev play — never touches Save).
 var instance_id := -1
 # +1 / -1 alignment-pull direction, re-rolled each run so it can't be pre-learnt
@@ -47,23 +47,28 @@ var align_bias_sign := 1.0
 # Ticked down by car.gd each physics frame (tick_cooldown). Groups one crash —
 # which contacts the chassis every tick while pinned — into a single hit.
 var _impact_cooldown := 0.0
+# Seconds of soft-hit immunity remaining after a bush/spectator graze. Tracked
+# separately from _impact_cooldown so a bush brush and a tree crash don't mask each
+# other. Ticked down by tick_cooldown alongside the impact window.
+var _soft_cooldown := 0.0
 
 
 # Field the model for a run: bind it to an OwnedCar (or -1 for free-roam), set the
 # HP pool, and re-roll the alignment-pull direction. Called by car.gd when a car
 # is configured (apply_car) and by the future fielding layer.
-func field(p_max_hp: float, p_hp: float, p_immortal: bool, p_instance_id := -1) -> void:
+func field(p_max_hp: float, p_hp: float, p_instance_id := -1) -> void:
 	max_hp = maxf(1.0, p_max_hp)
 	hp = clampf(p_hp, 0.0, max_hp)
-	immortal = p_immortal
 	instance_id = p_instance_id
 	_impact_cooldown = 0.0
+	_soft_cooldown = 0.0
 	reroll_bias()
 
 
-# Decay the post-hit impact cooldown. Called by car.gd each physics frame.
+# Decay the post-hit impact and soft-hit cooldowns. Called by car.gd each physics frame.
 func tick_cooldown(delta: float) -> void:
 	_impact_cooldown = maxf(0.0, _impact_cooldown - delta)
+	_soft_cooldown = maxf(0.0, _soft_cooldown - delta)
 
 
 # Re-roll the alignment-pull direction (±1). Random per run so a re-entry can pull
@@ -72,10 +77,10 @@ func reroll_bias() -> void:
 	align_bias_sign = 1.0 if randf() < 0.5 else -1.0
 
 
-# Damage fraction d ∈ [0,1]: 0 at full HP, 1 at 0 HP. Always 0 for the immortal
-# starter (it shows no effects). The handling/power effects scale off this.
+# Damage fraction d ∈ [0,1]: 0 at full HP, 1 at 0 HP. The handling/power effects
+# scale off this.
 func damage_fraction() -> float:
-	if immortal or max_hp <= 0.0:
+	if max_hp <= 0.0:
 		return 0.0
 	return clampf(1.0 - hp / max_hp, 0.0, 1.0)
 
@@ -109,10 +114,8 @@ static func hp_loss_for_speed(speed_mps: float, cfg: GameConfig) -> float:
 
 # Register an obstacle contact at the car's travel speed (m/s): convert it to HP
 # loss, apply it, and (when it actually costs HP) emit `damaged` for the HUD/audio
-# cue. Returns the HP lost. The immortal starter ignores impacts entirely.
+# cue. Returns the HP lost.
 func register_impact(speed_mps: float, contact_point: Vector3, cfg: GameConfig) -> float:
-	if immortal:
-		return 0.0
 	# Within the post-hit cooldown the crash is still "in progress" — ignore it so a
 	# car pinned against a tree (which contacts every tick) loses HP once, not per frame.
 	# RE-ARM the window on each continuing contact so a SUSTAINED crash (grinding along
@@ -134,24 +137,33 @@ func register_impact(speed_mps: float, contact_point: Vector3, cfg: GameConfig) 
 	return loss
 
 
-# Drain HP by `amount`, wrecking the car if it hits 0. The immortal starter floors
-# at 1 HP and is never wrecked.
+# Register a SOFT contact — a bush graze or a knocked spectator — as a FLAT HP loss
+# (not the speed square-law of register_impact): the drag/scuff of brushing something
+# soft, not a solid-obstacle crash. Guarded by a separate soft-hit cooldown so one
+# continuous contact (sitting in a bush, mowing a tight crowd) counts once, then
+# re-arms. Emits `damaged` for the HUD/audio cue and can wreck the car at 0 HP, just
+# like an impact. Returns the HP actually lost (0 if on cooldown or hp_loss <= 0).
+func register_soft_hit(hp_loss: float, contact_point: Vector3, cooldown_s: float) -> float:
+	if _soft_cooldown > 0.0 or hp_loss <= 0.0:
+		return 0.0
+	_soft_cooldown = maxf(0.0, cooldown_s)
+	apply_loss(hp_loss)
+	damaged.emit(hp_loss, contact_point)
+	return hp_loss
+
+
+# Drain HP by `amount`, wrecking the car if it hits 0.
 func apply_loss(amount: float) -> void:
-	if immortal:
-		hp = maxf(1.0, hp - amount)
-		return
 	hp = maxf(0.0, hp - amount)
 	if hp <= 0.0:
 		_wreck()
 
 
 # 0 HP: a fielded car is destroyed via Save (upgrades returned, then removed);
-# either way `wrecked` fires for the run/menu layer. Never wrecks the immortal.
+# either way `wrecked` fires for the run/menu layer.
 # `Save` is the autoload, reached by global name like Config is in Drivetrain; an
 # unbound model (instance_id < 0, free-roam/dev) never touches it.
 func _wreck() -> void:
-	if immortal:
-		return
 	if instance_id >= 0:
 		Save.wreck_car(instance_id)
 	wrecked.emit()

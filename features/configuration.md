@@ -108,7 +108,7 @@ See [stage.md](stage.md).
 | `impact_cooldown_s` | 0.7 | Post-hit window where impacts are ignored (groups a crash into one hit) |
 | `damage_power_loss_max` | 0.4 | Fraction of engine power lost at 0 HP |
 | `damage_steer_bias_max` | 0.08 | Max wheel-alignment steer pull (rad) at 0 HP |
-| `hud_hp_enabled` | true | Show the in-run HP gauge (hidden for the immortal starter) |
+| `hud_hp_enabled` | true | Show the in-run HP gauge |
 | `hud_low_hp_warn_frac` | 0.25 | HP fraction below which the gauge flashes a warning |
 
 Per-car `max_hp` is CarLibrary metadata, not a `GameConfig` field. See

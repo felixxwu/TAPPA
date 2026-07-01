@@ -18,9 +18,10 @@ per-car paint, camera fly-throughs *between* far stations) lives in
 
 ```
 exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pin) ─▶ rally detail ─Enter─▶ car park (pick eligible car) ─Start─▶ RallySession.start_rally ─▶ main.tscn (event 0) ─start line: briefing + presence ─launch─▶ countdown ─▶ RUN
-   main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ standings.tscn ─Continue─▶ next event
+   main.tscn ─StageManager.stage_completed─▶ report_event_result ─▶ standings.tscn (EVERY event pauses here) ─Continue─▶ next event
                                           └─ car.wrecked ─▶ WreckScreen (crash → orbit + menu) ─Return to HQ─▶ report_wreck (DNF)
-   final event / DNF ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
+   final event's standings.tscn ─Continue─▶ continue_to_next_event resolves ─rally_finished─▶ podium.tscn ─Continue─▶ HQ
+   (DNF / abandon) ─rally_finished─▶ podium.tscn or HQ
 ```
 
 ## Menu navigation (keyboard / gamepad)
@@ -42,9 +43,16 @@ space:
   seat the cursor after they're shown. This covers: the **title** (Start/Settings),
   the shared **`SettingsMenu`** (rows + bottom action button — used by both the HQ
   settings overlay and the pause menu), the **pause** menu (Resume/Settings/Quit),
-  the **standings** Continue, the **podium** Next, and the tuning-lift **Tune**
-  (sliders — left/right nudges the focused one) and **Upgrades** (install / repair)
-  pages.
+  the **standings** interstitial's single action button — `FOCUS_ALL`, re-grabbed via
+  `UITheme.focus_grab` both when the scene first opens and again every time
+  `_build_ui()` rebuilds for a page switch (event page ↔ combined page), so the
+  cursor never drops when the button text/target changes — the **podium** Next, and
+  the tuning-lift **Tune** (sliders — left/right nudges the focused one) and
+  **Upgrades** (install / repair) pages. On the standings interstitial specifically,
+  `ui_cancel`/`menu_back` (`_unhandled_input`) steps **back** from the combined page
+  to the event page — but only when there's an event page to return to (2+ events
+  completed); on the first event (combined-only) and while showing the event page
+  itself, back does nothing (there's nowhere to go).
 - **Diegetic 3D HQ stations** can't be a focus graph — "left/right" means *cycle the
   3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
@@ -80,7 +88,7 @@ track generation). A first-time player (no `starter_picked`) is **not** auto-gra
 a car: pressing **Start** on the title routes them into the car park's
 **starter picker** (`_enter_starter_pick`, `_carpark_starter_mode`) showing the three
 authored-body cars (MX-5, Focus, Twingo) as preview cars from `CarLibrary`; choosing one
-(`_confirm_starter`) grants it **immortal** (the anti-soft-lock floor), records
+(`_confirm_starter`) grants it as a normal first car, records
 `starter_picked` / `starter_model_id` / the selection, and enters the garage. Back
 returns to the title. Returning players skip the picker and Start goes straight to
 the garage. The picker reuses the car park's keyboard/gamepad nav (`_cars_input`:
@@ -211,6 +219,9 @@ itself** and doesn't need to scroll. The two pages:
 - **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from inventory via
   `Save.install_upgrade` (fitting **fully consumes** the part, confirmed via a dialog
   first since it can't be undone) plus the **Repair Kit** action `Save.use_repair_kit`.
+  The repair row also shows a green note **"All your cars were wrecked — a free Repair
+  Kit was provided."** on the refresh where `Save.ensure_repair_safety_net` (called from
+  `_refresh_lift_ui`) just granted a free kit (all owned cars wrecked + none held).
 
 `_refresh_lift_ui` toggles which face (hub vs. a menu page) is shown from `_lift_page`.
 See [tuning.md](tuning.md) for the underlying config pipeline.
@@ -298,7 +309,7 @@ when the garage is full, so on the **next HQ entry** `_build_hq` checks
 title. It parks the **whole collection** (the just-won car included) with the same
 `_build_lineup` + focus machinery as the car park, shows a `GARAGE FULL — (n / cap)`
 banner, and a **Scrap this car** action removes the focused instance via
-`Save.scrap_car` (returns its upgrades to inventory, refuses the immortal starter —
+`Save.scrap_car` (returns its upgrades to inventory, refuses the player's last car —
 its scrap button is disabled with a note). Scrapping re-evaluates: still over →
 re-prompt; back at the cap → fly to the title. There is no Back — the player can't
 leave until the garage is under the cap.
@@ -366,11 +377,19 @@ only when something was won.
    over it.
 2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
    position, name + car, time / `WRECKED`, the player's row tinted + marked.
-3. **CAR_REVEAL** (only if `car_reward != ""`) — a **slot-machine** spin through the
-   car roster that decelerates and **locks onto the car won**, then that car turns
-   on a **showroom turntable** with its name + a `(NEW)` tag when first owned.
-4. **UPGRADE_REVEAL** (only if an upgrade was won) — the same slot-machine spin for
-   the **single per-rally upgrade**, landing on its name.
+3. **CAR_REVEAL** (only if `car_reward != ""`) — the won car is spawned onto the
+   showroom turntable and turns there, with a **single-line** card underneath:
+   `"<car> (NEW) — delivered to your garage"` (the `(NEW)` tag only when first
+   owned). The big slot label is hidden here so the name isn't shown twice and the
+   card stays one line (no slot-machine spin for the car — that's the upgrade reveal).
+4. **UPGRADE_REVEAL** (one stage **per won upgrade** — a rally grants
+   `cfg.rally_upgrade_reward_count`, default 2) — the same slot-machine spin for
+   each per-rally upgrade, landing on its name. The **reward car stays on the
+   turntable** (and keeps spinning) through these reveals rather than despawning.
+
+During the two reveals the overlay's content stack drops to the **bottom of the
+screen** (`_middle.alignment = ALIGNMENT_END`) so the slot card clears the
+camera's view of the revealed car; the podium + leaderboard stay centred.
 
 The **Next button is hidden during a slot spin** and only reappears once it locks
 on (`_reveal_done`). The final Next returns to HQ, setting
@@ -378,6 +397,19 @@ on (`_reveal_done`). The final Next returns to HQ, setting
 drop height / settle time / turntable speed are `GameConfig` tunables
 (`podium_*`). Headless runs build synchronously and resolve the spins instantly so
 tests can step the stages.
+
+**Environment & scenery.** The floor is **grass with two feathered tarmac pads**
+(one under the podium, one under the showroom) — built as a subdivided mesh whose
+per-vertex `COLOR.a`/`UV2.x` drive `shaders/ps1_models.gdshader`, the **same
+grass↔tarmac crossfade the generated road uses**, so each pad feathers softly into
+the grass. Its triangles are **wound front-face-up** — that shader culls back
+faces, so a downward-wound floor draws nothing when viewed from above. Both focal areas are dressed with **trees, bushes and a standing
+crowd** (`_build_scenery`): the same low-poly `low_poly_tree.glb` /
+`groundcover_opaque.glb` / `spectator.glb` models the world scatters, placed as
+plain decorative `MultiMesh`es (seeded, no collision, no steering AI — the
+spectators just face the podium / showroom). Scenery is **skipped under headless**
+(pure dressing; keeps the test budget). Counts / ring radii / pad size + feather
+are `podium_*` `GameConfig` tunables.
 
 `last_result` carries `rally_name`, `standings` (each entry with `car_id`),
 `upgrades` (the one id won, `[]` on a DNF), `car_reward`, `car_reward_is_new`, and
@@ -390,7 +422,33 @@ N/3, restriction, fielded car + HP bar) and the **pre-launch presence** cars —
 built inside the run scene before the countdown; the player launches it into the
 `StageManager` countdown. See [start-line.md](start-line.md). The in-run **Pause**
 menu is covered above (`pause_menu.gd`); the between-event **standings**
-(`standings.tscn`) interstitial remains the open part of this location.
+(`standings.tscn`) interstitial is covered next.
+
+## Standings interstitial (`standings.gd`)
+
+Shown after **every** event (`RallySession.report_event_result` always enters
+`Phase.STANDINGS`), not just the ones before a next event. For any event after the
+first it is **two pages**, both built by the same `_standings_row` renderer (the
+row's `combined_ms` field carries the event-only time on page 1, the cumulative time
+on page 2):
+
+1. **Event page** ("EVENT n RESULT") — that one event's finishing times, ranked via
+   `RallySession.current_event_standings()`. A rival who DNF'd just that event sinks
+   to the bottom of this page (they may still be alive overall).
+2. **Combined page** ("STANDINGS — after event n of 3") — the cumulative leaderboard
+   via `RallySession.current_standings()`.
+
+The **first** event skips the event page and opens straight on the combined page (a
+single event's time already equals its combined time, so there's nothing extra to
+show). The **final** event shows only the event page, with its button reading
+**"Continue >"**; pressing it calls `continue_to_next_event()`, which resolves the
+rally, and the scene (connected to `RallySession.rally_finished`) then changes to
+`podium.tscn` itself — the combined view for the finished rally lives on the podium's
+LEADERBOARD stage instead of a second standings page. On a middling event the event
+page's button reads **"See overall standings >"** and advances to the combined page
+in place (`_showing_event_page = false; _build_ui()`); the combined page's button
+reads **"Continue to next event >"** and calls `continue_to_next_event()` to load the
+next event.
 
 ## Deferred (rest of the diegetic 3D build)
 
@@ -419,8 +477,10 @@ wraps; a **wrecked car is gated in the car park** (Start disabled, then a Repair
 restores it to full health and unlocks Start); **Back** steps car park → table →
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
-the cumulative leaderboard; the podium renders the finish summary **and the reward
-reveal + standings**; and the run scene fields the bound session car. The settings
+both the event-only and cumulative leaderboards across its two pages (and the
+final event's interstitial hands off to the podium on `rally_finished`); the podium
+renders the finish summary **and the reward reveal + standings**; and the run scene
+fields the bound session car. The settings
 test also checks the shared `SettingsMenu` exposes a **camera-angle row per mode** and
 **persists the chosen angle**. The pure `RallyLibrary.build_standings` ranking and the
 enriched `RallySession` result are covered in `test_rally_library.gd` /

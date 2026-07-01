@@ -8,7 +8,7 @@ extends "res://tests/headless/sim_test.gd"
 # `_scene`, `_car`, `_wait_physics()` and the settle machinery come from
 # sim_test.gd — before_each restores a cached settled car instead of re-dropping.
 
-const ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "reset_car"]
+const ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "reset_car", "handbrake"]
 
 
 func before_each() -> void:
@@ -31,6 +31,25 @@ func test_car_settles_on_ground() -> void:
 	assert_between(_car.global_position.y, 0.1, 1.5,
 		"car rides on the ground at suspension height, not sunk/launched")
 	assert_lt(_car.linear_velocity.length(), 0.3, "car at rest after settling on flat ground")
+
+
+func test_handbrake_locks_position_when_stopped() -> void:
+	# A stopped car holding the handbrake freezes in place so it can't be shoved or
+	# creep — a start-line queue car settling on its slot must not drift into the back
+	# of the car ahead. Releasing the handbrake unfreezes it.
+	assert_lt(_car.linear_velocity.length(), 0.5, "precondition: the car is at rest")
+	Input.action_press("handbrake")
+	await _wait_physics(2)
+	assert_true(_car.freeze, "a stopped car holding the handbrake is frozen (position locked)")
+	var pinned := _car.global_position
+	# A hard shove from behind can't move a frozen body.
+	_car.apply_central_impulse(-_car.global_transform.basis.z * 50000.0)
+	await _wait_physics(20)
+	assert_lt((_car.global_position - pinned).length(), 0.05,
+		"the locked car can't be shoved out of place")
+	Input.action_release("handbrake")
+	await _wait_physics(2)
+	assert_false(_car.freeze, "releasing the handbrake unlocks the car")
 
 
 func test_accelerate_moves_car_forward() -> void:
@@ -458,7 +477,7 @@ func test_car_has_damage_model_and_contact_monitor() -> void:
 func test_power_scale_tracks_damage() -> void:
 	var cfg: GameConfig = Config.data
 	# Healthy: full power passes through to the drivetrain.
-	_car.damage.field(1000.0, 1000.0, false)
+	_car.damage.field(1000.0, 1000.0)
 	await _wait_physics(2)
 	assert_almost_eq(_car.drivetrain.power_scale, 1.0, 0.001, "full HP keeps full power")
 	# Half HP: the driven torque is scaled by the configured loss curve.
@@ -474,7 +493,7 @@ func test_power_scale_tracks_damage() -> void:
 # hardest (head-on) hits and they dealt no damage. car.gd keys damage off the
 # pre-solve _approach_speed cached in _physics_process instead. See features/damage.md.
 func test_head_on_collision_costs_hp() -> void:
-	_car.damage.field(1000.0, 1000.0, false)
+	_car.damage.field(1000.0, 1000.0)
 	var impacts: Array = []
 	_car.damage.damaged.connect(func(loss, _pt): impacts.append(loss))
 

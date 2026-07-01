@@ -279,6 +279,17 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m,
 		false, true)
 
+	# Bushes are pass-through (no collider), so a separate proximity node makes
+	# brushing one cost HP + apply a drag torque. Hit radius is slightly under the
+	# bush's visual width (bush_hit_radius_frac) so clipping the edge is forgiven.
+	var bush_interaction := BushField.new()
+	bush_interaction.name = "BushInteraction"
+	add_child(bush_interaction)
+	bush_interaction.setup(bushes, $Car,
+		bush_radius * cfg.bush_hit_radius_frac,
+		cfg.bush_hp_loss, cfg.bush_drag_torque,
+		cfg.bush_min_speed_kmh / DamageModel.MPS_TO_KMH, cfg.soft_hit_cooldown_s)
+
 	if loading != null:
 		loading.set_step("Placing signs…")
 	await _yield_frame()

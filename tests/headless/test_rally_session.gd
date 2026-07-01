@@ -58,18 +58,18 @@ func _total_items() -> int:
 # Start a rally skipping track generation; return the owned car dict.
 # Caller may overwrite RallySession._opponent_field for determinism.
 func _start(rally_id: String, model := "mx5") -> Dictionary:
-	var owned: Dictionary = _save.grant_car(model, false)
+	var owned: Dictionary = _save.grant_car(model)
 	RallySession.start_rally(RallyLibrary.by_id(rally_id), owned, true)
 	return owned
 
 
-# Drive a full set of events, resuming through the between-event standings pause
-# (the rally now PAUSES on a leaderboard after each non-final event).
+# Drive a full set of events. The rally now PAUSES on a leaderboard after EVERY
+# event (including the last — an event-only page that then resolves to the podium),
+# so we continue past each one, the final continue triggering resolution.
 func _report_events(times: Array) -> void:
 	for i in times.size():
 		RallySession.report_event_result(int(times[i]))
-		if i < times.size() - 1:
-			RallySession.continue_to_next_event()
+		RallySession.continue_to_next_event()
 
 
 # Capture the next rally_finished result (one-shot, so nothing leaks across tests).
@@ -154,7 +154,9 @@ func test_happy_path_accumulates_and_places() -> void:
 	RallySession.report_event_result(20000)
 	assert_eq(RallySession.event_times_ms(), [20000, 20000] as Array[int], "times accumulate per event")
 	RallySession.continue_to_next_event()
-	RallySession.report_event_result(20000)  # combined 60000 -> resolve
+	RallySession.report_event_result(20000)  # 3rd event -> pauses on the event-only standings
+	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS, "the final event pauses on its event standings")
+	RallySession.continue_to_next_event()    # -> resolve
 	var r: Dictionary = finish[0]
 	assert_not_null(r, "rally_finished emitted")
 	assert_eq(r["combined_ms"], 60000, "combined = sum of event times")
@@ -179,7 +181,8 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	_report_events([20000, 20000, 20000])
 	var r: Dictionary = finish[0]
 	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
-	assert_eq(r["upgrades"].size(), 1, "a single per-rally upgrade id is captured for the reveal")
+	assert_eq(r["upgrades"].size(), Config.data.rally_upgrade_reward_count,
+		"a finished rally captures rally_upgrade_reward_count upgrade ids for the reveal")
 	# Difficulty 1 clamps to tier 1: the reward must be a real eligible tier-1 car,
 	# and the is_new flag must reflect whether the player already owned it. Derive
 	# both from the library/profile rather than pinning a specific model id, so this
@@ -225,18 +228,20 @@ func test_between_event_standings_pause_and_leaderboard() -> void:
 	assert_eq(RallySession.event_index(), 1, "now running event index 1")
 
 
-func test_one_upgrade_won_per_rally() -> void:
+func test_upgrades_won_per_rally_at_finish() -> void:
 	_start("shakedown")
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	assert_eq(_total_items(), 0, "no items before the rally")
 	RallySession.report_event_result(10000)
-	assert_eq(_total_items(), 0, "no upgrade mid-rally — it's one per rally, drawn at the finish")
+	assert_eq(_total_items(), 0, "no upgrades mid-rally — they're drawn per rally at the finish")
 	RallySession.continue_to_next_event()
 	RallySession.report_event_result(10000)
 	assert_eq(_total_items(), 0, "still no upgrade after the second event")
 	RallySession.continue_to_next_event()
-	RallySession.report_event_result(10000)  # final event -> resolve
-	assert_eq(_total_items(), 1, "exactly one upgrade is won per rally")
+	RallySession.report_event_result(10000)  # final event -> pauses on standings
+	RallySession.continue_to_next_event()    # -> resolve
+	assert_eq(_total_items(), Config.data.rally_upgrade_reward_count,
+		"rally_upgrade_reward_count upgrades are won per finished rally")
 
 
 func test_wreck_midrally_is_dnf_and_grants_no_upgrade() -> void:
@@ -295,7 +300,7 @@ func test_showdown_win_beat_instead_of_car_draw() -> void:
 
 
 func test_farming_rewin_grants_car_without_new_completion() -> void:
-	var owned: Dictionary = _save.grant_car("mx5", false)
+	var owned: Dictionary = _save.grant_car("mx5")
 	_save.complete_rally("shakedown", 999999)  # already won once
 	var completed_before: int = _save.completed_rally_count()
 	var cars_before: int = _save.profile["cars"].size()
@@ -325,3 +330,28 @@ func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
 	var p1: Dictionary = RallySession.current_event_p1_car()
 	assert_false(p1.is_empty(), "a classified P1 rival returns a car dict")
 	assert_eq(String(p1.get("id", "")), "porsche911", "P1 is the rival with the fastest non-DNF time")
+
+
+# The event-only leaderboard ranks by the just-completed event's time (not the
+# cumulative total), sinks a rival who DNF'd THAT event, and carries the player.
+func test_current_event_standings_ranks_by_the_just_completed_event() -> void:
+	assert_true(RallySession.current_event_standings().is_empty(), "idle: no event standings")
+	_start("shakedown", "mx5")
+	RallySession._opponent_field = [
+		# Cumulatively "Quick" leads, but for event 1 alone "Slow" is fastest and
+		# "Quick" is slowest — so the event-only ranking differs from the combined one.
+		{"name": "Quick", "car_name": "Porsche 911", "event_times_ms": [10000, 90000, 90000], "dnf": false, "combined_ms": 190000},
+		{"name": "Slow", "car_name": "Lexus LFA", "event_times_ms": [80000, 30000, 30000], "dnf": false, "combined_ms": 140000},
+		{"name": "Gone", "car_name": "Audi RS3", "event_times_ms": [50000, -1, -1], "dnf": true, "combined_ms": -1},
+	]
+	RallySession.report_event_result(90000)   # event 0
+	RallySession.continue_to_next_event()      # -> event 1 running
+	RallySession.report_event_result(40000)   # event 1: player 40k
+	var s := RallySession.current_event_standings()
+	assert_eq(s.size(), 4, "player + three rivals ranked for the event")
+	# Event 1 times: Slow 30k, player 40k, Quick 90k, Gone DNF (sinks last).
+	assert_eq(String(s[0]["name"]), "Slow", "fastest THIS event leads (not the combined leader)")
+	assert_true(s[1]["is_player"], "the player sits 2nd on this event's time")
+	assert_eq(int(s[1]["combined_ms"]), 40000, "the row carries the single-event time, not the cumulative")
+	assert_eq(int(s[3]["placed"]), -1, "a rival who DNF'd this event sinks to the bottom")
+	assert_true(bool(s[3]["dnf"]), "the event-DNF rival is flagged DNF")

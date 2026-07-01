@@ -81,6 +81,13 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_hud = hud
 	_mobile = mobile
 	_start_xform = player.global_transform
+	# Seat the start-line cars a small clearance ABOVE the road at spawn so they settle
+	# onto their wheels instead of spawning clipped into the ground. Anchoring it on
+	# _start_xform here cascades everywhere: the staged player and both queue props read
+	# their ride height off it (via _ground), and the countdown pose is reset_to it at
+	# the hand-off — so the player is clear before AND during the countdown.
+	if terrain != null and terrain.has_method("height_at"):
+		_start_xform.origin.y = terrain.height_at(_start_xform.origin.x, _start_xform.origin.z) + _cfg().start_spawn_clearance
 	# Hide the driving UI; the reveal is camera-only until the fade hands it back.
 	if _hud != null:
 		_hud.visible = false
@@ -416,7 +423,12 @@ func _roll_car_to(car, target: Vector3) -> void:
 	# small reaction margin — start braking once the target is within it.
 	var brake_dist: float = v * v / 28.0 + 0.25
 	if dist <= brake_dist:
-		car.ai_throttle = -1.0   # on/at the target: brake to a stop
+		# On/at the target: brake to a stop. Keep the brake pedal on ONLY while still
+		# genuinely rolling forward; once nearly stopped drop to zero throttle so the
+		# auto box doesn't grab reverse and rev the engine against the held handbrake
+		# (which reads as flooring the gas while slowing to a halt). The handbrake
+		# alone holds it the rest of the way in.
+		car.ai_throttle = -1.0 if v > 1.5 else 0.0
 		car.ai_handbrake = true
 	elif dist > brake_dist + 1.0:
 		car.ai_throttle = 1.0    # well behind: roll up

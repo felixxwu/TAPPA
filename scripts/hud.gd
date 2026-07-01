@@ -100,10 +100,10 @@ func _process(_delta: float) -> void:
 
 
 # Drive the HP gauge + impact flash off the car's damage model. Hidden when
-# hud_hp_enabled is off or for the immortal starter (which never takes damage).
+# hud_hp_enabled is off.
 func _update_damage(delta: float) -> void:
 	var dmg: DamageModel = car.damage
-	var show_gauge := dmg != null and Config.data.hud_hp_enabled and not dmg.immortal
+	var show_gauge := dmg != null and Config.data.hud_hp_enabled
 	_hp_bar.visible = show_gauge
 	_hp_label.visible = show_gauge
 	if show_gauge:

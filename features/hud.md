@@ -27,8 +27,8 @@ tracks `hp / max_hp` and is hue-graded from green (full) to red (empty), under a
 **`Health NN%`** label (a percentage, not a raw HP number — "HP" reads as
 horsepower); below `hud_low_hp_warn_frac` it pulses a low-health warning. Any HP drop since the previous
 frame bumps the red `ImpactFlash` overlay (sized to the loss), which fades back
-out each frame. The gauge is hidden when `hud_hp_enabled` is off or for the
-immortal starter (which never takes damage).
+out each frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for
+every car (the starter is a normal wreckable car like any other).
 
 ## Stage flow widgets
 

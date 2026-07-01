@@ -77,8 +77,7 @@ baseline/fallback.
 `car.gd` owns a `DamageModel` (see [damage.md](damage.md)) that degrades the car
 as its HP falls. Two effects fold into the per-step loop above: a **steer-bias
 pull** added to `steer_target` (step 3) and a **power scale** on the driven torque
-(`drivetrain.power_scale`, step 6). Both are 0 at full HP and for the immortal
-starter. `car.gd` also enables contact monitoring and reads obstacle-contact
+(`drivetrain.power_scale`, step 6). Both are 0 at full HP. `car.gd` also enables contact monitoring and reads obstacle-contact
 impulses in `_integrate_forces` to drain HP.
 
 ## Control source (player / locked / scripted)
@@ -93,6 +92,13 @@ impulses in `_integrate_forces` to drain HP.
   Used for the [start-line](start-line.md) queue cars, which run full physics (real
   suspension load) under script while axis-locked to a straight line. Discrete actions
   (shift / mode / reset) are ignored when locked or scripted.
+
+Regardless of source, a car that is holding the handbrake **and** below
+`HANDBRAKE_LOCK_SPEED` (0.5 m/s) is **position-locked** — `_apply_handbrake_lock`
+freezes the body so it can't be shoved or creep, and unfreezes the instant the
+handbrake is released. This is what keeps a settling [start-line](start-line.md) queue
+car from drifting into the back of the car ahead, and holds the player put during the
+countdown (`controls_locked` forces the handbrake).
 
 ## Braking summary
 

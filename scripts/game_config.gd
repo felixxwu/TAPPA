@@ -170,7 +170,7 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## for all cars at once WITHOUT touching the published peak_torque — the stats
 ## panel and power-to-weight still report the full, pre-scaling figure. Use it to
 ## globally dial back pace without re-balancing every car. 1.0 = no scaling.
-@export_range(0.1, 1.0) var global_torque_scale := 0.6
+@export_range(0.1, 1.0) var global_torque_scale := 0.8
 @export var idle_rpm := 900.0  # the no-stall floor: omega never drops below this
 ## Bouncing rev limiter width (rpm): fuel cuts at redline and only restores once
 ## the revs fall this far below it, so they oscillate across the band — an
@@ -296,6 +296,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Straight road (m) extended BEHIND the start line on a staged run, so the player
 ## (staged a full gap back) and the trailing car (two gaps back) sit on road.
 @export var start_lead_in_behind_m := 20.0
+## Height (m) the start-line cars are seated ABOVE the road at spawn — the player and
+## both queue cars (leader ahead, trailer behind) — so they settle onto their wheels
+## instead of spawning clipped into the ground. Smaller than the general drop-in
+## spawn_clearance: at the line the road height is known, so a gentle seat is enough.
+@export var start_spawn_clearance := 0.5
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
@@ -330,7 +335,32 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## Max wheel-alignment steer bias (radians, same unit as steer_limit) at 0 HP —
 ## the car pulls to one side as it takes damage. Direction is re-rolled per run.
 @export_range(0.0, 0.5) var damage_steer_bias_max := 0.08
-## Show the in-run HP gauge (mirrors hud_enabled). Hidden for the immortal starter.
+## Soft contacts (bushes, spectators) that are NOT solid-obstacle impacts: a flat HP
+## loss per contact (DamageModel.register_soft_hit), independent of the speed square
+## law, guarded by their own short cooldown so one continuous graze counts once.
+## Bushes stay pass-through (a per-tick proximity check, not a solid collider) — see
+## BushField / features/damage.md.
+## Flat HP a single bush graze costs (small — bushes just scuff the car).
+@export_range(0.0, 500.0) var bush_hp_loss := 12.0
+## Yaw drag-torque coefficient a bush applies as it snags a corner of the car: the
+## angular impulse is this times the car's speed (m/s) times sin(angle to the bush),
+## so faster grazes tug harder and a head-on brush barely twists. Sign swings the
+## nose toward the bush (the snagged corner drags back).
+@export_range(0.0, 500.0) var bush_drag_torque := 60.0
+## Below this speed (km/h) a bush neither damages nor tugs the car — a parked car
+## sitting in a bush isn't dragged.
+@export_range(0.0, 60.0) var bush_min_speed_kmh := 8.0
+## Bush interaction radius as a fraction of the bush mesh's visual XZ radius (<1 gives
+## the player leeway to clip the visible edge without being penalised).
+@export_range(0.1, 1.0) var bush_hit_radius_frac := 0.8
+## Soft-hit cooldown (s), shared by bush grazes and spectator hits: after any soft
+## contact the next one is ignored until this window elapses, so sitting in a bush or
+## mowing a tight crowd counts as one hit, not one per member/tick.
+@export_range(0.0, 5.0) var soft_hit_cooldown_s := 0.5
+## Flat HP a spectator hit costs (a bit more than a bush — you shouldn't mow the
+## crowd for free). Applied when a member is knocked over.
+@export_range(0.0, 500.0) var spectator_hp_loss := 30.0
+## Show the in-run HP gauge (mirrors hud_enabled).
 @export var hud_hp_enabled := true
 ## HP fraction below which the gauge flashes a low-HP warning.
 @export_range(0.0, 1.0) var hud_low_hp_warn_frac := 0.25
@@ -403,6 +433,11 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 ## exterior/title camera is shifted by the same offset so it stays centred on the row.
 @export var menu_car_park_offset := 0.0
 
+# --- Rewards (reward_system.gd / rally_session.gd) ----------------------------
+## How many per-event upgrade items a FINISHED (non-DNF) rally grants — each one
+## drawn independently and revealed with its own slot-machine spin on the podium.
+@export var rally_upgrade_reward_count := 2
+
 # --- Podium / reward-reveal sequence (podium.gd) ------------------------------
 ## Height (m) above each podium step the top-3 cars drop from, so they settle onto
 ## their suspension under physics (the "suspension simulated and loaded" beat).
@@ -418,6 +453,23 @@ const ENGINE_PRESETS: Array[Dictionary] = [
 @export var podium_slot_spin_time := 2.2
 ## Degrees/second the won car rotates on the showroom turntable in the reveal.
 @export var podium_showroom_spin_dps := 32.0
+## Half-size (m) of each square tarmac pad on the podium floor (one under the
+## podium, one under the showroom turntable). The rest of the floor is grass.
+@export var podium_tarmac_pad_half := 9.0
+## Width (m) of the grass↔tarmac feather band ramping each pad into the grass,
+## the same crossfade the generated road uses (shaders/ps1_models.gdshader).
+@export var podium_tarmac_feather_m := 3.0
+## Decorative trees scattered in a ring around the podium + showroom (visual
+## dressing only — no collision; skipped in headless test runs).
+@export var podium_scenery_tree_count := 40
+## Decorative bushes scattered on the grass around the podium + showroom.
+@export var podium_scenery_bush_count := 60
+## Roadside-style spectators standing in an arc facing the podium (+ a small
+## cluster at the showroom). Static dressing — no steering/ragdoll AI.
+@export var podium_spectator_count := 26
+## Inner / outer radius (m) of the tree+bush scatter ring around each focal area.
+@export var podium_scenery_ring_inner := 14.0
+@export var podium_scenery_ring_outer := 34.0
 
 # --- Diegetic HQ: one 3D space the camera flies through (todo/diegetic-hq.md).
 # Camera "stations" are an eye position + a look target (world space); the camera
@@ -1073,6 +1125,8 @@ func spectator_params() -> Dictionary:
 		"knock_spin": spectator_knock_spin,
 		"ragdoll_mass_kg": spectator_ragdoll_mass_kg,
 		"despawn_behind_m": spectator_despawn_behind_m,
+		"hp_loss": spectator_hp_loss,
+		"soft_hit_cooldown_s": soft_hit_cooldown_s,
 		"ragdoll_layer": 1 << 4,
 		"ragdoll_mask": 1,
 		"seed": 0,

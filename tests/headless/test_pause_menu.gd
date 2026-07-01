@@ -111,7 +111,7 @@ func test_quit_to_hq_abandons_the_rally_and_unfreezes() -> void:
 	# A live rally (driven directly, no scene loads) is abandoned by Quit to HQ:
 	# the session ends and the tree unfreezes. world.gd handles the trip back to HQ.
 	RallySession.auto_load_scenes = false
-	var owned: Dictionary = _save.grant_car("mx5", false)
+	var owned: Dictionary = _save.grant_car("mx5")
 	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
 	assert_true(RallySession.is_active(), "a rally is running")
 	_pause.open()

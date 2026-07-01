@@ -39,12 +39,12 @@ extends Node3D
 #   * OVERFLOW  — the garage-full prompt: shown on entering HQ while the player owns
 #     more than GameConfig.max_owned_cars (e.g. after a win pushed them to 11). The
 #     whole collection is parked in the car park and the player must scrap one car
-#     (the just-won car included; the immortal starter excepted) to drop back to the
+#     (the just-won car included; the player's last car excepted) to drop back to the
 #     cap before they can do anything else. Reuses the car-park lineup + framing.
 enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 
 # The cars offered on first run (the two authored-body cars). The player picks one in
-# the car park (see _enter_starter_pick); the chosen one becomes the immortal starter.
+# the car park (see _enter_starter_pick); the chosen one becomes the player's first car.
 # Generalises over this list, so a third starter is a one-line add.
 const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
 
@@ -97,8 +97,8 @@ var _selected_instance_id := -1
 # car raised on the lift, returning to the bay. _carpark_change_mode picks which.
 var _carpark_change_mode := false
 # True while the car park is showing the first-run starter picker (preview cars from
-# CarLibrary, not owned cars — the garage is empty). Select grants the immortal
-# starter; see _enter_starter_pick / _confirm_starter.
+# CarLibrary, not owned cars — the garage is empty). Select grants the first
+# car; see _enter_starter_pick / _confirm_starter.
 var _carpark_starter_mode := false
 # On the web build, go fullscreen on the player's first tap (browsers only allow
 # fullscreen from a user gesture). Latched so we request it once. Orientation is
@@ -126,6 +126,9 @@ var _settle_generation := 0
 # the car-park lineup), which OwnedCar it is, and which menu (TUNE / UPGRADES) is up.
 var _lift_car: Node3D
 var _lift_owned: Dictionary = {}
+# True for the single garage refresh where ensure_repair_safety_net just granted a
+# free kit, so the repair row can call it out. Recomputed each _refresh_lift_ui.
+var _safety_net_granted := false
 var _lift_car_instance_id := -2  # what _lift_car was built for (-2 = nothing yet)
 var _lift_page: int = LiftPage.HUB
 # Lift animation: the car is LOWERED on the ground in the garage view and RAISED when
@@ -267,8 +270,9 @@ func _build_hq() -> void:
 
 # First run no longer auto-grants a car: the player picks their starter (MX-5 vs
 # Focus) in the car park on pressing Start (see _enter_starter_pick / _confirm_starter).
-# The chosen car becomes the immortal anti-soft-lock floor. Kept as a hook in case a
-# future migration needs to backfill; currently a no-op.
+# The chosen car is a normal, wreckable car (the repair-kit safety net,
+# Save.ensure_repair_safety_net, is the anti-soft-lock floor now). Kept as a hook in
+# case a future migration needs to backfill; currently a no-op.
 func _ensure_starter() -> void:
 	pass
 
@@ -1368,14 +1372,12 @@ func _enter_overflow(snap := false) -> void:
 	_focus_changed(snap)
 
 
-# Scrap the focused car (unless it's the immortal starter), then re-evaluate: stay
+# Scrap the focused car (unless it's the player's last car), then re-evaluate: stay
 # in the prompt while still over the cap, otherwise fly out to the title.
 func _on_scrap_pressed() -> void:
 	if _eligible.is_empty() or _focus >= _eligible.size():
 		return
 	var owned: Dictionary = _eligible[_focus]
-	if bool(owned.get("immortal", false)):
-		return  # the starter can't be scrapped
 	var id := int(owned.get("instance_id", -1))
 	if not Save.scrap_car(id):
 		return
@@ -1390,7 +1392,7 @@ func _on_scrap_pressed() -> void:
 
 
 # Refresh the overflow overlay for the focused car (banner count, name, stats, and
-# the scrap button — disabled with a note for the immortal starter).
+# the scrap button — disabled with a note when it's the player's last car).
 func _refresh_overflow_ui(owned: Dictionary, entry: Dictionary, stats: String) -> void:
 	_overflow_banner.text = "GARAGE FULL — scrap a car to make room  (%d / %d)" % [
 		_owned_count(), Config.data.max_owned_cars]
@@ -1398,9 +1400,9 @@ func _refresh_overflow_ui(owned: Dictionary, entry: Dictionary, stats: String) -
 		entry.get("name", owned.get("model_id", "?")),
 		int(owned.get("instance_id", -1)), _focus + 1, _eligible.size()]
 	_overflow_stats_label.text = stats
-	var immortal: bool = owned.get("immortal", false)
-	_scrap_button.disabled = immortal
-	_overflow_note.text = "The starter car can't be scrapped — choose another." if immortal else ""
+	var last_car := _owned_count() <= 1
+	_scrap_button.disabled = last_car
+	_overflow_note.text = "Your last car can't be scrapped — choose another." if last_car else ""
 
 
 # --- Settings page -----------------------------------------------------------
@@ -1856,6 +1858,10 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 # Refresh the whole menu for the current selected car: name + stats, which menu is
 # shown, the sliders' gating/values, and the upgrades list.
 func _refresh_lift_ui() -> void:
+	# Recover a wrecked-out player before drawing the garage: a free Repair Kit when
+	# every owned car is wrecked and none is held (also checked on save load). The
+	# repair row calls out the free kit when it was just granted.
+	_safety_net_granted = Save.ensure_repair_safety_net()
 	_lift_owned = Save.selected_car()
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
 	var id := int(_lift_owned.get("instance_id", -1))
@@ -1977,10 +1983,6 @@ func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
 	var label := Label.new()
 	label.add_theme_font_size_override("font_size", 15)
-	if bool(_lift_owned.get("immortal", false)):
-		label.text = "Health: INDESTRUCTIBLE (starter)"
-		box.add_child(label)
-		return box
 	# Health as a percentage (a raw HP number reads as horsepower). A wrecked car (0%)
 	# is called out — it can't enter a rally until repaired.
 	var max_hp := float(entry.get("max_hp", 0.0))
@@ -1990,6 +1992,14 @@ func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
 	var health_text := "WRECKED — too damaged to race" if wrecked else "Health: %d%%" % pct
 	label.text = "%s   —   Repair Kits: x%d" % [health_text, kits]
 	box.add_child(label)
+	# When the safety net just topped up a stranded player, say so on the row.
+	if _safety_net_granted:
+		var net_note := Label.new()
+		net_note.text = "All your cars were wrecked — a free Repair Kit was provided."
+		net_note.add_theme_font_size_override("font_size", 12)
+		net_note.modulate = Color(0.6, 1, 0.7)
+		net_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		box.add_child(net_note)
 	# A Repair Kit fully restores the car. Offer it whenever the car isn't already at
 	# full health and a kit is owned; flag the missing-kit case for a wrecked car.
 	if hp < max_hp:
@@ -2108,7 +2118,7 @@ func _car_back() -> void:
 
 # First-run starter picker: park one PREVIEW car per STARTER_MODEL_IDS (not owned
 # cars — the garage is empty) and let the player choose. Select grants that model as
-# the immortal starter (see _confirm_starter); Back returns to the title.
+# the player's first car (see _confirm_starter); Back returns to the title.
 func _enter_starter_pick() -> void:
 	_carpark_starter_mode = true
 	_carpark_change_mode = false
@@ -2122,7 +2132,6 @@ func _enter_starter_pick() -> void:
 			"instance_id": idx,  # negative: a preview, not an owned car
 			"model_id": id,
 			"hp": float(entry.get("max_hp", 1000.0)),
-			"immortal": true,  # the chosen one becomes immortal; the stat reads right
 			"installed_upgrades": [],
 			"tuning": {},
 		})
@@ -2139,7 +2148,7 @@ func _enter_starter_pick() -> void:
 	_focus_changed(true)
 
 
-# Commit the focused preview as the immortal starter: grant it, record the choice,
+# Commit the focused preview as the player's first car: grant it, record the choice,
 # select it, then enter the garage.
 func _confirm_starter() -> void:
 	if _eligible.is_empty():
@@ -2147,7 +2156,7 @@ func _confirm_starter() -> void:
 	var model_id := String(_eligible[_focus].get("model_id", ""))
 	if model_id == "":
 		return
-	var car := Save.grant_car(model_id, true)
+	var car := Save.grant_car(model_id)
 	Save.profile["starter_picked"] = true
 	Save.profile["starter_model_id"] = model_id
 	Save.set_selected_car(int(car.get("instance_id", -1)))
@@ -2361,13 +2370,10 @@ func _repair_focused_car() -> void:
 # percentage (a raw HP number is misleading — it can read as horsepower); a wrecked
 # (0 HP) car is flagged so the lineup makes clear why it can't be entered.
 func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
-	var immortal: bool = owned.get("immortal", false)
 	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(owned.get("hp", 0.0))
 	var hp_text: String
-	if immortal:
-		hp_text = "Indestructible"
-	elif max_hp > 0.0 and hp <= 0.0:
+	if max_hp > 0.0 and hp <= 0.0:
 		hp_text = "WRECKED"
 	else:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
@@ -2496,7 +2502,7 @@ func _move_camera_to(xform: Transform3D, snap: bool) -> void:
 # screen with the loading overlay FIRST and let it paint a frame, then do the
 # handoff behind it (the run scene then shows its own loading screen — continuous).
 func _on_start_pressed() -> void:
-	# On first run the same action COMMITS the focused preview as the immortal starter.
+	# On first run the same action COMMITS the focused preview as the player's first car.
 	if _carpark_starter_mode:
 		_confirm_starter()
 		return

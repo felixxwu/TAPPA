@@ -135,8 +135,11 @@ rendered through the **same `TreeMeshField`** as the trees — same binning, the
 same per-bin importer-LOD / `visibility_range` cull, the same deterministic yaw
 and uniform height scaling. Two `build()` flags adapt it for ground cover:
 
-- `with_collision = false` — bushes are non-colliding scenery, so no
-  `StaticBody3D`/hitboxes are built.
+- `with_collision = false` — bushes are non-colliding *pass-through* scenery, so no
+  `StaticBody3D`/hitboxes are built (unlike trees, they are not solid obstacles). A
+  separate `BushField` node (`scripts/bush_field.gd`) does a per-tick proximity query
+  off the same scattered positions to make brushing a bush cost a little HP + apply a
+  drag torque — see [damage.md](damage.md) → "Soft contacts".
 - `bake_terrain_light = true` — each instance's MultiMesh colour is set to the
   terrain's baked light at its position (`light_at`), and the bush material has
   `vertex_color_use_as_albedo` enabled, so `ALBEDO = foliage_texture × COLOR`

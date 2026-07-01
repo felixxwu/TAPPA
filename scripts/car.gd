@@ -59,6 +59,13 @@ var ai_throttle := 0.0    # -1..1, forward positive (brake_reverse..accelerate a
 var ai_steer := 0.0       # -1..1, left positive (steer_right..steer_left axis)
 var ai_handbrake := false
 
+# Handbrake position lock: below this speed, a car holding the handbrake is FROZEN in
+# place so it can't be shoved or creep — e.g. a start-line queue car settling on its
+# slot can't drift into the back of the car ahead. Cleared the moment the handbrake is
+# released. See _apply_handbrake_lock.
+const HANDBRAKE_LOCK_SPEED := 0.5  # m/s
+var _handbrake_locked := false
+
 
 func _ready() -> void:
 	var cfg: GameConfig = Config.data
@@ -130,7 +137,7 @@ func _ready() -> void:
 	# Damage state: unbound (free-roam) until a car is applied / fielded. apply_car
 	# fills in the per-car max HP; this keeps the baseline car sane on its own.
 	damage = DamageModel.new()
-	damage.field(damage.max_hp, damage.max_hp, false)
+	damage.field(damage.max_hp, damage.max_hp)
 	damage.wrecked.connect(_on_wrecked)
 	_debug_overlay = WheelForceDebug.new(self)
 	_debug_overlay.visible = cfg.debug_wheel_forces
@@ -242,8 +249,9 @@ func _physics_process(delta: float) -> void:
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
 	var handbrake := ai_handbrake if ai_controlled else (controls_locked or Input.is_action_pressed("handbrake"))
+	_apply_handbrake_lock(handbrake, speed)
 	# Damage power loss: fade the driven torque as HP falls (1.0 healthy). 0 effect
-	# at full HP / for the immortal starter. See features/damage.md.
+	# at full HP. See features/damage.md.
 	drivetrain.power_scale = damage.power_multiplier(cfg)
 	drivetrain.step(delta, drive, brake_input, handbrake)
 
@@ -287,7 +295,7 @@ func _physics_process(delta: float) -> void:
 	var align_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
 	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + steer_input * cfg.steer_limit
 	# Damage wheel-alignment pull: a constant bias toward one side that grows as HP
-	# falls (0 at full HP / for the immortal starter). See features/damage.md.
+	# falls (0 at full HP). See features/damage.md.
 	steer_target += damage.steer_bias(cfg)
 	steering = move_toward(steering, steer_target, cfg.steer_speed * delta)
 	# Direct yaw torque about the car's up axis while steering, to fight
@@ -383,6 +391,34 @@ func _reset() -> void:
 # reset and the off-track recovery (TrackProgress). Restores velocities, wheel
 # spin and engine state so the car drops in cleanly rather than carrying over
 # stale momentum.
+# Freeze a nearly-stopped car that's holding the handbrake so its position is locked —
+# it can't be shoved or slowly creep (e.g. a start-line queue car settling on its slot
+# won't drift into the back of the car ahead). Freezing zeroes the velocity, so once
+# locked the car stays put until the handbrake is RELEASED, which unfreezes it. Only
+# this lock cycle touches `freeze`, so it never fights another freeze user.
+func _apply_handbrake_lock(handbrake: bool, speed: float) -> void:
+	# Only ENTER the lock once the car is actually resting on the ground — otherwise a
+	# boot-locked car (StageManager forces the handbrake) would freeze mid-air at its
+	# spawn clearance and never settle. Staying locked only needs the handbrake held.
+	if handbrake and speed < HANDBRAKE_LOCK_SPEED and _is_grounded():
+		if not _handbrake_locked:
+			_handbrake_locked = true
+			freeze = true
+	elif _handbrake_locked and not handbrake:
+		_handbrake_locked = false
+		freeze = false
+
+
+# True once the car is settled on its wheels (a solid majority in ground contact),
+# so the handbrake lock never engages while it's still dropping in / airborne.
+func _is_grounded() -> bool:
+	var n := 0
+	for wheel in _wheel_mounts:
+		if wheel.is_in_contact():
+			n += 1
+	return n >= 3
+
+
 func reset_to(xform: Transform3D) -> void:
 	global_transform = xform
 	linear_velocity = Vector3.ZERO
@@ -570,7 +606,7 @@ func apply_car(index: int) -> String:
 	# at full HP; a future rally layer re-fields it from the OwnedCar (with the
 	# stored HP + instance id) when a car is taken to the Start line.
 	var max_hp: float = spec.get("max_hp", damage.max_hp)
-	damage.field(max_hp, max_hp, false)
+	damage.field(max_hp, max_hp)
 
 	_reset()
 	return spec["name"]
@@ -597,11 +633,10 @@ func apply_owned(owned: Dictionary) -> String:
 	_sync_suspension_to_wheels()
 	mass = Config.data.mass
 	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
-	# removes it from the save (the immortal starter skips depletion).
+	# removes it from the save.
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
-	damage.field(max_hp, float(owned.get("hp", max_hp)),
-		bool(owned.get("immortal", false)), int(owned.get("instance_id", -1)))
+	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)))
 	return car_name
 
 

@@ -25,9 +25,25 @@ const PODIUM_CENTER := Vector3.ZERO
 const SHOWROOM_CENTER := Vector3(40.0, 0.0, 0.0)
 const CAR_SCENE_PATH := "res://car.tscn"
 
+# Floor + scenery assets. The ground reuses the terrain road-blend shader so the
+# tarmac pads feather into grass exactly the way the generated road does; the
+# trees/bushes/spectators are the same low-poly models the world scatters, but
+# placed as plain decorative MultiMeshes (no collision, no AI).
+const GROUND_SHADER := preload("res://shaders/ps1_models.gdshader")
+const GRASS_TEXTURE := preload("res://textures/grass.jpg")
+const TREE_MODEL := preload("res://models/low_poly_tree.glb")
+const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
+const SPECTATOR_SCENE := preload("res://blender/spectator/spectator.glb")
+
+# Floor is a square PlaneMesh side (m); subdivided finely enough that the pad
+# feather bands stay smooth.
+const FLOOR_SIZE := 120.0
+const FLOOR_SUBDIV := 160
+
 var _result: Dictionary = {}
 var _stages: Array[int] = []
 var _stage_index := 0
+var _upgrade_index := 0                # which won upgrade the next reveal shows
 var _stage: int = Stage.PODIUM
 var _headless := false
 # Gates the Next button during a slot-machine spin (false while spinning).
@@ -42,6 +58,7 @@ var _showroom_car: Node3D
 
 # Overlay widgets.
 var _layer: CanvasLayer
+var _middle: VBoxContainer             # the per-stage content stack (re-anchored per stage)
 var _title_label: Label
 var _body_label: Label                # headline result (PODIUM stage)
 var _leaderboard_scroll: ScrollContainer
@@ -57,6 +74,8 @@ func _ready() -> void:
 	_result = RallySession.last_result()
 	_headless = DisplayServer.get_name() == "headless"
 	_build_environment()
+	if not _headless:
+		_build_scenery()  # visual dressing only — skipped in tests to stay fast
 	_build_podium_steps()
 	_spawn_podium_cars()
 	_build_overlay()
@@ -71,7 +90,9 @@ func _compute_stages() -> Array[int]:
 	var stages: Array[int] = [Stage.PODIUM, Stage.LEADERBOARD]
 	if String(_result.get("car_reward", "")) != "":
 		stages.append(Stage.CAR_REVEAL)
-	if not (_result.get("upgrades", []) as Array).is_empty():
+	# One upgrade-reveal stage per won upgrade (a rally grants several), each a
+	# separate slot-machine spin stepped through with Next.
+	for _u in (_result.get("upgrades", []) as Array):
 		stages.append(Stage.UPGRADE_REVEAL)
 	return stages
 
@@ -79,6 +100,7 @@ func _compute_stages() -> Array[int]:
 # --- 3D environment ----------------------------------------------------------
 
 func _build_environment() -> void:
+	var cfg: GameConfig = Config.data
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
 	var sky_mat := PanoramaSkyMaterial.new()
@@ -109,13 +131,20 @@ func _build_environment() -> void:
 	floor_body.add_child(floor_shape)
 	add_child(floor_body)
 
+	# Grass ground with two feathered tarmac pads (podium + showroom). The tarmac
+	# is painted by the SAME road-blend shader the generated track uses: per-vertex
+	# COLOR.a is the grass→tarmac weight and UV2.x = 1 selects pure tarmac.
 	var ground := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(120.0, 120.0)
-	ground.mesh = plane
+	ground.name = "Floor"
+	ground.mesh = _build_floor_mesh()
 	ground.position.y = -0.01
-	var gm := StandardMaterial3D.new()
-	gm.albedo_color = Color(0.14, 0.15, 0.17)
+	var gm := ShaderMaterial.new()
+	gm.shader = GROUND_SHADER
+	gm.set_shader_parameter("albedo_texture", GRASS_TEXTURE)
+	gm.set_shader_parameter("tarmac_color", cfg.tarmac_color)
+	gm.set_shader_parameter("blend_road", true)
+	var tpm: float = cfg.terrain_tile_per_meter
+	gm.set_shader_parameter("texture_tile", Vector2(tpm, tpm))
 	ground.material_override = gm
 	add_child(ground)
 
@@ -138,6 +167,173 @@ func _build_environment() -> void:
 	_camera = Camera3D.new()
 	_camera.current = true
 	add_child(_camera)
+
+
+# The floor mesh: a subdivided grid carrying, per vertex, a grass→tarmac blend
+# weight in COLOR.a (1 on a pad, smoothstep-feathered to 0 across the feather
+# band) and UV2.x = 1 (pure tarmac). Two square pads: the podium and the showroom.
+func _build_floor_mesh() -> ArrayMesh:
+	var cfg: GameConfig = Config.data
+	var half: float = cfg.podium_tarmac_pad_half
+	var feather: float = maxf(cfg.podium_tarmac_feather_m, 0.001)
+	var pads := [Vector2(PODIUM_CENTER.x, PODIUM_CENTER.z),
+			Vector2(SHOWROOM_CENTER.x, SHOWROOM_CENTER.z)]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := FLOOR_SUBDIV
+	var step := FLOOR_SIZE / float(n)
+	var origin := -FLOOR_SIZE * 0.5
+	# Build the (n+1)^2 vertex grid, then index two triangles per cell.
+	for j in n + 1:
+		for i in n + 1:
+			var x := origin + float(i) * step
+			var z := origin + float(j) * step
+			var w := 0.0
+			for c in pads:
+				# Chebyshev distance → a square pad; feather beyond its half-extent.
+				var d := maxf(absf(x - c.x), absf(z - c.y))
+				w = maxf(w, 1.0 - smoothstep(half, half + feather, d))
+			st.set_color(Color(1.0, 1.0, 1.0, w))
+			st.set_uv(Vector2(x, z))
+			st.set_uv2(Vector2(1.0, 0.0))
+			st.set_normal(Vector3.UP)  # flat floor; keeps the mesh well-formed
+			st.add_vertex(Vector3(x, 0.0, z))
+	var row := n + 1
+	for j in n:
+		for i in n:
+			var a := j * row + i
+			var b := a + 1
+			var cc := a + row
+			var d := cc + 1
+			# Wound so the front face points UP: the shared ps1_models shader culls back
+			# faces, so a downward-facing floor draws nothing when viewed from above.
+			st.add_index(a); st.add_index(b); st.add_index(cc)
+			st.add_index(b); st.add_index(d); st.add_index(cc)
+	return st.commit()
+
+
+# --- Decorative scenery (real play only; skipped headless) --------------------
+
+# Dress both focal areas (podium + showroom) with trees, bushes and a standing
+# crowd. Pure visual dressing: plain MultiMeshes, no collision, no steering AI.
+func _build_scenery() -> void:
+	var cfg: GameConfig = Config.data
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0xB0DE  # fixed → stable placement run-to-run
+
+	var tree_mesh := _mesh_from_scene(TREE_MODEL)
+	if tree_mesh != null:
+		_add_multimesh(tree_mesh, _scatter_ring(rng, cfg.podium_scenery_tree_count,
+				cfg.podium_scenery_ring_inner, cfg.podium_scenery_ring_outer,
+				0.85, 1.25), "Trees")
+	var bush_mesh := _bush_mesh(cfg)
+	if bush_mesh != null:
+		_add_multimesh(bush_mesh, _scatter_ring(rng, cfg.podium_scenery_bush_count,
+				cfg.podium_scenery_ring_inner * 0.7, cfg.podium_scenery_ring_outer,
+				0.8, 1.4), "Bushes")
+	var spec_mesh := _mesh_from_scene(SPECTATOR_SCENE)
+	if spec_mesh != null:
+		_add_multimesh(spec_mesh, _spectator_transforms(cfg, spec_mesh), "Crowd")
+
+
+# Place `count` items in a ring [inner, outer] around each focal area (podium +
+# showroom), off the tarmac pads, with a random yaw and a uniform scale in
+# [scale_lo, scale_hi]. Deterministic given `rng`'s seed.
+func _scatter_ring(rng: RandomNumberGenerator, count: int, inner: float, outer: float,
+		scale_lo: float, scale_hi: float) -> Array[Transform3D]:
+	var cfg: GameConfig = Config.data
+	var pad := cfg.podium_tarmac_pad_half + cfg.podium_tarmac_feather_m
+	var centers := [PODIUM_CENTER, SHOWROOM_CENTER]
+	var out: Array[Transform3D] = []
+	for k in count:
+		var c: Vector3 = centers[k % centers.size()]
+		var pos := Vector3.ZERO
+		for _try in 8:
+			var ang := rng.randf() * TAU
+			var r := lerpf(inner, outer, rng.randf())
+			pos = c + Vector3(cos(ang) * r, 0.0, sin(ang) * r)
+			# Reject anything over either pad (Chebyshev, matching the floor pads).
+			var on_pad := false
+			for cc in centers:
+				if maxf(absf(pos.x - cc.x), absf(pos.z - cc.z)) < pad:
+					on_pad = true
+					break
+			if not on_pad:
+				break
+		var xb := Basis(Vector3.UP, rng.randf() * TAU).scaled(
+				Vector3.ONE * rng.randf_range(scale_lo, scale_hi))
+		out.append(Transform3D(xb, pos))
+	return out
+
+
+# A shallow crowd arc behind the podium (all facing it) plus a small cluster at
+# the showroom. Yaw points each figure at the focal centre; feet sit on y = 0.
+func _spectator_transforms(cfg: GameConfig, mesh: Mesh) -> Array[Transform3D]:
+	var foot := -mesh.get_aabb().position.y
+	var out: Array[Transform3D] = []
+	var pad := cfg.podium_tarmac_pad_half + cfg.podium_tarmac_feather_m
+	# Podium arc: two rows across the rear hemisphere (z < 0), facing the podium.
+	var arc := maxi(cfg.podium_spectator_count, 2)
+	for i in arc:
+		var t := float(i) / float(maxi(arc - 1, 1))
+		var ang := lerpf(deg_to_rad(205.0), deg_to_rad(335.0), t)
+		var r := pad + 3.0 + (2.4 if i % 2 == 1 else 0.0)
+		out.append(_facing_xform(PODIUM_CENTER, ang, r, foot))
+	# Showroom cluster: a small fan facing the turntable.
+	for i in 8:
+		var t := float(i) / 7.0
+		var ang := lerpf(deg_to_rad(120.0), deg_to_rad(240.0), t)
+		out.append(_facing_xform(SHOWROOM_CENTER, ang, pad + 3.5, foot))
+	return out
+
+
+# A transform standing at `center + r*(cos,sin)` on the ground, yawed to face
+# `center` (the mesh's default facing is +Z).
+func _facing_xform(center: Vector3, ang: float, r: float, foot: float) -> Transform3D:
+	var pos := center + Vector3(cos(ang) * r, foot, sin(ang) * r)
+	var dir := center - pos
+	var yaw := atan2(dir.x, dir.z)
+	return Transform3D(Basis(Vector3.UP, yaw), pos)
+
+
+func _add_multimesh(mesh: Mesh, transforms: Array[Transform3D], node_name: String) -> void:
+	if transforms.is_empty():
+		return
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = node_name
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+	mmi.multimesh = mm
+	add_child(mmi)
+
+
+# Pull the first MeshInstance3D's mesh out of an imported glb PackedScene.
+func _mesh_from_scene(scene: PackedScene) -> Mesh:
+	var inst := scene.instantiate()
+	var hits := inst.find_children("*", "MeshInstance3D", true, false)
+	var mesh: Mesh = (hits[0] as MeshInstance3D).mesh if not hits.is_empty() else null
+	inst.free()
+	return mesh
+
+
+# The groundcover bush mesh, tinted the same way world.gd renders scattered bushes.
+func _bush_mesh(cfg: GameConfig) -> Mesh:
+	var src := _mesh_from_scene(GROUNDCOVER_SCENE)
+	if src == null:
+		return null
+	var mesh: Mesh = src.duplicate()
+	var base := mesh.surface_get_material(0)
+	var mat: StandardMaterial3D = base.duplicate() if base is StandardMaterial3D else StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = cfg.bush_tint
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	mesh.surface_set_material(0, mat)
+	return mesh
 
 
 # The three podium steps (1st centred + tallest, 2nd left, 3rd right). Each is a
@@ -260,8 +456,9 @@ func _dup_meshes(car: Node) -> void:
 
 
 func _process(delta: float) -> void:
-	# Slowly turn the showroom car on its turntable while the car reveal is up.
-	if is_instance_valid(_turntable_pivot) and _stage == Stage.CAR_REVEAL:
+	# Slowly turn the showroom car on its turntable through the car reveal and the
+	# following upgrade reveals (the car stays on the turntable the whole time).
+	if is_instance_valid(_turntable_pivot) and (_stage == Stage.CAR_REVEAL or _stage == Stage.UPGRADE_REVEAL):
 		_turntable_pivot.rotation.y += deg_to_rad(Config.data.podium_showroom_spin_dps) * delta
 
 
@@ -285,12 +482,15 @@ func _build_overlay() -> void:
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_title_label)
 
-	# A centred stack that holds the per-stage content (only one visible at a time).
+	# A stack that holds the per-stage content (only one visible at a time). It's
+	# centred for the podium/leaderboard, but drops to the bottom during the car /
+	# upgrade reveals so the slot card doesn't cover the revealed car (_enter_stage).
 	var middle := VBoxContainer.new()
 	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	middle.alignment = BoxContainer.ALIGNMENT_CENTER
 	middle.add_theme_constant_override("separation", 14)
 	root.add_child(middle)
+	_middle = middle
 
 	_body_label = Label.new()
 	_body_label.add_theme_font_size_override("font_size", 22)
@@ -352,7 +552,13 @@ func _enter_stage(stage: int) -> void:
 	_body_label.visible = false
 	_leaderboard_scroll.visible = false
 	_slot_panel.visible = false
+	_slot_label.visible = true  # the car reveal hides it (one-line card); reset per stage
+	_slot_caption.custom_minimum_size = Vector2.ZERO  # car reveal widens it; reset per stage
 	_slot_caption.text = ""
+	# Drop the content to the bottom for the reveals (keeps the revealed car in
+	# clear view); keep it centred for the podium + leaderboard.
+	var reveal := stage == Stage.CAR_REVEAL or stage == Stage.UPGRADE_REVEAL
+	_middle.alignment = BoxContainer.ALIGNMENT_END if reveal else BoxContainer.ALIGNMENT_CENTER
 	match stage:
 		Stage.PODIUM: _show_podium()
 		Stage.LEADERBOARD: _show_leaderboard()
@@ -388,31 +594,39 @@ func _show_leaderboard() -> void:
 
 
 func _show_car_reveal() -> void:
+	# A single-line reveal card: the caption alone carries the car name (the big slot
+	# label is hidden, so the name isn't shown twice and the card stays one line).
 	_title_label.text = "YOUR NEW CAR"
 	_slot_panel.visible = true
+	_slot_label.visible = false
+	# The hidden slot label used to set the card width; give the caption that width so
+	# it stays a single horizontal line instead of wrapping to a narrow column.
+	_slot_caption.custom_minimum_size = Vector2(520, 0)
 	_move_camera(_showroom_cam())
 	var car_id := String(_result.get("car_reward", ""))
 	var entry := CarLibrary.by_id(car_id)
 	var target := String(entry.get("name", car_id))
-	# Bring the won car onto the turntable (hidden until the spin locks on).
 	_reveal_showroom_car(car_id)
-	var names := _car_names()
-	_start_slot(names, target, func() -> void:
-		if is_instance_valid(_showroom_car):
-			_showroom_car.visible = true
-		var is_new: bool = bool(_result.get("car_reward_is_new", false))
-		_slot_caption.text = UITheme.caps("%s%s — delivered to your garage" % [
-			target, "  (NEW)" if is_new else ""]))
+	if is_instance_valid(_showroom_car):
+		_showroom_car.visible = true
+	var is_new: bool = bool(_result.get("car_reward_is_new", false))
+	_slot_caption.text = UITheme.caps("%s%s — delivered to your garage" % [
+		target, "  (NEW)" if is_new else ""])
+	_reveal_done = true
+	_refresh_next_button()
 
 
 func _show_upgrade_reveal() -> void:
-	_title_label.text = "UPGRADE WON"
+	var upgrades: Array = _result.get("upgrades", [])
+	var idx := _upgrade_index
+	_upgrade_index += 1
+	# Title counts up when a rally grants more than one ("UPGRADE 1 OF 2").
+	_title_label.text = "UPGRADE %d OF %d" % [idx + 1, upgrades.size()] if upgrades.size() > 1 else "UPGRADE WON"
 	_slot_panel.visible = true
 	_move_camera(_showroom_cam())
-	if is_instance_valid(_showroom_car):
-		_showroom_car.visible = false
-	var upgrades: Array = _result.get("upgrades", [])
-	var won := String(upgrades[0]) if not upgrades.is_empty() else ""
+	# Keep the reward car on show through the upgrade reveals (it used to be hidden
+	# here — the reward car should stay visible while the upgrades are handed out).
+	var won := String(upgrades[idx]) if idx < upgrades.size() else ""
 	var target := String(UpgradeLibrary.by_id(won).get("name", won))
 	_start_slot(_upgrade_names(), target, func() -> void:
 		_slot_caption.text = UITheme.caps("%s — added to your inventory" % target))
@@ -476,13 +690,6 @@ func _finish_slot(on_done: Callable) -> void:
 	if on_done.is_valid():
 		on_done.call()
 	_refresh_next_button()
-
-
-func _car_names() -> Array:
-	var names: Array = []
-	for entry in CarLibrary.CARS:
-		names.append(String(entry.get("name", entry.get("id", "?"))))
-	return names
 
 
 func _upgrade_names() -> Array:

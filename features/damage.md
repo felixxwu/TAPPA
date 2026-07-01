@@ -15,11 +15,10 @@ in-run — a repair kit (Save) is the only way it climbs back.
 |-------|---------|
 | `max_hp` | the car's HP pool — CarLibrary metadata (`max_hp`, mass-keyed), set per car |
 | `hp` | working HP for the current run (starts at the OwnedCar's stored HP) |
-| `immortal` | the starter car's anti-soft-lock floor: no depletion, no effects, never wrecked |
 | `instance_id` | OwnedCar binding; **-1 = unbound** (free-roam / dev — never touches `Save`) |
 | `align_bias_sign` | ±1 steer-pull direction, re-rolled each run via `reroll_bias()` |
 
-`field(max_hp, hp, immortal, instance_id)` configures all of the above for a run.
+`field(max_hp, hp, instance_id)` configures all of the above for a run.
 `car.gd` calls it (unbound, full HP) from `apply_car`; the future rally/Start-line
 layer ([rally-session.md](rally-session.md)) re-fields it
 from the OwnedCar (stored HP + instance id) when a car is taken to the line.
@@ -29,8 +28,9 @@ from the OwnedCar (stored HP + instance id) when a car is taken to the line.
 `car.gd` enables `contact_monitor` (+ `max_contacts_reported`) and, in
 `_integrate_forces`, reads the body's travel speed and the per-tick contacts. Only
 contacts against bodies in the `DamageModel.OBSTACLE_GROUP` (`"obstacle"`) group
-count — trees/bushes (and the planned signs) tag their collision body with it in
-`billboard_field.gd`, so the ground/road never chip HP. Each qualifying contact
+count — **trees** tag their collision body with it in `tree_mesh_field.gd`, so the
+ground/road never chip HP. (Bushes and spectators are *soft contacts*, handled
+separately below — they are pass-through, not solid obstacles.) Each qualifying contact
 calls `register_impact(speed, …)` with the **speed the car was travelling at**:
 
 ```
@@ -73,9 +73,37 @@ Two guards stop a single crash from instantly wrecking the car (cars should surv
 
 A hit that costs HP emits `damaged(hp_loss, contact_point)` for the HUD/audio cue.
 
+## Soft contacts — bushes & spectators (`register_soft_hit`)
+
+Bushes and spectators are **not** solid obstacles: a `StaticBody` would arrest the
+car, the opposite of brushing through undergrowth or a crowd. They deal a **flat**
+HP loss (not the speed square-law) via `DamageModel.register_soft_hit(hp_loss,
+contact_point, cooldown_s)`, which drains HP, can wreck at 0, and emits the same
+`damaged` signal so the HUD flashes exactly as for a tree impact. A **separate**
+soft-hit cooldown (`soft_hit_cooldown_s`, tracked apart from the impact cooldown so
+a bush graze and a tree crash don't mask each other) groups a continuous
+contact — sitting in a bush, mowing a tight crowd — into one hit.
+
+- **Bushes** (`scripts/bush_field.gd`, `BushField`). Bushes are pure visual scatter
+  (a `TreeMeshField` built `with_collision=false`), so a dedicated node does a
+  per-tick **proximity query**: bush XZ positions binned into a grid (cell = hit
+  radius) so only the ~handful in the car's 3×3 neighbourhood are tested. Entering a
+  bush (one-shot — tracked in an "inside" set, re-arms on leave) costs `bush_hp_loss`
+  and applies a **side-based yaw drag torque** via `apply_torque_impulse`: the pure
+  `drag_torque(forward, to_bush, mag)` returns a torque whose sign swings the nose
+  *toward* the bush (a snagged corner dragging back) and whose magnitude is
+  `bush_drag_torque × speed × sin(angle)` (zero head-on, peaks side-on). The
+  interaction radius is `bush_hit_radius_frac` (<1) of the bush's visual `xz_radius`,
+  so clipping the visible edge is forgiven. Gated by `bush_min_speed_kmh` — a parked
+  car in a bush isn't tugged.
+- **Spectators** (`scripts/spectator_group.gd`). When a member is knocked over
+  (`_knock_over`), the car takes a `spectator_hp_loss` soft hit — a bit **more** than
+  a bush. No torque. Ploughing a dense line is one hit (shared soft-hit cooldown),
+  not one per member.
+
 ## Effects (scale with the damage fraction `d = 1 - hp/max_hp`)
 
-Read each physics tick in `car.gd`; both are 0 at full HP and for the immortal car:
+Read each physics tick in `car.gd`; both are 0 at full HP:
 
 - **Power loss** — `drivetrain.power_scale = damage.power_multiplier(cfg)` fades
   the driven torque to `1 - d * damage_power_loss_max` (applied at the engine
@@ -86,19 +114,23 @@ Read each physics tick in `car.gd`; both are 0 at full HP and for the immortal c
 
 ## Wreck at 0 HP
 
-`apply_loss()` clamps HP at 0 and, on a non-immortal car, calls `_wreck()`:
+`apply_loss()` clamps HP at 0 and calls `_wreck()`:
 - A **fielded** car (`instance_id >= 0`) calls `Save.wreck_car(instance_id)` —
   which leaves the car **owned at 0 HP** (NOT destroyed): it stays in the garage,
   its installed upgrades stay fitted (parts are consumed on fit, so they're never
   returned), and it's **too damaged to enter a rally** until a **Repair Kit**
   restores it (`Save.use_repair_kit` → full health). `Save.car_is_wrecked(car)` is
-  the "0 HP, non-immortal" predicate the menus gate on.
+  the "0 HP" predicate the menus gate on.
 - `wrecked` is emitted either way; `car.gd` re-emits it as the car-level `wrecked`
   signal for the rally/menu layer (sibling to `StageManager.stage_completed`).
 - In **free-roam** (unbound) there is no DNF flow, so `car.gd` heals the car
   to full and respawns it at the start so play continues.
 
-The immortal starter floors at 1 HP and is never wrecked.
+Every car — including the starter — is a normal, wreckable car (no invulnerable
+car exists). The anti-soft-lock floor is instead `Save.ensure_repair_safety_net`
+(see [save-persistence.md](save-persistence.md)): if the player owns ≥1 car, every
+owned car is wrecked, and no repair kits are held, it grants one free Repair Kit so
+a wrecked car can always be revived.
 
 ### Mid-event wreck menu (`scripts/wreck_screen.gd`)
 
@@ -117,14 +149,15 @@ the cinematic and report immediately. See [menus.md](menus.md) for the loop.
 green → amber → red) under a **`Health NN%`** label (`HPLabel` — a percentage, not a
 raw HP number, since "HP" reads as horsepower), a low-health **warning pulse** below
 `hud_low_hp_warn_frac`, and a red **impact flash** (`ImpactFlash`) sized to each
-HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off or for the immortal
-starter.
+HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off.
 
 ## Config knobs (`GameConfig`, *Damage* group)
 
 `impact_min_speed_kmh`, `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
 `impact_max_loss_frac`, `impact_cooldown_s`, `damage_power_loss_max`,
-`damage_steer_bias_max`, `hud_hp_enabled`, `hud_low_hp_warn_frac`,
+`damage_steer_bias_max`, soft contacts (`bush_hp_loss`, `bush_drag_torque`,
+`bush_min_speed_kmh`, `bush_hit_radius_frac`, `soft_hit_cooldown_s`,
+`spectator_hp_loss`), `hud_hp_enabled`, `hud_low_hp_warn_frac`,
 `wreck_settle_max_seconds` (cap on the wreck-menu settle wait; the orbit reuses the
 `start_orbit_*` knobs). Per-car `max_hp` is CarLibrary metadata, **not** a
 `GameConfig` field. A Repair Kit fully restores health, so there is no partial-heal
@@ -134,9 +167,12 @@ values are not).
 ## Tests
 
 `tests/headless/test_damage_model.gd` (speed→HP + the 60/20 km/h calibration, the per-hit cap + post-hit
-cooldown grouping a crash into one hit / needing several hits to wreck, effect
+cooldown grouping a crash into one hit / needing several hits to wreck, **soft
+hits** — flat loss, own cooldown independent of impacts, wreck at 0 — effect
 scaling, bound/unbound wreck **keeping the car at 0 HP with its upgrades**,
-immortal, persistence round-trip), `test_car.gd` (contact monitor + power-scale
+persistence round-trip), `test_bush_field.gd` (side-based `drag_torque` sign +
+scaling, enter/leave one-shot, min-speed gate), `test_spectator_damage.gd` (a
+knockdown costs the car `spectator_hp_loss`, more than a bush), `test_car.gd` (contact monitor + power-scale
 wiring, plus a **head-on collision costs HP** regression that drives the car into
 an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge), `test_wreck_screen.gd` (crash → orbit/menu →
 `return_requested`).

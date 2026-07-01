@@ -11,6 +11,9 @@ var _save: Node
 
 
 func before_each() -> void:
+	# Clear any focus a previous test's overlay grabbed (menus grab focus deferred
+	# for gamepad nav), so per-test focus assertions aren't contaminated by order.
+	get_viewport().gui_release_focus()
 	Config.reset()
 	_save = get_node("/root/Save")
 	_clean()
@@ -18,7 +21,7 @@ func before_each() -> void:
 	_save.save_disabled = false
 	_save.load_or_new()
 	# Most HQ tests exercise a player who has already chosen their starter (the normal
-	# state), so grant the immortal starter here. The first-run tests that cover the
+	# state), so grant the starter car here. The first-run tests that cover the
 	# starter-pick flow call _reset_to_first_run() to clear it back to an empty garage.
 	_pick_starter()
 	RallySession.auto_load_scenes = false
@@ -41,14 +44,14 @@ func _clean() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-# Simulate a completed first-run starter pick: grant the immortal starter and flag the
+# Simulate a completed first-run starter pick: grant the starter car and flag the
 # profile so Start goes straight to the garage (the first run now picks a starter in the
-# car park — see test_first_run_start_opens_starter_pick_then_grants_immortal). Tests that
+# car park — see test_first_run_start_opens_starter_pick_then_grants_first_car). Tests that
 # need an existing garage call this before booting HQ.
 func _pick_starter(model_id := "mx5") -> void:
 	_save.profile["starter_picked"] = true
 	_save.profile["starter_model_id"] = model_id
-	_save.grant_car(model_id, true)
+	_save.grant_car(model_id)
 
 
 # Undo the before_each starter grant: a fresh first-run profile with an empty garage.
@@ -98,7 +101,7 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	# First run no longer auto-grants a car — the player picks a starter on Start
-	# (see test_first_run_start_opens_starter_pick_then_grants_immortal). The garage
+	# (see test_first_run_start_opens_starter_pick_then_grants_first_car). The garage
 	# is empty until then.
 	assert_eq(_save.profile["cars"].size(), 0, "no car granted before the starter is picked")
 	# Boots to the exterior/title station: the title overlay is up.
@@ -335,7 +338,7 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 func test_hq_title_parks_all_owned_cars() -> void:
 	# The title shows the whole collection, regardless of rally eligibility — grant
 	# an AWD RS3 (which an RWD rally would exclude) and it's still parked.
-	_save.grant_car("rs3", false)
+	_save.grant_car("rs3")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -484,8 +487,8 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	# an in-band RWD 911 alongside the low-power RWD starter, pick that rally and
 	# enter: only the 911 qualifies — the AWD RS3 (wrong drivetrain) and the
 	# under-powered MX-5 (below the band) are both filtered out.
-	_save.grant_car("rs3", false)
-	_save.grant_car("porsche911", false)
+	_save.grant_car("rs3")
+	_save.grant_car("porsche911")
 	hq._on_rally_pin("rwd_masters")
 	hq._enter_car_screen()
 	await get_tree().process_frame
@@ -514,8 +517,8 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	# Two box-bodied cars of different sizes must keep their OWN body meshes — the
 	# car scene shares mesh sub-resources across instances, so without per-instance
 	# duplication both would render at whichever was applied last.
-	_save.grant_car("rs3", false)       # body 1.55 x 0.60 x 4.00
-	_save.grant_car("mustang", false)   # body 1.92 x 0.55 x 4.78
+	_save.grant_car("rs3")       # body 1.55 x 0.60 x 4.00
+	_save.grant_car("mustang")   # body 1.92 x 0.55 x 4.78
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -537,7 +540,7 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	# Parked cars drop in LIVE (so they settle onto their suspension), then freeze at
 	# the settled pose so a full car park costs nothing to keep parked.
-	_save.grant_car("rs3", false)
+	_save.grant_car("rs3")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -562,7 +565,7 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 
 
 func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
-	_save.grant_car("rs3", false)
+	_save.grant_car("rs3")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -583,8 +586,8 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	# The lineup is a centred row ALONG X — one car per painted bay — each parked
 	# nose-out toward the courtyard / menu camera (+Z), not the old recede-along-Z row.
-	_save.grant_car("rs3", false)
-	_save.grant_car("mustang", false)
+	_save.grant_car("rs3")
+	_save.grant_car("mustang")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -630,8 +633,8 @@ func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
 # (instead of the title), parking the whole collection.
 func test_hq_over_car_limit_boots_to_the_scrap_prompt() -> void:
 	Config.data.max_owned_cars = 2  # small cap so the test stays light
-	_save.grant_car("rs3", false)
-	_save.grant_car("mustang", false)  # 2 granted; the boot starter makes 3 > cap
+	_save.grant_car("rs3")
+	_save.grant_car("mustang")  # 2 granted; the boot starter makes 3 > cap
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -646,15 +649,13 @@ func test_hq_over_car_limit_boots_to_the_scrap_prompt() -> void:
 # Scrapping cars drops the count and, once back at the cap, flies out to the title.
 func test_hq_scrapping_clears_overflow_and_returns_to_title() -> void:
 	Config.data.max_owned_cars = 2
-	_save.grant_car("rs3", false)
-	_save.grant_car("mustang", false)
+	_save.grant_car("rs3")
+	_save.grant_car("mustang")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 3, "3 owned at boot (starter + 2)")
-	# Focus a scrappable (non-immortal) car and scrap it.
-	while bool(hq._eligible[hq._focus].get("immortal", false)):
-		hq._cycle_focus(1)
+	# Scrap the focused car (any car is scrappable while others remain).
 	hq._on_scrap_pressed()
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 2, "scrapping removed one car")
@@ -662,33 +663,30 @@ func test_hq_scrapping_clears_overflow_and_returns_to_title() -> void:
 	assert_true(hq._title_layer.visible, "the title overlay is shown again")
 
 
-# The immortal starter can't be scrapped: its scrap button is disabled with a note.
-func test_hq_overflow_cannot_scrap_immortal_starter() -> void:
-	Config.data.max_owned_cars = 1
-	_save.grant_car("rs3", false)  # starter + this = 2 > cap
+# The player's last car can't be scrapped: with a 0 cap the lone owned car still
+# overflows, and its scrap button is disabled with a note (keeps ≥1 car so the
+# repair-kit safety net always has something to bring back).
+func test_hq_overflow_cannot_scrap_last_car() -> void:
+	Config.data.max_owned_cars = 0  # even one owned car overflows
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.OVERFLOW, "over the cap on boot")
-	# Find the immortal starter in the lineup and focus it.
-	for i in hq._eligible.size():
-		if bool(hq._eligible[i].get("immortal", false)):
-			hq._focus = i
-			hq._focus_changed(true)
-			break
-	assert_true(hq._scrap_button.disabled, "the immortal starter's scrap action is disabled")
-	assert_string_contains(hq._overflow_note.text, "CAN'T BE SCRAPPED", "a note explains why")
+	assert_eq(_save.profile["cars"].size(), 1, "just the boot starter owned")
+	assert_eq(hq._view, hq.View.OVERFLOW, "over the (zero) cap on boot")
+	await _await_lineup(hq)
+	assert_true(hq._scrap_button.disabled, "the last owned car's scrap action is disabled")
+	assert_string_contains(hq._overflow_note.text.to_lower(), "last car", "a note explains why")
 	# Scrapping it anyway is a no-op (count unchanged, still overflowing).
 	hq._on_scrap_pressed()
-	assert_eq(_save.profile["cars"].size(), 2, "the starter wasn't scrapped")
+	assert_eq(_save.profile["cars"].size(), 1, "the last car wasn't scrapped")
 	assert_eq(hq._view, hq.View.OVERFLOW, "still in the scrap prompt")
 
 
 # At or under the cap, HQ boots straight to the title (no scrap prompt).
 func test_hq_at_car_limit_boots_to_the_title() -> void:
 	Config.data.max_owned_cars = 3
-	_save.grant_car("rs3", false)
-	_save.grant_car("mustang", false)  # starter + 2 = 3 == cap (not over)
+	_save.grant_car("rs3")
+	_save.grant_car("mustang")  # starter + 2 = 3 == cap (not over)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -699,7 +697,7 @@ func test_hq_at_car_limit_boots_to_the_title() -> void:
 func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 	# A wrecked (0 HP) car still appears in the eligible lineup, but it's too damaged
 	# to enter — Start is disabled until a Repair Kit restores it to full health.
-	var owned: Dictionary = _save.grant_car("rs3", false)
+	var owned: Dictionary = _save.grant_car("rs3")
 	var id := int(owned["instance_id"])
 	_save.apply_damage(id, 999999.0)  # wreck it (kept at 0 HP, not deleted)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -818,7 +816,7 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	assert_false(hq._lift_sliders["brake_bias"].editable, "brake bias locked without the brake kit")
 	assert_false(hq._lift_sliders["aero_balance"].editable, "aero locked without the aero kit")
 	# Fit a brake kit to a fresh car and select it — its brake-bias slider unlocks.
-	var owned: Dictionary = _save.grant_car("rs3", false)
+	var owned: Dictionary = _save.grant_car("rs3")
 	var id := int(owned["instance_id"])
 	_save.add_item("brake_kit")
 	_save.install_upgrade(id, "brake_kit")
@@ -833,7 +831,7 @@ func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> v
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var other: Dictionary = _save.grant_car("rs3", false)  # now two owned cars
+	var other: Dictionary = _save.grant_car("rs3")  # now two owned cars
 	hq._enter_lift()
 	await get_tree().process_frame
 	var before: int = _save.selected_instance_id()
@@ -861,7 +859,7 @@ func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection(
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	_save.grant_car("rs3", false)
+	_save.grant_car("rs3")
 	hq._enter_lift()
 	await get_tree().process_frame
 	var before: int = _save.selected_instance_id()
@@ -878,7 +876,7 @@ func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("rs3", false)
+	var owned: Dictionary = _save.grant_car("rs3")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
 	_save.add_item("engine_stage1")
@@ -980,7 +978,7 @@ func test_hq_mobile_start_skips_gate_once_scheme_chosen() -> void:
 func test_standings_interstitial_renders_the_leaderboard() -> void:
 	# After a non-final event the rally pauses on the standings; the scene shows the
 	# cumulative leaderboard so far. (auto_load_scenes is off, so no scene loads.)
-	var owned: Dictionary = _save.grant_car("rs3", false)
+	var owned: Dictionary = _save.grant_car("rs3")
 	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
 	RallySession._opponent_field = [
 		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
@@ -1012,22 +1010,37 @@ func test_podium_shows_the_finish_summary() -> void:
 	var text := _label_texts(pod)
 	assert_string_contains(text, "P2", "podium shows the placement")
 	assert_string_contains(text, "WON", "a top-3 finish reads as a win")
+	# The grass floor with feathered tarmac pads is built as a custom ArrayMesh
+	# (scenery MultiMeshes are skipped headless, but the floor swap always runs).
+	var floor_mi := pod.get_node_or_null("Floor")
+	assert_not_null(floor_mi, "the podium builds a named Floor mesh")
+	assert_true(floor_mi.mesh is ArrayMesh, "the floor is the custom feathered-tarmac mesh")
+	assert_eq(pod._middle.alignment, BoxContainer.ALIGNMENT_CENTER,
+		"the content stack is centred on the podium stage")
 	# The Next button is focused (once revealed) so the reward sequence steps with a
 	# keyboard / gamepad.
 	assert_eq(pod._next_button.focus_mode, Control.FOCUS_ALL, "the Next button is focusable")
 	assert_eq(pod.get_viewport().gui_get_focus_owner(), pod._next_button,
 		"Next is focused for keyboard / gamepad")
+	# _ready skips the decorative scenery under headless (pure dressing), so drive it
+	# directly to exercise the mesh-extraction + MultiMesh build paths and confirm
+	# every focal-area decoration lands (trees, bushes, crowd).
+	pod._build_scenery()
+	for node_name in ["Trees", "Bushes", "Crowd"]:
+		var mmi := pod.get_node_or_null(node_name)
+		assert_not_null(mmi, "scenery builds a %s MultiMesh" % node_name)
+		assert_true(mmi.multimesh.instance_count > 0, "%s has placed instances" % node_name)
 
 
 func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
-	# A top-3 win that grants the Porsche 911 plus the single per-rally upgrade. The
-	# reward sequence steps PODIUM -> LEADERBOARD -> CAR_REVEAL -> UPGRADE_REVEAL, with
-	# the slot-machine spins resolving instantly under headless.
+	# A top-3 win that grants the Porsche 911 plus the two per-rally upgrades. The
+	# reward sequence steps PODIUM -> LEADERBOARD -> CAR_REVEAL -> UPGRADE_REVEAL x2,
+	# with the slot-machine spins resolving instantly under headless.
 	RallySession._last_result = {
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
 		"car_reward": "porsche911", "car_reward_is_new": true,
-		"upgrades": ["engine_stage1"],
+		"upgrades": ["engine_stage1", "brake_kit"],
 		"standings": [
 			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},
 			{"name": "Rival 1", "combined_ms": 70000, "dnf": false, "is_player": false, "placed": 2},
@@ -1037,8 +1050,9 @@ func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
 	var pod: Node3D = load("res://podium.tscn").instantiate()
 	add_child_autofree(pod)
 	await get_tree().process_frame
-	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.CAR_REVEAL, pod.Stage.UPGRADE_REVEAL] as Array[int],
-		"all four reward stages are queued when a car + upgrade were won")
+	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.CAR_REVEAL,
+			pod.Stage.UPGRADE_REVEAL, pod.Stage.UPGRADE_REVEAL] as Array[int],
+		"a car + two upgrades queue the podium, leaderboard, car reveal and one reveal per upgrade")
 
 	# Next -> the leaderboard.
 	pod._on_next()
@@ -1054,15 +1068,40 @@ func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
 	assert_eq(pod._stage, pod.Stage.CAR_REVEAL, "Next from the leaderboard shows the car reveal")
 	assert_true(pod._reveal_done, "the slot spin resolves instantly under headless")
 	assert_true(pod._next_button.visible, "Next reappears once the spin locks on")
+	# The showroom car is spawned by the slot's on_done (only once the reel locks
+	# on), so after the reveal resolves it exists and is shown — not before.
+	assert_true(is_instance_valid(pod._showroom_car), "the won car is spawned once the reveal lands")
+	assert_true(pod._showroom_car.visible, "the revealed car is shown after the spin")
+	# The content stack drops to the bottom during the reveal so it clears the car.
+	assert_eq(pod._middle.alignment, BoxContainer.ALIGNMENT_END,
+		"the menu drops to the bottom during the car reveal")
 	var car := _label_texts(pod)
 	assert_string_contains(car, "PORSCHE 911", "the won car is revealed by name")
 	assert_string_contains(car, "NEW", "an un-owned car reward is flagged NEW")
+	# The car reveal is a single caption line — the big slot label is hidden so the
+	# car name isn't shown twice.
+	assert_false(pod._slot_label.visible, "the big slot label is hidden on the one-line car reveal")
 
-	# Next -> the upgrade slot-machine reveal.
+	# Next -> the first upgrade slot-machine reveal.
 	pod._on_next()
 	await get_tree().process_frame
-	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next from the car reveal shows the upgrade reveal")
-	assert_string_contains(_label_texts(pod), "STAGE 1 ENGINE KIT", "the won upgrade is revealed by name")
+	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next from the car reveal shows the first upgrade reveal")
+	assert_string_contains(_label_texts(pod), "STAGE 1 ENGINE KIT", "the first won upgrade is revealed by name")
+	assert_string_contains(_label_texts(pod), "UPGRADE 1 OF 2", "the reveal counts up when several were won")
+	# The shared slot label is restored for the upgrade reveal (the car reveal hid it).
+	assert_true(pod._slot_label.visible, "the slot label is shown again for the upgrade reveal spin")
+	# The reward car stays on show through the upgrade reveals (it used to despawn).
+	assert_true(is_instance_valid(pod._showroom_car) and pod._showroom_car.visible,
+		"the reward car stays visible during the first upgrade reveal")
+	assert_ne(pod._next_button.text, "CONTINUE TO HQ", "more upgrades remain, so this isn't the last stage")
+
+	# Next -> the second upgrade reveal (the last stage).
+	pod._on_next()
+	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next shows the second upgrade reveal")
+	assert_string_contains(_label_texts(pod), "BIG BRAKE KIT", "the second won upgrade is revealed by name")
+	assert_true(is_instance_valid(pod._showroom_car) and pod._showroom_car.visible,
+		"the reward car is still visible during the second upgrade reveal")
 	assert_eq(pod._next_button.text, "CONTINUE TO HQ", "the final stage's button returns to HQ")
 
 
@@ -1085,7 +1124,7 @@ func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 
 
 func test_run_scene_fields_the_bound_session_car() -> void:
-	var owned: Dictionary = _save.grant_car("rs3", false)
+	var owned: Dictionary = _save.grant_car("rs3")
 	var id := int(owned["instance_id"])
 	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
 	# Boot the run scene with a session active: world.gd fields the OwnedCar.
@@ -1095,11 +1134,10 @@ func test_run_scene_fields_the_bound_session_car() -> void:
 	await get_tree().process_frame
 	var car: VehicleBody3D = scene.get_node("Car")
 	assert_eq(car.damage.instance_id, id, "the car's damage model is bound to the fielded instance")
-	assert_false(car.damage.immortal, "a non-immortal owned car")
 	assert_eq(car.current_car_name(), "Audi RS3", "the owned car's model is fielded, not the default")
 
 
-func test_first_run_start_opens_starter_pick_then_grants_immortal() -> void:
+func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
 	_reset_to_first_run()
 	# Fresh profile has no starter picked and an empty garage.
 	assert_false(bool(_save.profile.get("starter_picked", false)), "fresh profile: no starter yet")
@@ -1124,7 +1162,7 @@ func test_first_run_start_opens_starter_pick_then_grants_immortal() -> void:
 	var cars: Array = _save.profile["cars"]
 	assert_eq(cars.size(), 1, "exactly one car granted")
 	assert_eq(String(cars[0]["model_id"]), "focus")
-	assert_true(bool(cars[0]["immortal"]), "the chosen starter is immortal")
+	assert_false(_save.car_is_wrecked(cars[0]), "the chosen starter is a healthy, ordinary car")
 	assert_eq(_save.selected_instance_id(), int(cars[0]["instance_id"]), "the starter is selected")
 	assert_eq(hq._view, hq.View.GARAGE, "lands in the garage after picking")
 

@@ -23,12 +23,12 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `starter_picked` / `starter_model_id` — first-run starter state. The starter is
   **chosen by the player**, not auto-granted: on a first run (no `starter_picked`)
   the HQ title's Start opens the car park's starter picker (MX-5, Focus or Twingo, the three
-  authored-body cars); picking one calls `grant_car(model_id, immortal=true)`, sets
+  authored-body cars); picking one calls `grant_car(model_id)`, sets
   these fields + the selection, and enters the garage. See `features/menus.md`.
 - `next_instance_id` — monotonic counter minting unique owned-car ids.
 - `cars` — array of **instance-based** owned cars. Each is a unique instance
   (`instance_id`) referencing a `CarLibrary` model id (`model_id`), carrying its
-  own `hp`, `immortal` flag, `installed_upgrades`, and `tuning` deltas. Two cars
+  own `hp`, `installed_upgrades`, and `tuning` deltas. Two cars
   of the same model can diverge (the random-car reward can grant a model you
   already own).
 - `selected_instance_id` — the owned car the player has **selected** (the one raised
@@ -64,12 +64,18 @@ heuristic.
 
 `Save.profile` (the loaded dict), `load_or_new()`, `save()` (debounced ~1s),
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
-that mutate + autosave: `grant_car(model_id, immortal)`, `get_car(instance_id)`,
+that mutate + autosave: `grant_car(model_id)`, `get_car(instance_id)`,
 `apply_damage(instance_id, amount)`, `wreck_car(instance_id)` (leaves the car owned
 at **0 HP** — not destroyed — too damaged to field until repaired),
-`car_is_wrecked(car)` (the 0-HP, non-immortal predicate the menus gate on),
+`car_is_wrecked(car)` (the 0-HP predicate the menus gate on),
+`ensure_repair_safety_net()` (anti-soft-lock floor — if the player owns ≥1 car,
+**every** owned car is wrecked, and **no** repair kits are held, grants ONE free
+Repair Kit and returns true, else no-op/false; called at the end of `load_or_new`
+and on every garage-lift refresh, `hq.gd:_refresh_lift_ui`),
 `scrap_car(instance_id)` (a deliberate player removal — erases the car, upgrades
-**not** refunded, refuses the immortal starter; drives HQ's garage-overflow prompt),
+**not** refunded, refuses the player's **last** owned car so the "always own ≥1 car"
+invariant holds and the safety net always has a car to revive; drives HQ's
+garage-overflow prompt),
 `set_tuning(instance_id, tuning)`, `selected_car()` / `selected_instance_id()` /
 `set_selected_car(instance_id)` (the lift's selected car, self-healing),
 `get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),
@@ -115,7 +121,9 @@ opaque strings.
 
 `tests/headless/test_save_manager.gd` — round-trip, default profile, instance-id
 uniqueness, HP seeding, idempotent rally completion, wreck-returns-upgrades,
-immortal-never-wrecks, inventory counts, migration refuse/backfill, corrupt-JSON
+the starter wrecking like any car, the `ensure_repair_safety_net` free-kit floor
+(all cars wrecked + none held), scrap refusing the last owned car, inventory counts,
+migration refuse/backfill, corrupt-JSON
 and `.bak` fallback, unknown-model pruning, new-game reset. Runs against a
 throwaway `user://test_profile.json`. CarLibrary metadata + id helpers are
 covered in `test_car_library.gd`; the autoload-registered smoke check is in

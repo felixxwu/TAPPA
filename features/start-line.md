@@ -30,6 +30,9 @@ car is held locked. Three phases, driven in `_process`:
    the player started (a gap behind the line). The player and trailer each drive forward
    while well behind their slot, coast into a speed-aware brake point, then **brake to a
    complete stop** on it (rather than flooring it for a fixed window and coasting past).
+   As they slow through the last metre or so they **cut throttle and hold on the
+   handbrake** — no gas is applied while stopping (a `-1.0` brake pedal at crawl speed
+   would make the auto box grab reverse and rev against the handbrake).
    The overlay hides. The fade does **not** start until the player has rolled up and
    come to a **complete stop** (`STOP_SPEED_EPS`), so the chase-cam cut never happens
    mid-roll; `start_drive_off_seconds` is a safety cap.
@@ -65,10 +68,21 @@ full `start_queue_gap` behind it (directly in the leader's old slot's queue) and
 the whole gap up to the line — so it travels a meaningful distance before braking —
 while the **trailer**, staged a gap behind the player (two gaps behind the line), rolls
 up to where the player started and **brakes to a stop** there too (so it doesn't coast
-through and drift). At the fade the player is **released** — AI override and axis locks
+through and drift). Once a car is nearly stopped and holding the handbrake it is
+**position-locked** (`Car._apply_handbrake_lock` freezes the body below
+`HANDBRAKE_LOCK_SPEED`), so a settling trailer can't creep into the back of the player
+and the player at the line can't be nudged; the lock releases when the handbrake does.
+At the fade the player is **released** — AI override and axis locks
 cleared, gearbox-auto restored — so the run drives normally. The `StageManager` keeps it
 locked through the countdown, so it holds at the line until GO. The player ends near
 the line; track progress projects onto the lead-in, so the exact stop doesn't matter.
+
+All three cars are **seated `start_spawn_clearance` (0.5 m) above the road** at spawn so
+they settle onto their wheels instead of clipping into the ground. `StartLine.setup`
+raises `_start_xform` to the road height plus the clearance; that single anchor
+cascades — the staged player and both queue props read their ride height off it (via
+`_ground`), and the countdown pose is `reset_to` it at the hand-off — so the player is
+clear both before and during the countdown.
 
 The two queue cars keep **collision exceptions** with the player and each other (so
 they never shove it), engines silenced, and are **despawned at the fade** so they
@@ -126,6 +140,7 @@ the countdown arms immediately.
 | `start_fade_seconds` | `0.6` | Length of each half (out, back) of the fade. |
 | `start_lead_in_ahead_m` | `22.0` | Straight road forced ahead of the start line (staged runs). |
 | `start_lead_in_behind_m` | `20.0` | Straight road extended behind the start line, for the staged player (a gap back) + trailer (two gaps back). |
+| `start_spawn_clearance` | `0.5` | Height (m) the player and both queue cars are seated above the road at spawn, so they settle onto their wheels instead of clipping into the ground. |
 
 See [configuration.md](configuration.md).
 

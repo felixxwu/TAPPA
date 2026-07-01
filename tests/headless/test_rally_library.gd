@@ -92,7 +92,7 @@ func test_roster_has_full_one_surface_events() -> void:
 
 func test_starter_always_has_an_enterable_rally() -> void:
 	# Anti-soft-lock floor: now that progression is gated on power-to-weight (not an
-	# open-class pool at every tier), the guarantee is that the immortal starter —
+	# open-class pool at every tier), the guarantee is that the starter —
 	# the lowest-power car, mx5 — can always enter at least one NON-showdown rally,
 	# and the showdown stays open-class so it can finish the game even if it never
 	# earns another car.
@@ -314,8 +314,12 @@ func test_opponent_field_shape_and_bounds() -> void:
 			for i in event_results.size():
 				var t: int = opp["event_times_ms"][i]
 				var best_car := RallyLibrary._best_eligible_car(rally)
-				var floor_ms := int(LapTimeModel.optimum_ms(event_results[i], best_car, events[i]) * RallyLibrary.RIVAL_PACE_MIN)
-				assert_gte(t, floor_ms - 1, "event time >= best eligible car floor * RIVAL_PACE_MIN")
+				# Fastest a rival can go: the tier's fast end minus the ±noise, clamped so
+				# they never beat the physics optimum. Every rival's event time is >= that.
+				var band := RallyLibrary._pace_band(int(rally.get("difficulty", 1)))
+				var min_factor: float = maxf(band.x * (1.0 - RallyLibrary.PACE_EVENT_NOISE), RallyLibrary.PACE_MIN_FLOOR)
+				var floor_ms := int(LapTimeModel.optimum_ms(event_results[i], best_car, events[i]) * min_factor)
+				assert_gte(t, floor_ms - 1, "event time >= best eligible car floor * fastest possible pace")
 				sum += t
 			assert_eq(int(opp["combined_ms"]), sum, "combined time is the sum of event times")
 
@@ -374,6 +378,72 @@ func test_opponent_field_deterministic_for_seed():
 	var b := RallyLibrary.generate_opponent_field(rally, [track], rally["events"])
 	assert_eq(a.size(), b.size())
 	assert_eq(int(a[0]["event_times_ms"][0]), int(b[0]["event_times_ms"][0]), "stable per seed")
+
+
+func test_opponent_field_is_a_ranked_ladder() -> void:
+	# Persistent per-rival skill: each rival's pace (time ÷ their OWN car's physics
+	# floor) is consistent across all 3 events — a fast rival stays fast — and the
+	# field's paces span a wide ladder rather than every rival averaging to mid-pack.
+	# We measure pace factor (not combined time) so car-floor variety doesn't mask
+	# the skill spread the fix controls.
+	var rally := RallyLibrary.by_id("coastal_sprint")
+	var track := _track_with_pieces()
+	var events: Array = (rally["events"] as Array).slice(0, 3)
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)
+	var mean_paces: Array = []
+	for opp in field:
+		if opp["dnf"]:
+			continue
+		var car := CarLibrary.by_id(String(opp["car_id"]))
+		var factors: Array = []
+		for i in events.size():
+			var floor_ms := LapTimeModel.optimum_ms(track, car, events[i])
+			factors.append(float(opp["event_times_ms"][i]) / float(floor_ms))
+		# Persistence: a rival's per-event paces cluster within the ±noise window
+		# (ratio <= 1 + 2*noise, plus a rounding cushion) — NOT re-rolled each event.
+		assert_lt(float(factors.max()) / float(factors.min()), 1.0 + 2.2 * RallyLibrary.PACE_EVENT_NOISE,
+			"%s holds a consistent pace across events" % opp["name"])
+		var sum := 0.0
+		for f in factors:
+			sum += f
+		mean_paces.append(sum / factors.size())
+	assert_gt(mean_paces.size(), 2, "enough clean rivals to rank")
+	mean_paces.sort()
+	# The field spans a real ladder: fastest vs slowest surviving rival's pace differ
+	# well beyond the ±5% per-event noise (band is [1.37, 2.42] for this tier — a
+	# ~1.77x ratio before noise and DNF attrition trim the surviving extremes).
+	assert_gt(float(mean_paces[mean_paces.size() - 1]) / float(mean_paces[0]), 1.25,
+		"field spans a ranked ladder, not a mid-pack cluster")
+
+
+func test_higher_tier_fields_faster_rivals() -> void:
+	# The pace band scales with hidden difficulty: a tier-4 field runs faster overall
+	# than a tier-1 field on the same track (top of the field creeps toward the floor).
+	var track := _track_with_pieces()
+	var events := [{"seed": 1}, {"seed": 2}, {"seed": 3}]
+	var results := [track, track, track]
+	var easy := {"id": "easy_r", "difficulty": 1, "restriction": {}, "events": events}
+	var hard := {"id": "hard_r", "difficulty": 4, "restriction": {}, "events": events}
+	var easy_field := RallyLibrary.generate_opponent_field(easy, results, events)
+	var hard_field := RallyLibrary.generate_opponent_field(hard, results, events)
+	var best := func(f: Array) -> int:
+		var b := -1
+		for opp in f:
+			if not opp["dnf"] and (b < 0 or int(opp["combined_ms"]) < b):
+				b = int(opp["combined_ms"])
+		return b
+	assert_lt(best.call(hard_field), best.call(easy_field),
+		"tier-4 winner is faster than the tier-1 winner on the same track")
+
+
+func test_pace_band_tightens_toward_floor_up_tier() -> void:
+	var t1 := RallyLibrary._pace_band(1)
+	var t4 := RallyLibrary._pace_band(4)
+	assert_eq(t1.x, t4.x, "fastest rival pace is the same at every tier")
+	assert_almost_eq(t1.x, 1.1, 0.001, "the fastest rival runs at 1.1x the car's physics optimum")
+	assert_lt(t4.y, t1.y, "tier-4 slowest rival is quicker than tier-1's")
+	assert_almost_eq(t1.y, 2.0, 0.001, "tier-1 backmarker is 2.0x their optimum")
+	assert_almost_eq(t4.y, 1.5, 0.001, "tier-4 backmarker tightens to 1.5x")
 
 
 func test_placement_and_top3() -> void:

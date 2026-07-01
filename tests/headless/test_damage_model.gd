@@ -76,7 +76,7 @@ func test_speed_damage_calibration() -> void:
 func test_register_impact_reduces_hp_and_emits_damaged() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, false)
+	dm.field(1000.0, 1000.0)
 	var got := {"loss": -1.0, "point": Vector3.ZERO, "count": 0}
 	dm.damaged.connect(func(loss: float, point: Vector3) -> void:
 		got["loss"] = loss
@@ -99,7 +99,7 @@ func test_register_impact_reduces_hp_and_emits_damaged() -> void:
 func test_single_impact_is_capped_and_cannot_wreck() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, false)
+	dm.field(1000.0, 1000.0)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
 	# A colossal single impact (huge speed) is capped to a fraction of max HP, so it can't wreck.
@@ -113,7 +113,7 @@ func test_single_impact_is_capped_and_cannot_wreck() -> void:
 func test_cooldown_groups_a_crash_and_it_takes_several_hits_to_wreck() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, false)
+	dm.field(1000.0, 1000.0)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
 	var big := _mps(1.0e6)  # huge speed -> capped per-hit loss
@@ -139,7 +139,7 @@ func test_sustained_contact_stays_one_hit() -> void:
 	# tick_cooldown(delta) + register_impact() loop while in contact.
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, false)
+	dm.field(1000.0, 1000.0)
 	var big := _mps(1.0e6)
 	dm.register_impact(big, Vector3.ZERO, cfg)
 	var after_one := dm.hp
@@ -153,12 +153,75 @@ func test_sustained_contact_stays_one_hit() -> void:
 		"a multi-second sustained crash still costs only one hit")
 
 
+# --- Soft hits (bushes / spectators) -----------------------------------------
+
+func test_soft_hit_applies_flat_loss_and_emits() -> void:
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	var got := {"loss": -1.0, "point": Vector3.ZERO, "count": 0}
+	dm.damaged.connect(func(loss: float, point: Vector3) -> void:
+		got["loss"] = loss
+		got["point"] = point
+		got["count"] += 1)
+	var lost := dm.register_soft_hit(12.0, Vector3(4, 5, 6), 0.5)
+	assert_almost_eq(lost, 12.0, 1e-6, "soft hit returns the flat HP lost (no speed law)")
+	assert_almost_eq(dm.hp, 988.0, 1e-6, "HP drained by the flat loss")
+	assert_almost_eq(got["loss"], 12.0, 1e-6, "damaged carries the flat loss")
+	assert_eq(got["point"], Vector3(4, 5, 6), "damaged carries the contact point")
+	assert_eq(got["count"], 1, "damaged emitted once")
+
+
+func test_soft_hit_cooldown_groups_repeated_contacts() -> void:
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	assert_almost_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 12.0, 1e-6, "first graze lands")
+	assert_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 0.0,
+		"a second graze inside the cooldown costs nothing")
+	assert_almost_eq(dm.hp, 988.0, 1e-6, "only one graze drained HP")
+	dm.tick_cooldown(0.5)  # window elapses
+	assert_almost_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 12.0, 1e-6,
+		"a graze after the cooldown lands again")
+
+
+func test_soft_hit_cooldown_is_separate_from_impact() -> void:
+	# A tree impact must not mask a following bush graze (and vice versa) — the two
+	# cooldowns are independent.
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	dm.register_impact(_mps(cfg.impact_ref_speed_kmh), Vector3.ZERO, cfg)  # arms impact cooldown
+	var after_impact := dm.hp
+	assert_almost_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 12.0, 1e-6,
+		"a bush graze still lands during an impact cooldown")
+	assert_almost_eq(dm.hp, after_impact - 12.0, 1e-6, "the graze drained HP on top of the impact")
+
+
+func test_soft_hit_can_wreck_at_zero_hp() -> void:
+	var dm := DamageModel.new()
+	dm.field(1000.0, 20.0)
+	var wrecks := {"n": 0}
+	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
+	dm.register_soft_hit(30.0, Vector3.ZERO, 0.5)
+	assert_eq(dm.hp, 0.0, "a soft hit that overruns remaining HP floors it at 0")
+	assert_eq(wrecks["n"], 1, "and wrecks the car, like an impact")
+
+
+func test_soft_hit_zero_loss_does_nothing() -> void:
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	var got := {"count": 0}
+	dm.damaged.connect(func(_l: float, _p: Vector3) -> void: got["count"] += 1)
+	assert_eq(dm.register_soft_hit(0.0, Vector3.ZERO, 0.5), 0.0, "a zero-loss soft hit costs nothing")
+	assert_eq(got["count"], 0, "no damaged signal for a zero-loss hit")
+	assert_almost_eq(dm.hp, 1000.0, 1e-6, "HP unchanged")
+
+
 # --- Effects scale with damage fraction --------------------------------------
 
 func test_effects_zero_at_full_hp() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, false)
+	dm.field(1000.0, 1000.0)
 	dm.align_bias_sign = 1.0
 	assert_almost_eq(dm.damage_fraction(), 0.0, 1e-6, "d = 0 at full HP")
 	assert_almost_eq(dm.power_multiplier(cfg), 1.0, 1e-6, "full power at full HP")
@@ -168,7 +231,7 @@ func test_effects_zero_at_full_hp() -> void:
 func test_effects_max_at_zero_hp() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, false)
+	dm.field(1000.0, 1000.0)
 	dm.align_bias_sign = 1.0
 	dm.hp = 0.0
 	assert_almost_eq(dm.damage_fraction(), 1.0, 1e-6, "d = 1 at 0 HP")
@@ -181,7 +244,7 @@ func test_effects_max_at_zero_hp() -> void:
 func test_effects_monotonic_between() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, false)
+	dm.field(1000.0, 1000.0)
 	dm.align_bias_sign = 1.0
 	dm.hp = 500.0
 	assert_almost_eq(dm.damage_fraction(), 0.5, 1e-6, "half HP -> d = 0.5")
@@ -194,7 +257,7 @@ func test_effects_monotonic_between() -> void:
 func test_steer_bias_follows_rolled_sign() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 0.0, false)
+	dm.field(1000.0, 0.0)
 	dm.align_bias_sign = -1.0
 	assert_almost_eq(dm.steer_bias(cfg), -cfg.damage_steer_bias_max, 1e-6,
 		"a -1 roll pulls the other way")
@@ -204,7 +267,7 @@ func test_steer_bias_follows_rolled_sign() -> void:
 
 func test_unbound_wreck_emits_without_touching_save() -> void:
 	var dm := DamageModel.new()
-	dm.field(800.0, 30.0, false, -1)  # unbound: free-roam / dev
+	dm.field(800.0, 30.0, -1)  # unbound: free-roam / dev
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
 	dm.apply_loss(100.0)
@@ -214,7 +277,7 @@ func test_unbound_wreck_emits_without_touching_save() -> void:
 
 
 func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
-	var car: Dictionary = _save.grant_car("mx5", false)
+	var car: Dictionary = _save.grant_car("mx5")
 	var id := int(car["instance_id"])
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(id, "engine_stage1"), "upgrade fitted")
@@ -222,7 +285,7 @@ func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 0, "item left inventory on install")
 
 	var dm := DamageModel.new()
-	dm.field(800.0, 40.0, false, id)
+	dm.field(800.0, 40.0, id)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
 	dm.apply_loss(40.0)  # -> 0 HP
@@ -237,24 +300,25 @@ func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 		"the upgrade is not returned to inventory (it rides along with the car)")
 
 
-func test_immortal_takes_no_damage_and_never_wrecks() -> void:
+func test_every_car_takes_damage_and_can_wreck() -> void:
+	# No car is invulnerable any more: impacts cost HP and enough damage wrecks it.
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(800.0, 800.0, true)
+	dm.field(800.0, 800.0)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	assert_eq(dm.register_impact(100000.0, Vector3.ZERO, cfg), 0.0, "immortal ignores impacts")
-	assert_eq(dm.hp, 800.0, "immortal HP unchanged by impacts")
+	assert_gt(dm.register_impact(100000.0, Vector3.ZERO, cfg), 0.0, "a hard impact costs HP")
+	assert_lt(dm.hp, 800.0, "HP falls after an impact")
 	dm.apply_loss(100000.0)
-	assert_gt(dm.hp, 0.0, "immortal HP floors above 0")
-	assert_eq(wrecks["n"], 0, "immortal is never wrecked")
-	assert_almost_eq(dm.damage_fraction(), 0.0, 1e-6, "immortal shows no damage effects")
+	assert_eq(dm.hp, 0.0, "lethal damage floors HP at 0")
+	assert_eq(wrecks["n"], 1, "the car wrecks at 0 HP")
+	assert_almost_eq(dm.damage_fraction(), 1.0, 1e-6, "a wrecked car reads full damage")
 
 
 # --- Persistence handoff -----------------------------------------------------
 
 func test_event_boundary_writeback_round_trips() -> void:
-	var car: Dictionary = _save.grant_car("rs3", false)
+	var car: Dictionary = _save.grant_car("rs3")
 	var id := int(car["instance_id"])
 	var max_hp := float(_save.get_car(id)["hp"])  # granted at full HP
 	# Working HP depleted over a run is written back at the event boundary.

@@ -49,6 +49,8 @@ var _capsule_radius := 0.3
 var _center := Vector2.ZERO       # group centroid, for the LOD distance test
 var _ragdolls: Array[RigidBody3D] = []
 var _rng := RandomNumberGenerator.new()
+var _hp_loss := 0.0               # HP the car loses per member knocked (spectator_hp_loss)
+var _cooldown := 0.0              # shared soft-hit cooldown so a mown line is one hit
 
 
 # Wire a freshly placed group. `member_positions` come from SpectatorScatter.members.
@@ -59,6 +61,8 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	_road_cells = road_cells
 	_tree_grid = tree_grid
 	_p = params
+	_hp_loss = float(params.get("hp_loss", 0.0))
+	_cooldown = float(params.get("soft_hit_cooldown_s", 0.0))
 	_rng.seed = int(params.get("seed", 0))
 
 	var n := member_positions.size()
@@ -360,6 +364,14 @@ func _knock_over(i: int, car_xf: Transform3D) -> void:
 		_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)
 	).normalized() * float(_p["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
 	_ragdolls.append(body)
+
+	# Mowing the crowd isn't free: the hit costs the car a flat HP loss (a bit more
+	# than a bush graze). Shared DamageModel soft-hit path (+ its cooldown), so
+	# ploughing a dense line counts as one hit, not one per member. See features/damage.md.
+	if _car != null and _hp_loss > 0.0:
+		var dmg: DamageModel = _car.get("damage")
+		if dmg != null:
+			dmg.register_soft_hit(_hp_loss, Vector3(x, ground, z), _cooldown)
 
 
 # Launch velocity for a knocked body: along `dir` at magnitude `speed x factor`

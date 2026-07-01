@@ -174,7 +174,7 @@ func test_stage_delta_popup_respects_config() -> void:
 func test_hp_gauge_tracks_working_hp() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
-	car.damage.field(1000.0, 1000.0, false)
+	car.damage.field(1000.0, 1000.0)
 	await get_tree().process_frame
 	assert_true(bar.visible, "gauge shown for a mortal car")
 	assert_almost_eq(bar.value, 1.0, 0.001, "full HP reads full")
@@ -183,19 +183,11 @@ func test_hp_gauge_tracks_working_hp() -> void:
 	assert_almost_eq(bar.value, 0.25, 0.001, "gauge reflects working HP / max_hp")
 
 
-func test_hp_gauge_hidden_for_immortal_starter() -> void:
-	var car: VehicleBody3D = _scene.get_node("Car")
-	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
-	car.damage.field(1000.0, 1000.0, true)  # immortal
-	await get_tree().process_frame
-	assert_false(bar.visible, "the immortal starter shows no HP gauge")
-
-
 func test_hp_gauge_hidden_when_disabled() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var bar := _scene.get_node("HUD/HPBar") as ProgressBar
 	Config.data.hud_hp_enabled = false
-	car.damage.field(1000.0, 1000.0, false)
+	car.damage.field(1000.0, 1000.0)
 	await get_tree().process_frame
 	assert_false(bar.visible, "gauge suppressed when hud_hp_enabled is off")
 	Config.data.hud_hp_enabled = true

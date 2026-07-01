@@ -26,15 +26,34 @@ const FIELD_MIN := 10
 const FIELD_MAX := 15
 const DNF_CHANCE := 0.18         # per-opponent, per-event
 
-# Rival pace band, as multiples of each rival's OWN physics floor (optimum_ms for
-# THEIR car on the event track): each clean rival's event time is uniform in
-# [floor × RIVAL_PACE_MIN, floor × (RIVAL_PACE_MIN + RIVAL_PACE_SPREAD)].
-# Raise RIVAL_PACE_MIN to make rivals easier (their times inflate further above
-# their floor); lower it to make them tougher. At 1.0 the quickest possible rival
-# drives a flawless lap (exactly their car's physics floor). RIVAL_PACE_SPREAD
-# controls how spread out the field is.
-const RIVAL_PACE_MIN := 1.3
-const RIVAL_PACE_SPREAD := 1.0
+# Rival pace, as multiples of each rival's OWN physics floor (optimum_ms for THEIR
+# car on the event track). Each rival gets a PERSISTENT skill (drawn once, not per
+# event): skill 0 = ace, skill 1 = backmarker. Their base pace is lerp(pace_fast,
+# pace_slow, skill), so a fast rival is fast across ALL 3 events and combined times
+# spread into a ranked ladder — rather than every rival's per-event draws averaging
+# out to mid-pack. Each event then applies a small ±PACE_EVENT_NOISE jitter around
+# that base pace so stages don't feel robotic and the odd upset can happen, without
+# collapsing the ranking.
+#
+# The fast end of the band is fixed: the fastest rival (skill 0) runs at 1.1x the
+# car's physics optimum at EVERY tier. Only the slow end scales with the rally's
+# HIDDEN difficulty tier (1–4) — it tightens toward the fast end as the tier rises,
+# so higher-tier rallies field a more uniformly quick pack (tier-1 backmarker is 2.0x
+# their optimum; tier-4 backmarker is 1.5x). See _pace_band().
+const PACE_FAST_BASE := 1.10     # fastest-rival pace (skill 0) — same at every tier
+const PACE_SLOW_BASE := 2.00     # tier-1 slowest-rival pace (skill 1)
+const PACE_FAST_STEP := 0.00     # fast end does not move with tier
+const PACE_SLOW_STEP := 0.1667   # each tier above 1 pulls the slow end down (2.0 -> 1.5 by tier 4)
+const PACE_EVENT_NOISE := 0.05   # ±5% per-event jitter around a rival's persistent base pace
+const PACE_MIN_FLOOR := 1.00     # hard clamp: rivals never beat their car's physics optimum
+
+
+# Rival pace band as (pace_fast, pace_slow) — the pace of the fastest (skill 0) and
+# slowest (skill 1) rival for a rally of the given hidden difficulty. The fast end
+# is a constant 1.1x (just off the physics optimum); only the slow end tightens up-tier.
+static func _pace_band(tier: int) -> Vector2:
+	var t := clampi(tier, 1, 4) - 1
+	return Vector2(PACE_FAST_BASE - t * PACE_FAST_STEP, PACE_SLOW_BASE - t * PACE_SLOW_STEP)
 
 
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
@@ -47,7 +66,7 @@ const RIVAL_PACE_SPREAD := 1.0
 # RWD). `difficulty` is a HIDDEN tier (never shown to the player) that drives the
 # reward tier (clamped by progress) and sort order — the p/w gate is the visible
 # requirement. `events` is exactly 3 EventDefs (the showdown's are longer). Exactly
-# one entry has `showdown = true` and stays open-class so the immortal starter can
+# one entry has `showdown = true` and stays open-class so the low-power starter can
 # always finish the game.
 const RALLIES: Array[Dictionary] = [
 	{
@@ -55,9 +74,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {"pw_max": 0.18},  # gated below: a low p/w ceiling — the starter's home
 		"events": [
-			{"seed": 1001, "turn_count": 10, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.85},
-			{"seed": 1002, "turn_count": 12, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.8},
-			{"seed": 1003, "turn_count": 11, "forestiness": 0.85, "surface_mix": 0.3, "straightness": 0.8},
+			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1},
+			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0.7, "straightness": 0.8},
+			{"seed": 1009, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.8},
 		],
 	},
 	{
@@ -76,9 +95,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {"pw_min": 0.12, "pw_max": 0.22},  # gated below: a slightly higher p/w ceiling
 		"events": [
-			{"seed": 2001, "turn_count": 14, "forestiness": 0.3, "surface_mix": 1.0, "straightness": 0.55},
-			{"seed": 2002, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.5},
-			{"seed": 2003, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.55},
+			{"seed": 2004, "turn_count": 14, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0},
+			{"seed": 2005, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2},
+			{"seed": 2006, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3},
 		],
 	},
 	{
@@ -116,7 +135,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "the_showdown", "name": "The Showdown", "difficulty": 4, "showdown": true,
 		"map_pos": Vector2(0.5, 0.12),
-		"restriction": {},  # open so the immortal starter can always finish the game
+		"restriction": {},  # open so the low-power starter can always finish the game
 		"events": [
 			{"seed": 9001, "turn_count": 22, "forestiness": 0.8, "surface_mix": 0.5},
 			{"seed": 9002, "turn_count": 24, "forestiness": 0.5, "surface_mix": 0.8},
@@ -285,9 +304,14 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	rng.seed = _rally_seed(rally)
 	var car_pool := _eligible_cars(rally)
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
+	var band := _pace_band(int(rally.get("difficulty", 1)))
 	var field: Array = []
 	for i in count:
 		var car: Dictionary = car_pool[rng.randi_range(0, car_pool.size() - 1)]
+		# Persistent per-rival skill (drawn ONCE): sets a base pace held across every
+		# event, so fast rivals stay fast and the field forms a ranked ladder.
+		var skill := rng.randf()
+		var base_pace := lerpf(band.x, band.y, skill)
 		var times: Array = []
 		var dnf := false
 		for k in event_results.size():
@@ -297,7 +321,8 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 			else:
 				var ev: Dictionary = events[k] if k < events.size() else {}
 				var floor_ms := LapTimeModel.optimum_ms(event_results[k], car, ev)
-				var factor := RIVAL_PACE_MIN + rng.randf() * RIVAL_PACE_SPREAD
+				var noise := 1.0 + (rng.randf() * 2.0 - 1.0) * PACE_EVENT_NOISE
+				var factor := maxf(base_pace * noise, PACE_MIN_FLOOR)
 				times.append(int(round(floor_ms * factor)))
 		var combined := -1
 		if not dnf:

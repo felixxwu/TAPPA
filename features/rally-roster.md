@@ -22,7 +22,7 @@ Each `RALLIES` entry:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
   `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`).
   **Progression is primarily gated on power-to-weight:** the earliest rallies are
-  gated only from above (a `pw_max` ceiling and no floor, so the low-power immortal
+  gated only from above (a `pw_max` ceiling and no floor, so the low-power
   starter qualifies), and the harder rallies tighten to a **band** (`pw_min` +
   `pw_max`) so an over-powered car can't walk them either. A rally may layer a
   secondary theme on top of its band (e.g. RWD Masters also wants `drive_mode` RWD,
@@ -92,8 +92,19 @@ generator also uses it per-rival.
   in-run "vs P1" pace popup (see [stage.md](stage.md)).
 - `generate_opponent_field(rally, event)` — the fixed field: 10–15 rivals, each
   rival's time = physics floor of **their own assigned car** (from `LapTimeModel`)
-  × a seeded pace factor in `[1.35, 2.35]`, so rivals are always slower than the
-  physics optimum of their car and thus beatable by design. Some **DNF**; a DNF in
+  × a pace factor. Each rival draws a **persistent skill** ONCE (not per event):
+  skill 0 = ace, skill 1 = backmarker, giving a base pace `lerp(pace_fast,
+  pace_slow, skill)` held across all 3 events — so a fast rival stays fast and the
+  field spreads into a ranked ladder instead of everyone's per-event draws
+  averaging to mid-pack. Each event adds a small ±`PACE_EVENT_NOISE` (±5%) jitter
+  around that base, clamped by `PACE_MIN_FLOOR` (1.0×) so no rival ever beats their
+  car's physics optimum — always beatable by design. In the `[pace_fast, pace_slow]`
+  band the **fast end is a constant 1.1×** (the fastest rival runs just off their
+  car's physics optimum at every tier); only the **slow end scales with the rally's
+  hidden `difficulty` tier (1–4)** via `_pace_band`, tightening toward the fast end as
+  the tier rises (tier 1 `[1.1, 2.0]` → tier 4 `[1.1, 1.5]`), so higher-tier rallies
+  field a more uniformly quick pack.
+  Some **DNF**; a DNF in
   any event disqualifies the opponent (`combined_ms = -1`, doesn't rank). Each
   rival is also assigned a **car** (`car_id` / `car_name`) drawn from the rally's
   eligible roster (`_eligible_cars` filters by the restriction, so a p/w-banded
@@ -121,7 +132,7 @@ generator also uses it per-rival.
 ## Anti-soft-lock guarantees
 
 The roster underwrites two guards (asserted by tests): a **starter floor** — the
-immortal starter (`mx5`, the lowest-power car) always has at least one non-showdown
+starter (`mx5`, the lowest-power car) always has at least one non-showdown
 rally inside its power band to race, and the showdown stays open-class so it can
 finish the game even if it never earns another car — and the **reward-eligibility
 query** above, so the reward system never grants a car stranded with no enterable

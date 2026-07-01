@@ -35,16 +35,16 @@ const UPGRADES: Array[Dictionary] = [
 	},
 	{
 		"id": "aero_kit", "name": "Aero Kit", "slot": "aero",
-		"tier": 2, "consumable": false,
+		"tier": 1, "consumable": false,
 		"effect": {"unlocks_aero_tuning": true, "downforce_front": 0.2, "downforce_rear": 0.2},
 	},
 	{
 		"id": "weight_reduction", "name": "Weight Reduction", "slot": "chassis",
-		"tier": 2, "consumable": false, "effect": {"mass_mult": 0.90},
+		"tier": 1, "consumable": false, "effect": {"mass_mult": 0.90},
 	},
 	{
 		"id": "brake_kit", "name": "Big Brake Kit", "slot": "brakes",
-		"tier": 2, "consumable": false,
+		"tier": 1, "consumable": false,
 		"effect": {"brake_torque_mult": 1.20, "unlocks_brake_bias": true},
 	},
 	{

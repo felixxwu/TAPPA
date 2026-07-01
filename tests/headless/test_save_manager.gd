@@ -37,7 +37,7 @@ func test_default_profile_is_empty_and_valid() -> void:
 
 
 func test_round_trip_survives_save_and_reload() -> void:
-	var car: Dictionary = _save.grant_car("mx5", true)
+	var car: Dictionary = _save.grant_car("mx5")
 	_save.add_item("repair_kit", 2)
 	_save.complete_rally("alpine", 123456)
 	_save.set_tuning(car["instance_id"], {"brake_bias": 0.55})
@@ -49,7 +49,6 @@ func test_round_trip_survives_save_and_reload() -> void:
 	_save.load_or_new()
 	assert_eq(_save.profile["cars"].size(), 1, "owned car reloaded")
 	assert_eq(_save.profile["cars"][0]["model_id"], "mx5", "model id reloaded")
-	assert_true(_save.profile["cars"][0]["immortal"], "immortal flag reloaded")
 	assert_eq(int(_save.profile["inventory"]["repair_kit"]), 2, "inventory reloaded")
 	assert_true(_save.rally_completed("alpine"), "rally completion reloaded")
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 123456, "best time reloaded")
@@ -94,21 +93,22 @@ func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 		"the upgrade is still installed on the wrecked car")
 
 
-func test_scrap_removes_car_consumes_upgrades_and_spares_immortal() -> void:
-	var starter: Dictionary = _save.grant_car("mx5", true)  # the immortal starter
+func test_scrap_removes_car_consumes_upgrades_and_spares_last_car() -> void:
+	var starter: Dictionary = _save.grant_car("mx5")
 	var car: Dictionary = _save.grant_car("mustang")
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
 
-	# Scrapping a normal car removes it; its fitted upgrade is lost with it (consumed
+	# Scrapping a car removes it; its fitted upgrade is lost with it (consumed
 	# for good when applied, like a wreck — not refunded).
-	assert_true(_save.scrap_car(car["instance_id"]), "scrapping a normal car succeeds")
+	assert_true(_save.scrap_car(car["instance_id"]), "scrapping a car succeeds while others remain")
 	assert_eq(_save.profile["cars"].size(), 1, "scrapped car removed (only the starter remains)")
 	assert_false(_save.profile["inventory"].has("engine_stage1"), "fitted upgrade is not refunded on scrap")
 
-	# The immortal starter can never be scrapped.
-	assert_false(_save.scrap_car(starter["instance_id"]), "the immortal starter can't be scrapped")
-	assert_eq(_save.profile["cars"].size(), 1, "the starter is still owned")
+	# The player's LAST car can never be scrapped (keeps ≥1 car so the repair-kit
+	# safety net always has something to bring back).
+	assert_false(_save.scrap_car(starter["instance_id"]), "the last owned car can't be scrapped")
+	assert_eq(_save.profile["cars"].size(), 1, "the last car is still owned")
 	# An unknown instance is a harmless no-op.
 	assert_false(_save.scrap_car(99999), "scrapping an unknown instance is a no-op")
 
@@ -160,11 +160,38 @@ func test_repair_kit_revives_a_wrecked_car() -> void:
 	assert_false(_save.car_is_wrecked(_save.get_car(id)), "and is no longer wrecked")
 
 
-func test_immortal_starter_never_wrecks() -> void:
-	var car: Dictionary = _save.grant_car("mx5", true)
+func test_starter_wrecks_like_any_car() -> void:
+	# The starter is no longer invulnerable: lethal damage wrecks it (0 HP, still owned).
+	var car: Dictionary = _save.grant_car("mx5")
 	_save.apply_damage(car["instance_id"], 999999.0)
-	assert_eq(_save.profile["cars"].size(), 1, "immortal car survives lethal damage")
-	assert_gte(float(_save.get_car(car["instance_id"])["hp"]), 1.0, "immortal car floors at 1 HP")
+	assert_eq(_save.profile["cars"].size(), 1, "the wrecked starter is kept in the garage")
+	assert_true(_save.car_is_wrecked(_save.get_car(car["instance_id"])), "the starter can be wrecked")
+
+
+func test_safety_net_grants_kit_when_all_wrecked_and_none_held() -> void:
+	var a: Dictionary = _save.grant_car("mx5")
+	var b: Dictionary = _save.grant_car("mustang")
+	_save.apply_damage(a["instance_id"], 999999.0)
+	_save.apply_damage(b["instance_id"], 999999.0)
+	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 0, "no kit before the net fires")
+	assert_true(_save.ensure_repair_safety_net(), "a free kit is granted when all cars are wrecked")
+	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 1, "exactly one free kit granted")
+	# Idempotent: once a kit is held, the net does not keep topping up.
+	assert_false(_save.ensure_repair_safety_net(), "no second kit while one is already held")
+	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 1, "still just the one kit")
+
+
+func test_safety_net_no_op_when_a_car_is_healthy() -> void:
+	var a: Dictionary = _save.grant_car("mx5")
+	_save.grant_car("mustang")  # healthy
+	_save.apply_damage(a["instance_id"], 999999.0)  # only one wrecked
+	assert_false(_save.ensure_repair_safety_net(), "not stranded: at least one car can still race")
+	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 0, "no free kit granted")
+
+
+func test_safety_net_no_op_with_no_cars() -> void:
+	assert_false(_save.ensure_repair_safety_net(), "owning no cars is not the wrecked-out case")
+	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 0, "no free kit granted")
 
 
 func test_apply_damage_wrecks_mortal_car_at_zero() -> void:
@@ -236,9 +263,9 @@ func test_unknown_model_id_dropped_on_load() -> void:
 	f.store_string(JSON.stringify({
 		"schema_version": _save.SCHEMA_VERSION,
 		"cars": [
-			{"instance_id": 1, "model_id": "mx5", "hp": 800.0, "immortal": false,
+			{"instance_id": 1, "model_id": "mx5", "hp": 800.0,
 				"installed_upgrades": [], "tuning": {}},
-			{"instance_id": 2, "model_id": "ghost_car", "hp": 1.0, "immortal": false,
+			{"instance_id": 2, "model_id": "ghost_car", "hp": 1.0,
 				"installed_upgrades": [], "tuning": {}},
 		],
 	}))

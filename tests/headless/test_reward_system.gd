@@ -20,7 +20,7 @@ func _profile(completed: Array, owned: Array) -> Dictionary:
 	var n := 1
 	for model_id in owned:
 		cars.append({"instance_id": n, "model_id": model_id, "hp": 100.0,
-			"immortal": false, "installed_upgrades": [], "tuning": {}})
+			"installed_upgrades": [], "tuning": {}})
 		n += 1
 	return {"rallies": rallies, "cars": cars}
 

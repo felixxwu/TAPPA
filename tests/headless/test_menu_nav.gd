@@ -54,3 +54,38 @@ func test_settings_menu_is_keyboard_navigable() -> void:
 	assert_true(sm.go_back(), "go_back from a sub-page is consumed")
 	assert_true(sm.at_root(), "go_back returns to the category list")
 	assert_false(sm.go_back(), "go_back at the root is left to the host")
+
+
+# The standings interstitial shows the event-only leaderboard first (for events
+# after the first), its button is keyboard/gamepad-focusable, and pressing it
+# switches to the combined-standings page (mid-rally). See features/menus.md.
+func test_standings_event_page_then_combined_is_navigable() -> void:
+	RallySession.auto_load_scenes = false
+	var owned: Dictionary = _save.grant_car("mx5")
+	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession._opponent_field = [
+		{"name": "Quick", "car_name": "Porsche 911", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
+	]
+	RallySession.report_event_result(50000)   # event 0 -> standings (first event: combined only)
+	RallySession.continue_to_next_event()      # -> event 1
+	RallySession.report_event_result(50000)   # event 1 -> standings (event-only first)
+
+	var s := preload("res://standings.tscn").instantiate()
+	add_child_autofree(s)
+	await get_tree().process_frame
+
+	assert_true(s.showing_event_page(), "a later event opens on the event-only page")
+	assert_false(s.is_final_event(), "the 2nd of 3 events is not the final event")
+	assert_eq(s._action_button.focus_mode, Control.FOCUS_ALL, "the page button is focusable")
+	assert_eq(s.get_viewport().gui_get_focus_owner(), s._action_button, "the button is focused on entry")
+
+	# Pressing the event-page button switches to the combined page (no scene change,
+	# since this is a mid-rally event).
+	s._action_button.pressed.emit()
+	await get_tree().process_frame
+	assert_false(s.showing_event_page(), "the button advances to the combined page")
+	assert_eq(s.get_viewport().gui_get_focus_owner(), s._action_button, "focus re-grabs on the combined page")
+
+	if RallySession.is_active():
+		RallySession.abandon()
+	RallySession.auto_load_scenes = true
