@@ -134,7 +134,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 890.0, "engine": "renault_12_i4",
 		# Real Renault JB1 5-speed ratios (Twingo Mk1 1.2 16V).
 		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 9,
-		"grip_front": 1.0, "grip_rear": 1.0, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
+		"grip_front": 0.5, "grip_rear": 0.5, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
@@ -168,7 +168,7 @@ const CARS: Array[Dictionary] = [
 		# Real Honda Acty HA4 5-speed ratios; kept on the high final_drive so its ~44 hp
 		# still pulls (see the gear_ratios header note).
 		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9,
-		"grip_front": 1.0, "grip_rear": 1.1, "shift_time": 0.35,  # 5-speed manual, skinny tyres, mid-engine RWD
+		"grip_front": 0.45, "grip_rear": 0.45, "shift_time": 0.35,  # 5-speed manual, skinny tyres, mid-engine RWD
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
 		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
