@@ -125,6 +125,15 @@ func _ready() -> void:
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	if RallySession.is_active():
 		_field_session_car()
+	elif RallySession.free_roam_instance_id >= 0:
+		# Free roam (session-less): field the owned car the player picked in the car
+		# park (baseline + upgrades + saved HP), falling back to the default library
+		# car if the instance has since vanished.
+		var owned: Dictionary = Save.get_car(RallySession.free_roam_instance_id)
+		if owned.is_empty():
+			$Car.apply_car(0)
+		else:
+			$Car.apply_owned(owned)
 	else:
 		$Car.apply_car(0)
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
@@ -651,9 +660,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _stage_manager.phase() == StageManager.Phase.COMPLETE:
 		return
+	# Mark handled BEFORE completing: force_complete() emits stage_completed, whose
+	# handler can transition the scene and detach this node, making a later
+	# get_viewport() call return null.
+	get_viewport().set_input_as_handled()
 	$Car.reset_to(_track_progress.jump_to_finish())
 	_stage_manager.force_complete()
-	get_viewport().set_input_as_handled()
 
 
 # Whether this run should open with the pre-event start-line scene: a session run

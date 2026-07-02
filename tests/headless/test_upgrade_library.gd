@@ -71,6 +71,34 @@ func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
 	assert_almost_eq(CarLibrary.power_to_weight(bare), base_pw, 0.001, "no upgrades -> baseline pw")
 
 
+func test_effective_meta_uses_swapped_engine_torque() -> void:
+	# A twingo running the mustang's V8: effective_meta seeds torque from the CURRENT
+	# engine, so the figure matches the swapped engine's library torque (mechanism,
+	# not a pinned number — derived from EngineLibrary).
+	var meta := CarLibrary.by_id("twingo").duplicate()
+	var v8 := "ford_50_v8"
+	var owned := {"model_id": "twingo", "swapped_engine": v8, "installed_upgrades": [], "tuning": {}}
+	var eff := UpgradeLibrary.effective_meta(owned, meta)
+	assert_almost_eq(float(eff["peak_torque"]), float(EngineLibrary.by_id(v8)["peak_torque"]), 0.001,
+		"torque seeded from the swapped engine")
+	# And total mass changed by the engine mass delta.
+	var expected_mass := EngineSwap.recompute_mass(
+		float(CarLibrary.by_id("twingo")["mass"]),
+		float(EngineLibrary.by_id(CarLibrary.by_id("twingo")["engine"])["mass"]),
+		float(EngineLibrary.by_id(v8)["mass"]))
+	assert_almost_eq(float(eff["mass"]), expected_mass, 0.001, "mass recomputed for the swapped engine")
+
+
+func test_effective_meta_applies_detune_to_torque() -> void:
+	var meta := CarLibrary.by_id("twingo").duplicate()
+	var full := UpgradeLibrary.effective_meta({"model_id": "twingo", "tuning": {}}, meta)
+	var half := UpgradeLibrary.effective_meta({"model_id": "twingo", "tuning": {"engine_detune": 0.5}}, meta.duplicate())
+	assert_almost_eq(float(half["peak_torque"]), float(full["peak_torque"]) * 0.5, 0.001,
+		"detune halves the torque feeding power-to-weight")
+	assert_lt(CarLibrary.power_to_weight(half), CarLibrary.power_to_weight(full),
+		"a detuned car has lower power-to-weight")
+
+
 func test_no_upgrades_leaves_config_untouched() -> void:
 	var cfg := GameConfig.new()
 	cfg.peak_torque = 250.0

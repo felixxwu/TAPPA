@@ -696,3 +696,24 @@ func test_axle_rate_splits_toward_the_heavier_axle() -> void:
 	cfg.weight_front = 0.5
 	assert_almost_eq(cfg.axle_stiffness(true), cfg.axle_stiffness(false), 0.0001,
 		"50/50: front and rear share the base rate")
+
+
+func test_engine_swap_reshapes_mass_and_torque() -> void:
+	var v8 := "ford_50_v8"
+	_car.apply_owned({"model_id": "twingo", "swapped_engine": v8, "hp": 700.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+	assert_almost_eq(_car.config.peak_torque, float(EngineLibrary.by_id(v8)["peak_torque"]), 0.5,
+		"live torque comes from the swapped engine")
+	var expected_mass := EngineSwap.recompute_mass(
+		float(CarLibrary.by_id("twingo")["mass"]),
+		float(EngineLibrary.by_id(CarLibrary.by_id("twingo")["engine"])["mass"]),
+		float(EngineLibrary.by_id(v8)["mass"]))
+	assert_almost_eq(_car.config.mass, expected_mass, 0.5, "mass recomputed for the heavier V8")
+	assert_almost_eq(_car.mass, expected_mass, 0.5, "RigidBody mass synced")
+
+
+func test_stock_car_is_unaffected_by_the_swap_step() -> void:
+	_car.apply_owned({"model_id": "twingo", "hp": 700.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+	assert_almost_eq(_car.config.mass, float(CarLibrary.by_id("twingo")["mass"]), 0.5,
+		"no swap -> stock mass unchanged")

@@ -19,7 +19,7 @@ extends RefCounted
 
 # The three axes the lift exposes. grip is always available; brake_bias / aero
 # are gated by the brakes / aero upgrades (UpgradeLibrary), matching the lift UI.
-const AXES := ["grip_balance", "brake_bias", "aero_balance"]
+const AXES := ["grip_balance", "brake_bias", "aero_balance", "engine_detune"]
 
 
 # Re-balance `cfg` from `owned_car.tuning`. Runs AFTER UpgradeLibrary.apply, so it
@@ -53,6 +53,11 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 		var aspan := cfg.tuning_aero_authority
 		cfg.downforce_front *= (1.0 - a * aspan)
 		cfg.downforce_rear *= (1.0 + a * aspan)
+
+	# engine_detune: a 0..1 direct torque scale (features/engine-swap.md). Applied
+	# LAST so it scales whatever torque the swapped engine + upgrade kits produced.
+	# Default 1.0 (full power); always available (no upgrade gate).
+	cfg.peak_torque *= clampf(float(tuning.get("engine_detune", 1.0)), 0.0, 1.0)
 
 
 # Whether an axis is tunable for this car: grip always, brake_bias / aero only with

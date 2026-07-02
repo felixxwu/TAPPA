@@ -97,7 +97,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
-		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50,  # ND: famous 50/50
+		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
 		# Real ND 6-speed manual ratios: 5.087/2.991/2.035/1.594/1.286/1.000.
 		# final_drive is game-tuned to 3.5, NOT the real 2.866: the MX-5's real ~150 hp
 		# (in-sim) can't pull the tall real final drive against the Jolt VehicleBody3D's
@@ -107,7 +107,7 @@ const CARS: Array[Dictionary] = [
 		# unused, but 1st-4th carry the real spacing that calms the mid-gear punch and
 		# stops the 4th-gear wheelspin. This box drives well, so the whole roster now
 		# shares it (see the gear_ratios header note). See features/drivetrain-and-tires.md.
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 5,
 		"grip_front": 1, "grip_rear": 1, "shift_time": 0.30,  # manual H-pattern roadster
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
@@ -126,9 +126,9 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Focus ST",  # Mk2 2009: ~1467 kg, 225 PS, 2.5 turbo i5, FWD hot hatch
 		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
-		"mass": 1467.0, "engine": "ford_25t_i5", "weight_front": 0.62,  # transverse turbo I5, nose-heavy FWD
+		"mass": 1467.0, "engine": "ford_25t_i5", "weight_front": 0.62, "engine_pos": 0.85,  # transverse turbo I5, nose-heavy FWD
 		# Real Getrag M66 6-speed ratios (Focus ST Mk2 2.5T).
-		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 10,
+		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 9,
 		"grip_front": 1, "grip_rear": 0.85, "shift_time": 0.30,  # 6-speed manual, FWD
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
@@ -148,9 +148,9 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Twingo",  # Mk1 (C06) 1.2 16V: ~890 kg, 75 PS, light FWD city car
 		"id": "twingo", "country": "FR", "car_type": "hatch", "max_hp": 700.0, "reward_tier": 1,
-		"mass": 890.0, "engine": "renault_12_i4", "weight_front": 0.62,  # transverse FWD city car, nose-heavy
+		"mass": 890.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
 		# Real Renault JB1 5-speed ratios (Twingo Mk1 1.2 16V).
-		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 9,
+		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 8,
 		"grip_front": 0.5, "grip_rear": 0.6, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
@@ -183,7 +183,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Honda Acty",  # HA4 kei truck: ~740 kg, 656cc mid-engine triple, RWD
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
-		"mass": 740.0, "engine": "honda_066_i3", "weight_front": 0.45,  # mid-engine cab-over kei, tail-heavy
+		"mass": 740.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
 		# Real Honda Acty HA4 5-speed ratios; kept on the high final_drive so its ~44 hp
 		# still pulls (see the gear_ratios header note).
 		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9,
@@ -206,7 +206,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1750 kg, 440 Magnum V8, RWD muscle
 		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 2,
-		"mass": 1750.0, "engine": "mopar_440_v8", "weight_front": 0.56,  # big-block V8 up front, nose-heavy
+		"mass": 1750.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		# Real 3-speed TorqueFlite A727 automatic ratios ('69 Charger R/T 440).
 		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4,
 		"grip_front": 1, "grip_rear": 0.9, "shift_time": 0.30,  # 3-speed TorqueFlite auto, RWD
@@ -228,7 +228,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
 		"id": "mustang", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 1,
-		"mass": 1720.0, "engine": "ford_50_v8", "weight_front": 0.53,  # front V8, mild nose bias
+		"mass": 1720.0, "engine": "ford_50_v8", "weight_front": 0.53, "engine_pos": 0.85,  # front V8, mild nose bias
 		# Real Getrag MT82 6-speed ratios (Mustang GT S550, 2015-17).
 		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.22,  # 6-speed manual muscle
@@ -242,7 +242,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 2,
-		"mass": 1505.0, "engine": "porsche_30_flat6", "weight_front": 0.39,  # rear-engine flat-6, tail-heavy ~39/61
+		"mass": 1505.0, "engine": "porsche_30_flat6", "weight_front": 0.39, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~39/61
 		# Real 8-speed PDK ratios (Porsche 911 992 Carrera).
 		"gear_ratios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.06,  # 8-speed PDK
@@ -256,7 +256,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
 		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
-		"mass": 1580.0, "engine": "toyota_48_v10", "weight_front": 0.48,  # front-mid V10 + rear transaxle, 48/52
+		"mass": 1580.0, "engine": "toyota_48_v10", "weight_front": 0.48, "engine_pos": 0.55,  # front-mid V10 + rear transaxle, 48/52
 		# Real 6-speed ASG ratios (Lexus LFA).
 		"gear_ratios": [3.231, 2.188, 1.609, 1.233, 0.970, 0.795], "final_drive": 7,
 		"grip_front": 1.20, "grip_rear": 1, "shift_time": 0.16,  # automated single-clutch ASG
@@ -270,7 +270,7 @@ const CARS: Array[Dictionary] = [
 	{
 		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
 		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 3,
-		"mass": 1731.0, "engine": "lambo_65_v12", "weight_front": 0.43,  # mid V12, tail-heavy ~43/57
+		"mass": 1731.0, "engine": "lambo_65_v12", "weight_front": 0.43, "engine_pos": 0.35,  # mid V12, tail-heavy ~43/57
 		# Real 7-speed ISR ratios (Lamborghini Aventador LP 700-4).
 		"gear_ratios": [3.909, 2.438, 1.810, 1.458, 1.185, 0.967, 0.844], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift

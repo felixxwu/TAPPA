@@ -331,6 +331,48 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 	save()
 
 
+# Exchange the CURRENT engines of two owned cars (features/engine-swap.md). Free,
+# unlimited, reversible — but only when both cars sit at 100% HP. Each car's
+# swapped_engine is set to the OTHER's current engine, then cleared to "" when the
+# result equals that car's own stock engine (so "stock" is canonical and the name
+# reverts). Returns false (no change) if the swap is not allowed.
+func swap_engines(id_a: int, id_b: int) -> bool:
+	if id_a == id_b:
+		return false
+	var a := get_car(id_a)
+	var b := get_car(id_b)
+	if not EngineSwap.can_swap(a, b):
+		return false
+	var stock_a := String(CarLibrary.by_id(String(a["model_id"])).get("engine", ""))
+	var stock_b := String(CarLibrary.by_id(String(b["model_id"])).get("engine", ""))
+	var cur_a := EngineSwap.current_engine_id(a, stock_a)
+	var cur_b := EngineSwap.current_engine_id(b, stock_b)
+	_set_engine(a, stock_a, cur_b)
+	_set_engine(b, stock_b, cur_a)
+	save()
+	return true
+
+
+# Set a car's engine to engine_id, clearing the swap field when it matches stock.
+func _set_engine(car: Dictionary, stock_id: String, engine_id: String) -> void:
+	if engine_id == stock_id or engine_id.is_empty():
+		car.erase("swapped_engine")
+	else:
+		car["swapped_engine"] = engine_id
+
+
+# Set a car's engine detune (0..1 torque scale) — a tuning-lift value stored in the
+# per-car tuning bag. Clamped to [0,1]. 1.0 = full power (the default everywhere).
+func set_engine_detune(instance_id: int, frac: float) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	var tuning: Dictionary = car.get("tuning", {})
+	tuning["engine_detune"] = clampf(frac, 0.0, 1.0)
+	car["tuning"] = tuning
+	save()
+
+
 # --- Selected car ------------------------------------------------------------
 # The player always has one owned car "selected" — the one raised on the garage
 # tuning lift (todo/menus.md). It's the default car the lift tunes/upgrades, and

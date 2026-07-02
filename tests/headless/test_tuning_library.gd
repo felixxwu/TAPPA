@@ -104,3 +104,26 @@ func test_axis_unlocked_reports_gating() -> void:
 	var kitted := {"installed_upgrades": ["aero_kit", "brake_kit"]}
 	assert_true(TuningLibrary.axis_unlocked(kitted, "brake_bias"), "brake kit unlocks brake bias")
 	assert_true(TuningLibrary.axis_unlocked(kitted, "aero_balance"), "aero kit unlocks aero balance")
+
+
+func test_engine_detune_scales_torque() -> void:
+	var cfg := _cfg()
+	cfg.peak_torque = 300.0
+	# Neutral / absent leaves torque alone.
+	TuningLibrary.apply({"tuning": {}}, cfg)
+	assert_almost_eq(cfg.peak_torque, 300.0, 0.0001, "no detune -> full torque")
+	# Half detune halves torque.
+	var cfg2 := _cfg()
+	cfg2.peak_torque = 300.0
+	TuningLibrary.apply({"tuning": {"engine_detune": 0.5}}, cfg2)
+	assert_almost_eq(cfg2.peak_torque, 150.0, 0.0001, "0.5 detune halves torque")
+	# Out-of-range clamps.
+	var cfg3 := _cfg()
+	cfg3.peak_torque = 300.0
+	TuningLibrary.apply({"tuning": {"engine_detune": 2.0}}, cfg3)
+	assert_almost_eq(cfg3.peak_torque, 300.0, 0.0001, "detune clamps at 1.0")
+
+
+func test_engine_detune_is_a_known_axis() -> void:
+	assert_true(TuningLibrary.AXES.has("engine_detune"), "detune is an axis (drives reset + slider refresh)")
+	assert_true(TuningLibrary.axis_unlocked({}, "engine_detune"), "detune is always available")

@@ -358,34 +358,93 @@ func test_hq_start_flies_into_the_garage() -> void:
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in the garage")
 
 
-# The garage overlay is a left/right cursor over Back (0) / Open map table (1) /
-# Tune car (2), wrapping at both ends, with select firing the item under the cursor.
+# The garage overlay is a left/right cursor over Back (0) / Map (1) / Tune Car (2) /
+# Free Roam (3), wrapping at both ends, with select firing the item under the cursor.
 func test_hq_garage_is_a_left_right_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
 	assert_eq(hq._view, hq.View.GARAGE, "start lands in the garage")
-	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Open map table")
+	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Map")
 	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 2, "right moves the cursor to Tune car")
+	assert_eq(hq._garage_focus, 2, "right moves the cursor to Tune Car")
+	hq._move_garage_focus(1)
+	assert_eq(hq._garage_focus, 3, "right moves the cursor to Free Roam")
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
 	hq._move_garage_focus(-1)
-	assert_eq(hq._garage_focus, 2, "left from Back wraps to Tune car")
+	assert_eq(hq._garage_focus, 3, "left from Back wraps to Free Roam")
 
 	# Select on the map-table item opens the map.
 	hq._garage_focus = 1
 	hq._activate_garage_focus()
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.TABLE, "select on Open map table opens the map")
+	assert_eq(hq._view, hq.View.TABLE, "select on Map opens the map")
 
 	# Back-to-garage, then select on the Back item leaves for the exterior.
 	hq._go_to(hq.View.GARAGE)
-	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Open map")
+	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Map")
 	hq._garage_focus = 0
 	hq._activate_garage_focus()
 	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
+
+
+# Free Roam launches a plain drive: no rally session, and a fresh random seed each
+# entry (so the track differs every time), with neutral terrain settings.
+func test_hq_free_roam_prepares_a_fresh_unseeded_run() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+
+	hq._prepare_free_roam()
+	assert_false(RallySession.is_active(),
+		"free roam runs with no active rally session (world fields the picked car)")
+	var first_seed: int = Config.data.track_seed
+	# A second preparation re-rolls the seed — a different track on the next entry.
+	# (randi() collisions are astronomically unlikely, so a mismatch is a safe assert.)
+	hq._prepare_free_roam()
+	assert_ne(Config.data.track_seed, first_seed, "free roam re-seeds the track on every entry")
+
+
+# Free Roam opens the car park to pick which owned car to drive: the whole owned
+# collection is parked, and Back returns to the garage (not the map).
+func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
+	_save.grant_car("focus")  # a second car so the collection isn't just the starter
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+
+	hq._enter_free_roam()
+	await _await_lineup(hq)
+	assert_eq(hq._view, hq.View.CARPARK, "Free Roam drops into the car park")
+	assert_true(hq._carpark_freeroam_mode, "the car park is in free-roam mode")
+	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
+		"the whole owned collection is parked to pick from")
+
+	# Back leaves free roam for the garage.
+	hq._car_back()
+	assert_false(hq._carpark_freeroam_mode, "backing out clears free-roam mode")
+	assert_eq(hq._view, hq.View.GARAGE, "Back from free-roam car pick returns to the garage")
+
+
+# The run scene fields the owned car the player picked for free roam, with no active
+# rally session (world.gd's free-roam branch).
+func test_free_roam_fields_the_picked_owned_car() -> void:
+	var owned: Dictionary = _save.grant_car("focus")
+	var id := int(owned["instance_id"])
+	RallySession.free_roam_instance_id = id
+	assert_false(RallySession.is_active(), "free roam runs with no active session")
+	SceneHelpers.minimal_world()
+	var scene: Node3D = load("res://main.tscn").instantiate()
+	add_child_autofree(scene)
+	await get_tree().process_frame
+	var car: VehicleBody3D = scene.get_node("Car")
+	assert_eq(car.damage.instance_id, id, "free roam fields the picked owned-car instance")
+	# Don't leak the pick into later tests.
+	RallySession.free_roam_instance_id = -1
 
 
 func test_hq_opening_the_table_shows_the_map() -> void:
@@ -1308,3 +1367,123 @@ func test_starter_pick_back_returns_to_title() -> void:
 	assert_false(hq._carpark_starter_mode, "starter mode cleared on back")
 	assert_eq(hq._view, hq.View.EXTERIOR, "back from the picker returns to the title")
 	assert_eq(_save.profile["cars"].size(), 0, "backing out grants nothing")
+
+
+func test_engine_swap_flow_exchanges_engines() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var a: Dictionary = _save.selected_car()
+	var b: Dictionary = _save.grant_car("mustang")
+	var stock_b: String = CarLibrary.by_id("mustang")["engine"]
+	hq._enter_engine_swap()
+	await _await_lineup(hq)
+	assert_true(hq._eligible.size() >= 1, "swap lineup lists the other owned car(s)")
+	hq._selected_instance_id = int(b["instance_id"])
+	hq._on_start_pressed()
+	assert_eq(String(_save.get_car(int(a["instance_id"])).get("swapped_engine", "")), stock_b,
+		"selected car received the target's engine")
+
+
+func test_display_name_reflects_swap() -> void:
+	assert_eq(EngineSwap.display_name({"name": "Twingo", "engine": "renault_12_i4"},
+		{"swapped_engine": "ford_50_v8"}), "V8 Twingo", "swapped owned car shows the layout prefix")
+
+
+func test_tuning_sliders_are_all_the_same_length() -> void:
+	# Every axis row's slider must line up to the same width, even though the detune
+	# row's value label ("80% - 0.20 kW/kg") is longer than the others.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var widths: Array = []
+	for axis in TuningLibrary.AXES:
+		widths.append((hq._lift_sliders[axis] as HSlider).size.x)
+	for w in widths:
+		assert_almost_eq(float(w), float(widths[0]), 0.5, "all tuning sliders share the same length")
+
+
+func test_detune_label_shows_power_to_weight() -> void:
+	# The detune value label carries the percent AND the live power-to-weight readout
+	# (format, not a pinned value).
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	hq._on_tune_slider_changed(80.0, "engine_detune")
+	var txt := String(hq._lift_slider_values["engine_detune"].text)
+	assert_true(txt.begins_with("80%"), "detune label leads with the percent")
+	assert_true(txt.to_lower().contains("kw/kg"), "detune label shows the power-to-weight readout")
+
+
+func test_detune_slider_is_present_and_focusable() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	assert_true(hq._lift_sliders.has("engine_detune"), "tuning page has a detune slider")
+	var slider: HSlider = hq._lift_sliders["engine_detune"]
+	assert_eq(slider.focus_mode, Control.FOCUS_ALL, "detune slider is keyboard/gamepad focusable")
+	assert_eq(slider.min_value, 0.0, "detune slider starts at 0%")
+	assert_eq(slider.max_value, 100.0, "detune slider tops at 100%")
+
+
+func test_detune_slider_persists_as_fraction() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	hq._on_tune_slider_changed(50.0, "engine_detune")
+	var id: int = _save.selected_instance_id()
+	assert_almost_eq(float(_save.get_car(id)["tuning"]["engine_detune"]), 0.5, 0.001,
+		"a 50% slider stores a 0.5 torque fraction")
+
+
+func _find_swap_button(hq: Node3D) -> Button:
+	for row in hq._lift_upgrades_box.get_children():
+		if row.is_queued_for_deletion():
+			continue  # a rebuild queue_free'd the old rows; ignore them
+		for child in row.get_children():
+			if child is Button and String(child.text).to_lower() == "swap engine":
+				return child
+	return null
+
+
+func test_swap_button_disabled_without_an_eligible_partner() -> void:
+	# before_each grants a single mx5 starter — no other car to swap with, so the
+	# Swap Engine button is disabled. Granting a second full-health car enables it.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	var btn := _find_swap_button(hq)
+	assert_not_null(btn, "the upgrades page has a Swap Engine button")
+	assert_true(btn.disabled, "no partner -> swap button disabled")
+	_save.grant_car("mustang")
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame  # let the rebuild's queue_free'd old rows clear
+	assert_false(_find_swap_button(hq).disabled, "a second 100%-HP car enables the swap")
+
+
+func test_engine_swap_button_is_focusable() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	var found := false
+	for row in hq._lift_upgrades_box.get_children():
+		for child in row.get_children():
+			if child is Button and String(child.text).to_upper() == "SWAP ENGINE":
+				assert_eq(child.focus_mode, Control.FOCUS_ALL, "swap button is focusable")
+				found = true
+	assert_true(found, "the upgrades page has a Swap Engine button")

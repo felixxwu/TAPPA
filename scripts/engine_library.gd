@@ -35,52 +35,52 @@ const FIRING := {
 
 const ENGINES: Array[Dictionary] = [
 	{
-		"id": "mazda_20_i4", "name": "2.0 Skyactiv-G i4", "layout": "i4",
+		"id": "mazda_20_i4", "name": "2.0 Skyactiv-G i4", "layout": "i4", "mass": 110.0,
 		"redline_rpm": 7500.0, "peak_torque": 205.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
 		"low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 	},
 	{
-		"id": "renault_12_i4", "name": "1.2 16V i4", "layout": "i4",
+		"id": "renault_12_i4", "name": "1.2 16V i4", "layout": "i4", "mass": 95.0,
 		"redline_rpm": 6800.0, "peak_torque": 105.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.13,
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 	},
 	{
-		"id": "ford_25t_i5", "name": "2.5T Duratec i5", "layout": "i5",
+		"id": "ford_25t_i5", "name": "2.5T Duratec i5", "layout": "i5", "mass": 150.0,
 		"redline_rpm": 6800.0, "peak_torque": 320.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.22,
 		"low_octave_mix": 0.1, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 	},
 	{
-		"id": "audi_25t_i5", "name": "2.5T TFSI i5", "layout": "i5",
+		"id": "audi_25t_i5", "name": "2.5T TFSI i5", "layout": "i5", "mass": 165.0,
 		"redline_rpm": 7000.0, "peak_torque": 500.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.22,
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 	},
 	{
-		"id": "ford_50_v8", "name": "5.0 Coyote V8", "layout": "v8",
+		"id": "ford_50_v8", "name": "5.0 Coyote V8", "layout": "v8", "mass": 200.0,
 		"redline_rpm": 7500.0, "peak_torque": 569.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.32,
 		"low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 	},
 	{
-		"id": "mopar_440_v8", "name": "440 Magnum V8", "layout": "v8",
+		"id": "mopar_440_v8", "name": "440 Magnum V8", "layout": "v8", "mass": 290.0,
 		"redline_rpm": 5500.0, "peak_torque": 600.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.56,
 		"low_octave_mix": 0.8, "volume_db": 8.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 	},
 	{
-		"id": "porsche_30_flat6", "name": "3.0 flat-6", "layout": "i6",
+		"id": "porsche_30_flat6", "name": "3.0 flat-6", "layout": "i6", "mass": 180.0,
 		"redline_rpm": 7500.0, "peak_torque": 450.0, "peak_torque_rpm": 4800.0, "engine_inertia": 0.18,
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 	},
 	{
-		"id": "toyota_48_v10", "name": "4.8 V10", "layout": "v10",
+		"id": "toyota_48_v10", "name": "4.8 V10", "layout": "v10", "mass": 220.0,
 		"redline_rpm": 9000.0, "peak_torque": 480.0, "peak_torque_rpm": 6000.0, "engine_inertia": 0.10,
 		"low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 	},
 	{
-		"id": "lambo_65_v12", "name": "6.5 V12", "layout": "v12",
+		"id": "lambo_65_v12", "name": "6.5 V12", "layout": "v12", "mass": 235.0,
 		"redline_rpm": 8350.0, "peak_torque": 690.0, "peak_torque_rpm": 5500.0, "engine_inertia": 0.26,
 		"low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 	},
 	{
-		"id": "honda_066_i3", "name": "0.66 E07A i3", "layout": "i3",
+		"id": "honda_066_i3", "name": "0.66 E07A i3", "layout": "i3", "mass": 70.0,
 		"redline_rpm": 7000.0, "peak_torque": 60.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.09,
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 	},

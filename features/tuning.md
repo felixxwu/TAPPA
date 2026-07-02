@@ -14,14 +14,32 @@ the authored `.tres`.
 
 ## The three axes
 
-Each owned car stores `tuning = { grip_balance, brake_bias, aero_balance }`, each a
-single normalized slider in `[-1, +1]`, default `0` (= the baseline, neutral).
+Each owned car stores `tuning = { grip_balance, brake_bias, aero_balance,
+engine_detune }`. The first three are a single normalized slider in `[-1, +1]`,
+default `0` (= the baseline, neutral); `engine_detune` is a direct `[0, 1]`
+torque scale, default `1.0` (full power).
 
 | Axis | Slider | Maps to | Gated by |
 |------|--------|---------|----------|
 | `grip_balance` | −1 understeer ↔ +1 oversteer | shifts `wheel_friction_slip_front`/`_rear` | always available |
 | `brake_bias` | −1 rearward ↔ +1 forward | the front/rear `brake_bias` split (drivetrain) | the **brakes** upgrade (`unlocks_brake_bias`) |
 | `aero_balance` | −1 front ↔ +1 rear | shifts `downforce_front`/`_rear` | the **aero** upgrade (`unlocks_aero_tuning`) |
+| `engine_detune` | 0% ↔ 100% torque | `cfg.peak_torque *= detune` | always available |
+
+**`engine_detune`** ([engine-swap.md](engine-swap.md)) is the odd one out: it's
+not a symmetric ±1 balance shift but a direct `0–100%` scale on the fitted
+engine's torque, applied by `TuningLibrary.apply` **last** (after grip/brake/
+aero) so it scales whatever torque the swapped-in engine + upgrade kits
+produced. It needs no upgrade to unlock — every car can be detuned, e.g. to
+duck under a rally's power-to-weight ceiling. **Reset to neutral** returns it
+to `1.0` (100%, full power), same as the other axes reset to their own
+neutral (`0`). It also feeds `UpgradeLibrary.effective_meta`, so a detuned
+car's reduced torque affects displayed power-to-weight and rally eligibility,
+not just the live-fielded car. The slider's value label pairs the percent with
+the car's live power-to-weight at that setting (e.g. `80% - 0.20 kW/kg`, via
+`hq.gd._detune_label_text` → `effective_meta`), so you can dial to a target band
+by eye. (All tuning-lift sliders share one fixed-width label column so they line
+up to the same length regardless of value text.)
 
 ## Application (`TuningLibrary.apply`)
 

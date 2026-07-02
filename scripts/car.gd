@@ -707,6 +707,12 @@ func apply_owned(owned: Dictionary) -> String:
 	if idx < 0:
 		idx = 0
 	var car_name := apply_car(idx)
+	# Step 1b: engine swap — if this car runs a non-stock engine, overwrite the
+	# engine profile + recompute mass / weight distribution BEFORE upgrades (so a
+	# weight-reduction kit scales the new total) and before the suspension re-sync
+	# at the end of this function (so the spring split re-derives from the new
+	# weight_front). See features/engine-swap.md.
+	_apply_engine_swap(owned)
 	# Step 2: installed upgrades multiply/extend the live config. apply_car already
 	# copied the baseline mass onto the RigidBody, so re-sync after a weight-reduction
 	# upgrade mutates cfg.mass (other upgraded fields are read live each physics step).
@@ -724,6 +730,45 @@ func apply_owned(owned: Dictionary) -> String:
 	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)),
 		owned.get("wheel_toe", []))
 	return car_name
+
+
+# Re-field this owned car's engine when it differs from the CarLibrary stock: writes
+# the swapped engine's full profile (torque/redline/firing/voicing) over the config,
+# rebuilds the drivetrain (new redline/shift speeds) and engine voice, and recomputes
+# total mass + static weight distribution treating the engine as a point mass at the
+# car's engine_pos. No-op for a stock car. Gearbox stays the car's own (apply_car set
+# it). See features/engine-swap.md.
+func _apply_engine_swap(owned: Dictionary) -> void:
+	var spec: Dictionary = CarLibrary.CARS[_car_index]
+	var stock := String(spec.get("engine", ""))
+	var current := EngineSwap.current_engine_id(owned, stock)
+	if current == stock:
+		return
+	var new_eng := EngineLibrary.by_id(current)
+	if new_eng.is_empty():
+		return
+	var cfg: GameConfig = config
+	EngineLibrary.apply(new_eng, cfg)
+
+	# Rebuild drivetrain (new redline/shift speeds; gearbox ratios already in cfg) + voice.
+	drivetrain = Drivetrain.new(self)
+	drivetrain.terrain = _resolve_terrain()
+	drivetrain.drive_mode = spec["drive_mode"] as Drivetrain.DriveMode
+	_recompute_axles()
+	var audio := $EngineAudio as Node
+	if audio.has_method("reconfigure"):
+		audio.reconfigure()
+
+	# Independent engine weight + position -> new total mass and weight distribution.
+	var m0 := float(EngineLibrary.by_id(stock).get("mass", 0.0))
+	var m1 := float(new_eng.get("mass", 0.0))
+	var spec_mass := float(spec["mass"])
+	var spec_wf := float(spec.get("weight_front", 0.5))
+	var ef := float(spec.get("engine_pos", spec_wf))
+	cfg.mass = EngineSwap.recompute_mass(spec_mass, m0, m1)
+	cfg.weight_front = EngineSwap.recompute_weight_front(spec_mass, spec_wf, m0, m1, ef)
+	mass = cfg.mass
+	center_of_mass = Vector3(0.0, 0.0, spec["wheelbase"] * (0.5 - cfg.weight_front))
 
 
 # Bend each wheel by its persisted damage toe (radians) via the per-wheel

@@ -58,7 +58,12 @@ space:
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
   `menu_left`/`menu_right`/`menu_up`/`menu_down`/`menu_select`/`menu_back` actions,
   which bind arrows + WASD + D-pad + Enter/Esc + gamepad A/B). The **car park** /
-  **overflow** cycle the focused car with left/right and Start/Scrap with select; the
+  **overflow** cycle the focused car with left/right and Start/Scrap with select — the
+  car park's **engine-swap mode** (`_carpark_swap_mode`, [engine-swap.md](engine-swap.md))
+  is the same station reused with a mode flag, so it inherits this nav for free: left/right
+  cycles the swap-eligible target cars, select confirms the swap (`_select_swap_target`),
+  and back (`_car_back`) returns to the tuning-lift Upgrades page instead of the map table;
+  the
   **map table** carries a **keyboard pin cursor** (`_table_pin_index`) that cycles the
   unlocked pins (left/right or up/down, wrapping), highlights the selected pin's
   readout box with the same hover-style lift a menu button gets (`UITheme.mark_panel_focused`
@@ -69,8 +74,15 @@ space:
   drops into the car park in change-car mode; the cursor seats on Change Car on entry
   (`menu_back` is also a shortcut back to the garage). The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
-  `_activate_garage_focus`) over its side-by-side **Back / Open map table / Tune car**
-  row, seated on Open map table on entry (`menu_back` shortcuts to the exterior).
+  `_activate_garage_focus`) over its side-by-side **Back / Map / Tune Car / Free Roam**
+  row, seated on Map on entry (`menu_back` shortcuts to the exterior). **Free Roam**
+  (`_enter_free_roam`) opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
+  parking the whole owned collection); Start (`_start_free_roam`) hands the picked
+  instance to `RallySession.free_roam_instance_id`, writes a fresh random seed + neutral
+  (0.5) terrain settings into the live Config (`_prepare_free_roam`), and loads the run
+  scene with NO active `RallySession`. `world.gd` fields that owned car (falling back to
+  the default library car) and skips the rally/start-line/podium wiring; the player
+  leaves via Pause → Quit to HQ.
   Because HQ hides overlays by toggling their
   **`CanvasLayer`** (which does *not* clear a `Control`'s focus — a CanvasLayer breaks
   the visibility chain), `_go_to` / `_lift_hub` call `get_viewport().gui_release_focus()`
@@ -217,16 +229,24 @@ returns to the hub; the hub's own Back returns to the garage. Because the hub co
 and page chrome live on the hub, each menu page gets the **full panel height to
 itself** and doesn't need to scroll. The two pages:
 
-- **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero;
-  locked axes greyed with a "needs X kit" note) plus **Reset to neutral**; each change
-  saves via `Save.set_tuning`.
+- **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero /
+  **engine detune**; locked axes greyed with a "needs X kit" note — detune is never
+  locked) plus **Reset to neutral**; each change saves via `Save.set_tuning`. See
+  [engine-swap.md](engine-swap.md) for the detune axis.
 - **Upgrades** (`LiftPage.UPGRADES`) — per slot: every part **applied** to the car
   gets an **Enable/Disable toggle** (`Save.set_upgrade_enabled`; free, instant, at
   most one enabled per slot — enabling one switches off a same-slot sibling), and
   each matching **unlocked** item gets an **Apply** button (`Save.install_upgrade`;
   applying consumes the item from the unlocked pool and fits it to this car for
   good, confirmed via a dialog first since it can't be moved or recovered) plus
-  the **Repair Kit** action `Save.use_repair_kit`.
+  the **Repair Kit** action `Save.use_repair_kit`. Above the slot rows sits an
+  **engine-swap row** (`_make_engine_swap_row`): the car's current engine name and
+  a **Swap Engine** button, disabled (with a tooltip) unless this car is at 100%
+  HP. Pressing it opens the car park in **swap mode** (`_enter_engine_swap` /
+  `_carpark_swap_mode`) — parking only the OTHER owned cars that also sit at 100%
+  HP (self excluded) — where the normal car-park cycle/confirm/back flow exchanges
+  the two cars' engines (`Save.swap_engines`) and returns to this page. See
+  [engine-swap.md](engine-swap.md).
   The repair row also shows a green note **"All your cars were wrecked — a free Repair
   Kit was provided."** on the refresh where `Save.ensure_repair_safety_net` (called from
   `_refresh_lift_ui`) just granted a free kit (all owned cars wrecked + none held).

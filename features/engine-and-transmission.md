@@ -79,7 +79,14 @@ drag at the 4500-rpm peak and ≈42 N·m at 8000 rpm.
 [configuration.md](configuration.md). Each `CarLibrary` entry carries an
 `"engine": "<engine_id>"` key; `car.gd`'s `apply_car()` resolves it
 (`EngineLibrary.by_id`) and writes the whole profile onto `GameConfig` via
-`EngineLibrary.apply()`. `peak_torque_rpm` is per-engine (not a fixed 4500 for
+`EngineLibrary.apply()`. Each `EngineLibrary` entry also carries a **`mass`**
+(kg), used by [engine-swap.md](engine-swap.md) to treat the engine as an
+independent point mass when a player exchanges engines between cars. Which
+engine a car is actually running is resolved via
+`EngineSwap.current_engine_id(owned, stock_id)` — the car's `swapped_engine`
+if a swap is in effect, else its `CarLibrary` stock `engine` id; `car.gd`'s
+`_apply_engine_swap()` re-applies `EngineLibrary.apply()` for the swapped-in
+engine on top of the stock baseline when the two differ. `peak_torque_rpm` is per-engine (not a fixed 4500 for
 every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its real
 ~5500 redline still sits comfortably above that. Layout (`i3`/`i4`/`i5`/`i6`/
 `v6`/`v8`/`v10`/`v12`) fixes both the cylinder count and the firing table

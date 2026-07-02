@@ -142,11 +142,19 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 	# reads the adjusted values off this dict). Only fill what's absent, so a meta
 	# that already carries explicit peak_torque/redline (e.g. a synthetic fixture)
 	# keeps its own values.
-	var eng := EngineLibrary.by_id(out.get("engine", ""))
+	# Resolve the CURRENT engine (swapped or stock) so a swapped car's torque/redline
+	# drive its power-to-weight (features/engine-swap.md). Seed mass off the swap too.
+	var stock_id := String(out.get("engine", ""))
+	var current_id := EngineSwap.current_engine_id(owned_car, stock_id)
+	var eng := EngineLibrary.by_id(current_id)
 	if not out.has("peak_torque"):
 		out["peak_torque"] = eng.get("peak_torque", 0.0)
 	if not out.has("redline"):
 		out["redline"] = eng.get("redline_rpm", 0.0)
+	if current_id != stock_id and out.has("mass"):
+		var stock_eng := EngineLibrary.by_id(stock_id)
+		out["mass"] = EngineSwap.recompute_mass(
+			float(out["mass"]), float(stock_eng.get("mass", 0.0)), float(eng.get("mass", 0.0)))
 	for item_id in enabled_upgrades(owned_car):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:
@@ -155,6 +163,9 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 					out["peak_torque"] = float(out.get("peak_torque", 0.0)) * float(effect[key])
 				"mass_mult":
 					out["mass"] = float(out.get("mass", 0.0)) * float(effect[key])
+	# Detune scales the torque feeding power-to-weight, after the engine kits.
+	var detune := clampf(float(owned_car.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
+	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * detune
 	return out
 
 

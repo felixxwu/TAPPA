@@ -55,6 +55,12 @@ var _last_result: Dictionary = {}      # the most recent finish, read by the pod
 # cleared by _reset_to_idle — it's read + cleared by hq.gd on its next _ready.
 var return_to_garage := false
 
+# Free-roam handoff: the owned-car instance the player picked for a session-LESS free
+# roam drive (hq.gd → Free Roam). world.gd fields this car when no rally is active
+# instead of the default library car. -1 = a plain dev boot (field library car 0).
+# Cleared when a real rally starts so it can't leak into a rally event's fielding.
+var free_roam_instance_id := -1
+
 # When true (the default for real play) RallySession performs the per-event scene
 # loads itself. Headless tests set it false and drive report_* directly with
 # precomputed target times, so no track generation or scene reload happens.
@@ -71,6 +77,8 @@ var auto_load_scenes := true
 # field and persisted HP are unchanged). Kicks the first event.
 func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := false) -> void:
 	_rally = rally
+	# A real rally supersedes any pending free-roam pick (world fields the session car).
+	free_roam_instance_id = -1
 	_car_instance_id = int(owned_car.get("instance_id", -1))
 	_car_model_id = String(owned_car.get("model_id", ""))
 	_event_index = 0

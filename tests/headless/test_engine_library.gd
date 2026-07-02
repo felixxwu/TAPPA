@@ -48,3 +48,12 @@ func test_apply_writes_the_whole_profile_onto_config() -> void:
 	assert_almost_eq(cfg.engine_soft_clip_post_gain, float(eng["soft_clip_post_gain"]), 0.001, "soft clip post gain")
 
 
+func test_every_engine_has_a_positive_mass() -> void:
+	# Sanity guard only (not a value pin): the weight simulation divides/weights by
+	# engine mass, so each engine must carry a finite positive dry weight.
+	for eng in EngineLibrary.ENGINES:
+		assert_true(eng.has("mass"), "%s declares a mass" % eng["id"])
+		assert_gt(float(eng["mass"]), 0.0, "%s mass is positive" % eng["id"])
+		assert_true(is_finite(float(eng["mass"])), "%s mass is finite" % eng["id"])
+
+

@@ -120,6 +120,18 @@ more, and shifts the car toward oversteer (and vice-versa). The transient effect
 the static front/rear balance comes through regardless. Nose-heavy FWD (Focus, Twingo)
 vs tail-heavy mid-engine (Acty, Aventador) vs 50/50 (MX-5).
 
+**Recompute on engine swap.** [engine-swap.md](engine-swap.md) lets a player move an
+engine from one owned car to another. `car.gd`'s `_apply_engine_swap` treats the
+engine as an independent point mass at the car's `engine_pos` (a `CarLibrary` field —
+the ENGINE's own front-weight fraction, distinct from the car's overall `weight_front`)
+and re-derives both `mass` and `weight_front` from the authored baseline via
+`EngineSwap.recompute_mass` / `EngineSwap.recompute_weight_front`, then re-applies the
+same `center_of_mass.z = wheelbase × (0.5 − weight_front)` formula above with the new
+`weight_front`. This runs before the upgrade/tuning steps and before the suspension
+re-sync, so a swapped-in heavy V8 (or a lightweight rear-engined flat-6) shifts the
+car's static balance — and hence its suspension load split and handling bias — exactly
+like a different authored `weight_front` would.
+
 ## Damage effects
 
 `car.gd` owns a `DamageModel` (see [damage.md](damage.md)) that degrades the car

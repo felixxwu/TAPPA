@@ -91,15 +91,24 @@ var _view: int = View.EXTERIOR
 var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
 var _selected_rally_id := ""
 var _selected_instance_id := -1
-# The car park serves two jobs. In RALLY mode (the default) it shows the cars eligible
-# for the chosen rally and Start launches the rally. In CHANGE-CAR mode (entered from
-# the tuning lift's "Change Car" button) it shows ALL owned cars and Select swaps the
-# car raised on the lift, returning to the bay. _carpark_change_mode picks which.
+# The car park serves several jobs. In RALLY mode (the default) it shows the cars
+# eligible for the chosen rally and Start launches the rally. In CHANGE-CAR mode
+# (entered from the tuning lift's "Change Car" button) it shows ALL owned cars and
+# Select swaps the car raised on the lift, returning to the bay. In FREE-ROAM mode
+# (the garage's "Free Roam" button) it shows ALL owned cars and Start launches a
+# session-less drive with the picked car. _carpark_change_mode / _carpark_freeroam_mode
+# (plus the swap / starter flags) pick which.
 var _carpark_change_mode := false
+# car park is picking an engine-swap partner (see _enter_engine_swap).
+var _carpark_swap_mode := false
 # True while the car park is showing the first-run starter picker (preview cars from
 # CarLibrary, not owned cars — the garage is empty). Select grants the first
 # car; see _enter_starter_pick / _confirm_starter.
 var _carpark_starter_mode := false
+# True while the car park is picking a car for a session-less FREE ROAM drive (entered
+# from the garage's "Free Roam" button). It shows ALL owned cars and Start launches
+# free roam with the chosen car (see _enter_free_roam / _start_free_roam).
+var _carpark_freeroam_mode := false
 # On the web build, go fullscreen on the player's first tap (browsers only allow
 # fullscreen from a user gesture). Latched so we request it once. Orientation is
 # locked to landscape via project.godot (display/window/handheld/orientation).
@@ -180,13 +189,14 @@ var _car_warning_label: Label
 var _car_repair_button: Button
 
 # Garage overlay cursor: a single left/right cursor over the bottom action row
-# (Back / Open map table / Tune car), painted by _refresh_garage_focus and fired by
+# (Back / Map / Tune Car / Free Roam), painted by _refresh_garage_focus and fired by
 # _activate_garage_focus. Buttons are FOCUS_NONE and highlighted by hand (like the
 # tuning hub) since the garage is a spatially-navigated 3D station, not a focus graph.
 var _garage_back_btn: Button    # "< Back" — index 0
-var _garage_table_btn: Button   # "Open map table >" — index 1
-var _garage_lift_btn: Button    # "Tune car (lift) >" — index 2
-var _garage_focus := 1          # which garage action the cursor sits on (defaults to Open map)
+var _garage_table_btn: Button   # "Map" — index 1
+var _garage_lift_btn: Button    # "Tune Car" — index 2
+var _garage_freeroam_btn: Button  # "Free Roam" — index 3
+var _garage_focus := 1          # which garage action the cursor sits on (defaults to Map)
 
 # Garage-overflow overlay widgets (the OVERFLOW station — scrap a car to make room).
 var _overflow_banner: Label
@@ -921,17 +931,25 @@ func _build_garage_overlay() -> void:
 	_garage_back_btn = back
 	# Convenience buttons mirroring the clickable 3D table / lift.
 	var to_table := Button.new()
-	to_table.text = "Open map table >"
+	to_table.text = "Map"
 	to_table.focus_mode = Control.FOCUS_NONE
 	to_table.pressed.connect(_enter_table)
 	actions.add_child(to_table)
 	_garage_table_btn = to_table
 	var to_lift := Button.new()
-	to_lift.text = "Tune car (lift) >"
+	to_lift.text = "Tune Car"
 	to_lift.focus_mode = Control.FOCUS_NONE
 	to_lift.pressed.connect(_enter_lift)
 	actions.add_child(to_lift)
 	_garage_lift_btn = to_lift
+	# Free Roam: drop straight into a freshly-seeded stage with neutral (0.5) terrain
+	# settings — no rally, no opponents, just driving (see _enter_free_roam).
+	var to_free := Button.new()
+	to_free.text = "Free Roam"
+	to_free.focus_mode = Control.FOCUS_NONE
+	to_free.pressed.connect(_enter_free_roam)
+	actions.add_child(to_free)
+	_garage_freeroam_btn = to_free
 
 	_passthrough_overlay(root)  # let taps reach the 3D table / lift behind the HUD
 
@@ -1154,6 +1172,8 @@ func _build_lift_tune_box(parent: VBoxContainer) -> void:
 		{"axis": "grip_balance", "name": "Grip balance", "lo": "understeer", "hi": "oversteer"},
 		{"axis": "brake_bias", "name": "Brake bias", "lo": "rearward", "hi": "forward"},
 		{"axis": "aero_balance", "name": "Aero balance", "lo": "front", "hi": "rear"},
+		{"axis": "engine_detune", "name": "Engine detune", "lo": "0%", "hi": "100%",
+			"min": 0.0, "max": 100.0, "step": 5.0, "fmt": "%d%%"},
 	]:
 		_lift_tune_box.add_child(_make_slider_row(spec))
 
@@ -1173,18 +1193,24 @@ func _make_slider_row(spec: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 16)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	# Left column: name on top of the current value.
+	# Left column: name on top of the current value. FIXED width (clip, don't grow) so
+	# a longer value — e.g. the detune row's "80% - 0.20 kW/kg" readout — can't widen
+	# this column and shrink only that row's slider. Every row's slider column then
+	# gets the same leftover width, so all sliders line up to the same length.
 	var label_col := VBoxContainer.new()
 	label_col.add_theme_constant_override("separation", 2)
-	label_col.custom_minimum_size = Vector2(140, 0)
+	label_col.custom_minimum_size = Vector2(180, 0)
+	label_col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	row.add_child(label_col)
 	var name_label := Label.new()
 	name_label.text = String(spec["name"])
 	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.clip_text = true
 	label_col.add_child(name_label)
 	var value := Label.new()
 	value.add_theme_font_size_override("font_size", 14)
 	value.modulate = Color(1, 1, 1, 0.8)
+	value.clip_text = true
 	label_col.add_child(value)
 	_lift_slider_values[axis] = value
 
@@ -1196,9 +1222,9 @@ func _make_slider_row(spec: Dictionary) -> Control:
 	row.add_child(slider_col)
 
 	var slider := HSlider.new()
-	slider.min_value = -1.0
-	slider.max_value = 1.0
-	slider.step = 0.05
+	slider.min_value = float(spec.get("min", -1.0))
+	slider.max_value = float(spec.get("max", 1.0))
+	slider.step = float(spec.get("step", 0.05))
 	# Focusable: ui_up/ui_down walk between sliders, ui_left/ui_right nudge the focused
 	# one (the natural Range behaviour) — keyboard/gamepad tuning with no pointer.
 	slider.focus_mode = Control.FOCUS_ALL
@@ -1608,6 +1634,71 @@ func _maybe_enter_web_fullscreen() -> void:
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
+# Free Roam: open the car park to pick which owned car to drive. Parks the WHOLE owned
+# collection (like Change Car) and frames the currently-selected car; Start launches
+# free roam with the focused car (see _start_free_roam), Back returns to the garage.
+func _enter_free_roam() -> void:
+	_carpark_freeroam_mode = true
+	_carpark_change_mode = false
+	_carpark_swap_mode = false
+	_carpark_starter_mode = false
+	_build_lineup(Save.profile.get("cars", []).duplicate())
+	_rally_banner.text = "Free roam — pick your car"
+	_no_eligible_label.visible = false
+	_start_button.text = "Start Free Roam"
+	_start_button.disabled = _eligible.is_empty()
+	_view = View.CARPARK
+	_detail_open = false
+	_update_overlays()
+	# Frame the currently-selected car, defaulting to the first parked car.
+	_focus = 0
+	var sel := Save.selected_instance_id()
+	for i in _eligible.size():
+		if int(_eligible[i].get("instance_id", -1)) == sel:
+			_focus = i
+			break
+	_focus_changed(true)
+
+
+# Launch free roam with the focused car: no rally, no opponents — just drive. Selects
+# the car, hands its instance to RallySession.free_roam_instance_id (world.gd fields it
+# with no active session), writes a FRESH random seed + neutral (0.5) terrain settings
+# into the live Config, then loads the run scene. The player leaves via Pause → Quit to
+# HQ (pause_menu.gd loads hq.tscn directly when no session is active). A random seed
+# each time means a different track on every entry.
+func _start_free_roam() -> void:
+	if _selected_instance_id < 0:
+		return
+	# Field this car for the drive, and select it so the lift shows it on return.
+	Save.set_selected_car(_selected_instance_id)
+	RallySession.free_roam_instance_id = _selected_instance_id
+	_carpark_freeroam_mode = false
+	_clear_lineup()
+	_selected_instance_id = -1
+	_prepare_free_roam()
+	var loading := LoadingScreen.new()
+	loading.set_step("Loading free roam…")
+	add_child(loading)
+	# Let the overlay paint before the synchronous scene change (mirrors _begin_rally_start).
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_tree().change_scene_to_file("res://main.tscn")
+
+
+# Config setup for free roam, split out so it's testable without a scene change: clear
+# any active session, then write a fresh random seed + neutral terrain settings into the
+# live Config. A random seed means a new track every entry.
+func _prepare_free_roam() -> void:
+	# Ensure no stale session steers world.gd down the rally path.
+	if RallySession.is_active():
+		RallySession.abandon()
+	var cfg: GameConfig = Config.data
+	cfg.track_seed = randi()
+	cfg.track_straightness = 0.5
+	cfg.track_forestiness = 0.5
+	cfg.track_tarmac_fraction = 0.5
+
+
 func _enter_table() -> void:
 	_detail_open = false
 	_table_pan = Vector3.ZERO  # re-centre the map each time we open it
@@ -1789,30 +1880,32 @@ func _lift_hub() -> void:
 	_refresh_lift_ui()
 
 
-# Move the garage's left/right cursor between Back (0), Open map table (1) and Tune car
-# (2), wrapping at the ends, and repaint it.
+# Move the garage's left/right cursor between Back (0), Map (1), Tune Car (2) and
+# Free Roam (3), wrapping at the ends, and repaint it.
 func _move_garage_focus(step: int) -> void:
-	_garage_focus = wrapi(_garage_focus + step, 0, 3)
+	_garage_focus = wrapi(_garage_focus + step, 0, 4)
 	_refresh_garage_focus()
 
 
 # Fire the garage action the cursor sits on: 0 backs out to the exterior, 1 opens the
-# map table, 2 opens the tuning lift.
+# map table, 2 opens the tuning lift, 3 launches free roam.
 func _activate_garage_focus() -> void:
 	match _garage_focus:
 		0: _go_to(View.EXTERIOR)
 		1: _enter_table()
 		2: _enter_lift()
+		3: _enter_free_roam()
 
 
-# Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Open
-# map / Tune buttons are highlighted by hand rather than via native focus).
+# Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Map /
+# Tune Car / Free Roam buttons are highlighted by hand rather than via native focus).
 func _refresh_garage_focus() -> void:
 	if _garage_table_btn == null:
 		return
 	UITheme.mark_focused(_garage_back_btn, _garage_focus == 0)
 	UITheme.mark_focused(_garage_table_btn, _garage_focus == 1)
 	UITheme.mark_focused(_garage_lift_btn, _garage_focus == 2)
+	UITheme.mark_focused(_garage_freeroam_btn, _garage_focus == 3)
 
 
 # Move the HUB's left/right cursor between Back (0), Change Car (1), Tuning (2) and
@@ -1918,7 +2011,7 @@ func _refresh_lift_ui() -> void:
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
 	var id := int(_lift_owned.get("instance_id", -1))
 	_lift_car_label.text = "%s  #%d\n%s" % [
-		entry.get("name", "?"), id, _car_stats_text(_lift_owned, entry)]
+		EngineSwap.display_name(entry, _lift_owned), id, _car_stats_text(_lift_owned, entry)]
 	# Show the hub (car selector + menu buttons) or a sub-menu page from _lift_page.
 	# The car description hides while a sub-menu is open so the centred page has room.
 	_lift_hub_controls.visible = _lift_page == LiftPage.HUB
@@ -1933,6 +2026,16 @@ func _refresh_lift_ui() -> void:
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
 
+# The engine-detune slider's value label: the detune percent plus the car's LIVE
+# power-to-weight at that setting (e.g. "80% - 0.20 kW/kg"), so the player sees the
+# ratio each event is gated on move as they detune. effective_meta already folds in
+# the (mirrored) detune, so this recomputes off the current setting.
+func _detune_label_text(pct: int) -> String:
+	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_lift_owned, entry))
+	return "%d%% - %.2f kW/kg" % [pct, pw]
+
+
 # Reflect the stored tuning + each axis's unlock state onto the sliders.
 func _refresh_sliders() -> void:
 	var tuning: Dictionary = _lift_owned.get("tuning", {})
@@ -1944,15 +2047,27 @@ func _refresh_sliders() -> void:
 		slider.editable = unlocked
 		row.modulate = Color(1, 1, 1, 1.0 if unlocked else 0.4)
 		# set_value_no_signal so syncing the UI doesn't re-save the value.
-		slider.set_value_no_signal(clampf(float(tuning.get(axis, 0.0)), -1.0, 1.0))
-		if unlocked:
-			value.text = "%+.2f" % slider.value
+		if axis == "engine_detune":
+			slider.set_value_no_signal(clampf(float(tuning.get("engine_detune", 1.0)), 0.0, 1.0) * 100.0)
+			value.text = _detune_label_text(int(round(slider.value)))
 		else:
-			value.text = "needs %s" % ("Big Brake Kit" if axis == "brake_bias" else "Aero Kit")
+			slider.set_value_no_signal(clampf(float(tuning.get(axis, 0.0)), -1.0, 1.0))
+			if unlocked:
+				value.text = "%+.2f" % slider.value
+			else:
+				value.text = "needs %s" % ("Big Brake Kit" if axis == "brake_bias" else "Aero Kit")
 
 
 func _on_tune_slider_changed(value: float, axis: String) -> void:
 	if _lift_owned.is_empty():
+		return
+	if axis == "engine_detune":
+		var frac := clampf(value / 100.0, 0.0, 1.0)
+		Save.set_engine_detune(int(_lift_owned.get("instance_id", -1)), frac)
+		var tuning_d: Dictionary = _lift_owned.get("tuning", {})
+		tuning_d["engine_detune"] = frac
+		_lift_owned["tuning"] = tuning_d
+		(_lift_slider_values[axis] as Label).text = _detune_label_text(int(round(value)))
 		return
 	var tuning: Dictionary = _lift_owned.get("tuning", {})
 	tuning[axis] = value
@@ -1994,6 +2109,8 @@ func _rebuild_upgrades_box() -> void:
 
 	# Repair kit + HP (the one consumable; heals working HP).
 	_lift_upgrades_box.add_child(_make_repair_row(id, inventory))
+	# Engine swap: current engine + a button into the car-park swap picker.
+	_lift_upgrades_box.add_child(_make_engine_swap_row(id))
 
 
 func _make_slot_row(slot: String, instance_id: int, installed: Array, inventory: Dictionary) -> Control:
@@ -2090,6 +2207,49 @@ func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
 	return box
 
 
+# The engine-swap row on the upgrades page: current engine label + a Swap button
+# that opens the car park in swap mode. Gated on the car being at 100% HP (both
+# cars must be full to swap). See features/engine-swap.md.
+func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
+	var owned := Save.get_car(instance_id)
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var current := EngineSwap.current_engine_id(owned, String(entry.get("engine", "")))
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = "Engine: %s" % EngineLibrary.by_id(current).get("name", current)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var button := Button.new()
+	button.text = "Swap Engine"
+	button.focus_mode = Control.FOCUS_ALL
+	var full_hp: bool = EngineSwap.can_swap(owned, owned)  # true iff this car is at max HP
+	var has_target := not _swap_targets(instance_id).is_empty()
+	button.disabled = not (full_hp and has_target)
+	if not full_hp:
+		button.tooltip_text = "This car must be at 100% health to swap engines"
+	elif not has_target:
+		button.tooltip_text = "No other 100%-health car to swap with"
+	button.pressed.connect(_enter_engine_swap)
+	row.add_child(button)
+	return row
+
+
+# The owned cars this car can swap engines with: every OTHER owned car that (with
+# this one) passes EngineSwap.can_swap — i.e. both at 100% HP. Shared by the swap-row
+# gating and the car-park swap lineup so they never disagree.
+func _swap_targets(current_id: int) -> Array:
+	var current_owned := Save.get_car(current_id)
+	var targets: Array = []
+	if current_owned.is_empty():
+		return targets
+	for car in Save.profile.get("cars", []):
+		if int(car.get("instance_id", -1)) == current_id:
+			continue
+		if EngineSwap.can_swap(current_owned, car):
+			targets.append(car)
+	return targets
+
+
 # Applying a part is irreversible (it's consumed from the unlocked pool and stays
 # on this car for good), so ASK first. The actual fit happens in _apply_upgrade
 # once the player accepts the dialog.
@@ -2138,6 +2298,7 @@ func _use_repair_kit(instance_id: int) -> void:
 # frame the first. With none eligible, show a hint + disable Start.
 func _enter_car_screen() -> void:
 	_carpark_change_mode = false
+	_carpark_freeroam_mode = false
 	_start_button.text = "Start Rally"
 	_build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
@@ -2168,6 +2329,7 @@ func _enter_car_screen() -> void:
 # raised car; Back returns to the bay (see _on_start_pressed / _car_back).
 func _enter_change_car() -> void:
 	_carpark_change_mode = true
+	_carpark_freeroam_mode = false
 	_build_lineup(Save.profile.get("cars", []).duplicate())
 	_rally_banner.text = "Change car"
 	_no_eligible_label.visible = false
@@ -2191,11 +2353,39 @@ func _car_back() -> void:
 	if _carpark_starter_mode:
 		_carpark_starter_mode = false
 		_go_to(View.EXTERIOR)
+	elif _carpark_freeroam_mode:
+		_carpark_freeroam_mode = false
+		_go_to(View.GARAGE)
+	elif _carpark_swap_mode:
+		_carpark_swap_mode = false
+		_enter_lift()
 	elif _carpark_change_mode:
 		_carpark_change_mode = false
 		_enter_lift()
 	else:
 		_go_to(View.TABLE)
+
+
+# Open the car park to pick an engine-swap partner: all OTHER owned cars at full
+# health (the current car is excluded — you can't swap with yourself). Confirming a
+# target exchanges engines via Save.swap_engines. See features/engine-swap.md.
+func _enter_engine_swap() -> void:
+	_carpark_swap_mode = true
+	_carpark_change_mode = false
+	_carpark_starter_mode = false
+	_carpark_freeroam_mode = false
+	_selected_instance_id = -1  # no partner chosen yet; guards _select_swap_target
+	var current_id := Save.selected_instance_id()
+	var targets := _swap_targets(current_id)
+	_build_lineup(targets)
+	_rally_banner.text = "Engine swap"
+	_no_eligible_label.visible = false
+	_start_button.text = "Swap Engine"
+	_view = View.CARPARK
+	_detail_open = false
+	_update_overlays()
+	_focus = 0
+	_focus_changed(true)
 
 
 # First-run starter picker: park one PREVIEW car per STARTER_MODEL_IDS (not owned
@@ -2204,6 +2394,7 @@ func _car_back() -> void:
 func _enter_starter_pick() -> void:
 	_carpark_starter_mode = true
 	_carpark_change_mode = false
+	_carpark_freeroam_mode = false
 	var previews: Array = []
 	var idx := -1
 	for id in STARTER_MODEL_IDS:
@@ -2425,8 +2616,11 @@ func _focus_changed(snap := false) -> void:
 	if _view == View.OVERFLOW:
 		_refresh_overflow_ui(owned, entry, stats)
 	else:
+		var display_owned: Dictionary = Save.get_car(_selected_instance_id)
+		var display_name: String = (EngineSwap.display_name(entry, display_owned)
+			if not display_owned.is_empty() else String(entry.get("name", owned.get("model_id", "?"))))
 		_car_name_label.text = "%s  #%d  (%d of %d)" % [
-			entry.get("name", owned.get("model_id", "?")), _selected_instance_id, _focus + 1, _eligible.size()]
+			display_name, _selected_instance_id, _focus + 1, _eligible.size()]
 		_car_stats_label.text = stats
 		# A wrecked focused car gates Start + offers a Repair (full restore).
 		_refresh_focus_damage(owned)
@@ -2612,10 +2806,18 @@ func _on_start_pressed() -> void:
 	if _carpark_starter_mode:
 		_confirm_starter()
 		return
+	# In engine-swap mode the same action exchanges engines with the focused car.
+	if _carpark_swap_mode:
+		_select_swap_target()
+		return
 	# In change-car mode the same action SELECTS the focused car for the lift and
 	# returns to the bay, rather than launching a rally.
 	if _carpark_change_mode:
 		_select_changed_car()
+		return
+	# In free-roam mode the same action launches free roam with the focused car.
+	if _carpark_freeroam_mode:
+		await _start_free_roam()
 		return
 	var owned := Save.get_car(_selected_instance_id)
 	var rally := RallyLibrary.by_id(_selected_rally_id)
@@ -2640,6 +2842,20 @@ func _select_changed_car() -> void:
 	_selected_instance_id = -1
 	_carpark_change_mode = false
 	_lift_car_instance_id = -2  # force the lift to respawn the newly-selected car
+	_enter_lift()
+
+
+# Confirm the highlighted car as the engine-swap partner: exchange engines, then
+# respawn the lift prop with its new engine and return to the upgrades page.
+func _select_swap_target() -> void:
+	var current_id := Save.selected_instance_id()
+	if _selected_instance_id >= 0:
+		Save.swap_engines(current_id, _selected_instance_id)
+	_clear_lineup()
+	_selected_instance_id = -1
+	_carpark_swap_mode = false
+	_lift_car_instance_id = -2  # force prop respawn with the new engine
+	_ensure_lift_car()
 	_enter_lift()
 
 
@@ -2697,8 +2913,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					_go_to(View.CARPARK if _settings_gate else View.EXTERIOR)
 					_settings_gate = false
 		View.GARAGE:
-			# The bottom action row (Back / Open map / Tune car) is a single left/right
-			# cursor; select fires it. menu_back is a shortcut straight to the exterior.
+			# The bottom action row (Back / Map / Tune Car / Free Roam) is a single
+			# left/right cursor; select fires it. menu_back shortcuts to the exterior.
 			if event.is_action_pressed("menu_left"):
 				_move_garage_focus(-1)
 			elif event.is_action_pressed("menu_right"):

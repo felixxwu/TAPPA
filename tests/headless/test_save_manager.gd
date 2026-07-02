@@ -346,3 +346,46 @@ func test_reset_new_game_overwrites_with_fresh_profile() -> void:
 	_save.reset_new_game()
 	assert_eq(_save.profile["cars"].size(), 0, "new game clears owned cars")
 	assert_true(_save.has_save(), "new game written to disk immediately")
+
+
+func test_swap_engines_exchanges_current_engines() -> void:
+	var a: Dictionary = _save.grant_car("twingo")
+	var b: Dictionary = _save.grant_car("mustang")
+	var stock_a: String = CarLibrary.by_id("twingo")["engine"]
+	var stock_b: String = CarLibrary.by_id("mustang")["engine"]
+	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "full-health swap succeeds")
+	# Re-fetch (grant_car returns a live ref, but re-read to be explicit).
+	a = _save.get_car(a["instance_id"])
+	b = _save.get_car(b["instance_id"])
+	assert_eq(String(a.get("swapped_engine", "")), stock_b, "twingo now runs the mustang engine")
+	assert_eq(String(b.get("swapped_engine", "")), stock_a, "mustang now runs the twingo engine")
+
+
+func test_swapping_back_restores_stock_and_clears_field() -> void:
+	var a: Dictionary = _save.grant_car("twingo")
+	var b: Dictionary = _save.grant_car("mustang")
+	_save.swap_engines(a["instance_id"], b["instance_id"])
+	_save.swap_engines(a["instance_id"], b["instance_id"])  # swap back
+	a = _save.get_car(a["instance_id"])
+	b = _save.get_car(b["instance_id"])
+	assert_eq(String(a.get("swapped_engine", "")), "", "twingo back to stock -> field cleared")
+	assert_eq(String(b.get("swapped_engine", "")), "", "mustang back to stock -> field cleared")
+
+
+func test_swap_blocked_when_a_car_is_not_full_health() -> void:
+	var a: Dictionary = _save.grant_car("twingo")
+	var b: Dictionary = _save.grant_car("mustang")
+	_save.apply_damage(b["instance_id"], 1.0)  # b now below max HP
+	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]), "damaged car blocks the swap")
+	a = _save.get_car(a["instance_id"])
+	assert_eq(String(a.get("swapped_engine", "")), "", "blocked swap leaves engines untouched")
+
+
+func test_set_engine_detune_clamps_and_persists() -> void:
+	var a: Dictionary = _save.grant_car("twingo")
+	_save.set_engine_detune(a["instance_id"], 0.5)
+	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 0.5, 0.0001, "stores fraction")
+	_save.set_engine_detune(a["instance_id"], 1.7)
+	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 1.0, 0.0001, "clamps above 1")
+	_save.set_engine_detune(a["instance_id"], -0.3)
+	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 0.0, 0.0001, "clamps below 0")

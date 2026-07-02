@@ -31,7 +31,13 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   own `hp`, `installed_upgrades`, `disabled_upgrades` (applied parts toggled off
   in the upgrades menu — fitted but inert), and `tuning` deltas. Two cars of the
   same model can diverge (the random-car reward can grant a model you already
-  own).
+  own). Two further fields support [engine-swap.md](engine-swap.md), both
+  defaulted on read so no `SCHEMA_VERSION` bump was needed for either:
+  - **`swapped_engine`** (string, default `""`) — a non-stock `EngineLibrary` id
+    currently fitted, written/cleared by `Save.swap_engines`; absent/empty means
+    the car runs its own `CarLibrary` stock engine.
+  - **`tuning.engine_detune`** (float, default `1.0`) — a `[0, 1]` torque scale
+    living in the existing `tuning` bag, written by `Save.set_engine_detune`.
 - `selected_instance_id` — the owned car the player has **selected** (the one raised
   on the garage tuning lift; see `features/tuning.md`). Resolved lazily by
   `Save.selected_car()`, which self-heals to the first owned car when the stored id
@@ -78,7 +84,12 @@ and on every garage-lift refresh, `hq.gd:_refresh_lift_ui`),
 **not** refunded, refuses the player's **last** owned car so the "always own ≥1 car"
 invariant holds and the safety net always has a car to revive; drives HQ's
 garage-overflow prompt),
-`set_tuning(instance_id, tuning)`, `selected_car()` / `selected_instance_id()` /
+`set_tuning(instance_id, tuning)`,
+`swap_engines(id_a, id_b)` (exchanges two owned cars' CURRENT engines; free,
+unlimited, reversible, gated on both sitting at 100% HP via `EngineSwap.can_swap`
+— see [engine-swap.md](engine-swap.md)),
+`set_engine_detune(instance_id, frac)` (clamped `[0,1]` torque-scale tuning value),
+`selected_car()` / `selected_instance_id()` /
 `set_selected_car(instance_id)` (the lift's selected car, self-healing),
 `get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),
 `add_item` / `consume_item`,
