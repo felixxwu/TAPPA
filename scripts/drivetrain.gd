@@ -62,8 +62,11 @@ func _init(p_car: VehicleBody3D) -> void:
 
 
 # throttle: 0..1 drive request (reverse comes from the engine's gear).
-# brake: 0..1 foot brake. handbrake: bool.
-func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
+# brake: 0..1 foot brake. handbrake: bool (rear brake torque + AWD centre-diff open).
+# declutch: open the engine clutch (normally = handbrake, so a held handbrake lets the
+# engine rev free; the finish stop passes it false so the engine stays coupled and
+# winds down with the braking wheels instead of free-revving — see car.gd).
+func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch: bool) -> void:
 	var cfg: GameConfig = car.config
 	readouts.clear()
 	var r := cfg.wheel_radius
@@ -128,7 +131,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 		# (drive, engine braking and shift cuts all live in EngineSim — including the
 		# damage misfire, a stochastic fuel cut that drops crank torque as HP falls).
 		# Brakes move omega toward zero but never reverse it (no sign flip-flop).
-		var drive_torque := engine.step(h, throttle, driveline_omega(), handbrake)
+		var drive_torque := engine.step(h, throttle, driveline_omega(), declutch)
 		match drive_mode:
 			DriveMode.AWD:
 				if handbrake:

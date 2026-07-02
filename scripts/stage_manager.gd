@@ -6,8 +6,9 @@ extends Node
 #      player launches and StartLine calls begin_countdown(). Skipped unless the
 #      manager is set up `staged` (a session run with start_line_enabled); a plain
 #      dev boot goes straight to COUNTDOWN exactly as before.
-#   1. COUNTDOWN — the car is locked (handbrake forced) while a big centered
-#      3·2·1·GO counts down on the HUD.
+#   1. COUNTDOWN — the handbrake is forced on but driver input stays live (so the
+#      player can rev up and launch on GO) while a big centered 3·2·1·GO counts
+#      down on the HUD.
 #   2. RUNNING   — controls unlock, an elapsed timer runs (small, top-right).
 #   3. COMPLETE  — when track progress reaches the finish, the timer freezes,
 #      the car re-locks, and a placeholder stage-complete panel shows.
@@ -36,6 +37,7 @@ var _car: Node          # a Car (VehicleBody3D) — toggles controls_locked
 var _hud: Node          # the HUD CanvasLayer — countdown / timer / complete panel
 var _progress: Node     # a TrackProgress — progress_percent() drives the end edge
 var _armed := false     # true once setup() has wired the refs and locked the car
+var _results_emitted := false  # true once proceed_to_results() has fired stage_completed
 
 # In-stage "vs P1" pace popup (HUD), wired by setup_splits() for a session run that
 # has a P1 rival; empty for a plain dev boot (no popup). _turn_progress[i] is the
@@ -71,19 +73,28 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_progress = progress
 	_elapsed = 0.0
 	_go_flash_left = 0.0
+	_results_emitted = false
+	# Clear any finish-stop braking from a previous arm (car swap / new event).
+	if car != null and "finish_stop" in car:
+		car.finish_stop = false
 	# Clear any pace-popup splits from a previous arm (a car swap / new event); a
 	# session run re-wires them via setup_splits() after this.
 	_turn_progress = []
 	_turn_time_frac = []
 	_p1_total_ms = 0
 	_split_cursor = 0
-	if _car != null:
-		_car.controls_locked = true
 	if staged:
-		# Wait at the start line; the countdown only arms once StartLine launches.
+		# Wait at the start line, fully held; the countdown only arms once StartLine launches.
+		if _car != null:
+			_car.controls_locked = true
+			_car.handbrake_locked = false
 		_phase = Phase.STAGING
 		_countdown_left = _cfg().stage_countdown_seconds
 	else:
+		# Countdown: hold only the handbrake so the player can rev up and launch on GO.
+		if _car != null:
+			_car.controls_locked = false
+			_car.handbrake_locked = true
 		_phase = Phase.COUNTDOWN
 		_countdown_left = _cfg().stage_countdown_seconds
 		_mark_progress_start()  # car is on the line now -> progress reads 0% from here
@@ -98,6 +109,10 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 func begin_countdown() -> void:
 	if not _armed or _phase != Phase.STAGING:
 		return
+	# Drop the full hold to a handbrake-only hold so the player can rev and launch on GO.
+	if _car != null:
+		_car.controls_locked = false
+		_car.handbrake_locked = true
 	_phase = Phase.COUNTDOWN
 	_countdown_left = _cfg().stage_countdown_seconds
 	# The start-line sequence has just snapped the car onto the line; anchor 0% here.
@@ -151,6 +166,7 @@ func _tick_countdown(delta: float) -> void:
 	_phase = Phase.RUNNING
 	if _car != null:
 		_car.controls_locked = false
+		_car.handbrake_locked = false
 	if _hud != null and _hud.has_method("show_countdown"):
 		_hud.show_countdown(0.0)  # "GO"
 	_go_flash_left = GO_FLASH_SECONDS
@@ -176,16 +192,36 @@ func _tick_running(delta: float) -> void:
 		_complete()
 
 
-# Trip the finish: freeze the timer, re-lock the car, show the panel and emit
-# stage_completed. Reached either by crossing the finish (the gate above) or by
-# the dev skip-to-finish cheat (force_complete).
+# Trip the finish: freeze the timer, re-lock the car and show the finish panel.
+# Reached either by crossing the finish (the gate above) or by the dev skip-to-finish
+# cheat (force_complete). stage_completed is DEFERRED to proceed_to_results() (the
+# panel's NEXT button), so the leaderboard/podium flow only starts once the player
+# dismisses the time — the car skids to a stop in the runoff behind the overlay.
 func _complete() -> void:
 	_phase = Phase.COMPLETE
-	# Re-lock so the finished car doesn't keep driving under the panel.
+	# Re-lock so the finished car skids to a stop under the panel (controls_locked
+	# forces the handbrake on) instead of driving on. It stays visible behind the
+	# overlay; the runoff road (features/track.md) gives it room to stop.
 	if _car != null:
 		_car.controls_locked = true
+		_car.handbrake_locked = false
+		# Brake to a stop (foot brake + handbrake) with the clutch kept engaged so the
+		# engine winds down instead of free-revving; the foot brake releases once
+		# stopped. See Car.finish_stop.
+		if "finish_stop" in _car:
+			_car.finish_stop = true
 	if _hud != null and _hud.has_method("show_stage_complete"):
 		_hud.show_stage_complete(_elapsed)
+
+
+# Advance from the finish panel into the post-stage flow (standings → podium): emit
+# stage_completed, which the session layer (world.gd) hangs the results flow off.
+# Fired by the HUD finish panel's NEXT button. Guarded so it only fires while
+# COMPLETE and only once, so a double-press can't re-enter the flow.
+func proceed_to_results() -> void:
+	if _phase != Phase.COMPLETE or _results_emitted:
+		return
+	_results_emitted = true
 	stage_completed.emit(_elapsed)
 
 

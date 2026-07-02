@@ -121,6 +121,12 @@ func _build() -> void:
 	_settings_panel = _build_settings_panel()
 	_overlay.add_child(_settings_panel)
 
+	# Framework: focus + WASD/arrow/gamepad nav across whichever page is showing
+	# (Resume/Settings/Quit, or the SettingsMenu rows). No on_back — this menu's
+	# own _unhandled_input owns ui_cancel because it also OPENS the menu when
+	# closed and steps sub-page → list → menu, which a plain back callback can't.
+	MenuNav.attach(_overlay, {first = _resume_button})
+
 	# Confirm before abandoning a rally — quitting forfeits this run (no retry).
 	_quit_dialog = ConfirmationDialog.new()
 	_quit_dialog.title = "Quit to HQ?"

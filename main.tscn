@@ -180,7 +180,11 @@ offset_bottom = 40.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="StageCompleteLabel" type="Label" parent="HUD/StageCompletePanel" unique_id=1044419649]
+[node name="Box" type="VBoxContainer" parent="HUD/StageCompletePanel" unique_id=1044419700]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="StageCompleteLabel" type="Label" parent="HUD/StageCompletePanel/Box" unique_id=1044419649]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
 text = "STAGE COMPLETE"

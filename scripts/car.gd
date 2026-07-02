@@ -65,10 +65,27 @@ var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount origin (scen
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
 # When true, driver input is ignored and the handbrake is forced on, so the car
-# physically holds still (e.g. during the stage countdown). Set by StageManager;
-# the rest of the simulation (drag, suspension, camera) keeps running so the car
-# settles naturally. See todo/stage-start-and-end.md §2.
+# physically holds still (e.g. staged at the start line, or after the finish).
+# Set by StageManager; the rest of the simulation (drag, suspension, camera) keeps
+# running so the car settles naturally. See todo/stage-start-and-end.md §2.
 var controls_locked := false
+
+# When true (set by StageManager on crossing the finish, alongside controls_locked),
+# the car brakes itself to a stop: full foot brake + the forced handbrake while it's
+# still rolling, then the foot brake releases once stopped. The engine clutch stays
+# ENGAGED through the stop so the engine winds down with the braking wheels (the
+# auto-clutch opens at standstill), instead of free-revving on the handbrake's open
+# clutch. Cleared on re-arm (setup / a car swap). See features/stage.md.
+var finish_stop := false
+# Below this speed the finish stop counts the car as stopped and releases the foot
+# brake (the handbrake / parking hold still holds it put).
+const FINISH_STOP_SPEED := 0.8  # m/s
+
+# When true, the handbrake is forced on but driver input is otherwise LIVE — the
+# player can rev the engine (the held handbrake opens the clutch, so revs climb
+# freely) and steer, then launch the instant the brake releases. Used during the
+# countdown so the player can pull away at full revs on GO. Set by StageManager.
+var handbrake_locked := false
 
 # Scripted ("AI") control for non-player cars — the start-line queue (scripts/
 # start_line.gd) drives the leader/trailer with full physics so they pull away and
@@ -271,7 +288,17 @@ func _physics_process(delta: float) -> void:
 			brake_input = rev_pedal
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
-	var handbrake := ai_handbrake if ai_controlled else (controls_locked or Input.is_action_pressed("handbrake"))
+	var handbrake := ai_handbrake if ai_controlled else (controls_locked or handbrake_locked or Input.is_action_pressed("handbrake"))
+	# Declutch normally follows the handbrake (a held handbrake opens the clutch so the
+	# engine can rev free — used for launches). The finish stop is the exception.
+	var declutch := handbrake
+	if finish_stop:
+		# Brake to a stop with the foot brake + the forced handbrake, but keep the
+		# clutch ENGAGED so the engine engine-brakes down with the wheels (the auto-clutch
+		# opens at standstill and the engine settles to idle) rather than free-revving on
+		# the open handbrake clutch. Release the foot brake once stopped.
+		declutch = false
+		brake_input = 1.0 if speed > FINISH_STOP_SPEED else 0.0
 	# Stiction hold: a fully-pinned axle (handbrake or the low-speed parking brake)
 	# should stop the car creeping down a slope. See _apply_parking_hold.
 	_apply_parking_hold(handbrake or brake_input >= 1.0, speed, delta)
@@ -279,7 +306,7 @@ func _physics_process(delta: float) -> void:
 	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
 	# cuts; ramps to 1 at 0 HP). See features/damage.md.
 	engine.misfire_level = damage.misfire_level(cfg)
-	drivetrain.step(delta, drive, brake_input, handbrake)
+	drivetrain.step(delta, drive, brake_input, handbrake, declutch)
 
 	# Quadratic aero drag; with redline-limited gearing, this sets how hard
 	# the top of each gear pulls.

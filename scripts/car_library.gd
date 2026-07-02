@@ -147,18 +147,18 @@ const CARS: Array[Dictionary] = [
 		"model_texture": "res://blender/twingo/twingo_texture.png",
 		"wheel_texture": "res://blender/twingo/wheel.png",
 	},
-	# {
-	# 	"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
-	# 	"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 1,
-	# 	"mass": 1575.0, "engine": "audi_25t_i5", "weight_front": 0.59,  # transverse turbo I5 quattro, nose-heavy
-	# 	"tire_compound": 1.05,  # performance summer tyres
-	# 	"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
-	# 	"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-	# 	"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
-	# 	"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
-	# 	"wheel_radius": 0.335, "wheel_width_front": 0.235, "wheel_width_rear": 0.235,  # 235/35R19 square, quattro
-	# 	"suspension_travel": 0.45, "suspension_stiffness": 13.0,  # firm AWD hot hatch
-	# },
+	{
+		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
+		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 1,
+		"mass": 1575.0, "engine": "audi_25t_i5", "weight_front": 0.59,  # transverse turbo I5 quattro, nose-heavy
+		"tire_compound": 1.05,  # performance summer tyres
+		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
+		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
+		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
+		"wheel_radius": 0.335, "wheel_width_front": 0.235, "wheel_width_rear": 0.235,  # 235/35R19 square, quattro
+		"suspension_travel": 0.45, "suspension_stiffness": 13.0,  # firm AWD hot hatch
+	},
 	{
 		"name": "Honda Acty",  # HA4 kei truck: ~740 kg, 656cc mid-engine triple, RWD
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,

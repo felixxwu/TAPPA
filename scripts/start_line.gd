@@ -495,8 +495,8 @@ func _handoff() -> void:
 
 # Undo the roll-up scripting so the run drives normally: clear the AI override and
 # axis locks (else the player couldn't turn) and restore the gearbox auto flag. The
-# StageManager keeps controls_locked through the countdown, so the car holds at the
-# line until GO.
+# StageManager forces the handbrake through the countdown, so the car holds at the
+# line (though the player can already rev up) until GO.
 func _release_player() -> void:
 	if not _player_staged or not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
 		return

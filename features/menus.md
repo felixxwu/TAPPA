@@ -31,28 +31,62 @@ keyboard *and* controller, alongside mouse / touch. There are **two regimes**, a
 which one a screen uses depends on whether its layout is a flat widget list or a 3D
 space:
 
-- **Flat / overlay menus** use **Godot's native focus** — the buttons are
-  `focus_mode = FOCUS_ALL`, one grabs focus when the menu opens, and the engine's
-  built-in `ui_up`/`ui_down`/`ui_left`/`ui_right` move focus, `ui_accept` fires the
-  focused control, `ui_cancel` backs out. Those default actions already bind arrow
-  keys + D-pad + left-stick + Enter/Space + gamepad A/B, so keyboard and controller
-  work with no extra wiring. The **focus highlight is the theme's `focus` stylebox**,
-  which `tools/build_ui_theme.gd` defines to match the **hover** look — so a focus
-  cursor and a mouse hover read identically (see [ui-design-system.md](ui-design-system.md)).
-  `UITheme.focus_grab(ctrl)` is the guarded, call-deferred grab helper menus use to
-  seat the cursor after they're shown. This covers: the **title** (Start/Settings),
+- **Flat / overlay menus** use **Godot's native focus**, wired by the **`MenuNav`
+  framework** (`scripts/menu_nav.gd`) so a menu author doesn't hand-roll (or forget)
+  the per-widget setup. A menu calls **`MenuNav.attach(root, {first = ..., on_back = ...})`**
+  once and the node it spawns handles all four chores: (1) walks `root` and sets every
+  interactive Control to `FOCUS_ALL` (a widget opts OUT with the `menu_nav_skip` meta —
+  used by the diegetic HQ buttons that keep `FOCUS_NONE`); (2) grabs the cursor onto
+  `first` (or the first focusable) — deferred, and again whenever the menu is re-shown;
+  (3) **fills the one gap in Godot's defaults** — the built-in `ui_up/down/left/right`
+  actions bind arrow keys + D-pad + left-stick but **not WASD**, so `MenuNav` translates
+  the game's `menu_up/down/left/right` actions (which bind W/A/S/D) into focus-neighbour
+  moves. Native `ui_*` still consumes arrows / stick / D-pad in the GUI phase *before*
+  `_unhandled_input`, so only the WASD presses reach `MenuNav` — no double-movement, and
+  no fragile `project.godot` surgery; (4) routes **both** `ui_cancel` **and** `menu_back`
+  to `on_back` (omit it and the host keeps its own back handling). `MenuNav` goes inert
+  while its `root` is hidden — including a hidden `CanvasLayer` ancestor (how HQ toggles
+  overlays), which `Control.is_visible_in_tree()` alone misses — so a hidden overlay never
+  steals input from the station behind it.
+
+  `ui_accept` fires the focused control and the **focus highlight is the theme's `focus`
+  stylebox**, which `tools/build_ui_theme.gd` defines to match the **hover** look — so a
+  focus cursor and a mouse hover read identically (see [ui-design-system.md](ui-design-system.md)).
+  `UITheme.focus_grab(ctrl)` is the guarded, call-deferred grab helper (grab a specific
+  control); `UITheme.focus_grab_first(root)` / `UITheme.first_focusable(root)` seat the
+  cursor on the first focusable control under a root (shared by `MenuNav` and HQ's
+  native-focus pages). `MenuNav` covers: the **title** (Start/Settings),
   the shared **`SettingsMenu`** (rows + bottom action button — used by both the HQ
   settings overlay and the pause menu), the **pause** menu (Resume/Settings/Quit),
-  the **standings** interstitial's single action button — `FOCUS_ALL`, re-grabbed via
+  the HUD **finish panel**'s single `NEXT` button (`StageCompletePanel`, attached in
+`hud.gd._ready` with `first = NextButton`; re-grabs focus whenever the panel is
+shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
+[stage.md](stage.md)), the **standings** interstitial's single action button —
+`FOCUS_ALL`, re-grabbed via
   `UITheme.focus_grab` both when the scene first opens and again every time
   `_build_ui()` rebuilds for a page switch (event page ↔ combined page), so the
   cursor never drops when the button text/target changes — the **podium** Next, and
   the tuning-lift **Tune** (sliders — left/right nudges the focused one) and
   **Upgrades** (install / repair) pages. On the standings interstitial specifically,
-  `ui_cancel`/`menu_back` (`_unhandled_input`) steps **back** from the combined page
-  to the event page — but only when there's an event page to return to (2+ events
+  the `MenuNav` `on_back` callback (`_on_back_pressed`) steps **back** from the combined
+  page to the event page — but only when there's an event page to return to (2+ events
   completed); on the first event (combined-only) and while showing the event page
-  itself, back does nothing (there's nowhere to go).
+  itself, back does nothing (there's nowhere to go). Standings re-runs `MenuNav.attach`
+  on every `_build_ui()` rebuild; `attach` reuses the existing node rather than stacking
+  handlers, and re-seats the cursor on the freshly-built button.
+
+  A few flat menus keep their own `_unhandled_input` and attach `MenuNav` **without**
+  `on_back`: the **pause** menu (its handler also *opens* the menu when closed, and
+  steps sub-page → list → menu, which a plain back callback can't express), and the HQ
+  overlays (**title**, **settings**, **Tune/Upgrades**), where `hq.gd._unhandled_input`
+  owns `menu_back`. There they lean on `MenuNav` purely for the WASD gap + `FOCUS_ALL`.
+  The HQ lift attaches `MenuNav` to the **Tune/Upgrades sub-boxes only** — never the lift
+  root — so the diegetic HUB buttons (`FOCUS_NONE`, manual left/right cursor) stay
+  untouched.
+
+  The **`start line`** and **`wreck screen`** are *press-anything-to-continue* screens
+  (a tap anywhere, or `menu_select` = Enter / gamepad A, proceeds), not multi-item
+  navigable menus, so they don't use `MenuNav` — there is nothing to navigate.
 - **Diegetic 3D HQ stations** can't be a focus graph — "left/right" means *cycle the
   3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
@@ -91,11 +125,14 @@ space:
   native-focus views re-grab a control right after.
 
 > **When you add or change a menu, wire its navigation in the same piece of work.**
-> A flat list: make the buttons `FOCUS_ALL` and `UITheme.focus_grab` the first one
-> when it shows (handle `ui_cancel`/`menu_back` for "back"). A new HQ station:
-> add a `menu_*` branch in `hq.gd._unhandled_input` and release focus on entry. Add a
-> nav test (see `tests/headless/test_menu_nav.gd` / the nav cases in
-> `test_menu_flow.gd` / `test_pause_menu.gd`).
+> A flat list: call **`MenuNav.attach(root, {first = <button>, on_back = <Callable>})`**
+> once after building it — the framework makes the widgets focusable, seats + re-seats
+> the cursor, fills the WASD gap, and routes `ui_cancel`/`menu_back` to `on_back`. Omit
+> `on_back` if the host owns "back" itself (e.g. a toggle handler); mark a widget with
+> the `menu_nav_skip` meta to leave it `FOCUS_NONE`. A new HQ station: add a `menu_*`
+> branch in `hq.gd._unhandled_input` and release focus on entry. Add a nav test (see
+> `tests/headless/test_menu_nav.gd` / the nav cases in `test_menu_flow.gd` /
+> `test_pause_menu.gd`).
 
 ## HQ (`hq.gd`)
 

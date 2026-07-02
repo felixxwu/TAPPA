@@ -221,13 +221,20 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
 	var result := TrackGenerator.generate(
 		gen_start, start_heading, cfg.track_seed, cfg.track_turn_count, cfg.track_width,
-		cfg.track_clearance, reserve_behind, cfg.track_straightness)
+		cfg.track_clearance, reserve_behind, cfg.track_straightness, cfg.track_runoff_m)
 	# Road/progress centerline (with the lead-in for staged runs). The raw generated
 	# centerline still feeds the signs, so the start gate sits ahead of the launch
 	# point — the cars cross it as they pull away.
 	var road_centerline := result["centerline"] as Curve2D
 	if staged:
 		road_centerline = _with_start_lead_in(road_centerline, start_pos, start_heading, cfg)
+	# The FINISH is the END of the generated track (plus lead-in) — capture its arc
+	# length BEFORE appending the runoff, so the arch and 100% progress anchor here.
+	var finish_len := road_centerline.get_baked_length()
+	# Append the post-finish runoff straight (features/track.md) to the RENDERED road so
+	# the car has room to skid to a stop past the arch. It's baked into the terrain +
+	# road-marked like the rest; the finish stays at finish_len (see below).
+	road_centerline = _with_finish_runoff(road_centerline, result["runoff"])
 	var transition_m := cfg.track_transition_cells * TerrainManager.CELL_M
 	# Surface split: the track runs gravel + tarmac with one switch, the tarmac
 	# share = track_tarmac_fraction (set per rally event). Which surface it opens on
@@ -332,7 +339,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# centerline, road_cells and terrain already in scope.
 	if cfg.spectators_enabled and cfg.spectator_group_size > 0:
 		_spawn_spectators(road_centerline, road_cells, trees, start_pos, start_heading,
-			cfg, $Floor as TerrainManager)
+			cfg, $Floor as TerrainManager, finish_len)
 
 	# Finish + start arches: the inflatable gates straddling the road
 	# (features/finish-arch.md). The FINISH gate sits at the END of the progress
@@ -343,10 +350,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var arch_terrain := $Floor as TerrainManager
 	var arch_info := _arch_event_info()
 	if cfg.finish_arch_enabled:
-		var fin_len := road_centerline.get_baked_length()
-		if fin_len > 0.0:
-			var fin_pos := road_centerline.sample_baked(fin_len)
-			var fin_tan := fin_pos - road_centerline.sample_baked(maxf(0.0, fin_len - 0.5))
+		if finish_len > 0.0:
+			var fin_pos := road_centerline.sample_baked(finish_len)
+			var fin_tan := fin_pos - road_centerline.sample_baked(maxf(0.0, finish_len - 0.5))
 			_place_arch("FinishArch", fin_pos, fin_tan, false, arch_info, cfg, arch_terrain)
 	if cfg.start_arch_enabled:
 		# start_pos / start_heading is the car's real spawn pose (the start line).
@@ -360,7 +366,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		_track_progress = TrackProgress.new()
 		_track_progress.name = "TrackProgress"
 		add_child(_track_progress)
-	_track_progress.setup(road_centerline, $Car, $Floor as TerrainManager)
+	_track_progress.setup(road_centerline, $Car, $Floor as TerrainManager, finish_len)
 
 	# Tire marks: gravel ruts laid behind the wheels while on the road
 	# (features/tire-marks.md). Reuse the node across regenerations like the managers
@@ -409,6 +415,11 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Staged runs hold the car in the start-line sequence until the player launches;
 	# otherwise the countdown arms immediately, as before. (`staged` computed above.)
 	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
+	# Route the finish panel's NEXT button to advance the stage into the results flow
+	# (both nodes persist across regenerations, so guard the connection).
+	var hud_node := $HUD
+	if not hud_node.finish_next_pressed.is_connected(_stage_manager.proceed_to_results):
+		hud_node.finish_next_pressed.connect(_stage_manager.proceed_to_results)
 	# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
 	# elapsed time compares to the leading rival's estimated time at that point.
 	_setup_stage_splits(result, staged, cfg)
@@ -467,10 +478,14 @@ func _bush_mesh(cfg: GameConfig) -> Mesh:
 # one at a seeded fraction of the way along (todo/roadside-spectators.md). Builds a
 # shared tree-point grid once so members can avoid spawning inside foliage.
 func _spawn_spectators(centerline: Curve2D, road_cells: Dictionary, trees: PackedVector2Array,
-		start_pos: Vector2, start_heading: Vector2, cfg: GameConfig, terrain: TerrainManager) -> void:
+		start_pos: Vector2, start_heading: Vector2, cfg: GameConfig, terrain: TerrainManager,
+		finish_len := -1.0) -> void:
 	var baked := centerline.get_baked_length()
 	if baked <= 0.0:
 		return
+	# End/mid crowds anchor to the FINISH (end of the timed track), not the rendered
+	# end — the runoff road past the finish should read as empty.
+	var end_len := baked if finish_len < 0.0 else minf(finish_len, baked)
 	var tree_cell: float = maxf(cfg.spectator_tree_avoid_m, 0.5)
 	var tree_grid := SpectatorScatter.build_point_grid(trees, tree_cell)
 
@@ -479,16 +494,16 @@ func _spawn_spectators(centerline: Curve2D, road_cells: Dictionary, trees: Packe
 		road_cells, tree_grid, cfg, terrain, cfg.track_seed + 101)
 
 	# Mid: a seeded fraction of the way along the centerline.
-	var mid_off := SpectatorScatter.mid_offset(baked,
+	var mid_off := SpectatorScatter.mid_offset(end_len,
 		cfg.spectator_mid_progress_min, cfg.spectator_mid_progress_max, cfg.track_seed)
 	var mid_pt := centerline.sample_baked(mid_off)
-	var mid_tan := centerline.sample_baked(minf(mid_off + 1.0, baked)) - mid_pt
+	var mid_tan := centerline.sample_baked(minf(mid_off + 1.0, end_len)) - mid_pt
 	_spawn_spectator_group("SpectatorMid", mid_pt, mid_tan,
 		road_cells, tree_grid, cfg, terrain, cfg.track_seed + 202)
 
 	# End: at the finish (end of the centerline).
-	var end_pt := centerline.sample_baked(baked)
-	var end_tan := end_pt - centerline.sample_baked(maxf(0.0, baked - 1.0))
+	var end_pt := centerline.sample_baked(end_len)
+	var end_tan := end_pt - centerline.sample_baked(maxf(0.0, end_len - 1.0))
 	_spawn_spectator_group("SpectatorEnd", end_pt, end_tan,
 		road_cells, tree_grid, cfg, terrain, cfg.track_seed + 303)
 
@@ -699,6 +714,20 @@ func _with_start_lead_in(gen: Curve2D, start_2d: Vector2, heading_2d: Vector2, c
 	c.add_point(start_2d)                                           # the start line
 	for i in gen.point_count:
 		c.add_point(gen.get_point_position(i), gen.get_point_in(i), gen.get_point_out(i))
+	return c
+
+
+# Append the post-finish runoff straight to a rendered centerline: one dead-straight
+# (handle-free) point at the runoff's far end, so the terrain bake + road markings
+# render it as real road past the finish. `runoff` is TrackGenerator's result["runoff"]
+# ({} when disabled or the track didn't complete -> the curve is returned unchanged).
+func _with_finish_runoff(gen: Curve2D, runoff: Dictionary) -> Curve2D:
+	if runoff.is_empty():
+		return gen
+	var c := Curve2D.new()
+	for i in gen.point_count:
+		c.add_point(gen.get_point_position(i), gen.get_point_in(i), gen.get_point_out(i))
+	c.add_point(runoff["end_pos"])  # dead-straight from the finish to the runoff end
 	return c
 
 # Configure the car for the session's fielded OwnedCar; fall back to the default

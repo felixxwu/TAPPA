@@ -83,8 +83,8 @@ to world XZ (`x → world x`, `y → world z`).
   different searches; **restart 0 keeps the authored seed**) up to `MAX_RESTARTS`,
   returning the deepest partial if all fail. A pathological seed that once took ~8
   minutes now bails and a fresh restart completes the track in well under a second.
-  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0, reserve_behind_m=0, straightness=0)`
-  returns `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool }`. Each
+  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0, reserve_behind_m=0, straightness=0, runoff_m=0)`
+  returns `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool, runoff: Dictionary }`. Each
   piece dict records `corner`, `flip`, `straight`, `cells`, and its `entry_pos` /
   `entry_heading` (the pose at the start of its connecting straight — used by
   roadside-sign placement, see [signs.md](signs.md)).
@@ -101,6 +101,19 @@ to world XZ (`x → world x`, `y → world z`).
   rejected. It's defined relative to the start frame, so the generated SHAPE depends
   only on `(seed, turn_count, width, reserve)` — the same value is passed when
   deriving opponent target times, keeping them in sync with the run-scene track.
+- **Finish runoff:** `runoff_m` (config `track_runoff_m`, default 20 m) requires a
+  straight runoff off the LAST corner's exit — the room the car skids to a stop in
+  past the finish. It's a real collision constraint *inside* the DFS: when a
+  candidate would complete the track, its runoff footprint is overlap-tested like a
+  corner, and if it won't fit that final-corner candidate is rejected and the search
+  backtracks. The generated `centerline` still ends at the finish; the runoff is
+  reported separately as `runoff = { end_pos, heading }` (empty when disabled or the
+  track didn't complete). `world.gd._with_finish_runoff` appends one dead-straight
+  point at `end_pos` to the RENDERED centerline, so the terrain bake + road markings
+  render the runoff as real road — but the finish arch and 100% progress stay at the
+  generated end ([finish-arch.md](finish-arch.md), [progress.md](progress.md)). Like
+  the other shape inputs, the same `runoff_m` is passed when deriving opponent
+  target times (it can change which final corner is chosen).
 
 ## Rendering
 
@@ -163,7 +176,9 @@ shader change.
 ## Configuration
 
 `track_width`, `track_clearance`, `track_seed`, `track_turn_count`,
-`track_straightness`, `track_transition_cells`, `track_tarmac_fraction`,
+`track_straightness`, `track_runoff_m` (straight runoff road past the finish,
+default 20 m — see the *Finish runoff* generation bullet above),
+`track_transition_cells`, `track_tarmac_fraction`,
 `track_surface_transition_m`, `tarmac_color` in `config/game_config.tres` (the
 `Track` group of `GameConfig`). Lane paint lives in the `Road Markings` group:
 `road_markings_enabled`, `road_marking_color`, `road_marking_width_m`,
@@ -189,7 +204,9 @@ length, starts at origin) for each, the documented right-hand turn direction and
 `tests/headless/test_track_generator.gd` — the geometry helpers (`frame_transform`,
 `mirror_points`, `rasterize_cells`, `exit_heading`) and the search: determinism
 per seed, exact corner count, start at the spawn frame, no cell overlap between
-pieces, G1 continuity at joins, and both L/R flips appearing across seeds.
+pieces, G1 continuity at joins, both L/R flips appearing across seeds, and the
+finish runoff (zero `runoff_m` reports no segment; a positive runoff's footprint
+never overlaps the placed track beyond the join buffer).
 
 `tests/headless/test_road_markings.gd` — `RoadMarkings.build()` against a straight
 curve + stub terrain: paint appears on tarmac and not on gravel, the disabled flag

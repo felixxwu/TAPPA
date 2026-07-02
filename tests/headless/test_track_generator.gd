@@ -240,3 +240,31 @@ func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 					rally["id"], int(event.get("seed", 0))])
 	assert_lt(Time.get_ticks_msec() - t0, 60000,
 		"all rally tracks generate in well under a minute (one seed used to take ~8 min)")
+
+
+func test_zero_runoff_reports_no_segment() -> void:
+	var r := TrackGenerator.generate(START_POS, START_HEADING, 7, 8, 6.0)
+	assert_true(r.has("runoff"), "result always carries a runoff key")
+	assert_true(r["runoff"].is_empty(), "no runoff requested -> no runoff segment")
+
+
+func test_runoff_straight_does_not_overlap_the_track() -> void:
+	var width := 6.0
+	var runoff := 20.0
+	var r := TrackGenerator.generate(START_POS, START_HEADING, 7, 8, width, 0.0, 0.0, 0.0, runoff)
+	assert_true(r["complete"], "generates with a runoff requirement")
+	assert_false(r["runoff"].is_empty(), "a completed track reports its runoff segment")
+	# Re-derive the runoff start (the last corner's exit) and rasterize the straight.
+	var start_exit: Vector2 = r["runoff"]["end_pos"] - r["runoff"]["heading"] * runoff
+	var runoff_cells := TrackGenerator.rasterize_cells(
+		PackedVector2Array([start_exit, r["runoff"]["end_pos"]]), width)
+	# Cells within the join buffer of the exit are allowed to touch the last corner
+	# (that's where the runoff attaches); everything beyond must be clear track.
+	var buffer_sq := width * width
+	for cell in runoff_cells:
+		var centre := Vector2((cell.x + 0.5) * TrackGenerator.CELL_M,
+			(cell.y + 0.5) * TrackGenerator.CELL_M)
+		if centre.distance_squared_to(start_exit) <= buffer_sq:
+			continue
+		assert_false(r["cells"].has(cell),
+			"runoff cell %s beyond the join must not overlap the placed track" % cell)

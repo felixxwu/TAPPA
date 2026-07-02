@@ -234,6 +234,26 @@ static func mark_panel_focused(container: PanelContainer, focused: bool, pad: in
 # `ctrl` is left untyped on purpose: a typed `Control` param breaks the bound-and-
 # deferred Callable path (`UITheme.focus_grab.bind(btn).call_deferred()`) — the
 # deferred queue stores the arg as a generic Object and the typed conversion fails.
+# The first focusable, enabled, visible Control under `root` (tree order), or null.
+# Shared by the menu framework (MenuNav) and HQ's native-focus pages to seat the
+# cursor when a menu opens. Skips FOCUS_NONE widgets and disabled buttons.
+static func first_focusable(root: Node) -> Control:
+	if root == null:
+		return null
+	for node in root.find_children("*", "Control", true, false):
+		var c := node as Control
+		if c != null and c.focus_mode != Control.FOCUS_NONE and c.is_visible_in_tree() \
+				and not (c is BaseButton and (c as BaseButton).disabled):
+			return c
+	return null
+
+
+# Grab focus on the first focusable control under `root` (see first_focusable).
+# Deferred-friendly: UITheme.focus_grab_first.bind(root).call_deferred().
+static func focus_grab_first(root: Node) -> void:
+	focus_grab(first_focusable(root))
+
+
 static func focus_grab(ctrl) -> void:
 	# Check validity BEFORE casting: a deferred grab can fire after its menu was freed
 	# (e.g. a scene torn down in a test), and `as Control` on a freed object errors.

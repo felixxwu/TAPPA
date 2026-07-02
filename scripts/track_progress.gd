@@ -33,6 +33,11 @@ var _best_offset := 0.0
 # anchoring progress here keeps the stage from reading several % before the off.
 # Re-anchored at the race start by mark_start() so the off is always exactly 0%.
 var _origin_offset := 0.0
+# The arc offset that reads as 100% — the finish line. Defaults to the curve's
+# baked length, but is set SHORTER when the rendered centerline extends past the
+# finish (the post-finish runoff road, features/track.md): progress must hit 100%
+# at the arch, not at the end of the runoff.
+var _finish_offset := 0.0
 # The 3D pose to restore on an off-track event: on the centerline at
 # _best_offset, lifted to ground + spawn_clearance, facing along the road.
 var _best_reset: Transform3D
@@ -40,9 +45,10 @@ var _best_reset: Transform3D
 
 # Wire the manager to a freshly generated track. Seeds progress at the offset
 # nearest the spawn so the car doesn't read as starting mid-track.
-func setup(centerline: Curve2D, car: Node, terrain: Node) -> void:
+func setup(centerline: Curve2D, car: Node, terrain: Node, finish_offset := -1.0) -> void:
 	_centerline = centerline
 	_baked_length = centerline.get_baked_length()
+	_finish_offset = _baked_length if finish_offset < 0.0 else minf(finish_offset, _baked_length)
 	_car = car
 	_terrain = terrain
 	# Seed progress at the spawn. A global nearest-point query is safe here: the car
@@ -70,7 +76,7 @@ func mark_start() -> void:
 # Re-point at a freshly spawned car on the same track (a car swap), resetting
 # progress to the new car's spawn offset.
 func retarget(car: Node, terrain: Node) -> void:
-	setup(_centerline, car, terrain)
+	setup(_centerline, car, terrain, _finish_offset)
 
 
 func _physics_process(_delta: float) -> void:
@@ -123,8 +129,8 @@ func _local_closest_offset(here: Vector2) -> float:
 func jump_to_finish() -> Transform3D:
 	if _centerline == null:
 		return Transform3D.IDENTITY
-	_best_offset = _baked_length
-	_best_reset = _reset_xform_at(_baked_length)
+	_best_offset = _finish_offset
+	_best_reset = _reset_xform_at(_finish_offset)
 	return _best_reset
 
 
@@ -163,11 +169,17 @@ func baked_length() -> float:
 	return _baked_length
 
 
+# Arc offset of the finish line (100%). Shorter than baked_length() when the
+# rendered centerline extends past the finish (the post-finish runoff road).
+func finish_offset() -> float:
+	return _finish_offset
+
+
 # 0.0 .. 1.0 fraction of the track reached, measured from the start line
 # (_origin_offset) to the finish (baked length) — so the off reads 0% and the
 # finish line reads 100%. Used by the HUD and the stage-completion gate.
 func progress_percent() -> float:
-	var span := _baked_length - _origin_offset
+	var span := _finish_offset - _origin_offset
 	if span <= 0.0:
 		return 0.0
 	return clampf((_best_offset - _origin_offset) / span, 0.0, 1.0)

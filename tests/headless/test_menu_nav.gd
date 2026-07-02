@@ -33,6 +33,104 @@ func test_menu_input_actions_exist() -> void:
 		assert_true(InputMap.has_action(action), "the %s action is mapped" % action)
 
 
+# WASD is bound on the directional menu actions — this is what lets the MenuNav
+# framework fill the gap in Godot's native ui_* defaults (which bind arrows + D-pad
+# + stick but NOT WASD). Guards the framework contract against a silent regression.
+func test_wasd_is_bound_on_menu_directions() -> void:
+	var wants := {"menu_up": KEY_W, "menu_down": KEY_S, "menu_left": KEY_A, "menu_right": KEY_D}
+	for action in wants:
+		var found := false
+		for e in InputMap.action_get_events(action):
+			if e is InputEventKey and (e as InputEventKey).physical_keycode == wants[action]:
+				found = true
+		assert_true(found, "%s is bound to its WASD key" % action)
+
+
+# Build a throwaway flat menu (a column of buttons) so we can exercise the framework
+# directly without standing up a whole game scene.
+func _make_flat_menu(count: int) -> Control:
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for i in count:
+		var b := Button.new()
+		b.text = "OPT %d" % i
+		b.focus_mode = Control.FOCUS_NONE  # framework should flip these to FOCUS_ALL
+		b.custom_minimum_size = Vector2(120, 30)
+		root.add_child(b)
+	return root
+
+
+func _press(action: String) -> InputEventAction:
+	var e := InputEventAction.new()
+	e.action = action
+	e.pressed = true
+	return e
+
+
+# attach() makes every button focusable and lands the cursor on the first one.
+func test_attach_makes_buttons_focusable_and_grabs_first() -> void:
+	var menu := _make_flat_menu(3)
+	add_child_autofree(menu)
+	MenuNav.attach(menu)
+	await get_tree().process_frame  # deferred focus grab
+	for b in menu.get_children():
+		if b is Button:
+			assert_eq((b as Button).focus_mode, Control.FOCUS_ALL, "button made focusable")
+	assert_eq(menu.get_viewport().gui_get_focus_owner(), menu.get_child(0),
+		"the first button is focused on open")
+
+
+# A widget can opt out of the framework's focus wiring with the menu_nav_skip meta
+# (used by the diegetic HQ station buttons that keep FOCUS_NONE).
+func test_menu_nav_skip_meta_is_left_focus_none() -> void:
+	var menu := _make_flat_menu(2)
+	(menu.get_child(1) as Button).set_meta("menu_nav_skip", true)
+	add_child_autofree(menu)
+	MenuNav.attach(menu)
+	await get_tree().process_frame
+	assert_eq((menu.get_child(1) as Button).focus_mode, Control.FOCUS_NONE,
+		"a menu_nav_skip widget is left un-focusable")
+
+
+# WASD (menu_down) moves the focus cursor to the next widget — the gap the framework
+# fills over Godot's native ui_* (which don't bind WASD).
+func test_wasd_moves_focus() -> void:
+	var menu := _make_flat_menu(3)
+	add_child_autofree(menu)
+	var nav := MenuNav.attach(menu)
+	await get_tree().process_frame  # grab first + lay out so neighbours resolve
+	assert_eq(menu.get_viewport().gui_get_focus_owner(), menu.get_child(0), "start on first")
+	nav._unhandled_input(_press("menu_down"))
+	assert_eq(menu.get_viewport().gui_get_focus_owner(), menu.get_child(1),
+		"menu_down (W/S family) moves the cursor down one")
+
+
+# on_back fires for BOTH ui_cancel (Esc / gamepad B) and menu_back — the uneven
+# back-routing the framework unifies.
+func test_on_back_fires_for_ui_cancel_and_menu_back() -> void:
+	var menu := _make_flat_menu(2)
+	add_child_autofree(menu)
+	var hits := [0]
+	var nav := MenuNav.attach(menu, {on_back = func() -> void: hits[0] += 1})
+	await get_tree().process_frame
+	nav._unhandled_input(_press("ui_cancel"))
+	nav._unhandled_input(_press("menu_back"))
+	assert_eq(hits[0], 2, "on_back fired for both ui_cancel and menu_back")
+
+
+# The framework goes inert while its menu is hidden, so a hidden overlay can't eat
+# input meant for whatever is actually on screen.
+func test_hidden_menu_does_not_consume_back() -> void:
+	var menu := _make_flat_menu(2)
+	add_child_autofree(menu)
+	var hits := [0]
+	var nav := MenuNav.attach(menu, {on_back = func() -> void: hits[0] += 1})
+	await get_tree().process_frame
+	menu.visible = false
+	nav._unhandled_input(_press("menu_back"))
+	assert_eq(hits[0], 0, "a hidden menu ignores back")
+
+
 # The shared SettingsMenu rows are focusable, drilling into a category lands the
 # cursor on that page's first row, and go_back() steps sub-page → list → (false).
 func test_settings_menu_is_keyboard_navigable() -> void:

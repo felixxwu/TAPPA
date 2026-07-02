@@ -9,10 +9,14 @@ extends GutTest
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 
-# Records controls_locked toggles (the only thing StageManager does to the car).
+# Records the control-lock toggles StageManager does to the car: the full lock
+# (STAGING / COMPLETE) and the handbrake-only lock (COUNTDOWN, so the player can
+# rev up and launch on GO).
 class StubCar:
 	extends Node3D
 	var controls_locked := false
+	var handbrake_locked := false
+	var finish_stop := false
 
 
 # Captures the HUD calls so they can be asserted without a real HUD scene.
@@ -93,12 +97,15 @@ func _to_running(sm: StageManager) -> void:
 	sm._process(Config.data.stage_countdown_seconds)  # exhaust the countdown
 
 
-func test_car_locked_during_countdown() -> void:
+func test_car_handbrake_held_during_countdown() -> void:
 	var sm := _make()
-	assert_true(_car.controls_locked, "car is locked from setup")
+	# The handbrake is forced but input stays live, so the player can rev and launch on GO.
+	assert_true(_car.handbrake_locked, "handbrake forced from setup")
+	assert_false(_car.controls_locked, "input not fully locked during the countdown")
 	assert_eq(sm.phase(), StageManager.Phase.COUNTDOWN, "starts in COUNTDOWN")
 	sm._process(1.0)  # partial tick (default countdown is 3 s)
-	assert_true(_car.controls_locked, "still locked mid-countdown")
+	assert_true(_car.handbrake_locked, "handbrake still held mid-countdown")
+	assert_false(_car.controls_locked, "still not fully locked mid-countdown")
 	assert_eq(sm.phase(), StageManager.Phase.COUNTDOWN, "still COUNTDOWN before the timer elapses")
 
 
@@ -109,6 +116,7 @@ func test_countdown_unlocks_and_starts_timer() -> void:
 	_to_running(sm)
 	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "phase flips to RUNNING at GO")
 	assert_false(_car.controls_locked, "controls unlock when the countdown ends")
+	assert_false(_car.handbrake_locked, "handbrake releases at GO so the car launches")
 	assert_true(started[0], "stage_started fired at GO")
 	assert_eq(_hud.last_countdown, 0.0, "HUD shown GO (0.0) at the transition")
 
@@ -131,7 +139,7 @@ func test_go_flash_hides_after_a_moment() -> void:
 	assert_eq(_hud.hide_countdown_calls, 1, "GO hidden once the flash time passes")
 
 
-func test_completion_freezes_timer_relocks_and_signals() -> void:
+func test_completion_freezes_relocks_and_defers_the_signal() -> void:
 	var sm := _make()
 	_to_running(sm)
 	sm._process(2.0)  # elapsed 2.0, progress still 0 -> running
@@ -141,18 +149,22 @@ func test_completion_freezes_timer_relocks_and_signals() -> void:
 	_progress.pct = 1.0  # 100% >= 99% default
 	sm._process(1.0)     # elapsed reaches 3.0 on the completing frame
 	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "reaching the finish completes the stage")
-	assert_almost_eq(completed[0], 3.0, 0.0001, "stage_completed carries the final time")
 	assert_almost_eq(sm.elapsed(), 3.0, 0.0001, "timer frozen at the completion time")
-	assert_true(_car.controls_locked, "car re-locked on completion")
-	assert_almost_eq(_hud.complete_time, 3.0, 0.0001, "complete panel shows the final time")
+	assert_true(_car.controls_locked, "the finished car is re-locked (handbrake skid)")
+	assert_true(_car.finish_stop, "the finished car brakes itself to a stop (foot + handbrake)")
+	assert_almost_eq(_hud.complete_time, 3.0, 0.0001, "the finish panel shows the final time")
+	assert_eq(completed[0], -1.0, "stage_completed is NOT emitted until the player proceeds")
 	# Further ticks must not advance the frozen timer.
 	sm._process(5.0)
 	assert_almost_eq(sm.elapsed(), 3.0, 0.0001, "no time accrues after completion")
+	# Pressing NEXT proceeds to the results flow with the final time.
+	sm.proceed_to_results()
+	assert_almost_eq(completed[0], 3.0, 0.0001, "proceed_to_results emits stage_completed with the final time")
 
 
-func test_force_complete_finishes_immediately() -> void:
+func test_force_complete_shows_panel_and_defers_the_signal() -> void:
 	# The dev skip-to-finish cheat: force_complete() runs the same completion path
-	# as crossing the line, regardless of progress or elapsed time.
+	# as crossing the line — lock + panel now, results only on NEXT.
 	var sm := _make()
 	_to_running(sm)
 	sm._process(1.5)  # elapsed 1.5, progress still 0 -> nowhere near the finish
@@ -161,19 +173,24 @@ func test_force_complete_finishes_immediately() -> void:
 	sm.stage_completed.connect(func(t: float) -> void: completed[0] = t)
 	sm.force_complete()
 	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "force_complete finishes the stage")
-	assert_almost_eq(completed[0], 1.5, 0.0001, "stage_completed carries the elapsed time so far")
 	assert_true(_car.controls_locked, "car re-locked on the forced finish")
-	assert_almost_eq(_hud.complete_time, 1.5, 0.0001, "complete panel shown")
+	assert_almost_eq(_hud.complete_time, 1.5, 0.0001, "finish panel shown")
+	assert_eq(completed[0], -1.0, "stage_completed deferred until NEXT")
+	sm.proceed_to_results()
+	assert_almost_eq(completed[0], 1.5, 0.0001, "proceed emits the elapsed time so far")
 
 
-func test_force_complete_is_idempotent_once_finished() -> void:
+func test_proceed_is_a_noop_before_completion_and_idempotent_after() -> void:
 	var sm := _make()
 	_to_running(sm)
+	var count := [0]
+	sm.stage_completed.connect(func(_t: float) -> void: count[0] += 1)
+	sm.proceed_to_results()  # not COMPLETE yet
+	assert_eq(count[0], 0, "proceed does nothing before the stage completes")
 	sm.force_complete()
-	var again := [0]
-	sm.stage_completed.connect(func(_t: float) -> void: again[0] += 1)
-	sm.force_complete()  # already COMPLETE -> no re-emit
-	assert_eq(again[0], 0, "a second force_complete after finishing does nothing")
+	sm.proceed_to_results()
+	sm.proceed_to_results()  # second press
+	assert_eq(count[0], 1, "proceed emits exactly once")
 
 
 func test_completion_uses_configured_percent() -> void:
@@ -275,7 +292,8 @@ func test_begin_countdown_leaves_staging() -> void:
 	var sm := _make_staged()
 	sm.begin_countdown()
 	assert_eq(sm.phase(), StageManager.Phase.COUNTDOWN, "begin_countdown() arms the countdown")
-	assert_true(_car.controls_locked, "car stays locked through the countdown")
+	assert_true(_car.handbrake_locked, "handbrake held through the countdown")
+	assert_false(_car.controls_locked, "full lock drops so the player can rev on the line")
 	assert_almost_eq(_hud.last_countdown, Config.data.stage_countdown_seconds, 0.0001,
 		"the full countdown shows when it arms")
 	# From here the normal flow runs.
@@ -298,10 +316,11 @@ func test_begin_countdown_is_noop_outside_staging() -> void:
 	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "a launch during the run is ignored")
 
 
-# Integration: booting main.tscn wires a StageManager that locks the real car
-# from the first frame (the scene is built once in before_all).
-func test_main_scene_locks_car_at_boot() -> void:
+# Integration: booting main.tscn wires a StageManager that holds the real car on
+# the line from the first frame (the scene is built once in before_all). The boot
+# is a non-staged countdown, so the handbrake is forced while input stays live.
+func test_main_scene_holds_car_at_boot() -> void:
 	var sm := _boot_scene.get_node_or_null("StageManager")
 	assert_not_null(sm, "world.gd wires a StageManager into the scene")
 	var car: VehicleBody3D = _boot_scene.get_node("Car")
-	assert_true(car.controls_locked, "car starts locked during the boot countdown")
+	assert_true(car.handbrake_locked, "car's handbrake is held during the boot countdown")

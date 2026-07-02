@@ -91,7 +91,10 @@ func _build_ui() -> void:
 	_action_button = cont
 
 	UITheme.enforce(self)  # house rules: uppercase + one font size
-	UITheme.focus_grab.bind(cont).call_deferred()
+	# Framework wires focus + WASD/arrow/gamepad nav and routes back (see
+	# features/menus.md → MenuNav). Re-run each _build_ui so the fresh button is
+	# picked up; attach() reuses the existing node rather than stacking handlers.
+	MenuNav.attach(self, {first = cont, on_back = _on_back_pressed})
 
 
 # The button advances: event page -> combined page (mid-rally), or event/combined
@@ -104,14 +107,13 @@ func _on_action() -> void:
 		RallySession.continue_to_next_event()
 
 
-# Back (keyboard/gamepad): from the combined page (reached from the event page) step
-# back to the event page. Otherwise leave it to the default (nothing to go back to).
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("menu_back"):
-		if not _showing_event_page and RallySession.events_completed() >= 2:
-			_showing_event_page = true
-			_build_ui()
-			get_viewport().set_input_as_handled()
+# Back (keyboard/gamepad, via MenuNav on_back): from the combined page (reached from
+# the event page) step back to the event page. On the event page there's nothing to
+# go back to, so we simply do nothing (MenuNav still consumes the press).
+func _on_back_pressed() -> void:
+	if not _showing_event_page and RallySession.events_completed() >= 2:
+		_showing_event_page = true
+		_build_ui()
 
 
 func _on_rally_finished(result: Dictionary) -> void:

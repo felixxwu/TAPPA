@@ -125,12 +125,13 @@ func test_country_restriction_filters() -> void:
 
 func test_power_to_weight_restriction_filters() -> void:
 	# A p/w band admits only cars whose power-to-weight sits inside [pw_min, pw_max].
-	var band := {"restriction": {"pw_min": 0.22, "pw_max": 0.30}}
+	# Bands are in HP/kg (is_eligible converts each car's kW/kg to HP/kg before comparing).
+	var band := {"restriction": {"pw_min": 0.295, "pw_max": 0.402}}
 	assert_false(RallyLibrary.is_eligible(band, CarLibrary.by_id("mx5")), "low-p/w MX-5 below the floor")
 	assert_true(RallyLibrary.is_eligible(band, CarLibrary.by_id("porsche911")), "mid-p/w 911 inside the band")
 	assert_false(RallyLibrary.is_eligible(band, CarLibrary.by_id("aventador")), "high-p/w Aventador above the cap")
 	# A ceiling-only gate (pw_max, no floor) lets the weakest car in but caps the strong.
-	var cap := {"restriction": {"pw_max": 0.20}}
+	var cap := {"restriction": {"pw_max": 0.268}}
 	assert_true(RallyLibrary.is_eligible(cap, CarLibrary.by_id("mx5")), "the low-power starter clears a ceiling gate")
 	assert_false(RallyLibrary.is_eligible(cap, CarLibrary.by_id("porsche911")), "a stronger car is capped out")
 
@@ -140,16 +141,16 @@ func test_installed_upgrades_change_rally_eligibility() -> void:
 	# or disqualify it for a rally's pw band — the HQ passes the car's effective_meta
 	# (baseline + installed upgrades) to is_eligible, not the raw roster entry.
 	var mx5 := CarLibrary.by_id("mx5")
-	# A band whose floor the bare starter can't clear.
-	var floor_gate := {"restriction": {"pw_min": 0.18, "pw_max": 0.40}}
+	# A band (HP/kg) whose floor the bare starter can't clear.
+	var floor_gate := {"restriction": {"pw_min": 0.241, "pw_max": 0.536}}
 	assert_false(RallyLibrary.is_eligible(floor_gate,
 		UpgradeLibrary.effective_meta({"installed_upgrades": []}, mx5)),
 		"bare MX-5 sits below the p/w floor")
 	assert_true(RallyLibrary.is_eligible(floor_gate,
 		UpgradeLibrary.effective_meta({"installed_upgrades": ["engine_stage2"]}, mx5)),
 		"a fitted engine kit qualifies the MX-5 for the band")
-	# A ceiling the bare starter clears; power + weight reduction push it over the cap.
-	var cap_gate := {"restriction": {"pw_max": 0.20}}
+	# A ceiling (HP/kg) the bare starter clears; power + weight reduction push it over the cap.
+	var cap_gate := {"restriction": {"pw_max": 0.268}}
 	assert_true(RallyLibrary.is_eligible(cap_gate,
 		UpgradeLibrary.effective_meta({"installed_upgrades": []}, mx5)),
 		"bare MX-5 clears the ceiling gate")

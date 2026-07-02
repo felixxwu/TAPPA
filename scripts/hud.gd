@@ -13,7 +13,13 @@ extends CanvasLayer
 @onready var _countdown_label: Label = $CountdownLabel
 @onready var _elapsed_label: Label = $ElapsedLabel
 @onready var _stage_complete_panel: Control = $StageCompletePanel
-@onready var _stage_complete_label: Label = $StageCompletePanel/StageCompleteLabel
+@onready var _stage_complete_label: Label = $StageCompletePanel/Box/StageCompleteLabel
+# Finish-panel NEXT button (built in code, added to the panel's Box). Pressing it
+# emits finish_next_pressed, which world.gd routes to StageManager.proceed_to_results
+# to start the post-stage flow (features/stage.md). Made keyboard/gamepad navigable
+# via MenuNav.attach (features/menus.md).
+signal finish_next_pressed
+var _next_button: Button
 # In-run "vs P1" pace popup: a small top-centre readout the StageManager pulses every
 # few turns, showing the player's time delta to the leading rival (− green = ahead,
 # + red = behind). Built in code (not the scene) and auto-hides after a moment.
@@ -65,6 +71,14 @@ func _ready() -> void:
 	_elapsed_label.add_theme_color_override("font_color", UITheme.INK)
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_build_stage_delta_label()
+	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
+	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
+	# onto it whenever the panel is shown (features/menus.md → "Menu navigation").
+	_next_button = UITheme.button("Next")
+	_next_button.name = "NextButton"
+	_next_button.pressed.connect(func() -> void: finish_next_pressed.emit())
+	$StageCompletePanel/Box.add_child(_next_button)
+	MenuNav.attach(_stage_complete_panel, {"first": _next_button})
 
 
 # Build the top-centre pace-popup label in code (it has no scene node). Anchored to
@@ -187,8 +201,10 @@ func show_elapsed(seconds: float) -> void:
 # buttons/actions are a separate todo (rally-event-flow.md / menus.md); this is
 # the stub the future flow attaches to.
 func show_stage_complete(seconds: float) -> void:
+	# Showing the panel fires its visibility_changed, which MenuNav uses to grab focus
+	# onto the NEXT button (ui_accept then triggers it; the theme paints the cursor).
 	_stage_complete_panel.visible = true
-	_stage_complete_label.text = "STAGE COMPLETE\n%s" % _format_time(seconds)
+	_stage_complete_label.text = "FINISH\n%s" % _format_time(seconds)
 
 
 # Top-centre pace popup, pulsed by the StageManager every few turns: the player's

@@ -21,7 +21,7 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
 | `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top centre) |
 | `StageDeltaLabel` | `P1 ±n.ns` pace popup | driven by `StageManager` (top-centre, code-built) |
-| `StageCompletePanel` | placeholder result panel | driven by `StageManager` |
+| `StageCompletePanel` | finish panel: `FINISH` + time + `NEXT` button | driven by `StageManager` |
 | `HPBar` (+ `HPLabel`) | `Health NN%` over a bar | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
 
@@ -43,8 +43,16 @@ The `CountdownLabel`, `ElapsedLabel` and `StageCompletePanel` are hidden at
 these methods: `show_countdown(seconds_left)` (big centered `3·2·1·GO`;
 `ceili` maps the remaining time to the digit, `0` → `GO`), `hide_countdown()`,
 `show_elapsed(seconds)` (top-centre `m:ss.cc`, gated by `hud_elapsed_enabled`),
-and `show_stage_complete(seconds)` (the placeholder result panel). `_format_time`
-is the shared `m:ss.cc` formatter.
+and `show_stage_complete(seconds)` (the finish panel — `FINISH` + the time).
+`_format_time` is the shared `m:ss.cc` formatter.
+
+The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
+code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**
+signal, which `world.gd` connects to `StageManager.proceed_to_results` — that's what
+starts the leaderboard/podium flow ([stage.md](stage.md)). The button is
+keyboard/gamepad navigable via `MenuNav.attach` (attached in `_ready`, so it's
+`FOCUS_ALL` and re-grabs focus whenever the panel is shown — `ui_accept` triggers
+it); see [menus.md](menus.md).
 
 The **`StageDeltaLabel`** is the in-run *"vs P1" pace popup*: a fifth method,
 `show_stage_delta(delta_ms)`, the `StageManager` pulses **every few turns** with the

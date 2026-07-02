@@ -13,10 +13,13 @@
   up / down / left / right / enter / back on keyboard AND controller (not just
   mouse / touch) — see `features/menus.md` → "Menu navigation". When you ADD a new
   menu or CHANGE an existing one, wire its navigation in the SAME piece of work:
-  - A flat widget list (overlay / panel): make its buttons `focus_mode = FOCUS_ALL`,
-    `UITheme.focus_grab(first_button)` (deferred) when it's shown, and route "back"
-    through `ui_cancel` / `menu_back`. The theme's `focus` stylebox paints the cursor
-    (it matches hover), so there's no extra visual work.
+  - A flat widget list (overlay / panel): call `MenuNav.attach(root, {first = <button>,
+    on_back = <Callable>})` once after building it (`scripts/menu_nav.gd`). The framework
+    makes the widgets `FOCUS_ALL`, seats + re-seats the cursor, fills the WASD gap (native
+    `ui_*` binds arrows + D-pad + stick but not WASD), and routes `ui_cancel` / `menu_back`
+    to `on_back`. Omit `on_back` if the host owns "back" itself; mark a widget with the
+    `menu_nav_skip` meta to leave it `FOCUS_NONE`. The theme's `focus` stylebox paints the
+    cursor (it matches hover), so there's no extra visual work.
   - A diegetic 3D HQ station: add a `menu_*` branch in `hq.gd._unhandled_input` and
     `get_viewport().gui_release_focus()` on entry (HQ hides overlays via CanvasLayer,
     which does not clear Control focus).

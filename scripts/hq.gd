@@ -903,6 +903,12 @@ func _build_title_overlay() -> void:
 	_title_layer.add_child(version_label)
 	_title_version_label = version_label
 
+	# Framework: WASD + arrow + gamepad focus nav for the flat Start/Settings menu
+	# (no on_back — EXTERIOR has no back; the diegetic stations behind keep menu_*).
+	# MenuNav goes inert while _title_layer is hidden, so it never steals input from
+	# the 3D stations. hq re-grabs focus itself on view entry.
+	MenuNav.attach(root, {first = start})
+
 
 func _build_garage_overlay() -> void:
 	var made := _make_overlay()
@@ -1073,6 +1079,13 @@ func _build_lift_overlay() -> void:
 	_lift_upgrades_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_lift_upgrades_box.add_theme_constant_override("separation", 8)
 	content.add_child(_lift_upgrades_box)
+
+	# Framework: WASD + arrow + gamepad focus nav for the native-focus TUNE (sliders)
+	# and UPGRADES (install / repair) sub-pages. Attached to the sub-boxes ONLY — not
+	# the lift root — so the diegetic HUB buttons (FOCUS_NONE, manual left/right
+	# cursor) are left untouched. Each box goes inert while hidden (_menu_visible).
+	MenuNav.attach(_lift_tune_box)
+	MenuNav.attach(_lift_upgrades_box)
 
 	var menu_back := Button.new()
 	menu_back.text = "< Back"
@@ -1485,6 +1498,11 @@ func _build_settings_overlay() -> void:
 	_settings_action_button.focus_mode = Control.FOCUS_ALL
 	_settings_action_button.pressed.connect(_on_settings_action)
 	root.add_child(_settings_action_button)
+
+	# Framework: WASD + arrow + gamepad focus nav across the SettingsMenu rows and
+	# the bottom button. No on_back — hq owns menu_back here (SettingsMenu.go_back /
+	# gate handling). Inert while the settings layer is hidden.
+	MenuNav.attach(root)
 
 
 # Open the Settings page. `gate` = the mandatory pre-rally pick (bottom button starts
@@ -1939,13 +1957,9 @@ func _refresh_hub_focus() -> void:
 
 # Grab focus on the first focusable, enabled, visible control under `root` — used to
 # seat the cursor when a native-focus page (the tuning sliders / upgrade list) opens.
+# Delegates to the shared UITheme helper (also used by the MenuNav framework).
 func _grab_first_focus(root: Node) -> void:
-	for c in root.find_children("*", "Control", true, false):
-		var ctrl := c as Control
-		if ctrl.focus_mode != Control.FOCUS_NONE and ctrl.is_visible_in_tree() \
-				and not (ctrl is BaseButton and (ctrl as BaseButton).disabled):
-			ctrl.grab_focus()
-			return
+	UITheme.focus_grab_first(root)
 
 
 # Spawn (or keep) the selected car raised on the lift. No-op if the right car is
@@ -2711,17 +2725,17 @@ func _restriction_text(restriction: Dictionary) -> String:
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
 	# A min+max pair reads as a single range ("power-to-weight 0.30-0.40 HP/kg"); a lone
-	# floor or ceiling keeps its >= / <= form. The authored bands are in kW/kg (what
-	# RallyLibrary.is_eligible compares power_to_weight against); convert to HP/kg here
-	# so the requirement matches every player-facing p/w readout (the car stats + the
-	# detune slider), which all show HP/kg. Eligibility math is unchanged — display only.
+	# floor or ceiling keeps its >= / <= form. The authored bands are already in HP/kg
+	# (RallyLibrary converts a car's kW/kg to HP/kg before comparing), the same unit as
+	# every player-facing p/w readout (the car stats + the detune slider), so display
+	# them straight — no conversion here.
 	if restriction.has("pw_min") and restriction.has("pw_max"):
 		parts.append("power-to-weight %.2f-%.2f HP/kg" % [
-			float(restriction["pw_min"]) * KW_TO_HP, float(restriction["pw_max"]) * KW_TO_HP])
+			float(restriction["pw_min"]), float(restriction["pw_max"])])
 	elif restriction.has("pw_min"):
-		parts.append("power-to-weight >= %.2f HP/kg" % (float(restriction["pw_min"]) * KW_TO_HP))
+		parts.append("power-to-weight >= %.2f HP/kg" % float(restriction["pw_min"]))
 	elif restriction.has("pw_max"):
-		parts.append("power-to-weight <= %.2f HP/kg" % (float(restriction["pw_max"]) * KW_TO_HP))
+		parts.append("power-to-weight <= %.2f HP/kg" % float(restriction["pw_max"]))
 	return ", ".join(parts)
 
 

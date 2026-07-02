@@ -150,7 +150,7 @@ func test_elapsed_label_formats_and_respects_config() -> void:
 func test_stage_complete_panel_shows_final_time() -> void:
 	var hud := _scene.get_node("HUD")
 	var panel := _scene.get_node("HUD/StageCompletePanel") as Control
-	var label := _scene.get_node("HUD/StageCompletePanel/StageCompleteLabel") as Label
+	var label := _scene.get_node("HUD/StageCompletePanel/Box/StageCompleteLabel") as Label
 	assert_false(panel.visible, "complete panel hidden until the stage ends")
 	hud.show_stage_complete(67.43)
 	assert_true(panel.visible, "complete panel shown on stage completion")
@@ -215,3 +215,18 @@ func test_hp_gauge_hidden_when_disabled() -> void:
 	await get_tree().process_frame
 	assert_false(bar.visible, "gauge suppressed when hud_hp_enabled is off")
 	Config.data.hud_hp_enabled = true
+
+
+func test_finish_panel_next_button_is_keyboard_navigable() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var next_btn: Button = hud.get_node("StageCompletePanel/Box/NextButton")
+	assert_eq(next_btn.focus_mode, Control.FOCUS_ALL, "NEXT is focusable for keyboard/gamepad")
+	hud.show_stage_complete(12.3)
+	assert_true(hud.get_node("StageCompletePanel").visible, "finish panel is shown")
+	await get_tree().process_frame  # deferred focus_grab lands
+	assert_eq(hud.get_viewport().gui_get_focus_owner(), next_btn,
+		"showing the finish panel focuses NEXT")
+	var fired := [0]
+	hud.finish_next_pressed.connect(func() -> void: fired[0] += 1)
+	next_btn.emit_signal("pressed")
+	assert_eq(fired[0], 1, "pressing NEXT emits finish_next_pressed")

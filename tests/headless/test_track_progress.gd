@@ -70,6 +70,31 @@ func test_jump_to_finish_pins_progress_to_100_percent() -> void:
 	assert_almost_eq(pose.origin.z, 100.0, 1.0, "finish pose is at the end of the road")
 
 
+func test_progress_reaches_100_percent_at_finish_offset_before_curve_end() -> void:
+	# Curve is 100 m long (before_each), but the finish is at 60 m: the last 40 m is
+	# runoff road the car rolls into after finishing.
+	_put_car(0, 0)
+	var tp := TrackProgress.new()
+	add_child_autofree(tp)
+	tp.setup(_curve, _car, null, 60.0)
+	assert_almost_eq(tp.progress_percent(), 0.0, 0.001, "starts at 0%")
+	# Drive to the finish offset (~60 m): progress is 100% even though road continues.
+	_put_car(0, 60)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_percent(), 1.0, 0.01,
+		"reaching the finish offset reads 100% though the curve extends further")
+
+
+func test_jump_to_finish_uses_the_finish_offset() -> void:
+	_put_car(0, 0)
+	var tp := TrackProgress.new()
+	add_child_autofree(tp)
+	tp.setup(_curve, _car, null, 60.0)
+	var pose := tp.jump_to_finish()
+	assert_almost_eq(tp.progress_percent(), 1.0, 0.001, "jump pins to 100% at the finish")
+	assert_almost_eq(pose.origin.z, 60.0, 1.0, "finish pose is at the finish offset, not the curve end")
+
+
 func test_progress_gated_by_distance() -> void:
 	_put_car(0, 0)
 	var tp := _make_progress()

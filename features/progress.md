@@ -10,9 +10,11 @@ now retains by handing it to this manager instead of discarding it after
 ## How it works
 
 `world.gd._generate_track()` creates a `TrackProgress`, adds it as a child, and
-calls `setup(centerline, car, terrain)`. On a car swap (`cycle_car`) it
-`retarget()`s the fresh car (progress resets to the spawn offset, since the new
-car respawns at the start).
+calls `setup(centerline, car, terrain, finish_offset)` — passing the arc length of
+the generated track (before the post-finish runoff is appended) as the finish
+offset (see Readouts). On a car swap (`cycle_car`) it `retarget()`s the fresh car
+(progress resets to the spawn offset, since the new car respawns at the start,
+preserving the finish offset).
 
 Each `_physics_process` tick:
 - Find the car's nearest offset on the curve via `_local_closest_offset` — a
@@ -59,9 +61,16 @@ off-track recovery now share one code path.
 
 ## Readouts
 
-`progress_offset()`, `baked_length()`, and `progress_percent()` (0..1) are
-exposed for the HUD and the stage-completion gate ([stage.md](stage.md), which
-fires at 100% — coinciding with the finish arch at the centerline end).
+`progress_offset()`, `baked_length()`, `finish_offset()`, and `progress_percent()`
+(0..1) are exposed for the HUD and the stage-completion gate ([stage.md](stage.md),
+which fires at 100% — coinciding with the finish arch). **100% is the finish
+offset, not the curve end.** The rendered road now continues past the finish for a
+short straight **runoff** ([track.md](track.md)) so the car has room to skid to a
+stop, so the centerline is longer than the timed track. `setup(centerline, car,
+terrain, finish_offset)` records that finish offset (defaults to the baked length
+when omitted / negative); `progress_percent()` measures the span
+`_origin_offset → _finish_offset`, and `jump_to_finish()` (the dev F cheat) pins to
+the finish offset. Driving into the runoff past the finish stays clamped at 1.0.
 `progress_percent()` is measured **from the start line, not the curve origin**:
 the progress centerline has a straight lead-in *behind* the start (so the queue
 car sits on road), which would otherwise read several % before the off. It is

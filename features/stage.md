@@ -7,42 +7,55 @@ control lock (`scripts/car.gd`) and the HUD stage widgets
 manager for the finish condition.
 
 Turns the always-live track into a timed stage: a countdown holds the car, then
-a run timer ticks until the finish line, then a placeholder complete panel shows.
+a run timer ticks until the finish line, then the car is locked (skidding to a stop
+in the runoff past the finish) and a finish panel shows the time with a NEXT button
+that advances to the leaderboard/podium flow.
 
 ## Flow (the state machine)
 
 `enum Phase { STAGING, COUNTDOWN, RUNNING, COMPLETE }`, advanced in `_process(delta)`:
 
-0. **STAGING** *(optional)* — when `setup(..., staged = true)`, the car is locked
-   and the manager simply **waits** (no countdown ticking) while the pre-event
+0. **STAGING** *(optional)* — when `setup(..., staged = true)`, the car is fully
+   locked (`controls_locked`) and the manager simply **waits** (no countdown ticking) while the pre-event
    start-line sequence ([start-line.md](start-line.md)) plays its time-to-beat
    reveal + orbit camera + launch animation. When it finishes (after the fade),
    `StartLine` calls `begin_countdown()`, which moves to COUNTDOWN. A plain dev boot
    (or a car swap) is set up un-staged and skips this straight to COUNTDOWN, exactly
    as before the start-line scene existed.
-1. **COUNTDOWN** — `setup()` (un-staged) or `begin_countdown()` locks the car
-   (`controls_locked = true`) and arms
+1. **COUNTDOWN** — `setup()` (un-staged) or `begin_countdown()` drops any full lock
+   and forces only the handbrake (`controls_locked = false`, `handbrake_locked = true`),
+   so the player can rev the engine and steer on the line but the car holds put. It arms
    `_countdown_left = stage_countdown_seconds`. It also calls
    `TrackProgress.mark_start()` so progress reads **0% from the line** — the car is
    on the start line by now (the start-line sequence snapped it there), so the
    lead-in behind the start and any roll-up settle don't count
    ([progress.md](progress.md)). Each frame shows the big centered `3·2·1·GO` on
-   the HUD. When the timer elapses: unlock the car, flash `GO`, emit
-   `stage_started`, switch to RUNNING.
+   the HUD. When the timer elapses: release the handbrake (so a revved car launches),
+   flash `GO`, emit `stage_started`, switch to RUNNING.
 2. **RUNNING** — accrue `_elapsed` each frame and show it top-right (`m:ss.cc`).
    The `GO` flash is held `GO_FLASH_SECONDS` (0.5 s, a const, not a config knob)
    then hidden. When progress reaches the finish, switch to COMPLETE.
-3. **COMPLETE** — freeze the timer, re-lock the car (so the finished car doesn't
-   drive on under the panel), show the placeholder stage-complete panel, and emit
-   `stage_completed(elapsed_seconds)`.
+3. **COMPLETE** — freeze the timer and re-lock the car (`controls_locked = true` +
+   `finish_stop = true`): the car **brakes itself to a stop** — full foot brake +
+   handbrake while rolling, foot brake released once stopped, clutch kept engaged so
+   the engine winds down to idle instead of free-revving ([car-physics.md](car-physics.md)) —
+   staying visible in the runoff road past the finish ([track.md](track.md)). Then
+   show the finish panel with the run time ([hud.md](hud.md)). `stage_completed` is **not**
+   emitted here: it's **deferred** to `proceed_to_results()`, which the finish
+   panel's **NEXT** button fires (via the HUD's `finish_next_pressed` signal, wired
+   in `world.gd`). So the leaderboard/podium flow only starts once the player
+   dismisses the time. `proceed_to_results()` is guarded — it emits
+   `stage_completed(elapsed_seconds)` only while COMPLETE and only once (a
+   double-press can't re-enter the flow). `force_complete()` (the dev F cheat) takes
+   the same path: panel now, results on NEXT.
 
 The finish edge is `progress_percent() * 100.0 >= stage_complete_percent`.
 `TrackProgress.progress_percent()` returns a **0..1 fraction**, so it is scaled to
 the 0..100 config percentage. Progress is monotonic, so this is a one-way edge —
 once COMPLETE, the phase never leaves it. `stage_complete_percent` is **100**, so
 the stage ends exactly as the car crosses the finish arch ([finish-arch.md](finish-arch.md)),
-which `world.gd` places at the centerline end; `TrackProgress` samples the curve's
-far edge so 100% is reachable ([progress.md](progress.md)).
+which `world.gd` places at the **finish offset** (the end of the timed track, before
+the runoff); `TrackProgress` reaches 100% at that offset ([progress.md](progress.md)).
 
 ## In-stage "vs P1" pace popup
 
@@ -85,12 +98,15 @@ stays `false` and the car is freely drivable.
 ## Signals
 
 - `stage_started` — countdown finished, timer running.
-- `stage_completed(elapsed_seconds: float)` — finish line reached, timer frozen.
+- `stage_completed(elapsed_seconds: float)` — emitted by `proceed_to_results()`
+  when the player presses **NEXT** on the finish panel (NOT on the raw finish),
+  timer frozen. This deferral gives the car room to skid to a stop and lets the
+  player read the time before the leaderboard.
 
-These are the hooks a future rally/menu layer attaches to. The **post-stage flow**
+These are the hooks the rally/menu layer attaches to. The **post-stage flow**
 (standings, podium, rewards, back to HQ) is out of scope here and owned by
-`features/rally-session.md` — this feature only provides the signal and a
-placeholder panel.
+`features/rally-session.md` — this feature only provides the signals, the finish
+panel, and the NEXT → `proceed_to_results()` gate.
 
 ## Wiring & lifecycle
 
@@ -107,7 +123,7 @@ the countdown.
 | Field | Default | Purpose |
 |-------|---------|---------|
 | `stage_countdown_seconds` | `3.0` | Countdown length before controls unlock. |
-| `stage_complete_percent` | `100.0` | Track-progress % (0..100) that ends the stage. 100 so it coincides with the finish arch at the centerline end; `TrackProgress` samples the curve's far edge so 100% is reachable. |
+| `stage_complete_percent` | `100.0` | Track-progress % (0..100) that ends the stage. 100 so it coincides with the finish arch at the finish offset (the timed-track end, before the runoff); `TrackProgress` reaches 100% there. |
 | `hud_elapsed_enabled` | `true` | Show the top-right run timer (mirrors `hud_enabled`). |
 | `hud_stage_delta_enabled` | `true` | Show the in-run "vs P1" pace popup (mirrors `hud_enabled`; needs a session P1). |
 | `stage_delta_interval_turns` | `5` | Turns between pace popups (every Nth turn). |

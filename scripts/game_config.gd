@@ -693,6 +693,13 @@ var peak_torque_rpm := 4500.0
 ## so their stages are easier. Changes the generated SHAPE, so opponent target times
 ## are derived with the same value (RallySession._compute_event_data).
 @export_range(0.0, 1.0) var track_straightness := 0.0
+## Length (m) of the straight runoff road appended AFTER the finish line, so the
+## car has room to skid to a stop past the arch. Treated as a real road piece: it is
+## collision-checked in the track generator (the finish corner backtracks if the
+## runoff won't fit) and baked into the terrain like the rest. The finish line/arch
+## and 100% progress stay at the END of the generated track, NOT the end of this
+## runoff. 0 disables it.
+@export var track_runoff_m := 20.0
 ## How forested this track is, in [0, 1] — the fraction of area covered by trees.
 ## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
 ## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by

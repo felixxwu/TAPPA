@@ -47,6 +47,13 @@ const PACE_SLOW_STEP := 0.1667   # each tier above 1 pulls the slow end down (2.
 const PACE_EVENT_NOISE := 0.05   # ±5% per-event jitter around a rival's persistent base pace
 const PACE_MIN_FLOOR := 1.00     # hard clamp: rivals never beat their car's physics optimum
 
+# The rally p/w band (pw_min / pw_max below) is AUTHORED in HP per kg — the same
+# unit the HUD / detail panel / detune slider show (hq.gd) — so a designer tunes
+# the bands in the numbers they see on screen. CarLibrary.power_to_weight() returns
+# kW/kg, so is_eligible converts a car's figure to HP/kg with this factor before
+# comparing it against the authored band. (1 kW = 1.34102 hp; mirrors hq.gd's KW_TO_HP.)
+const KW_TO_HP := 1.34102
+
 
 # Rival pace band as (pace_fast, pace_slow) — the pace of the fastest (skill 0) and
 # slowest (skill 1) rival for a rally of the given hidden difficulty. The fast end
@@ -72,7 +79,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Shakedown", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
-		"restriction": {"pw_min": 0.10, "pw_max": 0.18},  # gated below: a low p/w ceiling — the starter's home
+		"restriction": {"pw_min": 0.13, "pw_max": 0.24},  # gated below: a low p/w ceiling — the starter's home
 		"events": [
 			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1},
 			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0.7, "straightness": 0.8},
@@ -83,7 +90,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "front_runners", "name": "Front Runners", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.26, 0.6),
 		# FWD intro rally + a p/w ceiling: the Focus's home (parallels Shakedown for the MX-5).
-		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 0.12, "pw_max": 0.18},
+		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 0.16, "pw_max": 0.24},
 		"events": [
 			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85},
 			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8},
@@ -93,29 +100,29 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.34, 0.5),
-		"restriction": {"pw_min": 0.12, "pw_max": 0.22},  # gated below: a slightly higher p/w ceiling
+		"restriction": {"pw_min": 0.16, "pw_max": 0.30},  # gated below: a slightly higher p/w ceiling
 		"events": [
 			{"seed": 2004, "turn_count": 14, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0},
 			{"seed": 2005, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2},
-			{"seed": 2006, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3},
+			{"seed": 2007, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3},
 		],
 	},
 	{
 		"id": "rwd_masters", "name": "RWD Masters", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.52, 0.64),
 		# p/w band (primary gate) + an RWD theme: a mid-power rear-driven field.
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 0.22, "pw_max": 0.30},
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 0.21, "pw_max": 0.30},
 		"events": [
 			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5},
 			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45},
-			{"seed": 3003, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5},
+			{"seed": 3004, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5},
 		],
 	},
 	{
 		"id": "rising_sun", "name": "Rising Sun Rally", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.82, 0.34),
 		# JP-only AND a mid-upper p/w band — both must hold (is_eligible ANDs all fields).
-		"restriction": {"country": "JP", "pw_min": 0.23, "pw_max": 0.32},
+		"restriction": {"country": "JP", "pw_min": 0.31, "pw_max": 0.43},
 		"events": [
 			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25},
 			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2},
@@ -125,7 +132,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "grand_tour", "name": "Grand Tour", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.66, 0.28),
-		"restriction": {"pw_min": 0.28, "pw_max": 0.40},  # the top non-showdown p/w band
+		"restriction": {"pw_min": 0.38, "pw_max": 0.54},  # the top non-showdown p/w band
 		"events": [
 			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.15},
 			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15},
@@ -136,7 +143,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "american_muscle", "name": "American Muscle", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.42, 0.38),
 		# US-built muscle only, in a mid p/w band — the Charger / Mustang's home turf.
-		"restriction": {"country": "US", "car_type": "muscle", "pw_min": 0.18, "pw_max": 0.28},
+		"restriction": {"country": "US", "car_type": "muscle", "pw_min": 0.24, "pw_max": 0.38},
 		"events": [
 			{"seed": 6001, "turn_count": 12, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7},
 			{"seed": 6002, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6},
@@ -146,9 +153,9 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shitbox_cup", "name": "Sh*tbox Cup", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.12, 0.48),
-		# Gated ONLY from above, below even Shakedown's floor: a sub-0.10 p/w ceiling
-		# that only the true shitboxes (Twingo, Acty) squeeze under.
-		"restriction": {"pw_max": 0.10},
+		# Gated ONLY from above, below even Shakedown's floor: a sub-0.13 HP/kg p/w
+		# ceiling that only the true shitboxes (Twingo, Acty) squeeze under.
+		"restriction": {"pw_max": 0.13},
 		"events": [
 			{"seed": 7001, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0},
 			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0},
@@ -233,7 +240,8 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 		return false
 	if r.has("engine_max_l") and float(car_meta.get("engine_displacement_l", 0.0)) > float(r["engine_max_l"]):
 		return false
-	var pw := CarLibrary.power_to_weight(car_meta)
+	# power_to_weight is kW/kg; the authored band is HP/kg — convert before comparing.
+	var pw := CarLibrary.power_to_weight(car_meta) * KW_TO_HP
 	if r.has("pw_min") and pw < float(r["pw_min"]):
 		return false
 	if r.has("pw_max") and pw > float(r["pw_max"]):

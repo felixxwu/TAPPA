@@ -16,10 +16,13 @@ the `info` dict carries the **live event data** the banners display (see below).
 
 `world.gd._generate_track` calls `_place_arch(...)` twice after the roadside signs:
 
-- **Finish** — at the **end of the road (progress) centerline**, i.e. exactly
-  **100% track progress**. `stage_complete_percent` is 100 and TrackProgress can
-  now reach the curve's far end (see below), so crossing the finish arch ends the
-  stage immediately. Co-located with the finish sign pair ([signs.md](signs.md)).
+- **Finish** — at the **finish offset** (the end of the *generated* track,
+  captured before the post-finish runoff is appended), i.e. exactly **100% track
+  progress**. `stage_complete_percent` is 100 and TrackProgress reaches 100% at
+  that offset (see below), so crossing the finish arch ends the stage immediately.
+  The rendered road continues a short straight **runoff** past the arch
+  ([track.md](track.md)) so the car has room to stop — the arch does NOT move to
+  the runoff end. Co-located with the finish sign pair ([signs.md](signs.md)).
 - **Start** — at `start_pos` / `start_heading`, the **car's real spawn pose** (the
   start line). For a staged run this is the launch point ahead of the lead-in stub;
   for a dev boot it is centerline offset 0. This is exactly where track progress

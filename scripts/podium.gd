@@ -578,6 +578,10 @@ func _build_overlay() -> void:
 	root.add_child(_next_button)
 
 	UITheme.enforce(_layer)  # house rules: uppercase + one font size + button height
+	# Framework: focus + WASD/arrow/gamepad nav (Next, and the Apply/Keep choice
+	# when the upgrade reveal shows it). No on_back — the reward flow is linear
+	# (Next-only); podium re-grabs Next/Apply itself as reveals appear.
+	MenuNav.attach(root, {first = _next_button})
 
 
 # --- Stage flow --------------------------------------------------------------

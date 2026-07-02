@@ -1408,16 +1408,16 @@ func test_tuning_sliders_are_all_the_same_length() -> void:
 
 
 func test_restriction_text_shows_power_to_weight_in_hp_per_kg() -> void:
-	# The rally requirement string must show its p/w band in HP/kg (converted from the
-	# authored kW/kg), matching every other player-facing p/w readout. Injected band
-	# values, so no authored rally number is pinned.
+	# The rally requirement string must show its p/w band in HP/kg, matching every other
+	# player-facing p/w readout. The band is authored in HP/kg, so it is shown straight.
+	# Injected band values, so no authored rally number is pinned.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var txt: String = hq._restriction_text({"pw_min": 0.22, "pw_max": 0.30})
 	assert_true(txt.contains("HP/kg"), "requirement carries the HP/kg unit")
-	assert_true(txt.contains("%.2f" % (0.30 * hq.KW_TO_HP)), "ceiling converted kW/kg -> HP/kg")
-	assert_false(txt.contains("0.30 "), "raw kW/kg ceiling is not shown unconverted")
+	assert_true(txt.contains("0.22"), "authored HP/kg floor is shown straight")
+	assert_true(txt.contains("0.30"), "authored HP/kg ceiling is shown straight")
 
 
 func test_detune_label_shows_power_to_weight() -> void:

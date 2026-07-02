@@ -115,7 +115,8 @@ static func exit_heading(polyline: PackedVector2Array) -> Vector2:
 # must be passed wherever a track's target time is derived.
 static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int,
 		turn_count: int, width: float, clearance: float = 0.0,
-		reserve_behind_m: float = 0.0, straightness: float = 0.0) -> Dictionary:
+		reserve_behind_m: float = 0.0, straightness: float = 0.0,
+		runoff_m: float = 0.0) -> Dictionary:
 	var coll_width := width + 2.0 * clearance
 	var corners := _turn_corners()
 	# Cells of the lead-in corridor behind the start (empty when not staged). Cells
@@ -132,7 +133,7 @@ static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int
 	for restart in MAX_RESTARTS:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = seed_value + restart * RESTART_SEED_STRIDE
-		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved, straightness)
+		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved, straightness, runoff_m)
 		if result["complete"]:
 			return result
 		if best_partial.is_empty() or result["pieces"].size() > best_partial["pieces"].size():
@@ -308,11 +309,13 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 # DFS backtracking. Builds the world polybezier point-by-point.
 static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		width: float, corners: Array, rng: RandomNumberGenerator,
-		reserved: Dictionary = {}, straightness: float = 0.0) -> Dictionary:
+		reserved: Dictionary = {}, straightness: float = 0.0,
+		runoff_m: float = 0.0) -> Dictionary:
 	# world_points: Array of [pos, in, out]; starts with the spawn point.
 	var world_points: Array = [[start_pos, Vector2.ZERO, Vector2.ZERO]]
 	var occupied: Dictionary = {}
 	var pieces: Array = []
+	var runoff_result: Dictionary = {}
 	var frame_pos := start_pos
 	var frame_heading := start_heading.normalized()
 	var stack: Array = []  # one entry per placed corner (plus the frontier)
@@ -339,6 +342,24 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			var hit := _collide_and_cells(built["poly"], width, occupied, reserved, frame_pos)
 			if hit["collides"]:
 				continue
+			# If this candidate finishes the track, a runoff straight of runoff_m must
+			# also fit off its exit — treat the runoff footprint as a collision so the
+			# DFS backtracks the last corner when the runoff would overlap placed track.
+			var this_runoff: Dictionary = {}
+			if runoff_m > 0.0 and pieces.size() + 1 == turn_count:
+				var exit_pos: Vector2 = built["exit_pos"]
+				var exit_head: Vector2 = built["exit_heading"]
+				var runoff_end := exit_pos + exit_head * runoff_m
+				# occupied doesn't yet include this candidate's cells; add them so the
+				# runoff can't overlap the very corner it extends from (beyond the join).
+				var occ_with := occupied.duplicate()
+				for c in hit["cells"]:
+					occ_with[c] = true
+				var r_hit := _collide_and_cells(
+					PackedVector2Array([exit_pos, runoff_end]), width, occ_with, reserved, exit_pos)
+				if r_hit["collides"]:
+					continue  # runoff won't fit -> reject this last corner, backtrack
+				this_runoff = { "end_pos": runoff_end, "heading": exit_head }
 			# Commit.
 			var prev_out: Vector2 = world_points[world_points.size() - 1][2]
 			world_points[world_points.size() - 1][2] = built["merge_out"]
@@ -370,6 +391,7 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			})
 			frame_pos = built["exit_pos"]
 			frame_heading = built["exit_heading"]
+			runoff_result = this_runoff
 			placed = true
 			break
 		if placed:
@@ -402,4 +424,5 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		"cells": occupied,
 		"pieces": pieces,
 		"complete": pieces.size() == turn_count,
+		"runoff": runoff_result,
 	}

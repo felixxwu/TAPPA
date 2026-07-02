@@ -537,8 +537,9 @@ func _assert_spans_road_upright(arch: Node3D, who: String) -> void:
 
 
 func test_finish_arch_straddles_the_road_at_the_stage_end() -> void:
-	# world.gd places one FinishArch at the centerline END — i.e. exactly 100%
-	# track progress — so crossing it ends the stage immediately.
+	# world.gd places one FinishArch at the FINISH offset — i.e. exactly 100%
+	# track progress — so crossing it ends the stage immediately. The rendered road
+	# continues past it (the post-finish runoff), so this is NOT the centerline end.
 	var arch := await _await_node("FinishArch")
 	assert_not_null(arch, "world built a FinishArch at the stage end")
 	if arch == null:
@@ -550,9 +551,9 @@ func test_finish_arch_straddles_the_road_at_the_stage_end() -> void:
 	var tp = _scene.get_node_or_null("TrackProgress")
 	assert_not_null(tp, "TrackProgress present")
 	if tp != null:
-		var end2: Vector2 = tp._centerline.sample_baked(tp.baked_length())
+		var end2: Vector2 = tp._centerline.sample_baked(tp.finish_offset())
 		var here2 := Vector2(arch.global_transform.origin.x, arch.global_transform.origin.z)
-		assert_lt(here2.distance_to(end2), 1.0, "finish arch sits at the centerline end (100% progress)")
+		assert_lt(here2.distance_to(end2), 1.0, "finish arch sits at the finish offset (100% progress)")
 
 
 func test_start_arch_straddles_the_road_at_the_start_line() -> void:

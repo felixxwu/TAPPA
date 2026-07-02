@@ -436,7 +436,7 @@ func _generate_event_tracks(rally: Dictionary) -> Array:
 		var result := TrackGenerator.generate(
 			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
 			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind,
-			RallyLibrary.event_straightness(event))
+			RallyLibrary.event_straightness(event), cfg.track_runoff_m)
 		results.append(result)
 	return results
 
