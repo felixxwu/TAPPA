@@ -290,7 +290,7 @@ const CARS: Array[Dictionary] = [
 		# GM Turbo-Hydramatic 400 3-speed automatic (Dodd's own adaptation); final_drive
 		# game-tuned like the other autos so the huge torque pulls cleanly against Jolt's
 		# baseline rolling resistance (see the gear_ratios header note).
-		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 4,
+		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 3,
 		"tire_compound": 0.95, "shift_time": 0.30,  # period touring tyres, 3-speed auto, RWD
 		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body

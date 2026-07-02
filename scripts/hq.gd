@@ -2710,14 +2710,18 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	# A min+max pair reads as a single range ("power-to-weight 0.23-0.32"); a lone
-	# floor or ceiling keeps its >= / <= form.
+	# A min+max pair reads as a single range ("power-to-weight 0.30-0.40 HP/kg"); a lone
+	# floor or ceiling keeps its >= / <= form. The authored bands are in kW/kg (what
+	# RallyLibrary.is_eligible compares power_to_weight against); convert to HP/kg here
+	# so the requirement matches every player-facing p/w readout (the car stats + the
+	# detune slider), which all show HP/kg. Eligibility math is unchanged — display only.
 	if restriction.has("pw_min") and restriction.has("pw_max"):
-		parts.append("power-to-weight %.2f-%.2f" % [float(restriction["pw_min"]), float(restriction["pw_max"])])
+		parts.append("power-to-weight %.2f-%.2f HP/kg" % [
+			float(restriction["pw_min"]) * KW_TO_HP, float(restriction["pw_max"]) * KW_TO_HP])
 	elif restriction.has("pw_min"):
-		parts.append("power-to-weight >= %.2f" % float(restriction["pw_min"]))
+		parts.append("power-to-weight >= %.2f HP/kg" % (float(restriction["pw_min"]) * KW_TO_HP))
 	elif restriction.has("pw_max"):
-		parts.append("power-to-weight <= %.2f" % float(restriction["pw_max"]))
+		parts.append("power-to-weight <= %.2f HP/kg" % (float(restriction["pw_max"]) * KW_TO_HP))
 	return ", ".join(parts)
 
 
