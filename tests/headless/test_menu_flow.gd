@@ -1392,7 +1392,7 @@ func test_display_name_reflects_swap() -> void:
 
 func test_tuning_sliders_are_all_the_same_length() -> void:
 	# Every axis row's slider must line up to the same width, even though the detune
-	# row's value label ("80% - 0.20 kW/kg") is longer than the others.
+	# row's value label ("80% - 0.20 HP/kg") is longer than the others.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -1418,7 +1418,7 @@ func test_detune_label_shows_power_to_weight() -> void:
 	hq._on_tune_slider_changed(80.0, "engine_detune")
 	var txt := String(hq._lift_slider_values["engine_detune"].text)
 	assert_true(txt.begins_with("80%"), "detune label leads with the percent")
-	assert_true(txt.to_lower().contains("kw/kg"), "detune label shows the power-to-weight readout")
+	assert_true(txt.to_lower().contains("hp/kg"), "detune label shows the power-to-weight readout")
 
 
 func test_detune_slider_is_present_and_focusable() -> void:

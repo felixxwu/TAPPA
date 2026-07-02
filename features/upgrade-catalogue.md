@@ -55,7 +55,7 @@ is fitted.
 `effective_meta(owned_car, meta)` returns a copy of a car's CarLibrary entry with
 the power-to-weight inputs (`peak_torque`, `mass`) adjusted by its installed
 upgrades. It's pure (never touches the authored `CARS` entry) and is what makes a
-fitted engine kit or weight reduction **change the displayed kW/kg AND a car's
+fitted engine kit or weight reduction **change the displayed HP/kg AND a car's
 rally eligibility**: the HQ stats panel calls
 `CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry))`, and the
 two player-car eligibility checks (`hq._has_eligible_car`,

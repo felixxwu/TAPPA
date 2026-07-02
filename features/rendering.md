@@ -140,22 +140,24 @@ across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
 `cycle_car()` re-points the overlay at the swapped car, like the HUD. All tunables
 live in `GameConfig` under the **Speed Lines** group.
 
-## Authored body models (MX-5, Focus, Twingo)
+## Authored body models (MX-5, Focus, Twingo, Acty, Charger, The Beast)
 
 Cars with `use_model` on their CarLibrary spec render an authored glb body
 instead of the procedural chassis+cabin boxes; every other car still uses the
-boxes. Three cars carry a model today: the **MX-5**
+boxes. Six cars carry a model today: the **MX-5**
 (`blender/mx5/mx5.glb`, node `Car/Mx5Body`), the **Focus ST**
-(`blender/focus/focus.glb`, node `Car/FocusBody`) and the **Renault Twingo**
-(`blender/twingo/twingo.glb`, node `Car/TwingoBody`). All three bodies are
+(`blender/focus/focus.glb`, node `Car/FocusBody`), the **Renault Twingo**
+(`blender/twingo/twingo.glb`, node `Car/TwingoBody`), the **Honda Acty**
+(`blender/acty/acty.glb`, node `Car/ActyBody`), the **Charger R/T**
+(`blender/charger/charger.glb`, node `Car/ChargerBody`) and **The Beast**
+(`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`). All are
 instanced in `car.tscn`, hidden by default.
 
 The mapping is spec-driven (not hard-coded per car): each model car names its
 `model_node` (the body node to show) and `model_texture` (the baked albedo). The
-glb axes match across the exports (X = length, Y = up, Z = width); the
-`FocusBody` and `TwingoBody` transforms additionally flip 180° about Y vs the
-MX-5 because those glbs' length axes point the opposite way (each body's vertical
-offset is tuned per model so it seats on the wheels). `car.gd`'s `apply_car()` hides
+glb axes vary per export, so each body's `car.tscn` transform is a pure rotation
+that points its length axis down the car's forward (-Z) axis; each body's
+vertical offset is tuned per model so it seats on the wheels. `car.gd`'s `apply_car()` hides
 **all** model bodies (`_model_node_names()`) and the boxes, shows the spec's
 `model_node`, and assigns the `ps1_models_lit.gdshader` material to its mesh —
 `albedo_texture` = the spec's `model_texture`, `albedo_color` white — so the

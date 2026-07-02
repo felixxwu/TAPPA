@@ -63,6 +63,7 @@ enum LiftPage { HUB, TUNE, UPGRADES }
 signal lineup_built
 
 const MAX_STARS := 3
+const KW_TO_HP := 1.34102  # convert power-to-weight (kW/kg) to the displayed HP/kg
 
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
 # billboarded Sprite3D. PIN_LABEL_PX is the off-screen viewport resolution; pixel_size
@@ -1194,7 +1195,7 @@ func _make_slider_row(spec: Dictionary) -> Control:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	# Left column: name on top of the current value. FIXED width (clip, don't grow) so
-	# a longer value — e.g. the detune row's "80% - 0.20 kW/kg" readout — can't widen
+	# a longer value — e.g. the detune row's "80% - 0.20 HP/kg" readout — can't widen
 	# this column and shrink only that row's slider. Every row's slider column then
 	# gets the same leftover width, so all sliders line up to the same length.
 	var label_col := VBoxContainer.new()
@@ -2027,13 +2028,13 @@ func _refresh_lift_ui() -> void:
 
 
 # The engine-detune slider's value label: the detune percent plus the car's LIVE
-# power-to-weight at that setting (e.g. "80% - 0.20 kW/kg"), so the player sees the
+# power-to-weight at that setting (e.g. "80% - 0.20 HP/kg"), so the player sees the
 # ratio each event is gated on move as they detune. effective_meta already folds in
 # the (mirrored) detune, so this recomputes off the current setting.
 func _detune_label_text(pct: int) -> String:
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
-	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_lift_owned, entry))
-	return "%d%% - %.2f kW/kg" % [pct, pw]
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_lift_owned, entry)) * KW_TO_HP
+	return "%d%% - %.2f HP/kg" % [pct, pw]
 
 
 # Reflect the stored tuning + each axis's unlock state onto the sliders.
@@ -2678,10 +2679,10 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	else:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
 	var meta := UpgradeLibrary.effective_meta(owned, entry)
-	return "%s | %.2f G | %.2f kW/kg | %s" % [
+	return "%s | %.2f G | %.2f HP/kg | %s" % [
 		_drive_text(int(entry.get("drive_mode", -1))),
 		CarLibrary.max_lateral_g(meta, Config.data),
-		CarLibrary.power_to_weight(meta),
+		CarLibrary.power_to_weight(meta) * KW_TO_HP,
 		hp_text,
 	]
 

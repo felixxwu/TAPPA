@@ -283,6 +283,28 @@ const CARS: Array[Dictionary] = [
 		"wheel_radius": 0.35, "wheel_width_front": 0.255, "wheel_width_rear": 0.335,  # 255/335 huge stagger
 		"suspension_travel": 0.38, "suspension_stiffness": 18.0,  # very stiff supercar, lowest ride
 	},
+	{
+		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
+		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 4,
+		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
+		# GM Turbo-Hydramatic 400 3-speed automatic (Dodd's own adaptation); final_drive
+		# game-tuned like the other autos so the huge torque pulls cleanly against Jolt's
+		# baseline rolling resistance (see the gear_ratios header note).
+		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 4,
+		"tire_compound": 0.95, "shift_time": 0.30,  # period touring tyres, 3-speed auto, RWD
+		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0,  # long, brick-like body → real aero drag
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
+		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
+		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
+		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.5,
+		"wheel_radius": 0.37, "wheel_width_front": 0.235, "wheel_width_rear": 0.275,  # mild stagger
+		"suspension_travel": 0.45, "suspension_stiffness": 11.0,  # heavy long GT, softer ride
+		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().
+		"use_model": true,
+		"model_node": "TheBeastBody",
+		"model_texture": "res://blender/thebeast/mrbeast_texture.png",
+		"wheel_texture": "res://blender/thebeast/wheel.png",
+	},
 ]
 
 

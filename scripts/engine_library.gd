@@ -80,6 +80,15 @@ const ENGINES: Array[Dictionary] = [
 		"low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 	},
 	{
+		# Rolls-Royce Merlin: 27 L (1,650 cu in) aero/tank V12, as in John Dodd's "The Beast".
+		# Aero engines rev LOW (~3,000 rpm limit) but make colossal torque; in road tune here
+		# ~1,900 N·m @ ~2,000 rpm gives ~850 bhp by the power_to_weight heuristic (torque × redline).
+		# Huge crank/flywheel → very lazy revs (big engine_inertia). Loudest, deepest voice in the roster.
+		"id": "merlin_v27_v12", "name": "27L Merlin V12", "layout": "v12", "mass": 745.0,
+		"redline_rpm": 3200.0, "peak_torque": 1900.0, "peak_torque_rpm": 2000.0, "engine_inertia": 1.5,
+		"low_octave_mix": 0.8, "volume_db": 11.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+	},
+	{
 		"id": "honda_066_i3", "name": "0.66 E07A i3", "layout": "i3", "mass": 70.0,
 		"redline_rpm": 7000.0, "peak_torque": 60.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.09,
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,

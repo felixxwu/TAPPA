@@ -36,7 +36,7 @@ to `1.0` (100%, full power), same as the other axes reset to their own
 neutral (`0`). It also feeds `UpgradeLibrary.effective_meta`, so a detuned
 car's reduced torque affects displayed power-to-weight and rally eligibility,
 not just the live-fielded car. The slider's value label pairs the percent with
-the car's live power-to-weight at that setting (e.g. `80% - 0.20 kW/kg`, via
+the car's live power-to-weight at that setting (e.g. `80% - 0.20 HP/kg`, via
 `hq.gd._detune_label_text` → `effective_meta`), so you can dial to a target band
 by eye. (All tuning-lift sliders share one fixed-width label column so they line
 up to the same length regardless of value text.)

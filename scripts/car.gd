@@ -501,6 +501,13 @@ func reset_to(xform: Transform3D) -> void:
 static func respawn(old_car: Node, index: int, spawn_xform: Transform3D) -> Node:
 	var parent := old_car.get_parent()
 	old_car.name = "CarRetired"
+	# Stop the retired car simulating: queue_free() is deferred to frame end, so
+	# without this it would run one more _physics_process AFTER the fresh car's
+	# apply_car() has reshaped the shared Config.data (the active car keeps
+	# config == Config.data). Reading the new car's gearbox with its own stale gear
+	# state (e.g. a 7-speed still in gear 6, now indexing a 3-speed ratio table)
+	# throws an out-of-bounds. A car being replaced must not step again.
+	old_car.set_physics_process(false)
 	old_car.queue_free()
 	var fresh := CAR_SCENE.instantiate()
 	fresh.name = "Car"
@@ -838,7 +845,7 @@ func _sync_suspension_to_wheels() -> void:
 # Idempotent: the material is built once per mesh.
 # Names of the authored glb body nodes in car.tscn (hidden unless a spec selects one).
 func _model_node_names() -> PackedStringArray:
-	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody", "ActyBody", "ChargerBody"])
+	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody", "ActyBody", "ChargerBody", "TheBeastBody"])
 
 
 func _apply_model_material(model: Node3D, texture: Texture2D) -> void:

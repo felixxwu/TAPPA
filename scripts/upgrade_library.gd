@@ -127,7 +127,7 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 
 # A copy of the CarLibrary entry `meta` with the stats that drive the power-to-
 # weight figure (peak_torque, mass) adjusted by the car's installed upgrades, so
-# a fitted engine kit or weight reduction shifts the displayed kW/kg AND can
+# a fitted engine kit or weight reduction shifts the displayed HP/kg AND can
 # qualify / disqualify the car for a rally's pw band (RallyLibrary.is_eligible).
 # Pure: returns a fresh dict, never touches the authored CARS entry. Only the
 # meta-level numeric stats are adjusted here; downforce / brake / tuning gates
