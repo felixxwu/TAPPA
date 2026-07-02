@@ -106,6 +106,17 @@ func test_collects_four_wheels() -> void:
 	assert_eq(tm.wheel_count(), 4, "one ribbon per wheel")
 
 
+func test_warm_up_draws_then_clears() -> void:
+	# warm_up() adds a throwaway quad (same material) so the shader compiles behind
+	# the loading screen; clear_warm_up() must free it again.
+	var tm := _make()
+	tm.warm_up(Vector3(0, 0, 10))
+	assert_not_null(tm._warm_mi, "warm-up creates a drawable quad")
+	assert_gt((tm._warm_mi.mesh as Mesh).get_surface_count(), 0, "the warm-up quad has geometry to draw")
+	tm.clear_warm_up()
+	assert_null(tm._warm_mi, "clear_warm_up drops the warm-up quad")
+
+
 func test_marks_accumulate_on_gravel() -> void:
 	var tm := _make()
 	# Wheels straddle the centerline (|x| <= 3.3 gate) — on the gravel — advancing

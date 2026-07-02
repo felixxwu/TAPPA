@@ -33,23 +33,26 @@ func test_car_settles_on_ground() -> void:
 	assert_lt(_car.linear_velocity.length(), 0.3, "car at rest after settling on flat ground")
 
 
-func test_handbrake_locks_position_when_stopped() -> void:
-	# A stopped car holding the handbrake freezes in place so it can't be shoved or
-	# creep — a start-line queue car settling on its slot must not drift into the back
-	# of the car ahead. Releasing the handbrake unfreezes it.
+func test_handbrake_holds_against_slope_force() -> void:
+	# A stopped car holding the handbrake gets a static-friction hold so it doesn't
+	# creep — but it stays a LIVE rigid body (not frozen), unlike the old freeze hack.
+	# The flat fixture has no slope, so we stand in a slope's downhill gravity pull with
+	# a steady sub-cap horizontal force and check the held car resists it. The magnitude
+	# (2·m N ≈ an ~12° grade) sits well under the μ·m·g hold cap for any sane grip.
 	assert_lt(_car.linear_velocity.length(), 0.5, "precondition: the car is at rest")
 	Input.action_press("handbrake")
 	await _wait_physics(2)
-	assert_true(_car.freeze, "a stopped car holding the handbrake is frozen (position locked)")
+	assert_false(_car.freeze, "a handbraked car stays a live rigid body, not frozen")
 	var pinned := _car.global_position
-	# A hard shove from behind can't move a frozen body.
-	_car.apply_central_impulse(-_car.global_transform.basis.z * 50000.0)
-	await _wait_physics(20)
-	assert_lt((_car.global_position - pinned).length(), 0.05,
-		"the locked car can't be shoved out of place")
+	var pull := -_car.global_transform.basis.z * (_car.mass * 2.0)
+	for _i in range(60):
+		_car.apply_central_force(pull)
+		await _wait_physics(1)
+	assert_lt((_car.global_position - pinned).length(), 0.25,
+		"the held car resists a steady sub-cap slope force instead of creeping")
 	Input.action_release("handbrake")
 	await _wait_physics(2)
-	assert_false(_car.freeze, "releasing the handbrake unlocks the car")
+	assert_false(_car.freeze, "still live after releasing the handbrake")
 
 
 func test_accelerate_moves_car_forward() -> void:

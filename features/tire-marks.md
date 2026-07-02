@@ -88,6 +88,15 @@ nothing, the ring buffer caps the count, below the speed floor lays nothing, an
 airborne wheel stops marking, and a jump leaves a real gap (the landing point starts
 a new strip, not a stretched quad bridged back to the take-off point).
 
+## Shader warm-up
+
+The ribbon material has the same `gl_compatibility` first-visible-draw compile
+cost as the particle pools. `warm_up(pos)` draws a throwaway quad (same material)
+in front of the camera and `clear_warm_up()` frees it, so
+`world.gd._generate_track` primes the shader behind the loading overlay rather
+than hitching on the first mark laid — see
+[wheel-dust.md → Shader warm-up](wheel-dust.md).
+
 ## Out of scope (features/tire-marks.md)
 
 Alpha fade-out over distance and load-based colour variation — constant per-surface

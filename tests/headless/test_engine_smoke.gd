@@ -82,6 +82,16 @@ func test_no_misfire_no_smoke() -> void:
 	assert_eq(es.live_count(), 0, "a healthy engine (no new cuts) puffs no smoke")
 
 
+func test_warm_up_draws_then_clears() -> void:
+	# warm_up() parks one visible puff so the shader compiles behind the loading
+	# screen; clear_warm_up() must return the pool to empty.
+	var es := _make()
+	es.warm_up(Vector3(0, 0, 10))
+	assert_eq(es.live_count(), 1, "warm-up draws a single puff so the shader compiles")
+	es.clear_warm_up()
+	assert_eq(es.live_count(), 0, "clear_warm_up leaves the pool empty")
+
+
 func test_a_misfire_puffs_a_burst() -> void:
 	var es := _make()
 	_engine.misfire_count += 1  # one cut happened

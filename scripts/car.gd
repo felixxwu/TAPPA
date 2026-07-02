@@ -76,12 +76,9 @@ var ai_throttle := 0.0    # -1..1, forward positive (brake_reverse..accelerate a
 var ai_steer := 0.0       # -1..1, left positive (steer_right..steer_left axis)
 var ai_handbrake := false
 
-# Handbrake position lock: below this speed, a car holding the handbrake is FROZEN in
-# place so it can't be shoved or creep — e.g. a start-line queue car settling on its
-# slot can't drift into the back of the car ahead. Cleared the moment the handbrake is
-# released. See _apply_handbrake_lock.
+# Parking-hold speed gate: below this speed a fully-braked, grounded car gets a
+# static-friction hold so it doesn't creep down a slope. See _apply_parking_hold.
 const HANDBRAKE_LOCK_SPEED := 0.5  # m/s
-var _handbrake_locked := false
 # Smoothed steering input. Raw steer_input snaps 0->1 on a keyboard; easing it
 # gives one smooth -1..1 source that BOTH the wheel-angle target and the yaw
 # assist torque read, so the two stay 1:1 instead of the torque slamming to full
@@ -271,7 +268,9 @@ func _physics_process(delta: float) -> void:
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
 	var handbrake := ai_handbrake if ai_controlled else (controls_locked or Input.is_action_pressed("handbrake"))
-	_apply_handbrake_lock(handbrake, speed)
+	# Stiction hold: a fully-pinned axle (handbrake or the low-speed parking brake)
+	# should stop the car creeping down a slope. See _apply_parking_hold.
+	_apply_parking_hold(handbrake or brake_input >= 1.0, speed, delta)
 	# Damage misfire: feed the engine its misfire intensity so it cuts fuel in
 	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
 	# cuts; ramps to 1 at 0 HP). See features/damage.md.
@@ -447,22 +446,27 @@ func _reset() -> void:
 # reset and the off-track recovery (TrackProgress). Restores velocities, wheel
 # spin and engine state so the car drops in cleanly rather than carrying over
 # stale momentum.
-# Freeze a nearly-stopped car that's holding the handbrake so its position is locked —
-# it can't be shoved or slowly creep (e.g. a start-line queue car settling on its slot
-# won't drift into the back of the car ahead). Freezing zeroes the velocity, so once
-# locked the car stays put until the handbrake is RELEASED, which unfreezes it. Only
-# this lock cycle touches `freeze`, so it never fights another freeze user.
-func _apply_handbrake_lock(handbrake: bool, speed: float) -> void:
-	# Only ENTER the lock once the car is actually resting on the ground — otherwise a
-	# boot-locked car (StageManager forces the handbrake) would freeze mid-air at its
-	# spawn clearance and never settle. Staying locked only needs the handbrake held.
-	if handbrake and speed < HANDBRAKE_LOCK_SPEED and _is_grounded():
-		if not _handbrake_locked:
-			_handbrake_locked = true
-			freeze = true
-	elif _handbrake_locked and not handbrake:
-		_handbrake_locked = false
-		freeze = false
+# Static-friction hold for a nearly-stopped, fully-braked car so it doesn't slowly
+# creep down a slope. The tire model's longitudinal force fades to zero as slip does
+# (drivetrain._tire_force caps it at |slip|·m/h), so at creep speed gravity's slope
+# component wins and the car dribbles downhill. Rather than freeze the body (which
+# takes it out of the sim and snaps on release), we cancel the residual in-plane
+# velocity each frame with a counter-force, clamped to a friction limit so it acts
+# like real stiction — it holds any sane slope but a wall-steep grade still slides.
+func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
+	# Only hold once the car is actually resting on the ground — a boot-locked car
+	# (StageManager forces the handbrake) must be free to drop onto its wheels first.
+	if not (braked and speed < HANDBRAKE_LOCK_SPEED and _is_grounded()) or delta <= 0.0:
+		return
+	# Null the horizontal velocity component (leave vertical to gravity/suspension):
+	# F = -m·v_h/dt zeroes it in one step, so per-frame creep never accumulates.
+	var v_h := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	var hold := -v_h * mass / delta
+	# Clamp to μ·m·g so it behaves like static friction, not an infinite clamp.
+	var cap := config.parking_hold_grip * mass * float(ProjectSettings.get_setting("physics/3d/default_gravity"))
+	if hold.length() > cap:
+		hold = hold.normalized() * cap
+	apply_central_force(hold)
 
 
 # True once the car is settled on its wheels (a solid majority in ground contact),

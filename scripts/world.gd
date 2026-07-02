@@ -168,6 +168,18 @@ func _yield_frame() -> void:
 		await get_tree().process_frame
 
 
+# A point roughly 2 m in front of the active camera — where a warm-up instance is
+# guaranteed to sit inside the frustum (so it actually draws and compiles its
+# shader). Falls back to the car's position if no camera is up yet.
+func _warm_up_point() -> Vector3:
+	var cam := get_viewport().get_camera_3d()
+	if cam != null:
+		return cam.global_position - cam.global_transform.basis.z * 2.0
+	if has_node("Car"):
+		return ($Car as Node3D).global_position
+	return Vector3.ZERO
+
+
 # Build the track from the car's spawn pose, bake road heights, and build the
 # (deferred) terrain ring with flattening + colouring already applied — so no
 # chunk is ever rebuilt at startup. Each heavy step sets the loading label and
@@ -391,6 +403,25 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
 	# elapsed time compares to the leading rival's estimated time at that point.
 	_setup_stage_splits(result, staged, cfg)
+
+	# Prime the surface-effect shaders while the loading overlay still covers the
+	# view. Under gl_compatibility a material's shader variant compiles on its first
+	# VISIBLE draw; the particle pools sit off-screen (HIDE_Y) and the tyre-mark
+	# ribbons are empty until first used, so without this the first gravel wheelspin
+	# (or first skid / misfire) pays a one-frame compile hitch. Draw one throwaway
+	# instance of each in front of the camera for a rendered frame, then clear it.
+	# Only when a loading screen is up: on a bare regeneration the variants are
+	# already cached (identical renderer settings) and there's no overlay to hide
+	# the flash.
+	if loading != null and not _headless:
+		var wp := _warm_up_point()
+		_tire_marks.warm_up(wp)
+		_wheel_particles.warm_up(wp)
+		_engine_smoke.warm_up(wp)
+		await get_tree().process_frame
+		_tire_marks.clear_warm_up()
+		_wheel_particles.clear_warm_up()
+		_engine_smoke.clear_warm_up()
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
 	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment

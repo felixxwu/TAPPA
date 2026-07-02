@@ -148,6 +148,25 @@ func _clear() -> void:
 	multimesh.buffer = _buffer
 
 
+# Force this pool's shader variant to compile NOW (during track generation, behind
+# the loading overlay) instead of on the first engine misfire. Under gl_compatibility
+# a material compiles on its first VISIBLE draw, and every slot sits off-screen at
+# HIDE_Y until then — so we park one full puff in front of the camera for a rendered
+# frame, then clear_warm_up() hides it again. See features/engine-smoke.md.
+func warm_up(pos: Vector3) -> void:
+	if multimesh == null or _buffer.is_empty():
+		return
+	_life[0] = 1.0
+	_alive = 1
+	_write_slot(0, pos, 1.0, 1.0)  # full scale + opaque, so it actually draws
+	multimesh.buffer = _buffer
+
+
+# Undo warm_up(): park the warm-up puff off-screen and reset the pool to empty.
+func clear_warm_up() -> void:
+	_clear()
+
+
 func _physics_process(delta: float) -> void:
 	if not Config.data.engine_smoke_enabled or multimesh == null:
 		return

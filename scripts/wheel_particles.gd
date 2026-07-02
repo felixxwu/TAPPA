@@ -123,6 +123,26 @@ func _clear() -> void:
 	multimesh.buffer = _buffer
 
 
+# Force this pool's shader variant to compile NOW (during track generation, behind
+# the loading overlay) instead of on the first gravel wheelspin. Under
+# gl_compatibility a material compiles on its first VISIBLE draw, and every slot
+# sits off-screen at HIDE_Y until then — so we park one full-size clod in front of
+# the camera for a rendered frame, then clear_warm_up() hides it again. See
+# features/wheel-dust.md.
+func warm_up(pos: Vector3) -> void:
+	if multimesh == null or _buffer.is_empty():
+		return
+	_life[0] = 1.0
+	_alive = 1
+	_set_origin(0, pos)  # identity basis (from _build_pool) -> full quad, so it draws
+	multimesh.buffer = _buffer
+
+
+# Undo warm_up(): park the warm-up clod off-screen and reset the pool to empty.
+func clear_warm_up() -> void:
+	_clear()
+
+
 func _physics_process(delta: float) -> void:
 	if not Config.data.wheel_particles_enabled or multimesh == null:
 		return

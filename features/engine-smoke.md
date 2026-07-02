@@ -16,6 +16,11 @@ small pool** (`engine_smoke_max`, default 48), separate from the wheel dust. One
 call, a fixed instance count, a **ring buffer** that recycles the oldest slot so cost
 is hard-capped.
 
+Like the wheel dust, it exposes `warm_up(pos)` / `clear_warm_up()` so
+`world.gd._generate_track` can compile its shader variant behind the loading
+overlay instead of hitching on the first misfire — see
+[wheel-dust.md → Shader warm-up](wheel-dust.md).
+
 - **Trigger — a puff per cut.** `EngineSim` keeps a monotonic `misfire_count`,
   incremented on each *misfire* cut onset (not the rev limiter). Each physics tick
   `EngineSmoke` reads the count and puffs one burst (`engine_smoke_per_cut`

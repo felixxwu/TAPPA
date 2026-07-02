@@ -143,12 +143,17 @@ enables contact monitoring and reads obstacle-contact impulses in
   suspension load) under script while axis-locked to a straight line. Discrete actions
   (shift / mode / reset) are ignored when locked or scripted.
 
-Regardless of source, a car that is holding the handbrake **and** below
-`HANDBRAKE_LOCK_SPEED` (0.5 m/s) is **position-locked** — `_apply_handbrake_lock`
-freezes the body so it can't be shoved or creep, and unfreezes the instant the
-handbrake is released. This is what keeps a settling [start-line](start-line.md) queue
-car from drifting into the back of the car ahead, and holds the player put during the
-countdown (`controls_locked` forces the handbrake).
+Regardless of source, a car that is fully braked (handbrake **or** the low-speed
+parking brake) and below `HANDBRAKE_LOCK_SPEED` (0.5 m/s) gets a **static-friction
+hold** — `_apply_parking_hold` cancels its residual in-plane velocity each frame with
+a counter-force, clamped to `parking_hold_grip · m · g`. This is needed because the
+tire model's longitudinal force fades to zero as slip does (`_tire_force` caps it at
+`|slip|·m/h`), so at creep speed gravity's slope component would otherwise win and the
+car would dribble downhill. The hold behaves like real stiction: it pins the car on any
+sane grade but a wall-steep slope still slides, and — unlike the old `freeze` hack — the
+car stays a **live rigid body** (no snap on release, still collidable). This keeps a
+settling [start-line](start-line.md) queue car from creeping into the car ahead and
+holds the player put during the countdown (`controls_locked` forces the handbrake).
 
 ## Braking summary
 

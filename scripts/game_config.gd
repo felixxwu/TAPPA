@@ -105,6 +105,12 @@ var peak_torque_rpm := 4500.0
 ## Grip retained when a tire is fully sliding, as a fraction of peak μN. The
 ## tire force falls from full grip at tire_slip_peak down to this when locked.
 @export_range(0.1, 1.0) var sliding_grip_ratio := 0.7
+## Static-friction hold for a nearly-stopped, fully-braked car (handbrake or the
+## low-speed parking brake). The tire model's grip fades to zero as slip does, so
+## without this a parked car slowly creeps down a slope. Car._apply_parking_hold
+## cancels the residual in-plane velocity, clamped to this·m·g — like real stiction,
+## it holds any sane grade but a wall-steep slope still slides. ~1.0 ≈ gravel μ.
+@export_range(0.0, 2.0) var parking_hold_grip := 1.0
 @export var suspension_travel := 0.5  # also used as the wheel rest length (ray length)
 ## Per-axle spring travel / rest length (m) OVERRIDES. 0 = inherit suspension_travel
 ## (the common case); a positive value lets a body run a longer front or rear stroke

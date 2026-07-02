@@ -27,6 +27,19 @@ spin. Dead slots are parked far below the world (origin Y = `HIDE_Y`) rather tha
 zero-scaled — billboard materials don't reliably honour a zero instance scale
 under `gl_compatibility`, and a quad that far down is always off-screen.
 
+## Shader warm-up (no first-gravel hitch)
+
+Under `gl_compatibility` a material's shader variant compiles on its **first
+visible draw**. Because the pool sits off-screen at `HIDE_Y` until the first
+gravel wheelspin, that compile used to land as a one-frame stutter the moment a
+car crossed onto gravel. `warm_up(pos)` parks one full-size clod in front of the
+camera so the variant compiles up front, and `clear_warm_up()` hides it again;
+`world.gd._generate_track` calls this (for the dust, smoke, and tyre-mark
+materials) while the loading overlay still covers the view, so the compile is
+hidden. It only runs when a loading screen is up — on a bare regeneration the
+variant is already cached (identical renderer settings) and there's no overlay to
+hide a flash.
+
 ## Performance — one buffer upload, not N transform calls
 
 The instance transforms are pushed as a **single `multimesh.buffer` assignment

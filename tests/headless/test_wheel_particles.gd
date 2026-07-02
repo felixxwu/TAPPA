@@ -165,6 +165,16 @@ func test_sliding_and_spinning_still_emits_and_sprays_sideways() -> void:
 	assert_gt(v.y, 0.0, "dirt is angled upwards")
 
 
+func test_warm_up_draws_then_clears() -> void:
+	# warm_up() parks one visible instance so the shader compiles behind the loading
+	# screen; clear_warm_up() must return the pool to empty (no lingering clod).
+	var wp := _make()
+	wp.warm_up(Vector3(0, 0, 10))
+	assert_eq(wp.live_count(), 1, "warm-up draws a single clod so the shader compiles")
+	wp.clear_warm_up()
+	assert_eq(wp.live_count(), 0, "clear_warm_up leaves the pool empty")
+
+
 func test_ring_buffer_caps_live_particles() -> void:
 	Config.data.wheel_particle_max = 5
 	Config.data.wheel_particle_spawn_count = 3

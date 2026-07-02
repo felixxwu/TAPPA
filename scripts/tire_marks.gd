@@ -34,6 +34,7 @@ var _car: Node              # the VehicleBody3D (read for linear_velocity)
 var _half_width := 3.0      # road half-width (track_width * 0.5)
 var _offset := 0.0          # cached windowed nearest-offset for the car centre
 var _material: StandardMaterial3D
+var _warm_mi: MeshInstance3D  # throwaway quad used by warm_up() to prime the shader
 
 # Parallel per-wheel arrays (index == wheel).
 var _wheels: Array = []     # nodes exposing is_in_contact() + global_position
@@ -246,6 +247,42 @@ func _search_offset(here: Vector2, from_m: float, to_m: float) -> float:
 			best_o = o
 		o += SEARCH_STEP_M
 	return best_o
+
+
+# Force the ribbon material's shader variant to compile NOW (during track
+# generation, behind the loading overlay) instead of on the first mark laid. Under
+# gl_compatibility a material compiles on its first VISIBLE draw, and the per-wheel
+# ribbons are empty until a wheel marks — so we draw one throwaway quad (vertex
+# colour, same material) in front of the camera for a rendered frame, then
+# clear_warm_up() frees it. See features/tire-marks.md.
+func warm_up(pos: Vector3) -> void:
+	_ensure_material()
+	if _warm_mi == null:
+		_warm_mi = MeshInstance3D.new()
+		add_child(_warm_mi)
+	var s := 0.5
+	var verts := PackedVector3Array([
+		pos + Vector3(-s, 0.0, -s), pos + Vector3(-s, 0.0, s), pos + Vector3(s, 0.0, -s),
+		pos + Vector3(s, 0.0, -s), pos + Vector3(-s, 0.0, s), pos + Vector3(s, 0.0, s),
+	])
+	var cols := PackedColorArray()
+	for _v in 6:
+		cols.append(Config.data.tire_mark_color)
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_COLOR] = cols
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	mesh.surface_set_material(0, _material)
+	_warm_mi.mesh = mesh
+
+
+# Undo warm_up(): drop the throwaway warm-up quad.
+func clear_warm_up() -> void:
+	if is_instance_valid(_warm_mi):
+		_warm_mi.queue_free()
+	_warm_mi = null
 
 
 func _ensure_material() -> void:

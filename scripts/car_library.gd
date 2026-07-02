@@ -112,7 +112,7 @@ const CARS: Array[Dictionary] = [
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
-		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
+		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.45,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
 		"suspension_travel": 0.42, "suspension_stiffness": 10.0,  # compliant roadster baseline
 		# Renders the authored blender/mx5/mx5.glb body (Car/Mx5Body) instead of the
@@ -217,7 +217,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
 		"cabin_z": 0.35, "track": 1.6, "wheelbase": 3,
 		"wheel_radius": 0.36, "wheel_width": 0.225,
-		"suspension_travel": 0.45, "suspension_stiffness": 10.0,  # soft, heavy muscle car
+		"suspension_travel": 0.42, "suspension_stiffness": 10.0,  # soft, heavy muscle car
 		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
 		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
