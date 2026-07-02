@@ -712,6 +712,19 @@ func test_engine_swap_reshapes_mass_and_torque() -> void:
 	assert_almost_eq(_car.mass, expected_mass, 0.5, "RigidBody mass synced")
 
 
+func test_engine_swap_brings_its_transmission() -> void:
+	# The gearbox lives on the engine, so a swapped-in engine carries its own
+	# gear_ratios / final_drive / shift_time to the car (mechanism, not pinned values).
+	var v8 := "ford_50_v8"
+	_car.apply_owned({"model_id": "twingo", "swapped_engine": v8, "hp": 700.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+	var eng := EngineLibrary.by_id(v8)
+	assert_eq(_car.config.gear_ratios.size(), (eng["gear_ratios"] as Array).size(),
+		"swapped engine's gear count applied")
+	assert_almost_eq(_car.config.final_drive, float(eng["final_drive"]), 0.001, "swapped engine's final_drive applied")
+	assert_almost_eq(_car.config.shift_time, float(eng["shift_time"]), 0.001, "swapped engine's shift_time applied")
+
+
 func test_stock_car_is_unaffected_by_the_swap_step() -> void:
 	_car.apply_owned({"model_id": "twingo", "hp": 700.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})

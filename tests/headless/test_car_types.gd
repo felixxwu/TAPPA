@@ -170,16 +170,18 @@ func test_every_car_drives_forward() -> void:
 
 
 func test_every_car_applies_its_own_shift_time() -> void:
-	# Selecting a car overlays its gearbox shift_time onto the live config, so
-	# each car shifts at its own speed rather than a single global value.
+	# Fielding a car overlays its ENGINE's shift_time onto the live config (the gearbox
+	# lives on the engine now), so each car shifts at its own speed rather than a single
+	# global value.
 	var seen := {}
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
+		var eng := EngineLibrary.by_id(spec["engine"])
 		_select(i)
 		await _wait(5)
-		assert_almost_eq(Config.data.shift_time, float(spec["shift_time"]), 0.0001,
-			"%s: applies its own shift_time" % spec["name"])
-		seen[float(spec["shift_time"])] = true
+		assert_almost_eq(Config.data.shift_time, float(eng["shift_time"]), 0.0001,
+			"%s: applies its engine's shift_time" % spec["name"])
+		seen[float(eng["shift_time"])] = true
 	assert_gt(seen.size(), 1, "cars use a range of shift times, not one shared value")
 
 

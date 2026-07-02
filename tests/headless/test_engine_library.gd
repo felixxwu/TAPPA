@@ -19,6 +19,17 @@ func test_catalog_is_a_sane_range_of_engines() -> void:
 		assert_gt(eng["redline_rpm"], eng["peak_torque_rpm"], who + " redline above its torque peak")
 		assert_gt(eng["engine_inertia"], 0.0, who + " engine_inertia is positive")
 		assert_between(eng["low_octave_mix"], 0.0, 1.0, who + " low_octave_mix is a 0..1 blend")
+		# The transmission bolted to the engine (moved here from CarLibrary so a swap
+		# carries the gearbox): ratios non-empty, strictly DESCENDING and positive (1st
+		# is the shortest), positive final drive + shift time.
+		var ratios: Array = eng["gear_ratios"]
+		assert_gt(ratios.size(), 0, who + " has at least one forward gear")
+		assert_gt(eng["final_drive"], 0.0, who + " positive final_drive")
+		assert_gt(eng["shift_time"], 0.0, who + " positive shift_time")
+		for g in ratios.size():
+			assert_gt(ratios[g], 0.0, who + " gear %d ratio positive" % (g + 1))
+			if g > 0:
+				assert_lt(ratios[g], ratios[g - 1], who + " gear %d shorter than gear %d" % [g + 1, g])
 	assert_gte(layouts.size(), 4, "a range of layouts / sounds")
 
 
@@ -46,6 +57,12 @@ func test_apply_writes_the_whole_profile_onto_config() -> void:
 	assert_almost_eq(cfg.engine_volume_db, float(eng["volume_db"]), 0.001, "volume_db")
 	assert_almost_eq(cfg.engine_noise_level, db_to_linear(float(eng["noise_db"])), 0.0001, "noise_db -> linear")
 	assert_almost_eq(cfg.engine_soft_clip_post_gain, float(eng["soft_clip_post_gain"]), 0.001, "soft clip post gain")
+	# The transmission is written too, so a swapped engine brings its gearbox.
+	assert_eq(cfg.gear_ratios.size(), (eng["gear_ratios"] as Array).size(), "gear count written from the engine")
+	for g in cfg.gear_ratios.size():
+		assert_almost_eq(cfg.gear_ratios[g], float(eng["gear_ratios"][g]), 0.001, "gear %d ratio written" % (g + 1))
+	assert_almost_eq(cfg.final_drive, float(eng["final_drive"]), 0.001, "final_drive written")
+	assert_almost_eq(cfg.shift_time, float(eng["shift_time"]), 0.001, "shift_time written")
 
 
 func test_every_engine_has_a_positive_mass() -> void:

@@ -4,13 +4,15 @@ extends RefCounted
 # (see hud.gd) and applied by car.gd's apply_car(). Each entry overlays the
 # neutral baseline tuning (car.tscn + game_config.tres) with one real car's
 # character: body/cabin box dimensions, wheelbase and track, wheel/tyre size,
-# mass, tyre grip, aero drag, shift_time (gearbox shift speed), the driven
-# axle layout, and an "engine" id naming its powerplant in EngineLibrary
-# (scripts/engine_library.gd) — the single source of truth for ALL engine
-# data (cylinders/firing, torque, redline, inertia, and the voicing fields
-# low_octave_mix/volume_db/noise_db/soft_clip_post_gain). See
-# EngineLibrary.apply(), which car.gd's apply_car() calls with the resolved
-# engine.
+# mass, tyre grip, aero drag, the driven axle layout, and an "engine" id naming
+# its powerplant in EngineLibrary (scripts/engine_library.gd) — the single source
+# of truth for ALL engine data (cylinders/firing, torque, redline, inertia, the
+# voicing fields low_octave_mix/volume_db/noise_db/soft_clip_post_gain, AND the
+# TRANSMISSION bolted to it: gear_ratios / final_drive / shift_time). See
+# EngineLibrary.apply(), which car.gd's apply_car() calls with the resolved engine.
+# Because the gearbox lives on the engine, an ENGINE SWAP (features/engine-swap.md)
+# carries the whole drivetrain to the new car — the car entry no longer authors any
+# gearbox field.
 #
 # Dimensions (length / width / wheelbase / track) come from manufacturer spec
 # data and are used directly in metres (Godot units = metres).
@@ -18,16 +20,11 @@ extends RefCounted
 # Dynamics values are in real SI units, matching GameConfig (mass in kg),
 # anchored to the Mazda MX-5:
 #   * mass     — the car's real kerb mass in kg.
-#   * gear_ratios / final_drive — the gearbox (GameConfig.gear_ratios /
-#                final_drive). apply_car copies them in AFTER EngineLibrary.apply
-#                (which only sets torque / redline / firing), and EngineSim handles
-#                any number of forward gears. Each car now carries its OWN real
-#                published transmission ratios (per-car; see each entry's comment for
-#                the box modelled), so gearing character differs across the roster —
-#                a 3-speed TorqueFlite Charger vs an 8-speed PDK 911. Only the
-#                final_drive is a game value, kept deliberately higher than the real
-#                ~3-4 (tuned per car) so each pulls cleanly against Jolt's built-in
-#                rolling resistance (see the drag note below); the internal ratios are real.
+#   * (gearbox) — gear_ratios / final_drive / shift_time NO LONGER live here; they
+#                moved onto the ENGINE (EngineLibrary), so a swapped engine brings its
+#                own transmission. See EngineLibrary's header for the tuning rationale
+#                (real internal ratios; game-tuned final_drive against Jolt's baseline
+#                rolling resistance; manual-slow vs PDK-fast shift_time).
 #   * drag     — quadratic aero drag coefficient (GameConfig.drag_coefficient):
 #                the force is drag x speed². NOTE these are deliberately SMALL: the
 #                physics engine (Jolt VehicleBody3D) already applies a large
@@ -51,10 +48,6 @@ extends RefCounted
 #                then trims them. Rollover from high lateral force is held off by the low
 #                wheel_roll_influence (GameConfig, 0.1) — watch the taller bodies
 #                (Mustang-like) in hard turns if compounds climb much further.
-#   * shift_time — seconds of clutch-open throttle cut per gear change
-#                (GameConfig.shift_time): the manual roadster (MX-5) is slowest,
-#                the dual-clutch / automated supercars (911 PDK, RS3 DSG,
-#                Aventador ISR) snap through gears fastest.
 #   * downforce_front / downforce_rear — aero downforce (N per (m/s)² at each axle,
 #                GameConfig.downforce_*). apply_car() SETS these from the spec (so a
 #                car with 0 has none — no hidden global baseline), and the aero_kit
@@ -100,17 +93,7 @@ const CARS: Array[Dictionary] = [
 		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
-		# Real ND 6-speed manual ratios: 5.087/2.991/2.035/1.594/1.286/1.000.
-		# final_drive is game-tuned to 3.5, NOT the real 2.866: the MX-5's real ~150 hp
-		# (in-sim) can't pull the tall real final drive against the Jolt VehicleBody3D's
-		# built-in ~0.2 g rolling resistance (it stalls/crawls, stuck below the auto
-		# box's upshift point in 3rd). 3.5 is the shortest drive that still drives
-		# cleanly — gears 5/6 sit above its ~95 km/h power-limited top, so they go
-		# unused, but 1st-4th carry the real spacing that calms the mid-gear punch and
-		# stops the 4th-gear wheelspin. This box drives well, so the whole roster now
-		# shares it (see the gear_ratios header note). See features/drivetrain-and-tires.md.
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 5,
-		"tire_compound": 1.0, "shift_time": 0.30,  # sport touring tyres, manual H-pattern roadster
+		"tire_compound": 1.0,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
@@ -129,9 +112,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Focus ST",  # Mk2 2009: ~1467 kg, 225 PS, 2.5 turbo i5, FWD hot hatch
 		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
 		"mass": 1467.0, "engine": "ford_25t_i5", "weight_front": 0.62, "engine_pos": 0.85,  # transverse turbo I5, nose-heavy FWD
-		# Real Getrag M66 6-speed ratios (Focus ST Mk2 2.5T).
-		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 9,
-		"tire_compound": 1.05, "shift_time": 0.30,  # performance summer tyres, 6-speed manual, FWD
+		"tire_compound": 1.05,  # performance summer tyres
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
@@ -151,9 +132,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Twingo",  # Mk1 (C06) 1.2 16V: ~890 kg, 75 PS, light FWD city car
 		"id": "twingo", "country": "FR", "car_type": "hatch", "max_hp": 700.0, "reward_tier": 1,
 		"mass": 890.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
-		# Real Renault JB1 5-speed ratios (Twingo Mk1 1.2 16V).
-		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 8,
-		"tire_compound": 0.85, "shift_time": 0.35,  # hard economy tyres, skinny, 5-speed manual, FWD
+		"tire_compound": 0.85,  # hard economy tyres, skinny
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
@@ -172,9 +151,7 @@ const CARS: Array[Dictionary] = [
 	# 	"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
 	# 	"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 1,
 	# 	"mass": 1575.0, "engine": "audi_25t_i5", "weight_front": 0.59,  # transverse turbo I5 quattro, nose-heavy
-	# 	# Real 7-speed S tronic (DQ500-class) ratios (Audi RS3 8Y).
-	# 	"gear_ratios": [3.563, 2.526, 1.679, 1.022, 0.788, 0.761, 0.635], "final_drive": 12,
-	# 	"tire_compound": 1.05, "shift_time": 0.08,  # performance summer tyres, 7-speed S-tronic dual-clutch
+	# 	"tire_compound": 1.05,  # performance summer tyres
 	# 	"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
 	# 	"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 	# 	"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
@@ -186,10 +163,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Honda Acty",  # HA4 kei truck: ~740 kg, 656cc mid-engine triple, RWD
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
 		"mass": 740.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
-		# Real Honda Acty HA4 5-speed ratios; kept on the high final_drive so its ~44 hp
-		# still pulls (see the gear_ratios header note).
-		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9,
-		"tire_compound": 0.85, "shift_time": 0.35,  # hard commercial tyres, skinny, mid-engine RWD
+		"tire_compound": 0.85,  # hard commercial tyres, skinny
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
@@ -209,9 +183,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1750 kg, 440 Magnum V8, RWD muscle
 		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1750.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
-		# Real 3-speed TorqueFlite A727 automatic ratios ('69 Charger R/T 440).
-		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4.5,
-		"tire_compound": 0.95, "shift_time": 0.30,  # touring tyres, 3-speed TorqueFlite auto, RWD
+		"tire_compound": 0.95,  # touring tyres
 		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
@@ -231,9 +203,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
 		"id": "mustang", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 1,
 		"mass": 1720.0, "engine": "ford_50_v8", "weight_front": 0.53, "engine_pos": 0.85,  # front V8, mild nose bias
-		# Real Getrag MT82 6-speed ratios (Mustang GT S550, 2015-17).
-		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 7,
-		"tire_compound": 1.10, "shift_time": 0.22,  # performance summer tyres, 6-speed manual muscle
+		"tire_compound": 1.10,  # performance summer tyres
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
@@ -245,9 +215,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 2,
 		"mass": 1505.0, "engine": "porsche_30_flat6", "weight_front": 0.39, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~39/61
-		# Real 8-speed PDK ratios (Porsche 911 992 Carrera).
-		"gear_ratios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61], "final_drive": 7,
-		"tire_compound": 1.20, "shift_time": 0.06,  # sport semi-slick tyres, 8-speed PDK
+		"tire_compound": 1.20,  # sport semi-slick tyres
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
@@ -259,9 +227,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
 		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
 		"mass": 1580.0, "engine": "toyota_48_v10", "weight_front": 0.48, "engine_pos": 0.55,  # front-mid V10 + rear transaxle, 48/52
-		# Real 6-speed ASG ratios (Lexus LFA).
-		"gear_ratios": [3.231, 2.188, 1.609, 1.233, 0.970, 0.795], "final_drive": 7,
-		"tire_compound": 1.25, "shift_time": 0.16,  # track tyres, automated single-clutch ASG
+		"tire_compound": 1.25,  # track tyres
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
@@ -273,9 +239,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
 		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 3,
 		"mass": 1731.0, "engine": "lambo_65_v12", "weight_front": 0.43, "engine_pos": 0.35,  # mid V12, tail-heavy ~43/57
-		# Real 7-speed ISR ratios (Lamborghini Aventador LP 700-4).
-		"gear_ratios": [3.909, 2.438, 1.810, 1.458, 1.185, 0.967, 0.844], "final_drive": 7,
-		"tire_compound": 1.30, "shift_time": 0.05,  # track tyres, ISR single-clutch, ~50 ms shift
+		"tire_compound": 1.30,  # track tyres
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
@@ -287,11 +251,7 @@ const CARS: Array[Dictionary] = [
 		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
 		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 4,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
-		# GM Turbo-Hydramatic 400 3-speed automatic (Dodd's own adaptation); final_drive
-		# game-tuned like the other autos so the huge torque pulls cleanly against Jolt's
-		# baseline rolling resistance (see the gear_ratios header note).
-		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 3,
-		"tire_compound": 0.95, "shift_time": 0.30,  # period touring tyres, 3-speed auto, RWD
+		"tire_compound": 0.95,  # period touring tyres
 		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.

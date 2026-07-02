@@ -96,14 +96,18 @@ every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its rea
 
 - Forward gears (`gear_ratios`), one reverse (`reverse_ratio`), and a
   `final_drive` multiplier. `EngineSim` handles ANY number of forward gears, so
-  the gear COUNT can vary per car (the field is per-car, see below).
+  the gear COUNT can vary. **The transmission lives on the ENGINE**
+  (`EngineLibrary`: `gear_ratios` / `final_drive` / `shift_time`), not the car —
+  `EngineLibrary.apply` writes all three onto the config. Because of this, an
+  **engine swap carries its gearbox** to the new car
+  ([engine-swap.md](engine-swap.md)); a car's stock gearbox is just its stock
+  engine's.
 - Clutch limited to `clutch_max_torque`; auto-clutch opens when coasting below
   `clutch_engage_speed`.
 - Manual shifting: Q (down) / E (up). Auto mode toggled with T or HUD button.
-- `shift_time` (clutch-open throttle cut per gear change) is **per-car**: each
-  `CarLibrary` entry carries its own value, applied by `Car.apply_car()`, so the
-  manual MX-5 shifts slowly (0.30 s) while dual-clutch / automated supercars
-  (911, RS3, Aventador) snap through gears (0.05–0.08 s). The `GameConfig`
+- `shift_time` (clutch-open throttle cut per gear change) is **per-engine**: the
+  manual MX-5's i4 shifts slowly (0.30 s) while dual-clutch / automated supercars
+  (911 PDK, Aventador ISR) snap through gears (0.05–0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
 - **`engine_inertia` (crank + flywheel rotating inertia, kg·m²) is per-car**
   (`CarLibrary`, applied by `Car.apply_car()`). Small = fast revving, large =

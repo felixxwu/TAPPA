@@ -125,10 +125,11 @@ handbrake locks the driven axle.
 
 ## Gearing, top speed & the engine's hidden rolling resistance
 
-Gearing (`gear_ratios` + `final_drive`) is a **per-car** field in `CarLibrary`,
-applied by `Car.apply_car()` (see
-[engine-and-transmission.md](engine-and-transmission.md)), and **each car now
-carries its own real published transmission** — e.g. the MX-5's real ND 6-speed
+Gearing (`gear_ratios` + `final_drive` + `shift_time`) lives on the **engine**
+(`EngineLibrary`), written by `EngineLibrary.apply()` (see
+[engine-and-transmission.md](engine-and-transmission.md)), so an **engine swap
+carries its gearbox** ([engine-swap.md](engine-swap.md)). Each engine
+carries its car's real published transmission — e.g. the MX-5's real ND 6-speed
 ratios (`5.087 / 2.991 / 2.035 / 1.594 / 1.286 / 1.000`), the Charger's 3-speed
 TorqueFlite (`2.45 / 1.45 / 1.00`), the 911's 8-speed PDK, the Focus ST's Getrag
 M66 6-speed. Only `final_drive` is a game-tuned value (see below); the internal
@@ -170,10 +171,11 @@ aerodynamic value here would double-count the resistance and leave every car
 ## Tests
 
 `tests/headless/test_drivetrain.gd` (wheelspin, brake lockup, handbrake,
-parking brake), `tests/headless/test_drive_mode.gd` (per-mode torque). Per-car
-gearing is covered by `tests/headless/test_car_library.gd` (descending positive
-ratios, each car's own real gear_ratios; overlaid onto the live config by
-`apply_car`).
+parking brake), `tests/headless/test_drive_mode.gd` (per-mode torque). Gearing
+is covered by `tests/headless/test_engine_library.gd` (each engine's transmission:
+descending positive ratios, positive final_drive/shift_time) and
+`tests/headless/test_car_library.gd` (the engine's ratios overlaid onto the live
+config by `apply_car`).
 
 ## Related config
 

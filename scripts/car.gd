@@ -572,21 +572,13 @@ func apply_car(index: int) -> String:
 	cfg.mass = spec["mass"]
 	cfg.drag_coefficient = spec["drag"]
 	cfg.wheel_radius = spec["wheel_radius"]
-	# All engine data (sound + performance + voicing) comes from the referenced
-	# engine in EngineLibrary — the single source of truth. apply() writes every
-	# engine_* field onto cfg before the drivetrain/audio rebuild below.
+	# All engine data (sound + performance + voicing + the TRANSMISSION it's bolted to:
+	# gear_ratios / final_drive / shift_time) comes from the referenced engine in
+	# EngineLibrary — the single source of truth. apply() writes every engine_* and
+	# gearbox field onto cfg before the drivetrain/audio rebuild below, so an engine
+	# swap carries its whole drivetrain (see _apply_engine_swap). EngineSim recomputes
+	# its shift speeds for the new gearing on the rebuild.
 	EngineLibrary.apply(EngineLibrary.by_id(spec["engine"]), cfg)
-	# Per-car gearbox: real transmission ratios + final drive overlay the shared
-	# defaults. Set AFTER EngineLibrary.apply (which only touches torque/redline/
-	# firing) and BEFORE the drivetrain rebuild below, so EngineSim recomputes its
-	# shift speeds for the new gearing. Build a typed Array[float] (the dict value
-	# is an untyped literal).
-	if spec.has("gear_ratios"):
-		var ratios: Array[float] = []
-		for gr in spec["gear_ratios"]:
-			ratios.append(float(gr))
-		cfg.gear_ratios = ratios
-	cfg.final_drive = spec.get("final_drive", cfg.final_drive)
 	# One tyre compound per car (same rubber both axles); seed BOTH runtime axle μ
 	# from it. The grip_balance tuning slider (TuningLibrary.apply, run after) shifts
 	# them apart. Front/rear GRIP balance otherwise emerges physically from the widths
@@ -595,7 +587,6 @@ func apply_car(index: int) -> String:
 	cfg.wheel_friction_slip_rear = spec["tire_compound"]
 	cfg.wheel_width_front = spec["wheel_width_front"]
 	cfg.wheel_width_rear = spec["wheel_width_rear"]
-	cfg.shift_time = spec["shift_time"]
 	# Per-car aero downforce (N per (m/s)² at each axle). SET (not added) so a spec of
 	# 0 means 0 — no hidden global baseline — and so re-fielding can't accumulate the
 	# value. apply_owned applies the aero_kit upgrade ON TOP of this afterwards.
@@ -759,11 +750,11 @@ func apply_owned(owned: Dictionary) -> String:
 
 
 # Re-field this owned car's engine when it differs from the CarLibrary stock: writes
-# the swapped engine's full profile (torque/redline/firing/voicing) over the config,
-# rebuilds the drivetrain (new redline/shift speeds) and engine voice, and recomputes
-# total mass + static weight distribution treating the engine as a point mass at the
-# car's engine_pos. No-op for a stock car. Gearbox stays the car's own (apply_car set
-# it). See features/engine-swap.md.
+# the swapped engine's full profile (torque/redline/firing/voicing AND its bolted-on
+# transmission — gear_ratios/final_drive/shift_time) over the config, rebuilds the
+# drivetrain (new redline/gearing/shift speeds) and engine voice, and recomputes total
+# mass + static weight distribution treating the engine as a point mass at the car's
+# engine_pos. No-op for a stock car. See features/engine-swap.md.
 func _apply_engine_swap(owned: Dictionary) -> void:
 	var spec: Dictionary = CarLibrary.CARS[_car_index]
 	var stock := String(spec.get("engine", ""))

@@ -40,19 +40,9 @@ func test_each_spec_is_sane() -> void:
 	for spec in CarLibrary.CARS:
 		var who: String = spec["name"]
 		assert_gt(spec["mass"], 0.0, who + " has positive mass")
-		# Per-car gearbox (features/drivetrain-and-tires.md): gear_ratios + final
-		# drive. Ratios must be a non-empty, strictly DESCENDING set of positive
-		# numbers (1st is the shortest), and the final drive positive.
-		assert_true(spec.has("gear_ratios"), who + " has gear_ratios")
-		assert_true(spec.has("final_drive"), who + " has final_drive")
-		var ratios: Array = spec["gear_ratios"]
-		assert_gt(ratios.size(), 0, who + " has at least one forward gear")
-		assert_gt(spec["final_drive"], 0.0, who + " final_drive positive")
-		for g in ratios.size():
-			assert_gt(ratios[g], 0.0, who + " gear %d ratio positive" % (g + 1))
-			if g > 0:
-				assert_lt(ratios[g], ratios[g - 1],
-					who + " gear %d shorter than gear %d" % [g + 1, g])
+		# The gearbox (gear_ratios / final_drive / shift_time) now lives on the ENGINE
+		# (EngineLibrary), not the car — its sanity is checked in test_engine_library.gd.
+		assert_true(spec.has("engine"), who + " names an engine")
 		assert_gt(spec["tire_compound"], 0.0, who + " tyre compound is positive")
 		assert_false(EngineLibrary.by_id(spec["engine"]).is_empty(), who + " engine id resolves")
 		assert_between(spec["drive_mode"], 0, 2, who + " drive_mode is RWD/AWD/FWD")
@@ -177,16 +167,17 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	assert_almost_eq(Config.data.peak_torque, float(eng["peak_torque"]), 0.001, "peak_torque overlaid")
 	assert_almost_eq(Config.data.redline_rpm, float(eng["redline_rpm"]), 0.001, "redline overlaid")
 	assert_almost_eq(Config.data.engine_inertia, float(eng["engine_inertia"]), 0.001, "engine_inertia overlaid")
-	# Per-car gearbox overlaid onto the live config (the shared MX-5 6-speed box).
-	assert_eq(Config.data.gear_ratios.size(), (spec["gear_ratios"] as Array).size(),
-		"gear count overlaid")
+	# The engine's transmission (gear_ratios / final_drive) is overlaid onto the live
+	# config via EngineLibrary.apply — so a swapped engine would bring its own box.
+	assert_eq(Config.data.gear_ratios.size(), (eng["gear_ratios"] as Array).size(),
+		"gear count overlaid from the engine")
 	for g in Config.data.gear_ratios.size():
-		assert_almost_eq(Config.data.gear_ratios[g], float(spec["gear_ratios"][g]), 0.001,
-			"gear %d ratio overlaid" % (g + 1))
-	assert_almost_eq(Config.data.final_drive, float(spec["final_drive"]), 0.001, "final_drive overlaid")
+		assert_almost_eq(Config.data.gear_ratios[g], float(eng["gear_ratios"][g]), 0.001,
+			"gear %d ratio overlaid from the engine" % (g + 1))
+	assert_almost_eq(Config.data.final_drive, float(eng["final_drive"]), 0.001, "final_drive overlaid from the engine")
 	# The drivetrain's engine recomputed its shift speeds for the new gearing, so it
 	# has one upshift slot per gear (the top gear's is INF).
-	assert_eq(_car.drivetrain.engine.shift_up_speeds.size(), (spec["gear_ratios"] as Array).size(),
+	assert_eq(_car.drivetrain.engine.shift_up_speeds.size(), (eng["gear_ratios"] as Array).size(),
 		"shift speeds recomputed for the new gear count")
 	# Both axle μ are seeded from the car's single tyre compound; widths overlaid per axle.
 	assert_almost_eq(Config.data.wheel_friction_slip_front, float(spec["tire_compound"]), 0.001, "front grip seeded from compound")

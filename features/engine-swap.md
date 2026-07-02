@@ -117,9 +117,10 @@ When non-stock:
 
 1. Looks up the swapped-in engine in `EngineLibrary` and calls
    `EngineLibrary.apply(new_eng, cfg)` — this overwrites the config's whole
-   engine profile: torque curve, redline, cylinder count, firing angles, and
-   voicing (whatever `EngineLibrary.apply` writes for engine-and-transmission,
-   see [engine-and-transmission.md](engine-and-transmission.md)).
+   engine profile: torque curve, redline, cylinder count, firing angles,
+   voicing, **and the transmission bolted to that engine** (`gear_ratios`,
+   `final_drive`, `shift_time`), see
+   [engine-and-transmission.md](engine-and-transmission.md).
 2. **Rebuilds the drivetrain** (`Drivetrain.new(self)`, re-resolving terrain
    and drive mode) so the new redline/shift-speed table takes effect, and
    reconfigures the engine audio voice (`EngineAudio.reconfigure`) so the
@@ -140,11 +141,13 @@ When non-stock:
    `apply_car` uses for the baseline case (see [car-physics.md](car-physics.md)
    → Weight distribution), just re-derived from the post-swap `weight_front`.
 
-**The gearbox stays the car's own** — `_apply_engine_swap` never touches
-`gear_ratios`, `final_drive`, or `shift_time` (those were already set by
-`apply_car` from the car's own `CarLibrary` entry). Swapping a V8 into a
-kei car keeps that car's own 5-speed; only the engine profile and the mass
-it carries move.
+**The transmission swaps with the engine.** `gear_ratios`, `final_drive`, and
+`shift_time` live on the `EngineLibrary` entry (not the car), so
+`EngineLibrary.apply` — called in step 1 — brings the swapped engine's whole
+drivetrain: gearing spacing, overall ratio, and shift feel. Swapping a PDK V8
+into a kei car gives it the V8's gearbox and fast shifts, not the kei's
+5-speed. The drivetrain rebuild in step 2 recomputes shift speeds for the new
+ratios. (Design decision: engine + gearbox are one swappable unit.)
 
 ## Eligibility feed-through (`effective_meta`)
 
