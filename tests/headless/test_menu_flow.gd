@@ -601,7 +601,13 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 		parked[car.current_car_name()] = true
 	assert_eq(parked, expected, "HQ parks exactly the cars RallyLibrary deems eligible")
 	assert_gt(expected.size(), 0, "at least one owned car qualifies (else the test proves nothing)")
-	assert_string_contains(hq._rally_banner.text, "RWD CARS", "the banner spells out the rally restriction")
+	# The banner spells out the rally's restriction. Derive the expected text from the
+	# rally's actual restriction (same helper HQ uses) rather than pinning "RWD CARS",
+	# so it tracks any retune of the rally's restriction. The banner is upper-cased for
+	# display, so compare case-insensitively.
+	assert_string_contains(hq._rally_banner.text.to_upper(),
+		hq._restriction_text(rally["restriction"]).to_upper(),
+		"the banner spells out the rally restriction")
 
 
 func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
@@ -1276,7 +1282,7 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	assert_true(is_instance_valid(pod._showroom_car), "the won car is spawned once the reveal lands")
 	assert_true(pod._showroom_car.visible, "the revealed car is shown after the spin")
 	var car := _label_texts(pod)
-	assert_string_contains(car, "PORSCHE 911", "the won car is revealed by name")
+	assert_string_contains(car, "911 (930)", "the won car is revealed by name")
 	assert_string_contains(car, "NEW", "an un-owned car reward is flagged NEW")
 	# The car reveal is a single caption line — the big slot label is hidden so the
 	# car name isn't shown twice.

@@ -120,8 +120,8 @@ func nudge_wheels(hp_loss: float, cfg: GameConfig) -> void:
 	var strength := clampf(hp_loss / max_hp, 0.0, 1.0)
 	var base := strength * cfg.damage_wheel_toe_gain
 	for name in WHEEL_NAMES:
-		var sign := 1.0 if randf() < 0.5 else -1.0
-		var delta := sign * base * randf_range(0.5, 1.0)
+		var dir := 1.0 if randf() < 0.5 else -1.0
+		var delta := dir * base * randf_range(0.5, 1.0)
 		wheel_toe[name] = clampf(wheel_toe[name] + delta, -cfg.damage_wheel_toe_max, cfg.damage_wheel_toe_max)
 
 

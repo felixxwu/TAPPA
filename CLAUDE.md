@@ -73,6 +73,21 @@
   only rule out truly broken values (mass > 0, a grip coefficient is finite) are
   fine; pinning the *chosen* value is not. When in doubt, ask: "would a designer
   retuning this in the inspector break my test?" If yes, delete the assertion.
+- **Never depend on a specific catalogue entry existing.** A logic/physics test
+  must not reach into `CarLibrary` / `EngineLibrary` / `RallyLibrary` /
+  `UpgradeLibrary` for a particular authored entry by id (`CarLibrary.by_id("mx5")`,
+  `by_id("porsche911")`, etc.) and lean on that entry's identity or stats — the
+  catalogue is always subject to change (entries get renamed, retuned, or
+  removed), so such a test is brittle by construction. If a test exercises
+  logic or physics, build its OWN synthetic input dict with just the fields the
+  code under test reads (e.g. `{"mass": 1200.0, "peak_torque": 400.0,
+  "redline": 6000.0, "drive_mode": CarLibrary.RWD}` for an eligibility check, or
+  a hand-authored car for a physics sim) rather than a real catalogue car. If a
+  test can ONLY be written against a specific catalogue entry, it's testing the
+  catalogue, not the code — delete it. Iterating the whole table as opaque input
+  ("empty restriction accepts every car in `CARS`", "every drawn part is a real
+  catalogue item") is fine — that's the code's contract, not a dependency on any
+  one entry.
 - When adding or changing functionality, add or update tests in the same piece
   of work: gameplay/logic tests in `tests/headless/`, scene/structure checks in
   `tests/headless/test_smoke.gd`.

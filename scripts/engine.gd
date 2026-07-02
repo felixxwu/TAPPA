@@ -220,10 +220,10 @@ func _update_limiter(cfg: GameConfig) -> bool:
 # damage fraction and with engine load. `bias` (0..1) is how much fires regardless
 # of load — the rest is scaled by `load` (a 0..1 throttle/rpm blend). Pure/static so
 # the maths is unit-testable without pinning the authored config values.
-static func misfire_rate(level: float, load: float, rate_max: float, bias: float) -> float:
+static func misfire_rate(level: float, load_frac: float, rate_max: float, bias: float) -> float:
 	if level <= 0.0:
 		return 0.0
-	var load_factor := bias + (1.0 - bias) * clampf(load, 0.0, 1.0)
+	var load_factor := bias + (1.0 - bias) * clampf(load_frac, 0.0, 1.0)
 	return rate_max * clampf(level, 0.0, 1.0) * load_factor
 
 
@@ -238,8 +238,8 @@ func _update_misfire(cfg: GameConfig, h: float) -> bool:
 	if _misfire_timer > 0.0:
 		_misfire_timer -= h
 		return _misfire_timer > 0.0
-	var load := 0.5 * clampf(throttle, 0.0, 1.0) + 0.5 * clampf(rpm() / cfg.redline_rpm, 0.0, 1.0)
-	var rate := misfire_rate(misfire_level, load, cfg.damage_misfire_rate_max, cfg.damage_misfire_load_bias)
+	var load_frac := 0.5 * clampf(throttle, 0.0, 1.0) + 0.5 * clampf(rpm() / cfg.redline_rpm, 0.0, 1.0)
+	var rate := misfire_rate(misfire_level, load_frac, cfg.damage_misfire_rate_max, cfg.damage_misfire_load_bias)
 	if _rng.randf() < rate * h:
 		_misfire_timer = _rng.randf_range(cfg.damage_misfire_duration_min, cfg.damage_misfire_duration_max)
 		misfire_count += 1

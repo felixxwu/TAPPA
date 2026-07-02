@@ -131,7 +131,7 @@ Gearing (`gear_ratios` + `final_drive` + `shift_time`) lives on the **engine**
 carries its gearbox** ([engine-swap.md](engine-swap.md)). Each engine
 carries its car's real published transmission — e.g. the MX-5's real ND 6-speed
 ratios (`5.087 / 2.991 / 2.035 / 1.594 / 1.286 / 1.000`), the Charger's 3-speed
-TorqueFlite (`2.45 / 1.45 / 1.00`), the 911's 8-speed PDK, the Focus ST's Getrag
+TorqueFlite (`2.45 / 1.45 / 1.00`), the 911 (930)'s classic 4-speed, the Focus ST's Getrag
 M66 6-speed. Only `final_drive` is a game-tuned value (see below); the internal
 ratios are real and differ per car, so gearing character now varies across the
 roster instead of every car sharing one box. (An earlier iteration had every

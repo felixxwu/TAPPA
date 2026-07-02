@@ -80,10 +80,10 @@ const ENGINES: Array[Dictionary] = [
 		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4.5, "shift_time": 0.30,  # TorqueFlite A727 3-speed auto
 	},
 	{
-		"id": "porsche_30_flat6", "name": "3.0 flat-6", "layout": "i6", "mass": 180.0,
-		"redline_rpm": 7500.0, "peak_torque": 450.0, "peak_torque_rpm": 4800.0, "engine_inertia": 0.18,
+		"id": "porsche_30_flat6", "name": "3.0 turbo flat-6", "layout": "i6", "mass": 180.0,
+		"redline_rpm": 6800.0, "peak_torque": 343.0, "peak_torque_rpm": 4000.0, "engine_inertia": 0.18,  # 930 Turbo 3.0: 260 PS @ 5500, 343 Nm @ 4000
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61], "final_drive": 7, "shift_time": 0.06,  # 8-speed PDK
+		"gear_ratios": [3.18, 1.83, 1.26, 0.93], "final_drive": 4.22, "shift_time": 0.25,  # 4-speed manual (930/30)
 	},
 	{
 		"id": "toyota_48_v10", "name": "4.8 V10", "layout": "v10", "mass": 220.0,

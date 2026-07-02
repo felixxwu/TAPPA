@@ -212,15 +212,15 @@ const CARS: Array[Dictionary] = [
 		"suspension_travel": 0.55, "suspension_stiffness": 11.0,  # heavy muscle car, softer & taller
 	},
 	{
-		"name": "Porsche 911",  # 992 Carrera: ~1505 kg, 379 hp, flat-6 (smooth six), RWD
+		"name": "911 (930)",  # 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 2,
-		"mass": 1505.0, "engine": "porsche_30_flat6", "weight_front": 0.39, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~39/61
-		"tire_compound": 1.20,  # sport semi-slick tyres
+		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
+		"tire_compound": 1,
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
-		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
-		"wheel_radius": 0.34, "wheel_width_front": 0.245, "wheel_width_rear": 0.305,  # 245/305 big stagger
+		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
+		"cabin_z": 0.10, "track": 1.47, "wheelbase": 2.27,
+		"wheel_radius": 0.32, "wheel_width_front": 0.185, "wheel_width_rear": 0.215,  # 185/215 the "wide" 930 stagger
 		"suspension_travel": 0.42, "suspension_stiffness": 15.0,  # taut sports car, lower ride
 	},
 	{
@@ -249,7 +249,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
-		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 4,
+		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 3,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 0.95,  # period touring tyres
 		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0,  # long, brick-like body → real aero drag

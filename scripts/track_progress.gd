@@ -45,10 +45,10 @@ var _best_reset: Transform3D
 
 # Wire the manager to a freshly generated track. Seeds progress at the offset
 # nearest the spawn so the car doesn't read as starting mid-track.
-func setup(centerline: Curve2D, car: Node, terrain: Node, finish_offset := -1.0) -> void:
+func setup(centerline: Curve2D, car: Node, terrain: Node, finish_off := -1.0) -> void:
 	_centerline = centerline
 	_baked_length = centerline.get_baked_length()
-	_finish_offset = _baked_length if finish_offset < 0.0 else minf(finish_offset, _baked_length)
+	_finish_offset = _baked_length if finish_off < 0.0 else minf(finish_off, _baked_length)
 	_car = car
 	_terrain = terrain
 	# Seed progress at the spawn. A global nearest-point query is safe here: the car

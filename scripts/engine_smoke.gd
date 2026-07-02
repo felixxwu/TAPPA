@@ -110,11 +110,11 @@ func _build_pool() -> void:
 
 
 # Write a slot's uniform scale (basis diagonal), origin, and alpha into the buffer.
-func _write_slot(i: int, p: Vector3, scale: float, alpha: float) -> void:
+func _write_slot(i: int, p: Vector3, slot_scale: float, alpha: float) -> void:
 	var b := i * STRIDE
-	_buffer[b + 0] = scale
-	_buffer[b + 5] = scale
-	_buffer[b + 10] = scale
+	_buffer[b + 0] = slot_scale
+	_buffer[b + 5] = slot_scale
+	_buffer[b + 10] = slot_scale
 	_buffer[b + 3] = p.x
 	_buffer[b + 7] = p.y
 	_buffer[b + 11] = p.z
@@ -198,9 +198,9 @@ func _advance(delta: float) -> bool:
 		_pos[i] += _vel[i] * delta
 		# frac 0 at birth -> 1 at death, driving both growth and the alpha fade.
 		var frac := 1.0 - _life[i] / maxf(_max_life[i], 1e-6)
-		var scale := lerpf(1.0, cfg.engine_smoke_growth, frac)
+		var slot_scale := lerpf(1.0, cfg.engine_smoke_growth, frac)
 		var alpha := cfg.engine_smoke_color.a * (1.0 - frac)
-		_write_slot(i, _pos[i], scale, alpha)
+		_write_slot(i, _pos[i], slot_scale, alpha)
 	return true
 
 
