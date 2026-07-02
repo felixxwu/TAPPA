@@ -14,6 +14,7 @@ traction_ellipse_ratio = 0.7
 wheel_roll_influence = 0.5
 wheel_friction_slip_front = 0.5
 wheel_friction_slip_rear = 0.5
+tire_load_sensitivity = 0.0
 suspension_travel = 0.6
 rev_limiter_band = 700.0
 engine_inertia = 0.15

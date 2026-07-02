@@ -53,8 +53,7 @@ func test_each_spec_is_sane() -> void:
 			if g > 0:
 				assert_lt(ratios[g], ratios[g - 1],
 					who + " gear %d shorter than gear %d" % [g + 1, g])
-		assert_gt(spec["grip_front"], 0.0, who + " front grip is positive")
-		assert_gt(spec["grip_rear"], 0.0, who + " rear grip is positive")
+		assert_gt(spec["tire_compound"], 0.0, who + " tyre compound is positive")
 		assert_false(EngineLibrary.by_id(spec["engine"]).is_empty(), who + " engine id resolves")
 		assert_between(spec["drive_mode"], 0, 2, who + " drive_mode is RWD/AWD/FWD")
 		# drag is NOT asserted: it's a per-car tuning knob and 0 is valid (slippery
@@ -69,7 +68,8 @@ func test_each_spec_is_sane() -> void:
 		assert_gt(spec["track"], 0.0, who + " track positive")
 		assert_gt(spec["wheelbase"], 0.0, who + " wheelbase positive")
 		assert_gt(spec["wheel_radius"], 0.0, who + " wheel_radius positive")
-		assert_gt(spec["wheel_width"], 0.0, who + " wheel_width positive")
+		assert_gt(spec["wheel_width_front"], 0.0, who + " front tyre width positive")
+		assert_gt(spec["wheel_width_rear"], 0.0, who + " rear tyre width positive")
 		# Suspension: travel doubles as the wheel raycast length (must clear the
 		# wheel radius so the ray reaches the ground), stiffness in the export range.
 		assert_gt(spec["suspension_travel"], spec["wheel_radius"], who + " spring travel clears wheel radius")
@@ -99,6 +99,56 @@ func test_car_ids_are_unique_and_stable_lookups_work() -> void:
 	assert_true(CarLibrary.by_id("nope").is_empty(), "unknown id -> empty dict")
 
 
+
+
+# A square-tyre, 50/50 car whose per-wheel load sits exactly at the reference pressure
+# reads back its compound as-is (load factor = 1.0). Verifies the stat is anchored on
+# the compound, not some hidden scale.
+func test_max_lateral_g_returns_compound_at_reference_load() -> void:
+	var cfg := GameConfig.new()
+	# Pick a mass so each of 4 wheels carries exactly ref_pressure × width.
+	var width := 0.225
+	var per_wheel := cfg.tire_ref_pressure * width          # load that gives factor 1.0
+	var mass := per_wheel * 4.0 / (CarLibrary._G)           # 50/50 -> equal on all wheels
+	var entry := {"tire_compound": 1.0, "mass": mass, "weight_front": 0.5,
+		"wheel_width_front": width, "wheel_width_rear": width}
+	assert_almost_eq(CarLibrary.max_lateral_g(entry, cfg), 1.0, 0.0001,
+		"at reference pressure the G equals the compound")
+
+
+func test_max_lateral_g_scales_with_compound() -> void:
+	# The stat must be monotonic in the rubber compound, all else equal.
+	var cfg := GameConfig.new()
+	var base := {"mass": 1200.0, "weight_front": 0.5, "wheel_width_front": 0.225, "wheel_width_rear": 0.225}
+	var grippy := base.duplicate(); grippy["tire_compound"] = 1.3
+	var hard := base.duplicate(); hard["tire_compound"] = 0.85
+	assert_gt(CarLibrary.max_lateral_g(grippy, cfg), CarLibrary.max_lateral_g(hard, cfg),
+		"stickier compound -> higher lateral G")
+
+
+func test_max_lateral_g_drops_with_mass_and_recovers_with_width() -> void:
+	# Load sensitivity: adding mass on the same tyres lowers G; widening the tyres
+	# raises it back. This is the whole point of the accurate-deep model.
+	var cfg := GameConfig.new()
+	var light := {"tire_compound": 1.0, "mass": 900.0, "weight_front": 0.5,
+		"wheel_width_front": 0.225, "wheel_width_rear": 0.225}
+	var heavy := light.duplicate(); heavy["mass"] = 1800.0
+	var heavy_wide := heavy.duplicate()
+	heavy_wide["wheel_width_front"] = 0.315; heavy_wide["wheel_width_rear"] = 0.315
+	assert_lt(CarLibrary.max_lateral_g(heavy, cfg), CarLibrary.max_lateral_g(light, cfg),
+		"more mass on the same tyres -> less grip")
+	assert_gt(CarLibrary.max_lateral_g(heavy_wide, cfg), CarLibrary.max_lateral_g(heavy, cfg),
+		"wider tyres recover grip lost to mass")
+
+
+func test_tire_load_factor_is_neutral_when_sensitivity_is_zero() -> void:
+	# With the effect disabled the factor is exactly 1.0 for any load/width.
+	var cfg := GameConfig.new()
+	cfg.tire_load_sensitivity = 0.0
+	assert_almost_eq(cfg.tire_load_factor(5000.0, 0.2), 1.0, 0.0001, "k=0 -> no load effect")
+	# And a degenerate (zero/negative) load or width is safely neutral, never a divide blow-up.
+	assert_eq(cfg.tire_load_factor(0.0, 0.2), 1.0, "zero load -> neutral")
+	assert_eq(cfg.tire_load_factor(5000.0, 0.0), 1.0, "zero width -> neutral")
 
 
 func test_main_boots_as_first_car() -> void:
@@ -138,8 +188,11 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	# has one upshift slot per gear (the top gear's is INF).
 	assert_eq(_car.drivetrain.engine.shift_up_speeds.size(), (spec["gear_ratios"] as Array).size(),
 		"shift speeds recomputed for the new gear count")
-	assert_almost_eq(Config.data.wheel_friction_slip_front, float(spec["grip_front"]), 0.001, "front grip overlaid")
-	assert_almost_eq(Config.data.wheel_friction_slip_rear, float(spec["grip_rear"]), 0.001, "rear grip overlaid")
+	# Both axle μ are seeded from the car's single tyre compound; widths overlaid per axle.
+	assert_almost_eq(Config.data.wheel_friction_slip_front, float(spec["tire_compound"]), 0.001, "front grip seeded from compound")
+	assert_almost_eq(Config.data.wheel_friction_slip_rear, float(spec["tire_compound"]), 0.001, "rear grip seeded from compound")
+	assert_almost_eq(Config.data.wheel_width_front, float(spec["wheel_width_front"]), 0.001, "front tyre width overlaid")
+	assert_almost_eq(Config.data.wheel_width_rear, float(spec["wheel_width_rear"]), 0.001, "rear tyre width overlaid")
 	assert_eq(_car.drivetrain.drive_mode, spec["drive_mode"] as int, "drive layout overlaid")
 
 	# Geometry: chassis box + wheel positions follow the spec.

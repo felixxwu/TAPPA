@@ -2677,11 +2677,11 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 		hp_text = "WRECKED"
 	else:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
-	return "%s | %s | %s | %.2f kW/kg | %s" % [
+	var meta := UpgradeLibrary.effective_meta(owned, entry)
+	return "%s | %.2f G | %.2f kW/kg | %s" % [
 		_drive_text(int(entry.get("drive_mode", -1))),
-		String(entry.get("country", "?")),
-		String(entry.get("car_type", "?")),
-		CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)),
+		CarLibrary.max_lateral_g(meta, Config.data),
+		CarLibrary.power_to_weight(meta),
 		hp_text,
 	]
 

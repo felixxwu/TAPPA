@@ -570,8 +570,14 @@ func apply_car(index: int) -> String:
 			ratios.append(float(gr))
 		cfg.gear_ratios = ratios
 	cfg.final_drive = spec.get("final_drive", cfg.final_drive)
-	cfg.wheel_friction_slip_front = spec["grip_front"]
-	cfg.wheel_friction_slip_rear = spec["grip_rear"]
+	# One tyre compound per car (same rubber both axles); seed BOTH runtime axle μ
+	# from it. The grip_balance tuning slider (TuningLibrary.apply, run after) shifts
+	# them apart. Front/rear GRIP balance otherwise emerges physically from the widths
+	# below + weight_front via the drivetrain's load-sensitivity term.
+	cfg.wheel_friction_slip_front = spec["tire_compound"]
+	cfg.wheel_friction_slip_rear = spec["tire_compound"]
+	cfg.wheel_width_front = spec["wheel_width_front"]
+	cfg.wheel_width_rear = spec["wheel_width_rear"]
 	cfg.shift_time = spec["shift_time"]
 	# Per-car aero downforce (N per (m/s)² at each axle). SET (not added) so a spec of
 	# 0 means 0 — no hidden global baseline — and so re-fielding can't accumulate the
@@ -637,7 +643,8 @@ func apply_car(index: int) -> String:
 	# wheel to the new track/wheelbase (origin only, preserving the scene's
 	# axle-flip basis) and set its physics radius.
 	var radius: float = spec["wheel_radius"]
-	var width: float = spec["wheel_width"]
+	var width_front: float = spec["wheel_width_front"]
+	var width_rear: float = spec["wheel_width_rear"]
 	var half_track: float = spec["track"] * 0.5
 	var half_base: float = spec["wheelbase"] * 0.5
 	var wheels := find_children("*", "VehicleWheel3D", false)
@@ -648,6 +655,8 @@ func apply_car(index: int) -> String:
 		var mount: Vector3 = _wheel_mounts.get(wheel, wheel.position)
 		wheel.position = Vector3(signf(mount.x) * half_track, mount.y, signf(mount.z) * half_base)
 		wheel.wheel_radius = radius
+		# Steering wheels are the front axle; staggered cars get fatter rears.
+		var width: float = width_front if wheel.use_as_steering else width_rear
 		# Per-car, per-axle suspension (mirrors _ready()'s setup): front/rear rate + travel
 		# resolved from weight_front / suspension_travel_{front,rear}, dampers derived per axle.
 		_apply_suspension(wheel)

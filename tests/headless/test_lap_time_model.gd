@@ -5,7 +5,7 @@ const LapTimeModel = preload("res://scripts/lap_time_model.gd")
 # A reference car with known SI stats (mirrors CarLibrary fields used by the model).
 const CAR := {
 	"mass": 1200.0, "peak_torque": 300.0, "redline": 7000.0,
-	"grip_front": 1.1, "grip_rear": 1.1, "drag": 0.2,
+	"tire_compound": 1.1, "drag": 0.2,
 }
 
 func _straight_track(length: float) -> Dictionary:
@@ -39,8 +39,8 @@ func test_more_power_is_faster():
 	assert_lt(t_fast, t_slow, "more power => lower time")
 
 func test_more_grip_is_faster_in_corners():
-	var low := CAR.duplicate(); low["grip_front"] = 0.7; low["grip_rear"] = 0.7
-	var high := CAR.duplicate(); high["grip_front"] = 1.4; high["grip_rear"] = 1.4
+	var low := CAR.duplicate(); low["tire_compound"] = 0.7
+	var high := CAR.duplicate(); high["tire_compound"] = 1.4
 	var track := _arc_track(40.0, PI)   # a sustained 40 m radius corner
 	assert_lt(LapTimeModel.optimum_ms(track, high, {}),
 			LapTimeModel.optimum_ms(track, low, {}), "more grip => lower time in a corner")

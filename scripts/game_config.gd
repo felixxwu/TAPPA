@@ -91,8 +91,28 @@ var peak_torque_rpm := 4500.0
 ## from braking/throttle, rollover-proof), 1 = at the contact patch (full,
 ## physical roll and pitch).
 @export_range(0.0, 1.0) var wheel_roll_influence := 0.1
+## Runtime per-axle tyre μ. apply_car() seeds BOTH from the car's single
+## tire_compound (same rubber front and rear); the grip_balance tuning slider
+## (TuningLibrary) then shifts them apart to trim handling. The drivetrain scales
+## these by the surface multiplier AND the load-sensitivity factor (see
+## tire_load_factor) to get each wheel's live μ.
 @export var wheel_friction_slip_front := 0.8
 @export var wheel_friction_slip_rear := 0.6
+## Tyre section width (m) per axle; apply_car() copies these from the CarLibrary
+## spec's wheel_width_front / wheel_width_rear. Used BOTH to size the wheel meshes
+## (car.gd) and to feed tire_load_factor: a wider tyre spreads the axle load over
+## more contact patch, so it holds more grip under the same weight.
+@export var wheel_width_front := 0.225
+@export var wheel_width_rear := 0.225
+## Tyre load sensitivity: a real tyre's μ drops as the vertical load pressed through
+## its contact patch rises. tire_load_factor models this as (ref_pressure / actual)^k,
+## where pressure ~ load / width. k (this) keeps it gentle — real tyres vary only a few
+## percent; 0 disables the effect entirely (μ = compound regardless of load/width).
+@export_range(0.0, 0.5) var tire_load_sensitivity := 0.12
+## Reference contact pressure (N per m of tyre width) at which the load factor is 1.0.
+## Calibrated so a mid-pack car sits at ~1.0; heavier-per-width tyres fall below, lighter
+## or wider rise above.
+@export var tire_ref_pressure := 14000.0
 ## Per-surface grip multipliers on the base tire μ. Gravel is the standard 1.0
 ## (the generated road's default surface); grass (off the road) is lower and
 ## tarmac higher. A wheel's multiplier is resolved from the terrain at its
@@ -1031,6 +1051,22 @@ func axle_stiffness(front: bool) -> float:
 func axle_travel(front: bool) -> float:
 	var t: float = suspension_travel_front if front else suspension_travel_rear
 	return t if t > 0.0 else suspension_travel
+
+
+# Tyre load-sensitivity multiplier on a tyre's compound μ. Real tyre grip is NOT the
+# textbook load-independent μN: the effective μ falls as the load pressed through the
+# contact patch rises, and a wider tyre spreads that load over more rubber. So grip
+# tracks load-per-width, not load alone. We model the multiplier as (ref / P)^k where
+# P = normal_force / width and k = tire_load_sensitivity: >1 when a tyre is lightly
+# loaded or wide, <1 when heavily loaded or narrow, exactly 1 at tire_ref_pressure.
+# The SAME function feeds both the physics (drivetrain per-wheel μ, with the live
+# suspension normal force — so weight transfer shifts grip for free) and the car-select
+# lateral-G stat (with static axle loads), so the panel can't disagree with the car.
+func tire_load_factor(normal_force: float, width: float) -> float:
+	if normal_force <= 0.0 or width <= 0.0:
+		return 1.0
+	var pressure := normal_force / width
+	return pow(tire_ref_pressure / pressure, tire_load_sensitivity)
 
 
 # Critically damped for the spring rate. Godot scales each wheel's

@@ -319,7 +319,7 @@ keep parked. `◄ ►` (or
 shot from in front of the car** (`menu_camera_offset` is added in world space; +Z sits
 the eye ahead of the nose-out car, looking back past it at the garage) over
 `menu_camera_move_time`; the focused car **is** the selected car. The overlay shows
-its name + stats (drive / country / type / power-to-weight / **Health %**); there is
+its name + stats (drive / **lateral G** / power-to-weight / **Health %**); there is
 no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
 Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_kit`)

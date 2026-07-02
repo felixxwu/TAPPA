@@ -88,7 +88,10 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 			mu = (
 				cfg.wheel_friction_slip_front if wheel.use_as_steering
 				else cfg.wheel_friction_slip_rear
-			) * surface_grip(cfg, cp),
+			) * surface_grip(cfg, cp) * cfg.tire_load_factor(
+				n_force,
+				cfg.wheel_width_front if wheel.use_as_steering else cfg.wheel_width_rear
+			),
 			impulse_long = 0.0, impulse_lat = 0.0,
 		})
 

@@ -38,7 +38,36 @@ custom combined-slip tire model and explicit RWD/AWD/FWD behavior.
   - `s ≤ tire_slip_peak`: grip rises linearly 0 → 1.
   - `s > tire_slip_peak`: grip rolls off 1.0 → `sliding_grip_ratio` over ~3× peak.
 - Peak grip scaled by `wheel_friction_slip_front` / `_rear` (μ), then by a
-  **per-wheel surface multiplier** (`surface_grip`).
+  **per-wheel surface multiplier** (`surface_grip`), then by a **per-wheel
+  load-sensitivity factor** (`GameConfig.tire_load_factor`, see below).
+
+### Compound, width and load sensitivity
+
+A car authors **one `tire_compound`** (the rubber's intrinsic μ, ~0.85 hard economy
+→ ~1.30 track) plus **`wheel_width_front` / `wheel_width_rear`** (real section widths).
+`car.gd:apply_car` seeds BOTH `wheel_friction_slip_front/rear` from the single compound
+(the `grip_balance` tuning slider then trims them apart) and copies the widths onto the
+config.
+
+Effective μ is **not** the textbook load-independent `μN`. A real tyre's μ falls as the
+load pressed through its contact patch rises, and a wider tyre spreads that load over
+more rubber. `tire_load_factor(normal_force, width)` models this as
+`(tire_ref_pressure / (normal_force/width))^tire_load_sensitivity` — >1 when a tyre is
+lightly loaded or wide, <1 when heavily loaded or narrow, 1.0 at the reference pressure.
+The exponent (~0.12) keeps it gentle, matching real tyres (a few percent, not a cliff);
+set it to 0 to disable the effect.
+
+Because the physics feeds it the **live** suspension `n_force`, weight transfer emerges
+for free (braking loads the fronts → their μ dips), and front/rear grip **balance** now
+comes from the widths + `weight_front` rather than a per-axle grip knob. Consequences:
+**adding mass on the same tyres lowers grip; widening the tyres recovers it** — so both
+the lateral-G and the power-to-weight stats are genuinely driven by weight.
+
+The car-select panel shows this as a **lateral-G** figure (`CarLibrary.max_lateral_g`):
+each axle's static per-wheel load (`mass·g·weight_split/2`) run through the SAME
+`tire_load_factor`, times the compound, averaged over the two axles — so the panel can't
+disagree with what the car actually does. Note `wheel_width_*` is dual-purpose: it sizes
+the wheel meshes AND drives grip, so staggered cars both look and handle staggered.
 
 ## Per-wheel surface grip
 

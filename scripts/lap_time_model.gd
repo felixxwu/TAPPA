@@ -126,7 +126,7 @@ static func _curvature_profile(centerline: Curve2D, length: float) -> Dictionary
 # Average tyre grip (front+rear) blended by the event's surface mix, using the
 # GameConfig gravel/tarmac grip multipliers (matches rally_library's surface model).
 static func _surface_grip(car_meta: Dictionary, event: Dictionary) -> float:
-	var base := 0.5 * (float(car_meta.get("grip_front", 1.0)) + float(car_meta.get("grip_rear", 1.0)))
+	var base := float(car_meta.get("tire_compound", 1.0))
 	var tarmac := RallyLibrary.event_tarmac_fraction(event)
 	var cfg: GameConfig = Config.data
 	return base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
