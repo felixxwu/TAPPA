@@ -184,32 +184,39 @@ func test_every_car_applies_its_own_shift_time() -> void:
 
 
 func test_every_car_applies_its_own_suspension() -> void:
-	# Selecting a car overlays its spring travel + stiffness onto the live config
-	# AND onto all four wheels (dampers re-derived from stiffness), so each car
-	# rides on its own suspension rather than one shared global setup.
+	# Selecting a car overlays its spring travel + overall rate onto the live config
+	# AND onto all four wheels, with the rate split front/rear by weight_front
+	# (axle_stiffness) and dampers re-derived per axle — so each car rides on its own
+	# per-axle suspension rather than one shared global setup. This asserts the
+	# resolution LOGIC (rate = base x 2 x axle-weight-fraction, damper = sqrt(rate)),
+	# not the authored numbers.
 	var travels := {}
 	var stiffnesses := {}
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]
 		_select(i)
 		await _wait(5)
+		var cfg: GameConfig = Config.data
 		var travel: float = float(spec["suspension_travel"])
 		var stiffness: float = float(spec["suspension_stiffness"])
-		assert_almost_eq(Config.data.suspension_travel, travel, 0.0001,
+		assert_almost_eq(cfg.suspension_travel, travel, 0.0001,
 			"%s: applies its own suspension_travel" % spec["name"])
-		assert_almost_eq(Config.data.suspension_stiffness, stiffness, 0.0001,
+		assert_almost_eq(cfg.suspension_stiffness, stiffness, 0.0001,
 			"%s: applies its own suspension_stiffness" % spec["name"])
 		for wheel in _car.find_children("*", "VehicleWheel3D", false):
-			assert_almost_eq(wheel.suspension_travel, travel, 0.0001,
-				"%s: %s travel set" % [spec["name"], wheel.name])
-			assert_almost_eq(wheel.wheel_rest_length, travel, 0.0001,
+			var front: bool = wheel.position.z < 0.0
+			var k: float = cfg.axle_stiffness(front)
+			var axle_travel: float = cfg.axle_travel(front)
+			assert_almost_eq(wheel.suspension_travel, axle_travel, 0.0001,
+				"%s: %s travel set per axle" % [spec["name"], wheel.name])
+			assert_almost_eq(wheel.wheel_rest_length, axle_travel, 0.0001,
 				"%s: %s rest length matches travel" % [spec["name"], wheel.name])
-			assert_almost_eq(wheel.suspension_stiffness, stiffness, 0.0001,
-				"%s: %s stiffness set" % [spec["name"], wheel.name])
-			assert_almost_eq(wheel.damping_compression, sqrt(stiffness), 0.0001,
-				"%s: %s compression damper derived from stiffness" % [spec["name"], wheel.name])
-			assert_almost_eq(wheel.damping_relaxation, 1.5 * sqrt(stiffness), 0.0001,
-				"%s: %s rebound damper derived from stiffness" % [spec["name"], wheel.name])
+			assert_almost_eq(wheel.suspension_stiffness, k, 0.0001,
+				"%s: %s stiffness split from base by weight" % [spec["name"], wheel.name])
+			assert_almost_eq(wheel.damping_compression, sqrt(k), 0.0001,
+				"%s: %s compression damper derived from its axle rate" % [spec["name"], wheel.name])
+			assert_almost_eq(wheel.damping_relaxation, 1.5 * sqrt(k), 0.0001,
+				"%s: %s rebound damper derived from its axle rate" % [spec["name"], wheel.name])
 		travels[travel] = true
 		stiffnesses[stiffness] = true
 	assert_gt(travels.size(), 1, "cars use a range of spring travels, not one shared value")

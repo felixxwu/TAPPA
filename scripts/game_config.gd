@@ -106,10 +106,23 @@ var peak_torque_rpm := 4500.0
 ## tire force falls from full grip at tire_slip_peak down to this when locked.
 @export_range(0.1, 1.0) var sliding_grip_ratio := 0.7
 @export var suspension_travel := 0.5  # also used as the wheel rest length (ray length)
-## Spring rate of the suspension. Dampers are derived from this (see functions
+## Per-axle spring travel / rest length (m) OVERRIDES. 0 = inherit suspension_travel
+## (the common case); a positive value lets a body run a longer front or rear stroke
+## (rake / wheel-well fit). apply_car() sets them per car; axle_travel() resolves the
+## right one per wheel, falling back to suspension_travel when the override is 0.
+@export var suspension_travel_front := 0.0
+@export var suspension_travel_rear := 0.0
+## Spring rate of the suspension — this is the OVERALL rate; the front/rear rates
+## are derived from it by weight_front (see axle_stiffness), so a heavier axle gets
+## a proportionally stiffer spring and the car sits level instead of drooping onto
+## its heavy end. Dampers are derived from the resolved per-axle rate (see functions
 ## below), not configured separately.
 @export_range(0.1, 50.0) var suspension_stiffness := 10.0
 # Dampers are derived from stiffness (see functions below), not configured.
+## Static front-axle weight fraction (0..1); apply_car() copies it from the
+## CarLibrary spec's weight_front. Drives BOTH the custom centre of mass (car.gd)
+## and the front/rear spring-rate split (axle_stiffness). 0.5 = 50/50.
+@export_range(0.0, 1.0) var weight_front := 0.5
 @export var wheel_radius := 0.35
 ## Extra height (m) the car is lifted to on spawn, reset and car swaps, above
 ## its authored start position — keeps the wheels from clipping under the
@@ -999,17 +1012,34 @@ var peak_torque_rpm := 4500.0
 @export_range(0.0, 4.0) var texture_lod_bias := 0.75
 
 
+# Per-axle spring rate: the overall suspension_stiffness split front/rear by the
+# static weight fraction, so each axle's rate is proportional to the load it carries
+# and the car sits LEVEL at rest (compression = load / rate is then equal front and
+# rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car
+# gets the base rate on both axles (unchanged), a nose-heavy car a stiffer front.
+func axle_stiffness(front: bool) -> float:
+	return suspension_stiffness * 2.0 * (weight_front if front else 1.0 - weight_front)
+
+
+# Per-axle spring travel / rest length; a 0 override inherits suspension_travel.
+func axle_travel(front: bool) -> float:
+	var t: float = suspension_travel_front if front else suspension_travel_rear
+	return t if t > 0.0 else suspension_travel
+
+
 # Critically damped for the spring rate. Godot scales each wheel's
 # mass-normalized spring/damper by the full chassis mass, so with 4 wheels the
 # bounce mode is x'' + 4c x' + 4k x = 0 and per-wheel critical damping is
-# sqrt(stiffness), not the textbook 2 * sqrt(stiffness).
-func suspension_damping_compression() -> float:
-	return sqrt(suspension_stiffness)
+# sqrt(stiffness), not the textbook 2 * sqrt(stiffness). Pass a per-axle rate
+# (axle_stiffness) so each axle is critically damped for ITS own spring; the
+# argument defaults to the overall rate.
+func suspension_damping_compression(stiffness := -1.0) -> float:
+	return sqrt(stiffness if stiffness >= 0.0 else suspension_stiffness)
 
 
 # Rebound damper runs 1.5x the compression value for stability.
-func suspension_damping_relaxation() -> float:
-	return 1.5 * suspension_damping_compression()
+func suspension_damping_relaxation(stiffness := -1.0) -> float:
+	return 1.5 * suspension_damping_compression(stiffness)
 
 
 # Firing angles normalized to the 0..1 crank cycle (720° four-stroke). When

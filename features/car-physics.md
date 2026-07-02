@@ -72,17 +72,33 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
 ## Suspension
 
 Springs configured from `suspension_stiffness` / `suspension_travel`. Damping is
-derived in `GameConfig`: compression = √stiffness (critically damped), rebound =
+derived in `GameConfig`: compression = √rate (critically damped), rebound =
 1.5× compression. Per-wheel normal force is computed in
 `Drivetrain.wheel_normal_force()`.
 
+**Per-axle spring rates.** The authored `suspension_stiffness` is the car's
+*overall* rate; the front/rear rates are not authored but **split from it by the
+weight distribution** — `GameConfig.axle_stiffness(front)` returns
+`suspension_stiffness × 2 × axle_weight_fraction` (the ×2 keeps the two-axle mean
+at the base rate, so a 50/50 car gets the base rate on both). Because static
+compression is `load / rate` and both scale with the axle's weight fraction, the
+compression works out **equal front and rear** (`≈ g/(4·rate)`, independent of
+distribution) — so a nose-heavy car sits **level** instead of drooping onto its
+heavy end. Dampers are re-derived per axle from the resolved rate. This is the
+partner to the per-car centre of mass (see "Weight distribution"): `weight_front`
+drives both.
+
 `suspension_travel` doubles as the wheel raycast / rest length, so a shorter
-travel also lowers ride height. Both values are **per-car**: each `CarLibrary`
-entry carries its own `suspension_travel` + `suspension_stiffness`, overlaid onto
-the live config by `car.gd`'s `apply_car()` and pushed onto all four wheels
-(dampers re-derived). Soft & tall roadster/muscle (MX-5, Mustang) vs stiff & low
-supercars (911, LFA, Aventador). The `config/game_config.tres` values are the
-baseline/fallback.
+travel also lowers ride height. Optional `suspension_travel_front` /
+`suspension_travel_rear` overrides (0 = inherit `suspension_travel`) let a body run
+a longer front or rear stroke for rake / wheel-well fit; `axle_travel(front)`
+resolves them per wheel. These values are all **per-car**: each `CarLibrary` entry
+carries its own `suspension_travel` + `suspension_stiffness` (+ optional per-axle
+travel), overlaid onto the live config by `car.gd`'s `apply_car()` and pushed onto
+each wheel per axle via `_apply_suspension()` (dampers re-derived; the standalone
+`_sync_suspension_to_wheels()` re-pushes after an upgrade mutates the rate). Soft &
+tall roadster/muscle (MX-5, Mustang) vs stiff & low supercars (911, LFA,
+Aventador). The `config/game_config.tres` values are the baseline/fallback.
 
 ## Weight distribution (centre of mass)
 

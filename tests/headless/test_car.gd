@@ -663,3 +663,33 @@ func test_nose_heavy_car_sits_com_forward_of_tail_heavy() -> void:
 	_car.apply_car(CarLibrary.index_of("aventador"))  # tail-heavy mid-engine
 	var tail_z := _car.center_of_mass.z
 	assert_lt(nose_z, tail_z, "nose-heavy CoM sits forward (-Z) of a tail-heavy car's")
+
+
+func test_nose_heavy_car_settles_level_not_drooping() -> void:
+	# The front/rear spring-rate split (GameConfig.axle_stiffness) scales each axle's
+	# rate with the load it carries, so static compression is equal front and rear and
+	# a nose-heavy car sits LEVEL at rest instead of drooping onto its front. Settle a
+	# strongly nose-biased car from the spawn clearance and check the chassis pitch is
+	# ~flat (forward.y ~ 0), not pitched nose-down.
+	_car.apply_car(CarLibrary.index_of("focus"))  # nose-heavy FWD
+	await _wait_physics(150)
+	assert_lt(_car.linear_velocity.length(), 0.6, "car has settled at rest")
+	var forward := -_car.global_transform.basis.z
+	assert_lt(absf(forward.y), 0.06,
+		"nose-heavy car settles roughly level, not nose-down (pitch sin = %.3f)" % forward.y)
+
+
+func test_axle_rate_splits_toward_the_heavier_axle() -> void:
+	# LOGIC (not pinned values): axle_stiffness splits the overall rate by weight, so
+	# for a nose-heavy car the front spring is stiffer than the rear, and the mean of
+	# the two axle rates stays at the overall suspension_stiffness.
+	var cfg: GameConfig = Config.data
+	cfg.suspension_stiffness = 12.0
+	cfg.weight_front = 0.62
+	assert_gt(cfg.axle_stiffness(true), cfg.axle_stiffness(false),
+		"nose-heavy: front spring stiffer than rear")
+	assert_almost_eq((cfg.axle_stiffness(true) + cfg.axle_stiffness(false)) * 0.5, 12.0, 0.0001,
+		"mean axle rate stays at the overall suspension_stiffness")
+	cfg.weight_front = 0.5
+	assert_almost_eq(cfg.axle_stiffness(true), cfg.axle_stiffness(false), 0.0001,
+		"50/50: front and rear share the base rate")

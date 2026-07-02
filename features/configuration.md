@@ -41,8 +41,11 @@ the `.tres` requires a scene reload to take effect.
 | `wheel_roll_influence` | 0.1 | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM, 1 = contact patch |
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |
 | `wheel_friction_slip_rear` | 0.6 | Rear tire grip coefficient μ |
-| `suspension_travel` | 0.5 | Spring compression distance (m) |
-| `suspension_stiffness` | 10.0 | Spring rate; dampers derived from it |
+| `suspension_travel` | 0.5 | Spring compression distance (m) / wheel rest length |
+| `suspension_travel_front` | 0.0 | Front travel override; 0 = inherit `suspension_travel` |
+| `suspension_travel_rear` | 0.0 | Rear travel override; 0 = inherit `suspension_travel` |
+| `suspension_stiffness` | 10.0 | Overall spring rate; split front/rear by `weight_front` (`axle_stiffness`), dampers derived per axle |
+| `weight_front` | 0.5 | Static front-axle weight fraction; drives the centre of mass AND the spring-rate split |
 
 ### Engine & Transmission
 | Property | Default | Purpose |
@@ -144,8 +147,10 @@ only writer of these fields. See
 
 ## Derived-value helpers
 
-- `suspension_damping_compression()` → √`suspension_stiffness` (critically damped)
-- `suspension_damping_relaxation()` → 1.5× compression (stiffer rebound)
+- `axle_stiffness(front)` → `suspension_stiffness × 2 × axle_weight_fraction` (front/rear rate split by `weight_front`; ×2 keeps the two-axle mean at the base rate)
+- `axle_travel(front)` → the front/rear travel override, or `suspension_travel` when the override is 0
+- `suspension_damping_compression(rate)` → √rate (critically damped; defaults to `suspension_stiffness`)
+- `suspension_damping_relaxation(rate)` → 1.5× compression (stiffer rebound)
 - `engine_firing_phases()` → firing angles normalized to 0..1 crank cycle
 - `terrain_layers()` → `[Vector2(wavelength, amplitude), ...]`
 

@@ -129,7 +129,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1467.0, "engine": "ford_25t_i5", "weight_front": 0.62,  # transverse turbo I5, nose-heavy FWD
 		# Real Getrag M66 6-speed ratios (Focus ST Mk2 2.5T).
 		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 10,
-		"grip_front": 1.05, "grip_rear": 0.8, "shift_time": 0.30,  # 6-speed manual, FWD
+		"grip_front": 1, "grip_rear": 0.85, "shift_time": 0.30,  # 6-speed manual, FWD
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
@@ -151,7 +151,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 890.0, "engine": "renault_12_i4", "weight_front": 0.62,  # transverse FWD city car, nose-heavy
 		# Real Renault JB1 5-speed ratios (Twingo Mk1 1.2 16V).
 		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 9,
-		"grip_front": 0.5, "grip_rear": 0.5, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
+		"grip_front": 0.5, "grip_rear": 0.6, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
@@ -209,7 +209,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1750.0, "engine": "mopar_440_v8", "weight_front": 0.56,  # big-block V8 up front, nose-heavy
 		# Real 3-speed TorqueFlite A727 automatic ratios ('69 Charger R/T 440).
 		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4,
-		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.30,  # 3-speed TorqueFlite auto, RWD
+		"grip_front": 1, "grip_rear": 0.9, "shift_time": 0.30,  # 3-speed TorqueFlite auto, RWD
 		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is

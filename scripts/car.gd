@@ -107,11 +107,7 @@ func _ready() -> void:
 		# All contact friction is handled by the Drivetrain tire model; the
 		# built-in solver only does suspension + raycasts.
 		wheel.wheel_friction_slip = 0.0
-		wheel.suspension_travel = cfg.suspension_travel
-		wheel.wheel_rest_length = cfg.suspension_travel
-		wheel.suspension_stiffness = cfg.suspension_stiffness
-		wheel.damping_compression = cfg.suspension_damping_compression()
-		wheel.damping_relaxation = cfg.suspension_damping_relaxation()
+		_apply_suspension(wheel)
 		# Godot caps the suspension force at suspension_max_force (default 6000 N),
 		# which is far below what a ~1.5 t car needs to arrest a hard landing — the
 		# spring would clip and the chassis would bottom out. Lift the cap well
@@ -578,10 +574,16 @@ func apply_car(index: int) -> String:
 	# value. apply_owned applies the aero_kit upgrade ON TOP of this afterwards.
 	cfg.downforce_front = spec.get("downforce_front", 0.0)
 	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
-	# Per-car suspension: spring travel + rate. Dampers stay derived from
-	# stiffness (see GameConfig.suspension_damping_*). Pushed onto the wheels in
-	# the relocation loop below; Drivetrain reads stiffness live off the wheel.
+	# Per-car suspension: overall spring rate + per-axle travel. The front/rear
+	# spring RATES are not authored — they're derived from weight_front by
+	# GameConfig.axle_stiffness so the heavier axle gets a stiffer spring and the car
+	# sits level (see _apply_suspension). Travel defaults to the single suspension_travel
+	# unless a spec sets a front/rear value. Dampers stay derived from the resolved
+	# per-axle rate. Pushed onto the wheels in the relocation loop below.
 	cfg.suspension_travel = spec.get("suspension_travel", cfg.suspension_travel)
+	# Per-axle travel overrides: 0 = inherit suspension_travel (axle_travel resolves).
+	cfg.suspension_travel_front = spec.get("suspension_travel_front", 0.0)
+	cfg.suspension_travel_rear = spec.get("suspension_travel_rear", 0.0)
 	cfg.suspension_stiffness = spec.get("suspension_stiffness", cfg.suspension_stiffness)
 	mass = cfg.mass
 
@@ -592,7 +594,9 @@ func apply_car(index: int) -> String:
 	# +Z = rearward. Switching to CUSTOM overrides Godot's AUTO (which derives a centred
 	# CoM from the symmetric collision box). Feeds the static load split onto each axle
 	# via the settling suspension -> Drivetrain.wheel_normal_force -> tyre grip balance.
+	# Also drives the front/rear spring-rate split (GameConfig.axle_stiffness).
 	var front_frac: float = spec.get("weight_front", 0.5)
+	cfg.weight_front = front_frac
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0.0, 0.0, spec["wheelbase"] * (1.0 - front_frac - 0.5))
 
@@ -640,13 +644,9 @@ func apply_car(index: int) -> String:
 		var mount: Vector3 = _wheel_mounts.get(wheel, wheel.position)
 		wheel.position = Vector3(signf(mount.x) * half_track, mount.y, signf(mount.z) * half_base)
 		wheel.wheel_radius = radius
-		# Per-car suspension (mirrors _ready()'s setup): travel doubles as the
-		# raycast rest length; dampers are re-derived from the new stiffness.
-		wheel.suspension_travel = cfg.suspension_travel
-		wheel.wheel_rest_length = cfg.suspension_travel
-		wheel.suspension_stiffness = cfg.suspension_stiffness
-		wheel.damping_compression = cfg.suspension_damping_compression()
-		wheel.damping_relaxation = cfg.suspension_damping_relaxation()
+		# Per-car, per-axle suspension (mirrors _ready()'s setup): front/rear rate + travel
+		# resolved from weight_front / suspension_travel_{front,rear}, dampers derived per axle.
+		_apply_suspension(wheel)
 		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
 		if tire != null:
 			var cyl := tire.mesh as CylinderMesh
@@ -739,15 +739,37 @@ func _apply_wheel_toe() -> void:
 		wheel.steering = float(damage.wheel_toe.get(wheel.name, 0.0))
 
 
-# Re-push the live suspension stiffness + derived dampers onto all four wheels
-# (apply_car does this inline while relocating wheels; this is the standalone
-# version for when an upgrade changes cfg.suspension_stiffness after apply_car).
-func _sync_suspension_to_wheels() -> void:
+# Whether a wheel sits on the front axle. Front wheels are mounted at negative
+# local Z (forward = -Z); read the AUTHORED mount when known so this is stable even
+# after physics repaints the live transform (the repaint moves the wheel along the
+# suspension axis, not in Z, so the sign holds regardless — but the mount is cleaner).
+func _wheel_is_front(wheel: VehicleWheel3D) -> bool:
+	return float(_wheel_mounts.get(wheel, wheel.position).z) < 0.0
+
+
+# Push the resolved per-axle spring rate + travel + derived dampers onto one wheel.
+# Front and rear differ: the rate is split from the overall suspension_stiffness by
+# weight_front (axle_stiffness) so the heavier axle is stiffer and the car sits level;
+# travel comes from suspension_travel_{front,rear}; dampers are critically damped for
+# the wheel's OWN rate. The single place all three setup sites funnel through.
+func _apply_suspension(wheel: VehicleWheel3D) -> void:
 	var cfg: GameConfig = config
+	var front := _wheel_is_front(wheel)
+	var k: float = cfg.axle_stiffness(front)
+	var travel: float = cfg.axle_travel(front)
+	wheel.suspension_travel = travel
+	wheel.wheel_rest_length = travel
+	wheel.suspension_stiffness = k
+	wheel.damping_compression = cfg.suspension_damping_compression(k)
+	wheel.damping_relaxation = cfg.suspension_damping_relaxation(k)
+
+
+# Re-push the live per-axle suspension onto all four wheels (apply_car does this
+# inline while relocating wheels; this is the standalone version for when an upgrade
+# changes cfg.suspension_stiffness after apply_car).
+func _sync_suspension_to_wheels() -> void:
 	for wheel in find_children("*", "VehicleWheel3D", false):
-		wheel.suspension_stiffness = cfg.suspension_stiffness
-		wheel.damping_compression = cfg.suspension_damping_compression()
-		wheel.damping_relaxation = cfg.suspension_damping_relaxation()
+		_apply_suspension(wheel)
 
 
 # Give every MeshInstance3D in the authored body model the lit PS1 material
