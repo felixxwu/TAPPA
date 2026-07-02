@@ -36,7 +36,8 @@ the field-the-car pipeline (`car.gd.apply_owned`):
 ```
 
 Running after step 2 means tuning balances whatever baseline the upgrades produced,
-and the gating reads the same installed upgrades. Each axis is a symmetric shift of
+and the gating reads the same upgrades (only **enabled** parts count — a part
+toggled off in the upgrades menu neither changes the baseline nor unlocks sliders). Each axis is a symmetric shift of
 its config pair scaled by a `GameConfig` authority knob, so a slider can never zero
 or invert a value:
 
@@ -91,9 +92,11 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
   kit" note) plus **Reset to neutral**. Each row uses horizontal space: a left column
   with the axis name above its current value, beside a right column with the slider above
   its two extremity labels. Each change saves immediately via `Save.set_tuning`.
-- **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from the inventory
-  (`Save.install_upgrade`); fitting **fully consumes** the part (confirmed via a dialog
-  first, since it can't be undone) and a swap scraps the incumbent. Plus the **Repair
+- **Upgrades** (`LiftPage.UPGRADES`) — per slot: Enable/Disable toggles for each
+  applied part (`Save.set_upgrade_enabled`; free and reversible, one enabled per
+  slot) and an **Apply** button per matching unlocked item (`Save.install_upgrade`;
+  applying consumes the item from the unlocked pool and fits it to this car for
+  good, confirmed via a dialog first). Plus the **Repair
   Kit** action — shows Health as a percentage and, when a kit is owned and the car isn't
   full, a **restore-to-full** button (`Save.use_repair_kit`). Re-spawns the raised car
   so its body reflects the change.

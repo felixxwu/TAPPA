@@ -225,6 +225,7 @@ func grant_car(model_id: String) -> Dictionary:
 		"model_id": model_id,
 		"hp": max_hp,
 		"installed_upgrades": [],
+		"disabled_upgrades": [],
 		"tuning": {},
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
@@ -388,11 +389,13 @@ func consume_item(item_id: String, n := 1) -> bool:
 	return true
 
 
-# Pull one item from inventory and fit it to a car. The part is FULLY CONSUMED on
-# apply — it leaves inventory for good and never returns (not on swap, and not when
-# the car is wrecked). Enforces one-upgrade-per-slot (UpgradeLibrary): installing
-# into an occupied slot replaces the incumbent, which is scrapped (NOT refunded).
-# Consumables (the repair kit) and unknown ids can't be slotted — use
+# Pull one item from the unlocked pool (inventory) and fit it to a car. The part
+# is consumed from the pool on apply, but it STAYS ON THE CAR permanently and can
+# be enabled/disabled from the upgrades menu (set_upgrade_enabled). A car holds
+# any number of applied parts but at most one ENABLED per slot: a freshly-applied
+# part arrives enabled and switches off any same-slot incumbent (which stays
+# fitted, just disabled). Applying the same part to the same car twice is
+# rejected. Consumables (the repair kit) and unknown ids can't be slotted — use
 # use_repair_kit() for those. Returns true on success.
 func install_upgrade(instance_id: int, item_id: String) -> bool:
 	var car := get_car(instance_id)
@@ -401,17 +404,44 @@ func install_upgrade(instance_id: int, item_id: String) -> bool:
 	var slot := UpgradeLibrary.slot_of(item_id)
 	if slot.is_empty() or UpgradeLibrary.is_consumable(item_id):
 		return false  # not a slottable upgrade
+	if (car["installed_upgrades"] as Array).has(item_id):
+		return false  # already fitted to this car; keep the pool copy
 	if int(profile["inventory"].get(item_id, 0)) < 1:
 		return false  # nothing to install; don't disturb the incumbent
-	# Replace any incumbent occupying the same slot (scrapped, not refunded —
-	# the previously-fitted part was already consumed when it was applied).
-	for existing in car["installed_upgrades"].duplicate():
-		if UpgradeLibrary.slot_of(existing) == slot:
-			car["installed_upgrades"].erase(existing)
 	consume_item(item_id, 1)
 	car["installed_upgrades"].append(item_id)
+	_enable_exclusive(car, item_id, slot)
 	save()
 	return true
+
+
+# Toggle an applied upgrade on/off (the upgrades-menu switch). Enabling a part
+# disables any same-slot enabled sibling (one enabled per slot); disabling just
+# parks it — the part stays fitted either way. Returns false for a car/part that
+# isn't there.
+func set_upgrade_enabled(instance_id: int, item_id: String, enabled: bool) -> bool:
+	var car := get_car(instance_id)
+	if car.is_empty() or not (car.get("installed_upgrades", []) as Array).has(item_id):
+		return false
+	if enabled:
+		_enable_exclusive(car, item_id, UpgradeLibrary.slot_of(item_id))
+	else:
+		var disabled: Array = car.get("disabled_upgrades", [])
+		if not disabled.has(item_id):
+			disabled.append(item_id)
+		car["disabled_upgrades"] = disabled
+	save()
+	return true
+
+
+# Mark `item_id` enabled on `car` and every other applied part in `slot` disabled.
+func _enable_exclusive(car: Dictionary, item_id: String, slot: String) -> void:
+	var disabled: Array = car.get("disabled_upgrades", [])
+	for existing in car.get("installed_upgrades", []):
+		if existing != item_id and UpgradeLibrary.slot_of(existing) == slot and not disabled.has(existing):
+			disabled.append(existing)
+	disabled.erase(item_id)
+	car["disabled_upgrades"] = disabled
 
 
 # Spend one repair kit to FULLY restore a car's HP to its CarLibrary max_hp — the

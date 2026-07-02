@@ -28,14 +28,16 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `next_instance_id` — monotonic counter minting unique owned-car ids.
 - `cars` — array of **instance-based** owned cars. Each is a unique instance
   (`instance_id`) referencing a `CarLibrary` model id (`model_id`), carrying its
-  own `hp`, `installed_upgrades`, and `tuning` deltas. Two cars
-  of the same model can diverge (the random-car reward can grant a model you
-  already own).
+  own `hp`, `installed_upgrades`, `disabled_upgrades` (applied parts toggled off
+  in the upgrades menu — fitted but inert), and `tuning` deltas. Two cars of the
+  same model can diverge (the random-car reward can grant a model you already
+  own).
 - `selected_instance_id` — the owned car the player has **selected** (the one raised
   on the garage tuning lift; see `features/tuning.md`). Resolved lazily by
   `Save.selected_car()`, which self-heals to the first owned car when the stored id
   is unset (`-1`) or no longer owned (e.g. after a wreck).
-- `inventory` — `{ item_id -> count }` for uninstalled upgrades + repair kits.
+- `inventory` — `{ item_id -> count }`: the **unlocked pool** of not-yet-applied
+  upgrades (won but kept for later) + repair kits.
 - `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed } }`, only
   completed rallies present. Completion count is the single progression metric;
   `best_placed` is the best (lowest) finishing position ever achieved there (drives
@@ -80,9 +82,13 @@ garage-overflow prompt),
 `set_selected_car(instance_id)` (the lift's selected car, self-healing),
 `get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),
 `add_item` / `consume_item`,
-`install_upgrade` (enforces one-per-slot via `UpgradeLibrary`; fitting **fully
-consumes** the part — a swap scraps the incumbent rather than refunding it, and a
-wrecked car keeps its parts fitted; see `features/upgrade-catalogue.md`),
+`install_upgrade` (consumes the part from the unlocked pool and fits it to the
+car **for good** — applied parts accumulate on the car; at most one is ENABLED
+per slot, so applying one disables a same-slot incumbent rather than scrapping
+it, a duplicate of a part already on the car is rejected, and a wrecked car
+keeps its parts fitted; see `features/upgrade-catalogue.md`),
+`set_upgrade_enabled(instance_id, item_id, enabled)` (the upgrades-menu toggle —
+free and reversible; enabling a part switches off its same-slot siblings),
 `use_repair_kit(instance_id)`
 (spend a kit to **fully restore** health — revives a wrecked car),
 `complete_rally(rally_id, combined_ms,

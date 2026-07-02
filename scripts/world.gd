@@ -127,6 +127,10 @@ func _ready() -> void:
 		_field_session_car()
 	else:
 		$Car.apply_car(0)
+	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
+	# apply the newly-fielded car's per-car bonnet offset now — retarget() only
+	# runs on a later car swap.
+	($CameraManager as CameraManager).refresh_bonnet_offset()
 
 	await _generate_track(cfg, loading)
 

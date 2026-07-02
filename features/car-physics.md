@@ -38,7 +38,15 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    car's slip angle: full when the car points along its travel direction, fading
    linearly to zero once it has rotated `steer_assist_max_angle` (≈30°) into the
    turn, so the aid helps rotate the car in but won't keep over-rotating it into a
-   spin.
+   spin. **Spin protection** (`spin_assist_torque`) is the recovery counterpart:
+   once the car has rotated further than `spin_assist_angle` (≈35°) away from its
+   travel direction, a corrective yaw torque pulls the nose back toward the travel
+   direction, ramping in linearly from 0 at the threshold to full at twice it and
+   sharing the steer assist's speed fade-in. A yaw-rate damping term
+   (`SPIN_ASSIST_DAMPING`) settles the slide instead of oscillating. Suppressed
+   while the handbrake is held (so deliberate drifts work), and only active while
+   travelling nose-forward — it prevents reaching a spin rather than unwinding a
+   completed one.
 4. **Aero forces:**
    - *Drag:* `-velocity * |velocity| * drag_coefficient` (quadratic).
    - *Downforce:* `v² * downforce_{front,rear}` applied at the axle midpoints;
@@ -116,5 +124,6 @@ countdown (`controls_locked` forces the handbrake).
 ## Related config
 
 `mass`, `drag_coefficient`, `downforce_front/rear`, `steer_*`,
-`level_assist_torque`, `suspension_*`, `brake_torque`, `handbrake_torque`. See
+`spin_assist_torque`, `spin_assist_angle`, `level_assist_torque`,
+`suspension_*`, `brake_torque`, `handbrake_torque`. See
 [configuration.md](configuration.md).

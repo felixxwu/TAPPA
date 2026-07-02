@@ -83,6 +83,20 @@ func test_bonnet_uses_configured_offset_and_fov() -> void:
 	assert_almost_eq(bonnet.fov, cfg.bonnet_fov, 0.001, "bonnet at configured fov")
 
 
+func test_bonnet_offset_composes_base_plus_per_car() -> void:
+	# retarget() must place the bonnet camera at the shared GameConfig.bonnet_offset
+	# PLUS the active car's per-car bonnet_cam_offset (whatever those values are).
+	var cfg: GameConfig = Config.data
+	var car := _scene.get_node("Car")
+	var bonnet := _mgr.bonnet_camera as Camera3D
+	var per_car := Vector3.ZERO
+	if car.has_method("bonnet_cam_offset"):
+		per_car = car.bonnet_cam_offset()
+	_mgr.retarget(car)
+	assert_almost_eq(bonnet.transform.origin, cfg.bonnet_offset + per_car,
+		Vector3(0.001, 0.001, 0.001), "bonnet origin = base offset + per-car offset")
+
+
 func test_cycle_car_retargets_both_cameras() -> void:
 	var old_car := _scene.get_node("Car")
 	_scene.cycle_car()

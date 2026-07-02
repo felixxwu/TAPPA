@@ -72,7 +72,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Shakedown", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
-		"restriction": {"pw_max": 0.18},  # gated below: a low p/w ceiling — the starter's home
+		"restriction": {"pw_min": 0.10, "pw_max": 0.18},  # gated below: a low p/w ceiling — the starter's home
 		"events": [
 			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1},
 			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0.7, "straightness": 0.8},
@@ -83,7 +83,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "front_runners", "name": "Front Runners", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.26, 0.6),
 		# FWD intro rally + a p/w ceiling: the Focus's home (parallels Shakedown for the MX-5).
-		"restriction": {"drive_mode": CarLibrary.FWD, "pw_max": 0.18},
+		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 0.12, "pw_max": 0.18},
 		"events": [
 			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85},
 			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8},
@@ -130,6 +130,29 @@ const RALLIES: Array[Dictionary] = [
 			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.15},
 			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15},
 			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1},
+		],
+	},
+	{
+		"id": "american_muscle", "name": "American Muscle", "difficulty": 2, "showdown": false,
+		"map_pos": Vector2(0.42, 0.38),
+		# US-built muscle only, in a mid p/w band — the Charger / Mustang's home turf.
+		"restriction": {"country": "US", "car_type": "muscle", "pw_min": 0.18, "pw_max": 0.28},
+		"events": [
+			{"seed": 6001, "turn_count": 12, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7},
+			{"seed": 6002, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6},
+			{"seed": 6003, "turn_count": 12, "forestiness": 0.4, "surface_mix": 1.0, "straightness": 0.65},
+		],
+	},
+	{
+		"id": "shitbox_cup", "name": "Sh*tbox Cup", "difficulty": 1, "showdown": false,
+		"map_pos": Vector2(0.12, 0.48),
+		# Gated ONLY from above, below even Shakedown's floor: a sub-0.10 p/w ceiling
+		# that only the true shitboxes (Twingo, Acty) squeeze under.
+		"restriction": {"pw_max": 0.10},
+		"events": [
+			{"seed": 7001, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0},
+			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0},
+			{"seed": 7003, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0},
 		],
 	},
 	{

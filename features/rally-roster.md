@@ -30,8 +30,11 @@ Each `RALLIES` entry:
   secondary theme on top of its band (e.g. RWD Masters also wants `drive_mode` RWD,
   and **Front Runners** — the home of the FWD starters (Focus, Twingo) — wants
   `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally parallel to the
-  Shakedown for the MX-5).
-  The single open-class rally is the showdown.
+  Shakedown for the MX-5), and **American Muscle** wants `country` US +
+  `car_type` muscle on top of its band — the Charger / Mustang's home turf.
+  **Sh*tbox Cup** sits below even Shakedown: a `pw_max` 0.10 ceiling with no
+  floor, catering to the sub-0.10 p/w shitboxes (Twingo, Acty) that no other
+  rally's band admits. The single open-class rally is the showdown.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   forestiness?, surface_mix?, straightness?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; the

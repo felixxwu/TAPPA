@@ -100,7 +100,21 @@ func retarget(car: Node3D) -> void:
 	if bonnet_camera.get_parent() != car:
 		bonnet_camera.get_parent().remove_child(bonnet_camera)
 		car.add_child(bonnet_camera)
-	bonnet_camera.transform.origin = cfg.bonnet_offset
+	refresh_bonnet_offset()
+
+
+# Re-place the bonnet camera on its current parent car: origin = the shared
+# GameConfig.bonnet_offset PLUS that car's per-car bonnet_cam_offset (car-local
+# metres, see car.gd bonnet_cam_offset()). Call this AFTER apply_car/apply_owned
+# re-specs the car (which changes the per-car offset), since the bonnet camera is
+# already parented to the car in the scene and retarget() only runs on car swaps.
+func refresh_bonnet_offset() -> void:
+	var cfg: GameConfig = Config.data
+	var car := bonnet_camera.get_parent()
+	var per_car := Vector3.ZERO
+	if car != null and car.has_method("bonnet_cam_offset"):
+		per_car = car.bonnet_cam_offset()
+	bonnet_camera.transform.origin = cfg.bonnet_offset + per_car
 	bonnet_camera.fov = cfg.bonnet_fov
 
 

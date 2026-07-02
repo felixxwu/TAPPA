@@ -330,8 +330,11 @@ func _resolve_results() -> void:
 	if not _dnf:
 		var difficulty := int(_rally.get("difficulty", 1))
 		var count: int = maxi(Config.data.rally_upgrade_reward_count, 0)
+		# Exclude parts already fitted to the driven car — the podium offers each
+		# reward onto it, so a duplicate of what it carries would be a dead prize.
+		var driven: Dictionary = Save.get_car(_car_instance_id)
 		for _i in count:
-			var item_id: String = RewardSystem.draw_upgrade(difficulty, Save.profile)
+			var item_id: String = RewardSystem.draw_upgrade(difficulty, Save.profile, null, driven)
 			Save.add_item(item_id)
 			_upgrades_won.append(item_id)
 			upgrade_revealed.emit(item_id)
@@ -350,7 +353,7 @@ func _resolve_results() -> void:
 			showdown_done = true
 			showdown_won.emit()
 		else:
-			var model: Variant = RewardSystem.draw_car(int(_rally.get("difficulty", 1)), Save.profile)
+			var model: Variant = RewardSystem.draw_car(Save.profile)
 			if model != null:
 				car_reward = String(model)
 				# "New" iff the player didn't already own this model before the grant.
@@ -366,6 +369,9 @@ func _resolve_results() -> void:
 		"dnf": _dnf,
 		"rally_id": String(_rally.get("id", "")),
 		"rally_name": String(_rally.get("name", "")),
+		# The owned-car instance the player just drove — the podium's upgrade reveal
+		# offers to fit each won part straight onto it (features/reward-system.md).
+		"car_instance_id": _car_instance_id,
 		# Full ranked field for the standings overlay (built before _reset clears it).
 		# Carries each entrant's car_id too, so the podium can spawn the top-3 cars.
 		"standings": RallyLibrary.build_standings(_opponent_field, combined, _dnf, "You", _player_car_name(), _car_model_id),

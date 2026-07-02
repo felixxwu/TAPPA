@@ -212,10 +212,11 @@ var _lift_sliders: Dictionary = {}     # axis -> HSlider
 var _lift_slider_rows: Dictionary = {} # axis -> the row Control (to grey out when locked)
 var _lift_slider_values: Dictionary = {}  # axis -> the value Label
 
-# Confirmation for fitting an upgrade. Applying a part PERMANENTLY consumes it (it
-# never returns to inventory — see Save.install_upgrade), so the player accepts this
-# dialog before the part is committed. _pending_install holds the queued fit
-# {instance_id, item_id} between popping the dialog and the player confirming.
+# Confirmation for applying an upgrade. Applying a part PERMANENTLY consumes it
+# from the unlocked pool and fixes it to this car (it can be toggled off but never
+# moved — see Save.install_upgrade), so the player accepts this dialog before the
+# part is committed. _pending_install holds the queued fit {instance_id, item_id}
+# between popping the dialog and the player confirming.
 var _confirm_dialog: ConfirmationDialog
 var _pending_install: Dictionary = {}
 
@@ -1498,10 +1499,10 @@ func _on_settings_action() -> void:
 
 # --- Confirmation dialog -----------------------------------------------------
 
-# A shared yes/no dialog for irreversible actions. Currently the upgrade-fit gate:
-# applying a part permanently consumes it (it never returns to inventory, not even
-# on a wreck), so the player confirms before committing. _on_install_confirmed runs
-# on accept.
+# A shared yes/no dialog for irreversible actions. Currently the upgrade-apply
+# gate: applying a part consumes it from the unlocked pool and fixes it to this
+# car for good (toggleable, never movable or refunded — not even on a wreck), so
+# the player confirms before committing. _on_install_confirmed runs on accept.
 func _build_confirm_dialog() -> void:
 	_confirm_dialog = ConfirmationDialog.new()
 	_confirm_dialog.title = "Fit upgrade?"
@@ -1968,10 +1969,11 @@ func _reset_tuning() -> void:
 	_refresh_sliders()
 
 
-# Rebuild the UPGRADES menu for the current car: one row per slot showing what's
-# fitted, an Install button per matching item in the inventory, plus the repair-kit
-# action. Fitting a part consumes it permanently (confirmed first); there's no
-# uninstall — a part can only be replaced by fitting another into the same slot.
+# Rebuild the UPGRADES menu for the current car: one row per slot listing every
+# applied part with an Enable/Disable toggle (at most one enabled per slot), an
+# Apply button per matching unlocked item, plus the repair-kit action. Applying a
+# part consumes it from the unlocked pool and fits it to this car for good
+# (confirmed first); a fitted part can't be removed, only toggled off.
 func _rebuild_upgrades_box() -> void:
 	for c in _lift_upgrades_box.get_children():
 		c.queue_free()
@@ -1980,7 +1982,7 @@ func _rebuild_upgrades_box() -> void:
 	var inventory: Dictionary = Save.profile.get("inventory", {})
 
 	var heading := Label.new()
-	heading.text = "Fitting a part consumes it for good — it can't be removed."
+	heading.text = "Applied parts stay on this car for good — toggle them on or off below."
 	heading.add_theme_font_size_override("font_size", 12)
 	heading.modulate = Color(1, 1, 1, 0.8)
 	heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1998,31 +2000,50 @@ func _make_slot_row(slot: String, instance_id: int, installed: Array, inventory:
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 2)
 
-	# The fitted item in this slot (if any).
-	var fitted := ""
+	# One line per part applied to this car in this slot — "SLOT: PART NAME" on the
+	# left, a bare Enable/Disable toggle on the right of the SAME row. A DISABLED
+	# part reads "— empty —" exactly like an unfilled slot (its effect is off, so
+	# the slot is effectively empty), with the Enable button kept alongside to
+	# bring it back. Enabling switches off any same-slot sibling. A slot with
+	# nothing fitted at all is a single "— empty —" line with no button.
+	var any_fitted := false
 	for item_id in installed:
-		if UpgradeLibrary.slot_of(item_id) == slot:
-			fitted = item_id
-			break
-
-	var header := Label.new()
-	header.add_theme_font_size_override("font_size", 15)
-	var fitted_name: String = UpgradeLibrary.by_id(fitted).get("name", "—") if fitted != "" else "— empty —"
-	header.text = "%s: %s" % [slot.capitalize(), fitted_name]
-	box.add_child(header)
-
-	# An Install button for each owned (uninstalled) item that fits this slot.
-	for item_id in inventory:
 		if UpgradeLibrary.slot_of(item_id) != slot:
+			continue
+		any_fitted = true
+		var enabled := UpgradeLibrary.is_enabled(_lift_owned, item_id)
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var name_label := Label.new()
+		name_label.add_theme_font_size_override("font_size", 15)
+		name_label.text = "%s: %s" % [slot.capitalize(),
+			UpgradeLibrary.by_id(item_id).get("name", item_id) if enabled else "— empty —"]
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+		var toggle := Button.new()
+		toggle.text = "Disable" if enabled else "Enable"
+		toggle.focus_mode = Control.FOCUS_ALL
+		toggle.pressed.connect(_toggle_upgrade.bind(instance_id, item_id, not enabled))
+		row.add_child(toggle)
+		box.add_child(row)
+	if not any_fitted:
+		var empty := Label.new()
+		empty.add_theme_font_size_override("font_size", 15)
+		empty.text = "%s: — empty —" % slot.capitalize()
+		box.add_child(empty)
+
+	# An Apply button for each unlocked (not-yet-applied) item that fits this slot.
+	for item_id in inventory:
+		if UpgradeLibrary.slot_of(item_id) != slot or installed.has(item_id):
 			continue
 		var count := int(inventory[item_id])
 		if count <= 0:
 			continue
-		var install := Button.new()
-		install.text = "Install %s  (x%d)" % [UpgradeLibrary.by_id(item_id).get("name", item_id), count]
-		install.focus_mode = Control.FOCUS_ALL
-		install.pressed.connect(_install_upgrade.bind(instance_id, item_id))
-		box.add_child(install)
+		var apply := Button.new()
+		apply.text = "Apply %s  (x%d)" % [UpgradeLibrary.by_id(item_id).get("name", item_id), count]
+		apply.focus_mode = Control.FOCUS_ALL
+		apply.pressed.connect(_install_upgrade.bind(instance_id, item_id))
+		box.add_child(apply)
 	return box
 
 
@@ -2068,13 +2089,14 @@ func _make_repair_row(instance_id: int, inventory: Dictionary) -> Control:
 	return box
 
 
-# Fitting a part is irreversible (it's consumed permanently), so ASK first. The
-# actual fit happens in _apply_upgrade once the player accepts the dialog.
+# Applying a part is irreversible (it's consumed from the unlocked pool and stays
+# on this car for good), so ASK first. The actual fit happens in _apply_upgrade
+# once the player accepts the dialog.
 func _install_upgrade(instance_id: int, item_id: String) -> void:
 	var item_name: String = UpgradeLibrary.by_id(item_id).get("name", item_id)
 	_pending_install = {"instance_id": instance_id, "item_id": item_id}
 	_confirm_dialog.dialog_text = (
-		"Fit %s to this car?\n\nThe part is consumed permanently — it can't be removed or recovered, even if the car is wrecked."
+		"Apply %s to this car?\n\nThe part stays on this car for good — it can be toggled on/off but never moved to another car or recovered, even if the car is wrecked."
 		% item_name)
 	_confirm_dialog.popup_centered()
 
@@ -2092,6 +2114,15 @@ func _on_install_confirmed() -> void:
 # Actually fit the part (consuming it from inventory) and rebuild the lift + UI.
 func _apply_upgrade(instance_id: int, item_id: String) -> void:
 	if Save.install_upgrade(instance_id, item_id):
+		_lift_car_instance_id = -2  # the car's spec changed — rebuild the prop
+		_ensure_lift_car()
+		_refresh_lift_ui()
+
+
+# Toggle an applied part on/off (free, instant, reversible — no confirm needed)
+# and rebuild the lift prop + UI so the spec change shows immediately.
+func _toggle_upgrade(instance_id: int, item_id: String, enabled: bool) -> void:
+	if Save.set_upgrade_enabled(instance_id, item_id, enabled):
 		_lift_car_instance_id = -2  # the car's spec changed — rebuild the prop
 		_ensure_lift_car()
 		_refresh_lift_ui()
@@ -2603,6 +2634,9 @@ func _begin_rally_start() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
+	# Fielding a car also selects it, so the tuning lift shows the car the player
+	# last raced when they return to the garage.
+	Save.set_selected_car(_selected_instance_id)
 	var loading := LoadingScreen.new()
 	loading.set_step("Preparing rally…")
 	add_child(loading)

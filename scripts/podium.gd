@@ -6,11 +6,15 @@ extends Node3D
 #   1. PODIUM        — the top-3 finishers' cars stand physically on a 3D podium,
 #                      dropped in so they settle onto their suspension (loaded).
 #   2. LEADERBOARD   — the full ranked field, marking where the player finished.
-#   3. CAR_REVEAL    — a slot-machine spin through the car roster that lands on the
-#                      car won (top-3 only), then that car turns on a showroom
-#                      turntable with its name. (Skipped if no car was won.)
-#   4. UPGRADE_REVEAL— the same slot-machine spin for the single upgrade won this
-#                      rally. (Skipped if none — e.g. a DNF.)
+#   3. UPGRADE_REVEAL— a slot-machine spin per upgrade won this rally — handed out
+#                      at the podium, with the player's car still standing on it —
+#                      then an Apply/Keep choice: fit the part straight onto the
+#                      car the player just drove, or keep it unlocked for the
+#                      garage upgrades menu. (Skipped if none were won — e.g. a DNF.)
+#   4. CAR_REVEAL    — the camera flies over to the showroom for the same spin
+#                      through the car roster, landing on the car won (top-3
+#                      only), which turns on the turntable with its name.
+#                      (Skipped if no car was won.)
 #
 # The Next button stays hidden during a slot-machine spin and only appears once it
 # locks onto the result. The final Next flies back to HQ, opening on the GARAGE
@@ -66,6 +70,11 @@ var _leaderboard_box: VBoxContainer
 var _slot_panel: PanelContainer       # the slot-machine reveal card
 var _slot_label: Label                # the spinning name
 var _slot_caption: Label              # the locked-in caption under it
+var _choice_box: HBoxContainer        # the fit-it-now choice under an upgrade reveal
+var _apply_button: Button
+var _keep_button: Button
+var _choice_pending := false          # gates Next while an apply/keep choice is open
+var _choice_item_id := ""             # the revealed upgrade the open choice is about
 var _next_button: Button
 var _slot_tween: Tween
 
@@ -84,16 +93,18 @@ func _ready() -> void:
 	_enter_stage(_stages[0])
 
 
-# The stages present for this result: podium + leaderboard always; the car reveal
-# only when a car was won; the upgrade reveal only when an upgrade was won.
+# The stages present for this result: podium + leaderboard always; the upgrade
+# reveals only when upgrades were won; the car reveal only when a car was won.
+# Upgrades come FIRST — handed out while the player's car still stands on the
+# podium — and the sequence then flies over to the showroom for the car reward.
 func _compute_stages() -> Array[int]:
 	var stages: Array[int] = [Stage.PODIUM, Stage.LEADERBOARD]
-	if String(_result.get("car_reward", "")) != "":
-		stages.append(Stage.CAR_REVEAL)
 	# One upgrade-reveal stage per won upgrade (a rally grants several), each a
 	# separate slot-machine spin stepped through with Next.
 	for _u in (_result.get("upgrades", []) as Array):
 		stages.append(Stage.UPGRADE_REVEAL)
+	if String(_result.get("car_reward", "")) != "":
+		stages.append(Stage.CAR_REVEAL)
 	return stages
 
 
@@ -385,6 +396,9 @@ func _spawn_podium_cars() -> void:
 			continue
 		var drop := Vector3(xs[i], heights[i] + cfg.podium_car_drop_height, 0.0)
 		var car := _spawn_car(idx, PODIUM_CENTER + drop, not _headless)
+		# Face the camera: the car's forward is -Z and the podium camera sits on the
+		# +Z side, so an unrotated car shows its rear. Yaw it half a turn.
+		car.rotate_y(PI)
 		_podium_cars.append(car)
 		live = live or not _headless
 	# Let them settle under physics for a beat, then freeze the settled pose. In
@@ -459,9 +473,9 @@ func _dup_meshes(car: Node) -> void:
 
 
 func _process(delta: float) -> void:
-	# Slowly turn the showroom car on its turntable through the car reveal and the
-	# following upgrade reveals (the car stays on the turntable the whole time).
-	if is_instance_valid(_turntable_pivot) and (_stage == Stage.CAR_REVEAL or _stage == Stage.UPGRADE_REVEAL):
+	# Slowly turn the showroom car on its turntable through the car reveal (the
+	# closing stage — upgrades are handed out earlier, at the podium).
+	if is_instance_valid(_turntable_pivot) and _stage == Stage.CAR_REVEAL:
 		_turntable_pivot.rotation.y += deg_to_rad(Config.data.podium_showroom_spin_dps) * delta
 
 
@@ -536,6 +550,24 @@ func _build_overlay() -> void:
 	_slot_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	slot_col.add_child(_slot_caption)
 
+	# The upgrade reveal's apply/keep choice: fit the won part to the car the player
+	# just drove, or keep it unlocked for the garage upgrades menu. Both buttons are
+	# focusable so the choice works on keyboard/gamepad (features/menus.md).
+	_choice_box = HBoxContainer.new()
+	_choice_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_choice_box.add_theme_constant_override("separation", 12)
+	_choice_box.visible = false
+	slot_col.add_child(_choice_box)
+	_apply_button = Button.new()
+	_apply_button.focus_mode = Control.FOCUS_ALL
+	_apply_button.pressed.connect(_on_apply_upgrade)
+	_choice_box.add_child(_apply_button)
+	_keep_button = Button.new()
+	_keep_button.focus_mode = Control.FOCUS_ALL
+	_keep_button.text = "Keep for later"
+	_keep_button.pressed.connect(_on_keep_upgrade)
+	_choice_box.add_child(_keep_button)
+
 	_next_button = Button.new()
 	# Focusable so the reward sequence steps with a keyboard/gamepad (ui_accept); it's
 	# re-focused whenever it reappears after a reveal (_refresh_next_button).
@@ -555,6 +587,8 @@ func _enter_stage(stage: int) -> void:
 	_body_label.visible = false
 	_leaderboard_scroll.visible = false
 	_slot_panel.visible = false
+	_choice_box.visible = false
+	_choice_pending = false
 	_slot_label.visible = true  # the car reveal hides it (one-line card); reset per stage
 	_slot_caption.custom_minimum_size = Vector2.ZERO  # car reveal widens it; reset per stage
 	_slot_caption.text = ""
@@ -601,22 +635,24 @@ func _show_car_reveal() -> void:
 	# label is hidden, so the name isn't shown twice and the card stays one line).
 	_title_label.text = "YOUR NEW CAR"
 	_slot_panel.visible = true
-	_slot_label.visible = false
-	# The hidden slot label used to set the card width; give the caption that width so
-	# it stays a single horizontal line instead of wrapping to a narrow column.
+	# The slot label sets the card width while it spins; give the caption the same
+	# width so the landed card stays a single horizontal line instead of wrapping.
 	_slot_caption.custom_minimum_size = Vector2(520, 0)
 	_move_camera(_showroom_cam())
 	var car_id := String(_result.get("car_reward", ""))
 	var entry := CarLibrary.by_id(car_id)
 	var target := String(entry.get("name", car_id))
+	# Bring the won car onto the turntable (hidden until the spin locks on).
 	_reveal_showroom_car(car_id)
-	if is_instance_valid(_showroom_car):
-		_showroom_car.visible = true
-	var is_new: bool = bool(_result.get("car_reward_is_new", false))
-	_slot_caption.text = UITheme.caps("%s%s — delivered to your garage" % [
-		target, "  (NEW)" if is_new else ""])
-	_reveal_done = true
-	_refresh_next_button()
+	_start_slot(_car_names(), target, func() -> void:
+		# Collapse to the one-line card: the caption alone carries the car name
+		# once the reel lands, so the name isn't shown twice.
+		_slot_label.visible = false
+		if is_instance_valid(_showroom_car):
+			_showroom_car.visible = true
+		var is_new: bool = bool(_result.get("car_reward_is_new", false))
+		_slot_caption.text = UITheme.caps("%s%s — delivered to your garage" % [
+			target, "  (NEW)" if is_new else ""]))
 
 
 func _show_upgrade_reveal() -> void:
@@ -626,13 +662,56 @@ func _show_upgrade_reveal() -> void:
 	# Title counts up when a rally grants more than one ("UPGRADE 1 OF 2").
 	_title_label.text = "UPGRADE %d OF %d" % [idx + 1, upgrades.size()] if upgrades.size() > 1 else "UPGRADE WON"
 	_slot_panel.visible = true
-	_move_camera(_showroom_cam())
-	# Keep the reward car on show through the upgrade reveals (it used to be hidden
-	# here — the reward car should stay visible while the upgrades are handed out).
+	# Upgrades are handed out at the PODIUM, while the player's car still stands on
+	# it — the sequence only flies to the showroom for the car reveal afterwards.
+	_move_camera(_podium_cam())
 	var won := String(upgrades[idx]) if idx < upgrades.size() else ""
 	var target := String(UpgradeLibrary.by_id(won).get("name", won))
 	_start_slot(_upgrade_names(), target, func() -> void:
-		_slot_caption.text = UITheme.caps("%s — added to your inventory" % target))
+		_offer_upgrade_choice(won, target))
+
+
+# Once an upgrade reveal lands, offer to fit the part straight onto the car the
+# player just drove (Apply) or leave it unlocked for the garage upgrades menu
+# (Keep). Consumables (the repair kit) and a missing driven car skip the choice —
+# those just land in the unlocked pool as before.
+func _offer_upgrade_choice(item_id: String, item_name: String) -> void:
+	var driven := Save.get_car(int(_result.get("car_instance_id", -1)))
+	if driven.is_empty() or UpgradeLibrary.slot_of(item_id) == "" or UpgradeLibrary.is_consumable(item_id):
+		_slot_caption.text = UITheme.caps("%s — added to your unlocked parts" % item_name)
+		return
+	var car_name := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
+	_choice_item_id = item_id
+	_choice_pending = true
+	_slot_caption.text = UITheme.caps("Fit %s to the %s you just drove?" % [item_name, car_name])
+	_apply_button.text = UITheme.caps("Apply to %s" % car_name)
+	_choice_box.visible = true
+	UITheme.enforce(_layer)  # theme the freshly-shown choice buttons
+	_refresh_next_button()
+	UITheme.focus_grab.bind(_apply_button).call_deferred()
+
+
+func _on_apply_upgrade() -> void:
+	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
+	if Save.install_upgrade(int(_result.get("car_instance_id", -1)), _choice_item_id):
+		_slot_caption.text = UITheme.caps("%s fitted — toggle it any time in the garage" % item_name)
+	else:
+		# Already fitted to this car (a duplicate win) — the copy stays unlocked.
+		_slot_caption.text = UITheme.caps("%s is already fitted — kept in your unlocked parts" % item_name)
+	_resolve_upgrade_choice()
+
+
+func _on_keep_upgrade() -> void:
+	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
+	_slot_caption.text = UITheme.caps("%s kept — apply it any time in the garage" % item_name)
+	_resolve_upgrade_choice()
+
+
+func _resolve_upgrade_choice() -> void:
+	_choice_item_id = ""
+	_choice_pending = false
+	_choice_box.visible = false
+	_refresh_next_button()
 
 
 # Spawn the won car on the turntable, frozen and silent, hidden until the slot
@@ -695,6 +774,13 @@ func _finish_slot(on_done: Callable) -> void:
 	_refresh_next_button()
 
 
+func _car_names() -> Array:
+	var names: Array = []
+	for entry in CarLibrary.CARS:
+		names.append(String(entry.get("name", entry.get("id", "?"))))
+	return names
+
+
 func _upgrade_names() -> Array:
 	var names: Array = []
 	for entry in UpgradeLibrary.UPGRADES:
@@ -705,11 +791,12 @@ func _upgrade_names() -> Array:
 # --- Next button -------------------------------------------------------------
 
 func _refresh_next_button() -> void:
-	_next_button.visible = _reveal_done
+	# Hidden during a slot spin AND while an apply/keep choice is open — the choice
+	# buttons own the focus until the player picks one.
+	_next_button.visible = _reveal_done and not _choice_pending
 	_next_button.text = UITheme.caps("Continue to HQ" if _is_last_stage() else "Next >")
-	# Whenever the button reappears (hidden during a slot spin), re-grab focus so the
-	# controller cursor follows it.
-	if _reveal_done:
+	# Whenever the button reappears, re-grab focus so the controller cursor follows it.
+	if _next_button.visible:
 		UITheme.focus_grab.bind(_next_button).call_deferred()
 
 
@@ -718,8 +805,8 @@ func _is_last_stage() -> bool:
 
 
 func _on_next() -> void:
-	if not _reveal_done:
-		return  # never advance mid-spin (the button is hidden anyway)
+	if not _reveal_done or _choice_pending:
+		return  # never advance mid-spin or mid-choice (the button is hidden anyway)
 	_stage_index += 1
 	if _stage_index >= _stages.size():
 		_go_to_hq()
@@ -736,7 +823,9 @@ func _go_to_hq() -> void:
 # --- Camera ------------------------------------------------------------------
 
 func _podium_cam() -> Transform3D:
-	return _look_xform(PODIUM_CENTER + Vector3(0.0, 4.6, 11.0), PODIUM_CENTER + Vector3(0.0, 1.2, 0.0))
+	# Offset in X so the shot sits a little off the podium's axis — a 3/4-ish view
+	# of the cars (which face the camera) instead of a flat head-on line-up.
+	return _look_xform(PODIUM_CENTER + Vector3(4.2, 4.4, 10.2), PODIUM_CENTER + Vector3(0.0, 1.2, 0.0))
 
 
 func _showroom_cam() -> Transform3D:

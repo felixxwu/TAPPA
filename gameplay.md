@@ -157,7 +157,10 @@ roguelike**: do you risk your best car to win, or play it safe?
 
 ## Progression & rewards
 
-- **Per rally finished:** a single **random upgrade** drops into the inventory.
+- **Per rally finished:** a **random upgrade** is unlocked and offered straight
+  onto the car the player just drove (Apply/Keep on the podium reveal); declined
+  parts stay unlocked to apply later from the garage upgrades menu, and applied
+  parts can be enabled/disabled per car there.
 - **Per rally completed (top 3 on combined time):** a **random car** is granted.
 - **Rewards are renewable / farmable.** Re-running a rally and finishing **top 3
   again grants its car reward again** — completion itself is recorded once (it's
@@ -201,9 +204,10 @@ Two distinct systems:
     front/rear brake-split** parameter (the one new code knob `features/tuning.md` owns).
   - **Aero balance** (only if the **aero upgrade** is installed): how much front
     vs rear downforce — `downforce_front` / `downforce_rear`.
-- **Upgrades** — **inventory items** applied to a car (fully consumed on install,
-  so fitting is a one-time, confirmed commitment), won as rewards and lost with the
-  car if it is destroyed. Examples:
+- **Upgrades** — **unlocked parts** applied to a car (consumed from the unlocked
+  pool on apply, so fitting is a one-time, confirmed commitment; once fitted a
+  part can be enabled/disabled per car but never moved), won as rewards and lost
+  with the car if it is destroyed. Examples:
   engine/power, aero kit (unlocks aero tuning), suspension, brakes, plus the
   **repair kit** (consumed to heal damage). *(Exact upgrade list + how each maps
   to config knobs → its own todo.)*

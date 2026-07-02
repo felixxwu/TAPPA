@@ -170,7 +170,7 @@ func test_happy_path_accumulates_and_places() -> void:
 
 func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	var finish := _capture_finish()
-	_start("shakedown")  # the entry rally (a low p/w cap), difficulty 1
+	var driven := _start("shakedown")  # the entry rally (a low p/w cap), difficulty 1
 	# Player combined 60000; one opponent faster (50000) -> placed 2nd, top-3 win.
 	RallySession._opponent_field = _field([50000, 70000, 80000])
 	# Snapshot ownership BEFORE the finish: a top-3 win grants the reward car, so the
@@ -183,16 +183,21 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
 	assert_eq(r["upgrades"].size(), Config.data.rally_upgrade_reward_count,
 		"a finished rally captures rally_upgrade_reward_count upgrade ids for the reveal")
-	# Difficulty 1 clamps to tier 1: the reward must be a real eligible tier-1 car,
-	# and the is_new flag must reflect whether the player already owned it. Derive
-	# both from the library/profile rather than pinning a specific model id, so this
-	# survives roster changes (e.g. a second tier-1 car being added).
+	# The reward must be a real catalogue car (the draw policy itself — garage
+	# tier cap, unlock fallback — is covered by test_reward_system.gd with
+	# controlled profiles) and the is_new flag must reflect whether the player
+	# already owned it. Derived from the library/profile rather than pinning a
+	# specific model id, so this survives roster changes.
 	var reward := String(r["car_reward"])
-	assert_true(RewardSystem._eligible_candidates_at_tier(1, _save.profile).has(reward),
-		"a top-3 finish records a real eligible tier-1 car for the reveal")
+	assert_false(CarLibrary.by_id(reward).is_empty(),
+		"a top-3 finish records a real catalogue car for the reveal")
 	assert_eq(bool(r["car_reward_is_new"]), not owned_before.has(reward),
 		"the is_new flag matches whether the player already owned the won car before the win")
 	assert_false(r["showdown_won"], "the shakedown is not the showdown")
+	# The result names the owned-car instance the player drove, so the podium's
+	# upgrade reveal can offer to fit each won part straight onto it.
+	assert_eq(int(r["car_instance_id"]), int(driven["instance_id"]),
+		"the result carries the driven car's instance id for the apply-upgrade choice")
 	# A 2nd-place finish records best placement 2 (drives the world-map stars).
 	assert_eq(_save.best_placement("shakedown"), 2, "the best finishing position is recorded")
 	# Standings = field (3) + player, ranked, player classified 2nd.

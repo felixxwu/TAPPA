@@ -35,6 +35,8 @@ the `.tres` requires a scene reload to take effect.
 | `steer_assist_torque` | 200.0 | Yaw torque vs understeer (N·m) |
 | `steer_assist_min_speed` | 8.333 | Min speed (m/s ≈30 km/h) before steer assist applies |
 | `steer_assist_max_angle` | 0.524 rad | Slip angle (≈30°) at which steer assist tapers to zero; full at 0, linear in between |
+| `spin_assist_torque` | 6000.0 | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held; 0 disables |
+| `spin_assist_angle` | 0.611 rad | Slip angle (≈35°) where spin protection starts; ramps to full at twice this angle |
 | `level_assist_torque` | 8000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
 | `wheel_roll_influence` | 0.1 | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM, 1 = contact patch |
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |

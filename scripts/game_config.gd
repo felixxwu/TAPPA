@@ -63,6 +63,20 @@ var peak_torque_rpm := 4500.0
 ## linearly to nothing once the car has rotated this far into the turn, so it
 ## helps rotate the car in but won't keep over-rotating it into a spin. 30° ≈ 0.524 rad.
 @export_range(0.0, 1.571) var steer_assist_max_angle := deg_to_rad(30.0)
+## Spin protection: corrective yaw torque (N·m) that pulls the nose back toward
+## the direction of travel once the car has rotated further than
+## spin_assist_angle into a slide — the counterpart to steer_assist_torque
+## (which stops ADDING rotation past steer_assist_max_angle; this one actively
+## takes rotation away). Includes yaw-rate damping so it settles the slide
+## rather than oscillating. Suppressed while the handbrake is held so
+## deliberate drifts stay possible. 0 disables. An anti-spin aid, not a
+## physical force.
+@export_range(0.0, 30000.0) var spin_assist_torque := 6000.0
+## Slip angle (radians) where spin protection starts. The torque ramps in
+## linearly from 0 at this angle to full strength at twice it. Keep it above
+## steer_assist_max_angle so the two aids never fight over the same slide.
+## 35° ≈ 0.611 rad.
+@export_range(0.0, 1.571) var spin_assist_angle := deg_to_rad(35.0)
 ## Self-righting assist: when one or more wheels leave the ground, a roll+pitch
 ## torque (N·m at full 90° tilt) eases the car back toward flat, scaling with how
 ## far it has tilted. Never yaws the car. 0 disables. A landing/anti-flip aid,

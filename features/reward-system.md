@@ -31,35 +31,51 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 
 ## Upgrade draw (per event)
 
-`draw_upgrade(rally_difficulty, profile, rng=null) -> item_id`: pool = parts at
-the target tier (stepping down to the nearest lower tier that has an authored
-part, since not every tier has one) **plus the repair kit as a low-weight entry**
-(`REPAIR_KIT_DROP_WEIGHT`, placeholder). Weighted pick → returns an `item_id`;
-most rolls are a part, occasionally the repair kit. No ownership/slot filtering —
-items land in inventory and the player chooses where to fit them.
+`draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`:
+pool = parts at the target tier (stepping down to the nearest lower tier that has
+an eligible part, since not every tier has one) **plus the repair kit as a
+low-weight entry** (`REPAIR_KIT_DROP_WEIGHT`, placeholder). Parts **already
+fitted to `owned_car`** — the driven car the flow controller passes in, the one
+the podium offers each reward onto — are **excluded**, so the draw never awards a
+part the car already carries; with every part at/below the tier fitted, only the
+repair kit remains (the draw still always pays out). Weighted pick → returns an
+`item_id`; most rolls are a part, occasionally the repair kit.
+
+**Delivery:** the flow controller grants each drawn item into the unlocked pool
+(`Save.add_item`) and saves, then the podium's upgrade reveal offers an
+**Apply/Keep choice** per part: *Apply* fits it straight onto the owned car the
+player just drove (`Save.install_upgrade` on the result's `car_instance_id`);
+*Keep* leaves it unlocked to apply later from the garage upgrades menu. Applied
+parts stay on the car and can be enabled/disabled there
+(`Save.set_upgrade_enabled` — see `features/upgrade-catalogue.md`). Repair kits
+(consumable) skip the choice and just land in the pool.
 
 ## Car draw (per top-3 finish, including re-wins)
 
-`draw_car(rally_difficulty, profile, rng=null) -> model_id | null`. Fires on
-**every** top-3 finish (renewable supply — re-winning a completed rally re-grants
-a car, still tier-clamped), which is what guarantees 100% completion stays
-reachable despite permanent car destruction. Steps:
+`draw_car(profile, rng=null) -> model_id`. Fires on **every** top-3 finish
+(renewable supply — re-winning a completed rally re-grants a car). The rally's
+*difficulty is not an input*: the draw keys off the save profile alone, and it
+is **guaranteed** — a car is always granted. Two paths:
 
-1. `target_tier` as above.
-2. Candidates = `CarLibrary` models at that `reward_tier`.
-3. **Anti-soft-lock filter** — keep only models eligible for ≥1 still-incomplete
-   rally (`RallyLibrary.incomplete_rallies_enterable_by`), so a grant never
-   wastes itself.
-4. **Prefer un-owned** — draw uniformly from not-yet-owned survivors if any, else
-   a duplicate of an owned one.
-5. **Step down** through lower tiers if a tier's filtered set is empty; if *no*
-   eligible car exists at any tier, return `null` (the caller pays out a
-   high-tier upgrade instead).
+1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
+   is at or below the **garage tier** (`garage_tier(profile)`: the highest
+   `reward_tier` among cars the player owns; 1 for an empty garage). Owning a
+   tier-3 car means any tier ≤ 3 car can drop.
+2. **Unlock fallback** (`_unlock_candidates`) — takes over only when the player
+   is *stuck*: every rally their garage can currently enter is already completed
+   (each owned car is checked on its **effective** stats via
+   `UpgradeLibrary.effective_meta`, so installed upgrades count, against
+   `RallyLibrary.incomplete_rallies_enterable_by`). Candidates then become the
+   models eligible for the **lowest-difficulty still-locked** rallies (incomplete,
+   showdown only once unlocked) — e.g. all tier-1/2 rallies beaten with nothing
+   new enterable ⇒ a car for a difficulty-3 rally, never 4. This guarantees a
+   fresh rally opens after every reward.
+3. **Prefer un-owned** — either path draws uniformly from the not-yet-owned
+   candidates when any exist, else grants a duplicate of an owned one.
 
-The roster's starter floor (the `mx5` always has a non-showdown rally in
-its power band, plus the open-class showdown) independently guarantees the player
-always has an enterable rally, so this filter optimises grant *quality*, not
-reachability.
+With every rally completed the fallback is moot and the standard draw still pays
+(a duplicate at worst), so the reward never returns empty. The upgrade draw is
+unchanged and still uses the `target_tier` clamp above.
 
 ## Showdown
 
@@ -70,6 +86,8 @@ handled by the flow controller.
 
 `tests/headless/test_reward_system.gd` (injected seeded RNG): tier-ceiling
 monotonic + clamped; `target_tier` never exceeds the ceiling; upgrade draws land
-at the target tier with the repair kit a rare minority; car draws prefer un-owned
-then fall back to a duplicate; granted cars are always eligible for an incomplete
-rally; and `draw_car` returns `null` when nothing eligible remains.
+at the target tier with the repair kit a rare minority; a part already fitted to
+the driven car is never drawn (repair-kit fallback when the car has everything); car draws never exceed
+the garage tier and prefer un-owned before falling back to a duplicate; a stuck
+player's grant opens a lowest-difficulty locked rally; and `draw_car` still pays
+a real car even with everything completed (the guaranteed-reward property).

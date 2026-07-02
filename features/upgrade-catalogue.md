@@ -7,11 +7,13 @@ the catalogue of upgrade **items** — authored content (like `CarLibrary` /
 here); this library defines what those ids mean and what each does to a fielded
 car.
 
-**Upgrades vs tuning:** upgrades are consumable items that change a car's
-baseline and are **fully consumed when applied** — fitting a part uses it up for
-good; it never returns to inventory (not on swap, and not when the car is wrecked).
-Tuning (`features/tuning.md`, the lift) is free, reversible per-car config nudges.
-This is the upgrades half.
+**Upgrades vs tuning:** upgrades are items that change a car's baseline. Applying
+one consumes it from the unlocked pool and fits it to that car **for good** — it
+never returns to the pool (not on swap, and not when the car is wrecked) — but a
+fitted part can be **toggled on/off** in the upgrades menu
+(`OwnedCar.disabled_upgrades`); only **enabled** parts contribute effects, and a
+car keeps at most one enabled part per slot. Tuning (`features/tuning.md`, the
+lift) is free, reversible per-car config nudges. This is the upgrades half.
 
 ## Catalogue
 
@@ -29,8 +31,9 @@ A fielded car's live `Config.data` is built in a fixed order so effects compose
 predictably:
 
 1. **CarLibrary baseline** — `apply_car` copies the model's spec into `Config.data`.
-2. **Installed upgrades** — `UpgradeLibrary.apply(owned_car, cfg)` walks
-   `installed_upgrades` and applies each `effect` on top.
+2. **Enabled upgrades** — `UpgradeLibrary.apply(owned_car, cfg)` walks
+   `enabled_upgrades(owned_car)` (installed minus the menu-disabled ones) and
+   applies each `effect` on top; a disabled part stays fitted but is inert.
 3. **Per-car tuning** — the player's tuning deltas (`features/tuning.md`).
 4. **Damage multipliers** — power/steer degraded by HP fraction (`features/damage.md`).
 
@@ -65,15 +68,24 @@ are unmodified roster cars, not the player's upgraded ones).
 
 The slot policy and HP healing live in `Save` (it owns inventory + HP):
 
-- **`Save.install_upgrade(instance_id, item_id)`** — fitting **fully consumes** the
-  part: it leaves inventory for good and never comes back. Enforces **one upgrade
-  per slot**: installing into an occupied slot replaces the incumbent, which is
-  **scrapped, not refunded** (it was already consumed when it was applied).
-  Consumables and unknown ids can't be slotted (rejected). There is **no uninstall**
-  — a fitted part can only be replaced by fitting another into the same slot, and a
-  **wrecked car keeps its parts fitted** (the car isn't destroyed — see
+- **`Save.install_upgrade(instance_id, item_id)`** — applying consumes the part
+  from the **unlocked pool** (inventory) for good and fits it to that car
+  permanently. Applied parts **accumulate** on the car; at most one is **enabled**
+  per slot, so a freshly-applied part arrives enabled and switches off any
+  same-slot incumbent (which stays fitted, just disabled). Applying a part the car
+  already carries is rejected (the pool copy is kept). Consumables and unknown ids
+  can't be slotted (rejected). There is **no uninstall** — a fitted part can only
+  be toggled off, never moved to another car, and a **wrecked car keeps its parts
+  fitted** (the car isn't destroyed — see
   [save-persistence.md](save-persistence.md)). The HQ upgrades menu confirms via a
-  dialog before fitting, since the commitment is irreversible.
+  dialog before applying, since the commitment is irreversible; the podium's
+  reward reveal offers the same fit via its Apply/Keep choice
+  (`features/reward-system.md`).
+- **`Save.set_upgrade_enabled(instance_id, item_id, enabled)`** — the upgrades-menu
+  toggle for an applied part. Free, instant and reversible; enabling a part
+  disables its same-slot siblings (`OwnedCar.disabled_upgrades` holds the
+  toggled-off ids). `UpgradeLibrary.enabled_upgrades(car)` /
+  `is_enabled(car, id)` are the read side every effect/gate consumer uses.
 - **`Save.use_repair_kit(instance_id)`** — spends one repair kit to **fully
   restore** the car to its CarLibrary `max_hp`. The only way HP goes back up, and
   what revives a wrecked (0 HP) car. Offered at the tuning lift and at the
@@ -95,7 +107,11 @@ baseline incl. `mass_mult`; empty list is a no-op), `effective_meta`
 brake-bias tuning gates. `test_rally_library.gd` covers an installed upgrade
 qualifying / disqualifying a car for a rally's pw band; `test_car_library.gd`
 covers `apply_owned` re-syncing the RigidBody mass after a weight-reduction kit.
-Slot-replacement (incumbent scrapped, not refunded), consumable/unknown rejection,
-repair-kit heal+clamp, and wreck consumption (parts not returned) are in
-`test_save_manager.gd` (they need the Save profile). The HQ fit-confirmation flow is
-in `test_menu_flow.gd`.
+Disabled parts being inert everywhere (config, effective stats, tuning gates) is
+covered there too. Same-slot exclusivity (applying/enabling a part disables the
+incumbent instead of scrapping it), duplicate-apply rejection, the
+`set_upgrade_enabled` toggle, consumable/unknown rejection, repair-kit heal+clamp,
+and wreck consumption (parts not returned) are in `test_save_manager.gd` (they
+need the Save profile). The HQ apply-confirmation flow and the upgrades-menu
+toggle are in `test_menu_flow.gd`; the podium's Apply/Keep reward choice is in its
+podium-sequence test there.

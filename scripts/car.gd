@@ -17,6 +17,12 @@ static var _blank_wheel_tex: ImageTexture
 # instead of oscillating.
 const LEVEL_ASSIST_DAMPING := 0.35
 
+# Yaw-rate damping for the spin-protection assist, as a fraction of
+# spin_assist_torque per rad/s of yaw. Scales off the same knob so the
+# inspector keeps a single strength control while the recovery still settles
+# to the travel direction instead of oscillating.
+const SPIN_ASSIST_DAMPING := 0.35
+
 # Contacts the chassis reports per physics tick for the damage model. The car only
 # ever touches a few obstacles at once; a small cap keeps contact monitoring cheap.
 const MAX_CONTACTS_REPORTED := 8
@@ -295,13 +301,15 @@ func _physics_process(delta: float) -> void:
 	# standstill up to full at steer_assist_min_speed) so it doesn't snap in at
 	# low speed. Steering input offsets them by a fixed steer_limit.
 	var local_vel := global_transform.basis.inverse() * linear_velocity
+	var slip_angle := 0.0  # unclamped travel-direction yaw; also feeds spin protection below
 	var travel_angle := 0.0
 	if Vector2(local_vel.x, local_vel.z).length() > 2.0 and local_vel.z < 0.0:
 		# Yaw of the travel direction relative to the car's forward (-Z),
 		# positive to the left like VehicleWheel3D steering. Clamped so a deep
 		# slide can't spin the wheels to extreme angles. Only applied when
 		# moving forwards; when slow or reversing, plain input steering.
-		travel_angle = clampf(atan2(-local_vel.x, -local_vel.z), -PI / 3.0, PI / 3.0)
+		slip_angle = atan2(-local_vel.x, -local_vel.z)
+		travel_angle = clampf(slip_angle, -PI / 3.0, PI / 3.0)
 	var steer_input := ai_steer if ai_controlled else (0.0 if controls_locked else Input.get_axis("steer_right", "steer_left"))
 	# Ramp the travel alignment in linearly from 0 at standstill to its full
 	# configured value at steer_assist_min_speed (≈30 km/h), so it doesn't fight
@@ -331,6 +339,28 @@ func _physics_process(delta: float) -> void:
 	if cfg.steer_assist_max_angle > 0.0:
 		angle_scale = clampf(1.0 - rotated_into_turn / cfg.steer_assist_max_angle, 0.0, 1.0)
 	apply_torque(global_transform.basis.y * steer_input * cfg.steer_assist_torque * assist_scale * angle_scale)
+
+	# Spin protection: once the car has rotated further than spin_assist_angle
+	# away from its direction of travel, a corrective yaw torque pulls the nose
+	# back toward the travel direction — the slide-recovery counterpart to the
+	# steer assist above (which merely stops adding rotation past its taper).
+	# slip_angle's sign points toward the travel direction (positive left), so
+	# torquing along sign(slip_angle) always rotates the nose back. The torque
+	# ramps in linearly from 0 at the threshold to full at twice it, shares the
+	# steer assist's speed fade-in (assist_scale) so it stays out of low-speed
+	# manoeuvring, and carries a yaw-rate damping term so the slide settles
+	# instead of oscillating nose-side-to-side. Suppressed while the handbrake
+	# is held, so deliberate handbrake drifts stay possible. Only active while
+	# travelling nose-forward (slip_angle is 0 past 90° / when reversing — the
+	# aid prevents reaching a spin, it doesn't unwind a completed one).
+	if cfg.spin_assist_torque > 0.0 and cfg.spin_assist_angle > 0.0 and not handbrake:
+		var excess := absf(slip_angle) - cfg.spin_assist_angle
+		if excess > 0.0:
+			var spin_scale := clampf(excess / cfg.spin_assist_angle, 0.0, 1.0) * assist_scale
+			var up := global_transform.basis.y
+			var yaw_rate := angular_velocity.dot(up)
+			apply_torque(up * spin_scale * cfg.spin_assist_torque
+				* (signf(slip_angle) - yaw_rate * SPIN_ASSIST_DAMPING))
 
 	# Self-righting assist: while any wheel is off the ground, ease the chassis
 	# back toward level. up × world_up is the roll+pitch axis that rotates the
@@ -472,6 +502,16 @@ func current_car_name() -> String:
 	if _car_index < 0:
 		return "Base"
 	return CarLibrary.CARS[_car_index]["name"]
+
+
+# Per-car bonnet-camera position offset (metres, in the car's local space), added
+# on top of the shared GameConfig.bonnet_offset so each body's hood cam can be
+# nudged to sit at the right spot. Zero (baseline) for the untouched car and for
+# any entry that doesn't author one. Read by CameraManager.retarget().
+func bonnet_cam_offset() -> Vector3:
+	if _car_index < 0:
+		return Vector3.ZERO
+	return CarLibrary.CARS[_car_index].get("bonnet_cam_offset", Vector3.ZERO)
 
 
 # Give this car its OWN private GameConfig (a deep copy of the current global

@@ -8,6 +8,12 @@
 > ids) and adds `use_repair_kit(instance_id, heal_amount)` (heal clamped to
 > max_hp). Tests: `tests/headless/test_upgrade_library.gd` + slot/repair/wreck
 > coverage in `test_save_manager.gd`. Doc: `features/upgrade-catalogue.md`.
+> **Semantics update (2026-07):** applied parts now STAY on the car and are
+> per-car toggleable (`OwnedCar.disabled_upgrades`, `Save.set_upgrade_enabled`;
+> one ENABLED per slot — applying/enabling disables the same-slot incumbent
+> instead of scrapping it). Won parts are offered straight onto the driven car on
+> the podium (Apply/Keep); the inventory is the "unlocked pool" of kept parts.
+> Sections below describing replace-and-scrap describe the original design.
 > **Still open / deferred:** the full part list per slot/tier and exact `effect`
 > numbers (balance pass), the `repair_kit_hp` GameConfig tunable (caller passes
 > the heal amount today), and the reward-draw policy (owned by

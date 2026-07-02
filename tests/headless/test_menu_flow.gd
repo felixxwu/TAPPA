@@ -929,6 +929,38 @@ func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
 		"the installed part is consumed from inventory")
 
 
+func test_hq_lift_toggles_an_applied_upgrade() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var owned: Dictionary = _save.grant_car("rs3")
+	var id := int(owned["instance_id"])
+	_save.set_selected_car(id)
+	_save.add_item("engine_stage1")
+	_save.install_upgrade(id, "engine_stage1")
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	# The applied part gets a focusable toggle row in the upgrades menu.
+	var toggle: Button = null
+	for b in hq._lift_upgrades_box.find_children("*", "Button", true, false):
+		if String(b.text).begins_with("DISABLE"):
+			toggle = b
+			break
+	assert_not_null(toggle, "an applied part shows a Disable toggle")
+	assert_eq(toggle.focus_mode, Control.FOCUS_ALL, "the toggle is keyboard / gamepad focusable")
+	# Disabling parks the part: still fitted, but its effect is off.
+	hq._toggle_upgrade(id, "engine_stage1", false)
+	var car: Dictionary = _save.get_car(id)
+	assert_true(car["installed_upgrades"].has("engine_stage1"), "a disabled part stays applied to the car")
+	assert_false(UpgradeLibrary.is_enabled(car, "engine_stage1"), "the toggle switches the part off")
+	# Re-enabling brings it back — free and reversible, no confirmation dialog.
+	hq._toggle_upgrade(id, "engine_stage1", true)
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "engine_stage1"),
+		"the toggle switches the part back on")
+
+
 func test_hq_back_steps_carpark_to_table_to_garage() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -966,6 +998,33 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 		"a loading overlay is shown immediately on Start")
 	assert_true(RallySession.is_active(), "Start hands off to an active RallySession")
 	assert_eq(RallySession.rally_id(), "shakedown", "the chosen rally is running")
+
+
+func test_hq_starting_a_rally_selects_the_fielded_car() -> void:
+	# Fielding a car for a rally also makes it the selected car (the one on the
+	# tuning lift), so the garage shows the car the player last raced.
+	_save.grant_car("rs3")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	await _await_lineup(hq)
+	# Focus a car that is NOT the currently selected one, then start.
+	var before: int = _save.selected_instance_id()
+	var other := -1
+	for i in hq._eligible.size():
+		if int(hq._eligible[i]["instance_id"]) != before:
+			hq._focus = i
+			hq._focus_changed(true)
+			other = int(hq._eligible[i]["instance_id"])
+			break
+	assert_ne(other, -1, "a second eligible car exists to field")
+	await hq._on_start_pressed()
+	assert_true(RallySession.is_active(), "the rally launches with the fielded car")
+	assert_eq(_save.selected_instance_id(), other,
+		"fielding a car for a rally makes it the selected (lift) car")
 
 
 func test_hq_mobile_first_start_gates_on_control_scheme_pick() -> void:
@@ -1064,15 +1123,22 @@ func test_podium_shows_the_finish_summary() -> void:
 		assert_true(mmi.multimesh.instance_count > 0, "%s has placed instances" % node_name)
 
 
-func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
+func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	# A top-3 win that grants the Porsche 911 plus the two per-rally upgrades. The
-	# reward sequence steps PODIUM -> LEADERBOARD -> CAR_REVEAL -> UPGRADE_REVEAL x2,
-	# with the slot-machine spins resolving instantly under headless.
+	# reward sequence steps PODIUM -> LEADERBOARD -> UPGRADE_REVEAL x2 -> CAR_REVEAL
+	# (upgrades first, at the podium, then the fly-over to the showroom), with the
+	# slot-machine spins resolving instantly under headless. Each upgrade reveal
+	# ends on an Apply/Keep choice targeting the car the player just drove.
+	var driven: Dictionary = _save.grant_car("rs3")
+	var driven_id := int(driven["instance_id"])
+	_save.add_item("engine_stage1")
+	_save.add_item("brake_kit")
 	RallySession._last_result = {
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
 		"car_reward": "porsche911", "car_reward_is_new": true,
 		"upgrades": ["engine_stage1", "brake_kit"],
+		"car_instance_id": driven_id,
 		"standings": [
 			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},
 			{"name": "Rival 1", "combined_ms": 70000, "dnf": false, "is_player": false, "placed": 2},
@@ -1082,9 +1148,9 @@ func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
 	var pod: Node3D = load("res://podium.tscn").instantiate()
 	add_child_autofree(pod)
 	await get_tree().process_frame
-	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.CAR_REVEAL,
-			pod.Stage.UPGRADE_REVEAL, pod.Stage.UPGRADE_REVEAL] as Array[int],
-		"a car + two upgrades queue the podium, leaderboard, car reveal and one reveal per upgrade")
+	assert_eq(pod._stages, [pod.Stage.PODIUM, pod.Stage.LEADERBOARD, pod.Stage.UPGRADE_REVEAL,
+			pod.Stage.UPGRADE_REVEAL, pod.Stage.CAR_REVEAL] as Array[int],
+		"two upgrades + a car queue the podium, leaderboard, one reveal per upgrade, then the car")
 
 	# Next -> the leaderboard.
 	pod._on_next()
@@ -1094,46 +1160,68 @@ func test_podium_sequence_reveals_leaderboard_then_car_then_upgrade() -> void:
 	assert_string_contains(lb, "RIVAL 1", "the leaderboard lists the opponent field")
 	assert_string_contains(lb, "WRECKED", "a DNF opponent reads as WRECKED on the leaderboard")
 
-	# Next -> the car slot-machine reveal (resolves instantly headless).
+	# Next -> the first upgrade slot-machine reveal (resolves instantly headless).
+	# Upgrades come FIRST, handed out at the podium; the showroom car doesn't exist
+	# yet — it is only spawned by the closing car reveal.
 	pod._on_next()
 	await get_tree().process_frame
-	assert_eq(pod._stage, pod.Stage.CAR_REVEAL, "Next from the leaderboard shows the car reveal")
+	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next from the leaderboard shows the first upgrade reveal")
+	assert_string_contains(_label_texts(pod), "STAGE 1 ENGINE KIT", "the first won upgrade is revealed by name")
+	assert_string_contains(_label_texts(pod), "UPGRADE 1 OF 2", "the reveal counts up when several were won")
+	assert_false(is_instance_valid(pod._showroom_car),
+		"no showroom car exists yet — upgrades are revealed at the podium")
+	# The content stack drops to the bottom during a reveal so the card clears the 3D view.
+	assert_eq(pod._middle.alignment, BoxContainer.ALIGNMENT_END,
+		"the menu drops to the bottom during the upgrade reveal")
+	# The reveal lands on the Apply/Keep choice for the car the player just drove:
+	# Next is held back until the player picks, and Apply is focused for keyboard/pad.
+	assert_true(pod._choice_pending, "the upgrade reveal opens the apply/keep choice")
+	assert_true(pod._choice_box.visible, "the choice buttons are shown")
+	assert_false(pod._next_button.visible, "Next is hidden until the choice is made")
+	assert_eq(pod._apply_button.focus_mode, Control.FOCUS_ALL, "Apply is focusable")
+	assert_eq(pod._keep_button.focus_mode, Control.FOCUS_ALL, "Keep is focusable")
+	await get_tree().process_frame
+	assert_eq(pod.get_viewport().gui_get_focus_owner(), pod._apply_button,
+		"Apply is focused for keyboard / gamepad")
+	# Applying fits the part straight onto the driven car.
+	pod._apply_button.pressed.emit()
+	assert_true(_save.get_car(driven_id)["installed_upgrades"].has("engine_stage1"),
+		"Apply fits the won part to the car the player drove")
+	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 0,
+		"the applied part is consumed from the unlocked pool")
+	assert_false(pod._choice_pending, "the choice resolves once picked")
+	assert_true(pod._next_button.visible, "Next returns after the choice")
+	assert_ne(pod._next_button.text, "CONTINUE TO HQ", "more stages remain, so this isn't the last one")
+
+	# Next -> the second upgrade reveal. Keeping the part leaves it unlocked for
+	# the garage upgrades menu instead of fitting it.
+	pod._on_next()
+	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next shows the second upgrade reveal")
+	assert_string_contains(_label_texts(pod), "BIG BRAKE KIT", "the second won upgrade is revealed by name")
+	pod._keep_button.pressed.emit()
+	assert_false(_save.get_car(driven_id)["installed_upgrades"].has("brake_kit"),
+		"Keep does not fit the part to the car")
+	assert_eq(int(_save.profile["inventory"].get("brake_kit", 0)), 1,
+		"a kept part stays in the unlocked pool for the garage menu")
+
+	# Next -> the car slot-machine reveal (the closing stage: the fly-over to the
+	# showroom happens only after the upgrades are handed out).
+	pod._on_next()
+	await get_tree().process_frame
+	assert_eq(pod._stage, pod.Stage.CAR_REVEAL, "Next from the last upgrade shows the car reveal")
 	assert_true(pod._reveal_done, "the slot spin resolves instantly under headless")
 	assert_true(pod._next_button.visible, "Next reappears once the spin locks on")
 	# The showroom car is spawned by the slot's on_done (only once the reel locks
 	# on), so after the reveal resolves it exists and is shown — not before.
 	assert_true(is_instance_valid(pod._showroom_car), "the won car is spawned once the reveal lands")
 	assert_true(pod._showroom_car.visible, "the revealed car is shown after the spin")
-	# The content stack drops to the bottom during the reveal so it clears the car.
-	assert_eq(pod._middle.alignment, BoxContainer.ALIGNMENT_END,
-		"the menu drops to the bottom during the car reveal")
 	var car := _label_texts(pod)
 	assert_string_contains(car, "PORSCHE 911", "the won car is revealed by name")
 	assert_string_contains(car, "NEW", "an un-owned car reward is flagged NEW")
 	# The car reveal is a single caption line — the big slot label is hidden so the
 	# car name isn't shown twice.
 	assert_false(pod._slot_label.visible, "the big slot label is hidden on the one-line car reveal")
-
-	# Next -> the first upgrade slot-machine reveal.
-	pod._on_next()
-	await get_tree().process_frame
-	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next from the car reveal shows the first upgrade reveal")
-	assert_string_contains(_label_texts(pod), "STAGE 1 ENGINE KIT", "the first won upgrade is revealed by name")
-	assert_string_contains(_label_texts(pod), "UPGRADE 1 OF 2", "the reveal counts up when several were won")
-	# The shared slot label is restored for the upgrade reveal (the car reveal hid it).
-	assert_true(pod._slot_label.visible, "the slot label is shown again for the upgrade reveal spin")
-	# The reward car stays on show through the upgrade reveals (it used to despawn).
-	assert_true(is_instance_valid(pod._showroom_car) and pod._showroom_car.visible,
-		"the reward car stays visible during the first upgrade reveal")
-	assert_ne(pod._next_button.text, "CONTINUE TO HQ", "more upgrades remain, so this isn't the last stage")
-
-	# Next -> the second upgrade reveal (the last stage).
-	pod._on_next()
-	await get_tree().process_frame
-	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next shows the second upgrade reveal")
-	assert_string_contains(_label_texts(pod), "BIG BRAKE KIT", "the second won upgrade is revealed by name")
-	assert_true(is_instance_valid(pod._showroom_car) and pod._showroom_car.visible,
-		"the reward car is still visible during the second upgrade reveal")
 	assert_eq(pod._next_button.text, "CONTINUE TO HQ", "the final stage's button returns to HQ")
 
 

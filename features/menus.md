@@ -220,9 +220,13 @@ itself** and doesn't need to scroll. The two pages:
 - **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero;
   locked axes greyed with a "needs X kit" note) plus **Reset to neutral**; each change
   saves via `Save.set_tuning`.
-- **Upgrades** (`LiftPage.UPGRADES`) — per-slot install from inventory via
-  `Save.install_upgrade` (fitting **fully consumes** the part, confirmed via a dialog
-  first since it can't be undone) plus the **Repair Kit** action `Save.use_repair_kit`.
+- **Upgrades** (`LiftPage.UPGRADES`) — per slot: every part **applied** to the car
+  gets an **Enable/Disable toggle** (`Save.set_upgrade_enabled`; free, instant, at
+  most one enabled per slot — enabling one switches off a same-slot sibling), and
+  each matching **unlocked** item gets an **Apply** button (`Save.install_upgrade`;
+  applying consumes the item from the unlocked pool and fits it to this car for
+  good, confirmed via a dialog first since it can't be moved or recovered) plus
+  the **Repair Kit** action `Save.use_repair_kit`.
   The repair row also shows a green note **"All your cars were wrecked — a free Repair
   Kit was provided."** on the refresh where `Save.ensure_repair_safety_net` (called from
   `_refresh_lift_ui`) just granted a free kit (all owned cars wrecked + none held).
@@ -299,7 +303,9 @@ its name + stats (drive / country / type / power-to-weight / **Health %**); ther
 no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
 Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_kit`)
-and unlocks Start. A **banner** names the rally + restriction; **Start** shows the
+and unlocks Start. A **banner** names the rally + restriction; **Start** records the
+fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
+so the tuning lift shows the car last raced), shows the
 `LoadingScreen` overlay immediately and (after a fully presented frame, so it paints)
 calls `RallySession.start_rally(rally, owned)` — the handoff derives event target
 times by generating each track, which is heavy, so the overlay covers that work
@@ -381,15 +387,24 @@ only when something was won.
    over it.
 2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
    position, name + car, time / `WRECKED`, the player's row tinted + marked.
-3. **CAR_REVEAL** (only if `car_reward != ""`) — the won car is spawned onto the
-   showroom turntable and turns there, with a **single-line** card underneath:
+3. **UPGRADE_REVEAL** (one stage **per won upgrade** — a rally grants
+   `cfg.rally_upgrade_reward_count`, default 2) — a slot-machine spin for each
+   per-rally upgrade, landing on its name. These come **before the car reveal**
+   and are staged at the **podium camera**, so the upgrades are handed out while
+   the player's car still stands on the podium. The lock-in opens an
+   **Apply/Keep choice** (two focusable buttons, Apply focused first): *Apply*
+   fits the part straight onto the owned car the player just drove
+   (`Save.install_upgrade` on the result's `car_instance_id`); *Keep for later*
+   leaves it unlocked for the garage upgrades menu. Next is **hidden until the
+   choice is made** (`_choice_pending`). Repair kits and a missing driven car
+   skip the choice — the item just lands in the unlocked pool.
+4. **CAR_REVEAL** (only if `car_reward != ""`) — the camera **flies over to the
+   showroom** and the same slot-machine reel spins through the car catalogue's
+   names, decelerating onto the won car; on the lock-in the car appears on the
+   showroom turntable (hidden until then) and the card collapses to a **single
+   line**: the big slot label hides and the caption alone carries
    `"<car> (NEW) — delivered to your garage"` (the `(NEW)` tag only when first
-   owned). The big slot label is hidden here so the name isn't shown twice and the
-   card stays one line (no slot-machine spin for the car — that's the upgrade reveal).
-4. **UPGRADE_REVEAL** (one stage **per won upgrade** — a rally grants
-   `cfg.rally_upgrade_reward_count`, default 2) — the same slot-machine spin for
-   each per-rally upgrade, landing on its name. The **reward car stays on the
-   turntable** (and keeps spinning) through these reveals rather than despawning.
+   owned), so the name isn't shown twice.
 
 During the two reveals the overlay's content stack drops to the **bottom of the
 screen** (`_middle.alignment = ALIGNMENT_END`) so the slot card clears the

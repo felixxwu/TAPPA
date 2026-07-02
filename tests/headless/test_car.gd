@@ -290,6 +290,70 @@ func _left_steer_yaw_rate(slip_into_turn: float, torque: float) -> float:
 	return _car.angular_velocity.y
 
 
+# --- Spin protection assist ---------------------------------------------------
+# Past spin_assist_angle of slip, a corrective yaw torque pulls the nose back
+# toward the direction of travel (opposing the spin). Inactive below the
+# threshold and while the handbrake is held. Each check differences an
+# assist-on run against an assist-off run from an identical slide, so the
+# tire/caster yaw common to both cancels out and only the assist remains.
+
+func test_spin_assist_yaws_nose_back_toward_travel() -> void:
+	# Sliding with travel well to the LEFT of the nose (the car has rotated
+	# right, past the threshold): the assist must add LEFT (positive) yaw,
+	# rotating the nose back toward the travel direction.
+	var gain := await _spin_assist_yaw_gain(deg_to_rad(60.0), false)
+	assert_gt(gain, 0.02,
+		"beyond the slip threshold the assist yaws the nose back toward travel")
+
+
+func test_spin_assist_inactive_below_threshold() -> void:
+	# Travelling straight (zero slip) the assist must add essentially nothing —
+	# it's spin protection, not a straight-line stabiliser.
+	var gain := await _spin_assist_yaw_gain(0.0, false)
+	assert_lt(absf(gain), 0.02, "no assist torque while slip is below the threshold")
+
+
+func test_spin_assist_suppressed_by_handbrake() -> void:
+	# The same over-threshold slide with the handbrake held: deliberate drifts
+	# must not be fought, so the assist contribution must stay near zero.
+	var gain := await _spin_assist_yaw_gain(deg_to_rad(60.0), true)
+	assert_lt(absf(gain), 0.02, "handbrake suppresses the spin-protection torque")
+
+
+# Yaw rate the spin assist adds (torque on minus torque off) over a short window,
+# from a 20 m/s slide with the travel direction `slip` radians to the LEFT of the
+# nose. Steering input stays neutral so the steer assist contributes nothing.
+func _spin_assist_yaw_gain(slip: float, handbrake: bool) -> float:
+	var off := await _spin_slide_yaw_rate(slip, 0.0, handbrake)
+	var on := await _spin_slide_yaw_rate(slip, 12000.0, handbrake)
+	return on - off
+
+
+func _spin_slide_yaw_rate(slip: float, torque: float, handbrake: bool) -> float:
+	var cfg: GameConfig = Config.data
+	var saved_torque := cfg.spin_assist_torque
+	var saved_angle := cfg.spin_assist_angle
+	cfg.spin_assist_torque = torque
+	cfg.spin_assist_angle = deg_to_rad(20.0)
+	# Reset to the spawn pose so every run starts from an identical state.
+	Input.action_press("reset_car")
+	await _wait_physics(5)
+	Input.action_release("reset_car")
+	await _wait_physics(120)
+	var forward := -_car.global_transform.basis.z
+	var left := -_car.global_transform.basis.x
+	_car.linear_velocity = (forward * cos(slip) + left * sin(slip)) * 20.0
+	_car.angular_velocity = Vector3.ZERO
+	if handbrake:
+		Input.action_press("handbrake")
+	await _wait_physics(12)
+	if handbrake:
+		Input.action_release("handbrake")
+	cfg.spin_assist_torque = saved_torque
+	cfg.spin_assist_angle = saved_angle
+	return _car.angular_velocity.y
+
+
 func _axle_normal_sum(rear: bool) -> float:
 	var total := 0.0
 	for wheel in _car.find_children("*", "VehicleWheel3D", false):

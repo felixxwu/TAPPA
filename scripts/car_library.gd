@@ -61,6 +61,11 @@ extends RefCounted
 #                tail planted under power; front defaults to 0 when omitted.
 #
 # drive_mode matches Drivetrain.DriveMode: 0 RWD, 1 AWD, 2 FWD.
+#
+# bonnet_cam_offset (Vector3, metres, car-local) nudges the bonnet/hood camera on
+# top of the shared GameConfig.bonnet_offset so each body can sit its hood cam at
+# the right spot. Defaults to Vector3.ZERO; read via car.gd bonnet_cam_offset()
+# and applied in CameraManager.retarget(). See features/camera.md.
 
 const RWD := 0
 const AWD := 1
@@ -95,6 +100,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 7,
 		"grip_front": 1, "grip_rear": 1, "shift_time": 0.30,  # manual H-pattern roadster
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.50, "wheelbase": 2.31,
 		"wheel_radius": 0.30, "wheel_width": 0.195,
@@ -115,6 +121,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 10,
 		"grip_front": 1.05, "grip_rear": 0.8, "shift_time": 0.30,  # 6-speed manual, FWD
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
@@ -136,6 +143,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 9,
 		"grip_front": 0.5, "grip_rear": 0.5, "shift_time": 0.35,  # 5-speed manual, skinny tyres, FWD
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
 		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
@@ -156,6 +164,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [3.563, 2.526, 1.679, 1.022, 0.788, 0.761, 0.635], "final_drive": 12,
 		"grip_front": 1, "grip_rear": 0.8, "shift_time": 0.08,  # 7-speed S-tronic dual-clutch
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
 		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
 		"wheel_radius": 0.335, "wheel_width": 0.235,
@@ -170,6 +179,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9,
 		"grip_front": 0.45, "grip_rear": 0.45, "shift_time": 0.35,  # 5-speed manual, skinny tyres, mid-engine RWD
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
 		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
 		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),
@@ -185,12 +195,13 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1750 kg, 440 Magnum V8, RWD muscle
-		"id": "charger", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
+		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1750.0, "engine": "mopar_440_v8",
 		# Real 3-speed TorqueFlite A727 automatic ratios ('69 Charger R/T 440).
 		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.30,  # 3-speed TorqueFlite auto, RWD
 		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
 		# 5.28 m x 1.95 m). Long, low, heavy coupe.
 		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
@@ -206,12 +217,13 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
-		"id": "mustang", "country": "US", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 1,
+		"id": "mustang", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 1,
 		"mass": 1720.0, "engine": "ford_50_v8",
 		# Real Getrag MT82 6-speed ratios (Mustang GT S550, 2015-17).
 		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.22,  # 6-speed manual muscle
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
 		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -225,6 +237,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [4.89, 3.17, 2.15, 1.56, 1.18, 0.94, 0.76, 0.61], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.06,  # 8-speed PDK
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.85, 0.52, 4.52), "cabin": Vector3(1.45, 0.48, 1.55),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.45,
 		"wheel_radius": 0.34, "wheel_width": 0.245,
@@ -238,6 +251,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [3.231, 2.188, 1.609, 1.233, 0.970, 0.795], "final_drive": 7,
 		"grip_front": 1.20, "grip_rear": 1, "shift_time": 0.16,  # automated single-clutch ASG
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
 		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
 		"wheel_radius": 0.34, "wheel_width": 0.255,
@@ -251,6 +265,7 @@ const CARS: Array[Dictionary] = [
 		"gear_ratios": [3.909, 2.438, 1.810, 1.458, 1.185, 0.967, 0.844], "final_drive": 7,
 		"grip_front": 1.1, "grip_rear": 0.9, "shift_time": 0.05,  # ISR single-clutch, ~50 ms shift
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
 		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
 		"wheel_radius": 0.35, "wheel_width": 0.30,

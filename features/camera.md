@@ -90,6 +90,18 @@ Position and field of view come from `GameConfig`:
   `-Z` is the front, `+Y` raises it to eye height.
 - `bonnet_fov` (default `75.0`).
 
+On top of the shared `bonnet_offset`, each `CarLibrary` entry carries a
+`bonnet_cam_offset` (`Vector3`, metres, car-local; defaults to `Vector3.ZERO`) so
+an individual body can nudge its hood cam to the right spot. `car.gd`'s
+`bonnet_cam_offset()` returns the active car's value (zero for the untouched
+baseline), and `CameraManager.refresh_bonnet_offset()` sets the bonnet camera's
+origin to `bonnet_offset + bonnet_cam_offset`. Because the bonnet camera is a
+scene child of `$Car` (not re-parented at boot), `world.gd` calls
+`refresh_bonnet_offset()` right after fielding the car (`apply_car` /
+`apply_owned`) — otherwise the per-car offset would only take effect on a later
+car swap. `retarget()` (car swap) re-parents the camera and then calls
+`refresh_bonnet_offset()` itself.
+
 The `CameraManager` applies these on `_ready()` and re-applies them when the
 active car is swapped: `world.gd:cycle_car()` parks the bonnet camera on the
 world root while the old car is freed, then `CameraManager.retarget(fresh)`

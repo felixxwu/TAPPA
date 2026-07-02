@@ -7,9 +7,12 @@ extends RefCounted
 # a fielded car's config. See todo/upgrade-catalogue.md.
 #
 # Distinguish from TUNING: tuning (features/tuning.md, the lift) is free, reversible
-# per-car config nudges. Upgrades are consumable items that change a car's baseline
-# and are FULLY CONSUMED when applied — fitting a part uses it up for good; it never
-# returns to inventory (not on swap, and not when the car is wrecked).
+# per-car config nudges. Upgrades are items that change a car's baseline: applying
+# one consumes it from the unlocked pool and fits it to that car FOR GOOD (it never
+# returns to the pool — not on swap, and not when the car is wrecked), but a fitted
+# part can be toggled on/off in the upgrades menu (OwnedCar.disabled_upgrades). Only
+# ENABLED parts contribute effects; a car keeps at most one enabled per slot
+# (Save.install_upgrade / set_upgrade_enabled).
 
 # The one consumable's id, referenced by Save when a repair kit is used.
 const REPAIR_KIT_ID := "repair_kit"
@@ -77,14 +80,31 @@ static func is_consumable(id: String) -> bool:
 	return bool(by_id(id).get("consumable", false))
 
 
+# The applied upgrades that currently take effect on a car: installed minus the
+# ones toggled off in the upgrades menu. Every effect/gate reader below (and any
+# eligibility caller) goes through this, so a disabled part is inert everywhere.
+static func enabled_upgrades(owned_car: Dictionary) -> Array:
+	var disabled: Array = owned_car.get("disabled_upgrades", [])
+	var out: Array = []
+	for item_id in owned_car.get("installed_upgrades", []):
+		if not disabled.has(item_id):
+			out.append(item_id)
+	return out
+
+
+static func is_enabled(owned_car: Dictionary, item_id: String) -> bool:
+	return not (owned_car.get("disabled_upgrades", []) as Array).has(item_id)
+
+
 # --- Effect application (pipeline step 2) ------------------------------------
 
-# Apply every installed upgrade's effect on top of the CarLibrary baseline that
-# apply_car already wrote into `cfg` (step 1). Pure: mutates the passed-in live
-# `cfg` only, never the authored .tres. Unknown ids and flag-only effects
-# (`unlocks_*`) are skipped here — flags gate the tuning sliders, not config.
+# Apply every ENABLED upgrade's effect on top of the CarLibrary baseline that
+# apply_car already wrote into `cfg` (step 1); disabled parts stay fitted but
+# inert. Pure: mutates the passed-in live `cfg` only, never the authored .tres.
+# Unknown ids and flag-only effects (`unlocks_*`) are skipped here — flags gate
+# the tuning sliders, not config.
 static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
-	for item_id in owned_car.get("installed_upgrades", []):
+	for item_id in enabled_upgrades(owned_car):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:
 			var val: Variant = effect[key]
@@ -127,7 +147,7 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 		out["peak_torque"] = eng.get("peak_torque", 0.0)
 	if not out.has("redline"):
 		out["redline"] = eng.get("redline_rpm", 0.0)
-	for item_id in owned_car.get("installed_upgrades", []):
+	for item_id in enabled_upgrades(owned_car):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:
 			match key:
@@ -151,7 +171,7 @@ static func brake_bias_unlocked(owned_car: Dictionary) -> bool:
 
 
 static func _has_flag(owned_car: Dictionary, flag: String) -> bool:
-	for item_id in owned_car.get("installed_upgrades", []):
+	for item_id in enabled_upgrades(owned_car):
 		if bool(by_id(item_id).get("effect", {}).get(flag, false)):
 			return true
 	return false

@@ -2,15 +2,25 @@
 
 > Status: **DONE (core).** `RewardSystem` (`scripts/reward_system.gd`) implements
 > the pure draw policy: `tier_ceiling` / `target_tier` clamp, `draw_upgrade`
-> (target-tier parts + low-weight repair kit), and `draw_car` (anti-soft-lock
-> eligibility filter, prefer-un-owned, tier step-down, null when nothing
-> eligible). Static functions with an injectable RNG. Tests:
+> (target-tier parts + low-weight repair kit), and `draw_car` (garage-tier pool —
+> the highest `reward_tier` owned — prefer-un-owned, plus a stuck-player unlock
+> fallback that grants a car for the lowest-difficulty locked rally; the draw is
+> guaranteed, never null. NOTE: this SUPERSEDES the difficulty-based car draw
+> specced below — the sections that follow describe the original design). Static
+> functions with an injectable RNG. Tests:
 > `tests/headless/test_reward_system.gd` (7, seeded). Doc:
 > `features/reward-system.md`. **Still open / deferred:** the curve values
 > (`tier_ceiling` shape, `f(difficulty)` remap, `repair_kit_drop_weight`) move to
 > `GameConfig` in the balance pass; the call site (per-event / per-rally trigger)
 > and reveal are owned by `features/rally-session.md` + `todo/menus.md`. The draw
 > functions return an id — the caller delivers via `Save.add_item`/`grant_car`.
+> **Delivery update (2026-07):** won upgrades are no longer inventory-only — the
+> podium reveal offers an Apply/Keep choice that fits the part straight onto the
+> car the player just drove; declined parts stay in the unlocked pool, and applied
+> parts are per-car toggleable (`Save.set_upgrade_enabled`). `draw_upgrade` also
+> excludes parts already fitted to the driven car (repair-kit fallback when the
+> car has everything), so a reward is never a part the car already carries. See
+> `features/reward-system.md` › *Delivery* and `features/upgrade-catalogue.md`.
 >
 > Implementation brief for the reward
 > **draw policy** in `gameplay.md` › *Progression & rewards* — what the player is

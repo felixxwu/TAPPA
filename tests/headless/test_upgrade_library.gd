@@ -85,3 +85,26 @@ func test_aero_and_brake_bias_tuning_are_gated_by_upgrades() -> void:
 	var kitted := {"installed_upgrades": ["aero_kit", "brake_kit"]}
 	assert_true(UpgradeLibrary.aero_tuning_unlocked(kitted), "aero kit unlocks aero tuning")
 	assert_true(UpgradeLibrary.brake_bias_unlocked(kitted), "brake kit unlocks brake bias")
+
+
+func test_disabled_upgrades_are_inert_everywhere() -> void:
+	# A part toggled off in the upgrades menu stays fitted but contributes nothing:
+	# no config effect, no effective-meta shift, no tuning gate.
+	var car := {
+		"installed_upgrades": ["engine_stage1", "aero_kit", "brake_kit"],
+		"disabled_upgrades": ["engine_stage1", "aero_kit", "brake_kit"],
+	}
+	var cfg := GameConfig.new()
+	cfg.peak_torque = 100.0
+	UpgradeLibrary.apply(car, cfg)
+	assert_almost_eq(cfg.peak_torque, 100.0, 0.001, "a disabled engine kit leaves the config untouched")
+	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0}
+	var eff := UpgradeLibrary.effective_meta(car, entry)
+	assert_almost_eq(float(eff["peak_torque"]), 200.0, 0.001, "a disabled part doesn't shift effective stats")
+	assert_false(UpgradeLibrary.aero_tuning_unlocked(car), "a disabled aero kit doesn't unlock aero tuning")
+	assert_false(UpgradeLibrary.brake_bias_unlocked(car), "a disabled brake kit doesn't unlock brake bias")
+	# enabled_upgrades reflects the toggle; re-enabling brings the part back.
+	assert_eq(UpgradeLibrary.enabled_upgrades(car).size(), 0, "everything disabled -> nothing enabled")
+	car["disabled_upgrades"] = []
+	assert_eq(UpgradeLibrary.enabled_upgrades(car).size(), 3, "clearing the toggles re-enables the parts")
+	assert_true(UpgradeLibrary.aero_tuning_unlocked(car), "a re-enabled aero kit unlocks aero tuning again")
