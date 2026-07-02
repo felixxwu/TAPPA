@@ -8,10 +8,7 @@
 		{
 			"name":"Scene",
 			"nodes":[
-				0,
-				1,
-				2,
-				3
+				0
 			]
 		}
 	],
@@ -19,59 +16,6 @@
 		{
 			"mesh":0,
 			"name":"Cube"
-		},
-		{
-			"name":"Empty",
-			"rotation":[
-				0,
-				-0.7071066498756409,
-				0.7071069478988647,
-				3.0908616110991716e-08
-			],
-			"scale":[
-				1.2832789421081543,
-				1.2832789421081543,
-				1.2832789421081543
-			],
-			"translation":[
-				-0.09631848335266113,
-				0.8055713176727295,
-				0
-			]
-		},
-		{
-			"name":"Empty.001",
-			"rotation":[
-				0.4025473892688751,
-				0.5816879272460938,
-				-0.4054030776023865,
-				0.5790019631385803
-			],
-			"scale":[
-				1.0247316360473633,
-				1.0247316360473633,
-				1.0247316360473633
-			],
-			"translation":[
-				-0.05943881720304489,
-				0.40112200379371643,
-				0.02565789222717285
-			]
-		},
-		{
-			"mesh":1,
-			"name":"Cylinder",
-			"rotation":[
-				-0.7071067690849304,
-				0,
-				0,
-				0.7071068286895752
-			],
-			"scale":[
-				-0.485422283411026,
-				-0.485422283411026,
-				-0.485422283411026
-			]
 		}
 	],
 	"materials":[
@@ -99,19 +43,6 @@
 					},
 					"indices":3,
 					"material":0
-				}
-			]
-		},
-		{
-			"name":"Cylinder",
-			"primitives":[
-				{
-					"attributes":{
-						"POSITION":4,
-						"NORMAL":5,
-						"TEXCOORD_0":6
-					},
-					"indices":7
 				}
 			]
 		}
@@ -163,40 +94,6 @@
 			"componentType":5123,
 			"count":504,
 			"type":"SCALAR"
-		},
-		{
-			"bufferView":4,
-			"componentType":5126,
-			"count":60,
-			"max":[
-				-2.575990676879883,
-				-0.7748098373413086,
-				0.42586299777030945
-			],
-			"min":[
-				-4.4781036376953125,
-				-2.7748098373413086,
-				-1.5741369724273682
-			],
-			"type":"VEC3"
-		},
-		{
-			"bufferView":5,
-			"componentType":5126,
-			"count":60,
-			"type":"VEC3"
-		},
-		{
-			"bufferView":6,
-			"componentType":5126,
-			"count":60,
-			"type":"VEC2"
-		},
-		{
-			"bufferView":7,
-			"componentType":5123,
-			"count":108,
-			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
@@ -223,30 +120,6 @@
 			"byteLength":1008,
 			"byteOffset":8640,
 			"target":34963
-		},
-		{
-			"buffer":0,
-			"byteLength":720,
-			"byteOffset":9648,
-			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":720,
-			"byteOffset":10368,
-			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":480,
-			"byteOffset":11088,
-			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":216,
-			"byteOffset":11568,
-			"target":34963
 		}
 	],
 	"samplers":[
@@ -257,7 +130,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":11784,
+			"byteLength":9648,
 			"uri":"mrbeast.bin"
 		}
 	]
