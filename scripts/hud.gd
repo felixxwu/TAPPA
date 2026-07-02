@@ -44,10 +44,18 @@ var _last_hp := -1.0
 var _hp_pulse_t := 0.0
 # Last displayed health percentage, so the label only re-formats on a change.
 var _last_hp_pct := -1
+# The speed / gear / rpm readout is a dev diagnostic, hidden by default and
+# toggled with H (`toggle_debug_arrows`) — the same gate as the debug force
+# arrows, and like them only in a debug build (release/web ignore the key).
+var _debug_readout := false
 
 
 func _ready() -> void:
 	visible = Config.data.hud_enabled
+	# Speed / gear / rpm are a dev readout — hidden until H reveals them.
+	_speed_label.visible = false
+	_gear_label.visible = false
+	_rpm_label.visible = false
 	# Stage widgets start hidden; StageManager reveals them at the right moments.
 	_countdown_label.visible = false
 	_elapsed_label.visible = false
@@ -79,6 +87,14 @@ func _build_stage_delta_label() -> void:
 
 
 func _process(_delta: float) -> void:
+	# Toggle the speed / gear / rpm readout with H, gated to debug builds like the
+	# force arrows. Text below still refreshes while hidden, so it's correct the
+	# instant it's shown.
+	if OS.is_debug_build() and Input.is_action_just_pressed("toggle_debug_arrows"):
+		_debug_readout = not _debug_readout
+		_speed_label.visible = _debug_readout
+		_gear_label.visible = _debug_readout
+		_rpm_label.visible = _debug_readout
 	var engine: EngineSim = car.drivetrain.engine
 	var speed := roundi(car.linear_velocity.length() * 3.6)
 	if speed != _last_speed:

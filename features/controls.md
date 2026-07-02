@@ -16,7 +16,7 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `cycle_drive_mode` | Y | — | D-pad Up | Cycle RWD → AWD → FWD |
 | `reset_car` | R | — | Y / Triangle (North) | Teleport to start, zero velocity |
 | `cycle_camera` | C | — | B / Circle (East) | Cycle through cameras |
-| `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay |
+| `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
 | `skip_to_finish` | F | — | — | Dev: instantly complete the current event |
 

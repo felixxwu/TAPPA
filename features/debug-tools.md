@@ -16,13 +16,24 @@ that starts them visible (`debug_wheel_forces`) still works in any build.
 | Green | suspension normal force |
 | Red | tire friction force (applied by drivetrain) |
 | Blue | aero downforce (at axle midpoints) |
+| Yellow | combined steer-assist torque (single arrow above the roof) |
+
+The **yellow** arrow is a single helper for the two steering aids combined —
+the understeer steer assist and the spin-protection torque, which are both yaw
+torques about the car's up axis. `car.steer_assist_readout` sums them into one
+signed scalar (positive = the aids are rotating the nose **left**), reset and
+re-accumulated every physics tick. The overlay draws it above the roof pointing
+**left/right** along the car's lateral axis, its length scaling with the total
+torque (`debug_assist_arrow_scale`, m per N·m). A zero-length arrow (no assist
+active) is skipped.
 
 `_physics_process(delta)` rebuilds the mesh each frame from:
 - `drivetrain.readouts` — per-wheel `{normal, demand, applied}` data,
 - `car.downforce_readouts` — `[global_point, force_vector]` pairs.
 
-The same **H** toggle also shows a transparent overlay of the chassis collision
-box. It's a `MeshInstance3D` with a `BoxMesh`, parented under the car's
+The same **H** toggle also reveals the HUD's speed / gear / rpm readout (hidden by
+default — a dev diagnostic; see [hud.md](hud.md)) and shows a transparent overlay of
+the chassis collision box. It's a `MeshInstance3D` with a `BoxMesh`, parented under the car's
 `CollisionShape3D` so it inherits the shape's exact transform; its size is synced
 from the `BoxShape3D` each frame while visible (cars can swap the box at runtime).
 

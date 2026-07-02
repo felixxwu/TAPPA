@@ -9,6 +9,9 @@ extends MeshInstance3D
 const SUSPENSION_COLOR := Color(0.2, 1.0, 0.2)
 const FRICTION_COLOR := Color(1.0, 0.2, 0.2)
 const DOWNFORCE_COLOR := Color(0.3, 0.6, 1.0)
+# Combined steer-assist + spin-protection yaw torque, drawn as one arrow above
+# the car pointing left/right (see car.steer_assist_readout).
+const ASSIST_COLOR := Color(1.0, 0.9, 0.2)
 const COLLISION_BOX_COLOR := Color(1.0, 1.0, 1.0, 0.18)
 
 var car: VehicleBody3D
@@ -81,6 +84,14 @@ func _physics_process(_delta: float) -> void:
 		var p: Vector3 = entry[0]
 		var f: Vector3 = entry[1]
 		segments.append([p, p + f * scale_m_per_n, DOWNFORCE_COLOR])
+	# One combined steer-assist arrow above the roof: length scales with the
+	# total yaw-assist torque, direction points left/right (the way the aids are
+	# rotating the car). Positive readout = torque about the car's up axis =
+	# turning the nose left, so the arrow points along the car's -X (left).
+	var assist_scale_m_per_nm: float = Config.data.debug_assist_arrow_scale
+	var origin: Vector3 = car.global_position + car.global_transform.basis.y * 1.5
+	var left: Vector3 = -car.global_transform.basis.x
+	segments.append([origin, origin + left * car.steer_assist_readout * assist_scale_m_per_nm, ASSIST_COLOR])
 	var verts: Array = []  # [position, color] pairs, two per line segment
 	for seg in segments:
 		_add_arrow(verts, seg[0], seg[1], seg[2])

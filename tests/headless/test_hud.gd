@@ -69,6 +69,30 @@ func test_gear_and_rpm_labels_track_engine() -> void:
 	assert_eq((_scene.get_node("HUD/GearLabel") as Label).text, "N", "neutral shows N")
 
 
+func test_speed_gear_rpm_hidden_until_h_toggle() -> void:
+	# The speed / gear / rpm readout is a dev diagnostic: hidden on startup, shown
+	# and hidden again by the H toggle (same gate as the debug force arrows).
+	var speed := _scene.get_node("HUD/SpeedLabel") as Label
+	var gear := _scene.get_node("HUD/GearLabel") as Label
+	var rpm := _scene.get_node("HUD/RPMLabel") as Label
+	await get_tree().process_frame
+	assert_false(speed.visible, "speed hidden on startup")
+	assert_false(gear.visible, "gear hidden on startup")
+	assert_false(rpm.visible, "rpm hidden on startup")
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Input.action_release("toggle_debug_arrows")
+	assert_true(speed.visible, "H shows the speed readout")
+	assert_true(gear.visible, "H shows the gear readout")
+	assert_true(rpm.visible, "H shows the rpm readout")
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Input.action_release("toggle_debug_arrows")
+	assert_false(speed.visible, "H again hides the readout")
+
+
 func test_hud_has_no_version_label() -> void:
 	# The build version now lives on the title screen only (see test_hq.gd); the
 	# in-run HUD must not carry it.

@@ -12,6 +12,12 @@ On-screen readout plus two interactive mode buttons.
 | `SpeedLabel` | `"<n> km/h"` | `car.linear_velocity.length() * 3.6` |
 | `GearLabel` | `R` / `N` / `1`–`5` | `engine.gear` via `_gear_text()` |
 | `RPMLabel` | `"<n> rpm"` | `engine.rpm()` |
+
+The `SpeedLabel` / `GearLabel` / `RPMLabel` trio is a **dev diagnostic**: hidden by
+default and toggled with **H** (`toggle_debug_arrows`) — the same gate as the debug
+force arrows, and like them honoured only in a debug build (release/web ignore the
+key). Their text keeps refreshing while hidden, so it's correct the instant H
+reveals it. See [debug-tools.md](debug-tools.md).
 | `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
 | `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top centre) |
 | `StageDeltaLabel` | `P1 ±n.ns` pace popup | driven by `StageManager` (top-centre, code-built) |

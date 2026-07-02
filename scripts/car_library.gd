@@ -210,7 +210,7 @@ const CARS: Array[Dictionary] = [
 		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1750.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		# Real 3-speed TorqueFlite A727 automatic ratios ('69 Charger R/T 440).
-		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4,
+		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4.5,
 		"tire_compound": 0.95, "shift_time": 0.30,  # touring tyres, 3-speed TorqueFlite auto, RWD
 		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body

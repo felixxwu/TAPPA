@@ -421,6 +421,9 @@ var peak_torque_rpm := 4500.0
 @export var debug_wheel_forces := false  # per-wheel arrows (toggle with H): green = suspension, red = friction, blue = aero downforce
 ## Length of the debug force arrows, in metres drawn per newton of force.
 @export_range(0.00001, 0.01) var debug_force_arrow_scale := 0.00025
+## Length of the combined steer-assist debug arrow (yellow, above the car,
+## points left/right), in metres drawn per newton-metre of yaw-assist torque.
+@export_range(0.0000001, 0.001) var debug_assist_arrow_scale := 0.0001
 
 @export_group("Camera")
 @export var follow_distance := 6.0

@@ -56,6 +56,10 @@ var _approach_speed := 0.0
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
+# Combined yaw-assist torque applied this tick (steer assist + spin protection),
+# as a signed scalar about the car's up axis (positive = turning the nose left).
+# Read by the debug overlay to draw a single left/right assist arrow.
+var steer_assist_readout: float = 0.0
 var _car_index := -1  # selected CarLibrary entry, or -1 for the untouched baseline
 var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount origin (scene rest pose)
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
@@ -348,7 +352,11 @@ func _physics_process(delta: float) -> void:
 	var angle_scale := 1.0
 	if cfg.steer_assist_max_angle > 0.0:
 		angle_scale = clampf(1.0 - rotated_into_turn / cfg.steer_assist_max_angle, 0.0, 1.0)
-	apply_torque(global_transform.basis.y * _steer * cfg.steer_assist_torque * assist_scale * angle_scale)
+	var steer_assist_yaw := _steer * cfg.steer_assist_torque * assist_scale * angle_scale
+	apply_torque(global_transform.basis.y * steer_assist_yaw)
+	# Reset the combined assist readout each tick, then accumulate both aids into it
+	# for the debug overlay's single left/right arrow.
+	steer_assist_readout = steer_assist_yaw
 
 	# Spin protection: once the car has rotated further than spin_assist_angle
 	# away from its direction of travel, a corrective yaw torque pulls the nose
@@ -369,8 +377,10 @@ func _physics_process(delta: float) -> void:
 			var spin_scale := clampf(excess / cfg.spin_assist_angle, 0.0, 1.0) * assist_scale
 			var up := global_transform.basis.y
 			var yaw_rate := angular_velocity.dot(up)
-			apply_torque(up * spin_scale * cfg.spin_assist_torque
-				* (signf(slip_angle) - yaw_rate * SPIN_ASSIST_DAMPING))
+			var spin_assist_yaw := spin_scale * cfg.spin_assist_torque \
+				* (signf(slip_angle) - yaw_rate * SPIN_ASSIST_DAMPING)
+			apply_torque(up * spin_assist_yaw)
+			steer_assist_readout += spin_assist_yaw
 
 	# Self-righting assist: while any wheel is off the ground, ease the chassis
 	# back toward level. up × world_up is the roll+pitch axis that rotates the

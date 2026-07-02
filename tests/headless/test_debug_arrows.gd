@@ -121,6 +121,63 @@ func test_downforce_arrows_drawn_at_speed() -> void:
 		"two downforce arrows (6 verts each) must appear when downforce > 0 at speed")
 
 
+func test_assist_arrow_reflects_combined_yaw_assist() -> void:
+	# The single yellow assist arrow is driven by car.steer_assist_readout (steer
+	# assist + spin protection, summed as a signed yaw scalar). Verify the logic
+	# that must hold for ANY tuning: steering at speed produces an assist torque
+	# whose sign matches the steer direction, and the overlay draws an extra
+	# arrow when that torque is non-zero (vs none when the aid is switched off).
+	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
+	add_child_autofree(scene)
+	var car: VehicleBody3D = scene.get_node("Car")
+	for i in 60:
+		await get_tree().physics_frame
+	var overlay: WheelForceDebug = null
+	for child in car.get_children():
+		if child is WheelForceDebug:
+			overlay = child
+	assert_not_null(overlay, "debug overlay present")
+	if overlay == null:
+		return
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	Input.action_release("toggle_debug_arrows")
+
+	var cfg: GameConfig = Config.data
+	var saved_steer := cfg.steer_assist_torque
+	var saved_spin := cfg.spin_assist_torque
+	# Isolate the steer-assist term with a known positive torque; drive forward
+	# above the assist speed threshold and steer left.
+	cfg.steer_assist_torque = 20000.0
+	cfg.spin_assist_torque = 0.0
+	Input.action_press("steer_left")
+	for i in 30:
+		car.linear_velocity = -car.global_transform.basis.z * 30.0
+		await get_tree().physics_frame
+	var assist_on_verts := _surface_vertex_count(overlay)
+	assert_gt(car.steer_assist_readout, 0.0, "steering left yields a positive (nose-left) assist torque")
+
+	# Switch the aid off: readout collapses to zero and the assist arrow drops out.
+	cfg.steer_assist_torque = 0.0
+	for i in 30:
+		car.linear_velocity = -car.global_transform.basis.z * 30.0
+		await get_tree().physics_frame
+	var assist_off_verts := _surface_vertex_count(overlay)
+	assert_almost_eq(car.steer_assist_readout, 0.0, 0.001, "no assist torque when the aid is disabled")
+
+	Input.action_release("steer_left")
+	cfg.steer_assist_torque = saved_steer
+	cfg.spin_assist_torque = saved_spin
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	Input.action_release("toggle_debug_arrows")
+
+	assert_gte(assist_on_verts, assist_off_verts + 6,
+		"the assist arrow (6 verts) appears only when a yaw-assist torque is applied")
+
+
 func test_h_key_toggles_arrows() -> void:
 	var scene: Node3D = load("res://main.tscn").instantiate()
 	add_child_autofree(scene)
