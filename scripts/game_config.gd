@@ -47,7 +47,7 @@ var peak_torque_rpm := 4500.0
 @export_range(-2.0, 2.0) var downforce_rear := 0.0
 ## Max steering offset (radians) from the car's direction of travel.
 @export_range(0.0, 1.2) var steer_limit := 0.3
-@export var steer_speed := 5.0
+@export var steer_speed := 3.0
 ## How much the front wheels caster toward the direction of travel: 1.0 = fully
 ## track it (automatic countersteer), 0.0 = steering input only.
 @export_range(0.0, 1.0) var steer_travel_alignment := 1.0
@@ -299,12 +299,36 @@ var peak_torque_rpm := 4500.0
 ## breaks free — a sustained crash (pinned against / grinding through obstacles for
 ## seconds) stays ONE hit, not 30 per tick nor a fresh hit every cooldown.
 @export_range(0.0, 5.0) var impact_cooldown_s := 0.7
-## Fraction of engine power lost at 0 HP (caps the power-loss effect). The driven
-## torque is scaled by 1 - d * this, where d is the damage fraction.
-@export_range(0.0, 1.0) var damage_power_loss_max := 0.4
-## Max wheel-alignment steer bias (radians, same unit as steer_limit) at 0 HP —
-## the car pulls to one side as it takes damage. Direction is re-rolled per run.
-@export_range(0.0, 0.5) var damage_steer_bias_max := 0.08
+## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
+## power in stumbling bursts instead of a smooth derate — fully simulated (crank
+## torque drops to friction) and audible (the synth ducks + crackles on the cut).
+## The cut rate scales with the damage fraction and the engine's load. See
+## features/damage.md.
+## Health fraction (hp/max_hp) at/above which the engine is FULLY healthy — no
+## misfire. Below it the misfire ramps in, reaching full intensity at 0 HP. So a
+## lightly-damaged car runs clean; the stumble only sets in once it's properly hurt.
+@export_range(0.0, 1.0) var damage_misfire_health_threshold := 0.5
+## Cuts per second at 0 HP under full load — the worst-case misfire frequency.
+@export_range(0.0, 30.0) var damage_misfire_rate_max := 9.0
+## How much the misfire fires INDEPENDENT of load (0..1): the cut rate is
+## rate_max * damage_fraction * (this + (1-this) * load), where load blends throttle
+## and rpm. 1 = load-independent; 0 = only ever cuts under full load/revs.
+@export_range(0.0, 1.0) var damage_misfire_load_bias := 0.35
+## Shortest / longest single fuel-cut a misfire lasts (seconds) — rolled per cut so
+## the stumble has variety. Kept brief so the engine sputters rather than dies.
+@export_range(0.01, 1.0) var damage_misfire_duration_min := 0.04
+@export_range(0.01, 1.0) var damage_misfire_duration_max := 0.16
+## Wheel-toe misalignment from impacts (radians). Each solid impact bends every
+## wheel by a random amount/direction (DamageModel.nudge_wheels), permanently and
+## per-car (persisted, cleared only by a Repair Kit). The bent wheels are rotated
+## on the VehicleWheel3D nodes themselves, so the car's pull/crab comes from the
+## physics alone — no synthetic steer bias. See features/damage.md.
+## Toe (radians) a full-per-hit-cap impact adds to a wheel: the per-wheel nudge is
+## this times (hp_loss / max_hp) times a random 0.5..1 magnitude, with a random sign.
+@export_range(0.0, 0.5) var damage_wheel_toe_gain := 0.12
+## Per-wheel clamp on accumulated toe (radians) — a wheel can't bend past this no
+## matter how many hits it takes, so a heavily-crashed car stays (barely) drivable.
+@export_range(0.0, 0.5) var damage_wheel_toe_max := 0.14
 ## Soft contacts (bushes, spectators) that are NOT solid-obstacle impacts: a flat HP
 ## loss per contact (DamageModel.register_soft_hit), independent of the speed square
 ## law, guarded by their own short cooldown so one continuous graze counts once.
@@ -753,6 +777,44 @@ var peak_torque_rpm := 4500.0
 ## Random spread of the throw, as a fraction of the throw speed — widens the spray
 ## cone (and grows with how hard the wheel is spinning).
 @export_range(0.0, 1.0) var wheel_particle_spread := 0.35
+
+
+@export_group("Engine Smoke")
+## Grey smoke that puffs from the bonnet each time a damaged engine misfires
+## (EngineSmoke, features/engine-smoke.md). Its own small MultiMesh pool, separate
+## from the wheel dust. Off above the misfire health threshold (no cuts = no smoke).
+@export var engine_smoke_enabled := true
+## Hard cap on live smoke particles (ring-buffer size + MultiMesh instance count) —
+## a small pool, since smoke is a light haze, not a spray.
+@export_range(4, 500) var engine_smoke_max := 48
+## Smoke particles emitted per misfire cutout (one puff).
+@export_range(1, 20) var engine_smoke_per_cut := 5
+## Cap on misfire cuts turned into puffs per physics tick, so a rapid burst of cuts
+## can't flood the pool in one frame.
+@export_range(1, 10) var engine_smoke_max_puffs_per_tick := 2
+## Smoke colour (unshaded billboard). Alpha is the starting opacity; each particle
+## fades to nothing over its life.
+@export var engine_smoke_color := Color(0.30, 0.30, 0.32, 0.55)
+## Edge length of a smoke billboard at birth, in metres (it grows over its life).
+@export var engine_smoke_size_m := 0.35
+## How much a smoke puff grows over its lifetime (final size = birth size x this).
+@export_range(1.0, 8.0) var engine_smoke_growth := 3.0
+## How long each smoke particle lives before recycling, in seconds.
+@export var engine_smoke_lifetime_s := 1.5
+## Upward rise speed of the smoke, in m/s (buoyant lift).
+@export var engine_smoke_rise_mps := 1.4
+## Random sideways/scatter speed added to each puff particle, in m/s.
+@export var engine_smoke_scatter_mps := 0.5
+## Bonnet emit point in the car's LOCAL space (metres): front (−Z) and top (+Y) of
+## the chassis, so smoke rises from the engine bay. Added to the car origin each puff.
+@export var engine_smoke_offset := Vector3(0.0, 0.4, -1.2)
+## Synthetic (out-of-event) puffing for display cars whose engine isn't running (HQ
+## car park / lift): seconds between puffs at the WORST damage (severity 1, at 0 HP)
+## and at the LIGHTEST damage (severity → 0, just past the health threshold). The
+## interval lerps between them with severity, so a wreck smokes far more than a
+## lightly-damaged car. A fully-healthy car never puffs.
+@export_range(0.05, 3.0) var engine_smoke_synthetic_interval_min := 0.35
+@export_range(0.1, 6.0) var engine_smoke_synthetic_interval_max := 1.4
 
 
 @export_group("Trees")

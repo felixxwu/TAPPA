@@ -204,51 +204,103 @@ func test_soft_hit_zero_loss_does_nothing() -> void:
 	assert_almost_eq(dm.hp, 1000.0, 1e-6, "HP unchanged")
 
 
-# --- Effects scale with damage fraction --------------------------------------
+# --- Damage fraction (drives the engine misfire) -----------------------------
 
-func test_effects_zero_at_full_hp() -> void:
-	var cfg: GameConfig = Config.data
+func test_damage_fraction_tracks_hp() -> void:
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
-	dm.align_bias_sign = 1.0
 	assert_almost_eq(dm.damage_fraction(), 0.0, 1e-6, "d = 0 at full HP")
-	assert_almost_eq(dm.power_multiplier(cfg), 1.0, 1e-6, "full power at full HP")
-	assert_almost_eq(dm.steer_bias(cfg), 0.0, 1e-6, "no steer pull at full HP")
-
-
-func test_effects_max_at_zero_hp() -> void:
-	var cfg: GameConfig = Config.data
-	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0)
-	dm.align_bias_sign = 1.0
-	dm.hp = 0.0
-	assert_almost_eq(dm.damage_fraction(), 1.0, 1e-6, "d = 1 at 0 HP")
-	assert_almost_eq(dm.power_multiplier(cfg), 1.0 - cfg.damage_power_loss_max, 1e-6,
-		"power loss caps at damage_power_loss_max")
-	assert_almost_eq(dm.steer_bias(cfg), cfg.damage_steer_bias_max, 1e-6,
-		"steer pull caps at damage_steer_bias_max in the rolled direction")
-
-
-func test_effects_monotonic_between() -> void:
-	var cfg: GameConfig = Config.data
-	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0)
-	dm.align_bias_sign = 1.0
 	dm.hp = 500.0
 	assert_almost_eq(dm.damage_fraction(), 0.5, 1e-6, "half HP -> d = 0.5")
-	assert_almost_eq(dm.power_multiplier(cfg), 1.0 - 0.5 * cfg.damage_power_loss_max, 1e-6,
-		"power loss is half of max at half damage")
-	assert_almost_eq(dm.steer_bias(cfg), 0.5 * cfg.damage_steer_bias_max, 1e-6,
-		"steer pull is half of max at half damage")
+	dm.hp = 0.0
+	assert_almost_eq(dm.damage_fraction(), 1.0, 1e-6, "d = 1 at 0 HP")
 
 
-func test_steer_bias_follows_rolled_sign() -> void:
+func test_misfire_level_zero_above_threshold_then_ramps() -> void:
+	# Fully healthy above the health threshold; ramps 0 -> 1 from the threshold down
+	# to 0 HP. Uses an explicit threshold so it doesn't pin the authored config value.
+	var cfg := GameConfig.new()
+	cfg.damage_misfire_health_threshold = 0.5
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	assert_eq(dm.misfire_level(cfg), 0.0, "full health -> no misfire")
+	dm.hp = 600.0  # health 0.6, above the 0.5 threshold
+	assert_eq(dm.misfire_level(cfg), 0.0, "above the threshold the engine stays healthy")
+	dm.hp = 500.0  # exactly at the threshold: still the edge of healthy
+	assert_almost_eq(dm.misfire_level(cfg), 0.0, 1e-6, "at the threshold, misfire just begins")
+	dm.hp = 250.0  # health 0.25, halfway from threshold to 0
+	assert_almost_eq(dm.misfire_level(cfg), 0.5, 1e-6, "misfire ramps in below the threshold")
+	dm.hp = 0.0
+	assert_almost_eq(dm.misfire_level(cfg), 1.0, 1e-6, "full misfire intensity at 0 HP")
+
+
+# --- Wheel-toe misalignment --------------------------------------------------
+
+func test_field_loads_persisted_wheel_toe() -> void:
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0, -1, [0.01, -0.02, 0.03, -0.04])
+	# Loaded in WHEEL_NAMES order; round-trips back out unchanged.
+	assert_eq(dm.toe_array(), [0.01, -0.02, 0.03, -0.04], "toe loaded and returned in order")
+
+
+func test_field_missing_toe_fields_straight() -> void:
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0, -1, [])  # older save with no wheel_toe
+	assert_eq(dm.toe_array(), [0.0, 0.0, 0.0, 0.0], "an empty toe array fields straight wheels")
+
+
+func test_nudge_bends_every_wheel_within_clamp() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
-	dm.field(1000.0, 0.0)
-	dm.align_bias_sign = -1.0
-	assert_almost_eq(dm.steer_bias(cfg), -cfg.damage_steer_bias_max, 1e-6,
-		"a -1 roll pulls the other way")
+	dm.field(1000.0, 1000.0)
+	dm.nudge_wheels(cfg.impact_max_loss_frac * dm.max_hp, cfg)  # a big hit
+	var any_bent := false
+	for a in dm.toe_array():
+		assert_true(abs(a) <= cfg.damage_wheel_toe_max + 1e-6, "each wheel clamped to ±toe_max")
+		if absf(a) > 1e-9:
+			any_bent = true
+	assert_true(any_bent, "a solid hit bends at least one wheel")
+
+
+func test_nudge_zero_strength_is_noop() -> void:
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	dm.nudge_wheels(0.0, cfg)
+	assert_eq(dm.toe_array(), [0.0, 0.0, 0.0, 0.0], "a zero-loss hit bends nothing")
+
+
+func test_nudge_always_clamped_over_many_hits() -> void:
+	# Repeated hits can push a wheel back toward straight (random per-wheel sign) but
+	# can never exceed the clamp — the invariant that keeps a crashed car drivable.
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	for i in 50:
+		dm.nudge_wheels(cfg.impact_max_loss_frac * dm.max_hp, cfg)
+	for a in dm.toe_array():
+		assert_true(abs(a) <= cfg.damage_wheel_toe_max + 1e-6, "toe never exceeds the clamp")
+
+
+func test_reset_wheel_toe_straightens() -> void:
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0, -1, [0.05, -0.05, 0.05, -0.05])
+	dm.reset_wheel_toe()
+	assert_eq(dm.toe_array(), [0.0, 0.0, 0.0, 0.0], "a repair straightens every wheel")
+
+
+func test_register_impact_bends_wheels() -> void:
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	# A fast solid impact both costs HP and bends the wheels.
+	var loss := dm.register_impact(30.0, Vector3.ZERO, cfg)
+	assert_gt(loss, 0.0, "the hit cost HP")
+	var any_bent := false
+	for a in dm.toe_array():
+		if absf(a) > 1e-9:
+			any_bent = true
+	assert_true(any_bent, "the impact bent the wheels")
 
 
 # --- Wreck at 0 HP -----------------------------------------------------------

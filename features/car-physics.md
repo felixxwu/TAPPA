@@ -26,9 +26,13 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
 	 `engine.update_auto` handles upshifts based on ground speed.
    - *Manual:* W accelerates (or reverses in R gear); S brakes / reverses.
    - Near-zero speed engages a parking brake.
-3. **Steering:** front wheels caster toward the direction of travel
-   (`steer_travel_alignment`), blended with player input up to `steer_limit` at
-   `steer_speed`. The alignment fraction is scaled linearly with speed — 0 at
+3. **Steering:** the raw input is first smoothed once into a single `_steer`
+   value (eased toward the input at the same angular rate the wheels turn,
+   `steer_speed / steer_limit`), so a keyboard's instant 0→1 doesn't jerk; both
+   the wheel-angle target and the yaw assist torque read this same value, keeping
+   them 1:1. Front wheels caster toward the direction of travel
+   (`steer_travel_alignment`), blended with the smoothed input up to `steer_limit`
+   at `steer_speed`. The alignment fraction is scaled linearly with speed — 0 at
    standstill ramping to its full configured value at `steer_assist_min_speed`
    (≈30 km/h) — so it never snaps in suddenly at low speed. A direct yaw torque
    (`steer_assist_torque`) fights understeer,
@@ -80,13 +84,35 @@ the live config by `car.gd`'s `apply_car()` and pushed onto all four wheels
 supercars (911, LFA, Aventador). The `config/game_config.tres` values are the
 baseline/fallback.
 
+## Weight distribution (centre of mass)
+
+Each `CarLibrary` entry carries a real `weight_front` — the car's published static
+front-axle weight fraction (0.50 = 50/50, >0.5 nose-heavy, <0.5 tail-heavy).
+`apply_car()` switches the body to `CENTER_OF_MASS_MODE_CUSTOM` and places the CoM
+along the wheelbase: for static balance the CoM sits behind the front axle by
+`wheelbase × rear_fraction`, so from the wheelbase-centred body origin (front axle at
+−Z, rear at +Z) the offset is `center_of_mass.z = wheelbase × (rear_frac − 0.5)`
+(+Z = rearward). Only the front/rear split is authored; the CoM height stays at the
+body origin (`y = 0`) — published CoG-height data is scarce and the low
+`wheel_roll_influence` (0.1) damps its effect anyway.
+
+This is **not cosmetic**: `Drivetrain.wheel_normal_force()` derives each wheel's grip
+from its actual suspension compression, and the suspension settles around wherever the
+CoM sits — so a rearward CoM compresses the rear springs more, loads the rear tyres
+more, and shifts the car toward oversteer (and vice-versa). The transient effects (dive
+/ squat / roll load-transfer) are deliberately muted by the low `wheel_roll_influence`;
+the static front/rear balance comes through regardless. Nose-heavy FWD (Focus, Twingo)
+vs tail-heavy mid-engine (Acty, Aventador) vs 50/50 (MX-5).
+
 ## Damage effects
 
 `car.gd` owns a `DamageModel` (see [damage.md](damage.md)) that degrades the car
-as its HP falls. Two effects fold into the per-step loop above: a **steer-bias
-pull** added to `steer_target` (step 3) and a **power scale** on the driven torque
-(`drivetrain.power_scale`, step 6). Both are 0 at full HP. `car.gd` also enables contact monitoring and reads obstacle-contact
-impulses in `_integrate_forces` to drain HP.
+as its HP falls. Two effects fold into the per-step loop above: physically **bent
+wheels** (per-wheel toe on `VehicleWheel3D.steering`, step 3) and an **engine
+misfire** — `car.gd` feeds the damage fraction to `engine.misfire_level` (step 6)
+and `EngineSim` cuts fuel in stumbling bursts. Both are 0 at full HP. `car.gd` also
+enables contact monitoring and reads obstacle-contact impulses in
+`_integrate_forces` to drain HP.
 
 ## Control source (player / locked / scripted)
 

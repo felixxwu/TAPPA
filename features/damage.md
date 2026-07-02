@@ -16,12 +16,13 @@ in-run — a repair kit (Save) is the only way it climbs back.
 | `max_hp` | the car's HP pool — CarLibrary metadata (`max_hp`, mass-keyed), set per car |
 | `hp` | working HP for the current run (starts at the OwnedCar's stored HP) |
 | `instance_id` | OwnedCar binding; **-1 = unbound** (free-roam / dev — never touches `Save`) |
-| `align_bias_sign` | ±1 steer-pull direction, re-rolled each run via `reroll_bias()` |
+| `wheel_toe` | permanent per-wheel toe misalignment (rad), keyed by `WHEEL_NAMES` — see *Wheel misalignment* below |
 
-`field(max_hp, hp, instance_id)` configures all of the above for a run.
-`car.gd` calls it (unbound, full HP) from `apply_car`; the future rally/Start-line
-layer ([rally-session.md](rally-session.md)) re-fields it
-from the OwnedCar (stored HP + instance id) when a car is taken to the line.
+`field(max_hp, hp, instance_id, wheel_toe)` configures all of the above for a run.
+`car.gd` calls it (unbound, full HP, straight wheels) from `apply_car`; the
+rally/Start-line layer ([rally-session.md](rally-session.md)) re-fields it from the
+OwnedCar (stored HP + instance id + persisted `wheel_toe`) via `apply_owned` when a
+car is taken to the line.
 
 ## Impact → HP loss
 
@@ -71,7 +72,40 @@ Two guards stop a single crash from instantly wrecking the car (cars should surv
   free — a *sustained* crash (grinding along a tree line, or jammed against one for
   several seconds) stays **one** hit instead of re-chipping every `impact_cooldown_s`.
 
-A hit that costs HP emits `damaged(hp_loss, contact_point)` for the HUD/audio cue.
+A hit that costs HP emits `damaged(hp_loss, contact_point)` for the HUD/audio cue,
+and **bends the wheels** (`nudge_wheels`, below).
+
+## Wheel misalignment (`nudge_wheels`, `car.gd._apply_wheel_toe`)
+
+A damaged car no longer pulls via a synthetic steer offset. Instead each solid
+impact **permanently bends every wheel** by a random amount and direction, and the
+car's pull/crab then comes from the **physics alone** — the bent wheels are rotated
+on the `VehicleWheel3D` nodes themselves.
+
+- **The nudge** (`DamageModel.nudge_wheels`, called from `register_impact` on a
+  landed hit). For each of the four wheels: `toe += random_sign * (hp_loss/max_hp) *
+  damage_wheel_toe_gain * randf(0.5,1)`, clamped to `±damage_wheel_toe_max`. The
+  magnitude scales with the hit's strength (bigger crash → bigger knock); the sign
+  is rolled **per wheel**, so the wheels don't all bend the same way and repeated
+  hits can partly cancel — a wheel can end up near-straight again after two hits.
+  `wheel_toe` is a dictionary keyed by `WHEEL_NAMES` (`WheelFL/FR/RL/RR`, the
+  car.tscn node names and the stable order used to persist it).
+- **Applying it physically** (`car.gd._apply_wheel_toe`). Each wheel carries its own
+  `VehicleWheel3D.steering` — a physical steer angle the custom drivetrain tire model
+  reads for the force direction (`drivetrain.gd`). So the toe is applied straight to
+  that: **front** (steering) wheels get `steering` (the live base steer the body just
+  set) **plus** their toe; **rear** wheels — which the body never steers — get only
+  their toe. This runs every physics frame right after the base steer is computed, so
+  it re-asserts over the body's per-frame overwrite of the front wheels. No node
+  rotation and no re-parenting. Because the wheel *visual* is also rebuilt off
+  `wheel.steering` (`drivetrain._update_visuals`), the bend is **visible** for free.
+- **Persistence.** `wheel_toe` lives on the **OwnedCar** (a 4-float array ordered
+  like `WHEEL_NAMES`), persisted at each event boundary alongside HP
+  (`world.gd._on_session_event_completed` → `Save.set_wheel_toe`), so a car carries
+  its bent wheels **between events**. A **Repair Kit** straightens the wheels along
+  with restoring HP (`Save.use_repair_kit` zeroes it; `DamageModel.reset_wheel_toe`
+  is the in-model equivalent). Older saves with no `wheel_toe` key are backfilled
+  straight (`Save._sanitise`).
 
 ## Soft contacts — bushes & spectators (`register_soft_hit`)
 
@@ -101,16 +135,31 @@ contact — sitting in a bush, mowing a tight crowd — into one hit.
   a bush. No torque. Ploughing a dense line is one hit (shared soft-hit cooldown),
   not one per member.
 
-## Effects (scale with the damage fraction `d = 1 - hp/max_hp`)
+## Effects
 
-Read each physics tick in `car.gd`; both are 0 at full HP:
-
-- **Power loss** — `drivetrain.power_scale = damage.power_multiplier(cfg)` fades
-  the driven torque to `1 - d * damage_power_loss_max` (applied at the engine
-  torque in `drivetrain.gd`).
-- **Wheel-alignment pull** — `steer_target += damage.steer_bias(cfg)` adds a
-  constant bias of `align_bias_sign * d * damage_steer_bias_max` (radians), so a
-  damaged car drifts to one side. The direction is re-rolled per run.
+- **Engine misfire** (read each physics tick in `car.gd`) — instead of a smooth
+  power derate, a damaged engine **intermittently cuts fuel**. The engine stays
+  **fully healthy** while health (`hp/max_hp`) is at/above
+  `damage_misfire_health_threshold`; below it, `damage.misfire_level(cfg)` ramps
+  linearly from 0 at the threshold to 1 at 0 HP. `car.gd` feeds that as
+  `engine.misfire_level = m`; inside `EngineSim.step()` a stochastic cut fires with
+  probability `rate·h` per substep, where
+  `rate = damage_misfire_rate_max · m · (damage_misfire_load_bias + (1-bias)·load)`
+  and `load` blends throttle and rpm — so the stumble worsens with damage and under
+  load, and a healthy engine (`d = 0`) never cuts. Each cut lasts a rolled
+  `damage_misfire_duration_min..max`. While cut, crank torque drops to friction only
+  (real power loss, fully simulated) and the same `fuel_cut` state the rev limiter
+  uses ducks the synth's firing voice — so the engine audibly sputters. Unlike the
+  limiter it does **not** fire the exhaust crackle (that pop is limiter-only;
+  `engine_audio.gd` passes `engine.fuel_cut` to duck but only `engine.limiting` as
+  the crackle trigger). The pure
+  `EngineSim.misfire_rate()` is unit-testable, and a seeded per-engine RNG makes the
+  cuts reproducible). This **replaces** the old `power_scale` / `damage_power_loss_max`.
+  Each cut also puffs a burst of bonnet smoke — see [engine-smoke.md](engine-smoke.md).
+- **Wheel misalignment** — the car's pull/crab is NOT a damage-fraction effect: it
+  comes from the accumulated per-wheel `wheel_toe` applied to the physical wheels
+  (see *Wheel misalignment* above). It persists between events and is fixed only by
+  a Repair Kit, independent of HP.
 
 ## Wreck at 0 HP
 
@@ -154,8 +203,9 @@ HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off.
 ## Config knobs (`GameConfig`, *Damage* group)
 
 `impact_min_speed_kmh`, `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
-`impact_max_loss_frac`, `impact_cooldown_s`, `damage_power_loss_max`,
-`damage_steer_bias_max`, soft contacts (`bush_hp_loss`, `bush_drag_torque`,
+`impact_max_loss_frac`, `impact_cooldown_s`, `damage_misfire_health_threshold`, `damage_misfire_rate_max`,
+`damage_misfire_load_bias`, `damage_misfire_duration_min`, `damage_misfire_duration_max`,
+`damage_wheel_toe_gain`, `damage_wheel_toe_max`, soft contacts (`bush_hp_loss`, `bush_drag_torque`,
 `bush_min_speed_kmh`, `bush_hit_radius_frac`, `soft_hit_cooldown_s`,
 `spectator_hp_loss`), `hud_hp_enabled`, `hud_low_hp_warn_frac`,
 `wreck_settle_max_seconds` (cap on the wreck-menu settle wait; the orbit reuses the
@@ -168,11 +218,20 @@ values are not).
 
 `tests/headless/test_damage_model.gd` (speed→HP + the 60/20 km/h calibration, the per-hit cap + post-hit
 cooldown grouping a crash into one hit / needing several hits to wreck, **soft
-hits** — flat loss, own cooldown independent of impacts, wreck at 0 — effect
-scaling, bound/unbound wreck **keeping the car at 0 HP with its upgrades**,
-persistence round-trip), `test_bush_field.gd` (side-based `drag_torque` sign +
+hits** — flat loss, own cooldown independent of impacts, wreck at 0 — the
+**damage fraction** tracking HP, **wheel toe** (a hit bends every wheel within the
+clamp, a zero-strength hit is a no-op, toe stays clamped over many hits, `field`
+loads persisted toe, repair straightens), bound/unbound wreck **keeping the car at 0
+HP with its upgrades**, persistence round-trip, **misfire level** — 0 above the
+health threshold, ramping to 1 at 0 HP), `test_engine_logic.gd` (**misfire**:
+the pure `misfire_rate` is 0 when healthy / positive & load-rising under damage, a
+healthy engine never cuts over many steps, a wrecked one cuts intermittently, and a
+forced cut kills crank torque), `test_save_manager.gd` (`wheel_toe`
+round-trips through save/reload, a Repair Kit straightens the wheels, old saves
+backfill straight), `test_car.gd` (bent front wheels **veer the car through the
+physics alone**, `engine.misfire_level` tracks the damage fraction), `test_bush_field.gd` (side-based `drag_torque` sign +
 scaling, enter/leave one-shot, min-speed gate), `test_spectator_damage.gd` (a
-knockdown costs the car `spectator_hp_loss`, more than a bush), `test_car.gd` (contact monitor + power-scale
+knockdown costs the car `spectator_hp_loss`, more than a bush), `test_car.gd` (contact monitor
 wiring, plus a **head-on collision costs HP** regression that drives the car into
 an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge), `test_wreck_screen.gd` (crash → orbit/menu →
 `return_requested`).

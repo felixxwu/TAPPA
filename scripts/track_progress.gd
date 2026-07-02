@@ -116,6 +116,18 @@ func _local_closest_offset(here: Vector2) -> float:
 	return best_o
 
 
+# Dev cheat (F key): jump progress straight to the finish line. Pins progress to
+# 100% (so the stage-completion gate trips) and returns the finish pose so the
+# caller can teleport the car there. The local-window search in _physics_process
+# can't discover a far teleport on its own, so we set _best_offset directly.
+func jump_to_finish() -> Transform3D:
+	if _centerline == null:
+		return Transform3D.IDENTITY
+	_best_offset = _baked_length
+	_best_reset = _reset_xform_at(_baked_length)
+	return _best_reset
+
+
 # Convert a baked offset on the 2D curve into a 3D pose on the road facing along
 # the road's forward tangent (a Node3D faces -Z, so -Z ends up down the road).
 func _reset_xform_at(offset: float) -> Transform3D:

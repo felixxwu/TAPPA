@@ -115,6 +115,9 @@ func _sanitise(p: Dictionary) -> Dictionary:
 	var kept: Array = []
 	for car in p.get("cars", []):
 		if CarLibrary.index_of(car.get("model_id", "")) >= 0:
+			# Backfill per-wheel damage misalignment on saves that predate it (straight).
+			if not car.has("wheel_toe"):
+				car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
@@ -227,6 +230,7 @@ func grant_car(model_id: String) -> Dictionary:
 		"installed_upgrades": [],
 		"disabled_upgrades": [],
 		"tuning": {},
+		"wheel_toe": [0.0, 0.0, 0.0, 0.0],
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
 	profile["cars"].append(car)
@@ -254,6 +258,17 @@ func apply_damage(instance_id: int, amount: float) -> void:
 		wreck_car(instance_id)
 		return
 	car["hp"] = hp
+	save()
+
+
+# Persist a car's per-wheel damage misalignment (radians, ordered like
+# DamageModel.WHEEL_NAMES). Written at each event boundary alongside apply_damage so
+# a car carries its bent wheels between events (features/damage.md).
+func set_wheel_toe(instance_id: int, toe: Array) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	car["wheel_toe"] = toe.duplicate()
 	save()
 
 
@@ -456,6 +471,8 @@ func use_repair_kit(instance_id: int) -> bool:
 	var entry := CarLibrary.by_id(car["model_id"])
 	var max_hp: float = entry.get("max_hp", float(car["hp"])) if not entry.is_empty() else float(car["hp"])
 	car["hp"] = max_hp
+	# A repair also straightens the wheels — the alignment damage is fixed with the HP.
+	car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
 	save()
 	return true
 

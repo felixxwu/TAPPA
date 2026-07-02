@@ -53,7 +53,7 @@ var _crank_phase_low := 0.0  # second crank, half-speed = one octave lower
 var _sm_rpm := 0.0
 var _sm_throttle := 0.0
 var _cut_gain := 1.0  # fast-tracked firing-voice gain for the limiter fuel cut
-var _prev_fuel_cut := false  # edge-detect cut onsets to fire the crackle burst
+var _prev_crackle_cut := false  # edge-detect limiter-cut onsets to fire the crackle burst
 var _crackle_env := 0.0  # decaying amplitude of the current crackle burst
 var _dc_x_prev := 0.0  # DC-blocker state: previous input sample
 var _dc_y_prev := 0.0  # DC-blocker state: previous output sample
@@ -79,7 +79,7 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_build_voice_bank()
 
 
-func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false) -> void:
+func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false) -> void:
 	var dt := 1.0 / _mix_rate
 	var smooth := clampf(_smooth_rate * dt, 0.0, 1.0)
 	# A shift opens the clutch and cuts throttle, but the engine keeps spinning:
@@ -88,16 +88,18 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 	# apply only a slight extra dip for the torque interruption.
 	var target_throttle := 0.0 if shift_cut else clampf(throttle, 0.0, 1.0)
 	var cut := 0.8 if shift_cut else 1.0
-	# The rev limiter cuts fuel: combustion stops, so the firing voice ducks to
-	# _cut_level while the engine keeps spinning. The sim bounces fuel_cut on/off
-	# at the limit, so ducking honestly tracks that — no synthetic frequency. A
-	# fast envelope (CUT_SMOOTH_RATE) keeps each bounce edge crisp; the cut onset
-	# fires a crackle burst (unburnt fuel popping in the exhaust on overrun).
+	# A fuel cut stops combustion, so the firing voice ducks to _cut_level while the
+	# engine keeps spinning. `fuel_cut` covers BOTH the rev limiter and a damage
+	# misfire — both duck the voice. The crackle burst (unburnt fuel popping in the
+	# exhaust on overrun), however, only fits the limiter's clean on-throttle bounce,
+	# not a damaged engine stumbling — so it edge-triggers off `crackle_cut` (the
+	# limiter alone), passed separately by engine_audio.gd. A fast envelope
+	# (CUT_SMOOTH_RATE) keeps each bounce edge crisp.
 	var cut_target := _cut_level if fuel_cut else 1.0
 	var cut_smooth := clampf(CUT_SMOOTH_RATE * dt, 0.0, 1.0)
-	if fuel_cut and not _prev_fuel_cut:
+	if crackle_cut and not _prev_crackle_cut:
 		_crackle_env = _crackle
-	_prev_fuel_cut = fuel_cut
+	_prev_crackle_cut = crackle_cut
 	for i in range(n_frames):
 		_sm_rpm = lerpf(_sm_rpm, rpm, smooth)
 		_sm_throttle = lerpf(_sm_throttle, target_throttle, smooth)

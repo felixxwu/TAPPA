@@ -16,6 +16,20 @@ var auto := false  # automatic gearbox (picks the gear from the airspeed)
 var shift_timer := 0.0  # seconds of clutch-open throttle cut left in a shift
 var throttle := 0.0  # last drive request seen by step(), for the audio synth
 var limiting := false  # rev-limiter fuel cut latched on (see _update_limiter)
+# Combined fuel-cut state (rev limiter OR a damage misfire) for the audio synth:
+# while true, combustion has stopped this substep — the note ducks and crackles.
+var fuel_cut := false
+# Damage fraction 0..1 (0 = healthy), set each tick by car.gd. Drives the stochastic
+# misfire below — a damaged engine cuts fuel in stumbling bursts, more often with
+# damage and under load. Replaces the old smooth power derate. See features/damage.md.
+var misfire_level := 0.0
+var _misfire_timer := 0.0  # seconds left in the current damage fuel-cut (0 = firing)
+# Monotonic count of damage misfire cut ONSETS (not the rev limiter). EngineSmoke
+# reads the delta each frame to puff a burst of smoke per cut. See features/engine-smoke.md.
+var misfire_count := 0
+# Own RNG so misfires are reproducible in tests (set _rng.seed) and each car instance
+# stumbles independently. Randomised at runtime in _init.
+var _rng := RandomNumberGenerator.new()
 # Per-gear upshift airspeeds (m/s), one per forward gear. shift_up_speeds[g-1]
 # is the forward ground speed at which gear g nears redline; the box upshifts
 # on reaching it. The top gear's slot is INF.
@@ -31,6 +45,7 @@ func _init(p_config: GameConfig) -> void:
 	config = p_config
 	omega = idle_omega()
 	auto = config.auto_gearbox
+	_rng.randomize()
 	_compute_shift_speeds()
 
 
@@ -129,6 +144,8 @@ func reset() -> void:
 	gear = 1
 	shift_timer = 0.0
 	limiting = false
+	fuel_cut = false
+	_misfire_timer = 0.0
 
 
 # One substep of length h: integrates the flywheel against crank and clutch
@@ -139,7 +156,8 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	throttle = throttle_in
 	var cfg: GameConfig = config
 	shift_timer = maxf(shift_timer - h, 0.0)
-	var fuel_cut := _update_limiter(cfg)
+	# Combustion stops this substep if the rev limiter OR a damage misfire cuts fuel.
+	fuel_cut = _update_limiter(cfg) or _update_misfire(cfg, h)
 	# Always-on engine friction (pumping/viscous losses), affine in RPM the way
 	# FMEP is fit on real engines: a constant breakaway term plus a slope that
 	# grows with revs. The torque curve is treated as GROSS (indicated) output,
@@ -196,6 +214,37 @@ func _update_limiter(cfg: GameConfig) -> bool:
 	elif omega <= redline_omega() - band_omega:
 		limiting = false
 	return limiting
+
+
+# Damage misfire cut rate (cuts/second): 0 on a healthy engine, climbing with the
+# damage fraction and with engine load. `bias` (0..1) is how much fires regardless
+# of load — the rest is scaled by `load` (a 0..1 throttle/rpm blend). Pure/static so
+# the maths is unit-testable without pinning the authored config values.
+static func misfire_rate(level: float, load: float, rate_max: float, bias: float) -> float:
+	if level <= 0.0:
+		return 0.0
+	var load_factor := bias + (1.0 - bias) * clampf(load, 0.0, 1.0)
+	return rate_max * clampf(level, 0.0, 1.0) * load_factor
+
+
+# Stochastic damage misfire: while a cut is in progress hold it (returning true) until
+# its rolled duration elapses; otherwise roll each substep to START a cut with
+# probability rate*h, so the frequency is framerate-independent. A healthy engine
+# (misfire_level 0) never cuts. Biased to fire more under load/high revs.
+func _update_misfire(cfg: GameConfig, h: float) -> bool:
+	if misfire_level <= 0.0:
+		_misfire_timer = 0.0
+		return false
+	if _misfire_timer > 0.0:
+		_misfire_timer -= h
+		return _misfire_timer > 0.0
+	var load := 0.5 * clampf(throttle, 0.0, 1.0) + 0.5 * clampf(rpm() / cfg.redline_rpm, 0.0, 1.0)
+	var rate := misfire_rate(misfire_level, load, cfg.damage_misfire_rate_max, cfg.damage_misfire_load_bias)
+	if _rng.randf() < rate * h:
+		_misfire_timer = _rng.randf_range(cfg.damage_misfire_duration_min, cfg.damage_misfire_duration_max)
+		misfire_count += 1
+		return true
+	return false
 
 
 # Fraction of peak_torque available at the given RPM: 70% at zero, full at

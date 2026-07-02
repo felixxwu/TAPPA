@@ -3,8 +3,8 @@ extends RefCounted
 # Per-car HP / attrition state and the maths that degrade a damaged car, owned by
 # car.gd the way Drivetrain is (a plain RefCounted helper, no scene coupling). It
 # holds the run's WORKING HP, converts contact impulses into HP loss, exposes the
-# damage-fraction-scaled handling/power effects the car reads each tick, and
-# wrecks the car at 0 HP. See features/damage.md.
+# damage fraction (which drives the engine misfire) and the per-wheel toe the car
+# reads each tick, and wrecks the car at 0 HP. See features/damage.md.
 #
 # HP only ever goes DOWN in-run (no passive regen); a repair kit (Save) is the
 # only way it climbs back, and that lives between runs, not here.
@@ -36,13 +36,21 @@ const OBSTACLE_GROUP := "obstacle"
 # knobs are authored in (car.gd reads the body's velocity in m/s).
 const MPS_TO_KMH := 3.6
 
+# The four wheel nodes, in a STABLE order — the index used to persist wheel_toe on
+# the OwnedCar (features/damage.md). Matches the VehicleWheel3D node names in
+# car.tscn; car.gd maps each entry to its node when it applies the bend.
+const WHEEL_NAMES: Array[String] = ["WheelFL", "WheelFR", "WheelRL", "WheelRR"]
+
 var max_hp := 1000.0
 var hp := 1000.0
 # OwnedCar binding; -1 = unbound (free-roam / dev play — never touches Save).
 var instance_id := -1
-# +1 / -1 alignment-pull direction, re-rolled each run so it can't be pre-learnt
-# (features/damage.md). Set via reroll_bias(); defaults to a pull, not 0.
-var align_bias_sign := 1.0
+# Permanent per-wheel toe misalignment (radians), keyed by WHEEL_NAMES. Each solid
+# impact bends every wheel by a random amount/direction (nudge_wheels); car.gd feeds
+# these into the per-wheel VehicleWheel3D.steering so the car's pull/crab comes from
+# the physics alone. Persisted per car (Save), cleared only by a Repair Kit. See
+# features/damage.md.
+var wheel_toe: Dictionary = _zero_toe()
 # Seconds of impact immunity remaining after a damaging hit (impact_cooldown_s).
 # Ticked down by car.gd each physics frame (tick_cooldown). Groups one crash —
 # which contacts the chassis every tick while pinned — into a single hit.
@@ -54,15 +62,15 @@ var _soft_cooldown := 0.0
 
 
 # Field the model for a run: bind it to an OwnedCar (or -1 for free-roam), set the
-# HP pool, and re-roll the alignment-pull direction. Called by car.gd when a car
-# is configured (apply_car) and by the future fielding layer.
-func field(p_max_hp: float, p_hp: float, p_instance_id := -1) -> void:
+# HP pool, and load the car's persisted wheel misalignment. Called by car.gd when a
+# car is configured (apply_car / apply_owned) and by the fielding layer.
+func field(p_max_hp: float, p_hp: float, p_instance_id := -1, p_toe: Array = []) -> void:
 	max_hp = maxf(1.0, p_max_hp)
 	hp = clampf(p_hp, 0.0, max_hp)
 	instance_id = p_instance_id
 	_impact_cooldown = 0.0
 	_soft_cooldown = 0.0
-	reroll_bias()
+	set_toe_from_array(p_toe)
 
 
 # Decay the post-hit impact and soft-hit cooldowns. Called by car.gd each physics frame.
@@ -71,30 +79,72 @@ func tick_cooldown(delta: float) -> void:
 	_soft_cooldown = maxf(0.0, _soft_cooldown - delta)
 
 
-# Re-roll the alignment-pull direction (±1). Random per run so a re-entry can pull
-# the other way; not tied to any seed. Tests set align_bias_sign directly instead.
-func reroll_bias() -> void:
-	align_bias_sign = 1.0 if randf() < 0.5 else -1.0
+# A fresh all-zero toe map (no wheel bent). Used as the default and by a repair.
+static func _zero_toe() -> Dictionary:
+	var d := {}
+	for name in WHEEL_NAMES:
+		d[name] = 0.0
+	return d
 
 
-# Damage fraction d ∈ [0,1]: 0 at full HP, 1 at 0 HP. The handling/power effects
-# scale off this.
+# Load persisted per-wheel toe from an array ordered like WHEEL_NAMES (as stored on
+# the OwnedCar). A short/empty array leaves the remaining wheels straight, so an
+# older save with no wheel_toe key fields a straight car.
+func set_toe_from_array(arr: Array) -> void:
+	wheel_toe = _zero_toe()
+	for i in mini(arr.size(), WHEEL_NAMES.size()):
+		wheel_toe[WHEEL_NAMES[i]] = float(arr[i])
+
+
+# The current toe as an array ordered like WHEEL_NAMES, for persisting on the OwnedCar.
+func toe_array() -> Array:
+	var out: Array = []
+	for name in WHEEL_NAMES:
+		out.append(wheel_toe[name])
+	return out
+
+
+# Straighten every wheel (a Repair Kit fixes the alignment along with the HP).
+func reset_wheel_toe() -> void:
+	wheel_toe = _zero_toe()
+
+
+# Bend each wheel by a random amount and direction on a solid impact. The magnitude
+# scales with the hit's strength (hp_loss as a fraction of max HP) so a big crash
+# knocks the wheels harder; the direction is rolled PER WHEEL so they don't all bend
+# the same way and repeated hits can partly cancel (a wheel can end up near-straight
+# again). Each wheel is clamped to ±damage_wheel_toe_max. Called by register_impact.
+func nudge_wheels(hp_loss: float, cfg: GameConfig) -> void:
+	if hp_loss <= 0.0 or max_hp <= 0.0:
+		return
+	var strength := clampf(hp_loss / max_hp, 0.0, 1.0)
+	var base := strength * cfg.damage_wheel_toe_gain
+	for name in WHEEL_NAMES:
+		var sign := 1.0 if randf() < 0.5 else -1.0
+		var delta := sign * base * randf_range(0.5, 1.0)
+		wheel_toe[name] = clampf(wheel_toe[name] + delta, -cfg.damage_wheel_toe_max, cfg.damage_wheel_toe_max)
+
+
+# Damage fraction d ∈ [0,1]: 0 at full HP, 1 at 0 HP.
 func damage_fraction() -> float:
 	if max_hp <= 0.0:
 		return 0.0
 	return clampf(1.0 - hp / max_hp, 0.0, 1.0)
 
 
-# Added steer-target bias (radians) from wheel misalignment — the car drifts to
-# one side as it takes damage. 0 at full HP, ±damage_steer_bias_max at 0 HP.
-func steer_bias(cfg: GameConfig) -> float:
-	return align_bias_sign * damage_fraction() * cfg.damage_steer_bias_max
-
-
-# Multiplier on the driven torque: 1 at full HP, falling to
-# 1 - damage_power_loss_max at 0 HP.
-func power_multiplier(cfg: GameConfig) -> float:
-	return 1.0 - damage_fraction() * cfg.damage_power_loss_max
+# Engine misfire intensity ∈ [0,1], fed to EngineSim.misfire_level each tick by
+# car.gd. 0 (fully healthy) while health (hp/max_hp) is at/above
+# damage_misfire_health_threshold, then ramps linearly to 1 at 0 HP — so the engine
+# only starts stumbling once the car is damaged past the threshold.
+func misfire_level(cfg: GameConfig) -> float:
+	if max_hp <= 0.0:
+		return 0.0
+	var threshold := cfg.damage_misfire_health_threshold
+	if threshold <= 0.0:
+		# Degenerate threshold: only a dead-flat 0 HP car misfires (avoid div-by-zero).
+		return 1.0 if hp <= 0.0 else 0.0
+	var health := hp / max_hp
+	return clampf((threshold - health) / threshold, 0.0, 1.0)
 
 
 # HP a contact at the given travel speed (m/s) costs: nothing up to
@@ -132,6 +182,7 @@ func register_impact(speed_mps: float, contact_point: Vector3, cfg: GameConfig) 
 	# Cap a single hit so no one crash can wreck the car (survive 2-3 big hits).
 	loss = minf(loss, max_hp * cfg.impact_max_loss_frac)
 	_impact_cooldown = cfg.impact_cooldown_s
+	nudge_wheels(loss, cfg)
 	apply_loss(loss)
 	damaged.emit(loss, contact_point)
 	return loss

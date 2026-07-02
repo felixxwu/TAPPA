@@ -6,7 +6,10 @@
 MeshInstance3D`). Created by `car.gd` in `_ready()`.
 
 Draws per-wheel and aero force arrows as an immediate mesh. Toggled with **H**
-(`toggle_debug_arrows` input action).
+(`toggle_debug_arrows` input action). The **H** toggle only responds in a **debug
+build** (`OS.is_debug_build()` — editor / debug export); release exports such as
+the web build ignore the key, so players can't summon the dev arrows. A config
+that starts them visible (`debug_wheel_forces`) still works in any build.
 
 | Color | Force |
 |-------|-------|
@@ -22,6 +25,24 @@ The same **H** toggle also shows a transparent overlay of the chassis collision
 box. It's a `MeshInstance3D` with a `BoxMesh`, parented under the car's
 `CollisionShape3D` so it inherits the shape's exact transform; its size is synced
 from the `BoxShape3D` each frame while visible (cars can swap the box at runtime).
+
+## Skip to finish (event cheat)
+
+**Key: F** (`skip_to_finish` input action), handled in `world.gd._unhandled_input`.
+Instantly completes the current rally event: teleports the car onto the finish
+line and force-completes the stage, so the real completion → reward → progression
+flow fires exactly as it would on a genuine finish (nothing is faked downstream).
+
+Gated the same way as the H arrows — **debug builds only** (`OS.is_debug_build()`),
+so release/web builds ignore the key. It also does nothing unless a rally event is
+active (`RallySession.is_active()`) with a live `StageManager` that hasn't already
+finished. Mechanism:
+
+- `TrackProgress.jump_to_finish()` pins progress to 100% (the local-window search
+  can't discover a far teleport on its own) and returns the finish pose.
+- `Car.reset_to(pose)` places the car on the finish line.
+- `StageManager.force_complete()` runs the shared `_complete()` path (freeze timer,
+  re-lock car, show panel, emit `stage_completed`) regardless of phase.
 
 ## Frame profiler overlay
 

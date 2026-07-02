@@ -57,7 +57,7 @@ var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest pos
 var _rear_axle := Vector3.ZERO
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
 var _car_index := -1  # selected CarLibrary entry, or -1 for the untouched baseline
-var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount (scene rest pose)
+var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount origin (scene rest pose)
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
 # When true, driver input is ignored and the handbrake is forced on, so the car
@@ -82,6 +82,11 @@ var ai_handbrake := false
 # released. See _apply_handbrake_lock.
 const HANDBRAKE_LOCK_SPEED := 0.5  # m/s
 var _handbrake_locked := false
+# Smoothed steering input. Raw steer_input snaps 0->1 on a keyboard; easing it
+# gives one smooth -1..1 source that BOTH the wheel-angle target and the yaw
+# assist torque read, so the two stay 1:1 instead of the torque slamming to full
+# the instant a key is pressed.
+var _steer := 0.0
 
 
 func _ready() -> void:
@@ -271,9 +276,10 @@ func _physics_process(delta: float) -> void:
 			brake_input = 1.0  # parking brake: hold the car on slopes
 	var handbrake := ai_handbrake if ai_controlled else (controls_locked or Input.is_action_pressed("handbrake"))
 	_apply_handbrake_lock(handbrake, speed)
-	# Damage power loss: fade the driven torque as HP falls (1.0 healthy). 0 effect
-	# at full HP. See features/damage.md.
-	drivetrain.power_scale = damage.power_multiplier(cfg)
+	# Damage misfire: feed the engine its misfire intensity so it cuts fuel in
+	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
+	# cuts; ramps to 1 at 0 HP). See features/damage.md.
+	engine.misfire_level = damage.misfire_level(cfg)
 	drivetrain.step(delta, drive, brake_input, handbrake)
 
 	# Quadratic aero drag; with redline-limited gearing, this sets how hard
@@ -316,11 +322,20 @@ func _physics_process(delta: float) -> void:
 	# low-speed input steering yet returns smoothly with no sudden jump as speed
 	# builds. Shares the threshold with the steer-assist torque ramp below.
 	var align_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
-	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + steer_input * cfg.steer_limit
-	# Damage wheel-alignment pull: a constant bias toward one side that grows as HP
-	# falls (0 at full HP). See features/damage.md.
-	steer_target += damage.steer_bias(cfg)
+	# Smooth the raw input once, at the same angular rate the wheels turn
+	# (steer_speed rad/s over steer_limit rad of travel), so a keyboard's instant
+	# 0->1 eases in. Both the wheel-angle target below and the assist torque read
+	# this same _steer, keeping them 1:1.
+	var assist_rate := (cfg.steer_speed / cfg.steer_limit) if cfg.steer_limit > 0.0 else cfg.steer_speed
+	_steer = move_toward(_steer, steer_input, assist_rate * delta)
+	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + _steer * cfg.steer_limit
 	steering = move_toward(steering, steer_target, cfg.steer_speed * delta)
+	# Damage wheel misalignment: bend each wheel physically by its persisted toe on
+	# TOP of the base steer. The pull/crab of a damaged car then comes from the
+	# physics alone — the drivetrain tire model reads wheel.steering for the force
+	# direction (and the wheel visual off it too). No synthetic steer bias. See
+	# features/damage.md / DamageModel.nudge_wheels.
+	_apply_wheel_toe()
 	# Direct yaw torque about the car's up axis while steering, to fight
 	# understeer when the front tires alone can't rotate the car. Faded in
 	# linearly from 0 at standstill to full at steer_assist_min_speed (rather
@@ -334,11 +349,11 @@ func _physics_process(delta: float) -> void:
 	# far the car has already rotated in the steering direction. Full assist at 0,
 	# fading linearly to none at steer_assist_max_angle, so it helps rotate the car
 	# in but stops adding torque once it's turned enough — no over-rotation/spin.
-	var rotated_into_turn := -travel_angle * signf(steer_input)
+	var rotated_into_turn := -travel_angle * signf(_steer)
 	var angle_scale := 1.0
 	if cfg.steer_assist_max_angle > 0.0:
 		angle_scale = clampf(1.0 - rotated_into_turn / cfg.steer_assist_max_angle, 0.0, 1.0)
-	apply_torque(global_transform.basis.y * steer_input * cfg.steer_assist_torque * assist_scale * angle_scale)
+	apply_torque(global_transform.basis.y * _steer * cfg.steer_assist_torque * assist_scale * angle_scale)
 
 	# Spin protection: once the car has rotated further than spin_assist_angle
 	# away from its direction of travel, a corrective yaw torque pulls the nose
@@ -468,6 +483,8 @@ func reset_to(xform: Transform3D) -> void:
 	global_transform = xform
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+	steering = 0.0
+	_steer = 0.0
 	drivetrain.rear_omega = 0.0
 	for wheel in drivetrain.front_omega:
 		drivetrain.front_omega[wheel] = 0.0
@@ -567,6 +584,17 @@ func apply_car(index: int) -> String:
 	cfg.suspension_travel = spec.get("suspension_travel", cfg.suspension_travel)
 	cfg.suspension_stiffness = spec.get("suspension_stiffness", cfg.suspension_stiffness)
 	mass = cfg.mass
+
+	# Per-car centre of mass from the real static front-axle weight fraction. For
+	# static balance the CoM sits behind the front axle by wheelbase x rear_fraction,
+	# so measured from the wheelbase centre (the body origin, where the axles sit at
+	# +/- half_base along Z; forward is -Z) the offset is wheelbase x (rear_frac - 0.5),
+	# +Z = rearward. Switching to CUSTOM overrides Godot's AUTO (which derives a centred
+	# CoM from the symmetric collision box). Feeds the static load split onto each axle
+	# via the settling suspension -> Drivetrain.wheel_normal_force -> tyre grip balance.
+	var front_frac: float = spec.get("weight_front", 0.5)
+	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	center_of_mass = Vector3(0.0, 0.0, spec["wheelbase"] * (1.0 - front_frac - 0.5))
 
 	# Chassis + cabin + collision boxes.
 	var body: Vector3 = spec["body"]
@@ -689,8 +717,26 @@ func apply_owned(owned: Dictionary) -> String:
 	# removes it from the save.
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
-	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)))
+	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)),
+		owned.get("wheel_toe", []))
 	return car_name
+
+
+# Bend each wheel by its persisted damage toe (radians) via the per-wheel
+# VehicleWheel3D.steering — a physical steer angle the drivetrain tire model reads
+# for the force direction, so a damaged car pulls/crabs from the physics alone.
+# Front (steering) wheels carry the live steer PLUS their toe; rear wheels (which
+# the body never steers) carry only their toe. Called every physics frame right
+# after the base steering is set, so it also re-asserts over the body's per-frame
+# overwrite of the front wheels. The wheel visuals read wheel.steering too, so the
+# bend is visible. See DamageModel.nudge_wheels / features/damage.md.
+func _apply_wheel_toe() -> void:
+	if damage == null:
+		return
+	for wheel in drivetrain.front_wheels:
+		wheel.steering = steering + float(damage.wheel_toe.get(wheel.name, 0.0))
+	for wheel in drivetrain.rear_wheels:
+		wheel.steering = float(damage.wheel_toe.get(wheel.name, 0.0))
 
 
 # Re-push the live suspension stiffness + derived dampers onto all four wheels

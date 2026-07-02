@@ -183,6 +183,36 @@ func test_repair_kit_restores_to_full() -> void:
 	assert_false(_save.use_repair_kit(car["instance_id"] + 999), "no kit spent on an unknown car")
 
 
+func test_wheel_toe_persists_and_survives_reload() -> void:
+	var car: Dictionary = _save.grant_car("mx5")
+	var id: int = car["instance_id"]
+	assert_eq(_save.get_car(id)["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "a fresh car has straight wheels")
+	_save.set_wheel_toe(id, [0.01, -0.02, 0.03, -0.04])
+	_save.save_now()
+	_save.profile = {}
+	_save.load_or_new()
+	assert_eq(_save.get_car(id)["wheel_toe"], [0.01, -0.02, 0.03, -0.04], "bent wheels reloaded from disk")
+
+
+func test_repair_kit_straightens_wheels() -> void:
+	var car: Dictionary = _save.grant_car("mustang")
+	var id: int = car["instance_id"]
+	_save.set_wheel_toe(id, [0.05, -0.05, 0.05, -0.05])
+	_save.add_item("repair_kit", 1)
+	assert_true(_save.use_repair_kit(id), "repair kit consumed")
+	assert_eq(_save.get_car(id)["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "a repair straightens the wheels")
+
+
+func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
+	# A pre-feature owned car has no wheel_toe key; load must backfill it straight.
+	_save.profile["cars"] = [{
+		"instance_id": 7, "model_id": "mx5", "hp": 500.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {},
+	}]
+	_save.profile = _save._sanitise(_save.profile)
+	assert_eq(_save.profile["cars"][0]["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "backfilled straight")
+
+
 func test_repair_kit_revives_a_wrecked_car() -> void:
 	var car: Dictionary = _save.grant_car("mustang")
 	var id := int(car["instance_id"])

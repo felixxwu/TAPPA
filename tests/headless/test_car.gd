@@ -538,17 +538,17 @@ func test_car_has_damage_model_and_contact_monitor() -> void:
 	assert_gt(_car.max_contacts_reported, 0, "the car reports contacts for the damage model")
 
 
-func test_power_scale_tracks_damage() -> void:
-	var cfg: GameConfig = Config.data
-	# Healthy: full power passes through to the drivetrain.
+func test_engine_misfire_level_tracks_damage() -> void:
+	# car.gd feeds damage.misfire_level() to the engine each tick; the engine turns
+	# that into a stochastic fuel cut (tested in test_engine_logic.gd). The exact
+	# ramp lives in test_damage_model.gd — here we just confirm the wiring: healthy
+	# car -> 0, a badly damaged car -> some misfire.
 	_car.damage.field(1000.0, 1000.0)
 	await _wait_physics(2)
-	assert_almost_eq(_car.drivetrain.power_scale, 1.0, 0.001, "full HP keeps full power")
-	# Half HP: the driven torque is scaled by the configured loss curve.
-	_car.damage.hp = 500.0
+	assert_almost_eq(_car.drivetrain.engine.misfire_level, 0.0, 0.001, "full HP -> no misfire")
+	_car.damage.hp = 0.0
 	await _wait_physics(2)
-	assert_almost_eq(_car.drivetrain.power_scale, 1.0 - 0.5 * cfg.damage_power_loss_max, 0.001,
-		"power scale follows the damage fraction each tick")
+	assert_gt(_car.drivetrain.engine.misfire_level, 0.0, "a wrecked engine misfires")
 
 
 # Regression: a head-on collision must cost HP. Godot only reports a contact in
@@ -585,6 +585,29 @@ func test_head_on_collision_costs_hp() -> void:
 	assert_lt(_car.damage.hp, 1000.0, "a head-on collision must cost HP")
 
 
+# A car fielded with bent wheels must veer from the physics ALONE — the damage
+# steer bias was removed, so if the toe weren't applied to the actual wheel nodes
+# (and their steer axle re-captured on re-parent), the car would track straight.
+func test_bent_front_wheels_veer_the_car_via_physics() -> void:
+	var cfg: GameConfig = Config.data
+	var t := cfg.damage_wheel_toe_max
+	# Both front wheels toed the same way about the car-up axis = a physical steer.
+	_car.apply_owned({"model_id": "mx5", "wheel_toe": [t, t, 0.0, 0.0]})
+	await _wait_physics(4)
+	# The toe rides on the per-wheel VehicleWheel3D.steering the drivetrain reads for
+	# the force direction (front wheels carry the base steer plus their toe).
+	var fl := _car.get_node("WheelFL") as VehicleWheel3D
+	var rl := _car.get_node("WheelRL") as VehicleWheel3D
+	assert_almost_eq(fl.steering, _car.steering + t, 0.02, "front wheel carries base steer + toe")
+	assert_almost_eq(rl.steering, 0.0, 0.02, "an unbent rear wheel stays straight")
+	var start_yaw := _car.global_transform.basis.get_euler().y
+	Input.action_press("accelerate")
+	await _wait_physics(150)
+	Input.action_release("accelerate")
+	var yaw_delta: float = angle_difference(start_yaw, _car.global_transform.basis.get_euler().y)
+	assert_gt(absf(yaw_delta), 0.05, "bent front wheels veer the car with no synthetic steer bias")
+
+
 func test_mx5_wheels_use_its_own_wheel_texture() -> void:
 	_car.apply_car(CarLibrary.index_of("mx5"))
 	var tire := _car.get_node("WheelFL/Visual/Tire") as MeshInstance3D
@@ -614,3 +637,29 @@ func test_mx5_model_node_shown_via_spec_fields() -> void:
 	var mat := mi.get_surface_override_material(0) as ShaderMaterial
 	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
 	assert_true(str(tex.resource_path).ends_with("mx5_texture.png"), "mx5 body uses its own texture")
+
+
+func test_apply_car_sets_custom_center_of_mass_from_weight_front() -> void:
+	# LOGIC test (not a pinned value): whatever a car's authored weight_front is,
+	# apply_car must switch to a CUSTOM CoM and place it along the wheelbase per the
+	# static-balance mapping z = wheelbase x (rear_frac - 0.5), +Z = rearward.
+	for i in CarLibrary.CARS.size():
+		var spec: Dictionary = CarLibrary.CARS[i]
+		_car.apply_car(i)
+		assert_eq(_car.center_of_mass_mode, RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM,
+			"%s uses a custom centre of mass" % spec["name"])
+		var front_frac: float = spec.get("weight_front", 0.5)
+		var expected_z: float = spec["wheelbase"] * (1.0 - front_frac - 0.5)
+		assert_almost_eq(_car.center_of_mass.z, expected_z, 0.0001,
+			"%s CoM z follows wheelbase x (rear_frac - 0.5)" % spec["name"])
+		assert_almost_eq(_car.center_of_mass.x, 0.0, 0.0001, "%s CoM stays centred laterally" % spec["name"])
+
+
+func test_nose_heavy_car_sits_com_forward_of_tail_heavy() -> void:
+	# Sign/direction check: a nose-heavy car's CoM is forward (-Z) of a tail-heavy
+	# one's. Compares the sign of the mapping, not the specific figures.
+	_car.apply_car(CarLibrary.index_of("focus"))  # nose-heavy FWD
+	var nose_z := _car.center_of_mass.z
+	_car.apply_car(CarLibrary.index_of("aventador"))  # tail-heavy mid-engine
+	var tail_z := _car.center_of_mass.z
+	assert_lt(nose_z, tail_z, "nose-heavy CoM sits forward (-Z) of a tail-heavy car's")

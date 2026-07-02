@@ -47,5 +47,7 @@ func _process(_delta: float) -> void:
 	# avoiding a per-frame slice() allocation. resize only fires when n changes.
 	if _scratch.size() != n:
 		_scratch.resize(n)
-	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.limiting)
+	# fuel_cut (limiter OR damage misfire) ducks the note; the crackle burst is
+	# limiter-only (engine.limiting) — a damaged engine sputters without the pop.
+	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting)
 	_playback.push_buffer(_scratch)

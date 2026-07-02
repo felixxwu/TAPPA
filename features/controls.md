@@ -18,6 +18,7 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `cycle_camera` | C | — | B / Circle (East) | Cycle through cameras |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
+| `skip_to_finish` | F | — | — | Dev: instantly complete the current event |
 
 All actions use a 0.2 deadzone.
 
@@ -64,8 +65,11 @@ Deck / PlayStation, button glyphs follow the SDL standard layout):
 - **Bumpers are the shift paddles** (manual gearbox), face buttons cover the
   remaining toggles, and the D-pad cycles drive mode.
 
-The debug overlays (`toggle_debug_arrows`, `toggle_perf_overlay`) are
-intentionally keyboard-only.
+The debug overlays (`toggle_debug_arrows`, `toggle_perf_overlay`) and the
+`skip_to_finish` event cheat are intentionally keyboard-only. `toggle_debug_arrows`
+(**H**) and `skip_to_finish` (**F**) are further gated to **debug builds**
+(`OS.is_debug_build()`) — release exports ignore the keys. See
+[debug-tools.md](debug-tools.md) for skip-to-finish.
 
 ## Touch / mobile
 

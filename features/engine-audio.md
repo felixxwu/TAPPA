@@ -28,7 +28,9 @@ lower) and is crossfaded in by `engine_low_octave_mix` — see *Low octave* belo
 State: `_crank_phase`, `_firing_phases` (per-cylinder firing times, 0..1),
 `_harmonics`, `_idle_gain`, `_noise_level`, `_smooth_rate`.
 
-- `fill(buffer, rpm, throttle, shift_cut, n_frames, fuel_cut)`:
+- `fill(buffer, rpm, throttle, shift_cut, n_frames, fuel_cut, crackle_cut)`:
+  (`fuel_cut` ducks the voice — limiter or damage misfire; `crackle_cut` fires the
+  crackle — limiter only)
   1. one-pole smooth rpm + throttle per frame (`_smooth_rate`),
   2. advance crank phase,
   3. sum firing pulses via `_voice()`,
@@ -117,17 +119,22 @@ The audio honestly reflects the sim's **soft bounce limiter** rather than faking
 a synthetic stutter. `engine.gd`'s `_update_limiter()` latches a fuel cut at
 redline and releases it a `rev_limiter_band` below (engine braking drags the revs
 back down), so `engine.limiting` toggles on/off at the limit — a couple of Hz
-with the default flywheel inertia. `engine_audio.gd` passes that flag straight in
-as `fill()`'s `fuel_cut`, and the synth:
+with the default flywheel inertia. A **damage misfire** (see [damage.md](damage.md))
+also stops combustion, so `engine.fuel_cut` is the limiter OR the misfire.
+`engine_audio.gd` passes `engine.fuel_cut` as `fill()`'s `fuel_cut` **and**
+`engine.limiting` as its separate `crackle_cut`, and the synth:
 
 - **ducks the firing voice** toward `engine_limiter_cut_level` (combustion stops
-  while the engine keeps spinning) via `_cut_gain`. The duck rides its **own**
-  fast envelope (`CUT_SMOOTH_RATE`, far above `engine_smoothing_rate`) so each
-  bounce edge stays crisp no matter how slowly a car tracks rpm — that on/off
-  ducking *is* the audible limiter warble, taken directly from the sim,
-- **fires a crackle burst** on each cut onset (`engine_limiter_crackle`): a short
-  decaying noise burst (`_crackle_env`, `CRACKLE_DECAY` ≈ 6 ms tail) standing in
-  for unburnt fuel popping in the exhaust on overrun.
+  while the engine keeps spinning) via `_cut_gain`, on ANY `fuel_cut` — limiter or
+  misfire. The duck rides its **own** fast envelope (`CUT_SMOOTH_RATE`, far above
+  `engine_smoothing_rate`) so each bounce edge stays crisp no matter how slowly a
+  car tracks rpm — that on/off ducking *is* the audible limiter warble (and the
+  damage stumble), taken directly from the sim,
+- **fires a crackle burst** on each `crackle_cut` onset (`engine_limiter_crackle`):
+  a short decaying noise burst (`_crackle_env`, `CRACKLE_DECAY` ≈ 6 ms tail)
+  standing in for unburnt fuel popping in the exhaust on overrun. This is
+  **limiter-only** — a damage misfire ducks but does not pop, since the crackle
+  fits the limiter's clean on-throttle bounce, not a damaged engine sputtering.
 
 With `fuel_cut` false the output is byte-for-byte the pre-limiter voice, so
 normal running is unaffected. The crackle and duck are deliberately *not* a

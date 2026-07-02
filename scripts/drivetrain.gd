@@ -28,9 +28,6 @@ enum DriveMode { RWD, AWD, FWD }
 var car: VehicleBody3D
 var engine: EngineSim
 var drive_mode := DriveMode.RWD  # which axle(s) the engine drives
-# Multiplier on the engine's driven torque, set by car.gd each tick from the
-# damage model (1.0 = healthy, <1 as HP falls). See features/damage.md.
-var power_scale := 1.0
 # Terrain that resolves the surface under each wheel (a TerrainManager exposing
 # surface_at(x, z) -> (road_weight, tarmac_weight)). Set by car.gd from its Floor
 # sibling; null on the flat test fixtures, where every wheel keeps the base μ.
@@ -125,10 +122,10 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool) -> void:
 				front_reaction_each[c.wheel] = f.x * r
 
 		# The engine is geared to the driven axle(s); its total wheel torque
-		# (drive, engine braking and shift cuts all live in EngineSim).
+		# (drive, engine braking and shift cuts all live in EngineSim — including the
+		# damage misfire, a stochastic fuel cut that drops crank torque as HP falls).
 		# Brakes move omega toward zero but never reverse it (no sign flip-flop).
-		# power_scale fades the driven torque as the car takes damage (1.0 healthy).
-		var drive_torque := engine.step(h, throttle, driveline_omega(), handbrake) * power_scale
+		var drive_torque := engine.step(h, throttle, driveline_omega(), handbrake)
 		match drive_mode:
 			DriveMode.AWD:
 				if handbrake:

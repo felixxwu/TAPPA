@@ -273,15 +273,28 @@ func test_fuel_cut_is_sharp_despite_slow_smoothing() -> void:
 	assert_lt(_rms(cut, n), _rms(firing, n) * 0.8, "cut bites even with slow smoothing")
 
 
-# Entering fuel cut fires a crackle burst: with the duck disabled (cut_level 1)
-# and noise off, the cut buffer carries extra broadband energy vs no cut.
+# Entering a LIMITER cut fires a crackle burst: with the duck disabled (cut_level 1)
+# and noise off, the cut buffer carries extra broadband energy vs no cut. The
+# crackle edge-triggers off crackle_cut (the 7th arg), which the limiter sets.
 func test_fuel_cut_onset_adds_crackle() -> void:
 	var n := 4096
 	var quiet := PackedVector2Array(); quiet.resize(n)
 	var crackly := PackedVector2Array(); crackly.resize(n)
-	_limiter_synth(1.0, 0.5).fill(quiet, 7500.0, 1.0, false, n, false)
-	_limiter_synth(1.0, 0.5).fill(crackly, 7500.0, 1.0, false, n, true)
-	assert_gt(_rms(crackly, n), _rms(quiet, n), "cut onset adds a crackle burst")
+	_limiter_synth(1.0, 0.5).fill(quiet, 7500.0, 1.0, false, n, false, false)
+	_limiter_synth(1.0, 0.5).fill(crackly, 7500.0, 1.0, false, n, true, true)
+	assert_gt(_rms(crackly, n), _rms(quiet, n), "limiter cut onset adds a crackle burst")
+
+
+# A DAMAGE misfire ducks the voice (fuel_cut) but must NOT crackle — the pop is
+# limiter-only. With the duck disabled (cut_level 1) so only the crackle could
+# differ, a misfire cut (crackle_cut false) matches no-crackle; a limiter cut pops.
+func test_misfire_cut_ducks_without_crackle() -> void:
+	var n := 4096
+	var misfire := PackedVector2Array(); misfire.resize(n)
+	var limiter := PackedVector2Array(); limiter.resize(n)
+	_limiter_synth(1.0, 0.5).fill(misfire, 7500.0, 1.0, false, n, true, false)
+	_limiter_synth(1.0, 0.5).fill(limiter, 7500.0, 1.0, false, n, true, true)
+	assert_gt(_rms(limiter, n), _rms(misfire, n), "the limiter crackles; a damage misfire does not")
 
 
 # With no fuel cut the voice is identical to the pre-limiter default, so normal

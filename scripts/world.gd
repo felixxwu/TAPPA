@@ -369,6 +369,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		add_child(_wheel_particles)
 	_wheel_particles.setup($Car)
 
+	# Grey smoke puffed from the bonnet each time a damaged engine misfires. Its own
+	# small MultiMesh pool; reads the car's engine misfire counter live. See
+	# features/engine-smoke.md.
+	if _engine_smoke == null:
+		_engine_smoke = EngineSmoke.new()
+		_engine_smoke.name = "EngineSmoke"
+		add_child(_engine_smoke)
+	_engine_smoke.setup($Car)
+
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
 	# Reuse the node across regenerations so only one ticks.
@@ -541,6 +550,7 @@ var _road_markings: RoadMarkings
 # Flings cheap gravel dust off the driven wheels under wheelspin (re-targeted on
 # a car swap).
 var _wheel_particles: WheelParticles
+var _engine_smoke: EngineSmoke
 
 # Coarse far-terrain backdrop that gives the sky a horizon (distant_terrain.gd).
 var _distant_terrain: DistantTerrain
@@ -595,6 +605,25 @@ func _setup_stage_splits(track_result: Dictionary, staged: bool, cfg: GameConfig
 
 
 # --- RallySession run-scene integration (features/rally-session.md) ------------
+
+# Dev cheat (F key, features/debug-tools.md): skip straight to the finish of the
+# current event. Debug-build only (release/web ignore it) and only inside an active
+# rally event with a live StageManager. Teleports the car onto the finish line and
+# force-completes the stage, so the whole completion → reward → progression flow
+# fires exactly as it would on a real finish.
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_action_pressed("skip_to_finish"):
+		return
+	if not OS.is_debug_build() or not RallySession.is_active():
+		return
+	if _stage_manager == null or _track_progress == null:
+		return
+	if _stage_manager.phase() == StageManager.Phase.COMPLETE:
+		return
+	$Car.reset_to(_track_progress.jump_to_finish())
+	_stage_manager.force_complete()
+	get_viewport().set_input_as_handled()
+
 
 # Whether this run should open with the pre-event start-line scene: a session run
 # with the feature enabled AND a resolvable rally (so a missing rally never strands
@@ -654,6 +683,10 @@ func _wire_session_signals() -> void:
 
 func _on_session_event_completed(elapsed_seconds: float) -> void:
 	var hp_lost: float = maxf(0.0, _event_start_hp - $Car.damage.hp)
+	# Persist the wheels bent this event so the car carries its misalignment forward.
+	var iid: int = RallySession.car_instance_id()
+	if iid >= 0:
+		Save.set_wheel_toe(iid, $Car.damage.toe_array())
 	RallySession.report_event_result(int(round(elapsed_seconds * 1000.0)), hp_lost)
 
 
@@ -713,6 +746,8 @@ func cycle_car() -> void:
 	# Re-point wheel dust at the fresh car and clear the outgoing car's clods.
 	if _wheel_particles != null:
 		_wheel_particles.retarget(fresh)
+	if _engine_smoke != null:
+		_engine_smoke.retarget(fresh)
 	# Re-arm the stage on the fresh car (it spawns at the start), so the countdown
 	# restarts and the manager doesn't keep a freed car reference.
 	if _stage_manager != null:

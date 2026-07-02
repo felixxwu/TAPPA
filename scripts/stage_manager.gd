@@ -173,13 +173,29 @@ func _tick_running(delta: float) -> void:
 	# scale to the 0..100 stage_complete_percent. Monotonic, so this is a one-way
 	# edge — once tripped the phase never leaves COMPLETE.
 	if _progress != null and _progress.progress_percent() * 100.0 >= _cfg().stage_complete_percent:
-		_phase = Phase.COMPLETE
-		# Re-lock so the finished car doesn't keep driving under the panel.
-		if _car != null:
-			_car.controls_locked = true
-		if _hud != null and _hud.has_method("show_stage_complete"):
-			_hud.show_stage_complete(_elapsed)
-		stage_completed.emit(_elapsed)
+		_complete()
+
+
+# Trip the finish: freeze the timer, re-lock the car, show the panel and emit
+# stage_completed. Reached either by crossing the finish (the gate above) or by
+# the dev skip-to-finish cheat (force_complete).
+func _complete() -> void:
+	_phase = Phase.COMPLETE
+	# Re-lock so the finished car doesn't keep driving under the panel.
+	if _car != null:
+		_car.controls_locked = true
+	if _hud != null and _hud.has_method("show_stage_complete"):
+		_hud.show_stage_complete(_elapsed)
+	stage_completed.emit(_elapsed)
+
+
+# Dev cheat: complete the event immediately, no matter the current phase (unless
+# already finished). Runs the same completion path as crossing the finish line,
+# so the rally/reward/progression flow fires exactly as it would on a real run.
+func force_complete() -> void:
+	if not _armed or _phase == Phase.COMPLETE:
+		return
+	_complete()
 
 
 # Drive the "vs P1" pace popup. Advance past every turn boundary the player has now

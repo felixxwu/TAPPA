@@ -150,6 +150,32 @@ func test_completion_freezes_timer_relocks_and_signals() -> void:
 	assert_almost_eq(sm.elapsed(), 3.0, 0.0001, "no time accrues after completion")
 
 
+func test_force_complete_finishes_immediately() -> void:
+	# The dev skip-to-finish cheat: force_complete() runs the same completion path
+	# as crossing the line, regardless of progress or elapsed time.
+	var sm := _make()
+	_to_running(sm)
+	sm._process(1.5)  # elapsed 1.5, progress still 0 -> nowhere near the finish
+	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "still running before the cheat")
+	var completed := [-1.0]
+	sm.stage_completed.connect(func(t: float) -> void: completed[0] = t)
+	sm.force_complete()
+	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "force_complete finishes the stage")
+	assert_almost_eq(completed[0], 1.5, 0.0001, "stage_completed carries the elapsed time so far")
+	assert_true(_car.controls_locked, "car re-locked on the forced finish")
+	assert_almost_eq(_hud.complete_time, 1.5, 0.0001, "complete panel shown")
+
+
+func test_force_complete_is_idempotent_once_finished() -> void:
+	var sm := _make()
+	_to_running(sm)
+	sm.force_complete()
+	var again := [0]
+	sm.stage_completed.connect(func(_t: float) -> void: again[0] += 1)
+	sm.force_complete()  # already COMPLETE -> no re-emit
+	assert_eq(again[0], 0, "a second force_complete after finishing does nothing")
+
+
 func test_completion_uses_configured_percent() -> void:
 	Config.data.stage_complete_percent = 50.0
 	var sm := _make()

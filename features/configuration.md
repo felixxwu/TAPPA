@@ -107,8 +107,13 @@ See [stage.md](stage.md).
 | `impact_ref_hp_loss` | 200.0 | HP a reference-speed hit costs (square-law in speed); ~200 ⇒ most cars survive 4-5 hits at 60 km/h, barely any at 20 |
 | `impact_max_loss_frac` | 0.34 | Cap on one impact's HP loss, as a fraction of max HP (no single crash wrecks) |
 | `impact_cooldown_s` | 0.7 | Post-hit window where impacts are ignored (groups a crash into one hit) |
-| `damage_power_loss_max` | 0.4 | Fraction of engine power lost at 0 HP |
-| `damage_steer_bias_max` | 0.08 | Max wheel-alignment steer pull (rad) at 0 HP |
+| `damage_misfire_health_threshold` | 0.5 | Health fraction at/above which the engine is fully healthy; misfire ramps in below it |
+| `damage_misfire_rate_max` | 9.0 | Engine fuel-cuts/sec at 0 HP under full load (stumbling power loss) |
+| `damage_misfire_load_bias` | 0.35 | How much the misfire fires independent of load (0..1) |
+| `damage_misfire_duration_min` | 0.04 | Shortest single fuel-cut (s) |
+| `damage_misfire_duration_max` | 0.16 | Longest single fuel-cut (s) |
+| `damage_wheel_toe_gain` | 0.12 | Wheel-toe (rad) a full-per-hit-cap impact adds, scaled by hit strength & a random 0.5..1 per wheel |
+| `damage_wheel_toe_max` | 0.14 | Per-wheel clamp on accumulated toe (rad) |
 | `hud_hp_enabled` | true | Show the in-run HP gauge |
 | `hud_low_hp_warn_frac` | 0.25 | HP fraction below which the gauge flashes a warning |
 

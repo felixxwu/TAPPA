@@ -57,6 +57,19 @@ func test_progress_advances_on_road_and_is_monotonic() -> void:
 	assert_almost_eq(tp.progress_offset(), 30.0, 0.5, "backward travel does not reduce progress")
 
 
+func test_jump_to_finish_pins_progress_to_100_percent() -> void:
+	# The dev skip-to-finish cheat: jump_to_finish() pins progress to the end of the
+	# curve (100%) and returns the finish pose, without needing the car to be there.
+	_put_car(0, 0)
+	var tp := _make_progress()
+	assert_almost_eq(tp.progress_percent(), 0.0, 0.001, "starts at 0%")
+	var pose := tp.jump_to_finish()
+	assert_almost_eq(tp.progress_percent(), 1.0, 0.001, "progress pinned to 100%")
+	assert_almost_eq(tp.progress_offset(), tp.baked_length(), 0.5, "offset at the finish")
+	# The returned pose sits on the road at the end of the curve (~z = 100).
+	assert_almost_eq(pose.origin.z, 100.0, 1.0, "finish pose is at the end of the road")
+
+
 func test_progress_gated_by_distance() -> void:
 	_put_car(0, 0)
 	var tp := _make_progress()

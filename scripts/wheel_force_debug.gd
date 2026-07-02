@@ -53,7 +53,10 @@ func _build_collision_box() -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if Input.is_action_just_pressed("toggle_debug_arrows"):
+	# The H-key toggle is a dev-only affordance: only honour it in a debug build
+	# (editor / debug export). Release exports (e.g. the web build) never show the
+	# arrows via the key. A config that starts them visible still works either way.
+	if OS.is_debug_build() and Input.is_action_just_pressed("toggle_debug_arrows"):
 		visible = not visible
 	if _collision_box != null:
 		_collision_box.visible = visible

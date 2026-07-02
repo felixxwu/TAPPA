@@ -35,6 +35,85 @@ func test_rev_limiter_bounces_within_a_band() -> void:
 	assert_gt(lo, cfg.redline_rpm - cfg.rev_limiter_band - 60.0, "the bounce stays within the limiter band")
 
 
+# --- Damage misfire ----------------------------------------------------------
+
+func test_misfire_rate_zero_when_healthy() -> void:
+	# No damage -> never cuts, regardless of load or tuning.
+	assert_eq(EngineSim.misfire_rate(0.0, 1.0, 9.0, 0.5), 0.0, "a healthy engine never misfires")
+
+
+func test_misfire_rate_positive_and_rises_with_load() -> void:
+	# Constants supplied by the test (not the authored config) so this pins logic,
+	# not tuned values. bias 0.5 -> some cutting off-load, more under load.
+	var idle := EngineSim.misfire_rate(1.0, 0.0, 10.0, 0.5)
+	var loaded := EngineSim.misfire_rate(1.0, 1.0, 10.0, 0.5)
+	assert_gt(idle, 0.0, "a damaged engine still stumbles off-load (bias > 0)")
+	assert_gt(loaded, idle, "the misfire fires more often under load")
+
+
+# Count misfires in isolation via _update_misfire (fuel_cut also folds in the rev
+# limiter, which would fire whenever the revs sit at redline — nothing to do with
+# damage). Under load (throttle set, mid revs) but well below redline.
+func _count_misfires(steps: int) -> int:
+	var cfg: GameConfig = Config.data
+	_engine.throttle = 1.0
+	_engine.omega = _engine.redline_omega() * 0.5  # mid revs -> load, no limiter
+	var cuts := 0
+	for i in range(steps):
+		if _engine._update_misfire(cfg, 0.001):
+			cuts += 1
+	return cuts
+
+
+func test_healthy_engine_never_cuts_over_many_steps() -> void:
+	_engine.misfire_level = 0.0
+	_engine._rng.seed = 1
+	assert_eq(_count_misfires(3000), 0, "misfire_level 0 -> the engine never cuts fuel")
+
+
+func test_misfire_count_advances_only_on_cuts() -> void:
+	# misfire_count increments once per cut ONSET (EngineSmoke reads its delta to puff).
+	_engine.misfire_level = 0.0
+	_engine._rng.seed = 1
+	_count_misfires(2000)
+	assert_eq(_engine.misfire_count, 0, "a healthy engine never advances the misfire count")
+	_engine.misfire_level = 1.0
+	var cutting_substeps := _count_misfires(2000)
+	assert_gt(_engine.misfire_count, 0, "a damaged engine advances the count")
+	# Each onset is one of the cutting substeps (a cut spans several substeps), so the
+	# onset count can't exceed the number of substeps spent cutting.
+	assert_lte(_engine.misfire_count, cutting_substeps, "the count tracks cut onsets, not every substep")
+
+
+func test_damaged_engine_cuts_fuel_intermittently() -> void:
+	_engine.misfire_level = 1.0  # wrecked: worst-case misfire rate
+	_engine._rng.seed = 1
+	var cuts := _count_misfires(3000)
+	assert_gt(cuts, 0, "a heavily damaged engine cuts fuel during the run")
+	assert_lt(cuts, 3000, "but it is intermittent, not a permanent cut")
+
+
+func test_misfire_kills_crank_torque() -> void:
+	# During a cut, combustion stops: full throttle in neutral must NOT spin the
+	# flywheel up the way it does when firing — only engine friction acts.
+	_engine.gear = 0
+	_engine.misfire_level = 1.0
+	# Firing control: throttle raises the revs.
+	_engine.omega = _engine.idle_omega() + 50.0
+	_engine._misfire_timer = 0.0
+	_engine.misfire_level = 0.0
+	var before_fire := _engine.omega
+	_engine.step(0.01, 1.0, 0.0)
+	assert_gt(_engine.omega, before_fire, "firing on full throttle spins the flywheel up")
+	# Now force a misfire: the same input must not add crank torque.
+	_engine.misfire_level = 1.0
+	_engine._misfire_timer = 1.0  # a cut is in progress
+	var before_cut := _engine.omega
+	_engine.step(0.01, 1.0, 0.0)
+	assert_true(_engine.fuel_cut, "the forced misfire reports a fuel cut (for the audio)")
+	assert_lt(_engine.omega, before_cut, "with fuel cut, full throttle no longer drives the flywheel")
+
+
 func test_shift_up_speeds_are_increasing_and_reachable() -> void:
 	# Precomputed per-gear upshift speeds: one entry per forward gear, strictly
 	# increasing, and BELOW each gear's redline speed so the car can actually

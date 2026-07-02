@@ -1903,6 +1903,7 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 		if audio is AudioStreamPlayer:
 			audio.playing = false
 			audio.volume_db = -80.0
+	_add_synthetic_smoke(car)
 	return car
 
 
@@ -2355,7 +2356,28 @@ func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 		if audio is AudioStreamPlayer:
 			audio.playing = false
 			audio.volume_db = -80.0
+	_add_synthetic_smoke(car)
 	return car
+
+
+# Give a damaged display car (car park / lift) its own synthetic engine smoke — the
+# frozen prop's engine never runs, so EngineSmoke self-times puffs from the car's
+# damage severity instead of misfire cutouts. Parented to the CAR (so it's freed with
+# it) but top_level (world-space render, ignoring the car transform, like the event
+# pool at the scene root) and PROCESS_MODE_ALWAYS (keeps puffing though the car is
+# frozen / process-disabled). Skipped for a healthy car (severity 0 = no smoke).
+func _add_synthetic_smoke(car: Node) -> void:
+	if not Config.data.engine_smoke_enabled:
+		return
+	if car.get("damage") == null or car.damage.misfire_level(Config.data) <= 0.0:
+		return
+	var smoke := EngineSmoke.new()
+	car.add_child(smoke)
+	# Emits in the car's LOCAL space (see EngineSmoke._puff), so it renders at the
+	# bonnet relative to the car — no top_level. PROCESS_MODE_ALWAYS keeps it puffing
+	# even though the display car is frozen / process-disabled once settled.
+	smoke.process_mode = Node.PROCESS_MODE_ALWAYS
+	smoke.setup_synthetic(car)
 
 
 # Freeze the settled lineup (called a moment after spawning). No-op if a newer
