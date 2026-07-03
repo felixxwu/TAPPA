@@ -3,24 +3,15 @@ extends Node3D
 class_name TerrainManager
 
 # Owns the procedural terrain: noise state, height sampling, and the lifecycle
-# of the TerrainChunk children loaded around the car. The terrain is infinite in
-# theory (height_at is pure noise over world coords); only a RADIUS-ring of
-# chunks around the focus is ever built.
+# of the TerrainChunk children loaded around the car. The terrain is precomputed
+# over a bounded corridor (see _chunk_cache / precompute_corridor); the RADIUS-ring
+# of chunks around the focus is a render/physics window into that cache, not a
+# generation stream.
 
 const CHUNK_M := 50.0                        # chunk edge length in metres
 const CELL_M := 1.0                          # grid cell size (PS1 low-poly terrain)
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
 const RADIUS := 1                            # ring radius -> (2*RADIUS+1)^2 = 3x3
-const MAX_INTEGRATIONS_PER_FRAME := 1   # cap chunk node creation per frame
-# Per-frame work budget for the main-thread budgeted (web) path, in grid ROWS of
-# chunk generation (see TerrainChunkBuilder). A whole chunk is ~206 rows lit, far
-# more than one frame can afford on a phone, so even "one chunk per frame" stalled;
-# slicing to a row budget spreads a single chunk's build across ~10-15 frames while
-# the fog and the ring's lead distance hide the lag. Lower for smaller per-frame
-# spikes (more frames per chunk), raise for faster fill (heavier frames). The
-# nearest new chunk has ~0.7 s of lead before the car reaches it at speed, so even
-# a low budget keeps up comfortably.
-const MAX_BUILD_ROWS_PER_FRAME := 16
 const ROAD_SAMPLE_STEP_M := 0.25        # centerline sampling density for bake_road
 
 const ChunkScript := preload("res://scripts/terrain_chunk.gd")
@@ -84,28 +75,10 @@ var ground_color: Color = Color(0.35, 0.35, 0.35)
 # coord (Vector2i) -> TerrainChunk
 var _chunks: Dictionary = {}
 var _last_focus_coord: Vector2i = Vector2i(2147483647, 0)  # force first reconcile
-# Runtime generates chunks on worker threads; the editor always stays synchronous
-# (enforced in _reconcile via Engine.is_editor_hint(), NOT by mutating this flag —
-# see _ready). Tests set this false explicitly.
-@export var use_threaded_generation: bool = true
-# Force the frame-budgeted main-thread build queue (see _use_budgeted_generation /
-# _pump_build_queue) even off the web export. Off by default; the web export turns
-# the same path on automatically via OS.has_feature("web"). Exists so a headless
-# test can exercise the budgeted path on desktop. Like use_threaded_generation it
-# is NOT mutated in _ready (this is a @tool script — see the note there).
-@export var force_main_thread_budget: bool = false
 # When true, _ready does NOT build the initial ring — a parent (world.gd) builds
 # it via build_initial() after the track is applied, so flattening is baked in on
 # the first build. The editor always previews terrain regardless of this flag.
 @export var defer_initial_build: bool = false
-var _pending: Dictionary = {}          # coord -> WorkerThreadPool task id
-var _build_queue: Array[Vector2i] = [] # coords awaiting budgeted main-thread build
-# The chunk currently being built incrementally on the budgeted path (one at a
-# time, main thread only). Null when idle. Held across frames by _pump_build_queue;
-# its coord counts as "streaming" (is_streaming_chunks) and must not be re-queued.
-var _active_builder: TerrainChunkBuilder = null
-var _results: Dictionary = {}          # coord -> data Dictionary (worker-written)
-var _results_mutex: Mutex = Mutex.new()
 # Total chunk nodes spawned (mesh + collision built on the main thread). Read by
 # PerfOverlay to correlate frame-time spikes with terrain integration work.
 var integrations_total: int = 0
@@ -120,6 +93,17 @@ var integrations_total: int = 0
 var _cached_noises: Array[FastNoiseLite] = []
 var _cached_amplitudes: PackedFloat32Array = PackedFloat32Array()
 var _noise_cache_valid := false
+
+# Precomputed terrain: coord -> the data dict compute_chunk_data returns. Filled
+# behind the loading screen (world.gd) for the whole reachable corridor — the
+# play area is bounded by the off-track reset leash, so this is the complete set
+# of chunks the level can request. Runtime chunk loads are then cache lookups
+# (~0.2 ms node build), and height_at/light_at serve from it (it is the terrain
+# the player actually sees: road flattening included, unlike the raw noise).
+var _chunk_cache: Dictionary = {}
+# The coords the cache covers, kept so _rebuild_loaded can refill after a
+# terrain-param change (seed/layers) instead of serving stale arrays.
+var _corridor_coords: Array[Vector2i] = []
 
 
 func _connect_layer_signals() -> void:
@@ -187,22 +171,83 @@ func _ensure_noise_cache() -> void:
 	_noise_cache_valid = true
 
 
-# Single-sample height (main thread). Uses the cached noises rather than
-# rebuilding all layers per call — bake_track hits this thousands of times.
-func height_at(x: float, z: float) -> float:
+# PURE noise height — the generator. bake_track and chunk building MUST use
+# this (the flattening is derived from it; cache-first there would be circular).
+func _noise_height_at(x: float, z: float) -> float:
 	_ensure_noise_cache()
 	return _sample_height(_cached_noises, _cached_amplitudes, x, z)
 
 
+# Public height query — CACHE-FIRST. The cached grid is the terrain the player
+# actually sees and collides with (road flattening included); the noise is just
+# the helper that created it. Outside the corridor (distant backdrop, editor,
+# tests without precompute) this silently falls back to pure noise.
+func height_at(x: float, z: float) -> float:
+	var cached := _cached_height_at(x, z)
+	if not is_nan(cached):
+		return cached
+	return _noise_height_at(x, z)
+
+
+# Bilinear height from the cached chunk grid; NAN when the point isn't covered.
+func _cached_height_at(x: float, z: float) -> float:
+	if _chunk_cache.is_empty():
+		return NAN
+	var coord := chunk_coord_for(Vector3(x, 0.0, z))
+	if not _chunk_cache.has(coord):
+		return NAN
+	var heights: PackedFloat32Array = _chunk_cache[coord]["heights"]
+	var lx := (x - coord.x * CHUNK_M) / CELL_M
+	var lz := (z - coord.y * CHUNK_M) / CELL_M
+	var xi := clampi(floori(lx), 0, SAMPLES - 2)
+	var zi := clampi(floori(lz), 0, SAMPLES - 2)
+	var fx := clampf(lx - xi, 0.0, 1.0)
+	var fz := clampf(lz - zi, 0.0, 1.0)
+	var a := heights[zi * SAMPLES + xi]
+	var b := heights[zi * SAMPLES + xi + 1]
+	var c := heights[(zi + 1) * SAMPLES + xi]
+	var d := heights[(zi + 1) * SAMPLES + xi + 1]
+	return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fz)
+
+
 # Baked light tint at a world XZ (main thread), mirroring the per-vertex bake in
 # compute_chunk_data so the distant backdrop (DistantTerrain) shades identically
-# to the near chunks. White (a no-op) when light_amount is 0. Uses the cached
-# noises like height_at.
+# to the near chunks. White (a no-op) when light_amount is 0. CACHE-FIRST like
+# height_at; falls back to a fresh noise-based bake when uncovered or unlit.
 func light_at(x: float, z: float) -> Color:
 	if light_amount <= 0.0:
 		return Color(1, 1, 1)
+	var cached := _cached_light_at(x, z)
+	if cached.a >= 0.0:
+		return cached
 	_ensure_noise_cache()
 	return _bake_light(_cached_noises, _cached_amplitudes, x, z)
+
+
+# Bilinear baked light from the cache; alpha -1 signals "not covered" (Color has
+# no NAN sentinel). Falls through when the chunk is unlit (empty lights array).
+func _cached_light_at(x: float, z: float) -> Color:
+	if _chunk_cache.is_empty():
+		return Color(0, 0, 0, -1.0)
+	var coord := chunk_coord_for(Vector3(x, 0.0, z))
+	if not _chunk_cache.has(coord):
+		return Color(0, 0, 0, -1.0)
+	var lights: PackedColorArray = _chunk_cache[coord].get("lights", PackedColorArray())
+	if lights.is_empty():
+		return Color(0, 0, 0, -1.0)
+	var lx := (x - coord.x * CHUNK_M) / CELL_M
+	var lz := (z - coord.y * CHUNK_M) / CELL_M
+	var xi := clampi(floori(lx), 0, SAMPLES - 2)
+	var zi := clampi(floori(lz), 0, SAMPLES - 2)
+	var fx := clampf(lx - xi, 0.0, 1.0)
+	var fz := clampf(lz - zi, 0.0, 1.0)
+	var a := lights[zi * SAMPLES + xi]
+	var b := lights[zi * SAMPLES + xi + 1]
+	var c := lights[(zi + 1) * SAMPLES + xi]
+	var d := lights[(zi + 1) * SAMPLES + xi + 1]
+	var out := a.lerp(b, fx).lerp(c.lerp(d, fx), fz)
+	out.a = 1.0
+	return out
 
 
 # SAMPLES x SAMPLES heights centred on `center` (a chunk centre), sampled at
@@ -225,15 +270,12 @@ func build_heights(center: Vector3) -> PackedFloat32Array:
 	return heights
 
 
-# Pure CPU work for one chunk: heights + mesh arrays. Safe to call from a worker
-# thread — it reads only the (runtime-static) noise params and builds its own
-# FastNoiseLite instances, touching no scene state. The actual row-by-row work
-# lives in TerrainChunkBuilder (resumable, so the budgeted web path can spread it
-# across frames); here we just run a local builder to completion in one call, so
-# this monolithic path and the incremental one produce byte-identical data.
+# Pure CPU work for one chunk: heights + mesh arrays. Reads only the
+# (runtime-static) noise params. The row-by-row work itself lives in
+# TerrainChunkBuilder (kept out of this file for size).
 func compute_chunk_data(coord: Vector2i) -> Dictionary:
 	var builder := TerrainChunkBuilder.new(self, coord)
-	builder.run_to_completion()
+	builder.build()
 	return builder.data()
 
 
@@ -375,22 +417,95 @@ func target_coords(center: Vector2i) -> Array:
 	return result
 
 
+# Every chunk coord the runtime ring can request while the car stays within
+# `leash_m` of the centerline (the off-track reset leash) — plus one chunk of
+# margin for the physics tick between crossing the leash and the reset firing.
+# The margin is derived from the LIVE leash value, never hard-coded: the
+# invariant this region guarantees depends on that tunable. Straight spans
+# tessellate to just their endpoints, so each polyline segment is sub-sampled
+# at half a chunk so no interior chunk is skipped.
+func corridor_coords(centerline: Curve2D, leash_m: float) -> Array[Vector2i]:
+	var margin := RADIUS + int(ceil(leash_m / CHUNK_M)) + 1
+	var seen: Dictionary = {}
+	var out: Array[Vector2i] = []
+	var poly := centerline.tessellate()
+	for i in range(1, poly.size()):
+		var a := poly[i - 1]
+		var b := poly[i]
+		var steps := int(ceil(a.distance_to(b) / (CHUNK_M / 2.0))) + 1
+		for s in steps + 1:
+			var t := float(s) / float(steps) if steps > 0 else 0.0
+			var p := a.lerp(b, t)
+			var c := chunk_coord_for(Vector3(p.x, 0.0, p.y))
+			for dz in range(-margin, margin + 1):
+				for dx in range(-margin, margin + 1):
+					var cc := c + Vector2i(dx, dz)
+					if not seen.has(cc):
+						seen[cc] = true
+						out.append(cc)
+	return out
+
+
+# Store the corridor and reset the cache; cache_chunk() fills it (world.gd
+# batches the fills with frame awaits so the loading bar paints).
+func set_corridor(coords: Array[Vector2i]) -> void:
+	_corridor_coords = coords
+	_chunk_cache.clear()
+
+
+# The coords the current corridor covers (empty when no precompute has run).
+func corridor() -> Array[Vector2i]:
+	return _corridor_coords
+
+
+func cache_chunk(coord: Vector2i) -> void:
+	_chunk_cache[coord] = compute_chunk_data(coord)
+
+
+# Synchronous convenience: compute + cache the whole corridor in one call.
+func precompute_corridor(centerline: Curve2D, leash_m: float) -> void:
+	set_corridor(corridor_coords(centerline, leash_m))
+	for coord in _corridor_coords:
+		cache_chunk(coord)
+
+
+# World-XZ AABB of the precomputed corridor (zero rect when no corridor is set).
+# world.gd dilates this by the backdrop margin for the static DistantTerrain.
+func corridor_bounds() -> Rect2:
+	if _corridor_coords.is_empty():
+		return Rect2()
+	var lo := _corridor_coords[0]
+	var hi := _corridor_coords[0]
+	for c in _corridor_coords:
+		lo = Vector2i(mini(lo.x, c.x), mini(lo.y, c.y))
+		hi = Vector2i(maxi(hi.x, c.x), maxi(hi.y, c.y))
+	return Rect2(lo.x * CHUNK_M, lo.y * CHUNK_M,
+		(hi.x - lo.x + 1) * CHUNK_M, (hi.y - lo.y + 1) * CHUNK_M)
+
+
+func has_cached(coord: Vector2i) -> bool:
+	return _chunk_cache.has(coord)
+
+
+# Total cached bytes across all chunks' packed arrays, in MB — logged at load so
+# memory regressions are visible.
+func cache_size_mb() -> float:
+	var total := 0
+	for data in _chunk_cache.values():
+		for value in data.values():
+			if value is PackedFloat32Array or value is PackedInt32Array:
+				total += value.size() * 4
+			elif value is PackedVector2Array:
+				total += value.size() * 8
+			elif value is PackedVector3Array:
+				total += value.size() * 12
+			elif value is PackedColorArray:
+				total += value.size() * 16
+	return total / 1.0e6
+
+
 func loaded_coords() -> Array:
 	return _chunks.keys()
-
-
-# True while any chunk work is still in flight: queued for the budgeted main-thread
-# pump, dispatched to a worker, or finished and awaiting integration. DistantTerrain
-# reads this to hold its (heavy, ~2600-vertex light-baked) coarse rebuild until the
-# detail ring is quiet, so the two never share a frame on the single-threaded web
-# path — the back-to-back mesh builds were the bulk of the chunk-crossing hitch.
-func is_streaming_chunks() -> bool:
-	if _active_builder != null or not _build_queue.is_empty() or not _pending.is_empty():
-		return true
-	_results_mutex.lock()
-	var has_results := not _results.is_empty()
-	_results_mutex.unlock()
-	return has_results
 
 
 # Blend weight for a feature `d` metres from the road centerline: 1 at/inside
@@ -438,7 +553,7 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 		for s in steps + 1:
 			var t := float(s) / float(steps) if steps > 0 else 0.0
 			var p := a.lerp(b, t)
-			var y := height_at(p.x, p.y)
+			var y := _noise_height_at(p.x, p.y)
 			# Tarmac-ness at this point's distance along the track (feathered switch).
 			var tarmac := TrackSurface.tarmac_weight(
 				dist_m + t * seg_len, total_m, tarmac_fraction, tarmac_first, surface_feather_m)
@@ -483,11 +598,6 @@ func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fr
 
 
 func _ready() -> void:
-	# NB: do NOT write use_threaded_generation here. This is a @tool script, so in
-	# the editor _ready runs and any mutation of an exported property gets
-	# serialized back into the .tscn on the next save (flipping the shipped value).
-	# The editor/test "stay synchronous" rule is enforced at the use site in
-	# _reconcile via Engine.is_editor_hint() instead.
 	if layers.is_empty():
 		layers = _default_layers()
 	else:
@@ -499,12 +609,11 @@ func _ready() -> void:
 
 
 # Build the initial 3x3 ring synchronously around the focus (the car), so there
-# is always ground under the car at spawn; later boundary crossings use the
-# threaded queue.
+# is always ground under the car at spawn.
 func build_initial() -> void:
 	var focus := _focus_node()
 	var origin: Vector3 = focus.global_position if focus != null else Vector3.ZERO
-	_reconcile(chunk_coord_for(origin), true)
+	_reconcile(chunk_coord_for(origin))
 	_last_focus_coord = chunk_coord_for(origin)
 
 
@@ -512,63 +621,6 @@ func _process(_delta: float) -> void:
 	var focus := _focus_node()
 	if focus != null:
 		update_focus(focus.global_position)
-	_pump_build_queue()
-	_integrate_ready()
-
-
-# True when chunk generation must use the frame-budgeted main-thread queue instead
-# of either the worker pool or the old "build every missing chunk in one frame"
-# synchronous loop. Forced on for the web export: a single-threaded web build (no
-# cross-origin isolation -> no SharedArrayBuffer -> no real threads) runs
-# WorkerThreadPool.add_task SYNCHRONOUSLY on the main thread, so the "threaded"
-# path would still generate a whole ring's worth of chunks in one tick on every
-# boundary crossing — a visible stutter. Budgeting to MAX_BUILD_ROWS_PER_FRAME
-# (row-by-row via TerrainChunkBuilder) spreads that work across frames.
-# `force_main_thread_budget` lets a headless test exercise the same path on desktop.
-# Never engaged in the editor (deterministic preview).
-func _use_budgeted_generation() -> bool:
-	return not Engine.is_editor_hint() and (force_main_thread_budget or OS.has_feature("web"))
-
-
-# Advance up to MAX_BUILD_ROWS_PER_FRAME rows of chunk generation this frame
-# (budgeted path), spreading a single chunk's build across frames. Holds one
-# in-progress TerrainChunkBuilder across frames; when it completes the chunk is
-# spawned and the next queued coord starts (using any leftover row budget the same
-# frame). Coords that left the ring or were already built are skipped, and an
-# in-flight build whose coord left the ring is abandoned.
-func _pump_build_queue() -> void:
-	var wanted := target_coords(_last_focus_coord)
-	# Abandon a partial build whose coord is no longer wanted (focus moved away).
-	if _active_builder != null and not wanted.has(_active_builder.coord):
-		_active_builder = null
-	var rows := MAX_BUILD_ROWS_PER_FRAME
-	while rows > 0:
-		if _active_builder == null:
-			var coord := _take_next_build_coord(wanted)
-			if coord == _NO_BUILD_COORD:
-				return  # nothing left to build this frame
-			_active_builder = TerrainChunkBuilder.new(self, coord)
-		rows -= _active_builder.step(rows)
-		if _active_builder.complete:
-			var c: Vector2i = _active_builder.coord
-			# Re-check: the coord may have left the ring or been built since it started.
-			if wanted.has(c) and not _chunks.has(c):
-				_spawn_chunk(c, _active_builder.data())
-			_active_builder = null
-
-
-# Sentinel for "no buildable coord left" (Vector2i has no natural null).
-const _NO_BUILD_COORD := Vector2i(2147483647, 2147483647)
-
-
-# Pop the next still-wanted, not-yet-built coord off the queue, discarding any that
-# left the ring or were already built. Returns _NO_BUILD_COORD when none remain.
-func _take_next_build_coord(wanted: Array) -> Vector2i:
-	while not _build_queue.is_empty():
-		var coord: Vector2i = _build_queue.pop_front()
-		if wanted.has(coord) and not _chunks.has(coord):
-			return coord
-	return _NO_BUILD_COORD
 
 
 func _focus_node() -> Node3D:
@@ -587,48 +639,23 @@ func update_focus(pos: Vector3) -> void:
 	_reconcile(center)
 
 
-func _reconcile(center: Vector2i, force_sync: bool = false) -> void:
+func _reconcile(center: Vector2i) -> void:
 	var wanted := target_coords(center)
-	# Free chunks outside the ring.
 	for coord in _chunks.keys():
 		if not wanted.has(coord):
 			_chunks[coord].queue_free()
 			_chunks.erase(coord)
-	# Pending requests are intentionally NOT cancelled here: their task id stays
-	# in _pending until the worker finishes so _exit_tree can wait on it and so a
-	# coord that briefly leaves and re-enters the ring is never requested twice.
-	# _integrate_ready discards the result if the coord is no longer wanted.
-	# Schedule / build missing chunks.
 	for coord in wanted:
-		if _chunks.has(coord) or _pending.has(coord):
+		if _chunks.has(coord):
 			continue
-		if not force_sync and _use_budgeted_generation():
-			# Web / budgeted: enqueue for the per-frame main-thread pump so a boundary
-			# crossing spreads its chunk work across frames instead of stalling the
-			# whole row in one tick. (force_sync — build_initial — still builds the
-			# initial ring immediately below so there's ground under the car at spawn.)
-			# Skip the coord already mid-build so it isn't queued and built twice.
-			var building: bool = _active_builder != null and _active_builder.coord == coord
-			if not building and not _build_queue.has(coord):
-				_build_queue.append(coord)
-		# Editor always previews synchronously (deterministic, no worker threads in
-		# the tool context); runtime uses the worker pool when enabled.
-		elif use_threaded_generation and not force_sync and not Engine.is_editor_hint():
-			_request_chunk(coord)
-		else:
+		if _chunk_cache.has(coord):
+			_spawn_chunk(coord, _chunk_cache[coord])
+		elif _chunk_cache.is_empty():
+			# Editor / tests / pre-precompute: silent on-demand build.
 			_spawn_chunk(coord, compute_chunk_data(coord))
-
-
-func _request_chunk(coord: Vector2i) -> void:
-	_pending[coord] = WorkerThreadPool.add_task(_generate_on_worker.bind(coord))
-
-
-# Runs on a worker thread.
-func _generate_on_worker(coord: Vector2i) -> void:
-	var data := compute_chunk_data(coord)
-	_results_mutex.lock()
-	_results[coord] = data
-	_results_mutex.unlock()
+		else:
+			push_error("terrain cache miss at %s — corridor region/leash invariant broke" % coord)
+			_spawn_chunk(coord, compute_chunk_data(coord))
 
 
 func _spawn_chunk(coord: Vector2i, data: Dictionary) -> void:
@@ -639,44 +666,13 @@ func _spawn_chunk(coord: Vector2i, data: Dictionary) -> void:
 	integrations_total += 1
 
 
-# Main thread: turn up to MAX_INTEGRATIONS_PER_FRAME finished worker results into
-# chunk nodes. Results for coords no longer wanted are discarded.
-func _integrate_ready() -> void:
-	var integrated := 0
-	_results_mutex.lock()
-	var ready_coords: Array = _results.keys()
-	_results_mutex.unlock()
-	var wanted := target_coords(_last_focus_coord)
-	for coord in ready_coords:
-		if integrated >= MAX_INTEGRATIONS_PER_FRAME:
-			break
-		_results_mutex.lock()
-		var data: Dictionary = _results[coord]
-		_results.erase(coord)
-		_results_mutex.unlock()
-		# The task for this coord is done; release its pending slot.
-		_pending.erase(coord)
-		if not wanted.has(coord) or _chunks.has(coord):
-			continue  # left the ring, or already built — discard
-		_spawn_chunk(coord, data)
-		integrated += 1
-
-
-func _exit_tree() -> void:
-	# Ensure no worker writes into freed state after the manager leaves the tree.
-	for coord in _pending:
-		WorkerThreadPool.wait_for_task_completion(_pending[coord])
-	_pending.clear()
-	_results.clear()
-	_build_queue.clear()
-	_active_builder = null
-
-
 func _rebuild_loaded() -> void:
 	_noise_cache_valid = false  # seed / layers / wavelength changed
-	# Drop any in-flight budgeted build: it captured the old noise/road fields at
-	# start, so finishing it would spawn a stale chunk. Its coord re-queues on the
-	# next reconcile if still wanted. The loaded chunks are rebuilt synchronously below.
-	_active_builder = null
+	# Stale cached arrays must never survive a terrain-param change; refill for
+	# the stored corridor (dev-time synchronous hitch is fine — this only fires
+	# from the inspector / tests).
+	_chunk_cache.clear()
+	for coord in _corridor_coords:
+		cache_chunk(coord)
 	for chunk in _chunks.values():
 		chunk.setup(self, chunk.coord)

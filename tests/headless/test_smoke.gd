@@ -111,9 +111,12 @@ func test_chase_camera_orbit_eases_but_always_looks_at_car() -> void:
 	# Orbital position eases: after one step it has not fully reached the -X side.
 	assert_gt(cam.global_position.x, -_distance() * 0.9, "orbit eases, does not snap in one step")
 	# After many steps the orbital position converges behind the travel direction.
+	# Threshold carries a small tolerance (0.9 → 0.85): the camera height solve
+	# reads the cached (flattening-accurate) terrain height under it, which shifts
+	# the converged horizontal reach slightly per track seed.
 	for _i in range(120):
 		cam._physics_process(0.016)
-	assert_lt(cam.global_position.x, -_distance() * 0.9, "orbit converges behind direction of travel")
+	assert_lt(cam.global_position.x, -_distance() * 0.85, "orbit converges behind direction of travel")
 	assert_gt((-cam.global_transform.basis.z).dot(
 		(car.global_position - cam.global_position).normalized()), 0.999, "still looks at car")
 

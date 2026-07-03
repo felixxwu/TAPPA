@@ -94,9 +94,9 @@ investigating choppiness, with no pass/fail gate (numbers are machine-dependent)
 ```
 
 Two halves, printed to stdout:
-- **CPU** — `compute_chunk_data` (worker-thread noise + mesh arrays),
-  `_spawn_chunk` (main-thread ArrayMesh + `HeightMapShape3D` build — the
-  per-frame hitch suspect), and a simulated boundary crossing.
+- **CPU** — `compute_chunk_data` (load-time precompute cost: noise + mesh arrays),
+  `_spawn_chunk` (main-thread cache spawn at runtime), and a load-time boundary
+  crossing diagnostic.
 - **RENDER** — per-frame render cpu/gpu time for the real `main.tscn`, so a
   GPU-bound frame is distinguishable from a CPU one. Needs a real display;
   skipped under `--headless` (dummy renderer reports 0). GPU timestamp queries

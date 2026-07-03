@@ -12,7 +12,6 @@ const ManagerScript := preload("res://scripts/terrain_manager.gd")
 func _make_terrain() -> Node3D:
 	var m := Node3D.new()
 	m.set_script(ManagerScript)
-	m.use_threaded_generation = false
 	m.focus_path = NodePath("")
 	var layer := TerrainLayer.new()
 	layer.wavelength_m = 60.0

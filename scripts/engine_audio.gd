@@ -9,7 +9,9 @@ const MIX_RATE := 22050.0
 # between _process calls exceeds it, the buffer drains and the engine note
 # crackles/drops. On the single-threaded web build a chunk-crossing frame can be
 # tens of ms, so 0.1 s left almost no headroom. 0.15 s covers the worst post-
-# optimisation frame (the deferred distant-terrain rebuild) with margin, while
+# optimisation frame (terrain is now precomputed at load — see
+# features/terrain.md — so chunk crossings are cheap cache pulls, not a
+# rebuild; this margin instead covers web-export/GC hitches) with margin, while
 # keeping throttle→rev audio latency low enough to still feel responsive. Raise
 # toward ~0.2 if underruns persist on the weakest devices (at a little more lag).
 const BUFFER_SECONDS := 0.15

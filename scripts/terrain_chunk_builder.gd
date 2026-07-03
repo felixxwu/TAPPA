@@ -1,29 +1,14 @@
 class_name TerrainChunkBuilder
 extends RefCounted
 
-# Resumable builder for ONE terrain chunk's data: the same work as the body of
-# TerrainManager.compute_chunk_data, but advanced a few grid ROWS at a time so the
-# single-threaded web export can spread a chunk's CPU cost across frames instead of
-# stalling on the whole chunk in one tick (which, on a phone, overruns a frame on
-# its own even at one chunk per frame). Run to completion in a single call it is
-# byte-identical to the old monolithic compute — compute_chunk_data does exactly
-# that, so the worker-thread, synchronous and editor paths are unchanged; only the
-# budgeted web pump steps it incrementally across frames.
+# Builds ONE terrain chunk's data: heights, mesh arrays, per-vertex colours and
+# tarmac weights, and (when lit) baked light. Kept out of TerrainManager for size;
+# it only ever READS TerrainManager fields that are static after the track bake
+# (noise params, road/surface fields, light params).
 #
-# Each builder is a LOCAL instance owned by its caller and never shared, so the
-# threaded path's concurrent compute_chunk_data calls don't race on shared state.
-# It only ever READS TerrainManager fields that are static after the track bake
-# (noise params, road/surface fields, light params) — exactly what compute_chunk_data
-# has always read off a worker thread.
-
-# Phases walked in order; each spans a number of grid rows. HALO samples the PURE
-# height field over a 1-cell border (lit only — see TerrainManager.compute_chunk_data);
-# VERTS builds the mesh vertices/uvs/heights/light; COLORS and UV2 bake the per-vertex
-# road-blend and gravel/tarmac weights. Then DONE.
-enum { PH_HALO, PH_VERTS, PH_COLORS, PH_UV2, PH_DONE }
+# Each builder is a LOCAL instance owned by its caller and never shared.
 
 var coord: Vector2i
-var complete := false
 
 var _m: TerrainManager
 var _samples: int
@@ -43,8 +28,6 @@ var _lights: PackedColorArray         # empty when unlit (vertex_colors treats a
 var _colors: PackedColorArray
 var _uv2s: PackedVector2Array
 var _ph: PackedFloat32Array           # pure-height halo (lit only)
-var _phase: int = PH_HALO
-var _row: int = 0
 
 
 func _init(manager: TerrainManager, chunk_coord: Vector2i) -> void:
@@ -71,39 +54,19 @@ func _init(manager: TerrainManager, chunk_coord: Vector2i) -> void:
 	if _lit:
 		_lights.resize(_count)
 		_ph = PackedFloat32Array(); _ph.resize(_hs * _hs)
-	else:
-		_phase = PH_VERTS  # no halo to sample when lighting is off
 
 
-# Advance up to `max_rows` grid rows of work; returns how many rows were actually
-# processed (0 once complete). Sets `complete` when the final phase finishes.
-func step(max_rows: int) -> int:
-	var budget := max_rows
-	while budget > 0 and _phase != PH_DONE:
-		match _phase:
-			PH_HALO:
-				_halo_row(_row)
-			PH_VERTS:
-				_vertex_row(_row)
-			PH_COLORS:
-				_m._vertex_color_row(coord, _row, _lights, _colors)
-			PH_UV2:
-				_m._surface_uv2_row(coord, _row, _uv2s)
-		_row += 1
-		budget -= 1
-		var rows_in_phase := _hs if _phase == PH_HALO else _samples
-		if _row >= rows_in_phase:
-			_row = 0
-			_phase += 1
-	if _phase == PH_DONE:
-		complete = true
-	return max_rows - budget
-
-
-# Run every remaining row in one go (the synchronous / worker / editor path).
-func run_to_completion() -> void:
-	while not complete:
-		step(_count)  # _count >> the row total, so this finishes in one pass
+# Run every phase in order: halo rows (lit only), vertex rows, colour rows, uv2 rows.
+func build() -> void:
+	if _lit:
+		for hzi in _hs:
+			_halo_row(hzi)
+	for zi in _samples:
+		_vertex_row(zi)
+	for zi in _samples:
+		_m._vertex_color_row(coord, zi, _lights, _colors)
+	for zi in _samples:
+		_m._surface_uv2_row(coord, zi, _uv2s)
 
 
 # The finished chunk arrays, in the shape TerrainChunk.apply_data expects. Indices
@@ -130,6 +93,7 @@ func data() -> Dictionary:
 		"colors": _colors,
 		"uv2s": _uv2s,
 		"indices": indices,
+		"lights": _lights,   # per-vertex baked light (empty when unlit) — served by light_at
 	}
 
 

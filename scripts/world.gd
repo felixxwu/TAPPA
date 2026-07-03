@@ -257,21 +257,37 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	$Floor.set_track(road_centerline, cfg.track_width, transition_m,
 		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m)
 
+	# Precompute every chunk the bounded play area can request (the off-track
+	# reset leash bounds it), so in-run chunk loads are instant cache pulls and
+	# height_at/light_at serve the flattened, collidable terrain. Batched with
+	# frame awaits so the loading label paints and (on web) the tab stays alive.
+	await _stage(loading, "Precomputing terrain…")
+	var floor_tm := $Floor as TerrainManager
+	floor_tm.set_corridor(floor_tm.corridor_coords(
+		road_centerline, Config.data.track_progress_max_dist_m))
+	var precompute_done := 0
+	for coord in floor_tm.corridor():
+		floor_tm.cache_chunk(coord)
+		precompute_done += 1
+		if precompute_done % 8 == 0:
+			await _yield_frame()
+	print("terrain precompute: %d chunks, %.1f MB cached"
+		% [precompute_done, floor_tm.cache_size_mb()])
+
 	await _stage(loading, "Building terrain…")
 	$Floor.build_initial()
 
-	# Coarse distant backdrop so the reduced fog reveals a horizon (for the sky)
-	# instead of the hard edge where the detailed 3x3 ring ends (~75 m). Pure
-	# scenery: no collision, re-centres on the car. Built after build_initial() has
-	# warmed the noise cache height_at/light_at read. See distant_terrain.gd.
+	# Static coarse backdrop over the whole reachable play area + margin, so the
+	# reduced fog reveals a horizon instead of the detail ring's edge. Built ONCE
+	# behind the loading screen; never rebuilds (the play area is bounded).
 	if cfg.distant_terrain_enabled and _distant_terrain == null:
 		_distant_terrain = DistantTerrain.new()
 		_distant_terrain.name = "DistantTerrain"
-		_distant_terrain.radius_m = cfg.distant_terrain_radius_m
 		_distant_terrain.cell_m = cfg.distant_terrain_cell_m
 		_distant_terrain.sink_m = cfg.distant_terrain_sink_m
 		add_child(_distant_terrain)
-		_distant_terrain.setup($Floor as TerrainManager, $Car)
+		_distant_terrain.build_static(floor_tm,
+			floor_tm.corridor_bounds().grow(cfg.distant_terrain_radius_m))
 
 	# Trees + ground-cover bushes (+ the pass-through bush hit volume). Returns the
 	# tree points and road-margin cells the spectator layout reuses.

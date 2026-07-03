@@ -61,12 +61,21 @@ func test_environment_uses_skybox_with_demoted_fog() -> void:
 
 
 func test_distant_terrain_backdrop_built() -> void:
-	var dt := _scene.get_node_or_null("DistantTerrain") as MeshInstance3D
+	var dt := _scene.get_node_or_null("DistantTerrain") as Node3D
 	assert_not_null(dt, "distant-terrain backdrop built to give the sky a horizon")
-	if dt != null:
-		assert_not_null(dt.mesh, "distant terrain has a mesh")
-		assert_null(dt.get_node_or_null("Collision"), "distant terrain is scenery (no collision)")
-		assert_not_null(dt.material_override, "distant terrain reuses the shared chunk material")
+	if dt == null:
+		return
+	assert_null(dt.get_node_or_null("Collision"), "distant terrain node itself is scenery (no collision)")
+	var found_tile := false
+	for t in dt.get_children():
+		var mi := t as MeshInstance3D
+		assert_not_null(mi, "backdrop child is a tile MeshInstance3D")
+		if mi == null:
+			continue
+		assert_not_null(mi.mesh, "tile has a mesh")
+		assert_null(mi.get_node_or_null("Collision"), "tile is scenery (no collision)")
+		found_tile = true
+	assert_true(found_tile, "backdrop has at least one tile child")
 
 
 func test_terrain_chunks_have_shader_materials() -> void:

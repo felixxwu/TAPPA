@@ -667,7 +667,7 @@ var peak_torque_rpm := 4500.0
 ## Coarse far-terrain backdrop (DistantTerrain) that gives the sky a horizon past
 ## the detailed chunk ring. Disable to fall back to fog-only edge hiding.
 @export var distant_terrain_enabled := true
-## Half-extent of the backdrop square (m) — how far the visible terrain reaches.
+## Margin (m) the static backdrop extends past the reachable corridor bounds.
 @export_range(50.0, 1000.0) var distant_terrain_radius_m := 250.0
 ## Backdrop grid spacing (m). Coarse is fine at distance; smaller = finer hills, more verts.
 @export_range(2.0, 40.0) var distant_terrain_cell_m := 10.0

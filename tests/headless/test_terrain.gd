@@ -22,7 +22,6 @@ func _make_layer(wavelength: float, amplitude: float) -> TerrainLayer:
 func _make_manager(layer_list: Array[TerrainLayer], seed_value: int = 1337) -> Node3D:
 	var manager := Node3D.new()
 	manager.set_script(ManagerScript)
-	manager.use_threaded_generation = false  # deterministic synchronous tests
 	manager.focus_path = NodePath("")  # no car; tests drive focus explicitly
 	manager.noise_seed = seed_value
 	manager.layers = layer_list
@@ -30,141 +29,57 @@ func _make_manager(layer_list: Array[TerrainLayer], seed_value: int = 1337) -> N
 	return manager
 
 
-func test_distant_terrain_follows_noise_and_has_no_collision() -> void:
-	# The coarse far backdrop (distant_terrain.gd) samples the SAME noise as the
-	# real terrain so it matches at the seam, sits `sink_m` lower across the WHOLE
-	# mesh (so the detail ring always wins the overlap and nothing pokes through),
-	# and is pure scenery (no collision).
-	var manager = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
-	add_child_autofree(manager)  # _ready loads the 3x3 ring (no effect on the uncut backdrop)
+func test_distant_terrain_tiles_cover_bounds_and_sink_below_noise() -> void:
+	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
 	var dt := DistantTerrain.new()
-	dt.radius_m = 50.0
-	dt.cell_m = 10.0
+	dt.cell_m = 25.0
 	dt.sink_m = 1.5
-	autofree(dt)
-	dt.setup(manager, null)  # null focus -> centres at origin; out of tree -> no _process
-	assert_not_null(dt.mesh, "distant terrain builds a mesh")
-	var arrays: Array = dt.mesh.surface_get_arrays(0)
+	add_child_autofree(dt)
+	var bounds := Rect2(-100, -100, 700, 450)
+	dt.build_static(m, bounds)
+	# Tiles exist, are meshes without collision, and together cover the bounds.
+	var tiles := dt.get_children()
+	assert_gt(tiles.size(), 1, "backdrop split into multiple frustum-cullable tiles")
+	var covered := Rect2()
+	var first := true
+	for t in tiles:
+		assert_true(t is MeshInstance3D, "tile is a mesh")
+		assert_null(t.get_node_or_null("Collision"), "tile is scenery (no collision)")
+		var aabb: AABB = (t as MeshInstance3D).mesh.get_aabb()
+		var r := Rect2(t.position.x + aabb.position.x, t.position.z + aabb.position.z,
+			aabb.size.x, aabb.size.z)
+		covered = r if first else covered.merge(r)
+		first = false
+	assert_true(covered.encloses(bounds.grow(-dt.cell_m)),
+		"tile union covers the requested bounds")
+	# A sampled vertex sits sink_m below the terrain height (cache-first noise
+	# fallback out here), so the detail ring always renders above the backdrop.
+	var t0 := tiles[0] as MeshInstance3D
+	var arrays := t0.mesh.surface_get_arrays(0)
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	# per_edge = round(2*radius/cell) = 10 -> (10+1)^2 = 121 vertices.
-	assert_eq(verts.size(), 121, "coarse grid has (per_edge+1)^2 vertices")
-	var v := verts[60]  # an interior vertex
-	assert_almost_eq(v.y, manager.height_at(v.x, v.z) - dt.sink_m, 0.001,
-		"distant vertex follows the terrain noise, sunk by sink_m")
-	assert_null(dt.get_node_or_null("Collision"), "distant terrain is scenery — no collision body")
+	var v := verts[0]
+	var world_x := t0.position.x + v.x
+	var world_z := t0.position.z + v.z
+	assert_almost_eq(v.y, m.height_at(world_x, world_z) - dt.sink_m, 0.001,
+		"backdrop sits sink_m below true height")
 
 
-func test_distant_terrain_is_full_uncut_grid_regardless_of_loaded_chunks() -> void:
-	# The backdrop never holes itself: it underlaps the detail ring entirely and is
-	# sunk below it, so it always covers the skybox and needs no per-crossing recut.
-	# Same full index count whether or not the detail chunks are loaded.
-	var full := 10 * 10 * 6  # per_edge=round(2*50/10)=10 -> 100 cells × 6 indices
-	# (a) No detail chunks loaded (manager out of tree -> _ready never runs).
-	var m1 = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
-	assert_eq(m1.loaded_coords().size(), 0, "no detail chunks loaded")
-	var dt1 := DistantTerrain.new()
-	dt1.radius_m = 50.0
-	dt1.cell_m = 10.0
-	autofree(dt1)
-	dt1.setup(m1, null)
-	assert_eq(dt1.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size(), full,
-		"full coarse grid covers the skybox with nothing loaded")
-	# (b) Full detail ring loaded -> still a full uncut grid (no hole cut).
-	var m2 = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
-	add_child_autofree(m2)  # _ready builds the 3x3 ring
-	assert_gt(m2.loaded_coords().size(), 0, "detail ring loaded")
-	var dt2 := DistantTerrain.new()
-	dt2.radius_m = 50.0
-	dt2.cell_m = 10.0
-	autofree(dt2)
-	dt2.setup(m2, null)
-	assert_eq(dt2.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size(), full,
-		"still a full uncut grid with the detail ring loaded — no holing")
-
-
-func test_is_streaming_chunks_tracks_pending_work() -> void:
-	# DistantTerrain reads this to hold its rebuild until the detail ring is quiet.
-	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
-	m.force_main_thread_budget = true
-	add_child_autofree(m)  # initial ring built synchronously (force_sync) -> idle
-	assert_false(m.is_streaming_chunks(), "idle after the initial ring is built")
-	# Drive far -> the new ring is queued for the budgeted pump -> streaming.
-	m.update_focus(Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0))
-	assert_true(m.is_streaming_chunks(), "streaming while the build queue is non-empty")
-	# Slicing means the queue can empty while the last chunk is still mid-build, so
-	# pump until both the queue AND the active builder are done before asserting idle.
-	var guard := 0
-	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
-		m._pump_build_queue()
-		guard += 1
-	assert_false(m.is_streaming_chunks(), "idle once the queue drains and the build finishes")
-
-
-func test_distant_terrain_defers_rebuild_until_streaming_is_idle() -> void:
-	# A focus chunk crossing must NOT rebuild the coarse backdrop on a frame the
-	# detail ring is still streaming — those back-to-back main-thread mesh builds are
-	# the chunk-crossing hitch. The rebuild is deferred until the manager is idle.
-	var m = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
-	m.force_main_thread_budget = true
-	add_child_autofree(m)  # initial ring built; idle
-	var focus := Node3D.new()
-	add_child_autofree(focus)
-	focus.global_position = Vector3.ZERO
+func test_distant_terrain_is_static_after_build() -> void:
+	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
 	var dt := DistantTerrain.new()
-	dt.radius_m = 50.0
-	dt.cell_m = 10.0
-	autofree(dt)
-	dt.setup(m, focus)  # initial build at the origin
-	var mesh_before := dt.mesh
-	# Cross into a new chunk AND leave the manager busy streaming the new ring.
-	focus.global_position = Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0)
-	m.update_focus(focus.global_position)
-	assert_true(m.is_streaming_chunks(), "manager is streaming the new ring")
-	dt._process(0.0)
-	assert_eq(dt.mesh, mesh_before, "backdrop NOT rebuilt while the detail ring streams")
-	# Drain the detail ring (queue AND the active sliced build) -> the next _process
-	# rebuilds the backdrop.
-	var guard := 0
-	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
-		m._pump_build_queue()
-		guard += 1
-	assert_false(m.is_streaming_chunks(), "streaming finished")
-	# The rebuild is incremental (a few rows per _process), swapping the mesh in only
-	# when complete — so step _process until the new backdrop lands.
-	var guard2 := 0
-	while dt.mesh == mesh_before and guard2 < 100:
-		dt._process(0.0)
-		guard2 += 1
-	assert_ne(dt.mesh, mesh_before, "backdrop rebuilt (incrementally) once the ring is idle")
-
-
-func test_distant_terrain_rebuild_is_incremental() -> void:
-	# A sliced backdrop rebuild (a few rows per step) must produce the same mesh as a
-	# synchronous one, and must actually take more than one step — that's what keeps a
-	# re-centre from stalling a single frame.
-	var m = _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer], 1337)
-	m.light_amount = 1.0
-	add_child_autofree(m)
-	var dt := DistantTerrain.new()
-	dt.radius_m = 50.0  # per_edge = 10 -> 11 rows
-	dt.cell_m = 10.0
-	autofree(dt)
-	dt.setup(m, null)  # synchronous initial build at the origin
-	var sync_mesh := dt.mesh
-	# Incrementally rebuild around a new centre, 2 rows per step.
-	dt._begin_rebuild(Vector3(500.0, 0.0, 500.0))
-	var steps := 0
-	while dt._building and steps < 1000:
-		dt._step_rebuild(2)
-		steps += 1
-	assert_gt(steps, 1, "incremental rebuild takes more than one step")
-	var inc_mesh := dt.mesh
-	assert_ne(inc_mesh, sync_mesh, "a fresh mesh is built and swapped in on completion")
-	# Compare against a synchronous rebuild at the same centre.
-	dt.rebuild_around(Vector3(500.0, 0.0, 500.0))
-	var ref_verts: PackedVector3Array = dt.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var inc_verts: PackedVector3Array = inc_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	assert_eq(inc_verts, ref_verts, "incremental backdrop matches the synchronous build")
+	add_child_autofree(dt)
+	dt.build_static(m, Rect2(0, 0, 300, 300))
+	var meshes_before := []
+	for t in dt.get_children():
+		meshes_before.append((t as MeshInstance3D).mesh)
+	# Nothing about focus movement / frames rebuilds or replaces tiles: the
+	# static backdrop has no _process and no rebuild machinery at all.
+	m.update_focus(Vector3(150, 0, 150))
+	await get_tree().process_frame
+	var i := 0
+	for t in dt.get_children():
+		assert_eq((t as MeshInstance3D).mesh, meshes_before[i], "tile mesh untouched")
+		i += 1
 
 
 func test_height_at_is_deterministic_per_seed() -> void:
@@ -381,32 +296,6 @@ func test_terrain_bakes_static_lighting_into_vertex_colours() -> void:
 	assert_true(hi <= 1.0 + 1e-4, "brightest vertex stays within range")
 
 
-func test_incremental_build_matches_full_build() -> void:
-	# Stepping a TerrainChunkBuilder a few rows at a time must yield byte-identical
-	# arrays to compute_chunk_data (which runs the same builder to completion) — this
-	# is what lets the budgeted web path slice a chunk across frames without changing
-	# the terrain. Lit + a baked road so every output array carries real variation.
-	var m := _make_manager(
-		[_make_layer(60.0, 1.5), _make_layer(15.0, 0.4)] as Array[TerrainLayer], 21)
-	m.light_amount = 1.0
-	var curve := Curve2D.new()  # a straight through chunk (2,-1) so road fields apply
-	curve.add_point(Vector2(120.0, -30.0))
-	curve.add_point(Vector2(160.0, -30.0))
-	m.bake_track(curve, 6.0, 2.0, 0.5, false, 4.0)
-	var coord := Vector2i(2, -1)
-	var full: Dictionary = m.compute_chunk_data(coord)
-	# Fresh builder, stepped 3 rows at a time to force many resumes.
-	var b := TerrainChunkBuilder.new(m, coord)
-	var guard := 0
-	while not b.complete and guard < 10000:
-		b.step(3)
-		guard += 1
-	assert_true(b.complete, "stepped builder reaches completion")
-	var inc: Dictionary = b.data()
-	for key in ["center", "heights", "vertices", "uvs", "colors", "uv2s", "indices"]:
-		assert_eq(inc[key], full[key], "incremental %s matches the full build" % key)
-
-
 func test_baked_light_halo_matches_per_vertex_sampling() -> void:
 	# compute_chunk_data now reads each vertex's four light neighbours from a shared
 	# pure-height halo instead of re-sampling the noise 4× per vertex. That must stay
@@ -446,47 +335,6 @@ func test_terrain_lighting_off_keeps_flat_tint() -> void:
 		assert_almost_eq(c.r, 0.2, 1e-5, "r is the flat tint when unlit")
 		assert_almost_eq(c.g, 0.4, 1e-5, "g is the flat tint when unlit")
 		assert_almost_eq(c.b, 0.6, 1e-5, "b is the flat tint when unlit")
-
-
-func test_threaded_generation_loads_ring() -> void:
-	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
-	m.use_threaded_generation = true
-	add_child_autofree(m)  # _ready builds the origin ring synchronously
-	var ring: int = 2 * ManagerScript.RADIUS + 1
-	var ring_count := ring * ring
-	assert_eq(m.loaded_coords().size(), ring_count, "origin ring built synchronously at ready")
-
-	# Drive far away -> the new ring is requested on worker threads.
-	var far_pos := Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0)
-	var far_coord: Vector2i = m.chunk_coord_for(far_pos)
-	m.update_focus(far_pos)
-	assert_eq(m._pending.size(), ring_count, "full ring of chunks requested for the new ring")
-	assert_eq(m.loaded_coords().size(), 0, "old ring freed; new ring not yet integrated")
-
-	# Wait for the workers, then integrate (cap is 1/frame, so pump until drained).
-	for coord in m._pending.keys():
-		WorkerThreadPool.wait_for_task_completion(m._pending[coord])
-	var guard := 0
-	while not m._pending.is_empty() and guard < 100:
-		m._integrate_ready()
-		guard += 1
-	assert_eq(m.loaded_coords().size(), ring_count, "all requested chunks integrated")
-	assert_true(m._chunks.has(far_coord), "centre of the new ring loaded")
-
-
-func test_integrate_discards_out_of_ring_results() -> void:
-	# A worker result that finished after its coord left the ring must be
-	# discarded (not spawned) and its pending slot released.
-	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
-	add_child_autofree(m)  # synchronous; loads origin ring, _last_focus_coord = (0,0)
-	var stale := Vector2i(99, 99)  # far outside the loaded ring around origin
-	m._pending[stale] = 0
-	m._results[stale] = m.compute_chunk_data(stale)
-	var before: int = m.loaded_coords().size()
-	m._integrate_ready()
-	assert_false(m._chunks.has(stale), "out-of-ring result discarded, not spawned")
-	assert_false(m._pending.has(stale), "pending slot released for discarded result")
-	assert_eq(m.loaded_coords().size(), before, "no extra chunk added")
 
 
 func test_defer_initial_build_skips_ring_until_called() -> void:
@@ -604,56 +452,3 @@ func test_set_track_bakes_fields_and_rebuilds_loaded_chunks() -> void:
 	assert_true(has_road, "rebuilt chunk carries full road weight (alpha 1) where fully on-road")
 
 
-func test_budgeted_generation_spreads_builds_across_frames() -> void:
-	# The web export builds chunks on a frame-budgeted main-thread queue (see
-	# _use_budgeted_generation). force_main_thread_budget drives that path on desktop.
-	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
-	m.force_main_thread_budget = true
-	add_child_autofree(m)  # _ready builds the origin ring synchronously (force_sync)
-	var ring: int = 2 * ManagerScript.RADIUS + 1
-	var ring_count := ring * ring
-	assert_eq(m.loaded_coords().size(), ring_count, "origin ring built synchronously at ready")
-
-	# Drive far away: the old ring frees and the new ring is QUEUED, not built yet.
-	var far_pos := Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0)
-	var far_coord: Vector2i = m.chunk_coord_for(far_pos)
-	m.update_focus(far_pos)
-	assert_eq(m.loaded_coords().size(), 0, "old ring freed; new ring not built on the crossing tick")
-	assert_eq(m._build_queue.size(), ring_count, "full new ring queued for the budgeted pump")
-
-	# A chunk is many more rows than one frame's budget, so a single pump completes
-	# NO chunk — it only advances the first chunk partway (that's the slicing).
-	m._pump_build_queue()
-	assert_eq(m.loaded_coords().size(), 0, "one pump doesn't finish a whole chunk (row-sliced)")
-	assert_false(m._active_builder == null, "a chunk build is in progress across frames")
-
-	# Pump until the queue drains AND the active build finishes -> the whole ring lands.
-	var guard := 0
-	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
-		m._pump_build_queue()
-		guard += 1
-	assert_eq(m.loaded_coords().size(), ring_count, "all queued chunks eventually built")
-	assert_true(m._chunks.has(far_coord), "centre of the new ring loaded")
-
-
-func test_budgeted_pump_skips_coords_that_left_the_ring() -> void:
-	# A coord queued then driven out of the ring before the pump reaches it is
-	# discarded, not built.
-	var m := _make_manager([_make_layer(60.0, 1.5)] as Array[TerrainLayer])
-	m.force_main_thread_budget = true
-	add_child_autofree(m)
-	# Queue a ring far away without pumping.
-	var far_pos := Vector3(ManagerScript.CHUNK_M * 20.0, 0, 0)
-	m.update_focus(far_pos)
-	assert_gt(m._build_queue.size(), 0, "new ring queued")
-	# Jump somewhere else entirely before the pump runs: the queued coords are now
-	# out of the ring and must be skipped.
-	var other_pos := Vector3(0, 0, ManagerScript.CHUNK_M * 40.0)
-	m.update_focus(other_pos)
-	var guard := 0
-	while (not m._build_queue.is_empty() or m._active_builder != null) and guard < 1000:
-		m._pump_build_queue()
-		guard += 1
-	var ring: int = 2 * ManagerScript.RADIUS + 1
-	assert_eq(m.loaded_coords().size(), ring * ring, "only the current ring is built")
-	assert_true(m._chunks.has(m.chunk_coord_for(other_pos)), "current focus chunk loaded")

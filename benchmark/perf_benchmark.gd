@@ -6,8 +6,8 @@ extends Node
 #     ./run_benchmark.sh --headless   # CPU-only (no GPU timing), quick
 #
 # Two halves:
-#   CPU     — chunk-loading cost on the main thread vs the worker thread
-#             (compute_chunk_data, _spawn_chunk, a simulated boundary crossing).
+#   CPU     — chunk-loading cost on the main thread (compute_chunk_data,
+#             _spawn_chunk, a simulated boundary crossing against the cache).
 #   RENDER  — per-frame render cpu/gpu time for the real main.tscn, so a
 #             GPU-bound frame (fill rate, the full-screen PS1 post-process,
 #             per-cell terrain) is distinguishable from a CPU one. Needs a real
@@ -44,7 +44,6 @@ func _headless() -> bool:
 func _make_manager() -> Node3D:
 	var m := Node3D.new()
 	m.set_script(ManagerScript)
-	m.use_threaded_generation = false
 	m.focus_path = NodePath("")
 	m.noise_seed = 1337
 	var layers: Array[TerrainLayer] = []
@@ -77,15 +76,15 @@ func _bench_cpu() -> void:
 	var m := _make_manager()
 	add_child(m)
 
-	# Worker-thread cost: noise + de-indexed mesh arrays. Distinct coords so noise
-	# can't be cached.
+	# Load-time precompute cost: noise + de-indexed mesh arrays. Distinct coords so
+	# noise can't be cached.
 	var compute: Array = []
 	for cz in range(6):
 		for cx in range(6):
 			var t0 := Time.get_ticks_usec()
 			m.compute_chunk_data(Vector2i(cx + 100, cz + 100))
 			compute.append((Time.get_ticks_usec() - t0) / 1000.0)
-	_report("compute_chunk_data", compute, "(worker thread)")
+	_report("compute_chunk_data", compute, "(load-time precompute cost)")
 
 	# Main-thread cost: build the ArrayMesh + HeightMapShape3D and add the node —
 	# the per-frame hitch suspect (runtime caps this to 1/frame).
@@ -97,7 +96,7 @@ func _bench_cpu() -> void:
 			var t0 := Time.get_ticks_usec()
 			m._spawn_chunk(coord, data)
 			spawn.append((Time.get_ticks_usec() - t0) / 1000.0)
-	_report("spawn_chunk (integrate)", spawn, "(main thread, 1/frame at runtime)")
+	_report("spawn_chunk (integrate)", spawn, "(main thread, cache spawn at runtime)")
 
 	# One straight-line boundary crossing reconciles the ring and integrates a new
 	# row. Synchronous here; at runtime spread over (2*RADIUS+1) frames.
@@ -109,7 +108,7 @@ func _bench_cpu() -> void:
 		m.update_focus(Vector3(i * step, 0.0, 0.0))
 		crossing.append((Time.get_ticks_usec() - t0) / 1000.0)
 	_report("boundary crossing (row)", crossing,
-		"(over %d frames at runtime)" % (2 * ManagerScript.RADIUS + 1))
+		"(load-time only; runtime crossings pull from cache)")
 
 	m.queue_free()
 
@@ -180,11 +179,13 @@ func _percentile(samples: Array, q: float) -> float:
 
 
 # Drive the viewpoint across chunk boundaries and measure the REAL per-frame
-# interval — the scenario where choppiness actually shows up. vsync ON (the felt
-# experience): spikes that line up with chunk integration ⇒ terrain streaming;
-# frequent jitter with no integrations and low render cost ⇒ frame pacing.
+# interval — the scenario where choppiness actually shows up. Chunks are now
+# precomputed and served from the cache, so this measures cache-spawn cost, not
+# generation. vsync ON (the felt experience): spikes that line up with chunk
+# integration ⇒ cache-spawn cost; frequent jitter with no integrations and low
+# render cost ⇒ frame pacing.
 func _bench_drive() -> void:
-	print("\n-- DRIVE: scene in motion (terrain streaming) --")
+	print("\n-- DRIVE: scene in motion (cache-spawn cost) --")
 	if _headless():
 		print("  note: headless — interval reflects CPU only (no GPU/vsync pacing).")
 

@@ -20,8 +20,8 @@ the manager at runtime via `world.gd`.
   and collision samples of the old 0.5 m cells).
 - `SAMPLES = 51` — 51×51 height vertices per chunk (`CHUNK_M / CELL_M + 1`).
 - `RADIUS = 1` — a (2·RADIUS+1)² = **3×3** ring of chunks is kept loaded around
-  the car (~150 m span). Chunks are generated on worker threads as the car
-  approaches each boundary.
+  the car (~150 m span). Chunks are precomputed at level load and pulled from
+  cache as the car approaches each boundary.
 
 ## TerrainManager
 
@@ -40,9 +40,17 @@ Owns all terrain state and the chunk lifecycle.
 
 Key methods:
 
-- `height_at(x, z)` — sums all layers at a single world position. Uses a
-  main-thread noise cache (`_ensure_noise_cache`, invalidated by `_rebuild_loaded`)
-  so repeated spot samples (e.g. `bake_track`) don't rebuild the noises each call.
+- `height_at(x, z)` / `light_at(x, z)` — **cache-first**: bilinear-sample the
+  cached chunk grid (`_cached_height_at` / `_cached_light_at`) when the point
+  falls inside the precomputed corridor — this is flattening-accurate (it
+  matches the actual `HeightMapShape3D` collision the car drives on, road
+  bake included), not just the raw noise. Outside the corridor (editor, tests
+  without a precompute, or the `DistantTerrain` margin beyond it) they fall
+  back to the pure-noise sampler. `_noise_height_at` is the internal pure
+  sampler (used by `bake_track` and the fallback — flattening is *derived
+  from* it, so it must never read the cache itself). Uses a main-thread noise
+  cache (`_ensure_noise_cache`, invalidated by `_rebuild_loaded`) so repeated
+  spot samples don't rebuild the noises each call.
 - `build_heights(center)` — a `SAMPLES²` height array centred on a chunk centre,
   sampling absolute world coords with the noises built once (fast path for the
   ~10k samples per chunk).
@@ -55,6 +63,21 @@ Key methods:
   `_reconcile` the loaded set: free chunks outside the 3×3 ring, instantiate and
   `setup()` the missing ones. Called every frame from `_process`; cheap because
   it early-returns until the car crosses a chunk boundary.
+- `corridor_coords(centerline, leash_m)` — the full set of chunk coords the
+  runtime ring can ever request while the car stays within `leash_m` of the
+  centerline (the off-track reset leash): every centerline-sample chunk
+  dilated by `RADIUS + ceil(leash_m/CHUNK_M) + 1`. Straight spans tessellate to
+  just their endpoints, so segments are sub-sampled every `CHUNK_M/2` to avoid
+  skipping interior chunks. Pure function of the track + config, used once at
+  load to size the precompute (see Performance below).
+- `set_corridor(coords)` / `cache_chunk(coord)` / `precompute_corridor(centerline,
+  leash_m)` / `corridor()` / `has_cached(coord)` / `cache_size_mb()` /
+  `corridor_bounds()` — the precomputed-cache API. `set_corridor` stores the
+  coord list and clears `_chunk_cache`; `cache_chunk` computes and caches one
+  coord; `precompute_corridor` does both synchronously for the whole corridor
+  (used by tests and `_rebuild_loaded`, which must refill after a seed/layer
+  change). `corridor_bounds()` is the world-XZ AABB of the cached coords —
+  `world.gd` dilates it for the static `DistantTerrain` backdrop.
 
 ## TerrainChunk
 
@@ -163,96 +186,72 @@ the old `Border` safety wall and far visual plane were removed.
 
 The detailed 3×3 ring's edge sits only ~75–105 m from the car. Rather than hide
 that edge with dense fog (which also hid the sky), a coarse **`DistantTerrain`**
-backdrop (`scripts/distant_terrain.gd`) extends the visible terrain far past the
-ring — collision-free scenery sampling the same `height_at`/`light_at` noise,
-re-centred on the car — so the now-thin fog (`fog_density` 0.005) reveals a
-horizon for the skybox instead of a cliff. See
-[rendering.md](rendering.md) and [../todo/distant-terrain-and-sky.md](../todo/distant-terrain-and-sky.md).
-The coarse geometry re-centres on every focus **chunk crossing** and is a
-**full, uncut grid** — it underlaps the entire detail ring rather than holing out
-the loaded chunks. The rebuild is the same ~2,600-vertex, light-baked cost as a
-detail chunk, so it is **deferred AND sliced**, never run whole on the crossing
-frame: a crossing only marks the backdrop dirty (coalescing to the latest centre);
-the rebuild only *starts AND steps* on frames when
-`TerrainManager.is_streaming_chunks()` is false (no chunk queued, dispatched,
-awaiting integration, or mid-build), filling `ROWS_PER_FRAME` (8) grid rows per
-idle frame and swapping the new mesh in only when complete (the previous backdrop
-stays visible until then). So the backdrop and the detail-ring stream **never share
-a frame** — the backdrop fills purely in the gaps between detail builds (detail has
-priority), and no single frame does a whole coarse build. This keeps the heavy
-coarse build off the detail-ring stream *and* off any single frame — on the single-threaded web build those back-to-back
-main-thread mesh builds were the bulk of the chunk-crossing hitch. The synchronous
-`rebuild_around` (initial build at world load, behind the loading screen) runs the
-same begin/step/finish to completion in one call. The backdrop is huge and
-fog-softened, so the few frames' lag in re-centring is imperceptible. To stop it poking through the detailed terrain, the **whole
-backdrop is sunk `sink_m`** (default 1.5 m, `GameConfig.distant_terrain_sink_m`)
-below true height, so the detail ring always renders above it and the coarse mesh
-stays hidden beneath. At the ring's outer edge the coarse surface steps down by
-`sink_m`, but that edge is ~75 m away and softened by fog, so the step is
-imperceptible. This also guarantees the skybox is never exposed (the backdrop
-covers everything, including chunks the detail ring hasn't streamed in yet). It
-trades a tiny, constant bit of occluded coarse overdraw under the detail ring for
-**zero per-crossing work** — no loaded-chunk tracking, no index re-cut on chunk
-integration, no skybox-flash race; the backdrop only rebuilds on a chunk
-crossing. Tunables: `GameConfig.distant_terrain_*`.
+(`scripts/distant_terrain.gd`, a plain `Node3D`) extends the visible terrain far
+past the ring — collision-free scenery sampling the same `height_at`/`light_at`
+— so the now-thin fog (`fog_density` 0.005) reveals a horizon for the skybox
+instead of a cliff. See [rendering.md](rendering.md) and
+[../todo/distant-terrain-and-sky.md](../todo/distant-terrain-and-sky.md).
+
+Because the play area is now a **bounded corridor** (the off-track reset leash
+caps how far the car can ever get from the track), the backdrop no longer
+needs to track the car at all: `build_static(terrain, bounds)` builds a grid of
+static `250 m` tiles (`tile_m`) covering `TerrainManager.corridor_bounds()`
+dilated by `GameConfig.distant_terrain_radius_m` (now a **margin**, not a
+follow-radius) **once**, behind the loading screen, and never re-centres or
+rebuilds again. Tiles (rather than one huge mesh) keep the backdrop
+frustum-cullable — a single mesh spanning the whole stage would submit every
+triangle every frame through one giant AABB. `height_at`/`light_at` are
+cache-first inside the corridor and fall back to pure noise for the margin
+band beyond it, so the seam between "real" and "backdrop" terrain is
+continuous either way.
+
+To stop it poking through the detailed terrain, the **whole backdrop is sunk
+`sink_m`** (default 1.5 m, `GameConfig.distant_terrain_sink_m`) below true
+height, so the detail ring always renders above it and the coarse mesh stays
+hidden beneath; the visible step at the ring's outer edge is ~75 m away and
+softened by fog. This also guarantees the skybox is never exposed — the
+backdrop covers the whole corridor plus margin unconditionally, so there's no
+race with which chunks happen to be loaded. Tunables: `GameConfig.distant_terrain_*`
+(`cell_m`, `sink_m`, `tile_m` map straight to the matching `DistantTerrain`
+properties).
 
 ## Performance
 
-Chunk generation is split into a pure `compute_chunk_data(coord)` (noise +
-mesh arrays — all CPU math) and a cheap main-thread `apply_data` (builds the
-`ArrayMesh` + `HeightMapShape3D` and adds the node). The per-row work lives in
-**`TerrainChunkBuilder`** (`scripts/terrain_chunk_builder.gd`), a resumable builder
-that fills the chunk arrays a few grid ROWS at a time. `compute_chunk_data` just
-runs a local builder to completion in one call, so the monolithic and incremental
-paths produce byte-identical data (guarded by
-`test_incremental_build_matches_full_build`); each builder is a local instance, so
-the threaded path's concurrent calls never share state.
+Terrain generation is no longer a runtime stream — it's a one-time **precompute
+over a bounded corridor**, done behind the loading screen. The play area is
+bounded because the off-track reset leash caps how far the car can ever get
+from the track, so the reachable chunk set is knowable in advance:
 
-At runtime (`use_threaded_generation = true`), `compute_chunk_data` runs on a
-`WorkerThreadPool` task; `_process` integrates at most
-`MAX_INTEGRATIONS_PER_FRAME` (1) finished chunk per frame, so boundary crossings
-don't stutter. Worker results land in a `Mutex`-guarded `_results` dict; coords
-that leave the ring before integrating are discarded. `_exit_tree` waits on any
-outstanding tasks.
+1. `world.gd._generate_track` (loading stage "Precomputing terrain…") calls
+   `TerrainManager.corridor_coords(centerline, leash_m)` to get the full coord
+   list, then `set_corridor(coords)` and loops `cache_chunk(coord)` in
+   **batches of 8 per awaited frame** so the loading bar keeps painting.
+   Measured on the default stage: **204 chunks, 46.2 MB** cached
+   (`print("terrain precompute: %d chunks, %.1f MB cached")`), roughly
+   **~185 KB/chunk** (heights + mesh arrays + baked lights, all packed
+   arrays — see `cache_size_mb()`'s per-type accounting).
+2. Chunk generation itself is unchanged at the single-chunk level:
+   `compute_chunk_data(coord)` (noise + mesh arrays, pure CPU) runs a
+   `TerrainChunkBuilder.build()` (`scripts/terrain_chunk_builder.gd`) to
+   completion and returns its `data()` dict in one call — there is no
+   worker-thread pool or resumable/incremental path anymore; a
+   `TerrainChunkBuilder` instance is just a local scratchpad for the row loop.
+3. At runtime, `_reconcile` (driven by `update_focus` on chunk-boundary
+   crossings) is a **cache pull, not a build**: `_chunk_cache` lookup +
+   `_spawn_chunk` (mesh + `HeightMapShape3D` from the cached data) — measured
+   **~0.2 ms** per crossing, no stutter possible because there's no CPU-heavy
+   noise/mesh work left on the hot path.
+   - **Empty cache** (editor previews, most headless tests that never call
+     `precompute_corridor`): `_reconcile` silently falls through to a fresh
+     `compute_chunk_data(coord)` — the old synchronous on-demand behaviour,
+     unchanged so `@tool` editing and existing tests keep working.
+   - **Populated cache, coord missing** (the corridor/leash invariant broke —
+     should never happen in play): `push_error` and the same synchronous
+     fallback — a slow frame, not a hole in the ground.
 
-The **initial ring** is built synchronously in `_ready` (a one-time startup
-hitch — 9 chunks for the 3×3 ring) so there is always ground under the car at
-spawn. The **editor**
-(`Engine.is_editor_hint()`) and **tests** force `use_threaded_generation =
-false` for instant, deterministic builds.
-
-**Web export is deliberately single-threaded** (`export_presets.cfg`
-`variant/thread_support=false`) so the build needs no `SharedArrayBuffer` /
-cross-origin isolation and boots on any browser, including old / low-memory
-phones — the project's "runs on any device" floor (decided: see
-`todo/performance-optimisations.md` item 7). Without threads the worker pool
-isn't available, so terrain gen runs on the main thread, frame-budgeted so a
-boundary crossing doesn't generate a whole ring in one tick (a visible stutter).
-`_use_budgeted_generation()` (on whenever `OS.has_feature("web")`, or forced via
-`force_main_thread_budget` for desktop tests) routes missing coords into
-`_build_queue`; `_pump_build_queue()` then advances generation by at most
-`MAX_BUILD_ROWS_PER_FRAME` (16) grid ROWS per frame, holding one in-progress
-`TerrainChunkBuilder` (`_active_builder`) across frames and spawning it when
-complete. A whole chunk is ~206 rows lit — far more than one phone frame can
-afford — so even the old "one chunk per frame" still stalled; row-slicing spreads a
-single chunk's build across ~10-15 frames (the fog and the ring's lead distance —
-the nearest new chunk is ~0.7 s of travel away at speed — hide the lag). The active
-builder counts as "streaming" (`is_streaming_chunks()`, which `DistantTerrain` gates
-its rebuild on) and is excluded from re-queueing; a partial build whose coord leaves
-the ring is abandoned. This path keys on the `web` platform feature, not on the
-export's thread flag, so it was already in force before threads were turned off —
-the only thing the single-threaded export changes is dropping the unused engine
-thread pools (and the SAB host requirements). `build_initial` (`force_sync`)
-still builds the whole initial ring immediately, even on web. **Desktop** keeps
-real worker-thread generation (`use_threaded_generation`, threads always
-available there).
-
-Newly entered chunks can appear 1–2 frames late, but the car sits well inside
-the loaded 5×5 ring and fog hides the far edge, so the pop-in is not visible.
-
-`integrations_total` counts chunk nodes spawned (the main-thread mesh +
-collision build). The `PerfOverlay` (see [debug-tools.md](debug-tools.md)) reads
-its per-frame delta to correlate frame-time spikes with terrain integration.
+`integrations_total` still counts chunk nodes spawned (mesh + collision
+build); `PerfOverlay` (see [debug-tools.md](debug-tools.md)) reads its
+per-frame delta.
 
 ### Profiling chunk-loading cost
 
@@ -261,11 +260,14 @@ its per-frame delta to correlate frame-time spikes with terrain integration.
   lines noting whether a chunk integrated that frame. Use this to tell a terrain
   hitch from a steady GPU-bound frame.
 - **On-demand benchmark:** `./run_benchmark.sh` (standalone, NOT a test — see
-  [debug-tools.md](debug-tools.md)) benchmarks `compute_chunk_data`
-  (worker-thread CPU: noise + mesh arrays), `_spawn_chunk` (main-thread:
-  ArrayMesh + `HeightMapShape3D`), the per-boundary-crossing integration cost,
-  and — windowed — the real scene's render cpu/gpu time. Numbers are
+  [debug-tools.md](debug-tools.md)) benchmarks `compute_chunk_data` (CPU:
+  noise + mesh arrays), `_spawn_chunk` (main-thread: ArrayMesh +
+  `HeightMapShape3D`), the per-boundary-crossing integration cost, and —
+  windowed — the real scene's render cpu/gpu time. Numbers are
   machine-dependent, so it just prints a report; there's no pass/fail gate.
+  Last measured: 204 chunks / 46.2 MB precomputed, ~1 non-terrain spike per
+  600 frames post-load (the precompute absorbs what used to be per-crossing
+  cost).
 
 ## Tests
 
@@ -273,6 +275,16 @@ its per-frame delta to correlate frame-time spikes with terrain integration.
 chunk-coord math, chunk mesh/collision build, the **seam test** (adjacent chunks
 agree on the shared edge), and the **load/unload test** (full ring loaded around the
 focus; distant chunks freed when the focus moves).
+`test_cached_chunk_data_matches_fresh_compute` guards that a cached chunk's
+data is byte-identical to a fresh `compute_chunk_data` call (replaces the old
+incremental-vs-monolithic comparison now that there's only one build path).
+
+`tests/headless/test_terrain_precompute.gd` — the precomputed-corridor
+machinery: `corridor_coords` region math (covers every reachable position
+within the leash band, including straight-span sub-sampling), `set_corridor`/
+`cache_chunk`/`precompute_corridor`, cache-first `height_at`/`light_at`
+(matches the flattened/lit chunk data, not raw noise), and the empty-cache /
+populated-cache-miss fallback behaviour in `_reconcile`.
 
 ## Related config
 

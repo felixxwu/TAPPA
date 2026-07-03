@@ -1,5 +1,18 @@
 # Performance Optimisation Spec — mobile / low-end devices
 
+> **2026-07 update: terrain generation is now precomputed at load, not
+> streamed.** The bounded-corridor precompute (see `features/terrain.md` →
+> Performance) superseded the chunk-crossing streaming/budgeting work
+> described throughout this doc — `TerrainChunkBuilder` is no longer resumable
+> (`is_streaming_chunks`, `MAX_BUILD_ROWS_PER_FRAME`, `force_main_thread_budget`
+> and the whole budgeted-web queue were removed), `DistantTerrain` is a static
+> backdrop built once (no `ROWS_PER_FRAME` deferred rebuild), and
+> `_reconcile` is a cache lookup (`MAX_INTEGRATIONS_PER_FRAME` no longer
+> applies — there's no per-crossing build to throttle). The narrative below
+> (items 7 and the chunk-crossing follow-up) is kept for historical trace of
+> the single-threaded-web decision; the mechanism it describes has since been
+> replaced.
+>
 > Status: **PARTIALLY DONE.** The unblocked, decision-free, low-risk items are
 > implemented: **item 4** (frame cap — `GameConfig.target_fps`=30, applied in
 > `world._ready`, skipped under `--headless`), **item 1** (mipmaps on
