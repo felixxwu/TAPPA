@@ -973,29 +973,26 @@ func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection(
 	assert_eq(_save.selected_instance_id(), before, "backing out leaves the selection unchanged")
 
 
-func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
+func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
+	# Upgrades are car-bound and fitted when won — the garage no longer applies
+	# pooled parts to a car. Even with a slottable id sitting in inventory (a stale
+	# state that shouldn't occur post-migration), no "Apply" row is offered.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.add_item("turbo_small")
+	_save.profile["inventory"]["turbo_small"] = 1  # deliberately stale pool entry
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
-	# Installing now asks for confirmation first — nothing is fitted until accepted.
-	hq._install_upgrade(id, "turbo_small")
+	await get_tree().process_frame
+	for b in hq._lift_upgrades_box.find_children("*", "Button", true, false):
+		assert_false(String(b.text).begins_with("APPLY"),
+			"no apply-from-pool button appears in the garage upgrades menu")
 	assert_false(_save.get_car(id)["installed_upgrades"].has("turbo_small"),
-		"the part is not fitted until the confirmation dialog is accepted")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 1,
-		"the part stays in inventory until the fit is confirmed")
-	# Accepting the dialog commits the fit and consumes the part for good.
-	hq._confirm_dialog.confirmed.emit()
-	assert_true(_save.get_car(id)["installed_upgrades"].has("turbo_small"),
-		"accepting the confirmation fits the part to the selected car")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0,
-		"the installed part is consumed from inventory")
+		"nothing gets fitted from the pool")
 
 
 func test_hq_lift_toggles_an_applied_upgrade() -> void:
@@ -1200,8 +1197,10 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	# ends on an Apply/Keep choice targeting the car the player just drove.
 	var driven: Dictionary = _save.grant_car("fx_awd")
 	var driven_id := int(driven["instance_id"])
-	_save.add_item("turbo_small")
-	_save.add_item("brake_kit")
+	# Upgrades are car-bound: the reward loop already fitted both won parts to the
+	# driven car, DISABLED. The podium's Apply/Keep only chooses enable-now vs later.
+	_save.install_upgrade(driven_id, "turbo_small", false)
+	_save.install_upgrade(driven_id, "brake_kit", false)
 	RallySession._last_result = {
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
@@ -1252,27 +1251,27 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	await get_tree().process_frame
 	assert_eq(pod.get_viewport().gui_get_focus_owner(), pod._apply_button,
 		"Apply is focused for keyboard / gamepad")
-	# Applying fits the part straight onto the driven car.
+	# Applying ENABLES the already-fitted part on the driven car.
 	pod._apply_button.pressed.emit()
 	assert_true(_save.get_car(driven_id)["installed_upgrades"].has("turbo_small"),
-		"Apply fits the won part to the car the player drove")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0,
-		"the applied part is consumed from the unlocked pool")
+		"the won part stays fitted to the car the player drove")
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(driven_id), "turbo_small"),
+		"Apply enables the won part")
 	assert_false(pod._choice_pending, "the choice resolves once picked")
 	assert_true(pod._next_button.visible, "Next returns after the choice")
 	assert_ne(pod._next_button.text, "CONTINUE TO HQ", "more stages remain, so this isn't the last one")
 
-	# Next -> the second upgrade reveal. Keeping the part leaves it unlocked for
-	# the garage upgrades menu instead of fitting it.
+	# Next -> the second upgrade reveal. Keeping the part leaves it fitted to the
+	# car but DISABLED, to enable later in the garage.
 	pod._on_next()
 	await get_tree().process_frame
 	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next shows the second upgrade reveal")
 	assert_string_contains(_label_texts(pod), "BIG BRAKE KIT", "the second won upgrade is revealed by name")
 	pod._keep_button.pressed.emit()
-	assert_false(_save.get_car(driven_id)["installed_upgrades"].has("brake_kit"),
-		"Keep does not fit the part to the car")
-	assert_eq(int(_save.profile["inventory"].get("brake_kit", 0)), 1,
-		"a kept part stays in the unlocked pool for the garage menu")
+	assert_true(_save.get_car(driven_id)["installed_upgrades"].has("brake_kit"),
+		"Keep leaves the part fitted to the car (upgrades are car-bound)")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(driven_id), "brake_kit"),
+		"a kept part stays disabled until enabled in the garage")
 
 	# Next -> the car slot-machine reveal (the closing stage: the fly-over to the
 	# showroom happens only after the upgrades are handed out).

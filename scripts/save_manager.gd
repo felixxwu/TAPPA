@@ -1,7 +1,7 @@
 extends Node
 # Autoload "Save": the single source of truth for everything the meta-game
-# mutates — owned cars (each with its own HP / installed upgrades / tuning),
-# the uninstalled-item inventory, and rally completion — persisted as JSON at
+# mutates — owned cars (each with its own HP / car-bound installed upgrades /
+# tuning), the consumable inventory (repair kits), and rally completion — JSON at
 # user://profile.json so progress survives a restart on both desktop and the
 # web build (see todo/save-persistence.md).
 #
@@ -18,7 +18,7 @@ extends Node
 
 # Bump on any breaking shape change to PlayerProfile; older files are migrated
 # forward on load (see _migrate), newer files are refused rather than truncated.
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 # Default profile location. Kept as a settable property (not a hard const) so
 # named save slots can be layered on later without reworking the API, and so
@@ -200,9 +200,9 @@ func _migrate(p: Dictionary) -> Dictionary:
 	if v > SCHEMA_VERSION:
 		return {}  # downgrade: refuse
 	while v < SCHEMA_VERSION:
-		if not _MIGRATIONS.has(v):
+		if not _MIGRATABLE_FROM.has(v):
 			return {}  # gap in the migration chain: refuse rather than guess
-		p = _MIGRATIONS[v].call(p)
+		p = _migrate_step(v, p)
 		v = int(p.get("schema_version", v + 1))
 	# Backfill any keys a (correctly-versioned but partial) file is missing.
 	var base := _default_profile()
@@ -211,9 +211,27 @@ func _migrate(p: Dictionary) -> Dictionary:
 			p[k] = base[k]
 	return p
 
-# version N -> N+1 transforms. Empty until the first breaking change ships;
-# e.g. `0: func(p): p["schema_version"] = 1; ...; return p`.
-const _MIGRATIONS := {}
+# Versions we know how to step FROM (each _migrate_step(v, p) bumps schema_version
+# to v+1). Kept as a plain const list (a const dict of Callables isn't a constant
+# expression in GDScript, and would null this autoload at parse time).
+const _MIGRATABLE_FROM := [1]
+
+# Apply the single version N -> N+1 transform.aa
+#   1 -> 2: upgrades became CAR-BOUND. The old shared `inventory` pool of
+#           slottable parts is gone (parts now live on the OwnedCar they were won
+#           for), so strip every non-repair-kit entry from `inventory` — those
+#           unbound parts were never applied and have no car to belong to. Repair
+#           kits (the one consumable) stay pooled.
+func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
+	match from_version:
+		1:
+			var inv: Dictionary = p.get("inventory", {})
+			for item_id in inv.keys():
+				if String(item_id) != UpgradeLibrary.REPAIR_KIT_ID:
+					inv.erase(item_id)
+			p["inventory"] = inv
+			p["schema_version"] = 2
+	return p
 
 
 # --- Owned-car mutators ------------------------------------------------------
@@ -446,15 +464,19 @@ func consume_item(item_id: String, n := 1) -> bool:
 	return true
 
 
-# Pull one item from the unlocked pool (inventory) and fit it to a car. The part
-# is consumed from the pool on apply, but it STAYS ON THE CAR permanently and can
-# be enabled/disabled from the upgrades menu (set_upgrade_enabled). A car holds
-# any number of applied parts but at most one ENABLED per slot: a freshly-applied
-# part arrives enabled and switches off any same-slot incumbent (which stays
-# fitted, just disabled). Applying the same part to the same car twice is
-# rejected. Consumables (the repair kit) and unknown ids can't be slotted — use
-# use_repair_kit() for those. Returns true on success.
-func install_upgrade(instance_id: int, item_id: String) -> bool:
+# Fit a won part to a car. Upgrades are CAR-BOUND: a part belongs to the car it
+# was won for (rally_session installs it on the driven car) and never moves to
+# another car or into a shared pool — so this takes no inventory, it just records
+# the fit on the OwnedCar. It STAYS ON THE CAR permanently and can be
+# enabled/disabled from the upgrades menu (set_upgrade_enabled). A car holds any
+# number of fitted parts but at most one ENABLED per slot. `enabled` controls the
+# freshly-fitted state: true -> enabled, switching off any same-slot incumbent
+# (used for a direct fit); false -> parked disabled (the reward loop fits every
+# won part disabled, then the podium's Apply enables the player's pick). Fitting
+# the same part to the same car twice is rejected (per-car dedup). Consumables
+# (the repair kit) and unknown ids can't be slotted — use use_repair_kit() /
+# add_item() for those. Returns true on success.
+func install_upgrade(instance_id: int, item_id: String, enabled := true) -> bool:
 	var car := get_car(instance_id)
 	if car.is_empty():
 		return false
@@ -462,12 +484,15 @@ func install_upgrade(instance_id: int, item_id: String) -> bool:
 	if slot.is_empty() or UpgradeLibrary.is_consumable(item_id):
 		return false  # not a slottable upgrade
 	if (car["installed_upgrades"] as Array).has(item_id):
-		return false  # already fitted to this car; keep the pool copy
-	if int(profile["inventory"].get(item_id, 0)) < 1:
-		return false  # nothing to install; don't disturb the incumbent
-	consume_item(item_id, 1)
+		return false  # already fitted to this car (per-car dedup)
 	car["installed_upgrades"].append(item_id)
-	_enable_exclusive(car, item_id, slot)
+	if enabled:
+		_enable_exclusive(car, item_id, slot)
+	else:
+		var disabled: Array = car.get("disabled_upgrades", [])
+		if not disabled.has(item_id):
+			disabled.append(item_id)
+		car["disabled_upgrades"] = disabled
 	save()
 	return true
 

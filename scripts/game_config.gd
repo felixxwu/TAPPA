@@ -46,32 +46,34 @@ var peak_torque_rpm := 4500.0
 ## adds on top of the car's value.
 @export_range(-2.0, 2.0) var downforce_rear := 0.0
 ## Max steering offset (radians) from the car's direction of travel.
-@export_range(0.0, 1.2) var steer_limit := 0.7
+@export_range(0.0, 1.2) var steer_limit := 0.8
 ## Speed-dependent steering: the input steer_limit above stays full at or below
-## steer_limit_falloff_start (m/s), then ramps down linearly to
-## steer_limit_min_fraction of itself by steer_limit_falloff_end (m/s), holding
-## that floor above it — so the car isn't twitchy at speed. Only the input term
-## is tapered; the travel-alignment countersteer is untouched. Set min_fraction
-## to 1.0 (or end <= start) to disable.
-@export_range(0.0, 50.0) var steer_limit_falloff_start := 0
-@export_range(0.0, 120.0) var steer_limit_falloff_end := 50.0
-@export_range(0.0, 1.0) var steer_limit_min_fraction := 0.1
-@export var steer_speed := 3.0
+## steer_limit_falloff_start_kph, then ramps down linearly to
+## steer_limit_min_fraction of itself by steer_limit_falloff_end_kph, holding
+## that floor above it — so the car isn't twitchy at speed. Authored in km/h
+## (unlike the m/s fields such as steer_assist_min_speed — these are the knobs a
+## designer reads off the HUD speedo). The factor scales both the input wheel
+## angle and the steer-assist torque; the travel-alignment countersteer is
+## untouched. Set min_fraction to 1.0 (or end <= start) to disable.
+@export_range(0.0, 200.0) var steer_limit_falloff_start_kph := 0.0
+@export_range(0.0, 400.0) var steer_limit_falloff_end_kph := 50.0
+@export_range(0.0, 1.0) var steer_limit_min_fraction := 0.15
+@export var steer_speed := 4.0
 ## How much the front wheels caster toward the direction of travel: 1.0 = fully
 ## track it (automatic countersteer), 0.0 = steering input only.
 @export_range(0.0, 1.0) var steer_travel_alignment := 1.0
 ## Yaw torque (N·m) applied while steering to fight understeer — a steering aid,
 ## not a physical force.
-@export_range(0.0, 10000.0) var steer_assist_torque := 1763.0
+@export_range(0.0, 10000.0) var steer_assist_torque := 4000
 ## Minimum speed (m/s) before the steer-assist yaw torque kicks in. Below this
 ## the car is too slow for understeer to matter and the aid only makes low-speed
 ## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.
-@export_range(0.0, 50.0) var steer_assist_min_speed := 8.333
+@export_range(0.0, 50.0) var steer_assist_min_speed := 10
 ## Slip angle (radians) at which the steer-assist yaw torque tapers to zero. The
 ## assist is full when the car points along its travel direction and fades
 ## linearly to nothing once the car has rotated this far into the turn, so it
 ## helps rotate the car in but won't keep over-rotating it into a spin. 30° ≈ 0.524 rad.
-@export_range(0.0, 1.571) var steer_assist_max_angle := deg_to_rad(30.0)
+@export_range(0.0, 1.571) var steer_assist_max_angle := deg_to_rad(5.0)
 ## Spin protection: corrective yaw torque (N·m) that pulls the nose back toward
 ## the direction of travel once the car has rotated further than
 ## spin_assist_angle into a slide — the counterpart to steer_assist_torque

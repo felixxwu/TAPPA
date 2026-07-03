@@ -338,12 +338,19 @@ func _resolve_results() -> void:
 	if not _dnf:
 		var difficulty := int(_rally.get("difficulty", 1))
 		var count: int = maxi(Config.data.rally_upgrade_reward_count, 0)
-		# Exclude parts already fitted to the driven car — the podium offers each
-		# reward onto it, so a duplicate of what it carries would be a dead prize.
-		var driven: Dictionary = Save.get_car(_car_instance_id)
+		# Upgrades are CAR-BOUND: each won part is fitted straight onto the driven
+		# car (disabled — the podium's Apply enables the player's pick). Fitting it
+		# before the next draw is also what dedups the multi-reward draw: draw_upgrade
+		# excludes the car's installed parts, so re-reading the live car each pass
+		# stops the same slottable part being won twice in one rally. Repair kits
+		# (consumable, exempt from dedup) go to the pooled inventory and may repeat.
 		for _i in count:
+			var driven: Dictionary = Save.get_car(_car_instance_id)
 			var item_id: String = RewardSystem.draw_upgrade(difficulty, Save.profile, null, driven)
-			Save.add_item(item_id)
+			if UpgradeLibrary.is_consumable(item_id):
+				Save.add_item(item_id, 1, false)
+			else:
+				Save.install_upgrade(_car_instance_id, item_id, false)
 			_upgrades_won.append(item_id)
 			upgrade_revealed.emit(item_id)
 		Save.save()

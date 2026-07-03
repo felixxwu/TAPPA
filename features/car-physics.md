@@ -32,13 +32,19 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    the wheel-angle target and the yaw assist torque read this same value, keeping
    them 1:1. Front wheels caster toward the direction of travel
    (`steer_travel_alignment`), blended with the smoothed input up to `steer_limit`
-   at `steer_speed`. The input's `steer_limit` is **speed-scaled**
-   (`Car.speed_scaled_steer_limit`): full at/below `steer_limit_falloff_start`,
-   ramping down linearly to `steer_limit_min_fraction` of itself by
-   `steer_limit_falloff_end` and holding that floor above, so high-speed steering
-   isn't twitchy/spin-prone. Only the input term tapers — the travel-alignment
-   countersteer keeps full authority so slides still catch. Set `min_fraction`
-   to 1.0 (or `end <= start`) to disable. The alignment fraction is scaled linearly with speed — 0 at
+   at `steer_speed`. Steering authority is **speed-scaled** by a shared factor
+   (`Car.speed_steer_authority`): 1.0 at/below `steer_limit_falloff_start_kph`,
+   ramping down linearly to `steer_limit_min_fraction` by
+   `steer_limit_falloff_end_kph` (both authored in km/h; converted from the
+   physics m/s inside the helper)
+   and holding that floor above, so high-speed steering isn't twitchy/spin-prone.
+   This factor scales **both** the input wheel-angle limit
+   (`Car.speed_scaled_steer_limit` = `steer_limit ×` factor) **and** the
+   steer-assist yaw torque below — in this arcade model the assist provides most
+   of the turning authority, so scaling the wheel angle alone has almost no felt
+   effect. The travel-alignment countersteer and spin protection are deliberately
+   NOT scaled, so slides still catch. Set `min_fraction` to 1.0 (or `end <= start`)
+   to disable. The alignment fraction is scaled linearly with speed — 0 at
    standstill ramping to its full configured value at `steer_assist_min_speed`
    (≈30 km/h) — so it never snaps in suddenly at low speed. A direct yaw torque
    (`steer_assist_torque`) fights understeer,

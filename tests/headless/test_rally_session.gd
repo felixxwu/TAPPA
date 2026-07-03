@@ -236,20 +236,46 @@ func test_between_event_standings_pause_and_leaderboard() -> void:
 	assert_eq(RallySession.event_index(), 1, "now running event index 1")
 
 
-func test_upgrades_won_per_rally_at_finish() -> void:
-	_start("shakedown")
+func test_upgrades_won_per_rally_bind_to_the_driven_car_without_duplicates() -> void:
+	# Upgrades are CAR-BOUND and the multi-reward draw dedups: each won slottable
+	# part is fitted (disabled) to the driven car, and no slottable part is won
+	# twice in one rally (the re-roll now excludes what's already on the car). Crank
+	# the reward count well past the eligible slottable pool so, without dedup, a
+	# duplicate would be forced — then assert none occurs.
+	var original_count: int = Config.data.rally_upgrade_reward_count
+	Config.data.rally_upgrade_reward_count = 8
+	var finish := _capture_finish()
+	var driven := _start("shakedown")
+	var driven_id := int(driven["instance_id"])
 	RallySession._opponent_field = _field([90000])  # player will be top-3
-	assert_eq(_total_items(), 0, "no items before the rally")
-	RallySession.report_event_result(10000)
-	assert_eq(_total_items(), 0, "no upgrades mid-rally — they're drawn per rally at the finish")
-	RallySession.continue_to_next_event()
-	RallySession.report_event_result(10000)
-	assert_eq(_total_items(), 0, "still no upgrade after the second event")
-	RallySession.continue_to_next_event()
-	RallySession.report_event_result(10000)  # final event -> pauses on standings
-	RallySession.continue_to_next_event()    # -> resolve
-	assert_eq(_total_items(), Config.data.rally_upgrade_reward_count,
-		"rally_upgrade_reward_count upgrades are won per finished rally")
+	_report_events([10000, 10000, 10000])
+	Config.data.rally_upgrade_reward_count = original_count
+	var r: Dictionary = finish[0]
+
+	var slottable_wins: Array = []
+	var repair_wins := 0
+	for item_id in r["upgrades"]:
+		if UpgradeLibrary.is_consumable(item_id):
+			repair_wins += 1
+		else:
+			slottable_wins.append(item_id)
+
+	# The re-roll fix: no slottable part is won twice in the same rally.
+	var uniq := {}
+	for item_id in slottable_wins:
+		uniq[item_id] = true
+	assert_eq(uniq.size(), slottable_wins.size(), "no slottable upgrade is won twice in one rally")
+
+	# Each won slottable part is bound to the driven car — fitted, and disabled
+	# (the podium's Apply is what enables the player's pick).
+	var live: Dictionary = _save.get_car(driven_id)
+	var installed: Array = live["installed_upgrades"]
+	for item_id in slottable_wins:
+		assert_true(installed.has(item_id), "the won part is fitted to the driven car")
+		assert_false(UpgradeLibrary.is_enabled(live, item_id), "and lands disabled until Apply")
+	# Repair kits (consumable, exempt) go to the pooled inventory, not the car.
+	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.REPAIR_KIT_ID, 0)), repair_wins,
+		"won repair kits land in inventory, not on the car")
 
 
 func test_wreck_midrally_is_dnf_and_grants_no_upgrade() -> void:

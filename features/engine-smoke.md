@@ -34,9 +34,17 @@ overlay instead of hitching on the first misfire — see
   `engine_smoke_max_puffs_per_tick` bursts/frame so a rapid run of cuts can't flood
   the pool. Using the counter delta (not an edge-detected bool) means no cut is
   missed regardless of frame/substep timing.
-- **Emit point.** `engine_smoke_offset` — a car-local point at the front-top of the
-  chassis (the bonnet / engine bay) — transformed by the car's `global_transform`,
-  so smoke rises from the engine for any car.
+- **Emit point.** The car's `engine_smoke_local` — a car-local point pinned to where
+  the engine actually sits. Its longitudinal (Z) component is derived from the car's
+  `engine_pos` (the normalised front-fraction, `1.0` = fully front / −Z, `0.0` = fully
+  rear / +Z) mapped onto the wheelbase exactly like the centre of mass
+  (`car.gd:_set_center_of_mass`): `z = wheelbase × (0.5 − engine_pos)`. So a rear-engine
+  911 (`engine_pos ~0.1`) puffs from the tail, a front-engine car from the nose. The
+  lateral/height come from the global `GameConfig.engine_smoke_offset` (its X/Y); its Z
+  is only the baseline fallback for a car that doesn't expose `engine_smoke_local`.
+  `car.gd` recomputes `engine_smoke_local` per spec in `_apply_physics_spec`. The emit
+  point is transformed by the car's `global_transform` (event mode) or used directly
+  (synthetic mode), so smoke rises from the engine for any car.
 - **Motion / look.** Each particle rises (`engine_smoke_rise_mps` plus a little
   random `engine_smoke_scatter_mps`), **grows** over its life (uniform scale written
   into the MultiMesh basis diagonal, up to `engine_smoke_growth`×), and **fades** to
@@ -86,7 +94,8 @@ fixed, the values are not.
 
 ## Tests
 
-`tests/headless/test_engine_smoke.gd` (a misfire puffs one burst, no new cut emits
+`tests/headless/test_engine_smoke.gd` (a misfire puffs one burst, the puff emits from
+the car's `engine_smoke_local` — rear-engine +Z vs front-engine −Z, no new cut emits
 nothing more, the per-tick burst cap holds, `live_count` never exceeds the pool cap,
 smoke expires after its lifetime, disabled emits nothing; **synthetic mode** — a
 healthy car never puffs, a damaged one puffs on the severity-scaled timer, and worse

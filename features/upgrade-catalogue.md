@@ -2,18 +2,21 @@
 
 `UpgradeLibrary` (`scripts/upgrade_library.gd`, `class_name UpgradeLibrary`) is
 the catalogue of upgrade **items** — authored content (like `CarLibrary` /
-`RallyLibrary`), not player state. The save profile holds the player side
-(inventory counts + each `OwnedCar.installed_upgrades`, keyed by the stable `id`
-here); this library defines what those ids mean and what each does to a fielded
-car.
+`RallyLibrary`), not player state. The save profile holds the player side (each
+`OwnedCar.installed_upgrades` / `disabled_upgrades`, keyed by the stable `id`
+here, plus the consumable `inventory` — repair kits only); this library defines
+what those ids mean and what each does to a fielded car.
 
-**Upgrades vs tuning:** upgrades are items that change a car's baseline. Applying
-one consumes it from the unlocked pool and fits it to that car **for good** — it
-never returns to the pool (not on swap, and not when the car is wrecked) — but a
-fitted part can be **toggled on/off** in the upgrades menu
-(`OwnedCar.disabled_upgrades`); only **enabled** parts contribute effects, and a
-car keeps at most one enabled part per slot. Tuning (`features/tuning.md`, the
-lift) is free, reversible per-car config nudges. This is the upgrades half.
+**Upgrades are car-bound.** An upgrade belongs to the car it was won for and
+**never moves** to another car or into a shared pool. When a part is won it is
+fitted straight onto the driven car (`rally_session` installs it **disabled**;
+the podium's Apply enables the player's pick). A fitted part can be **toggled
+on/off** in the upgrades menu (`OwnedCar.disabled_upgrades`); only **enabled**
+parts contribute effects, and a car keeps at most one enabled part per slot. A
+car can never hold the same upgrade twice (**per-car dedup**), and the part stays
+on the car for good (not on swap, and not when the car is wrecked). Tuning
+(`features/tuning.md`, the lift) is free, reversible per-car config nudges. This
+is the upgrades half.
 
 ## Catalogue
 
@@ -83,18 +86,21 @@ are unmodified roster cars, not the player's upgraded ones).
 
 The slot policy and HP healing live in `Save` (it owns inventory + HP):
 
-- **`Save.install_upgrade(instance_id, item_id)`** — applying consumes the part
-  from the **unlocked pool** (inventory) for good and fits it to that car
-  permanently. Applied parts **accumulate** on the car; at most one is **enabled**
-  per slot, so a freshly-applied part arrives enabled and switches off any
-  same-slot incumbent (which stays fitted, just disabled). Applying a part the car
-  already carries is rejected (the pool copy is kept). Consumables and unknown ids
-  can't be slotted (rejected). There is **no uninstall** — a fitted part can only
-  be toggled off, never moved to another car, and a **wrecked car keeps its parts
+- **`Save.install_upgrade(instance_id, item_id, enabled := true)`** — fits a won
+  part to a car. Upgrades are **car-bound**, so this takes no inventory (there is
+  no shared pool for slottable parts) — it just records the fit on the OwnedCar.
+  `enabled` controls the freshly-fitted state: `true` enables it (switching off
+  any same-slot incumbent, which stays fitted, just disabled); `false` parks it
+  disabled. The reward loop fits every won part with `enabled = false`, then the
+  podium's Apply enables the player's pick. Applied parts **accumulate** on the
+  car; at most one is **enabled** per slot. Fitting a part the car already carries
+  is rejected (**per-car dedup**). Consumables and unknown ids can't be slotted
+  (rejected). There is **no uninstall** and no move — a fitted part can only be
+  toggled off, never moved to another car, and a **wrecked car keeps its parts
   fitted** (the car isn't destroyed — see
-  [save-persistence.md](save-persistence.md)). The HQ upgrades menu confirms via a
-  dialog before applying, since the commitment is irreversible; the podium's
-  reward reveal offers the same fit via its Apply/Keep choice
+  [save-persistence.md](save-persistence.md)). The HQ upgrades menu only toggles
+  parts already on the car (no apply-from-pool); the podium's reward reveal picks
+  enable-now vs enable-later via its Apply/Keep choice
   (`features/reward-system.md`).
 - **`Save.set_upgrade_enabled(instance_id, item_id, enabled)`** — the upgrades-menu
   toggle for an applied part. Free, instant and reversible; enabling a part
@@ -108,10 +114,12 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 
 ## Reward integration
 
-Upgrades are the per-event reward (cars are per-rally). The reward draw picks an
-`UpgradeDef` by `tier`, clamped by progress — that policy is reward-system logic
-(`todo/reward-system.md`); this library just provides the tier-keyed pool and
-`Save.add_item` grants it into inventory.
+Upgrades are the per-rally reward (cars are per-rally too). The reward draw picks
+an `UpgradeDef` by `tier`, clamped by progress, excluding parts already on the
+driven car — that policy is reward-system logic (`todo/reward-system.md`); this
+library just provides the tier-keyed pool. The flow controller fits each won part
+straight onto the driven car via `Save.install_upgrade(..., enabled=false)`
+(repair kits, being consumable, go to `Save.add_item` instead).
 
 ## Tests
 
@@ -124,9 +132,12 @@ qualifying / disqualifying a car for a rally's pw band; `test_car_library.gd`
 covers `apply_owned` re-syncing the RigidBody mass after a weight-reduction kit.
 Disabled parts being inert everywhere (config, effective stats, tuning gates) is
 covered there too. Same-slot exclusivity (applying/enabling a part disables the
-incumbent instead of scrapping it), duplicate-apply rejection, the
-`set_upgrade_enabled` toggle, consumable/unknown rejection, repair-kit heal+clamp,
-and wreck consumption (parts not returned) are in `test_save_manager.gd` (they
-need the Save profile). The HQ apply-confirmation flow and the upgrades-menu
-toggle are in `test_menu_flow.gd`; the podium's Apply/Keep reward choice is in its
-podium-sequence test there.
+incumbent instead of scrapping it), the `enabled=false` disabled fit, per-car
+duplicate-fit rejection, the same part fitting two different cars independently,
+the `set_upgrade_enabled` toggle, consumable/unknown rejection, repair-kit
+heal+clamp, wreck (parts stay on the car), and the v1→v2 migration stripping the
+old unbound pool are in `test_save_manager.gd` (they need the Save profile). The
+garage upgrades menu having no apply-from-pool rows and the toggle are in
+`test_menu_flow.gd`; the podium's Apply(enable)/Keep(disable) reward choice is in
+its podium-sequence test there. `test_rally_session.gd` covers won parts binding
+to the driven car with no slottable part won twice per rally (the dedup'd draw).

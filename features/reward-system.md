@@ -35,20 +35,25 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 pool = parts at the target tier (stepping down to the nearest lower tier that has
 an eligible part, since not every tier has one) **plus the repair kit as a
 low-weight entry** (`REPAIR_KIT_DROP_WEIGHT`, placeholder). Parts **already
-fitted to `owned_car`** — the driven car the flow controller passes in, the one
-the podium offers each reward onto — are **excluded**, so the draw never awards a
-part the car already carries; with every part at/below the tier fitted, only the
-repair kit remains (the draw still always pays out). Weighted pick → returns an
-`item_id`; most rolls are a part, occasionally the repair kit.
+fitted to `owned_car`** — the driven car the flow controller passes in — are
+**excluded**, so the draw never awards a part the car already carries. This
+exclusion is also what dedups the multi-reward draw: the flow controller fits
+each won part onto the car **before** the next draw, so re-reading the live car
+each pass stops the same part being won twice in one rally. With every part
+at/below the tier fitted, only the repair kit remains (the draw still always pays
+out). Weighted pick → returns an `item_id`; most rolls are a part, occasionally
+the repair kit.
 
-**Delivery:** the flow controller grants each drawn item into the unlocked pool
-(`Save.add_item`) and saves, then the podium's upgrade reveal offers an
-**Apply/Keep choice** per part: *Apply* fits it straight onto the owned car the
-player just drove (`Save.install_upgrade` on the result's `car_instance_id`);
-*Keep* leaves it unlocked to apply later from the garage upgrades menu. Applied
-parts stay on the car and can be enabled/disabled there
-(`Save.set_upgrade_enabled` — see `features/upgrade-catalogue.md`). Repair kits
-(consumable) skip the choice and just land in the pool.
+**Delivery:** upgrades are **car-bound** — the flow controller fits each drawn
+part straight onto the driven car **disabled**
+(`Save.install_upgrade(car_instance_id, item_id, false)`) and saves; a drawn
+repair kit (consumable) goes to `Save.add_item` instead. The podium's upgrade
+reveal then offers an **Apply/Keep choice** per part — the part is already on the
+car, so the choice is only enable-now vs enable-later: *Apply* enables it
+(`Save.set_upgrade_enabled(..., true)`), *Keep* leaves it disabled to enable later
+from the garage upgrades menu (see `features/upgrade-catalogue.md`). A won part
+never moves to another car and a car never holds two of the same (per-car dedup);
+repair kits skip the choice and just land in inventory.
 
 ## Car draw (per top-3 finish, including re-wins)
 

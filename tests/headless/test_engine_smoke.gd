@@ -25,11 +25,13 @@ class StubDamage:
 		return level
 
 
-# Stub car: a drivetrain + a damage model + a world transform (bonnet emit point).
+# Stub car: a drivetrain + a damage model + a world transform (engine emit point) +
+# the per-car engine_smoke_local EngineSmoke reads for the emit point.
 class StubCar:
 	extends Node3D
 	var drivetrain
 	var damage
+	var engine_smoke_local := Vector3(0.0, 0.4, -1.2)
 
 
 var _car: StubCar
@@ -98,6 +100,32 @@ func test_a_misfire_puffs_a_burst() -> void:
 	_tick(es)
 	assert_eq(es.live_count(), Config.data.engine_smoke_per_cut,
 		"one misfire puffs one burst of smoke")
+
+
+# The single live particle's local Z (car sits at identity basis, so world Z == local
+# Z), ignoring the small per-puff jitter. Only valid with exactly one particle alive.
+func _live_local_z(es: EngineSmoke) -> float:
+	for i in es.max_particles():
+		if es._life[i] > 0.0:
+			return es._pos[i].z
+	return NAN
+
+
+func test_puff_emits_from_the_cars_engine_point() -> void:
+	# Smoke leaves from the car's engine_smoke_local, not a fixed bonnet point: a
+	# rear-engine emit point (+Z) puffs behind the car origin, a front one (−Z) ahead.
+	Config.data.engine_smoke_per_cut = 1  # one particle so _live_local_z is unambiguous
+	_car.engine_smoke_local = Vector3(0.0, 0.4, 1.5)  # rear engine (+Z = rearward)
+	var es := _make()
+	_engine.misfire_count += 1
+	_tick(es)
+	assert_almost_eq(_live_local_z(es), 1.5, 0.15, "rear-engine smoke puffs from behind the car origin")
+
+	_car.engine_smoke_local = Vector3(0.0, 0.4, -1.5)  # front engine (−Z = forward)
+	var es2 := _make()
+	_engine.misfire_count += 1
+	_tick(es2)
+	assert_almost_eq(_live_local_z(es2), -1.5, 0.15, "front-engine smoke puffs from ahead of the car origin")
 
 
 func test_no_new_cut_emits_nothing_more() -> void:

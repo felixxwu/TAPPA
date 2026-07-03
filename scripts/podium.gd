@@ -7,10 +7,12 @@ extends Node3D
 #                      dropped in so they settle onto their suspension (loaded).
 #   2. LEADERBOARD   — the full ranked field, marking where the player finished.
 #   3. UPGRADE_REVEAL— a slot-machine spin per upgrade won this rally — handed out
-#                      at the podium, with the player's car still standing on it —
-#                      then an Apply/Keep choice: fit the part straight onto the
-#                      car the player just drove, or keep it unlocked for the
-#                      garage upgrades menu. (Skipped if none were won — e.g. a DNF.)
+#                      at the podium, with the player's car still standing on it.
+#                      Every won part is already fitted to the driven car (disabled);
+#                      the Apply/Keep choice just enables it now or leaves it
+#                      disabled to enable later in the garage. Upgrades are
+#                      CAR-BOUND — they never move to another car. (Skipped if none
+#                      were won — e.g. a DNF.)
 #   4. CAR_REVEAL    — the camera flies over to the showroom for the same spin
 #                      through the car roster, landing on the car won (top-3
 #                      only), which turns on the turntable with its name.
@@ -550,9 +552,10 @@ func _build_overlay() -> void:
 	_slot_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	slot_col.add_child(_slot_caption)
 
-	# The upgrade reveal's apply/keep choice: fit the won part to the car the player
-	# just drove, or keep it unlocked for the garage upgrades menu. Both buttons are
-	# focusable so the choice works on keyboard/gamepad (features/menus.md).
+	# The upgrade reveal's apply/keep choice: the won part is already fitted to the
+	# driven car (disabled) — Apply enables it now, Keep leaves it disabled to enable
+	# later in the garage. Both buttons are focusable so the choice works on
+	# keyboard/gamepad (features/menus.md).
 	_choice_box = HBoxContainer.new()
 	_choice_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_choice_box.add_theme_constant_override("separation", 12)
@@ -675,14 +678,15 @@ func _show_upgrade_reveal() -> void:
 		_offer_upgrade_choice(won, target))
 
 
-# Once an upgrade reveal lands, offer to fit the part straight onto the car the
-# player just drove (Apply) or leave it unlocked for the garage upgrades menu
-# (Keep). Consumables (the repair kit) and a missing driven car skip the choice —
-# those just land in the unlocked pool as before.
+# Once an upgrade reveal lands, offer to enable the part now (Apply) or leave it
+# fitted-but-disabled to enable later in the garage (Keep). The part is already
+# fitted to the driven car by the reward loop — the choice is only enable-now vs
+# enable-later; it never moves the part off this car. Consumables (the repair kit)
+# and a missing driven car skip the choice — a repair kit just lands in inventory.
 func _offer_upgrade_choice(item_id: String, item_name: String) -> void:
 	var driven := Save.get_car(int(_result.get("car_instance_id", -1)))
 	if driven.is_empty() or UpgradeLibrary.slot_of(item_id) == "" or UpgradeLibrary.is_consumable(item_id):
-		_slot_caption.text = UITheme.caps("%s — added to your unlocked parts" % item_name)
+		_slot_caption.text = UITheme.caps("%s — added to your inventory" % item_name)
 		return
 	var car_name := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
 	_choice_item_id = item_id
@@ -696,18 +700,19 @@ func _offer_upgrade_choice(item_id: String, item_name: String) -> void:
 
 
 func _on_apply_upgrade() -> void:
+	# The part is already fitted to the driven car (disabled) by the reward loop;
+	# Apply just enables it (switching off any same-slot incumbent).
 	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
-	if Save.install_upgrade(int(_result.get("car_instance_id", -1)), _choice_item_id):
-		_slot_caption.text = UITheme.caps("%s fitted — toggle it any time in the garage" % item_name)
-	else:
-		# Already fitted to this car (a duplicate win) — the copy stays unlocked.
-		_slot_caption.text = UITheme.caps("%s is already fitted — kept in your unlocked parts" % item_name)
+	Save.set_upgrade_enabled(int(_result.get("car_instance_id", -1)), _choice_item_id, true)
+	_slot_caption.text = UITheme.caps("%s fitted & enabled — toggle it any time in the garage" % item_name)
 	_resolve_upgrade_choice()
 
 
 func _on_keep_upgrade() -> void:
+	# The part stays fitted to this car but disabled; enable it later in the garage.
 	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
-	_slot_caption.text = UITheme.caps("%s kept — apply it any time in the garage" % item_name)
+	Save.set_upgrade_enabled(int(_result.get("car_instance_id", -1)), _choice_item_id, false)
+	_slot_caption.text = UITheme.caps("%s fitted (disabled) — enable it any time in the garage" % item_name)
 	_resolve_upgrade_choice()
 
 

@@ -55,6 +55,12 @@ var damage: DamageModel
 var _approach_speed := 0.0
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
+# Car-local point the engine smoke puffs from (read by EngineSmoke). Its longitudinal
+# (Z) component is derived from the car's engine position so smoke leaves from where
+# the engine actually sits — a rear-engine car (911) smokes from the tail, a front
+# engine from the nose. Lateral/height come from GameConfig.engine_smoke_offset;
+# recomputed per spec in _apply_physics_spec. See _compute_engine_smoke_local.
+var engine_smoke_local := Vector3.ZERO
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
 # Combined yaw-assist torque applied this tick (steer assist + spin protection),
 # as a signed scalar about the car's up axis (positive = turning the nose left).
@@ -186,22 +192,37 @@ func _ready() -> void:
 	_debug_overlay.visible = cfg.debug_wheel_forces
 	add_child(_debug_overlay)
 	_recompute_axles()
+	# Baseline emit point until a car spec is applied: the raw config offset.
+	engine_smoke_local = cfg.engine_smoke_offset
 
 
 # Terrain surface height at a world position, used to seat the spawn above the
 # ground. Looks for a sibling that exposes height_at (the hilly Floor in the
 # main scene); on the flat test fixtures (a WorldBoundary at y=0) there is none,
 # so it falls back to 0.
-# Speed-dependent max steering angle. Returns the effective input steer limit
-# (radians): full cfg.steer_limit at/below steer_limit_falloff_start, ramping
-# linearly down to steer_limit_min_fraction of it at/above steer_limit_falloff_end,
-# holding that floor above. end <= start (or min_fraction == 1.0) disables it.
+# Speed-dependent steering authority factor in [steer_limit_min_fraction, 1.0]:
+# 1.0 at/below steer_limit_falloff_start_kph, ramping linearly down to
+# steer_limit_min_fraction at/above steer_limit_falloff_end_kph, holding that
+# floor above. end <= start (or min_fraction == 1.0) yields a constant 1.0
+# (disabled). The config thresholds are authored in km/h; `speed` is the physics
+# m/s, converted here. BOTH the input wheel-angle limit AND the steer-assist yaw
+# torque are scaled by this — in this arcade model the assist provides most of
+# the turning authority, so scaling the wheel angle alone has almost no felt
+# effect. The travel-alignment countersteer and spin protection are deliberately
+# NOT scaled.
+static func speed_steer_authority(cfg: GameConfig, speed: float) -> float:
+	if cfg.steer_limit_falloff_end_kph <= cfg.steer_limit_falloff_start_kph:
+		return 1.0
+	var speed_kph := speed * 3.6
+	var falloff := clampf((speed_kph - cfg.steer_limit_falloff_start_kph) \
+		/ (cfg.steer_limit_falloff_end_kph - cfg.steer_limit_falloff_start_kph), 0.0, 1.0)
+	return lerpf(1.0, cfg.steer_limit_min_fraction, falloff)
+
+
+# The effective input steer limit (radians) at this speed — steer_limit scaled by
+# the speed-dependent authority factor above.
 static func speed_scaled_steer_limit(cfg: GameConfig, speed: float) -> float:
-	var falloff := 0.0
-	if cfg.steer_limit_falloff_end > cfg.steer_limit_falloff_start:
-		falloff = clampf((speed - cfg.steer_limit_falloff_start) \
-			/ (cfg.steer_limit_falloff_end - cfg.steer_limit_falloff_start), 0.0, 1.0)
-	return cfg.steer_limit * lerpf(1.0, cfg.steer_limit_min_fraction, falloff)
+	return cfg.steer_limit * speed_steer_authority(cfg, speed)
 
 
 func _ground_height_at(pos: Vector3) -> float:
@@ -410,8 +431,8 @@ func _update_steering(delta: float, speed: float) -> Dictionary:
 	var assist_rate := (cfg.steer_speed / cfg.steer_limit) if cfg.steer_limit > 0.0 else cfg.steer_speed
 	_steer = move_toward(_steer, steer_input, assist_rate * delta)
 	# Speed-dependent max steering angle: taper the input steer_limit down from
-	# full (at/below steer_limit_falloff_start) to steer_limit_min_fraction of
-	# itself (at/above steer_limit_falloff_end), so the car isn't twitchy/spin-
+	# full (at/below steer_limit_falloff_start_kph) to steer_limit_min_fraction of
+	# itself (at/above steer_limit_falloff_end_kph), so the car isn't twitchy/spin-
 	# prone at speed. Only the input term is scaled; the travel-alignment
 	# countersteer keeps its full authority so slides still catch. See
 	# features/car-physics.md.
@@ -444,7 +465,11 @@ func _apply_steer_assist(speed: float, travel_angle: float) -> void:
 	var angle_scale := 1.0
 	if cfg.steer_assist_max_angle > 0.0:
 		angle_scale = clampf(1.0 - rotated_into_turn / cfg.steer_assist_max_angle, 0.0, 1.0)
-	var steer_assist_yaw := _steer * cfg.steer_assist_torque * assist_scale * angle_scale
+	# Scale by the same speed-dependent authority as the wheel-angle limit, so a
+	# reduced high-speed steer cap is actually felt (the assist otherwise provides
+	# most of the turning authority and would mask the smaller wheel angle).
+	var authority := speed_steer_authority(cfg, speed)
+	var steer_assist_yaw := _steer * cfg.steer_assist_torque * assist_scale * angle_scale * authority
 	apply_torque(global_transform.basis.y * steer_assist_yaw)
 	# Reset the combined assist readout each tick; spin protection accumulates onto it.
 	steer_assist_readout = steer_assist_yaw
@@ -731,6 +756,7 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	var front_frac: float = spec.get("weight_front", 0.5)
 	cfg.weight_front = front_frac
 	_set_center_of_mass(spec["wheelbase"], front_frac)
+	_compute_engine_smoke_local(spec)
 
 
 # Resize the procedural chassis + cabin box meshes and the shared collision box
@@ -847,6 +873,19 @@ func _reconfigure_engine_audio() -> void:
 func _set_center_of_mass(wheelbase: float, weight_front: float) -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0.0, 0.0, wheelbase * (0.5 - weight_front))
+
+
+# Car-local emit point for the engine smoke (features/engine-smoke.md), pinned to the
+# engine's real longitudinal position. engine_pos is the same normalised front-fraction
+# as weight_front (1.0 = fully front, 0.0 = fully rear), so it maps onto the wheelbase
+# exactly like the CoM above: z = wheelbase x (0.5 - engine_pos), +Z = rearward (forward
+# is -Z). A rear-engine 911 (engine_pos ~0.1) puffs from the tail; a front-engine car
+# from the nose. Falls back to weight_front, then 0.5, when a spec omits engine_pos.
+# Lateral (X) and height (Y) still come from the global GameConfig.engine_smoke_offset.
+func _compute_engine_smoke_local(spec: Dictionary) -> void:
+	var base: Vector3 = config.engine_smoke_offset
+	var engine_pos: float = spec.get("engine_pos", spec.get("weight_front", 0.5))
+	engine_smoke_local = Vector3(base.x, base.y, spec["wheelbase"] * (0.5 - engine_pos))
 
 
 # Field an OwnedCar (features/rally-session.md fielding pipeline): the CarLibrary

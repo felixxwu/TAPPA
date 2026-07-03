@@ -81,17 +81,16 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 
 func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.add_item("turbo_small", 1)
+	# Upgrades are CAR-BOUND — install_upgrade fits the won part straight to the car
+	# (no shared inventory pool for slottable parts).
 	assert_true(_save.install_upgrade(car["instance_id"], "turbo_small"), "upgrade installed")
-	assert_false(_save.profile["inventory"].has("turbo_small"), "item left inventory once fitted")
 
 	_save.wreck_car(car["instance_id"])
 	# A wrecked car is NOT deleted — it stays owned at 0 HP, repairable with a kit.
 	assert_eq(_save.profile["cars"].size(), 1, "the wrecked car is kept, not removed")
 	assert_eq(float(_save.get_car(car["instance_id"])["hp"]), 0.0, "the wrecked car sits at 0 HP")
 	assert_true(_save.car_is_wrecked(_save.get_car(car["instance_id"])), "and reads as wrecked")
-	# Its upgrades ride along with the car (parts are consumed on fit; never returned).
-	assert_false(_save.profile["inventory"].has("turbo_small"), "the fitted upgrade stays on the car")
+	# Its upgrades ride along with the car (bound to it; never moved or returned).
 	assert_true(_save.get_car(car["instance_id"])["installed_upgrades"].has("turbo_small"),
 		"the upgrade is still installed on the wrecked car")
 
@@ -99,14 +98,13 @@ func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 func test_scrap_removes_car_consumes_upgrades_and_spares_last_car() -> void:
 	var starter: Dictionary = _save.grant_car("fx_light_rwd")
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.add_item("turbo_small", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "turbo_small"), "upgrade installed")
 
-	# Scrapping a car removes it; its fitted upgrade is lost with it (consumed
-	# for good when applied, like a wreck — not refunded).
+	# Scrapping a car removes it; its fitted upgrade is lost with it (bound to the
+	# car, like a wreck — never refunded to a pool).
 	assert_true(_save.scrap_car(car["instance_id"]), "scrapping a car succeeds while others remain")
 	assert_eq(_save.profile["cars"].size(), 1, "scrapped car removed (only the starter remains)")
-	assert_false(_save.profile["inventory"].has("turbo_small"), "fitted upgrade is not refunded on scrap")
+	assert_false(_save.profile["inventory"].has("turbo_small"), "the bound upgrade is gone with the car")
 
 	# The player's LAST car can never be scrapped (keeps ≥1 car so the repair-kit
 	# safety net always has something to bring back).
@@ -118,8 +116,6 @@ func test_scrap_removes_car_consumes_upgrades_and_spares_last_car() -> void:
 
 func test_install_disables_same_slot_incumbent() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.add_item("turbo_small", 1)
-	_save.add_item("turbo_large", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "turbo_small"), "first engine kit fitted")
 	# Applying a second engine upgrade keeps both on the car but switches the
 	# incumbent off — at most one ENABLED part per slot.
@@ -131,25 +127,47 @@ func test_install_disables_same_slot_incumbent() -> void:
 	assert_true(UpgradeLibrary.is_enabled(fitted_car, "turbo_large"), "the newly-applied kit is enabled")
 	assert_false(UpgradeLibrary.is_enabled(fitted_car, "turbo_small"),
 		"the same-slot incumbent is disabled, not scrapped")
-	assert_false(_save.profile["inventory"].has("turbo_small"),
-		"the applied part left the unlocked pool for good")
+
+
+func test_install_disabled_parks_the_part_without_enabling() -> void:
+	# The reward loop fits every won part disabled (enabled=false); the podium's
+	# Apply enables the player's pick. A disabled fit lands parked, not live.
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	assert_true(_save.install_upgrade(id, "turbo_small", false), "part fitted disabled")
+	var fitted_car: Dictionary = _save.get_car(id)
+	assert_true((fitted_car["installed_upgrades"] as Array).has("turbo_small"), "part is on the car")
+	assert_false(UpgradeLibrary.is_enabled(fitted_car, "turbo_small"), "but it is not enabled")
+	# The podium Apply flow (set_upgrade_enabled true) turns it on.
+	assert_true(_save.set_upgrade_enabled(id, "turbo_small", true), "it can be enabled later")
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "now live")
 
 
 func test_install_rejects_a_part_already_on_the_car() -> void:
+	# Per-car dedup: a car can never hold the same upgrade twice.
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.add_item("turbo_small", 2)
 	assert_true(_save.install_upgrade(car["instance_id"], "turbo_small"), "first copy fitted")
 	assert_false(_save.install_upgrade(car["instance_id"], "turbo_small"),
 		"a part already on the car can't be applied again")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 1,
-		"the rejected duplicate stays in the unlocked pool")
+	assert_eq((_save.get_car(car["instance_id"])["installed_upgrades"] as Array).count("turbo_small"), 1,
+		"the car still carries exactly one copy")
+
+
+func test_same_part_fits_on_two_different_cars_independently() -> void:
+	# Dedup is PER CAR — two different cars may each own their own copy of a part.
+	var a: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var b: Dictionary = _save.grant_car("fx_light_rwd")
+	assert_true(_save.install_upgrade(a["instance_id"], "turbo_small"), "car A gets a copy")
+	assert_true(_save.install_upgrade(b["instance_id"], "turbo_small"), "car B gets its own copy")
+	assert_true((_save.get_car(a["instance_id"])["installed_upgrades"] as Array).has("turbo_small"),
+		"car A carries it")
+	assert_true((_save.get_car(b["instance_id"])["installed_upgrades"] as Array).has("turbo_small"),
+		"car B carries it")
 
 
 func test_toggle_upgrade_enabled_is_exclusive_per_slot() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
-	_save.add_item("turbo_small", 1)
-	_save.add_item("turbo_large", 1)
 	_save.install_upgrade(id, "turbo_small")
 	_save.install_upgrade(id, "turbo_large")
 	# Disabling the enabled part leaves the slot with nothing live.
@@ -283,6 +301,21 @@ func test_migration_refuses_newer_version() -> void:
 	var future: Dictionary = _save._default_profile()
 	future["schema_version"] = _save.SCHEMA_VERSION + 1
 	assert_true(_save._migrate(future).is_empty(), "a newer-version profile is refused (returns empty)")
+
+
+func test_migration_v1_strips_unbound_slottable_parts_keeps_repair_kits() -> void:
+	# v1 -> v2: upgrades became car-bound; the old shared pool of slottable parts
+	# is dropped (they were never applied and have no car to belong to), but repair
+	# kits (the one consumable) stay pooled.
+	var v1: Dictionary = _save._default_profile()
+	v1["schema_version"] = 1
+	v1["inventory"] = {"turbo_small": 2, "brake_kit": 1, UpgradeLibrary.REPAIR_KIT_ID: 3}
+	var migrated: Dictionary = _save._migrate(v1)
+	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
+	var inv: Dictionary = migrated["inventory"]
+	assert_false(inv.has("turbo_small"), "unbound slottable part dropped")
+	assert_false(inv.has("brake_kit"), "unbound slottable part dropped")
+	assert_eq(int(inv.get(UpgradeLibrary.REPAIR_KIT_ID, 0)), 3, "repair kits preserved")
 
 
 func test_migration_backfills_missing_keys() -> void:

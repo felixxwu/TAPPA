@@ -319,10 +319,9 @@ func test_unbound_wreck_emits_without_touching_save() -> void:
 func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("mx5")
 	var id := int(car["instance_id"])
-	_save.add_item("turbo_small", 1)
+	# Upgrades are car-bound — install_upgrade fits the part straight to the car.
 	assert_true(_save.install_upgrade(id, "turbo_small"), "upgrade fitted")
 	assert_eq(_save.get_car(id)["installed_upgrades"].size(), 1, "one upgrade installed")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0, "item left inventory on install")
 
 	var dm := DamageModel.new()
 	dm.field(800.0, 40.0, id)
@@ -336,8 +335,6 @@ func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "the saved car sits at 0 HP")
 	assert_true(_save.get_car(id)["installed_upgrades"].has("turbo_small"),
 		"the fitted upgrade stays on the wrecked car")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0,
-		"the upgrade is not returned to inventory (it rides along with the car)")
 
 
 func test_every_car_takes_damage_and_can_wreck() -> void:

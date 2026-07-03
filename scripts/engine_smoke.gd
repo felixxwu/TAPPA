@@ -212,17 +212,24 @@ func _car_severity() -> float:
 	return _car.damage.misfire_level(Config.data)
 
 
-# Emit one burst of smoke particles at the car's bonnet emit point, each rising with
-# a little random scatter. Coordinate space matches how this pool is parented:
+# Emit one burst of smoke particles at the car's engine emit point, each rising with
+# a little random scatter. The local emit point is the CAR's per-car engine_smoke_local
+# (its longitudinal position tracks where the engine actually sits — a rear-engine 911
+# smokes from the tail), falling back to the global GameConfig.engine_smoke_offset when
+# the car doesn't expose one (e.g. a bare stub). Coordinate space matches how this pool
+# is parented:
 # - EVENT mode is parented to the world root, so we emit in WORLD space
-#   (car.global_transform * offset) as the moving car drives around.
+#   (car.global_transform * local) as the moving car drives around.
 # - SYNTHETIC mode is parented to the (static, level) display CAR, so we emit in the
 #   car's LOCAL space — the offset directly — and the MultiMesh renders it relative to
-#   the car, placing the puff at the bonnet without any world-transform juggling.
+#   the car, placing the puff at the engine without any world-transform juggling.
 func _puff(cfg: GameConfig) -> void:
-	var origin: Vector3 = cfg.engine_smoke_offset
+	var local: Vector3 = cfg.engine_smoke_offset
+	if is_instance_valid(_car) and _car.get("engine_smoke_local") != null:
+		local = _car.engine_smoke_local
+	var origin: Vector3 = local
 	if not _synthetic:
-		origin = _car.global_transform * cfg.engine_smoke_offset
+		origin = _car.global_transform * local
 	for _n in maxi(1, cfg.engine_smoke_per_cut):
 		var scatter := Vector3(
 			randf_range(-1.0, 1.0), randf_range(0.0, 0.5), randf_range(-1.0, 1.0)

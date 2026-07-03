@@ -30,9 +30,9 @@ the `.tres` requires a scene reload to take effect.
 | `drag_coefficient` | 0.4 | Quadratic aero drag (top-speed limiter) |
 | `downforce_front` / `downforce_rear` | 0.0 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0). Set **per-car** by `apply_car` from the CarLibrary spec (these defaults are just the fallback); every car has a small rear value |
 | `steer_limit` | 0.3 rad | Max steer angle from travel direction (low speed) |
-| `steer_limit_falloff_start` | 15.0 | Speed (m/s) at/below which `steer_limit` stays full |
-| `steer_limit_falloff_end` | 55.0 | Speed (m/s) at/above which the cap hits its floor |
-| `steer_limit_min_fraction` | 0.45 | High-speed cap as a fraction of `steer_limit` (1.0 disables) |
+| `steer_limit_falloff_start_kph` | 0.0 | Speed (**km/h**) at/below which steering authority is full |
+| `steer_limit_falloff_end_kph` | 50.0 | Speed (**km/h**) at/above which authority hits its floor |
+| `steer_limit_min_fraction` | 0.01 | High-speed authority floor, scales wheel angle AND steer assist (1.0 disables) |
 | `steer_speed` | 5.0 | Steering responsiveness (rad/s) |
 | `steer_travel_alignment` | 1.0 | Auto-countersteer fraction (0..1) |
 | `steer_assist_torque` | 200.0 | Yaw torque vs understeer (N·m) |
