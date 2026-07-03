@@ -219,9 +219,15 @@ const CARS: Array[Dictionary] = [
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
-		"cabin_z": 0.10, "track": 1.47, "wheelbase": 2.27,
+		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
 		"wheel_radius": 0.32, "wheel_width_front": 0.185, "wheel_width_rear": 0.215,  # 185/215 the "wide" 930 stagger
-		"suspension_travel": 0.42, "suspension_stiffness": 15.0,  # taut sports car, lower ride
+		"suspension_travel": 0.35, "suspension_stiffness": 15.0,  # taut sports car, lower ride
+		# Renders blender/911/911.glb (Car/Porsche911Body) with its baked texture; see
+		# car.gd apply_car(). Wheels use its own wheel.png.
+		"use_model": true,
+		"model_node": "Porsche911Body",
+		"model_texture": "res://blender/911/texture.png",
+		"wheel_texture": "res://blender/911/wheel.png",
 	},
 	{
 		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
