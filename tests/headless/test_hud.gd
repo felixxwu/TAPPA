@@ -75,10 +75,12 @@ func test_speed_gear_rpm_hidden_until_h_toggle() -> void:
 	var speed := _scene.get_node("HUD/SpeedLabel") as Label
 	var gear := _scene.get_node("HUD/GearLabel") as Label
 	var rpm := _scene.get_node("HUD/RPMLabel") as Label
+	var boost := _scene.get_node("HUD/BoostLabel") as Label
 	await get_tree().process_frame
 	assert_false(speed.visible, "speed hidden on startup")
 	assert_false(gear.visible, "gear hidden on startup")
 	assert_false(rpm.visible, "rpm hidden on startup")
+	assert_false(boost.visible, "boost hidden on startup")
 	Input.action_press("toggle_debug_arrows")
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -86,11 +88,26 @@ func test_speed_gear_rpm_hidden_until_h_toggle() -> void:
 	assert_true(speed.visible, "H shows the speed readout")
 	assert_true(gear.visible, "H shows the gear readout")
 	assert_true(rpm.visible, "H shows the rpm readout")
+	assert_true(boost.visible, "H shows the boost readout")
 	Input.action_press("toggle_debug_arrows")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	Input.action_release("toggle_debug_arrows")
 	assert_false(speed.visible, "H again hides the readout")
+	assert_false(boost.visible, "H again hides the boost readout")
+
+
+func test_boost_text_formatting() -> void:
+	# Pure formatter for the debug boost readout: N/A on an NA engine, else a
+	# percentage of full boost. (Logic, not tuned values — the percentages are
+	# derived from the boost fraction passed in.)
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.boost_text(false, 0.0), "Boost N/A", "no turbo shows N/A")
+	assert_eq(Hud.boost_text(false, 0.9), "Boost N/A", "NA ignores any stray boost value")
+	assert_eq(Hud.boost_text(true, 0.0), "Boost 0%", "a spooled-down turbo reads 0%")
+	assert_eq(Hud.boost_text(true, 0.5), "Boost 50%", "half boost reads 50%")
+	assert_eq(Hud.boost_text(true, 1.0), "Boost 100%", "full boost reads 100%")
+	assert_eq(Hud.boost_text(true, 2.0), "Boost 100%", "boost is clamped to 100%")
 
 
 func test_hud_has_no_version_label() -> void:

@@ -27,6 +27,10 @@ extends RefCounted
 #                     (features/engine-audio.md): octave-down crossfade, master level,
 #                     broadband-noise level (dB, converted to linear here), and the
 #                     post-soft-clip trim.
+#   * turbo_* / supercharger_enabled / engine_turbo_*_gain / engine_supercharger_whine_gain
+#                     — FORCED INDUCTION (features/forced-induction.md), all optional:
+#                     an NA engine omits them and apply() defaults to OFF/zero, so the
+#                     turbo sim is skipped and no boost/whine audio plays.
 
 # Standard firing tables: crank angles (degrees) over the 720° four-stroke cycle,
 # shared across engines of the same layout. Even spacing sounds smooth; the uneven
@@ -81,9 +85,13 @@ const ENGINES: Array[Dictionary] = [
 	},
 	{
 		"id": "porsche_30_flat6", "name": "3.0 turbo flat-6", "layout": "i6", "mass": 180.0,
-		"redline_rpm": 6800.0, "peak_torque": 343.0, "peak_torque_rpm": 4000.0, "engine_inertia": 0.18,  # 930 Turbo 3.0: 260 PS @ 5500, 343 Nm @ 4000
+		"redline_rpm": 6800.0, "peak_torque": 225.0, "peak_torque_rpm": 4000.0, "engine_inertia": 0.18,  # 930 Turbo 3.0: 260 PS @ 5500, 343 Nm @ 4000
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"gear_ratios": [3.18, 1.83, 1.26, 0.93], "final_drive": 4.22, "shift_time": 0.25,  # 4-speed manual (930/30)
+		# Stock forced induction (features/forced-induction.md): the 930's single
+		# large turbo, famous for its lag. Balance placeholders.
+		"turbo_enabled": true, "turbo_boost_gain": 0.5, "turbo_inertia": 1.0e-2, "turbo_omega_ref": 11000.0,
+		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
 	},
 	{
 		# Dodge Viper RT/10 (1st gen) 8.0 L (488 cu in) OHV V10: 400 bhp @ 4600, 630 N·m (465 lb-ft) @ 3600.
@@ -178,3 +186,18 @@ static func apply(engine: Dictionary, cfg: GameConfig) -> void:
 		cfg.gear_ratios = ratios
 	cfg.final_drive = engine.get("final_drive", cfg.final_drive)
 	cfg.shift_time = engine.get("shift_time", cfg.shift_time)
+	# Forced induction (features/forced-induction.md). Optional keys — NA engines omit
+	# them and fall back to OFF/zero, so the turbo sim is skipped and no whine plays.
+	cfg.turbo_enabled = engine.get("turbo_enabled", false)
+	cfg.turbo_inertia = engine.get("turbo_inertia", cfg.turbo_inertia)
+	cfg.turbo_omega_ref = engine.get("turbo_omega_ref", cfg.turbo_omega_ref)
+	cfg.turbo_boost_gain = engine.get("turbo_boost_gain", 0.0)
+	cfg.turbo_drive_gain = engine.get("turbo_drive_gain", cfg.turbo_drive_gain)
+	cfg.turbo_drag_coef = engine.get("turbo_drag_coef", cfg.turbo_drag_coef)
+	cfg.turbo_antilag = engine.get("turbo_antilag", false)
+	cfg.turbo_antilag_drive = engine.get("turbo_antilag_drive", 0.0)
+	cfg.supercharger_enabled = engine.get("supercharger_enabled", false)
+	cfg.engine_turbo_whistle_gain = engine.get("engine_turbo_whistle_gain", 0.0)
+	cfg.engine_turbo_bov_gain = engine.get("engine_turbo_bov_gain", 0.0)
+	cfg.engine_turbo_antilag_bang_gain = engine.get("engine_turbo_antilag_bang_gain", 0.0)
+	cfg.engine_supercharger_whine_gain = engine.get("engine_supercharger_whine_gain", 0.0)

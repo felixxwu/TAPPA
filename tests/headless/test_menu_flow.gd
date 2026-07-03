@@ -331,8 +331,8 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	dev._grant_car("fx_awd", "Fixture AWD")
 	assert_eq(int(_save.profile["cars"].size()), before + 1, "unlocking grants a car instance")
 	# Add any upgrade: it lands in the inventory.
-	dev._add_upgrade("engine_stage1", "Stage 1 Engine Kit")
-	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 1,
+	dev._add_upgrade("turbo_small", "Small Turbo")
+	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 1,
 		"adding an upgrade puts it in inventory")
 	# Wipe: everything resets to a fresh new game.
 	dev._wipe_progress()
@@ -980,21 +980,21 @@ func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.add_item("engine_stage1")
+	_save.add_item("turbo_small")
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	# Installing now asks for confirmation first — nothing is fitted until accepted.
-	hq._install_upgrade(id, "engine_stage1")
-	assert_false(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),
+	hq._install_upgrade(id, "turbo_small")
+	assert_false(_save.get_car(id)["installed_upgrades"].has("turbo_small"),
 		"the part is not fitted until the confirmation dialog is accepted")
-	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 1,
+	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 1,
 		"the part stays in inventory until the fit is confirmed")
 	# Accepting the dialog commits the fit and consumes the part for good.
 	hq._confirm_dialog.confirmed.emit()
-	assert_true(_save.get_car(id)["installed_upgrades"].has("engine_stage1"),
+	assert_true(_save.get_car(id)["installed_upgrades"].has("turbo_small"),
 		"accepting the confirmation fits the part to the selected car")
-	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 0,
+	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0,
 		"the installed part is consumed from inventory")
 
 
@@ -1005,8 +1005,8 @@ func test_hq_lift_toggles_an_applied_upgrade() -> void:
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.add_item("engine_stage1")
-	_save.install_upgrade(id, "engine_stage1")
+	_save.add_item("turbo_small")
+	_save.install_upgrade(id, "turbo_small")
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
@@ -1020,13 +1020,13 @@ func test_hq_lift_toggles_an_applied_upgrade() -> void:
 	assert_not_null(toggle, "an applied part shows a Disable toggle")
 	assert_eq(toggle.focus_mode, Control.FOCUS_ALL, "the toggle is keyboard / gamepad focusable")
 	# Disabling parks the part: still fitted, but its effect is off.
-	hq._toggle_upgrade(id, "engine_stage1", false)
+	hq._toggle_upgrade(id, "turbo_small", false)
 	var car: Dictionary = _save.get_car(id)
-	assert_true(car["installed_upgrades"].has("engine_stage1"), "a disabled part stays applied to the car")
-	assert_false(UpgradeLibrary.is_enabled(car, "engine_stage1"), "the toggle switches the part off")
+	assert_true(car["installed_upgrades"].has("turbo_small"), "a disabled part stays applied to the car")
+	assert_false(UpgradeLibrary.is_enabled(car, "turbo_small"), "the toggle switches the part off")
 	# Re-enabling brings it back — free and reversible, no confirmation dialog.
-	hq._toggle_upgrade(id, "engine_stage1", true)
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "engine_stage1"),
+	hq._toggle_upgrade(id, "turbo_small", true)
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"),
 		"the toggle switches the part back on")
 
 
@@ -1200,13 +1200,13 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	# ends on an Apply/Keep choice targeting the car the player just drove.
 	var driven: Dictionary = _save.grant_car("fx_awd")
 	var driven_id := int(driven["instance_id"])
-	_save.add_item("engine_stage1")
+	_save.add_item("turbo_small")
 	_save.add_item("brake_kit")
 	RallySession._last_result = {
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
 		"car_reward": "fx_rwd_coupe", "car_reward_is_new": true,
-		"upgrades": ["engine_stage1", "brake_kit"],
+		"upgrades": ["turbo_small", "brake_kit"],
 		"car_instance_id": driven_id,
 		"standings": [
 			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},
@@ -1235,7 +1235,7 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	pod._on_next()
 	await get_tree().process_frame
 	assert_eq(pod._stage, pod.Stage.UPGRADE_REVEAL, "Next from the leaderboard shows the first upgrade reveal")
-	assert_string_contains(_label_texts(pod), "STAGE 1 ENGINE KIT", "the first won upgrade is revealed by name")
+	assert_string_contains(_label_texts(pod), "SMALL TURBO", "the first won upgrade is revealed by name")
 	assert_string_contains(_label_texts(pod), "UPGRADE 1 OF 2", "the reveal counts up when several were won")
 	assert_false(is_instance_valid(pod._showroom_car),
 		"no showroom car exists yet — upgrades are revealed at the podium")
@@ -1254,9 +1254,9 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 		"Apply is focused for keyboard / gamepad")
 	# Applying fits the part straight onto the driven car.
 	pod._apply_button.pressed.emit()
-	assert_true(_save.get_car(driven_id)["installed_upgrades"].has("engine_stage1"),
+	assert_true(_save.get_car(driven_id)["installed_upgrades"].has("turbo_small"),
 		"Apply fits the won part to the car the player drove")
-	assert_eq(int(_save.profile["inventory"].get("engine_stage1", 0)), 0,
+	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0,
 		"the applied part is consumed from the unlocked pool")
 	assert_false(pod._choice_pending, "the choice resolves once picked")
 	assert_true(pod._next_button.visible, "Next returns after the choice")

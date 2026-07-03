@@ -183,11 +183,80 @@ the noise floor staying constant across volumes, and the rev-limiter fuel-cut
 duck + crackle (ducks the voice, stays sharp under slow smoothing, crackles on
 cut onset, and leaves the no-cut voice unchanged), the soft-clip curve (bounded
 when overdriven, rounds peaks, drive/post-gain scaling), and the DC blocker
-keeping an overdriven voice AC-dominated rather than collapsing to DC silence.
+keeping an overdriven voice AC-dominated rather than collapsing to DC silence,
+and the forced-induction layers (whistle energy rising with boost, a BOV event
+adding a transient burst, a supercharger whine appearing only when enabled).
 `tests/headless/test_engine_library.gd` checks `EngineLibrary.apply()` writes
 volume/noise/low-octave/post-gain correctly for each catalog entry.
 `tests/headless/test_car_types.gd` checks each car's referenced engine ends up
 applied to the live config (volume, noise level, post-gain).
+
+## Forced induction
+
+On top of the base cylinder voice, the synth layers four turbo/supercharger
+elements, all independently gained and all opt-in via their config gains
+(zero gain = no cost, no sound — old cars are unaffected):
+
+- **Spool whistle.** Resonant **band-pass-filtered noise** (a real turbo is air
+  through the compressor, not a pure tone — a wavetable sine read as a piercing
+  whine). White noise runs through a TPT/Cytomic state-variable band-pass filter
+  (integrator states `_svf_ic1`/`_svf_ic2`, band output `v1` normalized by `k`
+  so `Q` sets tone not level). The centre frequency sweeps
+  `engine_turbo_whistle_freq_min`→`engine_turbo_whistle_freq_max` with the shaft
+  speed `turbo_spin` (`= omega_turbo / turbo_omega_ref`); `engine_turbo_whistle_q`
+  is the airy↔tonal resonance and `engine_turbo_air_mix` blends in a one-pole
+  low-passed broadband air-rush layer (`_air_lp`, `TURBO_AIR_LP_HZ`). Amplitude
+  tracks `boost` and `engine_turbo_whistle_gain` (×`TURBO_WHISTLE_LEVEL`); only
+  runs while `boost > 0`. The SVF coefficients (a `tan` + a few products) are
+  computed ONCE per `fill()` — boost/spin are constant across a buffer — so the
+  per-sample loop is just the cheap SVF recurrence, no per-sample transcendental.
+- **Blow-off valve (BOV) burst.** A transient decaying noise burst
+  (`_bov_env`, instant attack + exponential decay), edge-triggered when
+  `bov_event` goes true, scaled by `engine_turbo_bov_gain` **× the boost level at
+  the lift** (so a full-boost lift dumps the loudest "pshhh", a partial spool a
+  softer one). `bov_event` fires on a throttle lift while boosted OR at the start
+  of a gear shift (the driver lifts to shift, so it vents even with the throttle
+  held — see `EngineSim._step_turbo`). The decay length is
+  set by `engine_turbo_bov_decay_ms` (a time in ms, converted to the per-sample
+  factor `_bov_decay` via `_decay_factor` at init) — independent of the anti-lag
+  bang's decay. Going back on the throttle (`throttle > 0.1` and NOT mid-shift, so
+  a held throttle during a shift's own vent isn't cut) **immediately kills** any
+  ringing tail — the manifold re-pressurizes and the valve shuts. An optional
+  **flutter** LFO (`engine_turbo_bov_flutter_amount` depth,
+  `engine_turbo_bov_flutter_hz` rate) tremolos the burst for the stuttering
+  surge "brrrap"; its phase resets on each trigger. `bov_event` is **latched** by the sim (set on the
+  lift-while-boosted edge, not cleared per-substep) and **consumed** by
+  `engine_audio.gd._process` (read then cleared): the engine steps 8× per physics
+  tick but audio samples once per rendered frame, so a single-substep pulse would
+  be missed — latch-and-consume guarantees each blow-off fires exactly once.
+- **Anti-lag bang burst.** Its OWN independent decaying noise burst
+  (`_antilag_env`, `engine_turbo_antilag_bang_gain`, with its own decay length
+  `engine_turbo_antilag_decay_ms` → `_antilag_decay`) — separate from the BOV
+  burst — retriggered every `ANTILAG_BANG_INTERVAL` seconds while
+  `antilag_active` stays true (coasting on boost with anti-lag engaged), via
+  `_antilag_timer`.
+- **Supercharger whine.** A wavetable tone (`_build_whistle_table` /
+  `_read_whistle`, ×`TURBO_TONE_LEVEL`) — a supercharger genuinely IS a
+  mechanical belt-driven tone, so the tonal wavetable is right here. Pitch tracks
+  engine rpm directly (belt-driven: `rpm * SUPERCHARGER_BELT_HZ_PER_RPM`) and it
+  is always on (not gated on boost) while `supercharger_enabled` is true, scaled
+  by `engine_supercharger_whine_gain`.
+
+The whistle and whine are summed onto the `voice` signal (after its own
+`_master_gain` is applied, so they carry their own independent gains rather
+than the engine-voice master level); the BOV and anti-lag bursts ride on the
+noise bus (like the crackle). All four then DC-block and soft-clip together
+with the rest of the engine signal.
+
+`fill()` gained four new trailing params — `boost`, `turbo_spin`,
+`bov_event`, `antilag_active` — all defaulted (`0.0`/`0.0`/`false`/`false`),
+so every pre-existing call site and test keeps working unchanged.
+`scripts/engine_audio.gd._process` computes `turbo_spin` from
+`engine.omega_turbo / Config.data.turbo_omega_ref` (guarded against a zero
+`turbo_omega_ref`) and passes `engine.boost`, `engine.bov_event`, and
+`engine.antilag_active` straight through from `EngineSim`. See
+[forced-induction.md](forced-induction.md) for the underlying turbo/supercharger
+simulation these signals come from.
 
 ## Related config
 
@@ -197,8 +266,10 @@ applied to the live config (volume, noise level, post-gain).
 `EngineLibrary.low_octave_mix`), `engine_limiter_cut_level`,
 `engine_limiter_crackle`, `engine_soft_clip_drive` (global),
 `engine_soft_clip_post_gain` (engine property via
-`EngineLibrary.soft_clip_post_gain`). See [configuration.md](configuration.md)
-and `scripts/engine_library.gd`.
+`EngineLibrary.soft_clip_post_gain`), `turbo_enabled`, `turbo_omega_ref`,
+`supercharger_enabled`, `engine_turbo_whistle_gain`, `engine_turbo_bov_gain`,
+`engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`. See
+[configuration.md](configuration.md) and `scripts/engine_library.gd`.
 
 ## Performance note
 

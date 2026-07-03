@@ -20,10 +20,21 @@ lift) is free, reversible per-car config nudges. This is the upgrades half.
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
 (`engine` / `aero` / `chassis` / `brakes`, or `""` for consumables), `tier`
 (reward-tier gating), `consumable`, and `effect` (config-field → delta/multiplier).
-Current set: two engine kits (stage 1/2), an aero kit, a **weight-reduction** kit
-(chassis slot, `mass_mult` 0.90), a big brake kit, and the **repair kit** (the one
-consumable). The concrete part list and exact numbers are a balance pass
-(deferred); these are single-purpose defaults.
+Current set: two **turbo kits** (engine slot — `turbo_small` tier 1, `turbo_large`
+tier 3), an aero kit, a **weight-reduction** kit (chassis slot, `mass_mult` 0.90),
+a big brake kit, and the **repair kit** (the one consumable). The concrete part
+list and exact numbers are a balance pass (deferred); these are single-purpose
+defaults.
+
+The engine slot installs a **turbocharger** rather than a flat power bump: each
+turbo kit's `effect` is a single `install_turbo` key whose value is a dict of turbo
+parameters (`turbo_boost_gain`, `turbo_inertia`, `turbo_omega_ref`,
+`turbo_drive_gain`, `turbo_drag_coef`, and the whistle/BOV audio gains). `apply`
+sets `turbo_enabled = true` and copies those onto `cfg`, so fitting a turbo (or a
+bigger one over a stock turbo) reshapes the delivered torque curve dynamically —
+the full model lives in `features/forced-induction.md`. The old flat
+`peak_torque_mult` stage kits are gone. **Superchargers are never upgrades** — they
+are an intrinsic engine property (`features/forced-induction.md`).
 
 ## Effect-application pipeline
 
@@ -38,8 +49,9 @@ predictably:
 4. **Damage multipliers** — power/steer degraded by HP fraction (`features/damage.md`).
 
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored
-`.tres`. `*_mult` keys multiply the baseline (`peak_torque`, `brake_torque`,
-`mass`); additive keys add (`downforce_front` / `downforce_rear`).
+`.tres`. `*_mult` keys multiply the baseline (`brake_torque`, `mass`); additive
+keys add (`downforce_front` / `downforce_rear`); `install_turbo` writes the turbo
+fields (see above).
 `unlocks_*` keys are **flags**, skipped by `apply` — they gate tuning sliders, not
 config. `aero_tuning_unlocked(car)` / `brake_bias_unlocked(car)` read those flags
 so the tuning lift only exposes aero / brake-bias sliders when the matching kit
@@ -55,8 +67,11 @@ is fitted.
 `effective_meta(owned_car, meta)` returns a copy of a car's CarLibrary entry with
 the power-to-weight inputs (`peak_torque`, `mass`) adjusted by its installed
 upgrades. It's pure (never touches the authored `CARS` entry) and is what makes a
-fitted engine kit or weight reduction **change the displayed HP/kg AND a car's
-rally eligibility**: the HQ stats panel calls
+fitted turbo or weight reduction **change the displayed HP/kg AND a car's
+rally eligibility**: a turbo is **rated at peak boost** — `effective_meta`
+multiplies `peak_torque` by `(1 + turbo_boost_gain)` (the stock engine's gain, or
+an installed turbo kit's, whichever applies) so a turbocharged car reads as more
+powerful and is gated accordingly. the HQ stats panel calls
 `CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry))`, and the
 two player-car eligibility checks (`hq._has_eligible_car`,
 `hq._build_eligible_lineup`) pass `effective_meta` into `RallyLibrary.is_eligible`,

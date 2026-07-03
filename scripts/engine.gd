@@ -10,6 +10,9 @@ extends RefCounted
 # above idle into drive torque (model stability constant, not a tuning knob).
 const FLYWHEEL_DRAIN_TIME := 0.3
 
+# Boost above which snapping the throttle shut vents the blow-off valve.
+const BOV_BOOST_THRESHOLD := 0.3
+
 var omega := 0.0  # rad/s engine flywheel speed
 var gear := 1  # -1 = reverse, 0 = neutral, 1..N forward
 var auto := false  # automatic gearbox (picks the gear from the airspeed)
@@ -19,6 +22,16 @@ var limiting := false  # rev-limiter fuel cut latched on (see _update_limiter)
 # Combined fuel-cut state (rev limiter OR a damage misfire) for the audio synth:
 # while true, combustion has stopped this substep — the note ducks and crackles.
 var fuel_cut := false
+# Turbo shaft state (features/forced-induction.md). omega_turbo integrates against
+# turbo_inertia in step(); boost = (omega_turbo/omega_ref)^2 multiplies delivered
+# torque. Zero and inert on an NA engine (config.turbo_enabled false). The audio
+# bridge reads boost/omega_turbo/bov_event/antilag_active for the whistle + bursts.
+var omega_turbo := 0.0  # rad/s turbo shaft speed
+var boost := 0.0  # 0..1 boost fraction
+var bov_event := false  # set the substep a blow-off vents (lift while boosted)
+var antilag_active := false  # true while anti-lag bangs (off-throttle, still boosted)
+var _prev_throttle := 0.0  # for the blow-off lift edge
+var _prev_shifting := false  # for the blow-off shift edge (driver lifts to change gear)
 # Damage fraction 0..1 (0 = healthy), set each tick by car.gd. Drives the stochastic
 # misfire below — a damaged engine cuts fuel in stumbling bursts, more often with
 # damage and under load. Replaces the old smooth power derate. See features/damage.md.
@@ -146,6 +159,12 @@ func reset() -> void:
 	limiting = false
 	fuel_cut = false
 	_misfire_timer = 0.0
+	omega_turbo = 0.0
+	boost = 0.0
+	bov_event = false
+	antilag_active = false
+	_prev_throttle = 0.0
+	_prev_shifting = false
 
 
 # One substep of length h: integrates the flywheel against crank and clutch
@@ -166,11 +185,15 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	# the limiter; the no-stall idle clamp below still holds the bottom.
 	var friction := cfg.engine_friction_base + cfg.engine_friction_slope * rpm() / 1000.0
 	var crank := -friction
+	# Turbo: integrate the shaft (real inertia) and derive boost BEFORE building
+	# crank torque, so the boost multiplier reflects this substep. NA engines skip it.
+	_step_turbo(cfg, h, throttle_in)
 	if throttle > 0.001 and shift_timer <= 0.0 and not fuel_cut:
 		# global_torque_scale is a hidden global de-rate: it scales the torque the
 		# engine actually delivers without altering cfg.peak_torque, so the stats
 		# panel still shows the full published figure while every car is dialled back.
-		crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm())
+		# The turbo multiplies delivered torque by (1 + boost * boost_gain).
+		crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm()) * (1.0 + boost * cfg.turbo_boost_gain)
 
 	var gr := ratio()
 	var input_omega := driveline_omega * gr
@@ -227,6 +250,31 @@ static func misfire_rate(level: float, load_frac: float, rate_max: float, bias: 
 	return rate_max * clampf(level, 0.0, 1.0) * load_factor
 
 
+# --- Turbo shaft maths (pure, unit-testable; wired into step() below) --------
+# Boost pressure fraction from shaft speed: centrifugal compressor pressure rises
+# with the square of speed, saturating at 1.0 (the fitted turbo's design ceiling).
+static func boost_fraction(omega_turbo: float, omega_ref: float) -> float:
+	if omega_ref <= 0.0:
+		return 0.0
+	var r := omega_turbo / omega_ref
+	return clampf(r * r, 0.0, 1.0)
+
+
+# Exhaust energy available to spin the shaft: proportional to mass flow (throttle *
+# rpm). Anti-lag injects a residual drive floor off-throttle so the shaft stays lit.
+static func turbo_exhaust_drive(rpm: float, throttle: float, drive_gain: float, antilag: bool, antilag_drive: float) -> float:
+	var drive := drive_gain * clampf(throttle, 0.0, 1.0) * maxf(rpm, 0.0)
+	if antilag:
+		drive = maxf(drive, antilag_drive)
+	return drive
+
+
+# Net angular acceleration of the shaft: (exhaust drive − ω² bearing/aero drag) / inertia.
+static func turbo_shaft_accel(exhaust_drive: float, omega_turbo: float, drag_coef: float, inertia: float) -> float:
+	var drag := drag_coef * omega_turbo * omega_turbo
+	return (exhaust_drive - drag) / maxf(inertia, 1.0e-9)
+
+
 # Stochastic damage misfire: while a cut is in progress hold it (returning true) until
 # its rolled duration elapses; otherwise roll each substep to START a cut with
 # probability rate*h, so the frequency is framerate-independent. A healthy engine
@@ -259,3 +307,35 @@ func _torque_fraction(at_rpm: float) -> float:
 		1.0, 0.7,
 		(at_rpm - cfg.peak_torque_rpm) / (cfg.redline_rpm - cfg.peak_torque_rpm)
 	)
+
+
+# Advance the turbo shaft one substep and update boost + audio-signal flags.
+# omega_turbo integrates (exhaust_drive − ω² drag) / inertia; boost = (ω/ω_ref)².
+# Lag, boost threshold, mid-range surge and off-throttle bleed all fall out of this.
+func _step_turbo(cfg: GameConfig, h: float, throttle_in: float) -> void:
+	if not cfg.turbo_enabled:
+		omega_turbo = 0.0
+		boost = 0.0
+		antilag_active = false
+		_prev_throttle = throttle_in
+		return
+	var drive := turbo_exhaust_drive(rpm(), throttle_in, cfg.turbo_drive_gain, cfg.turbo_antilag, cfg.turbo_antilag_drive)
+	omega_turbo = maxf(omega_turbo + turbo_shaft_accel(drive, omega_turbo, cfg.turbo_drag_coef, cfg.turbo_inertia) * h, 0.0)
+	boost = boost_fraction(omega_turbo, cfg.turbo_omega_ref)
+	# Blow-off: venting the dump valve while boosted. Two triggers, both LATCHED
+	# (not cleared per-substep) — the engine steps 8x per physics tick but the audio
+	# bridge samples once per rendered frame, so a single-substep pulse would be
+	# missed; engine_audio.gd consumes + clears it.
+	#   1. A throttle lift (snap shut) while on boost.
+	#   2. The START of a gear shift — the driver lifts to change gear, so a shift
+	#      dumps boost too even if the throttle input is still held down.
+	var shifting := shift_timer > 0.0
+	if boost > BOV_BOOST_THRESHOLD:
+		if _prev_throttle > 0.1 and throttle_in <= 0.05:
+			bov_event = true
+		elif shifting and not _prev_shifting:
+			bov_event = true
+	# Anti-lag bangs while coasting on boost.
+	antilag_active = cfg.turbo_antilag and throttle_in <= 0.05 and boost > 0.05
+	_prev_throttle = throttle_in
+	_prev_shifting = shifting

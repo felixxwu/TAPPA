@@ -29,12 +29,20 @@ const SLOTS := ["engine", "aero", "chassis", "brakes"]
 # are a balance pass (deferred); these are legible single-purpose defaults.
 const UPGRADES: Array[Dictionary] = [
 	{
-		"id": "engine_stage1", "name": "Stage 1 Engine Kit", "slot": "engine",
-		"tier": 1, "consumable": false, "effect": {"peak_torque_mult": 1.10},
+		"id": "turbo_small", "name": "Small Turbo", "slot": "engine", "tier": 1, "consumable": false,
+		"effect": {"install_turbo": {
+			"turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3, "turbo_omega_ref": 10000.0,
+			"turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6,
+			"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
+		}},
 	},
 	{
-		"id": "engine_stage2", "name": "Stage 2 Engine Kit", "slot": "engine",
-		"tier": 3, "consumable": false, "effect": {"peak_torque_mult": 1.25},
+		"id": "turbo_large", "name": "Big Turbo", "slot": "engine", "tier": 3, "consumable": false,
+		"effect": {"install_turbo": {
+			"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
+			"turbo_drive_gain": 0.028, "turbo_drag_coef": 1.0e-6,
+			"engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
+		}},
 	},
 	{
 		"id": "aero_kit", "name": "Aero Kit", "slot": "aero",
@@ -109,8 +117,10 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 		for key in effect:
 			var val: Variant = effect[key]
 			match key:
-				"peak_torque_mult":
-					cfg.peak_torque *= float(val)
+				"install_turbo":
+					cfg.turbo_enabled = true
+					for tkey in (val as Dictionary):
+						cfg.set(tkey, (val as Dictionary)[tkey])
 				"brake_torque_mult":
 					cfg.brake_torque *= float(val)
 				"mass_mult":
@@ -155,15 +165,20 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 		var stock_eng := EngineLibrary.by_id(stock_id)
 		out["mass"] = EngineSwap.recompute_mass(
 			float(out["mass"]), float(stock_eng.get("mass", 0.0)), float(eng.get("mass", 0.0)))
+	# Resolve the turbo boost gain: the stock engine's, overridden by an installed
+	# turbo upgrade. Rated "at peak boost" — the displayed HP + power-to-weight
+	# eligibility reflect the full boosted torque (features/forced-induction.md).
+	var boost_gain := float(eng.get("turbo_boost_gain", 0.0))
 	for item_id in enabled_upgrades(owned_car):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:
 			match key:
-				"peak_torque_mult":
-					out["peak_torque"] = float(out.get("peak_torque", 0.0)) * float(effect[key])
 				"mass_mult":
 					out["mass"] = float(out.get("mass", 0.0)) * float(effect[key])
-	# Detune scales the torque feeding power-to-weight, after the engine kits.
+				"install_turbo":
+					boost_gain = float((effect[key] as Dictionary).get("turbo_boost_gain", boost_gain))
+	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + boost_gain)
+	# Detune scales the torque feeding power-to-weight, after the boost rating.
 	var detune := clampf(float(owned_car.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
 	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * detune
 	return out

@@ -34,6 +34,18 @@ const DC_BLOCK_R := 0.995
 const VOICE_TABLE_SIZE := 2048  # phase resolution of one crank cycle
 const VOICE_LOAD_TABLES := 8    # load (throttle) steps the bank is baked at
 
+const WHISTLE_TABLE_SIZE := 1024
+# Internal headroom scales for the turbo/supercharger layers, so a gain of 1.0 sits
+# subordinate to the engine note rather than dwarfing it. The whistle is now
+# band-pass-filtered noise (lower RMS than a raw sine), so it gets a higher level
+# than the tonal supercharger whine.
+const TURBO_WHISTLE_LEVEL := 0.5  # filtered-noise spool whistle
+const TURBO_TONE_LEVEL := 0.12    # tonal supercharger whine (wavetable)
+# Cutoff (Hz) of the broadband air-rush layer blended under the resonant whine.
+const TURBO_AIR_LP_HZ := 1800.0
+const SUPERCHARGER_BELT_HZ_PER_RPM := 0.12  # whine pitch = rpm * this (belt ratio)
+const ANTILAG_BANG_INTERVAL := 0.08  # seconds between anti-lag bangs while coasting
+
 var _mix_rate: float
 var _firing_phases: Array[float]
 var _harmonics: int
@@ -59,6 +71,34 @@ var _dc_x_prev := 0.0  # DC-blocker state: previous input sample
 var _dc_y_prev := 0.0  # DC-blocker state: previous output sample
 var _rng := RandomNumberGenerator.new()
 var _voice_bank: Array[PackedFloat32Array] = []  # [VOICE_LOAD_TABLES] of [VOICE_TABLE_SIZE]
+var _turbo_whistle_gain := 0.0
+# Turbo whistle = resonant band-pass-filtered noise. Sweep range + resonance + the
+# broadband air-rush blend, cached from config; the band-pass is a TPT/Cytomic
+# state-variable filter (unconditionally stable to any centre freq), its
+# coefficients recomputed once per fill() and its two integrator states below.
+var _turbo_whistle_freq_min := 700.0
+var _turbo_whistle_freq_max := 5000.0
+var _turbo_whistle_q := 3.5
+var _turbo_air_mix := 0.45
+var _svf_ic1 := 0.0  # SVF integrator state 1
+var _svf_ic2 := 0.0  # SVF integrator state 2
+var _air_lp := 0.0  # air-rush one-pole low-pass state
+var _air_lp_coeff := 0.0  # air-rush LP coefficient (fixed cutoff, set at init)
+var _turbo_bov_gain := 0.0
+var _bov_decay := 0.0  # per-sample decay factor for the blow-off burst (from decay_ms)
+var _bov_flutter_amount := 0.0  # LFO depth over the burst (0 = smooth, 1 = full-depth stutter)
+var _bov_flutter_hz := 20.0  # flutter LFO frequency
+var _bov_flutter_phase := 0.0  # LFO phase, reset on each burst trigger
+var _turbo_antilag_bang_gain := 0.0
+var _antilag_decay := 0.0  # per-sample decay factor for the anti-lag bang (from decay_ms)
+var _supercharger := false
+var _supercharger_whine_gain := 0.0
+var _whistle_table := PackedFloat32Array()  # single-cycle whine tone (supercharger), baked once
+var _whine_phase := 0.0
+var _bov_env := 0.0  # decaying blow-off burst amplitude
+var _antilag_env := 0.0  # decaying anti-lag bang amplitude
+var _antilag_timer := 0.0  # spacing between anti-lag bangs while coasting on boost
+var _prev_bov := false  # edge-detect the blow-off event
 
 
 func _init(cfg: GameConfig, mix_rate: float) -> void:
@@ -75,11 +115,26 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_crackle = cfg.engine_limiter_crackle
 	_soft_clip_drive = maxf(cfg.engine_soft_clip_drive, 0.001)  # >0; avoid /0-ish curves
 	_soft_clip_post_gain = cfg.engine_soft_clip_post_gain
+	_turbo_whistle_gain = cfg.engine_turbo_whistle_gain
+	_turbo_whistle_freq_min = cfg.engine_turbo_whistle_freq_min
+	_turbo_whistle_freq_max = cfg.engine_turbo_whistle_freq_max
+	_turbo_whistle_q = maxf(cfg.engine_turbo_whistle_q, 0.5)
+	_turbo_air_mix = clampf(cfg.engine_turbo_air_mix, 0.0, 1.0)
+	_air_lp_coeff = 1.0 - exp(-TAU * TURBO_AIR_LP_HZ / _mix_rate)
+	_turbo_bov_gain = cfg.engine_turbo_bov_gain
+	_bov_decay = _decay_factor(cfg.engine_turbo_bov_decay_ms)
+	_bov_flutter_amount = clampf(cfg.engine_turbo_bov_flutter_amount, 0.0, 1.0)
+	_bov_flutter_hz = cfg.engine_turbo_bov_flutter_hz
+	_turbo_antilag_bang_gain = cfg.engine_turbo_antilag_bang_gain
+	_antilag_decay = _decay_factor(cfg.engine_turbo_antilag_decay_ms)
+	_supercharger = cfg.supercharger_enabled
+	_supercharger_whine_gain = cfg.engine_supercharger_whine_gain
+	_build_whistle_table()
 	_rng.seed = 1  # deterministic for tests
 	_build_voice_bank()
 
 
-func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false) -> void:
+func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false, boost := 0.0, turbo_spin := 0.0, bov_event := false, antilag_active := false) -> void:
 	var dt := 1.0 / _mix_rate
 	var smooth := clampf(_smooth_rate * dt, 0.0, 1.0)
 	# A shift opens the clutch and cuts throttle, but the engine keeps spinning:
@@ -100,6 +155,34 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 	if crackle_cut and not _prev_crackle_cut:
 		_crackle_env = _crackle
 	_prev_crackle_cut = crackle_cut
+	# Going back on the throttle re-pressurizes the manifold and shuts the dump
+	# valve, so kill any ringing BOV tail immediately. But NOT mid-shift: during a
+	# shift the throttle is cut regardless of the driver's input (shift_cut), so a
+	# held throttle there must not silence the shift's own blow-off.
+	if throttle > 0.1 and not shift_cut:
+		_bov_env = 0.0
+	# Scale the burst by how much boost was being run: a full-boost lift dumps the
+	# loudest "pshhh", a partial-spool lift a softer one.
+	if bov_event and not _prev_bov:
+		_bov_env = _turbo_bov_gain * clampf(boost, 0.0, 1.0)
+		_bov_flutter_phase = 0.0  # start each burst's flutter from the same point
+	_prev_bov = bov_event
+	# Turbo whistle band-pass coefficients — computed ONCE per buffer (boost/turbo_spin
+	# are constant across a fill()), so the per-sample loop is just the cheap SVF
+	# recurrence with no transcendental. TPT/Cytomic SVF: unconditionally stable at any
+	# centre frequency. Centre freq sweeps freq_min→freq_max with shaft speed.
+	var whistle_active := _turbo_whistle_gain != 0.0 and boost > 0.0
+	var svf_a1 := 0.0
+	var svf_a2 := 0.0
+	var svf_a3 := 0.0
+	var svf_k := 0.0
+	if whistle_active:
+		var fc := lerpf(_turbo_whistle_freq_min, _turbo_whistle_freq_max, clampf(turbo_spin, 0.0, 1.0))
+		var g := tan(PI * fc / _mix_rate)
+		svf_k = 1.0 / _turbo_whistle_q
+		svf_a1 = 1.0 / (1.0 + g * (g + svf_k))
+		svf_a2 = g * svf_a1
+		svf_a3 = g * svf_a2
 	for i in range(n_frames):
 		_sm_rpm = lerpf(_sm_rpm, rpm, smooth)
 		_sm_throttle = lerpf(_sm_throttle, target_throttle, smooth)
@@ -122,6 +205,42 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 		var noise := (_rng.randf() * 2.0 - 1.0) * _noise_level * (0.2 + 0.8 * _sm_throttle)
 		# Exhaust crackle rides on top of the steady noise floor as a decaying burst.
 		noise += (_rng.randf() * 2.0 - 1.0) * _crackle_env
+		# Turbo spool: resonant band-pass-filtered NOISE (centre freq tracks shaft
+		# speed) blended with a broadband air-rush layer — reads as airflow, not a
+		# pure tone. White noise → TPT SVF band-pass (v1), normalized by k so Q sets
+		# tone not level; air rush is the same noise one-pole low-passed.
+		if whistle_active:
+			var wn := _rng.randf() * 2.0 - 1.0
+			var v3 := wn - _svf_ic2
+			var v1 := svf_a1 * _svf_ic1 + svf_a2 * v3
+			var v2 := _svf_ic2 + svf_a2 * _svf_ic1 + svf_a3 * v3
+			_svf_ic1 = 2.0 * v1 - _svf_ic1
+			_svf_ic2 = 2.0 * v2 - _svf_ic2
+			_air_lp += _air_lp_coeff * (wn - _air_lp)
+			var spool := lerpf(v1 * svf_k, _air_lp, _turbo_air_mix)
+			voice += spool * boost * _turbo_whistle_gain * TURBO_WHISTLE_LEVEL
+		# Supercharger whine: pitch tracks engine rpm (belt-driven), always on.
+		if _supercharger and _supercharger_whine_gain != 0.0:
+			var whine_hz := _sm_rpm * SUPERCHARGER_BELT_HZ_PER_RPM
+			_whine_phase = fposmod(_whine_phase + whine_hz * dt, 1.0)
+			voice += _read_whistle(_whine_phase) * (0.3 + 0.7 * _sm_throttle) * _supercharger_whine_gain * TURBO_TONE_LEVEL
+		# Blow-off vent burst (decaying filtered noise), optionally fluttered by an
+		# LFO tremolo (the stuttering surge "brrrap"): the LFO scales the burst
+		# amplitude between (1 - amount) and 1 at _bov_flutter_hz.
+		_bov_env *= _bov_decay
+		var bov_lfo := 1.0
+		if _bov_flutter_amount > 0.0 and _bov_env > 0.0:
+			_bov_flutter_phase = fposmod(_bov_flutter_phase + _bov_flutter_hz * dt, 1.0)
+			bov_lfo = 1.0 - _bov_flutter_amount * (0.5 + 0.5 * sin(TAU * _bov_flutter_phase))
+		noise += (_rng.randf() * 2.0 - 1.0) * _bov_env * bov_lfo
+		# Anti-lag bangs: retrigger a short burst at intervals while coasting on boost.
+		if antilag_active:
+			_antilag_timer -= dt
+			if _antilag_timer <= 0.0:
+				_antilag_env = _turbo_antilag_bang_gain
+				_antilag_timer = ANTILAG_BANG_INTERVAL
+		_antilag_env *= _antilag_decay
+		noise += (_rng.randf() * 2.0 - 1.0) * _antilag_env
 		var env := lerpf(_idle_gain, 1.0, _sm_throttle) * cut
 		# DC-block the combined signal BEFORE the soft clipper (see DC_BLOCK_R) so
 		# the positive-biased voice is centred and overdrive swings both rails
@@ -160,6 +279,31 @@ func _build_voice_bank() -> void:
 		for i in range(VOICE_TABLE_SIZE):
 			table[i] = _voice(float(i) / float(VOICE_TABLE_SIZE), load_level)
 		_voice_bank.append(table)
+
+
+# Bake one cycle of the turbine tone (fundamental + a quieter octave) so the
+# per-sample whistle path is a couple of array reads, mirroring the voice bank.
+func _build_whistle_table() -> void:
+	_whistle_table.resize(WHISTLE_TABLE_SIZE)
+	for i in range(WHISTLE_TABLE_SIZE):
+		var ph := TAU * float(i) / float(WHISTLE_TABLE_SIZE)
+		_whistle_table[i] = 0.8 * sin(ph) + 0.2 * sin(2.0 * ph)
+
+
+# Read the whistle table at a normalized phase [0,1) with linear interpolation.
+func _read_whistle(phase: float) -> float:
+	var p := phase * float(WHISTLE_TABLE_SIZE)
+	var i0 := int(p) % WHISTLE_TABLE_SIZE
+	var i1 := (i0 + 1) % WHISTLE_TABLE_SIZE
+	return lerpf(_whistle_table[i0], _whistle_table[i1], p - floorf(p))
+
+
+# Convert a burst envelope decay TIME (ms) into the per-sample multiplicative decay
+# factor. decay_ms is the exponential time constant (time to fall to 1/e): after
+# that many ms the envelope has decayed by e. Guards a >=1-sample denominator.
+func _decay_factor(decay_ms: float) -> float:
+	var tau_samples := maxf(decay_ms / 1000.0 * _mix_rate, 1.0)
+	return exp(-1.0 / tau_samples)
 
 
 # Read the baked voice at (phase, load) with bilinear interpolation: linear in

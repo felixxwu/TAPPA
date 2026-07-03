@@ -420,3 +420,186 @@ func test_dc_blocker_keeps_overdriven_voice_audible() -> void:
 	ac = sqrt(ac / count)
 	assert_gt(ac, 0.2, "overdriven voice stays loud (AC content), not collapsed to DC silence")
 	assert_gt(ac, absf(mean), "output is AC-dominated, not pinned to a DC rail")
+
+
+func _turbo_synth() -> EngineAudioSynth:
+	var cfg := GameConfig.new()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	cfg.engine_noise_level = 0.0  # isolate the tonal turbo/supercharger layers
+	cfg.turbo_enabled = true
+	cfg.turbo_omega_ref = 12000.0
+	cfg.engine_turbo_whistle_gain = 0.5
+	cfg.engine_turbo_bov_gain = 0.5
+	cfg.engine_turbo_antilag_bang_gain = 0.5
+	return EngineAudioSynth.new(cfg, MIX_RATE)
+
+
+func _energy(buf: PackedVector2Array) -> float:
+	var e := 0.0
+	for s in buf:
+		e += s.x * s.x
+	return e
+
+
+func _zero_crossings(buf: PackedVector2Array) -> int:
+	var z := 0
+	for i in range(1, buf.size()):
+		if (buf[i].x >= 0.0) != (buf[i - 1].x >= 0.0):
+			z += 1
+	return z
+
+
+func test_whistle_adds_energy_with_boost() -> void:
+	var synth := _turbo_synth()
+	var quiet := PackedVector2Array(); quiet.resize(1024)
+	var loud := PackedVector2Array(); loud.resize(1024)
+	# Same rpm/throttle; only boost + shaft speed differ.
+	synth.fill(quiet, 3000.0, 1.0, false, 1024, false, false, 0.0, 0.0)
+	synth.fill(loud, 3000.0, 1.0, false, 1024, false, false, 0.9, 0.9)
+	assert_gt(_energy(loud), _energy(quiet), "spool whistle adds energy as boost rises")
+
+
+func test_whistle_pitch_rises_with_shaft_speed() -> void:
+	# The spool is band-pass-filtered noise whose centre frequency sweeps UP with
+	# shaft speed, so faster spin => higher spectral content => more zero-crossings.
+	# Mute the firing voice so the whistle dominates the buffer, isolating the cue.
+	var mk := func() -> EngineAudioSynth:
+		var cfg := GameConfig.new()
+		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+		cfg.engine_noise_level = 0.0
+		cfg.engine_volume_db = -80.0  # mute the firing voice; isolate the whistle
+		cfg.turbo_enabled = true
+		cfg.turbo_omega_ref = 12000.0
+		cfg.engine_turbo_whistle_gain = 0.9
+		cfg.engine_turbo_air_mix = 0.0  # pure resonant band = sharpest pitch cue
+		cfg.engine_turbo_whistle_freq_min = 600.0
+		cfg.engine_turbo_whistle_freq_max = 6000.0
+		return EngineAudioSynth.new(cfg, MIX_RATE)
+	var slow := PackedVector2Array(); slow.resize(4096)
+	var fast := PackedVector2Array(); fast.resize(4096)
+	# Fresh synths (same seed) so only the shaft speed differs between the two.
+	mk.call().fill(slow, 3000.0, 1.0, false, 4096, false, false, 1.0, 0.1)
+	mk.call().fill(fast, 3000.0, 1.0, false, 4096, false, false, 1.0, 1.0)
+	assert_gt(_zero_crossings(fast), _zero_crossings(slow),
+		"spool centre frequency (zero-crossing rate) rises with shaft speed")
+
+
+func test_bov_event_produces_a_burst() -> void:
+	var synth := _turbo_synth()
+	var none := PackedVector2Array(); none.resize(1024)
+	var vent := PackedVector2Array(); vent.resize(1024)
+	synth.fill(none, 3000.0, 0.0, false, 1024, false, false, 0.5, 0.5, false)
+	synth.fill(vent, 3000.0, 0.0, false, 1024, false, false, 0.5, 0.5, true)
+	assert_gt(_energy(vent), _energy(none), "a blow-off event adds a transient burst")
+
+
+func test_bov_burst_scales_with_boost() -> void:
+	# The burst amplitude tracks the boost being run at the lift: a full-boost lift
+	# is louder than a partial-spool lift (same gain, same decay, same trigger).
+	var full := _turbo_synth()
+	var part := _turbo_synth()
+	var loud := PackedVector2Array(); loud.resize(1024)
+	var soft := PackedVector2Array(); soft.resize(1024)
+	full.fill(loud, 3000.0, 0.0, false, 1024, false, false, 1.0, 1.0, true)
+	part.fill(soft, 3000.0, 0.0, false, 1024, false, false, 0.4, 0.4, true)
+	assert_gt(_energy(loud), _energy(soft), "the blow-off is loudest at full boost")
+
+
+func _long_bov_synth() -> EngineAudioSynth:
+	# Isolate the BOV tail: muted voice, no whistle/noise, a long decay so a tail
+	# survives across buffers unless something kills it.
+	var cfg := GameConfig.new()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	cfg.engine_noise_level = 0.0
+	cfg.engine_volume_db = -80.0
+	cfg.turbo_enabled = true
+	cfg.engine_turbo_bov_gain = 0.6
+	cfg.engine_turbo_whistle_gain = 0.0
+	cfg.engine_turbo_bov_decay_ms = 200.0
+	return EngineAudioSynth.new(cfg, MIX_RATE)
+
+
+func test_throttle_application_kills_bov_tail() -> void:
+	var synth := _long_bov_synth()
+	var ring := PackedVector2Array(); ring.resize(1024)
+	var killed := PackedVector2Array(); killed.resize(1024)
+	synth.fill(ring, 3000.0, 0.0, false, 1024, false, false, 0.8, 0.8, true)  # fire, ring off-throttle
+	# Back on throttle (not shifting): the ringing tail must be cut immediately.
+	synth.fill(killed, 3000.0, 1.0, false, 1024, false, false, 0.8, 0.8, false)
+	assert_gt(_energy(ring), 0.0, "precondition: the burst is ringing")
+	assert_lt(_energy(killed), _energy(ring) * 0.05, "throttle application kills the BOV tail")
+
+
+func test_bov_tail_survives_throttle_held_during_shift() -> void:
+	# During a shift the throttle is cut regardless of input, so a held throttle
+	# must NOT silence the shift's blow-off (only a genuine post-shift re-application does).
+	var held := _long_bov_synth()
+	var released := _long_bov_synth()
+	var during_shift := PackedVector2Array(); during_shift.resize(1024)
+	var on_throttle := PackedVector2Array(); on_throttle.resize(1024)
+	held.fill(during_shift, 3000.0, 0.0, false, 1024, false, false, 0.8, 0.8, true)  # fire
+	released.fill(on_throttle, 3000.0, 0.0, false, 1024, false, false, 0.8, 0.8, true)  # fire (same)
+	# Next buffer: throttle held, but one is mid-shift (shift_cut) and one is not.
+	held.fill(during_shift, 3000.0, 1.0, true, 1024, false, false, 0.8, 0.8, false)
+	released.fill(on_throttle, 3000.0, 1.0, false, 1024, false, false, 0.8, 0.8, false)
+	assert_gt(_energy(during_shift), _energy(on_throttle),
+		"a held throttle mid-shift keeps the blow-off; back on throttle (no shift) kills it")
+
+
+func test_bov_flutter_modulates_the_burst() -> void:
+	# The flutter LFO scales the burst between (1 - amount) and 1, so its mean
+	# amplitude — and thus total energy over the tail — drops when flutter is on.
+	var mk := func(amount: float) -> EngineAudioSynth:
+		var cfg := GameConfig.new()
+		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+		cfg.engine_noise_level = 0.0
+		cfg.engine_volume_db = -80.0
+		cfg.turbo_enabled = true
+		cfg.engine_turbo_bov_gain = 0.6
+		cfg.engine_turbo_whistle_gain = 0.0
+		cfg.engine_turbo_bov_decay_ms = 200.0
+		cfg.engine_turbo_bov_flutter_amount = amount
+		cfg.engine_turbo_bov_flutter_hz = 30.0
+		return EngineAudioSynth.new(cfg, MIX_RATE)
+	var smooth := PackedVector2Array(); smooth.resize(2048)
+	var fluttered := PackedVector2Array(); fluttered.resize(2048)
+	mk.call(0.0).fill(smooth, 3000.0, 0.0, false, 2048, false, false, 0.9, 0.9, true)
+	mk.call(0.9).fill(fluttered, 3000.0, 0.0, false, 2048, false, false, 0.9, 0.9, true)
+	assert_gt(_energy(smooth), 0.0, "precondition: the burst is audible")
+	assert_lt(_energy(fluttered), _energy(smooth),
+		"flutter chops the burst amplitude, lowering its mean energy")
+
+
+func test_bov_decay_ms_shapes_the_tail() -> void:
+	# A longer decay time rings out longer, so the burst carries more total energy
+	# over the buffer than a short decay (same gain, same trigger).
+	var mk := func(decay_ms: float) -> EngineAudioSynth:
+		var cfg := GameConfig.new()
+		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+		cfg.engine_noise_level = 0.0
+		cfg.engine_volume_db = -80.0  # mute the voice; isolate the burst
+		cfg.turbo_enabled = true
+		cfg.engine_turbo_bov_gain = 0.6
+		cfg.engine_turbo_bov_decay_ms = decay_ms
+		return EngineAudioSynth.new(cfg, MIX_RATE)
+	var short_tail := PackedVector2Array(); short_tail.resize(4096)
+	var long_tail := PackedVector2Array(); long_tail.resize(4096)
+	mk.call(5.0).fill(short_tail, 3000.0, 0.0, false, 4096, false, false, 0.5, 0.5, true)
+	mk.call(120.0).fill(long_tail, 3000.0, 0.0, false, 4096, false, false, 0.5, 0.5, true)
+	assert_gt(_energy(long_tail), _energy(short_tail),
+		"a longer bov_decay_ms rings the burst out longer (more energy)")
+
+
+func test_supercharger_whine_only_when_enabled() -> void:
+	var mk := func(blown: bool) -> EngineAudioSynth:
+		var cfg := GameConfig.new()
+		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+		cfg.engine_noise_level = 0.0
+		cfg.supercharger_enabled = blown
+		cfg.engine_supercharger_whine_gain = 0.6
+		return EngineAudioSynth.new(cfg, MIX_RATE)
+	var plain := PackedVector2Array(); plain.resize(1024)
+	var blown := PackedVector2Array(); blown.resize(1024)
+	mk.call(false).fill(plain, 4000.0, 0.8, false, 1024)
+	mk.call(true).fill(blown, 4000.0, 0.8, false, 1024)
+	assert_gt(_energy(blown), _energy(plain), "a supercharged engine adds a whine layer")

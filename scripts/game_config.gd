@@ -203,6 +203,32 @@ var peak_torque_rpm := 4500.0
 ## Downshift dead band: thresholds sit this fraction below each upshift point,
 ## preventing the gearbox from hunting between gears.
 @export_range(0.0, 1.0) var shift_hysteresis := 0.15
+# --- Forced induction (features/forced-induction.md) ---
+## Whether this engine has a turbocharger fitted (stock or via a turbo upgrade).
+## When false the turbo sim is skipped and delivered torque is the NA figure.
+@export var turbo_enabled := false
+## Rotational inertia of the turbo shaft (kg·m²) — the PHYSICAL source of lag.
+## Bigger turbo = larger = spools slower. Must be > 0. Balance placeholder.
+@export var turbo_inertia := 1.0e-2
+## Shaft speed (rad/s) at which boost reaches its full value (1.0). Larger turbos
+## use a higher value (need more speed/flow for full boost), so they come on higher.
+@export var turbo_omega_ref := 12000.0
+## Torque multiplier at full boost: delivered = na_torque * (1 + boost * this).
+## "How much extra power". 0 = no boost (NA). Balance placeholder.
+@export var turbo_boost_gain := 0.0
+## Couples exhaust flow (∝ throttle * rpm) into shaft drive torque — how hard the
+## exhaust spins the wheel up. Balance placeholder (steady-state: drive_gain*throttle*rpm = drag_coef*omega²).
+@export var turbo_drive_gain := 0.024
+## Bearing/aero drag on the shaft (∝ omega²): sets the steady-state speed for a
+## given flow and the off-throttle bleed-down rate. Balance placeholder.
+@export var turbo_drag_coef := 1.0e-6
+## Anti-lag: keep the shaft spinning off-throttle (instant response) + exhaust bangs.
+@export var turbo_antilag := false
+## Residual exhaust drive injected off-throttle when anti-lag is on (keeps omega up).
+@export var turbo_antilag_drive := 0.0
+## Whether this engine has a belt-driven supercharger. Audio-only: its power gain
+## is already baked into the engine's authored peak_torque, so the sim is unchanged.
+@export var supercharger_enabled := false
 # --- Engine audio ---
 ## Master level of the engine voice, in decibels. Per-car, set from CarLibrary's
 ## volume_db; this value is the fallback default for cars that omit the key.
@@ -242,6 +268,40 @@ var peak_torque_rpm := 4500.0
 ## output level independently of the drive amount. 1.0 = transparent; > 1 is
 ## caught by the clamp backstop.
 @export_range(0.0, 4.0) var engine_soft_clip_post_gain := 1.0
+## Mix level of the turbo spool whistle (0 = off). Rides on top of the engine note,
+## amplitude tracking boost. Negative values invert the layer's phase (subtractive mix).
+@export_range(-1.0, 1.0) var engine_turbo_whistle_gain := 0.0
+## Turbo spool CHARACTER. The whistle is resonant band-pass-FILTERED NOISE (real
+## turbos are air rushing through the compressor, not a pure tone), whose centre
+## frequency (Hz) sweeps from _freq_min (barely spooling) to _freq_max (full boost)
+## with the turbo shaft speed. See features/forced-induction.md.
+@export_range(100.0, 4000.0) var engine_turbo_whistle_freq_min := 350.0
+@export_range(1000.0, 9000.0) var engine_turbo_whistle_freq_max := 2500.0
+## Filter resonance: low Q = airier / breathier rush; high Q = a more tonal whistle.
+@export_range(0.5, 12.0) var engine_turbo_whistle_q := 0.7
+## Blend of the broadband air-rush layer under the resonant whine: 0 = pure resonant
+## whine, 1 = mostly airflow "whoosh". Keeps it from sounding like a test tone.
+@export_range(0.0, 1.0) var engine_turbo_air_mix := 0.45
+## Amplitude of the blow-off / dump-valve "pshhh" burst on a throttle lift while boosted.
+@export_range(-1.0, 1.0) var engine_turbo_bov_gain := 0.0
+## Decay time (ms) of the blow-off burst's envelope — how long the "pshhh" tail
+## rings out. Instant attack, exponential decay. Independent of the anti-lag bang.
+@export_range(1.0, 500.0) var engine_turbo_bov_decay_ms := 300.0
+## Blow-off FLUTTER: an LFO (tremolo) over the burst, for the stuttering
+## "brrrap" flutter/surge character. 0 = smooth "pshhh"; 1 = full depth (chops
+## the burst to silence at each LFO trough).
+@export_range(0.0, 1.0) var engine_turbo_bov_flutter_amount := 0.5
+## Flutter LFO frequency (Hz) — how fast the burst stutters. ~10–40 Hz reads as flutter.
+@export_range(1.0, 200.0) var engine_turbo_bov_flutter_hz := 15.0
+## Amplitude of the anti-lag exhaust bang burst (its OWN noise burst, independent of
+## the limiter crackle, so it mixes separately).
+@export_range(-1.0, 1.0) var engine_turbo_antilag_bang_gain := 0.0
+## Decay time (ms) of each anti-lag bang's envelope — shorter = a sharper crack,
+## longer = a fatter thud. Independent of the blow-off burst.
+@export_range(1.0, 500.0) var engine_turbo_antilag_decay_ms := 12.0
+## Mix level of the belt-driven supercharger whine (0 = off). Pitch tracks engine rpm.
+## Negative values invert the layer's phase (subtractive mix).
+@export_range(-1.0, 1.0) var engine_supercharger_whine_gain := 0.0
 @export_enum("RWD", "AWD", "FWD") var drive_mode := 0  # initial layout (cycle in-game with Y)
 # AWD uses a fully locked centre diff (front + rear share one driveline speed),
 # so there is no torque-split knob.

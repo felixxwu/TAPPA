@@ -49,5 +49,13 @@ func _process(_delta: float) -> void:
 		_scratch.resize(n)
 	# fuel_cut (limiter OR damage misfire) ducks the note; the crackle burst is
 	# limiter-only (engine.limiting) — a damaged engine sputters without the pop.
-	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting)
+	# turbo_spin normalizes the shaft speed so the whistle pitch tracks it; boost/
+	# bov_event/antilag_active drive the whistle amplitude and the transient bursts.
+	var cfg: GameConfig = Config.data
+	var turbo_spin := engine.omega_turbo / cfg.turbo_omega_ref if cfg.turbo_omega_ref > 0.0 else 0.0
+	# bov_event is latched by the sim across the physics substeps; consume it here so
+	# each blow-off fires exactly once and re-arms (the synth edge-detects it).
+	var bov := engine.bov_event
+	engine.bov_event = false
+	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active)
 	_playback.push_buffer(_scratch)

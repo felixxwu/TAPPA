@@ -45,16 +45,17 @@ func test_effect_application_multiplies_and_adds_on_baseline() -> void:
 	cfg.mass = 1000.0
 	cfg.downforce_front = 0.0
 	cfg.downforce_rear = 0.0
-	var car := {"installed_upgrades": ["engine_stage1", "brake_kit", "weight_reduction", "aero_kit"]}
+	var car := {"installed_upgrades": ["turbo_large", "brake_kit", "weight_reduction", "aero_kit"]}
 	# Expected values are derived from each upgrade's configured effect, so this tests
 	# the apply PIPELINE (right field, multiply vs add) without pinning the tunable
 	# multipliers/amounts — retuning a kit's strength won't break the test.
-	var eng: Dictionary = UpgradeLibrary.by_id("engine_stage1")["effect"]
+	var turbo: Dictionary = UpgradeLibrary.by_id("turbo_large")["effect"]["install_turbo"]
 	var brk: Dictionary = UpgradeLibrary.by_id("brake_kit")["effect"]
 	var wgt: Dictionary = UpgradeLibrary.by_id("weight_reduction")["effect"]
 	var aero: Dictionary = UpgradeLibrary.by_id("aero_kit")["effect"]
 	UpgradeLibrary.apply(car, cfg)
-	assert_almost_eq(cfg.peak_torque, 100.0 * float(eng["peak_torque_mult"]), 0.001, "engine kit multiplies torque")
+	assert_true(cfg.turbo_enabled, "installing a turbo enables it on the config")
+	assert_almost_eq(cfg.turbo_boost_gain, float(turbo["turbo_boost_gain"]), 0.001, "turbo kit writes its boost gain")
 	assert_almost_eq(cfg.brake_torque, 1000.0 * float(brk["brake_torque_mult"]), 0.001, "brake kit multiplies brake torque")
 	assert_almost_eq(cfg.mass, 1000.0 * float(wgt["mass_mult"]), 0.001, "weight reduction multiplies mass")
 	assert_almost_eq(cfg.downforce_front, float(aero["downforce_front"]), 0.001, "aero kit adds front downforce")
@@ -66,12 +67,12 @@ func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
 	# so the derived power-to-weight rises (and never mutate the source entry).
 	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0}
 	var base_pw := CarLibrary.power_to_weight(entry)
-	var car := {"installed_upgrades": ["engine_stage1", "weight_reduction"]}
+	var car := {"installed_upgrades": ["turbo_large", "weight_reduction"]}
 	var eff := UpgradeLibrary.effective_meta(car, entry)
-	var eng_mult: float = float(UpgradeLibrary.by_id("engine_stage1")["effect"]["peak_torque_mult"])
+	var boost_gain: float = float(UpgradeLibrary.by_id("turbo_large")["effect"]["install_turbo"]["turbo_boost_gain"])
 	var mass_mult: float = float(UpgradeLibrary.by_id("weight_reduction")["effect"]["mass_mult"])
 	assert_almost_eq(float(eff["mass"]), 1000.0 * mass_mult, 0.001, "weight reduction lightens the meta mass")
-	assert_almost_eq(float(eff["peak_torque"]), 200.0 * eng_mult, 0.001, "engine kit raises the meta torque")
+	assert_almost_eq(float(eff["peak_torque"]), 200.0 * (1.0 + boost_gain), 0.001, "turbo rates the meta torque at peak boost")
 	assert_gt(CarLibrary.power_to_weight(eff), base_pw, "upgrades raise the effective power-to-weight")
 	assert_almost_eq(float(entry["mass"]), 1000.0, 0.001, "source entry is left untouched")
 	# No upgrades is a faithful copy.
@@ -127,13 +128,14 @@ func test_disabled_upgrades_are_inert_everywhere() -> void:
 	# A part toggled off in the upgrades menu stays fitted but contributes nothing:
 	# no config effect, no effective-meta shift, no tuning gate.
 	var car := {
-		"installed_upgrades": ["engine_stage1", "aero_kit", "brake_kit"],
-		"disabled_upgrades": ["engine_stage1", "aero_kit", "brake_kit"],
+		"installed_upgrades": ["turbo_large", "aero_kit", "brake_kit"],
+		"disabled_upgrades": ["turbo_large", "aero_kit", "brake_kit"],
 	}
 	var cfg := GameConfig.new()
 	cfg.peak_torque = 100.0
 	UpgradeLibrary.apply(car, cfg)
-	assert_almost_eq(cfg.peak_torque, 100.0, 0.001, "a disabled engine kit leaves the config untouched")
+	assert_almost_eq(cfg.peak_torque, 100.0, 0.001, "a disabled turbo leaves the config untouched")
+	assert_false(cfg.turbo_enabled, "a disabled turbo doesn't enable itself on the config")
 	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0}
 	var eff := UpgradeLibrary.effective_meta(car, entry)
 	assert_almost_eq(float(eff["peak_torque"]), 200.0, 0.001, "a disabled part doesn't shift effective stats")
@@ -144,3 +146,35 @@ func test_disabled_upgrades_are_inert_everywhere() -> void:
 	car["disabled_upgrades"] = []
 	assert_eq(UpgradeLibrary.enabled_upgrades(car).size(), 3, "clearing the toggles re-enables the parts")
 	assert_true(UpgradeLibrary.aero_tuning_unlocked(car), "a re-enabled aero kit unlocks aero tuning again")
+
+
+func test_turbo_upgrades_are_engine_slot_items() -> void:
+	assert_eq(UpgradeLibrary.slot_of("turbo_small"), "engine", "small turbo is an engine-slot item")
+	assert_eq(UpgradeLibrary.slot_of("turbo_large"), "engine", "large turbo is an engine-slot item")
+	# The old flat-multiplier stages are gone.
+	assert_true(UpgradeLibrary.by_id("engine_stage1").is_empty(), "Stage 1 kit removed")
+	assert_true(UpgradeLibrary.by_id("engine_stage2").is_empty(), "Stage 2 kit removed")
+
+
+func test_no_supercharger_upgrade_exists() -> void:
+	# Superchargers are intrinsic engine properties, never an upgrade.
+	for item in UpgradeLibrary.UPGRADES:
+		assert_false(String(item["id"]).contains("supercharger"), "no supercharger in the upgrade catalogue")
+
+
+func test_install_turbo_writes_turbo_fields_onto_config() -> void:
+	var cfg := GameConfig.new()
+	assert_false(cfg.turbo_enabled, "config starts NA")
+	var owned := {"installed_upgrades": ["turbo_large"], "disabled_upgrades": []}
+	UpgradeLibrary.apply(owned, cfg)
+	assert_true(cfg.turbo_enabled, "installing a turbo enables it on the config")
+	assert_gt(cfg.turbo_boost_gain, 0.0, "the turbo upgrade sets a boost gain")
+
+
+func test_effective_meta_rates_turbo_at_peak_boost() -> void:
+	# Synthetic meta carrying its own peak_torque so we don't depend on the catalogue.
+	var base := {"peak_torque": 300.0, "redline": 7000.0, "mass": 1200.0, "engine": ""}
+	var na := UpgradeLibrary.effective_meta({"installed_upgrades": [], "disabled_upgrades": []}, base)
+	var turbo := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large"], "disabled_upgrades": []}, base)
+	assert_gt(float(turbo["peak_torque"]), float(na["peak_torque"]),
+		"a fitted turbo rates the car at a higher (boosted) peak torque")

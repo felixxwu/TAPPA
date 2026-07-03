@@ -7,6 +7,11 @@ extends CanvasLayer
 @onready var _speed_label: Label = $SpeedLabel
 @onready var _gear_label: Label = $GearLabel
 @onready var _rpm_label: Label = $RPMLabel
+# Turbo boost readout, part of the H debug overlay. Built in code (no scene node)
+# and stacked under the rpm/gear labels; shows the live boost pressure as a
+# percentage of full boost, or "N/A" on a naturally-aspirated engine.
+var _boost_label: Label
+var _last_boost_text := ""
 # Stage flow widgets, driven by StageManager (todo/stage-start-and-end.md):
 # the big centered 3·2·1·GO, the small top-right run timer, and the placeholder
 # stage-complete panel. Hidden until the stage flow calls the methods below.
@@ -62,6 +67,7 @@ func _ready() -> void:
 	_speed_label.visible = false
 	_gear_label.visible = false
 	_rpm_label.visible = false
+	_build_boost_label()
 	# Stage widgets start hidden; StageManager reveals them at the right moments.
 	_countdown_label.visible = false
 	_elapsed_label.visible = false
@@ -84,6 +90,29 @@ func _ready() -> void:
 # Build the top-centre pace-popup label in code (it has no scene node). Anchored to
 # the top centre, sitting just below the run timer, and
 # hidden until the StageManager pulses it via show_stage_delta().
+# Build the debug boost readout in code (no scene node), stacked top-left just
+# below the rpm/gear labels, matching their font size. Hidden until H reveals it.
+func _build_boost_label() -> void:
+	_boost_label = Label.new()
+	_boost_label.name = "BoostLabel"
+	_boost_label.offset_left = 8.0
+	_boost_label.offset_top = 48.0
+	_boost_label.offset_right = 128.0
+	_boost_label.offset_bottom = 68.0
+	_boost_label.add_theme_font_size_override("font_size", 14)
+	_boost_label.visible = false
+	add_child(_boost_label)
+
+
+# Debug boost readout text: the live boost as a percentage of full boost, or
+# "N/A" on a naturally-aspirated engine (no turbo fitted). Pure so it's unit-
+# testable without the HUD scene.
+static func boost_text(turbo_enabled: bool, boost: float) -> String:
+	if not turbo_enabled:
+		return "Boost N/A"
+	return "Boost %d%%" % roundi(clampf(boost, 0.0, 1.0) * 100.0)
+
+
 func _build_stage_delta_label() -> void:
 	_stage_delta_label = Label.new()
 	_stage_delta_label.name = "StageDeltaLabel"
@@ -109,6 +138,7 @@ func _process(_delta: float) -> void:
 		_speed_label.visible = _debug_readout
 		_gear_label.visible = _debug_readout
 		_rpm_label.visible = _debug_readout
+		_boost_label.visible = _debug_readout
 	var engine: EngineSim = car.drivetrain.engine
 	var speed := roundi(car.linear_velocity.length() * 3.6)
 	if speed != _last_speed:
@@ -121,6 +151,10 @@ func _process(_delta: float) -> void:
 	if rpm != _last_rpm:
 		_last_rpm = rpm
 		_rpm_label.text = "%d rpm" % rpm
+	var boost_str := boost_text(Config.data.turbo_enabled, engine.boost)
+	if boost_str != _last_boost_text:
+		_last_boost_text = boost_str
+		_boost_label.text = boost_str
 	_update_damage(_delta)
 	# Fade the pace popup out after its on-screen time elapses.
 	if _stage_delta_left > 0.0:

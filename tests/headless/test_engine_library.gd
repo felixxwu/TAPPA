@@ -72,6 +72,32 @@ func test_apply_writes_the_whole_profile_onto_config() -> void:
 	assert_almost_eq(cfg.shift_time, float(eng["shift_time"]), 0.001, "shift_time written")
 
 
+func test_apply_copies_forced_induction_fields() -> void:
+	# Synthetic engine dicts (not the shipped catalogue): a turbo engine and a plain NA one.
+	var cfg := GameConfig.new()
+	var turbo_engine := {
+		"layout": "i4", "redline_rpm": 7000.0, "peak_torque": 300.0, "peak_torque_rpm": 4000.0,
+		"engine_inertia": 0.15, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0,
+		"soft_clip_post_gain": 0.07,
+		"turbo_enabled": true, "turbo_boost_gain": 0.7, "turbo_inertia": 8.0e-6,
+		"engine_turbo_whistle_gain": 0.4,
+	}
+	EngineLibrary.apply(turbo_engine, cfg)
+	assert_true(cfg.turbo_enabled, "a turbo engine sets turbo_enabled")
+	assert_gt(cfg.turbo_boost_gain, 0.0, "turbo boost gain is copied through")
+	assert_gt(cfg.engine_turbo_whistle_gain, 0.0, "whistle gain is copied through")
+
+	var cfg2 := GameConfig.new()
+	var na_engine := {
+		"layout": "i4", "redline_rpm": 7000.0, "peak_torque": 200.0, "peak_torque_rpm": 4500.0,
+		"engine_inertia": 0.15, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0,
+		"soft_clip_post_gain": 0.07,
+	}
+	EngineLibrary.apply(na_engine, cfg2)
+	assert_false(cfg2.turbo_enabled, "an engine without turbo keys stays NA")
+	assert_false(cfg2.supercharger_enabled, "an engine without supercharger key stays unblown")
+
+
 func test_every_engine_has_a_positive_mass() -> void:
 	# Sanity guard only (not a value pin): the weight simulation divides/weights by
 	# engine mass, so each engine must carry a finite positive dry weight.

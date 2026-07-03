@@ -152,8 +152,8 @@ func test_installed_upgrades_change_rally_eligibility() -> void:
 	var car := {"mass": 1100.0, "peak_torque": 200.0, "redline": 6500.0,
 		"tire_compound": 1.0, "drive_mode": CarLibrary.RWD}
 	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": []}, car)
-	var powered := UpgradeLibrary.effective_meta({"installed_upgrades": ["engine_stage2"]}, car)
-	var maxed := UpgradeLibrary.effective_meta({"installed_upgrades": ["engine_stage2", "weight_reduction"]}, car)
+	var powered := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large"]}, car)
+	var maxed := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large", "weight_reduction"]}, car)
 	var pw_bare := CarLibrary.power_to_weight(bare) * RallyLibrary.KW_TO_HP
 	var pw_powered := CarLibrary.power_to_weight(powered) * RallyLibrary.KW_TO_HP
 	var pw_maxed := CarLibrary.power_to_weight(maxed) * RallyLibrary.KW_TO_HP

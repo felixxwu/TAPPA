@@ -13,7 +13,9 @@ On-screen readout plus two interactive mode buttons.
 | `GearLabel` | `R` / `N` / `1`–`5` | `engine.gear` via `_gear_text()` |
 | `RPMLabel` | `"<n> rpm"` | `engine.rpm()` |
 
-The `SpeedLabel` / `GearLabel` / `RPMLabel` trio is a **dev diagnostic**: hidden by
+The `SpeedLabel` / `GearLabel` / `RPMLabel` trio, plus a code-built `BoostLabel`
+(turbo boost as a percentage of full boost, or `Boost N/A` on a non-turbo engine —
+formatted by the pure `hud.gd::boost_text`), is a **dev diagnostic**: hidden by
 default and toggled with **H** (`toggle_debug_arrows`) — the same gate as the debug
 force arrows, and like them honoured only in a debug build (release/web ignore the
 key). Their text keeps refreshing while hidden, so it's correct the instant H

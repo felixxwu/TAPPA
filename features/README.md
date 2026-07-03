@@ -35,6 +35,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
 | [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift; `EngineLibrary` (`scripts/engine_library.gd`) — the catalog of real engines cars reference by id |
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
+| [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (audio-only) — engine property, stock or via `turbo_small`/`turbo_large` upgrades |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
