@@ -189,6 +189,18 @@ func _ready() -> void:
 # ground. Looks for a sibling that exposes height_at (the hilly Floor in the
 # main scene); on the flat test fixtures (a WorldBoundary at y=0) there is none,
 # so it falls back to 0.
+# Speed-dependent max steering angle. Returns the effective input steer limit
+# (radians): full cfg.steer_limit at/below steer_limit_falloff_start, ramping
+# linearly down to steer_limit_min_fraction of it at/above steer_limit_falloff_end,
+# holding that floor above. end <= start (or min_fraction == 1.0) disables it.
+static func speed_scaled_steer_limit(cfg: GameConfig, speed: float) -> float:
+	var falloff := 0.0
+	if cfg.steer_limit_falloff_end > cfg.steer_limit_falloff_start:
+		falloff = clampf((speed - cfg.steer_limit_falloff_start) \
+			/ (cfg.steer_limit_falloff_end - cfg.steer_limit_falloff_start), 0.0, 1.0)
+	return cfg.steer_limit * lerpf(1.0, cfg.steer_limit_min_fraction, falloff)
+
+
 func _ground_height_at(pos: Vector3) -> float:
 	var parent := get_parent()
 	if parent != null:
@@ -354,7 +366,14 @@ func _physics_process(delta: float) -> void:
 	# this same _steer, keeping them 1:1.
 	var assist_rate := (cfg.steer_speed / cfg.steer_limit) if cfg.steer_limit > 0.0 else cfg.steer_speed
 	_steer = move_toward(_steer, steer_input, assist_rate * delta)
-	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + _steer * cfg.steer_limit
+	# Speed-dependent max steering angle: taper the input steer_limit down from
+	# full (at/below steer_limit_falloff_start) to steer_limit_min_fraction of
+	# itself (at/above steer_limit_falloff_end), so the car isn't twitchy/spin-
+	# prone at speed. Only the input term is scaled; the travel-alignment
+	# countersteer keeps its full authority so slides still catch. See
+	# features/car-physics.md.
+	var effective_steer_limit := speed_scaled_steer_limit(cfg, speed)
+	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + _steer * effective_steer_limit
 	steering = move_toward(steering, steer_target, cfg.steer_speed * delta)
 	# Damage wheel misalignment: bend each wheel physically by its persisted toe on
 	# TOP of the base steer. The pull/crab of a damaged car then comes from the
@@ -761,6 +780,13 @@ func apply_owned(owned: Dictionary) -> String:
 	# copied the baseline mass onto the RigidBody, so re-sync after a weight-reduction
 	# upgrade mutates cfg.mass (other upgraded fields are read live each physics step).
 	UpgradeLibrary.apply(owned, config)
+	# A turbo upgrade sets the turbo audio voicing (whistle/BOV gains + turbo_enabled)
+	# on the config; the synth caches voicing at build time, so rebuild it now — the
+	# reconfigure in apply_car ran BEFORE these upgrade fields existed. Without this a
+	# turbo fitted to an NA car is silent (its physics still reads the config live).
+	var audio := $EngineAudio as Node
+	if audio.has_method("reconfigure"):
+		audio.reconfigure()
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
 	# installed upgrades, so it must run after step 2.

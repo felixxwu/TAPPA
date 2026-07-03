@@ -46,7 +46,16 @@ var peak_torque_rpm := 4500.0
 ## adds on top of the car's value.
 @export_range(-2.0, 2.0) var downforce_rear := 0.0
 ## Max steering offset (radians) from the car's direction of travel.
-@export_range(0.0, 1.2) var steer_limit := 0.3
+@export_range(0.0, 1.2) var steer_limit := 0.7
+## Speed-dependent steering: the input steer_limit above stays full at or below
+## steer_limit_falloff_start (m/s), then ramps down linearly to
+## steer_limit_min_fraction of itself by steer_limit_falloff_end (m/s), holding
+## that floor above it — so the car isn't twitchy at speed. Only the input term
+## is tapered; the travel-alignment countersteer is untouched. Set min_fraction
+## to 1.0 (or end <= start) to disable.
+@export_range(0.0, 50.0) var steer_limit_falloff_start := 0
+@export_range(0.0, 120.0) var steer_limit_falloff_end := 50.0
+@export_range(0.0, 1.0) var steer_limit_min_fraction := 0.1
 @export var steer_speed := 3.0
 ## How much the front wheels caster toward the direction of travel: 1.0 = fully
 ## track it (automatic countersteer), 0.0 = steering input only.
