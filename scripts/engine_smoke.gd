@@ -1,11 +1,9 @@
 class_name EngineSmoke
-extends MultiMeshInstance3D
+extends CpuParticlePool
 # Grey smoke that puffs from the bonnet each time a DAMAGED engine misfires (a fuel
-# cut — see features/damage.md). Modelled on WheelParticles: the gl_compatibility
-# renderer has no GPU-particle physics, so this is a hand-rolled CPU pool drawn
-# through ONE MultiMesh of billboarded quads — one draw call, a fixed instance count,
-# a ring buffer that recycles the oldest slot. Its own SMALL pool, separate from the
-# wheel dust (a light haze, not a spray).
+# cut — see features/damage.md). A hand-rolled CPU pool drawn through ONE MultiMesh of
+# billboarded quads (the shared ring-buffer machinery lives in CpuParticlePool). Its own
+# SMALL pool, separate from the wheel dust (a light haze, not a spray).
 #
 # Unlike the dust, each smoke particle GROWS (scale written into the MultiMesh basis
 # diagonal) and FADES (per-instance alpha via MultiMesh instance colours) over its
@@ -19,21 +17,11 @@ extends MultiMeshInstance3D
 # 3/7/11) then an RGBA colour at 12..15. We write the basis diagonal (uniform scale
 # for growth), the origin, and the alpha (fade) each tick.
 const STRIDE := 16
-# Dead particles are parked far below the world rather than zero-scaled — billboard
-# materials don't reliably honour a zero instance scale under gl_compatibility.
-const HIDE_Y := -1.0e7
 
 var _car: Node  # the VehicleBody3D (read for drivetrain.engine + world transform)
 
-# Particle pool (parallel arrays, index == MultiMesh instance == ring slot).
-var _pos: PackedVector3Array
-var _vel: PackedVector3Array
-var _life: PackedFloat32Array   # remaining lifetime (s); <= 0 means the slot is dead
-var _max_life: PackedFloat32Array  # lifetime the slot was born with (for grow/fade fraction)
-var _buffer: PackedFloat32Array   # the live MultiMesh transform+colour buffer
-var _next := -1                 # ring-buffer write cursor
-var _alive := 0
-var _max := 0
+# Extra per-slot array: the lifetime the slot was born with (for grow/fade fraction).
+var _max_life: PackedFloat32Array
 # Last EngineSim.misfire_count we turned into puffs — the delta each tick is the
 # number of new cuts to emit for.
 var _last_misfire_count := 0
@@ -43,6 +31,10 @@ var _last_misfire_count := 0
 # features/engine-smoke.md.
 var _synthetic := false
 var _puff_timer := 0.0
+
+
+func _stride() -> int:
+	return STRIDE
 
 
 func setup(car: Node) -> void:
@@ -81,7 +73,6 @@ func _engine_misfire_count() -> int:
 
 func _build_pool() -> void:
 	var cfg: GameConfig = Config.data
-	_max = maxi(1, cfg.engine_smoke_max)
 	var quad := QuadMesh.new()
 	quad.size = Vector2(cfg.engine_smoke_size_m, cfg.engine_smoke_size_m)
 	var mat := StandardMaterial3D.new()
@@ -98,14 +89,10 @@ func _build_pool() -> void:
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
 	mm.mesh = quad
-	mm.instance_count = _max
+	mm.instance_count = maxi(1, cfg.engine_smoke_max)
 	multimesh = mm
-	_pos = PackedVector3Array(); _pos.resize(_max)
-	_vel = PackedVector3Array(); _vel.resize(_max)
-	_life = PackedFloat32Array(); _life.resize(_max)
+	_alloc_pool(mm.instance_count)
 	_max_life = PackedFloat32Array(); _max_life.resize(_max)
-	_buffer = PackedFloat32Array()
-	_buffer.resize(_max * STRIDE)
 	_clear()
 
 
@@ -137,34 +124,9 @@ func _hide_slot(i: int) -> void:
 	_buffer[b + 15] = 0.0
 
 
-func _clear() -> void:
-	_next = -1
-	_alive = 0
-	if multimesh == null or _buffer.is_empty():
-		return
-	for i in _max:
-		_life[i] = 0.0
-		_hide_slot(i)
-	multimesh.buffer = _buffer
-
-
-# Force this pool's shader variant to compile NOW (during track generation, behind
-# the loading overlay) instead of on the first engine misfire. Under gl_compatibility
-# a material compiles on its first VISIBLE draw, and every slot sits off-screen at
-# HIDE_Y until then — so we park one full puff in front of the camera for a rendered
-# frame, then clear_warm_up() hides it again. See features/engine-smoke.md.
-func warm_up(pos: Vector3) -> void:
-	if multimesh == null or _buffer.is_empty():
-		return
-	_life[0] = 1.0
-	_alive = 1
-	_write_slot(0, pos, 1.0, 1.0)  # full scale + opaque, so it actually draws
-	multimesh.buffer = _buffer
-
-
-# Undo warm_up(): park the warm-up puff off-screen and reset the pool to empty.
-func clear_warm_up() -> void:
-	_clear()
+# A warmed-up slot draws full-scale + opaque, so the shader compiles.
+func _build_slot(i: int, p: Vector3) -> void:
+	_write_slot(i, p, 1.0, 1.0)
 
 
 func _physics_process(delta: float) -> void:
@@ -274,21 +236,6 @@ func _puff(cfg: GameConfig) -> void:
 
 # Write one particle into the ring buffer, recycling the oldest slot when full.
 func _emit(cfg: GameConfig, pos: Vector3, vel: Vector3) -> void:
-	_next = (_next + 1) % _max
-	if _life[_next] <= 0.0:
-		_alive += 1  # reused a dead slot; overwriting a live one keeps the count
-	_pos[_next] = pos
-	_vel[_next] = vel
-	_life[_next] = cfg.engine_smoke_lifetime_s
+	_emit_slot(pos, vel, cfg.engine_smoke_lifetime_s)
 	_max_life[_next] = cfg.engine_smoke_lifetime_s
 	_write_slot(_next, pos, 1.0, cfg.engine_smoke_color.a)
-
-
-# --- Readouts (tests) --------------------------------------------------------
-
-func live_count() -> int:
-	return _alive
-
-
-func max_particles() -> int:
-	return _max

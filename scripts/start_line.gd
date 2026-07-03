@@ -235,17 +235,8 @@ func _format_leader(pos: int, entry: Dictionary) -> String:
 	var car := String(entry.get("car_name", ""))
 	var car_part := " — %s" % car if car != "" else ""
 	return "P%d   %s%s — %s" % [
-		pos, String(entry.get("name", "Rival")), car_part, _format_ms(int(entry.get("time_ms", -1)))]
-
-
-# m:ss.cc, or an em dash when there's no rival time to show.
-func _format_ms(ms: int) -> String:
-	if ms < 0:
-		return "—"
-	var seconds := ms / 1000.0
-	var minutes := int(seconds / 60.0)
-	var rem := seconds - minutes * 60.0
-	return "%d:%05.2f" % [minutes, rem]
+		pos, String(entry.get("name", "Rival")), car_part,
+		UITheme.format_time(int(entry.get("time_ms", -1)), "—")]
 
 
 # --- Fade-to-black overlay ---------------------------------------------------

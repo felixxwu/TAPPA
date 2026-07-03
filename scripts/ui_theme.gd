@@ -114,6 +114,40 @@ static func money(text: String) -> Label:
 	return label(text, "gold")
 
 
+# Format a lap/run time in milliseconds as "m:ss.cc" (e.g. 83210 -> "1:23.21").
+# The single source of truth for the time read-out the leaderboard/standings,
+# podium, start line and finish arch all show. Negative ms is the "no time"
+# sentinel — it renders `negative_text` ("--:--" for standings/podium, "—" for
+# the start-line rival grid). Callers with seconds (the HUD) multiply by 1000.
+static func format_time(ms: int, negative_text: String = "--:--") -> String:
+	if ms < 0:
+		return negative_text
+	var seconds := ms / 1000.0
+	var minutes := int(seconds / 60.0)
+	return "%d:%05.2f" % [minutes, seconds - minutes * 60.0]
+
+
+# One leaderboard/standings row, identical between the standings overlay and the
+# podium's leaderboard: "> P3 — NAME (CAR) — 1:23.21", where the leading "> " and
+# a gold tint mark the player, place < 1 reads "DNF", and a wrecked entry shows
+# "WRECKED" instead of a time. Reads `placed`, `dnf`, `combined_ms`, `name`,
+# `car_name`, `is_player` from the entry dict.
+static func standings_row(entry: Dictionary) -> Label:
+	var l := Label.new()
+	var placed := int(entry.get("placed", -1))
+	var pos_text := "P%d" % placed if placed >= 1 else "DNF"
+	var time_text := "WRECKED" if entry.get("dnf", false) else format_time(int(entry.get("combined_ms", -1)))
+	var who := String(entry.get("name", "?"))
+	var car := String(entry.get("car_name", ""))
+	if car != "":
+		who += " (%s)" % car
+	var is_player: bool = entry.get("is_player", false)
+	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
+	if is_player:
+		l.add_theme_color_override("font_color", GOLD)
+	return l
+
+
 static func _role_color(role: String) -> Color:
 	match role:
 		"dim": return INK_DIM

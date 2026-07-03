@@ -72,16 +72,22 @@ levers, in order of payoff:
   `trees_per_turn = 0` (which zeroes bushes too — they share the scatter params),
   cutting the build from ~15 s to <1 s while still wiring up the car, HUD, cameras
   and TrackProgress. `test_hud.gd` / `test_mobile_controls.gd` / `test_car_library.gd`
+  / `test_camera_manager.gd` / `test_render_smoke.gd` / `test_config_applied.gd`
   use it (each `after_each` calls `Config.reset()` so the minimal track/foliage
-  doesn't leak into later files that don't reset Config). Only the files that
-  genuinely assert on the track/terrain/foliage (`test_car_terrain.gd`,
-  `test_loading_screen.gd`, `test_terrain.gd`) pay the full generation.
+  doesn't leak into later files that don't reset Config). Tests that only inspect
+  the car + ground (no world nodes at all) go one cheaper still and instantiate
+  the flat `res://tests/fixtures/test_track.tscn` directly (`test_debug_arrows.gd`).
+  Only the files that genuinely assert on the track/terrain/foliage
+  (`test_car_terrain.gd`, `test_loading_screen.gd`, `test_terrain.gd`) pay the
+  full generation.
 - **Settle once, not per test.** `tests/headless/sim_test.gd` is the base for
   physics-scene tests. It settles the baseline car **once**, caches the resting
   `Transform3D`, and on later setups restores that pose and stabilises in
   `RESTORE_FRAMES` (~10) instead of dropping from the 2.5 m spawn clearance and
-  waiting `SETTLE_FRAMES` (150). `test_car.gd` / `test_engine.gd` extend it;
-  `test_car_types.gd` keeps a per-car-index settled-pose cache via the same
+  waiting `SETTLE_FRAMES` (150). It carries `class_name SimTest`, so tests can
+  `extends SimTest` (the older `extends "res://tests/headless/sim_test.gd"` path
+  form still resolves to the same base). `test_car.gd` / `test_engine.gd` extend
+  it; `test_car_types.gd` keeps a per-car-index settled-pose cache via the same
   mechanism.
 - **Logic that doesn't need a scene** (flywheel/gearbox/clutch math) lives in
   `test_engine_logic.gd`, which builds a bare `EngineSim` and pays no settle
@@ -90,18 +96,27 @@ levers, in order of payoff:
 
 ### Test-catalogue seam — `CarFixtures`
 
-`CarLibrary` and `EngineLibrary` each expose a small seam so tests don't have
-to reach into (and get broken by) the shipped catalogue:
+All four content libraries — `CarLibrary`, `EngineLibrary`, `RallyLibrary`,
+`UpgradeLibrary` — expose the same small seam so tests don't have to reach into
+(and get broken by) the shipped catalogue:
 
-- `all()` — returns the active roster (shipped `CARS`/`ENGINES` unless
-  overridden).
+- `all()` — returns the active roster (shipped `CARS`/`ENGINES`/`RALLIES`/
+  `UPGRADES` unless overridden).
 - `override_for_test(list)` — swaps the active roster to `list` for the rest
   of the process.
 - `reset()` — drops the override and falls back to the shipped const.
 
 The seam is **inert in production**: an empty/unset override is treated as
-"no override" and every lookup falls straight back to the real `CARS`/
-`ENGINES` const, so shipping code never sees a behavior change.
+"no override" and every lookup falls straight back to the real shipped const,
+so shipping code never sees a behavior change.
+
+The seam and the stable-id lookups (`index_of`/`by_id`) are implemented once in
+the shared `Registry` helper (`scripts/registry.gd`): each library owns a
+`Registry.Seam` instance and delegates `all()`/`override_for_test()`/`reset()`
+to it, while `index_of`/`by_id` call `Registry.index_of(all(), id)` /
+`Registry.by_id(all(), id)`. `test_registry.gd` covers the helper directly with
+synthetic entries. (Rally/upgrade gained the `override_for_test`/`reset` seam in
+that refactor — previously only car/engine had it.)
 
 `tests/headless/car_fixtures.gd` (`class_name CarFixtures`) is a synthetic
 catalogue built on that seam — a stable, test-owned roster that can't be
@@ -126,6 +141,24 @@ Conversely, the catalogue-**contract** tests (`test_car_types.gd`,
 their entire job is asserting every real entry is well-formed — and instead
 call `CarLibrary.reset()` / `EngineLibrary.reset()` in `before_each` to guard
 against a leaked override from an earlier file.
+
+### Shared DX helpers (`save_test_helpers.gd`, `node_query.gd`)
+
+Two additional test-only helpers factor out patterns the suite hand-rolls
+repeatedly. They are **additive** — existing tests are not yet rewritten to use
+them (adoption is deferred), but new tests should reach for them:
+
+- `SaveTestHelpers` (`tests/headless/save_test_helpers.gd`) — `redirect(path)`
+  points the `Save` autoload at a throwaway `user://` profile (enables saving,
+  loads a fresh default) and `cleanup(path)` deletes it plus its `.bak`/`.tmp`
+  siblings and restores `DEFAULT_PROFILE_PATH`. This is the same dance the nine
+  save-redirect files (`test_save_manager.gd`, `test_damage_model.gd`,
+  `test_start_line.gd`, `test_pause_menu.gd`, `test_menu_flow.gd`,
+  `test_camera_manager.gd`, `test_rally_session.gd`, `test_menu_nav.gd`,
+  `test_input_remap.gd`) currently spell out inline.
+- `NodeQuery` (`tests/headless/node_query.gd`) — read-only tree queries for
+  menu/UI tests: `first_of_type`/`all_of_type` (by class name),
+  `button_with_text`, and `all_label_text`.
 
 ### No pixel-diff visual regression
 

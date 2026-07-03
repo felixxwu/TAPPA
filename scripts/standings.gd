@@ -81,7 +81,7 @@ func _build_ui() -> void:
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(content)
 	for entry in rows:
-		content.add_child(_standings_row(entry))
+		content.add_child(UITheme.standings_row(entry))
 
 	var cont := Button.new()
 	cont.text = button_text
@@ -125,31 +125,3 @@ func _on_rally_finished(result: Dictionary) -> void:
 	if result.get("abandoned", false):
 		return
 	get_tree().change_scene_to_file("res://podium.tscn")
-
-
-# One standings row: position, name (and the car), time / DNF; the player's row is
-# tinted and marked. Shared by both pages (the row's `combined_ms` is the event time
-# on page 1, the cumulative time on page 2).
-func _standings_row(entry: Dictionary) -> Label:
-	var l := Label.new()
-	var placed := int(entry.get("placed", -1))
-	var pos_text := "P%d" % placed if placed >= 1 else "DNF"
-	var time_text := "WRECKED" if entry.get("dnf", false) else _fmt(int(entry.get("combined_ms", -1)))
-	var who := String(entry.get("name", "?"))
-	var car := String(entry.get("car_name", ""))
-	if car != "":
-		who += " (%s)" % car
-	var is_player: bool = entry.get("is_player", false)
-	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
-	if is_player:
-		l.add_theme_color_override("font_color", UITheme.GOLD)
-	return l
-
-
-# m:ss.cc from milliseconds.
-func _fmt(ms: int) -> String:
-	if ms < 0:
-		return "--:--"
-	var seconds := ms / 1000.0
-	var minutes := int(seconds / 60.0)
-	return "%d:%05.2f" % [minutes, seconds - minutes * 60.0]

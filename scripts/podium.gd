@@ -626,7 +626,7 @@ func _show_leaderboard() -> void:
 		none.text = "No standings recorded."
 		_leaderboard_box.add_child(none)
 	for entry in standings:
-		_leaderboard_box.add_child(_standings_row(entry))
+		_leaderboard_box.add_child(UITheme.standings_row(entry))
 	_leaderboard_scroll.visible = true
 	UITheme.enforce(_layer)  # uppercase the freshly-built standings rows
 	_move_camera(_podium_cam())
@@ -865,7 +865,7 @@ func _summary_text() -> String:
 		return "%sDNF — car wrecked.\nThe rally stays incomplete." % prefix
 	var placed := int(_result.get("placed", -1))
 	var combined := int(_result.get("combined_ms", -1))
-	var lines: Array[String] = ["%sFinished P%d   (%s)" % [prefix, placed, _fmt(combined)]]
+	var lines: Array[String] = ["%sFinished P%d   (%s)" % [prefix, placed, UITheme.format_time(combined)]]
 	if _result.get("showdown_won", false):
 		lines.append("THE SHOWDOWN IS WON — you've completed the game!")
 	elif _result.get("completed", false):
@@ -873,28 +873,3 @@ func _summary_text() -> String:
 	else:
 		lines.append("Outside the top 3 — no car reward. Re-enter from HQ to try again.")
 	return "\n".join(lines)
-
-
-func _standings_row(entry: Dictionary) -> Label:
-	var l := Label.new()
-	var placed := int(entry.get("placed", -1))
-	var pos_text := "P%d" % placed if placed >= 1 else "DNF"
-	var time_text := "WRECKED" if entry.get("dnf", false) else _fmt(int(entry.get("combined_ms", -1)))
-	var who := String(entry.get("name", "?"))
-	var car := String(entry.get("car_name", ""))
-	if car != "":
-		who += " (%s)" % car
-	var is_player: bool = entry.get("is_player", false)
-	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
-	if is_player:
-		l.add_theme_color_override("font_color", UITheme.GOLD)
-	return l
-
-
-# m:ss.cc from milliseconds.
-func _fmt(ms: int) -> String:
-	if ms < 0:
-		return "--:--"
-	var seconds := ms / 1000.0
-	var minutes := int(seconds / 60.0)
-	return "%d:%05.2f" % [minutes, seconds - minutes * 60.0]

@@ -54,16 +54,13 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 	var bin := maxf(bin_size, 1.0)
 	var world_pos := PackedVector3Array()
 	world_pos.resize(positions.size())
-	var bins := {}  # Vector2i -> PackedInt32Array of instance indices
 	for i in positions.size():
 		var p := positions[i]
 		var pos := Vector3(p.x, terrain.height_at(p.x, p.y), p.y)
 		instance_positions[i] = pos
 		world_pos[i] = pos
-		var key := Vector2i(floori(p.x / bin), floori(p.y / bin))
-		if not bins.has(key):
-			bins[key] = PackedInt32Array()
-		bins[key].append(i)
+	# Vector2i -> PackedInt32Array of instance indices, one MultiMesh per bin.
+	var bins := SpatialGrid.of_indices(positions, bin)
 
 	# One MultiMesh per bin, positioned at the bin centre so visibility_range /
 	# LOD distance is measured from there (instance transforms are bin-local).
@@ -101,18 +98,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
 	# model). Skipped for scenery-only fields: the HQ tree ring and the
 	# non-colliding ground-cover bushes.
 	if with_collision and positions.size() > 0:
-		var body := StaticBody3D.new()
-		body.name = "Collision"
-		body.add_to_group(DamageModel.OBSTACLE_GROUP)
-		add_child(body)
-		_collision_shape = BoxShape3D.new()
-		_collision_shape.size = Vector3(collision_radius * 2.0, collision_height, collision_radius * 2.0)
-		for i in positions.size():
-			var pos := world_pos[i]
-			# Box centred half its height above the ground so it rests on it.
-			var box_xform := Transform3D(Basis.IDENTITY,
-				Vector3(pos.x, pos.y + collision_height * 0.5, pos.z))
-			PhysicsServer3D.body_add_shape(body.get_rid(), _collision_shape.get_rid(), box_xform)
+		_collision_shape = ObstacleBody.build(self, world_pos, collision_radius, collision_height)
 
 
 # Uniform scale that makes `mesh` stand `target_height` tall (the same scale

@@ -43,6 +43,17 @@ COMMITS="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 VERSION="0.${COMMITS} (${SHA})"
 
+# A leftover project.godot.bak means a PREVIOUS run died before its restore trap
+# fired (or one is running concurrently). Overwriting it here would clobber the
+# real, unmodified project.godot with an already-version-stamped copy — so refuse
+# to start and let the user reconcile it, rather than silently corrupting the file.
+if [[ -e project.godot.bak ]]; then
+  echo "error: project.godot.bak already exists — a previous build_web.sh may have" \
+    "aborted before restoring project.godot. Inspect it: if project.godot looks" \
+    "correct, 'rm project.godot.bak'; otherwise 'mv project.godot.bak project.godot'." >&2
+  exit 1
+fi
+
 restore_project_godot() { [[ -f project.godot.bak ]] && mv -f project.godot.bak project.godot; }
 trap restore_project_godot EXIT
 

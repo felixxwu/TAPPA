@@ -187,3 +187,77 @@ func test_standings_event_page_then_combined_is_navigable() -> void:
 	if RallySession.is_active():
 		RallySession.abandon()
 	RallySession.auto_load_scenes = true
+
+
+# --- ButtonCursor (scripts/button_cursor.gd) ---------------------------------
+# The manual left/right cursor the diegetic HQ stations (garage action row, tuning
+# hub) use in place of native focus. hq.gd owns the index; the cursor owns the shared
+# wrap / repaint / fire behaviour. These check that behaviour directly.
+
+# wrapped() steps the index and wraps at both ends of the row.
+func test_button_cursor_wraps_at_both_ends() -> void:
+	var cursor := ButtonCursor.new()
+	var buttons: Array = []
+	for i in 4:
+		buttons.append(Button.new())
+	cursor.setup(buttons, [func() -> void: pass, func() -> void: pass,
+		func() -> void: pass, func() -> void: pass])
+	assert_eq(cursor.wrapped(2, 1), 3, "step forward advances one")
+	assert_eq(cursor.wrapped(3, 1), 0, "stepping past the end wraps to the first")
+	assert_eq(cursor.wrapped(0, -1), 3, "stepping back from the first wraps to the last")
+	for b in buttons:
+		b.free()
+
+
+# An empty cursor never crashes: wrapped() returns the index unchanged and refresh() is
+# a no-op (so hq can paint before the row is built).
+func test_button_cursor_empty_is_safe() -> void:
+	var cursor := ButtonCursor.new()
+	assert_eq(cursor.wrapped(0, 1), 0, "wrapped() on an empty row returns the index")
+	cursor.refresh(0)  # must not error
+	cursor.activate(0)  # out of range -> no-op, must not error
+	pass_test("empty ButtonCursor tolerates wrap/refresh/activate")
+
+
+# activate(index) fires the action wired to that index; an out-of-range index no-ops.
+func test_button_cursor_activate_fires_the_indexed_action() -> void:
+	var cursor := ButtonCursor.new()
+	var fired := [-1]
+	var a := Button.new()
+	var b := Button.new()
+	cursor.setup([a, b], [
+		func() -> void: fired[0] = 0,
+		func() -> void: fired[0] = 1,
+	])
+	cursor.activate(1)
+	assert_eq(fired[0], 1, "activate(1) fires the second action")
+	cursor.activate(0)
+	assert_eq(fired[0], 0, "activate(0) fires the first action")
+	fired[0] = -1
+	cursor.activate(5)  # out of range
+	assert_eq(fired[0], -1, "an out-of-range activate fires nothing")
+	a.free()
+	b.free()
+
+
+# refresh(index) paints exactly the button at `index` as focused and clears the rest —
+# the manual equivalent of a native focus ring (UITheme.mark_focused).
+func test_button_cursor_refresh_paints_only_the_focused_button() -> void:
+	var cursor := ButtonCursor.new()
+	var a := Button.new()
+	var b := Button.new()
+	var c := Button.new()
+	add_child_autofree(a)
+	add_child_autofree(b)
+	add_child_autofree(c)
+	cursor.setup([a, b, c], [func() -> void: pass, func() -> void: pass, func() -> void: pass])
+	cursor.refresh(1)
+	# mark_focused overrides the "normal" stylebox + font colour on the focused button
+	# only; the others carry no such override.
+	assert_false(a.has_theme_stylebox_override("normal"), "unfocused button has no cursor box")
+	assert_true(b.has_theme_stylebox_override("normal"), "the focused button is painted")
+	assert_false(c.has_theme_stylebox_override("normal"), "the other unfocused button is clear")
+	# Moving the cursor clears the old highlight.
+	cursor.refresh(0)
+	assert_true(a.has_theme_stylebox_override("normal"), "the new index is painted")
+	assert_false(b.has_theme_stylebox_override("normal"), "the old highlight is cleared")

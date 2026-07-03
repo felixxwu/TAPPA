@@ -128,33 +128,28 @@ const ENGINES: Array[Dictionary] = [
 ]
 
 
-# Test seam — see CarLibrary for the rationale. No production code reads ENGINES
-# directly; every reader goes through by_id/index_of/apply, so routing these two
-# is enough. FIRING stays const (keyed by layout, not by authored entry).
-static var _test_catalogue: Array[Dictionary] = []
+# Test seam + stable-id lookups via the shared Registry helper (scripts/registry.gd).
+# See CarLibrary for the rationale. No production code reads ENGINES directly; every
+# reader goes through by_id/index_of/apply, so routing these is enough. FIRING stays
+# const (keyed by layout, not by authored entry).
+static var _seam := Registry.Seam.new(ENGINES)
 
 static func all() -> Array[Dictionary]:
-	return _test_catalogue if not _test_catalogue.is_empty() else ENGINES
+	return _seam.all()
 
 static func override_for_test(engines: Array[Dictionary]) -> void:
-	_test_catalogue = engines
+	_seam.override_for_test(engines)
 
 static func reset() -> void:
-	_test_catalogue = []
+	_seam.reset()
 
 
 static func index_of(id: String) -> int:
-	var engines := all()
-	for i in engines.size():
-		if engines[i]["id"] == id:
-			return i
-	return -1
+	return Registry.index_of(all(), id)
 
 
 static func by_id(id: String) -> Dictionary:
-	var engines := all()
-	var i := index_of(id)
-	return engines[i] if i >= 0 else {}
+	return Registry.by_id(all(), id)
 
 
 # Write the engine's whole profile into GameConfig. The synth (engine_audio_synth.gd)

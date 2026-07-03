@@ -1,6 +1,6 @@
 # Engine Smoke
 
-**Source:** `scripts/engine_smoke.gd` (`EngineSmoke`, a `MultiMeshInstance3D`).
+**Source:** `scripts/engine_smoke.gd` (`EngineSmoke`, `extends CpuParticlePool`).
 
 Grey smoke that puffs from the bonnet each time a **damaged engine misfires** — a
 visual companion to the [damage misfire](damage.md) fuel cut. Since the misfire only
@@ -14,7 +14,13 @@ of billboarded quads — the same cheap pattern as [`WheelParticles`](wheel-dust
 (the `gl_compatibility` renderer has no GPU-particle physics), but with its **own
 small pool** (`engine_smoke_max`, default 48), separate from the wheel dust. One draw
 call, a fixed instance count, a **ring buffer** that recycles the oldest slot so cost
-is hard-capped.
+is hard-capped. The ring-buffer machinery (parallel `_pos`/`_vel`/`_life` arrays, the
+`_next` cursor, `_clear()`, `warm_up()`/`clear_warm_up()`, `_emit_slot()`, and the
+`live_count()`/`max_particles()` readouts) is shared with the wheel dust via the
+common `CpuParticlePool` base — see [wheel dust → shared pool base](wheel-dust.md).
+`EngineSmoke` supplies its own `STRIDE` (16, for TRANSFORM_3D + COLOR), the
+grow/fade slot writer (`_write_slot`), an extra `_max_life` array for the fade
+fraction, and its misfire/synthetic emission.
 
 Like the wheel dust, it exposes `warm_up(pos)` / `clear_warm_up()` so
 `world.gd._generate_track` can compile its shader variant behind the loading

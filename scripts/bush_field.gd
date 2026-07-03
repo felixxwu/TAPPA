@@ -44,13 +44,9 @@ func setup(positions: PackedVector2Array, car: Node, hit_radius: float,
 	_min_speed_mps = min_speed_mps
 	_cooldown = cooldown_s
 	_cell = _hit_radius
-	_grid = {}
-	for i in _points.size():
-		var p := _points[i]
-		var key := Vector2i(floori(p.x / _cell), floori(p.y / _cell))
-		if not _grid.has(key):
-			_grid[key] = PackedInt32Array()
-		_grid[key].append(i)
+	# Bin bush indices into the hit-radius grid so each tick only tests the car's 3x3
+	# neighbourhood (cell == hit radius, so any overlapping bush is in those cells).
+	_grid = SpatialGrid.of_indices(_points, _cell)
 
 
 func _physics_process(_delta: float) -> void:
@@ -69,11 +65,10 @@ func _physics_process(_delta: float) -> void:
 	# Bushes the car overlaps THIS tick (from the 3x3 neighbourhood — since the grid
 	# cell is the hit radius, any overlapping bush is in these cells).
 	var overlapping := {}
-	var bx := floori(car_xz.x / _cell)
-	var bz := floori(car_xz.y / _cell)
+	var base := SpatialGrid.cell_key(car_xz, _cell)
 	for ox in range(-1, 2):
 		for oz in range(-1, 2):
-			var arr: PackedInt32Array = _grid.get(Vector2i(bx + ox, bz + oz), PackedInt32Array())
+			var arr: PackedInt32Array = _grid.get(Vector2i(base.x + ox, base.y + oz), PackedInt32Array())
 			for idx in arr:
 				var p := _points[idx]
 				if car_xz.distance_to(p) >= _hit_radius:

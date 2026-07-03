@@ -1,7 +1,7 @@
 # Wheel dust (gravel spray)
 
 `WheelParticles` (`scripts/wheel_particles.gd`, `class_name WheelParticles extends
-MultiMeshInstance3D`) flings cheap gravel/dirt clods backwards from the **driven**
+CpuParticlePool`) flings cheap gravel/dirt clods backwards from the **driven**
 wheels whenever they spin faster than the ground — a standing burnout, a wheelspin
 launch, or a spinning slide. Created + wired by `world.gd._generate_track` (reused
 across event regenerations, re-targeted on a car swap in `world.gd.cycle_car`),
@@ -16,6 +16,20 @@ single `MultiMesh` of small **billboarded quads** — one draw call, one shared
 2-triangle mesh, a fixed `instance_count`, no per-particle scene nodes. The
 material is unshaded, cull-disabled, billboarded, tinted to the gravel colour (same
 style as the tire marks / debug overlays).
+
+## Shared pool base — `CpuParticlePool`
+
+The ring-buffer machinery is shared with [engine smoke](engine-smoke.md) via a
+common base, `CpuParticlePool` (`scripts/cpu_particle_pool.gd`, `extends
+MultiMeshInstance3D`). The base owns the parallel `_pos` / `_vel` / `_life` arrays
+and the live transform `_buffer`, the ring-buffer write cursor (`_next`) + live/max
+counters, `_clear()` / hide-off-screen, the `warm_up()` / `clear_warm_up()`
+shader-compile dance, `_emit_slot()` (the ring recycle), and the `live_count()` /
+`max_particles()` test readouts. Subclasses supply only what differs: their `STRIDE`
+(via `_stride()`), the per-slot buffer writer (`_build_slot()` for a warmed-up slot,
+plus their own writer), how a dead slot is parked (`_hide_slot()`), the per-tick
+integration (`_advance()`), and the emission source (`_physics_process()`). Direct
+coverage of the base ring lives in `tests/headless/test_cpu_particle_pool.gd`.
 
 ## Ring buffer
 

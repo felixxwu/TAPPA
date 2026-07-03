@@ -27,7 +27,6 @@ extends Node3D
 # ragdoll is freed.
 
 const SPECTATOR_SCENE := preload("res://blender/spectator/spectator.glb")
-const CELL_M := TrackGenerator.CELL_M
 
 # --- agent state (parallel arrays, index = member) ----------------------------
 var _pos: PackedVector2Array      # world XZ
@@ -162,7 +161,7 @@ static func road_force(pos: Vector2, road_cells: Dictionary, probe: float) -> Ve
 	var force := Vector2.ZERO
 	for d in DIRS:
 		var q: Vector2 = pos + d * probe
-		if road_cells.has(Vector2i(floori(q.x / CELL_M), floori(q.y / CELL_M))):
+		if ScatterMath.on_road(q, road_cells):
 			force -= d
 	return force
 
@@ -173,11 +172,10 @@ static func obstacle_force(pos: Vector2, grid: Dictionary, cell: float, radius: 
 	var force := Vector2.ZERO
 	if grid.is_empty() or cell <= 0.0 or radius <= 0.0:
 		return force
-	var bx := floori(pos.x / cell)
-	var bz := floori(pos.y / cell)
+	var base := SpatialGrid.cell_key(pos, cell)
 	for ox in range(-1, 2):
 		for oz in range(-1, 2):
-			var arr: PackedVector2Array = grid.get(Vector2i(bx + ox, bz + oz), PackedVector2Array())
+			var arr: PackedVector2Array = grid.get(Vector2i(base.x + ox, base.y + oz), PackedVector2Array())
 			for q in arr:
 				var d := pos.distance_to(q)
 				if d > 0.0001 and d < radius:

@@ -1,5 +1,26 @@
 extends GutTest
 
+# The two scene-backed tests below (car + world values applied) are read-only
+# checks that config landed on the built scene, so share ONE minimal_world()
+# instance — that trims main.tscn's expensive terrain/track/foliage generation
+# (see scene_helpers.gd) while still wiring the car, world environment and
+# materials exactly as the full game does. Config is left at the minimal_world
+# baseline for the duration; every assertion compares the scene against the live
+# Config.data, so the trimmed track/foliage values don't affect them.
+var _scene: Node3D
+
+
+func before_all() -> void:
+	SceneTestHelpers.minimal_world()
+	_scene = load("res://main.tscn").instantiate()
+	add_child(_scene)
+	await get_tree().physics_frame  # let _ready() run
+
+
+func after_all() -> void:
+	_scene.free()
+	Config.reset()  # minimal_world() zeroed foliage/track — restore the baseline for later files
+
 
 func test_road_tile_per_meter_present() -> void:
 	var cfg := GameConfig.new()
@@ -46,11 +67,8 @@ func _export_hint(prop_name: String, obj: Object) -> Dictionary:
 
 
 func test_car_values_applied() -> void:
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child_autofree(scene)
-	await get_tree().physics_frame  # let _ready() run
 	var cfg: GameConfig = Config.data
-	var car: VehicleBody3D = scene.get_node("Car")
+	var car: VehicleBody3D = _scene.get_node("Car")
 	assert_eq(car.mass, cfg.mass, "car mass from config")
 	for wheel in car.find_children("*", "VehicleWheel3D", false):
 		# Built-in friction must be OFF — the Drivetrain tire model owns all
@@ -69,28 +87,25 @@ func test_car_values_applied() -> void:
 
 
 func test_world_values_applied() -> void:
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child_autofree(scene)
-	await get_tree().physics_frame  # let _ready() run
 	var cfg: GameConfig = Config.data
-	var env: Environment = scene.get_node("WorldEnvironment").environment
+	var env: Environment = _scene.get_node("WorldEnvironment").environment
 	assert_almost_eq(env.fog_density, cfg.fog_density, 0.0001, "fog density from config")
 	assert_eq(env.background_color, cfg.background_color, "background color from config")
 	assert_eq(env.fog_light_color, cfg.background_color, "fog color matches background")
-	assert_eq(scene.get_node("Floor").texture_tile_per_meter, cfg.terrain_tile_per_meter, "terrain tiling from config")
-	var floor_layers: Array[TerrainLayer] = scene.get_node("Floor").layers
+	assert_eq(_scene.get_node("Floor").texture_tile_per_meter, cfg.terrain_tile_per_meter, "terrain tiling from config")
+	var floor_layers: Array[TerrainLayer] = _scene.get_node("Floor").layers
 	var cfg_layers := cfg.terrain_layers()
 	assert_eq(floor_layers.size(), cfg_layers.size(), "terrain layer count from config")
 	for i in floor_layers.size():
 		assert_eq(floor_layers[i].wavelength_m, cfg_layers[i].x, "layer %d wavelength from config" % i)
 		assert_eq(floor_layers[i].amplitude_m, cfg_layers[i].y, "layer %d amplitude from config" % i)
-	var chassis_mat: ShaderMaterial = scene.get_node("Car/Chassis").get_surface_override_material(0)
+	var chassis_mat: ShaderMaterial = _scene.get_node("Car/Chassis").get_surface_override_material(0)
 	assert_eq(chassis_mat.get_shader_parameter("albedo_color"), cfg.chassis_color, "chassis color from config")
-	var post_mat: ShaderMaterial = scene.get_node("PostProcess/ColorRect").material
+	var post_mat: ShaderMaterial = _scene.get_node("PostProcess/ColorRect").material
 	assert_eq(post_mat.get_shader_parameter("virtual_resolution"), cfg.virtual_resolution, "dither grid from config")
-	var tire_mat: ShaderMaterial = scene.get_node("Car/WheelFL/Visual/Tire").get_surface_override_material(0)
+	var tire_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Tire").get_surface_override_material(0)
 	assert_eq(tire_mat.get_shader_parameter("albedo_color"), cfg.wheel_color, "tire color from config")
-	var spoke_mat: ShaderMaterial = scene.get_node("Car/WheelFL/Visual/Spoke1").get_surface_override_material(0)
+	var spoke_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Spoke1").get_surface_override_material(0)
 	assert_eq(spoke_mat.get_shader_parameter("albedo_color"), cfg.wheel_spoke_color, "spoke color from config")
 
 

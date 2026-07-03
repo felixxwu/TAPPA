@@ -272,7 +272,7 @@ func _add_banners() -> void:
 		if is_start and target_ms > 0:
 			_add_label("TIME TO\nBEAT", Vector3(cx, panel_cy + panel_h * 0.02, hz),
 				panel_h * 0.05, _INK, 0.0, false)
-			_add_label(_fmt_time(target_ms), Vector3(cx, panel_cy - panel_h * 0.11, hz),
+			_add_label(UITheme.format_time(target_ms), Vector3(cx, panel_cy - panel_h * 0.11, hz),
 				panel_h * 0.07, _INK, 0.0, false)
 
 
@@ -313,13 +313,6 @@ func _add_label(text: String, pos: Vector3, height_m: float, col: Color,
 	if face_back:
 		l.rotate_y(PI)
 	add_child(l)
-
-
-# m:ss.ss, matching the HUD / standings clocks (hud.gd, standings.gd).
-func _fmt_time(ms: int) -> String:
-	var s := ms / 1000.0
-	var m := int(s / 60.0)
-	return "%d:%05.2f" % [m, s - m * 60.0]
 
 
 # ---------------------------------------------------------------------------

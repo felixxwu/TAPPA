@@ -6,6 +6,13 @@
 `models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired in
 `scripts/world.gd._generate_track()`.
 
+Shared low-level helpers used across the scatter/field code: `ScatterMath`
+(`scripts/scatter_math.gd`) — seeded `hash01` + road-cell `cell_of`/`on_road`;
+`SpatialGrid` (`scripts/spatial_grid.gd`) — bin points into cells and query a
+3x3 neighbourhood; `ObstacleBody` (`scripts/obstacle_body.gd`) — the shared
+single-`BoxShape3D` StaticBody obstacle builder used by `TreeMeshField` and
+`BillboardField`.
+
 After the track is generated and baked, foliage is scattered around each turn.
 Both **trees** and **bushes** are solid low-poly 3D meshes rendered through the
 same `TreeMeshField` — the old alpha-cutout billboards are gone. Both share the

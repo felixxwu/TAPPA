@@ -46,7 +46,8 @@ these methods: `show_countdown(seconds_left)` (big centered `3·2·1·GO`;
 `ceili` maps the remaining time to the digit, `0` → `GO`), `hide_countdown()`,
 `show_elapsed(seconds)` (top-centre `m:ss.cc`, gated by `hud_elapsed_enabled`),
 and `show_stage_complete(seconds)` (the finish panel — `FINISH` + the time).
-`_format_time` is the shared `m:ss.cc` formatter.
+`UITheme.format_time(ms)` is the shared `m:ss.cc` formatter (the seconds-based
+call sites convert to ms first).
 
 The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
 code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**

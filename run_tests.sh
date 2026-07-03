@@ -81,17 +81,26 @@ done
 cd "$(dirname "$0")"
 FAIL=0
 
-# GUT's exit code only reflects assertion failures — a script that fails to
-# parse/load logs "SCRIPT ERROR" but still exits 0, so scan the output too.
+# The single source of truth for "GUT exited 0 but the output betrays a broken
+# script" — GUT's exit code only reflects assertion failures, so a script that
+# fails to parse/load logs one of these but still exits 0. Scanned in run_pass;
+# keep new known-fatal output strings in THIS pattern (one place) so the runner
+# and anyone reading it agree on what counts as a hidden failure.
+TEST_ERROR_PATTERN='SCRIPT ERROR|Parse Error|Failed to load script'
+
 run_pass() {
-  local out
-  out="$("$@" 2>&1)"
-  local status=$?
-  printf '%s\n' "$out"
-  if grep -qE 'SCRIPT ERROR|Parse Error|Failed to load script' <<<"$out"; then
+  # tee so the output STREAMS live (long runs aren't silent until the end) while
+  # still being captured for the error scan. PIPESTATUS[0] is the command's own
+  # exit status (tee always exits 0).
+  local tmp; tmp="$(mktemp -t rally_test_out.XXXXXX)"
+  "$@" 2>&1 | tee "$tmp"
+  local status=${PIPESTATUS[0]}
+  if grep -qE "$TEST_ERROR_PATTERN" "$tmp"; then
+    rm -f "$tmp"
     echo "error: script errors detected in test output" >&2
     return 1
   fi
+  rm -f "$tmp"
   return $status
 }
 
@@ -101,7 +110,14 @@ run_pass() {
 # intermittently fail to resolve. A headless --import pass rebuilds the cache
 # first, making script loading deterministic run-to-run.
 echo "=== warmup: rebuild class cache (--import) ==="
-with_timeout "$WARMUP_TIMEOUT" "$GODOT" --headless --import >/dev/null 2>&1 || true
+# Best-effort (the tests still run if it fails), but SURFACE the failure rather
+# than silently swallowing it with `|| true` — a broken warmup is the usual cause
+# of intermittent, run-to-run class_name resolution flakiness, so a visible
+# warning is what lets you connect the two.
+if ! with_timeout "$WARMUP_TIMEOUT" "$GODOT" --headless --import >/dev/null 2>&1; then
+  echo "warning: class-cache warmup (--import) failed or timed out — script loading" \
+    "may be nondeterministic this run (cross-script class_name references can flake)" >&2
+fi
 
 # --fixed-fps 60 decouples the main loop from wall-clock: each iteration advances
 # by a fixed 1/60 s delta (matching the default physics_ticks_per_second) and the

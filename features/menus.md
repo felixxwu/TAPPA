@@ -109,7 +109,13 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   (`menu_back` is also a shortcut back to the garage). The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
   `_activate_garage_focus`) over its side-by-side **Back / Map / Tune Car / Free Roam**
-  row, seated on Map on entry (`menu_back` shortcuts to the exterior). **Free Roam**
+  row, seated on Map on entry (`menu_back` shortcuts to the exterior). Both of these
+  manual rows share a small **`ButtonCursor`** helper (`scripts/button_cursor.gd`):
+  `hq.gd` keeps the index (`_garage_focus` / `_hub_focus`), the cursor owns the shared
+  wrap / repaint / fire behaviour, and each button's `pressed` callable is also the
+  cursor's action for that index, so a mouse click and a keyboard/gamepad select can
+  never fall out of step. (The map-table pin cursor stays bespoke — it paints a
+  billboarded pin panel and pans the camera, not a flat button row.) **Free Roam**
   (`_enter_free_roam`) opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
   parking the whole owned collection); Start (`_start_free_roam`) hands the picked
   instance to `RallySession.free_roam_instance_id`, writes a fresh random seed + neutral
@@ -156,10 +162,17 @@ cover (so tests see a ready HQ after one frame). HQ is **one diegetic 3D space**
 (`GameConfig.hq_*_cam_eye/look`, eased over `menu_camera_move_time`). Clickable 3D
 objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_pickable`
 (`get_viewport().physics_object_picking` is on); their handlers also respond to
-`menu_*` keyboard/gamepad input. The environment — a block-building skyline
-**behind the garage** (`_build_buildings`, kept clear of the title camera's view),
-billboard **trees** framing the lot (`_build_trees`, reusing the stage's
-`BillboardField`), the garage shell, the lift — is built from `BoxMesh`
+`menu_*` keyboard/gamepad input. The **static 3D world** — everything that never
+changes once built — is split into **`HQEnvironment`** (`scripts/hq_environment.gd`),
+a small `RefCounted` collaborator `hq.gd._build_hq` drives via `_env.build(self,
+_on_table_input, _on_lift_input)`: it parents all the geometry to the HQ node (so the
+scene tree is unchanged), wires the pickable table/lift areas back to hq's own click
+handlers, and hands back the `camera` / `map_table` / `pins_root` handles hq keeps
+driving (the dynamic props — the parked-car lineup, the lift car, the map pins — stay
+in `hq.gd`). Its pieces: a block-building skyline **behind the garage**
+(`_build_buildings`, kept clear of the title camera's view), low-poly mesh **trees**
+framing the lot (`_build_trees`, reusing the stage's `TreeMeshField` via
+`MeshUtil.first_mesh`), the garage shell, the lift — built from `BoxMesh`
 blocks via `_block()` (placeholder art; the framing/positions that the flow depends
 on are in `GameConfig`). The **map table** is the exception: `_build_map_table`
 instantiates a proper `MapTable` model (`scripts/map_table.gd`) — a wooden tabletop
@@ -504,7 +517,7 @@ menu is covered above (`pause_menu.gd`); the between-event **standings**
 
 Shown after **every** event (`RallySession.report_event_result` always enters
 `Phase.STANDINGS`), not just the ones before a next event. For any event after the
-first it is **two pages**, both built by the same `_standings_row` renderer (the
+first it is **two pages**, both built by the same `UITheme.standings_row` renderer (the
 row's `combined_ms` field carries the event-only time on page 1, the cumulative time
 on page 2):
 

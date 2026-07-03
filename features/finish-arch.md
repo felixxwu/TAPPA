@@ -108,8 +108,8 @@ it always matches the event):
   names auto-wrap to the beam width.
 - **Legs** (a cream board on each leg's front face) — `STAGE n/3` at the top and
   the `TIME TO BEAT m:ss.ss` (start gate only, from the fastest rival's time for
-  this event) below it. No difficulty tier is shown (it's hidden). `_fmt_time()`
-  matches the HUD / standings clocks.
+  this event) below it. No difficulty tier is shown (it's hidden). The time uses
+  `UITheme.format_time()`, the shared clock formatter (HUD / standings / podium).
 
 Empty/zero `info` fields are skipped, so a dev boot or direct play with no active
 rally shows just the `START` / `FINISH` wordmark — no misleading stage text.

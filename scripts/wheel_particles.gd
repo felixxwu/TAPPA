@@ -1,12 +1,9 @@
 class_name WheelParticles
-extends MultiMeshInstance3D
+extends CpuParticlePool
 # Cheap gravel/dirt spray flung backwards from the driven wheels whenever they
 # spin faster than the ground — a burnout, a wheelspin launch, or a spinning
-# slide. The gl_compatibility renderer (desktop + mobile) has no Decals and no
-# GPU-particle physics to lean on, so this is the cheapest particle that still
-# reads as a clod of dirt: a hand-rolled CPU pool drawn through ONE MultiMesh of
-# small billboarded quads. One draw call, one shared 2-triangle mesh, a fixed
-# instance count, and no per-particle scene nodes.
+# slide. A hand-rolled CPU pool drawn through ONE MultiMesh of small billboarded
+# quads (the shared ring-buffer machinery lives in CpuParticlePool).
 #
 # Created + wired by world.gd._generate_track (reused across event regenerations,
 # re-targeted on a car swap, exactly like TireMarks). The pool is a fixed-size
@@ -21,11 +18,6 @@ extends MultiMeshInstance3D
 # per-instance set_instance_transform() calls (the latter is the classic
 # MultiMesh perf trap — N engine round-trips a frame murders mobile/WebGL).
 const STRIDE := 12
-# Dead particles are parked far below the world (origin Y) rather than zero-scaled —
-# billboard materials don't reliably honour a zero instance scale under
-# gl_compatibility, but a quad this far down is always off-screen, so it draws
-# nothing visible.
-const HIDE_Y := -1.0e7
 
 # Surface gate thresholds against TerrainManager.surface_at (road_weight, tarmac_weight).
 # The wheel must be at least half onto the road (else it's grass) AND on the gravel
@@ -36,14 +28,9 @@ const TARMAC_WEIGHT_MAX := 0.5
 
 var _car: Node                 # the VehicleBody3D (read for drivetrain + position)
 
-# Particle pool (parallel arrays, index == MultiMesh instance == ring slot).
-var _pos: PackedVector3Array
-var _vel: PackedVector3Array
-var _life: PackedFloat32Array  # remaining lifetime (s); <= 0 means the slot is dead
-var _buffer: PackedFloat32Array  # the live MultiMesh transform buffer (STRIDE floats/slot)
-var _next := -1                # ring-buffer write cursor (advances, wraps, recycles oldest)
-var _alive := 0
-var _max := 0
+
+func _stride() -> int:
+	return STRIDE
 
 
 # Wire to the current car. The wheel/surface state is read live off the car's
@@ -65,7 +52,6 @@ func retarget(car: Node) -> void:
 # billboarded and cull-disabled (same style as the debug/tire-mark overlays).
 func _build_pool() -> void:
 	var cfg: GameConfig = Config.data
-	_max = maxi(1, cfg.wheel_particle_max)
 	var quad := QuadMesh.new()
 	quad.size = Vector2(cfg.wheel_particle_size_m, cfg.wheel_particle_size_m)
 	var mat := StandardMaterial3D.new()
@@ -77,16 +63,12 @@ func _build_pool() -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = quad
-	mm.instance_count = _max
+	mm.instance_count = maxi(1, cfg.wheel_particle_max)
 	multimesh = mm
-	_pos = PackedVector3Array(); _pos.resize(_max)
-	_vel = PackedVector3Array(); _vel.resize(_max)
-	_life = PackedFloat32Array(); _life.resize(_max)
+	_alloc_pool(mm.instance_count)
 	# Pre-seed every slot's transform with an identity basis (rows on the diagonal)
 	# and a hidden origin. From here on only the three origin floats per slot ever
 	# change, so the buffer never has to rebuild bases.
-	_buffer = PackedFloat32Array()
-	_buffer.resize(_max * STRIDE)
 	for i in _max:
 		var b := i * STRIDE
 		_buffer[b + 0] = 1.0   # basis row 0 x
@@ -111,36 +93,9 @@ func _hide_slot(i: int) -> void:
 	_buffer[b + 11] = 0.0
 
 
-# Kill every particle and park its instance off-screen.
-func _clear() -> void:
-	_next = -1
-	_alive = 0
-	if multimesh == null or _buffer.is_empty():
-		return
-	for i in _max:
-		_life[i] = 0.0
-		_hide_slot(i)
-	multimesh.buffer = _buffer
-
-
-# Force this pool's shader variant to compile NOW (during track generation, behind
-# the loading overlay) instead of on the first gravel wheelspin. Under
-# gl_compatibility a material compiles on its first VISIBLE draw, and every slot
-# sits off-screen at HIDE_Y until then — so we park one full-size clod in front of
-# the camera for a rendered frame, then clear_warm_up() hides it again. See
-# features/wheel-dust.md.
-func warm_up(pos: Vector3) -> void:
-	if multimesh == null or _buffer.is_empty():
-		return
-	_life[0] = 1.0
-	_alive = 1
-	_set_origin(0, pos)  # identity basis (from _build_pool) -> full quad, so it draws
-	multimesh.buffer = _buffer
-
-
-# Undo warm_up(): park the warm-up clod off-screen and reset the pool to empty.
-func clear_warm_up() -> void:
-	_clear()
+# A warmed-up slot draws with the pre-seeded identity basis -> full quad.
+func _build_slot(i: int, p: Vector3) -> void:
+	_set_origin(i, p)
 
 
 func _physics_process(delta: float) -> void:
@@ -256,20 +211,5 @@ func _spray(cfg: GameConfig, cp: Vector3, fwd: Vector3, vel: Vector3, surface_sp
 
 # Write one particle into the ring buffer, recycling the oldest slot when full.
 func _emit(cfg: GameConfig, pos: Vector3, vel: Vector3) -> void:
-	_next = (_next + 1) % _max
-	if _life[_next] <= 0.0:
-		_alive += 1  # reused a dead slot; overwriting a live one keeps the count
-	_pos[_next] = pos
-	_vel[_next] = vel
-	_life[_next] = cfg.wheel_particle_lifetime_s
+	_emit_slot(pos, vel, cfg.wheel_particle_lifetime_s)
 	_set_origin(_next, pos)  # caller uploads the whole buffer once per tick
-
-
-# --- Readouts (tests) --------------------------------------------------------
-
-func live_count() -> int:
-	return _alive
-
-
-func max_particles() -> int:
-	return _max

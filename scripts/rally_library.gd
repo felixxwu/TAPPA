@@ -176,17 +176,27 @@ const RALLIES: Array[Dictionary] = [
 
 
 # --- Lookups -----------------------------------------------------------------
+# Test seam + stable-id lookups via the shared Registry helper (scripts/registry.gd),
+# matching CarLibrary/EngineLibrary. An empty override means "use the shipped
+# RALLIES"; tests call override_for_test()/reset() to run against a synthetic list.
+static var _seam := Registry.Seam.new(RALLIES)
+
+static func all() -> Array[Dictionary]:
+	return _seam.all()
+
+static func override_for_test(rallies: Array[Dictionary]) -> void:
+	_seam.override_for_test(rallies)
+
+static func reset() -> void:
+	_seam.reset()
+
 
 static func index_of(id: String) -> int:
-	for i in RALLIES.size():
-		if RALLIES[i]["id"] == id:
-			return i
-	return -1
+	return Registry.index_of(all(), id)
 
 
 static func by_id(id: String) -> Dictionary:
-	var i := index_of(id)
-	return RALLIES[i] if i >= 0 else {}
+	return Registry.by_id(all(), id)
 
 
 # Width an event runs at — its override, else the authored default.
@@ -482,7 +492,7 @@ static func completed_count(profile: Dictionary) -> int:
 # The showdown is enterable only when every non-showdown rally is completed.
 static func showdown_unlocked(profile: Dictionary) -> bool:
 	var rallies: Dictionary = profile.get("rallies", {})
-	for rally in RALLIES:
+	for rally in all():
 		if rally["showdown"]:
 			continue
 		if not rallies.get(rally["id"], {}).get("completed", false):
@@ -496,7 +506,7 @@ static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dicti
 	var rallies: Dictionary = profile.get("rallies", {})
 	var out: Array = []
 	var sd_unlocked := showdown_unlocked(profile)
-	for rally in RALLIES:
+	for rally in all():
 		if rallies.get(rally["id"], {}).get("completed", false):
 			continue
 		if rally["showdown"] and not sd_unlocked:

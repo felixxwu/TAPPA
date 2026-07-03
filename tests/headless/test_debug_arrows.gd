@@ -2,7 +2,9 @@ extends GutTest
 
 
 func test_wheel_force_arrows_drawn_when_grounded() -> void:
-	var scene: Node3D = load("res://main.tscn").instantiate()
+	# Flat fixture (car + ground) — this only inspects the car's debug overlay, so
+	# it doesn't need main.tscn's terrain/track/foliage generation.
+	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(scene)
 	var car: VehicleBody3D = scene.get_node("Car")
 	for i in 60:  # let the car settle onto its wheels
@@ -28,7 +30,8 @@ func test_wheel_force_arrows_drawn_when_grounded() -> void:
 
 
 func test_collision_box_shown_and_transparent_with_arrows() -> void:
-	var scene: Node3D = load("res://main.tscn").instantiate()
+	# Flat fixture (car + ground) — only inspects the car's overlay/collision box.
+	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(scene)
 	var car: VehicleBody3D = scene.get_node("Car")
 	for i in 30:
@@ -179,7 +182,8 @@ func test_assist_arrow_reflects_combined_yaw_assist() -> void:
 
 
 func test_h_key_toggles_arrows() -> void:
-	var scene: Node3D = load("res://main.tscn").instantiate()
+	# Flat fixture (car + ground) — only inspects the car's overlay.
+	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(scene)
 	var car: VehicleBody3D = scene.get_node("Car")
 	for i in 30:

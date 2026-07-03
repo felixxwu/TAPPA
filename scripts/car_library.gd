@@ -255,36 +255,30 @@ const CARS: Array[Dictionary] = [
 # save system survives the roster being reordered or extended. These resolve a
 # stored id back to the current array position / entry.
 
-# Test seam: an empty override means "use the shipped CARS". Tests call
-# override_for_test() to run against a synthetic roster and reset() in teardown.
-# Inert in production (_test_catalogue is always empty there).
-static var _test_catalogue: Array[Dictionary] = []
+# Test seam + stable-id lookups via the shared Registry helper (scripts/registry.gd).
+# An empty override means "use the shipped CARS"; tests call override_for_test() to
+# run against a synthetic roster and reset() in teardown. Inert in production.
+static var _seam := Registry.Seam.new(CARS)
 
 static func all() -> Array[Dictionary]:
-	return _test_catalogue if not _test_catalogue.is_empty() else CARS
+	return _seam.all()
 
 static func override_for_test(cars: Array[Dictionary]) -> void:
-	_test_catalogue = cars
+	_seam.override_for_test(cars)
 
 static func reset() -> void:
-	_test_catalogue = []
+	_seam.reset()
 
 
 # Array position of the car with this stable id, or -1 if no such car exists
 # (e.g. a car removed from the roster — the save system drops orphaned entries).
 static func index_of(id: String) -> int:
-	var cars := all()
-	for i in cars.size():
-		if cars[i]["id"] == id:
-			return i
-	return -1
+	return Registry.index_of(all(), id)
 
 
 # The CarLibrary entry for a stable id, or an empty Dictionary if unknown.
 static func by_id(id: String) -> Dictionary:
-	var cars := all()
-	var i := index_of(id)
-	return cars[i] if i >= 0 else {}
+	return Registry.by_id(all(), id)
 
 
 # A rough power-to-weight figure (kW per kg) derived from the published torque,

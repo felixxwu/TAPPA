@@ -1,5 +1,8 @@
+class_name SimTest
 extends GutTest
 # Shared base for physics-scene tests on the flat test-track fixture.
+# Tests may `extends SimTest` (or the existing path form
+# `extends "res://tests/headless/sim_test.gd"` — both resolve to this base).
 #
 # WHY THIS EXISTS — the runner's --fixed-fps 60 already decouples the loop from
 # wall-clock (frames run at CPU speed, same 1/60 delta), so the remaining cost is

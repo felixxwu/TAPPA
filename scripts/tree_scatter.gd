@@ -42,14 +42,6 @@ static func turn_anchor(piece: Dictionary) -> Vector2:
 	return sum / float(maxi(cells.size(), 1))
 
 
-# True if the cell containing `p` is a road cell — i.e. the tree would sit on the
-# painted track. A tree in any non-road cell is allowed, so trees can land in the
-# cell immediately beside the road.
-static func _on_road(p: Vector2, road_cells: Dictionary) -> bool:
-	var cell := Vector2i(floori(p.x / CELL_M), floori(p.y / CELL_M))
-	return road_cells.has(cell)
-
-
 # The scatter grid's cell size (m): chosen so that one point per cell over a disc of
 # `spawn_radius_m` yields ~`trees_per_turn` points, matching the old per-turn count.
 static func grid_cell_size(params: Dictionary) -> float:
@@ -60,21 +52,13 @@ static func grid_cell_size(params: Dictionary) -> float:
 	return radius * sqrt(PI / per_turn)
 
 
-# A stable pseudo-random in [0, 1) for (cell, seed, axis) — order-independent (a pure
-# hash, not a running RNG), so a cell's jitter doesn't depend on iteration order and a
-# different seed (e.g. the bush offset) produces a different, interleaved pattern.
-static func _hash01(cx: int, cz: int, seed_value: int, salt: int) -> float:
-	var h := hash([cx, cz, seed_value, salt])
-	return float(posmod(h, 1000003)) / 1000003.0
-
-
 # The world-XZ point for grid cell (cx, cz): the cell centre, shifted by the per-seed
 # lattice `phase`, plus a seeded jitter of up to ±jitter/2 of a cell in each axis. The
 # uniform phase doesn't change relative spacing, so two points are still no closer than
 # (1 - jitter) * cell (axis-adjacent worst case) — spacing guaranteed by construction.
 static func _cell_point(cx: int, cz: int, cell: float, jitter: float, seed_value: int, phase: Vector2) -> Vector2:
-	var jx := (_hash01(cx, cz, seed_value, 0) - 0.5) * jitter
-	var jz := (_hash01(cx, cz, seed_value, _JITTER_SALT) - 0.5) * jitter
+	var jx := (ScatterMath.hash01(cx, cz, seed_value, 0) - 0.5) * jitter
+	var jz := (ScatterMath.hash01(cx, cz, seed_value, _JITTER_SALT) - 0.5) * jitter
 	return Vector2((cx + 0.5 + jx) * cell, (cz + 0.5 + jz) * cell) + phase
 
 
@@ -82,8 +66,8 @@ static func _cell_point(cx: int, cz: int, cell: float, jitter: float, seed_value
 # (trees vs bushes) land on interleaved grids rather than the same cells.
 static func _grid_phase(cell: float, seed_value: int) -> Vector2:
 	return Vector2(
-		_hash01(0, 0, seed_value, _PHASE_SALT_X) * cell,
-		_hash01(0, 0, seed_value, _PHASE_SALT_Z) * cell)
+		ScatterMath.hash01(0, 0, seed_value, _PHASE_SALT_X) * cell,
+		ScatterMath.hash01(0, 0, seed_value, _PHASE_SALT_Z) * cell)
 
 
 # The forest-patch noise: a low-frequency Perlin field (wavelength in metres) that
@@ -144,7 +128,7 @@ static func scatter(pieces: Array, road_cells: Dictionary, params: Dictionary, s
 				if anchor.distance_to(p) > radius:
 					continue
 				used[key] = true
-				if _on_road(p, road_cells):
+				if ScatterMath.on_road(p, road_cells):
 					continue  # cell consumed but the point sits on the road: skip it
 				# Forest gate: drop trees that fall in a clearing (noise below threshold).
 				if forest != null and forest_density(forest, p) <= forest_threshold:

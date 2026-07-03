@@ -12,11 +12,15 @@ extends GutTest
 var _scene: Node3D
 
 
-# main.tscn._ready() generates the full terrain + track, which is expensive, so
-# build it ONCE for the whole script. Every test here is a read-only check of
-# the rendering setup (or runs a few process frames on it), so a single shared
-# instance is safe.
+# minimal_world() trims main.tscn's expensive terrain/track/foliage generation
+# (see scene_helpers.gd), and we build the scene ONCE for the whole script. Every
+# test here is a read-only check of the rendering setup (or runs a few process
+# frames on it), so a single shared instance is safe. The rendering nodes
+# (WorldEnvironment, DistantTerrain, chunk Floor, PostProcess, SpeedLines, car
+# materials) and _tree_mesh() are all built regardless of track length/foliage,
+# so the minimal build still exercises everything asserted below.
 func before_all() -> void:
+	SceneTestHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	await get_tree().physics_frame  # let world._ready() generate + apply + build
@@ -24,6 +28,7 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_scene.free()
+	Config.reset()  # minimal_world() zeroed foliage/track — restore the baseline for later files
 
 
 func _assert_shader_material(mat: Material, who: String) -> void:

@@ -265,13 +265,54 @@ func _physics_process(delta: float) -> void:
 			if Input.is_action_just_pressed("shift_down"):
 				engine.request_shift(-1)
 
+	var speed := linear_velocity.length()
+	# Resolve the continuous driver controls (throttle/brake split, driven
+	# direction, foot brake, handbrake, clutch) into the drivetrain step inputs.
+	var inputs := _resolve_drive_inputs(engine, speed)
+	var drive: float = inputs["drive"]
+	var brake_input: float = inputs["brake_input"]
+	var handbrake: bool = inputs["handbrake"]
+	var declutch: bool = inputs["declutch"]
+	# Stiction hold: a fully-pinned axle (handbrake or the low-speed parking brake)
+	# should stop the car creeping down a slope. See _apply_parking_hold.
+	_apply_parking_hold(handbrake or brake_input >= 1.0, speed, delta)
+	# Damage misfire: feed the engine its misfire intensity so it cuts fuel in
+	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
+	# cuts; ramps to 1 at 0 HP). See features/damage.md.
+	engine.misfire_level = damage.misfire_level(cfg)
+	drivetrain.step(delta, drive, brake_input, handbrake, declutch)
+
+	# Quadratic aero drag + speed-squared per-axle downforce (and the debug readout).
+	_apply_aero()
+
+	# Point the front wheels (caster toward travel + input steer, damage toe),
+	# then the yaw aids that key off the travel geometry it returns.
+	var angles := _update_steering(delta, speed)
+	# Direct yaw torque while steering, to fight understeer when the front tires
+	# alone can't rotate the car (faded in with speed, tapered as the car rotates in).
+	_apply_steer_assist(speed, angles["travel_angle"])
+	# Slide-recovery counterpart: pulls the nose back once the car has rotated
+	# past spin_assist_angle from its travel direction. Accumulates onto the readout.
+	_apply_spin_protection(speed, angles["slip_angle"], handbrake)
+	# Self-righting assist while any wheel is airborne.
+	_apply_level_assist()
+
+	if not controls_locked and not ai_controlled and Input.is_action_just_pressed("reset_car"):
+		_reset()
+
+
+# Resolve the driver's continuous controls into the drivetrain step's inputs: the
+# throttle/brake pedal split, the driven direction (drive), foot brake, handbrake
+# and clutch (declutch). Handles the automatic vs manual gearbox logic and the
+# locked / scripted-AI / finish-stop special cases. Returns
+# {drive, brake_input, handbrake, declutch}.
+func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 	# Neutralise driver input while locked; the forced handbrake below holds the
 	# car on a slope without freezing the whole simulation.
 	var throttle := ai_throttle if ai_controlled else (0.0 if controls_locked else Input.get_axis("brake_reverse", "accelerate"))
 	var fwd_pedal := maxf(throttle, 0.0)  # W
 	var rev_pedal := maxf(-throttle, 0.0)  # S
 	var moving_forward := linear_velocity.dot(-global_transform.basis.z) > 1.0
-	var speed := linear_velocity.length()
 	var drive := 0.0
 	var brake_input := 0.0
 	if engine.auto:
@@ -314,21 +355,15 @@ func _physics_process(delta: float) -> void:
 		# the open handbrake clutch. Release the foot brake once stopped.
 		declutch = false
 		brake_input = 1.0 if speed > FINISH_STOP_SPEED else 0.0
-	# Stiction hold: a fully-pinned axle (handbrake or the low-speed parking brake)
-	# should stop the car creeping down a slope. See _apply_parking_hold.
-	_apply_parking_hold(handbrake or brake_input >= 1.0, speed, delta)
-	# Damage misfire: feed the engine its misfire intensity so it cuts fuel in
-	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
-	# cuts; ramps to 1 at 0 HP). See features/damage.md.
-	engine.misfire_level = damage.misfire_level(cfg)
-	drivetrain.step(delta, drive, brake_input, handbrake, declutch)
+	return {"drive": drive, "brake_input": brake_input, "handbrake": handbrake, "declutch": declutch}
 
-	# Quadratic aero drag; with redline-limited gearing, this sets how hard
-	# the top of each gear pulls.
+
+# Quadratic aero drag plus speed-squared downforce at each axle, pressing the body
+# down so suspension compression raises wheel normal force (and therefore grip).
+# With redline-limited gearing, the drag sets how hard the top of each gear pulls.
+func _apply_aero() -> void:
+	var cfg: GameConfig = config
 	apply_central_force(-linear_velocity * linear_velocity.length() * cfg.drag_coefficient)
-
-	# Speed-squared downforce per axle, pressing the body down so suspension
-	# compression raises wheel normal force (and therefore grip).
 	var v2 := linear_velocity.length_squared()
 	var down := -global_transform.basis.y
 	apply_force(down * v2 * cfg.downforce_front, global_transform.basis * _front_axle)
@@ -342,13 +377,18 @@ func _physics_process(delta: float) -> void:
 			[global_position + global_transform.basis * _rear_axle, down * v2 * cfg.downforce_rear],
 		]
 
-	# Front wheels caster toward the direction of travel (blended in by
-	# steer_travel_alignment; at 1.0 they fully track it, making countersteer
-	# in a slide automatic). The alignment is faded in linearly with speed (0 at
-	# standstill up to full at steer_assist_min_speed) so it doesn't snap in at
-	# low speed. Steering input offsets them by a fixed steer_limit.
+
+# Point the front wheels: caster toward the direction of travel (blended in by
+# steer_travel_alignment; at 1.0 they fully track it, making countersteer in a
+# slide automatic) faded in linearly with speed (0 at standstill up to full at
+# steer_assist_min_speed) so it doesn't snap in at low speed, offset by the
+# speed-scaled input steer. Smooths the raw input into `_steer`, sets `steering`,
+# and lays the persisted damage toe on top. Returns the travel geometry
+# {slip_angle, travel_angle} the yaw assists key off.
+func _update_steering(delta: float, speed: float) -> Dictionary:
+	var cfg: GameConfig = config
 	var local_vel := global_transform.basis.inverse() * linear_velocity
-	var slip_angle := 0.0  # unclamped travel-direction yaw; also feeds spin protection below
+	var slip_angle := 0.0  # unclamped travel-direction yaw; also feeds spin protection
 	var travel_angle := 0.0
 	if Vector2(local_vel.x, local_vel.z).length() > 2.0 and local_vel.z < 0.0:
 		# Yaw of the travel direction relative to the car's forward (-Z),
@@ -384,45 +424,50 @@ func _physics_process(delta: float) -> void:
 	# direction (and the wheel visual off it too). No synthetic steer bias. See
 	# features/damage.md / DamageModel.nudge_wheels.
 	_apply_wheel_toe()
-	# Direct yaw torque about the car's up axis while steering, to fight
-	# understeer when the front tires alone can't rotate the car. Faded in
-	# linearly from 0 at standstill to full at steer_assist_min_speed (rather
-	# than switched on abruptly at that threshold), so it ramps back up smoothly
-	# with no sudden jump while still staying out of low-speed handling.
+	return {"slip_angle": slip_angle, "travel_angle": travel_angle}
+
+
+# Direct yaw torque about the car's up axis while steering, to fight understeer
+# when the front tires alone can't rotate the car. Faded in linearly from 0 at
+# standstill to full at steer_assist_min_speed (rather than switched on abruptly),
+# and tapered off as the car rotates into the turn so it stops adding torque once
+# turned enough (no over-rotation/spin). Sets the combined assist readout.
+func _apply_steer_assist(speed: float, travel_angle: float) -> void:
+	var cfg: GameConfig = config
 	var assist_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
-	# Taper the assist off as the car rotates into the turn. travel_angle is the
-	# slip angle (travel direction relative to the car's nose); steering into a
-	# slide rotates the car so its nose leads the travel direction, which is the
-	# same sign as steer_input. -travel_angle * sign(steer_input) is therefore how
-	# far the car has already rotated in the steering direction. Full assist at 0,
-	# fading linearly to none at steer_assist_max_angle, so it helps rotate the car
-	# in but stops adding torque once it's turned enough — no over-rotation/spin.
+	# travel_angle is the slip angle (travel direction relative to the car's nose);
+	# steering into a slide rotates the car so its nose leads the travel direction,
+	# the same sign as steer_input. -travel_angle * sign(_steer) is therefore how far
+	# the car has already rotated in the steering direction. Full assist at 0, fading
+	# linearly to none at steer_assist_max_angle.
 	var rotated_into_turn := -travel_angle * signf(_steer)
 	var angle_scale := 1.0
 	if cfg.steer_assist_max_angle > 0.0:
 		angle_scale = clampf(1.0 - rotated_into_turn / cfg.steer_assist_max_angle, 0.0, 1.0)
 	var steer_assist_yaw := _steer * cfg.steer_assist_torque * assist_scale * angle_scale
 	apply_torque(global_transform.basis.y * steer_assist_yaw)
-	# Reset the combined assist readout each tick, then accumulate both aids into it
-	# for the debug overlay's single left/right arrow.
+	# Reset the combined assist readout each tick; spin protection accumulates onto it.
 	steer_assist_readout = steer_assist_yaw
 
-	# Spin protection: once the car has rotated further than spin_assist_angle
-	# away from its direction of travel, a corrective yaw torque pulls the nose
-	# back toward the travel direction — the slide-recovery counterpart to the
-	# steer assist above (which merely stops adding rotation past its taper).
-	# slip_angle's sign points toward the travel direction (positive left), so
-	# torquing along sign(slip_angle) always rotates the nose back. The torque
-	# ramps in linearly from 0 at the threshold to full at twice it, shares the
-	# steer assist's speed fade-in (assist_scale) so it stays out of low-speed
-	# manoeuvring, and carries a yaw-rate damping term so the slide settles
-	# instead of oscillating nose-side-to-side. Suppressed while the handbrake
-	# is held, so deliberate handbrake drifts stay possible. Only active while
-	# travelling nose-forward (slip_angle is 0 past 90° / when reversing — the
-	# aid prevents reaching a spin, it doesn't unwind a completed one).
+
+# Spin protection: once the car has rotated further than spin_assist_angle away
+# from its direction of travel, a corrective yaw torque pulls the nose back toward
+# the travel direction — the slide-recovery counterpart to the steer assist (which
+# merely stops adding rotation past its taper). slip_angle's sign points toward the
+# travel direction (positive left), so torquing along sign(slip_angle) always
+# rotates the nose back. Ramps in linearly from 0 at the threshold to full at twice
+# it, shares the steer assist's speed fade-in (assist_scale) so it stays out of
+# low-speed manoeuvring, and carries a yaw-rate damping term so the slide settles
+# instead of oscillating nose-side-to-side. Suppressed while the handbrake is held,
+# so deliberate handbrake drifts stay possible. Only active while travelling
+# nose-forward (slip_angle is 0 past 90° / when reversing — the aid prevents
+# reaching a spin, it doesn't unwind a completed one).
+func _apply_spin_protection(speed: float, slip_angle: float, handbrake: bool) -> void:
+	var cfg: GameConfig = config
 	if cfg.spin_assist_torque > 0.0 and cfg.spin_assist_angle > 0.0 and not handbrake:
 		var excess := absf(slip_angle) - cfg.spin_assist_angle
 		if excess > 0.0:
+			var assist_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
 			var spin_scale := clampf(excess / cfg.spin_assist_angle, 0.0, 1.0) * assist_scale
 			var up := global_transform.basis.y
 			var yaw_rate := angular_velocity.dot(up)
@@ -431,14 +476,16 @@ func _physics_process(delta: float) -> void:
 			apply_torque(up * spin_assist_yaw)
 			steer_assist_readout += spin_assist_yaw
 
-	# Self-righting assist: while any wheel is off the ground, ease the chassis
-	# back toward level. up × world_up is the roll+pitch axis that rotates the
-	# car's up toward vertical — it lies in the horizontal plane, so it adds no
-	# yaw — and its length is sin(tilt), so the correction grows the further the
-	# car is from flat (peaking near 90°). A damping term opposing the roll+pitch
-	# angular velocity (the yaw component, about the car's own up, is left free)
-	# keeps it from overshooting level and wobbling. No effect once all four
-	# wheels plant.
+
+# Self-righting assist: while any wheel is off the ground, ease the chassis back
+# toward level. up × world_up is the roll+pitch axis that rotates the car's up
+# toward vertical — it lies in the horizontal plane, so it adds no yaw — and its
+# length is sin(tilt), so the correction grows the further the car is from flat
+# (peaking near 90°). A damping term opposing the roll+pitch angular velocity (the
+# yaw component, about the car's own up, is left free) keeps it from overshooting
+# level and wobbling. No effect once all four wheels plant.
+func _apply_level_assist() -> void:
+	var cfg: GameConfig = config
 	if cfg.level_assist_torque > 0.0 and _any_wheel_airborne():
 		var up := global_transform.basis.y
 		var roll_pitch_rate := angular_velocity - up * angular_velocity.dot(up)
@@ -446,9 +493,6 @@ func _physics_process(delta: float) -> void:
 			up.cross(Vector3.UP) * cfg.level_assist_torque
 			- roll_pitch_rate * cfg.level_assist_torque * LEVEL_ASSIST_DAMPING
 		)
-
-	if not controls_locked and not ai_controlled and Input.is_action_just_pressed("reset_car"):
-		_reset()
 
 
 # Read solid contacts each physics tick and feed obstacle hits to the damage
@@ -615,9 +659,38 @@ func use_isolated_config() -> void:
 func apply_car(index: int, rebuild_audio := true) -> String:
 	var spec: Dictionary = CarLibrary.all()[index]
 	_car_index = index
-	var cfg: GameConfig = config
+	_apply_physics_spec(spec)
+	_apply_body_meshes(spec)
+	_apply_model_visibility(spec)
+	_relocate_wheels(spec)
 
-	# Physics/config overlay; everything is read live from cfg each physics step.
+	# Rebuild the drivetrain so it re-reads the moved hardpoints and recomputes
+	# shift speeds for the new redline/gearing, on the spec's driven-axle layout.
+	_rebuild_drivetrain(spec["drive_mode"] as Drivetrain.DriveMode)
+
+	# Rebuild the engine voice for the new cylinder count / firing order. Skipped when
+	# rebuild_audio is false — apply_owned defers it to a single rebuild at the end of
+	# the fielding pipeline (after engine swap + upgrades, which can also change the
+	# voicing), instead of rebuilding here and again per later step.
+	if rebuild_audio:
+		_reconfigure_engine_audio()
+
+	# Per-car HP pool (CarLibrary metadata, mass-keyed). Free-roam fields it unbound
+	# at full HP; a future rally layer re-fields it from the OwnedCar (with the
+	# stored HP + instance id) when a car is taken to the Start line.
+	var max_hp: float = spec.get("max_hp", damage.max_hp)
+	damage.field(max_hp, max_hp)
+
+	_reset()
+	return spec["name"]
+
+
+# Overlay a CarLibrary entry's physics/config fields onto the live config (read
+# live each physics step): mass, drag, wheel radius, the referenced engine's whole
+# profile + transmission, tyre compound + widths, per-axle downforce, per-axle
+# suspension, and the mass + custom centre of mass.
+func _apply_physics_spec(spec: Dictionary) -> void:
+	var cfg: GameConfig = config
 	cfg.mass = spec["mass"]
 	cfg.drag_coefficient = spec["drag"]
 	cfg.wheel_radius = spec["wheel_radius"]
@@ -653,21 +726,16 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 	cfg.suspension_travel_rear = spec.get("suspension_travel_rear", 0.0)
 	cfg.suspension_stiffness = spec.get("suspension_stiffness", cfg.suspension_stiffness)
 	mass = cfg.mass
-
-	# Per-car centre of mass from the real static front-axle weight fraction. For
-	# static balance the CoM sits behind the front axle by wheelbase x rear_fraction,
-	# so measured from the wheelbase centre (the body origin, where the axles sit at
-	# +/- half_base along Z; forward is -Z) the offset is wheelbase x (rear_frac - 0.5),
-	# +Z = rearward. Switching to CUSTOM overrides Godot's AUTO (which derives a centred
-	# CoM from the symmetric collision box). Feeds the static load split onto each axle
-	# via the settling suspension -> Drivetrain.wheel_normal_force -> tyre grip balance.
-	# Also drives the front/rear spring-rate split (GameConfig.axle_stiffness).
+	# Per-car centre of mass from the real static front-axle weight fraction. Also
+	# drives the front/rear spring-rate split (GameConfig.axle_stiffness).
 	var front_frac: float = spec.get("weight_front", 0.5)
 	cfg.weight_front = front_frac
-	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	center_of_mass = Vector3(0.0, 0.0, spec["wheelbase"] * (1.0 - front_frac - 0.5))
+	_set_center_of_mass(spec["wheelbase"], front_frac)
 
-	# Chassis + cabin + collision boxes.
+
+# Resize the procedural chassis + cabin box meshes and the shared collision box
+# to the spec's dimensions.
+func _apply_body_meshes(spec: Dictionary) -> void:
 	var body: Vector3 = spec["body"]
 	var cabin: Vector3 = spec["cabin"]
 	(($Chassis as MeshInstance3D).mesh as BoxMesh).size = body
@@ -678,9 +746,11 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 	(cabin_mesh.mesh as BoxMesh).size = cabin
 	cabin_mesh.position = Vector3(0.0, body.y * 0.5 + cabin.y * 0.45, spec["cabin_z"])
 
-	# Authored-model cars hide the procedural chassis/cabin boxes and show ONE glb body
-	# (spec["model_node"]); every other body + the boxes are hidden. The collision box
-	# above is shared by both paths. Wheels stay procedural either way.
+
+# Authored-model cars hide the procedural chassis/cabin boxes and show ONE glb body
+# (spec["model_node"]); every other body + the boxes are hidden. The collision box
+# (set in _apply_body_meshes) is shared by both paths. Wheels stay procedural either way.
+func _apply_model_visibility(spec: Dictionary) -> void:
 	var use_model: bool = spec.get("use_model", false)
 	var active_node := String(spec.get("model_node", ""))
 	for node_name in _model_node_names():
@@ -692,8 +762,14 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 		if is_active:
 			_apply_model_material(model_body, load(String(spec.get("model_texture", ""))))
 	($Chassis as MeshInstance3D).visible = not use_model
-	cabin_mesh.visible = not use_model
+	($Cabin as MeshInstance3D).visible = not use_model
 
+
+# Reposition + resize each wheel to the spec's track / wheelbase / radius / width
+# (relocating from the AUTHORED mount, origin only), push per-axle suspension onto
+# it, and re-skin its tyre + spoke, then detach and re-attach all wheels so the
+# body re-latches the moved suspension connection points.
+func _relocate_wheels(spec: Dictionary) -> void:
 	# Tyre + spoke meshes are duplicated per-instance in _ready() (so multiple
 	# car.tscn instances, e.g. the start-line queue props, can't stomp each
 	# other's wheel visuals); resize each wheel's own copy here. Reposition each
@@ -741,30 +817,36 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 		add_child(wheel)
 		wheel.owner = self
 
-	# Rebuild the drivetrain so it re-reads the moved hardpoints and recomputes
-	# shift speeds for the new redline/gearing, then set the driven axle layout.
+
+# Recreate the drivetrain (fresh hardpoints + shift speeds for the current
+# redline/gearing) on the given driven-axle layout, re-resolve the terrain and
+# recompute the axle midpoints. Shared by apply_car and _apply_engine_swap; _ready
+# builds its own (it interleaves other setup and keeps the config-derived drive_mode).
+func _rebuild_drivetrain(drive_mode: Drivetrain.DriveMode) -> void:
 	drivetrain = Drivetrain.new(self)
 	drivetrain.terrain = _resolve_terrain()
-	drivetrain.drive_mode = spec["drive_mode"] as Drivetrain.DriveMode
+	drivetrain.drive_mode = drive_mode
 	_recompute_axles()
 
-	# Rebuild the engine voice for the new cylinder count / firing order. Skipped when
-	# rebuild_audio is false — apply_owned defers it to a single rebuild at the end of
-	# the fielding pipeline (after engine swap + upgrades, which can also change the
-	# voicing), instead of rebuilding here and again per later step.
-	if rebuild_audio:
-		var audio := $EngineAudio as Node
-		if audio.has_method("reconfigure"):
-			audio.reconfigure()
 
-	# Per-car HP pool (CarLibrary metadata, mass-keyed). Free-roam fields it unbound
-	# at full HP; a future rally layer re-fields it from the OwnedCar (with the
-	# stored HP + instance id) when a car is taken to the Start line.
-	var max_hp: float = spec.get("max_hp", damage.max_hp)
-	damage.field(max_hp, max_hp)
+# Rebuild the EngineAudio voice for the current engine profile / voicing, when the
+# node supports it (some headless fixtures swap in a stub without reconfigure()).
+func _reconfigure_engine_audio() -> void:
+	var audio := $EngineAudio as Node
+	if audio.has_method("reconfigure"):
+		audio.reconfigure()
 
-	_reset()
-	return spec["name"]
+
+# Set the custom centre of mass from the static front-axle weight fraction. For
+# static balance the CoM sits behind the front axle by wheelbase x rear_fraction, so
+# measured from the wheelbase centre (the body origin, where the axles sit at
+# +/- half_base along Z; forward is -Z) the offset is wheelbase x (0.5 - weight_front),
+# +Z = rearward. Switching to CUSTOM overrides Godot's AUTO (which derives a centred
+# CoM from the symmetric collision box). Feeds the static load split onto each axle
+# via the settling suspension -> Drivetrain.wheel_normal_force -> tyre grip balance.
+func _set_center_of_mass(wheelbase: float, weight_front: float) -> void:
+	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	center_of_mass = Vector3(0.0, 0.0, wheelbase * (0.5 - weight_front))
 
 
 # Field an OwnedCar (features/rally-session.md fielding pipeline): the CarLibrary
@@ -801,9 +883,7 @@ func apply_owned(owned: Dictionary) -> String:
 	# turbo fitted as an UPGRADE (whistle/BOV gains + turbo_enabled), not just the
 	# engine. The synth caches voicing at build time, so without this a turbo on an NA
 	# car would be silent even though its physics reads the config live.
-	var audio := $EngineAudio as Node
-	if audio.has_method("reconfigure"):
-		audio.reconfigure()
+	_reconfigure_engine_audio()
 	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
 	# removes it from the save.
 	var entry := CarLibrary.by_id(model_id)
@@ -834,10 +914,7 @@ func _apply_engine_swap(owned: Dictionary) -> void:
 	# Rebuild drivetrain (new redline/shift speeds; gearbox ratios already in cfg). The
 	# engine voice is NOT rebuilt here — this is only ever called from apply_owned, which
 	# rebuilds the synth once after all config mutation (swap + upgrades + tuning).
-	drivetrain = Drivetrain.new(self)
-	drivetrain.terrain = _resolve_terrain()
-	drivetrain.drive_mode = spec["drive_mode"] as Drivetrain.DriveMode
-	_recompute_axles()
+	_rebuild_drivetrain(spec["drive_mode"] as Drivetrain.DriveMode)
 
 	# Independent engine weight + position -> new total mass and weight distribution.
 	var m0 := float(EngineLibrary.by_id(stock).get("mass", 0.0))
@@ -848,7 +925,7 @@ func _apply_engine_swap(owned: Dictionary) -> void:
 	cfg.mass = EngineSwap.recompute_mass(spec_mass, m0, m1)
 	cfg.weight_front = EngineSwap.recompute_weight_front(spec_mass, spec_wf, m0, m1, ef)
 	mass = cfg.mass
-	center_of_mass = Vector3(0.0, 0.0, spec["wheelbase"] * (0.5 - cfg.weight_front))
+	_set_center_of_mass(spec["wheelbase"], cfg.weight_front)
 
 
 # Bend each wheel by its persisted damage toe (radians) via the per-wheel

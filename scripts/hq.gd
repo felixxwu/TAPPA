@@ -79,7 +79,6 @@ const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.4)
 # (before _ready), which would stretch the "stuck at 100%" gap after Godot's boot bar.
 # Both are only needed by _build_hq, which runs behind our LoadingScreen.
 const CAR_SCENE_PATH := "res://car.tscn"
-const TREE_MODEL_PATH := "res://models/low_poly_tree.glb"
 var _car_scene: PackedScene  # cached on first use (load() also caches engine-side)
 
 
@@ -147,11 +146,12 @@ var _lift_page: int = LiftPage.HUB
 var _lift_raised := false
 var _lift_tween: Tween
 
-# 3D staging.
+# 3D staging. The STATIC world (sky, grass, buildings, trees, garage, car-park
+# surface, map table, lift) is built by HQEnvironment; hq keeps the handles it drives.
+var _env: HQEnvironment
 var _camera: Camera3D
 var _cam_tween: Tween
 var _map_table: MapTable        # the wooden table model the map plane sits on
-var _map_plane: MeshInstance3D  # the flat map laid on the table top
 var _pins_root: Node3D          # parent of the rally pins
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
 var _table_pin_index := -1      # keyboard/gamepad cursor into _unlocked_pins() (-1 = none)
@@ -190,13 +190,11 @@ var _car_warning_label: Label
 var _car_repair_button: Button
 
 # Garage overlay cursor: a single left/right cursor over the bottom action row
-# (Back / Map / Tune Car / Free Roam), painted by _refresh_garage_focus and fired by
-# _activate_garage_focus. Buttons are FOCUS_NONE and highlighted by hand (like the
-# tuning hub) since the garage is a spatially-navigated 3D station, not a focus graph.
-var _garage_back_btn: Button    # "< Back" — index 0
-var _garage_table_btn: Button   # "Map" — index 1
-var _garage_lift_btn: Button    # "Tune Car" — index 2
-var _garage_freeroam_btn: Button  # "Free Roam" — index 3
+# (Back / Map / Tune Car / Free Roam). Buttons are FOCUS_NONE and highlighted by hand
+# (a ButtonCursor, like the tuning hub) since the garage is a spatially-navigated 3D
+# station, not a focus graph. hq keeps the index (_garage_focus, read by tests); the
+# ButtonCursor owns the shared wrap/paint/fire behaviour (scripts/button_cursor.gd).
+var _garage_cursor := ButtonCursor.new()
 var _garage_focus := 1          # which garage action the cursor sits on (defaults to Map)
 
 # Garage-overflow overlay widgets (the OVERFLOW station — scrap a car to make room).
@@ -210,10 +208,9 @@ var _scrap_button: Button
 var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
 var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Change Car + Tuning/Upgrades buttons
-var _hub_back_btn: Button       # HUB "< Back" — left of the left/right cursor (index 0)
-var _hub_change_btn: Button     # HUB "Change Car" — index 1 of the left/right cursor
-var _hub_tune_btn: Button       # HUB "Tuning >" — index 2 of the left/right cursor
-var _hub_upgrades_btn: Button   # HUB "Upgrades >" — right of the left/right cursor (index 3)
+# The HUB's Back / Change Car / Tuning / Upgrades row is a left/right ButtonCursor, same
+# as the garage: hq keeps the index (_hub_focus, read by tests), the cursor the behaviour.
+var _hub_cursor := ButtonCursor.new()
 var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Change Car, 2 = Tune, 3 = Upgrades)
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
@@ -263,7 +260,12 @@ func _ready() -> void:
 # Build the whole HQ (environment, station overlays, map pins, initial title view).
 # Synchronous; the caller decides whether to cover it with a loading screen.
 func _build_hq() -> void:
-	_build_environment()
+	_env = HQEnvironment.new()
+	# The pickable table / lift areas route their clicks back to hq's own handlers.
+	_env.build(self, _on_table_input, _on_lift_input)
+	_camera = _env.camera
+	_map_table = _env.map_table
+	_pins_root = _env.pins_root
 	_build_title_overlay()
 	_build_garage_overlay()
 	_build_table_overlay()
@@ -305,331 +307,12 @@ func _ensure_selection() -> void:
 	Save.selected_car()
 
 
-# --- 3D world (buildings, garage, table, lift, car park) ---------------------
+# --- 3D world (built by HQEnvironment) ---------------------------------------
 
-func _build_environment() -> void:
-	var env := WorldEnvironment.new()
-	var e := Environment.new()
-	# Same skybox as the run scene (main.tscn) so HQ shares the look. The garage
-	# stays lit (directional + ambient below); the sky is just the backdrop.
-	var sky_mat := PanoramaSkyMaterial.new()
-	sky_mat.panorama = load("res://textures/sky_field.png")
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	e.background_mode = Environment.BG_SKY
-	e.sky = sky
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.6, 0.6, 0.68)
-	e.ambient_light_energy = 1.0
-	env.environment = e
-	add_child(env)
-
-	var sun := DirectionalLight3D.new()
-	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(40.0), 0.0)
-	sun.light_energy = 1.1
-	add_child(sun)
-
-	var cfg: GameConfig = Config.data
-	# Grass field covering the whole lot, with the concrete apron (below) laid on top
-	# around the garage + car park. The grass uses the same texture as the run scene's
-	# terrain, tiled to match (terrain_tile_per_meter), sitting a hair below the apron.
-	var grass_size := 240.0
-	var grass := MeshInstance3D.new()
-	var grass_plane := PlaneMesh.new()
-	grass_plane.size = Vector2(grass_size, grass_size)
-	grass.mesh = grass_plane
-	grass.position.y = -0.02  # just under the concrete so the apron wins where they overlap
-	var grass_mat := StandardMaterial3D.new()
-	grass_mat.albedo_texture = load("res://textures/grass.jpg")
-	grass_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	var tiles := grass_size * cfg.terrain_tile_per_meter
-	grass_mat.uv1_scale = Vector3(tiles, tiles, 1.0)
-	grass.material_override = grass_mat
-	add_child(grass)
-
-	# Grey concrete apron around the garage + car park (the player parks / tunes here).
-	var concrete := MeshInstance3D.new()
-	var concrete_plane := PlaneMesh.new()
-	concrete_plane.size = cfg.hq_concrete_size
-	concrete.mesh = concrete_plane
-	concrete.position = Vector3(cfg.hq_concrete_center.x, 0.0, cfg.hq_concrete_center.z)
-	var concrete_mat := StandardMaterial3D.new()
-	concrete_mat.albedo_color = Color(0.18, 0.19, 0.22)
-	concrete.material_override = concrete_mat
-	add_child(concrete)
-
-	# Collision floor under the lot so the parked cars settle onto their suspension
-	# (the visual ground plane has no collision). A thick box with its top at y = 0.
-	var floor_body := StaticBody3D.new()
-	var floor_shape := CollisionShape3D.new()
-	var floor_box := BoxShape3D.new()
-	floor_box.size = Vector3(240.0, 2.0, 240.0)
-	floor_shape.shape = floor_box
-	floor_shape.position = Vector3(0.0, -1.0, 0.0)  # top face at y = 0
-	floor_body.add_child(floor_shape)
-	add_child(floor_body)
-
-	_build_buildings()
-	_build_trees()
-	_build_garage()
-	_build_carpark()
-	_build_map_table()
-	_build_lift()
-
-	_camera = Camera3D.new()
-	_camera.current = true
-	add_child(_camera)
-
-
-# A solid colour block (BoxMesh, centred at pos). The building/garage/table/lift art
-# is deliberately placeholder (todo/diegetic-hq.md defers HQ art); the camera framing
-# and the table/lift/car-park positions that the flow depends on live in GameConfig.
-func _block(pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	mi.material_override = m
-	mi.position = pos
-	add_child(mi)
-	return mi
-
-
-# Placeholder skyline BEHIND the garage (−Z) — simple blocks of varying height.
-# The title camera (hq_exterior_cam_*) sits out at +Z looking back over the car
-# park toward the garage, so buildings belong behind the garage (its back wall is
-# at z ≈ −6); placing them in front of it would block the shot.
-func _build_buildings() -> void:
-	var blocks := [
-		[Vector3(-15.0, 6.0, -16.0), Vector3(9.0, 12.0, 9.0), Color(0.26, 0.28, 0.34)],
-		[Vector3(-3.0, 8.0, -24.0), Vector3(11.0, 16.0, 10.0), Color(0.24, 0.26, 0.31)],
-		[Vector3(12.0, 7.0, -18.0), Vector3(9.0, 14.0, 9.0), Color(0.30, 0.31, 0.36)],
-		[Vector3(24.0, 5.0, -13.0), Vector3(8.0, 10.0, 8.0), Color(0.28, 0.29, 0.33)],
-		[Vector3(-25.0, 5.0, -14.0), Vector3(8.0, 10.0, 9.0), Color(0.27, 0.28, 0.34)],
-		[Vector3(5.0, 5.0, -12.0), Vector3(7.0, 10.0, 7.0), Color(0.29, 0.30, 0.35)],
-	]
-	for b in blocks:
-		_block(b[0], b[1], b[2])
-
-
-# Trees framing the lot so HQ reads as an outdoor clearing under the open-field
-# skybox, instead of floating on a bare plane. Reuses the stage's low-poly tree
-# mesh field (TreeMeshField); scenery only (no collision). A close-in annulus,
-# but with the front-centre corridor kept clear so trees never block the title
-# camera's view of the car park, and the garage footprint kept clear so none
-# spawn inside it. Trees hug the garage's sides and back.
-func _build_trees() -> void:
-	var cfg: GameConfig = Config.data
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 20240
-	var positions := PackedVector2Array()
-	var inner := 18.0
-	var outer := 66.0
-	for _i in 320:
-		var ang := rng.randf() * TAU
-		var rad := sqrt(rng.randf()) * (outer - inner) + inner
-		var p := Vector2(cos(ang) * rad, sin(ang) * rad)
-		# Keep the front-centre clear: the car park sits at +Z (hq_carpark_origin)
-		# and the title camera looks down that corridor, so no trees with |x| small
-		# and z ahead of the garage. Also skip the garage footprint itself.
-		if absf(p.x) < 22.0 and p.y > 8.0:
-			continue
-		if absf(p.x) < 9.0 and absf(p.y) < 9.0:
-			continue
-		positions.append(p)
-	# HQ ground is a flat plane at y = 0; a layerless TerrainManager returns height
-	# 0 everywhere, which is all the field needs to seat the trees. Used only
-	# during build(), then freed.
-	var flat := TerrainManager.new()
-	flat.layers = [] as Array[TerrainLayer]
-	var field := TreeMeshField.new()
-	add_child(field)
-	# render_distance 1000 (no cull — HQ is small), no collision (scenery).
-	field.build(positions, flat, _hq_tree_mesh(), cfg.tree_size_m.y,
-		cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
-		1000.0, 0.0, cfg.tree_bin_size_m, false)
-	flat.free()
-
-
-# The tree ArrayMesh, pulled once from the imported .glb scene.
-func _hq_tree_mesh() -> Mesh:
-	var scene := (load(TREE_MODEL_PATH) as PackedScene).instantiate()
-	var stack: Array[Node] = [scene]
-	var mesh: Mesh = null
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is MeshInstance3D:
-			mesh = (n as MeshInstance3D).mesh
-			break
-		for c in n.get_children():
-			stack.append(c)
-	scene.free()
-	return mesh
-
-
-# The garage shell — the two-bay service-park model (scripts/garage.gd). Open
-# toward +Z (the car park) so the camera looks in through the front from the
-# garage station; the LEFT bay frames the map table (hq_table_pos, −X) and the
-# RIGHT bay frames the tuning lift (hq_lift_pos, +X). The model is sized to the
-# hq_garage_size footprint and centred at the origin (front edge at +gz/2, back
-# wall at −gz/2), matching the old placeholder so the camera stations and the
-# table/lift placement are unchanged. Its own environment + ground are off (the
-# HQ provides the sky, sun, grass and concrete apron); it keeps its per-bay
-# ceiling lights. The table-map camera (eye y ~2.6) and garage camera both sit
-# below the roof (~5.6), so neither looks down through it.
-func _build_garage() -> void:
-	var cfg: GameConfig = Config.data
-	var gx: float = cfg.hq_garage_size.x
-	var gz: float = cfg.hq_garage_size.y
-	var garage: Node3D = load("res://scripts/garage.gd").new()
-	garage.build_environment = false
-	garage.build_ground = false
-	garage.num_bays = 2
-	garage.bay_depth = gz
-	# Two bays + three pillars span the full footprint width.
-	garage.bay_width = (gx - 3.0 * garage.pillar_w) / 2.0
-	# Model origin is the centre of the FRONT edge; shift it forward by half the
-	# depth so the shell straddles the origin like the old placeholder did.
-	garage.position = Vector3(0.0, 0.0, gz * 0.5)
-	add_child(garage)
-
-
-# --- Car park surface (painted parking bays) ---------------------------------
-
-# Lay a tarmac parking-bay surface in front of the garage: a textured plane over the
-# concrete apron with painted white bay dividers, one bay per max_owned_cars slot, so
-# each parked car sits in its own marked bay. Centred on the lot (hq_carpark_origin +
-# menu_car_park_offset) and sized from the bay width (menu_car_spacing) and depth
-# (menu_carpark_bay_depth) so the bay grid lines up exactly with where _build_lineup
-# parks the cars. Built once with the HQ; the cars are parked/cleared on top of it.
-func _build_carpark() -> void:
-	var cfg: GameConfig = Config.data
-	var bays: int = max(1, cfg.max_owned_cars)
-	var bw: float = cfg.menu_car_spacing
-	var depth: float = cfg.menu_carpark_bay_depth
-	var center := _carpark_center()
-	var surface := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(bays * bw, depth)
-	surface.mesh = pm
-	# A hair above the concrete apron (y = 0) so the markings win over it without
-	# z-fighting; the cars settle onto y = 0, so this sits just under their tyres.
-	surface.position = Vector3(center.x, 0.012, center.z)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = _carpark_bay_texture(bays)
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	mat.roughness = 0.95
-	surface.material_override = mat
-	add_child(surface)
-
-
-# World centre (XZ) of the car-park lot — the bay row + its painted surface share it.
-func _carpark_center() -> Vector3:
-	var cfg: GameConfig = Config.data
-	return cfg.hq_carpark_origin + Vector3(cfg.menu_car_park_offset, 0.0, 0.0)
-
-
-# World X of the centre of bay `i` (0 = left / −X), derived from the lot centre, bay
-# count and bay width so the cars (_build_lineup) and the painted dividers agree.
+# World X of the centre of bay `i` (0 = left / −X). Delegates to HQEnvironment so the
+# parked-car lineup (_build_lineup) and the painted bay dividers agree on the grid.
 func _bay_center_x(i: int, bays: int) -> float:
-	var bw: float = Config.data.menu_car_spacing
-	return _carpark_center().x + (i + 0.5 - bays * 0.5) * bw
-
-
-# Procedural tarmac-with-bay-markings texture: a dark asphalt field with white bay
-# dividers every bay (bays + 1 lines) plus a solid "kerb" line across the back of the
-# bays (the edge the nose-out cars back up to). The divider period matches one bay so,
-# tiled 1:1 across the surface plane, the lines fall on the bay boundaries.
-func _carpark_bay_texture(bays: int) -> ImageTexture:
-	var px_per_bay := 96
-	var w := bays * px_per_bay
-	var h := 200
-	var img := Image.create(w, h, true, Image.FORMAT_RGBA8)
-	var asphalt := Color(0.15, 0.16, 0.18)
-	var paint := Color(0.86, 0.87, 0.84)
-	img.fill(asphalt)
-	var half := 3  # half line width, px
-	# Vertical bay dividers (run front-to-back along the plane's V / world Z).
-	for b in range(bays + 1):
-		var cx := clampi(b * px_per_bay, half, w - half - 1)
-		for x in range(cx - half, cx + half + 1):
-			for y in range(h):
-				img.set_pixel(x, y, paint)
-	# A solid kerb line across the back edge of every bay.
-	for y in range(0, half * 2 + 1):
-		for x in range(w):
-			img.set_pixel(x, y, paint)
-	img.generate_mipmaps()  # the lines minify cleanly when the lot is far / oblique
-	return ImageTexture.create_from_image(img)
-
-
-# The map table: a block with the flat 3D map plane on top + a pickable area so a tap
-# (in the garage view) drops the camera to the table view.
-func _build_map_table() -> void:
-	var cfg: GameConfig = Config.data
-	var p: Vector3 = cfg.hq_table_pos
-	var s: Vector3 = cfg.hq_table_size
-	# A proper wooden table (top + apron + legs + stretchers) instead of a plain
-	# block; its top surface sits at y = s.y so the map plane / pins still align.
-	_map_table = MapTable.new()
-	_map_table.table_size = s
-	_map_table.position = p
-	add_child(_map_table)
-	var top_y := p.y + s.y
-
-	_map_plane = MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = cfg.hq_map_plane_size
-	_map_plane.mesh = pm
-	var mm := StandardMaterial3D.new()
-	# Satellite map photo laid over the (now square) table top. Unshaded so the
-	# aerial colours read true under the garage lighting from the near-top-down
-	# table camera, rather than being darkened by the directional sun's angle.
-	mm.albedo_texture = load("res://textures/map_table.jpg")
-	mm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_map_plane.material_override = mm
-	_map_plane.position = Vector3(p.x, top_y + 0.01, p.z)
-	add_child(_map_plane)
-
-	_pins_root = Node3D.new()
-	add_child(_pins_root)
-
-	var area := Area3D.new()
-	var cs := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(s.x, 0.6, s.z)
-	cs.shape = box
-	area.add_child(cs)
-	area.position = Vector3(p.x, top_y, p.z)
-	area.input_ray_pickable = true
-	area.input_event.connect(_on_table_input)
-	add_child(area)
-
-
-# The tuning lift: a platform + two posts, with a pickable area. Tapping it (in the
-# garage) flashes a "coming soon" line — tuning itself is a later slice.
-func _build_lift() -> void:
-	var cfg: GameConfig = Config.data
-	var p: Vector3 = cfg.hq_lift_pos
-	var s: Vector3 = cfg.hq_lift_size
-	var metal := Color(0.40, 0.42, 0.46)
-	_block(p + Vector3(0.0, s.y * 0.5, 0.0), s, metal)  # platform
-	_block(p + Vector3(-s.x * 0.5 + 0.2, 1.1, 0.0), Vector3(0.2, 2.2, 0.2), metal)
-	_block(p + Vector3(s.x * 0.5 - 0.2, 1.1, 0.0), Vector3(0.2, 2.2, 0.2), metal)
-
-	var area := Area3D.new()
-	var cs := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(s.x, 2.4, s.z)
-	cs.shape = box
-	area.add_child(cs)
-	area.position = p + Vector3(0.0, 1.2, 0.0)
-	area.input_ray_pickable = true
-	area.input_event.connect(_on_lift_input)
-	add_child(area)
+	return HQEnvironment.bay_center_x(i, bays)
 
 
 # --- 3D map pins -------------------------------------------------------------
@@ -850,6 +533,18 @@ func _passthrough_overlay(root: Control) -> void:
 			(n as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
+# A diegetic-station action button: FOCUS_NONE (the station navigates by a manual
+# left/right cursor, not native focus), text set raw (UITheme.enforce uppercases + sizes
+# it on the next _normalize_menus), with `cb` wired to `pressed`. The repeated
+# new + FOCUS_NONE + connect idiom the garage row / tuning hub used inline.
+func _station_button(text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.pressed.connect(cb)
+	return b
+
+
 func _build_title_overlay() -> void:
 	var made := _make_overlay()
 	_title_layer = made[0]
@@ -927,36 +622,25 @@ func _build_garage_overlay() -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
-	# Back / Open map table / Tune car form a single left/right cursor (_garage_focus),
-	# painted by _refresh_garage_focus. FOCUS_NONE + hand-painted like the tuning hub,
-	# since the garage is a spatially-navigated 3D station, not a native focus graph.
-	var back := Button.new()
-	back.text = "< Back"
-	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(func() -> void: _go_to(View.EXTERIOR))
+	# Back / Map / Tune Car / Free Roam form a single left/right ButtonCursor
+	# (_garage_focus). FOCUS_NONE + hand-painted like the tuning hub, since the garage is
+	# a spatially-navigated 3D station, not a native focus graph. Each button's pressed
+	# callable is ALSO the cursor's action for that index, so click and select agree.
+	var on_back := func() -> void: _go_to(View.EXTERIOR)
+	var back := _station_button("< Back", on_back)
 	actions.add_child(back)
-	_garage_back_btn = back
 	# Convenience buttons mirroring the clickable 3D table / lift.
-	var to_table := Button.new()
-	to_table.text = "Map"
-	to_table.focus_mode = Control.FOCUS_NONE
-	to_table.pressed.connect(_enter_table)
+	var to_table := _station_button("Map", _enter_table)
 	actions.add_child(to_table)
-	_garage_table_btn = to_table
-	var to_lift := Button.new()
-	to_lift.text = "Tune Car"
-	to_lift.focus_mode = Control.FOCUS_NONE
-	to_lift.pressed.connect(_enter_lift)
+	var to_lift := _station_button("Tune Car", _enter_lift)
 	actions.add_child(to_lift)
-	_garage_lift_btn = to_lift
 	# Free Roam: drop straight into a freshly-seeded stage with neutral (0.5) terrain
 	# settings — no rally, no opponents, just driving (see _enter_free_roam).
-	var to_free := Button.new()
-	to_free.text = "Free Roam"
-	to_free.focus_mode = Control.FOCUS_NONE
-	to_free.pressed.connect(_enter_free_roam)
+	var to_free := _station_button("Free Roam", _enter_free_roam)
 	actions.add_child(to_free)
-	_garage_freeroam_btn = to_free
+	_garage_cursor.setup(
+		[back, to_table, to_lift, to_free],
+		[on_back, _enter_table, _enter_lift, _enter_free_roam])
 
 	_passthrough_overlay(root)  # let taps reach the 3D table / lift behind the HUD
 
@@ -1133,36 +817,25 @@ func _build_lift_overlay() -> void:
 	_lift_hub_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left_col.add_child(_lift_hub_controls)
 
-	# Back / Change Car / Tuning / Upgrades form a single left/right cursor (_hub_focus),
-	# painted by _refresh_hub_focus.
-	var back := Button.new()
-	back.text = "< Back"
-	back.focus_mode = Control.FOCUS_NONE
-	back.pressed.connect(func() -> void: _go_to(View.GARAGE))
+	# Back / Change Car / Tuning / Upgrades form a single left/right ButtonCursor
+	# (_hub_focus). As with the garage row, each button's pressed callable is also the
+	# cursor's action for that index, so a click and a keyboard/gamepad select agree.
+	var on_back := func() -> void: _go_to(View.GARAGE)
+	var to_tune_cb := _open_lift_page.bind(LiftPage.TUNE)
+	var to_upgrades_cb := _open_lift_page.bind(LiftPage.UPGRADES)
+	var back := _station_button("< Back", on_back)
 	_lift_hub_controls.add_child(back)
-	_hub_back_btn = back
-
 	# Change which car is on the lift: opens the car park to pick a new selected car.
-	var change_car := Button.new()
-	change_car.text = "Change Car"
-	change_car.focus_mode = Control.FOCUS_NONE
-	change_car.pressed.connect(_enter_change_car)
+	var change_car := _station_button("Change Car", _enter_change_car)
 	_lift_hub_controls.add_child(change_car)
-	_hub_change_btn = change_car
-
 	# The two menu buttons.
-	var to_tune := Button.new()
-	to_tune.text = "Tuning >"
-	to_tune.focus_mode = Control.FOCUS_NONE
-	to_tune.pressed.connect(_open_lift_page.bind(LiftPage.TUNE))
+	var to_tune := _station_button("Tuning >", to_tune_cb)
 	_lift_hub_controls.add_child(to_tune)
-	_hub_tune_btn = to_tune
-	var to_upgrades := Button.new()
-	to_upgrades.text = "Upgrades >"
-	to_upgrades.focus_mode = Control.FOCUS_NONE
-	to_upgrades.pressed.connect(_open_lift_page.bind(LiftPage.UPGRADES))
+	var to_upgrades := _station_button("Upgrades >", to_upgrades_cb)
 	_lift_hub_controls.add_child(to_upgrades)
-	_hub_upgrades_btn = to_upgrades
+	_hub_cursor.setup(
+		[back, change_car, to_tune, to_upgrades],
+		[on_back, _enter_change_car, to_tune_cb, to_upgrades_cb])
 
 
 # Build the TUNE menu: one slider row per tuning axis. Static structure; gating /
@@ -1902,57 +1575,39 @@ func _lift_hub() -> void:
 # Move the garage's left/right cursor between Back (0), Map (1), Tune Car (2) and
 # Free Roam (3), wrapping at the ends, and repaint it.
 func _move_garage_focus(step: int) -> void:
-	_garage_focus = wrapi(_garage_focus + step, 0, 4)
+	_garage_focus = _garage_cursor.wrapped(_garage_focus, step)
 	_refresh_garage_focus()
 
 
 # Fire the garage action the cursor sits on: 0 backs out to the exterior, 1 opens the
 # map table, 2 opens the tuning lift, 3 launches free roam.
 func _activate_garage_focus() -> void:
-	match _garage_focus:
-		0: _go_to(View.EXTERIOR)
-		1: _enter_table()
-		2: _enter_lift()
-		3: _enter_free_roam()
+	_garage_cursor.activate(_garage_focus)
 
 
 # Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Map /
 # Tune Car / Free Roam buttons are highlighted by hand rather than via native focus).
 func _refresh_garage_focus() -> void:
-	if _garage_table_btn == null:
-		return
-	UITheme.mark_focused(_garage_back_btn, _garage_focus == 0)
-	UITheme.mark_focused(_garage_table_btn, _garage_focus == 1)
-	UITheme.mark_focused(_garage_lift_btn, _garage_focus == 2)
-	UITheme.mark_focused(_garage_freeroam_btn, _garage_focus == 3)
+	_garage_cursor.refresh(_garage_focus)
 
 
 # Move the HUB's left/right cursor between Back (0), Change Car (1), Tuning (2) and
 # Upgrades (3), wrapping at the ends, and repaint it.
 func _move_hub_focus(step: int) -> void:
-	_hub_focus = wrapi(_hub_focus + step, 0, 4)
+	_hub_focus = _hub_cursor.wrapped(_hub_focus, step)
 	_refresh_hub_focus()
 
 
 # Fire the hub item the cursor sits on: 0 backs out to the garage, 1 opens the car park
 # to change car, 2/3 open the Tuning / Upgrades pages.
 func _activate_hub_focus() -> void:
-	match _hub_focus:
-		0: _go_to(View.GARAGE)
-		1: _enter_change_car()
-		2: _open_lift_page(LiftPage.TUNE)
-		3: _open_lift_page(LiftPage.UPGRADES)
+	_hub_cursor.activate(_hub_focus)
 
 
 # Paint the manual hub cursor (the hub uses left/right + select, not native focus, so the
 # Back / Change Car / Tuning / Upgrades buttons are highlighted by hand instead).
 func _refresh_hub_focus() -> void:
-	if _hub_tune_btn == null:
-		return
-	UITheme.mark_focused(_hub_back_btn, _hub_focus == 0)
-	UITheme.mark_focused(_hub_change_btn, _hub_focus == 1)
-	UITheme.mark_focused(_hub_tune_btn, _hub_focus == 2)
-	UITheme.mark_focused(_hub_upgrades_btn, _hub_focus == 3)
+	_hub_cursor.refresh(_hub_focus)
 
 
 # Grab focus on the first focusable, enabled, visible control under `root` — used to
@@ -2500,7 +2155,7 @@ func _build_lineup(cars: Array) -> void:
 	var cfg: GameConfig = Config.data
 	var n := cars.size()
 	var bays: int = max(1, cfg.max_owned_cars)
-	var center := _carpark_center()
+	var center := HQEnvironment.carpark_center()
 	# Lay out ALL the lot markers up front (cheap Marker3Ds): the camera framing and the
 	# focus cursor key off _markers / _eligible, so they work immediately even while the
 	# heavy car props are still streaming in below.

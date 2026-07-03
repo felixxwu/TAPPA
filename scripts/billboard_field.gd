@@ -47,20 +47,6 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	instance_positions = PackedVector3Array()
 	instance_positions.resize(positions.size())
 
-	# One StaticBody3D holds every hitbox; all share one BoxShape3D resource
-	# instanced per position with its own transform (cheap: one shape, N
-	# transforms). Skipped entirely when with_collision is false.
-	var body: StaticBody3D = null
-	if with_collision:
-		body = StaticBody3D.new()
-		body.name = "Collision"
-		# Tag as a damage-dealing obstacle so the car's damage model counts hits
-		# against it (and not the ground/road). See features/damage.md.
-		body.add_to_group(DamageModel.OBSTACLE_GROUP)
-		add_child(body)
-		_collision_shape = BoxShape3D.new()
-		_collision_shape.size = Vector3(collision_radius * 2.0, collision_height, collision_radius * 2.0)
-
 	for i in positions.size():
 		var p := positions[i]
 		# y_offset sinks the sprite into the ground (negative) to hide a gap at
@@ -69,9 +55,10 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 		var pos := Vector3(p.x, y, p.y)
 		instance_positions[i] = pos
 		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos))
-		if with_collision:
-			# Box centred half its height above the ground so it rests on it.
-			var box_xform := Transform3D(Basis.IDENTITY, Vector3(p.x, y + collision_height * 0.5, p.y))
-			PhysicsServer3D.body_add_shape(body.get_rid(), _collision_shape.get_rid(), box_xform)
+
+	# One StaticBody3D holds every hitbox; all share one BoxShape3D resource instanced
+	# per position (cheap: one shape, N transforms). Skipped when with_collision is false.
+	if with_collision:
+		_collision_shape = ObstacleBody.build(self, instance_positions, collision_radius, collision_height)
 
 	multimesh = mm

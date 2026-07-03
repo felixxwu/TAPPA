@@ -228,7 +228,7 @@ func show_elapsed(seconds: float) -> void:
 	if not Config.data.hud_elapsed_enabled:
 		return
 	_elapsed_label.visible = true
-	_elapsed_label.text = _format_time(seconds)
+	_elapsed_label.text = UITheme.format_time(roundi(seconds * 1000.0))
 
 
 # Placeholder stage-complete panel — at minimum the final time. The menu's
@@ -238,7 +238,7 @@ func show_stage_complete(seconds: float) -> void:
 	# Showing the panel fires its visibility_changed, which MenuNav uses to grab focus
 	# onto the NEXT button (ui_accept then triggers it; the theme paints the cursor).
 	_stage_complete_panel.visible = true
-	_stage_complete_label.text = "FINISH\n%s" % _format_time(seconds)
+	_stage_complete_label.text = "FINISH\n%s" % UITheme.format_time(roundi(seconds * 1000.0))
 
 
 # Top-centre pace popup, pulsed by the StageManager every few turns: the player's
@@ -254,10 +254,3 @@ func show_stage_delta(delta_ms: int) -> void:
 	_stage_delta_label.add_theme_color_override("font_color", UITheme.GREEN if ahead else UITheme.RED)
 	_stage_delta_label.visible = true
 	_stage_delta_left = Config.data.stage_delta_show_seconds
-
-
-# m:ss.cc, e.g. 1:07.43.
-func _format_time(seconds: float) -> String:
-	var minutes := int(seconds / 60.0)
-	var rem := seconds - minutes * 60.0
-	return "%d:%05.2f" % [minutes, rem]

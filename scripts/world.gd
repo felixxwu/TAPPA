@@ -25,16 +25,9 @@ var _tree_mesh_cache: Mesh
 func _tree_mesh() -> Mesh:
 	if _tree_mesh_cache != null:
 		return _tree_mesh_cache
-	var scene := TREE_MODEL.instantiate()
-	var stack: Array[Node] = [scene]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is MeshInstance3D:
-			_tree_mesh_cache = (n as MeshInstance3D).mesh
-			break
-		for c in n.get_children():
-			stack.append(c)
-	scene.queue_free()
+	# Extract the first (only) mesh from the imported .glb — a single ArrayMesh
+	# carrying the trunk + canopy as separate surfaces (see the surface walk below).
+	_tree_mesh_cache = MeshUtil.first_mesh(TREE_MODEL)
 	if _tree_mesh_cache != null:
 		var cfg: GameConfig = Config.data
 		for s in _tree_mesh_cache.get_surface_count():
@@ -177,6 +170,29 @@ func _yield_frame() -> void:
 		await get_tree().process_frame
 
 
+# Set a loading-screen step label (when an overlay is up) and yield a frame so it
+# paints before the next blocking generation call. Collapses to a synchronous
+# no-op under headless (via _yield_frame), so tests still see a fully-built world.
+func _stage(loading: LoadingScreen, label: String) -> void:
+	if loading != null:
+		loading.set_step(label)
+	await _yield_frame()
+
+
+# Get-or-create a named child: return the existing node with `node_name` if one is
+# already present (so regenerating the world — entering a new event — reuses the
+# node instead of stacking duplicates or colliding on name), otherwise build one
+# via `factory`, name it, and add it. `factory` is a Callable returning a Node.
+func _ensure_child(node_name: String, factory: Callable) -> Node:
+	var existing := get_node_or_null(node_name)
+	if existing != null:
+		return existing
+	var node: Node = factory.call()
+	node.name = node_name
+	add_child(node)
+	return node
+
+
 # A point roughly 2 m in front of the active camera — where a warm-up instance is
 # guaranteed to sit inside the frustum (so it actually draws and compiles its
 # shader). Falls back to the car's position if no camera is up yet.
@@ -195,9 +211,7 @@ func _warm_up_point() -> Vector3:
 # yields a frame first (outside headless) so the message paints before the
 # blocking work runs; `loading` is freed once the world is ready.
 func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
-	if loading != null:
-		loading.set_step("Generating track…")
-	await _yield_frame()
+	await _stage(loading, "Generating track…")
 	var xform: Transform3D = $Car.global_transform
 	var start_pos := Vector2(xform.origin.x, xform.origin.z)
 	# A Node3D's forward is -Z; project it onto the XZ plane.
@@ -243,9 +257,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	$Floor.set_track(road_centerline, cfg.track_width, transition_m,
 		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m)
 
-	if loading != null:
-		loading.set_step("Building terrain…")
-	await _yield_frame()
+	await _stage(loading, "Building terrain…")
 	$Floor.build_initial()
 
 	# Coarse distant backdrop so the reduced fog reveals a horizon (for the sky)
@@ -261,9 +273,63 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		add_child(_distant_terrain)
 		_distant_terrain.setup($Floor as TerrainManager, $Car)
 
-	if loading != null:
-		loading.set_step("Scattering trees…")
-	await _yield_frame()
+	# Trees + ground-cover bushes (+ the pass-through bush hit volume). Returns the
+	# tree points and road-margin cells the spectator layout reuses.
+	var foliage := await _build_foliage(cfg, result, road_centerline, loading)
+
+	# Roadside turn-arrow signs along the stage.
+	await _build_signs(cfg, result, loading)
+
+	# Roadside spectators: crowds that react to the car (todo/roadside-spectators.md).
+	# One group at the start, one at the end, and one at a seeded mid-stage point.
+	# Built after trees so members can avoid spawning inside foliage; reuses the
+	# centerline, road_cells and terrain built above.
+	if cfg.spectators_enabled and cfg.spectator_group_size > 0:
+		_spawn_spectators(road_centerline, foliage["road_cells"], foliage["trees"],
+			start_pos, start_heading, cfg, $Floor as TerrainManager, finish_len)
+
+	# Finish + start inflatable arches straddling the road.
+	_build_arches(road_centerline, finish_len, start_pos, start_heading, cfg)
+
+	# Persistent per-stage managers (progress, tire marks, road paint, wheel dust,
+	# engine smoke, stage flow) + the in-stage "vs P1" pace splits.
+	_build_persistent_managers(cfg, result, road_centerline, finish_len, staged)
+
+	# Prime the surface-effect shaders while the loading overlay still covers the
+	# view. Under gl_compatibility a material's shader variant compiles on its first
+	# VISIBLE draw; the particle pools sit off-screen (HIDE_Y) and the tyre-mark
+	# ribbons are empty until first used, so without this the first gravel wheelspin
+	# (or first skid / misfire) pays a one-frame compile hitch. Draw one throwaway
+	# instance of each in front of the camera for a rendered frame, then clear it.
+	# Only when a loading screen is up: on a bare regeneration the variants are
+	# already cached (identical renderer settings) and there's no overlay to hide
+	# the flash.
+	if loading != null and not _headless:
+		var wp := _warm_up_point()
+		_tire_marks.warm_up(wp)
+		_wheel_particles.warm_up(wp)
+		_engine_smoke.warm_up(wp)
+		await get_tree().process_frame
+		_tire_marks.clear_warm_up()
+		_wheel_particles.clear_warm_up()
+		_engine_smoke.clear_warm_up()
+
+	# World is ready — drop the loading overlay (absent for direct/programmatic
+	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment
+	# longer: _ready drops it only AFTER the start-line queue is laid out, so the
+	# black overlay hides the car at its pre-staged spot instead of flashing it.
+	if loading != null and not staged:
+		loading.finish()
+
+
+# Scatter trees + ground-cover bushes around the stage and render both as binned
+# MultiMesh fields (TreeMeshField), plus the pass-through bush hit volume. Takes the
+# already-generated track `result` + rendered `road_centerline`; owns the two
+# loading steps. Returns {"trees", "road_cells"} — the tree points and road-margin
+# cells the spectator layout reuses.
+func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2D,
+		loading: LoadingScreen = null) -> Dictionary:
+	await _stage(loading, "Scattering trees…")
 	# Scatter trees around each turn, then render them as solid low-poly meshes
 	# binned into per-cell MultiMeshes (TreeMeshField) so the engine LOD-/cull-s
 	# far bins. height_at needs the terrain noise cache, which build_initial() has
@@ -284,9 +350,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		cfg.tree_size_m.y, cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m)
 
-	if loading != null:
-		loading.set_step("Scattering bushes…")
-	await _yield_frame()
+	await _stage(loading, "Scattering bushes…")
 	# Bushes: same scatter as trees (offset seed so they interleave; NOT forest-gated,
 	# default forestiness 1.0 so undergrowth covers the whole stage) and the SAME
 	# renderer (TreeMeshField) — the low-poly ground-cover mesh, binned with per-bin
@@ -322,31 +386,28 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		cfg.bush_hp_loss, cfg.bush_drag_torque,
 		cfg.bush_min_speed_kmh / DamageModel.MPS_TO_KMH, cfg.soft_hit_cooldown_s)
 
-	if loading != null:
-		loading.set_step("Placing signs…")
-	await _yield_frame()
-	# Roadside turn-arrow signs along the stage (todo/roadside-signs.md). Few per
-	# stage, so individual nodes (not a MultiMesh); knockable cosmetic props that
-	# deal no HP damage. Start/finish are the inflatable arches, not signs.
+	return {"trees": trees, "road_cells": road_cells}
+
+
+# Roadside turn-arrow signs along the stage (todo/roadside-signs.md). Few per stage,
+# so individual nodes (not a MultiMesh); knockable cosmetic props that deal no HP
+# damage. Start/finish are the inflatable arches, not signs. Owns its loading step.
+func _build_signs(cfg: GameConfig, result: Dictionary, loading: LoadingScreen = null) -> void:
+	await _stage(loading, "Placing signs…")
 	var sign_layout := SignLayout.plan(result["centerline"], result["pieces"])
 	var sign_field := SignField.new()
 	add_child(sign_field)
 	sign_field.build(sign_layout, $Floor as TerrainManager, cfg.sign_render_params())
 
-	# Roadside spectators: crowds that react to the car (todo/roadside-spectators.md).
-	# One group at the start, one at the end, and one at a seeded mid-stage point.
-	# Built after trees so members can avoid spawning inside foliage; reuses the
-	# centerline, road_cells and terrain already in scope.
-	if cfg.spectators_enabled and cfg.spectator_group_size > 0:
-		_spawn_spectators(road_centerline, road_cells, trees, start_pos, start_heading,
-			cfg, $Floor as TerrainManager, finish_len)
 
-	# Finish + start arches: the inflatable gates straddling the road
-	# (features/finish-arch.md). The FINISH gate sits at the END of the progress
-	# centerline — i.e. exactly 100% track progress — so crossing it ends the stage
-	# immediately; the START gate sits at the start line where the car actually
-	# spawns. Each opening is sized to the road width plus a margin so the legs stand
-	# clear, and each is turned so its banner face meets the driver.
+# Finish + start arches: the inflatable gates straddling the road
+# (features/finish-arch.md). The FINISH gate sits at the END of the progress
+# centerline — i.e. exactly 100% track progress — so crossing it ends the stage
+# immediately; the START gate sits at the start line where the car actually spawns.
+# Each opening is sized to the road width plus a margin so the legs stand clear, and
+# each is turned so its banner face meets the driver.
+func _build_arches(road_centerline: Curve2D, finish_len: float,
+		start_pos: Vector2, start_heading: Vector2, cfg: GameConfig) -> void:
 	var arch_terrain := $Floor as TerrainManager
 	var arch_info := _arch_event_info()
 	if cfg.finish_arch_enabled:
@@ -358,62 +419,53 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		# start_pos / start_heading is the car's real spawn pose (the start line).
 		_place_arch("StartArch", start_pos, start_heading, true, arch_info, cfg, arch_terrain)
 
+
+# Create-or-reuse the persistent per-stage managers and wire the stage splits. Each
+# node is reused across regenerations (entering a new event) via _ensure_child, so
+# managers don't accumulate or collide on name.
+func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
+		road_centerline: Curve2D, finish_len: float, staged: bool) -> void:
 	# Retain the centerline in a TrackProgress manager: tracks how far the car has
 	# driven and snaps it back onto the road if it strays too far (the Curve2D is
-	# otherwise discarded after set_track). Reuse the node across regenerations
-	# (entering a new event) so managers don't accumulate or collide on name.
-	if _track_progress == null:
-		_track_progress = TrackProgress.new()
-		_track_progress.name = "TrackProgress"
-		add_child(_track_progress)
+	# otherwise discarded after set_track).
+	_track_progress = _ensure_child("TrackProgress",
+		func() -> Node: return TrackProgress.new()) as TrackProgress
 	_track_progress.setup(road_centerline, $Car, $Floor as TerrainManager, finish_len)
 
 	# Tire marks: gravel ruts laid behind the wheels while on the road
-	# (features/tire-marks.md). Reuse the node across regenerations like the managers
-	# above; gated to the road half-width, so it needs the centerline + terrain.
-	if _tire_marks == null:
-		_tire_marks = TireMarks.new()
-		_tire_marks.name = "TireMarks"
-		add_child(_tire_marks)
+	# (features/tire-marks.md); gated to the road half-width, so it needs the
+	# centerline + terrain.
+	_tire_marks = _ensure_child("TireMarks",
+		func() -> Node: return TireMarks.new()) as TireMarks
 	_tire_marks.setup(road_centerline, $Car, $Floor as TerrainManager, cfg.track_width * 0.5)
 
 	# Road paint: solid edge lines + a dashed centre line along the tarmac sections,
 	# so tarmac reads as tarmac (features/track.md). A static mesh built once from the
-	# centerline + surface split; rebuilt on a regeneration like the managers above.
-	if _road_markings == null:
-		_road_markings = RoadMarkings.new()
-		_road_markings.name = "RoadMarkings"
-		add_child(_road_markings)
+	# centerline + surface split; rebuilt on a regeneration.
+	_road_markings = _ensure_child("RoadMarkings",
+		func() -> Node: return RoadMarkings.new()) as RoadMarkings
 	_road_markings.build(road_centerline, $Floor as TerrainManager, cfg.road_marking_params())
 
 	# Wheel dust: cheap gravel spray flung from the driven wheels under wheelspin
-	# (features/wheel-dust.md). Reused across regenerations like the managers above;
-	# the surface under each wheel (gravel vs grass/tarmac) is read live off the
-	# car's drivetrain terrain, so it only needs the car here.
-	if _wheel_particles == null:
-		_wheel_particles = WheelParticles.new()
-		_wheel_particles.name = "WheelParticles"
-		add_child(_wheel_particles)
+	# (features/wheel-dust.md); the surface under each wheel (gravel vs grass/tarmac)
+	# is read live off the car's drivetrain terrain, so it only needs the car here.
+	_wheel_particles = _ensure_child("WheelParticles",
+		func() -> Node: return WheelParticles.new()) as WheelParticles
 	_wheel_particles.setup($Car)
 
 	# Grey smoke puffed from the bonnet each time a damaged engine misfires. Its own
 	# small MultiMesh pool; reads the car's engine misfire counter live. See
 	# features/engine-smoke.md.
-	if _engine_smoke == null:
-		_engine_smoke = EngineSmoke.new()
-		_engine_smoke.name = "EngineSmoke"
-		add_child(_engine_smoke)
+	_engine_smoke = _ensure_child("EngineSmoke",
+		func() -> Node: return EngineSmoke.new()) as EngineSmoke
 	_engine_smoke.setup($Car)
 
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
-	# Reuse the node across regenerations so only one ticks.
-	if _stage_manager == null:
-		_stage_manager = StageManager.new()
-		_stage_manager.name = "StageManager"
-		add_child(_stage_manager)
+	_stage_manager = _ensure_child("StageManager",
+		func() -> Node: return StageManager.new()) as StageManager
 	# Staged runs hold the car in the start-line sequence until the player launches;
-	# otherwise the countdown arms immediately, as before. (`staged` computed above.)
+	# otherwise the countdown arms immediately, as before.
 	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
 	# Route the finish panel's NEXT button to advance the stage into the results flow
 	# (both nodes persist across regenerations, so guard the connection).
@@ -424,32 +476,6 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# elapsed time compares to the leading rival's estimated time at that point.
 	_setup_stage_splits(result, staged, cfg)
 
-	# Prime the surface-effect shaders while the loading overlay still covers the
-	# view. Under gl_compatibility a material's shader variant compiles on its first
-	# VISIBLE draw; the particle pools sit off-screen (HIDE_Y) and the tyre-mark
-	# ribbons are empty until first used, so without this the first gravel wheelspin
-	# (or first skid / misfire) pays a one-frame compile hitch. Draw one throwaway
-	# instance of each in front of the camera for a rendered frame, then clear it.
-	# Only when a loading screen is up: on a bare regeneration the variants are
-	# already cached (identical renderer settings) and there's no overlay to hide
-	# the flash.
-	if loading != null and not _headless:
-		var wp := _warm_up_point()
-		_tire_marks.warm_up(wp)
-		_wheel_particles.warm_up(wp)
-		_engine_smoke.warm_up(wp)
-		await get_tree().process_frame
-		_tire_marks.clear_warm_up()
-		_wheel_particles.clear_warm_up()
-		_engine_smoke.clear_warm_up()
-
-	# World is ready — drop the loading overlay (absent for direct/programmatic
-	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment
-	# longer: _ready drops it only AFTER the start-line queue is laid out, so the
-	# black overlay hides the car at its pre-staged spot instead of flashing it.
-	if loading != null and not staged:
-		loading.finish()
-
 
 # Build the ground-cover bush mesh from the groundcover_opaque GLB. Keeps the
 # imported (tone-matched) foliage texture, but makes the material UNSHADED — the
@@ -458,18 +484,17 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 # COLOR multiplies the albedo (matching the ground tint everywhere, as the old
 # foliage shader did). Duplicated so the cached scene resource is not mutated.
 func _bush_mesh(cfg: GameConfig) -> Mesh:
-	var inst := GROUNDCOVER_SCENE.instantiate()
-	var src := inst.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
-	var mesh: Mesh = src.mesh.duplicate()
-	inst.free()
-	var base := mesh.surface_get_material(0)
-	var mat: StandardMaterial3D = base.duplicate() if base is StandardMaterial3D else StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.vertex_color_use_as_albedo = true
+	# Duplicated so the cached scene resource is not mutated.
+	var mesh: Mesh = MeshUtil.first_mesh(GROUNDCOVER_SCENE).duplicate()
+	# Keep the imported (tone-matched) foliage texture, but rebuild the surface as
+	# the flat unshaded PS1 material with vertex_color_use_as_albedo — so the
+	# per-instance baked terrain light TreeMeshField writes into the MultiMesh COLOR
+	# multiplies the albedo (matching the ground tint everywhere). See PS1Material.
+	var base := mesh.surface_get_material(0) as StandardMaterial3D
+	var albedo: Texture2D = base.albedo_texture if base != null else null
+	var mat := PS1Material.unshaded(albedo, true)
 	# Lifted tint so the tone-matched ground cover reads a bit more against the grass.
 	mat.albedo_color = cfg.bush_tint
-	# Nearest filter (keep mipmaps) for the flat PS1 look, like the rest of the world.
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	mesh.surface_set_material(0, mat)
 	return mesh
 

@@ -13,17 +13,9 @@ class_name SpectatorScatter
 #    (no O(n^2) neighbour scan), they stay off the carriageway, and they never
 #    spawn inside a tree.
 
-const CELL_M := TrackGenerator.CELL_M  # 0.5 m road-rasterisation grid
-
 const _JITTER := 0.5                   # jitter as a fraction of a cell (±0.25 cell)
 const _SALT_Z := 0x165667B1            # decorrelates the two jitter axes
 const _SALT_PICK := 0x9E3779B1         # decorrelates the thinning shuffle
-
-
-# A stable pseudo-random in [0, 1) for (cx, cz, seed, salt) — a pure hash, so a
-# cell's jitter is order-independent (mirrors TreeScatter._hash01).
-static func _hash01(cx: int, cz: int, seed_value: int, salt: int) -> float:
-	return float(posmod(hash([cx, cz, seed_value, salt]), 1000003)) / 1000003.0
 
 
 # Along-track distance (m) for the random mid-stage group: a seeded fraction of
@@ -31,45 +23,15 @@ static func _hash01(cx: int, cz: int, seed_value: int, salt: int) -> float:
 static func mid_offset(baked_length: float, frac_min: float, frac_max: float, seed_value: int) -> float:
 	var lo := clampf(minf(frac_min, frac_max), 0.0, 1.0)
 	var hi := clampf(maxf(frac_min, frac_max), 0.0, 1.0)
-	var t := _hash01(0, 0, seed_value, 0)
+	var t := ScatterMath.hash01(0, 0, seed_value, 0)
 	return baked_length * (lo + (hi - lo) * t)
 
 
-# True if the cell containing `p` is a road cell (same test TreeScatter uses).
-static func _on_road(p: Vector2, road_cells: Dictionary) -> bool:
-	return road_cells.has(Vector2i(floori(p.x / CELL_M), floori(p.y / CELL_M)))
-
-
 # Build a uniform spatial grid of points (e.g. tree positions) keyed by cell, so
-# _near_point() only checks a 3x3 neighbourhood instead of every point.
+# proximity tests only check a 3x3 neighbourhood instead of every point. Thin wrapper
+# over SpatialGrid.of_points (kept as the public API world.gd + SpectatorGroup consume).
 static func build_point_grid(points: PackedVector2Array, cell: float) -> Dictionary:
-	var grid := {}
-	if cell <= 0.0:
-		return grid
-	for p in points:
-		var key := Vector2i(floori(p.x / cell), floori(p.y / cell))
-		if not grid.has(key):
-			grid[key] = PackedVector2Array()
-		grid[key].append(p)
-	return grid
-
-
-# True if any gridded point is within `radius` of `p`. `grid` must have been
-# built with build_point_grid(points, cell) where cell >= radius (so the 3x3
-# neighbourhood is guaranteed to cover the radius).
-static func _near_point(p: Vector2, grid: Dictionary, cell: float, radius: float) -> bool:
-	if grid.is_empty() or cell <= 0.0 or radius <= 0.0:
-		return false
-	var r2 := radius * radius
-	var bx := floori(p.x / cell)
-	var bz := floori(p.y / cell)
-	for ox in range(-1, 2):
-		for oz in range(-1, 2):
-			var arr: PackedVector2Array = grid.get(Vector2i(bx + ox, bz + oz), PackedVector2Array())
-			for q in arr:
-				if p.distance_squared_to(q) <= r2:
-					return true
-	return false
+	return SpatialGrid.of_points(points, cell)
 
 
 # Standing positions for one group, scattered over an oriented band that straddles
@@ -95,16 +57,16 @@ static func members(center: Vector2, tangent: Vector2, half_len: float, half_wid
 	var cands: Array[Vector2] = []
 	for ca in range(-reach_a, reach_a + 1):
 		for cc in range(-reach_c, reach_c + 1):
-			var ja := (_hash01(ca, cc, seed_value, 0) - 0.5) * _JITTER * separation
-			var jc := (_hash01(ca, cc, seed_value, _SALT_Z) - 0.5) * _JITTER * separation
+			var ja := (ScatterMath.hash01(ca, cc, seed_value, 0) - 0.5) * _JITTER * separation
+			var jc := (ScatterMath.hash01(ca, cc, seed_value, _SALT_Z) - 0.5) * _JITTER * separation
 			var along := ca * separation + ja
 			var across := cc * separation + jc
 			if absf(along) > half_len or absf(across) > half_width:
 				continue
 			var p := center + fwd * along + nrm * across
-			if _on_road(p, road_cells):
+			if ScatterMath.on_road(p, road_cells):
 				continue
-			if _near_point(p, tree_grid, tree_cell, tree_avoid_radius):
+			if SpatialGrid.near_point(p, tree_grid, tree_cell, tree_avoid_radius):
 				continue
 			cands.append(p)
 	# Seeded shuffle (sort by a per-point hash key) so thinning to `count` keeps an
@@ -118,4 +80,4 @@ static func members(center: Vector2, tangent: Vector2, half_len: float, half_wid
 
 # Deterministic shuffle key for a candidate point.
 static func _pick_key(p: Vector2, seed_value: int) -> float:
-	return _hash01(int(round(p.x * 16.0)), int(round(p.y * 16.0)), seed_value, _SALT_PICK)
+	return ScatterMath.hash01(int(round(p.x * 16.0)), int(round(p.y * 16.0)), seed_value, _SALT_PICK)

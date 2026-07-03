@@ -8,8 +8,9 @@ var _mgr: Node
 var _save: Node
 
 
-# main.tscn._ready() generates the full terrain + track, which is expensive, so
-# build it ONCE for the whole script. The two mutating tests are order-safe: the
+# minimal_world() trims main.tscn's expensive terrain/track/foliage generation
+# (see scene_helpers.gd), and we build the scene ONCE for the whole script. The
+# two mutating tests are order-safe: the
 # camera-cycle test wraps back to chase (net-neutral), and the destructive
 # cycle_car test (which swaps the Car node) is defined last. GUT runs tests in
 # definition order, so a single shared instance is safe.
@@ -19,7 +20,9 @@ var _save: Node
 # the "starts on chase" assertion is deterministic and so the test doesn't touch the
 # real profile.
 func before_all() -> void:
-	Config.reset()
+	# Cameras/CameraManager/cycle_car need the wired world, but not its track shape
+	# or foliage — minimal_world() trims generation to a 1-turn, tree-free build.
+	SceneTestHelpers.minimal_world()
 	_save = get_node("/root/Save")
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
@@ -32,6 +35,7 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_scene.free()
+	Config.reset()  # minimal_world() zeroed foliage/track — restore the baseline for later files
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):

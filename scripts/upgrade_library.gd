@@ -66,17 +66,27 @@ const UPGRADES: Array[Dictionary] = [
 
 
 # --- Lookups -----------------------------------------------------------------
+# Test seam + stable-id lookups via the shared Registry helper (scripts/registry.gd),
+# matching CarLibrary/EngineLibrary. An empty override means "use the shipped
+# UPGRADES"; tests call override_for_test()/reset() to run against a synthetic list.
+static var _seam := Registry.Seam.new(UPGRADES)
+
+static func all() -> Array[Dictionary]:
+	return _seam.all()
+
+static func override_for_test(upgrades: Array[Dictionary]) -> void:
+	_seam.override_for_test(upgrades)
+
+static func reset() -> void:
+	_seam.reset()
+
 
 static func index_of(id: String) -> int:
-	for i in UPGRADES.size():
-		if UPGRADES[i]["id"] == id:
-			return i
-	return -1
+	return Registry.index_of(all(), id)
 
 
 static func by_id(id: String) -> Dictionary:
-	var i := index_of(id)
-	return UPGRADES[i] if i >= 0 else {}
+	return Registry.by_id(all(), id)
 
 
 # The slot an item occupies, or "" for consumables / unknown ids.
@@ -104,33 +114,53 @@ static func is_enabled(owned_car: Dictionary, item_id: String) -> bool:
 	return not (owned_car.get("disabled_upgrades", []) as Array).has(item_id)
 
 
+# --- Effect descriptor table -------------------------------------------------
+# The single source of truth for what each `effect` key DOES, so apply() (live cfg)
+# and effective_meta() (power-to-weight inputs) can't silently drift — adding an
+# effect means adding one row here. Each row:
+#   field    — the target GameConfig / meta field ("" for turbo / flag-only)
+#   op       — "mult" (field *= val), "add" (field += val), "install_turbo"
+#              (special: enable + splat the sub-dict), or "flag" (gates a tuning
+#              slider, no config effect)
+#   feeds_pw — whether it changes a power-to-weight input (mass / torque), so
+#              effective_meta must mirror it; the rest are cfg-only.
+const EFFECTS := {
+	"install_turbo":       {"field": "", "op": "install_turbo", "feeds_pw": true},
+	"brake_torque_mult":   {"field": "brake_torque", "op": "mult", "feeds_pw": false},
+	"mass_mult":           {"field": "mass", "op": "mult", "feeds_pw": true},
+	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false},
+	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false},
+	"unlocks_aero_tuning": {"field": "", "op": "flag", "feeds_pw": false},
+	"unlocks_brake_bias":  {"field": "", "op": "flag", "feeds_pw": false},
+}
+
+
 # --- Effect application (pipeline step 2) ------------------------------------
 
 # Apply every ENABLED upgrade's effect on top of the CarLibrary baseline that
 # apply_car already wrote into `cfg` (step 1); disabled parts stay fitted but
 # inert. Pure: mutates the passed-in live `cfg` only, never the authored .tres.
 # Unknown ids and flag-only effects (`unlocks_*`) are skipped here — flags gate
-# the tuning sliders, not config.
+# the tuning sliders, not config. Driven by the EFFECTS table above.
 static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	for item_id in enabled_upgrades(owned_car):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:
 			var val: Variant = effect[key]
-			match key:
+			var desc: Dictionary = EFFECTS.get(key, {})
+			match desc.get("op", ""):
 				"install_turbo":
 					cfg.turbo_enabled = true
 					for tkey in (val as Dictionary):
 						cfg.set(tkey, (val as Dictionary)[tkey])
-				"brake_torque_mult":
-					cfg.brake_torque *= float(val)
-				"mass_mult":
-					cfg.mass *= float(val)
-				"downforce_front":
-					cfg.downforce_front += float(val)
-				"downforce_rear":
-					cfg.downforce_rear += float(val)
-				"unlocks_aero_tuning", "unlocks_brake_bias":
-					pass  # flags gate tuning sliders (features/tuning.md), not cfg
+				"mult":
+					var f: String = desc["field"]
+					cfg.set(f, float(cfg.get(f)) * float(val))
+				"add":
+					var f: String = desc["field"]
+					cfg.set(f, float(cfg.get(f)) + float(val))
+				_:
+					pass  # "flag" (gates tuning sliders) + unknown ids: no cfg effect
 
 
 # --- Effective car stats (display + eligibility) -----------------------------
@@ -169,12 +199,18 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 	# turbo upgrade. Rated "at peak boost" — the displayed HP + power-to-weight
 	# eligibility reflect the full boosted torque (features/forced-induction.md).
 	var boost_gain := float(eng.get("turbo_boost_gain", 0.0))
+	# Mirror only the power-to-weight-feeding effects (EFFECTS[*].feeds_pw), from the
+	# same table apply() uses, so the two can't drift.
 	for item_id in enabled_upgrades(owned_car):
 		var effect: Dictionary = by_id(item_id).get("effect", {})
 		for key in effect:
-			match key:
-				"mass_mult":
-					out["mass"] = float(out.get("mass", 0.0)) * float(effect[key])
+			var desc: Dictionary = EFFECTS.get(key, {})
+			if not bool(desc.get("feeds_pw", false)):
+				continue
+			match desc["op"]:
+				"mult":
+					var f: String = desc["field"]
+					out[f] = float(out.get(f, 0.0)) * float(effect[key])
 				"install_turbo":
 					boost_gain = float((effect[key] as Dictionary).get("turbo_boost_gain", boost_gain))
 	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + boost_gain)
