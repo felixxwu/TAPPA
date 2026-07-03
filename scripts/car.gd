@@ -23,6 +23,12 @@ const LEVEL_ASSIST_DAMPING := 0.35
 # to the travel direction instead of oscillating.
 const SPIN_ASSIST_DAMPING := 0.35
 
+# Speed (m/s) by which the steer limit is fully governed by the tire's optimum
+# slip angle. Below it the cap blends linearly from the full mechanical steer_limit
+# at standstill (tight parking-speed turning) toward the slip-based cap, reaching
+# it here. 50 km/h ≈ 13.889 m/s.
+const STEER_LOCK_BLEND_END_SPEED := 40.0 / 3.6
+
 # Contacts the chassis reports per physics tick for the damage model. The car only
 # ever touches a few obstacles at once; a small cap keeps contact monitoring cheap.
 const MAX_CONTACTS_REPORTED := 8
@@ -200,29 +206,41 @@ func _ready() -> void:
 # ground. Looks for a sibling that exposes height_at (the hilly Floor in the
 # main scene); on the flat test fixtures (a WorldBoundary at y=0) there is none,
 # so it falls back to 0.
-# Speed-dependent steering authority factor in [steer_limit_min_fraction, 1.0]:
-# 1.0 at/below steer_limit_falloff_start_kph, ramping linearly down to
-# steer_limit_min_fraction at/above steer_limit_falloff_end_kph, holding that
-# floor above. end <= start (or min_fraction == 1.0) yields a constant 1.0
-# (disabled). The config thresholds are authored in km/h; `speed` is the physics
-# m/s, converted here. BOTH the input wheel-angle limit AND the steer-assist yaw
-# torque are scaled by this — in this arcade model the assist provides most of
-# the turning authority, so scaling the wheel angle alone has almost no felt
-# effect. The travel-alignment countersteer and spin protection are deliberately
-# NOT scaled.
-static func speed_steer_authority(cfg: GameConfig, speed: float) -> float:
-	if cfg.steer_limit_falloff_end_kph <= cfg.steer_limit_falloff_start_kph:
+# The front tire's peak-grip slip angle (radians) for a surface whose normalized
+# optimum slip is slip_peak — asin because the normalized lateral slip fed to the
+# tire model is sin(slip angle) (see Drivetrain._tire_force). ≈8° on tarmac
+# (slip_peak 0.14), ≈18° on gravel (0.31). Both steering aids key off this.
+static func optimum_slip_angle(slip_peak: float) -> float:
+	return asin(clampf(slip_peak, 0.0, 1.0))
+
+
+# The effective input steer limit (radians): the largest steering offset from the
+# travel direction that keeps the front tire at or below its optimum slip, so a
+# full-lock input pins the tire on its grip peak (max cornering) rather than
+# scrubbing past it. The slip-based cap is derived from the tire model, not a tuned
+# ramp: the normalized slip a steering offset θ induces is sin(θ)·speed/v_ref
+# (v_ref floored at tire_norm_floor), so the optimum is sin(θ) = slip_peak·v_ref/speed.
+# slip_peak is the surface under the steering axle. Below STEER_LOCK_BLEND_END_SPEED
+# the return blends linearly from the full mechanical steer_limit at standstill
+# (tight parking-speed turning) to that slip-based cap, so low-speed steering keeps
+# real bite; above it the cap is purely slip-based (pinned to asin(slip_peak)).
+static func optimum_steer_limit(cfg: GameConfig, speed: float, slip_peak: float) -> float:
+	var v_ref := maxf(speed, cfg.tire_norm_floor)
+	var sin_opt := clampf(slip_peak * v_ref / maxf(speed, 0.001), 0.0, 1.0)
+	var slip_based := minf(cfg.steer_limit, asin(sin_opt))
+	var blend := clampf(speed / STEER_LOCK_BLEND_END_SPEED, 0.0, 1.0)
+	return lerpf(cfg.steer_limit, slip_based, blend)
+
+
+# Fraction the steering aids are scaled by relative to full lock — the felt
+# authority. As speed rises the physical steer limit shrinks toward the optimum
+# angle, so the steer-assist torque tapers by the same ratio (otherwise the assist
+# would mask the smaller wheel angle). 1.0 at creep, →asin(slip_peak)/steer_limit
+# at speed.
+static func steer_authority(cfg: GameConfig, speed: float, slip_peak: float) -> float:
+	if cfg.steer_limit <= 0.0:
 		return 1.0
-	var speed_kph := speed * 3.6
-	var falloff := clampf((speed_kph - cfg.steer_limit_falloff_start_kph) \
-		/ (cfg.steer_limit_falloff_end_kph - cfg.steer_limit_falloff_start_kph), 0.0, 1.0)
-	return lerpf(1.0, cfg.steer_limit_min_fraction, falloff)
-
-
-# The effective input steer limit (radians) at this speed — steer_limit scaled by
-# the speed-dependent authority factor above.
-static func speed_scaled_steer_limit(cfg: GameConfig, speed: float) -> float:
-	return cfg.steer_limit * speed_steer_authority(cfg, speed)
+	return optimum_steer_limit(cfg, speed, slip_peak) / cfg.steer_limit
 
 
 func _ground_height_at(pos: Vector3) -> float:
@@ -311,7 +329,7 @@ func _physics_process(delta: float) -> void:
 	var angles := _update_steering(delta, speed)
 	# Direct yaw torque while steering, to fight understeer when the front tires
 	# alone can't rotate the car (faded in with speed, tapered as the car rotates in).
-	_apply_steer_assist(speed, angles["travel_angle"])
+	_apply_steer_assist(speed, angles["travel_angle"], angles["slip_peak"])
 	# Slide-recovery counterpart: pulls the nose back once the car has rotated
 	# past spin_assist_angle from its travel direction. Accumulates onto the readout.
 	_apply_spin_protection(speed, angles["slip_angle"], handbrake)
@@ -430,13 +448,15 @@ func _update_steering(delta: float, speed: float) -> Dictionary:
 	# this same _steer, keeping them 1:1.
 	var assist_rate := (cfg.steer_speed / cfg.steer_limit) if cfg.steer_limit > 0.0 else cfg.steer_speed
 	_steer = move_toward(_steer, steer_input, assist_rate * delta)
-	# Speed-dependent max steering angle: taper the input steer_limit down from
-	# full (at/below steer_limit_falloff_start_kph) to steer_limit_min_fraction of
-	# itself (at/above steer_limit_falloff_end_kph), so the car isn't twitchy/spin-
-	# prone at speed. Only the input term is scaled; the travel-alignment
-	# countersteer keeps its full authority so slides still catch. See
-	# features/car-physics.md.
-	var effective_steer_limit := speed_scaled_steer_limit(cfg, speed)
+	# Physical max steering offset: bound the input term so the front tire sits at
+	# its optimum slip angle (peak grip) for the surface underneath the steering
+	# axle rather than scrubbing past it. Opens up to the mechanical steer_limit at
+	# low speed (no slip) and pins to the surface optimum at speed — surface- and
+	# speed-derived from the tire model, no tuned ramp. Only the input term is
+	# bounded; the travel-alignment countersteer keeps full authority so slides
+	# still catch. See features/car-physics.md.
+	var slip_peak := drivetrain.steering_axle_slip_peak(cfg)
+	var effective_steer_limit := optimum_steer_limit(cfg, speed, slip_peak)
 	var steer_target := travel_angle * cfg.steer_travel_alignment * align_scale + _steer * effective_steer_limit
 	steering = move_toward(steering, steer_target, cfg.steer_speed * delta)
 	# Damage wheel misalignment: bend each wheel physically by its persisted toe on
@@ -445,7 +465,7 @@ func _update_steering(delta: float, speed: float) -> Dictionary:
 	# direction (and the wheel visual off it too). No synthetic steer bias. See
 	# features/damage.md / DamageModel.nudge_wheels.
 	_apply_wheel_toe()
-	return {"slip_angle": slip_angle, "travel_angle": travel_angle}
+	return {"slip_angle": slip_angle, "travel_angle": travel_angle, "slip_peak": slip_peak}
 
 
 # Direct yaw torque about the car's up axis while steering, to fight understeer
@@ -453,22 +473,24 @@ func _update_steering(delta: float, speed: float) -> Dictionary:
 # standstill to full at steer_assist_min_speed (rather than switched on abruptly),
 # and tapered off as the car rotates into the turn so it stops adding torque once
 # turned enough (no over-rotation/spin). Sets the combined assist readout.
-func _apply_steer_assist(speed: float, travel_angle: float) -> void:
+func _apply_steer_assist(speed: float, travel_angle: float, slip_peak: float) -> void:
 	var cfg: GameConfig = config
 	var assist_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
 	# travel_angle is the slip angle (travel direction relative to the car's nose);
 	# steering into a slide rotates the car so its nose leads the travel direction,
 	# the same sign as steer_input. -travel_angle * sign(_steer) is therefore how far
 	# the car has already rotated in the steering direction. Full assist at 0, fading
-	# linearly to none at steer_assist_max_angle.
+	# linearly to none once the car has rotated by the surface's optimum slip angle —
+	# the assist rotates the car in until the tires hit peak grip, then stops adding.
 	var rotated_into_turn := -travel_angle * signf(_steer)
+	var max_angle := optimum_slip_angle(slip_peak)
 	var angle_scale := 1.0
-	if cfg.steer_assist_max_angle > 0.0:
-		angle_scale = clampf(1.0 - rotated_into_turn / cfg.steer_assist_max_angle, 0.0, 1.0)
+	if max_angle > 0.0:
+		angle_scale = clampf(1.0 - rotated_into_turn / max_angle, 0.0, 1.0)
 	# Scale by the same speed-dependent authority as the wheel-angle limit, so a
 	# reduced high-speed steer cap is actually felt (the assist otherwise provides
 	# most of the turning authority and would mask the smaller wheel angle).
-	var authority := speed_steer_authority(cfg, speed)
+	var authority := steer_authority(cfg, speed, slip_peak)
 	var steer_assist_yaw := _steer * cfg.steer_assist_torque * assist_scale * angle_scale * authority
 	apply_torque(global_transform.basis.y * steer_assist_yaw)
 	# Reset the combined assist readout each tick; spin protection accumulates onto it.

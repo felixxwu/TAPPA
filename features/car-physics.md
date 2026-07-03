@@ -32,19 +32,24 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    the wheel-angle target and the yaw assist torque read this same value, keeping
    them 1:1. Front wheels caster toward the direction of travel
    (`steer_travel_alignment`), blended with the smoothed input up to `steer_limit`
-   at `steer_speed`. Steering authority is **speed-scaled** by a shared factor
-   (`Car.speed_steer_authority`): 1.0 at/below `steer_limit_falloff_start_kph`,
-   ramping down linearly to `steer_limit_min_fraction` by
-   `steer_limit_falloff_end_kph` (both authored in km/h; converted from the
-   physics m/s inside the helper)
-   and holding that floor above, so high-speed steering isn't twitchy/spin-prone.
-   This factor scales **both** the input wheel-angle limit
-   (`Car.speed_scaled_steer_limit` = `steer_limit ×` factor) **and** the
-   steer-assist yaw torque below — in this arcade model the assist provides most
-   of the turning authority, so scaling the wheel angle alone has almost no felt
-   effect. The travel-alignment countersteer and spin protection are deliberately
-   NOT scaled, so slides still catch. Set `min_fraction` to 1.0 (or `end <= start`)
-   to disable. The alignment fraction is scaled linearly with speed — 0 at
+   at `steer_speed`. The input steering offset is **physically bounded** by the
+   front tire's optimum slip angle (`Car.optimum_steer_limit`), not a tuned speed
+   ramp: the normalized slip a steering offset θ induces is `sin(θ)·speed/v_ref`
+   (`v_ref` floored at `tire_norm_floor`), so the largest offset that keeps the
+   tire on its grip peak is `sin(θ) = slip_peak·v_ref/speed`, which pins to
+   `asin(slip_peak)` — the surface's optimum slip angle (≈8° tarmac, ≈18° gravel),
+   speed-independent — because capping at the optimum is also the tightest
+   achievable turn. `slip_peak` is the surface under the steering axle
+   (`Drivetrain.steering_axle_slip_peak`). Below `STEER_LOCK_BLEND_END_SPEED`
+   (50 km/h) the effective cap blends **linearly** from the full mechanical
+   `steer_limit` at standstill down to that slip-based cap, so parking-speed turning
+   keeps full bite; above 50 km/h it is purely slip-based.
+   The steer-assist yaw torque is scaled by the same reduction
+   (`Car.steer_authority` = cap ÷ `steer_limit`) so the smaller wheel angle is
+   actually felt — in this arcade model the assist provides most of the turning
+   authority and would otherwise mask it. The travel-alignment countersteer and
+   spin protection are deliberately NOT scaled, so slides still catch. The
+   alignment fraction is scaled linearly with speed — 0 at
    standstill ramping to its full configured value at `steer_assist_min_speed`
    (≈30 km/h) — so it never snaps in suddenly at low speed. A direct yaw torque
    (`steer_assist_torque`) fights understeer,
@@ -52,8 +57,9 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    (≈30 km/h) — rather than switched on abruptly at that threshold — so it ramps
    up smoothly without making low-speed handling twitchy. It also tapers with the
    car's slip angle: full when the car points along its travel direction, fading
-   linearly to zero once it has rotated `steer_assist_max_angle` (≈30°) into the
-   turn, so the aid helps rotate the car in but won't keep over-rotating it into a
+   linearly to zero once it has rotated the surface's optimum slip angle
+   (`asin(slip_peak)`, ≈8–18°) into the turn — the aid rotates the car in until the
+   tires reach peak grip, then stops adding, so it won't keep over-rotating it into a
    spin. **Spin protection** (`spin_assist_torque`) is the recovery counterpart:
    once the car has rotated further than `spin_assist_angle` (≈35°) away from its
    travel direction, a corrective yaw torque pulls the nose back toward the travel

@@ -27,8 +27,8 @@ var peak_torque_rpm := 4500.0
 @export var mass := 1058.0
 # Must comfortably exceed the sliding tires' reaction torque (≈ μ·N·r per
 # axle, ~150 N·m at μ 0.7) or the wheels can't lock against grippy ground.
-@export var brake_torque := 2645.0  # N·m per axle from the foot brake (S)
-@export var handbrake_torque := 3527.0  # N·m on the rear axle (Space)
+@export var brake_torque := 1500.0  # N·m per axle from the foot brake (S)
+@export var handbrake_torque := 5000.0  # N·m on the rear axle (Space)
 @export var engine_friction_base := 10.0  # N·m always-on crank friction at 0 rpm (FMEP constant term)
 @export var engine_friction_slope := 4.0  # N·m of extra crank friction per 1000 rpm (FMEP linear term)
 @export var axle_inertia := 2.645  # kg·m² rear axle spin inertia; fronts use half each
@@ -45,48 +45,37 @@ var peak_torque_rpm := 4500.0
 ## (this default is only the fallback when a spec omits them); the aero_kit upgrade
 ## adds on top of the car's value.
 @export_range(-2.0, 2.0) var downforce_rear := 0.0
-## Max steering offset (radians) from the car's direction of travel.
+## Mechanical max steering offset (radians) from the car's direction of travel —
+## the full-lock wheel angle available at low speed. At speed the effective limit
+## is bounded BELOW this by the tire's optimum slip angle (Car.optimum_steer_limit),
+## so a full-lock input pins the front tires on their grip peak instead of
+## scrubbing past it — derived from the surface under the steering axle
+## (asin(slip_peak): ≈8° tarmac, ≈18° gravel), not a tuned speed ramp.
 @export_range(0.0, 1.2) var steer_limit := 0.8
-## Speed-dependent steering: the input steer_limit above stays full at or below
-## steer_limit_falloff_start_kph, then ramps down linearly to
-## steer_limit_min_fraction of itself by steer_limit_falloff_end_kph, holding
-## that floor above it — so the car isn't twitchy at speed. Authored in km/h
-## (unlike the m/s fields such as steer_assist_min_speed — these are the knobs a
-## designer reads off the HUD speedo). The factor scales both the input wheel
-## angle and the steer-assist torque; the travel-alignment countersteer is
-## untouched. Set min_fraction to 1.0 (or end <= start) to disable.
-@export_range(0.0, 200.0) var steer_limit_falloff_start_kph := 0.0
-@export_range(0.0, 400.0) var steer_limit_falloff_end_kph := 50.0
-@export_range(0.0, 1.0) var steer_limit_min_fraction := 0.15
-@export var steer_speed := 4.0
+@export var steer_speed := 5.0
 ## How much the front wheels caster toward the direction of travel: 1.0 = fully
 ## track it (automatic countersteer), 0.0 = steering input only.
 @export_range(0.0, 1.0) var steer_travel_alignment := 1.0
 ## Yaw torque (N·m) applied while steering to fight understeer — a steering aid,
 ## not a physical force.
-@export_range(0.0, 10000.0) var steer_assist_torque := 4000
+@export_range(0.0, 10000.0) var steer_assist_torque := 7000
 ## Minimum speed (m/s) before the steer-assist yaw torque kicks in. Below this
 ## the car is too slow for understeer to matter and the aid only makes low-speed
 ## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.
 @export_range(0.0, 50.0) var steer_assist_min_speed := 10
-## Slip angle (radians) at which the steer-assist yaw torque tapers to zero. The
-## assist is full when the car points along its travel direction and fades
-## linearly to nothing once the car has rotated this far into the turn, so it
-## helps rotate the car in but won't keep over-rotating it into a spin. 30° ≈ 0.524 rad.
-@export_range(0.0, 1.571) var steer_assist_max_angle := deg_to_rad(5.0)
 ## Spin protection: corrective yaw torque (N·m) that pulls the nose back toward
 ## the direction of travel once the car has rotated further than
 ## spin_assist_angle into a slide — the counterpart to steer_assist_torque
-## (which stops ADDING rotation past steer_assist_max_angle; this one actively
-## takes rotation away). Includes yaw-rate damping so it settles the slide
+## (which stops ADDING rotation past the surface's optimum slip angle; this one
+## actively takes rotation away). Includes yaw-rate damping so it settles the slide
 ## rather than oscillating. Suppressed while the handbrake is held so
 ## deliberate drifts stay possible. 0 disables. An anti-spin aid, not a
 ## physical force.
-@export_range(0.0, 30000.0) var spin_assist_torque := 6000.0
+@export_range(0.0, 30000.0) var spin_assist_torque := 0.0
 ## Slip angle (radians) where spin protection starts. The torque ramps in
-## linearly from 0 at this angle to full strength at twice it. Keep it above
-## steer_assist_max_angle so the two aids never fight over the same slide.
-## 35° ≈ 0.611 rad.
+## linearly from 0 at this angle to full strength at twice it. Keep it above the
+## surface's optimum slip angle (asin(slip_peak), ≈8–18°) so the two aids never
+## fight over the same slide. 35° ≈ 0.611 rad.
 @export_range(0.0, 1.571) var spin_assist_angle := deg_to_rad(35.0)
 ## Self-righting assist: when one or more wheels leave the ground, a roll+pitch
 ## torque (N·m at full 90° tilt) eases the car back toward flat, scaling with how
@@ -132,10 +121,40 @@ var peak_torque_rpm := 4500.0
 @export_range(0.1, 2.0) var grass_grip := 0.7
 @export_range(0.1, 2.0) var gravel_grip := 1.0
 @export_range(0.1, 2.0) var tarmac_grip := 1.3
-@export var tire_slip_peak := 1.5
+## Slip at which grip peaks, as a NORMALIZED (dimensionless) slip — lateral it is
+## sin(slip angle), longitudinal it is the slip ratio Δv/v. 0.15 ≈ sin(8.6°), so
+## peak lateral grip lands at ~8.6° of slip angle at ANY speed (a real tyre peaks
+## at a roughly constant angle, not a constant slip *speed*). The contact's slip
+## velocities are divided by the patch's ground speed (floored by tire_norm_floor)
+## before this curve is applied — see Drivetrain._tire_force.
+@export var tire_slip_peak := 0.15
+## Floor (m/s) on the reference speed used to normalize slip into the grip curve.
+## A stationary tyre has no well-defined slip angle, so below this speed the model
+## degrades gracefully toward the old slip-velocity behavior instead of dividing
+## by ~0. Keep it low enough not to affect cornering feel, high enough to stay
+## stable at creep.
+@export var tire_norm_floor := 2.5
 ## Grip retained when a tire is fully sliding, as a fraction of peak μN. The
 ## tire force falls from full grip at tire_slip_peak down to this when locked.
 @export_range(0.1, 1.0) var sliding_grip_ratio := 0.7
+## Per-surface OVERRIDES of the two grip-curve shape parameters above. When a
+## wheel is on terrain, tire_slip_peak and sliding_grip_ratio are resolved from
+## these anchors, blended across the SAME feathered grass↔road / gravel↔tarmac
+## bands surface_grip uses for μ (Drivetrain.surface_tire_params). Off terrain
+## (flat fixtures) the globals above are the fallback.
+## Optimum slip is a NORMALIZED slip (sin of the slip angle, laterally). Rubber
+## on hard tarmac peaks at a low angle then drops off sharply (Pacejka-shaped);
+## loose gravel/grass shears a wedge of material and peaks at a MUCH larger angle
+## with a broad, forgiving plateau past it — which is why rally is driven
+## sideways. sin(8°)≈0.14, sin(18°)≈0.31, sin(20°)≈0.34.
+@export var tarmac_slip_peak := 0.14
+@export var gravel_slip_peak := 0.31
+@export var grass_slip_peak := 0.34
+## Post-peak grip retention per surface (see sliding_grip_ratio). Tarmac falls
+## off; loose surfaces stay near their peak well past it (the plateau).
+@export_range(0.1, 1.0) var tarmac_slide_ratio := 0.6
+@export_range(0.1, 1.0) var gravel_slide_ratio := 0.85
+@export_range(0.1, 1.0) var grass_slide_ratio := 0.82
 ## Static-friction hold for a nearly-stopped, fully-braked car (handbrake or the
 ## low-speed parking brake). The tire model's grip fades to zero as slip does, so
 ## without this a parked car slowly creeps down a slope. Car._apply_parking_hold

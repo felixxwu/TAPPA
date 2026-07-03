@@ -29,15 +29,11 @@ the `.tres` requires a scene reload to take effect.
 | `handbrake_torque` | 400.0 | Rear handbrake N·m (Space) |
 | `drag_coefficient` | 0.4 | Quadratic aero drag (top-speed limiter) |
 | `downforce_front` / `downforce_rear` | 0.0 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0). Set **per-car** by `apply_car` from the CarLibrary spec (these defaults are just the fallback); every car has a small rear value |
-| `steer_limit` | 0.3 rad | Max steer angle from travel direction (low speed) |
-| `steer_limit_falloff_start_kph` | 0.0 | Speed (**km/h**) at/below which steering authority is full |
-| `steer_limit_falloff_end_kph` | 50.0 | Speed (**km/h**) at/above which authority hits its floor |
-| `steer_limit_min_fraction` | 0.01 | High-speed authority floor, scales wheel angle AND steer assist (1.0 disables) |
+| `steer_limit` | 0.8 rad | Mechanical max steer angle from travel direction (full lock at low speed); at speed the effective cap is bounded by the tire's optimum slip angle (`Car.optimum_steer_limit`), derived from the surface, not a tuned ramp |
 | `steer_speed` | 5.0 | Steering responsiveness (rad/s) |
 | `steer_travel_alignment` | 1.0 | Auto-countersteer fraction (0..1) |
-| `steer_assist_torque` | 200.0 | Yaw torque vs understeer (N·m) |
+| `steer_assist_torque` | 200.0 | Yaw torque vs understeer (N·m); scaled at speed by `Car.steer_authority` (cap ÷ `steer_limit`) |
 | `steer_assist_min_speed` | 8.333 | Min speed (m/s ≈30 km/h) before steer assist applies |
-| `steer_assist_max_angle` | 0.524 rad | Slip angle (≈30°) at which steer assist tapers to zero; full at 0, linear in between |
 | `spin_assist_torque` | 6000.0 | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held; 0 disables |
 | `spin_assist_angle` | 0.611 rad | Slip angle (≈35°) where spin protection starts; ramps to full at twice this angle |
 | `level_assist_torque` | 8000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |

@@ -208,3 +208,92 @@ func test_parking_brake_holds_longitudinally() -> void:
 	_car.linear_velocity = -_car.global_transform.basis.z * 0.5
 	await _wait_physics(60)
 	assert_lt(_car.linear_velocity.length(), 0.2, "parking brake stops slow creep")
+
+
+# Slip angle of peak lateral force, swept via _tire_force with a synthetic
+# contact at pure cornering (no wheelspin/brake). Returns degrees.
+func _peak_lateral_slip_angle_deg(v: float, slip_peak := -1.0, slide_ratio := -1.0) -> float:
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	if slip_peak < 0.0:
+		slip_peak = cfg.tire_slip_peak
+	if slide_ratio < 0.0:
+		slide_ratio = cfg.sliding_grip_ratio
+	var best_f := -1.0
+	var best_deg := 0.0
+	var deg := 1.0
+	while deg <= 45.0:
+		var a := deg_to_rad(deg)
+		# Car moving at speed v with its velocity offset by the slip angle from
+		# the nose: longitudinal ground vel = v·cos(a), lateral = v·sin(a).
+		var c := {
+			v_long = v * cos(a),
+			s_lat = v * sin(a),
+			mu = 1.0,
+			n_force = 4000.0,
+			slip_peak = slip_peak,
+			slide_ratio = slide_ratio,
+		}
+		# surface_vel = v_long -> zero longitudinal slip, pure lateral.
+		var f_lat: float = absf(dt._tire_force(cfg, c, c.v_long, 1.0 / 60.0).y)
+		if f_lat > best_f:
+			best_f = f_lat
+			best_deg = deg
+		deg += 0.5
+	return best_deg
+
+
+func test_peak_lateral_grip_at_constant_slip_angle() -> void:
+	# The tire model normalizes slip by speed, so peak lateral grip must land at
+	# the SAME slip angle regardless of speed (a real tyre peaks at ~a constant
+	# angle, not a constant slip speed). Property test — holds for any reasonable
+	# tire_slip_peak, pins no tuned value.
+	var slow := _peak_lateral_slip_angle_deg(15.0)
+	var fast := _peak_lateral_slip_angle_deg(40.0)
+	assert_almost_eq(fast, slow, 1.0,
+		"peak lateral slip angle is speed-independent (%.1f° vs %.1f°)" % [slow, fast])
+	# And it's a genuine interior peak, not a monotone ramp to the sweep edge.
+	assert_gt(slow, 1.0, "peak is at a nonzero slip angle")
+	assert_lt(slow, 44.0, "grip falls off past the peak, not still climbing at 45°")
+
+
+func test_surface_tire_params_blend() -> void:
+	# The three surface-dependent tire params resolve from the (road, tarmac)
+	# terrain weights to the matching per-surface anchor. Tests the blend LOGIC
+	# maps weights -> anchors; the anchor VALUES are tunable and not asserted.
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	var stub := _StubTerrain.new()
+	dt.terrain = stub
+
+	stub.s = Vector2(0.0, 0.0)  # off-road grass
+	var grass: Dictionary = dt.surface_tire_params(cfg, Vector3.ZERO)
+	assert_almost_eq(grass.slip_peak, cfg.grass_slip_peak, 1e-4, "grass slip peak")
+	assert_almost_eq(grass.slide_ratio, cfg.grass_slide_ratio, 1e-4, "grass slide ratio")
+
+	stub.s = Vector2(1.0, 0.0)  # full gravel road
+	var gravel: Dictionary = dt.surface_tire_params(cfg, Vector3.ZERO)
+	assert_almost_eq(gravel.slip_peak, cfg.gravel_slip_peak, 1e-4, "gravel slip peak")
+	assert_almost_eq(gravel.slide_ratio, cfg.gravel_slide_ratio, 1e-4, "gravel slide ratio")
+
+	stub.s = Vector2(1.0, 1.0)  # full tarmac road
+	var tarmac: Dictionary = dt.surface_tire_params(cfg, Vector3.ZERO)
+	assert_almost_eq(tarmac.slip_peak, cfg.tarmac_slip_peak, 1e-4, "tarmac slip peak")
+	assert_almost_eq(tarmac.slide_ratio, cfg.tarmac_slide_ratio, 1e-4, "tarmac slide ratio")
+
+	dt.terrain = null
+	var none: Dictionary = dt.surface_tire_params(cfg, Vector3.ZERO)
+	assert_eq(none.mu_mult, 1.0, "no terrain -> μ unscaled")
+	assert_almost_eq(none.slip_peak, cfg.tire_slip_peak, 1e-4, "no terrain -> global slip peak")
+
+
+func test_higher_slip_peak_moves_optimum_angle_out() -> void:
+	# The grip curve peaks at its own slip_peak, so a contact with a larger
+	# slip_peak (a looser surface) reaches optimum lateral grip at a LARGER slip
+	# angle. Synthetic slip_peak inputs — asserts the code's contract, not any
+	# tuned surface value.
+	var v := 25.0
+	var tight := _peak_lateral_slip_angle_deg(v, 0.14)   # tarmac-like
+	var loose := _peak_lateral_slip_angle_deg(v, 0.31)   # gravel-like
+	assert_gt(loose, tight + 3.0,
+		"looser surface (bigger slip_peak) peaks at a bigger slip angle (%.1f° vs %.1f°)" % [tight, loose])

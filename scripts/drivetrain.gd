@@ -84,14 +84,19 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		var fwd := wheel_forward(wheel)
 		var side := wheel_side(wheel)
 		var vel := velocity_at(cp)
+		# One terrain query for all three surface-dependent tire params (μ mult,
+		# optimum-slip location, sliding plateau) at this contact.
+		var surf := surface_tire_params(cfg, cp)
 		contacts.append({
 			wheel = wheel, cp = cp, fwd = fwd, side = side,
 			v_long = fwd.dot(vel), s_lat = -side.dot(vel),
 			n_force = n_force,
+			slip_peak = surf.slip_peak,
+			slide_ratio = surf.slide_ratio,
 			mu = (
 				cfg.wheel_friction_slip_front if wheel.use_as_steering
 				else cfg.wheel_friction_slip_rear
-			) * surface_grip(cfg, cp) * cfg.tire_load_factor(
+			) * surf.mu_mult * cfg.tire_load_factor(
 				n_force,
 				cfg.wheel_width_front if wheel.use_as_steering else cfg.wheel_width_rear
 			),
@@ -282,30 +287,42 @@ func _front_avg_omega() -> float:
 # stability caps; the contact context c is fixed for the tick. cfg is passed in
 # (rather than re-fetched) — this runs once per contact per substep.
 func _tire_force(cfg: GameConfig, c: Dictionary, surface_vel: float, h: float) -> Vector2:
-	# Slip velocity of the contact patch vs the ground. Positive s_long =
+	# Slip velocity of the contact patch vs the ground (m/s). Positive s_long_v =
 	# wheel surface running ahead of the ground (wheelspin) -> force forward.
-	var s_long: float = surface_vel - c.v_long
-	var s_lat: float = c.s_lat
+	var s_long_v: float = surface_vel - c.v_long
+	var s_lat_v: float = c.s_lat
+	# Normalize slip velocities into dimensionless slip before the grip curve, so
+	# grip peaks at a constant slip *angle* (lateral) / slip *ratio* (long) rather
+	# than a constant slip *speed*. Reference is the patch's planar ground speed
+	# (sqrt of the two ground-velocity components — s_lat_v IS the lateral ground
+	# velocity, c.v_long the longitudinal one), floored so we never divide by ~0
+	# at creep. s_lat / v_ref is then sin(slip angle), s_long / v_ref the slip
+	# ratio; both stay bounded when the car is barely moving.
+	var v_ref: float = maxf(sqrt(c.v_long * c.v_long + s_lat_v * s_lat_v), cfg.tire_norm_floor)
+	var s_long := s_long_v / v_ref
+	var s_lat := s_lat_v / v_ref
 	# Traction ellipse via scaled slip space: weight longitudinal slip by the
 	# ratio, take the grip curve on the combined magnitude, then unscale the
 	# longitudinal force component (max long force = μN / ratio).
 	var er: float = cfg.traction_ellipse_ratio
 	var scaled := Vector2(s_long * er, s_lat)
 	var s := scaled.length()
-	if s < 0.001:
+	if s < 0.0001:
 		return Vector2.ZERO
-	var f_scaled: Vector2 = scaled / s * c.mu * c.n_force * _grip_curve(cfg, s)
+	var f_scaled: Vector2 = scaled / s * c.mu * c.n_force * _grip_curve(c.slip_peak, c.slide_ratio, s)
 	var f_long: float = f_scaled.x / er
 	var f_lat: float = f_scaled.y
 	# Stability caps: never push harder than would zero a slip component
-	# within one substep. Longitudinal uses the smaller of the chassis share
-	# and the axle's effective contact mass (I / r²) — the wheel side reacts
-	# much faster than the chassis; lateral has no spin state, chassis only.
+	# within one substep. These use the RAW slip velocities (m/s), so the
+	# standstill divide-by-zero guarantee is preserved regardless of v_ref.
+	# Longitudinal uses the smaller of the chassis share and the axle's effective
+	# contact mass (I / r²) — the wheel side reacts much faster than the chassis;
+	# lateral has no spin state, chassis only.
 	var share := car.mass / float(hardpoints.size())
 	var spin_mass: float = cfg.axle_inertia * 0.5 / (cfg.wheel_radius * cfg.wheel_radius)
-	var long_cap: float = absf(s_long) * minf(share, spin_mass) / h
+	var long_cap: float = absf(s_long_v) * minf(share, spin_mass) / h
 	f_long = clampf(f_long, -long_cap, long_cap)
-	f_lat = clampf(f_lat, -absf(s_lat) * share / h, absf(s_lat) * share / h)
+	f_lat = clampf(f_lat, -absf(s_lat_v) * share / h, absf(s_lat_v) * share / h)
 	return Vector2(f_long, f_lat)
 
 
@@ -315,20 +332,59 @@ func _tire_force(cfg: GameConfig, c: Dictionary, surface_vel: float, h: float) -
 # uses: road weight fades grass→road, tarmac weight fades gravel→tarmac. With no
 # terrain (flat fixtures) the multiplier is 1.0, so the base μ is unchanged.
 func surface_grip(cfg: GameConfig, cp: Vector3) -> float:
+	return surface_tire_params(cfg, cp).mu_mult
+
+
+# All three surface-dependent tire params at a contact point, from ONE terrain
+# query: μ multiplier, the normalized optimum-slip location, and the sliding
+# plateau. Each is blended across the same feathered grass↔road / gravel↔tarmac
+# bands the road colour uses. Off terrain (flat fixtures) μ is unscaled (1.0) and
+# the shape falls back to the global tire_slip_peak / sliding_grip_ratio.
+func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 	if terrain == null or not terrain.has_method("surface_at"):
-		return 1.0
+		return {
+			mu_mult = 1.0,
+			slip_peak = cfg.tire_slip_peak,
+			slide_ratio = cfg.sliding_grip_ratio,
+		}
 	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
-	var road_grip := lerpf(cfg.gravel_grip, cfg.tarmac_grip, s.y)
-	return lerpf(cfg.grass_grip, road_grip, s.x)
+	return {
+		mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s),
+		slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s),
+		slide_ratio = _surface_blend(cfg.grass_slide_ratio, cfg.gravel_slide_ratio, cfg.tarmac_slide_ratio, s),
+	}
 
 
-# Grip fraction (0..1 of μN) for a combined slip speed s (m/s): linear up to
-# the peak, then falling off to sliding_grip_ratio over three more peaks.
-func _grip_curve(cfg: GameConfig, s: float) -> float:
-	if s <= cfg.tire_slip_peak:
-		return s / cfg.tire_slip_peak
-	var t := clampf((s - cfg.tire_slip_peak) / (3.0 * cfg.tire_slip_peak), 0.0, 1.0)
-	return lerpf(1.0, cfg.sliding_grip_ratio, t)
+# Blend a per-surface value across the terrain's (road, tarmac) weights: tarmac
+# weight fades gravel→tarmac, road weight fades grass→road.
+func _surface_blend(grass: float, gravel: float, tarmac: float, s: Vector2) -> float:
+	var road := lerpf(gravel, tarmac, s.y)
+	return lerpf(grass, road, s.x)
+
+
+# The normalized optimum slip (slip_peak) the STEERING axle is currently on,
+# averaged over the front wheels in ground contact. This is what the steering
+# aids key off to bound the front tires to their peak-grip slip angle
+# (asin(slip_peak)) for the surface underneath them. Falls back to the global
+# tire_slip_peak when no front wheel is grounded (airborne) or off terrain.
+func steering_axle_slip_peak(cfg: GameConfig) -> float:
+	var total := 0.0
+	var n := 0
+	for wheel in front_wheels:
+		if wheel.is_in_contact():
+			total += surface_tire_params(cfg, wheel.get_contact_point()).slip_peak
+			n += 1
+	return (total / n) if n > 0 else cfg.tire_slip_peak
+
+
+# Grip fraction (0..1 of μN) for a combined NORMALIZED slip s (dimensionless,
+# from _tire_force), given this contact's surface-resolved shape: linear up to
+# slip_peak, then falling off to slide_ratio over three more peaks.
+func _grip_curve(slip_peak: float, slide_ratio: float, s: float) -> float:
+	if s <= slip_peak:
+		return s / slip_peak
+	var t := clampf((s - slip_peak) / (3.0 * slip_peak), 0.0, 1.0)
+	return lerpf(1.0, slide_ratio, t)
 
 
 # Normal force the suspension presses this wheel into the ground with,

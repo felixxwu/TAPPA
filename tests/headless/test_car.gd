@@ -248,25 +248,23 @@ func test_steer_assist_suppressed_below_min_speed() -> void:
 
 func test_steer_assist_tapers_with_slip_angle() -> void:
 	# The assist fades linearly with how far the car has already rotated into the
-	# turn: full at zero slip, nothing past steer_assist_max_angle. Steering left,
-	# measure the yaw the assist adds (torque on minus off, over a short window)
-	# when the car points along its travel vs. when it has slipped well past the
-	# limit — the slipped contribution must taper to near nothing.
+	# turn: full at zero slip, nothing once the car has rotated past the surface's
+	# optimum slip angle (asin(slip_peak), ≈8–18°). Steering left, measure the yaw
+	# the assist adds (torque on minus off, over a short window) when the car points
+	# along its travel vs. when it has slipped 45° — well past any surface optimum —
+	# so the slipped contribution must taper to near nothing.
 	var cfg: GameConfig = Config.data
 	var saved_torque := cfg.steer_assist_torque
-	var saved_angle := cfg.steer_assist_max_angle
-	cfg.steer_assist_max_angle = deg_to_rad(15.0)
 
 	var aligned := await _steer_assist_yaw_gain(0.0)
 	var slipped := await _steer_assist_yaw_gain(deg_to_rad(45.0))
 
 	cfg.steer_assist_torque = saved_torque
-	cfg.steer_assist_max_angle = saved_angle
 
 	assert_gt(aligned, 0.03,
 		"aligned: the assist must add left yaw when the car points along its travel")
 	assert_lt(absf(slipped), aligned * 0.3,
-		"slipped past steer_assist_max_angle: the assist contribution must taper away")
+		"slipped past the optimum slip angle: the assist contribution must taper away")
 
 
 # Left-steer yaw rate the assist adds (torque 8000 minus torque 0) over a short

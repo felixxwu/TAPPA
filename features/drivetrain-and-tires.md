@@ -31,12 +31,32 @@ custom combined-slip tire model and explicit RWD/AWD/FWD behavior.
 ## Tire force model
 
 - `_tire_force(contact, surface_vel, h)` — combined-slip force from the grip
-  curve, capped for stability. Longitudinal slip = (wheel surface speed − ground
-  speed) along rolling dir; lateral slip = transverse contact velocity. Long
-  slip is weighted to approximate a traction ellipse.
-- `_grip_curve(s)`:
-  - `s ≤ tire_slip_peak`: grip rises linearly 0 → 1.
-  - `s > tire_slip_peak`: grip rolls off 1.0 → `sliding_grip_ratio` over ~3× peak.
+  curve, capped for stability. Longitudinal slip velocity = (wheel surface speed
+  − ground speed) along rolling dir; lateral slip velocity = transverse contact
+  velocity. Long slip is weighted to approximate a traction ellipse.
+- **Slip is normalized before the curve.** Both slip velocities are divided by
+  the patch's planar ground speed `v_ref = max(√(v_long² + s_lat²), tire_norm_floor)`,
+  turning them into dimensionless slip: lateral → `sin(slip angle)`, longitudinal
+  → slip ratio `Δv/v`. So grip peaks at a constant slip **angle**/ **ratio**,
+  not a constant slip **speed** — a real tyre peaks at ~a fixed angle regardless
+  of speed. The `tire_norm_floor` floor avoids dividing by ~0 at creep (a
+  stationary tyre has no defined slip angle); the stability caps still key off
+  the RAW velocities, so the standstill guarantee is unchanged.
+- `_grip_curve(slip_peak, slide_ratio, s)` (s is the combined normalized slip):
+  - `s ≤ slip_peak`: grip rises linearly 0 → 1.
+  - `s > slip_peak`: grip rolls off 1.0 → `slide_ratio` over ~3× peak.
+- **The curve shape is surface-dependent.** `slip_peak` (optimum-slip location)
+  and `slide_ratio` (post-peak plateau) are resolved *per contact* from the
+  terrain by `surface_tire_params(cp)` — one `surface_at` query, blended across
+  the same feathered grass↔road / gravel↔tarmac bands as μ, and stashed in the
+  contact. Rubber on hard **tarmac** peaks at a low slip angle then drops off
+  sharply (`tarmac_slip_peak ≈ 0.14 ≈ sin(8°)`, `tarmac_slide_ratio ≈ 0.6`);
+  loose **gravel/grass** shear a wedge of material and peak at a much larger
+  angle with a broad, forgiving plateau (`gravel_slip_peak ≈ 0.31 ≈ sin(18°)`,
+  `gravel_slide_ratio ≈ 0.85`) — which is why rally is driven sideways. Off
+  terrain (flat fixtures) the shape falls back to the global `tire_slip_peak` /
+  `sliding_grip_ratio`. `surface_grip(cp)` is now a thin wrapper returning the
+  same query's μ multiplier.
 - Peak grip scaled by `wheel_friction_slip_front` / `_rear` (μ), then by a
   **per-wheel surface multiplier** (`surface_grip`), then by a **per-wheel
   load-sensitivity factor** (`GameConfig.tire_load_factor`, see below).
