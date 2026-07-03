@@ -144,13 +144,14 @@ live in `GameConfig` under the **Speed Lines** group.
 
 Cars with `use_model` on their CarLibrary spec render an authored glb body
 instead of the procedural chassis+cabin boxes; every other car still uses the
-boxes. Six cars carry a model today: the **MX-5**
+boxes. Seven cars carry a model today: the **MX-5**
 (`blender/mx5/mx5.glb`, node `Car/Mx5Body`), the **Focus ST**
 (`blender/focus/focus.glb`, node `Car/FocusBody`), the **Renault Twingo**
 (`blender/twingo/twingo.glb`, node `Car/TwingoBody`), the **Honda Acty**
 (`blender/acty/acty.glb`, node `Car/ActyBody`), the **Charger R/T**
-(`blender/charger/charger.glb`, node `Car/ChargerBody`) and **The Beast**
-(`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`). All are
+(`blender/charger/charger.glb`, node `Car/ChargerBody`), **The Beast**
+(`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`) and the **911 (930)**
+(`blender/911/911.glb`, node `Car/Porsche911Body`). All are
 instanced in `car.tscn`, hidden by default.
 
 The mapping is spec-driven (not hard-coded per car): each model car names its
