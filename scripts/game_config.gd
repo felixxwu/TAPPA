@@ -57,8 +57,11 @@ var peak_torque_rpm := 4500.0
 ## track it (automatic countersteer), 0.0 = steering input only.
 @export_range(0.0, 1.0) var steer_travel_alignment := 1.0
 ## Yaw torque (N·m) applied while steering to fight understeer — a steering aid,
-## not a physical force.
-@export_range(0.0, 10000.0) var steer_assist_torque := 7000
+## not a physical force. This is only the neutral baseline / fallback: the value
+## is authored PER CAR (CarLibrary "steer_assist_torque") and overlaid onto cfg by
+## car.gd apply_car(), so the shipped roster drives it, not this global. Kept at 0
+## so a car that authors no value gets no assist.
+@export_range(0.0, 10000.0) var steer_assist_torque := 0.0
 ## Minimum speed (m/s) before the steer-assist yaw torque kicks in. Below this
 ## the car is too slow for understeer to matter and the aid only makes low-speed
 ## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.

@@ -52,7 +52,9 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    alignment fraction is scaled linearly with speed — 0 at
    standstill ramping to its full configured value at `steer_assist_min_speed`
    (≈30 km/h) — so it never snaps in suddenly at low speed. A direct yaw torque
-   (`steer_assist_torque`) fights understeer,
+   (`steer_assist_torque`, authored **per car** in `CarLibrary` and overlaid onto
+   the config by `apply_car()`; the global `GameConfig` value is a 0 fallback, so
+   only cars that author a value get the aid) fights understeer,
    faded in linearly from 0 at standstill to full at `steer_assist_min_speed`
    (≈30 km/h) — rather than switched on abruptly at that threshold — so it ramps
    up smoothly without making low-speed handling twitchy. It also tapers with the

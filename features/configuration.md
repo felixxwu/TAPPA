@@ -32,7 +32,7 @@ the `.tres` requires a scene reload to take effect.
 | `steer_limit` | 0.8 rad | Mechanical max steer angle from travel direction (full lock at low speed); at speed the effective cap is bounded by the tire's optimum slip angle (`Car.optimum_steer_limit`), derived from the surface, not a tuned ramp |
 | `steer_speed` | 5.0 | Steering responsiveness (rad/s) |
 | `steer_travel_alignment` | 1.0 | Auto-countersteer fraction (0..1) |
-| `steer_assist_torque` | 200.0 | Yaw torque vs understeer (N·m); scaled at speed by `Car.steer_authority` (cap ÷ `steer_limit`) |
+| `steer_assist_torque` | 0.0 | Yaw torque vs understeer (N·m); scaled at speed by `Car.steer_authority` (cap ÷ `steer_limit`). Authored **per car** in `CarLibrary` (overlaid by `apply_car()`); this global is a 0 fallback |
 | `steer_assist_min_speed` | 8.333 | Min speed (m/s ≈30 km/h) before steer assist applies |
 | `spin_assist_torque` | 6000.0 | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held; 0 disables |
 | `spin_assist_angle` | 0.611 rad | Slip angle (≈35°) where spin protection starts; ramps to full at twice this angle |

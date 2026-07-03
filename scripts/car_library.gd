@@ -53,6 +53,10 @@ extends RefCounted
 #                car with 0 has none — no hidden global baseline), and the aero_kit
 #                upgrade adds on top. All cars carry a small rear value to keep the
 #                tail planted under power; front defaults to 0 when omitted.
+#   * steer_assist_torque — per-car yaw torque (N·m) of the understeer steering aid
+#                (GameConfig.steer_assist_torque). apply_car() SETS this from the spec
+#                (default 0 → no assist; no hidden global baseline), so the aid is a
+#                per-car character knob, not a global. Only the Focus authors a value.
 #   * weight_front — the car's real static front-axle weight fraction (0..1):
 #                0.50 = 50/50, >0.5 = nose-heavy (front-engine FWD), <0.5 = tail-heavy
 #                (mid/rear-engine). apply_car() turns this into the RigidBody's custom
@@ -94,7 +98,7 @@ const CARS: Array[Dictionary] = [
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
 		"tire_compound": 1.0,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.45,
@@ -113,7 +117,7 @@ const CARS: Array[Dictionary] = [
 		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
 		"mass": 1467.0, "engine": "ford_25t_i5", "weight_front": 0.62, "engine_pos": 0.85,  # transverse turbo I5, nose-heavy FWD
 		"tire_compound": 1.05,  # performance summer tyres
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 7000,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
@@ -133,7 +137,7 @@ const CARS: Array[Dictionary] = [
 		"id": "twingo", "country": "FR", "car_type": "hatch", "max_hp": 700.0, "reward_tier": 1,
 		"mass": 890.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
 		"tire_compound": 0.85,  # hard economy tyres, skinny
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
@@ -152,7 +156,7 @@ const CARS: Array[Dictionary] = [
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
 		"mass": 740.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
 		"tire_compound": 0.85,  # hard commercial tyres, skinny
-		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": AWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
 		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
@@ -172,7 +176,7 @@ const CARS: Array[Dictionary] = [
 		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1750.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95,  # touring tyres
-		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
+		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
 		# 5.28 m x 1.95 m). Long, low, heavy coupe.
@@ -192,7 +196,7 @@ const CARS: Array[Dictionary] = [
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 2,
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 4000,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
@@ -210,7 +214,7 @@ const CARS: Array[Dictionary] = [
 		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 1000.0, "reward_tier": 3,
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
 		"tire_compound": 1.15,  # sticky performance tyres (period bias-belted rubber)
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
 		"cabin_z": 0.10, "track": 1.60, "wheelbase": 2.44,
@@ -222,7 +226,7 @@ const CARS: Array[Dictionary] = [
 		"id": "xjs", "country": "GB", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75,  # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95,  # period touring / GT tyres
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.79, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.50, "wheelbase": 2.59,
@@ -234,7 +238,7 @@ const CARS: Array[Dictionary] = [
 		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 3,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 0.95,  # period touring tyres
-		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0,  # long, brick-like body → real aero drag
+		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 0,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),

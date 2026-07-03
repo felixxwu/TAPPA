@@ -761,6 +761,9 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	# value. apply_owned applies the aero_kit upgrade ON TOP of this afterwards.
 	cfg.downforce_front = spec.get("downforce_front", 0.0)
 	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
+	# Per-car steer-assist yaw torque (understeer aid). SET (not added) so a spec of
+	# 0 means no assist — no hidden global baseline. Only the focus authors a value.
+	cfg.steer_assist_torque = spec.get("steer_assist_torque", 0.0)
 	# Per-car suspension: overall spring rate + per-axle travel. The front/rear
 	# spring RATES are not authored — they're derived from weight_front by
 	# GameConfig.axle_stiffness so the heavier axle gets a stiffer spring and the car
