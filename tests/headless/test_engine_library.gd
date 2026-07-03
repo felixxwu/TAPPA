@@ -3,6 +3,13 @@ extends GutTest
 # must be internally sane, and apply() must write the whole profile onto GameConfig.
 
 
+func before_each() -> void:
+	# Leak guard: this file asserts on the REAL catalogue, so make sure no other
+	# file's fixture override is still installed.
+	CarLibrary.reset()
+	EngineLibrary.reset()
+
+
 func test_catalog_is_a_sane_range_of_engines() -> void:
 	assert_gt(EngineLibrary.ENGINES.size(), 1, "a catalog, not one engine")
 	var ids := {}

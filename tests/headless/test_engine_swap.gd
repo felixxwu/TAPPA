@@ -4,6 +4,16 @@ extends GutTest
 # no scene, no save file. Values are INJECTED (not read from the authored
 # tables) so no tunable number is pinned. See features/engine-swap.md.
 
+const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+
+
+func before_each() -> void:
+	CarFixtures.install()
+
+
+func after_each() -> void:
+	CarFixtures.restore()
+
 
 func test_current_engine_id_prefers_swap_then_stock() -> void:
 	assert_eq(EngineSwap.current_engine_id({}, "stock_i4"), "stock_i4", "no swap -> stock")
@@ -12,14 +22,20 @@ func test_current_engine_id_prefers_swap_then_stock() -> void:
 
 
 func test_layout_label_uppercases_known_layout() -> void:
+	# layout_label looks the engine up in EngineLibrary by id, so it needs real
+	# engine ids to resolve — restore the real catalogue for this one test.
+	CarFixtures.restore()
 	# Derived from EngineLibrary's own layout key, not a pinned string.
-	var v8 := EngineLibrary.ENGINES[0]  # any real engine
+	var v8 := EngineLibrary.all()[0]  # a real engine
 	assert_eq(EngineSwap.layout_label("mopar_440_v8"), "V8", "v8 layout -> V8")
 	assert_eq(EngineSwap.layout_label("mazda_20_i4"), "I4", "i4 layout -> I4")
 	assert_eq(EngineSwap.layout_label("does_not_exist"), "", "unknown -> empty")
 
 
 func test_display_name_prefixes_layout_only_when_swapped() -> void:
+	# display_name resolves the swapped engine's layout via EngineLibrary by id,
+	# so it needs a real engine id to resolve — restore the real catalogue for this test.
+	CarFixtures.restore()
 	var entry := {"name": "Twingo", "engine": "renault_12_i4"}
 	assert_eq(EngineSwap.display_name(entry, {}), "Twingo", "stock -> plain name")
 	var swapped := {"swapped_engine": "mopar_440_v8"}
@@ -48,8 +64,8 @@ func test_recompute_weight_front_moves_cog_by_engine_position() -> void:
 
 func test_can_swap_requires_both_cars_at_full_health() -> void:
 	# Use a real model id so max_hp resolves; hp values are injected, not the authored max.
-	var model := CarLibrary.CARS[0]["id"]
-	var max_hp: float = CarLibrary.CARS[0]["max_hp"]
+	var model: String = CarLibrary.all()[0]["id"]
+	var max_hp: float = CarLibrary.all()[0]["max_hp"]
 	var full_a := {"model_id": model, "hp": max_hp}
 	var full_b := {"model_id": model, "hp": max_hp}
 	var hurt := {"model_id": model, "hp": max_hp - 1.0}

@@ -5,12 +5,14 @@ extends GutTest
 # throwaway Save profile so a real profile is never touched.
 
 const TEST_PATH := "user://test_rally_session_profile.json"
+const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 
 var _save: Node
 
 
 func before_each() -> void:
 	Config.reset()
+	CarFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -30,6 +32,7 @@ func after_each() -> void:
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
+	CarFixtures.restore()
 
 
 func _clean() -> void:
@@ -57,7 +60,7 @@ func _total_items() -> int:
 
 # Start a rally skipping track generation; return the owned car dict.
 # Caller may overwrite RallySession._opponent_field for determinism.
-func _start(rally_id: String, model := "mx5") -> Dictionary:
+func _start(rally_id: String, model := "fx_light_rwd") -> Dictionary:
 	var owned: Dictionary = _save.grant_car(model)
 	RallySession.start_rally(RallyLibrary.by_id(rally_id), owned, true)
 	return owned
@@ -105,16 +108,16 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 	assert_true(RallySession.current_event_leaders().is_empty(), "idle: no leaders")
 	_start("coastal_sprint")
 	RallySession._opponent_field = [
-		{"name": "A", "car_name": "Porsche 911", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "B", "car_name": "Lexus LFA", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "C", "car_name": "Focus ST", "event_times_ms": [-1, 0, 0], "dnf": true, "combined_ms": -1},
-		{"name": "D", "car_name": "Charger R/T", "event_times_ms": [60000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "A", "car_name": "Fixture AWD", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "B", "car_name": "Fixture Coupe", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "C", "car_name": "Fixture Hatch", "event_times_ms": [-1, 0, 0], "dnf": true, "combined_ms": -1},
+		{"name": "D", "car_name": "Fixture Roadster", "event_times_ms": [60000, 0, 0], "dnf": false, "combined_ms": 1},
 	]
 	# Event 0: C set no time (-1, omitted). Fastest-first: B 45k, A 50k, D 60k.
 	var leaders := RallySession.current_event_leaders(3)
 	assert_eq(leaders.size(), 3, "the top three rivals for the event are returned")
 	assert_eq(String(leaders[0]["name"]), "B", "the fastest rival leads")
-	assert_eq(String(leaders[0]["car_name"]), "Lexus LFA", "the leader's car comes through")
+	assert_eq(String(leaders[0]["car_name"]), "Fixture Coupe", "the leader's car comes through")
 	assert_eq(int(leaders[0]["time_ms"]), 45000, "the leader's event time comes through")
 	assert_eq(String(leaders[2]["name"]), "D", "third fastest is listed third")
 	for e in leaders:
@@ -124,9 +127,9 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 # The leaderboard carries the car each entrant drove — the rivals' and the
 # player's fielded car.
 func test_standings_carry_the_player_and_rival_cars() -> void:
-	_start("shakedown", "mx5")
+	_start("shakedown", "fx_light_rwd")
 	RallySession._opponent_field = [
-		{"name": "Quick", "car_name": "Porsche 911", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
+		{"name": "Quick", "car_name": "Fixture Coupe", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 	]
 	RallySession.report_event_result(50000)
 	var player := {}
@@ -136,8 +139,8 @@ func test_standings_carry_the_player_and_rival_cars() -> void:
 			player = e
 		else:
 			rival = e
-	assert_eq(String(rival["car_name"]), "Porsche 911", "the rival's car is in the standings")
-	assert_eq(String(player["car_name"]), "MX-5", "the player's fielded car is in the standings")
+	assert_eq(String(rival["car_name"]), "Fixture Coupe", "the rival's car is in the standings")
+	assert_eq(String(player["car_name"]), "Fixture Roadster", "the player's fielded car is in the standings")
 
 
 func test_idle_when_no_rally() -> void:
@@ -305,7 +308,7 @@ func test_showdown_win_beat_instead_of_car_draw() -> void:
 
 
 func test_farming_rewin_grants_car_without_new_completion() -> void:
-	var owned: Dictionary = _save.grant_car("mx5")
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.complete_rally("shakedown", 999999)  # already won once
 	var completed_before: int = _save.completed_rally_count()
 	var cars_before: int = _save.profile["cars"].size()
@@ -327,27 +330,27 @@ func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
 	_start("coastal_sprint")
 	# Inject a field with known car_ids and event times for event 0.
 	RallySession._opponent_field = [
-		{"name": "A", "car_id": "mx5",      "event_times_ms": [55000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "B", "car_id": "porsche911","event_times_ms": [48000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "C", "car_id": "aventador", "event_times_ms": [-1,    0, 0], "dnf": true,  "combined_ms": -1},
+		{"name": "A", "car_id": "fx_light_rwd",      "event_times_ms": [55000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "B", "car_id": "fx_rwd_coupe","event_times_ms": [48000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "C", "car_id": "fx_awd", "event_times_ms": [-1,    0, 0], "dnf": true,  "combined_ms": -1},
 	]
-	# Event 0: C DNF'd (time -1), so P1 is B with 48000 driving a porsche911.
+	# Event 0: C DNF'd (time -1), so P1 is B with 48000 driving a fx_rwd_coupe.
 	var p1: Dictionary = RallySession.current_event_p1_car()
 	assert_false(p1.is_empty(), "a classified P1 rival returns a car dict")
-	assert_eq(String(p1.get("id", "")), "porsche911", "P1 is the rival with the fastest non-DNF time")
+	assert_eq(String(p1.get("id", "")), "fx_rwd_coupe", "P1 is the rival with the fastest non-DNF time")
 
 
 # The event-only leaderboard ranks by the just-completed event's time (not the
 # cumulative total), sinks a rival who DNF'd THAT event, and carries the player.
 func test_current_event_standings_ranks_by_the_just_completed_event() -> void:
 	assert_true(RallySession.current_event_standings().is_empty(), "idle: no event standings")
-	_start("shakedown", "mx5")
+	_start("shakedown", "fx_light_rwd")
 	RallySession._opponent_field = [
 		# Cumulatively "Quick" leads, but for event 1 alone "Slow" is fastest and
 		# "Quick" is slowest — so the event-only ranking differs from the combined one.
-		{"name": "Quick", "car_name": "Porsche 911", "event_times_ms": [10000, 90000, 90000], "dnf": false, "combined_ms": 190000},
-		{"name": "Slow", "car_name": "Lexus LFA", "event_times_ms": [80000, 30000, 30000], "dnf": false, "combined_ms": 140000},
-		{"name": "Gone", "car_name": "Focus ST", "event_times_ms": [50000, -1, -1], "dnf": true, "combined_ms": -1},
+		{"name": "Quick", "car_name": "Fixture AWD", "event_times_ms": [10000, 90000, 90000], "dnf": false, "combined_ms": 190000},
+		{"name": "Slow", "car_name": "Fixture Coupe", "event_times_ms": [80000, 30000, 30000], "dnf": false, "combined_ms": 140000},
+		{"name": "Gone", "car_name": "Fixture Hatch", "event_times_ms": [50000, -1, -1], "dnf": true, "combined_ms": -1},
 	]
 	RallySession.report_event_result(90000)   # event 0
 	RallySession.continue_to_next_event()      # -> event 1 running

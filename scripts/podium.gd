@@ -780,7 +780,7 @@ func _finish_slot(on_done: Callable) -> void:
 
 func _car_names() -> Array:
 	var names: Array = []
-	for entry in CarLibrary.CARS:
+	for entry in CarLibrary.all():
 		names.append(String(entry.get("name", entry.get("id", "?"))))
 	return names
 

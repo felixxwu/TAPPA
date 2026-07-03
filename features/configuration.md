@@ -66,7 +66,7 @@ the `.tres` requires a scene reload to take effect.
 | `engine_harmonics` | 4 | Firing-pulse richness |
 | `engine_noise_level` | 0.15 | Broadband noise mix (per-car from `CarLibrary.noise_db`, in dB) |
 | `engine_smoothing_rate` | 200.0 | RPM/throttle audio tracking rate |
-| `engine_low_octave_mix` | 0.0 | Crossfade toward a voice one octave lower (per-car; LFA 0.5) |
+| `engine_low_octave_mix` | 0.0 | Crossfade toward a voice one octave lower (per-car; Viper 0.7) |
 | `engine_soft_clip_drive` | 0.6 | Pre-amp into the sine soft clipper (global; higher = more grit) |
 | `engine_soft_clip_post_gain` | 1.0 | Post-amp after the soft clipper (global; 1.0 = transparent) |
 | `drive_mode` | 0 (RWD) | Initial layout: RWD, AWD, FWD |

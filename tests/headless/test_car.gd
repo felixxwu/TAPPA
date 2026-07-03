@@ -23,6 +23,7 @@ func before_each() -> void:
 func after_each() -> void:
 	for action in ACTIONS:
 		Input.action_release(action)
+	CarFixtures.restore()
 
 
 func test_car_settles_on_ground() -> void:
@@ -438,11 +439,12 @@ func test_downforce_inert_at_standstill() -> void:
 func test_apply_car_sets_downforce_from_spec_overwriting_stale() -> void:
 	# Downforce is a PER-CAR spec value: apply_car SETS (not adds) it, so a car with
 	# 0 has none (no hidden global baseline) and re-fielding can't accumulate it.
+	CarFixtures.install()
 	var cfg: GameConfig = Config.data
 	cfg.downforce_front = 0.5  # pollute, as a prior fielding / aero_kit upgrade would
 	cfg.downforce_rear = 0.5
-	_car.apply_car(0)  # MX-5
-	var spec: Dictionary = CarLibrary.CARS[0]
+	_car.apply_car(0)  # Fixture Roadster
+	var spec: Dictionary = CarLibrary.all()[0]
 	assert_almost_eq(cfg.downforce_rear, float(spec.get("downforce_rear", 0.0)), 1e-6,
 		"apply_car sets rear downforce from the spec, overwriting the stale value")
 	assert_almost_eq(cfg.downforce_front, float(spec.get("downforce_front", 0.0)), 1e-6,
@@ -454,8 +456,9 @@ func test_aero_kit_upgrade_adds_downforce() -> void:
 	# ON TOP of whatever the car's spec baseline is (apply_owned, step 2). Asserts
 	# the upgrade's DELTA, not a hardcoded per-car value, so it can't go stale when
 	# the CarLibrary tuning data changes.
+	CarFixtures.install()
 	var cfg: GameConfig = Config.data
-	_car.apply_car(0)  # MX-5 — establishes the spec baseline (step 1)
+	_car.apply_car(0)  # Fixture Roadster — establishes the spec baseline (step 1)
 	var baseline_front := cfg.downforce_front
 	var baseline_rear := cfg.downforce_rear
 	var aero: Dictionary = UpgradeLibrary.by_id("aero_kit")["effect"]
@@ -592,10 +595,11 @@ func test_head_on_collision_costs_hp() -> void:
 # steer bias was removed, so if the toe weren't applied to the actual wheel nodes
 # (and their steer axle re-captured on re-parent), the car would track straight.
 func test_bent_front_wheels_veer_the_car_via_physics() -> void:
+	CarFixtures.install()
 	var cfg: GameConfig = Config.data
 	var t := cfg.damage_wheel_toe_max
 	# Both front wheels toed the same way about the car-up axis = a physical steer.
-	_car.apply_owned({"model_id": "mx5", "wheel_toe": [t, t, 0.0, 0.0]})
+	_car.apply_owned({"model_id": "fx_light_rwd", "wheel_toe": [t, t, 0.0, 0.0]})
 	await _wait_physics(4)
 	# The toe rides on the per-wheel VehicleWheel3D.steering the drivetrain reads for
 	# the force direction (front wheels carry the base steer plus their toe).
@@ -623,8 +627,8 @@ func test_mx5_wheels_use_its_own_wheel_texture() -> void:
 
 
 func test_modelless_car_gets_blank_wheel_texture() -> void:
-	# aventador has no wheel_texture spec -> blank dark disc, NOT the mx5 photo.
-	_car.apply_car(CarLibrary.index_of("aventador"))
+	# xjs has no wheel_texture spec -> blank dark disc, NOT the mx5 photo.
+	_car.apply_car(CarLibrary.index_of("xjs"))
 	var tire := _car.get_node("WheelFL/Visual/Tire") as MeshInstance3D
 	var mat := tire.get_surface_override_material(0) as ShaderMaterial
 	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
@@ -646,8 +650,9 @@ func test_apply_car_sets_custom_center_of_mass_from_weight_front() -> void:
 	# LOGIC test (not a pinned value): whatever a car's authored weight_front is,
 	# apply_car must switch to a CUSTOM CoM and place it along the wheelbase per the
 	# static-balance mapping z = wheelbase x (rear_frac - 0.5), +Z = rearward.
-	for i in CarLibrary.CARS.size():
-		var spec: Dictionary = CarLibrary.CARS[i]
+	CarFixtures.install()
+	for i in CarLibrary.all().size():
+		var spec: Dictionary = CarLibrary.all()[i]
 		_car.apply_car(i)
 		assert_eq(_car.center_of_mass_mode, RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM,
 			"%s uses a custom centre of mass" % spec["name"])
@@ -661,9 +666,10 @@ func test_apply_car_sets_custom_center_of_mass_from_weight_front() -> void:
 func test_nose_heavy_car_sits_com_forward_of_tail_heavy() -> void:
 	# Sign/direction check: a nose-heavy car's CoM is forward (-Z) of a tail-heavy
 	# one's. Compares the sign of the mapping, not the specific figures.
-	_car.apply_car(CarLibrary.index_of("focus"))  # nose-heavy FWD
+	CarFixtures.install()
+	_car.apply_car(CarLibrary.index_of("fx_fwd_hatch"))  # nose-heavy FWD
 	var nose_z := _car.center_of_mass.z
-	_car.apply_car(CarLibrary.index_of("aventador"))  # tail-heavy mid-engine
+	_car.apply_car(CarLibrary.index_of("fx_rwd_coupe"))  # tail-heavy
 	var tail_z := _car.center_of_mass.z
 	assert_lt(nose_z, tail_z, "nose-heavy CoM sits forward (-Z) of a tail-heavy car's")
 
@@ -674,7 +680,8 @@ func test_nose_heavy_car_settles_level_not_drooping() -> void:
 	# a nose-heavy car sits LEVEL at rest instead of drooping onto its front. Settle a
 	# strongly nose-biased car from the spawn clearance and check the chassis pitch is
 	# ~flat (forward.y ~ 0), not pitched nose-down.
-	_car.apply_car(CarLibrary.index_of("focus"))  # nose-heavy FWD
+	CarFixtures.install()
+	_car.apply_car(CarLibrary.index_of("fx_fwd_hatch"))  # nose-heavy FWD
 	await _wait_physics(150)
 	assert_lt(_car.linear_velocity.length(), 0.6, "car has settled at rest")
 	var forward := -_car.global_transform.basis.z
@@ -699,14 +706,15 @@ func test_axle_rate_splits_toward_the_heavier_axle() -> void:
 
 
 func test_engine_swap_reshapes_mass_and_torque() -> void:
-	var v8 := "ford_50_v8"
-	_car.apply_owned({"model_id": "twingo", "swapped_engine": v8, "hp": 700.0,
+	CarFixtures.install()
+	var v8 := "fx_v8"
+	_car.apply_owned({"model_id": "fx_light_rwd", "swapped_engine": v8, "hp": 700.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
 	assert_almost_eq(_car.config.peak_torque, float(EngineLibrary.by_id(v8)["peak_torque"]), 0.5,
 		"live torque comes from the swapped engine")
 	var expected_mass := EngineSwap.recompute_mass(
-		float(CarLibrary.by_id("twingo")["mass"]),
-		float(EngineLibrary.by_id(CarLibrary.by_id("twingo")["engine"])["mass"]),
+		float(CarLibrary.by_id("fx_light_rwd")["mass"]),
+		float(EngineLibrary.by_id(CarLibrary.by_id("fx_light_rwd")["engine"])["mass"]),
 		float(EngineLibrary.by_id(v8)["mass"]))
 	assert_almost_eq(_car.config.mass, expected_mass, 0.5, "mass recomputed for the heavier V8")
 	assert_almost_eq(_car.mass, expected_mass, 0.5, "RigidBody mass synced")
@@ -715,8 +723,9 @@ func test_engine_swap_reshapes_mass_and_torque() -> void:
 func test_engine_swap_brings_its_transmission() -> void:
 	# The gearbox lives on the engine, so a swapped-in engine carries its own
 	# gear_ratios / final_drive / shift_time to the car (mechanism, not pinned values).
-	var v8 := "ford_50_v8"
-	_car.apply_owned({"model_id": "twingo", "swapped_engine": v8, "hp": 700.0,
+	CarFixtures.install()
+	var v8 := "fx_v8"
+	_car.apply_owned({"model_id": "fx_light_rwd", "swapped_engine": v8, "hp": 700.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
 	var eng := EngineLibrary.by_id(v8)
 	assert_eq(_car.config.gear_ratios.size(), (eng["gear_ratios"] as Array).size(),
@@ -726,7 +735,8 @@ func test_engine_swap_brings_its_transmission() -> void:
 
 
 func test_stock_car_is_unaffected_by_the_swap_step() -> void:
-	_car.apply_owned({"model_id": "twingo", "hp": 700.0,
+	CarFixtures.install()
+	_car.apply_owned({"model_id": "fx_light_rwd", "hp": 700.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
-	assert_almost_eq(_car.config.mass, float(CarLibrary.by_id("twingo")["mass"]), 0.5,
+	assert_almost_eq(_car.config.mass, float(CarLibrary.by_id("fx_light_rwd")["mass"]), 0.5,
 		"no swap -> stock mass unchanged")

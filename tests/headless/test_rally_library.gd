@@ -5,6 +5,14 @@ extends GutTest
 # test_car_library.gd. See todo/rally-roster.md.
 
 
+func before_each() -> void:
+	CarFixtures.install()
+
+
+func after_each() -> void:
+	CarFixtures.restore()
+
+
 # --- Roster validity (anti-soft-lock) ---------------------------------------
 
 func test_roster_is_well_formed() -> void:
@@ -56,14 +64,18 @@ func test_event_straightness_defaults_to_unbiased() -> void:
 
 
 func test_starter_always_has_an_enterable_rally() -> void:
+	# SHIPPED-CONTENT guarantee: this must run against the REAL catalogue, not the
+	# fixtures installed by before_each — restore first so CarLibrary sees the real
+	# roster. (after_each's restore still runs afterward; it's idempotent.)
+	CarFixtures.restore()
 	# Anti-soft-lock floor: now that progression is gated on power-to-weight (not an
 	# open-class pool at every tier), the guarantee is that the weakest car in the
-	# roster can always enter at least one NON-showdown rally, and the showdown stays
-	# open-class so it can finish the game even if it never earns another car. Derive
-	# the weakest car by p/w rather than pinning a specific catalogue id.
+	# real roster can always enter at least one NON-showdown rally, and the showdown
+	# stays open-class so it can finish the game even if it never earns another car.
+	# Derive the weakest car by p/w rather than pinning a specific catalogue id.
 	var starter: Dictionary = {}
 	var starter_pw := INF
-	for spec in CarLibrary.CARS:
+	for spec in CarLibrary.all():
 		var pw := CarLibrary.power_to_weight(spec)
 		if pw < starter_pw:
 			starter_pw = pw
@@ -90,7 +102,7 @@ func test_open_class_matches_every_car() -> void:
 	# CARS as opaque input is fine; the empty-restriction rally is synthetic so the test
 	# never leans on a specific authored open-class entry existing.
 	var open_class := {"restriction": {}}
-	for spec in CarLibrary.CARS:
+	for spec in CarLibrary.all():
 		assert_true(RallyLibrary.is_eligible(open_class, spec),
 			"open-class accepts %s" % spec["name"])
 
@@ -175,7 +187,7 @@ func test_track_generation_is_deterministic() -> void:
 
 func test_turn_splits_are_monotonic_and_total_matches_target() -> void:
 	var track := _track_with_pieces()
-	var car := CarLibrary.by_id("mx5")
+	var car := CarLibrary.by_id("fx_light_rwd")
 	var splits := RallyLibrary.derive_turn_splits(track, car, {})
 	assert_eq(splits.size(), track["pieces"].size(), "one split per placed turn")
 	var prev_off := -1.0
@@ -192,14 +204,14 @@ func test_turn_splits_are_monotonic_and_total_matches_target() -> void:
 
 
 func test_turn_splits_empty_without_pieces() -> void:
-	var car := CarLibrary.by_id("mx5")
+	var car := CarLibrary.by_id("fx_light_rwd")
 	assert_eq(RallyLibrary.derive_turn_splits({}, car), [], "no track -> no splits")
 	assert_eq(RallyLibrary.derive_turn_splits({"pieces": []}, car), [], "no pieces -> no splits")
 
 
 func test_turn_splits_honour_target_override() -> void:
 	var track := _track_with_pieces()
-	var car := CarLibrary.by_id("mx5")
+	var car := CarLibrary.by_id("fx_light_rwd")
 	var natural := RallyLibrary.derive_turn_splits(track, car)
 	var overridden := RallyLibrary.derive_turn_splits(track, car, {"target_ms_override": 42000})
 	# The final cumulative time lands exactly on the override.
@@ -240,7 +252,7 @@ func _track_with_pieces() -> Dictionary:
 
 func test_turn_splits_final_equals_optimum_ms() -> void:
 	var track := _track_with_pieces()
-	var car := CarLibrary.by_id("mx5")
+	var car := CarLibrary.by_id("fx_light_rwd")
 	var splits := RallyLibrary.derive_turn_splits(track, car, {})
 	assert_false(splits.is_empty(), "splits are non-empty")
 	assert_almost_eq(int(splits[splits.size() - 1]["cum_ms"]),
@@ -249,14 +261,14 @@ func test_turn_splits_final_equals_optimum_ms() -> void:
 
 func test_turn_splits_monotonic() -> void:
 	var track := _track_with_pieces()
-	var splits := RallyLibrary.derive_turn_splits(track, CarLibrary.by_id("mx5"), {})
+	var splits := RallyLibrary.derive_turn_splits(track, CarLibrary.by_id("fx_light_rwd"), {})
 	for i in range(1, splits.size()):
 		assert_gte(int(splits[i]["cum_ms"]), int(splits[i - 1]["cum_ms"]), "cum_ms monotonic")
 
 
 func test_turn_splits_override_rescales_to_total() -> void:
 	var track := _track_with_pieces()
-	var splits := RallyLibrary.derive_turn_splits(track, CarLibrary.by_id("mx5"), {"target_ms_override": 60000})
+	var splits := RallyLibrary.derive_turn_splits(track, CarLibrary.by_id("fx_light_rwd"), {"target_ms_override": 60000})
 	assert_almost_eq(int(splits[splits.size() - 1]["cum_ms"]), 60000, 2, "rescaled to override total")
 
 

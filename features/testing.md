@@ -88,6 +88,45 @@ levers, in order of payoff:
   cost at all. Reserve the physics fixture for behaviour that genuinely needs
   the car/driveline (idle under load, redline, shifting through the clutch).
 
+### Test-catalogue seam — `CarFixtures`
+
+`CarLibrary` and `EngineLibrary` each expose a small seam so tests don't have
+to reach into (and get broken by) the shipped catalogue:
+
+- `all()` — returns the active roster (shipped `CARS`/`ENGINES` unless
+  overridden).
+- `override_for_test(list)` — swaps the active roster to `list` for the rest
+  of the process.
+- `reset()` — drops the override and falls back to the shipped const.
+
+The seam is **inert in production**: an empty/unset override is treated as
+"no override" and every lookup falls straight back to the real `CARS`/
+`ENGINES` const, so shipping code never sees a behavior change.
+
+`tests/headless/car_fixtures.gd` (`class_name CarFixtures`) is a synthetic
+catalogue built on that seam — a stable, test-owned roster that can't be
+broken by renaming, retuning, adding, or removing real cars/engines:
+
+- **Cars:** `fx_light_rwd` (RWD roadster, nose-light), `fx_fwd_hatch` (FWD
+  hatch, nose-heavy), `fx_rwd_coupe` (RWD coupe, tail-heavy, V8), `fx_awd`
+  (AWD coupe, ~50-50). Together they span drive mode, weight bias, body size,
+  and power-to-weight band — whatever axis a test needs to vary.
+- **Engines:** `fx_i4` and `fx_v8`, reusing real `EngineLibrary` firing-layout
+  keys (`i4`/`v8`) so `EngineLibrary.apply()` and the audio path still work
+  against them.
+- `CarFixtures.install()` calls `override_for_test()` on both libraries;
+  `CarFixtures.restore()` calls `reset()` on both.
+
+**Mandatory rule:** any test that calls `CarFixtures.install()` MUST call
+`CarFixtures.restore()` in its `after_each`/`after_all` — an override left in
+place leaks into every test file that runs after it in the same process.
+Conversely, the catalogue-**contract** tests (`test_car_types.gd`,
+`test_engine_library.gd`, and the roster-invariant cases in
+`test_car_library.gd`) deliberately stay on the real, shipped catalogue —
+their entire job is asserting every real entry is well-formed — and instead
+call `CarLibrary.reset()` / `EngineLibrary.reset()` in `before_each` to guard
+against a leaked override from an earlier file.
+
 ### No pixel-diff visual regression
 
 The old golden pixel-diff test (`tests/visual/`, `tests/golden/`) was removed: a

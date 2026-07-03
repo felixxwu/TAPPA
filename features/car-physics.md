@@ -97,8 +97,8 @@ carries its own `suspension_travel` + `suspension_stiffness` (+ optional per-axl
 travel), overlaid onto the live config by `car.gd`'s `apply_car()` and pushed onto
 each wheel per axle via `_apply_suspension()` (dampers re-derived; the standalone
 `_sync_suspension_to_wheels()` re-pushes after an upgrade mutates the rate). Soft &
-tall roadster/muscle (MX-5, Charger) vs stiff & low supercars (911, LFA,
-Aventador). The `config/game_config.tres` values are the baseline/fallback.
+tall roadster/muscle (MX-5, Charger) vs stiff & low supercars (911, Viper,
+XJS). The `config/game_config.tres` values are the baseline/fallback.
 
 ## Weight distribution (centre of mass)
 
@@ -118,7 +118,8 @@ CoM sits — so a rearward CoM compresses the rear springs more, loads the rear 
 more, and shifts the car toward oversteer (and vice-versa). The transient effects (dive
 / squat / roll load-transfer) are deliberately muted by the low `wheel_roll_influence`;
 the static front/rear balance comes through regardless. Nose-heavy FWD (Focus, Twingo)
-vs tail-heavy mid-engine (Acty, Aventador) vs 50/50 (MX-5).
+and nose-heavy front-engine GT (XJS) vs tail-heavy mid-engine (Acty) vs
+near-50/50 (MX-5, Viper).
 
 **Recompute on engine swap.** [engine-swap.md](engine-swap.md) lets a player move an
 engine from one owned car to another. `car.gd`'s `_apply_engine_swap` treats the

@@ -116,7 +116,7 @@ static func garage_tier(profile: Dictionary) -> int:
 # CarLibrary model ids with reward_tier at or below `tier`.
 static func _cars_at_or_below_tier(tier: int) -> Array:
 	var out: Array = []
-	for entry in CarLibrary.CARS:
+	for entry in CarLibrary.all():
 		if int(entry.get("reward_tier", 0)) <= tier:
 			out.append(entry["id"])
 	return out
@@ -151,7 +151,7 @@ static func _unlock_candidates(profile: Dictionary) -> Array:
 	for rally in locked:
 		if int(rally.get("difficulty", 1)) != lowest:
 			continue
-		for entry in CarLibrary.CARS:
+		for entry in CarLibrary.all():
 			if RallyLibrary.is_eligible(rally, entry):
 				out[entry["id"]] = true
 	return out.keys()

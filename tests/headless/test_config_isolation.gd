@@ -14,6 +14,11 @@ const CAR_SCENE := preload("res://car.tscn")
 
 func before_each() -> void:
 	Config.reset()
+	CarFixtures.install()
+
+
+func after_each() -> void:
+	CarFixtures.restore()
 
 
 func _fresh_car() -> Node:
@@ -43,14 +48,14 @@ func test_isolated_config_is_a_separate_object() -> void:
 func test_prop_apply_does_not_clobber_active_cars_engine() -> void:
 	# Active car applies some car and owns the global config.
 	var player := await _fresh_car()
-	player.apply_car(CarLibrary.index_of("charger"))
+	player.apply_car(CarLibrary.index_of("fx_rwd_coupe"))
 	var active_torque: float = Config.data.peak_torque
 	var active_final: float = Config.data.final_drive
 
 	# A prop car with an isolated config then applies a DIFFERENT car.
 	var prop := await _fresh_car()
 	prop.use_isolated_config()
-	prop.apply_car(CarLibrary.index_of("mx5"))
+	prop.apply_car(CarLibrary.index_of("fx_light_rwd"))
 
 	# The global (active car's) engine/gearbox must be exactly as the active car
 	# left it — the prop's reshape landed on its own copy.
@@ -60,6 +65,6 @@ func test_prop_apply_does_not_clobber_active_cars_engine() -> void:
 		"prop apply must not change the active car's gearing in the global config")
 	# And the prop's own config really did take its own car's engine (logic, not a
 	# pinned number: compare against the EngineLibrary source it copies from).
-	var prop_engine := EngineLibrary.by_id(CarLibrary.by_id("mx5")["engine"])
+	var prop_engine := EngineLibrary.by_id(CarLibrary.by_id("fx_light_rwd")["engine"])
 	assert_eq(prop.config.peak_torque, prop_engine["peak_torque"],
 		"prop config carries its own engine's torque")

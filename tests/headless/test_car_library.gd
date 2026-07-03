@@ -13,6 +13,8 @@ func before_each() -> void:
 	# These tests inspect the car roster + apply_car/cycle_car, not the track or
 	# its foliage, so boot a minimal world (~15s -> <1s per instance). minimal_world
 	# resets Config to baseline first, exactly as the old Config.reset() did.
+	CarLibrary.reset()
+	EngineLibrary.reset()  # guard against a leaked override from another test file
 	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
@@ -22,6 +24,7 @@ func before_each() -> void:
 
 func after_each() -> void:
 	Config.reset()  # don't leak a car selection into other test files
+	CarFixtures.restore()
 
 
 func test_library_has_a_range_of_cars() -> void:
@@ -150,9 +153,10 @@ func test_main_boots_as_first_car() -> void:
 
 
 func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
-	# Pick the Charger R/T: a V8, RWD, with distinct dimensions from the MX-5.
-	var index := _index_of("Charger R/T")
-	var spec: Dictionary = CarLibrary.CARS[index]
+	# Pick the Fixture Coupe: a V8, RWD, with distinct dimensions from the Fixture Roadster.
+	CarFixtures.install()
+	var index := CarLibrary.index_of("fx_rwd_coupe")
+	var spec: Dictionary = CarLibrary.all()[index]
 	var returned: String = _car.apply_car(index)
 	await get_tree().physics_frame
 	assert_eq(returned, spec["name"], "apply_car returns the car name")
@@ -200,19 +204,23 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	assert_true(fl.use_as_steering, "front wheel still steers after swap")
 	assert_true(rr.use_as_traction, "rear wheel still drives after swap")
 
-	# The LFA is the one car that blends the octave-lower voice in.
-	_car.apply_car(_index_of("Lexus LFA"))
+	# apply_car copies the applied car's engine low_octave_mix onto the live audio config.
+	var hatch := CarLibrary.by_id("fx_fwd_hatch")
+	var hatch_engine := EngineLibrary.by_id(String(hatch["engine"]))
+	_car.apply_car(CarLibrary.index_of("fx_fwd_hatch"))
 	await get_tree().physics_frame
-	assert_almost_eq(Config.data.engine_low_octave_mix, 0.5, 0.001, "LFA applies a 50/50 low octave")
+	assert_almost_eq(Config.data.engine_low_octave_mix, float(hatch_engine["low_octave_mix"]), 0.001,
+		"apply_car copies the car engine's low octave mix onto the config")
 
 
 func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 	# apply_car sets the RigidBody mass from the spec; apply_owned then runs the
 	# installed upgrades, so a weight-reduction upgrade must flow through to both
 	# the live config AND the physics body (apply_owned re-syncs car.mass after it).
-	var spec := CarLibrary.by_id("mx5")
+	CarFixtures.install()
+	var spec := CarLibrary.by_id("fx_light_rwd")
 	var base_mass: float = float(spec["mass"])
-	_car.apply_owned({"model_id": "mx5", "installed_upgrades": ["weight_reduction"],
+	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["weight_reduction"],
 		"hp": float(spec.get("max_hp", 100.0)), "instance_id": -1})
 	await get_tree().physics_frame
 	assert_almost_eq(Config.data.mass, base_mass * 0.90, 0.001, "config mass cut 10% by the kit")
@@ -222,16 +230,17 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 func test_cycle_car_advances_and_wraps() -> void:
 	# The HUD button drives World.cycle_car(), which re-instantiates the car and
 	# re-points the camera/HUD. Boots on car 0; cycling N times returns to car 0.
-	var n := CarLibrary.CARS.size()
+	CarFixtures.install()
+	var n := CarLibrary.all().size()
 	for i in range(1, n):
 		_scene.cycle_car()
 		var car: VehicleBody3D = _scene.get_node("Car")
-		assert_eq(car.current_car_name(), CarLibrary.CARS[i]["name"], "cycle advances to car %d" % i)
+		assert_eq(car.current_car_name(), CarLibrary.all()[i]["name"], "cycle advances to car %d" % i)
 		assert_eq((_scene.get_node("ChaseCamera") as Camera3D).target, car,
 			"camera re-points at the new car")
 	_scene.cycle_car()
 	assert_eq((_scene.get_node("Car") as VehicleBody3D).current_car_name(),
-		CarLibrary.CARS[0]["name"], "cycle wraps back to the first car")
+		CarLibrary.all()[0]["name"], "cycle wraps back to the first car")
 
 
 func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
@@ -281,14 +290,6 @@ func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
 	assert_false(model.visible, "box car hides the authored model")
 	assert_true((_car.get_node("Chassis") as MeshInstance3D).visible, "box car shows the chassis box")
 	assert_true((_car.get_node("Cabin") as MeshInstance3D).visible, "box car shows the cabin box")
-
-
-func _index_of(car_name: String) -> int:
-	for i in CarLibrary.CARS.size():
-		if CarLibrary.CARS[i]["name"] == car_name:
-			return i
-	fail_test("car not found: " + car_name)
-	return 0
 
 
 func test_focus_is_a_fwd_model_car() -> void:

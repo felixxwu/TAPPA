@@ -4,6 +4,16 @@ extends GutTest
 # behaviour. Pure functions, driven with an injected seeded RNG. See
 # todo/reward-system.md.
 
+const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+
+
+func before_each() -> void:
+	CarFixtures.install()
+
+
+func after_each() -> void:
+	CarFixtures.restore()
+
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
 	var r := RandomNumberGenerator.new()
@@ -104,7 +114,7 @@ func test_draw_upgrade_falls_back_to_repair_kit_when_car_has_everything() -> voi
 # the live library so tests survive roster/tier retunes.
 func _lowest_tier_model() -> Dictionary:
 	var best: Dictionary = {}
-	for entry in CarLibrary.CARS:
+	for entry in CarLibrary.all():
 		if best.is_empty() or int(entry["reward_tier"]) < int(best["reward_tier"]):
 			best = entry
 	return best
@@ -153,7 +163,7 @@ func test_draw_car_grants_duplicate_when_everything_owned() -> void:
 	# Own the whole roster: no un-owned candidate remains anywhere, so the draw
 	# still grants (guaranteed reward) — a duplicate of an owned model.
 	var owned: Array = []
-	for entry in CarLibrary.CARS:
+	for entry in CarLibrary.all():
 		owned.append(String(entry["id"]))
 	var profile := _profile([], owned)
 	var model: Variant = RewardSystem.draw_car(profile, _rng(1))
@@ -169,7 +179,7 @@ func test_draw_car_always_grants_even_with_everything_completed() -> void:
 	var profile := _profile(all_ids, [])
 	var model: Variant = RewardSystem.draw_car(profile, _rng(1))
 	assert_not_null(model, "a car is always granted, even post-completion")
-	assert_false(CarLibrary.by_id(String(model)).is_empty(), "and it is a real catalogue car")
+	assert_false(CarLibrary.by_id(String(model)).is_empty(), "and it is a catalogue car")
 
 
 func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
@@ -178,7 +188,7 @@ func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
 	# draw must then grant a car eligible for one of the LOWEST-difficulty
 	# locked rallies — guaranteeing a new rally opens up.
 	var stuck_car: Dictionary = {}
-	for entry in CarLibrary.CARS:
+	for entry in CarLibrary.all():
 		for rally in RallyLibrary.RALLIES:
 			if not rally["showdown"] and not RallyLibrary.is_eligible(rally, entry):
 				stuck_car = entry

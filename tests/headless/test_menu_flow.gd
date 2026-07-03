@@ -5,6 +5,7 @@ extends GutTest
 # (features/rally-session.md). Runs against a throwaway Save profile.
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
+const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 const TEST_PATH := "user://test_menu_flow_profile.json"
 
 var _save: Node
@@ -15,6 +16,7 @@ func before_each() -> void:
 	# for gamepad nav), so per-test focus assertions aren't contaminated by order.
 	get_viewport().gui_release_focus()
 	Config.reset()
+	CarFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -36,6 +38,7 @@ func after_each() -> void:
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
+	CarFixtures.restore()
 
 
 func _clean() -> void:
@@ -48,7 +51,7 @@ func _clean() -> void:
 # profile so Start goes straight to the garage (the first run now picks a starter in the
 # car park — see test_first_run_start_opens_starter_pick_then_grants_first_car). Tests that
 # need an existing garage call this before booting HQ.
-func _pick_starter(model_id := "mx5") -> void:
+func _pick_starter(model_id := "fx_light_rwd") -> void:
 	_save.profile["starter_picked"] = true
 	_save.profile["starter_model_id"] = model_id
 	_save.grant_car(model_id)
@@ -325,7 +328,7 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	assert_false(dev.at_root(), "the Dev category opens its own page")
 	# Unlock any car: a new owned instance is added.
 	var before: int = _save.profile["cars"].size()
-	dev._grant_car("aventador", "Lamborghini Aventador")
+	dev._grant_car("fx_awd", "Fixture AWD")
 	assert_eq(int(_save.profile["cars"].size()), before + 1, "unlocking grants a car instance")
 	# Add any upgrade: it lands in the inventory.
 	dev._add_upgrade("engine_stage1", "Stage 1 Engine Kit")
@@ -339,13 +342,13 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 
 func test_hq_title_parks_all_owned_cars() -> void:
 	# The title shows the whole collection, regardless of rally eligibility — grant
-	# an AWD Aventador (which an RWD rally would exclude) and it's still parked.
-	_save.grant_car("aventador")
+	# an RWD XJS (which an RWD rally would exclude) and it's still parked.
+	_save.grant_car("fx_awd")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	await _await_lineup(hq)
-	assert_eq(hq._cars.size(), 2, "the title parks every owned car (starter + Aventador)")
+	assert_eq(hq._cars.size(), 2, "the title parks every owned car (starter + XJS)")
 
 
 func test_hq_start_flies_into_the_garage() -> void:
@@ -411,7 +414,7 @@ func test_hq_free_roam_prepares_a_fresh_unseeded_run() -> void:
 # Free Roam opens the car park to pick which owned car to drive: the whole owned
 # collection is parked, and Back returns to the garage (not the map).
 func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
-	_save.grant_car("focus")  # a second car so the collection isn't just the starter
+	_save.grant_car("fx_fwd_hatch")  # a second car so the collection isn't just the starter
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -433,7 +436,7 @@ func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
 # The run scene fields the owned car the player picked for free roam, with no active
 # rally session (world.gd's free-roam branch).
 func test_free_roam_fields_the_picked_owned_car() -> void:
-	var owned: Dictionary = _save.grant_car("focus")
+	var owned: Dictionary = _save.grant_car("fx_fwd_hatch")
 	var id := int(owned["instance_id"])
 	RallySession.free_roam_instance_id = id
 	assert_false(RallySession.is_active(), "free roam runs with no active session")
@@ -574,12 +577,11 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# RWD Masters wants RWD cars inside a mid power-to-weight band. Own an AWD Aventador
-	# and an in-band RWD 911 alongside the low-power RWD starter, pick that rally and
-	# enter: only the 911 qualifies — the AWD Aventador (wrong drivetrain) and the
-	# under-powered MX-5 (below the band) are both filtered out.
-	_save.grant_car("aventador")
-	_save.grant_car("porsche911")
+	# RWD Masters wants RWD cars inside a mid power-to-weight band. Own an XJS and a
+	# 911 alongside the low-power RWD starter, pick that rally and enter: HQ parks
+	# exactly the owned cars the eligibility rule accepts (derived below, not pinned).
+	_save.grant_car("fx_awd")
+	_save.grant_car("fx_rwd_coupe")
 	hq._on_rally_pin("rwd_masters")
 	hq._enter_car_screen()
 	await get_tree().process_frame
@@ -592,7 +594,7 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	# parks the library's eligible set, no more, no less.
 	var rally := RallyLibrary.by_id("rwd_masters")
 	var expected := {}
-	for model_id in ["mx5", "aventador", "porsche911"]:  # the player's owned roster here
+	for model_id in ["fx_light_rwd", "fx_awd", "fx_rwd_coupe"]:  # the player's owned roster here
 		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(model_id)):
 			expected[CarLibrary.by_id(model_id)["name"]] = true
 	await _await_lineup(hq)
@@ -614,8 +616,8 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	# Two box-bodied cars of different sizes must keep their OWN body meshes — the
 	# car scene shares mesh sub-resources across instances, so without per-instance
 	# duplication both would render at whichever was applied last.
-	_save.grant_car("aventador")   # body 2.03 x 0.45 x 4.78
-	_save.grant_car("lfa")         # body 1.895 x 0.48 x 4.51
+	_save.grant_car("fx_awd")     # two differently-sized box bodies
+	_save.grant_car("fx_rwd_coupe")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -628,20 +630,22 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 	for car in hq._cars:
 		var chassis := car.get_node("Chassis") as MeshInstance3D
 		size_by_name[car.current_car_name()] = (chassis.mesh as BoxMesh).size
-	assert_eq(size_by_name["Lamborghini Aventador"], Vector3(2.03, 0.45, 4.78), "the Aventador keeps its own body size")
-	assert_eq(size_by_name["Lexus LFA"], Vector3(1.895, 0.48, 4.51), "the LFA keeps its own body size")
-	assert_ne(size_by_name["Lamborghini Aventador"], size_by_name["Lexus LFA"],
+	# Each parked car keeps its OWN library body size — derived from the catalogue so a
+	# retune of either body doesn't break the test; what it proves is per-instance meshes.
+	assert_eq(size_by_name["Fixture AWD"], CarLibrary.by_id("fx_awd")["body"], "the Fixture AWD keeps its own body size")
+	assert_eq(size_by_name["Fixture Coupe"], CarLibrary.by_id("fx_rwd_coupe")["body"], "the Fixture Coupe keeps its own body size")
+	assert_ne(size_by_name["Fixture AWD"], size_by_name["Fixture Coupe"],
 		"parked cars do NOT share one mesh (per-instance duplication)")
 
 
 func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	# Parked cars drop in LIVE (so they settle onto their suspension), then freeze at
 	# the settled pose so a full car park costs nothing to keep parked.
-	_save.grant_car("aventador")
+	_save.grant_car("fx_awd")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: starter + Aventador both eligible
+	hq._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
@@ -662,7 +666,7 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 
 
 func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
-	_save.grant_car("aventador")
+	_save.grant_car("fx_awd")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -683,8 +687,8 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	# The lineup is a centred row ALONG X — one car per painted bay — each parked
 	# nose-out toward the courtyard / menu camera (+Z), not the old recede-along-Z row.
-	_save.grant_car("aventador")
-	_save.grant_car("lfa")
+	_save.grant_car("fx_awd")
+	_save.grant_car("fx_rwd_coupe")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -730,8 +734,8 @@ func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
 # (instead of the title), parking the whole collection.
 func test_hq_over_car_limit_boots_to_the_scrap_prompt() -> void:
 	Config.data.max_owned_cars = 2  # small cap so the test stays light
-	_save.grant_car("aventador")
-	_save.grant_car("lfa")  # 2 granted; the boot starter makes 3 > cap
+	_save.grant_car("fx_awd")
+	_save.grant_car("fx_rwd_coupe")  # 2 granted; the boot starter makes 3 > cap
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -746,8 +750,8 @@ func test_hq_over_car_limit_boots_to_the_scrap_prompt() -> void:
 # Scrapping cars drops the count and, once back at the cap, flies out to the title.
 func test_hq_scrapping_clears_overflow_and_returns_to_title() -> void:
 	Config.data.max_owned_cars = 2
-	_save.grant_car("aventador")
-	_save.grant_car("lfa")
+	_save.grant_car("fx_awd")
+	_save.grant_car("fx_rwd_coupe")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -782,8 +786,8 @@ func test_hq_overflow_cannot_scrap_last_car() -> void:
 # At or under the cap, HQ boots straight to the title (no scrap prompt).
 func test_hq_at_car_limit_boots_to_the_title() -> void:
 	Config.data.max_owned_cars = 3
-	_save.grant_car("aventador")
-	_save.grant_car("lfa")  # starter + 2 = 3 == cap (not over)
+	_save.grant_car("fx_awd")
+	_save.grant_car("fx_rwd_coupe")  # starter + 2 = 3 == cap (not over)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -794,16 +798,16 @@ func test_hq_at_car_limit_boots_to_the_title() -> void:
 func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 	# A wrecked (0 HP) car still appears in the eligible lineup, but it's too damaged
 	# to enter — Start is disabled until a Repair Kit restores it to full health.
-	var owned: Dictionary = _save.grant_car("aventador")
+	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.apply_damage(id, 999999.0)  # wreck it (kept at 0 HP, not deleted)
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_rally_pin("the_showdown")  # open-class: starter + Aventador both eligible
+	hq._on_rally_pin("the_showdown")  # open-class: starter + XJS both eligible
 	hq._enter_car_screen()
 	await get_tree().process_frame
-	# Focus the wrecked Aventador in the lineup.
+	# Focus the wrecked XJS in the lineup.
 	var idx := -1
 	for i in hq._eligible.size():
 		if int(hq._eligible[i]["instance_id"]) == id:
@@ -823,7 +827,7 @@ func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 	hq._repair_focused_car()
 	assert_false(hq._start_button.disabled, "repairing the car enables Start")
 	assert_false(hq._car_warning_label.visible, "the warning clears once repaired")
-	assert_almost_eq(float(_save.get_car(id)["hp"]), float(CarLibrary.by_id("aventador")["max_hp"]), 0.001,
+	assert_almost_eq(float(_save.get_car(id)["hp"]), float(CarLibrary.by_id("fx_awd")["max_hp"]), 0.001,
 		"the repaired car is restored to full health")
 
 
@@ -847,7 +851,7 @@ func test_hq_lift_raises_the_selected_car() -> void:
 	assert_true(hq._lift_layer.visible, "the tuning menu is shown")
 	assert_true(is_instance_valid(hq._lift_car), "the selected car is raised on the lift")
 	assert_true(hq._lift_raised, "entering the bay raises the car on the lift")
-	assert_eq(hq._lift_car.current_car_name(), "MX-5", "the lift shows the selected car")
+	assert_eq(hq._lift_car.current_car_name(), "Fixture Roadster", "the lift shows the selected car")
 	# Going back to the garage lowers it again.
 	hq._lift_back()
 	assert_eq(hq._view, hq.View.GARAGE, "Back returns to the garage")
@@ -913,7 +917,7 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	assert_false(hq._lift_sliders["brake_bias"].editable, "brake bias locked without the brake kit")
 	assert_false(hq._lift_sliders["aero_balance"].editable, "aero locked without the aero kit")
 	# Fit a brake kit to a fresh car and select it — its brake-bias slider unlocks.
-	var owned: Dictionary = _save.grant_car("aventador")
+	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.add_item("brake_kit")
 	_save.install_upgrade(id, "brake_kit")
@@ -928,7 +932,7 @@ func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> v
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var other: Dictionary = _save.grant_car("aventador")  # now two owned cars
+	var other: Dictionary = _save.grant_car("fx_awd")  # now two owned cars
 	hq._enter_lift()
 	await get_tree().process_frame
 	var before: int = _save.selected_instance_id()
@@ -956,7 +960,7 @@ func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection(
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	_save.grant_car("aventador")
+	_save.grant_car("fx_awd")
 	hq._enter_lift()
 	await get_tree().process_frame
 	var before: int = _save.selected_instance_id()
@@ -973,7 +977,7 @@ func test_hq_lift_installs_an_upgrade_from_inventory() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("aventador")
+	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
 	_save.add_item("engine_stage1")
@@ -998,7 +1002,7 @@ func test_hq_lift_toggles_an_applied_upgrade() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("aventador")
+	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
 	_save.add_item("engine_stage1")
@@ -1068,7 +1072,7 @@ func test_hq_choose_rally_then_car_then_start_launches_a_session() -> void:
 func test_hq_starting_a_rally_selects_the_fielded_car() -> void:
 	# Fielding a car for a rally also makes it the selected car (the one on the
 	# tuning lift), so the garage shows the car the player last raced.
-	_save.grant_car("aventador")
+	_save.grant_car("fx_awd")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -1134,7 +1138,7 @@ func test_hq_mobile_start_skips_gate_once_scheme_chosen() -> void:
 func test_standings_interstitial_renders_the_leaderboard() -> void:
 	# After a non-final event the rally pauses on the standings; the scene shows the
 	# cumulative leaderboard so far. (auto_load_scenes is off, so no scene loads.)
-	var owned: Dictionary = _save.grant_car("aventador")
+	var owned: Dictionary = _save.grant_car("fx_awd")
 	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
 	RallySession._opponent_field = [
 		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
@@ -1189,19 +1193,19 @@ func test_podium_shows_the_finish_summary() -> void:
 
 
 func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
-	# A top-3 win that grants the Porsche 911 plus the two per-rally upgrades. The
+	# A top-3 win that grants the Fixture Coupe plus the two per-rally upgrades. The
 	# reward sequence steps PODIUM -> LEADERBOARD -> UPGRADE_REVEAL x2 -> CAR_REVEAL
 	# (upgrades first, at the podium, then the fly-over to the showroom), with the
 	# slot-machine spins resolving instantly under headless. Each upgrade reveal
 	# ends on an Apply/Keep choice targeting the car the player just drove.
-	var driven: Dictionary = _save.grant_car("aventador")
+	var driven: Dictionary = _save.grant_car("fx_awd")
 	var driven_id := int(driven["instance_id"])
 	_save.add_item("engine_stage1")
 	_save.add_item("brake_kit")
 	RallySession._last_result = {
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
-		"car_reward": "porsche911", "car_reward_is_new": true,
+		"car_reward": "fx_rwd_coupe", "car_reward_is_new": true,
 		"upgrades": ["engine_stage1", "brake_kit"],
 		"car_instance_id": driven_id,
 		"standings": [
@@ -1282,7 +1286,10 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	assert_true(is_instance_valid(pod._showroom_car), "the won car is spawned once the reveal lands")
 	assert_true(pod._showroom_car.visible, "the revealed car is shown after the spin")
 	var car := _label_texts(pod)
-	assert_string_contains(car, "911 (930)", "the won car is revealed by name")
+	# Derive the reward car's name from the catalogue (labels are upper-cased for
+	# display) rather than pinning an authored name that a rename would break.
+	var reward_name: String = String(CarLibrary.by_id("fx_rwd_coupe")["name"]).to_upper()
+	assert_string_contains(car, reward_name, "the won car is revealed by name")
 	assert_string_contains(car, "NEW", "an un-owned car reward is flagged NEW")
 	# The car reveal is a single caption line — the big slot label is hidden so the
 	# car name isn't shown twice.
@@ -1309,7 +1316,7 @@ func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 
 
 func test_run_scene_fields_the_bound_session_car() -> void:
-	var owned: Dictionary = _save.grant_car("aventador")
+	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
 	# Boot the run scene with a session active: world.gd fields the OwnedCar.
@@ -1319,10 +1326,14 @@ func test_run_scene_fields_the_bound_session_car() -> void:
 	await get_tree().process_frame
 	var car: VehicleBody3D = scene.get_node("Car")
 	assert_eq(car.damage.instance_id, id, "the car's damage model is bound to the fielded instance")
-	assert_eq(car.current_car_name(), "Lamborghini Aventador", "the owned car's model is fielded, not the default")
+	assert_eq(car.current_car_name(), "Fixture AWD", "the owned car's model is fielded, not the default")
 
 
 func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
+	# This flow is driven by hq.gd's STARTER_MODEL_IDS constant, which hardcodes real
+	# catalogue ids (mx5/focus/twingo) — it can't be pointed at the synthetic fixtures
+	# without touching production code, so restore the real catalogue for this one test.
+	CarFixtures.restore()
 	_reset_to_first_run()
 	# Fresh profile has no starter picked and an empty garage.
 	assert_false(bool(_save.profile.get("starter_picked", false)), "fresh profile: no starter yet")
@@ -1380,8 +1391,8 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var a: Dictionary = _save.selected_car()
-	var b: Dictionary = _save.grant_car("lfa")
-	var stock_b: String = CarLibrary.by_id("lfa")["engine"]
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	assert_true(hq._eligible.size() >= 1, "swap lineup lists the other owned car(s)")
@@ -1392,6 +1403,9 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 
 
 func test_display_name_reflects_swap() -> void:
+	# EngineSwap.display_name looks the swapped engine's layout up in EngineLibrary by id,
+	# so it needs a real engine id to resolve — restore the real catalogue for this one test.
+	CarFixtures.restore()
 	assert_eq(EngineSwap.display_name({"name": "Twingo", "engine": "renault_12_i4"},
 		{"swapped_engine": "ford_50_v8"}), "V8 Twingo", "swapped owned car shows the layout prefix")
 
@@ -1476,7 +1490,7 @@ func _find_swap_button(hq: Node3D) -> Button:
 
 
 func test_swap_button_disabled_without_an_eligible_partner() -> void:
-	# before_each grants a single mx5 starter — no other car to swap with, so the
+	# before_each grants a single Fixture Roadster starter — no other car to swap with, so the
 	# Swap Engine button is disabled. Granting a second full-health car enables it.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1486,7 +1500,7 @@ func test_swap_button_disabled_without_an_eligible_partner() -> void:
 	var btn := _find_swap_button(hq)
 	assert_not_null(btn, "the upgrades page has a Swap Engine button")
 	assert_true(btn.disabled, "no partner -> swap button disabled")
-	_save.grant_car("lfa")
+	_save.grant_car("fx_rwd_coupe")
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame  # let the rebuild's queue_free'd old rows clear

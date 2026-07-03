@@ -19,6 +19,10 @@ static var _settled_by_index := {}
 
 
 func before_each() -> void:
+	# Leak guard: this file asserts on the REAL catalogue, so make sure no other
+	# file's fixture override is still installed.
+	CarLibrary.reset()
+	EngineLibrary.reset()
 	Config.reset()
 	_make_scene()
 	_spawn = _car.transform

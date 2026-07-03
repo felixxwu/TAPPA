@@ -54,6 +54,7 @@ var _save: Node
 
 func before_each() -> void:
 	Config.reset()
+	CarFixtures.install()
 	# A throwaway save profile so the camera mode the manager restores is deterministic
 	# (a fresh profile has no camera_mode → defaults to chase) and the real profile is
 	# left untouched.
@@ -81,6 +82,7 @@ func before_each() -> void:
 
 func after_each() -> void:
 	Config.reset()
+	CarFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -95,7 +97,7 @@ func _rally() -> Dictionary:
 func _leaders() -> Array:
 	return [
 		{"name": "Rival 3", "car_name": "Porsche 911", "time_ms": 75430},  # 1:15.43, the leader
-		{"name": "Rival 1", "car_name": "Lexus LFA", "time_ms": 78120},
+		{"name": "Rival 1", "car_name": "Dodge Viper RT/10", "time_ms": 78120},
 		{"name": "Rival 7", "car_name": "Focus ST", "time_ms": 80050},
 	]
 
@@ -150,7 +152,7 @@ func test_queue_cars_are_eligible_for_the_rally() -> void:
 	var rally := _rally()
 	for prop in [sl._leader, sl._trailer]:
 		assert_not_null(prop, "the queue car spawned")
-		var spec: Dictionary = CarLibrary.CARS[prop._car_index]
+		var spec: Dictionary = CarLibrary.all()[prop._car_index]
 		assert_true(RallyLibrary.is_eligible(rally, spec),
 			"%s lining up is eligible for the rally" % spec["name"])
 

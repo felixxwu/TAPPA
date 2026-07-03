@@ -64,8 +64,8 @@ It is an **engine** property: `EngineLibrary` defines `low_octave_mix` on each
 catalog entry (`scripts/engine_library.gd`) and `EngineLibrary.apply()` writes
 it into `GameConfig.engine_low_octave_mix` (called from `car.gd`'s
 `apply_car()`) before `reconfigure()` rebuilds the synth. Most engines sit at
-`0.0`; the high-revving V10 (`toyota_48_v10`, used by the Lexus LFA) and the
-V8s/V12 (`ford_50_v8`, `mopar_440_v8`, `lambo_65_v12`) are lifted to deepen
+`0.0`; the deep V10 (`dodge_80_v10`, used by the Dodge Viper RT/10) and the
+V8s/V12 (`ford_50_v8`, `mopar_440_v8`, `jaguar_53_v12`) are lifted to deepen
 their synthesized note.
 
 ## Soft clipper

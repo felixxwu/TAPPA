@@ -358,7 +358,7 @@ func test_every_car_takes_damage_and_can_wreck() -> void:
 # --- Persistence handoff -----------------------------------------------------
 
 func test_event_boundary_writeback_round_trips() -> void:
-	var car: Dictionary = _save.grant_car("aventador")
+	var car: Dictionary = _save.grant_car("xjs")
 	var id := int(car["instance_id"])
 	var max_hp := float(_save.get_car(id)["hp"])  # granted at full HP
 	# Working HP depleted over a run is written back at the event boundary.

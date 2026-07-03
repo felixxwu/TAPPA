@@ -86,16 +86,20 @@ const ENGINES: Array[Dictionary] = [
 		"gear_ratios": [3.18, 1.83, 1.26, 0.93], "final_drive": 4.22, "shift_time": 0.25,  # 4-speed manual (930/30)
 	},
 	{
-		"id": "toyota_48_v10", "name": "4.8 V10", "layout": "v10", "mass": 220.0,
-		"redline_rpm": 9000.0, "peak_torque": 480.0, "peak_torque_rpm": 6000.0, "engine_inertia": 0.10,
-		"low_octave_mix": 0.5, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [3.231, 2.188, 1.609, 1.233, 0.970, 0.795], "final_drive": 7, "shift_time": 0.16,  # 6-speed ASG
+		# Dodge Viper RT/10 (1st gen) 8.0 L (488 cu in) OHV V10: 400 bhp @ 4600, 630 N·m (465 lb-ft) @ 3600.
+		# Big pushrod truck-derived V10 — deep, low-revving, lazy heavy crank (high inertia).
+		"id": "dodge_80_v10", "name": "8.0 V10", "layout": "v10", "mass": 230.0,
+		"redline_rpm": 6000.0, "peak_torque": 630.0, "peak_torque_rpm": 3600.0, "engine_inertia": 0.35,
+		"low_octave_mix": 0.7, "volume_db": 9.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"gear_ratios": [2.66, 1.78, 1.30, 1.00, 0.74, 0.50], "final_drive": 6, "shift_time": 0.30,  # Tremec T-56 6-speed manual
 	},
 	{
-		"id": "lambo_65_v12", "name": "6.5 V12", "layout": "v12", "mass": 235.0,
-		"redline_rpm": 8350.0, "peak_torque": 690.0, "peak_torque_rpm": 5500.0, "engine_inertia": 0.26,
-		"low_octave_mix": 0.5, "volume_db": 10.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
-		"gear_ratios": [3.909, 2.438, 1.810, 1.458, 1.185, 0.967, 0.844], "final_drive": 7, "shift_time": 0.05,  # 7-speed ISR single-clutch
+		# Jaguar XJS 5.3 L V12 HE: ~295 bhp @ 5500, 432 N·m (318 lb-ft) @ 3000.
+		# Smooth SOHC luxury V12 — refined, deep, quieter than the exotics.
+		"id": "jaguar_53_v12", "name": "5.3 V12", "layout": "v12", "mass": 235.0,
+		"redline_rpm": 6000.0, "peak_torque": 432.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.30,
+		"low_octave_mix": 0.5, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 6, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{
 		# Rolls-Royce Merlin: 27 L (1,650 cu in) aero/tank V12, as in John Dodd's "The Beast".
@@ -116,16 +120,33 @@ const ENGINES: Array[Dictionary] = [
 ]
 
 
+# Test seam — see CarLibrary for the rationale. No production code reads ENGINES
+# directly; every reader goes through by_id/index_of/apply, so routing these two
+# is enough. FIRING stays const (keyed by layout, not by authored entry).
+static var _test_catalogue: Array[Dictionary] = []
+
+static func all() -> Array[Dictionary]:
+	return _test_catalogue if not _test_catalogue.is_empty() else ENGINES
+
+static func override_for_test(engines: Array[Dictionary]) -> void:
+	_test_catalogue = engines
+
+static func reset() -> void:
+	_test_catalogue = []
+
+
 static func index_of(id: String) -> int:
-	for i in ENGINES.size():
-		if ENGINES[i]["id"] == id:
+	var engines := all()
+	for i in engines.size():
+		if engines[i]["id"] == id:
 			return i
 	return -1
 
 
 static func by_id(id: String) -> Dictionary:
+	var engines := all()
 	var i := index_of(id)
-	return ENGINES[i] if i >= 0 else {}
+	return engines[i] if i >= 0 else {}
 
 
 # Write the engine's whole profile into GameConfig. The synth (engine_audio_synth.gd)

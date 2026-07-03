@@ -41,7 +41,7 @@ func _ready() -> void:
 	var rally := RallyLibrary.by_id("rwd_masters")
 	var leaders := [
 		{"name": "Rival 3", "car_name": "Porsche 911", "time_ms": 75430},
-		{"name": "Rival 1", "car_name": "Lexus LFA", "time_ms": 78120},
+		{"name": "Rival 1", "car_name": "Dodge Viper RT/10", "time_ms": 78120},
 		{"name": "Rival 7", "car_name": "Focus ST", "time_ms": 80050},
 	]
 	sl._build_overlay(rally, 1, leaders)

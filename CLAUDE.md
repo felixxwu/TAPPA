@@ -88,6 +88,11 @@
   ("empty restriction accepts every car in `CARS`", "every drawn part is a real
   catalogue item") is fine — that's the code's contract, not a dependency on any
   one entry.
+- Catalogue-dependent tests should `CarFixtures.install()`
+  (`tests/headless/car_fixtures.gd`) a synthetic roster rather than reaching
+  into the real `CarLibrary`/`EngineLibrary` — only catalogue-contract tests
+  (`test_car_types`, `test_engine_library`, roster invariants in
+  `test_car_library`) use the shipped data.
 - When adding or changing functionality, add or update tests in the same piece
   of work: gameplay/logic tests in `tests/headless/`, scene/structure checks in
   `tests/headless/test_smoke.gd`.

@@ -150,7 +150,7 @@ boxes. Seven cars carry a model today: the **MX-5**
 (`blender/twingo/twingo.glb`, node `Car/TwingoBody`), the **Honda Acty**
 (`blender/acty/acty.glb`, node `Car/ActyBody`), the **Charger R/T**
 (`blender/charger/charger.glb`, node `Car/ChargerBody`), **The Beast**
-(`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`) and the **911 (930)**
+(`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`) and the **911 Turbo**
 (`blender/911/911.glb`, node `Car/Porsche911Body`). All are
 instanced in `car.tscn`, hidden by default.
 

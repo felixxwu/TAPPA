@@ -107,7 +107,7 @@ road colour uses (grass↔road and gravel↔tarmac — see [terrain.md](terrain.
 Switch live with **Y** or the HUD drive button. The roster now ships two stock **FWD** cars — the **Focus ST** (`id: "focus"`) and
 the **Renault Twingo** (`id: "twingo"`), both home entrants of the Front Runners
 rally (see `features/rally-roster.md`) — so the FWD path is exercised by real cars,
-not just the live toggle. The MX-5 is RWD; the Acty/Aventador are AWD.
+not just the live toggle. The MX-5/Viper/XJS are RWD; the Acty is AWD.
 
 **AWD handbrake exception:** AWD is normally one rigid locked driveline, so a
 foot-brake lockup takes all four wheels together. The handbrake is the one
@@ -131,7 +131,7 @@ Gearing (`gear_ratios` + `final_drive` + `shift_time`) lives on the **engine**
 carries its gearbox** ([engine-swap.md](engine-swap.md)). Each engine
 carries its car's real published transmission — e.g. the MX-5's real ND 6-speed
 ratios (`5.087 / 2.991 / 2.035 / 1.594 / 1.286 / 1.000`), the Charger's 3-speed
-TorqueFlite (`2.45 / 1.45 / 1.00`), the 911 (930)'s classic 4-speed, the Focus ST's Getrag
+TorqueFlite (`2.45 / 1.45 / 1.00`), the 911 Turbo's classic 4-speed, the Focus ST's Getrag
 M66 6-speed. Only `final_drive` is a game-tuned value (see below); the internal
 ratios are real and differ per car, so gearing character now varies across the
 roster instead of every car sharing one box. (An earlier iteration had every
@@ -160,11 +160,11 @@ change.
 Because this baseline resistance already lands the cars near their real top speeds
 on its own, the per-car `drag` coefficients are **sized to top it up to the
 realistic total, not to be the whole aero force** — so they are deliberately small
-(slippery cars like the LFA/Aventador sit near zero; only draggy bodies like the
+(slippery cars like the Viper/XJS sit near zero; only draggy bodies like the
 Charger carry a real coefficient). They were tuned by measuring top speed in the
-sim; with them the cars top out within a couple of percent of real, except the
-LFA and Aventador, which the baseline friction caps a little under their real tops
-(≈306 vs 325, ≈319 vs 350) even at near-zero drag. Setting `drag` to a from-scratch
+sim; with them the cars top out within a couple of percent of real, except for a
+few whose baseline friction caps them a little under their real tops even at
+near-zero drag. Setting `drag` to a from-scratch
 aerodynamic value here would double-count the resistance and leave every car
 10–25 % slow.
 

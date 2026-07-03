@@ -556,13 +556,13 @@ static func respawn(old_car: Node, index: int, spawn_xform: Transform3D) -> Node
 
 # The next car index after this one, wrapping around.
 func next_car_index() -> int:
-	return (_car_index + 1) % CarLibrary.CARS.size()
+	return (_car_index + 1) % CarLibrary.all().size()
 
 
 func current_car_name() -> String:
 	if _car_index < 0:
 		return "Base"
-	return CarLibrary.CARS[_car_index]["name"]
+	return CarLibrary.all()[_car_index]["name"]
 
 
 # Per-car bonnet-camera position offset (metres, in the car's local space), added
@@ -572,7 +572,7 @@ func current_car_name() -> String:
 func bonnet_cam_offset() -> Vector3:
 	if _car_index < 0:
 		return Vector3.ZERO
-	return CarLibrary.CARS[_car_index].get("bonnet_cam_offset", Vector3.ZERO)
+	return CarLibrary.all()[_car_index].get("bonnet_cam_offset", Vector3.ZERO)
 
 
 # Give this car its OWN private GameConfig (a deep copy of the current global
@@ -591,7 +591,7 @@ func use_isolated_config() -> void:
 # then rebuilds the drivetrain (fresh hardpoints + shift speeds) and engine
 # voice so the new sound and gearing take effect. Returns the car's name.
 func apply_car(index: int) -> String:
-	var spec: Dictionary = CarLibrary.CARS[index]
+	var spec: Dictionary = CarLibrary.all()[index]
 	_car_index = index
 	var cfg: GameConfig = config
 
@@ -783,7 +783,7 @@ func apply_owned(owned: Dictionary) -> String:
 # mass + static weight distribution treating the engine as a point mass at the car's
 # engine_pos. No-op for a stock car. See features/engine-swap.md.
 func _apply_engine_swap(owned: Dictionary) -> void:
-	var spec: Dictionary = CarLibrary.CARS[_car_index]
+	var spec: Dictionary = CarLibrary.all()[_car_index]
 	var stock := String(spec.get("engine", ""))
 	var current := EngineSwap.current_engine_id(owned, stock)
 	if current == stock:

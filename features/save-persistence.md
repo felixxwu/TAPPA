@@ -61,8 +61,8 @@ saved.
 ## CarLibrary metadata (prerequisite)
 
 `scripts/car_library.gd` gained additive per-entry metadata that ownership keys
-on: a stable string **`id`** (`mx5`, `focus`, `porsche911`, `lfa`, `charger`,
-`aventador` — never reordered/reused, replaces array-index identity for
+on: a stable string **`id`** (`mx5`, `focus`, `porsche911`, `viper`, `charger`,
+`xjs` — never reordered/reused, replaces array-index identity for
 persistence), plus `country`, `car_type`, `max_hp`, and `reward_tier`. Helpers:
 `CarLibrary.index_of(id)` / `by_id(id)` resolve a stored id to the current array
 position, and `power_to_weight(entry)` is a derived (not stored) ranking

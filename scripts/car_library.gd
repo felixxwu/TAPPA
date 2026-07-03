@@ -34,7 +34,7 @@ extends RefCounted
 #                only to TOP UP that baseline to the realistic total — NOT to be the
 #                whole aero force — and was tuned per car by measuring top speed in
 #                the sim. Draggy bodies (Charger) still need a real coefficient;
-#                slippery coupes (LFA, Aventador) sit near zero because the engine's
+#                slippery coupes (Viper, XJS) sit near zero because the engine's
 #                baseline alone already meets (or slightly exceeds) the resistance
 #                for their real top speed.
 #   * tire_compound — ONE dimensionless rubber-grip coefficient per car (same
@@ -87,7 +87,7 @@ const FWD := 2
 # (GameConfig.suspension_stiffness); the compression/rebound dampers are derived
 # from it (critically damped, see GameConfig.suspension_damping_*), not specified
 # per car. Soft & tall roadster/muscle (MX-5, Charger) vs stiff & low supercars
-# (911, LFA, Aventador).
+# (911, Viper, XJS).
 const CARS: Array[Dictionary] = [
 	{
 		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
@@ -188,10 +188,10 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/charger/wheel.png",
 	},
 	{
-		"name": "911 (930)",  # 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
+		"name": "911 Turbo",  # 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 2,
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
-		"tire_compound": 1,
+		"tire_compound": 0.92,
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
@@ -206,28 +206,28 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/911/wheel.png",
 	},
 	{
-		"name": "Lexus LFA",  # ~1580 kg, 553 hp, 4.8 V10 screamer, front-mid RWD
-		"id": "lfa", "country": "JP", "car_type": "coupe", "max_hp": 1000.0, "reward_tier": 3,
-		"mass": 1580.0, "engine": "toyota_48_v10", "weight_front": 0.48, "engine_pos": 0.55,  # front-mid V10 + rear transaxle, 48/52
-		"tire_compound": 1.25,  # track tyres
+		"name": "Dodge Viper RT/10",  # 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
+		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 1000.0, "reward_tier": 3,
+		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
+		"tire_compound": 1.15,  # sticky performance tyres (period bias-belted rubber)
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(1.895, 0.48, 4.51), "cabin": Vector3(1.45, 0.46, 1.60),
-		"cabin_z": 0.10, "track": 1.58, "wheelbase": 2.605,
-		"wheel_radius": 0.34, "wheel_width_front": 0.265, "wheel_width_rear": 0.305,  # 265/305 stagger
-		"suspension_travel": 0.40, "suspension_stiffness": 16.0,  # stiff front-mid GT
+		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
+		"cabin_z": 0.10, "track": 1.60, "wheelbase": 2.44,
+		"wheel_radius": 0.34, "wheel_width_front": 0.275, "wheel_width_rear": 0.335,  # 275/335 stagger
+		"suspension_travel": 0.40, "suspension_stiffness": 15.0,  # firm but a touch softer than the later GTS
 	},
 	{
-		"name": "Lamborghini Aventador",  # LP 700-4: ~1731 kg, 690 hp, 6.5 V12, AWD
-		"id": "aventador", "country": "IT", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 3,
-		"mass": 1731.0, "engine": "lambo_65_v12", "weight_front": 0.43, "engine_pos": 0.35,  # mid V12, tail-heavy ~43/57
-		"tire_compound": 1.30,  # track tyres
-		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"name": "Jaguar XJS",  # 5.3 V12 HE: ~1755 kg, ~295 hp, front V12, RWD GT
+		"id": "xjs", "country": "GB", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
+		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75,  # front V12, nose-heavy ~53/47
+		"tire_compound": 0.95,  # period touring / GT tyres
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(2.03, 0.45, 4.78), "cabin": Vector3(1.55, 0.44, 1.55),
-		"cabin_z": 0.05, "track": 1.72, "wheelbase": 2.70,
-		"wheel_radius": 0.35, "wheel_width_front": 0.255, "wheel_width_rear": 0.335,  # 255/335 huge stagger
-		"suspension_travel": 0.38, "suspension_stiffness": 18.0,  # very stiff supercar, lowest ride
+		"body": Vector3(1.79, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
+		"cabin_z": 0.30, "track": 1.50, "wheelbase": 2.59,
+		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235,  # 215/235 mild stagger
+		"suspension_travel": 0.42, "suspension_stiffness": 12.0,  # soft long-legged GT
 	},
 	{
 		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
@@ -255,19 +255,36 @@ const CARS: Array[Dictionary] = [
 # save system survives the roster being reordered or extended. These resolve a
 # stored id back to the current array position / entry.
 
+# Test seam: an empty override means "use the shipped CARS". Tests call
+# override_for_test() to run against a synthetic roster and reset() in teardown.
+# Inert in production (_test_catalogue is always empty there).
+static var _test_catalogue: Array[Dictionary] = []
+
+static func all() -> Array[Dictionary]:
+	return _test_catalogue if not _test_catalogue.is_empty() else CARS
+
+static func override_for_test(cars: Array[Dictionary]) -> void:
+	_test_catalogue = cars
+
+static func reset() -> void:
+	_test_catalogue = []
+
+
 # Array position of the car with this stable id, or -1 if no such car exists
 # (e.g. a car removed from the roster — the save system drops orphaned entries).
 static func index_of(id: String) -> int:
-	for i in CARS.size():
-		if CARS[i]["id"] == id:
+	var cars := all()
+	for i in cars.size():
+		if cars[i]["id"] == id:
 			return i
 	return -1
 
 
 # The CarLibrary entry for a stable id, or an empty Dictionary if unknown.
 static func by_id(id: String) -> Dictionary:
+	var cars := all()
 	var i := index_of(id)
-	return CARS[i] if i >= 0 else {}
+	return cars[i] if i >= 0 else {}
 
 
 # A rough power-to-weight figure (kW per kg) derived from the published torque,

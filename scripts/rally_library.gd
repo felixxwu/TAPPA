@@ -252,7 +252,7 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 # The eligible car with the highest power-to-weight for a rally. Falls back to the
 # best car in the whole roster when `rally` is empty (legacy/test callers).
 static func _best_eligible_car(rally: Dictionary) -> Dictionary:
-	var pool: Array = _eligible_cars(rally) if not rally.is_empty() else CarLibrary.CARS
+	var pool: Array = _eligible_cars(rally) if not rally.is_empty() else CarLibrary.all()
 	var best: Dictionary = {}
 	var best_pw := -1.0
 	for car in pool:
@@ -376,23 +376,23 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 # car (it never should; open-class admits everything).
 static func _eligible_cars(rally: Dictionary) -> Array:
 	var pool: Array = []
-	for entry in CarLibrary.CARS:
+	for entry in CarLibrary.all():
 		if is_eligible(rally, entry):
 			pool.append(entry)
-	return pool if not pool.is_empty() else CarLibrary.CARS
+	return pool if not pool.is_empty() else CarLibrary.all()
 
 
-# CarLibrary.CARS indices a rally's restriction admits — the pool an index-based
+# CarLibrary.all() indices a rally's restriction admits — the pool an index-based
 # spawner (the start-line queue props, start_line.gd) draws its cars from, so the
 # cars bookending the player are always eligible for the rally. Falls back to every
 # index if a restriction somehow admits none (it never should; open-class admits all).
 static func eligible_car_indices(rally: Dictionary) -> Array:
 	var pool: Array = []
-	for i in CarLibrary.CARS.size():
-		if is_eligible(rally, CarLibrary.CARS[i]):
+	for i in CarLibrary.all().size():
+		if is_eligible(rally, CarLibrary.all()[i]):
 			pool.append(i)
 	if pool.is_empty():
-		for i in CarLibrary.CARS.size():
+		for i in CarLibrary.all().size():
 			pool.append(i)
 	return pool
 

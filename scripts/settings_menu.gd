@@ -108,7 +108,7 @@ func _build() -> void:
 	_dev_page.add_child(_dev_status)
 	_dev_page.add_child(_make_action_button("Wipe all progress", _wipe_progress))
 	_dev_page.add_child(_make_sub("Unlock a car:"))
-	for car in CarLibrary.CARS:
+	for car in CarLibrary.all():
 		var car_id := String(car["id"])
 		var car_name := String(car["name"])
 		_dev_page.add_child(_make_action_button("Unlock %s" % car_name, _grant_car.bind(car_id, car_name)))

@@ -106,21 +106,21 @@ every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its rea
   `clutch_engage_speed`.
 - Manual shifting: Q (down) / E (up). Auto mode toggled with T or HUD button.
 - `shift_time` (clutch-open throttle cut per gear change) is **per-engine**: the
-  manual MX-5's i4 shifts slowly (0.30 s) while dual-clutch / automated supercars
-  (Aventador ISR) snap through gears (0.05–0.08 s). The `GameConfig`
+  manual MX-5's i4 shifts slowly (0.30 s) while dual-clutch / automated boxes
+  (the 2.5T i5's 7-speed S tronic) snap through gears (~0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
 - **`engine_inertia` (crank + flywheel rotating inertia, kg·m²) is per-car**
   (`CarLibrary`, applied by `Car.apply_car()`). Small = fast revving, large =
   a heavy, lazy flywheel. Anchored to the MX-5's light 2.0 i4 (`0.15`) and
-  scaled by each car's real rotating character: the LFA's famously ultra-light
-  V10 sits lowest (`0.10`, 0→9000 rpm in ~0.6 s) despite its cylinder count,
-  while the heavy V8 Charger (`0.56`) and big V12 Aventador (`0.26`) carry the
-  most spinning mass and rev slowest. Cars that omit it keep the `GameConfig`
+  scaled by each car's real rotating character: the tiny Acty i3 sits lowest
+  (`0.09`, near-instant revs), while the big pushrod V10 Viper (`0.35`), the
+  heavy V8 Charger (`0.56`) and the vast Merlin V12 (`1.5`) carry the most
+  spinning mass and rev slowest. Cars that omit it keep the `GameConfig`
   fallback.
 - **`gear_ratios` + `final_drive` are also per-car** (`CarLibrary`, applied by
   `Car.apply_car()` after the engine is resolved), and **each car now carries its
   own real published transmission** — e.g. the Charger runs a 3-speed TorqueFlite
-  A727 (`2.45 / 1.45 / 1.00`), the 911 (930) its classic 4-speed, the Focus ST a Getrag M66
+  A727 (`2.45 / 1.45 / 1.00`), the 911 Turbo its classic 4-speed, the Focus ST a Getrag M66
   6-speed, the Acty its real HA4 5-speed. Only `final_drive` remains a
   game-tuned value, kept deliberately HIGH (mostly ~6–7, but tuned per car
   across a wider band — e.g. 4 on the torquey Charger up to 12 on the Focus ST)

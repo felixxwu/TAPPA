@@ -5,12 +5,14 @@ extends GutTest
 # profile is never touched.
 
 const TEST_PATH := "user://test_profile.json"
+const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 
 var _save: Node
 
 
 func before_each() -> void:
 	_save = get_node("/root/Save")
+	CarFixtures.install()
 	_clean()
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
@@ -21,6 +23,7 @@ func after_each() -> void:
 	_clean()
 	# Restore the real path so we don't leak the test redirect into other files.
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
+	CarFixtures.restore()
 
 
 func _clean() -> void:
@@ -37,7 +40,7 @@ func test_default_profile_is_empty_and_valid() -> void:
 
 
 func test_round_trip_survives_save_and_reload() -> void:
-	var car: Dictionary = _save.grant_car("mx5")
+	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.add_item("repair_kit", 2)
 	_save.complete_rally("alpine", 123456)
 	_save.set_tuning(car["instance_id"], {"brake_bias": 0.55})
@@ -48,7 +51,7 @@ func test_round_trip_survives_save_and_reload() -> void:
 	_save.profile = {}
 	_save.load_or_new()
 	assert_eq(_save.profile["cars"].size(), 1, "owned car reloaded")
-	assert_eq(_save.profile["cars"][0]["model_id"], "mx5", "model id reloaded")
+	assert_eq(_save.profile["cars"][0]["model_id"], "fx_light_rwd", "model id reloaded")
 	assert_eq(int(_save.profile["inventory"]["repair_kit"]), 2, "inventory reloaded")
 	assert_true(_save.rally_completed("alpine"), "rally completion reloaded")
 	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 123456, "best time reloaded")
@@ -56,15 +59,15 @@ func test_round_trip_survives_save_and_reload() -> void:
 
 
 func test_instance_ids_are_unique_per_grant() -> void:
-	var a: Dictionary = _save.grant_car("mx5")
-	var b: Dictionary = _save.grant_car("mx5")  # same model, must diverge
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_light_rwd")  # same model, must diverge
 	assert_ne(a["instance_id"], b["instance_id"], "two instances of one model get distinct ids")
 	assert_eq(_save.profile["cars"].size(), 2, "both instances owned")
 
 
 func test_grant_car_seeds_hp_from_library_max() -> void:
-	var car: Dictionary = _save.grant_car("aventador")
-	assert_almost_eq(float(car["hp"]), float(CarLibrary.by_id("aventador")["max_hp"]), 0.001,
+	var car: Dictionary = _save.grant_car("fx_awd")
+	assert_almost_eq(float(car["hp"]), float(CarLibrary.by_id("fx_awd")["max_hp"]), 0.001,
 		"new car starts at the library max_hp")
 
 
@@ -77,7 +80,7 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 
 
 func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
-	var car: Dictionary = _save.grant_car("lfa")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
 	assert_false(_save.profile["inventory"].has("engine_stage1"), "item left inventory once fitted")
@@ -94,8 +97,8 @@ func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 
 
 func test_scrap_removes_car_consumes_upgrades_and_spares_last_car() -> void:
-	var starter: Dictionary = _save.grant_car("mx5")
-	var car: Dictionary = _save.grant_car("lfa")
+	var starter: Dictionary = _save.grant_car("fx_light_rwd")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
 
@@ -114,7 +117,7 @@ func test_scrap_removes_car_consumes_upgrades_and_spares_last_car() -> void:
 
 
 func test_install_disables_same_slot_incumbent() -> void:
-	var car: Dictionary = _save.grant_car("porsche911")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.add_item("engine_stage1", 1)
 	_save.add_item("engine_stage2", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "first engine kit fitted")
@@ -133,7 +136,7 @@ func test_install_disables_same_slot_incumbent() -> void:
 
 
 func test_install_rejects_a_part_already_on_the_car() -> void:
-	var car: Dictionary = _save.grant_car("porsche911")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.add_item("engine_stage1", 2)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "first copy fitted")
 	assert_false(_save.install_upgrade(car["instance_id"], "engine_stage1"),
@@ -143,7 +146,7 @@ func test_install_rejects_a_part_already_on_the_car() -> void:
 
 
 func test_toggle_upgrade_enabled_is_exclusive_per_slot() -> void:
-	var car: Dictionary = _save.grant_car("porsche911")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
 	_save.add_item("engine_stage1", 1)
 	_save.add_item("engine_stage2", 1)
@@ -164,7 +167,7 @@ func test_toggle_upgrade_enabled_is_exclusive_per_slot() -> void:
 
 
 func test_install_rejects_consumables_and_unknown_items() -> void:
-	var car: Dictionary = _save.grant_car("mx5")
+	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.add_item("repair_kit", 1)
 	assert_false(_save.install_upgrade(car["instance_id"], "repair_kit"), "repair kit can't be slotted")
 	assert_false(_save.install_upgrade(car["instance_id"], "bogus"), "unknown item can't be installed")
@@ -172,8 +175,8 @@ func test_install_rejects_consumables_and_unknown_items() -> void:
 
 
 func test_repair_kit_restores_to_full() -> void:
-	var car: Dictionary = _save.grant_car("lfa")  # max_hp 1000
-	var max_hp := float(CarLibrary.by_id("lfa")["max_hp"])
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var max_hp := float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"])
 	_save.apply_damage(car["instance_id"], 500.0)  # 500 hp
 	_save.add_item("repair_kit", 2)
 	assert_true(_save.use_repair_kit(car["instance_id"]), "repair kit consumed")
@@ -184,7 +187,7 @@ func test_repair_kit_restores_to_full() -> void:
 
 
 func test_wheel_toe_persists_and_survives_reload() -> void:
-	var car: Dictionary = _save.grant_car("mx5")
+	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	var id: int = car["instance_id"]
 	assert_eq(_save.get_car(id)["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "a fresh car has straight wheels")
 	_save.set_wheel_toe(id, [0.01, -0.02, 0.03, -0.04])
@@ -195,7 +198,7 @@ func test_wheel_toe_persists_and_survives_reload() -> void:
 
 
 func test_repair_kit_straightens_wheels() -> void:
-	var car: Dictionary = _save.grant_car("lfa")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id: int = car["instance_id"]
 	_save.set_wheel_toe(id, [0.05, -0.05, 0.05, -0.05])
 	_save.add_item("repair_kit", 1)
@@ -206,7 +209,7 @@ func test_repair_kit_straightens_wheels() -> void:
 func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 	# A pre-feature owned car has no wheel_toe key; load must backfill it straight.
 	_save.profile["cars"] = [{
-		"instance_id": 7, "model_id": "mx5", "hp": 500.0,
+		"instance_id": 7, "model_id": "fx_light_rwd", "hp": 500.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {},
 	}]
 	_save.profile = _save._sanitise(_save.profile)
@@ -214,9 +217,9 @@ func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 
 
 func test_repair_kit_revives_a_wrecked_car() -> void:
-	var car: Dictionary = _save.grant_car("lfa")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
-	var max_hp := float(CarLibrary.by_id("lfa")["max_hp"])
+	var max_hp := float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"])
 	_save.apply_damage(id, 999999.0)  # wreck it -> 0 HP, still owned
 	assert_true(_save.car_is_wrecked(_save.get_car(id)), "the car is wrecked")
 	assert_false(_save.use_repair_kit(id), "can't repair without a kit")
@@ -228,15 +231,15 @@ func test_repair_kit_revives_a_wrecked_car() -> void:
 
 func test_starter_wrecks_like_any_car() -> void:
 	# The starter is no longer invulnerable: lethal damage wrecks it (0 HP, still owned).
-	var car: Dictionary = _save.grant_car("mx5")
+	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.apply_damage(car["instance_id"], 999999.0)
 	assert_eq(_save.profile["cars"].size(), 1, "the wrecked starter is kept in the garage")
 	assert_true(_save.car_is_wrecked(_save.get_car(car["instance_id"])), "the starter can be wrecked")
 
 
 func test_safety_net_grants_kit_when_all_wrecked_and_none_held() -> void:
-	var a: Dictionary = _save.grant_car("mx5")
-	var b: Dictionary = _save.grant_car("lfa")
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.apply_damage(a["instance_id"], 999999.0)
 	_save.apply_damage(b["instance_id"], 999999.0)
 	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 0, "no kit before the net fires")
@@ -248,8 +251,8 @@ func test_safety_net_grants_kit_when_all_wrecked_and_none_held() -> void:
 
 
 func test_safety_net_no_op_when_a_car_is_healthy() -> void:
-	var a: Dictionary = _save.grant_car("mx5")
-	_save.grant_car("lfa")  # healthy
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.grant_car("fx_rwd_coupe")  # healthy
 	_save.apply_damage(a["instance_id"], 999999.0)  # only one wrecked
 	assert_false(_save.ensure_repair_safety_net(), "not stranded: at least one car can still race")
 	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 0, "no free kit granted")
@@ -261,7 +264,7 @@ func test_safety_net_no_op_with_no_cars() -> void:
 
 
 func test_apply_damage_wrecks_mortal_car_at_zero() -> void:
-	var car: Dictionary = _save.grant_car("lfa")  # mortal
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")  # mortal
 	_save.apply_damage(car["instance_id"], 999999.0)
 	# Lethal damage wrecks the car but keeps it owned at 0 HP (repairable), not deleted.
 	assert_eq(_save.profile["cars"].size(), 1, "the wrecked car is kept in the garage")
@@ -329,7 +332,7 @@ func test_unknown_model_id_dropped_on_load() -> void:
 	f.store_string(JSON.stringify({
 		"schema_version": _save.SCHEMA_VERSION,
 		"cars": [
-			{"instance_id": 1, "model_id": "mx5", "hp": 800.0,
+			{"instance_id": 1, "model_id": "fx_light_rwd", "hp": 800.0,
 				"installed_upgrades": [], "tuning": {}},
 			{"instance_id": 2, "model_id": "ghost_car", "hp": 1.0,
 				"installed_upgrades": [], "tuning": {}},
@@ -338,43 +341,43 @@ func test_unknown_model_id_dropped_on_load() -> void:
 	f.close()
 	_save.load_or_new()
 	assert_eq(_save.profile["cars"].size(), 1, "orphaned car (unknown model) dropped")
-	assert_eq(_save.profile["cars"][0]["model_id"], "mx5", "valid car kept")
+	assert_eq(_save.profile["cars"][0]["model_id"], "fx_light_rwd", "valid car kept")
 
 
 func test_reset_new_game_overwrites_with_fresh_profile() -> void:
-	_save.grant_car("mx5")
+	_save.grant_car("fx_light_rwd")
 	_save.reset_new_game()
 	assert_eq(_save.profile["cars"].size(), 0, "new game clears owned cars")
 	assert_true(_save.has_save(), "new game written to disk immediately")
 
 
 func test_swap_engines_exchanges_current_engines() -> void:
-	var a: Dictionary = _save.grant_car("twingo")
-	var b: Dictionary = _save.grant_car("lfa")
-	var stock_a: String = CarLibrary.by_id("twingo")["engine"]
-	var stock_b: String = CarLibrary.by_id("lfa")["engine"]
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var stock_a: String = CarLibrary.by_id("fx_light_rwd")["engine"]
+	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
 	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "full-health swap succeeds")
 	# Re-fetch (grant_car returns a live ref, but re-read to be explicit).
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
-	assert_eq(String(a.get("swapped_engine", "")), stock_b, "twingo now runs the LFA engine")
-	assert_eq(String(b.get("swapped_engine", "")), stock_a, "LFA now runs the twingo engine")
+	assert_eq(String(a.get("swapped_engine", "")), stock_b, "Fixture Roadster now runs the Fixture Coupe engine")
+	assert_eq(String(b.get("swapped_engine", "")), stock_a, "Fixture Coupe now runs the Fixture Roadster engine")
 
 
 func test_swapping_back_restores_stock_and_clears_field() -> void:
-	var a: Dictionary = _save.grant_car("twingo")
-	var b: Dictionary = _save.grant_car("lfa")
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.swap_engines(a["instance_id"], b["instance_id"])
 	_save.swap_engines(a["instance_id"], b["instance_id"])  # swap back
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
-	assert_eq(String(a.get("swapped_engine", "")), "", "twingo back to stock -> field cleared")
-	assert_eq(String(b.get("swapped_engine", "")), "", "LFA back to stock -> field cleared")
+	assert_eq(String(a.get("swapped_engine", "")), "", "Fixture Roadster back to stock -> field cleared")
+	assert_eq(String(b.get("swapped_engine", "")), "", "Fixture Coupe back to stock -> field cleared")
 
 
 func test_swap_blocked_when_a_car_is_not_full_health() -> void:
-	var a: Dictionary = _save.grant_car("twingo")
-	var b: Dictionary = _save.grant_car("lfa")
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	_save.apply_damage(b["instance_id"], 1.0)  # b now below max HP
 	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]), "damaged car blocks the swap")
 	a = _save.get_car(a["instance_id"])
@@ -382,7 +385,7 @@ func test_swap_blocked_when_a_car_is_not_full_health() -> void:
 
 
 func test_set_engine_detune_clamps_and_persists() -> void:
-	var a: Dictionary = _save.grant_car("twingo")
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_engine_detune(a["instance_id"], 0.5)
 	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 0.5, 0.0001, "stores fraction")
 	_save.set_engine_detune(a["instance_id"], 1.7)
