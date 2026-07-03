@@ -107,8 +107,8 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 	RallySession._opponent_field = [
 		{"name": "A", "car_name": "Porsche 911", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
 		{"name": "B", "car_name": "Lexus LFA", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "C", "car_name": "Audi RS3", "event_times_ms": [-1, 0, 0], "dnf": true, "combined_ms": -1},
-		{"name": "D", "car_name": "Ford Mustang GT", "event_times_ms": [60000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "C", "car_name": "Focus ST", "event_times_ms": [-1, 0, 0], "dnf": true, "combined_ms": -1},
+		{"name": "D", "car_name": "Charger R/T", "event_times_ms": [60000, 0, 0], "dnf": false, "combined_ms": 1},
 	]
 	# Event 0: C set no time (-1, omitted). Fastest-first: B 45k, A 50k, D 60k.
 	var leaders := RallySession.current_event_leaders(3)
@@ -329,7 +329,7 @@ func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "mx5",      "event_times_ms": [55000, 0, 0], "dnf": false, "combined_ms": 1},
 		{"name": "B", "car_id": "porsche911","event_times_ms": [48000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "C", "car_id": "rs3",       "event_times_ms": [-1,    0, 0], "dnf": true,  "combined_ms": -1},
+		{"name": "C", "car_id": "aventador", "event_times_ms": [-1,    0, 0], "dnf": true,  "combined_ms": -1},
 	]
 	# Event 0: C DNF'd (time -1), so P1 is B with 48000 driving a porsche911.
 	var p1: Dictionary = RallySession.current_event_p1_car()
@@ -347,7 +347,7 @@ func test_current_event_standings_ranks_by_the_just_completed_event() -> void:
 		# "Quick" is slowest — so the event-only ranking differs from the combined one.
 		{"name": "Quick", "car_name": "Porsche 911", "event_times_ms": [10000, 90000, 90000], "dnf": false, "combined_ms": 190000},
 		{"name": "Slow", "car_name": "Lexus LFA", "event_times_ms": [80000, 30000, 30000], "dnf": false, "combined_ms": 140000},
-		{"name": "Gone", "car_name": "Audi RS3", "event_times_ms": [50000, -1, -1], "dnf": true, "combined_ms": -1},
+		{"name": "Gone", "car_name": "Focus ST", "event_times_ms": [50000, -1, -1], "dnf": true, "combined_ms": -1},
 	]
 	RallySession.report_event_result(90000)   # event 0
 	RallySession.continue_to_next_event()      # -> event 1 running

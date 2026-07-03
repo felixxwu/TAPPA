@@ -77,7 +77,7 @@ func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
 
 
 func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
-	var car: Dictionary = _save.grant_car("mustang")
+	var car: Dictionary = _save.grant_car("lfa")
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
 	assert_false(_save.profile["inventory"].has("engine_stage1"), "item left inventory once fitted")
@@ -95,7 +95,7 @@ func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 
 func test_scrap_removes_car_consumes_upgrades_and_spares_last_car() -> void:
 	var starter: Dictionary = _save.grant_car("mx5")
-	var car: Dictionary = _save.grant_car("mustang")
+	var car: Dictionary = _save.grant_car("lfa")
 	_save.add_item("engine_stage1", 1)
 	assert_true(_save.install_upgrade(car["instance_id"], "engine_stage1"), "upgrade installed")
 
@@ -172,9 +172,9 @@ func test_install_rejects_consumables_and_unknown_items() -> void:
 
 
 func test_repair_kit_restores_to_full() -> void:
-	var car: Dictionary = _save.grant_car("mustang")  # max_hp 1100
-	var max_hp := float(CarLibrary.by_id("mustang")["max_hp"])
-	_save.apply_damage(car["instance_id"], 500.0)  # 600 hp
+	var car: Dictionary = _save.grant_car("lfa")  # max_hp 1000
+	var max_hp := float(CarLibrary.by_id("lfa")["max_hp"])
+	_save.apply_damage(car["instance_id"], 500.0)  # 500 hp
 	_save.add_item("repair_kit", 2)
 	assert_true(_save.use_repair_kit(car["instance_id"]), "repair kit consumed")
 	# A kit fully restores the car, not a partial heal.
@@ -195,7 +195,7 @@ func test_wheel_toe_persists_and_survives_reload() -> void:
 
 
 func test_repair_kit_straightens_wheels() -> void:
-	var car: Dictionary = _save.grant_car("mustang")
+	var car: Dictionary = _save.grant_car("lfa")
 	var id: int = car["instance_id"]
 	_save.set_wheel_toe(id, [0.05, -0.05, 0.05, -0.05])
 	_save.add_item("repair_kit", 1)
@@ -214,9 +214,9 @@ func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 
 
 func test_repair_kit_revives_a_wrecked_car() -> void:
-	var car: Dictionary = _save.grant_car("mustang")
+	var car: Dictionary = _save.grant_car("lfa")
 	var id := int(car["instance_id"])
-	var max_hp := float(CarLibrary.by_id("mustang")["max_hp"])
+	var max_hp := float(CarLibrary.by_id("lfa")["max_hp"])
 	_save.apply_damage(id, 999999.0)  # wreck it -> 0 HP, still owned
 	assert_true(_save.car_is_wrecked(_save.get_car(id)), "the car is wrecked")
 	assert_false(_save.use_repair_kit(id), "can't repair without a kit")
@@ -236,7 +236,7 @@ func test_starter_wrecks_like_any_car() -> void:
 
 func test_safety_net_grants_kit_when_all_wrecked_and_none_held() -> void:
 	var a: Dictionary = _save.grant_car("mx5")
-	var b: Dictionary = _save.grant_car("mustang")
+	var b: Dictionary = _save.grant_car("lfa")
 	_save.apply_damage(a["instance_id"], 999999.0)
 	_save.apply_damage(b["instance_id"], 999999.0)
 	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 0, "no kit before the net fires")
@@ -249,7 +249,7 @@ func test_safety_net_grants_kit_when_all_wrecked_and_none_held() -> void:
 
 func test_safety_net_no_op_when_a_car_is_healthy() -> void:
 	var a: Dictionary = _save.grant_car("mx5")
-	_save.grant_car("mustang")  # healthy
+	_save.grant_car("lfa")  # healthy
 	_save.apply_damage(a["instance_id"], 999999.0)  # only one wrecked
 	assert_false(_save.ensure_repair_safety_net(), "not stranded: at least one car can still race")
 	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), 0, "no free kit granted")
@@ -261,7 +261,7 @@ func test_safety_net_no_op_with_no_cars() -> void:
 
 
 func test_apply_damage_wrecks_mortal_car_at_zero() -> void:
-	var car: Dictionary = _save.grant_car("mustang")  # mortal
+	var car: Dictionary = _save.grant_car("lfa")  # mortal
 	_save.apply_damage(car["instance_id"], 999999.0)
 	# Lethal damage wrecks the car but keeps it owned at 0 HP (repairable), not deleted.
 	assert_eq(_save.profile["cars"].size(), 1, "the wrecked car is kept in the garage")
@@ -350,31 +350,31 @@ func test_reset_new_game_overwrites_with_fresh_profile() -> void:
 
 func test_swap_engines_exchanges_current_engines() -> void:
 	var a: Dictionary = _save.grant_car("twingo")
-	var b: Dictionary = _save.grant_car("mustang")
+	var b: Dictionary = _save.grant_car("lfa")
 	var stock_a: String = CarLibrary.by_id("twingo")["engine"]
-	var stock_b: String = CarLibrary.by_id("mustang")["engine"]
+	var stock_b: String = CarLibrary.by_id("lfa")["engine"]
 	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "full-health swap succeeds")
 	# Re-fetch (grant_car returns a live ref, but re-read to be explicit).
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
-	assert_eq(String(a.get("swapped_engine", "")), stock_b, "twingo now runs the mustang engine")
-	assert_eq(String(b.get("swapped_engine", "")), stock_a, "mustang now runs the twingo engine")
+	assert_eq(String(a.get("swapped_engine", "")), stock_b, "twingo now runs the LFA engine")
+	assert_eq(String(b.get("swapped_engine", "")), stock_a, "LFA now runs the twingo engine")
 
 
 func test_swapping_back_restores_stock_and_clears_field() -> void:
 	var a: Dictionary = _save.grant_car("twingo")
-	var b: Dictionary = _save.grant_car("mustang")
+	var b: Dictionary = _save.grant_car("lfa")
 	_save.swap_engines(a["instance_id"], b["instance_id"])
 	_save.swap_engines(a["instance_id"], b["instance_id"])  # swap back
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
 	assert_eq(String(a.get("swapped_engine", "")), "", "twingo back to stock -> field cleared")
-	assert_eq(String(b.get("swapped_engine", "")), "", "mustang back to stock -> field cleared")
+	assert_eq(String(b.get("swapped_engine", "")), "", "LFA back to stock -> field cleared")
 
 
 func test_swap_blocked_when_a_car_is_not_full_health() -> void:
 	var a: Dictionary = _save.grant_car("twingo")
-	var b: Dictionary = _save.grant_car("mustang")
+	var b: Dictionary = _save.grant_car("lfa")
 	_save.apply_damage(b["instance_id"], 1.0)  # b now below max HP
 	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]), "damaged car blocks the swap")
 	a = _save.get_car(a["instance_id"])

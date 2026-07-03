@@ -623,8 +623,8 @@ func test_mx5_wheels_use_its_own_wheel_texture() -> void:
 
 
 func test_modelless_car_gets_blank_wheel_texture() -> void:
-	# rs3 has no wheel_texture spec -> blank dark disc, NOT the mx5 photo.
-	_car.apply_car(CarLibrary.index_of("rs3"))
+	# aventador has no wheel_texture spec -> blank dark disc, NOT the mx5 photo.
+	_car.apply_car(CarLibrary.index_of("aventador"))
 	var tire := _car.get_node("WheelFL/Visual/Tire") as MeshInstance3D
 	var mat := tire.get_surface_override_material(0) as ShaderMaterial
 	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D

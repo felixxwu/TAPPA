@@ -29,7 +29,7 @@ func _initialize() -> void:
 	# Start from a clean roster (load_or_new can recover a stale .bak), then grant 9 so
 	# the starter makes a full 10-car collection (== the cap → boots to the title).
 	sm.profile["cars"] = []
-	for id in ["rs3", "mustang", "porsche911", "lfa", "aventador", "rs3", "mustang", "porsche911", "lfa"]:
+	for id in ["focus", "charger", "porsche911", "lfa", "aventador", "focus", "charger", "porsche911", "lfa"]:
 		sm.grant_car(id, false)
 
 	var svp := SubViewport.new()

@@ -97,7 +97,7 @@ carries its own `suspension_travel` + `suspension_stiffness` (+ optional per-axl
 travel), overlaid onto the live config by `car.gd`'s `apply_car()` and pushed onto
 each wheel per axle via `_apply_suspension()` (dampers re-derived; the standalone
 `_sync_suspension_to_wheels()` re-pushes after an upgrade mutates the rate). Soft &
-tall roadster/muscle (MX-5, Mustang) vs stiff & low supercars (911, LFA,
+tall roadster/muscle (MX-5, Charger) vs stiff & low supercars (911, LFA,
 Aventador). The `config/game_config.tres` values are the baseline/fallback.
 
 ## Weight distribution (centre of mass)

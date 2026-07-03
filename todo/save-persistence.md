@@ -231,12 +231,12 @@ system, and it's the hard blocker for saving (the id) and for rally restrictions
   detail — rough peak power ≈ f(`peak_torque`, `redline`), ÷ `mass`).
 
 **New fields to add per entry:**
-- **`id`** *(string, required)* — a stable key, e.g. `"mx5"`, `"rs3"`,
-  `"porsche911"`, `"lfa"`, `"mustang"`, `"aventador"`. **Never reordered or
+- **`id`** *(string, required)* — a stable key, e.g. `"mx5"`, `"focus"`,
+  `"porsche911"`, `"lfa"`, `"charger"`, `"aventador"`. **Never reordered or
   reused.** Replaces array-index identity (`car.gd:16,253`) everywhere ownership
   is persisted.
-- **`country`** *(string)* — e.g. `JP` (MX-5, LFA), `DE` (RS3, 911), `US`
-  (Mustang), `IT` (Aventador). A restriction tag.
+- **`country`** *(string)* — e.g. `JP` (MX-5, LFA), `DE` (911), `US`
+  (Focus, Charger), `IT` (Aventador). A restriction tag.
 - **`car_type`** *(string)* — e.g. roadster / hatch / coupe / saloon. A
   restriction tag; values authored per car.
 - **`max_hp`** *(float)* — per-car durability the damage model needs; the saved
@@ -244,8 +244,8 @@ system, and it's the hard blocker for saving (the id) and for rally restrictions
   default from a `mass`-based formula, override per car. Exact numbers are
   damage-tuning, deferred to playtesting.
 - **`engine_displacement_l`** *(float, optional)* — only if rallies restrict by
-  engine *size* as well as cylinder layout (MX-5 2.0, RS3 2.5, 911 3.0, LFA 4.8,
-  Mustang 5.0, Aventador 6.5). Skip until a rally needs it.
+  engine *size* as well as cylinder layout (MX-5 2.0, Focus 2.5, 911 3.0, LFA 4.8,
+  Charger 7.2, Aventador 6.5). Skip until a rally needs it.
 - **`reward_tier`** *(int)* — the car's reward tier, used by the reward system
   (`todo/reward-system.md`) to match a draw's clamped tier. Default from a
   power-to-weight heuristic, overridable per car.

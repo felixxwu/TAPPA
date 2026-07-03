@@ -114,7 +114,7 @@ every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its rea
   a heavy, lazy flywheel. Anchored to the MX-5's light 2.0 i4 (`0.15`) and
   scaled by each car's real rotating character: the LFA's famously ultra-light
   V10 sits lowest (`0.10`, 0→9000 rpm in ~0.6 s) despite its cylinder count,
-  while the heavy V8 Mustang (`0.32`) and big V12 Aventador (`0.26`) carry the
+  while the heavy V8 Charger (`0.56`) and big V12 Aventador (`0.26`) carry the
   most spinning mass and rev slowest. Cars that omit it keep the `GameConfig`
   fallback.
 - **`gear_ratios` + `final_drive` are also per-car** (`CarLibrary`, applied by

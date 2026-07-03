@@ -34,7 +34,7 @@ Each `RALLIES` entry:
   and **Front Runners** — the home of the FWD starters (Focus, Twingo) — wants
   `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally parallel to the
   Shakedown for the MX-5), and **American Muscle** wants `country` US +
-  `car_type` muscle on top of its band — the Charger / Mustang's home turf.
+  `car_type` muscle on top of its band — the Charger's home turf.
   **Sh*tbox Cup** sits below even Shakedown: a `pw_max` 0.13 HP/kg ceiling with no
   floor, catering to the sub-0.13 HP/kg shitboxes (Twingo, Acty) that no other
   rally's band admits. The single open-class rally is the showdown.

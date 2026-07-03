@@ -72,7 +72,7 @@ func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
 
 
 func test_effective_meta_uses_swapped_engine_torque() -> void:
-	# A twingo running the mustang's V8: effective_meta seeds torque from the CURRENT
+	# A twingo running a V8: effective_meta seeds torque from the CURRENT
 	# engine, so the figure matches the swapped engine's library torque (mechanism,
 	# not a pinned number — derived from EngineLibrary).
 	var meta := CarLibrary.by_id("twingo").duplicate()

@@ -96,7 +96,7 @@ func _leaders() -> Array:
 	return [
 		{"name": "Rival 3", "car_name": "Porsche 911", "time_ms": 75430},  # 1:15.43, the leader
 		{"name": "Rival 1", "car_name": "Lexus LFA", "time_ms": 78120},
-		{"name": "Rival 7", "car_name": "Audi RS3", "time_ms": 80050},
+		{"name": "Rival 7", "car_name": "Focus ST", "time_ms": 80050},
 	]
 
 
@@ -116,7 +116,7 @@ func test_reveal_shows_top_three_times_to_beat_and_context() -> void:
 	assert_string_contains(top, "1:15.43", "the leader's time to beat is shown (m:ss.cc)")
 	assert_string_contains(top, "RIVAL 3", "the leader's driver name is shown")
 	assert_string_contains(top, "PORSCHE 911", "the car the leader drove is shown")
-	assert_string_contains(sl._leader_rows[2].text, "AUDI RS3", "third place's car is shown too")
+	assert_string_contains(sl._leader_rows[2].text, "FOCUS ST", "third place's car is shown too")
 	assert_string_contains(sl._subtitle_label.text, "RWD MASTERS", "the rally is named")
 	assert_string_contains(sl._subtitle_label.text, "EVENT 2 OF 3", "the event index is shown")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "it waits in the orbit/reveal phase")

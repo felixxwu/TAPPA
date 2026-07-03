@@ -142,7 +142,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "american_muscle", "name": "American Muscle", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.42, 0.38),
-		# US-built muscle only, in a mid p/w band — the Charger / Mustang's home turf.
+		# US-built muscle only, in a mid p/w band — the Charger's home turf.
 		"restriction": {"country": "US", "car_type": "muscle", "pw_min": 0.24, "pw_max": 0.38},
 		"events": [
 			{"seed": 6001, "turn_count": 12, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7},

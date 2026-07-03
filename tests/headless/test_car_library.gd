@@ -150,8 +150,8 @@ func test_main_boots_as_first_car() -> void:
 
 
 func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
-	# Pick the Ford Mustang GT: a V8, RWD, with distinct dimensions from the MX-5.
-	var index := _index_of("Ford Mustang GT")
+	# Pick the Charger R/T: a V8, RWD, with distinct dimensions from the MX-5.
+	var index := _index_of("Charger R/T")
 	var spec: Dictionary = CarLibrary.CARS[index]
 	var returned: String = _car.apply_car(index)
 	await get_tree().physics_frame

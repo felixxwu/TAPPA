@@ -33,7 +33,7 @@ extends RefCounted
 #                lands the cars near their real top speeds. drag is therefore sized
 #                only to TOP UP that baseline to the realistic total — NOT to be the
 #                whole aero force — and was tuned per car by measuring top speed in
-#                the sim. Draggy bodies (Mustang) still need a real coefficient;
+#                the sim. Draggy bodies (Charger) still need a real coefficient;
 #                slippery coupes (LFA, Aventador) sit near zero because the engine's
 #                baseline alone already meets (or slightly exceeds) the resistance
 #                for their real top speed.
@@ -47,7 +47,7 @@ extends RefCounted
 #                wheel_friction_slip_front/rear from this; the grip_balance tuning slider
 #                then trims them. Rollover from high lateral force is held off by the low
 #                wheel_roll_influence (GameConfig, 0.1) — watch the taller bodies
-#                (Mustang-like) in hard turns if compounds climb much further.
+#                (Charger-like) in hard turns if compounds climb much further.
 #   * downforce_front / downforce_rear — aero downforce (N per (m/s)² at each axle,
 #                GameConfig.downforce_*). apply_car() SETS these from the spec (so a
 #                car with 0 has none — no hidden global baseline), and the aero_kit
@@ -86,7 +86,7 @@ const FWD := 2
 # also sits the car lower. suspension_stiffness is the spring rate
 # (GameConfig.suspension_stiffness); the compression/rebound dampers are derived
 # from it (critically damped, see GameConfig.suspension_damping_*), not specified
-# per car. Soft & tall roadster/muscle (MX-5, Mustang) vs stiff & low supercars
+# per car. Soft & tall roadster/muscle (MX-5, Charger) vs stiff & low supercars
 # (911, LFA, Aventador).
 const CARS: Array[Dictionary] = [
 	{
@@ -148,18 +148,6 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/twingo/wheel.png",
 	},
 	{
-		"name": "Audi RS3",  # 8Y: ~1575 kg, 401 hp, turbo inline-5, quattro AWD
-		"id": "rs3", "country": "DE", "car_type": "hatch", "max_hp": 1000.0, "reward_tier": 1,
-		"mass": 1575.0, "engine": "audi_25t_i5", "weight_front": 0.59,  # transverse turbo I5 quattro, nose-heavy
-		"tire_compound": 1.05,  # performance summer tyres
-		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(1.55, 0.60, 4), "cabin": Vector3(1.50, 0.52, 1.70),
-		"cabin_z": 0.15, "track": 1.57, "wheelbase": 2.63,
-		"wheel_radius": 0.335, "wheel_width_front": 0.235, "wheel_width_rear": 0.235,  # 235/35R19 square, quattro
-		"suspension_travel": 0.45, "suspension_stiffness": 13.0,  # firm AWD hot hatch
-	},
-	{
 		"name": "Honda Acty",  # HA4 kei truck: ~740 kg, 656cc mid-engine triple, RWD
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
 		"mass": 740.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
@@ -198,18 +186,6 @@ const CARS: Array[Dictionary] = [
 		"model_node": "ChargerBody",
 		"model_texture": "res://blender/charger/charger_texture.png",
 		"wheel_texture": "res://blender/charger/wheel.png",
-	},
-	{
-		"name": "Ford Mustang GT",  # S550: ~1720 kg, 460 hp, 5.0 V8 muscle, RWD
-		"id": "mustang", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 1,
-		"mass": 1720.0, "engine": "ford_50_v8", "weight_front": 0.53, "engine_pos": 0.85,  # front V8, mild nose bias
-		"tire_compound": 1.10,  # performance summer tyres
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(1.92, 0.55, 4.78), "cabin": Vector3(1.55, 0.50, 1.75),
-		"cabin_z": 0.30, "track": 1.62, "wheelbase": 2.72,
-		"wheel_radius": 0.34, "wheel_width_front": 0.255, "wheel_width_rear": 0.275,  # 255/275 PP stagger
-		"suspension_travel": 0.55, "suspension_stiffness": 11.0,  # heavy muscle car, softer & taller
 	},
 	{
 		"name": "911 (930)",  # 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
