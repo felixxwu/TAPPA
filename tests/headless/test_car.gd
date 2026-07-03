@@ -93,6 +93,9 @@ func test_aero_drag_decelerates_at_speed() -> void:
 	# losses alone, then coast with drag on — drag must shed well beyond the
 	# wheel-loss baseline (analytically ~10 m/s at default mass/coefficient).
 	assert_eq(_car.linear_damp, 0.0, "car must not rely on generic linear damping")
+	# Rotational counterpart: angular_damp is forced to 0 too, so a launched car
+	# keeps its spin mid-air instead of being slowed by Godot's implicit 0.1 default.
+	assert_eq(_car.angular_damp, 0.0, "car must not rely on generic angular damping")
 	var cfg: GameConfig = Config.data
 	var saved := cfg.drag_coefficient
 	cfg.drag_coefficient = 0.0

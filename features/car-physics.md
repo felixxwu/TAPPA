@@ -58,7 +58,11 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
    travelling nose-forward — it prevents reaching a spin rather than unwinding a
    completed one.
 4. **Aero forces:**
-   - *Drag:* `-velocity * |velocity| * drag_coefficient` (quadratic).
+   - *Drag:* `-velocity * |velocity| * drag_coefficient` (quadratic). `linear_damp`
+	 is forced to 0 so this is the only speed-dependent linear loss. The body's
+	 `angular_damp` is likewise forced to 0 in `_ready` (Godot's implicit default is
+	 0.1) so a launched car keeps its spin mid-air instead of being passively slowed;
+	 grounded rotation is governed by the tire model + the steer/spin/level assists.
    - *Downforce:* `v² * downforce_{front,rear}` applied at the axle midpoints;
 	 also recorded in `downforce_readouts` for the debug overlay. Either
 	 coefficient may be negative, which produces lift (an upward force that

@@ -121,6 +121,9 @@ func _ready() -> void:
 	global_transform = _start_transform
 	mass = cfg.mass
 	linear_damp = 0.0  # aero drag below is the only speed-dependent loss
+	angular_damp = 0.0  # no passive angular decay — the car keeps its spin mid-air
+	# (Godot's implicit default is 0.1; force 0 so a launched car isn't slowed in
+	# the air). Grounded rotation is governed by the tire model + steer/spin assists.
 	for wheel in find_children("*", "VehicleWheel3D", false):
 		# All contact friction is handled by the Drivetrain tire model; the
 		# built-in solver only does suspension + raycasts.
@@ -609,7 +612,7 @@ func use_isolated_config() -> void:
 # mass, drag, engine character and drive layout onto the live config and scene,
 # then rebuilds the drivetrain (fresh hardpoints + shift speeds) and engine
 # voice so the new sound and gearing take effect. Returns the car's name.
-func apply_car(index: int) -> String:
+func apply_car(index: int, rebuild_audio := true) -> String:
 	var spec: Dictionary = CarLibrary.all()[index]
 	_car_index = index
 	var cfg: GameConfig = config
@@ -745,10 +748,14 @@ func apply_car(index: int) -> String:
 	drivetrain.drive_mode = spec["drive_mode"] as Drivetrain.DriveMode
 	_recompute_axles()
 
-	# Rebuild the engine voice for the new cylinder count / firing order.
-	var audio := $EngineAudio as Node
-	if audio.has_method("reconfigure"):
-		audio.reconfigure()
+	# Rebuild the engine voice for the new cylinder count / firing order. Skipped when
+	# rebuild_audio is false — apply_owned defers it to a single rebuild at the end of
+	# the fielding pipeline (after engine swap + upgrades, which can also change the
+	# voicing), instead of rebuilding here and again per later step.
+	if rebuild_audio:
+		var audio := $EngineAudio as Node
+		if audio.has_method("reconfigure"):
+			audio.reconfigure()
 
 	# Per-car HP pool (CarLibrary metadata, mass-keyed). Free-roam fields it unbound
 	# at full HP; a future rally layer re-fields it from the OwnedCar (with the
@@ -769,7 +776,10 @@ func apply_owned(owned: Dictionary) -> String:
 	var idx := CarLibrary.index_of(model_id)
 	if idx < 0:
 		idx = 0
-	var car_name := apply_car(idx)
+	# Defer the audio rebuild: the engine swap and the upgrades below can both change
+	# the audio voicing, so the synth is rebuilt ONCE at the end (see below) rather
+	# than by apply_car here and again per step.
+	var car_name := apply_car(idx, false)
 	# Step 1b: engine swap — if this car runs a non-stock engine, overwrite the
 	# engine profile + recompute mass / weight distribution BEFORE upgrades (so a
 	# weight-reduction kit scales the new total) and before the suspension re-sync
@@ -780,19 +790,20 @@ func apply_owned(owned: Dictionary) -> String:
 	# copied the baseline mass onto the RigidBody, so re-sync after a weight-reduction
 	# upgrade mutates cfg.mass (other upgraded fields are read live each physics step).
 	UpgradeLibrary.apply(owned, config)
-	# A turbo upgrade sets the turbo audio voicing (whistle/BOV gains + turbo_enabled)
-	# on the config; the synth caches voicing at build time, so rebuild it now — the
-	# reconfigure in apply_car ran BEFORE these upgrade fields existed. Without this a
-	# turbo fitted to an NA car is silent (its physics still reads the config live).
-	var audio := $EngineAudio as Node
-	if audio.has_method("reconfigure"):
-		audio.reconfigure()
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
 	# installed upgrades, so it must run after step 2.
 	TuningLibrary.apply(owned, config)
 	_sync_suspension_to_wheels()
 	mass = config.mass
+	# The config is now final (baseline → swap → upgrades → tuning). Rebuild the engine
+	# voice ONCE here, so any writer that touched audio voicing is covered — including a
+	# turbo fitted as an UPGRADE (whistle/BOV gains + turbo_enabled), not just the
+	# engine. The synth caches voicing at build time, so without this a turbo on an NA
+	# car would be silent even though its physics reads the config live.
+	var audio := $EngineAudio as Node
+	if audio.has_method("reconfigure"):
+		audio.reconfigure()
 	# Step 4: working HP starts at the saved value; bind to the instance so a wreck
 	# removes it from the save.
 	var entry := CarLibrary.by_id(model_id)
@@ -820,14 +831,13 @@ func _apply_engine_swap(owned: Dictionary) -> void:
 	var cfg: GameConfig = config
 	EngineLibrary.apply(new_eng, cfg)
 
-	# Rebuild drivetrain (new redline/shift speeds; gearbox ratios already in cfg) + voice.
+	# Rebuild drivetrain (new redline/shift speeds; gearbox ratios already in cfg). The
+	# engine voice is NOT rebuilt here — this is only ever called from apply_owned, which
+	# rebuilds the synth once after all config mutation (swap + upgrades + tuning).
 	drivetrain = Drivetrain.new(self)
 	drivetrain.terrain = _resolve_terrain()
 	drivetrain.drive_mode = spec["drive_mode"] as Drivetrain.DriveMode
 	_recompute_axles()
-	var audio := $EngineAudio as Node
-	if audio.has_method("reconfigure"):
-		audio.reconfigure()
 
 	# Independent engine weight + position -> new total mass and weight distribution.
 	var m0 := float(EngineLibrary.by_id(stock).get("mass", 0.0))
