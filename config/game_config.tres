@@ -1,0 +1,76 @@
+[gd_resource type="Resource" script_class="GameConfig" format=3 uid="uid://cw3gfrkbxjkwf"]
+
+[ext_resource type="Script" uid="uid://d1smj8wwi8fwv" path="res://scripts/game_config.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+brake_torque = 500.0
+drag_coefficient = 2.645
+steer_limit = 0.5
+steer_assist_torque = 4000.0
+steer_assist_min_speed = 10.0
+steer_assist_max_angle = 0.015
+spin_assist_angle = 0.6
+level_assist_torque = 5000.0
+traction_ellipse_ratio = 1.0
+wheel_roll_influence = 0.4
+wheel_friction_slip_front = 0.5
+suspension_travel = 0.6
+brake_bias = 0.4
+rev_limiter_band = 700.0
+engine_inertia = 0.15
+gear_ratios = Array[float]([6.0, 4.0, 2.9, 2.4, 2.0])
+final_drive = 3.0
+clutch_max_torque = 100000.0
+auto_gearbox = true
+upshift_redline_fraction = 0.7
+engine_idle_gain = 1.0
+engine_harmonics = 6
+engine_noise_level = 0.001
+engine_smoothing_rate = 1000.0
+engine_limiter_crackle = 0.015
+engine_soft_clip_drive = 30.0
+engine_soft_clip_post_gain = 0.2
+impact_ref_hp_loss = 320.0
+damage_wheel_toe_gain = 0.2
+damage_wheel_toe_max = 0.4
+follow_distance = 5.0
+follow_height = 2.5
+smoothing = 3.0
+hq_table_cam_eye = Vector3(-3, 2.15, 0.2)
+terrain_tile_per_meter = 0.5
+road_tile_per_meter = 1.0
+terrain_layer1_wavelength = 500.0
+terrain_layer1_amplitude = 30.0
+terrain_layer2_wavelength = 40.0
+terrain_layer2_amplitude = 0.5
+terrain_layer3_wavelength = 15.0
+terrain_layer3_amplitude = 0.5
+track_width = 7.0
+track_seed = 2
+track_turn_count = 30
+track_runoff_m = 30.0
+tire_mark_max_segments = 20
+tire_mark_ground_offset_m = 0.2
+trees_per_turn = 200
+tree_spawn_radius_m = 50.0
+tree_collision_radius_m = 0.1
+tree_render_distance_m = 40.0
+bush_height_m = 1.5
+sign_panel_size_m = Vector2(1.008, 1.008)
+sign_thickness_m = 0.042
+sign_base_depth_m = 0.672
+sign_textures = {
+"arrow_1_left": "res://textures/signs/arrow_1_left.png",
+"arrow_1_right": "res://textures/signs/arrow_1_right.png",
+"arrow_2_left": "res://textures/signs/arrow_2_left.png",
+"arrow_2_right": "res://textures/signs/arrow_2_right.png",
+"arrow_3_left": "res://textures/signs/arrow_3_left.png",
+"arrow_3_right": "res://textures/signs/arrow_3_right.png",
+"arrow_4_left": "res://textures/signs/arrow_4_left.png",
+"arrow_4_right": "res://textures/signs/arrow_4_right.png",
+"arrow_square_left": "res://textures/signs/arrow_square_left.png",
+"arrow_square_right": "res://textures/signs/arrow_square_right.png",
+"arrow_uturn_left": "res://textures/signs/arrow_uturn_left.png",
+"arrow_uturn_right": "res://textures/signs/arrow_uturn_right.png"
+}

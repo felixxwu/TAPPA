@@ -1,0 +1,68 @@
+extends GutTest
+# The corner shape library (CornerLibrary): every pacenote turn type is a set of
+# hand-authored Curve2D control points (meters; entry at origin heading +Y).
+# build_curve() must turn each entry into a usable Curve2D, names must be unique,
+# and the full standard set (1-6, Square, Hairpin, Straight, one compound) present.
+
+
+const EXPECTED := [
+	"1", "2", "3", "4", "5", "6",
+	"Square", "Hairpin", "Straight", "Right 4 tightens 2",
+]
+
+
+func test_library_has_the_expected_corners() -> void:
+	var names := {}
+	for spec in CornerLibrary.CORNERS:
+		names[spec["name"]] = true
+	assert_eq(names.size(), CornerLibrary.CORNERS.size(), "corner names are unique")
+	for want in EXPECTED:
+		assert_true(names.has(want), "library contains '%s'" % want)
+
+
+func test_build_curve_produces_a_usable_curve_for_every_corner() -> void:
+	for spec in CornerLibrary.CORNERS:
+		var who: String = spec["name"]
+		var curve := CornerLibrary.build_curve(spec)
+		assert_true(curve is Curve2D, who + " builds a Curve2D")
+		assert_gte(curve.point_count, 2, who + " has at least 2 points")
+		# A non-degenerate shape: tessellated polyline has measurable length.
+		var pts := curve.tessellate()
+		var length := 0.0
+		for i in range(1, pts.size()):
+			length += pts[i].distance_to(pts[i - 1])
+		assert_gt(length, 0.0, who + " has positive length")
+
+
+func test_first_point_is_at_origin() -> void:
+	# Every corner enters at the origin so they share a common anchor for layout.
+	for spec in CornerLibrary.CORNERS:
+		var curve := CornerLibrary.build_curve(spec)
+		assert_almost_eq(curve.get_point_position(0), Vector2.ZERO, Vector2(0.001, 0.001),
+			spec["name"] + " starts at the origin")
+
+
+func test_documented_shape_semantics() -> void:
+	# Shape invariant: all corners are right-hand turns — the curve ends at
+	# X >= 0 (turning toward +X; Straight ends at X == 0, which still satisfies
+	# >= 0). This holds regardless of how sharp any individual corner is authored.
+	for spec in CornerLibrary.CORNERS:
+		var who: String = spec["name"]
+		var curve := CornerLibrary.build_curve(spec)
+		var pts := curve.tessellate()
+		var endpoint := pts[pts.size() - 1]
+		assert_gte(endpoint.x, 0.0, who + " is a right-hand turn (ends at X >= 0)")
+
+
+func test_catalog_scene_makes_one_label_per_corner() -> void:
+	var scene: CornerCatalog = load("res://corner_catalog.tscn").instantiate()
+	add_child_autofree(scene)
+	await get_tree().process_frame  # let _ready() build the layout
+	var labels := 0
+	for child in scene.get_children():
+		if child is Label:
+			labels += 1
+	assert_eq(labels, CornerLibrary.CORNERS.size(),
+		"one name label per corner in the catalog")
+	# Layout spreads corners across positive X (left-to-right row).
+	assert_gt(scene.layout_width, 0.0, "catalog reports a positive laid-out width")
