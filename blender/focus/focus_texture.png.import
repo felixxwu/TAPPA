@@ -4,9 +4,8 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dmb1dyidlcxvy"
 path.s3tc="res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.s3tc.ctex"
-path.etc2="res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -16,7 +15,7 @@ generator_parameters={
 [deps]
 
 source_file="res://blender/focus/focus_texture.png"
-dest_files=["res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.s3tc.ctex", "res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.etc2.ctex"]
+dest_files=["res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.s3tc.ctex"]
 
 [params]
 

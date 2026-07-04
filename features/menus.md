@@ -403,6 +403,21 @@ lineup renders each at its true size despite `car.tscn`'s shared mesh
 sub-resources. The shared-`Config.data` write from `apply_owned` is harmless here —
 the props don't simulate and `world.gd` re-applies the fielded car's config per run.
 
+### Android app notice (mobile web boot)
+
+Booting the **web build in an Android browser** (`OS.has_feature("web_android")`,
+checked by `_should_show_android_app_notice`) shows a one-per-boot overlay over the
+title shot: mobile-web performance is poor, so it points the player at the itch.io
+page (`ANDROID_APP_URL`) hosting the much-faster APK. Two buttons: **Get the Android
+app** (`OS.shell_open` → opens the itch page in a new tab) and **Continue in
+browser** (dismiss). Desktop web and iOS never see it (nothing to install there),
+and it only appears over a normal title boot — never over the garage-overflow gate.
+While the notice is up, `_title_layer` is hidden so the title's MenuNav can't fight
+the notice's for focus; dismissing (button, Esc, or gamepad B via the notice's
+`MenuNav.attach(..., on_back = ...)`) frees the layer and re-shows the title, whose
+MenuNav re-grabs the Start button through `visibility_changed`. Covered by the
+Android-notice tests in `tests/headless/test_menu_flow.gd`.
+
 ## Run-scene fielding (`world.gd`)
 
 When a `RallySession` is active, `world._ready` fields the player's OwnedCar via

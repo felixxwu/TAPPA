@@ -79,6 +79,9 @@ const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.4)
 # (before _ready), which would stretch the "stuck at 100%" gap after Godot's boot bar.
 # Both are only needed by _build_hq, which runs behind our LoadingScreen.
 const CAR_SCENE_PATH := "res://car.tscn"
+# The itch.io page hosting the Android APK — where the mobile-web boot notice sends
+# players for the (much faster) native build.
+const ANDROID_APP_URL := "https://felixxwu.itch.io/rally"
 var _car_scene: PackedScene  # cached on first use (load() also caches engine-side)
 
 
@@ -158,6 +161,7 @@ var _table_pin_index := -1      # keyboard/gamepad cursor into _unlocked_pins() 
 
 # Overlays (one CanvasLayer per station; only the active one is visible).
 var _title_layer: CanvasLayer
+var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once dismissed
 var _garage_layer: CanvasLayer
 var _table_layer: CanvasLayer
 var _detail_layer: CanvasLayer
@@ -281,6 +285,11 @@ func _build_hq() -> void:
 		_enter_overflow(true)
 	else:
 		_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
+	# Playing the WEB build in an Android browser: point the player at the itch.io
+	# APK once per boot — the native build performs far better than mobile web.
+	# Only over the title shot (a normal boot); never over the overflow gate.
+	if _should_show_android_app_notice() and _view == View.EXTERIOR:
+		_show_android_app_notice()
 
 
 # First run no longer auto-grants a car: the player picks their starter (MX-5 vs
@@ -594,6 +603,58 @@ func _build_title_overlay() -> void:
 	# MenuNav goes inert while _title_layer is hidden, so it never steals input from
 	# the 3D stations. hq re-grabs focus itself on view entry.
 	MenuNav.attach(root, {first = start})
+
+
+# True when the WEB build is running in an Android browser — the one case where the
+# player could instead install the (much faster) APK from the itch.io page. iOS has
+# no app to offer and desktop web performs fine, so neither gets the notice.
+func _should_show_android_app_notice() -> bool:
+	return OS.has_feature("web_android")
+
+
+# One-per-boot notice over the title shot: mobile-web performance is poor, the APK
+# is much faster. Hides the title overlay while it's up so its MenuNav can't fight
+# this one for focus; dismissing restores the title (whose MenuNav re-grabs focus
+# via visibility_changed).
+func _show_android_app_notice() -> void:
+	if _android_notice_layer != null:
+		return
+	_title_layer.visible = false
+	var made := _make_overlay()
+	_android_notice_layer = made[0]
+	var root: VBoxContainer = made[1]
+	root.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var msg := Label.new()
+	msg.text = "Heads up: the browser version runs much slower on phones.\nFor smooth performance, install the free Android app from itch.io."
+	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	msg.add_theme_font_size_override("font_size", 22)
+	root.add_child(msg)
+
+	var get_app := Button.new()
+	get_app.text = "Get the Android app"
+	get_app.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	get_app.custom_minimum_size = Vector2(320, 52)
+	get_app.pressed.connect(func() -> void: OS.shell_open(ANDROID_APP_URL))
+	root.add_child(get_app)
+
+	var stay := Button.new()
+	stay.text = "Continue in browser"
+	stay.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	stay.custom_minimum_size = Vector2(320, 44)
+	stay.pressed.connect(_dismiss_android_app_notice)
+	root.add_child(stay)
+
+	MenuNav.attach(root, {first = get_app, on_back = _dismiss_android_app_notice})
+
+
+func _dismiss_android_app_notice() -> void:
+	if _android_notice_layer == null:
+		return
+	_android_notice_layer.queue_free()
+	_android_notice_layer = null
+	_title_layer.visible = _view == View.EXTERIOR
 
 
 func _build_garage_overlay() -> void:

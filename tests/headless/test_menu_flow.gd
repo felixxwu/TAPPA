@@ -1519,3 +1519,52 @@ func test_engine_swap_button_is_focusable() -> void:
 				assert_eq(child.focus_mode, Control.FOCUS_ALL, "swap button is focusable")
 				found = true
 	assert_true(found, "the upgrades page has a Swap Engine button")
+
+
+# --- Android app boot notice (features/menus.md → "Android app notice") ------
+
+func _press(action: String) -> InputEventAction:
+	var e := InputEventAction.new()
+	e.action = action
+	e.pressed = true
+	return e
+
+
+# A normal boot outside an Android browser never shows the notice: the headless test
+# runner is not a web build, so the platform gate must leave the title untouched.
+func test_boot_shows_no_android_notice_outside_android_web() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	assert_null(hq._android_notice_layer, "no Android-app notice off Android web")
+	assert_true(hq._title_layer.visible, "the title overlay is shown as normal")
+
+
+# The notice overlay itself: it hides the title while up (so the two MenuNavs can't
+# fight for focus), seats the cursor on a real button for keyboard/gamepad players,
+# and back (Esc / gamepad B) dismisses it, restoring the title and its focus.
+func test_android_notice_is_navigable_and_back_dismisses() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	hq._show_android_app_notice()
+	assert_not_null(hq._android_notice_layer, "the notice overlay is up")
+	assert_false(hq._title_layer.visible, "the title hides while the notice is up")
+	await get_tree().process_frame  # deferred MenuNav focus grab
+	var focused := hq.get_viewport().gui_get_focus_owner()
+	assert_true(focused is Button and hq._android_notice_layer.is_ancestor_of(focused),
+		"the cursor lands on one of the notice's buttons")
+	# Showing twice must not stack a second overlay.
+	var layer: CanvasLayer = hq._android_notice_layer
+	hq._show_android_app_notice()
+	assert_eq(hq._android_notice_layer, layer, "a second show reuses the open notice")
+	# Back dismisses via the notice's MenuNav on_back.
+	var nav: MenuNav = null
+	for child in layer.get_child(0).get_children():
+		if child is MenuNav:
+			nav = child
+	assert_not_null(nav, "the notice has MenuNav attached")
+	nav._unhandled_input(_press("menu_back"))
+	assert_null(hq._android_notice_layer, "back dismisses the notice")
+	assert_true(hq._title_layer.visible, "dismissing restores the title overlay")
+	await get_tree().process_frame  # title MenuNav re-grabs on visibility
+	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
+		"focus returns to the title Start button")

@@ -4,9 +4,8 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://b3o2ff3hsberm"
 path.s3tc="res://.godot/imported/groundcover_opaque__albedo.png-1422041a13c7a0acbb9137758dd833e3.s3tc.ctex"
-path.etc2="res://.godot/imported/groundcover_opaque__albedo.png-1422041a13c7a0acbb9137758dd833e3.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -16,7 +15,7 @@ generator_parameters={
 [deps]
 
 source_file="res://models/vegetation/groundcover_opaque__albedo.png"
-dest_files=["res://.godot/imported/groundcover_opaque__albedo.png-1422041a13c7a0acbb9137758dd833e3.s3tc.ctex", "res://.godot/imported/groundcover_opaque__albedo.png-1422041a13c7a0acbb9137758dd833e3.etc2.ctex"]
+dest_files=["res://.godot/imported/groundcover_opaque__albedo.png-1422041a13c7a0acbb9137758dd833e3.s3tc.ctex"]
 
 [params]
 
