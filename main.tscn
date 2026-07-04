@@ -16,6 +16,7 @@
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
 [ext_resource type="Texture2D" uid="uid://bcx6lhspkcwhl" path="res://textures/sky_field.png" id="12_sky"]
 [ext_resource type="Script" uid="uid://detelg2t5mcwj" path="res://scripts/pause_menu.gd" id="13_pause"]
+[ext_resource type="Script" path="res://scripts/post_process_view.gd" id="14_ppview"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("12_sky")
@@ -97,13 +98,20 @@ script = ExtResource("10_cammgr")
 chase_camera = NodePath("../ChaseCamera")
 bonnet_camera = NodePath("../Car/BonnetCamera")
 
-[node name="PostProcess" type="CanvasLayer" parent="." unique_id=1572474653]
-
-[node name="ColorRect" type="ColorRect" parent="PostProcess" unique_id=679846541]
+[node name="PostProcess" type="SubViewportContainer" parent="." unique_id=1572474653]
+texture_filter = 1
 material = SubResource("mat_post")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+mouse_filter = 2
+stretch = true
+script = ExtResource("14_ppview")
+
+[node name="View" type="SubViewport" parent="PostProcess" unique_id=679846541]
+handle_input_locally = false
+
+[node name="ViewCamera" type="Camera3D" parent="PostProcess/View" unique_id=679846542]
 
 [node name="SpeedLines" type="CanvasLayer" parent="." unique_id=289473973 node_paths=PackedStringArray("car")]
 script = ExtResource("2_lines_s")

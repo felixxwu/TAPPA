@@ -29,8 +29,9 @@ Main [Node3D]                       script: world.gd
 │   └── (TerrainChunk children)     spawned at runtime, 3×3 around the car
 ├── Car [VehicleBody3D]             instance of car.tscn, at (0,1,0)
 ├── ChaseCamera [Camera3D]          script: chase_camera.gd, targets Car
-├── PostProcess [CanvasLayer]
-│   └── ColorRect                   shader: ps1_post_process.gdshader (dither)
+├── PostProcess [SubViewportContainer] script: post_process_view.gd; material: ps1_post_process.gdshader (dither)
+│   └── View [SubViewport]          shares the main World3D; renders the 3D frame
+│       └── ViewCamera [Camera3D]   mirror of the active gameplay camera
 └── HUD [CanvasLayer]               script: hud.gd, layer 2
     └── SpeedLabel / GearLabel / RPMLabel
 ```

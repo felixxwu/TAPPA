@@ -126,9 +126,14 @@ func _distance() -> float:
 
 
 func test_post_process_present() -> void:
-	var rect := _scene.get_node("PostProcess/ColorRect") as ColorRect
-	assert_not_null(rect)
-	assert_not_null(rect.material as ShaderMaterial, "post-process ShaderMaterial assigned")
+	var container := _scene.get_node("PostProcess") as SubViewportContainer
+	assert_not_null(container)
+	assert_not_null(container.material as ShaderMaterial, "post-process ShaderMaterial assigned")
+	var view := container.get_node("View") as SubViewport
+	assert_not_null(view, "post-process SubViewport present")
+	assert_false(view.own_world_3d, "subviewport renders the main World3D, not its own")
+	assert_not_null(view.get_node("ViewCamera") as Camera3D, "mirror camera present")
+	assert_eq(container.mouse_filter, Control.MOUSE_FILTER_IGNORE, "post-process container ignores input")
 
 
 func test_hud_speed_label_present() -> void:
@@ -429,7 +434,12 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	]
 	field.build(layout, floor_node, Config.data.sign_render_params())
 	assert_eq(field.sign_count, layout.size(), "one sign built per layout entry")
-	assert_eq(field.get_child_count(), layout.size(), "one node per sign")
+	# Children: one RigidBody3D per sign, plus the shared MultiMeshInstance3Ds
+	# that render all resting panels (one per distinct face material).
+	var bodies := field.get_children().filter(func(c): return c is RigidBody3D)
+	assert_eq(bodies.size(), layout.size(), "one body per sign")
+	var mms := field.get_children().filter(func(c): return c is MultiMeshInstance3D)
+	assert_gt(mms.size(), 0, "resting panels render via shared MultiMeshes")
 	# Each sign is a light, knockable RigidBody3D (the wet-floor-board feel).
 	var sign0 := field.get_child(0) as RigidBody3D
 	assert_not_null(sign0, "each sign is a RigidBody3D")
@@ -445,9 +455,10 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 	# body would free-fall into the void before the player reached it. The car wakes
 	# it on contact (test_sign_wakes_only_on_dynamic_non_self_contact).
 	assert_true(sign0.freeze, "sign spawns frozen so it never free-falls off-terrain")
-	# Two splayed panels + a collision shape + an Area3D waker, all children of the
-	# body so the whole sign tumbles together (count directly — find_children defaults
-	# to owned=true, which excludes programmatically-built nodes).
+	# A collision shape + an Area3D waker are children of the body so the whole
+	# sign tumbles together. Panels are NOT nodes while the sign rests — they live
+	# in the shared MultiMeshes and only materialize on the body when knocked
+	# (see test_sign_field.gd for that swap contract).
 	var panels := 0
 	var has_shape := false
 	var has_waker := false
@@ -458,7 +469,7 @@ func test_sign_field_builds_knockable_signs_at_road_height() -> void:
 			has_shape = true
 		elif child is Area3D:
 			has_waker = true
-	assert_eq(panels, 2, "each sign has two A-frame panels")
+	assert_eq(panels, 0, "a resting sign carries no per-node panel meshes")
 	assert_true(has_shape, "sign body carries a collision shape")
 	assert_true(has_waker, "sign carries an Area3D waker to unfreeze it on car contact")
 	# Knockable cosmetic clutter: deals NO HP damage, so it is NOT a damage obstacle.

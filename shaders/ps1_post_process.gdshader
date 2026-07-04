@@ -1,6 +1,10 @@
 shader_type canvas_item;
 
-uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_nearest;
+// Applied to the PostProcess SubViewportContainer in main.tscn: TEXTURE is the
+// SubViewport's rendered 3D frame, so no hint_screen_texture is needed. The
+// screen-texture hint forced a full-screen backbuffer copy (render-pass break +
+// mid-frame command submit) every frame on the Compatibility backend; sampling
+// the subviewport texture we already have is free.
 uniform vec2 virtual_resolution = vec2(320.0, 240.0);
 
 // The PS1's 4x4 ordered dither matrix, added to the 0-255 color before
@@ -15,8 +19,8 @@ const mat4 DITHER = mat4(
 );
 
 void fragment() {
-	vec3 color = texture(screen_texture, SCREEN_UV).rgb;
-	vec2 virtual_pixel = floor(SCREEN_UV * virtual_resolution);
+	vec3 color = texture(TEXTURE, UV).rgb;
+	vec2 virtual_pixel = floor(UV * virtual_resolution);
 	int x = int(mod(virtual_pixel.x, 4.0));
 	int y = int(mod(virtual_pixel.y, 4.0));
 	float dither = DITHER[x][y] / 255.0;

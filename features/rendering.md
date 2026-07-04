@@ -101,12 +101,22 @@ Used by: car chassis/cabin/wheels/spokes, and the authored body models (MX-5, Fo
 (see below).
 
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
-Applied via the `PostProcess/ColorRect`. Uniforms: `screen_texture`
-(hint_screen_texture, nearest, repeat disabled), `virtual_resolution`
+Applied as the material of the `PostProcess` **SubViewportContainer**
+(`scripts/post_process_view.gd`). The 3D world stays in the main tree but is
+rendered through `PostProcess/View`, a `SubViewport` that shares the main
+`World3D` (`own_world_3d = false`) and carries a `ViewCamera` mirror camera
+synced every frame to the active gameplay camera; the root viewport's own 3D
+pass is disabled while the stage scene is in the tree (restored on exit, so the
+HQ renders normally). The shader samples the container's `TEXTURE` (the
+subviewport frame) directly — deliberately NOT `hint_screen_texture`, which
+would force a full-screen backbuffer copy (render-pass break + mid-frame GPU
+submit) every frame on the Compatibility backend. Uniform: `virtual_resolution`
 (set from `cfg.virtual_resolution`, [480,360], by `world.gd`).
 
-Algorithm: sample screen → quantize to virtual resolution → apply a 4×4 ordered
+Algorithm: sample frame → quantize to virtual resolution → apply a 4×4 ordered
 (Bayer) dither matrix → truncate to 5-bit RGB (32 levels/channel) → output.
+The dither applies to the 3D world only: SpeedLines / HUD / menus live on
+CanvasLayers drawn above the container.
 
 ### `speed_lines.gdshader` — `canvas_item` (full-screen overlay)
 Anime "edge speed lines": black streaks radiating inward from the screen edges
@@ -192,7 +202,7 @@ model. Each per-car material also carries the tread `albedo_color`
 | Spokes (all 8) | `albedo_color` | `wheel_spoke_color` (silver) |
 | Car meshes + authored body | fake-light uniforms | Lighting group (`cfg.apply_car_light`) |
 | Floor (terrain) | baked vertex-colour shading | Lighting group (`cfg.apply_terrain_light`) |
-| PostProcess/ColorRect | `virtual_resolution` | `virtual_resolution` [480,360] |
+| PostProcess (SubViewportContainer) | `virtual_resolution` | `virtual_resolution` [480,360] |
 
 ## Environment
 

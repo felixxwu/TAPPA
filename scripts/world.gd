@@ -110,7 +110,7 @@ func _ready() -> void:
 	# The MX-5 body model is lit in car.gd's _apply_model_material when built.
 	for car_mesh in [$Car/Chassis, $Car/Cabin, $Car/WheelFL/Visual/Tire, $Car/WheelFL/Visual/Spoke1]:
 		cfg.apply_car_light(_mat(car_mesh))
-	($PostProcess/ColorRect.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
+	($PostProcess.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
 
 	# Field the car. With an active RallySession this event runs the player's
 	# OwnedCar (baseline + upgrades + saved HP, features/rally-session.md); a plain

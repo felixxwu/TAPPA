@@ -130,7 +130,11 @@ func _bench_render() -> void:
 
 	var scene: Node3D = load("res://main.tscn").instantiate()
 	add_child(scene)
-	var rid := get_viewport().get_viewport_rid()
+	# The 3D world renders through the PostProcess SubViewport (the root
+	# viewport's 3D pass is disabled while main.tscn is in the tree) — measure
+	# the viewport that actually does the 3D work.
+	var view := scene.get_node_or_null("PostProcess/View") as SubViewport
+	var rid := view.get_viewport_rid() if view != null else get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(rid, true)
 
 	for _i in WARMUP:

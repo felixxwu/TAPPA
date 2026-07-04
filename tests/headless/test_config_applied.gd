@@ -101,7 +101,7 @@ func test_world_values_applied() -> void:
 		assert_eq(floor_layers[i].amplitude_m, cfg_layers[i].y, "layer %d amplitude from config" % i)
 	var chassis_mat: ShaderMaterial = _scene.get_node("Car/Chassis").get_surface_override_material(0)
 	assert_eq(chassis_mat.get_shader_parameter("albedo_color"), cfg.chassis_color, "chassis color from config")
-	var post_mat: ShaderMaterial = _scene.get_node("PostProcess/ColorRect").material
+	var post_mat: ShaderMaterial = _scene.get_node("PostProcess").material
 	assert_eq(post_mat.get_shader_parameter("virtual_resolution"), cfg.virtual_resolution, "dither grid from config")
 	var tire_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Tire").get_surface_override_material(0)
 	assert_eq(tire_mat.get_shader_parameter("albedo_color"), cfg.wheel_color, "tire color from config")

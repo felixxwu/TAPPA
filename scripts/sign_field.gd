@@ -3,10 +3,14 @@ extends Node3D
 # Builds the physical roadside signs from a SignLayout plan (todo/roadside-signs.md
 # §3/§4). Each sign is a free-standing A-frame ("wet-floor" board): two thin panels
 # joined at a top ridge and splayed apart at the bottom, oriented so the large
-# faces point up-track / down-track and read for an approaching driver. Signs are
-# few (tens per stage), so each is an individual node — no MultiMesh/culling
-# (unlike the foliage in todo/performance-optimisations.md); the engine frustum-
-# culls the MeshInstance3Ds and each sign carries its own face texture anyway.
+# faces point up-track / down-track and read for an approaching driver.
+#
+# RENDERING: signs at rest are drawn by one MultiMeshInstance3D per distinct face
+# material (texture key) — two panel instances per sign — so the whole field costs
+# a handful of draw calls instead of two MeshInstance3Ds per sign. A sign only
+# becomes an individually-rendered node when the car knocks it over: _wake_sign
+# zero-scales its MultiMesh instances and attaches real panel meshes to the body,
+# which then tumbles under physics. Knocked signs are few, so the swap is cheap.
 #
 # Each sign is a light RigidBody3D, but it behaves like a knocked spectator rather
 # than a solid prop: it never runs real collision physics against the car. It lives
@@ -43,6 +47,18 @@ var sign_count := 0
 var _knock := {}
 var _rng := RandomNumberGenerator.new()
 
+# Panel geometry snapshot from build(), used by _wake_sign to attach real panel
+# meshes to a knocked body.
+var _panel_size: Vector2
+var _thickness: float
+var _splay: float
+# texture_key -> shared ShaderMaterial (one MultiMesh per material, so panels of
+# the same face texture batch into one draw).
+var _materials := {}
+# body -> {"mm": MultiMesh, "indices": PackedInt32Array, "mat": ShaderMaterial}
+# — how to find (and later hide) a resting sign's MultiMesh panel instances.
+var _rendered := {}
+
 
 # Build one sign per layout entry. `params` is GameConfig.sign_render_params().
 func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
@@ -56,6 +72,12 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 	var half_w: float = float(params["track_width"]) / 2.0
 	_knock = params
 	_rng.seed = 0
+	_panel_size = panel_size
+	_thickness = thickness
+	_splay = splay
+	# material -> Array of {body, xform} panel instances, collected while placing
+	# bodies, then baked into one MultiMesh per material below.
+	var batches := {}
 
 	for entry in layout:
 		var pos: Vector2 = entry["pos"]
@@ -97,11 +119,56 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 			Vector3(edge.x, y, edge.y))
 		add_child(sign_body)
 
-		var mat := _material_for(String(entry["kind"]), String(entry["texture_key"]), textures)
-		_add_panels(sign_body, panel_size, thickness, splay, mat)
+		# Materials are shared per texture key so panels with the same face batch
+		# into one MultiMesh (and one draw call).
+		var key := String(entry["texture_key"])
+		if not _materials.has(key):
+			_materials[key] = _material_for(String(entry["kind"]), key, textures)
+		var mat: ShaderMaterial = _materials[key]
+		if not batches.has(mat):
+			batches[mat] = []
+		for local in _panel_transforms():
+			batches[mat].append({"body": sign_body, "xform": sign_body.transform * local})
 		_add_collision_shape(sign_body, panel_size, base_depth)
 		_add_waker(sign_body, panel_size, base_depth)
 		sign_count += 1
+
+	_build_multimeshes(batches)
+
+
+# One MultiMeshInstance3D per face material, holding every resting sign's two
+# panels. Records each body's instance indices so _wake_sign can hide them.
+func _build_multimeshes(batches: Dictionary) -> void:
+	var mesh := _panel_mesh(_panel_size, _thickness)
+	for mat in batches:
+		var items: Array = batches[mat]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = items.size()
+		for i in items.size():
+			mm.set_instance_transform(i, items[i]["xform"])
+			var body: RigidBody3D = items[i]["body"]
+			if not _rendered.has(body):
+				# A plain Array, NOT a packed array: packed arrays are value types,
+				# so appending through the dictionary would mutate a copy.
+				_rendered[body] = {"mm": mm, "indices": [], "mat": mat}
+			(_rendered[body]["indices"] as Array).append(i)
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = mat
+		add_child(mmi)
+
+
+# The two panel poses of the A-frame, local to the sign body (see _add_panels).
+func _panel_transforms() -> Array[Transform3D]:
+	var h := _panel_size.y
+	var out: Array[Transform3D] = []
+	for d in [1, -1]:
+		out.append(Transform3D(
+			Basis(Vector3.RIGHT, -d * _splay),
+			Vector3(0.0, (h * 0.5) * cos(_splay), d * (h * 0.5) * sin(_splay))))
+	return out
 
 
 # An Area3D, slightly larger than the sign, that wakes the frozen body when the car
@@ -141,7 +208,22 @@ func _wake_sign(other: Node, body: RigidBody3D) -> void:
 	if other is CollisionObject3D:
 		body.add_collision_exception_with(other)
 	body.freeze = false
+	_materialize_sign(body)
 	_launch_sign(body, other)
+
+
+# Swap a just-knocked sign from MultiMesh rendering to real panel meshes on the
+# body: zero-scale its MultiMesh instances (a MultiMesh can't remove single
+# instances) and attach individual panels that tumble with the physics body.
+func _materialize_sign(body: RigidBody3D) -> void:
+	var entry: Dictionary = _rendered.get(body, {})
+	if entry.is_empty():
+		return
+	_rendered.erase(body)
+	var mm: MultiMesh = entry["mm"]
+	for i: int in entry["indices"]:
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
+	_add_panels(body, _panel_size, _thickness, _splay, entry["mat"])
 
 
 # Fling a just-knocked sign along the car's velocity, with an upward bias and a random
@@ -180,17 +262,14 @@ func _launch_sign(body: RigidBody3D, car: Node) -> void:
 # texture both ways — the arrow-correct-on-approach refinement is deferred, §4).
 func _add_panels(sign_root: Node3D, panel_size: Vector2, thickness: float,
 		splay: float, mat: ShaderMaterial) -> void:
-	var h := panel_size.y
 	var mesh := _panel_mesh(panel_size, thickness)
-	for d in [1, -1]:
+	# Panel centred at its midpoint, rotated about X by -d*splay: bottom swings
+	# out to (0,0,d*h*sin) while the top meets the apex at (0,h*cos,0).
+	for local in _panel_transforms():
 		var panel := MeshInstance3D.new()
 		panel.mesh = mesh
 		panel.material_override = mat
-		# Panel centred at its midpoint, rotated about X by -d*splay: bottom swings
-		# out to (0,0,d*h*sin) while the top meets the apex at (0,h*cos,0).
-		panel.transform = Transform3D(
-			Basis(Vector3.RIGHT, -d * splay),
-			Vector3(0.0, (h * 0.5) * cos(splay), d * (h * 0.5) * sin(splay)))
+		panel.transform = local
 		sign_root.add_child(panel)
 
 

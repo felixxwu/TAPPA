@@ -90,9 +90,24 @@ func test_terrain_chunks_have_shader_materials() -> void:
 
 
 func test_post_process_shader_wired() -> void:
-	var rect := _scene.get_node("PostProcess/ColorRect") as ColorRect
-	assert_not_null(rect, "post-process ColorRect present")
-	_assert_shader_material(rect.material, "post-process ColorRect")
+	var container := _scene.get_node("PostProcess") as SubViewportContainer
+	assert_not_null(container, "post-process SubViewportContainer present")
+	_assert_shader_material(container.material, "post-process SubViewportContainer")
+	# The subviewport must render the SAME world the scene lives in.
+	var view := container.get_node("View") as SubViewport
+	assert_eq(view.find_world_3d(), container.get_viewport().find_world_3d(),
+		"post-process subviewport shares the main World3D")
+
+
+func test_post_process_mirror_camera_syncs() -> void:
+	var src := _scene.get_viewport().get_camera_3d()
+	assert_not_null(src, "an active gameplay camera exists")
+	var mirror := _scene.get_node("PostProcess/View/ViewCamera") as Camera3D
+	src.fov = 87.0
+	await get_tree().process_frame
+	assert_almost_eq(mirror.global_position, src.global_position, Vector3.ONE * 0.001,
+		"mirror camera follows the active camera's position")
+	assert_almost_eq(mirror.fov, 87.0, 0.001, "mirror camera copies fov")
 
 
 func test_speed_lines_overlay_wired() -> void:

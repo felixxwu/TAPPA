@@ -52,9 +52,14 @@ boundary offsets, now decoupled from signs — kept only as the stage timer's ho
 per-sector splits later ([stage.md](stage.md), §5 of the brief).
 
 **`SignField.build(layout, terrain, params)` — the builder.** One `RigidBody3D`
-per sign (signs number in the tens, so individual nodes; no MultiMesh/culling —
-the engine frustum-culls them and each face texture is unique). The panels and
-hitbox are **children of the body**, so the whole sign tumbles as one. Per sign:
+per sign for physics, but resting signs are RENDERED through shared MultiMeshes:
+one `MultiMeshInstance3D` per distinct face material (texture key), two panel
+instances per sign, so the whole field costs a handful of draw calls. Materials
+are cached per texture key (`_materials`) so same-faced signs batch. A sign only
+gains its own panel `MeshInstance3D`s when knocked: `_wake_sign` zero-scales its
+MultiMesh instances (`_materialize_sign`; a MultiMesh can't remove single
+instances) and attaches real panels to the body, which then tumbles as one with
+the hitbox. Per sign:
 - **Placement** — `edge = pos + side * perp * (track_width/2 - sign_edge_inset_m)`;
   ground `y = terrain.height_at(pos.x, pos.y)` (the **centerline** height = the
   flat road surface). This is the **resting pose**; physics takes over once the
@@ -130,8 +135,11 @@ Any key absent from `sign_textures` simply shows the per-kind colour fallback.
 `tests/headless/test_sign_layout.gd` — that only turn signs are planted (no
 start/finish/sector boards), the turn count, keys (incl. 5/6 unsigned), left/right
 arrow mapping, determinism, and the `sector_offsets` helper.
-`tests/headless/test_smoke.gd` — `SignField.build` creates one node per sign, two
-panels each, a collision body + an `Area3D` waker, spawned **frozen** and sitting at
+`tests/headless/test_sign_field.gd` — the MultiMesh rendering contract: resting
+signs have no per-node panels (one MultiMesh per face material, two instances per
+sign); a knocked sign leaves the batch and gains its two real panels, exactly once.
+`tests/headless/test_smoke.gd` — `SignField.build` creates one body per sign
+(panels batched, not nodes), a collision body + an `Area3D` waker, spawned **frozen** and sitting at
 the road-surface height, on its own layer + world-only mask (so the car can't collide
 with it); and that a sign wakes only on a dynamic non-self contact (the car), never
 from its own body or a `StaticBody3D` (terrain/trees) — and that waking **launches**
