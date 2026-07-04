@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://pdb7pdcksmg3"
 path.s3tc="res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.s3tc.ctex"
+path.etc2="res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://blender/charger/charger_texture.png"
-dest_files=["res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.s3tc.ctex"]
+dest_files=["res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.s3tc.ctex", "res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.etc2.ctex"]
 
 [params]
 
