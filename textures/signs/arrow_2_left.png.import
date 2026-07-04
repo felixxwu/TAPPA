@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/arrow_2_left.png-1c024a73df2c328a89b5af4d67a5
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

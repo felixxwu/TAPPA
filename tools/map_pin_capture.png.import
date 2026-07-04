@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/map_pin_capture.png-19e0a3b44e581ad241a2c35a4
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

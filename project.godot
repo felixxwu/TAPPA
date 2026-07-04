@@ -38,6 +38,16 @@ window/handheld/orientation="sensor_landscape"
 
 import/blender/enabled=false
 
+[importer_defaults]
+
+; New textures default to lossy WebP at 0.7 — keeps exports small (the 2026-07
+; build-size pass); bump per-texture in the Import dock only where quality
+; visibly suffers.
+texture={
+"compress/mode": 1,
+"compress/lossy_quality": 0.7
+}
+
 [gui]
 
 theme/custom="res://theme/ui_theme.tres"

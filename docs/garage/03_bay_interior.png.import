@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/03_bay_interior.png-61b26dc2883a9f2c2bf4dc218
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

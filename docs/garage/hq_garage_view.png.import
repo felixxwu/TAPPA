@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/hq_garage_view.png-bdcec5d3c73cab887345005179
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

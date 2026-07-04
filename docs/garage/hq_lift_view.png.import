@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/hq_lift_view.png-2ab21b8b052bebad8decf3f5c4cf
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -16,7 +16,7 @@ dest_files=["res://.godot/imported/HSplitContainer.svg-81e594d94ee80e4176e099672
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

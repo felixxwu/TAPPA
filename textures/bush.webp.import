@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/bush.webp-d80c948058df1d698f8b90a7352df38d.ct
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

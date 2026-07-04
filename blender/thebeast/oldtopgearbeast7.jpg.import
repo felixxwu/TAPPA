@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/oldtopgearbeast7.jpg-f400ff91624123fb5ca18efe
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
