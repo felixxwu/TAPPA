@@ -70,7 +70,7 @@ is fitted.
 `effective_meta(owned_car, meta)` returns a copy of a car's CarLibrary entry with
 the power-to-weight inputs (`peak_torque`, `mass`) adjusted by its installed
 upgrades. It's pure (never touches the authored `CARS` entry) and is what makes a
-fitted turbo or weight reduction **change the displayed HP/kg AND a car's
+fitted turbo or weight reduction **change the displayed hp/tonne AND a car's
 rally eligibility**: a turbo is **rated at peak boost** — `effective_meta`
 multiplies `peak_torque` by `(1 + turbo_boost_gain)` (the stock engine's gain, or
 an installed turbo kit's, whichever applies) so a turbocharged car reads as more

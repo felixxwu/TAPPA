@@ -123,7 +123,7 @@ func test_country_restriction_filters() -> void:
 
 func test_power_to_weight_restriction_filters() -> void:
 	# A p/w band admits only cars whose power-to-weight sits inside [pw_min, pw_max].
-	# Bands are in HP/kg (is_eligible converts each car's kW/kg to HP/kg before comparing).
+	# Bands are in hp/tonne (is_eligible converts each car's kW/kg to hp/tonne before comparing).
 	# Use synthetic cars spanning low / mid / high p/w and derive the band from the mid
 	# car's own figure, so the test leans on the eligibility LOGIC — never on authored
 	# catalogue values (which are free to change). power_to_weight() reads peak_torque +
@@ -131,7 +131,7 @@ func test_power_to_weight_restriction_filters() -> void:
 	var low := {"mass": 1200.0, "peak_torque": 200.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
 	var mid := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
 	var high := {"mass": 1000.0, "peak_torque": 600.0, "redline": 8000.0, "drive_mode": CarLibrary.RWD}
-	var pw_mid := CarLibrary.power_to_weight(mid) * RallyLibrary.KW_TO_HP
+	var pw_mid := CarLibrary.power_to_weight(mid) * RallyLibrary.KW_KG_TO_HP_TONNE
 	var band := {"restriction": {"pw_min": pw_mid * 0.9, "pw_max": pw_mid * 1.1}}
 	assert_false(RallyLibrary.is_eligible(band, low), "low-p/w car below the floor")
 	assert_true(RallyLibrary.is_eligible(band, mid), "mid-p/w car inside the band")
@@ -154,9 +154,9 @@ func test_installed_upgrades_change_rally_eligibility() -> void:
 	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": []}, car)
 	var powered := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large"]}, car)
 	var maxed := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large", "weight_reduction"]}, car)
-	var pw_bare := CarLibrary.power_to_weight(bare) * RallyLibrary.KW_TO_HP
-	var pw_powered := CarLibrary.power_to_weight(powered) * RallyLibrary.KW_TO_HP
-	var pw_maxed := CarLibrary.power_to_weight(maxed) * RallyLibrary.KW_TO_HP
+	var pw_bare := CarLibrary.power_to_weight(bare) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var pw_powered := CarLibrary.power_to_weight(powered) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var pw_maxed := CarLibrary.power_to_weight(maxed) * RallyLibrary.KW_KG_TO_HP_TONNE
 	assert_gt(pw_powered, pw_bare, "an engine kit raises effective p/w")
 	assert_gt(pw_maxed, pw_powered, "adding weight reduction raises it further")
 	# A floor between bare and powered: the bare car can't clear it, the upgraded one can.

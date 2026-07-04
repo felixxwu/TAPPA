@@ -1411,7 +1411,7 @@ func test_display_name_reflects_swap() -> void:
 
 func test_tuning_sliders_are_all_the_same_length() -> void:
 	# Every axis row's slider must line up to the same width, even though the detune
-	# row's value label ("80% - 0.20 HP/kg") is longer than the others.
+	# row's value label ("80% - 200 hp/tonne") is longer than the others.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -1426,17 +1426,17 @@ func test_tuning_sliders_are_all_the_same_length() -> void:
 		assert_almost_eq(float(w), float(widths[0]), 0.5, "all tuning sliders share the same length")
 
 
-func test_restriction_text_shows_power_to_weight_in_hp_per_kg() -> void:
-	# The rally requirement string must show its p/w band in HP/kg, matching every other
-	# player-facing p/w readout. The band is authored in HP/kg, so it is shown straight.
+func test_restriction_text_shows_power_to_weight_in_hp_per_tonne() -> void:
+	# The rally requirement string must show its p/w band in hp/tonne, matching every other
+	# player-facing p/w readout. The band is authored in hp/tonne, so it is shown straight.
 	# Injected band values, so no authored rally number is pinned.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var txt: String = hq._restriction_text({"pw_min": 0.22, "pw_max": 0.30})
-	assert_true(txt.contains("HP/kg"), "requirement carries the HP/kg unit")
-	assert_true(txt.contains("0.22"), "authored HP/kg floor is shown straight")
-	assert_true(txt.contains("0.30"), "authored HP/kg ceiling is shown straight")
+	var txt: String = hq._restriction_text({"pw_min": 220.0, "pw_max": 300.0})
+	assert_true(txt.contains("hp/tonne"), "requirement carries the hp/tonne unit")
+	assert_true(txt.contains("220"), "authored hp/tonne floor is shown straight")
+	assert_true(txt.contains("300"), "authored hp/tonne ceiling is shown straight")
 
 
 func test_detune_label_shows_power_to_weight() -> void:
@@ -1450,7 +1450,7 @@ func test_detune_label_shows_power_to_weight() -> void:
 	hq._on_tune_slider_changed(80.0, "engine_detune")
 	var txt := String(hq._lift_slider_values["engine_detune"].text)
 	assert_true(txt.begins_with("80%"), "detune label leads with the percent")
-	assert_true(txt.to_lower().contains("hp/kg"), "detune label shows the power-to-weight readout")
+	assert_true(txt.to_lower().contains("hp/tonne"), "detune label shows the power-to-weight readout")
 
 
 func test_detune_slider_is_present_and_focusable() -> void:

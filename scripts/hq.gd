@@ -63,7 +63,7 @@ enum LiftPage { HUB, TUNE, UPGRADES }
 signal lineup_built
 
 const MAX_STARS := 3
-const KW_TO_HP := 1.34102  # convert power-to-weight (kW/kg) to the displayed HP/kg
+const KW_KG_TO_HP_TONNE := 1341.02  # convert power-to-weight (kW/kg) to the displayed hp/tonne (1 kW = 1.34102 hp, 1 tonne = 1000 kg)
 
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
 # billboarded Sprite3D. PIN_LABEL_PX is the off-screen viewport resolution; pixel_size
@@ -872,7 +872,7 @@ func _make_slider_row(spec: Dictionary) -> Control:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	# Left column: name on top of the current value. FIXED width (clip, don't grow) so
-	# a longer value — e.g. the detune row's "80% - 0.20 HP/kg" readout — can't widen
+	# a longer value — e.g. the detune row's "80% - 200 hp/tonne" readout — can't widen
 	# this column and shrink only that row's slider. Every row's slider column then
 	# gets the same leftover width, so all sliders line up to the same length.
 	var label_col := VBoxContainer.new()
@@ -1675,13 +1675,13 @@ func _refresh_lift_ui() -> void:
 
 
 # The engine-detune slider's value label: the detune percent plus the car's LIVE
-# power-to-weight at that setting (e.g. "80% - 0.20 HP/kg"), so the player sees the
+# power-to-weight at that setting (e.g. "80% - 200 hp/tonne"), so the player sees the
 # ratio each event is gated on move as they detune. effective_meta already folds in
 # the (mirrored) detune, so this recomputes off the current setting.
 func _detune_label_text(pct: int) -> String:
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
-	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_lift_owned, entry)) * KW_TO_HP
-	return "%d%% - %.2f HP/kg" % [pct, pw]
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_lift_owned, entry)) * KW_KG_TO_HP_TONNE
+	return "%d%% - %.0f hp/tonne" % [pct, pw]
 
 
 # Reflect the stored tuning + each axis's unlock state onto the sliders.
@@ -2283,10 +2283,10 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	else:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
 	var meta := UpgradeLibrary.effective_meta(owned, entry)
-	return "%s | %.2f G | %.2f HP/kg | %s" % [
+	return "%s | %.2f G | %.0f hp/tonne | %s" % [
 		_drive_text(int(entry.get("drive_mode", -1))),
 		CarLibrary.max_lateral_g(meta, Config.data),
-		CarLibrary.power_to_weight(meta) * KW_TO_HP,
+		CarLibrary.power_to_weight(meta) * KW_KG_TO_HP_TONNE,
 		hp_text,
 	]
 
@@ -2314,18 +2314,18 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	# A min+max pair reads as a single range ("power-to-weight 0.30-0.40 HP/kg"); a lone
-	# floor or ceiling keeps its >= / <= form. The authored bands are already in HP/kg
-	# (RallyLibrary converts a car's kW/kg to HP/kg before comparing), the same unit as
+	# A min+max pair reads as a single range ("power-to-weight 300-400 hp/tonne"); a lone
+	# floor or ceiling keeps its >= / <= form. The authored bands are already in hp/tonne
+	# (RallyLibrary converts a car's kW/kg to hp/tonne before comparing), the same unit as
 	# every player-facing p/w readout (the car stats + the detune slider), so display
 	# them straight — no conversion here.
 	if restriction.has("pw_min") and restriction.has("pw_max"):
-		parts.append("power-to-weight %.2f-%.2f HP/kg" % [
+		parts.append("power-to-weight %.0f-%.0f hp/tonne" % [
 			float(restriction["pw_min"]), float(restriction["pw_max"])])
 	elif restriction.has("pw_min"):
-		parts.append("power-to-weight >= %.2f HP/kg" % float(restriction["pw_min"]))
+		parts.append("power-to-weight >= %.0f hp/tonne" % float(restriction["pw_min"]))
 	elif restriction.has("pw_max"):
-		parts.append("power-to-weight <= %.2f HP/kg" % float(restriction["pw_max"]))
+		parts.append("power-to-weight <= %.0f hp/tonne" % float(restriction["pw_max"]))
 	return ", ".join(parts)
 
 
