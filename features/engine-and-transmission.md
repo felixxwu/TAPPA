@@ -87,7 +87,13 @@ drag at the 4500-rpm peak and ≈42 N·m at 8000 rpm.
 (`EngineLibrary.by_id`) and writes the whole profile onto `GameConfig` via
 `EngineLibrary.apply()`. Each `EngineLibrary` entry also carries a **`mass`**
 (kg), used by [engine-swap.md](engine-swap.md) to treat the engine as an
-independent point mass when a player exchanges engines between cars. Which
+independent point mass when a player exchanges engines between cars. Displayed
+power / power-to-weight are **derived** from the same torque + redline
+(`CarLibrary.power_to_weight`: torque × redline speed ×
+`CarLibrary.TORQUE_POWER_FALLOFF`, a single global ~0.78 calibration for real
+torque falloff before redline) — there is no separately-authored power figure,
+so retuning an engine's torque moves its stats and its physics together, and
+the derived figures land within ~±8% of the cars' real published power. Which
 engine a car is actually running is resolved via
 `EngineSwap.current_engine_id(owned, stock_id)` — the car's `swapped_engine`
 if a swap is in effect, else its `CarLibrary` stock `engine` id; `car.gd`'s

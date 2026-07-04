@@ -223,7 +223,7 @@ func _materialize_sign(body: RigidBody3D) -> void:
 	var mm: MultiMesh = entry["mm"]
 	for i: int in entry["indices"]:
 		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
-	_add_panels(body, _panel_size, _thickness, _splay, entry["mat"])
+	_add_panels(body, _panel_size, _thickness, entry["mat"])
 
 
 # Fling a just-knocked sign along the car's velocity, with an upward bias and a random
@@ -261,7 +261,7 @@ func _launch_sign(body: RigidBody3D, car: Node) -> void:
 # show a zoomed-in slice of the arrow. Both panels share the face material (same
 # texture both ways — the arrow-correct-on-approach refinement is deferred, §4).
 func _add_panels(sign_root: Node3D, panel_size: Vector2, thickness: float,
-		splay: float, mat: ShaderMaterial) -> void:
+		mat: ShaderMaterial) -> void:
 	var mesh := _panel_mesh(panel_size, thickness)
 	# Panel centred at its midpoint, rotated about X by -d*splay: bottom swings
 	# out to (0,0,d*h*sin) while the top meets the apex at (0,h*cos,0).

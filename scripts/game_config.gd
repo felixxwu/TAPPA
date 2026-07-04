@@ -212,7 +212,7 @@ var peak_torque_rpm := 4500.0
 ## for all cars at once WITHOUT touching the published peak_torque — the stats
 ## panel and power-to-weight still report the full, pre-scaling figure. Use it to
 ## globally dial back pace without re-balancing every car. 1.0 = no scaling.
-@export_range(0.1, 1.0) var global_torque_scale := 0.8
+@export_range(0.1, 1.0) var global_torque_scale := 1
 @export var idle_rpm := 900.0  # the no-stall floor: omega never drops below this
 ## Bouncing rev limiter width (rpm): fuel cuts at redline and only restores once
 ## the revs fall this far below it, so they oscillate across the band — an
@@ -561,6 +561,14 @@ var peak_torque_rpm := 4500.0
 ## front-3/4 menu camera frames the focused car with the garage behind it. The
 ## exterior/title camera is shifted by the same offset so it stays centred on the row.
 @export var menu_car_park_offset := 0.0
+## Minimum horizontal pointer drag (px) in the car-park / overflow lineup for the
+## gesture to count as a SWIPE to the prev/next car (hq.gd _lineup_pointer_input).
+## Must also out-measure the vertical component so a sloppy vertical drag doesn't pan.
+@export var menu_swipe_min_px := 60.0
+## Maximum total pointer travel (px) between press and release for the gesture to
+## count as a TAP on a parked car (raycast pick + focus). Between this and
+## menu_swipe_min_px the gesture is neither and does nothing.
+@export var menu_tap_max_px := 14.0
 
 # --- Rewards (reward_system.gd / rally_session.gd) ----------------------------
 ## How many per-event upgrade items a FINISHED (non-DNF) rally grants — each one

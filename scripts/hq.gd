@@ -124,6 +124,13 @@ var _table_pan := Vector3.ZERO
 var _table_panning := false
 var _table_dragged := false
 
+# Car-park lineup pointer state: a horizontal drag (mouse, or finger via
+# emulate_mouse_from_touch) swipes the focus to the prev/next car; a short press
+# that never turned into a drag is a TAP, which raycast-picks the parked car under
+# the pointer and focuses it directly (see _lineup_pointer_input).
+var _lineup_pressing := false
+var _lineup_drag_accum := Vector2.ZERO
+
 # Car-park state: the owned cars eligible for the chosen rally, the parked car nodes
 # + their lot markers (parallel to _eligible), and which slot is focused.
 var _eligible: Array = []
@@ -682,7 +689,7 @@ func _build_garage_overlay() -> void:
 	var back := _station_button("< Back", on_back)
 	actions.add_child(back)
 	# Convenience buttons mirroring the clickable 3D table / lift.
-	var to_table := _station_button("Map", _enter_table)
+	var to_table := _station_button("Career", _enter_table)
 	actions.add_child(to_table)
 	var to_lift := _station_button("Tune Car", _enter_lift)
 	actions.add_child(to_lift)
@@ -1071,6 +1078,7 @@ func _build_car_overlay() -> void:
 	_start_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_start_button.pressed.connect(_on_start_pressed)
 	actions.add_child(_start_button)
+	_passthrough_overlay(root)  # let taps / swipes reach the 3D lineup behind the HUD
 
 
 # --- Garage overflow (scrap a car to make room) ------------------------------
@@ -1133,6 +1141,7 @@ func _build_overflow_overlay() -> void:
 	_scrap_button.focus_mode = Control.FOCUS_NONE
 	_scrap_button.pressed.connect(_on_scrap_pressed)
 	root.add_child(_scrap_button)
+	_passthrough_overlay(root)  # let taps / swipes reach the 3D lineup behind the HUD
 
 
 # Whether the player owns more cars than the cap (so the scrap prompt must show).
@@ -2628,8 +2637,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cars_input(event)
 		View.OVERFLOW:
 			# Pan the lineup and scrap the focused car. No "back" — the player can't
-			# leave the prompt until the garage is back under the cap.
-			if event.is_action_pressed("menu_left"):
+			# leave the prompt until the garage is back under the cap. Swipe + tap-a-car
+			# work here too (the overflow shares the lineup machinery).
+			if _lineup_pointer_input(event):
+				pass
+			elif event.is_action_pressed("menu_left"):
 				_cycle_focus(-1)
 			elif event.is_action_pressed("menu_right"):
 				_cycle_focus(1)
@@ -2661,6 +2673,8 @@ func _pan_table(rel: Vector2) -> void:
 
 
 func _cars_input(event: InputEvent) -> void:
+	if _lineup_pointer_input(event):
+		return
 	if event.is_action_pressed("menu_left"):
 		_cycle_focus(-1)
 	elif event.is_action_pressed("menu_right"):
@@ -2669,3 +2683,60 @@ func _cars_input(event: InputEvent) -> void:
 		_on_start_pressed()
 	elif event.is_action_pressed("menu_back"):
 		_car_back()
+
+
+# Pointer navigation for the car-park / overflow lineup (mouse, or finger via
+# emulate_mouse_from_touch): a horizontal drag past menu_swipe_min_px swipes the
+# focus to the prev/next car (drag left pulls the NEXT car in from the right, like
+# flicking a carousel); a press+release that stayed under menu_tap_max_px is a tap,
+# which raycasts into the lot and focuses the parked car under the pointer, so the
+# player can just touch the car they want instead of hunting for the ◄ ► buttons.
+# Returns true when the event was pointer traffic this handler owns.
+func _lineup_pointer_input(event: InputEvent) -> bool:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_lineup_pressing = true
+			_lineup_drag_accum = Vector2.ZERO
+		elif _lineup_pressing:
+			_lineup_pressing = false
+			var cfg: GameConfig = Config.data
+			if absf(_lineup_drag_accum.x) >= cfg.menu_swipe_min_px \
+					and absf(_lineup_drag_accum.x) > absf(_lineup_drag_accum.y):
+				_cycle_focus(1 if _lineup_drag_accum.x < 0.0 else -1)
+			elif _lineup_drag_accum.length() <= cfg.menu_tap_max_px:
+				_focus_car_at(event.position)
+		return true
+	if event is InputEventMouseMotion and _lineup_pressing:
+		_lineup_drag_accum += event.relative
+		return true
+	return false
+
+
+# Tap-to-select: raycast from the camera through the tapped screen point and, if it
+# hits one of the parked lineup cars, focus that car directly. The frozen props stay
+# in the physics space (freeze + PROCESS_MODE_DISABLED don't remove their bodies),
+# so a plain space query finds them without any per-car Area3D plumbing.
+func _focus_car_at(screen_pos: Vector2) -> void:
+	var idx := _car_index_at(screen_pos)
+	if idx >= 0 and idx != _focus:
+		_focus = idx
+		_focus_changed()
+
+
+# The lineup index of the parked car whose body the ray through `screen_pos` hits
+# first, or -1 for a miss (ground, buildings, empty sky). The hit collider is a
+# child body inside the car scene, so walk up to the root that _cars holds.
+func _car_index_at(screen_pos: Vector2) -> int:
+	var from := _camera.project_ray_origin(screen_pos)
+	var to := from + _camera.project_ray_normal(screen_pos) * 200.0
+	var hit := get_world_3d().direct_space_state.intersect_ray(
+		PhysicsRayQueryParameters3D.create(from, to))
+	if hit.is_empty():
+		return -1
+	var node: Node = hit.get("collider")
+	while node != null:
+		var i := _cars.find(node)
+		if i >= 0:
+			return i
+		node = node.get_parent()
+	return -1

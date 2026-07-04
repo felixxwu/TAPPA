@@ -12,6 +12,10 @@ extends RefCounted
 #                     real published crank torque (N·m); peak_torque_rpm is where the
 #                     preset curve peaks; redline is the real rev limit and MUST sit
 #                     above peak_torque_rpm or the torque curve inverts.
+#                     Displayed power / power-to-weight are DERIVED from these
+#                     (CarLibrary.power_to_weight: torque × redline speed × a global
+#                     falloff factor) — there is deliberately no separately-authored
+#                     power figure, so retuning torque moves the stats with it.
 #   * engine_inertia — crank+flywheel rotating inertia (kg·m²): small revs fast, large
 #                     revs lazily.
 #   * mass          — real dry weight (kg), independent of the chassis. Fed to the
@@ -94,25 +98,25 @@ const ENGINES: Array[Dictionary] = [
 		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
 	},
 	{
-		# Dodge Viper RT/10 (1st gen) 8.0 L (488 cu in) OHV V10: 400 bhp @ 4600, 630 N·m (465 lb-ft) @ 3600.
+		# Dodge Viper RT/10 (1st gen, 1992) 8.0 L (488 cu in) OHV V10: 400 bhp @ 4600, 610 N·m (450 lb-ft) @ 3600.
 		# Big pushrod truck-derived V10 — deep, low-revving, lazy heavy crank (high inertia).
 		"id": "dodge_80_v10", "name": "8.0 V10", "layout": "v10", "mass": 230.0,
-		"redline_rpm": 6000.0, "peak_torque": 630.0, "peak_torque_rpm": 3600.0, "engine_inertia": 0.35,
+		"redline_rpm": 6000.0, "peak_torque": 610.0, "peak_torque_rpm": 3600.0, "engine_inertia": 0.35,
 		"low_octave_mix": 0.7, "volume_db": 9.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"gear_ratios": [2.66, 1.78, 1.30, 1.00, 0.74, 0.50], "final_drive": 6, "shift_time": 0.30,  # Tremec T-56 6-speed manual
 	},
 	{
-		# Jaguar XJS 5.3 L V12 HE: ~295 bhp @ 5500, 432 N·m (318 lb-ft) @ 3000.
+		# Jaguar XJS 5.3 L V12 HE: 295 PS @ 5500, 432 N·m (318 lb-ft) @ 3000; tach redlined 6500.
 		# Smooth SOHC luxury V12 — refined, deep, quieter than the exotics.
 		"id": "jaguar_53_v12", "name": "5.3 V12", "layout": "v12", "mass": 235.0,
-		"redline_rpm": 6000.0, "peak_torque": 432.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.30,
+		"redline_rpm": 6500.0, "peak_torque": 432.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.30,
 		"low_octave_mix": 0.5, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 6, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{
 		# Rolls-Royce Merlin: 27 L (1,650 cu in) aero/tank V12, as in John Dodd's "The Beast".
 		# Aero engines rev LOW (~3,000 rpm limit) but make colossal torque; in road tune here
-		# ~1,900 N·m @ ~2,000 rpm gives ~850 bhp by the power_to_weight heuristic (torque × redline).
+		# ~1,900 N·m @ ~2,000 rpm derives to ~665 bhp — the conservative end of the CLAIMED 750-950 bhp.
 		# Huge crank/flywheel → very lazy revs (big engine_inertia). Loudest, deepest voice in the roster.
 		"id": "merlin_v27_v12", "name": "27L Merlin V12", "layout": "v12", "mass": 745.0,
 		"redline_rpm": 3200.0, "peak_torque": 1900.0, "peak_torque_rpm": 2000.0, "engine_inertia": 1.5,

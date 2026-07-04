@@ -15,7 +15,9 @@ On-screen readout plus two interactive mode buttons.
 
 The `SpeedLabel` / `GearLabel` / `RPMLabel` trio, plus a code-built `BoostLabel`
 (turbo boost as a percentage of full boost, or `Boost N/A` on a non-turbo engine —
-formatted by the pure `hud.gd::boost_text`), is a **dev diagnostic**: hidden by
+formatted by the pure `hud.gd::boost_text`) and a code-built `SeedLabel` (the
+current world seed, `Config.data.track_seed`, formatted by the pure
+`hud.gd::seed_text` — for identifying/reproducing a run), is a **dev diagnostic**: hidden by
 default and toggled with **H** (`toggle_debug_arrows`) — the same gate as the debug
 force arrows, and like them honoured only in a debug build (release/web ignore the
 key). Their text keeps refreshing while hidden, so it's correct the instant H

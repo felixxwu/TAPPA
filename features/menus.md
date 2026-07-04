@@ -92,7 +92,17 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
   `menu_left`/`menu_right`/`menu_up`/`menu_down`/`menu_select`/`menu_back` actions,
   which bind arrows + WASD + D-pad + Enter/Esc + gamepad A/B). The **car park** /
-  **overflow** cycle the focused car with left/right and Start/Scrap with select — the
+  **overflow** cycle the focused car with left/right and Start/Scrap with select; the
+  same lineups are also **pointer-navigable** (`_lineup_pointer_input`, shared by both
+  stations): a horizontal **swipe** (mouse drag, or finger via
+  `emulate_mouse_from_touch`) past `GameConfig.menu_swipe_min_px` cycles the focus
+  (drag left pulls the next car in, carousel-style), and a **tap** (total travel under
+  `GameConfig.menu_tap_max_px`) raycasts into the lot (`_car_index_at`, a plain
+  space query — the frozen props keep their bodies in the physics space) and focuses
+  the parked car under the pointer directly, so a touch or mouse player never has to
+  find the small ◄ ► buttons (both overlays are `_passthrough_overlay`'d — everything
+  but the buttons is `MOUSE_FILTER_IGNORE`, or the full-rect HUD would swallow the
+  click before `_unhandled_input` sees it) — the
   car park's **engine-swap mode** (`_carpark_swap_mode`, [engine-swap.md](engine-swap.md))
   is the same station reused with a mode flag, so it inherits this nav for free: left/right
   cycles the swap-eligible target cars, select confirms the swap (`_select_swap_target`),
@@ -108,8 +118,8 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   drops into the car park in change-car mode; the cursor seats on Change Car on entry
   (`menu_back` is also a shortcut back to the garage). The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
-  `_activate_garage_focus`) over its side-by-side **Back / Map / Tune Car / Free Roam**
-  row, seated on Map on entry (`menu_back` shortcuts to the exterior). Both of these
+  `_activate_garage_focus`) over its side-by-side **Back / Career / Tune Car / Free Roam**
+  row, seated on Career on entry (`menu_back` shortcuts to the exterior). Both of these
   manual rows share a small **`ButtonCursor`** helper (`scripts/button_cursor.gd`):
   `hq.gd` keeps the index (`_garage_focus` / `_hub_focus`), the cursor owns the shared
   wrap / repaint / fire behaviour, and each button's `pressed` callable is also the

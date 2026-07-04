@@ -97,7 +97,7 @@ const CARS: Array[Dictionary] = [
 		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
-		"tire_compound": 1.0,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
+		"tire_compound": 0.93,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
@@ -116,7 +116,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Focus ST",  # Mk2 2009: ~1467 kg, 225 PS, 2.5 turbo i5, FWD hot hatch
 		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
 		"mass": 1467.0, "engine": "ford_25t_i5", "weight_front": 0.62, "engine_pos": 0.85,  # transverse turbo I5, nose-heavy FWD
-		"tire_compound": 1.05,  # performance summer tyres
+		"tire_compound": 0.95,  # performance summer tyres
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 7000,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
@@ -133,9 +133,9 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/focus/wheel.png",
 	},
 	{
-		"name": "Twingo",  # Mk1 (C06) 1.2 16V: ~890 kg, 75 PS, light FWD city car
+		"name": "Twingo",  # Mk1 (C06) 1.2 16V: ~950 kg, 75 PS, light FWD city car
 		"id": "twingo", "country": "FR", "car_type": "hatch", "max_hp": 700.0, "reward_tier": 1,
-		"mass": 890.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
+		"mass": 950.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
 		"tire_compound": 0.85,  # hard economy tyres, skinny
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
@@ -152,9 +152,9 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/twingo/wheel.png",
 	},
 	{
-		"name": "Honda Acty",  # HA4 kei truck: ~740 kg, 656cc mid-engine triple, RWD
+		"name": "Honda Acty",  # HA4 kei truck: ~780 kg, 656cc mid-engine triple
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
-		"mass": 740.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
+		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
 		"tire_compound": 0.85,  # hard commercial tyres, skinny
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
@@ -172,9 +172,9 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/acty/wheel.png",
 	},
 	{
-		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1750 kg, 440 Magnum V8, RWD muscle
+		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
 		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 2,
-		"mass": 1750.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
+		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95,  # touring tyres
 		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
@@ -285,17 +285,26 @@ static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
 
 
-# A rough power-to-weight figure (kW per kg) derived from the published torque,
-# redline and mass — NOT stored, recomputed on demand for reward-tier defaults
-# and the stats panel. Peak power ~ torque x angular speed at redline; the exact
-# constant is a tuning detail, this is only a relative ranking heuristic.
+# A real engine's torque has already fallen off by redline, so its true peak power
+# sits well below torque × redline speed. This single global factor calibrates
+# that falloff: with it, every stock car's derived figure lands within ~±8% of its
+# real published power (e.g. Viper 401 hp vs 400, Charger 362 vs 375, boosted 930
+# 251 vs 260, MX-5 168 vs 181). One constant for the whole roster — power is
+# DERIVED from torque, never authored separately, so retuning an engine's torque
+# moves its displayed power with it.
+const TORQUE_POWER_FALLOFF := 0.78
+
+# The car's power-to-weight figure (kW per kg) — NOT stored, recomputed on demand
+# for reward-tier defaults, the stats panel, and rally pw-band eligibility:
+# peak power ≈ peak_torque × redline angular speed × TORQUE_POWER_FALLOFF.
 #
 # torque/redline resolve from the referenced engine (EngineLibrary) UNLESS the
 # entry carries its own "peak_torque"/"redline" — which is how upgrade-adjusted
 # stats flow through: UpgradeLibrary.effective_meta() seeds those keys from the
-# engine and multiplies them by the installed engine kits, so an upgraded meta
-# ranks above the base car. A raw CarLibrary entry has neither key and falls back
-# to its engine's published figures.
+# engine (rating a turbo's torque at peak boost, so the boosted figure is the
+# displayed one) and multiplies them by the installed engine kits / detune, so an
+# upgraded meta ranks above the base car. A raw CarLibrary entry has neither key
+# and derives from its engine's published torque/redline.
 static func power_to_weight(entry: Dictionary) -> float:
 	var eng := EngineLibrary.by_id(entry.get("engine", ""))
 	var torque: float = float(entry.get("peak_torque", eng.get("peak_torque", 0.0)))
@@ -303,7 +312,7 @@ static func power_to_weight(entry: Dictionary) -> float:
 	var mass: float = entry.get("mass", 1.0)
 	if mass <= 0.0:
 		return 0.0
-	var peak_power_kw := torque * redline * (TAU / 60.0) / 1000.0
+	var peak_power_kw := torque * redline * (TAU / 60.0) / 1000.0 * TORQUE_POWER_FALLOFF
 	return peak_power_kw / mass
 
 

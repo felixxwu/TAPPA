@@ -187,6 +187,10 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 	var stock_id := String(out.get("engine", ""))
 	var current_id := EngineSwap.current_engine_id(owned_car, stock_id)
 	var eng := EngineLibrary.by_id(current_id)
+	if not eng.is_empty():
+		# Point the meta at the CURRENT engine so power_to_weight derives from the
+		# fitted engine (not the stock one) after a swap.
+		out["engine"] = current_id
 	if not out.has("peak_torque"):
 		out["peak_torque"] = eng.get("peak_torque", 0.0)
 	if not out.has("redline"):

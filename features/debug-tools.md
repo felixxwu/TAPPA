@@ -35,7 +35,9 @@ The same **H** toggle also reveals the HUD's speed / gear / rpm / **turbo boost*
 readout (hidden by default — a dev diagnostic; see [hud.md](hud.md)). The boost line
 reads the live boost pressure as a percentage of full boost (`hud.gd`'s pure
 `boost_text` off `EngineSim.boost`), or `Boost N/A` on a naturally-aspirated engine
-(`turbo_enabled` false) — see [forced-induction.md](forced-induction.md). It also shows a transparent overlay of
+(`turbo_enabled` false) — see [forced-induction.md](forced-induction.md). A **seed**
+line below it shows the current world seed (`Config.data.track_seed`, via the pure
+`seed_text`) so a generated stage can be identified and reproduced. It also shows a transparent overlay of
 the chassis collision box. It's a `MeshInstance3D` with a `BoxMesh`, parented under the car's
 `CollisionShape3D` so it inherits the shape's exact transform; its size is synced
 from the `BoxShape3D` each frame while visible (cars can swap the box at runtime).

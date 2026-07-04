@@ -76,11 +76,13 @@ func test_speed_gear_rpm_hidden_until_h_toggle() -> void:
 	var gear := _scene.get_node("HUD/GearLabel") as Label
 	var rpm := _scene.get_node("HUD/RPMLabel") as Label
 	var boost := _scene.get_node("HUD/BoostLabel") as Label
+	var seed_label := _scene.get_node("HUD/SeedLabel") as Label
 	await get_tree().process_frame
 	assert_false(speed.visible, "speed hidden on startup")
 	assert_false(gear.visible, "gear hidden on startup")
 	assert_false(rpm.visible, "rpm hidden on startup")
 	assert_false(boost.visible, "boost hidden on startup")
+	assert_false(seed_label.visible, "seed hidden on startup")
 	Input.action_press("toggle_debug_arrows")
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -89,12 +91,16 @@ func test_speed_gear_rpm_hidden_until_h_toggle() -> void:
 	assert_true(gear.visible, "H shows the gear readout")
 	assert_true(rpm.visible, "H shows the rpm readout")
 	assert_true(boost.visible, "H shows the boost readout")
+	assert_true(seed_label.visible, "H shows the seed readout")
+	assert_eq(seed_label.text, "Seed %d" % Config.data.track_seed,
+		"seed readout shows the current track seed")
 	Input.action_press("toggle_debug_arrows")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	Input.action_release("toggle_debug_arrows")
 	assert_false(speed.visible, "H again hides the readout")
 	assert_false(boost.visible, "H again hides the boost readout")
+	assert_false(seed_label.visible, "H again hides the seed readout")
 
 
 func test_boost_text_formatting() -> void:
@@ -108,6 +114,14 @@ func test_boost_text_formatting() -> void:
 	assert_eq(Hud.boost_text(true, 0.5), "Boost 50%", "half boost reads 50%")
 	assert_eq(Hud.boost_text(true, 1.0), "Boost 100%", "full boost reads 100%")
 	assert_eq(Hud.boost_text(true, 2.0), "Boost 100%", "boost is clamped to 100%")
+
+
+func test_seed_text_formatting() -> void:
+	# Pure formatter for the debug seed readout: echoes whatever seed is passed
+	# in (logic, not an authored value).
+	const Hud = preload("res://scripts/hud.gd")
+	assert_eq(Hud.seed_text(42), "Seed 42", "seed readout echoes the seed")
+	assert_eq(Hud.seed_text(-7), "Seed -7", "negative seeds print verbatim")
 
 
 func test_hud_has_no_version_label() -> void:

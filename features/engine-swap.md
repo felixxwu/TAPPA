@@ -156,10 +156,10 @@ derives a car's power-to-weight figure for display and for
 `RallyLibrary.is_eligible` (see [upgrade-catalogue.md](upgrade-catalogue.md)).
 It resolves the CURRENT engine the same way `car.gd` does:
 
-1. Resolves `current_id := EngineSwap.current_engine_id(owned_car, stock_id)`
-   and seeds `peak_torque`/`redline` from that engine (only filling values the
-   `meta` doesn't already carry, so synthetic test fixtures with explicit
-   values are untouched).
+1. Resolves `current_id := EngineSwap.current_engine_id(owned_car, stock_id)`,
+   points the meta's `engine` at it, and seeds `peak_torque`/`redline` from
+   that engine (only filling values the `meta` doesn't already carry, so
+   synthetic test fixtures with explicit values are untouched).
 2. If swapped (`current_id != stock_id`), recomputes `mass` via
    `EngineSwap.recompute_mass` using the stock and swapped-in engine masses —
    so a swap changes the displayed/eligibility mass exactly like it changes

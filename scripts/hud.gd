@@ -12,6 +12,11 @@ extends CanvasLayer
 # percentage of full boost, or "N/A" on a naturally-aspirated engine.
 var _boost_label: Label
 var _last_boost_text := ""
+# Track-seed readout, part of the H debug overlay. Built in code and stacked
+# under the boost label; shows the current world seed (Config.data.track_seed)
+# so a run can be identified/reproduced.
+var _seed_label: Label
+var _last_seed_text := ""
 # Stage flow widgets, driven by StageManager (todo/stage-start-and-end.md):
 # the big centered 3·2·1·GO, the small top-right run timer, and the placeholder
 # stage-complete panel. Hidden until the stage flow calls the methods below.
@@ -68,6 +73,7 @@ func _ready() -> void:
 	_gear_label.visible = false
 	_rpm_label.visible = false
 	_build_boost_label()
+	_build_seed_label()
 	# Stage widgets start hidden; StageManager reveals them at the right moments.
 	_countdown_label.visible = false
 	_elapsed_label.visible = false
@@ -113,6 +119,25 @@ static func boost_text(turbo_enabled: bool, boost: float) -> String:
 	return "Boost %d%%" % roundi(clampf(boost, 0.0, 1.0) * 100.0)
 
 
+# Build the debug seed readout in code (no scene node), stacked top-left just
+# below the boost label, matching its font size. Hidden until H reveals it.
+func _build_seed_label() -> void:
+	_seed_label = Label.new()
+	_seed_label.name = "SeedLabel"
+	_seed_label.offset_left = 8.0
+	_seed_label.offset_top = 68.0
+	_seed_label.offset_right = 168.0
+	_seed_label.offset_bottom = 88.0
+	_seed_label.add_theme_font_size_override("font_size", 14)
+	_seed_label.visible = false
+	add_child(_seed_label)
+
+
+# Debug seed readout text. Pure so it's unit-testable without the HUD scene.
+static func seed_text(track_seed: int) -> String:
+	return "Seed %d" % track_seed
+
+
 func _build_stage_delta_label() -> void:
 	_stage_delta_label = Label.new()
 	_stage_delta_label.name = "StageDeltaLabel"
@@ -139,6 +164,7 @@ func _process(_delta: float) -> void:
 		_gear_label.visible = _debug_readout
 		_rpm_label.visible = _debug_readout
 		_boost_label.visible = _debug_readout
+		_seed_label.visible = _debug_readout
 	var engine: EngineSim = car.drivetrain.engine
 	var speed := roundi(car.linear_velocity.length() * 3.6)
 	if speed != _last_speed:
@@ -155,6 +181,10 @@ func _process(_delta: float) -> void:
 	if boost_str != _last_boost_text:
 		_last_boost_text = boost_str
 		_boost_label.text = boost_str
+	var seed_str := seed_text(Config.data.track_seed)
+	if seed_str != _last_seed_text:
+		_last_seed_text = seed_str
+		_seed_label.text = seed_str
 	_update_damage(_delta)
 	# Fade the pace popup out after its on-screen time elapses.
 	if _stage_delta_left > 0.0:

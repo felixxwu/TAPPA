@@ -253,25 +253,25 @@ static func misfire_rate(level: float, load_frac: float, rate_max: float, bias: 
 # --- Turbo shaft maths (pure, unit-testable; wired into step() below) --------
 # Boost pressure fraction from shaft speed: centrifugal compressor pressure rises
 # with the square of speed, saturating at 1.0 (the fitted turbo's design ceiling).
-static func boost_fraction(omega_turbo: float, omega_ref: float) -> float:
+static func boost_fraction(turbo_omega: float, omega_ref: float) -> float:
 	if omega_ref <= 0.0:
 		return 0.0
-	var r := omega_turbo / omega_ref
+	var r := turbo_omega / omega_ref
 	return clampf(r * r, 0.0, 1.0)
 
 
 # Exhaust energy available to spin the shaft: proportional to mass flow (throttle *
 # rpm). Anti-lag injects a residual drive floor off-throttle so the shaft stays lit.
-static func turbo_exhaust_drive(rpm: float, throttle: float, drive_gain: float, antilag: bool, antilag_drive: float) -> float:
-	var drive := drive_gain * clampf(throttle, 0.0, 1.0) * maxf(rpm, 0.0)
+static func turbo_exhaust_drive(engine_rpm: float, throttle_in: float, drive_gain: float, antilag: bool, antilag_drive: float) -> float:
+	var drive := drive_gain * clampf(throttle_in, 0.0, 1.0) * maxf(engine_rpm, 0.0)
 	if antilag:
 		drive = maxf(drive, antilag_drive)
 	return drive
 
 
 # Net angular acceleration of the shaft: (exhaust drive − ω² bearing/aero drag) / inertia.
-static func turbo_shaft_accel(exhaust_drive: float, omega_turbo: float, drag_coef: float, inertia: float) -> float:
-	var drag := drag_coef * omega_turbo * omega_turbo
+static func turbo_shaft_accel(exhaust_drive: float, turbo_omega: float, drag_coef: float, inertia: float) -> float:
+	var drag := drag_coef * turbo_omega * turbo_omega
 	return (exhaust_drive - drag) / maxf(inertia, 1.0e-9)
 
 

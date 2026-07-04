@@ -21,7 +21,10 @@ Each `RALLIES` entry:
   Otherwise every present field must match the car's CarLibrary metadata:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
   `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`,
-  which resolves torque/redline from the car's referenced `EngineLibrary` engine —
+  derived from the referenced `EngineLibrary` engine's torque + redline (× the
+  global `TORQUE_POWER_FALLOFF` calibration, boosted torque for turbos via
+  `effective_meta`), so the gate compares against the same hp/tonne shown on
+  the stats panels — within ~±8% of the cars' real published figures —
   see [engine-and-transmission.md](engine-and-transmission.md)). The `pw_min`/`pw_max`
   bands are **authored in hp/tonne** — the same unit shown on every player-facing p/w
   readout — so a designer tunes them in the numbers on screen; `is_eligible` converts a
@@ -35,8 +38,8 @@ Each `RALLIES` entry:
   `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally parallel to the
   Shakedown for the MX-5), and **American Muscle** wants `country` US +
   `car_type` muscle on top of its band — the Charger's home turf.
-  **Sh*tbox Cup** sits below even Shakedown: a `pw_max` 130 hp/tonne ceiling with no
-  floor, catering to the sub-130 hp/tonne shitboxes (Twingo, Acty) that no other
+  **Sh*tbox Cup** sits below even Shakedown: a `pw_max` 91 hp/tonne ceiling with no
+  floor, catering to the sub-91 hp/tonne shitboxes (Twingo, Acty) that no other
   rally's band admits. The single open-class rally is the showdown.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   forestiness?, surface_mix?, straightness?, target_ms_override? }`. The

@@ -684,6 +684,92 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
 
+# Feed a pointer press / drag / release into the car-park input handler, the same
+# events a mouse (or a finger via emulate_mouse_from_touch) produces.
+func _lineup_button(hq: Node3D, pressed: bool, pos: Vector2) -> void:
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = pressed
+	ev.position = pos
+	hq._cars_input(ev)
+
+
+func _lineup_motion(hq: Node3D, relative: Vector2) -> void:
+	var ev := InputEventMouseMotion.new()
+	ev.relative = relative
+	hq._cars_input(ev)
+
+
+func _lineup_gesture(hq: Node3D, drag: Vector2, pos := Vector2(400, 300)) -> void:
+	_lineup_button(hq, true, pos)
+	if drag != Vector2.ZERO:
+		_lineup_motion(hq, drag)
+	_lineup_button(hq, false, pos + drag)
+
+
+func test_hq_carpark_swipe_cycles_the_focus() -> void:
+	_save.grant_car("fx_awd")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("the_showdown")  # open-class: both cars eligible
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	var swipe: float = Config.data.menu_swipe_min_px + 20.0
+	# Dragging LEFT pulls the next car in from the right (carousel feel).
+	_lineup_gesture(hq, Vector2(-swipe, 0.0))
+	assert_eq(hq._focus, 1, "a leftward swipe advances the focus to the next car")
+	_lineup_gesture(hq, Vector2(swipe, 0.0))
+	assert_eq(hq._focus, 0, "a rightward swipe steps the focus back")
+	# A mostly-vertical drag is neither a swipe nor a tap: the focus stays put.
+	_lineup_gesture(hq, Vector2(-swipe * 0.3, -swipe * 2.0))
+	assert_eq(hq._focus, 0, "a vertical drag does not swipe the lineup")
+
+
+func test_hq_carpark_tap_on_a_parked_car_focuses_it() -> void:
+	_save.grant_car("fx_awd")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("the_showdown")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	await _await_lineup(hq)
+	hq._snap_camera_to_focus()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	assert_eq(hq._focus, 0, "the first car starts focused")
+	# Tap where the SECOND parked car appears on screen: the raycast picks it and the
+	# focus (and selection) jump straight to it — no ◄ ► button hunting.
+	var target: Node3D = hq._cars[1]
+	var screen: Vector2 = hq._camera.unproject_position(target.global_position)
+	_lineup_gesture(hq, Vector2.ZERO, screen)
+	assert_eq(hq._focus, 1, "tapping a parked car focuses it")
+	assert_eq(hq._selected_instance_id, int(hq._eligible[1]["instance_id"]),
+		"the tapped car becomes the selected car")
+	# A tap on empty lot (high above the lineup, into the sky) leaves the focus alone.
+	_lineup_gesture(hq, Vector2.ZERO, Vector2(screen.x, 1.0))
+	assert_eq(hq._focus, 1, "tapping empty space keeps the current focus")
+
+
+# The car-park / overflow overlays must NOT swallow pointer input: everything but
+# the buttons is MOUSE_FILTER_IGNORE (via _passthrough_overlay), or a desktop click /
+# touch tap would stop at the full-rect container and never reach _unhandled_input's
+# swipe + tap-a-car handling.
+func test_hq_lineup_overlays_pass_pointer_input_through() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	for layer in [hq._car_layer, hq._overflow_layer]:
+		var root: Control = (layer as CanvasLayer).get_child(0)
+		assert_eq(root.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+			"the overlay root lets clicks fall through to the 3D lineup")
+		for n in root.find_children("*", "Control", true, false):
+			if not (n is BaseButton):
+				assert_eq((n as Control).mouse_filter, Control.MOUSE_FILTER_IGNORE,
+					"%s lets clicks fall through to the 3D lineup" % n.get_class())
+
+
 func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	# The lineup is a centred row ALONG X — one car per painted bay — each parked
 	# nose-out toward the courtyard / menu camera (+Z), not the old recede-along-Z row.
