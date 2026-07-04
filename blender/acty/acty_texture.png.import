@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://oyhxjd3svco4"
 path.s3tc="res://.godot/imported/acty_texture.png-8478830f64aa34490b7ef1a40b0f9f8b.s3tc.ctex"
+path.etc2="res://.godot/imported/acty_texture.png-8478830f64aa34490b7ef1a40b0f9f8b.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://blender/acty/acty_texture.png"
-dest_files=["res://.godot/imported/acty_texture.png-8478830f64aa34490b7ef1a40b0f9f8b.s3tc.ctex"]
+dest_files=["res://.godot/imported/acty_texture.png-8478830f64aa34490b7ef1a40b0f9f8b.s3tc.ctex", "res://.godot/imported/acty_texture.png-8478830f64aa34490b7ef1a40b0f9f8b.etc2.ctex"]
 
 [params]
 

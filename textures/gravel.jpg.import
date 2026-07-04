@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://qxvxctxwm27g"
 path.s3tc="res://.godot/imported/gravel.jpg-5b4d9eb381b9029fc89ed9121a6f1ec6.s3tc.ctex"
+path.etc2="res://.godot/imported/gravel.jpg-5b4d9eb381b9029fc89ed9121a6f1ec6.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/gravel.jpg"
-dest_files=["res://.godot/imported/gravel.jpg-5b4d9eb381b9029fc89ed9121a6f1ec6.s3tc.ctex"]
+dest_files=["res://.godot/imported/gravel.jpg-5b4d9eb381b9029fc89ed9121a6f1ec6.s3tc.ctex", "res://.godot/imported/gravel.jpg-5b4d9eb381b9029fc89ed9121a6f1ec6.etc2.ctex"]
 
 [params]
 
