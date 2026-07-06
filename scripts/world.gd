@@ -7,6 +7,9 @@ const BUSH_SEED_OFFSET := 1013
 # Ground-cover bush: low-poly mesh (replaces the old bush.webp billboards),
 # instanced via TreeMeshField (same renderer as trees, no collision). See features/trees.md.
 const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
+# Old billboard tree texture, used when cfg.use_billboard_trees is true (the perf
+# A/B path — see _build_foliage / features/trees.md).
+const TREE_TEXTURE := preload("res://textures/tree.png")
 # Near-camera dither dissolve applied to the tree canopy so trees don't block the
 # chase camera when it pushes inside them (see shaders/tree_canopy.gdshader).
 const TREE_CANOPY_SHADER := preload("res://shaders/tree_canopy.gdshader")
@@ -360,11 +363,19 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	# spawn inside the forest patches, breaking up the otherwise-continuous tree line.
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed, cfg.track_forestiness, cfg.forest_wavelength_m)
-	var tree_field := TreeMeshField.new()
-	add_child(tree_field)
-	tree_field.build(trees, $Floor as TerrainManager, _tree_mesh(),
-		cfg.tree_size_m.y, cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
-		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m)
+	if cfg.use_billboard_trees:
+		# Perf A/B path: render trees as the old alpha-cutout billboards.
+		var tree_billboards := BillboardField.new()
+		add_child(tree_billboards)
+		tree_billboards.build(trees, $Floor as TerrainManager, cfg.tree_size_m, TREE_TEXTURE,
+			cfg.tree_collision_radius_m, cfg.tree_collision_height_m, true,
+			cfg.tree_render_distance_m, cfg.tree_render_fade_m)
+	else:
+		var tree_field := TreeMeshField.new()
+		add_child(tree_field)
+		tree_field.build(trees, $Floor as TerrainManager, _tree_mesh(),
+			cfg.tree_size_m.y, cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
+			cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m)
 
 	await _stage(loading, "Scattering bushes…")
 	# Bushes: same scatter as trees (offset seed so they interleave; NOT forest-gated,

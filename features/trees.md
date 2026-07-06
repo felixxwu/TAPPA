@@ -15,9 +15,16 @@ single-`BoxShape3D` StaticBody obstacle builder used by `TreeMeshField` and
 
 After the track is generated and baked, foliage is scattered around each turn.
 Both **trees** and **bushes** are solid low-poly 3D meshes rendered through the
-same `TreeMeshField` — the old alpha-cutout billboards are gone. Both share the
-same `TreeScatter` placement. (`BillboardField` still exists for any future
-sprite use.)
+same `TreeMeshField` by default. Both share the same `TreeScatter` placement.
+
+**Perf A/B toggle (`use_billboard_trees`).** When
+`GameConfig.use_billboard_trees` is true, `world.gd._build_foliage()` instead
+renders **trees** as the old alpha-cutout billboards via `BillboardField`
+(`textures/tree.png`, `billboard.gdshader`) with collision. **Bushes always stay
+low-poly meshes** (`TreeMeshField`) regardless of the toggle. This is kept purely
+so the mesh vs billboard tree cost can be measured side by side; flip it in
+`config/game_config.tres`. Trees keep the same `TreeScatter` placement and
+`tree_render_distance_m` / `tree_render_fade_m` cull either way.
 
 ## Placement (`TreeScatter`)
 

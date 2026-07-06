@@ -38,19 +38,16 @@ window/handheld/orientation="sensor_landscape"
 
 import/blender/enabled=false
 
-[importer_defaults]
-
-; New textures default to lossy WebP at 0.7 — keeps exports small (the 2026-07
-; build-size pass); bump per-texture in the Import dock only where quality
-; visibly suffers.
-texture={
-"compress/mode": 1,
-"compress/lossy_quality": 0.7
-}
-
 [gui]
 
 theme/custom="res://theme/ui_theme.tres"
+
+[importer_defaults]
+
+texture={
+"compress/lossy_quality": 0.7,
+"compress/mode": 1
+}
 
 [input]
 
@@ -187,8 +184,8 @@ menu_down={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-textures/vram_compression/import_etc2_astc=true
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
 shading/overrides/force_vertex_shading=true
