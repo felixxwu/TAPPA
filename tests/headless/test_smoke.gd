@@ -169,7 +169,7 @@ func test_floor_is_terrain_manager() -> void:
 
 
 func test_shaders_load_with_code() -> void:
-	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader", "res://shaders/billboard.gdshader"]:
+	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader", "res://shaders/billboard.gdshader", "res://shaders/billboard_opaque.gdshader"]:
 		var shader := load(path) as Shader
 		assert_not_null(shader, path + " loads")
 		assert_true(shader.code.length() > 0, path + " has code")
@@ -260,6 +260,41 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 	assert_not_null(smat, "quad has a ShaderMaterial")
 	assert_eq(smat.get_shader_parameter("render_distance"), 80.0, "render_distance param set")
 	assert_eq(smat.get_shader_parameter("fade_band"), 15.0, "fade_band param set")
+
+
+func test_billboard_field_opaque_mesh_path_uses_silhouette_and_opaque_shader() -> void:
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var tex := load("res://textures/tree.png") as Texture2D
+	# A trivial 2-triangle silhouette stand-in (a unit quad) is enough to prove
+	# the field instances the SUPPLIED mesh with the opaque shader.
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for uv in [Vector2(0,1), Vector2(1,1), Vector2(1,0), Vector2(0,1), Vector2(1,0), Vector2(0,0)]:
+		st.set_uv(uv)
+		st.add_vertex(Vector3(uv.x - 0.5, 1.0 - uv.y, 0.0))
+	var silhouette := st.commit()
+
+	var field := BillboardField.new()
+	add_child_autofree(field)
+	var positions := PackedVector2Array([Vector2(10, 10), Vector2(20, 12)])
+	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0,
+		0.0, silhouette, true)
+
+	assert_eq(field.multimesh.mesh, silhouette, "field instances the supplied silhouette mesh")
+	assert_false(field.multimesh.mesh is QuadMesh, "not a QuadMesh in the opaque path")
+	assert_eq(field.multimesh.instance_count, positions.size(), "one instance per position")
+	var smat := field.multimesh.mesh.surface_get_material(0) as ShaderMaterial
+	assert_not_null(smat, "silhouette surface has a ShaderMaterial")
+	assert_eq(smat.shader, load("res://shaders/billboard_opaque.gdshader"),
+		"opaque path uses the discard-free billboard shader")
+	assert_eq(smat.get_shader_parameter("render_distance"), 80.0, "render_distance wired")
+	# size is carried as instance scale so the shader reads it from MODEL_MATRIX.
+	# (MultiMesh.get_instance_transform is a no-op stub under --headless, so we
+	# read the field's own mirror of the scale it baked into every transform.)
+	assert_almost_eq(field.instance_scale.x, 4.0, 1e-3, "instance scaled by size.x")
+	assert_almost_eq(field.instance_scale.y, 6.0, 1e-3, "instance scaled by size.y")
+	# Collision still built for trees.
+	assert_not_null(field.get_node_or_null("Collision"), "opaque path still builds collision")
 
 
 func _load_tree_mesh() -> Mesh:

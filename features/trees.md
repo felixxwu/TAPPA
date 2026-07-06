@@ -18,13 +18,25 @@ Both **trees** and **bushes** are solid low-poly 3D meshes rendered through the
 same `TreeMeshField` by default. Both share the same `TreeScatter` placement.
 
 **Perf A/B toggle (`use_billboard_trees`).** When
-`GameConfig.use_billboard_trees` is true, `world.gd._build_foliage()` instead
-renders **trees** as the old alpha-cutout billboards via `BillboardField`
-(`textures/tree.png`, `billboard.gdshader`) with collision. **Bushes always stay
-low-poly meshes** (`TreeMeshField`) regardless of the toggle. This is kept purely
-so the mesh vs billboard tree cost can be measured side by side; flip it in
-`config/game_config.tres`. Trees keep the same `TreeScatter` placement and
-`tree_render_distance_m` / `tree_render_fade_m` cull either way.
+`GameConfig.use_billboard_trees` is true, `world.gd._build_foliage()` renders
+**trees** as opaque tight-cutout billboards instead of the low-poly 3D mesh
+(`TreeMeshField`). **Bushes always stay meshes** regardless of the toggle.
+
+The billboard cutout is baked into GEOMETRY, not the shader: `TreeSilhouette`
+(`scripts/tree_silhouette.gd`) traces `textures/tree.png`'s alpha into a
+low-poly silhouette `ArrayMesh` once at load (cached by `world._tree_silhouette_mesh()`),
+triangulating every opaque cluster `opaque_to_polygons` returns so the gaps
+between clusters are real geometry holes. `BillboardField` instances that mesh in
+a single MultiMesh (one draw call) with `shaders/billboard_opaque.gdshader` —
+`unshaded, depth_draw_opaque`, **no `discard`**. Because there is no per-fragment
+alpha test, early-Z stays enabled and overdraw collapses to actual coverage,
+which is the win on tile-based mobile-web GPUs (an alpha-`discard` billboard
+disables early-Z for the whole draw and pays overdraw every frame). Distance
+fade is a vertex **shrink-out** over `tree_render_fade_m` before
+`tree_render_distance_m` (opaque, replacing the old screen-door dither, which
+needed `discard`). Trees keep the same `TreeScatter` placement and box collision.
+The silhouette airiness/triangle budget is set by `TREE_SILHOUETTE_ALPHA` /
+`TREE_SILHOUETTE_EPSILON` in `world.gd`.
 
 ## Placement (`TreeScatter`)
 

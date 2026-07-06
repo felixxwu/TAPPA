@@ -10,6 +10,11 @@ const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.g
 # Old billboard tree texture, used when cfg.use_billboard_trees is true (the perf
 # A/B path — see _build_foliage / features/trees.md).
 const TREE_TEXTURE := preload("res://textures/tree.png")
+# Silhouette build params for the opaque billboard tree cutout (rendering
+# constants, not gameplay balance). Higher threshold = airier/more fragmented
+# canopy; higher epsilon = fewer triangles. See TreeSilhouette / features/trees.md.
+const TREE_SILHOUETTE_ALPHA := 0.3
+const TREE_SILHOUETTE_EPSILON := 3.0
 # Near-camera dither dissolve applied to the tree canopy so trees don't block the
 # chase camera when it pushes inside them (see shaders/tree_canopy.gdshader).
 const TREE_CANOPY_SHADER := preload("res://shaders/tree_canopy.gdshader")
@@ -53,6 +58,20 @@ func _tree_mesh() -> Mesh:
 				canopy.set_shader_parameter("near_fade_end", cfg.tree_near_fade_end_m)
 				_tree_mesh_cache.surface_set_material(s, canopy)
 	return _tree_mesh_cache
+
+
+# The opaque billboard-tree silhouette mesh, traced once from TREE_TEXTURE's
+# alpha and shared by every instance in the tree BillboardField.
+var _tree_silhouette_cache: Mesh
+
+
+# Builds (and caches) the tree silhouette mesh from the billboard texture's alpha.
+func _tree_silhouette_mesh() -> Mesh:
+	if _tree_silhouette_cache != null:
+		return _tree_silhouette_cache
+	_tree_silhouette_cache = TreeSilhouette.build(
+		TREE_TEXTURE.get_image(), TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON)
+	return _tree_silhouette_cache
 
 
 func _ready() -> void:
@@ -364,12 +383,15 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed, cfg.track_forestiness, cfg.forest_wavelength_m)
 	if cfg.use_billboard_trees:
-		# Perf A/B path: render trees as the old alpha-cutout billboards.
+		# Perf A/B path: render trees as opaque tight-cutout billboards — the
+		# cutout is baked into a silhouette mesh (no shader discard -> early-Z
+		# stays on), instanced in one MultiMesh. See features/trees.md.
 		var tree_billboards := BillboardField.new()
 		add_child(tree_billboards)
 		tree_billboards.build(trees, $Floor as TerrainManager, cfg.tree_size_m, TREE_TEXTURE,
 			cfg.tree_collision_radius_m, cfg.tree_collision_height_m, true,
-			cfg.tree_render_distance_m, cfg.tree_render_fade_m)
+			cfg.tree_render_distance_m, cfg.tree_render_fade_m,
+			0.0, _tree_silhouette_mesh(), true)
 	else:
 		var tree_field := TreeMeshField.new()
 		add_child(tree_field)
