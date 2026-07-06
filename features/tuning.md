@@ -35,7 +35,11 @@ duck under a rally's power-to-weight ceiling. **Reset to neutral** returns it
 to `1.0` (100%, full power), same as the other axes reset to their own
 neutral (`0`). It also feeds `UpgradeLibrary.effective_meta`, so a detuned
 car's reduced torque affects displayed power-to-weight and rally eligibility,
-not just the live-fielded car. The slider's value label pairs the percent with
+not just the live-fielded car. The car park offers this as a one-press prompt:
+an over-powered car (over a rally's `pw_max` cap) still parks in the rally
+lineup with Start relabelled **Detune to N% & Start**, which applies the
+qualifying tune (`RallyLibrary.qualifying_detune`) on agreement — see
+[menus.md](menus.md) → CARPARK. The slider's value label pairs the percent with
 the car's live power-to-weight at that setting (e.g. `80% - 200 hp/tonne`, via
 `hq.gd._detune_label_text` → `effective_meta`), so you can dial to a target band
 by eye. (All tuning-lift sliders share one fixed-width label column so they line

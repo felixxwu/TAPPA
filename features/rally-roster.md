@@ -94,6 +94,15 @@ generator also uses it per-rival.
 - `is_eligible(rally, car_meta)` — restriction match (open-class → always true).
   `car_meta` is a CarLibrary entry, resolved by the owned car's stable
   `model_id`. The menus' field-a-car rig and map pins filter on this.
+- `qualifying_detune(rally, full_meta)` — the largest whole-percent
+  `engine_detune` fraction at which a car passes the restriction: `1.0` when it's
+  already eligible at full tune, `-1.0` when no detune can qualify it (a non-power
+  field fails, or the band floor is unreachable). `full_meta` is the car's
+  effective stats at FULL tune (`effective_meta` with detune 1.0), so the result
+  is an absolute detune-slider setting; it's floored to the slider's whole-percent
+  steps and verified back through `is_eligible`. This powers the car park's
+  **detune-to-enter prompt** — an over-powered car may enter a `pw_max`-capped
+  rally by agreeing to this tune (see [menus.md](menus.md) → CARPARK).
 - `derive_target_ms(track_result, car_meta, event)` — per-event PAR time: physics
   floor of the **best eligible car** (see `LapTimeModel` below) × `GameConfig.driver_factor`
   (default 1.08, the driver-imperfection multiplier that turns the physics floor into a
@@ -172,7 +181,9 @@ is deferred (cosmetic).
 `tests/headless/test_rally_library.gd` — roster validity (unique ids, 3 events
 each, single showdown, the **starter floor**, and the **p/w gating** shape: every
 non-showdown rally caps p/w, tier-1 has no floor, tier-3+ uses a band), eligibility
-(open-class + drive_mode + country + power-to-weight filters), track-gen
+(open-class + drive_mode + country + power-to-weight filters, and
+`qualifying_detune`'s duck-under-the-cap / already-eligible / unfixable cases),
+track-gen
 determinism, target-time positivity + override, opponent-field
 shape/bounds/determinism + DNF semantics, placement/top-3, progress count, and
 showdown unlock + the enterable query. The start-line queue cars being eligible for

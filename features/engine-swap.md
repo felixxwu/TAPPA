@@ -201,6 +201,13 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   unlike brake-bias/aero). The slider stores `frac = value / 100.0` via
   `Save.set_engine_detune`; **Reset to neutral** returns it to `1.0` (100%,
   full power) like every other axis returns to its own neutral.
+- **Car-park detune-to-enter prompt** — an owned car OVER a rally's `pw_max`
+  cap still parks in the rally car-select lineup, with a warning that it
+  doesn't qualify as-is and the tune that would fix it; Start becomes the
+  explicit agreement (**Detune to N% & Start**) and applies that tune via
+  `Save.set_engine_detune` before fielding (`hq._refresh_focus_detune` /
+  `_on_start_pressed`; the math is `RallyLibrary.qualifying_detune`). See
+  [menus.md](menus.md) → CARPARK.
 
 ### Navigation
 
@@ -233,4 +240,7 @@ clearing behaviour. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
 covers the `engine_detune` axis application. `test_menu_flow.gd` covers the
-swap row, car-park swap mode, and the detune slider's navigation/persistence.
+swap row, car-park swap mode, the detune slider's navigation/persistence, and
+the car-park detune-to-enter prompt (over-cap car parks with the warning +
+relabelled Start; agreeing applies the tune and launches). `test_rally_library.gd`
+covers `RallyLibrary.qualifying_detune` itself.

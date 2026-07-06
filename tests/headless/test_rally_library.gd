@@ -169,6 +169,54 @@ func test_installed_upgrades_change_rally_eligibility() -> void:
 	assert_false(RallyLibrary.is_eligible(cap_gate, maxed), "engine kit + weight reduction push it over the cap")
 
 
+func test_qualifying_detune_ducks_an_over_powered_car_under_the_cap() -> void:
+	# An over-powered car can enter a pw_max-capped rally by agreeing to a detune:
+	# qualifying_detune returns the whole-percent engine tune that scales its p/w
+	# under the cap. Synthetic car; the cap is derived from the car's own figure, so
+	# the test exercises the LOGIC (linear torque scaling + the is_eligible
+	# verification), never an authored value.
+	var car := {"mass": 1000.0, "peak_torque": 500.0, "redline": 7000.0, "drive_mode": CarLibrary.RWD}
+	var pw := CarLibrary.power_to_weight(car) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var rally := {"restriction": {"pw_max": pw * 0.8}}
+	assert_false(RallyLibrary.is_eligible(rally, car), "the car is over the cap at full tune")
+	var frac := RallyLibrary.qualifying_detune(rally, car)
+	assert_between(frac, 0.01, 0.99, "an over-cap car needs a real down-tune (not 0, not full power)")
+	assert_almost_eq(frac * 100.0, roundf(frac * 100.0), 0.0001,
+		"the tune is a whole slider percent, so it round-trips through the detune slider")
+	# It is the LARGEST such percent: within one slider step of the exact cap ratio.
+	assert_gt(frac, 0.8 - 0.011, "the proposed tune sits within one percent step of the cap ratio")
+	# And the detuned car really is eligible (the helper verifies through is_eligible).
+	var detuned := car.duplicate()
+	detuned["peak_torque"] = float(car["peak_torque"]) * frac
+	assert_true(RallyLibrary.is_eligible(rally, detuned), "the proposed detune makes the car eligible")
+
+
+func test_qualifying_detune_full_power_and_unfixable_cases() -> void:
+	var car := {"mass": 1000.0, "peak_torque": 500.0, "redline": 7000.0, "drive_mode": CarLibrary.RWD}
+	var pw := CarLibrary.power_to_weight(car) * RallyLibrary.KW_KG_TO_HP_TONNE
+	# Already eligible at full tune -> 1.0 (an absolute slider setting: full power).
+	assert_eq(RallyLibrary.qualifying_detune({"restriction": {"pw_max": pw * 1.1}}, car), 1.0,
+		"a car already under the cap needs no detune")
+	# A non-power restriction failing too -> no detune can fix it.
+	var wrong_drive := {"restriction": {"drive_mode": CarLibrary.AWD, "pw_max": pw * 0.8}}
+	assert_eq(RallyLibrary.qualifying_detune(wrong_drive, car), -1.0,
+		"detuning can't fix a drive-mode mismatch")
+	# Underpowered (below a band floor): detuning only lowers p/w further.
+	var floor_gate := {"restriction": {"pw_min": pw * 1.2, "pw_max": pw * 1.5}}
+	assert_eq(RallyLibrary.qualifying_detune(floor_gate, car), -1.0,
+		"a car below the band floor can't detune its way in")
+	# The contract everywhere: the result is either -1.0 or a tune that verifies
+	# eligible — even against a band whose floor sits just under its cap, where the
+	# whole-percent rounding can land below the floor.
+	var narrow := {"restriction": {"pw_min": pw * 0.799, "pw_max": pw * 0.8}}
+	var frac := RallyLibrary.qualifying_detune(narrow, car)
+	if frac > 0.0:
+		var detuned := car.duplicate()
+		detuned["peak_torque"] = float(car["peak_torque"]) * frac
+		assert_true(RallyLibrary.is_eligible(narrow, detuned),
+			"a returned tune always verifies eligible against the whole restriction")
+
+
 # --- Determinism -------------------------------------------------------------
 
 func test_track_generation_is_deterministic() -> void:

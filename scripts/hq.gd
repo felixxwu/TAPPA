@@ -134,6 +134,11 @@ var _lineup_drag_accum := Vector2.ZERO
 # Car-park state: the owned cars eligible for the chosen rally, the parked car nodes
 # + their lot markers (parallel to _eligible), and which slot is focused.
 var _eligible: Array = []
+# instance_id -> the engine-detune fraction that would qualify an over-powered parked
+# car for the chosen rally (RallyLibrary.qualifying_detune). Populated only by the
+# rally car-select lineup (_build_eligible_lineup); for these cars Start becomes an
+# explicit "agree to detune" action (see _refresh_focus_detune / _on_start_pressed).
+var _detune_needed: Dictionary = {}
 var _cars: Array = []
 var _markers: Array = []
 var _focus := 0
@@ -465,11 +470,15 @@ func _stars_for(rally_id: String) -> int:
 
 # Whether the player owns at least one car eligible to enter `rally` — drives the
 # pin flag's green (raceable) vs grey (no qualifying car) pennant. Mirrors the
-# eligibility filter used to build the car-park lineup (_build_eligible_lineup).
+# eligibility filter used to build the car-park lineup (_build_eligible_lineup),
+# including an over-powered car that would qualify if it agreed to a detune.
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get("cars", []):
-		var meta := UpgradeLibrary.effective_meta(car, CarLibrary.by_id(String(car.get("model_id", ""))))
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		var meta := UpgradeLibrary.effective_meta(car, entry)
 		if RallyLibrary.is_eligible(rally, meta):
+			return true
+		if _qualifying_detune_for(rally, car, entry, meta) > 0.0:
 			return true
 	return false
 
@@ -1047,7 +1056,8 @@ func _build_car_overlay() -> void:
 	_car_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_car_stats_label)
 
-	# Shown only when the focused car is wrecked: why it can't be entered + how to fix it.
+	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it) or
+	# over-powered for the rally (the detune Start would apply — _refresh_focus_detune).
 	_car_warning_label = Label.new()
 	_car_warning_label.add_theme_font_size_override("font_size", 14)
 	_car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1969,8 +1979,9 @@ func _use_repair_kit(instance_id: int) -> void:
 		_refresh_lift_ui()
 
 
-# Enter the car park for the chosen rally: park only the ELIGIBLE owned cars and
-# frame the first. With none eligible, show a hint + disable Start.
+# Enter the car park for the chosen rally: park the ELIGIBLE owned cars (plus any
+# over-powered car a detune would qualify — see _build_eligible_lineup) and frame
+# the first. With none, show a hint + disable Start.
 func _enter_car_screen() -> void:
 	_carpark_change_mode = false
 	_carpark_freeroam_mode = false
@@ -2128,17 +2139,55 @@ func _clear_lineup() -> void:
 	_cars = []
 	_markers = []
 	_eligible = []
+	_detune_needed = {}
 
 
-# Park the owned cars ELIGIBLE for the selected rally (the car-select screen).
+# Park the owned cars ELIGIBLE for the selected rally (the car-select screen), plus
+# any OVER-POWERED car a detune would fit under the rally's pw_max cap — those park
+# with a warning and Start becomes an explicit agreement to that detune
+# (_refresh_focus_detune / _on_start_pressed).
 func _build_eligible_lineup() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var eligible: Array = []
+	var needs_detune := {}
 	for car in Save.profile.get("cars", []):
-		var meta := UpgradeLibrary.effective_meta(car, CarLibrary.by_id(String(car.get("model_id", ""))))
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		var meta := UpgradeLibrary.effective_meta(car, entry)
 		if RallyLibrary.is_eligible(rally, meta):
 			eligible.append(car)
-	_build_lineup(eligible)
+			continue
+		var frac := _qualifying_detune_for(rally, car, entry, meta)
+		if frac > 0.0:
+			needs_detune[int(car.get("instance_id", -1))] = frac
+			eligible.append(car)
+	_build_lineup(eligible)  # clears _detune_needed (via _clear_lineup)
+	_detune_needed = needs_detune
+
+
+# The engine-detune fraction that would let `owned` enter `rally`, for the one case
+# the car-park prompt covers: the car is TOO POWERFUL (its current p/w sits over the
+# rally's pw_max cap) but tuning the engine down would duck it under. -1.0 when the
+# car is under the cap (already eligible, or ineligible for a reason detuning can't
+# fix — those cars keep today's behaviour) or when no detune qualifies it.
+func _qualifying_detune_for(rally: Dictionary, owned: Dictionary, entry: Dictionary, meta: Dictionary) -> float:
+	var r: Dictionary = rally.get("restriction", {})
+	if not r.has("pw_max"):
+		return -1.0
+	if CarLibrary.power_to_weight(meta) * KW_KG_TO_HP_TONNE <= float(r["pw_max"]):
+		return -1.0
+	var frac := RallyLibrary.qualifying_detune(rally, _full_power_meta(owned, entry))
+	return frac if frac > 0.0 and frac < 1.0 else -1.0
+
+
+# The car's effective stats at FULL engine tune (detune 1.0), whatever the stored
+# slider value — the base the qualifying-detune math scales down from, so the prompt
+# always proposes an absolute slider setting.
+func _full_power_meta(owned: Dictionary, entry: Dictionary) -> Dictionary:
+	var full := owned.duplicate(true)
+	var tuning: Dictionary = full.get("tuning", {})
+	tuning["engine_detune"] = 1.0
+	full["tuning"] = tuning
+	return UpgradeLibrary.effective_meta(full, entry)
 
 
 # Park ALL owned cars for the title screen, so the player's whole collection is on
@@ -2304,7 +2353,8 @@ func _focus_changed(snap := false) -> void:
 
 
 # A wrecked focused car can't be entered: disable Start and explain why, offering a
-# Repair (full restore) when a kit is owned. A healthy car clears all of this.
+# Repair (full restore) when a kit is owned. A healthy car clears all of this, then
+# checks the over-powered detune-to-qualify prompt (_refresh_focus_detune).
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Change-car mode just swaps the car on the lift, so a wrecked car is still a valid
 	# pick (it can be repaired in the bay). Never gate Select on damage there.
@@ -2315,9 +2365,11 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 		return
 	if not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
-		_car_warning_label.visible = false
 		_car_repair_button.visible = false
+		_refresh_focus_detune(owned)
 		return
+	if _carpark_rally_mode():
+		_start_button.text = "Start Rally"  # a detune prompt on the previous focus doesn't stick
 	_start_button.disabled = true
 	_car_warning_label.visible = true
 	var kits := int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
@@ -2328,6 +2380,37 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 	else:
 		_car_warning_label.text = "Too damaged to enter — and you have no Repair Kits. Win one, or pick another car."
 		_car_repair_button.visible = false
+
+
+# The car park in its default job — picking a car for the chosen rally — as opposed
+# to the starter-pick / engine-swap / change-car / free-roam modes layered on it.
+func _carpark_rally_mode() -> bool:
+	return not (_carpark_starter_mode or _carpark_swap_mode or _carpark_change_mode or _carpark_freeroam_mode)
+
+
+# An over-powered focused car (parked because a detune would duck it under the
+# rally's pw_max cap — _build_eligible_lineup) keeps Start ENABLED but turns it into
+# an explicit agreement: the warning spells out that the car doesn't qualify and the
+# engine tune that would fix it, and Start — relabelled "Detune to N% & Start" —
+# applies that tune before fielding the car (_on_start_pressed). A car with no
+# pending detune just clears the warning and restores the plain Start label.
+func _refresh_focus_detune(owned: Dictionary) -> void:
+	_car_warning_label.visible = false
+	if not _carpark_rally_mode():
+		return
+	var frac: float = _detune_needed.get(int(owned.get("instance_id", -1)), -1.0)
+	if frac <= 0.0:
+		_start_button.text = "Start Rally"
+		return
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var cap := float(RallyLibrary.by_id(_selected_rally_id).get("restriction", {}).get("pw_max", 0.0))
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * KW_KG_TO_HP_TONNE
+	var tuned_pw := CarLibrary.power_to_weight(_full_power_meta(owned, entry)) * KW_KG_TO_HP_TONNE * frac
+	var pct := roundi(frac * 100.0)
+	_car_warning_label.text = ("Doesn't qualify — %.0f hp/tonne is over this rally's %.0f cap. " +
+		"Starting will detune the engine to %d%% (%.0f hp/tonne) so it qualifies.") % [pw, cap, pct, tuned_pw]
+	_car_warning_label.visible = true
+	_start_button.text = "Detune to %d%% & Start" % pct
 
 
 # Spend a Repair Kit on the focused (wrecked) car: full restore, then re-evaluate so
@@ -2502,6 +2585,13 @@ func _on_start_pressed() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
+	# An over-powered car parks with Start as an explicit detune agreement (the button
+	# reads "Detune to N% & Start" — _refresh_focus_detune): pressing it IS the
+	# agreement, so apply that engine tune now, before fielding the car.
+	var detune: float = _detune_needed.get(_selected_instance_id, -1.0)
+	if detune > 0.0:
+		Save.set_engine_detune(_selected_instance_id, detune)
+		_detune_needed.erase(_selected_instance_id)
 	# On mobile, the player must choose a touch control scheme before their first
 	# event. If they haven't picked one yet, show the picker as a gate now; once they
 	# confirm it's saved and we never ask again (see _on_settings_action).

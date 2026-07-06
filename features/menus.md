@@ -358,8 +358,9 @@ restriction — the power-to-weight gate, not the hidden difficulty tier — eve
 count, best finish + stars); **Enter Rally** flies out to the
 car park, **◄ Map** dismisses the panel, and the table Back returns to the garage.
 
-**CARPARK (the outdoor lineup).** Only the owned cars **eligible for the chosen
-rally** (`RallyLibrary.is_eligible`) are parked at `GameConfig.hq_carpark_origin`,
+**CARPARK (the outdoor lineup).** The owned cars **eligible for the chosen
+rally** (`RallyLibrary.is_eligible`) — plus any **over-powered** car a detune
+would qualify (below) — are parked at `GameConfig.hq_carpark_origin`,
 in a **centred row ALONG X** — one car per painted bay (`menu_car_spacing` wide), with
 fewer cars than bays centred within the grid — each **parked nose-out toward the
 courtyard / menu camera (+Z)** so the camera frames its front with the garage behind;
@@ -388,7 +389,18 @@ its name + stats (drive / **lateral G** / power-to-weight / **Health %**); there
 no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
 Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_kit`)
-and unlocks Start. A **banner** names the rally + restriction; **Start** records the
+and unlocks Start. An **over-powered** focused car — its p/w sits over the rally's
+`pw_max` cap but detuning the engine would duck it under — still parks
+(`_build_eligible_lineup` records its qualifying tune from
+`RallyLibrary.qualifying_detune` in `_detune_needed`) with Start **enabled** but
+turned into an explicit agreement (`_refresh_focus_detune`): the warning explains the
+car doesn't qualify as-is and names the engine tune that would fix it, and Start —
+relabelled **Detune to N% & Start** — applies that tune (`Save.set_engine_detune`)
+before fielding the car (`_on_start_pressed`). Because it stays a single enabled
+Start button, the agreement is keyboard/gamepad reachable through the car park's
+existing `menu_select` handling with no new input surface. The map pin's green
+"raceable" pennant counts these detunable cars too (`_has_eligible_car` mirrors the
+lineup filter). A **banner** names the rally + restriction; **Start** records the
 fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
 so the tuning lift shows the car last raced), shows the
 `LoadingScreen` overlay immediately and (after a fully presented frame, so it paints)
@@ -593,7 +605,9 @@ opens the **rally detail**, and Enter flies to the
 RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
 wraps; a **wrecked car is gated in the car park** (Start disabled, then a Repair Kit
-restores it to full health and unlocks Start); **Back** steps car park → table →
+restores it to full health and unlocks Start); an **over-powered car parks with the
+detune-to-enter prompt** (warning + relabelled Start; agreeing applies the qualifying
+`engine_detune` and launches the rally); **Back** steps car park → table →
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
 both the event-only and cumulative leaderboards across its two pages (and the

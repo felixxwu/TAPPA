@@ -264,6 +264,32 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 	return true
 
 
+# The largest engine-detune fraction at which a car passes `rally`'s restriction,
+# or -1.0 when no detune can qualify it (a non-power restriction field fails, or
+# the band floor is unreachable). `full_meta` is the car's effective stats at FULL
+# tune (UpgradeLibrary.effective_meta with engine_detune 1.0), so the result is an
+# absolute detune-slider setting, not a value relative to the current tune; a car
+# already eligible at full tune returns 1.0. Torque — hence peak power and
+# power-to-weight — scales linearly with the detune fraction, so the target is the
+# cap/full ratio, floored to the tune slider's whole-percent steps so the value
+# round-trips through the UI. The result is verified back through is_eligible, so
+# a band floor (pw_min) the detuned figure would fall under still returns -1.0.
+static func qualifying_detune(rally: Dictionary, full_meta: Dictionary) -> float:
+	if is_eligible(rally, full_meta):
+		return 1.0
+	var r: Dictionary = rally.get("restriction", {})
+	var pw := CarLibrary.power_to_weight(full_meta) * KW_KG_TO_HP_TONNE
+	if not r.has("pw_max") or pw <= float(r["pw_max"]):
+		return -1.0  # ineligible for a reason detuning can't fix
+	var frac := floorf(float(r["pw_max"]) / pw * 100.0) / 100.0
+	if frac <= 0.0:
+		return -1.0
+	var eng := EngineLibrary.by_id(String(full_meta.get("engine", "")))
+	var scaled := full_meta.duplicate()
+	scaled["peak_torque"] = float(full_meta.get("peak_torque", eng.get("peak_torque", 0.0))) * frac
+	return frac if is_eligible(rally, scaled) else -1.0
+
+
 # The eligible car with the highest power-to-weight for a rally. Falls back to the
 # best car in the whole roster when `rally` is empty (legacy/test callers).
 static func _best_eligible_car(rally: Dictionary) -> Dictionary:

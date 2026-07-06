@@ -39,6 +39,7 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	CarFixtures.restore()
+	RallyLibrary.reset()  # drop any synthetic rally roster a test installed
 
 
 func _clean() -> void:
@@ -588,20 +589,26 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
 	assert_true(hq._car_layer.visible, "the car-park overlay is shown")
 	assert_false(hq._detail_layer.visible, "the detail overlay is hidden in the car park")
-	# Expected = exactly the owned cars RallyLibrary deems eligible. Derived from the
-	# eligibility rule + owned roster (not a pinned model name), so it stays correct
-	# if cars or the rally's p/w band are retuned — what it really asserts is that HQ
-	# parks the library's eligible set, no more, no less.
+	# Expected = exactly the owned cars RallyLibrary deems eligible, plus any
+	# over-powered car a detune would qualify (those park with a detune-to-enter
+	# prompt — see test_hq_carpark_offers_detune_to_enter_an_over_powered_car).
+	# Derived from the eligibility rule + owned roster (not a pinned model name), so
+	# it stays correct if cars or the rally's p/w band are retuned — what it really
+	# asserts is that HQ parks the library's enterable set, no more, no less.
 	var rally := RallyLibrary.by_id("rwd_masters")
 	var expected := {}
 	for model_id in ["fx_light_rwd", "fx_awd", "fx_rwd_coupe"]:  # the player's owned roster here
-		if RallyLibrary.is_eligible(rally, CarLibrary.by_id(model_id)):
-			expected[CarLibrary.by_id(model_id)["name"]] = true
+		var spec := CarLibrary.by_id(model_id)
+		var frac := RallyLibrary.qualifying_detune(rally, spec)
+		var over_cap: bool = CarLibrary.power_to_weight(spec) * RallyLibrary.KW_KG_TO_HP_TONNE \
+			> float(rally["restriction"].get("pw_max", INF))
+		if RallyLibrary.is_eligible(rally, spec) or (over_cap and frac > 0.0):
+			expected[spec["name"]] = true
 	await _await_lineup(hq)
 	var parked := {}
 	for car in hq._cars:
 		parked[car.current_car_name()] = true
-	assert_eq(parked, expected, "HQ parks exactly the cars RallyLibrary deems eligible")
+	assert_eq(parked, expected, "HQ parks exactly the eligible + detunable-to-fit cars")
 	assert_gt(expected.size(), 0, "at least one owned car qualifies (else the test proves nothing)")
 	# The banner spells out the rally's restriction. Derive the expected text from the
 	# rally's actual restriction (same helper HQ uses) rather than pinning "RWD CARS",
@@ -915,6 +922,84 @@ func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 	assert_false(hq._car_warning_label.visible, "the warning clears once repaired")
 	assert_almost_eq(float(_save.get_car(id)["hp"]), float(CarLibrary.by_id("fx_awd")["max_hp"]), 0.001,
 		"the repaired car is restored to full health")
+
+
+func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
+	# A car OVER a rally's pw_max cap still parks in the car-select lineup, with a
+	# warning that it doesn't qualify as-is and the engine tune that would fix it;
+	# Start becomes the explicit agreement ("Detune to N% & Start") — pressing it
+	# applies that detune and launches the rally.
+	var owned: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(owned["instance_id"])
+	# A synthetic rally whose pw_max sits between the starter's p/w and the coupe's,
+	# so the starter is plainly eligible and the coupe is over the cap — the cap is
+	# derived from the cars' own effective figures, never a pinned number.
+	var pw_starter := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(
+		_save.profile["cars"][0], CarLibrary.by_id("fx_light_rwd"))) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var pw_coupe := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(
+		owned, CarLibrary.by_id("fx_rwd_coupe"))) * RallyLibrary.KW_KG_TO_HP_TONNE
+	assert_gt(pw_coupe, pw_starter, "the coupe out-powers the starter (else this test proves nothing)")
+	var rallies: Array[Dictionary] = [
+		{
+			"id": "fx_capped", "name": "Fixture Capped", "difficulty": 1, "showdown": false,
+			"map_pos": Vector2(0.3, 0.3),
+			"restriction": {"pw_max": (pw_starter + pw_coupe) * 0.5},
+			"events": [
+				{"seed": 11, "turn_count": 4}, {"seed": 12, "turn_count": 4}, {"seed": 13, "turn_count": 4},
+			],
+		},
+		{
+			"id": "fx_showdown", "name": "Fixture Showdown", "difficulty": 4, "showdown": true,
+			"map_pos": Vector2(0.7, 0.7), "restriction": {},
+			"events": [
+				{"seed": 21, "turn_count": 4}, {"seed": 22, "turn_count": 4}, {"seed": 23, "turn_count": 4},
+			],
+		},
+	]
+	RallyLibrary.override_for_test(rallies)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_rally_pin("fx_capped")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	# Both cars park: the eligible starter AND the over-cap coupe, which carries the
+	# detune that would qualify it.
+	assert_eq(hq._eligible.size(), 2, "the over-powered car still parks alongside the eligible one")
+	assert_true(hq._detune_needed.has(id), "the over-cap car carries its qualifying detune")
+	var frac: float = hq._detune_needed.get(id, -1.0)
+	assert_between(frac, 0.01, 0.99, "the qualifying detune is a real down-tune")
+	# Focus the over-powered coupe: the warning + relabelled Start; Start stays ENABLED.
+	var idx := -1
+	for i in hq._eligible.size():
+		if int(hq._eligible[i]["instance_id"]) == id:
+			idx = i
+	assert_gt(idx, -1, "the over-powered car is in the lineup")
+	hq._focus = idx
+	hq._focus_changed()
+	assert_true(hq._car_warning_label.visible, "the doesn't-qualify warning is shown")
+	assert_string_contains(hq._car_warning_label.text, "%d%%" % roundi(frac * 100.0),
+		"the warning names the tune that would qualify the car")
+	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it IS the agreement")
+	# The overlays upper-case their labels (house style), so compare case-insensitively.
+	assert_string_contains(hq._start_button.text.to_upper(), "DETUNE",
+		"Start is relabelled as the detune agreement")
+	# Cycling to the plainly-eligible starter clears the prompt.
+	hq._focus = (idx + 1) % hq._eligible.size()
+	hq._focus_changed()
+	assert_false(hq._car_warning_label.visible, "an eligible car shows no warning")
+	assert_eq(hq._start_button.text.to_upper(), "START RALLY", "an eligible car keeps the plain Start label")
+	# Agree: press Start on the coupe — the detune is applied, the car now qualifies,
+	# and the rally launches with it.
+	hq._focus = idx
+	hq._focus_changed()
+	await hq._on_start_pressed()
+	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), frac, 0.0001,
+		"agreeing applies the qualifying engine detune to the car")
+	assert_true(RallyLibrary.is_eligible(RallyLibrary.by_id("fx_capped"),
+		UpgradeLibrary.effective_meta(_save.get_car(id), CarLibrary.by_id("fx_rwd_coupe"))),
+		"the detuned car now qualifies for the rally")
+	assert_true(RallySession.is_active(), "the rally launches after the agreement")
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
