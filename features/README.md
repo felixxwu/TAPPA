@@ -56,6 +56,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [mobile-controls.md](mobile-controls.md) | On-screen touch buttons: steer/throttle/brake (phones/web) |
 | [rendering.md](rendering.md) | PS1 shaders, dither post-process, materials, fog |
 | [debug-tools.md](debug-tools.md) | Force-arrow visualization overlay |
+| [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven long stage at 50 km/h, perf overlay + end-of-run stats breakdown |
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |
 
@@ -95,6 +96,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard.gdshader` |
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/perf_overlay.gd` |
 | Perf benchmark | `benchmark/perf_benchmark.gd`, `run_benchmark.sh` |
+| In-game benchmark | `scripts/benchmark_mode.gd` (`Benchmark` autoload), `scripts/benchmark_runner.gd`, `scripts/benchmark_stats.gd`, `scripts/benchmark_results.gd` |
 | Tests | `tests/`, `run_tests.sh` |
 
 > **Keep this current:** when you add or change a feature, update the matching

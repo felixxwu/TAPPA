@@ -64,8 +64,12 @@ finished. Mechanism:
 
 **Source:** `scripts/perf_overlay.gd` (`class_name PerfOverlay extends
 CanvasLayer`). Created by `world.gd` in `_ready()` (like the wheel-force
-overlay), passing the `Floor` terrain manager for correlation. Toggled with
-**P** (`toggle_perf_overlay`); hidden and idle by default.
+overlay), passing the `Floor` terrain manager for correlation and pointing
+`measure_viewport` at the `PostProcess/View` SubViewport (where the 3D pass
+actually runs in `main.tscn` — the root's 3D is disabled there). Toggled with
+**P** (`toggle_perf_overlay`); hidden and idle by default. Forced on for a whole
+run in benchmark mode via `activate()` ([benchmark.md](benchmark.md)). Text is
+`FONT_SIZE` = 15 px so the readout is legible at a glance.
 
 Diagnoses choppiness by separating the suspects per frame:
 
@@ -75,6 +79,7 @@ Diagnoses choppiness by separating the suspects per frame:
 | cpu process / physics | main-thread script + collision/physics cost |
 | render **cpu** vs **gpu** | CPU-bound vs GPU-bound (fill rate, post-process shader) |
 | draws / objects / prims | scene complexity / draw-call pressure |
+| vram (tex) / nodes / phys objs | video-memory + scene-tree + active-physics pressure |
 | chunks loaded / spikes | terrain ring size; running spike count |
 
 While active it enables `RenderingServer.viewport_set_measure_render_time` and,
@@ -89,6 +94,8 @@ that don't support it (and always headless); the overlay labels that case.
 **Source:** `benchmark/perf_benchmark.gd` + `benchmark/perf_benchmark.tscn`, run
 via `./run_benchmark.sh`. **NOT part of the test suite** — an on-demand tool for
 investigating choppiness, with no pass/fail gate (numbers are machine-dependent).
+For the player-facing, in-game benchmark (Settings → Benchmark: feature toggles,
+auto-driven run, results breakdown) see [benchmark.md](benchmark.md).
 
 ```bash
 ./run_benchmark.sh             # windowed: CPU chunk timings + GPU/render time

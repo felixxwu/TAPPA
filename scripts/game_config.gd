@@ -969,6 +969,10 @@ var peak_torque_rpm := 4500.0
 
 @export_group("Trees")
 ## Billboard tree sprites scattered around each track turn.
+## Master switch for stage foliage — trees, bushes and the bush hit volume. The
+## benchmark's vegetation toggle drives this (features/benchmark.md); normal play
+## leaves it on. Unlike trees_per_turn = 0 it skips the scatter work entirely.
+@export var vegetation_enabled := true
 ## Target tree count per turn — drives the scatter grid's density (the actual count is
 ## approximate, since foliage sits on a global jittered grid). 0 disables trees AND
 ## bushes (they share these params).
@@ -1029,6 +1033,9 @@ var peak_torque_rpm := 4500.0
 # Few per stage (tens), so they are individual nodes, not a MultiMesh. Authored face
 # textures (the pacenote arrow boards) go in sign_textures. Start/finish are the
 # inflatable arches, not signs, and the stage is no longer split into signed sectors.
+## Master switch for the roadside signs. The benchmark's signs toggle drives this
+## (features/benchmark.md); normal play leaves it on.
+@export var signs_enabled := true
 ## Number of equal arc-length sectors the stage is split into. No longer drives any
 ## signs (sector boards were dropped); kept only as the stage timer's per-sector
 ## split hook (SignLayout.sector_offsets, todo/stage-start-and-end.md §5).

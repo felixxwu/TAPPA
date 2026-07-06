@@ -15,6 +15,10 @@ extends VBoxContainer
 #   • Mobile controls — pick the touch control scheme (MobileControls.SCHEMES),
 #     persisted under MobileControls.SETTING_KEY. Each row carries a vector layout
 #     diagram (ControlSchemeDiagram), as on the original title-screen page.
+#   • Benchmark — configure and launch the in-game performance benchmark
+#     (features/benchmark.md): one ON/OFF row per Benchmark.TOGGLES entry
+#     (vegetation, spectators, render distance, …) and a Start row that hands off
+#     to the Benchmark autoload (which owns the config overrides + scene change).
 # Navigation is internal: show_list()/show_camera()/show_schemes() swap which page
 # is visible. `page_changed(is_root)` lets the host adapt its single bottom button
 # — on a sub-page it means "< Back" (to the list); on the list it means the host's
@@ -40,12 +44,15 @@ var scheme_rows: Array = []
 # Key-binding rows, exposed for tests / hosts:
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
+# Benchmark toggle rows, exposed for tests: [{key: String, button: Button}].
+var benchmark_rows: Array = []
 
 # The swappable pages (only one visible at a time).
 var _list_page: VBoxContainer
 var _camera_page: VBoxContainer
 var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
+var _benchmark_page: VBoxContainer
 var _dev_page: VBoxContainer
 var _dev_status: Label  # feedback line on the dev page ("Granted …", "Wiped …")
 
@@ -69,6 +76,7 @@ func _build() -> void:
 	_list_page.add_child(_make_nav_button("Camera", show_camera))
 	_list_page.add_child(_make_nav_button("Key bindings", show_controls))
 	_list_page.add_child(_make_nav_button("Mobile controls", show_schemes))
+	_list_page.add_child(_make_nav_button("Benchmark", show_benchmark))
 	_list_page.add_child(_make_nav_button("Dev", show_dev))
 
 	# Camera sub-page.
@@ -100,6 +108,21 @@ func _build() -> void:
 	for entry in MobileControls.SCHEMES:
 		_scheme_page.add_child(_make_scheme_row(int(entry["id"]), entry))
 
+	# Benchmark sub-page — the pre-run feature toggles + Start (features/benchmark.md).
+	_benchmark_page = _make_page()
+	add_child(_benchmark_page)
+	_benchmark_page.add_child(_make_heading("Benchmark"))
+	_benchmark_page.add_child(_make_sub(
+		"Auto-drive a long stage at %d km/h and measure performance. Toggle features to isolate their cost:"
+		% int(BenchmarkRunner.TARGET_SPEED_KMH)))
+	benchmark_rows.clear()
+	for entry in Benchmark.TOGGLES:
+		var key := String(entry["key"])
+		var button := _make_action_button("", _toggle_benchmark.bind(key))
+		benchmark_rows.append({"key": key, "button": button})
+		_benchmark_page.add_child(button)
+	_benchmark_page.add_child(_make_action_button("Start benchmark  >", _start_benchmark))
+
 	# Dev sub-page — wipe the whole save, or unlock any car / upgrade in the game.
 	_dev_page = _make_page()
 	add_child(_dev_page)
@@ -121,6 +144,7 @@ func _build() -> void:
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
 	_refresh_controls_selection()
+	_refresh_benchmark_rows()
 
 
 # --- Navigation --------------------------------------------------------------
@@ -149,6 +173,7 @@ func focus_current_page() -> void:
 	if _camera_page.visible: page = _camera_page
 	elif _controls_page.visible: page = _controls_page
 	elif _scheme_page.visible: page = _scheme_page
+	elif _benchmark_page.visible: page = _benchmark_page
 	elif _dev_page.visible: page = _dev_page
 	_focus_first_in(page)
 
@@ -179,6 +204,10 @@ func show_schemes() -> void:
 	_show_page(_scheme_page)
 
 
+func show_benchmark() -> void:
+	_show_page(_benchmark_page)
+
+
 func show_dev() -> void:
 	_show_page(_dev_page)
 
@@ -189,6 +218,7 @@ func _show_page(page: Control) -> void:
 	_camera_page.visible = page == _camera_page
 	_controls_page.visible = page == _controls_page
 	_scheme_page.visible = page == _scheme_page
+	_benchmark_page.visible = page == _benchmark_page
 	_dev_page.visible = page == _dev_page
 	page_changed.emit(at_root())
 	# Move the focus cursor onto the newly-shown page (deferred so it runs after the
@@ -305,6 +335,34 @@ func _capture_for_slot(event: InputEvent, slot: String) -> InputEvent:
 		m.axis_value = signf(event.axis_value)
 		return m
 	return null
+
+
+# --- Benchmark ---------------------------------------------------------------
+
+# Repaint every benchmark toggle row with its option's current ON/OFF state
+# (green-selected while ON, like the camera/scheme selections).
+func _refresh_benchmark_rows() -> void:
+	for row in benchmark_rows:
+		var on: bool = Benchmark.get_option(String(row["key"]))
+		var name_text := ""
+		for entry in Benchmark.TOGGLES:
+			if String(entry["key"]) == String(row["key"]):
+				name_text = String(entry["name"])
+		row["button"].text = UITheme.caps("%s: %s" % [name_text, "On" if on else "Off"])
+		_highlight(row["button"], on)
+
+
+# Flip one benchmark toggle and repaint.
+func _toggle_benchmark(key: String) -> void:
+	Benchmark.set_option(key, not Benchmark.get_option(key))
+	_refresh_benchmark_rows()
+
+
+# Launch the benchmark. The Benchmark autoload owns the rest (unpause, abandon
+# any active rally, config overrides, the run-scene load), so this works the
+# same from the HQ title screen and the in-run pause menu.
+func _start_benchmark() -> void:
+	Benchmark.start()
 
 
 # --- Dev actions -------------------------------------------------------------

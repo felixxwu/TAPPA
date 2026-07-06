@@ -178,8 +178,24 @@ func _ready() -> void:
 			loading.finish()
 
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
-	# wheel-force debug overlay; harmless and idle until toggled on.
-	add_child(PerfOverlay.new($Floor as TerrainManager))
+	# wheel-force debug overlay; harmless and idle until toggled on. Render times
+	# are measured on the PostProcess SubViewport — the viewport that actually
+	# does the 3D work while main.tscn is up (the root's 3D pass is disabled).
+	var perf := PerfOverlay.new($Floor as TerrainManager)
+	perf.measure_viewport = get_node_or_null("PostProcess/View") as Viewport
+	add_child(perf)
+
+	# Benchmark mode (features/benchmark.md): force the profiler on, hide the
+	# touch controls (the HUD is already off via cfg.hud_enabled), and hand the
+	# car to the auto-driving runner for the whole stage.
+	if Benchmark.active:
+		perf.activate()
+		($MobileControls as CanvasLayer).visible = false
+		var runner := BenchmarkRunner.new()
+		runner.name = "BenchmarkRunner"
+		add_child(runner)
+		runner.setup($Car, _track_progress, _road_centerline,
+			get_node_or_null("PostProcess/View") as Viewport)
 
 
 # Yield a frame so a freshly-set LoadingScreen step actually paints before the
@@ -278,6 +294,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var tarmac_first := TrackSurface.orientation_tarmac_first(cfg.track_seed)
 	$Floor.set_track(road_centerline, cfg.track_width, transition_m,
 		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m)
+	# Retained for post-build consumers outside this call (the benchmark runner
+	# follows the same road the progress manager measures).
+	_road_centerline = road_centerline
 
 	# Precompute every chunk the bounded play area can request (the off-track
 	# reset leash bounds it), so in-run chunk loads are instant cache pulls and
@@ -316,7 +335,8 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var foliage := await _build_foliage(cfg, result, road_centerline, loading)
 
 	# Roadside turn-arrow signs along the stage.
-	await _build_signs(cfg, result, loading)
+	if cfg.signs_enabled:
+		await _build_signs(cfg, result, loading)
 
 	# Roadside spectators: crowds that react to the car (todo/roadside-spectators.md).
 	# One group at the start, one at the end, and one at a seeded mid-stage point.
@@ -367,6 +387,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 # cells the spectator layout reuses.
 func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2D,
 		loading: LoadingScreen = null) -> Dictionary:
+	if not cfg.vegetation_enabled:
+		# Foliage off (the benchmark's vegetation toggle): skip the scatter and the
+		# fields entirely, but still hand the spectator layout the road-margin cells
+		# it needs to keep crowds off the carriageway.
+		var bare_cells := TrackGenerator.rasterize_cells(
+			road_centerline.tessellate(), cfg.track_width + 2.0 * cfg.tree_road_margin_m)
+		return {"trees": PackedVector2Array(), "road_cells": bare_cells}
 	await _stage(loading, "Scattering trees…")
 	# Scatter trees around each turn, then render them as solid low-poly meshes
 	# binned into per-cell MultiMeshes (TreeMeshField) so the engine LOD-/cull-s
@@ -511,19 +538,22 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
+	# A benchmark run skips the whole stage flow — the manager is left un-armed
+	# (no countdown, no control lock) and BenchmarkRunner drives instead.
 	_stage_manager = _ensure_child("StageManager",
 		func() -> Node: return StageManager.new()) as StageManager
-	# Staged runs hold the car in the start-line sequence until the player launches;
-	# otherwise the countdown arms immediately, as before.
-	_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
-	# Route the finish panel's NEXT button to advance the stage into the results flow
-	# (both nodes persist across regenerations, so guard the connection).
-	var hud_node := $HUD
-	if not hud_node.finish_next_pressed.is_connected(_stage_manager.proceed_to_results):
-		hud_node.finish_next_pressed.connect(_stage_manager.proceed_to_results)
-	# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
-	# elapsed time compares to the leading rival's estimated time at that point.
-	_setup_stage_splits(result, staged, cfg)
+	if not Benchmark.active:
+		# Staged runs hold the car in the start-line sequence until the player launches;
+		# otherwise the countdown arms immediately, as before.
+		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, staged)
+		# Route the finish panel's NEXT button to advance the stage into the results flow
+		# (both nodes persist across regenerations, so guard the connection).
+		var hud_node := $HUD
+		if not hud_node.finish_next_pressed.is_connected(_stage_manager.proceed_to_results):
+			hud_node.finish_next_pressed.connect(_stage_manager.proceed_to_results)
+		# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
+		# elapsed time compares to the leading rival's estimated time at that point.
+		_setup_stage_splits(result, staged, cfg)
 
 
 # Build the ground-cover bush mesh from the groundcover_opaque GLB. Keeps the
@@ -667,6 +697,10 @@ var _car_spawn: Transform3D
 # Tracks track progress + off-track reset for the current car (re-targeted on a
 # car swap, since the fresh car respawns at the start).
 var _track_progress: TrackProgress
+
+# The rendered road/progress centerline from the latest generation (lead-in +
+# runoff included) — kept for the benchmark runner's pursuit line.
+var _road_centerline: Curve2D
 
 # Owns the per-stage countdown -> run timer -> completion flow for the current
 # stage (recreated on each track regeneration).

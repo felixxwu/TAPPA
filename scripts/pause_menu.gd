@@ -58,11 +58,14 @@ func _on_quit_pressed() -> void:
 
 
 # Leave the run for HQ: unfreeze, then abandon the active rally. RallySession.abandon
-# emits rally_finished, which world.gd routes back to HQ (the garage view). With no
+# emits rally_finished, which world.gd routes back to HQ (the garage view). A benchmark
+# run exits through Benchmark.exit_to_hq so its config overrides are restored. With no
 # session (a plain dev boot of main.tscn) there's nothing to abandon, so load HQ direct.
 func quit_to_hq() -> void:
 	get_tree().paused = false
-	if RallySession.is_active():
+	if Benchmark.active:
+		Benchmark.exit_to_hq()
+	elif RallySession.is_active():
 		RallySession.abandon()
 	else:
 		get_tree().change_scene_to_file("res://hq.tscn")

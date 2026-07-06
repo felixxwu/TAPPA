@@ -201,6 +201,9 @@ green so the ground cover reads a bit more against the grass).
 ## Configuration
 
 `Trees` group in `GameConfig` (`config/game_config.tres` overrides some):
+`vegetation_enabled` (master switch — false skips the whole scatter + fields +
+bush hit volume; the benchmark's vegetation toggle drives it, see
+[benchmark.md](benchmark.md)),
 `trees_per_turn` (density target), `tree_spawn_radius_m`, `tree_road_margin_m`
 (gap from the road edge), `tree_jitter` (how far trees wander from the grid; lower
 = more regular), `tree_size_m` (the tree model is scaled so its **height** matches

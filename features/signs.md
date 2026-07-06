@@ -103,6 +103,8 @@ the hitbox. Per sign:
 
 ## Config (`GameConfig` › *Roadside Signs*)
 
+`signs_enabled` (master switch — false skips the sign build entirely; the
+benchmark's signs toggle drives it, see [benchmark.md](benchmark.md)),
 `sign_panel_size_m`, `sign_thickness_m`, `sign_splay_deg`, `sign_edge_inset_m`,
 `sign_base_depth_m`, `sign_mass_kg`, `sign_textures`, and the knock-over launch
 (`sign_knock_speed_factor`, `sign_knock_speed_min`, `sign_knock_speed_max`,

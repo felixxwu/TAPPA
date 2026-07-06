@@ -234,13 +234,18 @@ into **its own sub-page**:
   its name and how-to. The choice persists under `MobileControls.SETTING_KEY` and is
   applied on the next run (or **live**, in the pause menu, via the `scheme_changed`
   signal — the on-screen controls rebuild the instant you pick a scheme).
+- **Benchmark** — configure and launch the **in-game performance benchmark**
+  ([benchmark.md](benchmark.md)): one ON/OFF row per `Benchmark.TOGGLES` entry
+  (vegetation, spectators, render distance, uncap FPS, …) and a **Start benchmark**
+  row that hands off to the `Benchmark` autoload (config overrides + run-scene
+  load). Toggle states are session-scoped, not saved.
 - **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
   fresh new game), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
   and per upgrade/repair-kit (`Save.add_item`, from `UpgradeLibrary.UPGRADES`) to
   unlock anything in the game. A status line reports the last action.
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
-`show_schemes()` / `show_dev()` swap which page is visible (only the visible page contributes
+`show_schemes()` / `show_benchmark()` / `show_dev()` swap which page is visible (only the visible page contributes
 height, so the long schemes page scrolls while the short list/camera pages don't),
 and `page_changed(is_root)` lets the host steer its single bottom button — on a
 sub-page it reads **< Back** (returns to the list); on the list it is the host's own
