@@ -124,10 +124,14 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 
 # The unlock-fallback pool: non-empty ONLY when the garage is stuck — no owned
 # car (on its EFFECTIVE stats, so installed upgrades count) can enter any
-# still-incomplete rally. Then: take the still-locked (incomplete, showdown only
-# if unlocked) rallies at the LOWEST difficulty present, and return every
-# CarLibrary model eligible for one of them, so the grant opens progression in
-# difficulty order (all tier-1/2 beaten -> a car for a difficulty-3 rally, not 4).
+# still-incomplete rally. Then: walk the still-locked (incomplete, showdown only
+# if unlocked) rallies by difficulty ASCENDING and return every CarLibrary model
+# eligible for one at the lowest difficulty ANY catalogue car can actually
+# enter, so the grant opens progression in difficulty order (all tier-1/2
+# beaten -> a car for a difficulty-3 rally, not 4). Stepping past a difficulty
+# whose restriction bands no catalogue car fits matters: giving up there (and
+# silently falling back to the standard draw) would leave the player soft-locked
+# even though a grant for the next difficulty up re-opens progression.
 static func _unlock_candidates(profile: Dictionary) -> Array:
 	for car in profile.get("cars", []):
 		var meta := UpgradeLibrary.effective_meta(car, CarLibrary.by_id(String(car.get("model_id", ""))))
@@ -135,26 +139,30 @@ static func _unlock_candidates(profile: Dictionary) -> Array:
 			return []  # a new rally is already enterable — standard draw applies
 	var rallies: Dictionary = profile.get("rallies", {})
 	var sd_unlocked := RallyLibrary.showdown_unlocked(profile)
-	var locked: Array = []
+	# Locked rallies grouped by difficulty, so we can walk difficulties ascending.
+	var locked_by_difficulty := {}
 	for rally in RallyLibrary.RALLIES:
 		if rallies.get(rally["id"], {}).get("completed", false):
 			continue
 		if rally["showdown"] and not sd_unlocked:
 			continue
-		locked.append(rally)
-	if locked.is_empty():
-		return []  # everything is beaten — nothing to unlock, standard draw applies
-	var lowest := int(locked[0].get("difficulty", 1))
-	for rally in locked:
-		lowest = mini(lowest, int(rally.get("difficulty", 1)))
-	var out := {}
-	for rally in locked:
-		if int(rally.get("difficulty", 1)) != lowest:
-			continue
-		for entry in CarLibrary.all():
-			if RallyLibrary.is_eligible(rally, entry):
-				out[entry["id"]] = true
-	return out.keys()
+		var d := int(rally.get("difficulty", 1))
+		if not locked_by_difficulty.has(d):
+			locked_by_difficulty[d] = []
+		locked_by_difficulty[d].append(rally)
+	var difficulties: Array = locked_by_difficulty.keys()
+	difficulties.sort()
+	for d in difficulties:
+		var out := {}
+		for rally in locked_by_difficulty[d]:
+			for entry in CarLibrary.all():
+				if RallyLibrary.is_eligible(rally, entry):
+					out[entry["id"]] = true
+		if not out.is_empty():
+			return out.keys()
+	# Nothing is locked, or no catalogue car can enter any locked rally (a hard
+	# data hole no grant can fix) — the standard draw applies.
+	return []
 
 
 # Uniform pick from `pool`, restricted to not-yet-owned models when any exist

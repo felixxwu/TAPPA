@@ -74,7 +74,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 
 	# Opaque path scales the normalized mesh by size; quad path bakes size in.
 	instance_scale = Vector3(size.x, size.y, 1.0) if use_opaque else Vector3.ONE
-	var basis := Basis.from_scale(instance_scale) if use_opaque else Basis.IDENTITY
+	var inst_basis := Basis.from_scale(instance_scale) if use_opaque else Basis.IDENTITY
 
 	for i in positions.size():
 		var p := positions[i]
@@ -83,7 +83,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 		var y := terrain.height_at(p.x, p.y) + y_offset
 		var pos := Vector3(p.x, y, p.y)
 		instance_positions[i] = pos
-		mm.set_instance_transform(i, Transform3D(basis, pos))
+		mm.set_instance_transform(i, Transform3D(inst_basis, pos))
 
 	# One StaticBody3D holds every hitbox; all share one BoxShape3D resource instanced
 	# per position (cheap: one shape, N transforms). Skipped when with_collision is false.

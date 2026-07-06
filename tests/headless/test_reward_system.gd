@@ -205,15 +205,26 @@ func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
 	# Sanity: the setup really is stuck (no incomplete rally enterable).
 	assert_true(RallyLibrary.incomplete_rallies_enterable_by(stuck_car, profile).is_empty(),
 		"setup: the owned car has no incomplete rally left to enter")
-	# The lowest difficulty among the locked (incomplete, showdown-gated) rallies.
+	# The lowest difficulty among the locked (incomplete, showdown-gated) rallies
+	# that at least one catalogue car can actually enter — a locked rally whose
+	# restriction band no car fits can't be opened by ANY grant, so the draw steps
+	# past it to the next difficulty up rather than giving up (anti-soft-lock).
 	var sd := RallyLibrary.showdown_unlocked(profile)
 	var lowest := 0
 	for rally in RallyLibrary.RALLIES:
 		if completed.has(rally["id"]) or (rally["showdown"] and not sd):
 			continue
+		var any_eligible := false
+		for entry in CarLibrary.all():
+			if RallyLibrary.is_eligible(rally, entry):
+				any_eligible = true
+				break
+		if not any_eligible:
+			continue
 		var d := int(rally["difficulty"])
 		lowest = d if lowest == 0 else mini(lowest, d)
-	assert_gt(lowest, 0, "setup: at least one locked rally remains")
+	if lowest == 0:
+		return  # no locked rally admits any car at all — nothing a grant could open
 	for i in 20:
 		var model: Variant = RewardSystem.draw_car(profile, _rng(i))
 		var meta := CarLibrary.by_id(String(model))
@@ -225,7 +236,7 @@ func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
 				opens_lowest = true
 				break
 		assert_true(opens_lowest,
-			"the stuck-player grant enters a locked rally at the LOWEST locked difficulty")
+			"the stuck-player grant enters a locked rally at the LOWEST openable locked difficulty")
 		# And the grant really re-opens progression.
 		assert_false(RallyLibrary.incomplete_rallies_enterable_by(meta, profile).is_empty(),
 			"the granted car can enter a still-incomplete rally")
