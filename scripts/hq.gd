@@ -400,6 +400,9 @@ func _add_pin_hit(pin: Node3D, rally_id: String, pos: Vector3, r: float) -> void
 	area.add_child(cs)
 	area.position = pos
 	area.input_ray_pickable = true
+	# Pure click target — overlap monitoring is unused (see hq_environment.gd).
+	area.monitoring = false
+	area.monitorable = false
 	area.input_event.connect(_on_pin_input.bind(rally_id))
 	pin.add_child(area)
 

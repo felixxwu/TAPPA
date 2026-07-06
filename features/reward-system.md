@@ -71,10 +71,13 @@ is **guaranteed** — a car is always granted. Two paths:
    (each owned car is checked on its **effective** stats via
    `UpgradeLibrary.effective_meta`, so installed upgrades count, against
    `RallyLibrary.incomplete_rallies_enterable_by`). Candidates then become the
-   models eligible for the **lowest-difficulty still-locked** rallies (incomplete,
-   showdown only once unlocked) — e.g. all tier-1/2 rallies beaten with nothing
-   new enterable ⇒ a car for a difficulty-3 rally, never 4. This guarantees a
-   fresh rally opens after every reward.
+   models eligible for the still-locked rallies (incomplete, showdown only once
+   unlocked) at the **lowest difficulty any catalogue car can actually enter** —
+   e.g. all tier-1/2 rallies beaten with nothing new enterable ⇒ a car for a
+   difficulty-3 rally, never 4. A locked difficulty whose restriction bands no
+   catalogue car fits is stepped past (giving up there would leave the player
+   soft-locked even though a grant one difficulty up re-opens progression). This
+   guarantees a fresh rally opens after every reward whenever one is openable.
 3. **Prefer un-owned** — either path draws uniformly from the not-yet-owned
    candidates when any exist, else grants a duplicate of an owned one.
 
@@ -94,5 +97,6 @@ monotonic + clamped; `target_tier` never exceeds the ceiling; upgrade draws land
 at the target tier with the repair kit a rare minority; a part already fitted to
 the driven car is never drawn (repair-kit fallback when the car has everything); car draws never exceed
 the garage tier and prefer un-owned before falling back to a duplicate; a stuck
-player's grant opens a lowest-difficulty locked rally; and `draw_car` still pays
-a real car even with everything completed (the guaranteed-reward property).
+player's grant opens a locked rally at the lowest difficulty any car can enter;
+and `draw_car` still pays a real car even with everything completed (the
+guaranteed-reward property).

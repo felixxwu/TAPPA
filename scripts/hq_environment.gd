@@ -302,6 +302,11 @@ func _build_map_table(host: Node3D, on_table_input: Callable) -> void:
 	area.add_child(cs)
 	area.position = Vector3(p.x, top_y, p.z)
 	area.input_ray_pickable = true
+	# Pure click target: overlap monitoring is unused, and a monitoring area lets
+	# a body freed inside its volume underflow Jolt's area ref-counting
+	# ("ref_count <= 0" in jolt_area_3d _flush_events).
+	area.monitoring = false
+	area.monitorable = false
 	area.input_event.connect(on_table_input)
 	host.add_child(area)
 
@@ -325,5 +330,10 @@ func _build_lift(host: Node3D, on_lift_input: Callable) -> void:
 	area.add_child(cs)
 	area.position = p + Vector3(0.0, 1.2, 0.0)
 	area.input_ray_pickable = true
+	# Pure click target, and the lift-car prop is freed + respawned INSIDE this
+	# volume (change car / engine swap) — with monitoring on, that churn
+	# underflows Jolt's area ref-counting ("ref_count <= 0" in _flush_events).
+	area.monitoring = false
+	area.monitorable = false
 	area.input_event.connect(on_lift_input)
 	host.add_child(area)
