@@ -389,3 +389,67 @@ func test_current_event_standings_ranks_by_the_just_completed_event() -> void:
 	assert_eq(int(s[1]["combined_ms"]), 40000, "the row carries the single-event time, not the cumulative")
 	assert_eq(int(s[3]["placed"]), -1, "a rival who DNF'd this event sinks to the bottom")
 	assert_true(bool(s[3]["dnf"]), "the event-DNF rival is flagged DNF")
+
+
+# --- Temporary car-park detune (features/engine-swap.md) --------------------------
+
+func _detune_of(id: int) -> float:
+	return float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0))
+
+
+# A car-park "Detune to N% & Start" agreement is temporary, for that rally only:
+# the registered prior tune (here a garage-set 0.9) holds NOWHERE mid-rally — not
+# at event boundaries — and is restored only when the rally actually resolves.
+func test_registered_detune_reverts_to_the_prior_tune_when_the_rally_finishes() -> void:
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	var id := int(owned["instance_id"])
+	# The garage previously detuned this car to 0.9; the car-park popup then
+	# detunes it further to 0.6 for this rally only (mirrors hq._on_detune_confirmed).
+	_save.set_engine_detune(id, 0.9)
+	RallySession.register_detune_revert(id, _detune_of(id))
+	_save.set_engine_detune(id, 0.6)
+	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession._opponent_field = _field([100000, 200000])
+	# Mid-rally — including the standings pause between events — the temporary
+	# detune must hold; the tune never creeps back up before the rally is over.
+	RallySession.report_event_result(50000)
+	assert_almost_eq(_detune_of(id), 0.6, 0.0001, "the temporary detune holds at the event boundary")
+	RallySession.continue_to_next_event()
+	assert_almost_eq(_detune_of(id), 0.6, 0.0001, "the temporary detune holds into the next event")
+	_report_events([50000, 50000])  # the remaining events -> the rally resolves
+	assert_false(RallySession.is_active(), "the rally resolved")
+	assert_almost_eq(_detune_of(id), 0.9, 0.0001,
+		"finishing restores the garage-set tune the popup temporarily overrode")
+
+
+# A never-tuned car reverts to the 1.0 (100%) default, and abandoning mid-rally
+# counts as the rally ending too — the temporary detune must not outlive the rally.
+func test_registered_detune_reverts_to_default_on_abandon() -> void:
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	var id := int(owned["instance_id"])
+	RallySession.register_detune_revert(id, _detune_of(id))
+	_save.set_engine_detune(id, 0.7)
+	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession._opponent_field = _field([100000])
+	RallySession.abandon()
+	assert_almost_eq(_detune_of(id), 1.0, 0.0001,
+		"abandoning restores the never-tuned car to full power")
+
+
+# A revert registered for a car that never actually started (the player backed out
+# before start_rally): the next start_rally settles it immediately — that car isn't
+# racing, so its temporary detune is undone rather than left applied or rewritten
+# when the OTHER car's rally later ends.
+func test_stale_detune_revert_for_an_unfielded_car_is_settled_at_start() -> void:
+	var backed_out: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var stale_id := int(backed_out["instance_id"])
+	RallySession.register_detune_revert(stale_id, 1.0)
+	_save.set_engine_detune(stale_id, 0.5)  # the agreement's detune, never raced
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	assert_almost_eq(_detune_of(stale_id), 1.0, 0.0001,
+		"the unraced car's temporary detune is undone as soon as another rally starts")
+	RallySession._opponent_field = _field([100000])
+	RallySession.abandon()
+	assert_almost_eq(_detune_of(stale_id), 1.0, 0.0001,
+		"and the later rally end leaves it alone")

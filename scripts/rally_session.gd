@@ -49,6 +49,12 @@ var _opponent_field: Array = []        # fixed per rally seed (never saved)
 var _dnf := false
 var _upgrades_won: Array[String] = []  # the single upgrade id drawn this rally (reveal)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
+# Car-park detune-to-enter agreements are TEMPORARY, for this rally only:
+# instance_id -> the engine_detune to restore once the rally ENDS (finish, wreck
+# or abandon — all funnel through _reset_to_idle, which never runs mid-rally, so
+# the tune can't creep back up between events). Registered by hq's detune confirm
+# (register_detune_revert); a garage-lift detune never touches this.
+var _detune_revert: Dictionary = {}
 
 # One-shot navigation flag set by the podium's final "Continue": tells HQ to open
 # straight on the GARAGE view (not the exterior title) when it next boots. NOT
@@ -81,6 +87,15 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 	free_roam_instance_id = -1
 	_car_instance_id = int(owned_car.get("instance_id", -1))
 	_car_model_id = String(owned_car.get("model_id", ""))
+	# Keep only the fielded car's pending detune revert. An agreement whose start
+	# was then backed out of (it never reached start_rally) is settled NOW: that
+	# car isn't racing, so its temporary detune is undone immediately rather than
+	# lingering to rewrite its tuning when THIS rally ends.
+	for id in _detune_revert:
+		if int(id) != _car_instance_id:
+			Save.set_engine_detune(int(id), float(_detune_revert[id]))
+	var pending: Variant = _detune_revert.get(_car_instance_id)
+	_detune_revert = {} if pending == null else {_car_instance_id: pending}
 	_event_index = 0
 	_event_times_ms = []
 	_dnf = false
@@ -410,7 +425,23 @@ func _owns_model(model_id: String) -> bool:
 	return false
 
 
+# A car-park "Detune to N% & Start" agreement is only for the rally being entered:
+# remember the tune to put back afterwards (the garage-set value, or the 1.0
+# default if the car was never tuned). Called by hq's detune confirm just before
+# it applies the temporary detune; the restore happens in _reset_to_idle.
+func register_detune_revert(instance_id: int, prior_frac: float) -> void:
+	if instance_id < 0:
+		return
+	_detune_revert[instance_id] = clampf(prior_frac, 0.0, 1.0)
+
+
 func _reset_to_idle() -> void:
+	# The rally is over (finish, wreck or abandon): put back the engine tune the
+	# car-park detune agreement temporarily overrode. Only here — never at an
+	# event boundary — so the tune can't go back up mid-rally.
+	for id in _detune_revert:
+		Save.set_engine_detune(int(id), float(_detune_revert[id]))
+	_detune_revert = {}
 	_rally = {}
 	_car_instance_id = -1
 	_car_model_id = ""

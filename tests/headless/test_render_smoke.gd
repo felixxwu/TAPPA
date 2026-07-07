@@ -241,13 +241,13 @@ func test_all_shaders_sample_textures_with_nearest_filter() -> void:
 
 func test_tree_canopy_material_uses_nearest_filter() -> void:
 	# The tree mesh comes from a GLB whose baked StandardMaterials import with
-	# linear filtering. world.gd._tree_mesh() forces nearest on every surface and
+	# linear filtering. Foliage.tree_mesh() forces nearest on every surface and
 	# swaps the textured canopy surface to the tree_canopy ShaderMaterial (so it
 	# can dither-dissolve near the camera). Verify: the canopy ends up a
 	# ShaderMaterial carrying its leaf texture and sampling nearest (via the
 	# shader's filter_nearest hint), while the untextured trunk stays a
 	# BaseMaterial3D filtered nearest-with-mipmaps.
-	var mesh := _scene._tree_mesh() as Mesh
+	var mesh := Foliage.tree_mesh() as Mesh
 	assert_not_null(mesh, "tree mesh extracted from the GLB")
 	if mesh == null:
 		return

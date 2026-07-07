@@ -387,8 +387,8 @@ func test_tree_canopy_uses_near_camera_dissolve_shader() -> void:
 	# The canopy surface is swapped to the near-camera dissolve ShaderMaterial
 	# (so trees the chase camera enters stop blocking the view), with its fade
 	# range wired from GameConfig. The trunk surface keeps its StandardMaterial3D.
-	var mesh := (_scene as Node).call("_tree_mesh") as Mesh
-	assert_not_null(mesh, "world exposes the shared tree mesh")
+	var mesh := Foliage.tree_mesh() as Mesh
+	assert_not_null(mesh, "Foliage exposes the shared tree mesh")
 	var cfg: GameConfig = Config.data
 	var canopy: ShaderMaterial = null
 	for s in mesh.get_surface_count():

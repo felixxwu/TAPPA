@@ -35,10 +35,6 @@ const CAR_SCENE_PATH := "res://car.tscn"
 # tarmac pads feather into grass exactly the way the generated road does; the
 # trees/bushes/spectators are the same low-poly models the world scatters, but
 # placed as plain decorative MultiMeshes (no collision, no AI).
-const GROUND_SHADER := preload("res://shaders/ps1_models.gdshader")
-const GRASS_TEXTURE := preload("res://textures/grass.jpg")
-const TREE_MODEL := preload("res://models/low_poly_tree.glb")
-const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
 const SPECTATOR_SCENE := preload("res://blender/spectator/spectator.glb")
 
 # Floor is a square PlaneMesh side (m); subdivided finely enough that the pad
@@ -149,16 +145,15 @@ func _build_environment() -> void:
 	# COLOR.a is the grass→tarmac weight and UV2.x = 1 selects pure tarmac.
 	var ground := MeshInstance3D.new()
 	ground.name = "Floor"
-	ground.mesh = _build_floor_mesh()
+	var pad_size := Vector2.ONE * cfg.podium_tarmac_pad_half * 2.0
+	var pads: Array[Rect2] = [
+		Rect2(Vector2(PODIUM_CENTER.x, PODIUM_CENTER.z) - pad_size * 0.5, pad_size),
+		Rect2(Vector2(SHOWROOM_CENTER.x, SHOWROOM_CENTER.z) - pad_size * 0.5, pad_size),
+	]
+	ground.mesh = MeshUtil.feathered_ground_mesh(FLOOR_SIZE, FLOOR_SUBDIV, pads,
+		cfg.podium_tarmac_feather_m)
 	ground.position.y = -0.01
-	var gm := ShaderMaterial.new()
-	gm.shader = GROUND_SHADER
-	gm.set_shader_parameter("albedo_texture", GRASS_TEXTURE)
-	gm.set_shader_parameter("tarmac_color", cfg.tarmac_color)
-	gm.set_shader_parameter("blend_road", true)
-	var tpm: float = cfg.terrain_tile_per_meter
-	gm.set_shader_parameter("texture_tile", Vector2(tpm, tpm))
-	ground.material_override = gm
+	ground.material_override = MeshUtil.feathered_ground_material(cfg)
 	add_child(ground)
 
 	# The showroom turntable: a low wide cylinder the won car turns on.
@@ -182,49 +177,6 @@ func _build_environment() -> void:
 	add_child(_camera)
 
 
-# The floor mesh: a subdivided grid carrying, per vertex, a grass→tarmac blend
-# weight in COLOR.a (1 on a pad, smoothstep-feathered to 0 across the feather
-# band) and UV2.x = 1 (pure tarmac). Two square pads: the podium and the showroom.
-func _build_floor_mesh() -> ArrayMesh:
-	var cfg: GameConfig = Config.data
-	var half: float = cfg.podium_tarmac_pad_half
-	var feather: float = maxf(cfg.podium_tarmac_feather_m, 0.001)
-	var pads := [Vector2(PODIUM_CENTER.x, PODIUM_CENTER.z),
-			Vector2(SHOWROOM_CENTER.x, SHOWROOM_CENTER.z)]
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var n := FLOOR_SUBDIV
-	var step := FLOOR_SIZE / float(n)
-	var origin := -FLOOR_SIZE * 0.5
-	# Build the (n+1)^2 vertex grid, then index two triangles per cell.
-	for j in n + 1:
-		for i in n + 1:
-			var x := origin + float(i) * step
-			var z := origin + float(j) * step
-			var w := 0.0
-			for c in pads:
-				# Chebyshev distance → a square pad; feather beyond its half-extent.
-				var d := maxf(absf(x - c.x), absf(z - c.y))
-				w = maxf(w, 1.0 - smoothstep(half, half + feather, d))
-			st.set_color(Color(1.0, 1.0, 1.0, w))
-			st.set_uv(Vector2(x, z))
-			st.set_uv2(Vector2(1.0, 0.0))
-			st.set_normal(Vector3.UP)  # flat floor; keeps the mesh well-formed
-			st.add_vertex(Vector3(x, 0.0, z))
-	var row := n + 1
-	for j in n:
-		for i in n:
-			var a := j * row + i
-			var b := a + 1
-			var cc := a + row
-			var d := cc + 1
-			# Wound so the front face points UP: the shared ps1_models shader culls back
-			# faces, so a downward-facing floor draws nothing when viewed from above.
-			st.add_index(a); st.add_index(b); st.add_index(cc)
-			st.add_index(b); st.add_index(d); st.add_index(cc)
-	return st.commit()
-
-
 # --- Decorative scenery (real play only; skipped headless) --------------------
 
 # Dress both focal areas (podium + showroom) with trees, bushes and a standing
@@ -234,12 +186,17 @@ func _build_scenery() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0xB0DE  # fixed → stable placement run-to-run
 
-	var tree_mesh := _mesh_from_scene(TREE_MODEL)
+	# The shared tree + bush meshes (Foliage), so the podium dressing references the
+	# same models the stage + HQ do. The podium keeps its own decorative placement
+	# (a scale-jittered ring per focal area, plain MultiMeshes) rather than the
+	# verge fields — this is a close-up hero shot where varied 3D trees read better
+	# than the distance-culled billboard field, so it always uses the 3D tree mesh.
+	var tree_mesh := Foliage.tree_mesh()
 	if tree_mesh != null:
 		_add_multimesh(tree_mesh, _scatter_ring(rng, cfg.podium_scenery_tree_count,
 				cfg.podium_scenery_ring_inner, cfg.podium_scenery_ring_outer,
 				0.85, 1.25), "Trees")
-	var bush_mesh := _bush_mesh(cfg)
+	var bush_mesh := Foliage.bush_mesh()
 	if bush_mesh != null:
 		_add_multimesh(bush_mesh, _scatter_ring(rng, cfg.podium_scenery_bush_count,
 				cfg.podium_scenery_ring_inner * 0.7, cfg.podium_scenery_ring_outer,
@@ -330,22 +287,6 @@ func _mesh_from_scene(scene: PackedScene) -> Mesh:
 	var hits := inst.find_children("*", "MeshInstance3D", true, false)
 	var mesh: Mesh = (hits[0] as MeshInstance3D).mesh if not hits.is_empty() else null
 	inst.free()
-	return mesh
-
-
-# The groundcover bush mesh, tinted the same way world.gd renders scattered bushes.
-func _bush_mesh(cfg: GameConfig) -> Mesh:
-	var src := _mesh_from_scene(GROUNDCOVER_SCENE)
-	if src == null:
-		return null
-	var mesh: Mesh = src.duplicate()
-	var base := mesh.surface_get_material(0)
-	var mat: StandardMaterial3D = base.duplicate() if base is StandardMaterial3D else StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.vertex_color_use_as_albedo = true
-	mat.albedo_color = cfg.bush_tint
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	mesh.surface_set_material(0, mat)
 	return mesh
 
 
@@ -544,7 +485,10 @@ func _build_overlay() -> void:
 	_slot_label = Label.new()
 	_slot_label.add_theme_font_size_override("font_size", 40)
 	_slot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_slot_label.custom_minimum_size = Vector2(520, 0)
+	_slot_label.custom_minimum_size = Vector2(_card_width(), 0)
+	# Wrap at the card width: without this a long part/car name at this font size
+	# stretches the reveal card (and its Apply/Keep confirm) wider than the screen.
+	_slot_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	slot_col.add_child(_slot_label)
 	_slot_caption = Label.new()
 	_slot_caption.add_theme_font_size_override("font_size", 16)
@@ -585,6 +529,12 @@ func _build_overlay() -> void:
 	# when the upgrade reveal shows it). No on_back — the reward flow is linear
 	# (Next-only); podium re-grabs Next/Apply itself as reveals appear.
 	MenuNav.attach(root, {first = _next_button})
+
+
+# The reveal card's content width: the 520px design width, shrunk on narrow
+# viewports so the card (plus panel padding/border) never overflows the screen.
+func _card_width() -> float:
+	return minf(520.0, get_viewport().get_visible_rect().size.x * 0.8)
 
 
 # --- Stage flow --------------------------------------------------------------
@@ -644,7 +594,7 @@ func _show_car_reveal() -> void:
 	_slot_panel.visible = true
 	# The slot label sets the card width while it spins; give the caption the same
 	# width so the landed card stays a single horizontal line instead of wrapping.
-	_slot_caption.custom_minimum_size = Vector2(520, 0)
+	_slot_caption.custom_minimum_size = Vector2(_card_width(), 0)
 	_move_camera(_showroom_cam())
 	var car_id := String(_result.get("car_reward", ""))
 	var entry := CarLibrary.by_id(car_id)

@@ -118,20 +118,22 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
 
 
-func test_hq_frames_the_lot_with_tree_meshes() -> void:
-	# HQ trees were swapped from billboards to the shared low-poly mesh field,
-	# as scenery (no collision).
+func test_hq_frames_the_lot_with_config_matched_trees() -> void:
+	# HQ trees are spawned through the shared Foliage helper, so they match the
+	# game's tree representation (billboard cutout or 3D mesh, per
+	# cfg.use_billboard_trees) instead of a hardcoded mesh — and they're scenery
+	# (no collision).
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var field: TreeMeshField = null
-	for c in hq.get_children():
-		if c is TreeMeshField:
-			field = c
-	assert_not_null(field, "HQ frames the lot with a TreeMeshField (3D trees, not billboards)")
-	if field != null:
-		assert_gt(field.bin_count, 0, "HQ tree field has at least one bin")
-		assert_null(field.get_node_or_null("Collision"), "HQ trees are scenery (no collision)")
+	var field := hq.get_node_or_null("HQTrees")
+	assert_not_null(field, "HQ frames the lot with a tree field")
+	# The field type must match what the config selects for the stage.
+	if Config.data.use_billboard_trees:
+		assert_true(field is BillboardField, "billboard config → HQ frames with billboard trees")
+	else:
+		assert_true(field is TreeMeshField, "mesh config → HQ frames with 3D tree meshes")
+	assert_null(field.get_node_or_null("Collision"), "HQ trees are scenery (no collision)")
 
 
 func test_hq_map_table_is_a_proper_wooden_model() -> void:
@@ -449,6 +451,56 @@ func test_free_roam_fields_the_picked_owned_car() -> void:
 	assert_eq(car.damage.instance_id, id, "free roam fields the picked owned-car instance")
 	# Don't leak the pick into later tests.
 	RallySession.free_roam_instance_id = -1
+
+
+# Finishing the track in free roam has no session to report to; the finish panel's
+# Next must still DO something — it returns to HQ (not silently no-op). Drives the
+# REAL signal chain (stage_completed → world's handler), not the handler directly:
+# the wiring itself once only existed for session runs, which is exactly the bug.
+func test_free_roam_finish_next_returns_to_hq() -> void:
+	var owned: Dictionary = _save.grant_car("fx_fwd_hatch")
+	RallySession.free_roam_instance_id = int(owned["instance_id"])
+	SceneHelpers.minimal_world()
+	var scene: Node3D = load("res://main.tscn").instantiate()
+	add_child_autofree(scene)
+	await get_tree().process_frame
+	var requested: Array = [""]
+	scene.scene_change_hook = func(path: String) -> void: requested[0] = path
+	# The finish emits stage_completed (proceed_to_results); world must have it
+	# connected even with no session — that connection is what routes Next to HQ.
+	scene._stage_manager.stage_completed.emit(12.0)
+	assert_eq(String(requested[0]), "res://hq.tscn",
+		"the free-roam finish panel's Next returns to HQ")
+	RallySession.free_roam_instance_id = -1
+
+
+# The HQ clearing is dressed like a stage verge: the framing tree ring is joined by
+# an interleaved bush ring and spectators spread around the clearing (pure scenery —
+# no steering; there is no car in HQ to react to). Spectators stand on the grass,
+# never on the concrete apron.
+func test_hq_has_bush_and_spectator_scenery() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# The tree field is billboard OR mesh (per config); the bush field is always
+	# a 3D TreeMeshField.
+	assert_not_null(hq.get_node_or_null("HQTrees"), "the HQ tree ring field exists")
+	var bushes: TreeMeshField = hq.get_node_or_null("HQBushes")
+	assert_not_null(bushes, "the HQ scatters a bush field alongside the trees")
+	assert_gt(bushes.instance_positions.size(), 0, "the bush field is populated")
+	var crowd := hq.get_node_or_null("HQSpectators") as MultiMeshInstance3D
+	assert_not_null(crowd, "spectators stand around the lot")
+	assert_gt(crowd.multimesh.instance_count, 0, "the spectator scatter is populated")
+	# All of them keep off the tarmac (the concrete apron the cars park on). The
+	# scatter is read from meta — headless MultiMesh buffers can't be read back.
+	var cfg: GameConfig = Config.data
+	var half := cfg.hq_concrete_size * 0.5
+	var positions: PackedVector2Array = crowd.get_meta("positions")
+	assert_eq(positions.size(), crowd.multimesh.instance_count, "one instance per scattered spectator")
+	for p in positions:
+		assert_true(absf(p.x - cfg.hq_concrete_center.x) > half.x
+			or absf(p.y - cfg.hq_concrete_center.z) > half.y,
+			"spectators stand beyond the tarmac (%s)" % p)
 
 
 func test_hq_opening_the_table_shows_the_map() -> void:
@@ -925,10 +977,10 @@ func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 
 
 func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
-	# A car OVER a rally's pw_max cap still parks in the car-select lineup, with a
-	# warning that it doesn't qualify as-is and the engine tune that would fix it;
-	# Start becomes the explicit agreement ("Detune to N% & Start") — pressing it
-	# applies that detune and launches the rally.
+	# A car OVER a rally's pw_max cap still parks in the car-select lineup and LOOKS
+	# eligible there (no warning label, plain Start — the overlay stays compact).
+	# Pressing Start pops a confirm dialog spelling out the qualifying detune; only
+	# agreeing ("Detune to N% & Start") applies that detune and launches the rally.
 	var owned: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(owned["instance_id"])
 	# A synthetic rally whose pw_max sits between the starter's p/w and the coupe's,
@@ -969,7 +1021,8 @@ func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
 	assert_true(hq._detune_needed.has(id), "the over-cap car carries its qualifying detune")
 	var frac: float = hq._detune_needed.get(id, -1.0)
 	assert_between(frac, 0.01, 0.99, "the qualifying detune is a real down-tune")
-	# Focus the over-powered coupe: the warning + relabelled Start; Start stays ENABLED.
+	# Focus the over-powered coupe: it LOOKS eligible — no warning label, the plain
+	# Start label, and Start enabled. The detune agreement only surfaces on press.
 	var idx := -1
 	for i in hq._eligible.size():
 		if int(hq._eligible[i]["instance_id"]) == id:
@@ -977,29 +1030,39 @@ func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
 	assert_gt(idx, -1, "the over-powered car is in the lineup")
 	hq._focus = idx
 	hq._focus_changed()
-	assert_true(hq._car_warning_label.visible, "the doesn't-qualify warning is shown")
-	assert_string_contains(hq._car_warning_label.text, "%d%%" % roundi(frac * 100.0),
-		"the warning names the tune that would qualify the car")
-	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it IS the agreement")
+	assert_false(hq._car_warning_label.visible, "no warning label — the car looks eligible in the park")
+	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it opens the agreement")
 	# The overlays upper-case their labels (house style), so compare case-insensitively.
-	assert_string_contains(hq._start_button.text.to_upper(), "DETUNE",
-		"Start is relabelled as the detune agreement")
-	# Cycling to the plainly-eligible starter clears the prompt.
-	hq._focus = (idx + 1) % hq._eligible.size()
-	hq._focus_changed()
-	assert_false(hq._car_warning_label.visible, "an eligible car shows no warning")
-	assert_eq(hq._start_button.text.to_upper(), "START RALLY", "an eligible car keeps the plain Start label")
-	# Agree: press Start on the coupe — the detune is applied, the car now qualifies,
-	# and the rally launches with it.
-	hq._focus = idx
-	hq._focus_changed()
+	assert_eq(hq._start_button.text.to_upper(), "START RALLY",
+		"the over-powered car keeps the plain Start label")
+	# Press Start: instead of launching, the detune-agreement confirm pops, naming the
+	# tune that would qualify the car. Nothing is applied yet.
 	await hq._on_start_pressed()
+	assert_not_null(hq._detune_dialog, "pressing Start on an over-powered car pops the detune confirm")
+	assert_true(hq._detune_dialog.visible, "the confirm dialog is shown")
+	assert_string_contains(hq._detune_dialog.dialog_text, "%d%%" % roundi(frac * 100.0),
+		"the dialog names the tune that would qualify the car")
+	assert_string_contains(hq._detune_dialog.ok_button_text.to_upper(), "DETUNE",
+		"the OK button is the explicit detune agreement")
+	assert_false(RallySession.is_active(), "the rally does not launch until the player agrees")
+	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
+		"no detune is applied before the player agrees")
+	# Agree: confirm the dialog — the detune is applied, the car now qualifies, and
+	# the rally launches with it.
+	hq._detune_dialog.hide()
+	await hq._on_detune_confirmed()
 	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), frac, 0.0001,
 		"agreeing applies the qualifying engine detune to the car")
 	assert_true(RallyLibrary.is_eligible(RallyLibrary.by_id("fx_capped"),
 		UpgradeLibrary.effective_meta(_save.get_car(id), CarLibrary.by_id("fx_rwd_coupe"))),
 		"the detuned car now qualifies for the rally")
 	assert_true(RallySession.is_active(), "the rally launches after the agreement")
+	# The popup's agreement is TEMPORARY, for this rally only: once the rally ends
+	# the tune reverts to what it was before — this car was never garage-tuned, so
+	# back to the 1.0 (100%) default.
+	RallySession.abandon()
+	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
+		"the popup detune reverts to the pre-rally tune once the rally ends")
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------

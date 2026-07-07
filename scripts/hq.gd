@@ -137,8 +137,12 @@ var _eligible: Array = []
 # instance_id -> the engine-detune fraction that would qualify an over-powered parked
 # car for the chosen rally (RallyLibrary.qualifying_detune). Populated only by the
 # rally car-select lineup (_build_eligible_lineup); for these cars Start becomes an
-# explicit "agree to detune" action (see _refresh_focus_detune / _on_start_pressed).
+# explicit "agree to detune" action (see _show_detune_confirm / _on_start_pressed).
 var _detune_needed: Dictionary = {}
+# Confirm popup shown when Start is pressed on an over-powered car: the car looks
+# eligible in the park; this dialog carries the doesn't-qualify warning and the
+# "Detune to N% & Start" agreement (_show_detune_confirm). Built lazily.
+var _detune_dialog: ConfirmationDialog
 var _cars: Array = []
 var _markers: Array = []
 var _focus := 0
@@ -1059,8 +1063,9 @@ func _build_car_overlay() -> void:
 	_car_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_car_stats_label)
 
-	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it) or
-	# over-powered for the rally (the detune Start would apply — _refresh_focus_detune).
+	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it).
+	# An over-powered car does NOT warn here — its detune agreement pops as a confirm
+	# dialog on Start instead (_show_detune_confirm), keeping the overlay compact.
 	_car_warning_label = Label.new()
 	_car_warning_label.add_theme_font_size_override("font_size", 14)
 	_car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2147,8 +2152,8 @@ func _clear_lineup() -> void:
 
 # Park the owned cars ELIGIBLE for the selected rally (the car-select screen), plus
 # any OVER-POWERED car a detune would fit under the rally's pw_max cap — those park
-# with a warning and Start becomes an explicit agreement to that detune
-# (_refresh_focus_detune / _on_start_pressed).
+# looking eligible, and pressing Start pops an explicit agreement to that detune
+# (_show_detune_confirm / _on_start_pressed).
 func _build_eligible_lineup() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var eligible: Array = []
@@ -2356,8 +2361,9 @@ func _focus_changed(snap := false) -> void:
 
 
 # A wrecked focused car can't be entered: disable Start and explain why, offering a
-# Repair (full restore) when a kit is owned. A healthy car clears all of this, then
-# checks the over-powered detune-to-qualify prompt (_refresh_focus_detune).
+# Repair (full restore) when a kit is owned. A healthy car clears all of this — an
+# over-powered car looks eligible here; its detune agreement only surfaces as a
+# confirm popup on Start (_show_detune_confirm).
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Change-car mode just swaps the car on the lift, so a wrecked car is still a valid
 	# pick (it can be repaired in the bay). Never gate Select on damage there.
@@ -2368,11 +2374,9 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 		return
 	if not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
+		_car_warning_label.visible = false
 		_car_repair_button.visible = false
-		_refresh_focus_detune(owned)
 		return
-	if _carpark_rally_mode():
-		_start_button.text = "Start Rally"  # a detune prompt on the previous focus doesn't stick
 	_start_button.disabled = true
 	_car_warning_label.visible = true
 	var kits := int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
@@ -2392,28 +2396,50 @@ func _carpark_rally_mode() -> bool:
 
 
 # An over-powered focused car (parked because a detune would duck it under the
-# rally's pw_max cap — _build_eligible_lineup) keeps Start ENABLED but turns it into
-# an explicit agreement: the warning spells out that the car doesn't qualify and the
-# engine tune that would fix it, and Start — relabelled "Detune to N% & Start" —
-# applies that tune before fielding the car (_on_start_pressed). A car with no
-# pending detune just clears the warning and restores the plain Start label.
-func _refresh_focus_detune(owned: Dictionary) -> void:
-	_car_warning_label.visible = false
-	if not _carpark_rally_mode():
-		return
-	var frac: float = _detune_needed.get(int(owned.get("instance_id", -1)), -1.0)
-	if frac <= 0.0:
-		_start_button.text = "Start Rally"
-		return
+# rally's pw_max cap — _build_eligible_lineup) looks eligible in the car park —
+# no warning label, plain Start — to keep the car-select overlay compact. Pressing
+# Start pops this confirm instead: it spells out that the car doesn't qualify and
+# the engine tune that would fix it, and the OK button ("Detune to N% & Start")
+# applies that tune and launches (_on_detune_confirmed).
+func _show_detune_confirm(owned: Dictionary, frac: float) -> void:
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var cap := float(RallyLibrary.by_id(_selected_rally_id).get("restriction", {}).get("pw_max", 0.0))
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * KW_KG_TO_HP_TONNE
 	var tuned_pw := CarLibrary.power_to_weight(_full_power_meta(owned, entry)) * KW_KG_TO_HP_TONNE * frac
 	var pct := roundi(frac * 100.0)
-	_car_warning_label.text = ("Doesn't qualify — %.0f hp/tonne is over this rally's %.0f cap. " +
+	if _detune_dialog == null:
+		_detune_dialog = ConfirmationDialog.new()
+		_detune_dialog.title = "Detune to enter?"
+		_detune_dialog.get_cancel_button().text = "Cancel"
+		_detune_dialog.confirmed.connect(_on_detune_confirmed)
+		# Cap the dialog's width: without wrapping it sizes to the longest text line
+		# and can overflow a small window. Wrap the message at a fixed label width
+		# instead and let the dialog grow vertically.
+		var label := _detune_dialog.get_label()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.custom_minimum_size = Vector2(400, 0)
+		add_child(_detune_dialog)
+	_detune_dialog.dialog_text = ("Doesn't qualify — %.0f hp/tonne is over this rally's %.0f cap. " +
 		"Starting will detune the engine to %d%% (%.0f hp/tonne) so it qualifies.") % [pw, cap, pct, tuned_pw]
-	_car_warning_label.visible = true
-	_start_button.text = "Detune to %d%% & Start" % pct
+	_detune_dialog.ok_button_text = "Detune to %d%% & Start" % pct
+	_detune_dialog.reset_size()  # re-fit to this car's message (a stale larger size sticks otherwise)
+	_detune_dialog.popup_centered()
+
+
+# The player agreed to the qualifying detune (_show_detune_confirm): apply that
+# engine tune to the car, then continue the normal start flow. The agreement is
+# TEMPORARY, for this rally only — register the current tune (the garage-set
+# value, or the untouched 1.0) with the session so it's restored when the rally
+# ends (RallySession.register_detune_revert; garage-lift detunes stay permanent).
+func _on_detune_confirmed() -> void:
+	var frac: float = _detune_needed.get(_selected_instance_id, -1.0)
+	if frac <= 0.0:
+		return
+	var prior := float(Save.get_car(_selected_instance_id).get("tuning", {}).get("engine_detune", 1.0))
+	RallySession.register_detune_revert(_selected_instance_id, prior)
+	Save.set_engine_detune(_selected_instance_id, frac)
+	_detune_needed.erase(_selected_instance_id)
+	await _proceed_with_start()
 
 
 # Spend a Repair Kit on the focused (wrecked) car: full restore, then re-evaluate so
@@ -2588,13 +2614,19 @@ func _on_start_pressed() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
-	# An over-powered car parks with Start as an explicit detune agreement (the button
-	# reads "Detune to N% & Start" — _refresh_focus_detune): pressing it IS the
-	# agreement, so apply that engine tune now, before fielding the car.
+	# An over-powered car looks eligible in the park; pressing Start pops the detune
+	# agreement as a confirm dialog instead of an always-on warning label. Only an
+	# explicit OK there applies the tune and fields the car (_on_detune_confirmed).
 	var detune: float = _detune_needed.get(_selected_instance_id, -1.0)
 	if detune > 0.0:
-		Save.set_engine_detune(_selected_instance_id, detune)
-		_detune_needed.erase(_selected_instance_id)
+		_show_detune_confirm(owned, detune)
+		return
+	await _proceed_with_start()
+
+
+# The start flow after any detune agreement is settled: the mobile control-scheme
+# gate, then the actual handoff.
+func _proceed_with_start() -> void:
 	# On mobile, the player must choose a touch control scheme before their first
 	# event. If they haven't picked one yet, show the picker as a gate now; once they
 	# confirm it's saved and we never ask again (see _on_settings_action).

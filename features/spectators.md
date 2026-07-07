@@ -20,6 +20,7 @@ is a thin wrapper over `SpatialGrid.of_points`.
 | `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one crowd: steering, MultiMesh render, LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). |
 | `scripts/world.gd` | `_spawn_spectators()` / `_spawn_spectator_group()` build the three groups in `_generate_track`, after the centerline + `road_cells` + trees exist. |
 | `scripts/game_config.gd` | `@export_group("Spectators")` + `spectator_params()`. |
+| `scripts/hq_environment.gd` | `_build_spectators()` — STATIC scenery spectators spread around the HQ clearing (3 × `spectator_group_size`, off the tarmac apron, out of the trees): one MultiMesh, no steering/ragdolls (no car in HQ). |
 | `blender/spectator/spectator.glb` | The low-poly figure: 150 triangles, no armature (hence single-capsule ragdolls). Quadric-decimated for cheap crowds; one mesh used at all distances. |
 
 ## How it works

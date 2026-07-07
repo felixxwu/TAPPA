@@ -132,7 +132,9 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   (0.5) terrain settings into the live Config (`_prepare_free_roam`), and loads the run
   scene with NO active `RallySession`. `world.gd` fields that owned car (falling back to
   the default library car) and skips the rally/start-line/podium wiring; the player
-  leaves via Pause → Quit to HQ.
+  leaves via Pause → Quit to HQ, or by finishing the track — with no session to report
+  to, the finish panel's **Next** returns straight to HQ
+  (`world._on_session_event_completed`'s no-session branch).
   Because HQ hides overlays by toggling their
   **`CanvasLayer`** (which does *not* clear a `Control`'s focus — a CanvasLayer breaks
   the visibility chain), `_go_to` / `_lift_hub` call `get_viewport().gui_release_focus()`
@@ -161,8 +163,12 @@ authored-body cars (MX-5, Focus, Twingo) as preview cars from `CarLibrary`; choo
 `starter_picked` / `starter_model_id` / the selection, and enters the garage. Back
 returns to the title. Returning players skip the picker and Start goes straight to
 the garage. The picker reuses the car park's keyboard/gamepad nav (`_cars_input`:
-left/right/select/back). Building the HQ (ground, buildings, the billboard tree ring, the
-garage, the parked lineup) is synchronous and takes a beat, so on a real display
+left/right/select/back). Building the HQ (the ground — grass with the tarmac apron
+feathered into it via the shared road-blend mesh, `MeshUtil.feathered_ground_mesh`,
+the same treatment as the track verges and podium pads — buildings, the tree ring plus an
+interleaved bush ring and three static spectator crowds — pure scenery, no steering
+(`HQEnvironment._build_bushes` / `_build_spectators`) — the garage, the parked
+lineup) is synchronous and takes a beat, so on a real display
 `_ready` shows a **`LoadingScreen` cover** the moment the scene starts, builds behind
 it (`_build_hq`), then reveals — bridging the gap after Godot's boot bar so the load
 never looks frozen. Under the headless test runner it builds synchronously with no
@@ -392,13 +398,18 @@ Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_
 and unlocks Start. An **over-powered** focused car — its p/w sits over the rally's
 `pw_max` cap but detuning the engine would duck it under — still parks
 (`_build_eligible_lineup` records its qualifying tune from
-`RallyLibrary.qualifying_detune` in `_detune_needed`) with Start **enabled** but
-turned into an explicit agreement (`_refresh_focus_detune`): the warning explains the
-car doesn't qualify as-is and names the engine tune that would fix it, and Start —
-relabelled **Detune to N% & Start** — applies that tune (`Save.set_engine_detune`)
-before fielding the car (`_on_start_pressed`). Because it stays a single enabled
-Start button, the agreement is keyboard/gamepad reachable through the car park's
-existing `menu_select` handling with no new input surface. The map pin's green
+`RallyLibrary.qualifying_detune` in `_detune_needed`) and **looks eligible** — no
+warning label, the plain enabled Start (saves overlay space). Pressing Start pops a
+**`ConfirmationDialog`** (`_show_detune_confirm`) that explains the car doesn't
+qualify as-is and names the engine tune that would fix it; its OK button —
+**Detune to N% & Start** — is the explicit agreement that applies the tune
+(`Save.set_engine_detune`) before fielding the car (`_on_detune_confirmed` →
+`_proceed_with_start`). The tune is **temporary, for that rally only** (unlike a
+garage-lift detune): the confirm registers the prior value with
+`RallySession.register_detune_revert`, and the session restores it when the rally
+ends — only at the actual end (finish/wreck/abandon), never between events. The dialog is a native `ConfirmationDialog` (same pattern as
+the pause menu's quit confirm), so OK/Cancel are keyboard/gamepad reachable via the
+window's built-in focus handling. The map pin's green
 "raceable" pennant counts these detunable cars too (`_has_eligible_car` mirrors the
 lineup filter). A **banner** names the rally + restriction; **Start** records the
 fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
@@ -606,7 +617,7 @@ RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
 wraps; a **wrecked car is gated in the car park** (Start disabled, then a Repair Kit
 restores it to full health and unlocks Start); an **over-powered car parks with the
-detune-to-enter prompt** (warning + relabelled Start; agreeing applies the qualifying
+detune-to-enter prompt** (looks eligible; Start pops the confirm dialog; agreeing applies the qualifying
 `engine_detune` and launches the rally); **Back** steps car park → table →
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders

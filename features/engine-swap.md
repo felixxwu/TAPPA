@@ -202,11 +202,19 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   `Save.set_engine_detune`; **Reset to neutral** returns it to `1.0` (100%,
   full power) like every other axis returns to its own neutral.
 - **Car-park detune-to-enter prompt** — an owned car OVER a rally's `pw_max`
-  cap still parks in the rally car-select lineup, with a warning that it
-  doesn't qualify as-is and the tune that would fix it; Start becomes the
-  explicit agreement (**Detune to N% & Start**) and applies that tune via
-  `Save.set_engine_detune` before fielding (`hq._refresh_focus_detune` /
-  `_on_start_pressed`; the math is `RallyLibrary.qualifying_detune`). See
+  cap still parks in the rally car-select lineup and LOOKS eligible there (no
+  warning label, plain Start — saves overlay space); pressing Start pops a
+  **confirm dialog** that explains it doesn't qualify as-is and the tune that
+  would fix it, with OK as the explicit agreement (**Detune to N% & Start**)
+  that applies the tune via `Save.set_engine_detune` before fielding
+  (`hq._show_detune_confirm` / `_on_detune_confirmed`; the math is
+  `RallyLibrary.qualifying_detune`). The agreement is **temporary, for that
+  rally only** — unlike a garage-lift detune, which is permanent: the confirm
+  registers the car's prior tune with the session
+  (`RallySession.register_detune_revert`), and when the rally ENDS (finish,
+  wreck or abandon — all via `_reset_to_idle`, never mid-rally, so the tune
+  can't creep back up between events) the prior tune is restored (the
+  garage-set value, or the 1.0 default if never tuned). See
   [menus.md](menus.md) → CARPARK.
 
 ### Navigation
@@ -241,6 +249,6 @@ drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
 covers the `engine_detune` axis application. `test_menu_flow.gd` covers the
 swap row, car-park swap mode, the detune slider's navigation/persistence, and
-the car-park detune-to-enter prompt (over-cap car parks with the warning +
-relabelled Start; agreeing applies the tune and launches). `test_rally_library.gd`
+the car-park detune-to-enter prompt (over-cap car parks looking eligible; Start
+pops the confirm; agreeing applies the tune and launches). `test_rally_library.gd`
 covers `RallyLibrary.qualifying_detune` itself.

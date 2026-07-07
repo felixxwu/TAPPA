@@ -2,76 +2,12 @@ extends Node3D
 # Applies the central GameConfig to scene-owned resources at startup.
 # Car handling is applied by car.gd; camera follow by chase_camera.gd.
 
-const TREE_MODEL := preload("res://models/low_poly_tree.glb")
 const BUSH_SEED_OFFSET := 1013
-# Ground-cover bush: low-poly mesh (replaces the old bush.webp billboards),
-# instanced via TreeMeshField (same renderer as trees, no collision). See features/trees.md.
-const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
-# Old billboard tree texture, used when cfg.use_billboard_trees is true (the perf
-# A/B path — see _build_foliage / features/trees.md).
-const TREE_TEXTURE := preload("res://textures/tree.png")
-# Silhouette build params for the opaque billboard tree cutout (rendering
-# constants, not gameplay balance). Higher threshold = airier/more fragmented
-# canopy; higher epsilon = fewer triangles. See TreeSilhouette / features/trees.md.
-const TREE_SILHOUETTE_ALPHA := 0.3
-const TREE_SILHOUETTE_EPSILON := 3.0
-# Near-camera dither dissolve applied to the tree canopy so trees don't block the
-# chase camera when it pushes inside them (see shaders/tree_canopy.gdshader).
-const TREE_CANOPY_SHADER := preload("res://shaders/tree_canopy.gdshader")
 
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
 # world the instant main.tscn is instantiated, exactly as before this overlay.
 var _headless := false
-
-# The tree ArrayMesh, extracted once from TREE_MODEL (a PackedScene) and shared
-# by every per-bin MultiMesh in the TreeMeshField.
-var _tree_mesh_cache: Mesh
-
-
-# Extracts (and caches) the tree mesh from the imported .glb scene.
-func _tree_mesh() -> Mesh:
-	if _tree_mesh_cache != null:
-		return _tree_mesh_cache
-	# Extract the first (only) mesh from the imported .glb — a single ArrayMesh
-	# carrying the trunk + canopy as separate surfaces (see the surface walk below).
-	_tree_mesh_cache = MeshUtil.first_mesh(TREE_MODEL)
-	if _tree_mesh_cache != null:
-		var cfg: GameConfig = Config.data
-		for s in _tree_mesh_cache.get_surface_count():
-			var sm := _tree_mesh_cache.surface_get_material(s) as BaseMaterial3D
-			if sm == null:
-				continue
-			# The GLB's baked StandardMaterials import with linear filtering, which
-			# blurs the leaf texture; force nearest (keeping mipmaps) for the flat
-			# PS1 look.
-			sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-			# The canopy is the textured (leaf-mapped) surface; the trunk has no
-			# texture. Swap the canopy to a ShaderMaterial that keeps the unshaded,
-			# double-sided, vertex-colour-tinted look but dither-dissolves near the
-			# camera so a tree the chase camera enters stops blocking the view.
-			if sm.albedo_texture != null:
-				var canopy := ShaderMaterial.new()
-				canopy.shader = TREE_CANOPY_SHADER
-				canopy.set_shader_parameter("albedo", sm.albedo_texture)
-				canopy.set_shader_parameter("near_fade_start", cfg.tree_near_fade_start_m)
-				canopy.set_shader_parameter("near_fade_end", cfg.tree_near_fade_end_m)
-				_tree_mesh_cache.surface_set_material(s, canopy)
-	return _tree_mesh_cache
-
-
-# The opaque billboard-tree silhouette mesh, traced once from TREE_TEXTURE's
-# alpha and shared by every instance in the tree BillboardField.
-var _tree_silhouette_cache: Mesh
-
-
-# Builds (and caches) the tree silhouette mesh from the billboard texture's alpha.
-func _tree_silhouette_mesh() -> Mesh:
-	if _tree_silhouette_cache != null:
-		return _tree_silhouette_cache
-	_tree_silhouette_cache = TreeSilhouette.build(
-		TREE_TEXTURE.get_image(), TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON)
-	return _tree_silhouette_cache
 
 
 func _ready() -> void:
@@ -158,8 +94,13 @@ func _ready() -> void:
 
 	await _generate_track(cfg, loading)
 
-	# A session run wires this event's completion / wreck back to the orchestrator,
-	# and routes the rally's finish to the podium.
+	# The stage finish is handled in EVERY mode: a session run reports the event to
+	# the orchestrator; free roam / a dev boot has no session, so the finish panel's
+	# Next returns to HQ instead (_on_session_event_completed's no-session branch).
+	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
+		_stage_manager.stage_completed.connect(_on_session_event_completed)
+	# A session run additionally wires the wreck back to the orchestrator, and
+	# routes the rally's finish to the podium.
 	if RallySession.is_active():
 		_wire_session_signals()
 		# Pre-event start-line scene: briefing + presence cars before the countdown
@@ -409,22 +350,11 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	# spawn inside the forest patches, breaking up the otherwise-continuous tree line.
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed, cfg.track_forestiness, cfg.forest_wavelength_m)
-	if cfg.use_billboard_trees:
-		# Perf A/B path: render trees as opaque tight-cutout billboards — the
-		# cutout is baked into a silhouette mesh (no shader discard -> early-Z
-		# stays on), instanced in one MultiMesh. See features/trees.md.
-		var tree_billboards := BillboardField.new()
-		add_child(tree_billboards)
-		tree_billboards.build(trees, $Floor as TerrainManager, cfg.tree_size_m, TREE_TEXTURE,
-			cfg.tree_collision_radius_m, cfg.tree_collision_height_m, true,
-			cfg.tree_render_distance_m, cfg.tree_render_fade_m,
-			0.0, _tree_silhouette_mesh(), true)
-	else:
-		var tree_field := TreeMeshField.new()
-		add_child(tree_field)
-		tree_field.build(trees, $Floor as TerrainManager, _tree_mesh(),
-			cfg.tree_size_m.y, cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
-			cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m)
+	# Trees render as billboards or 3D meshes per cfg.use_billboard_trees — the
+	# choice (and the shared mesh/material) live in Foliage so every scene matches.
+	# Stage trees collide (they're obstacles).
+	Foliage.spawn_trees(self, trees, $Floor as TerrainManager, true,
+		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
 
 	await _stage(loading, "Scattering bushes…")
 	# Bushes: same scatter as trees (offset seed so they interleave; NOT forest-gated,
@@ -437,19 +367,14 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	# bush's own world-space radius (on top of tree_road_margin_m) — that keeps the
 	# bush CENTRE far enough out that no part of the scaled mesh spills onto the road,
 	# at any per-instance yaw.
-	var bush_mesh := _bush_mesh(cfg)
-	var bush_radius := TreeMeshField.xz_radius(bush_mesh, cfg.bush_height_m)
+	var bush_radius := TreeMeshField.xz_radius(Foliage.bush_mesh(), cfg.bush_height_m)
 	var bush_footprint := cfg.track_width + 2.0 * (cfg.tree_road_margin_m + bush_radius)
 	var bush_road_cells := TrackGenerator.rasterize_cells(
 		road_centerline.tessellate(), bush_footprint)
 	var bushes := TreeScatter.scatter(result["pieces"], bush_road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
-	var bush_field := TreeMeshField.new()
-	add_child(bush_field)
-	bush_field.build(bushes, $Floor as TerrainManager, bush_mesh,
-		cfg.bush_height_m, 0.0, 0.0,
-		cfg.tree_render_distance_m, cfg.tree_render_fade_m, cfg.tree_bin_size_m,
-		false, true)
+	Foliage.spawn_bushes(self, bushes, $Floor as TerrainManager,
+		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
 
 	# Bushes are pass-through (no collider), so a separate proximity node makes
 	# brushing one cost HP + apply a drag torque. Hit radius is slightly under the
@@ -554,28 +479,6 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
 		# elapsed time compares to the leading rival's estimated time at that point.
 		_setup_stage_splits(result, staged, cfg)
-
-
-# Build the ground-cover bush mesh from the groundcover_opaque GLB. Keeps the
-# imported (tone-matched) foliage texture, but makes the material UNSHADED — the
-# flat PS1 look the rest of the world uses — and enables vertex_color_use_as_albedo
-# so the per-instance baked terrain light TreeMeshField writes into the MultiMesh
-# COLOR multiplies the albedo (matching the ground tint everywhere, as the old
-# foliage shader did). Duplicated so the cached scene resource is not mutated.
-func _bush_mesh(cfg: GameConfig) -> Mesh:
-	# Duplicated so the cached scene resource is not mutated.
-	var mesh: Mesh = MeshUtil.first_mesh(GROUNDCOVER_SCENE).duplicate()
-	# Keep the imported (tone-matched) foliage texture, but rebuild the surface as
-	# the flat unshaded PS1 material with vertex_color_use_as_albedo — so the
-	# per-instance baked terrain light TreeMeshField writes into the MultiMesh COLOR
-	# multiplies the albedo (matching the ground tint everywhere). See PS1Material.
-	var base := mesh.surface_get_material(0) as StandardMaterial3D
-	var albedo: Texture2D = base.albedo_texture if base != null else null
-	var mat := PS1Material.unshaded(albedo, true)
-	# Lifted tint so the tone-matched ground cover reads a bit more against the grass.
-	mat.albedo_color = cfg.bush_tint
-	mesh.surface_set_material(0, mat)
-	return mesh
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and
@@ -861,7 +764,27 @@ func _wire_session_signals() -> void:
 		RallySession.rally_finished.connect(_on_session_rally_finished)
 
 
+# Test seam: headless tests can't survive a real change_scene_to_file (it would
+# replace the GUT runner scene), so they set this to capture the requested path
+# instead. Real play leaves it unset and gets the real scene change.
+var scene_change_hook: Callable = Callable()
+
+
+func _change_scene(path: String) -> void:
+	if scene_change_hook.is_valid():
+		scene_change_hook.call(path)
+		return
+	get_tree().change_scene_to_file(path)
+
+
 func _on_session_event_completed(elapsed_seconds: float) -> void:
+	# No active rally — free roam (or a plain dev boot) reached the finish. There is
+	# no session to report to (report_event_result would silently no-op, leaving the
+	# finish panel's Next doing nothing), so Next returns to HQ instead — the same
+	# destination as the pause menu's Quit with no session.
+	if not RallySession.is_active():
+		_change_scene("res://hq.tscn")
+		return
 	var hp_lost: float = maxf(0.0, _event_start_hp - $Car.damage.hp)
 	# Persist the wheels bent this event so the car carries its misalignment forward.
 	var iid: int = RallySession.car_instance_id()
@@ -892,9 +815,9 @@ func _on_session_car_wrecked() -> void:
 func _on_session_rally_finished(result: Dictionary) -> void:
 	if result.get("abandoned", false):
 		RallySession.return_to_garage = true
-		get_tree().change_scene_to_file("res://hq.tscn")
+		_change_scene("res://hq.tscn")
 	else:
-		get_tree().change_scene_to_file("res://podium.tscn")
+		_change_scene("res://podium.tscn")
 
 
 # Swap to the next car in the library: re-instantiate a fresh car (see

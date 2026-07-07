@@ -13,7 +13,7 @@ extends RefCounted
 # The two pickable station areas (table / lift) route their input_event to the callbacks
 # hq passes in (its own _on_table_input / _on_lift_input), so picking still lands in hq.
 
-const TREE_MODEL_PATH := "res://models/low_poly_tree.glb"
+const SPECTATOR_PATH := "res://blender/spectator/spectator.glb"
 
 # Handles hq reads back after build().
 var camera: Camera3D
@@ -47,33 +47,19 @@ func build(host: Node3D, on_table_input: Callable, on_lift_input: Callable) -> v
 	host.add_child(sun)
 
 	var cfg: GameConfig = Config.data
-	# Grass field covering the whole lot, with the concrete apron (below) laid on top
-	# around the garage + car park. The grass uses the same texture as the run scene's
-	# terrain, tiled to match (terrain_tile_per_meter), sitting a hair below the apron.
-	var grass_size := 240.0
-	var grass := MeshInstance3D.new()
-	var grass_plane := PlaneMesh.new()
-	grass_plane.size = Vector2(grass_size, grass_size)
-	grass.mesh = grass_plane
-	grass.position.y = -0.02  # just under the concrete so the apron wins where they overlap
-	var grass_mat := StandardMaterial3D.new()
-	grass_mat.albedo_texture = load("res://textures/grass.jpg")
-	grass_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	var tiles := grass_size * cfg.terrain_tile_per_meter
-	grass_mat.uv1_scale = Vector3(tiles, tiles, 1.0)
-	grass.material_override = grass_mat
-	host.add_child(grass)
-
-	# Grey concrete apron around the garage + car park (the player parks / tunes here).
-	var concrete := MeshInstance3D.new()
-	var concrete_plane := PlaneMesh.new()
-	concrete_plane.size = cfg.hq_concrete_size
-	concrete.mesh = concrete_plane
-	concrete.position = Vector3(cfg.hq_concrete_center.x, 0.0, cfg.hq_concrete_center.z)
-	var concrete_mat := StandardMaterial3D.new()
-	concrete_mat.albedo_color = Color(0.18, 0.19, 0.22)
-	concrete.material_override = concrete_mat
-	host.add_child(concrete)
+	# One ground mesh: the grass field with the tarmac apron (garage + car park)
+	# feathered into it — the SAME road-blend shader and per-vertex COLOR.a weight
+	# the generated track's verges and the podium's tarmac pads use, so the apron
+	# edge dissolves into the grass instead of a hard plane-on-plane seam.
+	var ground := MeshInstance3D.new()
+	ground.name = "HQGround"
+	var apron := Rect2(Vector2(cfg.hq_concrete_center.x, cfg.hq_concrete_center.z)
+		- cfg.hq_concrete_size * 0.5, cfg.hq_concrete_size)
+	ground.mesh = MeshUtil.feathered_ground_mesh(240.0, 240, [apron],
+		cfg.podium_tarmac_feather_m)
+	ground.position.y = -0.01
+	ground.material_override = MeshUtil.feathered_ground_material(cfg)
+	host.add_child(ground)
 
 	# Collision floor under the lot so the parked cars settle onto their suspension
 	# (the visual ground plane has no collision). A thick box with its top at y = 0.
@@ -87,7 +73,9 @@ func build(host: Node3D, on_table_input: Callable, on_lift_input: Callable) -> v
 	host.add_child(floor_body)
 
 	_build_buildings(host)
-	_build_trees(host)
+	var trees := _build_trees(host)
+	_build_bushes(host)
+	_build_spectators(host, trees)
 	_build_garage(host)
 	_build_carpark(host)
 	_build_map_table(host, on_table_input)
@@ -132,42 +120,119 @@ func _build_buildings(host: Node3D) -> void:
 
 
 # Trees framing the lot so HQ reads as an outdoor clearing under the open-field
-# skybox, instead of floating on a bare plane. Reuses the stage's low-poly tree
-# mesh field (TreeMeshField); scenery only (no collision). A close-in annulus,
-# but with the front-centre corridor kept clear so trees never block the title
-# camera's view of the car park, and the garage footprint kept clear so none
-# spawn inside it. Trees hug the garage's sides and back.
-func _build_trees(host: Node3D) -> void:
-	var cfg: GameConfig = Config.data
+# skybox, instead of floating on a bare plane. Spawned through the shared Foliage
+# helper, so they use the SAME representation the stage does (billboard cutout or
+# 3D mesh, per cfg.use_billboard_trees) — never a hardcoded mesh that drifts from
+# the game. Scenery only (no collision, render_distance 1000 = no cull, HQ is
+# small). A close-in annulus with the front-centre corridor kept clear so trees
+# never block the title camera's view of the car park, and the garage footprint
+# kept clear so none spawn inside it. Returns the scatter for the spectator layout.
+func _build_trees(host: Node3D) -> PackedVector2Array:
+	var positions := _scatter_ring(320, 20240)
+	var flat := _flat_terrain()
+	var field := Foliage.spawn_trees(host, positions, flat, false, 1000.0, 0.0)
+	field.name = "HQTrees"
+	flat.free()
+	return positions
+
+
+# Ground-cover bushes interleaved with the tree ring (an offset seed, same annulus),
+# so the HQ clearing carries the same undergrowth as the stages instead of bare
+# grass between the trunks. Spawned through the shared Foliage helper (identical
+# mesh + material + cfg.bush_height_m scale as the stage), so an HQ bush is the same
+# size and look as a stage bush; scenery only — no collision, no BushField.
+func _build_bushes(host: Node3D) -> void:
+	# 1013 mirrors world.gd's BUSH_SEED_OFFSET so the two scatters interleave.
+	var positions := _scatter_ring(320, 20240 + 1013)
+	var flat := _flat_terrain()
+	var field := Foliage.spawn_bushes(host, positions, flat, 1000.0, 0.0)
+	field.name = "HQBushes"
+	flat.free()
+
+
+# Seeded annulus scatter shared by the framing trees and bushes: points in the
+# ring [18, 66] m around the lot, keeping the front-centre corridor clear (the car
+# park sits at +Z and the title camera looks down that corridor) and skipping the
+# garage footprint so nothing spawns inside it.
+func _scatter_ring(count: int, seed_value: int) -> PackedVector2Array:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 20240
+	rng.seed = seed_value
 	var positions := PackedVector2Array()
 	var inner := 18.0
 	var outer := 66.0
-	for _i in 320:
+	for _i in count:
 		var ang := rng.randf() * TAU
 		var rad := sqrt(rng.randf()) * (outer - inner) + inner
 		var p := Vector2(cos(ang) * rad, sin(ang) * rad)
-		# Keep the front-centre clear: the car park sits at +Z (hq_carpark_origin)
-		# and the title camera looks down that corridor, so no trees with |x| small
-		# and z ahead of the garage. Also skip the garage footprint itself.
 		if absf(p.x) < 22.0 and p.y > 8.0:
 			continue
 		if absf(p.x) < 9.0 and absf(p.y) < 9.0:
 			continue
 		positions.append(p)
-	# HQ ground is a flat plane at y = 0; a layerless TerrainManager returns height
-	# 0 everywhere, which is all the field needs to seat the trees. Used only
-	# during build(), then freed.
+	return positions
+
+
+# A layerless TerrainManager: the HQ ground is a plane at y = 0, so height_at
+# returns 0 everywhere — all a foliage field needs to seat its instances. Used
+# only during build(); the caller frees it.
+func _flat_terrain() -> TerrainManager:
 	var flat := TerrainManager.new()
 	flat.layers = [] as Array[TerrainLayer]
-	var field := TreeMeshField.new()
-	host.add_child(field)
-	# render_distance 1000 (no cull — HQ is small), no collision (scenery).
-	field.build(positions, flat, MeshUtil.first_mesh(load(TREE_MODEL_PATH)), cfg.tree_size_m.y,
-		cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
-		1000.0, 0.0, cfg.tree_bin_size_m, false)
-	flat.free()
+	return flat
+
+
+# Static spectators spread all around the lot — the same headcount as a stage
+# (3 × spectator_group_size), but scattered individually across the whole clearing
+# rather than clumped into groups: the same seeded annulus as the trees/bushes,
+# additionally rejecting the concrete apron (they stand on the grass beyond the
+# tarmac, never among the parked cars) and points inside a tree. Pure scenery in
+# one MultiMesh — no steering/ragdolls (there is no car to react to in HQ). Each
+# spectator faces the lot centre with a little yaw jitter.
+func _build_spectators(host: Node3D, trees: PackedVector2Array) -> void:
+	var cfg: GameConfig = Config.data
+	var count := 3 * cfg.spectator_group_size
+	if count <= 0:
+		return
+	var mesh := MeshUtil.first_mesh(load(SPECTATOR_PATH))
+	if mesh == null:
+		return
+	var foot_offset := -mesh.get_aabb().position.y  # feet on the ground, as SpectatorGroup does
+	var tree_cell: float = maxf(cfg.spectator_tree_avoid_m, 0.5)
+	var tree_grid := SpectatorScatter.build_point_grid(trees, tree_cell)
+	# Apron half-extents (plus a margin): spectators are rejected on the tarmac.
+	var apron_half := cfg.hq_concrete_size * 0.5 + Vector2(1.5, 1.5)
+	var apron_c := Vector2(cfg.hq_concrete_center.x, cfg.hq_concrete_center.z)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20240 + 7
+	var positions := PackedVector2Array()
+	for candidate in _scatter_ring(count * 3, 20240 + 7):  # over-draw, filters thin it below
+		if positions.size() >= count:
+			break
+		if absf(candidate.x - apron_c.x) < apron_half.x and absf(candidate.y - apron_c.y) < apron_half.y:
+			continue  # on the tarmac
+		if SpatialGrid.near_point(candidate, tree_grid, tree_cell, cfg.spectator_tree_avoid_m):
+			continue  # inside a tree
+		positions.append(candidate)
+	if positions.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = positions.size()
+	for i in positions.size():
+		var p := positions[i]
+		# Face the lot centre, with jitter so the crowd doesn't stand in lockstep.
+		var yaw := Vector2(-p.x, -p.y).angle_to(Vector2(0, 1)) + (rng.randf() - 0.5) * 0.8
+		var basis := Basis(Vector3.UP, yaw)
+		mm.set_instance_transform(i, Transform3D(basis, Vector3(p.x, foot_offset, p.y)))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "HQSpectators"
+	mmi.multimesh = mm
+	# The scatter, readable by tests: headless MultiMesh transform buffers are
+	# RenderingServer no-op stubs and can't be read back (same reason TreeMeshField
+	# exposes instance_positions).
+	mmi.set_meta("positions", positions)
+	host.add_child(mmi)
 
 
 # The garage shell — the two-bay service-park model (scripts/garage.gd). Open

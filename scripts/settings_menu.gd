@@ -529,6 +529,10 @@ func _make_sub(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 14)
+	# Wrap long blurbs (e.g. the benchmark page's description) to the width the
+	# page's rows set, instead of forcing the whole settings panel wider.
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return label
 
 

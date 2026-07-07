@@ -1,10 +1,23 @@
 # Trees (low-poly mesh scatter around turns)
 
-**Source:** `scripts/tree_scatter.gd` (`class_name TreeScatter`),
+**Source:** `scripts/foliage.gd` (`class_name Foliage` — the ONE place that
+decides tree representation and owns the shared tree/bush meshes + materials),
+`scripts/tree_scatter.gd` (`class_name TreeScatter`),
 `scripts/tree_mesh_field.gd` (`class_name TreeMeshField`, trees AND bushes),
 `models/low_poly_tree.glb` + `textures/leaves.png` (tree model),
 `models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired in
 `scripts/world.gd._generate_track()`.
+
+**Centralised spawning (`Foliage`).** Every place that spawns foliage — the stage
+(`world.gd`), the HQ clearing (`hq_environment.gd`), and the podium's decorative
+dressing (`podium.gd`) — goes through `Foliage.spawn_trees()` /
+`Foliage.spawn_bushes()` (or `Foliage.tree_mesh()` / `Foliage.bush_mesh()` for the
+podium's own MultiMesh placement). So the billboard-vs-mesh decision and the
+shared meshes live in exactly one file: a tree is the same kind of tree wherever
+it appears, and a bush is scaled to `cfg.bush_height_m` everywhere. (The podium is
+the one deliberate exception on representation: a close-up hero shot, it always
+uses the 3D tree mesh — scale-jittered — because the distance-culled billboard
+field reads poorly up close. It still pulls that mesh from `Foliage`.)
 
 Shared low-level helpers used across the scatter/field code: `ScatterMath`
 (`scripts/scatter_math.gd`) — seeded `hash01` + road-cell `cell_of`/`on_road`;
@@ -18,13 +31,13 @@ Both **trees** and **bushes** are solid low-poly 3D meshes rendered through the
 same `TreeMeshField` by default. Both share the same `TreeScatter` placement.
 
 **Perf A/B toggle (`use_billboard_trees`).** When
-`GameConfig.use_billboard_trees` is true, `world.gd._build_foliage()` renders
+`GameConfig.use_billboard_trees` is true, `Foliage.spawn_trees()` renders
 **trees** as opaque tight-cutout billboards instead of the low-poly 3D mesh
 (`TreeMeshField`). **Bushes always stay meshes** regardless of the toggle.
 
 The billboard cutout is baked into GEOMETRY, not the shader: `TreeSilhouette`
 (`scripts/tree_silhouette.gd`) traces `textures/tree.png`'s alpha into a
-low-poly silhouette `ArrayMesh` once at load (cached by `world._tree_silhouette_mesh()`),
+low-poly silhouette `ArrayMesh` once at load (cached by `Foliage.tree_silhouette_mesh()`),
 triangulating every opaque cluster `opaque_to_polygons` returns so the gaps
 between clusters are real geometry holes. `BillboardField` instances that mesh in
 a single MultiMesh (one draw call) with `shaders/billboard_opaque.gdshader` —
@@ -36,7 +49,7 @@ fade is a vertex **shrink-out** over `tree_render_fade_m` before
 `tree_render_distance_m` (opaque, replacing the old screen-door dither, which
 needed `discard`). Trees keep the same `TreeScatter` placement and box collision.
 The silhouette airiness/triangle budget is set by `TREE_SILHOUETTE_ALPHA` /
-`TREE_SILHOUETTE_EPSILON` in `world.gd`.
+`TREE_SILHOUETTE_EPSILON` in `Foliage`.
 
 ## Placement (`TreeScatter`)
 
@@ -113,7 +126,7 @@ renderer-independent mirrors, since the MultiMesh transform buffer lives in the
 RenderingServer (a no-op stub under `--headless`, so tests read these instead).
 
 The tree mesh is extracted once from the `.glb` PackedScene by
-`world.gd._tree_mesh()` and shared by every bin's MultiMesh. The **trunk** keeps
+`Foliage.tree_mesh()` and shared by every bin's MultiMesh. The **trunk** keeps
 its baked **unshaded** `StandardMaterial3D` — the depth shading is baked into the
 mesh's vertex colours (see the asset section below), so it reads correctly with no
 dedicated scene light and stays in the flat PS1 look — single-sided (`CULL_BACK`).
@@ -128,7 +141,7 @@ robust everywhere.
 **Near-camera dissolve (`shaders/tree_canopy.gdshader`).** Double-siding the
 canopy is robust but reintroduces a problem single-sided culling used to solve for
 free: with both sides drawn, the inward-facing leaves still render when the chase
-camera pushes *inside* a tree, blocking the view. So `world.gd._tree_mesh()` swaps
+camera pushes *inside* a tree, blocking the view. So `Foliage.tree_mesh()` swaps
 the canopy surface's material for a `ShaderMaterial` that keeps the unshaded,
 double-sided, vertex-colour-tinted leaf look (`ALBEDO = leaves × COLOR`) but
 **dither-dissolves fragments near the camera**: canopy fragments within
