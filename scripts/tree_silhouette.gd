@@ -31,12 +31,24 @@ static func build(image: Image, alpha_threshold: float, simplify_epsilon: float)
 		var tris := Geometry2D.triangulate_polygon(outline)
 		if tris.is_empty():
 			continue  # degenerate/self-touching contour; skip it
-		for idx in tris:
-			var px := outline[idx]
-			# Pixel -> normalized card: x in [-0.5,0.5], y in [0,1] with the
-			# bottom edge at 0 (image +y is down, so flip). UV in [0,1].
-			st.set_uv(Vector2(px.x / float(w), px.y / float(h)))
-			st.add_vertex(Vector3(px.x / float(w) - 0.5, 1.0 - px.y / float(h), 0.0))
+		# Emit each triangle twice, one per plane, keeping the three verts of a
+		# triangle contiguous so PRIMITIVE_TRIANGLES winds correctly. Two crossed
+		# planes form a "+" (cross) billboard: the first in the XY plane, the
+		# second the same silhouette rotated 90 deg about Y (into the ZY plane).
+		# Both share the UV, so the same cutout shows from every horizontal angle
+		# without the card having to face the camera.
+		var tri_count := tris.size() / 3
+		for plane in 2:
+			for t in tri_count:
+				for k in 3:
+					var px := outline[tris[t * 3 + k]]
+					var nx := px.x / float(w) - 0.5
+					var ny := 1.0 - px.y / float(h)
+					st.set_uv(Vector2(px.x / float(w), px.y / float(h)))
+					if plane == 0:
+						st.add_vertex(Vector3(nx, ny, 0.0))
+					else:
+						st.add_vertex(Vector3(0.0, ny, nx))
 		any = true
 
 	if not any:

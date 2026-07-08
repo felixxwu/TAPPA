@@ -39,15 +39,29 @@ The billboard cutout is baked into GEOMETRY, not the shader: `TreeSilhouette`
 (`scripts/tree_silhouette.gd`) traces `textures/tree.png`'s alpha into a
 low-poly silhouette `ArrayMesh` once at load (cached by `Foliage.tree_silhouette_mesh()`),
 triangulating every opaque cluster `opaque_to_polygons` returns so the gaps
-between clusters are real geometry holes. `BillboardField` instances that mesh in
-a single MultiMesh (one draw call) with `shaders/billboard_opaque.gdshader` —
-`unshaded, depth_draw_opaque`, **no `discard`**. Because there is no per-fragment
+between clusters are real geometry holes. The silhouette is emitted as a **"+"
+(cross)** — the traced triangles are added twice, once in the XY plane and once
+rotated 90° about Y into the ZY plane (sharing the same UVs). `BillboardField`
+instances that mesh in a single MultiMesh (one draw call) with
+`shaders/billboard_opaque.gdshader` — `unshaded, cull_disabled,
+depth_draw_opaque`, **no `discard`**. Because there is no per-fragment
 alpha test, early-Z stays enabled and overdraw collapses to actual coverage,
 which is the win on tile-based mobile-web GPUs (an alpha-`discard` billboard
-disables early-Z for the whole draw and pays overdraw every frame). Distance
+disables early-Z for the whole draw and pays overdraw every frame).
+
+**The cross does NOT face the camera.** Unlike a classic sprite billboard, the
+"+" is planted at a fixed, deterministic **random yaw** per tree (hashed off the
+instance's world XZ via `ScatterMath.hash01`, baked into the MultiMesh transform
+basis in `BillboardField.build`). Because it's a cross, the silhouette still
+reads as solid foliage from any horizontal angle, and the per-tree random yaw
+stops a stand from looking like an aligned grid. The shader therefore no longer
+rotates the card toward the camera — it just applies the model transform (yaw +
+`tree_size_m` scale, with Z scaled by the horizontal `size.x` for the second
+plane). Distance
 fade is a vertex **shrink-out** over `tree_render_fade_m` before
 `tree_render_distance_m` (opaque, replacing the old screen-door dither, which
-needed `discard`). Trees keep the same `TreeScatter` placement and box collision.
+needed `discard`): the shader scales the whole normalized vertex toward the
+bottom-centre pivot. Trees keep the same `TreeScatter` placement and box collision.
 The silhouette airiness/triangle budget is set by `TREE_SILHOUETTE_ALPHA` /
 `TREE_SILHOUETTE_EPSILON` in `Foliage`.
 

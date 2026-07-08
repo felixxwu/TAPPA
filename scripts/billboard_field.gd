@@ -73,8 +73,9 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	instance_positions.resize(positions.size())
 
 	# Opaque path scales the normalized mesh by size; quad path bakes size in.
-	instance_scale = Vector3(size.x, size.y, 1.0) if use_opaque else Vector3.ONE
-	var inst_basis := Basis.from_scale(instance_scale) if use_opaque else Basis.IDENTITY
+	# The opaque mesh is a "+" cross, so its Z (the second plane) scales with the
+	# horizontal size.x just like X.
+	instance_scale = Vector3(size.x, size.y, size.x) if use_opaque else Vector3.ONE
 
 	for i in positions.size():
 		var p := positions[i]
@@ -83,7 +84,15 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 		var y := terrain.height_at(p.x, p.y) + y_offset
 		var pos := Vector3(p.x, y, p.y)
 		instance_positions[i] = pos
-		mm.set_instance_transform(i, Transform3D(inst_basis, pos))
+		# The cross no longer faces the camera, so give each tree a deterministic
+		# random yaw about Y (hashed off its position) — otherwise every "+" would
+		# align to the same axes and the stand would look like a grid. The quad
+		# path keeps its identity basis (that shader still billboards).
+		var basis := Basis.IDENTITY
+		if use_opaque:
+			var yaw := ScatterMath.hash01(int(round(p.x)), int(round(p.y)), 0, 7) * TAU
+			basis = Basis(Vector3.UP, yaw).scaled(instance_scale)
+		mm.set_instance_transform(i, Transform3D(basis, pos))
 
 	# One StaticBody3D holds every hitbox; all share one BoxShape3D resource instanced
 	# per position (cheap: one shape, N transforms). Skipped when with_collision is false.
