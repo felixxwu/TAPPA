@@ -8,7 +8,7 @@ on:
 env:
   GODOT_VERSION: "4.6"
   ITCH_USER: felixxwu        # <-- your itch.io username
-  ITCH_GAME: rally           # itch.io game slug -> https://felixxwu.itch.io/rally
+  ITCH_GAME: tappa           # itch.io game slug -> https://felixxwu.itch.io/tappa
   EXPORT_DIR: build/web
 
 jobs:
@@ -169,4 +169,4 @@ jobs:
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          ./butler push build/android/rally.apk "${ITCH_USER}/${ITCH_GAME}:android"
+          ./butler push build/android/tappa.apk "${ITCH_USER}/${ITCH_GAME}:android"

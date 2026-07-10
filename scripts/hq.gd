@@ -81,7 +81,7 @@ const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.4)
 const CAR_SCENE_PATH := "res://car.tscn"
 # The itch.io page hosting the Android APK — where the mobile-web boot notice sends
 # players for the (much faster) native build.
-const ANDROID_APP_URL := "https://felixxwu.itch.io/rally"
+const ANDROID_APP_URL := "https://felixxwu.itch.io/tappa"
 var _car_scene: PackedScene  # cached on first use (load() also caches engine-side)
 
 

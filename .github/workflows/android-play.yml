@@ -31,7 +31,7 @@ env:
   #   alpha      - closed testing (invite-only groups)
   #   beta       - open testing (anyone with the opt-in link)
   #   production - public on the store
-  TRACK: beta
+  TRACK: alpha
 
 jobs:
   publish:

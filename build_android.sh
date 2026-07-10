@@ -2,7 +2,7 @@
 # Export the game as an Android APK (for upload to itch.io as the "android"
 # channel).
 #
-#   ./build_android.sh            # release export -> build/android/rally.apk
+#   ./build_android.sh            # release export -> build/android/tappa.apk
 #   ./build_android.sh --debug    # debug export
 #
 # Signing: Godot reads the keystore from environment variables, so no keystore
@@ -30,7 +30,7 @@ esac
 cd "$(dirname "$0")"
 
 OUT_DIR="build/android"
-APK="$OUT_DIR/rally.apk"
+APK="$OUT_DIR/tappa.apk"
 
 # --- version stamping -------------------------------------------------------
 # Same scheme as build_web.sh: version name 0.<commit count> (<short sha>),
