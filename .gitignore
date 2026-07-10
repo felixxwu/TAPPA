@@ -45,6 +45,14 @@ sign_controlled.png
 # Local secrets / env
 .env
 
+# Signing keys and service-account credentials — must NEVER be committed.
+# These live only on your machine and as encrypted GitHub Actions secrets.
+*.keystore
+*.jks
+upload.keystore
+*play*service*account*.json
+service-account*.json
+
 # Superpowers brainstorm/session scratch artifacts
 /.superpowers/
 

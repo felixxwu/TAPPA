@@ -1,0 +1,146 @@
+name: Publish to Google Play
+
+# Builds an Android App Bundle (.aab) from the "Android Play (AAB)" export
+# preset and uploads it to the Google Play Console via the Play Developer API.
+#
+# This is separate from deploy.yml (which builds a sideloadable .apk for
+# itch.io): Play requires an AAB + Gradle build + the tappa.game package name,
+# all of which live in the dedicated preset and build_android_play.sh.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   PLAY_SERVICE_ACCOUNT_JSON  - full contents of the GCP service-account JSON key
+#   ANDROID_KEYSTORE_B64       - base64 of your upload keystore (same one deploy.yml uses)
+#   ANDROID_KEYSTORE_PASSWORD  - that keystore's password
+#
+# NOTE ON THE FIRST RELEASE: the Play Developer API refuses the very first
+# upload for a brand-new app. You must upload one build by hand in the Play
+# Console before this workflow will succeed. Also, new *personal* developer
+# accounts must complete a closed test (12+ testers, 14 days) before production
+# access is granted — until then set TRACK to "internal" or "closed".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  GODOT_VERSION: "4.6"
+  PACKAGE_NAME: tappa.game
+  # Play track to publish to:
+  #   internal   - internal testing (<=100 testers, instant)
+  #   alpha      - closed testing (invite-only groups)
+  #   beta       - open testing (anyone with the opt-in link)
+  #   production - public on the store
+  TRACK: beta
+
+jobs:
+  publish:
+    name: Build AAB & upload to Play
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so build_android_play.sh can derive the version name
+          # and the monotonic Android versionCode from the commit count.
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless) + export templates
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fsSL -o templates.tpz "${BASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+          godot --version
+
+      - name: Point Godot at the runner's Android SDK + JDK
+        run: |
+          set -euo pipefail
+          # The Ubuntu runner ships an Android SDK at $ANDROID_HOME; Godot reads
+          # the SDK/JDK locations from its editor settings, so write them there.
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-${GODOT_VERSION}.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          export/android/android_sdk_path = "${ANDROID_HOME}"
+          EOF
+
+      - name: Install the Godot Android build template (required for AAB/Gradle)
+        run: |
+          set -euo pipefail
+          # An AAB export uses use_gradle_build=true, which needs the Android
+          # build template installed into the project at res://android/build.
+          # The template ships inside the export-templates archive as
+          # android_source.zip; extracting it into android/build is exactly what
+          # the editor's "Install Android Build Template" menu item does.
+          TPL_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p android/build
+          unzip -q -o "${TPL_DIR}/android_source.zip" -d android/build
+          # Godot checks this version stamp matches the engine version.
+          echo "${GODOT_VERSION}.stable" > android/.build_version
+          ls android/build | head
+
+      - name: Prepare signing keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # The upload keystore must be a real, persistent keystore for Play:
+          # Play App Signing verifies every upload against the same upload key.
+          # (Unlike deploy.yml, we do NOT fall back to an ephemeral keystore —
+          # a changing signature would be rejected by Play.)
+          if [[ -z "${ANDROID_KEYSTORE_B64}" ]]; then
+            echo "::error::ANDROID_KEYSTORE_B64 secret is missing — Play requires a stable upload keystore."
+            exit 1
+          fi
+          echo "${ANDROID_KEYSTORE_B64}" | base64 -d > upload.keystore
+          {
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$PWD/upload.keystore"
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=rally"
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=${ANDROID_KEYSTORE_PASSWORD}"
+          } >> "$GITHUB_ENV"
+
+      - name: Import project (build resource cache)
+        run: godot --headless --import --quit || true
+
+      - name: Export Android App Bundle (via build_android_play.sh)
+        env:
+          GODOT: /usr/local/bin/godot
+        run: |
+          set -euo pipefail
+          ./build_android_play.sh
+          ls -la build/android-play
+
+      - name: Upload the .aab as a workflow artifact
+        # Captured before the Play upload so you can grab the bundle even when
+        # that step fails — e.g. the first-ever release, which must be uploaded
+        # to the Play Console by hand before the API will accept anything.
+        uses: actions/upload-artifact@v4
+        with:
+          name: rally-aab
+          path: build/android-play/rally.aab
+          if-no-files-found: error
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.PACKAGE_NAME }}
+          releaseFiles: build/android-play/rally.aab
+          track: ${{ env.TRACK }}
+          status: completed
