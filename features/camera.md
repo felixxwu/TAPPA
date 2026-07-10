@@ -69,6 +69,27 @@ the car is stationary or crawling it eases toward the car's facing instead of
 chasing velocity noise. The `1 - exp(-rate·dt)` slerp weight keeps the easing
 frame-rate independent.
 
+**Speed FOV (dolly zoom).** The chase camera widens its field of view with
+horizontal speed to sell a sense of speed. The target FOV ramps linearly from
+`chase_fov` (stationary) to `chase_fov + chase_fov_speed_boost` once the car
+reaches `chase_fov_speed` (m/s), and the live `fov` eases toward that target with
+the same frame-rate-independent `1 - exp(-chase_fov_smoothing · dt)` weight so it
+breathes in and out rather than snapping.
+
+To keep the car itself roughly the same on-screen size while the FOV breathes,
+the follow distance is scaled inversely — a **dolly zoom** (Vertigo effect). An
+object of fixed size subtends an angle proportional to `1/(distance · tan(fov/2))`,
+so holding that product at its standstill value means the full-dolly distance is
+`follow_distance · tan(chase_fov/2) / tan(fov/2)`: the wider the FOV, the closer
+the camera pulls in. The background rushes past faster while the car stays put.
+
+`chase_dolly_mix` (0–1) sets how much of that correction is applied: the effective
+ratio is `lerp(1.0, tan(chase_fov/2)/tan(fov/2), chase_dolly_mix)`. At `0` the
+follow distance never changes (pure FOV zoom — the car grows with speed); at `1`
+it's the full dolly zoom (the car keeps its size); in between softens an
+over-eager pull-in. This effective distance (not the raw `follow_distance`) is
+what feeds the terrain clearance solve below.
+
 ### Exported / config
 
 - `target: Node3D` — the node to follow (set in the scene to `Car`).
@@ -76,6 +97,13 @@ frame-rate independent.
 - `smoothing` (5.0) — rate at which the camera's orbital position eases toward
   the travel direction; higher snaps faster, lower is more languid. The look-at
   is unaffected. See [configuration.md](configuration.md).
+- `chase_fov` (100.0) — base field of view at a standstill.
+- `chase_fov_speed_boost` (15.0) — extra FOV degrees added at full speed.
+- `chase_fov_speed` (55.0 m/s) — speed at which the full boost is reached.
+- `chase_fov_smoothing` (4.0) — easing rate for FOV changes.
+- `chase_dolly_mix` (0–1) — how strongly the follow distance is pulled in to
+  counteract the speed FOV (0 = distance fixed, 1 = full dolly zoom holding the
+  car's on-screen size).
 
 ## Bonnet camera
 

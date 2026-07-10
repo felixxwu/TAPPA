@@ -11,7 +11,7 @@ func _cfg() -> GameConfig:
 	cfg.wheel_friction_slip_rear = 0.6
 	cfg.downforce_front = 0.5
 	cfg.downforce_rear = 0.5
-	cfg.brake_bias = 0.4
+	cfg.brake_bias = 0.55  # a car's per-car default baseline (NOT the old hardcoded 0.4)
 	cfg.tuning_grip_authority = 0.15
 	cfg.tuning_brake_authority = 0.3
 	cfg.tuning_aero_authority = 0.5
@@ -26,7 +26,7 @@ func test_neutral_tuning_is_a_no_op() -> void:
 	assert_almost_eq(cfg.wheel_friction_slip_rear, 0.6, 0.0001, "neutral leaves rear grip")
 	assert_almost_eq(cfg.downforce_front, 0.5, 0.0001, "neutral leaves front downforce")
 	assert_almost_eq(cfg.downforce_rear, 0.5, 0.0001, "neutral leaves rear downforce")
-	assert_almost_eq(cfg.brake_bias, 0.4, 0.0001, "neutral leaves brake bias at the 40/60 default")
+	assert_almost_eq(cfg.brake_bias, 0.55, 0.0001, "neutral leaves brake bias at the car's baseline")
 
 
 func test_grip_balance_shifts_grip_rearward_and_is_monotonic() -> void:
@@ -67,18 +67,31 @@ func test_aero_balance_is_gated_by_the_aero_upgrade() -> void:
 
 
 func test_brake_bias_is_gated_by_the_brakes_upgrade() -> void:
-	# No brake kit → brake_bias forced to the 0.4 (40/60) stock default, ignoring the slider.
+	# No brake kit → the car simply keeps its baseline (0.55 here), ignoring the slider.
 	var locked := _cfg()
 	TuningLibrary.apply({"installed_upgrades": [], "tuning": {"brake_bias": 1.0}}, locked)
-	assert_almost_eq(locked.brake_bias, 0.4, 0.0001, "no brake kit: bias pinned at the 40/60 default")
+	assert_almost_eq(locked.brake_bias, 0.55, 0.0001, "no brake kit: bias stays at the car's baseline")
 	# With the brake kit, the slider moves the split ±tuning_brake_authority around the
-	# 0.4 default: +1 -> 0.7 forward, −1 -> 0.1 rearward.
+	# car's baseline (0.55): +1 -> 0.85 forward, −1 -> 0.25 rearward.
 	var unlocked := _cfg()
 	TuningLibrary.apply({"installed_upgrades": ["brake_kit"], "tuning": {"brake_bias": 1.0}}, unlocked)
-	assert_almost_eq(unlocked.brake_bias, 0.7, 0.0001, "brake kit: +1 sends 70% to the front")
+	assert_almost_eq(unlocked.brake_bias, 0.85, 0.0001, "brake kit: +1 shifts 0.3 forward of baseline")
 	var rearward := _cfg()
 	TuningLibrary.apply({"installed_upgrades": ["brake_kit"], "tuning": {"brake_bias": -1.0}}, rearward)
-	assert_almost_eq(rearward.brake_bias, 0.1, 0.0001, "brake kit: −1 sends 90% to the rear")
+	assert_almost_eq(rearward.brake_bias, 0.25, 0.0001, "brake kit: −1 shifts 0.3 rearward of baseline")
+
+
+func test_brake_bias_slider_recenters_on_the_car_baseline() -> void:
+	# The slider is baseline-relative, not pinned to any fixed centre: the SAME slider
+	# value produces different results for cars with different default biases.
+	var front_biased := _cfg()
+	front_biased.brake_bias = 0.60
+	TuningLibrary.apply({"installed_upgrades": ["brake_kit"], "tuning": {"brake_bias": 1.0}}, front_biased)
+	var rear_biased := _cfg()
+	rear_biased.brake_bias = 0.45
+	TuningLibrary.apply({"installed_upgrades": ["brake_kit"], "tuning": {"brake_bias": 1.0}}, rear_biased)
+	assert_almost_eq(front_biased.brake_bias - rear_biased.brake_bias, 0.15, 0.0001,
+		"same slider preserves the gap between the two cars' baselines")
 
 
 func test_out_of_range_sliders_clamp() -> void:
@@ -90,7 +103,7 @@ func test_out_of_range_sliders_clamp() -> void:
 	}, cfg)
 	assert_almost_eq(cfg.wheel_friction_slip_front, 0.8 * 0.85, 0.0001, "grip clamps at +1")
 	assert_almost_eq(cfg.downforce_front, 0.5 * 1.5, 0.0001, "aero clamps at −1 (front up)")
-	assert_almost_eq(cfg.brake_bias, 0.7, 0.0001, "brake bias clamps at +1")
+	assert_almost_eq(cfg.brake_bias, 0.85, 0.0001, "brake bias clamps at +1 (baseline + authority)")
 	assert_gt(cfg.wheel_friction_slip_front, 0.0, "grip never zeroes")
 	assert_gt(cfg.brake_bias, 0.0, "brake bias never inverts")
 	assert_lt(cfg.brake_bias, 1.0, "brake bias never saturates past the split")

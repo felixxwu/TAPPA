@@ -48,6 +48,7 @@ static func cars() -> Array[Dictionary]:
 			"name": "Fixture Hatch", "id": "fx_fwd_hatch", "country": "US", "car_type": "hatch",
 			"max_hp": 950.0, "reward_tier": 1, "mass": 900.0, "engine": "fx_i4",
 			"weight_front": 0.62, "engine_pos": 0.85, "tire_compound": 1.05,
+			"brake_bias": 0.62,  # the only fixture car that authors a default brake bias
 			"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
 			"body": Vector3(1.80, 0.55, 4.30), "cabin": Vector3(1.45, 0.50, 1.60),
 			"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.60,

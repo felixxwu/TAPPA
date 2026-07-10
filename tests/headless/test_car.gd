@@ -452,6 +452,24 @@ func test_apply_car_sets_downforce_from_spec_overwriting_stale() -> void:
 		"front downforce comes from the spec (0 when unspecified)")
 
 
+func test_apply_car_seeds_brake_bias_from_spec_else_keeps_config_default() -> void:
+	# brake_bias is a per-car default: apply_car copies the spec value onto cfg, and a
+	# car that omits it falls back to whatever cfg already holds (no forced value).
+	CarFixtures.install()
+	var cfg: GameConfig = Config.data
+	cfg.brake_bias = 0.33  # a stale/prior value, distinct from any fixture default
+	# Fixture Hatch authors a brake_bias -> apply_car overwrites the stale value with it.
+	var hatch := CarLibrary.index_of("fx_fwd_hatch")
+	_car.apply_car(hatch)
+	assert_almost_eq(cfg.brake_bias, float(CarLibrary.all()[hatch]["brake_bias"]), 1e-6,
+		"apply_car seeds cfg.brake_bias from the car's authored default")
+	# Fixture Roadster omits brake_bias -> apply_car leaves the current cfg value intact.
+	cfg.brake_bias = 0.41
+	_car.apply_car(CarLibrary.index_of("fx_light_rwd"))
+	assert_almost_eq(cfg.brake_bias, 0.41, 1e-6,
+		"a car with no brake_bias falls back to the config default, not a forced value")
+
+
 func test_aero_kit_upgrade_adds_downforce() -> void:
 	# Downforce IS applied to the live config via the aero_kit upgrade, layered
 	# ON TOP of whatever the car's spec baseline is (apply_owned, step 2). Asserts

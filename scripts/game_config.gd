@@ -150,7 +150,7 @@ var peak_torque_rpm := 4500.0
 ## loose gravel/grass shears a wedge of material and peaks at a MUCH larger angle
 ## with a broad, forgiving plateau past it — which is why rally is driven
 ## sideways. sin(8°)≈0.14, sin(18°)≈0.31, sin(20°)≈0.34.
-@export var tarmac_slip_peak := 0.14
+@export var tarmac_slip_peak := 0.20
 @export var gravel_slip_peak := 0.31
 @export var grass_slip_peak := 0.34
 ## Post-peak grip retention per surface (see sliding_grip_ratio). Tarmac falls
@@ -194,13 +194,15 @@ var peak_torque_rpm := 4500.0
 # TuningLibrary.apply re-balances the live config from these, scaled by the
 # authority knobs below so a slider can never zero or invert a value. The lift
 # UI (hq.gd) drives the sliders; gating (aero/brake) comes from installed upgrades.
-## Front share of the foot-brake torque (the new front/rear split drivetrain.gd
-## applies). 0.5 = today's equal split; the brake_bias slider moves it around 0.5.
+## Front share of the foot-brake torque (the front/rear split drivetrain.gd
+## applies). 0.5 = equal split. This is only the FALLBACK: CarLibrary.apply_car
+## seeds it per-car from each car's authored brake_bias, and the brakes-kit slider
+## shifts it about that baseline. Used directly only for a car that omits the field.
 @export_range(0.0, 1.0) var brake_bias := 0.5
 ## Max fraction of grip shifted front<->rear at slider |1| (grip_balance).
 @export_range(0.0, 1.0) var tuning_grip_authority := 0.15
-## Half-span of brake_bias the slider can move from 0.5 (brake_bias, gated by the
-## brakes upgrade) — e.g. 0.3 lets the slider reach brake_bias in [0.2, 0.8].
+## Half-span the brake_bias slider can move from the car's default (gated by the
+## brakes upgrade) — e.g. 0.3 lets a car with a 0.55 default reach [0.25, 0.85].
 @export_range(0.0, 0.5) var tuning_brake_authority := 0.3
 ## Max fraction of downforce shifted front<->rear at slider |1| (aero_balance,
 ## gated by the aero upgrade).
@@ -527,6 +529,22 @@ var peak_torque_rpm := 4500.0
 @export var bonnet_offset := Vector3(0.0, 0.7, -0.6)
 ## Field of view (degrees) for the bonnet camera.
 @export_range(30.0, 120.0) var bonnet_fov := 75.0
+## Base field of view (degrees) for the chase camera at a standstill.
+@export_range(30.0, 120.0) var chase_fov := 90.0
+## Extra FOV (degrees) added on top of chase_fov at chase_fov_speed and above, to
+## sell a sense of speed. The FOV eases linearly from chase_fov (stationary) to
+## chase_fov + chase_fov_speed_boost at chase_fov_speed (m/s).
+@export_range(0.0, 100.0) var chase_fov_speed_boost := 100.0
+## Speed (m/s) at which the full chase_fov_speed_boost is reached.
+@export_range(1.0, 100.0) var chase_fov_speed := 55.0
+## Easing rate for chase FOV changes (1 - exp(-rate*dt)); higher snaps faster.
+@export_range(0.1, 20.0) var chase_fov_smoothing := 4.0
+## Dolly-zoom strength: how strongly the follow distance is pulled in to
+## counteract the speed FOV so the car keeps its on-screen size. 0 = distance
+## never changes (pure FOV zoom, the car grows with speed); 1 = full dolly zoom
+## (distance ∝ 1/tan(fov/2), the car stays the same size). Values in between
+## soften an over-eager pull-in.
+@export_range(0.0, 1.0) var chase_dolly_mix := 0.5
 
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car
