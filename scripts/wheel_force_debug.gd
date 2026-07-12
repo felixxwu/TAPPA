@@ -17,10 +17,12 @@ const COLLISION_BOX_COLOR := Color(1.0, 1.0, 1.0, 0.18)
 var car: VehicleBody3D
 var _mesh := ImmediateMesh.new()
 var _wheels: Array = []
-# Transparent overlay of the chassis collision box, shown with the arrows. Lives
-# under the CollisionShape3D so it inherits its exact transform; only its mesh
-# size is synced (cars can swap the box at runtime).
+# Transparent overlay of the chassis collision hull (a chamfered octagon), shown
+# with the arrows. Lives under the CollisionShape3D so it inherits its exact
+# transform; its mesh is rebuilt from the hull points whenever they change (cars
+# swap the hull at runtime via apply_car).
 var _collision_box: MeshInstance3D = null
+var _hull_points := PackedVector3Array()
 
 
 func _init(p_car: VehicleBody3D) -> void:
@@ -45,14 +47,43 @@ func _build_collision_box() -> void:
 	if shape_node == null:
 		return
 	_collision_box = MeshInstance3D.new()
-	_collision_box.mesh = BoxMesh.new()
+	_collision_box.mesh = ArrayMesh.new()
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.albedo_color = COLLISION_BOX_COLOR
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # see the box from inside too
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # see the hull from inside too
 	_collision_box.material_override = mat
 	_collision_box.visible = visible
 	shape_node.add_child(_collision_box)
+
+
+# Rebuild the transparent overlay mesh as the octagonal prism described by the
+# hull's 16 points ([top, bottom] per corner, 8 corners walked clockwise — the
+# ordering car.gd._chassis_hull_points documents). Eight side quads + two caps.
+func _rebuild_collision_mesh(points: PackedVector3Array) -> void:
+	var arr_mesh := _collision_box.mesh as ArrayMesh
+	arr_mesh.clear_surfaces()
+	@warning_ignore("integer_division")
+	var n := points.size() / 2  # corners (two points — top + bottom — each)
+	if n < 3:
+		return
+	var verts := PackedVector3Array()
+	for i in n:
+		var j := (i + 1) % n
+		var top_i := points[2 * i]
+		var bot_i := points[2 * i + 1]
+		var top_j := points[2 * j]
+		var bot_j := points[2 * j + 1]
+		# Side quad (double-sided material, so winding is cosmetic).
+		verts.append_array([top_i, top_j, bot_j, top_i, bot_j, bot_i])
+	# Fan the two octagon caps from corner 0.
+	for i in range(1, n - 1):
+		verts.append_array([points[0], points[2 * i], points[2 * (i + 1)]])          # top
+		verts.append_array([points[1], points[2 * (i + 1) + 1], points[2 * i + 1]])  # bottom
+	var surface := []
+	surface.resize(Mesh.ARRAY_MAX)
+	surface[Mesh.ARRAY_VERTEX] = verts
+	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surface)
 
 
 func _physics_process(_delta: float) -> void:
@@ -64,9 +95,10 @@ func _physics_process(_delta: float) -> void:
 	if _collision_box != null:
 		_collision_box.visible = visible
 		if visible:
-			var shape := (_collision_box.get_parent() as CollisionShape3D).shape as BoxShape3D
-			if shape != null:
-				(_collision_box.mesh as BoxMesh).size = shape.size
+			var shape := (_collision_box.get_parent() as CollisionShape3D).shape as ConvexPolygonShape3D
+			if shape != null and shape.points != _hull_points:
+				_hull_points = shape.points
+				_rebuild_collision_mesh(_hull_points)
 	if not visible:
 		_mesh.clear_surfaces()
 		return

@@ -303,10 +303,11 @@ func test_focus_is_a_fwd_model_car() -> void:
 
 func test_focus_collision_box_matches_body() -> void:
 	_car.apply_car(CarLibrary.index_of("focus"))
-	var shape := (_car.get_node("CollisionShape3D") as CollisionShape3D).shape as BoxShape3D
+	# The hull is a chamfered octagon; its bounding extents still track the body.
+	var extents := _chassis_hull_extents()
 	var body: Vector3 = CarLibrary.CARS[CarLibrary.index_of("focus")]["body"]
-	assert_almost_eq(shape.size.z, body.z, 0.01)
-	assert_almost_eq(shape.size.y, body.y - 0.3, 0.01)
+	assert_almost_eq(extents.z, body.z, 0.01)
+	assert_almost_eq(extents.y, body.y - 0.3, 0.01)
 	assert_true((_car.get_node("FocusBody") as Node3D).visible, "FocusBody shown")
 	assert_false((_car.get_node("Mx5Body") as Node3D).visible, "Mx5Body hidden for the Focus")
 
@@ -322,9 +323,19 @@ func test_twingo_is_a_fwd_model_car() -> void:
 
 func test_twingo_collision_box_matches_body() -> void:
 	_car.apply_car(CarLibrary.index_of("twingo"))
-	var shape := (_car.get_node("CollisionShape3D") as CollisionShape3D).shape as BoxShape3D
+	var extents := _chassis_hull_extents()
 	var body: Vector3 = CarLibrary.CARS[CarLibrary.index_of("twingo")]["body"]
-	assert_almost_eq(shape.size.z, body.z, 0.01)
-	assert_almost_eq(shape.size.y, body.y - 0.3, 0.01)
+	assert_almost_eq(extents.z, body.z, 0.01)
+	assert_almost_eq(extents.y, body.y - 0.3, 0.01)
 	assert_true((_car.get_node("TwingoBody") as Node3D).visible, "TwingoBody shown")
 	assert_false((_car.get_node("FocusBody") as Node3D).visible, "FocusBody hidden for the Twingo")
+
+
+# Bounding extents of the chassis collision hull (a chamfered octagon) — the
+# mid-edge points still reach every box face, so the AABB equals the box dims.
+func _chassis_hull_extents() -> Vector3:
+	var hull := (_car.get_node("CollisionShape3D") as CollisionShape3D).shape as ConvexPolygonShape3D
+	var aabb := AABB(hull.points[0], Vector3.ZERO)
+	for p in hull.points:
+		aabb = aabb.expand(p)
+	return aabb.size

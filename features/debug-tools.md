@@ -38,9 +38,11 @@ reads the live boost pressure as a percentage of full boost (`hud.gd`'s pure
 (`turbo_enabled` false) — see [forced-induction.md](forced-induction.md). A **seed**
 line below it shows the current world seed (`Config.data.track_seed`, via the pure
 `seed_text`) so a generated stage can be identified and reproduced. It also shows a transparent overlay of
-the chassis collision box. It's a `MeshInstance3D` with a `BoxMesh`, parented under the car's
-`CollisionShape3D` so it inherits the shape's exact transform; its size is synced
-from the `BoxShape3D` each frame while visible (cars can swap the box at runtime).
+the chassis collision hull (a chamfered octagon — see
+[car-physics.md](car-physics.md) → "Hitbox shape"). It's a `MeshInstance3D` with an
+`ArrayMesh`, parented under the car's `CollisionShape3D` so it inherits the shape's exact
+transform; the prism is rebuilt from the `ConvexPolygonShape3D` points whenever they
+change while visible (cars swap the hull at runtime via `apply_car`).
 
 ## Skip to finish (event cheat)
 

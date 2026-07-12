@@ -33,6 +33,15 @@ var peak_torque_rpm := 4500.0
 @export var engine_friction_slope := 4.0  # N·m of extra crank friction per 1000 rpm (FMEP linear term)
 @export var axle_inertia := 2.645  # kg·m² rear axle spin inertia; fronts use half each
 @export var drag_coefficient := 3.527  # quadratic aero drag on the chassis
+## Fraction of the chassis WIDTH cut off each of the four vertical corners of the
+## collision hull, chamfering the box into an elongated octagon (top-down). The
+## cut is applied as an equal ABSOLUTE inset on both the width (X) and length (Z)
+## at every corner, so the corner is 45° and the nose/tail read as a regular
+## octagon — 1/3 leaves a flat front edge one-third of the car's width. 0 = a
+## plain box. Only affects obstacle contacts + damage impulses (the wheels are
+## independent raycasts), so it changes how the car clips scenery, not its grip
+## or speed. Clamped in car.gd so every face keeps a positive flat edge.
+@export_range(0.0, 0.5) var hitbox_chamfer_fraction := 1.0 / 3.0
 ## N of aero downforce per (m/s)² at the FRONT axle, applied downward at the
 ## axle midpoint. Compresses the suspension so grip rises via normal force.
 ## 0.2 ≈ half the car's weight at 25 m/s. Negative values produce lift,

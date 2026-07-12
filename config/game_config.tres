@@ -6,6 +6,7 @@
 script = ExtResource("1")
 distant_terrain_enabled = false
 drag_coefficient = 2.645
+hitbox_chamfer_fraction = 0.333333
 spin_assist_angle = 0.6
 level_assist_torque = 5000.0
 traction_ellipse_ratio = 1.0
