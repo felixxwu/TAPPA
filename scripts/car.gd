@@ -380,6 +380,12 @@ func _physics_process(delta: float) -> void:
 	if replay_playback:
 		_step_replay(delta)
 		return
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"car", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(delta: float) -> void:
 	var cfg: GameConfig = config
 	# Capture the pre-solve travel speed for _integrate_forces' damage keying — this
 	# runs before the physics solver, so it still holds the true approach speed even

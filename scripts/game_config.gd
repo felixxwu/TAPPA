@@ -489,7 +489,7 @@ var peak_torque_rpm := 4500.0
 ## angular impulse is this times the car's speed (m/s) times sin(angle to the bush),
 ## so faster grazes tug harder and a head-on brush barely twists. Sign swings the
 ## nose toward the bush (the snagged corner drags back).
-@export_range(0.0, 500.0) var bush_drag_torque := 200.0
+@export_range(0.0, 500.0) var bush_drag_torque := 120.0
 ## Below this speed (km/h) a bush neither damages nor tugs the car — a parked car
 ## sitting in a bush isn't dragged.
 @export_range(0.0, 60.0) var bush_min_speed_kmh := 8.0

@@ -47,7 +47,13 @@ func setup(positions: PackedVector2Array, car: Node, hit_radius: float,
 	_grid = SpatialGrid.of_indices(_points, _cell)
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"bush_field", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(_delta: float) -> void:
 	if _car == null or _points.is_empty():
 		return
 	var dmg: DamageModel = _car.get("damage")

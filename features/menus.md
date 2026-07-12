@@ -258,9 +258,10 @@ sub-page it reads **< Back** (returns to the list); on the list it is the host's
 action. The saved choice in each section is highlighted and persisted via
 `Save.set_setting`. Settings is also shown as a **pre-rally gate**: on mobile, if no
 scheme has been chosen yet, Start opens this page (`_open_settings(true)`) instead of
-launching — on the list the bottom button reads **Start >** and confirms the pick
-(the highlighted default if untouched), saving it so the gate never reappears, then
-begins the rally.
+launching — jumping **straight to the Mobile controls page** (skipping the category
+list) so the player only picks a touch layout. The bottom button reads **Start >**
+and confirms the pick (the highlighted default if untouched), saving it so the gate
+never reappears, then begins the rally; pressing back cancels the gate to the car park.
 
 All the scrollable menu lists (Settings, the tuning lift, the standings/podium
 leaderboards) use **`TouchScrollContainer`** (`scripts/touch_scroll_container.gd`)

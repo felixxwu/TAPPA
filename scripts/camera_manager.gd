@@ -37,7 +37,13 @@ func _ready() -> void:
 	_apply()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"camera_manager", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(_delta: float) -> void:
 	if Input.is_action_just_pressed("cycle_camera"):
 		cycle()
 

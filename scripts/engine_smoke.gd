@@ -130,6 +130,12 @@ func _build_slot(i: int, p: Vector3) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"engine_smoke", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(delta: float) -> void:
 	if not Config.data.engine_smoke_enabled or multimesh == null:
 		return
 	# Age the live smoke (rise + grow + fade), then emit new puffs — from misfire

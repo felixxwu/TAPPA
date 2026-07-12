@@ -89,7 +89,13 @@ func _rebuild_collision_mesh(points: PackedVector3Array) -> void:
 	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surface)
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"wheel_force_debug", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(_delta: float) -> void:
 	# The H-key toggle is a dev-only affordance: only honour it in a debug build
 	# (editor / debug export). Release exports (e.g. the web build) never show the
 	# arrows via the key. A config that starts them visible still works either way.

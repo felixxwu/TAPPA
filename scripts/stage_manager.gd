@@ -144,6 +144,12 @@ func _mark_progress_start() -> void:
 
 
 func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"stage_manager", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(delta: float) -> void:
 	if not _armed:
 		return
 	match _phase:

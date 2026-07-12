@@ -154,7 +154,13 @@ func _build_stage_delta_label() -> void:
 	add_child(_stage_delta_label)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"hud", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(_delta: float) -> void:
 	# Toggle the speed / gear / rpm readout with H, gated to debug builds like the
 	# force arrows. Text below still refreshes while hidden, so it's correct the
 	# instant it's shown.

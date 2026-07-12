@@ -38,7 +38,13 @@ func reconfigure() -> void:
 	_synth = EngineAudioSynth.new(Config.data, MIX_RATE)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"engine_audio", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(_delta: float) -> void:
 	if _playback == null:
 		return  # headless / no audio device
 	var engine: EngineSim = get_parent().drivetrain.engine

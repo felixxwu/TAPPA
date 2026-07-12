@@ -97,6 +97,27 @@ frame** (`TerrainManager.integrations_total` delta) — so terrain-correlated
 hitches are obvious in a play-session log. The GPU timer reads 0 on backends
 that don't support it (and always headless); the overlay labels that case.
 
+## PerfLog autoload (per-second log lines + per-script timing)
+
+**Source:** `scripts/perf_log.gd`, registered as the `PerfLog` autoload. Debug
+builds only (`OS.is_debug_build()` disables it otherwise). Once per second it
+prints to stdout (and therefore the Godot log at
+`user://logs/godot.log`):
+
+- `[perf] fps=… process=… physics=… draw_calls=… mem=…` — the headline
+  `Performance` monitors, so a play session leaves a CPU/GPU cost trail that can
+  be analyzed after the fact.
+- `[perf-scripts] ms/frame: engine_audio=0.956 car=0.189 …` — average
+  main-thread cost per rendered frame of each instrumented script, sorted
+  descending, summed across all instances of the script (e.g. every AI car).
+
+The per-script numbers come from a timing wrapper pattern: each per-frame
+script keeps its real body in `_timed_process` / `_timed_physics_process`, and
+the public `_process` / `_physics_process` callback times that call and reports
+it via `PerfLog.track(&"<script name>", usec)`. When adding a NEW script with a
+per-frame callback, follow the same pattern so it shows up in the table (and
+note tests may call the public callback directly — keep its signature).
+
 ## Standalone performance benchmark
 
 **Source:** `benchmark/perf_benchmark.gd` + `benchmark/perf_benchmark.tscn`, run

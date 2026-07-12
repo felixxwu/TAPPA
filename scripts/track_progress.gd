@@ -85,6 +85,12 @@ func retarget(car: Node, terrain: Node) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"track_progress", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(delta: float) -> void:
 	if _centerline == null or _car == null:
 		return
 	# During a replay the car is a passive ghost driven along a recording; the loop-wrap

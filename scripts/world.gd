@@ -1094,6 +1094,11 @@ func _present_standings_overlay(_event_index: int) -> void:
 	if _replay_recorder.recording:
 		_replay_recorder.stop()
 	($HUD as CanvasLayer).visible = false
+	# Hide the on-screen driving controls — the replay isn't drivable, and the
+	# touch sticks/pedals would just clutter the cinematic on a touch device.
+	var mobile := get_node_or_null("MobileControls") as CanvasLayer
+	if mobile != null:
+		mobile.visible = false
 	# Camera for the cinematic replay.
 	_replay_camera = ReplayCamera.new()
 	add_child(_replay_camera)

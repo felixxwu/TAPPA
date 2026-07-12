@@ -779,7 +779,13 @@ func build_initial() -> void:
 	_last_focus_coord = chunk_coord_for(origin)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"terrain_manager", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(_delta: float) -> void:
 	var focus := _focus_node()
 	if focus != null:
 		update_focus(focus.global_position)

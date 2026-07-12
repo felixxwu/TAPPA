@@ -91,7 +91,13 @@ func _collect_wheels(car: Node) -> Array:
 	return out
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"tire_marks", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(_delta: float) -> void:
 	if not Config.data.tire_marks_enabled or _centerline == null or not is_instance_valid(_car):
 		return
 	# Below the speed floor (parked / countdown): break every ribbon so a later

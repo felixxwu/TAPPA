@@ -37,6 +37,12 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"chase_camera", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(delta: float) -> void:
 	if target == null:
 		return
 

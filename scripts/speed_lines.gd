@@ -32,6 +32,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"speed_lines", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(delta: float) -> void:
 	if _mat == null or not is_instance_valid(car):
 		return
 	var cfg: GameConfig = Config.data

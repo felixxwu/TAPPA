@@ -76,9 +76,11 @@ touch availability is the detection signal.)
 
 On mobile, a player must choose a scheme before their first event. If no scheme is
 saved yet, HQ's Start button opens the Settings picker as a **gate**
-(`hq.gd._open_settings(true)`) instead of launching; confirming saves the chosen
-scheme (the highlighted default if untouched) and proceeds, so the gate never shows
-again. See [menus.md](menus.md) › Settings.
+(`hq.gd._open_settings(true)`) instead of launching — jumping **straight to the
+Mobile controls page** (not the full category list), so the player only picks a
+touch layout. Confirming (the bottom **Start >** button) saves the chosen scheme
+(the highlighted default if untouched) and proceeds, so the gate never shows again.
+Pressing back cancels the gate to the car park. See [menus.md](menus.md) › Settings.
 
 ## Related config
 

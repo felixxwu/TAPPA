@@ -446,7 +446,13 @@ func _position_thumb() -> void:
 	_slider_thumb.position = Vector2(center_x + _steer * usable - _thumb_w * 0.5, _slider_rect.position.y)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"mobile_controls", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(_delta: float) -> void:
 	_apply_actions()
 
 

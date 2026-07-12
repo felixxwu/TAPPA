@@ -1395,6 +1395,11 @@ func test_hq_mobile_first_start_gates_on_control_scheme_pick() -> void:
 	hq._on_start_pressed()
 	assert_eq(hq._view, hq.View.SETTINGS, "first mobile start shows the control picker")
 	assert_true(hq._settings_gate, "the picker is in pre-rally gate mode")
+	# The gate jumps straight to the mobile-controls page (not the full category list),
+	# and its bottom button starts the rally rather than backing out.
+	assert_false(hq._settings_menu.at_root(), "the gate opens on the mobile-controls page, not the category list")
+	assert_eq(hq._settings_menu._scheme_page.visible, true, "the mobile-controls page is the one shown")
+	assert_eq(hq._settings_action_button.text.to_upper(), "START >", "the gate button starts the rally")
 	assert_false(RallySession.is_active(), "the rally hasn't started — it's gated on the pick")
 	# Confirm: saves the (default, untouched) scheme so we never ask again, then starts.
 	hq._on_settings_action()

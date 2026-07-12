@@ -99,6 +99,12 @@ func _build_slot(i: int, p: Vector3) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"wheel_particles", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(delta: float) -> void:
 	if not Config.data.wheel_particles_enabled or multimesh == null:
 		return
 	# Advance the existing spray (gravity + drag + lifetime) so airborne clods

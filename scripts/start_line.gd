@@ -347,6 +347,12 @@ func _queue_seed(rally: Dictionary) -> int:
 # --- Sequence ----------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"start_line", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(delta: float) -> void:
 	match _seq:
 		Seq.ORBIT:
 			_advance_orbit(delta)

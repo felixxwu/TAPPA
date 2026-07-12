@@ -24,6 +24,7 @@ InputRemap="*res://scripts/input_remap.gd"
 RallySession="*res://scripts/rally_session.gd"
 Benchmark="*res://scripts/benchmark_mode.gd"
 DisplayStretch="*res://scripts/display_stretch.gd"
+PerfLog="*res://scripts/perf_log.gd"
 
 [display]
 

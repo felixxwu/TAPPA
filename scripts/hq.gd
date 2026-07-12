@@ -1277,17 +1277,24 @@ func _open_settings(gate: bool) -> void:
 	_settings_gate = gate
 	_settings_sub.text = ("Choose your touch controls to start:" if gate
 		else "Camera & controls:")
-	_settings_menu.show_list()  # emits page_changed → sets the bottom button label
+	# The pre-rally gate jumps straight to the mobile-controls page — the player only
+	# needs to pick a touch layout, not wade through the full category list. The
+	# title-screen / pause entry opens on the category list as usual.
+	if gate:
+		_settings_menu.show_schemes()  # emits page_changed → sets the bottom button label
+	else:
+		_settings_menu.show_list()
 	_go_to(View.SETTINGS)
 
 
-# Keep the single bottom button in step with the page: on a sub-page it backs out
-# to the list ("< Back"); on the list it is the host's own action — "Start >" in the
-# pre-rally gate, "< Back" (to the exterior) on the title screen.
-func _on_settings_page_changed(is_root: bool) -> void:
+# Keep the single bottom button in step with the page: in the pre-rally gate the
+# bottom button always starts the rally ("Start >", since the gate shows only the
+# mobile-controls page); otherwise it's a plain "< Back" (out to the list from a
+# sub-page, or out to the exterior from the list).
+func _on_settings_page_changed(_is_root: bool) -> void:
 	if _settings_action_button == null:
 		return  # SettingsMenu._ready fires its first page_changed before the button exists
-	_settings_action_button.text = "Start >" if (is_root and _settings_gate) else "< Back"
+	_settings_action_button.text = "Start >" if _settings_gate else "< Back"
 
 
 # The settings bottom button. On a sub-page it returns to the category list. On the
@@ -1295,16 +1302,19 @@ func _on_settings_page_changed(is_root: bool) -> void:
 # if the player didn't tap one) so we never ask again, then start the rally; from the
 # title screen it just returns to the exterior.
 func _on_settings_action() -> void:
-	if not _settings_menu.at_root():
-		_settings_menu.show_list()
-		return
+	# Gate: the button starts the rally straight from the mobile-controls page. Make
+	# sure a scheme is saved (the highlighted default if the player didn't tap one) so
+	# we never ask again.
 	if _settings_gate:
 		if Save.get_setting(MobileControls.SETTING_KEY, null) == null:
 			Save.set_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
 		_settings_gate = false
 		_begin_rally_start()
-	else:
-		_go_to(View.EXTERIOR)
+		return
+	if not _settings_menu.at_root():
+		_settings_menu.show_list()
+		return
+	_go_to(View.EXTERIOR)
 
 
 # --- Confirmation dialog -----------------------------------------------------
@@ -2797,12 +2807,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			pass
 		View.SETTINGS:
 			if event.is_action_pressed("menu_back"):
-				# A sub-page backs out to the category list first (handled by the shared
-				# menu); from the list, cancel the pre-rally gate back to the car park,
-				# otherwise back to the title.
-				if not _settings_menu.go_back():
-					_go_to(View.CARPARK if _settings_gate else View.EXTERIOR)
+				# In the pre-rally gate we show only the mobile-controls page (no category
+				# list), so back cancels the gate straight back to the car park. Otherwise
+				# a sub-page backs out to the category list first, then back exits to title.
+				if _settings_gate:
+					_go_to(View.CARPARK)
 					_settings_gate = false
+				elif not _settings_menu.go_back():
+					_go_to(View.EXTERIOR)
 		View.GARAGE:
 			# The bottom action row (Back / Map / Tune Car / Free Roam) is a single
 			# left/right cursor; select fires it. menu_back shortcuts to the exterior.

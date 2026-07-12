@@ -247,6 +247,12 @@ static func _add_priority(v: Vector2, extra: Vector2, max_speed: float) -> Vecto
 # --- simulation ---------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(delta)
+	PerfLog.track(&"spectator_group", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(delta: float) -> void:
 	if _car == null or _pos.is_empty():
 		_age_ragdolls()
 		return
