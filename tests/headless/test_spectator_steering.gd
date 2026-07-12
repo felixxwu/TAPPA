@@ -93,15 +93,27 @@ func test_clamp_speed_leaves_slow_vectors() -> void:
 
 # --- prioritised arbitration (combine) ----------------------------------------
 
-func test_combine_flees_car_before_avoiding_obstacles() -> void:
-	# Flee already saturates the speed budget, so a conflicting obstacle/separation
-	# push cannot bend the path — escaping the car wins.
+func test_combine_flees_car_before_avoiding_static_obstacles() -> void:
+	# Flee already saturates the speed budget, so a conflicting road/tree avoid push
+	# cannot bend the path — escaping the car beats dodging static obstacles.
 	var flee := Vector2(3.0, 0)      # == max_speed, pointing +x away from car
 	var avoid := Vector2(0, 3.0)     # would push +z if it had any budget
-	var sep := Vector2(0, 3.0)
-	var out := SpectatorGroup.combine(flee, avoid, sep, Vector2.ZERO, 3.0)
+	var out := SpectatorGroup.combine(flee, avoid, Vector2.ZERO, Vector2.ZERO, 3.0)
 	assert_almost_eq(out.x, 3.0, 1e-3, "keeps full flee speed along +x")
-	assert_almost_eq(out.y, 0.0, 1e-3, "obstacle/separation get no budget while fleeing hard")
+	assert_almost_eq(out.y, 0.0, 1e-3, "static avoidance gets no budget while fleeing hard")
+
+
+func test_combine_blends_separation_with_flee_so_a_crowd_never_collapses() -> void:
+	# Separation is NOT starved by flee — the two urgent local forces blend, so a
+	# fleeing crowd fans out sideways rather than piling onto one point and freezing.
+	# (Flee weighted higher than separation, mirroring w_flee > w_separation.)
+	var flee := Vector2(4.0, 0)      # strong flee, +x away from the car
+	var sep := Vector2(0, 1.5)       # neighbour push, +z
+	var out := SpectatorGroup.combine(flee, Vector2.ZERO, sep, Vector2.ZERO, 3.5)
+	assert_gt(out.x, 0.0, "still fleeing the car along +x")
+	assert_gt(out.y, 0.0, "separation still bends the path so the crowd spreads")
+	assert_gt(out.x, out.y, "flee's larger pull keeps escape the dominant direction")
+	assert_lte(out.length(), 3.5 + 1e-3, "total never exceeds max_speed")
 
 
 func test_combine_uses_avoidance_when_not_fleeing() -> void:
