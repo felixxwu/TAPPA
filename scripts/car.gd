@@ -195,17 +195,19 @@ func _ready() -> void:
 	if cabin_mesh.mesh != null:
 		cabin_mesh.mesh = cabin_mesh.mesh.duplicate()
 	# The chassis collision BoxShape3D is a shared sub-resource too (car.tscn
-	# shape_chassis), and _apply_body_meshes resizes it in place per car. Without a
-	# per-instance copy, a start-line queue prop's apply_car() would stomp the
-	# player's HITBOX (the meshes above are isolated, so the car still LOOKS right
-	# but collides at the last-applied car's size). Duplicate it once here too.
+	# shape_chassis). _apply_body_meshes now swaps in a per-instance
+	# ConvexPolygonShape3D (the chamfered-octagon hull), which is inherently isolated,
+	# but a car instance that never gets apply_car'd keeps this scene default — so
+	# duplicate it once here too. Without a per-instance copy, a start-line queue
+	# prop's apply_car() could otherwise stomp the player's HITBOX (the meshes above
+	# are isolated, so the car still LOOKS right but collides at the wrong size).
 	var collision := $CollisionShape3D as CollisionShape3D
 	if collision.shape != null:
 		collision.shape = collision.shape.duplicate()
 	drivetrain = Drivetrain.new(self)
 	drivetrain.terrain = _resolve_terrain()
 	# Read per-contact impulses in _integrate_forces (used by the damage model to
-	# turn obstacle hits into HP loss). The chassis box is the only solid shape —
+	# turn obstacle hits into HP loss). The chassis hull is the only solid shape —
 	# the wheels are raycasts — so this reports chassis-vs-world contacts only.
 	contact_monitor = true
 	max_contacts_reported = MAX_CONTACTS_REPORTED
@@ -854,18 +856,59 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	_compute_engine_smoke_local(spec)
 
 
-# Resize the procedural chassis + cabin box meshes and the shared collision box
-# to the spec's dimensions.
+# Resize the procedural chassis box mesh + cabin box to the spec's dimensions and
+# rebuild the collision hull as a chamfered octagon (see _chassis_hull_points).
 func _apply_body_meshes(spec: Dictionary) -> void:
 	var body: Vector3 = spec["body"]
 	var cabin: Vector3 = spec["cabin"]
 	(($Chassis as MeshInstance3D).mesh as BoxMesh).size = body
-	(($CollisionShape3D as CollisionShape3D).shape as BoxShape3D).size = (
-		Vector3(body.x, body.y - 0.3, body.z)
-	)
+	var hitbox := Vector3(body.x, body.y - 0.3, body.z)
+	var chamfer := body.x * config.hitbox_chamfer_fraction
+	var collision := $CollisionShape3D as CollisionShape3D
+	# The scene authors a BoxShape3D; the first apply swaps in a ConvexPolygonShape3D
+	# (and later applies reuse it). Assigning a fresh shape per instance also keeps the
+	# hull isolated the same way the _ready duplicate did for the box.
+	var hull := collision.shape as ConvexPolygonShape3D
+	if hull == null:
+		hull = ConvexPolygonShape3D.new()
+		collision.shape = hull
+	hull.points = _chassis_hull_points(hitbox, chamfer)
 	var cabin_mesh := $Cabin as MeshInstance3D
 	(cabin_mesh.mesh as BoxMesh).size = cabin
 	cabin_mesh.position = Vector3(0.0, body.y * 0.5 + cabin.y * 0.45, spec["cabin_z"])
+
+
+# The chassis collision hull: a box with its four VERTICAL corners chamfered, so
+# top-down it's an elongated octagon. A glancing corner clip on a tree/sign/wall
+# then deflects along the obstacle instead of catching the square corner and
+# snapping the car. `chamfer` is the absolute inset applied EQUALLY along X (width)
+# and Z (length) at each corner — an equal cut makes the corner 45° so the nose and
+# tail read as a regular octagon. Clamped so every one of the eight faces keeps a
+# positive flat edge even for an extreme body/config. Returns 16 points (the 8
+# top-view corners duplicated at +/- half height); the order is [top, bottom] per
+# corner, walked clockwise from the front-right — WheelForceDebug's overlay relies
+# on that ordering to rebuild the prism it draws.
+static func _chassis_hull_points(size: Vector3, chamfer: float) -> PackedVector3Array:
+	var hx := size.x * 0.5
+	var hy := size.y * 0.5
+	var hz := size.z * 0.5
+	var c := clampf(chamfer, 0.0, minf(hx, hz) * 0.99)
+	# Forward is -Z; the 8 corners walk clockwise from the front-right (top view).
+	var outline := PackedVector2Array([
+		Vector2(hx, -hz + c),   # right side, toward the front
+		Vector2(hx - c, -hz),   # front edge, right  (front-right corner cut)
+		Vector2(-hx + c, -hz),  # front edge, left   (front-left corner cut)
+		Vector2(-hx, -hz + c),  # left side, toward the front
+		Vector2(-hx, hz - c),   # left side, toward the rear
+		Vector2(-hx + c, hz),   # rear edge, left    (rear-left corner cut)
+		Vector2(hx - c, hz),    # rear edge, right   (rear-right corner cut)
+		Vector2(hx, hz - c),    # right side, toward the rear
+	])
+	var pts := PackedVector3Array()
+	for p in outline:
+		pts.push_back(Vector3(p.x, hy, p.y))
+		pts.push_back(Vector3(p.x, -hy, p.y))
+	return pts
 
 
 # Authored-model cars hide the procedural chassis/cabin boxes and show ONE glb body

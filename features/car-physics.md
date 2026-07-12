@@ -17,11 +17,35 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
 - `_reset()` — restores `_start_transform`, zeroes linear/angular velocity, and
   resets the drivetrain/engine. Bound to **R**.
 
+### Hitbox shape (chamfered octagon)
+
+The chassis collision hull is **not a plain box** — it's a box with its four
+**vertical** corners chamfered, so from the top it's an elongated octagon
+(`_chassis_hull_points` in `car.gd`). `_apply_body_meshes` swaps the scene's default
+`BoxShape3D` for a per-car `ConvexPolygonShape3D` whose 16 points (8 top-view corners ×
+top/bottom) are rebuilt from the body dims each `apply_car`. The corner cut is an
+**equal absolute inset on both width (X) and length (Z)** — `body.x ×
+GameConfig.hitbox_chamfer_fraction` (default **1/3**) — so the cut is 45° and the
+nose/tail read as a regular octagon (a third-of-width chamfer leaves a flat front edge
+one-third the car's width). The inset is clamped so every face keeps a positive flat
+edge. The hull's **bounding extents are unchanged** (the mid-edge points still reach
+`body.x`, `body.y − 0.3`, `body.z`), so weight/CoM/ride-height are unaffected — only the
+corners are pulled in.
+
+Why: the hull is only ever hit by *obstacles* (trees, signs, spectators, other cars) and
+feeds the damage model's contact impulses — the wheels are independent raycasts, so this
+shape has **zero effect on grip, top speed, or cornering**. Chamfering makes a glancing
+corner clip **deflect along** the obstacle instead of catching the square corner and
+snapping the car, and (being a glancing rather than square contact) costs marginally less
+HP on side-swipes. The [debug overlay](debug-tools.md) draws the octagon prism, rebuilt
+from the same hull points. Geometry is covered by `test_chassis_hull_*` in
+`tests/headless/test_car_types.gd`.
+
 ### Per-instance resource isolation
 
 `car.tscn` authors the chassis/cabin boxes, the wheel tyre/spoke meshes, and the
-chassis **collision `BoxShape3D`** as `[sub_resource]`s. Godot shares one copy of a
-sub-resource across **every instance** of the scene, and `apply_car()` resizes these
+chassis **collision shape** as `[sub_resource]`s. Godot shares one copy of a
+sub-resource across **every instance** of the scene, and `apply_car()` reshapes these
 in place per car (`_apply_body_meshes` / `_relocate_wheels`). So without isolation, a
 second live car — the [start-line](start-line.md) queue leader/trailer, spawned and
 `apply_car`'d **after** the player is already sized — reshapes the shared resource and
@@ -29,10 +53,13 @@ the change bleeds back onto the player: wrong wheel visuals, or (the subtler one
 player's **hitbox** taking the last-applied car's body size while the meshes still look
 right. `car.gd._ready()` defends against this by giving each instance its own copies up
 front (`.duplicate()` of the Chassis/Cabin meshes, each wheel's tyre/spoke mesh, and
-the collision shape) before any `apply_car` can run. Any *new* shared sub-resource that
-`apply_car` mutates must be added to that list, or it will silently leak across
-instances — this class of bug has bitten wheels and the hitbox already
-(`tests/headless/test_car_types.gd` has a regression for each).
+the collision shape) before any `apply_car` can run. The hitbox is doubly safe now that
+`_apply_body_meshes` assigns a **fresh** `ConvexPolygonShape3D` per instance (the scene
+`BoxShape3D` is only the un-applied fallback), but the duplicate still covers a car that
+never gets `apply_car`'d. Any *new* shared sub-resource that `apply_car` mutates must be
+added to that list, or it will silently leak across instances — this class of bug has
+bitten wheels and the hitbox already (`tests/headless/test_car_types.gd` has a regression
+for each).
 
 ## Per-step loop (`_physics_process`)
 

@@ -28,6 +28,7 @@ the `.tres` requires a scene reload to take effect.
 | `brake_torque` | 300.0 | Foot-brake N·m per axle (S) |
 | `handbrake_torque` | 400.0 | Rear handbrake N·m (Space) |
 | `drag_coefficient` | 0.4 | Quadratic aero drag (top-speed limiter) |
+| `hitbox_chamfer_fraction` | 0.333 | Fraction of body width cut off each vertical corner of the collision hull, chamfering it into an elongated octagon (equal inset on X + Z → 45° corners, regular octagon at the nose). Only affects obstacle contacts + damage impulses, not grip/speed. 0 = plain box (range 0.0–0.5) |
 | `downforce_front` / `downforce_rear` | 0.0 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0). Set **per-car** by `apply_car` from the CarLibrary spec (these defaults are just the fallback); every car has a small rear value |
 | `steer_limit` | 0.8 rad | Mechanical max steer angle from travel direction (full lock at low speed); at speed the effective cap is bounded by the tire's optimum slip angle (`Car.optimum_steer_limit`), derived from the surface, not a tuned ramp |
 | `steer_speed` | 5.0 | Steering responsiveness (rad/s) |

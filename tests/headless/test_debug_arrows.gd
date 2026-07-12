@@ -34,6 +34,7 @@ func test_collision_box_shown_and_transparent_with_arrows() -> void:
 	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(scene)
 	var car: VehicleBody3D = scene.get_node("Car")
+	car.apply_car(0)  # the shipping path: the hull becomes the chamfered octagon
 	for i in 30:
 		await get_tree().physics_frame
 	var overlay: WheelForceDebug = null
@@ -60,9 +61,17 @@ func test_collision_box_shown_and_transparent_with_arrows() -> void:
 	await get_tree().physics_frame
 	Input.action_release("toggle_debug_arrows")
 	assert_true(box.visible, "H shows the collision box")
-	# Sized to match the chassis collision shape.
-	var shape := (car.get_node("CollisionShape3D") as CollisionShape3D).shape as BoxShape3D
-	assert_eq((box.mesh as BoxMesh).size, shape.size, "box matches collision shape size")
+	# Rebuilt as the chassis collision hull (a chamfered octagon). The overlay prism
+	# spans the same extents as the convex hull it visualises.
+	var shape := (car.get_node("CollisionShape3D") as CollisionShape3D).shape as ConvexPolygonShape3D
+	assert_not_null(shape, "chassis collides with a convex hull")
+	var arr_mesh := box.mesh as ArrayMesh
+	assert_gt(arr_mesh.get_surface_count(), 0, "overlay mesh built from the hull")
+	var hull := AABB(shape.points[0], Vector3.ZERO)
+	for p in shape.points:
+		hull = hull.expand(p)
+	assert_true(arr_mesh.get_aabb().size.is_equal_approx(hull.size),
+		"overlay mesh matches the hull extents (%s vs %s)" % [arr_mesh.get_aabb().size, hull.size])
 
 
 func _surface_vertex_count(overlay: WheelForceDebug) -> int:

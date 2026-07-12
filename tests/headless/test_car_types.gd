@@ -128,11 +128,72 @@ func test_apply_body_on_a_second_instance_does_not_resize_the_first_hitbox(
 	# The queue prop applies its (larger) body AFTER the player is already sized.
 	second._apply_body_meshes(large)
 
-	var first_box := (first.get_node("CollisionShape3D").shape as BoxShape3D)
+	# The hull is a chamfered octagon (ConvexPolygonShape3D); its extents still span
+	# the small car's collision box, not the large one's, proving isolation.
+	var first_hull := (first.get_node("CollisionShape3D").shape as ConvexPolygonShape3D)
+	assert_not_null(first_hull, "first car's chassis is a convex hull")
+	var aabb := AABB(first_hull.points[0], Vector3.ZERO)
+	for p in first_hull.points:
+		aabb = aabb.expand(p)
 	var expected := Vector3(small["body"].x, small["body"].y - 0.3, small["body"].z)
-	assert_true(first_box.size.is_equal_approx(expected),
-		"first car's hitbox keeps its own size (%s) after a second car is sized (%s)"
-			% [expected, first_box.size])
+	assert_true(aabb.size.is_equal_approx(expected),
+		"first car's hitbox keeps its own extents (%s) after a second car is sized (%s)"
+			% [expected, aabb.size])
+
+
+# The chassis collision hull is a box with its four vertical corners chamfered
+# (an elongated octagon top-down). These assert the SHAPE LOGIC, not the tuned
+# chamfer amount: any positive inset cuts the corners equally in X and Z, preserves
+# the box's bounding extents, and keeps the hull symmetric.
+func test_chassis_hull_is_a_symmetric_chamfered_octagon() -> void:
+	var size := Vector3(2.0, 0.5, 4.0)
+	var c := 0.5
+	var pts: PackedVector3Array = _car._chassis_hull_points(size, c)
+	assert_eq(pts.size(), 16, "octagon prism: 8 corners x top + bottom")
+
+	# Bounding extents are unchanged — the mid-edge points still reach every face.
+	var aabb := AABB(pts[0], Vector3.ZERO)
+	for p in pts:
+		aabb = aabb.expand(p)
+	assert_true(aabb.size.is_equal_approx(size), "hull spans the full box extents (%s)" % aabb.size)
+
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	# Every square corner is cut: no point sits at a full (+/-hx, +/-hz) corner.
+	for p in pts:
+		var at_corner := is_equal_approx(absf(p.x), hx) and is_equal_approx(absf(p.z), hz)
+		assert_false(at_corner, "corner (%s) chamfered away" % p)
+
+	# Symmetric under x -> -x and z -> -z.
+	for p in pts:
+		assert_true(_has_point(pts, Vector3(-p.x, p.y, p.z)), "x-mirror of %s present" % p)
+		assert_true(_has_point(pts, Vector3(p.x, p.y, -p.z)), "z-mirror of %s present" % p)
+
+	# Equal cut in X and Z (45 degrees) — the front edge is inset by c in x and the
+	# side edge is inset by the SAME c in z, which is what makes the nose read as a
+	# regular octagon.
+	var hy := size.y * 0.5
+	assert_true(_has_point(pts, Vector3(hx - c, hy, -hz)), "front edge inset by c in x")
+	assert_true(_has_point(pts, Vector3(hx, hy, -hz + c)), "side edge inset by c in z")
+
+
+func test_chassis_hull_clamps_an_extreme_chamfer() -> void:
+	# A chamfer larger than the half-body still yields a valid hull (points stay
+	# within the box, no crossed/degenerate polygon), rather than crashing.
+	var size := Vector3(1.4, 0.5, 3.0)
+	var pts: PackedVector3Array = _car._chassis_hull_points(size, 10.0)
+	assert_eq(pts.size(), 16, "still 16 points")
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	for p in pts:
+		assert_true(absf(p.x) <= hx + 0.001 and absf(p.z) <= hz + 0.001, "point %s within box" % p)
+
+
+func _has_point(pts: PackedVector3Array, target: Vector3) -> bool:
+	for p in pts:
+		if p.is_equal_approx(target):
+			return true
+	return false
 
 
 func test_every_car_sits_on_the_ground() -> void:
