@@ -261,3 +261,26 @@ func test_finish_panel_next_button_is_keyboard_navigable() -> void:
 	hud.finish_next_pressed.connect(func() -> void: fired[0] += 1)
 	next_btn.emit_signal("pressed")
 	assert_eq(fired[0], 1, "pressing NEXT emits finish_next_pressed")
+
+
+# The health gauge reserves "0%" for a genuine wreck (hp == 0). Any positive HP
+# rounds UP to at least 1%, so a nearly-dead-but-alive car never reads 0% and
+# leaves the player wondering why nothing happens. Regression guard for the HUD
+# rounding down to 0% while the car was still drivable.
+func test_health_percent_reserves_zero_for_a_real_wreck() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var label: Label = hud.get_node("HPLabel")
+	var dmg: DamageModel = car.damage
+
+	# A sliver of HP (well under 0.5% of max, which naive rounding shows as 0%).
+	dmg.field(1000.0, 1.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(label.text, "Health 1%", "a still-alive car never reads 0%")
+
+	# A genuine wreck (0 HP) is the only thing that reads 0%.
+	dmg.hp = 0.0
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(label.text, "Health 0%", "0% is reserved for hp == 0")

@@ -1086,7 +1086,7 @@ var peak_torque_rpm := 4500.0
 ## a look value (the hitbox is gone the instant it's felled).
 @export_range(0.1, 5.0) var tree_fell_duration_s := 2
 ## Distance (m) past which trees are fully culled. Defaults near the loaded
-## terrain extent (RADIUS=1, CHUNK_M=50 -> ~75 m).
+## terrain extent (RADIUS=2, CHUNK_M=50 -> ~125 m).
 @export_range(10.0, 500.0) var tree_render_distance_m := 80.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export_range(0.0, 100.0) var tree_render_fade_m := 15.0

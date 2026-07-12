@@ -475,6 +475,13 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		func() -> Node: return EngineSmoke.new()) as EngineSmoke
 	_engine_smoke.setup($Car)
 
+	# Records the car's transform each frame during a stage run, so it can be
+	# played back as a cinematic replay behind the between-event standings
+	# overlay (features/event-replay.md).
+	_replay_recorder = _ensure_child("ReplayRecorder",
+		func() -> Node: return ReplayRecorder.new()) as ReplayRecorder
+	_replay_recorder.setup($Car)
+
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
 	# A benchmark run skips the whole stage flow — the manager is left un-armed
@@ -859,6 +866,11 @@ var _road_markings: RoadMarkings
 var _wheel_particles: WheelParticles
 var _engine_smoke: EngineSmoke
 
+# Cinematic replay behind the between-event standings overlay (features/event-replay.md).
+var _replay_recorder: ReplayRecorder
+var _replay_camera: ReplayCamera
+var _standings_overlay: CanvasLayer
+
 # Coarse far-terrain backdrop that gives the sky a horizon (distant_terrain.gd).
 var _distant_terrain: DistantTerrain
 
@@ -873,6 +885,10 @@ var _wreck_screen: WreckScreen
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
+# HP + wheel-toe captured at the finish CROSSING (_on_finish_reached), used at
+# report time so the post-finish runoff coast can't alter the event's damage.
+var _event_hp_at_finish := 0.0
+var _event_toe_at_finish: Array = []
 
 
 # Wire the StageManager's in-stage "vs P1" pace popup for a session run. Builds the
@@ -991,6 +1007,9 @@ func _field_session_car() -> void:
 		return
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
+	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
+	_event_hp_at_finish = _event_start_hp
+	_event_toe_at_finish = $Car.damage.toe_array()
 
 
 # Route this event's StageManager / damage signals to the session, and the rally's
@@ -1003,6 +1022,17 @@ func _wire_session_signals() -> void:
 		($Car as Node).wrecked.connect(_on_session_car_wrecked)
 	if not RallySession.rally_finished.is_connected(_on_session_rally_finished):
 		RallySession.rally_finished.connect(_on_session_rally_finished)
+
+	# Live (non-headless) runs own the standings presentation as an in-world
+	# overlay, keeping this run world alive behind it for the cinematic replay;
+	# RallySession then skips its own scene-change path (see rally_session.gd).
+	RallySession.standings_overlay_host = not _headless
+	if _stage_manager != null and not _stage_manager.stage_started.is_connected(_on_stage_started):
+		_stage_manager.stage_started.connect(_on_stage_started)
+	if _stage_manager != null and not _stage_manager.finish_reached.is_connected(_on_finish_reached):
+		_stage_manager.finish_reached.connect(_on_finish_reached)
+	if not RallySession.standings_ready.is_connected(_present_standings_overlay):
+		RallySession.standings_ready.connect(_present_standings_overlay)
 
 
 # Test seam: headless tests can't survive a real change_scene_to_file (it would
@@ -1026,12 +1056,67 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	if not RallySession.is_active():
 		_change_scene("res://hq.tscn")
 		return
-	var hp_lost: float = maxf(0.0, _event_start_hp - $Car.damage.hp)
-	# Persist the wheels bent this event so the car carries its misalignment forward.
+	# HP lost + persisted wheel-toe are snapshotted at the FINISH CROSSING (see
+	# _on_finish_reached), NOT here: this handler fires on the NEXT button, by which time
+	# the car has skidded to a stop / idled in the runoff, and any barrier clip during
+	# that post-finish coast would be wrongly charged to the event's damage.
+	var hp_lost: float = maxf(0.0, _event_start_hp - _event_hp_at_finish)
 	var iid: int = RallySession.car_instance_id()
 	if iid >= 0:
-		Save.set_wheel_toe(iid, $Car.damage.toe_array())
+		Save.set_wheel_toe(iid, _event_toe_at_finish)
+	if _replay_recorder != null:
+		_replay_recorder.stop()
 	RallySession.report_event_result(int(round(elapsed_seconds * 1000.0)), hp_lost)
+
+
+func _on_stage_started() -> void:
+	if _replay_recorder != null:
+		_replay_recorder.start()
+
+
+# Fired the instant the finish is crossed (StageManager._complete), before the NEXT
+# button. Two run-end snapshots are taken HERE so the post-finish coast can't affect
+# them: (1) stop the recorder (else the stationary runoff tail lands in the replay);
+# (2) capture HP + wheel-toe as of the crossing (the driven run's real damage).
+func _on_finish_reached() -> void:
+	if _replay_recorder != null:
+		_replay_recorder.stop()
+	_event_hp_at_finish = $Car.damage.hp
+	_event_toe_at_finish = $Car.damage.toe_array()
+
+
+# Present the standings as an in-world CanvasLayer overlay and start the replay,
+# keeping the run world alive behind it. Headless runs (no display) skip this;
+# RallySession then falls back to its scene-change path.
+func _present_standings_overlay(_event_index: int) -> void:
+	if _headless or _replay_recorder == null:
+		return
+	if _replay_recorder.recording:
+		_replay_recorder.stop()
+	($HUD as CanvasLayer).visible = false
+	# Camera for the cinematic replay.
+	_replay_camera = ReplayCamera.new()
+	add_child(_replay_camera)
+	_replay_camera.setup($Car, _replay_recorder)
+	_replay_camera.current = true
+	# Car into replay playback.
+	($Car as Node).begin_replay(_replay_recorder)
+	# Standings overlay Control on its own CanvasLayer.
+	_standings_overlay = CanvasLayer.new()
+	_standings_overlay.name = "StandingsOverlay"
+	var panel: Control = load("res://standings.tscn").instantiate()
+	panel.overlay_mode = true
+	panel.leaderboard_hidden_changed.connect(_on_leaderboard_hidden_changed)
+	_standings_overlay.add_child(panel)
+	add_child(_standings_overlay)
+	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
+
+
+func _on_leaderboard_hidden_changed(hidden: bool) -> void:
+	# Engine audio: muted while the leaderboard is shown, on while hidden (watch mode).
+	var ea := $Car.get_node_or_null("EngineAudio") as AudioStreamPlayer
+	if ea != null:
+		ea.volume_db = 0.0 if hidden else -60.0
 
 
 func _on_session_car_wrecked() -> void:

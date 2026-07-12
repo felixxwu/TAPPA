@@ -166,6 +166,11 @@ var _lift_owned: Dictionary = {}
 # free kit, so the repair row can call it out. Recomputed each _refresh_lift_ui.
 var _safety_net_granted := false
 var _lift_car_instance_id := -2  # what _lift_car was built for (-2 = nothing yet)
+# Deep hash of the owned dict _lift_car was built from. _ensure_lift_car reuses the
+# prop only when BOTH the instance id and this hash match, so any in-place data change
+# (repair, upgrade toggle, engine swap) auto-invalidates the prop — no mutator has to
+# remember to force a respawn. Mirrors the car park's _obtain_parked_car / _car_cache.
+var _lift_car_hash := 0
 var _lift_page: int = LiftPage.HUB
 # Lift animation: the car is LOWERED on the ground in the garage view and RAISED when
 # the bay is entered (tweened over hq_lift_raise_time). _lift_raised is the current
@@ -1699,12 +1704,14 @@ func _ensure_lift_car() -> void:
 		_clear_lift_car()
 		return
 	var id := int(owned.get("instance_id", -1))
-	if is_instance_valid(_lift_car) and _lift_car_instance_id == id:
+	var owned_hash := owned.hash()
+	if is_instance_valid(_lift_car) and _lift_car_instance_id == id and _lift_car_hash == owned_hash:
 		_lift_owned = owned
 		return
 	_clear_lift_car()
 	_lift_owned = owned
 	_lift_car_instance_id = id
+	_lift_car_hash = owned_hash
 	_lift_car = _spawn_lift_car(owned)
 
 
@@ -1715,6 +1722,7 @@ func _clear_lift_car() -> void:
 		_lift_car.queue_free()
 	_lift_car = null
 	_lift_car_instance_id = -2
+	_lift_car_hash = 0
 
 
 # Build the selected car as a silent, frozen prop on the lift platform at the current
@@ -1985,14 +1993,14 @@ func _swap_targets(current_id: int) -> Array:
 # and rebuild the lift prop + UI so the spec change shows immediately.
 func _toggle_upgrade(instance_id: int, item_id: String, enabled: bool) -> void:
 	if Save.set_upgrade_enabled(instance_id, item_id, enabled):
-		_lift_car_instance_id = -2  # the car's spec changed — rebuild the prop
-		_ensure_lift_car()
+		_ensure_lift_car()  # the car's spec changed — the hash flips, so the prop respawns
 		_refresh_lift_ui()
 
 
 func _use_repair_kit(instance_id: int) -> void:
 	if Save.use_repair_kit(instance_id):
-		_refresh_lift_ui()
+		_ensure_lift_car()  # the car is healed — the hash flips, so the prop respawns with a
+		_refresh_lift_ui()  # fresh (healthy) DamageModel and the synthetic smoke stops
 
 
 # Enter the car park for the chosen rally: park the ELIGIBLE owned cars (plus any
@@ -2529,7 +2537,9 @@ func _repair_focused_car() -> void:
 		return
 	var id := int(_eligible[_focus].get("instance_id", -1))
 	if Save.use_repair_kit(id):
-		_focus_changed()
+		_build_lineup(_eligible)  # respawn the healed prop so its fresh (healthy)
+		_focus_changed()          # DamageModel stops the synthetic smoke
+
 
 
 # One-line car summary shown in the car-select / overflow overlays. Health reads as a
@@ -2724,8 +2734,7 @@ func _select_changed_car() -> void:
 	_clear_lineup()
 	_selected_instance_id = -1
 	_carpark_change_mode = false
-	_lift_car_instance_id = -2  # force the lift to respawn the newly-selected car
-	_enter_lift()
+	_enter_lift()  # a different car is selected — _ensure_lift_car's id/hash key respawns it
 
 
 # Confirm the highlighted car as the engine-swap partner: exchange engines, then
@@ -2737,8 +2746,7 @@ func _select_swap_target() -> void:
 	_clear_lineup()
 	_selected_instance_id = -1
 	_carpark_swap_mode = false
-	_lift_car_instance_id = -2  # force prop respawn with the new engine
-	_ensure_lift_car()
+	_ensure_lift_car()  # the engine data changed — the hash flips, so the prop respawns
 	_enter_lift()
 
 

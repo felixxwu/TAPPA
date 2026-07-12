@@ -275,7 +275,10 @@ the same path the map-table pan uses).
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
-spawned whenever the camera is inside — garage/lift — and dropped otherwise). In the
+spawned whenever the camera is inside — garage/lift — and dropped otherwise). Like the
+car park, the lift prop is **reused only while both its instance id and a deep
+`owned.hash()` match** — so any in-place data change to the selected car (repair, upgrade
+toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a rebuild. In the
 garage the car rests **lowered on the ground** (`hq_lift_car_lowered_height`).
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view). A HUD hint + Back (to the exterior) + convenience buttons sit on top.
@@ -592,15 +595,40 @@ on page 2):
 
 The **first** event skips the event page and opens straight on the combined page (a
 single event's time already equals its combined time, so there's nothing extra to
-show). The **final** event shows only the event page, with its button reading
-**"Continue >"**; pressing it calls `continue_to_next_event()`, which resolves the
-rally, and the scene (connected to `RallySession.rally_finished`) then changes to
-`podium.tscn` itself — the combined view for the finished rally lives on the podium's
-LEADERBOARD stage instead of a second standings page. On a middling event the event
-page's button reads **"See overall standings >"** and advances to the combined page
-in place (`_showing_event_page = false; _build_ui()`); the combined page's button
-reads **"Continue to next event >"** and calls `continue_to_next_event()` to load the
-next event.
+show). Every event **after** the first — including the **final** event — shows
+**both** pages before Continue: the event page's button reads **"See overall
+standings >"** and advances to the combined page in place (`_showing_event_page =
+false; _build_ui()`); the combined page's button reads **"Continue to next event >"**
+and calls `continue_to_next_event()`. On a middling event that loads the next event;
+on the final event `continue_to_next_event()` instead resolves the rally
+(`_resolve_results` → `PODIUM`, `rally_finished`), and the scene (connected to
+`RallySession.rally_finished` in non-overlay mode) then changes to `podium.tscn` itself
+— the combined view for the finished rally lives on the podium's LEADERBOARD stage
+instead of a second standings page.
+
+**Overlay mode** (`overlay_mode := false`, set by the host BEFORE `_ready`): `world.gd`
+hosts this scene over the in-world **event-replay** cinematic instead of as a flat
+interstitial — see [event-replay.md](event-replay.md) for the recorder/camera/car
+playback this sits on top of, and [rally-session.md](rally-session.md) for how
+`RallySession.standings_overlay_host` routes the scene here instead of a scene swap. In
+overlay mode: the `Background`
+`ColorRect` is transparent (alpha 0) instead of opaque `UITheme.BLACK`, so the replay
+shows through; `_ready` does NOT connect `RallySession.rally_finished` (the live host
+owns the rally-finished -> podium transition, not the overlay); and a
+**Hide/Show leaderboard** toggle (`toggle_leaderboard()`,
+`leaderboard_hidden_changed(hidden)` signal, `leaderboard_hidden` var) lets the player
+watch the replay full-screen — hidden state rebuilds with ONLY a "Show leaderboard >"
+button, still `FOCUS_ALL` and re-seated via `MenuNav.attach` with `first = show_btn` and
+`on_back = toggle_leaderboard` (so Esc/gamepad B also re-shows it, mirroring the
+attach-without-on_back convention elsewhere in this file — here `on_back` IS wired
+because showing the leaderboard again is the natural "back" action from the hidden
+state); shown state adds a "Hide leaderboard" button next to Continue, and the row of
+buttons (Continue + Hide leaderboard) stays reachable the same way the non-overlay
+button is — both states are fully keyboard/gamepad focusable, never mouse-only. The
+host (`world._on_leaderboard_hidden_changed`) listens
+for `leaderboard_hidden_changed` to mute/unmute the car's engine audio while the
+leaderboard is shown vs. hidden. Non-overlay mode is unchanged (opaque bg, owns the
+podium transition, no hide/show button).
 
 ## Deferred (rest of the diegetic 3D build)
 

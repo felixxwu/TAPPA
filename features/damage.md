@@ -211,7 +211,10 @@ the cinematic and report immediately. See [menus.md](menus.md) for the loop.
 green → amber → red) under a **`Health NN%`** label (`HPLabel` — a percentage, not a
 raw HP number, since "HP" reads as horsepower), a low-health **warning pulse** below
 `hud_low_hp_warn_frac`, and a red **impact flash** (`ImpactFlash`) sized to each
-HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off.
+HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off. The percentage
+**reserves `0%` for a genuine wreck** (`hp == 0`): any positive HP rounds UP to at
+least `1%`, so the label never reads `0%` on a still-drivable car (which would look
+like a broken wreck trigger).
 
 ## Config knobs (`GameConfig`, *Damage* group)
 

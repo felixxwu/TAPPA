@@ -72,6 +72,12 @@ var free_roam_instance_id := -1
 # precomputed target times, so no track generation or scene reload happens.
 var auto_load_scenes := true
 
+# When a live scene (world.gd) will present the standings as an in-world overlay
+# (so the run world stays alive for the replay), it sets this and _load_standings_scene
+# becomes a no-op — the host owns showing the panel. continue_to_next_event still
+# changes scene as usual. See features/event-replay.md.
+var standings_overlay_host := false
+
 
 # --- Public API --------------------------------------------------------------
 
@@ -506,4 +512,6 @@ func _load_event_scene(event: Dictionary) -> void:
 # Show the between-event standings interstitial; its Continue calls
 # continue_to_next_event() to load the next event.
 func _load_standings_scene() -> void:
+	if standings_overlay_host:
+		return
 	get_tree().change_scene_to_file("res://standings.tscn")

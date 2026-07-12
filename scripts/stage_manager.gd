@@ -52,7 +52,8 @@ var _split_cursor := 0
 var _split_interval := 5
 
 signal stage_started                            # countdown finished, timer running
-signal stage_completed(elapsed_seconds: float)  # finish line reached
+signal finish_reached                           # car crossed the finish (phase -> COMPLETE, before the NEXT button)
+signal stage_completed(elapsed_seconds: float)  # NEXT pressed on the finish panel; post-stage flow begins
 
 
 func _cfg() -> GameConfig:
@@ -212,6 +213,12 @@ func _complete() -> void:
 			_car.finish_stop = true
 	if _hud != null and _hud.has_method("show_stage_complete"):
 		_hud.show_stage_complete(_elapsed)
+	# The timed run is over the instant the line is crossed; anything after this
+	# (the skid to a stop in the runoff, idling under the finish panel until NEXT)
+	# is NOT part of the driven run. Fire finish_reached so the replay recorder
+	# stops here rather than at stage_completed (the NEXT button), which would tack
+	# a stationary tail onto the recording. See features/event-replay.md.
+	finish_reached.emit()
 
 
 # Advance from the finish panel into the post-stage flow (standings → podium): emit

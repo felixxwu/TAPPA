@@ -95,6 +95,18 @@ func _pin_for(hq: Node3D, rally_id: String) -> Node3D:
 
 
 # The billboarded readout-box sprite a pin floats above its flag.
+# The player's currently-owned car (before_each already grants a starter via
+# _pick_starter) — the first entry in the profile's garage.
+func _first_owned_car() -> Dictionary:
+	return _save.profile["cars"][0]
+
+
+# Any rally from the (possibly synthetic) catalogue — no assertion on which one, only
+# that it exists, so this stays valid under CarFixtures/RallyLibrary overrides.
+func _any_rally() -> Dictionary:
+	return RallyLibrary.all()[0]
+
+
 func _pin_label_sprite(pin: Node3D) -> Sprite3D:
 	return pin.find_children("*", "Sprite3D", true, false)[0]
 
@@ -1845,3 +1857,21 @@ func test_android_notice_is_navigable_and_back_dismisses() -> void:
 	await get_tree().process_frame  # title MenuNav re-grabs on visibility
 	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
 		"focus returns to the title Start button")
+
+
+# The final event used to skip straight to the podium from its event-only page. It
+# should now show the SAME two-page flow as every other event: event result page,
+# then Continue steps to the combined/cumulative standings page before resolving.
+func test_final_event_shows_combined_page_before_proceeding() -> void:
+	var owned := _first_owned_car()
+	RallySession.start_rally(_any_rally(), owned, true)
+	RallySession.report_event_result(1000, 0.0)   # event 1
+	RallySession.continue_to_next_event()
+	RallySession.report_event_result(1000, 0.0)   # event 2
+	RallySession.continue_to_next_event()
+	RallySession.report_event_result(1000, 0.0)   # event 3 (final)
+	var s: Control = load("res://standings.tscn").instantiate()
+	add_child_autofree(s)
+	assert_true(s.showing_event_page(), "final event opens on the event page")
+	s._on_action()                                 # advance from the event page
+	assert_false(s.showing_event_page(), "final event now shows the combined page")

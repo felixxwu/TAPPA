@@ -40,7 +40,13 @@ that advances to the leaderboard/podium flow.
    handbrake while rolling, foot brake released once stopped, clutch kept engaged so
    the engine winds down to idle instead of free-revving ([car-physics.md](car-physics.md)) —
    staying visible in the runoff road past the finish ([track.md](track.md)). Then
-   show the finish panel with the run time ([hud.md](hud.md)). `stage_completed` is **not**
+   show the finish panel with the run time ([hud.md](hud.md)). It **does** emit
+   `finish_reached` here — the "car crossed the line" moment, distinct from the deferred
+   `stage_completed`. Anything that should reflect the *driven run* rather than the
+   player's panel-dismiss must key off `finish_reached`: `world.gd` stops the replay
+   recorder (else the runoff idle tails the recording — [event-replay.md](event-replay.md))
+   and snapshots the event's HP loss + persisted wheel-toe here (else damage taken during
+   the post-finish coast is wrongly charged). `stage_completed` is **not**
    emitted here: it's **deferred** to `proceed_to_results()`, which the finish
    panel's **NEXT** button fires (via the HUD's `finish_next_pressed` signal, wired
    in `world.gd`). So the leaderboard/podium flow only starts once the player
@@ -98,6 +104,8 @@ stays `false` and the car is freely drivable.
 ## Signals
 
 - `stage_started` — countdown finished, timer running.
+- `finish_reached` — car crossed the finish (phase → COMPLETE), fired in `_complete()`
+  before the NEXT button; for run-end snapshots that must exclude the post-finish coast.
 - `stage_completed(elapsed_seconds: float)` — emitted by `proceed_to_results()`
   when the player presses **NEXT** on the finish panel (NOT on the raw finish),
   timer frozen. This deferral gives the car room to skid to a stop and lets the

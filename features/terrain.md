@@ -8,7 +8,7 @@
 Procedurally generated rolling terrain from stacked Perlin noise. The terrain is
 **infinite in theory**: `height_at(x, z)` is a pure function of absolute world
 coordinates, so any point in the world has a defined height. Only the car's
-immediate surroundings are ever built — a moving 3×3 grid of chunks that loads
+immediate surroundings are ever built — a moving 5×5 grid of chunks that loads
 and unloads as the car drives. `@tool` means chunks also regenerate live in the
 editor (centred on the origin, since there is no car there), and config drives
 the manager at runtime via `world.gd`.
@@ -19,8 +19,8 @@ the manager at runtime via `world.gd`.
 - `CELL_M = 1.0` — 1 m grid cells (low-poly PS1 terrain; quarter the triangles
   and collision samples of the old 0.5 m cells).
 - `SAMPLES = 51` — 51×51 height vertices per chunk (`CHUNK_M / CELL_M + 1`).
-- `RADIUS = 1` — a (2·RADIUS+1)² = **3×3** ring of chunks is kept loaded around
-  the car (~150 m span). Chunks are precomputed at level load and pulled from
+- `RADIUS = 2` — a (2·RADIUS+1)² = **5×5** ring of chunks is kept loaded around
+  the car (~250 m span). Chunks are precomputed at level load and pulled from
   cache as the car approaches each boundary.
 
 ## TerrainManager
@@ -60,7 +60,7 @@ Key methods:
   shared mutable state), the main thread reuses the cached pair.
 - `chunk_coord_for(pos)` / `target_coords(center)` — integer chunk-grid math.
 - `update_focus(pos)` — recompute the car's chunk coord and, when it changes,
-  `_reconcile` the loaded set: free chunks outside the 3×3 ring, instantiate and
+  `_reconcile` the loaded set: free chunks outside the 5×5 ring, instantiate and
   `setup()` the missing ones. Called every frame from `_process`; cheap because
   it early-returns until the car crosses a chunk boundary.
 - `corridor_coords(centerline, leash_m)` — the full set of chunk coords the
@@ -247,7 +247,7 @@ the old `Border` safety wall and far visual plane were removed.
 
 ## Fog & distant backdrop
 
-The detailed 3×3 ring's edge sits only ~75–105 m from the car. Rather than hide
+The detailed 5×5 ring's edge sits ~125–175 m from the car. Rather than hide
 that edge with dense fog (which also hid the sky), a coarse **`DistantTerrain`**
 (`scripts/distant_terrain.gd`, a plain `Node3D`) extends the visible terrain far
 past the ring — collision-free scenery sampling the same `height_at`/`light_at`
@@ -271,7 +271,7 @@ continuous either way.
 To stop it poking through the detailed terrain, the **whole backdrop is sunk
 `sink_m`** (default 1.5 m, `GameConfig.distant_terrain_sink_m`) below true
 height, so the detail ring always renders above it and the coarse mesh stays
-hidden beneath; the visible step at the ring's outer edge is ~75 m away and
+hidden beneath; the visible step at the ring's outer edge is ~125 m away and
 softened by fog. This also guarantees the skybox is never exposed — the
 backdrop covers the whole corridor plus margin unconditionally, so there's no
 race with which chunks happen to be loaded. Tunables: `GameConfig.distant_terrain_*`

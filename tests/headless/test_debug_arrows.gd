@@ -74,6 +74,49 @@ func test_collision_box_shown_and_transparent_with_arrows() -> void:
 		"overlay mesh matches the hull extents (%s vs %s)" % [arr_mesh.get_aabb().size, hull.size])
 
 
+func test_car_body_hidden_while_overlay_shown() -> void:
+	# The hitbox hull is drawn slightly smaller than the body, so H hides the car
+	# body (procedural boxes + any glb model) to reveal it, restoring on toggle-off.
+	var scene: Node3D = load("res://tests/fixtures/test_track.tscn").instantiate()
+	add_child_autofree(scene)
+	var car: VehicleBody3D = scene.get_node("Car")
+	car.apply_car(0)
+	for i in 30:
+		await get_tree().physics_frame
+	var overlay: WheelForceDebug = null
+	for child in car.get_children():
+		if child is WheelForceDebug:
+			overlay = child
+	assert_not_null(overlay, "debug overlay present")
+	if overlay == null:
+		return
+	# Whatever body node is showing for this car (procedural boxes or a glb model).
+	var body_names := ["Chassis", "Cabin", "Mx5Body", "FocusBody", "TwingoBody",
+		"ActyBody", "ChargerBody", "TheBeastBody", "Porsche911Body"]
+	var visible_before := []
+	for n in body_names:
+		var node := car.get_node_or_null(n) as Node3D
+		if node != null and node.visible:
+			visible_before.append(node)
+	assert_gt(visible_before.size(), 0, "at least one body mesh visible before toggling")
+
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	Input.action_release("toggle_debug_arrows")
+	assert_true(overlay.visible, "H shows the overlay")
+	for node in visible_before:
+		assert_false(node.visible, "body hidden while the overlay is shown")
+
+	Input.action_press("toggle_debug_arrows")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	Input.action_release("toggle_debug_arrows")
+	assert_false(overlay.visible, "H hides the overlay again")
+	for node in visible_before:
+		assert_true(node.visible, "body restored when the overlay is dismissed")
+
+
 func _surface_vertex_count(overlay: WheelForceDebug) -> int:
 	if overlay.mesh.get_surface_count() == 0:
 		return 0

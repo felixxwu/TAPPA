@@ -134,3 +134,21 @@ The `CameraManager` applies these on `_ready()` and re-applies them when the
 active car is swapped: `world.gd:cycle_car()` parks the bonnet camera on the
 world root while the old car is freed, then `CameraManager.retarget(fresh)`
 re-parents it onto the new car (and re-points the chase camera's `target`).
+
+## Replay camera (cinematic director)
+
+**Source:** `scripts/replay_camera.gd` (`ReplayCamera`, extends `Camera3D`). Not part of
+the `CameraManager` cycle — it's a **standalone camera created on demand** by
+`world.gd` for the between-event standings overlay (see
+[event-replay.md](event-replay.md)), not one of the player-selectable modes above.
+
+`world._present_standings_overlay` instantiates a fresh `ReplayCamera`, calls
+`setup(target, recorder)` (target = `$Car`), and sets `current = true` to take over the
+viewport for the duration of the standings screen. A deterministic, testable
+`_tick(delta)` (no RNG, no engine-clock reads) cycles through four shots
+(`enum Shot { ORBIT, FLYBY, LOW_CHASE, HIGH_WIDE }`), dwelling `SHOT_DWELL := 4.0`
+seconds on each before advancing to the next (`_shot = (_shot + 1) % Shot.size()`):
+an orbiting shot circling the car at radius 9 m, a fixed offset flyby, a low shot
+parked behind the car's facing, and a high wide establishing shot — each frame
+`look_at`s the target. It goes away with the overlay once the standings screen closes
+(the player's chosen `CameraManager` mode resumes on the next event / return to HQ).

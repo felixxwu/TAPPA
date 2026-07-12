@@ -72,13 +72,33 @@ retry** — re-enter from the map later; damage and the opponent field persist).
 
 In real play (`auto_load_scenes = true`) each event writes its
 `(seed, turn_count, width)` into `Config.data` and reloads `main.tscn`. After
-EVERY event — including the last — `report_event_result` loads `standings.tscn`
-(the leaderboard interstitial) and waits. Its Continue calls
+EVERY event — including the last — `report_event_result` emits `standings_ready` and
+waits at `Phase.STANDINGS`.
+
+**Standings presentation is now an in-world overlay, not a scene swap.**
+`world.gd` connects `standings_ready` to `_present_standings_overlay`, which — for a
+real (non-headless) run — keeps the just-finished run scene alive, drops in a
+cinematic replay of the event just driven, and shows `standings.tscn` as a transparent
+`CanvasLayer` overlay on top of it (`standings.gd`'s `overlay_mode = true`). See
+[event-replay.md](event-replay.md) for the recorder/camera/playback mechanics. To make
+room for this, `world.gd` sets `RallySession.standings_overlay_host = true` on setup
+(false under headless), and `_load_standings_scene()` — the method that would otherwise
+`change_scene_to_file("res://standings.tscn")` — becomes a **no-op** whenever that flag
+is set, since the host already owns showing the panel. Headless tests never set the
+flag, so `_load_standings_scene()` behaves exactly as before there (in practice it never
+fires anyway — `auto_load_scenes` is false and tests call `continue_to_next_event()`
+directly).
+
+Every event — **including the final one** — shows the standings screen's two pages (the
+just-finished event's times, then the cumulative leaderboard) before anything else
+happens; the final event's combined page still reads a "Continue to next event >"
+button, but pressing it resolves the rally instead. Its Continue calls
 `continue_to_next_event()`: for a non-final event this loads the next event; for
 the final event it instead resolves the rally (`_resolve_results` → `PODIUM`) and
-emits `rally_finished` — the standings scene itself is connected to
-`rally_finished` and changes to `podium.tscn` on that signal (the run scene is
-already gone by then, so the standings scene owns that transition). Headless
+emits `rally_finished`. In overlay mode the **live host** (`world.gd`) owns the
+`rally_finished` → podium transition (the run scene is still alive); in the older flat
+mode the standings scene itself connects `rally_finished` and changes to `podium.tscn`
+on that signal, since the run scene is already gone by then. Headless
 tests set `auto_load_scenes = false`, drive `report_*` directly, and call
 `continue_to_next_event()` to step past the standings pause (no scenes load).
 

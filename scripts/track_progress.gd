@@ -87,6 +87,11 @@ func retarget(car: Node, terrain: Node) -> void:
 func _physics_process(delta: float) -> void:
 	if _centerline == null or _car == null:
 		return
+	# During a replay the car is a passive ghost driven along a recording; the loop-wrap
+	# jump (finish → start) would trip the off-track leash / stuck watchdog and teleport
+	# it mid-replay. Progress tracking is meaningless for the ghost, so skip entirely.
+	if _car.get("replay_playback"):
+		return
 	var p: Vector3 = _car.global_transform.origin
 	var here := Vector2(p.x, p.z)
 	var offset := _local_closest_offset(here)

@@ -82,6 +82,15 @@ by contrast, is parented to the world root and emits in world space as the car
 drives.) Podium cars are spawned from the library baseline (`apply_car`, full health)
 rather than the owned instance, so they carry no damage and show no smoke.
 
+The smoke node is created **once at spawn** off the prop's `DamageModel`, so healing a
+car's persisted HP does not retroactively silence an already-parked prop — the prop must
+be **rebuilt** for the change to take. Both HQ display caches key their reuse on a **deep
+hash of the owned dict** (not just its instance id), so any in-place data change — repair,
+upgrade toggle, engine swap, tuning — flips the hash and auto-respawns the prop on the next
+`_ensure_lift_car` (lift) / `_obtain_parked_car` (car park); no mutator has to remember to
+force it. The fresh prop is full-health, so `_add_synthetic_smoke` skips it and the smoke
+stops immediately.
+
 ## Config knobs (`GameConfig`, *Engine Smoke* group)
 
 `engine_smoke_enabled`, `engine_smoke_max`, `engine_smoke_per_cut`,

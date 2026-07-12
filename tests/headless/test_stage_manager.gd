@@ -162,6 +162,39 @@ func test_completion_freezes_relocks_and_defers_the_signal() -> void:
 	assert_almost_eq(completed[0], 3.0, 0.0001, "proceed_to_results emits stage_completed with the final time")
 
 
+func test_finish_reached_fires_on_crossing_before_stage_completed() -> void:
+	# The replay recorder stops on finish_reached, so it MUST fire the instant the
+	# line is crossed (phase -> COMPLETE) — not when NEXT is pressed. Otherwise the
+	# post-finish skid + idle gets recorded as a stationary tail on the replay.
+	var sm := _make()
+	_to_running(sm)
+	var finished := [0]
+	var completed := [0]
+	sm.finish_reached.connect(func() -> void: finished[0] += 1)
+	sm.stage_completed.connect(func(_t: float) -> void: completed[0] += 1)
+	_progress.pct = 1.0  # cross the finish
+	sm._process(0.5)
+	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "crossing the line completes the stage")
+	assert_eq(finished[0], 1, "finish_reached fires once on the crossing frame")
+	assert_eq(completed[0], 0, "stage_completed is still deferred to the NEXT button")
+	# Extra ticks under the finish panel must not re-fire finish_reached.
+	sm._process(3.0)
+	assert_eq(finished[0], 1, "finish_reached does not re-fire while idling on the panel")
+	sm.proceed_to_results()
+	assert_eq(completed[0], 1, "NEXT emits stage_completed, distinct from finish_reached")
+
+
+func test_force_complete_also_fires_finish_reached() -> void:
+	# The dev skip-to-finish cheat runs the same _complete() path, so the recorder
+	# stop must fire there too.
+	var sm := _make()
+	_to_running(sm)
+	var finished := [0]
+	sm.finish_reached.connect(func() -> void: finished[0] += 1)
+	sm.force_complete()
+	assert_eq(finished[0], 1, "force_complete fires finish_reached via _complete()")
+
+
 func test_force_complete_shows_panel_and_defers_the_signal() -> void:
 	# The dev skip-to-finish cheat: force_complete() runs the same completion path
 	# as crossing the line — lock + panel now, results only on NEXT.

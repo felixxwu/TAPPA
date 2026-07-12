@@ -130,6 +130,113 @@ func test_a_changed_car_respawns_while_the_rest_are_reused() -> void:
 	assert_eq(after[1], before[1], "the unchanged car is reused (same node)")
 
 
+# Whether a display car prop carries live synthetic engine smoke (added by
+# hq.gd._add_synthetic_smoke only for a damaged car).
+func _has_smoke(car: Node) -> bool:
+	if not is_instance_valid(car):
+		return false
+	return not car.find_children("*", "EngineSmoke", true, false).is_empty()
+
+
+# Repairing the car on the lift heals it immediately: the wrecked prop (which smokes)
+# is rebuilt as a healthy one that does not — the reported bug was the stale prop
+# smoking on after a repair.
+func test_repairing_on_the_lift_stops_the_smoke() -> void:
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.set_selected_car(id)
+	_save.wreck_car(id)
+	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
+
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._ensure_lift_car()
+	assert_true(_has_smoke(hq._lift_car), "precondition: a wrecked lift car smokes")
+
+	hq._use_repair_kit(id)
+	assert_true(is_instance_valid(hq._lift_car), "the lift still holds a car after the repair")
+	assert_false(_has_smoke(hq._lift_car), "the repaired lift car no longer smokes")
+
+
+# Repairing the wrecked focused car in the car park respawns a healthy prop that no
+# longer smokes (same stale-prop bug, other repair entry point).
+func test_repairing_in_the_car_park_stops_the_smoke() -> void:
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.wreck_car(id)
+	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
+
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	await _build_and_wait(hq, _owned_cars_live())
+	hq._focus = 0
+	var wrecked_car = hq._cars[0]
+	assert_true(_has_smoke(wrecked_car), "precondition: the wrecked parked car smokes")
+
+	hq._repair_focused_car()
+	await _wait_for_lineup(hq)
+	assert_false(_has_smoke(hq._cars[0]), "the repaired parked car no longer smokes")
+
+
+# The lift prop is a cache of the selected car's owned data, keyed on instance id AND a
+# deep hash of the owned dict (hq.gd._ensure_lift_car). An in-place data change to the
+# selected car (repair, upgrade toggle, engine swap, ...) flips that hash, so the prop
+# auto-respawns on the next _ensure_lift_car — no mutator has to remember to force it.
+# This is the invariant that keeps every lift mutator safe; the two repair tests above
+# are one visible consequence of it.
+func test_lift_prop_respawns_when_the_selected_cars_data_changes() -> void:
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.set_selected_car(id)
+
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._ensure_lift_car()
+	var before: int = hq._lift_car.get_instance_id()
+
+	# Any in-place data change flips the owned dict's deep hash.
+	var tuning: Dictionary = _save.get_car(id).get("tuning", {})
+	tuning["engine_detune"] = 0.5 if float(tuning.get("engine_detune", 1.0)) != 0.5 else 0.75
+	_save.set_tuning(id, tuning)
+
+	hq._ensure_lift_car()
+	assert_true(is_instance_valid(hq._lift_car), "the lift still holds a car")
+	assert_ne(hq._lift_car.get_instance_id(), before,
+		"a data change to the selected car respawns the lift prop (fresh node)")
+
+
+# The flip side: with no data change, _ensure_lift_car reuses the exact same prop node —
+# it must not respawn on every call (that's what the hash guard buys over a blind rebuild).
+func test_lift_prop_reused_when_the_selected_car_is_unchanged() -> void:
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.set_selected_car(id)
+
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._ensure_lift_car()
+	var before: int = hq._lift_car.get_instance_id()
+
+	hq._ensure_lift_car()
+	assert_eq(hq._lift_car.get_instance_id(), before,
+		"an unchanged selected car reuses the same lift prop node")
+
+
+# Owned cars as LIVE Save references (not deep copies) — the car-park eligible lineup
+# holds live refs, so use_repair_kit's in-place heal flips their deep hash and forces
+# a respawn. _owned_cars() (deep copy) would sever that link.
+func _owned_cars_live() -> Array:
+	return _save.profile.get("cars", [])
+
+
+func _wait_for_lineup(hq: Node3D) -> void:
+	for _i in 600:
+		if hq._cars.size() >= hq._eligible.size():
+			break
+		await get_tree().process_frame
+
+
 func test_selling_a_car_evicts_its_cached_node() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)

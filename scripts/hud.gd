@@ -205,7 +205,10 @@ func _update_damage(delta: float) -> void:
 		_hp_bar.value = frac
 		# Label the gauge "Health" + a live percentage (a raw HP number is misleading —
 		# it reads as horsepower). Only re-format when the rounded percent changes.
-		var pct := roundi(frac * 100.0)
+		# Any positive HP rounds UP to at least 1% so "0%" is reserved for a genuine
+		# wreck (hp == 0) — otherwise the gauge reads 0% while the car is still alive
+		# and the player wonders why nothing happens when they keep driving.
+		var pct := 0 if dmg.hp <= 0.0 else maxi(1, roundi(frac * 100.0))
 		if pct != _last_hp_pct:
 			_last_hp_pct = pct
 			_hp_label.text = "Health %d%%" % pct

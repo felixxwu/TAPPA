@@ -40,6 +40,9 @@ func _ready() -> void:
 	global_transform = Transform3D.IDENTITY
 	_wheels = car.find_children("*", "VehicleWheel3D", false)
 	_build_collision_box()
+	# If the overlay starts visible (config), hide the body to match the H-toggle behaviour.
+	if visible and car.has_method("set_body_hidden"):
+		car.set_body_hidden(true)
 
 
 func _build_collision_box() -> void:
@@ -92,6 +95,10 @@ func _physics_process(_delta: float) -> void:
 	# arrows via the key. A config that starts them visible still works either way.
 	if OS.is_debug_build() and Input.is_action_just_pressed("toggle_debug_arrows"):
 		visible = not visible
+		# Hide the car body while the overlay is up so the (now slightly smaller)
+		# hitbox hull isn't obscured; restore it when the overlay is dismissed.
+		if car.has_method("set_body_hidden"):
+			car.set_body_hidden(visible)
 	if _collision_box != null:
 		_collision_box.visible = visible
 		if visible:

@@ -44,6 +44,12 @@ the chassis collision hull (a chamfered octagon — see
 transform; the prism is rebuilt from the `ConvexPolygonShape3D` points whenever they
 change while visible (cars swap the hull at runtime via `apply_car`).
 
+While the overlay is shown the **car body is hidden** (`Car.set_body_hidden(true)` —
+procedural chassis/cabin boxes and any glb model body), because the hull is drawn a
+little smaller than the visible body and would otherwise be obscured by it. Dismissing
+the overlay restores the body by re-running the normal per-spec visibility
+(`_apply_model_visibility`). Wheels stay visible either way.
+
 ## Skip to finish (event cheat)
 
 **Key: F** (`skip_to_finish` input action), handled in `world.gd._unhandled_input`.

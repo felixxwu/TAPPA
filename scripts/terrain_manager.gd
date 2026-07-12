@@ -11,7 +11,7 @@ class_name TerrainManager
 const CHUNK_M := 50.0                        # chunk edge length in metres
 const CELL_M := 1.0                          # grid cell size (PS1 low-poly terrain)
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
-const RADIUS := 1                            # ring radius -> (2*RADIUS+1)^2 = 3x3
+const RADIUS := 2                            # ring radius -> (2*RADIUS+1)^2 = 5x5
 const ROAD_SAMPLE_STEP_M := 0.25        # centerline sampling density for bake_road
 # Cliffs & drops (features/terrain.md). The cliff pass walks the centerline coarser
 # than the road (camber varies over cliff_wavelength_m ≫ a cell, and the stamp band

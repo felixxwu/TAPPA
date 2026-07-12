@@ -34,6 +34,11 @@ var drive_mode := DriveMode.RWD  # which axle(s) the engine drives
 var terrain: Object = null
 var rear_wheels: Array = []
 var front_wheels: Array = []
+# Replay override: VehicleWheel3D -> omega (rad/s). Non-empty only during
+# replay playback, where the body is frozen and the true spin is zero; the
+# effect systems (wheel_particles, tire_marks) read wheel_omega, so feeding
+# the recorded spin here reproduces gravel spray + skid marks. Empty = normal.
+var replay_omega: Dictionary = {}
 var hardpoints: Dictionary = {}  # wheel -> rest-pose local position
 var rear_omega := 0.0  # rad/s, locked axle (both rear wheels)
 var front_omega: Dictionary = {}  # front wheel -> rad/s
@@ -224,6 +229,16 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 # rotated 180° about Y in the scene, hence the PI. The Y flip also mirrors
 # the local X (axle) axis, so positive omega rolling the wheel forward
 # (car -Z) needs a POSITIVE rotation about the flipped axle.
+# Replay playback: step() doesn't run, so advance the wheel visual spin from the
+# recorded per-wheel omega (in replay_omega) and rebuild the visuals. Called by
+# car.gd._process during a replay, after the car's transform is applied.
+func replay_spin(delta: float) -> void:
+	for wheel in visuals:
+		var om: float = float(replay_omega.get(wheel, 0.0))
+		spin_angle[wheel] = fmod(float(spin_angle.get(wheel, 0.0)) + om * delta, TAU)
+	_update_visuals()
+
+
 func _update_visuals() -> void:
 	for wheel in visuals:
 		var visual: Node3D = visuals[wheel]
@@ -244,6 +259,8 @@ func _omega_of(wheel: VehicleWheel3D) -> float:
 # dust particles) detect wheelspin from the real spin state without poking the
 # private per-wheel/axle dictionaries directly.
 func wheel_omega(wheel: VehicleWheel3D) -> float:
+	if not replay_omega.is_empty() and replay_omega.has(wheel):
+		return float(replay_omega[wheel])
 	return _omega_of(wheel)
 
 

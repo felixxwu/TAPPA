@@ -121,6 +121,62 @@ var ai_throttle := 0.0    # -1..1, forward positive (brake_reverse..accelerate a
 var ai_steer := 0.0       # -1..1, left positive (steer_right..steer_left axis)
 var ai_handbrake := false
 
+# Replay playback (features/event-replay.md): the standings screen drives the
+# car along a ReplayRecorder's frames with the rigid-body solver frozen, while
+# the suspension raycasts + effect/audio subsystems stay live on recorded
+# signals so the run looks filmed. See begin_replay / end_replay.
+# Replay process order (see begin_replay): the car must run its _process BEFORE any
+# node that reads its transform in _process — the ReplayCamera and the TerrainManager
+# chunk-load focus (`../Car`). Lower priority = runs earlier. Keep this below any such
+# observer's priority; if a new observer is ever set below this, it would read a stale
+# pose (the historic "terrain loads at the finish while the car drives off" bug).
+const REPLAY_PROCESS_PRIORITY := -1000
+
+var replay_playback := false
+var _replay: ReplayRecorder = null
+var _replay_t := 0.0
+var _replay_xform := Transform3D()
+var _replay_vel := Vector3.ZERO
+var _saved_process_priority := 0
+
+func replay_cursor() -> float:
+	return _replay_t
+
+
+# True when the human driver's live inputs should be read: not locked (staging/finish),
+# not scripted (AI / opponent), not a passive replay ghost. One predicate so a future
+# non-driving mode is dead to input in ONE place instead of leaking through each input
+# site. (Handbrake has its own held-while-locked semantics and is gated separately.)
+func _driver_input_live() -> bool:
+	return not controls_locked and not ai_controlled and not replay_playback
+
+func begin_replay(recorder: ReplayRecorder) -> void:
+	_replay = recorder
+	_replay_t = 0.0
+	_replay_xform = global_transform
+	_replay_vel = Vector3.ZERO
+	replay_playback = true
+	# The physics server will NOT reliably move this body from script (setting
+	# global_transform is overridden; a frozen body renders at its freeze pose;
+	# body_set_state never synced to the node for other nodes' _process reads).
+	# So drive the transform in _process instead (see _process) — that DOES reach the
+	# render transform and any node reading the car in _process. The catch is _process
+	# ORDER: readers earlier in the tree (the terrain's focus) would read the car
+	# before we update it. Force this car to process FIRST (lowest priority) so every
+	# observer — camera, terrain focus, renderer — reads the fresh pose. custom_integrator
+	# stops gravity/forces so the physics body doesn't fall between our _process writes.
+	custom_integrator = true
+	_saved_process_priority = process_priority
+	process_priority = REPLAY_PROCESS_PRIORITY
+
+func end_replay() -> void:
+	replay_playback = false
+	_replay = null
+	custom_integrator = false
+	process_priority = _saved_process_priority
+	if drivetrain != null:
+		drivetrain.replay_omega = {}
+
 # Parking-hold speed gate: below this speed a fully-braked, grounded car gets a
 # static-friction hold so it doesn't creep down a slope. See _apply_parking_hold.
 const HANDBRAKE_LOCK_SPEED := 0.5  # m/s
@@ -304,7 +360,26 @@ func _recompute_axles() -> void:
 		_rear_axle += p / rears.size()
 
 
+func _process(delta: float) -> void:
+	# Apply the recorded pose in the RENDER context. This is the one place a script
+	# transform write reaches the render transform and every node that reads this car
+	# in _process. begin_replay sets process_priority very low so THIS runs before the
+	# terrain focus + camera each frame, so they all read the fresh pose (not a stale
+	# one from before this update). _step_replay (physics tick) computes _replay_xform.
+	if replay_playback:
+		global_transform = _replay_xform
+		# Spin the wheel meshes from the recorded per-wheel omega. drivetrain.step()
+		# (which normally advances the visual spin) does NOT run during replay, so the
+		# wheels would sit dead-still without this. Done here, after the transform is
+		# applied, so the wheel visuals rebuild off the fresh car basis.
+		if drivetrain != null:
+			drivetrain.replay_spin(delta)
+
+
 func _physics_process(delta: float) -> void:
+	if replay_playback:
+		_step_replay(delta)
+		return
 	var cfg: GameConfig = config
 	# Capture the pre-solve travel speed for _integrate_forces' damage keying — this
 	# runs before the physics solver, so it still holds the true approach speed even
@@ -316,7 +391,7 @@ func _physics_process(delta: float) -> void:
 	var engine := drivetrain.engine
 	# Discrete gear/mode actions only respond when controls are unlocked, so the
 	# player can't shift or change mode mid-countdown. Scripted cars never read them.
-	if not controls_locked and not ai_controlled:
+	if _driver_input_live():
 		if Input.is_action_just_pressed("toggle_gearbox"):
 			engine.auto = not engine.auto
 		if Input.is_action_just_pressed("cycle_drive_mode"):
@@ -359,8 +434,60 @@ func _physics_process(delta: float) -> void:
 	# Self-righting assist while any wheel is airborne.
 	_apply_level_assist()
 
-	if not controls_locked and not ai_controlled and Input.is_action_just_pressed("reset_car"):
+	if _driver_input_live() and Input.is_action_just_pressed("reset_car"):
 		_reset()
+
+
+# Drive the body along the recording (looping) and pin the state the effect +
+# audio systems read, so gravel/smoke/engine-note replay in sync. The frozen
+# kinematic body ignores forces, so we set its pose directly; wheels keep their
+# live suspension raycasts (contact + compression) but read recorded steer/omega.
+func _step_replay(delta: float) -> void:
+	if _replay == null or _replay.frame_count() == 0:
+		return
+	var dur := _replay.duration()
+	_replay_t += delta
+	if dur > 0.0 and _replay_t > dur:
+		_replay_t = fmod(_replay_t, dur)   # loop
+	var f := _replay.sample_at(_replay_t)
+	if f.is_empty():
+		return
+	# Stash the pose for _process to apply (see _process — the render/_process-order
+	# fix). Feed the recorded velocity to the script linear_velocity so effects that
+	# read it (tire_marks speed gate) see the real speed.
+	_replay_xform = f["xform"]
+	_replay_vel = f["velocity"]
+	linear_velocity = f["velocity"]
+	# Pin the engine note + smoke to the recorded engine state. engine.step() does NOT
+	# run during replay, so besides rpm/throttle/misfire we must neutralise the ducking
+	# state the audio synth reads (fuel_cut, limiting, boost, turbo, shift, blow-off,
+	# antilag) — otherwise it stays frozen at whatever the car was doing when it crossed
+	# the finish (usually braking / rev-limiting), muffling the note for the whole replay
+	# and only sounding right near the end. The result is a clean rev tracking the
+	# recorded rpm; turbo whistle/backfire nuance is dropped (acceptable for the replay).
+	if drivetrain != null and drivetrain.engine != null:
+		var eng: EngineSim = drivetrain.engine
+		eng.omega = f["rpm"] * TAU / 60.0
+		eng.throttle = f["throttle"]
+		eng.misfire_level = f["misfire"]
+		eng.fuel_cut = false
+		eng.limiting = false
+		eng.boost = 0.0
+		eng.omega_turbo = 0.0
+		eng.bov_event = false
+		eng.antilag_active = false
+		eng.shift_timer = 0.0
+	# Recorded per-wheel steer (incl. damage toe) + omega for visuals + effects.
+	var wheels := (drivetrain.front_wheels + drivetrain.rear_wheels) if drivetrain != null else []
+	var omap := {}
+	for i in wheels.size():
+		var w: VehicleWheel3D = wheels[i]
+		if i < f["wheel_steer"].size():
+			w.steering = f["wheel_steer"][i]
+		if i < f["wheel_omega"].size():
+			omap[w] = f["wheel_omega"][i]
+	if drivetrain != null:
+		drivetrain.replay_omega = omap
 
 
 # Resolve the driver's continuous controls into the drivetrain step's inputs: the
@@ -371,7 +498,7 @@ func _physics_process(delta: float) -> void:
 func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 	# Neutralise driver input while locked; the forced handbrake below holds the
 	# car on a slope without freezing the whole simulation.
-	var throttle := ai_throttle if ai_controlled else (0.0 if controls_locked else Input.get_axis("brake_reverse", "accelerate"))
+	var throttle := Input.get_axis("brake_reverse", "accelerate") if _driver_input_live() else (ai_throttle if ai_controlled else 0.0)
 	var fwd_pedal := maxf(throttle, 0.0)  # W
 	var rev_pedal := maxf(-throttle, 0.0)  # S
 	var moving_forward := linear_velocity.dot(-global_transform.basis.z) > 1.0
@@ -470,7 +597,7 @@ func _update_steering(delta: float, speed: float) -> Dictionary:
 		# moving forwards; when slow or reversing, plain input steering.
 		slip_angle = atan2(-local_vel.x, -local_vel.z)
 		travel_angle = clampf(slip_angle, -PI / 3.0, PI / 3.0)
-	var steer_input := ai_steer if ai_controlled else (0.0 if controls_locked else Input.get_axis("steer_right", "steer_left"))
+	var steer_input := Input.get_axis("steer_right", "steer_left") if _driver_input_live() else (ai_steer if ai_controlled else 0.0)
 	# Ramp the travel alignment in linearly from 0 at standstill to its full
 	# configured value at steer_assist_min_speed (≈30 km/h), so it doesn't fight
 	# low-speed input steering yet returns smoothly with no sudden jump as speed
@@ -592,6 +719,11 @@ func _apply_level_assist() -> void:
 # stay contact-driven here — but on their own speed thresholds; they no longer touch HP.
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if damage == null:
+		return
+	# The replay ghost is positioned via the physics server (see _step_replay); it must
+	# take no damage and fell no trees — the per-frame reposition would otherwise read
+	# as a huge deceleration and "wreck" it (wreck screen / spurious DNF).
+	if replay_playback:
 		return
 	var cfg: GameConfig = config
 	var contacts := state.get_contact_count()
@@ -927,6 +1059,21 @@ func _apply_model_visibility(spec: Dictionary) -> void:
 			_apply_model_material(model_body, load(String(spec.get("model_texture", ""))))
 	($Chassis as MeshInstance3D).visible = not use_model
 	($Cabin as MeshInstance3D).visible = not use_model
+
+
+# Hide (or restore) every body mesh — chassis/cabin boxes AND the glb model bodies —
+# so the debug hitbox overlay isn't obscured. Restoring re-runs the normal
+# per-spec visibility logic so the right body (procedural vs model) reappears.
+func set_body_hidden(hidden: bool) -> void:
+	if hidden:
+		($Chassis as MeshInstance3D).visible = false
+		($Cabin as MeshInstance3D).visible = false
+		for node_name in _model_node_names():
+			var model_body := get_node_or_null(NodePath(node_name)) as Node3D
+			if model_body != null:
+				model_body.visible = false
+	else:
+		_apply_model_visibility(CarLibrary.all()[_car_index])
 
 
 # Reposition + resize each wheel to the spec's track / wheelbase / radius / width
