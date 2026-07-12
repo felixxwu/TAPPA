@@ -15,8 +15,10 @@ knocked **spectator** ([spectators.md](spectators.md)) rather than a solid prop:
 layer (off the car's mask) and masks only the world layer (terrain + trees), so the
 car drives straight through it; on contact the waker **flings it along the car's
 travel direction** — a fake collision — and it then tumbles on the terrain on its own.
-They deal **no HP damage** (cosmetic clutter, deliberately *not* in
-the damage `OBSTACLE_GROUP`, unlike the solid trees in [damage.md](damage.md)).
+They deal **no HP damage**: their collision is decoupled from the car (own layer, off
+the car's mask — see below), so the car never decelerates against a sign, and damage is
+keyed purely to deceleration ([damage.md](damage.md)). They're also *not* in the
+`OBSTACLE_GROUP`, so they trigger no tree-style fell reaction.
 (`SignField` is still a kind-agnostic builder — it can render a "sector"/"start"/
 "finish" board if ever handed one — but `plan` only emits turns.)
 

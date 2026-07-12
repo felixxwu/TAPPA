@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+distant_terrain_enabled = false
 drag_coefficient = 2.645
 spin_assist_angle = 0.6
 level_assist_torque = 5000.0
@@ -46,11 +47,13 @@ track_seed = 2
 track_turn_count = 30
 track_runoff_m = 30.0
 track_progress_max_dist_m = 15.0
+cliff_amount = 0.7
 tire_mark_max_segments = 20
 tire_mark_ground_offset_m = 0.2
 trees_per_turn = 200
 tree_spawn_radius_m = 50.0
 tree_collision_radius_m = 0.1
+tree_fell_speed_kmh = 30.0
 tree_render_distance_m = 80.0
 tree_size_m = Vector2(4.4, 6.6)
 bush_height_m = 1.5

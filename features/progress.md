@@ -37,6 +37,30 @@ along-track-far section of a winding track — so it's independent of
 `track_clearance` (the old below-`track_clearance` assert is gone). The spawn seed
 in `setup` still uses a global query (unambiguous at the start line).
 
+## Stuck-car recovery (inside the leash)
+
+The lateral reset only fires when the car strays *sideways* past the threshold. With
+big cliffs & drops ([terrain.md](terrain.md)) a car can get trapped **inside** the
+leash — nose-down in a pit, flipped on its roof, or pinned against a wall — where it
+never triggers. A **watchdog** (`_update_recovery`, run each tick after the lateral
+check) handles that: it accumulates `_stuck_time` while the car is **stationary**
+(`linear_velocity < recovery_speed_mps`) **and can't recover on its own** — i.e. one
+of:
+
+- **throttling** and going nowhere (`car.is_throttling()` — flooring it, pinned),
+- **flipped** (`up · UP < recovery_upright_dot`, rolled onto side/roof), or
+- **in a pit** (`car.y` more than `recovery_depth_m` below the road surface at its
+  progress point — a drop it can't climb out of, caught even with no input).
+
+Once `_stuck_time` passes `recovery_timeout_s` it calls `reset_to(_best_reset)` —
+**free** (a plain teleport to the last on-road pose, no penalty; you already lost the
+time getting stuck) and damage-free (`reset_to` suppresses impact frames, see
+[damage.md](damage.md)). The **stationary gate** keeps everyday play safe: while
+driving, falling or jumping the car is moving, so the timer stays at 0, and a
+deliberately-parked upright car on the road satisfies no qualifier and is left alone.
+The lateral reset zeroes `_stuck_time` when it fires, so the two never double-up. The
+manual `R` reset still exists — this is the automatic safety net.
+
 ## The recovery pose
 
 `_reset_xform_at(offset)` converts a baked curve offset into a 3D pose: position
@@ -57,7 +81,11 @@ off-track recovery now share one code path.
 | Field | Default | Purpose |
 |---|---|---|
 | `track_progress_max_dist_m` | `25.0` | Lateral distance from the centerline within which progress counts; beyond it triggers the reset. Generous (run wide before snapping back); independent of `track_clearance` thanks to the windowed search. |
-| `off_track_reset_enabled` | `true` | Master switch for the auto-reset (progress tracking runs regardless). |
+| `off_track_reset_enabled` | `true` | Master switch for the lateral auto-reset (progress tracking runs regardless). |
+
+Stuck-recovery knobs live in the **Recovery** group: `recovery_enabled`,
+`recovery_timeout_s` (3.0), `recovery_speed_mps` (0.7), `recovery_depth_m` (3.0),
+`recovery_upright_dot` (0.3).
 
 ## Readouts
 
@@ -90,4 +118,7 @@ an off-road position doesn't advance progress; straying triggers exactly one
 reset whose XZ matches the recorded progress, lifted by `spawn_clearance` and
 facing along the road; the reset can be disabled; `progress_percent` tracks the
 fraction driven, reads 0% at the start line despite the lead-in, and `mark_start()`
-re-zeros it at the car's position.
+re-zeros it at the car's position. The **stuck-recovery watchdog**: a stationary car
+that's flooring it / flipped / in a pit auto-recovers after the timeout (and not
+before), a parked upright car or a moving car never does, recovery can be disabled,
+and it teleports to the last on-road pose.

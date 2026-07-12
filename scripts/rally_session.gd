@@ -490,6 +490,7 @@ func _load_event_scene(event: Dictionary) -> void:
 	cfg.track_width = RallyLibrary.event_width(event)
 	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
 	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
+	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
 	get_tree().change_scene_to_file("res://main.tscn")
 
 

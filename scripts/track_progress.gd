@@ -42,6 +42,11 @@ var _finish_offset := 0.0
 # _best_offset, lifted to ground + spawn_clearance, facing along the road.
 var _best_reset: Transform3D
 
+# Seconds the car has been stuck (stationary AND unable to self-recover) — the stuck
+# watchdog (features/progress.md). Accumulates in _update_recovery, fires a free reset
+# at recovery_timeout_s. Zeroed the moment the car moves or recovers.
+var _stuck_time := 0.0
+
 
 # Wire the manager to a freshly generated track. Seeds progress at the offset
 # nearest the spawn so the car doesn't read as starting mid-track.
@@ -79,7 +84,7 @@ func retarget(car: Node, terrain: Node) -> void:
 	setup(_centerline, car, terrain, _finish_offset)
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _centerline == null or _car == null:
 		return
 	var p: Vector3 = _car.global_transform.origin
@@ -93,6 +98,36 @@ func _physics_process(_delta: float) -> void:
 			_best_reset = _reset_xform_at(offset)
 	elif Config.data.off_track_reset_enabled:
 		_car.reset_to(_best_reset)
+		_stuck_time = 0.0  # lateral reset already recovered it; don't double-fire
+		return
+	_update_recovery(delta, p, on_curve)
+
+
+# Stuck-car recovery watchdog (features/progress.md). A car can get trapped INSIDE the
+# lateral leash — nose-down in a pit, flipped, or pinned against a wall — where the
+# check above never fires. Accumulate _stuck_time while the car is stationary AND can't
+# recover on its own (flooring it and going nowhere, flipped, or fallen below the road);
+# once it passes recovery_timeout_s, teleport it to the last on-road pose. FREE — a plain
+# reset_to (no penalty), and reset_to suppresses impact damage so the recovery costs no HP.
+func _update_recovery(delta: float, car_pos: Vector3, nearest_pt: Vector2) -> void:
+	var cfg: GameConfig = Config.data
+	if not cfg.recovery_enabled or not ("linear_velocity" in _car):
+		return
+	var stationary: bool = (_car.linear_velocity as Vector3).length() < cfg.recovery_speed_mps
+	if not stationary:
+		_stuck_time = 0.0
+		return
+	var road_y := _ground_height(nearest_pt.x, nearest_pt.y)
+	var in_pit := car_pos.y < road_y - cfg.recovery_depth_m
+	var flipped: bool = _car.global_transform.basis.y.dot(Vector3.UP) < cfg.recovery_upright_dot
+	var throttling: bool = _car.has_method("is_throttling") and _car.is_throttling()
+	if not (in_pit or flipped or throttling):
+		_stuck_time = 0.0
+		return
+	_stuck_time += delta
+	if _stuck_time >= cfg.recovery_timeout_s:
+		_car.reset_to(_best_reset)
+		_stuck_time = 0.0
 
 
 # Nearest centerline offset to `here`, searched only within a window around the

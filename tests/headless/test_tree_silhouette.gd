@@ -31,8 +31,13 @@ func test_solid_image_fills_normalized_card_bounds() -> void:
 	for uv in uvs:
 		assert_between(uv.x, 0.0, 1.0, "u in [0,1]")
 		assert_between(uv.y, 0.0, 1.0, "v in [0,1]")
+	# Cross ("+") billboard: two crossed planes, so every vertex lies on EITHER the XY
+	# plane (z=0) or the ZY plane (x=0), and the second plane gives the card depth in z
+	# spanning the same normalized width [-0.5, 0.5].
 	for v in verts:
-		assert_almost_eq(v.z, 0.0, 1e-4, "silhouette is flat (z=0)")
+		assert_true(absf(v.z) < 1e-4 or absf(v.x) < 1e-4, "vertex lies on one of the crossed planes")
+	assert_almost_eq(aabb.position.z, -0.5, 0.05, "cross depth front ~ -0.5")
+	assert_almost_eq(aabb.end.z, 0.5, 0.05, "cross depth back ~ 0.5")
 
 
 func test_two_separated_blobs_leave_a_gap_between_them() -> void:

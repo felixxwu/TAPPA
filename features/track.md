@@ -125,6 +125,20 @@ road texture** (grass → gravel). The road is flat across its width, and its ed
 `track_width/2` — both the height (mesh + collision) and the texture fade blend
 smoothly (smoothstep) from the flat road to the true terrain across that band.
 
+## Cliffs & drops (track-side)
+
+Beyond the transition band the terrain can rise into a **cliff** or fall away into
+a **drop** along the sides of the track, so a stage runs along a ledge rather than
+over uniformly rolling hills. It's a terrain-height feature (the full model lives
+in [terrain.md](terrain.md) → *Cliffs & drops*): a signed per-vertex offset driven
+by 1-D noise along the track, zero across the road + transition band (so the road
+edge is never disturbed) and fading back to natural grade beyond an influence
+radius. One side rises by exactly what the other falls. The **inside crook of a
+hairpin** (or any pocket the road wraps around) is detected geometrically and
+flattened, so the crook stays clean while the *outside* of a bend can still carry a
+drop. Per-event height is set by `RallyLibrary.event_cliffiness`; the noise
+wavelength is global.
+
 ## Surface split (gravel ↔ tarmac)
 
 `scripts/track_surface.gd` (`class_name TrackSurface`, pure static functions)
@@ -185,7 +199,11 @@ default 20 m — see the *Finish runoff* generation bullet above),
 `road_marking_edge_inset_m`, `road_marking_center_dash_m`,
 `road_marking_center_gap_m`, `road_marking_height_m`,
 `road_marking_tarmac_threshold`, `road_marking_sample_step_m`
-(via `GameConfig.road_marking_params()`).
+(via `GameConfig.road_marking_params()`). Track-side cliffs live in the `Cliffs`
+group: `cliff_enabled`, `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`,
+`cliff_run_m`, `cliff_fade_m`, `cliff_pinch_angle_deg`, `cliff_amount` (pushed onto
+the terrain by `GameConfig.apply_cliffs`; per-event scale via
+`RallyLibrary.event_cliffiness`).
 
 ## Track progress & off-track reset
 

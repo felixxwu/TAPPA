@@ -24,56 +24,69 @@ rally/Start-line layer ([rally-session.md](rally-session.md)) re-fields it from 
 OwnedCar (stored HP + instance id + persisted `wheel_toe`) via `apply_owned` when a
 car is taken to the line.
 
-## Impact → HP loss
+## Damage → HP loss (unified deceleration model)
 
-`car.gd` enables `contact_monitor` (+ `max_contacts_reported`) and, in
-`_integrate_forces`, reads the body's travel speed and the per-tick contacts. Only
-contacts against bodies in the `DamageModel.OBSTACLE_GROUP` (`"obstacle"`) group
-count — **trees** tag their collision body with it in `tree_mesh_field.gd`, so the
-ground/road never chip HP. (Bushes and spectators are *soft contacts*, handled
-separately below — they are pass-through, not solid obstacles.) Each qualifying contact
-calls `register_impact(speed, …)` with the **speed the car was travelling at**:
+Damage is **generalised**: HP loss is keyed to how much velocity the car sheds in a
+**single physics tick** — whatever caused it. A tree, a sign, a cliff wall, a
+nose-first drop into a pit, a brushed bush, a mowed crowd: they all decelerate the
+body, and that deceleration *is* the damage signal. Nothing on the track "knows" it
+deals damage; the car's own physics does.
 
-```
-# v = impact speed in km/h (car speed × 3.6); 0 below impact_min_speed_kmh.
-hp_loss = impact_ref_hp_loss * (v² - impact_min_speed_kmh²)
-                             / (impact_ref_speed_kmh² - impact_min_speed_kmh²)
+`car.gd._integrate_forces` runs every physics tick. It computes:
+
+```gdscript
+dv = (_approach_velocity - state.linear_velocity).length()   # m/s shed this tick
 ```
 
-A **square law** (kinetic energy): a hit at the reference speed
-(`impact_ref_speed_kmh`, ~60 km/h) costs `impact_ref_hp_loss` (320 HP in
-`game_config.tres`, up from the 200 default — objects hit harder), so with
-per-car max HP of 800-1100 most cars survive **~3 moderate hits**; the square
-then makes a 20 km/h hit cost only a small fraction of that, so the car **barely
-takes damage at low speed**. `hp_loss_for_speed()` is a pure static so the
-conversion is unit-testable.
+`_approach_velocity` is the **pre-solve** velocity cached at the top of
+`_physics_process`; `state.linear_velocity` is **post-solve**. Godot resolves
+collisions (and, on a head-on hit, arrests the body) *before* `_integrate_forces`
+sees the state, so a collision's full velocity loss shows up in `dv` — with **no
+contact inspection**. Gravity/engine/drag each move the velocity only ~0.1–0.3 m/s
+per tick, far under threshold, so only real collisions and the soft-drag impulses
+(below) produce a damaging `dv`. Using the full **vector** (not scalar speed change)
+captures glancing redirects and vertical face-plants alike.
 
-**Approach speed, not the arrested one.** The impact speed fed to
-`register_impact` is `car.gd._approach_speed` — the chassis speed cached at the
-top of `_physics_process`, *before* the physics solver runs — **not** the
-`state.linear_velocity` available inside `_integrate_forces`. Godot only surfaces
-a contact in `_integrate_forces` *after* the constraint solver has already
-resolved (and, in a head-on hit, arrested) it, so the post-solve velocity is
-near zero on exactly the hardest crashes. Reading it directly made head-on
-collisions deal **no** damage (the square law floored to 0 below
-`impact_min_speed_kmh`) while glancing hits — which keep their speed — still
-chipped HP. Keying off the cached pre-solve speed gives the true approach speed.
+`DamageModel.register_deceleration(dv, dt, point, cfg)` turns it into HP loss:
 
-Two guards stop a single crash from instantly wrecking the car (cars should survive
-2-3 big hits):
-- **Per-hit cap** — the loss is clamped to `impact_max_loss_frac` of max HP, so no
-  one impact can take more than ~1/3 of the bar.
-- **Post-hit cooldown** — after a damaging hit, impacts are ignored for
-  `impact_cooldown_s`. The chassis contacts an obstacle *every physics tick* while
-  it's pinned/tumbling, so without this one crash would register dozens of hits;
-  the cooldown groups a whole crash into a single hit. `car.gd._physics_process`
-  decays it via `damage.tick_cooldown(delta)`. The window **re-arms on each
-  continuing contact**, so the timer only starts counting down once the car breaks
-  free — a *sustained* crash (grinding along a tree line, or jammed against one for
-  several seconds) stays **one** hit instead of re-chipping every `impact_cooldown_s`.
+```
+# floor = impact_threshold_g · g · dt   (per-tick velocity below which nothing counts)
+# above the floor, a pure square law in km/h (v = the shed velocity):
+hp_loss = impact_ref_hp_loss · v² / impact_ref_speed_kmh²
+```
+
+- **Braking-proof threshold** (`impact_threshold_g`, ~2 g). Tyres/brakes cap real
+  deceleration at ~1–1.5 g and suspension cushions a clean wheel-landing over several
+  ticks, so those stay under the floor and cost nothing; a solid crash arrests the
+  body in one tick (tens of g) and clears it easily. The small soft-drag impulses
+  tip just over it for a light chip. (Trade-off: a hard flat landing or sharp kerb
+  can briefly exceed 2 g and chip *minor wear* — accepted; raise `impact_threshold_g`
+  if it feels twitchy.)
+- **Continuity.** For a full solid arrest `dv ≈ approach speed`, so a 60 km/h head-on
+  lands exactly where the old speed-keyed model did — `impact_ref_hp_loss` (320 HP in
+  `game_config.tres`) and the whole square-law tuning carry over. `hp_loss_for_speed()`
+  is still the pure, unit-tested static.
+
+Two things shape survivability:
+- **Per-hit cap** — each tick's loss is clamped to `impact_max_loss_frac` of max HP
+  (~1/3), so no one spike wrecks the car.
+- **No cooldown.** A pinned/stopped car sheds ~0 velocity/tick, so grinding against a
+  wall self-limits with no timer; a genuine multi-bounce **tumble** down a tall drop
+  is several real `dv` spikes and racks up several capped hits — so a long fall can
+  wreck you. This is intentional: drops are dangerous.
+
+A **reset/teleport** zeroes the velocity discontinuously, which would read as a huge
+false `dv`; `car.gd.reset_to` sets `_suppress_impact_frames` so the next couple of
+ticks skip the damage check.
 
 A hit that costs HP emits `damaged(hp_loss, contact_point)` for the HUD/audio cue,
 and **bends the wheels** (`nudge_wheels`, below).
+
+**Object reactions stay contact-driven.** The `_integrate_forces` contact loop is
+kept, but *only* to trigger reactions — trees fall (`TreeFall.should_fell`), etc. —
+on their own approach-speed thresholds (they still need to know *which* object was
+hit). It no longer touches HP. `OBSTACLE_GROUP` (`"obstacle"`) still tags those
+collision bodies so the loop can find them.
 
 ## Wheel misalignment (`nudge_wheels`, `car.gd._apply_wheel_toe`)
 
@@ -82,7 +95,7 @@ impact **permanently bends every wheel** by a random amount and direction, and t
 car's pull/crab then comes from the **physics alone** — the bent wheels are rotated
 on the `VehicleWheel3D` nodes themselves.
 
-- **The nudge** (`DamageModel.nudge_wheels`, called from `register_impact` on a
+- **The nudge** (`DamageModel.nudge_wheels`, called from `register_deceleration` on a
   landed hit). For each of the four wheels: `toe += random_sign * (hp_loss/max_hp) *
   damage_wheel_toe_gain * randf(0.5,1)`, clamped to `±damage_wheel_toe_max`. The
   magnitude scales with the hit's strength (bigger crash → bigger knock); the sign
@@ -107,33 +120,33 @@ on the `VehicleWheel3D` nodes themselves.
   is the in-model equivalent). Older saves with no `wheel_toe` key are backfilled
   straight (`Save._sanitise`).
 
-## Soft contacts — bushes & spectators (`register_soft_hit`)
+## Soft contacts — bushes & spectators (`apply_soft_drag`)
 
 Bushes and spectators are **not** solid obstacles: a `StaticBody` would arrest the
-car, the opposite of brushing through undergrowth or a crowd. They deal a **flat**
-HP loss (not the speed square-law) via `DamageModel.register_soft_hit(hp_loss,
-contact_point, cooldown_s)`, which drains HP, can wreck at 0, and emits the same
-`damaged` signal so the HUD flashes exactly as for a tree impact. A **separate**
-soft-hit cooldown (`soft_hit_cooldown_s`, tracked apart from the impact cooldown so
-a bush graze and a tree crash don't mask each other) groups a continuous
-contact — sitting in a bush, mowing a tight crowd — into one hit.
+car, the opposite of brushing through undergrowth or a crowd. So they stay
+**pass-through**, but instead of a separate flat-HP path they apply a small
+**speed-scaled drag impulse** to the car via `car.apply_soft_drag(strength)` —
+`apply_central_impulse(-v_horiz · strength · mass)`, shedding a `strength` fraction of
+horizontal speed. The resulting deceleration then feeds the **unified damage rule**
+above for a light chip. Grouping is natural: a car slowed toward a stop sheds ~0 more
+per tick, so ploughing a dense line doesn't wildly over-count — no soft-hit cooldown
+needed.
 
 - **Bushes** (`scripts/bush_field.gd`, `BushField`). Bushes are pure visual scatter
   (a `TreeMeshField` built `with_collision=false`), so a dedicated node does a
   per-tick **proximity query**: bush XZ positions binned into a grid (cell = hit
   radius) so only the ~handful in the car's 3×3 neighbourhood are tested. Entering a
-  bush (one-shot — tracked in an "inside" set, re-arms on leave) costs `bush_hp_loss`
-  and applies a **side-based yaw drag torque** via `apply_torque_impulse`: the pure
-  `drag_torque(forward, to_bush, mag)` returns a torque whose sign swings the nose
-  *toward* the bush (a snagged corner dragging back) and whose magnitude is
-  `bush_drag_torque × speed × sin(angle)` (zero head-on, peaks side-on). The
-  interaction radius is `bush_hit_radius_frac` (<1) of the bush's visual `xz_radius`,
-  so clipping the visible edge is forgiven. Gated by `bush_min_speed_kmh` — a parked
-  car in a bush isn't tugged.
+  bush (one-shot — tracked in an "inside" set, re-arms on leave) calls
+  `apply_soft_drag(bush_drag_strength)` and applies a **side-based yaw drag torque**
+  via `apply_torque_impulse`: the pure `drag_torque(forward, to_bush, mag)` returns a
+  torque whose sign swings the nose *toward* the bush (a snagged corner dragging back)
+  and whose magnitude is `bush_drag_torque × speed × sin(angle)` (zero head-on, peaks
+  side-on). The interaction radius is `bush_hit_radius_frac` (<1) of the bush's visual
+  `xz_radius`, so clipping the visible edge is forgiven. Gated by `bush_min_speed_kmh`
+  — a parked car in a bush isn't tugged.
 - **Spectators** (`scripts/spectator_group.gd`). When a member is knocked over
-  (`_knock_over`), the car takes a `spectator_hp_loss` soft hit — a bit **more** than
-  a bush. No torque. Ploughing a dense line is one hit (shared soft-hit cooldown),
-  not one per member.
+  (`_knock_over`), the car takes `apply_soft_drag(spectator_drag_strength)` — a bit
+  **more** than a bush. No torque.
 
 ## Effects
 
@@ -202,12 +215,13 @@ HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off.
 
 ## Config knobs (`GameConfig`, *Damage* group)
 
-`impact_min_speed_kmh`, `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
-`impact_max_loss_frac`, `impact_cooldown_s`, `damage_misfire_health_threshold`, `damage_misfire_rate_max`,
+`impact_threshold_g` (the braking-proof deceleration gate — the single sensitivity
+knob), `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
+`impact_max_loss_frac`, `damage_misfire_health_threshold`, `damage_misfire_rate_max`,
 `damage_misfire_load_bias`, `damage_misfire_duration_min`, `damage_misfire_duration_max`,
-`damage_wheel_toe_gain`, `damage_wheel_toe_max`, soft contacts (`bush_hp_loss`, `bush_drag_torque`,
-`bush_min_speed_kmh`, `bush_hit_radius_frac`, `soft_hit_cooldown_s`,
-`spectator_hp_loss`), `hud_hp_enabled`, `hud_low_hp_warn_frac`,
+`damage_wheel_toe_gain`, `damage_wheel_toe_max`, soft contacts (`bush_drag_strength`,
+`bush_drag_torque`, `bush_min_speed_kmh`, `bush_hit_radius_frac`,
+`spectator_drag_strength`), `hud_hp_enabled`, `hud_low_hp_warn_frac`,
 `wreck_settle_max_seconds` (cap on the wreck-menu settle wait; the orbit reuses the
 `start_orbit_*` knobs). Per-car `max_hp` is CarLibrary metadata, **not** a
 `GameConfig` field. A Repair Kit fully restores health, so there is no partial-heal
@@ -216,9 +230,11 @@ values are not).
 
 ## Tests
 
-`tests/headless/test_damage_model.gd` (speed→HP + the 60/20 km/h calibration, the per-hit cap + post-hit
-cooldown grouping a crash into one hit / needing several hits to wreck, **soft
-hits** — flat loss, own cooldown independent of impacts, wreck at 0 — the
+`tests/headless/test_damage_model.gd` (the square-law `hp_loss_for_speed`, **unified
+deceleration damage** — below-threshold braking costs nothing, above-threshold costs
+HP & emits, a full arrest matches the capped square law, the per-hit cap can't wreck,
+a stopped car self-limits without a cooldown, repeated spikes accumulate & wreck, a
+soft-drag-magnitude deceleration deals a small chip — the
 **damage fraction** tracking HP, **wheel toe** (a hit bends every wheel within the
 clamp, a zero-strength hit is a no-op, toe stays clamped over many hits, `field`
 loads persisted toe, repair straightens), bound/unbound wreck **keeping the car at 0
@@ -230,8 +246,8 @@ forced cut kills crank torque), `test_save_manager.gd` (`wheel_toe`
 round-trips through save/reload, a Repair Kit straightens the wheels, old saves
 backfill straight), `test_car.gd` (bent front wheels **veer the car through the
 physics alone**, `engine.misfire_level` tracks the damage fraction), `test_bush_field.gd` (side-based `drag_torque` sign +
-scaling, enter/leave one-shot, min-speed gate), `test_spectator_damage.gd` (a
-knockdown costs the car `spectator_hp_loss`, more than a bush), `test_car.gd` (contact monitor
+scaling, enter/leave one-shot **soft drag**, min-speed gate), `test_spectator_damage.gd` (a
+knockdown applies **soft drag** to the car), `test_car.gd` (contact monitor
 wiring, plus a **head-on collision costs HP** regression that drives the car into
 an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge), `test_wreck_screen.gd` (crash → orbit/menu →
 `return_requested`).

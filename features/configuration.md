@@ -105,11 +105,10 @@ See [stage.md](stage.md).
 ### Damage
 | Property | Default | Purpose |
 |----------|---------|---------|
-| `impact_min_speed_kmh` | 10.0 | Impact speed (km/h) below which a hit costs no HP |
-| `impact_ref_speed_kmh` | 60.0 | Reference impact speed (km/h) at which a hit costs `impact_ref_hp_loss` |
-| `impact_ref_hp_loss` | 200.0 | HP a reference-speed hit costs (square-law in speed); ~200 ⇒ most cars survive 4-5 hits at 60 km/h, barely any at 20 |
-| `impact_max_loss_frac` | 0.34 | Cap on one impact's HP loss, as a fraction of max HP (no single crash wrecks) |
-| `impact_cooldown_s` | 0.7 | Post-hit window where impacts are ignored (groups a crash into one hit) |
+| `impact_threshold_g` | 2.0 | Deceleration (g) a physics tick must exceed before it costs HP — keeps braking/clean landings free; the single sensitivity knob for the unified deceleration-damage model |
+| `impact_ref_speed_kmh` | 60.0 | Reference shed-velocity (km/h) at which a hit costs `impact_ref_hp_loss` |
+| `impact_ref_hp_loss` | 200.0 | HP a reference hit costs (square-law in shed velocity); a full arrest sheds ≈ the approach speed |
+| `impact_max_loss_frac` | 0.34 | Cap on one tick's HP loss, as a fraction of max HP (no single spike wrecks); a stopped car self-limits, a tumble racks up several |
 | `damage_misfire_health_threshold` | 0.5 | Health fraction at/above which the engine is fully healthy; misfire ramps in below it |
 | `damage_misfire_rate_max` | 9.0 | Engine fuel-cuts/sec at 0 HP under full load (stumbling power loss) |
 | `damage_misfire_load_bias` | 0.35 | How much the misfire fires independent of load (0..1) |
@@ -123,10 +122,36 @@ See [stage.md](stage.md).
 Per-car `max_hp` is CarLibrary metadata, not a `GameConfig` field. See
 [damage.md](damage.md).
 
+### Recovery
+Automatic stuck-car recovery (see [progress.md](progress.md)).
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `recovery_enabled` | true | Master toggle for the stuck watchdog (the lateral off-track reset runs regardless) |
+| `recovery_timeout_s` | 3.0 | Seconds stationary + unable to self-recover before the free auto-reset fires |
+| `recovery_speed_mps` | 0.7 | Below this speed the car counts as "not moving" |
+| `recovery_depth_m` | 3.0 | Metres below the road surface that count as fallen-into-a-pit (recovers even with no throttle) |
+| `recovery_upright_dot` | 0.3 | up·UP below which the car counts as flipped |
+
 ### Terrain Layers
 Three (wavelength, amplitude) pairs — `terrain_layerN_wavelength` /
 `terrain_layerN_amplitude` for N = 1,2,3 (large hills → fine bumps). See
 [terrain.md](terrain.md).
+
+### Cliffs
+Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `cliff_enabled` | true | Master toggle; off ⇒ the bake skips the cliff pass entirely |
+| `cliff_wavelength_m` | 60.0 | Along-track period of the camber noise (**global**, same every event) |
+| `cliff_gain` | 1.6 | Camber-noise scale before the `[-1,1]` clamp (higher ⇒ more full-height cliffs) |
+| `cliff_max_height_m` | 8.0 | Global height ceiling at `\|camber\|=1` (= drop depth); scaled per event |
+| `cliff_run_m` | 6.0 | Horizontal run road-edge band → full height (small ⇒ steep) |
+| `cliff_fade_m` | 6.0 | Horizontal run full height → back to grade (bounds the influence radius R) |
+| `cliff_pinch_angle_deg` | 45.0 | Bearing-span band past 180° over which a hairpin crook tapers to flat |
+| `cliff_amount` | 1.0 | Runtime per-event scale on `cliff_max_height_m` (`[0,1]`); written by `RallySession` from the event's `cliffiness`, else the shipped fallback |
+
+Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mirrors
+`apply_terrain_light`). `cliff_seed = track_seed`.
 
 ## Engine data
 

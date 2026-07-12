@@ -73,10 +73,13 @@ roguelike**: do you risk your best car to win, or play it safe?
 - Each car has **HP (durability)** — a per-car stat. **Heavier cars tend to have
   more HP** (more durable); the value is a per-car override in **`CarLibrary`**,
   loosely keyed to `mass`. HP **only depletes** between events and rallies (no
-  passive regen). **Hitting objects** (the roadside signs / trees already have
-  collision) subtracts HP **scaled by the speed you hit at** — a square-law
-  (kinetic-energy) curve, so most cars survive 4-5 hits at ~60 km/h but barely
-  scratch at ~20 km/h, and a high-speed crash bites hard.
+  passive regen). Damage is **unified on deceleration**: HP loss is keyed to how much
+  velocity the car sheds in a single instant — a wall, a tree, a cliff face, a
+  nose-first drop, or a brushed bush/crowd all decelerate the car, and that *is* the
+  signal (nothing on the track has bespoke damage logic). It's a **square-law**
+  (kinetic-energy) curve above a braking-proof threshold, so hard braking and clean
+  landings are free, most cars survive 4-5 hits at ~60 km/h, a low-speed nudge barely
+  scratches, and a high-speed crash — or a long tumble down a drop — bites hard.
 - **Effects scale with damage** (i.e. with HP lost, as a fraction of max):
   - **Wheel alignment** → a steering pull (the car drifts to one side). The sim
     has no alignment-offset knob today; add one (a constant toe/steer bias fed
@@ -93,6 +96,10 @@ roguelike**: do you risk your best car to win, or play it safe?
   never returned; the car is no longer destroyed).
 - **HP carries over** across events and rallies — chip damage from one rally
   weakens the car in the next unless repaired.
+- **Getting stuck auto-recovers for free.** If a car ends up trapped — pinned,
+  flipped, or dropped into a pit it can't climb out of — it's snapped back onto the
+  road at its last good spot after a few seconds, with no penalty (you've already lost
+  the time). See `features/progress.md`.
 - **Starter is immune** (effectively infinite HP — never wrecked) — the
   anti-soft-lock floor.
 - **In-run feedback.** Because wrecking ends the run, the run shows a **live

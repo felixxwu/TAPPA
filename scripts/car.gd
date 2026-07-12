@@ -59,6 +59,18 @@ var damage: DamageModel
 # state.linear_velocity (which a head-on hit has already arrested to ~0). See
 # _integrate_forces for the full rationale.
 var _approach_speed := 0.0
+# Horizontal pre-solve travel direction (unit, or zero when ~stationary), captured
+# alongside _approach_speed for the same reason: it's the direction a felled tree
+# should topple, and a head-on hit's post-solve velocity is ~0. See knock_down.
+var _approach_dir := Vector3.ZERO
+# Full pre-solve velocity vector, captured alongside _approach_speed. _integrate_forces
+# subtracts the post-solve state.linear_velocity from it to get the velocity SHED this
+# tick (dv), which drives the unified deceleration damage (features/damage.md).
+var _approach_velocity := Vector3.ZERO
+# Physics ticks during which deceleration damage is suppressed. A reset/teleport zeroes
+# the velocity discontinuously, which would read as a huge false dv; reset_to sets this
+# so the next couple of ticks don't chip HP. Decremented in _integrate_forces.
+var _suppress_impact_frames := 0
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
 # Car-local point the engine smoke puffs from (read by EngineSmoke). Its longitudinal
@@ -182,6 +194,14 @@ func _ready() -> void:
 	var cabin_mesh := $Cabin as MeshInstance3D
 	if cabin_mesh.mesh != null:
 		cabin_mesh.mesh = cabin_mesh.mesh.duplicate()
+	# The chassis collision BoxShape3D is a shared sub-resource too (car.tscn
+	# shape_chassis), and _apply_body_meshes resizes it in place per car. Without a
+	# per-instance copy, a start-line queue prop's apply_car() would stomp the
+	# player's HITBOX (the meshes above are isolated, so the car still LOOKS right
+	# but collides at the last-applied car's size). Duplicate it once here too.
+	var collision := $CollisionShape3D as CollisionShape3D
+	if collision.shape != null:
+		collision.shape = collision.shape.duplicate()
 	drivetrain = Drivetrain.new(self)
 	drivetrain.terrain = _resolve_terrain()
 	# Read per-contact impulses in _integrate_forces (used by the damage model to
@@ -243,25 +263,27 @@ static func steer_authority(cfg: GameConfig, speed: float, slip_peak: float) -> 
 	return optimum_steer_limit(cfg, speed, slip_peak) / cfg.steer_limit
 
 
-func _ground_height_at(pos: Vector3) -> float:
+# First sibling exposing `method` (the Floor in the main scene; null on the flat
+# test fixtures). Shared by the terrain lookups below.
+func _sibling_with_method(method: String) -> Node:
 	var parent := get_parent()
 	if parent != null:
 		for sibling in parent.get_children():
-			if sibling != self and sibling.has_method("height_at"):
-				return sibling.height_at(pos.x, pos.z)
-	return 0.0
-
-
-# The terrain that resolves per-wheel surface grip (the Floor in the main scene),
-# found as the sibling exposing surface_at. Null on the flat test fixtures, where
-# the drivetrain then leaves every wheel on the base μ. Mirrors _ground_height_at.
-func _resolve_terrain() -> Node:
-	var parent := get_parent()
-	if parent != null:
-		for sibling in parent.get_children():
-			if sibling != self and sibling.has_method("surface_at"):
+			if sibling != self and sibling.has_method(method):
 				return sibling
 	return null
+
+
+func _ground_height_at(pos: Vector3) -> float:
+	var floor_node := _sibling_with_method("height_at")
+	return floor_node.height_at(pos.x, pos.z) if floor_node != null else 0.0
+
+
+# The terrain that resolves per-wheel surface grip, found as the sibling exposing
+# surface_at. Null on the flat test fixtures, where the drivetrain then leaves every
+# wheel on the base μ.
+func _resolve_terrain() -> Node:
+	return _sibling_with_method("surface_at")
 
 
 # Axle midpoints for the downforce application points, classified the same way
@@ -286,10 +308,9 @@ func _physics_process(delta: float) -> void:
 	# runs before the physics solver, so it still holds the true approach speed even
 	# on a head-on hit the solver is about to arrest. See _integrate_forces.
 	_approach_speed = linear_velocity.length()
-	# Decay the damage model's post-hit impact cooldown (groups a sustained crash
-	# into one hit; see DamageModel.register_impact).
-	if damage != null:
-		damage.tick_cooldown(delta)
+	_approach_velocity = linear_velocity
+	var horiz := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	_approach_dir = horiz.normalized() if horiz.length_squared() > 0.0001 else Vector3.ZERO
 	var engine := drivetrain.engine
 	# Discrete gear/mode actions only respond when controls are unlocked, so the
 	# player can't shift or change mode mid-countdown. Scripted cars never read them.
@@ -395,6 +416,17 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 		declutch = false
 		brake_input = 1.0 if speed > FINISH_STOP_SPEED else 0.0
 	return {"drive": drive, "brake_input": brake_input, "handbrake": handbrake, "declutch": declutch}
+
+
+# True when the driver is asking for forward throttle — read by TrackProgress' stuck
+# watchdog to tell "flooring it and going nowhere" from a car parked on purpose. Mirrors
+# the throttle source in _resolve_drive_inputs; false while controls are locked
+# (countdown / post-finish) so a car held at the line never reads as throttling.
+func is_throttling() -> bool:
+	if controls_locked:
+		return false
+	var t := ai_throttle if ai_controlled else Input.get_axis("brake_reverse", "accelerate")
+	return t > 0.5
 
 
 # Quadratic aero drag plus speed-squared downforce at each axle, pressing the body
@@ -542,29 +574,46 @@ func _apply_level_assist() -> void:
 		)
 
 
-# Read solid contacts each physics tick and feed obstacle hits to the damage
-# model. Only contacts against bodies in the obstacle group count (trees / bushes
-# / signs); ground and road contacts are ignored, so normal driving never chips HP.
+# The unified damage tick + the (decoupled) object-reaction pass. Runs every physics
+# frame. contact_monitor + max_contacts_reported are enabled in _ready.
 #
-# CRITICAL: damage is keyed to `_approach_speed` — the speed cached at the top of
-# _physics_process, BEFORE the solver runs — NOT to state.linear_velocity here.
-# Godot only reports a contact in _integrate_forces AFTER the constraint solver has
-# already resolved (and, in a head-on hit, arrested) it, so state.linear_velocity
-# at this point is near zero on exactly the hardest crashes. Reading it directly
-# made head-on collisions deal no damage (the square law floored to 0 below
-# impact_min_speed_kmh) while glancing hits, which keep their speed, still chipped
-# HP. The cached pre-solve speed is the true approach speed. The post-hit cooldown
-# in register_impact still groups the rest of the crash into that one hit.
-# contact_monitor + max_contacts_reported are enabled in _ready.
+# DAMAGE is global and contact-free: HP loss is keyed to how much velocity the body
+# shed this tick — `_approach_velocity` (cached at the top of _physics_process, BEFORE
+# the solver) minus the post-solve `state.linear_velocity`. Godot resolves collisions
+# (and, on a head-on hit, arrests the body) BEFORE _integrate_forces sees the state, so
+# that difference IS the impact's velocity loss — a wall, a tree, a cliff face, a
+# nose-first drop, or a soft drag impulse, no matter WHAT (if anything) the contact loop
+# reports. Everyday driving, braking and clean wheel-landings stay under the
+# braking-proof threshold in register_deceleration. See features/damage.md.
+#
+# REACTIONS (felling / knock-over) still need to know WHICH object was hit, so they
+# stay contact-driven here — but on their own speed thresholds; they no longer touch HP.
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if damage == null:
 		return
 	var cfg: GameConfig = config
-	for i in state.get_contact_count():
-		var collider := state.get_contact_collider_object(i) as Node
-		if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
-			continue
-		damage.register_impact(_approach_speed, state.get_contact_local_position(i), cfg)
+	var contacts := state.get_contact_count()
+	# Unified deceleration damage (skipped for a couple of ticks after a reset/teleport,
+	# whose discontinuous velocity zeroing would read as a false dv).
+	if _suppress_impact_frames > 0:
+		_suppress_impact_frames -= 1
+	else:
+		var dv := (_approach_velocity - state.linear_velocity).length()
+		var contact_point := state.get_contact_local_position(0) if contacts > 0 else global_position
+		damage.register_deceleration(dv, state.step, contact_point, cfg)
+	# Object reactions — trees fall (etc.) on their own approach-speed threshold. The
+	# threshold depends only on the (loop-invariant) approach speed, so gate once: a
+	# too-slow crash skips walking the contacts entirely. Ploughing into a line of trees
+	# still drops each one (the hitbox is disabled next step, so the car stops here now).
+	if TreeFall.should_fell(_approach_speed, cfg):
+		for i in contacts:
+			var collider := state.get_contact_collider_object(i) as Node
+			if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
+				continue
+			var field := collider.get_parent()
+			if field != null and field.has_method("knock_down"):
+				field.knock_down(state.get_contact_collider_shape(i),
+					_approach_dir, cfg.tree_fell_duration_s)
 
 
 # DamageModel reached 0 HP. Re-emit for the rally/menu layer. In free-roam (an
@@ -629,8 +678,24 @@ func _is_grounded() -> bool:
 	return n >= 3
 
 
+# Soft pass-through contact (a brushed bush / mowed spectator): shed a small,
+# speed-scaled slice of horizontal momentum so the unified deceleration-damage rule
+# (_integrate_forces) deals the minor HP loss — instead of a separate flat-loss path.
+# `strength` in [0,1] is the fraction of horizontal speed removed this contact.
+func apply_soft_drag(strength: float) -> void:
+	if strength <= 0.0:
+		return
+	var v_h := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	if v_h.length_squared() < 1e-4:
+		return
+	apply_central_impulse(-v_h * clampf(strength, 0.0, 1.0) * mass)
+
+
 func reset_to(xform: Transform3D) -> void:
 	global_transform = xform
+	# A reset zeroes the velocity discontinuously; suppress deceleration damage for the
+	# next couple of physics ticks so that jump doesn't read as a crash.
+	_suppress_impact_frames = 2
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	steering = 0.0

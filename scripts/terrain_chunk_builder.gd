@@ -28,6 +28,8 @@ var _lights: PackedColorArray         # empty when unlit (vertex_colors treats a
 var _colors: PackedColorArray
 var _uv2s: PackedVector2Array
 var _ph: PackedFloat32Array           # pure-height halo (lit only)
+var _has_cliffs: bool                 # cheap gate: skip cliff lookups when none baked
+var _cliff_offsets: Dictionary        # captured once (avoids a per-vertex property deref)
 
 
 func _init(manager: TerrainManager, chunk_coord: Vector2i) -> void:
@@ -43,6 +45,8 @@ func _init(manager: TerrainManager, chunk_coord: Vector2i) -> void:
 	_noises = pair[0]
 	_amplitudes = pair[1]
 	_lit = manager.light_amount > 0.0
+	_cliff_offsets = manager.cliff_offsets
+	_has_cliffs = not _cliff_offsets.is_empty()
 	_hs = _samples + 2
 	_count = _samples * _samples
 	_heights = PackedFloat32Array(); _heights.resize(_count)
@@ -98,11 +102,20 @@ func data() -> Dictionary:
 
 
 func _halo_row(hzi: int) -> void:
+	var per_edge := _samples - 1
+	var gz := coord.y * per_edge + (hzi - 1)
 	var pz := _center.z - _half + (hzi - 1) * _cell_m
 	var base := hzi * _hs
 	for hxi in _hs:
+		var gx := coord.x * per_edge + (hxi - 1)
 		var px := _center.x - _half + (hxi - 1) * _cell_m
-		_ph[base + hxi] = TerrainManager._sample_height(_noises, _amplitudes, px, pz)
+		# noise + cliff offset (NOT the road flatten): the light normal must include
+		# the cliff so steep cliffs shade as cliffs, while the near-flat road stays
+		# excluded (as today) so seams stay consistent.
+		var h := TerrainManager._sample_height(_noises, _amplitudes, px, pz)
+		if _has_cliffs:
+			h += _cliff_offsets.get(Vector2i(gx, gz), 0.0)
+		_ph[base + hxi] = h
 
 
 func _vertex_row(zi: int) -> void:
@@ -113,18 +126,22 @@ func _vertex_row(zi: int) -> void:
 		var lx := -_half + xi * _cell_m
 		var wx := _center.x + lx
 		var idx := zi * _samples + xi
+		var vidx := Vector2i(coord.x * per_edge + xi, coord.y * per_edge + zi)
 		var h: float
 		if _lit:
 			# Centre of this vertex in the halo (offset by 1 for the border); its four
 			# ±1-cell neighbours are ±1 (x) and ±_hs (z) — the same world coords the
-			# per-vertex light bake used, so the output is bit-identical.
+			# per-vertex light bake used, so the output is bit-identical. The halo already
+			# carries noise + cliff, so h includes the cliff offset here.
 			var c := (zi + 1) * _hs + (xi + 1)
 			h = _ph[c]
 			_lights[idx] = _m._light_from_neighbours(_ph[c - 1], _ph[c + 1], _ph[c - _hs], _ph[c + _hs])
 		else:
+			# Unlit: no halo, so add the cliff offset onto the pure noise directly.
 			h = TerrainManager._sample_height(_noises, _amplitudes, wx, wz)
+			if _has_cliffs:
+				h += _cliff_offsets.get(vidx, 0.0)
 		# Blend road vertices toward the baked road height by their weight.
-		var vidx := Vector2i(coord.x * per_edge + xi, coord.y * per_edge + zi)
 		if _m.road_blend.has(vidx):
 			h = lerpf(h, _m.road_heights[vidx], _m.road_blend[vidx])
 		_heights[idx] = h

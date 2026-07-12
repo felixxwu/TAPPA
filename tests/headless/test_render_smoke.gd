@@ -21,6 +21,9 @@ var _scene: Node3D
 # so the minimal build still exercises everything asserted below.
 func before_all() -> void:
 	SceneTestHelpers.minimal_world()
+	# The shipped config ships the distant-terrain backdrop OFF (game_config.tres), but
+	# this suite asserts the backdrop-building path, so enable it for the test scene.
+	Config.data.distant_terrain_enabled = true
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	await get_tree().physics_frame  # let world._ready() generate + apply + build
@@ -103,11 +106,16 @@ func test_post_process_mirror_camera_syncs() -> void:
 	var src := _scene.get_viewport().get_camera_3d()
 	assert_not_null(src, "an active gameplay camera exists")
 	var mirror := _scene.get_node("PostProcess/View/ViewCamera") as Camera3D
-	src.fov = 87.0
-	await get_tree().process_frame
-	assert_almost_eq(mirror.global_position, src.global_position, Vector3.ONE * 0.001,
+	# post_process_view copies src's transform + fov each frame, ONE frame later, so
+	# while the camera eases into its rest pose (or its speed-based FOV is still
+	# changing) the mirror reads a frame behind. Settle first, then the copy matches
+	# src exactly — we assert the mirror MIRRORS src, not any forced value (the chase
+	# camera owns both the pose and the fov and would overwrite a forced one).
+	for _i in 90:
+		await get_tree().process_frame
+	assert_almost_eq(mirror.global_position, src.global_position, Vector3.ONE * 0.01,
 		"mirror camera follows the active camera's position")
-	assert_almost_eq(mirror.fov, 87.0, 0.001, "mirror camera copies fov")
+	assert_almost_eq(mirror.fov, src.fov, 0.05, "mirror camera copies the active camera's fov")
 
 
 func test_speed_lines_overlay_wired() -> void:

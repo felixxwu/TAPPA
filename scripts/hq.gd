@@ -63,7 +63,7 @@ enum LiftPage { HUB, TUNE, UPGRADES }
 signal lineup_built
 
 const MAX_STARS := 3
-const KW_KG_TO_HP_TONNE := 1341.02  # convert power-to-weight (kW/kg) to the displayed hp/tonne (1 kW = 1.34102 hp, 1 tonne = 1000 kg)
+const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of truth for the kW/kg -> hp/tonne display conversion
 
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
 # billboarded Sprite3D. PIN_LABEL_PX is the off-screen viewport resolution; pixel_size
@@ -145,6 +145,14 @@ var _detune_needed: Dictionary = {}
 var _detune_dialog: ConfirmationDialog
 var _cars: Array = []
 var _markers: Array = []
+# Reuse cache for parked lineup cars, shared by every lineup (rally car-select,
+# title, overflow) since they all build from the same owned cars. Keyed by the
+# owned car's instance_id -> {"hash": int, "node": Node3D}; the hash is the deep
+# Variant hash of the owned dict, so a car whose tuning / damage / engine changed
+# gets a fresh respawn while unchanged cars are reused as-is (see _build_lineup /
+# _release_lineup). Cars are hidden + detached (not freed) between lineups and
+# freed with the HQ node on exit-to-race.
+var _car_cache: Dictionary = {}
 var _focus := 0
 # Bumped each time a lineup is (re)built so a pending settle-then-freeze timer for an
 # old lineup no-ops when it fires (see _build_eligible_lineup / _freeze_lineup).
@@ -2138,9 +2146,11 @@ func _confirm_starter() -> void:
 
 func _clear_lineup() -> void:
 	_settle_generation += 1  # cancel any pending settle-then-freeze for this lineup
+	# Release (hide + detach) the parked cars rather than freeing them, so a re-entry
+	# into any lineup can reuse the cached instances (see _car_cache / _build_lineup).
 	for car in _cars:
 		if is_instance_valid(car):
-			car.queue_free()
+			car.visible = false
 	for marker in _markers:
 		if is_instance_valid(marker):
 			marker.queue_free()
@@ -2148,6 +2158,27 @@ func _clear_lineup() -> void:
 	_markers = []
 	_eligible = []
 	_detune_needed = {}
+
+
+# Free every cached (and currently active) parked car outright — used when the cache
+# would otherwise leak, e.g. eviction of sold cars. Frees the node and drops its entry.
+func _free_cached_car(instance_id: int) -> void:
+	var entry: Dictionary = _car_cache.get(instance_id, {})
+	var node = entry.get("node")
+	if is_instance_valid(node):
+		node.queue_free()
+	_car_cache.erase(instance_id)
+
+
+# Drop cache entries for cars the player no longer owns (sold / scrapped), freeing
+# their nodes so the cache doesn't outlive the collection.
+func _evict_unowned_cached_cars() -> void:
+	var owned_ids := {}
+	for car in Save.profile.get("cars", []):
+		owned_ids[int(car.get("instance_id", -1))] = true
+	for id in _car_cache.keys():
+		if not owned_ids.has(id):
+			_free_cached_car(id)
 
 
 # Park the owned cars ELIGIBLE for the selected rally (the car-select screen), plus
@@ -2213,6 +2244,7 @@ func _build_title_lineup() -> void:
 # cars) and the title screen (all owned cars).
 func _build_lineup(cars: Array) -> void:
 	_clear_lineup()  # bumps _settle_generation, cancelling any in-flight spawn/freeze
+	_evict_unowned_cached_cars()  # drop cached nodes for cars sold since the last build
 	_eligible = cars
 	var cfg: GameConfig = Config.data
 	var n := cars.size()
@@ -2243,17 +2275,55 @@ func _build_lineup(cars: Array) -> void:
 # Stream the parked car props in across frames (see _build_lineup), then let them
 # settle and freeze. Bails the moment a newer lineup supersedes this one.
 func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
+	var any_fresh := false
 	for i in cars.size():
 		if generation != _settle_generation:
 			return  # a rebuild / back-out replaced this lineup mid-stream
-		_cars.append(_spawn_parked_car(cars[i], _markers[i]))
-		await get_tree().process_frame
+		var car := _obtain_parked_car(cars[i], _markers[i])
+		_cars.append(car)
+		# A cached car is already built + settled + frozen: reposition and show it with
+		# no per-frame cost. Only a freshly-instanced car (heavy: physics scene + mesh
+		# duplication) gets spread across a frame to avoid hitching, and needs settling.
+		if car.get_meta("lineup_fresh", false):
+			any_fresh = true
+			await get_tree().process_frame
 	if generation != _settle_generation:
 		return
 	emit_signal("lineup_built")
-	# Let the lineup settle under physics for a moment, then freeze the settled pose.
-	await get_tree().create_timer(Config.data.menu_car_settle_seconds).timeout
-	_freeze_lineup(generation)
+	# Only fresh cars need to settle-then-freeze; a fully-cached lineup is already at
+	# rest, so skip the wait entirely and keep the re-entry instant.
+	if any_fresh:
+		await get_tree().create_timer(Config.data.menu_car_settle_seconds).timeout
+		_freeze_lineup(generation)
+
+
+# Return a parked car for `owned` at `marker`, reusing the cached instance when this
+# car's data is unchanged (deep hash match) or (re)spawning a fresh one otherwise. The
+# returned node carries a "lineup_fresh" meta so the caller knows whether it still
+# needs to settle. Updates _car_cache in place.
+func _obtain_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
+	var instance_id := int(owned.get("instance_id", -1))
+	var owned_hash := owned.hash()
+	var cached: Dictionary = _car_cache.get(instance_id, {})
+	var node = cached.get("node")
+	if is_instance_valid(node) and int(cached.get("hash", 0)) == owned_hash:
+		# Reuse: it's already built, sized, and frozen at its settled pose. Reapply the
+		# settled offset captured relative to its marker at freeze time (see
+		# _freeze_lineup) so it sits ON its suspension at the new bay — writing the raw
+		# marker transform would drop the body onto the ground (marker y = 0), sinking it.
+		node.global_transform = marker.global_transform * cached.get("rel", Transform3D.IDENTITY)
+		node.visible = true
+		node.set_meta("lineup_fresh", false)
+		node.set_meta("owned_instance_id", instance_id)
+		return node
+	# Stale (data changed) or missing: drop any old node and spawn afresh.
+	if is_instance_valid(node):
+		node.queue_free()
+	var fresh := _spawn_parked_car(owned, marker)
+	fresh.set_meta("lineup_fresh", true)
+	fresh.set_meta("owned_instance_id", instance_id)
+	_car_cache[instance_id] = {"hash": owned_hash, "node": fresh}
+	return fresh
 
 
 # Spawn one owned car as a live, silent car prop at a marker (raised by
@@ -2308,10 +2378,19 @@ func _add_synthetic_smoke(car: Node) -> void:
 func _freeze_lineup(generation: int) -> void:
 	if generation != _settle_generation:
 		return
-	for car in _cars:
-		if is_instance_valid(car):
-			car.freeze = true
-			car.process_mode = Node.PROCESS_MODE_DISABLED
+	for i in _cars.size():
+		var car = _cars[i]
+		if not is_instance_valid(car):
+			continue
+		car.freeze = true
+		car.process_mode = Node.PROCESS_MODE_DISABLED
+		# Record where the car settled RELATIVE to its bay marker (mostly a rise onto its
+		# suspension), so a later cache reuse can re-seat it on its wheels at any bay
+		# instead of dropping the frozen body to ground level (see _obtain_parked_car).
+		if i < _markers.size() and is_instance_valid(_markers[i]):
+			var id := int(car.get_meta("owned_instance_id", -1))
+			if _car_cache.has(id):
+				_car_cache[id]["rel"] = _markers[i].global_transform.affine_inverse() * car.global_transform
 
 
 # Give a car instance its own copies of every mesh resource (car.tscn's body/wheel

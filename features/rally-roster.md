@@ -42,7 +42,7 @@ Each `RALLIES` entry:
   floor, catering to the sub-91 hp/tonne shitboxes (Twingo, Acty) that no other
   rally's band admits. The single open-class rally is the showdown.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
-  forestiness?, surface_mix?, straightness?, target_ms_override? }`. The
+  forestiness?, surface_mix?, straightness?, cliffiness?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; the
   showdown's events are longer. `forestiness` (0–1, default 1.0 via
   `event_forestiness`) sets how wooded the stage is — trees only spawn where the
@@ -51,7 +51,14 @@ Each `RALLIES` entry:
   default 0.0 via `event_straightness`) biases generation toward gentler corners +
   longer straights for an easier, less twisty stage — **earlier, lower-tier events
   run higher** so the start of the game is easier, the showdown stays unbiased
-  (twistiest). See [track.md](track.md).
+  (twistiest). See [track.md](track.md). `cliffiness` (0–1, default 0.0 via
+  `event_cliffiness`) sets how cliffy the stage is — 0 = flat, 1 = the tallest
+  cliffs/deepest drops (`cliff_max_height_m`). It only scales the height ceiling
+  (the noise wavelength is global); **earlier, lower-tier events run tamer**,
+  coastal/mountain and the showdown crank it up. Written to `GameConfig.cliff_amount`
+  by `RallySession`. Unlike `straightness`/`width`/`surface_mix`, it does **not**
+  change the centerline or the flat lengthwise road profile, so it does **not** feed
+  opponent target-time derivation. See [terrain.md](terrain.md) → *Cliffs & drops*.
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). Pure UI data; no effect on the sim.
 
@@ -90,7 +97,8 @@ generator also uses it per-rival.
 ## Key functions
 
 - `index_of(id)` / `by_id(id)` / `event_width(event)` / `event_forestiness(event)` /
-  `event_tarmac_fraction(event)` / `event_straightness(event)` — lookups.
+  `event_tarmac_fraction(event)` / `event_straightness(event)` /
+  `event_cliffiness(event)` — lookups.
 - `is_eligible(rally, car_meta)` — restriction match (open-class → always true).
   `car_meta` is a CarLibrary entry, resolved by the owned car's stable
   `model_id`. The menus' field-a-car rig and map pins filter on this.

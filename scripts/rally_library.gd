@@ -51,9 +51,9 @@ const PACE_MIN_FLOOR := 1.00     # hard clamp: rivals never beat their car's phy
 # unit the HUD / detail panel / detune slider show (hq.gd) — so a designer tunes
 # the bands in the numbers they see on screen. CarLibrary.power_to_weight() returns
 # kW/kg, so is_eligible converts a car's figure to hp/tonne with this factor before
-# comparing it against the authored band. (1 kW = 1.34102 hp, 1 tonne = 1000 kg;
-# mirrors hq.gd's KW_KG_TO_HP_TONNE.)
-const KW_KG_TO_HP_TONNE := 1341.02
+# comparing it against the authored band. Uses CarLibrary.KW_KG_TO_HP_TONNE — the
+# single source of truth for the conversion, shared with hq.gd.
+const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 
 
 # Rival pace band as (pace_fast, pace_slow) — the pace of the fastest (skill 0) and
@@ -82,9 +82,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {"pw_min": 91.0, "pw_max": 180.0},  # gated below: a low p/w ceiling — the starter's home (ceiling clears the MX-5 ~159 / XJS ~175 hp/t)
 		"events": [
-			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1},
-			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0.7, "straightness": 0.8},
-			{"seed": 1009, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.8},
+			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.1},
+			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0.7, "straightness": 0.8, "cliffiness": 0.2},
+			{"seed": 1009, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.3},
 		],
 	},
 	{
@@ -93,9 +93,9 @@ const RALLIES: Array[Dictionary] = [
 		# FWD intro rally + a p/w ceiling: the Focus's home (parallels Shakedown for the MX-5).
 		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 112.0, "pw_max": 168.0},
 		"events": [
-			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85},
-			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8},
-			{"seed": 1103, "turn_count": 11, "forestiness": 0.75, "surface_mix": 0.3, "straightness": 0.8},
+			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.15},
+			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.25},
+			{"seed": 1103, "turn_count": 11, "forestiness": 0.75, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.3},
 		],
 	},
 	{
@@ -103,9 +103,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {"pw_min": 112.0, "pw_max": 210.0},  # gated below: a slightly higher p/w ceiling
 		"events": [
-			{"seed": 2004, "turn_count": 14, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0},
-			{"seed": 2005, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2},
-			{"seed": 2007, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3},
+			{"seed": 2004, "turn_count": 14, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55},
+			{"seed": 2005, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65},
+			{"seed": 2007, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3, "cliffiness": 0.5},
 		],
 	},
 	{
@@ -114,9 +114,9 @@ const RALLIES: Array[Dictionary] = [
 		# p/w band (primary gate) + an RWD theme: a mid-power rear-driven field.
 		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 147.0, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
 		"events": [
-			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5},
-			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45},
-			{"seed": 3004, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5},
+			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4},
+			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5},
+			{"seed": 3004, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.6},
 		],
 	},
 	{
@@ -129,9 +129,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.82, 0.34),
 		"restriction": {"pw_min": 210.0, "pw_max": 301.0},
 		"events": [
-			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25},
-			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2},
-			{"seed": 4003, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25},
+			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55},
+			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7},
+			{"seed": 4003, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6},
 		],
 	},
 	{
@@ -139,9 +139,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.66, 0.28),
 		"restriction": {"pw_min": 266.0, "pw_max": 378.0},  # the top non-showdown p/w band (The Beast derives to ~350 hp/t)
 		"events": [
-			{"seed": 5001, "turn_count": 18, "forestiness": 0.55, "surface_mix": 1.0, "straightness": 0.15},
-			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15},
-			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1},
+			{"seed": 3371549700, "turn_count": 18, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75},
+			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15, "cliffiness": 0.85},
+			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1, "cliffiness": 0.9},
 		],
 	},
 	{
@@ -150,9 +150,9 @@ const RALLIES: Array[Dictionary] = [
 		# US-built muscle only, in a mid p/w band — the Charger's home turf.
 		"restriction": {"country": "US", "car_type": "muscle", "pw_min": 168.0, "pw_max": 266.0},
 		"events": [
-			{"seed": 6001, "turn_count": 12, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7},
-			{"seed": 6002, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6},
-			{"seed": 6003, "turn_count": 12, "forestiness": 0.4, "surface_mix": 1.0, "straightness": 0.65},
+			{"seed": 6001, "turn_count": 12, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7, "cliffiness": 0.3},
+			{"seed": 6002, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.4},
+			{"seed": 6003, "turn_count": 12, "forestiness": 0.4, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.35},
 		],
 	},
 	{
@@ -162,9 +162,9 @@ const RALLIES: Array[Dictionary] = [
 		# ceiling that only the true shitboxes (Twingo, Acty) squeeze under.
 		"restriction": {"pw_max": 91.0},
 		"events": [
-			{"seed": 7001, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0},
-			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0},
-			{"seed": 7003, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0},
+			{"seed": 7001, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0, "cliffiness": 0.1},
+			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.15},
+			{"seed": 7003, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.2},
 		],
 	},
 	{
@@ -172,9 +172,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.5, 0.12),
 		"restriction": {},  # open so the low-power starter can always finish the game
 		"events": [
-			{"seed": 9001, "turn_count": 22, "forestiness": 0.8, "surface_mix": 0.5},
-			{"seed": 9002, "turn_count": 24, "forestiness": 0.5, "surface_mix": 0.8},
-			{"seed": 9003, "turn_count": 22, "forestiness": 0.65, "surface_mix": 0.3},
+			{"seed": 9001, "turn_count": 22, "forestiness": 0.8, "surface_mix": 0.5, "cliffiness": 0.8},
+			{"seed": 9002, "turn_count": 24, "forestiness": 0.5, "surface_mix": 0.8, "cliffiness": 0.9},
+			{"seed": 9003, "turn_count": 22, "forestiness": 0.65, "surface_mix": 0.3, "cliffiness": 1.0},
 		],
 	},
 ]
@@ -231,6 +231,15 @@ static func event_tarmac_fraction(event: Dictionary) -> float:
 # (it changes the track SHAPE, so the same value is used when deriving target times).
 static func event_straightness(event: Dictionary) -> float:
 	return clampf(float(event.get("straightness", 0.0)), 0.0, 1.0)
+
+
+# How cliffy this event's stage is, in [0, 1]: 0 = flat (no cliffs/drops), 1 = the
+# tallest cliffs/deepest drops (cliff_max_height_m). Scales the global height ceiling
+# (GameConfig.cliff_amount); the camber wavelength stays global. Default 0 keeps an
+# event that omits it flat. Cliffs don't change the centerline or the flat lengthwise
+# road profile, so this does NOT feed opponent target-time derivation.
+static func event_cliffiness(event: Dictionary) -> float:
+	return clampf(float(event.get("cliffiness", 0.0)), 0.0, 1.0)
 
 
 # --- Eligibility -------------------------------------------------------------

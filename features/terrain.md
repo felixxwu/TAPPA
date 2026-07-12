@@ -170,6 +170,69 @@ the true terrain across a transition band just outside the road edge, using
   loaded here and nothing rebuilds; chunks loaded later bake the blend at build
   time. (Replaces the older binary `track_cells` + `bake_road`.)
 
+## Cliffs & drops
+
+Artificial **cliffs** and **drops** sculpted into the terrain along the sides of
+the track, so a stage can run along a ledge — a wall rising on one side, the
+ground falling away on the other. A **terrain-height feature**: one more signed
+per-vertex term on top of the noise height, added *before* the road flatten, so
+it changes both the render mesh and the `HeightMapShape3D` collision (real,
+drivable geometry). Driven by 1-D noise along the track, so it varies smoothly
+and needs no hand-authoring.
+
+- `cliff_offsets: Dictionary` — grid-vertex index (`Vector2i`, **global**, keyed
+  exactly like `road_heights` → seam-safe by construction) → signed height offset
+  (m). Empty when disabled or the effective height is 0 (identity, zero cost).
+- Per-vertex offset (from the **nearest** centerline sample):
+  `side(d) · camber(s) · profile(|d|) · (1 − contested) · cliff_max_height_m · cliff_amount`.
+  `side` flips across the centerline and `camber` carries the sign, so one side
+  rises by exactly what the other falls — *"a cliff is as tall as the drop is
+  deep"* falls out for free, and the slice is level at `camber = 0`.
+- `camber(s)` — a 1-D `FastNoiseLite` value in `[-1, 1]` along arc length `s`
+  (`_make_camber_noise` / `_camber`, seeded `cliff_seed ^ CLIFF_SEED_SALT` off the
+  stage's `track_seed`; `cliff_gain` scales before the clamp, `cliff_wavelength_m`
+  is the along-track period — **global**, same for every event).
+- `_cliff_profile(d, inner, rise, outer)` — the cross-section: **0 across the whole
+  road + transition band** (`inner = width/2 + transition_m`, so the cliff only
+  begins where the road has fully met the grass and never tilts the shoulder),
+  rising 0→1 over `cliff_run_m` (to `rise`), then falling 1→0 over `cliff_fade_m`
+  (to `outer = R`, the influence radius). A localized berm/ditch that returns to
+  grade — **not** an infinite shelf: past `R` the offset is 0, so `height_at`
+  matches pure noise again and the `DistantTerrain` backdrop needs no `cliff_offset`
+  fallback (no seam). Keep `R` inside the corridor dilation (~150 m at the default
+  leash) — any sane `R` (tens of m) is safe.
+- Contested-vertex flatten — the inside crook of a hairpin (or any pocket the road
+  wraps around) goes **flat**, detected **geometrically**: per stamped vertex, the
+  vertex→sample bearings are unioned into `CLIFF_BEARING_BUCKETS` circular buckets
+  (order-independent, wrap-safe — never min/max of the angle). The wrap span =
+  `360° − largest empty arc`; a straight / the *outside* of a bend stays within a
+  half-plane (≤ 180° → keep the cliff), an inside crook wraps > 180° → flatten.
+  Feathered over `cliff_pinch_angle_deg` past 180° (`_contested_from_span`), so the
+  taper to flat is continuous (no wedge seam, no step seam).
+- **Bake** (`_bake_cliffs`, called at the end of `bake_track`): one coarse
+  centerline walk at `CLIFF_SAMPLE_STEP_M` (≫ the road's `ROAD_SAMPLE_STEP_M` — the
+  main cost lever, since the stamp band is ~10-20× wider). Per sample: compute
+  `camber(s)`; per stamped vertex within `R`, keep the nearest sample's
+  `side·camber·profile` and OR its bearing bucket. After the walk, fold the wrap
+  span into `contested` and scale by `cliff_max_height_m · cliff_amount`.
+- **Apply** (`terrain_chunk_builder._vertex_row`): `h += cliff_offsets[vidx]` on the
+  noise height, before the road-flatten `lerp`. Feeds `_heights` → mesh **and**
+  collision.
+- **Lighting** — the light normal must include the cliff or steep cliffs shade as
+  flat. The `_ph` halo (`_halo_row`) carries **noise + cliff** (still excluding the
+  road flatten, as before), so `_light_from_neighbours` shades cliffs correctly; the
+  lit `_vertex_row` reads `h` straight from that halo (already cliff-inclusive), and
+  only the unlit path adds the offset separately.
+- **Params** are pushed from `GameConfig` (`apply_cliffs`) onto the manager by
+  `world.gd` before `set_track` (mirrors `apply_terrain_light`): `cliff_enabled`,
+  `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`, `cliff_run_m`,
+  `cliff_fade_m`, `cliff_pinch_angle_deg`, `cliff_amount` (runtime per-event scale,
+  written by `RallySession` from the event's `cliffiness`), `cliff_seed`
+  (`= track_seed`). See the `Cliffs` group in [configuration.md](configuration.md).
+- Tests: `tests/headless/test_terrain_cliffs.gd` (zero-when-off/level, flat road +
+  band handoff, antisymmetry, bounded, fade-out, determinism, hairpin flatten,
+  chunk height, cliff seam).
+
 ### Deferred initial build
 
 `defer_initial_build` (set on `Floor` in `main.tscn`) makes `_ready` skip the

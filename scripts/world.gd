@@ -233,6 +233,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# share = track_tarmac_fraction (set per rally event). Which surface it opens on
 	# is seeded off track_seed so it's deterministic but varied across events.
 	var tarmac_first := TrackSurface.orientation_tarmac_first(cfg.track_seed)
+	# Cliff params onto the terrain before the bake reads them (mirrors the Lighting
+	# group applied earlier); the cliff pass runs inside set_track → bake_track.
+	cfg.apply_cliffs($Floor as TerrainManager)
 	$Floor.set_track(road_centerline, cfg.track_width, transition_m,
 		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m)
 	# Retained for post-build consumers outside this call (the benchmark runner
@@ -384,8 +387,8 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	add_child(bush_interaction)
 	bush_interaction.setup(bushes, $Car,
 		bush_radius * cfg.bush_hit_radius_frac,
-		cfg.bush_hp_loss, cfg.bush_drag_torque,
-		cfg.bush_min_speed_kmh / DamageModel.MPS_TO_KMH, cfg.soft_hit_cooldown_s)
+		cfg.bush_drag_strength, cfg.bush_drag_torque,
+		cfg.bush_min_speed_kmh / DamageModel.MPS_TO_KMH)
 
 	return {"trees": trees, "road_cells": road_cells}
 

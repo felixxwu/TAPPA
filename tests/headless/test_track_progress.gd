@@ -9,8 +9,12 @@ extends GutTest
 class StubCar:
 	extends Node3D
 	var reset_calls: Array = []
+	var linear_velocity := Vector3.ZERO   # read by the stuck watchdog
+	var throttling := false                # is_throttling() return
 	func reset_to(xform: Transform3D) -> void:
 		reset_calls.append(xform)
+	func is_throttling() -> bool:
+		return throttling
 
 
 var _car: StubCar
@@ -180,3 +184,102 @@ func test_mark_start_rezeros_progress_at_the_cars_position() -> void:
 	_put_car(0, 65)
 	tp._physics_process(0.0)
 	assert_almost_eq(tp.progress_percent(), 0.5, 0.05, "progress counts from the new start origin")
+
+
+# --- Stuck-car recovery watchdog ---------------------------------------------
+
+# Step the watchdog until it either resets or the wait elapses; returns whether it reset.
+func _run_ticks(tp: TrackProgress, seconds: float, dt := 0.5) -> bool:
+	var before: int = _car.reset_calls.size()
+	var t := 0.0
+	while t < seconds:
+		tp._physics_process(dt)
+		if _car.reset_calls.size() > before:
+			return true
+		t += dt
+	return false
+
+
+func test_flooring_it_and_going_nowhere_recovers() -> void:
+	# Stationary + throttle held → recovers after the timeout.
+	_put_car(0, 20)
+	var tp := _make_progress()
+	_car.linear_velocity = Vector3.ZERO
+	_car.throttling = true
+	assert_true(_run_ticks(tp, Config.data.recovery_timeout_s + 1.0),
+		"a car flooring it and going nowhere auto-recovers")
+
+
+func test_does_not_recover_before_the_timeout() -> void:
+	_put_car(0, 20)
+	var tp := _make_progress()
+	_car.linear_velocity = Vector3.ZERO
+	_car.throttling = true
+	# Just under the timeout: no reset yet.
+	assert_false(_run_ticks(tp, Config.data.recovery_timeout_s - 0.6, 0.5),
+		"no recovery before the stuck timeout elapses")
+
+
+func test_flipped_car_recovers() -> void:
+	_put_car(0, 20)
+	var tp := _make_progress()
+	_car.linear_velocity = Vector3.ZERO
+	_car.throttling = false
+	# Roll it onto its roof: up-vector points down.
+	_car.global_transform = Transform3D(Basis(Vector3(1, 0, 0), PI), Vector3(0, 0, 20))
+	assert_true(_run_ticks(tp, Config.data.recovery_timeout_s + 1.0),
+		"a flipped, stationary car auto-recovers even with no throttle")
+
+
+func test_car_in_a_pit_recovers_without_throttle() -> void:
+	_put_car(0, 20)
+	var tp := _make_progress()  # null terrain → road height 0
+	_car.linear_velocity = Vector3.ZERO
+	_car.throttling = false
+	# Well below the road surface (0) − recovery_depth_m.
+	_car.global_transform = Transform3D(Basis.IDENTITY, Vector3(0, -Config.data.recovery_depth_m - 5.0, 20))
+	assert_true(_run_ticks(tp, Config.data.recovery_timeout_s + 1.0),
+		"a car fallen into a pit auto-recovers even with no input")
+
+
+func test_parked_upright_on_road_never_recovers() -> void:
+	# Stationary but upright, on the road, no throttle → the player just stopped; leave it.
+	_put_car(0, 20)
+	var tp := _make_progress()
+	_car.linear_velocity = Vector3.ZERO
+	_car.throttling = false
+	assert_false(_run_ticks(tp, Config.data.recovery_timeout_s + 2.0),
+		"a deliberately parked car is never auto-reset")
+
+
+func test_moving_car_never_recovers() -> void:
+	# Even flooring it, a car that's actually moving is not stuck.
+	_put_car(0, 20)
+	var tp := _make_progress()
+	_car.linear_velocity = Vector3(0, 0, 5.0)  # driving
+	_car.throttling = true
+	assert_false(_run_ticks(tp, Config.data.recovery_timeout_s + 2.0),
+		"a moving car is never treated as stuck")
+
+
+func test_recovery_disabled_never_recovers() -> void:
+	Config.data.recovery_enabled = false
+	_put_car(0, 20)
+	var tp := _make_progress()
+	_car.linear_velocity = Vector3.ZERO
+	_car.throttling = true
+	assert_false(_run_ticks(tp, Config.data.recovery_timeout_s + 2.0),
+		"no auto-recovery when the watchdog is disabled")
+
+
+func test_recovery_target_is_the_last_on_road_pose() -> void:
+	_put_car(0, 20)
+	var tp := _make_progress()
+	tp._physics_process(0.0)  # bank progress + _best_reset at ~20 m
+	var expected := tp._reset_xform_at(20.0)
+	_car.linear_velocity = Vector3.ZERO
+	_car.throttling = true
+	assert_true(_run_ticks(tp, Config.data.recovery_timeout_s + 1.0), "recovers")
+	var got: Transform3D = _car.reset_calls[-1]
+	assert_almost_eq(got.origin, expected.origin, Vector3.ONE * 0.5,
+		"recovery teleports to the last on-road pose, not the start")

@@ -15,6 +15,22 @@ const BILLBOARD_OPAQUE_SHADER := preload("res://shaders/billboard_opaque.gdshade
 # the body's lifetime. Null when built without collision.
 var _collision_shape: BoxShape3D
 
+# The shared obstacle StaticBody3D (null without collision). Kept so knock_down()
+# can disable one instance's box in place via the physics server.
+var _collision_body: StaticBody3D
+
+# True when this field renders the opaque cross path (trees). Only that path is
+# fellable — the quad path is camera-billboarded by its shader, so tilting the
+# transform basis wouldn't show. Set in build().
+var _use_opaque: bool = false
+
+# Felling bookkeeping (see TreeMeshField for the mirror). Unlike TreeMeshField this
+# is ONE unbinned MultiMesh, so the instance index IS the build/shape index — no
+# slot map needed. _fallen: idx -> true (idempotent set). _falling: active tilts,
+# each {"idx", "base_pos", "yaw", "axis", "elapsed", "duration"}.
+var _fallen: Dictionary = {}
+var _falling: Array = []
+
 # The world position placed for each instance, in build order — a
 # renderer-independent mirror of the MultiMesh instance transforms. The MultiMesh
 # transform buffer lives in the RenderingServer, which is a no-op stub under
@@ -42,6 +58,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	#    is normalized (x in [-0.5,0.5], y in [0,1]); size is carried as per-
 	#    instance scale so the opaque shader reads it from MODEL_MATRIX.
 	var use_opaque := mesh != null and opaque
+	_use_opaque = use_opaque
 	var render_mesh: Mesh
 	if use_opaque:
 		render_mesh = mesh
@@ -98,5 +115,61 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	# per position (cheap: one shape, N transforms). Skipped when with_collision is false.
 	if with_collision:
 		_collision_shape = ObstacleBody.build(self, instance_positions, collision_radius, collision_height)
+		_collision_body = get_node_or_null("Collision") as StaticBody3D
 
 	multimesh = mm
+	# Nothing falling at first — only tick _process once a tree is actually felled.
+	set_process(false)
+
+
+# The upright instance basis build() authored for the instance at world `pos`, so a
+# fall animation can rebuild the transform. Mirrors the build() loop: the opaque
+# cross carries a deterministic per-instance yaw + the authored size scale; the quad
+# path is identity (and not fellable — see _use_opaque).
+func _upright_basis(pos: Vector3) -> Basis:
+	if not _use_opaque:
+		return Basis.IDENTITY
+	var yaw := ScatterMath.hash01(int(round(pos.x)), int(round(pos.z)), 0, 7) * TAU
+	return Basis(Vector3.UP, yaw).scaled(instance_scale)
+
+
+# Fell instance `idx`, toppling it in horizontal unit direction `dir` over
+# `duration` seconds — the BillboardField twin of TreeMeshField.knock_down. Disables
+# the hitbox in place (next step, so the car still stops now) and tilts the cross to
+# the ground. Idempotent; a no-op without collision, off the opaque path, or on a
+# bad index.
+func knock_down(idx: int, dir: Vector3, duration: float) -> void:
+	if _collision_body == null or not _use_opaque:
+		return
+	if _fallen.has(idx) or idx < 0 or idx >= instance_positions.size():
+		return
+	# Disable in place — body_remove_shape would shift every higher shape index and
+	# break the shape-index -> instance-index mapping this relies on.
+	PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, true)
+	_fallen[idx] = true
+	_falling.append({
+		"idx": idx, "base_pos": instance_positions[idx],
+		"axis": TreeFall.topple_axis(dir),
+		"elapsed": 0.0, "duration": maxf(duration, 0.0),
+	})
+	set_process(true)
+
+
+# True once instance `idx` has been felled (hitbox disabled, toppling or flat).
+func is_fallen(idx: int) -> bool:
+	return _fallen.has(idx)
+
+
+func _process(delta: float) -> void:
+	var still_active: Array = []
+	for rec: Dictionary in _falling:
+		rec["elapsed"] += delta
+		var angle := TreeFall.fall_angle(rec["elapsed"], rec["duration"])
+		# Tilt about the base (the instance origin, at ground level) from upright.
+		var b := Basis(rec["axis"], angle) * _upright_basis(rec["base_pos"])
+		multimesh.set_instance_transform(rec["idx"], Transform3D(b, rec["base_pos"]))
+		if rec["elapsed"] < rec["duration"]:
+			still_active.append(rec)
+	_falling = still_active
+	if _falling.is_empty():
+		set_process(false)

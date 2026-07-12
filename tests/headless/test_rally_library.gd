@@ -63,6 +63,15 @@ func test_event_straightness_defaults_to_unbiased() -> void:
 	assert_eq(RallyLibrary.event_straightness({"straightness": -1.0}), 0.0, "clamps below 0")
 
 
+func test_event_cliffiness_defaults_to_flat() -> void:
+	# An event that omits cliffiness defaults to 0.0 (flat, no cliffs); authored
+	# values pass through clamped to [0, 1].
+	assert_eq(RallyLibrary.event_cliffiness({}), 0.0, "missing cliffiness -> 0.0 (flat)")
+	assert_almost_eq(RallyLibrary.event_cliffiness({"cliffiness": 0.4}), 0.4, 0.0001, "authored value passes through")
+	assert_eq(RallyLibrary.event_cliffiness({"cliffiness": 2.0}), 1.0, "clamps above 1")
+	assert_eq(RallyLibrary.event_cliffiness({"cliffiness": -1.0}), 0.0, "clamps below 0")
+
+
 func test_starter_always_has_an_enterable_rally() -> void:
 	# SHIPPED-CONTENT guarantee: this must run against the REAL catalogue, not the
 	# fixtures installed by before_each — restore first so CarLibrary sees the real

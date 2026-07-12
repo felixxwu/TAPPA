@@ -48,8 +48,7 @@ var _capsule_radius := 0.3
 var _center := Vector2.ZERO       # group centroid, for the LOD distance test
 var _ragdolls: Array[RigidBody3D] = []
 var _rng := RandomNumberGenerator.new()
-var _hp_loss := 0.0               # HP the car loses per member knocked (spectator_hp_loss)
-var _cooldown := 0.0              # shared soft-hit cooldown so a mown line is one hit
+var _drag_strength := 0.0         # fraction of horizontal speed a knock sheds (soft drag)
 
 
 # Wire a freshly placed group. `member_positions` come from SpectatorScatter.members.
@@ -60,8 +59,7 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	_road_cells = road_cells
 	_tree_grid = tree_grid
 	_p = params
-	_hp_loss = float(params.get("hp_loss", 0.0))
-	_cooldown = float(params.get("soft_hit_cooldown_s", 0.0))
+	_drag_strength = float(params.get("drag_strength", 0.0))
 	_rng.seed = int(params.get("seed", 0))
 
 	var n := member_positions.size()
@@ -363,13 +361,13 @@ func _knock_over(i: int, car_xf: Transform3D) -> void:
 	).normalized() * float(_p["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
 	_ragdolls.append(body)
 
-	# Mowing the crowd isn't free: the hit costs the car a flat HP loss (a bit more
-	# than a bush graze). Shared DamageModel soft-hit path (+ its cooldown), so
-	# ploughing a dense line counts as one hit, not one per member. See features/damage.md.
-	if _car != null and _hp_loss > 0.0:
-		var dmg: DamageModel = _car.get("damage")
-		if dmg != null:
-			dmg.register_soft_hit(_hp_loss, Vector3(x, ground, z), _cooldown)
+	# Mowing the crowd isn't free: knocking a member sheds a little of the car's speed
+	# (soft drag), and the unified deceleration-damage rule (car._integrate_forces) turns
+	# that into the HP chip. Grouping is natural — a car slowed toward a stop sheds ~0
+	# more per member — so ploughing a dense line doesn't wildly over-count. See
+	# features/damage.md.
+	if _car != null and _drag_strength > 0.0 and _car.has_method("apply_soft_drag"):
+		_car.apply_soft_drag(_drag_strength)
 
 
 # Launch velocity for a knocked body: along `dir` at magnitude `speed x factor`

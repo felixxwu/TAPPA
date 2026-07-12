@@ -180,6 +180,58 @@ The body stays on `collision_layer = 1` like `TerrainChunk`, so the car collides
 with trees the same way it collides with the ground. (`BillboardField` keeps the
 identical scheme for the bush field's optional collision.)
 
+## Felling — crash a tree over at speed (`TreeFall` + `TreeMeshField`)
+
+Crash into a tree carrying real speed and it topples over and loses its hitbox, so
+you can drive on through where it stood. Hit one slowly and it stays a solid
+obstacle (the collision above, unchanged). The car still **comes to a complete stop
+against the tree on the impact frame** in both cases — felling is additive feedback,
+not a replacement for the crash: the disabled hitbox only takes effect on the next
+physics step, so the tree arrests you now and then falls.
+
+- **Threshold.** `TreeFall.should_fell(speed_mps, cfg)` (`scripts/tree_fall.gd`, a
+  pure static module like `ScatterMath`) returns true when the km/h-converted
+  approach speed is `>= cfg.tree_fell_speed_kmh` (0 disables felling). Keyed to the
+  car's **pre-solve** `_approach_speed` / `_approach_dir` (`car.gd`), captured at the
+  top of `_physics_process` — a head-on hit's post-solve velocity is ~0, so reading
+  it later would never fell (same rationale as the damage speed).
+- **Trigger.** `car.gd._integrate_forces`'s object-reaction loop (kept contact-driven,
+  separate from the global deceleration-damage tick): for an obstacle contact fast
+  enough to fell, it calls
+  `field.knock_down(state.get_contact_collider_shape(i), _approach_dir, cfg.tree_fell_duration_s)`.
+  The contact's **shape index equals the tree's global index** (boxes are added in
+  build order; see `ObstacleBody`). Felling reads only the approach speed — damage is
+  a separate global signal — so ploughing into a line of trees drops each one.
+- **`knock_down(idx, dir, duration)`** (idempotent). Disables that tree's box in
+  place via `PhysicsServer3D.body_set_shape_disabled(body_rid, idx, true)` — never
+  `body_remove_shape`, which would shift every higher shape index and break the
+  index→tree mapping. Then it queues a fall record; `is_fallen(idx)` reports the
+  bookkeeping (the physics server has no public "is disabled" getter). Because
+  `build()` bins instances away from build order, a `_slot_of` map
+  (global idx → `{mmi, j, base_pos, centre}`) finds the one MultiMesh instance to
+  animate. A collision-less field (bushes) or an unknown idx is a safe no-op.
+- **Animation.** `TreeMeshField._process` advances each fall, rebuilding only that
+  instance's transform: `Basis(axis, TreeFall.fall_angle(elapsed, duration)) *
+  Basis(UP, yaw).scaled(scale)` at the unchanged base origin, so it pivots about the
+  trunk base. `topple_axis(dir)` is horizontal and perpendicular to travel (falls
+  along `dir`). `fall_angle` is an eased 0 → `FLAT_ANGLE` (just past PI/2), monotone,
+  clamped. Records retire when flat and `set_process(false)` when none remain, so a
+  settled forest costs nothing per frame.
+- **Persistence.** Run-local and transient — a fresh run regenerates standing trees.
+  A mid-run off-track auto-reset (`TrackProgress`) does not regenerate the world, so
+  **felled trees stay felled** after a reset (you broke them, they're broken).
+
+**Billboard trees fall too.** `BillboardField` (used when `use_billboard_trees` is
+true — the shipped default in `game_config.tres`) carries the same `knock_down` /
+`is_fallen` / `_process`. It's simpler there: one unbinned MultiMesh, so the contact
+shape index IS the instance index (no `_slot_of`). Only the **opaque cross path**
+(trees) is fellable — the quad path is camera-billboarded by its shader, so tilting
+the transform basis wouldn't show; `_upright_basis` rebuilds the instance's authored
+yaw+scale so the tilt starts from upright. Config knobs `tree_fell_speed_kmh` /
+`tree_fell_duration_s` are
+balance values (see Configuration); tests assert the felling *logic*, never the
+chosen numbers.
+
 ## Bushes (ground-cover mesh, same renderer as trees)
 
 Bushes are the low ground-cover patch in
@@ -237,7 +289,10 @@ bush hit volume; the benchmark's vegetation toggle drives it, see
 `.y`, ~6 m; `.x` is legacy footprint hinting), `tree_bin_size_m` (render bin grid
 size, default 25 m — smaller = finer LOD/cull granularity but more draw calls),
 `tree_collision_radius_m` (box half-extent in X/Z), `tree_collision_height_m`
-(box height), `tree_render_distance_m` (cull distance), `tree_render_fade_m`
+(box height), `tree_fell_speed_kmh` (approach speed at/above which a crash topples
+the tree and removes its hitbox — 0 disables felling), `tree_fell_duration_s`
+(seconds a felled tree takes to tilt flat), `tree_render_distance_m` (cull
+distance), `tree_render_fade_m`
 (dissolve band), `tree_near_fade_start_m` / `tree_near_fade_end_m` (the
 near-camera canopy dissolve range — fragments within `start` of the camera fully
 gone, fully solid again by `end`), `bush_height_m` (height the ground-cover bush mesh is scaled to),

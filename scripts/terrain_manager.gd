@@ -13,6 +13,17 @@ const CELL_M := 1.0                          # grid cell size (PS1 low-poly terr
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
 const RADIUS := 1                            # ring radius -> (2*RADIUS+1)^2 = 3x3
 const ROAD_SAMPLE_STEP_M := 0.25        # centerline sampling density for bake_road
+# Cliffs & drops (features/terrain.md). The cliff pass walks the centerline coarser
+# than the road (camber varies over cliff_wavelength_m ≫ a cell, and the stamp band
+# is ~10-20× wider), so the sample density is the main cost lever.
+const CLIFF_SAMPLE_STEP_M := 1.0
+# Bearing buckets for the hairpin wrap test. Circular set-union of the vertex→sample
+# bearings; the wrap span = 360° − largest empty arc. More buckets → finer span, so a
+# straight (true span < 180°) never rounds up past 180° and false-fires contested.
+const CLIFF_BEARING_BUCKETS := 48
+# Salt mixed into track_seed for the camber noise, so the whole stage (track shape,
+# surface split, cliffs) is one deterministic function of track_seed.
+const CLIFF_SEED_SALT := 0x5C1FF
 
 const ChunkScript := preload("res://scripts/terrain_chunk.gd")
 
@@ -55,6 +66,26 @@ var track_weights: Dictionary = {}  # cell index -> colour blend weight [0,1]
 # into the mesh UV2.x by surface_uv2()/compute_chunk_data so the shader fades the
 # gravel texture to the flat tarmac colour the same way the road fades from grass.
 var track_surface: Dictionary = {}
+
+# Cliffs & drops (features/terrain.md). A signed per-vertex height offset added on
+# top of the noise height (before the road flatten) by bake_track's cliff pass, so a
+# stage can run along a ledge — a wall rising on one side, ground falling away on the
+# other. Keyed in the same GLOBAL vertex-index space as road_heights (seam-safe by
+# construction). Empty when cliff_enabled is off or the effective height is 0.
+var cliff_offsets: Dictionary = {}   # global vertex index (Vector2i) -> signed offset (m)
+# Cliff params, set from GameConfig.apply_cliffs before bake_track (like the Lighting
+# group). cliff_amount is the runtime per-event scale on cliff_max_height_m (0..1),
+# written by RallySession from the event's cliffiness; cliff_seed derives the camber
+# noise from the stage's track_seed.
+var cliff_enabled: bool = false
+var cliff_wavelength_m: float = 60.0
+var cliff_gain: float = 1.6
+var cliff_max_height_m: float = 8.0
+var cliff_run_m: float = 6.0
+var cliff_fade_m: float = 6.0
+var cliff_pinch_angle_deg: float = 45.0
+var cliff_amount: float = 1.0
+var cliff_seed: int = 1
 
 # Baked terrain lighting. The terrain and the sun never move, so the fake
 # directional+hemisphere shading (mirroring shaders/ps1_models_lit.gdshader) is
@@ -584,6 +615,137 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	road_blend = rb
 	track_weights = tw
 	track_surface = ts
+	_bake_cliffs(centerline, width, transition_m)
+
+
+# The camber signal's FastNoiseLite: a 1-D value along the track's arc length,
+# analogous to TrackSurface.tarmac_weight being a pure function of distance. Seeded
+# off track_seed so the whole stage is deterministic.
+func _make_camber_noise() -> FastNoiseLite:
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise.fractal_type = FastNoiseLite.FRACTAL_NONE
+	noise.seed = cliff_seed ^ CLIFF_SEED_SALT
+	noise.frequency = 1.0 / maxf(cliff_wavelength_m, 0.001)
+	return noise
+
+
+# The camber value in [-1, 1] at arc length `s`: raw 1-D noise scaled by cliff_gain
+# then clamped. Higher gain → the signal spends more time saturated at ±1 (frequent
+# full-height cliffs); the clamp makes ±1 a hard ceiling. Carries the sign, so as it
+# slides through 0 a left-cliff/right-drop becomes level becomes a right-cliff.
+func _camber(noise: FastNoiseLite, s: float) -> float:
+	return clampf(noise.get_noise_1d(s) * cliff_gain, -1.0, 1.0)
+
+
+# The cross-section shape as a function of perpendicular distance |d| from the
+# centerline: 0 under the road AND across the full feathered transition band (so the
+# shoulder isn't tilted and the cliff only begins where the road has met the grass),
+# rising 0→1 over cliff_run_m, then falling 1→0 over cliff_fade_m back to natural grade
+# (a localized berm/ditch, not an infinite shelf). 0 again past the influence radius R.
+static func _cliff_profile(d: float, inner: float, rise: float, outer: float) -> float:
+	if d <= inner or d >= outer:
+		return 0.0
+	if d < rise:
+		return smoothstep(inner, rise, d)
+	return 1.0 - smoothstep(rise, outer, d)
+
+
+# The hairpin-crook flatten weight in [0, 1] from the vertex's bearing wrap span: 0
+# while the road stays within a half-plane (span ≤ 180° — straights and the OUTSIDE
+# of bends keep their cliff), ramping to 1 over cliff_pinch_angle_deg as the road wraps
+# further around the vertex (inside crook / loop-back → flatten). Feathered so the
+# taper to flat is continuous (a boolean would trade the wedge seam for a step seam).
+func _contested_from_span(span_deg: float) -> float:
+	if cliff_pinch_angle_deg <= 0.0:
+		return 1.0 if span_deg > 180.0 else 0.0
+	return clampf((span_deg - 180.0) / cliff_pinch_angle_deg, 0.0, 1.0)
+
+
+# Circular bearing span in degrees from a bitmask of occupied buckets: 360° − the
+# largest run of consecutive EMPTY buckets (the biggest gap the road leaves around the
+# vertex). Order-independent (set union) and wrap-safe (unlike min/max of the angle).
+static func _bucket_span_deg(mask: int) -> float:
+	if mask == 0:
+		return 0.0
+	var max_empty := 0
+	var cur := 0
+	# Walk twice around the circle so a gap straddling bucket 0 is measured whole.
+	for i in CLIFF_BEARING_BUCKETS * 2:
+		if mask & (1 << (i % CLIFF_BEARING_BUCKETS)) == 0:
+			cur += 1
+			max_empty = maxi(max_empty, cur)
+		else:
+			cur = 0
+	# mask is non-empty, so at least one bucket is occupied and the empty run can never
+	# reach CLIFF_BEARING_BUCKETS (a full mask gives max_empty 0 → 360°) — no clamp needed.
+	return float(CLIFF_BEARING_BUCKETS - max_empty) * (360.0 / CLIFF_BEARING_BUCKETS)
+
+
+# Bake the signed cliff offset per vertex over a band ~R wide either side of the road.
+# One coarse centerline walk (CLIFF_SAMPLE_STEP_M): at each sample compute the camber,
+# and per stamped vertex keep the NEAREST sample's side·camber·profile plus a set of
+# occupied bearing buckets. After the walk, fold the wrap span into the contested
+# flatten and scale by the effective max height. Cleared + skipped when disabled or 0.
+func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float) -> void:
+	cliff_offsets = {}
+	if not cliff_enabled:
+		return
+	var eff_max := cliff_max_height_m * clampf(cliff_amount, 0.0, 1.0)
+	if eff_max <= 0.0:
+		return
+	var inner := width / 2.0 + transition_m   # cliff starts at the outer band edge
+	var rise := inner + cliff_run_m           # full ±1 here
+	var outer := rise + cliff_fade_m          # back to 0 here = influence radius R
+	var outer_sq := outer * outer             # reject the box corners without a sqrt
+	var reach := int(ceil(outer / CELL_M)) + 1
+	var camber_noise := _make_camber_noise()
+
+	var v_best: Dictionary = {}   # vertex -> nearest sample distance so far
+	var base: Dictionary = {}     # vertex -> side·camber·profile at the nearest sample
+	var buckets: Dictionary = {}  # vertex -> bitmask of occupied bearing buckets
+	var bucket_span := TAU / float(CLIFF_BEARING_BUCKETS)
+
+	var poly := centerline.tessellate()
+	var dist_m := 0.0
+	for i in range(1, poly.size()):
+		var a := poly[i - 1]
+		var b := poly[i]
+		var seg_len := a.distance_to(b)
+		if seg_len <= 0.0:
+			continue
+		var tangent := (b - a) / seg_len
+		var steps := maxi(int(ceil(seg_len / CLIFF_SAMPLE_STEP_M)), 1)
+		for sidx in steps + 1:
+			var t := float(sidx) / float(steps)
+			var p := a.lerp(b, t)
+			var camber := _camber(camber_noise, dist_m + t * seg_len)
+			var vbx := roundi(p.x / CELL_M)
+			var vbz := roundi(p.y / CELL_M)
+			for dz in range(-reach, reach + 1):
+				for dx in range(-reach, reach + 1):
+					var v := Vector2i(vbx + dx, vbz + dz)
+					var off := Vector2(v.x * CELL_M, v.y * CELL_M) - p
+					if off.length_squared() > outer_sq:   # corner reject before the sqrt
+						continue
+					var dv := off.length()
+					# Bearing bucket for the wrap test (vertex → sample direction).
+					if dv > 0.0001:
+						var ang := atan2(-off.y, -off.x) + PI   # 0..TAU
+						var bit := int(ang / bucket_span) % CLIFF_BEARING_BUCKETS
+						buckets[v] = int(buckets.get(v, 0)) | (1 << bit)
+					if not v_best.has(v) or dv < v_best[v]:
+						v_best[v] = dv
+						# side = sign of the tangent × offset cross product.
+						var cross := tangent.x * off.y - tangent.y * off.x
+						base[v] = signf(cross) * camber * _cliff_profile(dv, inner, rise, outer)
+		dist_m += seg_len
+
+	for v in base.keys():
+		var span := _bucket_span_deg(int(buckets.get(v, 0)))
+		var val: float = base[v] * (1.0 - _contested_from_span(span)) * eff_max
+		if absf(val) > 0.0001:
+			cliff_offsets[v] = val
 
 
 # Apply a track: bake the weighted height + road-blend fields from the centerline,

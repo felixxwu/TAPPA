@@ -715,7 +715,10 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	hq._freeze_lineup(hq._settle_generation)
 	for car in hq._cars:
 		assert_true(car.freeze, "settled cars are frozen at their pose")
-	# A stale freeze (old generation) must not touch a freshly-rebuilt lineup.
+	# A stale freeze (old generation) must not touch a freshly-rebuilt lineup. Clear the
+	# reuse cache first so this re-entry spawns FRESH (live-settling) cars rather than
+	# reusing the frozen ones — the cache-reuse path is covered by test_lineup_cache.
+	hq._car_cache.clear()
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)

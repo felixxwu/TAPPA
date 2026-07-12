@@ -36,6 +36,10 @@ const OBSTACLE_GROUP := "obstacle"
 # knobs are authored in (car.gd reads the body's velocity in m/s).
 const MPS_TO_KMH := 3.6
 
+# Gravity magnitude used to turn the config's braking-proof threshold (in g) into a
+# per-tick velocity floor (impact_threshold_g · g · dt). See register_deceleration.
+const GRAVITY_MPS2 := 9.81
+
 # The four wheel nodes, in a STABLE order — the index used to persist wheel_toe on
 # the OwnedCar (features/damage.md). Matches the VehicleWheel3D node names in
 # car.tscn; car.gd maps each entry to its node when it applies the bend.
@@ -51,14 +55,6 @@ var instance_id := -1
 # the physics alone. Persisted per car (Save), cleared only by a Repair Kit. See
 # features/damage.md.
 var wheel_toe: Dictionary = _zero_toe()
-# Seconds of impact immunity remaining after a damaging hit (impact_cooldown_s).
-# Ticked down by car.gd each physics frame (tick_cooldown). Groups one crash —
-# which contacts the chassis every tick while pinned — into a single hit.
-var _impact_cooldown := 0.0
-# Seconds of soft-hit immunity remaining after a bush/spectator graze. Tracked
-# separately from _impact_cooldown so a bush brush and a tree crash don't mask each
-# other. Ticked down by tick_cooldown alongside the impact window.
-var _soft_cooldown := 0.0
 
 
 # Field the model for a run: bind it to an OwnedCar (or -1 for free-roam), set the
@@ -68,15 +64,7 @@ func field(p_max_hp: float, p_hp: float, p_instance_id := -1, p_toe: Array = [])
 	max_hp = maxf(1.0, p_max_hp)
 	hp = clampf(p_hp, 0.0, max_hp)
 	instance_id = p_instance_id
-	_impact_cooldown = 0.0
-	_soft_cooldown = 0.0
 	set_toe_from_array(p_toe)
-
-
-# Decay the post-hit impact and soft-hit cooldowns. Called by car.gd each physics frame.
-func tick_cooldown(delta: float) -> void:
-	_impact_cooldown = maxf(0.0, _impact_cooldown - delta)
-	_soft_cooldown = maxf(0.0, _soft_cooldown - delta)
 
 
 # A fresh all-zero toe map (no wheel bent). Used as the default and by a repair.
@@ -113,7 +101,7 @@ func reset_wheel_toe() -> void:
 # scales with the hit's strength (hp_loss as a fraction of max HP) so a big crash
 # knocks the wheels harder; the direction is rolled PER WHEEL so they don't all bend
 # the same way and repeated hits can partly cancel (a wheel can end up near-straight
-# again). Each wheel is clamped to ±damage_wheel_toe_max. Called by register_impact.
+# again). Each wheel is clamped to ±damage_wheel_toe_max. Called by register_deceleration.
 func nudge_wheels(hp_loss: float, cfg: GameConfig) -> void:
 	if hp_loss <= 0.0 or max_hp <= 0.0:
 		return
@@ -147,60 +135,42 @@ func misfire_level(cfg: GameConfig) -> float:
 	return clampf((threshold - health) / threshold, 0.0, 1.0)
 
 
-# HP a contact at the given travel speed (m/s) costs: nothing up to
-# impact_min_speed_kmh, then a square-law (kinetic-energy) climb that reaches
-# impact_ref_hp_loss at impact_ref_speed_kmh. Working in km/h matches the config
-# knobs. Pure/static so the conversion is unit-testable.
+# HP a shed velocity (m/s) costs: a pure square-law (kinetic-energy) climb reaching
+# impact_ref_hp_loss at impact_ref_speed_kmh (working in km/h to match the config knobs;
+# above the reference it keeps climbing, capped by the caller). There is no low-speed
+# floor here — the braking-proof gate lives in register_deceleration (impact_threshold_g),
+# so this stays a clean v² curve, well-defined from zero. Pure/static, unit-testable.
 static func hp_loss_for_speed(speed_mps: float, cfg: GameConfig) -> float:
 	var v := speed_mps * MPS_TO_KMH
-	var lo := cfg.impact_min_speed_kmh
-	if v <= lo:
-		return 0.0
-	# Square law normalised so the loss is 0 at lo and impact_ref_hp_loss at the
-	# reference speed; above the reference it keeps climbing (capped by the caller).
-	var span := maxf(cfg.impact_ref_speed_kmh * cfg.impact_ref_speed_kmh - lo * lo, 1e-6)
-	return cfg.impact_ref_hp_loss * (v * v - lo * lo) / span
+	var ref := cfg.impact_ref_speed_kmh
+	return cfg.impact_ref_hp_loss * v * v / maxf(ref * ref, 1e-6)
 
 
-# Register an obstacle contact at the car's travel speed (m/s): convert it to HP
-# loss, apply it, and (when it actually costs HP) emit `damaged` for the HUD/audio
-# cue. Returns the HP lost.
-func register_impact(speed_mps: float, contact_point: Vector3, cfg: GameConfig) -> float:
-	# Within the post-hit cooldown the crash is still "in progress" — ignore it so a
-	# car pinned against a tree (which contacts every tick) loses HP once, not per frame.
-	# RE-ARM the window on each continuing contact so a SUSTAINED crash (grinding along
-	# a tree line, or jammed against one for several seconds) stays a single hit: the
-	# timer only starts counting down once the car breaks free of the obstacle. Without
-	# this re-arm the fixed window expires mid-crash and the car re-chips every
-	# impact_cooldown_s while still in contact.
-	if _impact_cooldown > 0.0:
-		_impact_cooldown = cfg.impact_cooldown_s
+# The UNIFIED damage entry point (features/damage.md): HP loss keyed to how much
+# velocity the car shed in ONE physics tick (`dv_mps`), whatever caused it — a tree,
+# a cliff wall, a nose-first drop, or the small drag impulse of a brushed bush/crowd.
+# `dt` is the physics step. Nothing below the braking-proof threshold
+# (impact_threshold_g · g · dt) costs HP, so ordinary braking (~1-1.5 g) is free;
+# above it the same square law as before scales the loss (for a full solid arrest
+# dv ≈ approach speed, so the existing tuning carries over). Capped per hit so no one
+# crash wrecks the car. NO cooldown: a pinned car sheds ~0 velocity/tick so grinding
+# self-limits, while a real multi-bounce tumble racks up several capped hits. Returns
+# the HP lost.
+func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg: GameConfig) -> float:
+	if dt <= 0.0:
 		return 0.0
-	var loss := hp_loss_for_speed(speed_mps, cfg)
+	var floor_mps := cfg.impact_threshold_g * GRAVITY_MPS2 * dt
+	if dv_mps <= floor_mps:
+		return 0.0
+	var loss := hp_loss_for_speed(dv_mps, cfg)
 	if loss <= 0.0:
 		return 0.0
 	# Cap a single hit so no one crash can wreck the car (survive 2-3 big hits).
 	loss = minf(loss, max_hp * cfg.impact_max_loss_frac)
-	_impact_cooldown = cfg.impact_cooldown_s
 	nudge_wheels(loss, cfg)
 	apply_loss(loss)
 	damaged.emit(loss, contact_point)
 	return loss
-
-
-# Register a SOFT contact — a bush graze or a knocked spectator — as a FLAT HP loss
-# (not the speed square-law of register_impact): the drag/scuff of brushing something
-# soft, not a solid-obstacle crash. Guarded by a separate soft-hit cooldown so one
-# continuous contact (sitting in a bush, mowing a tight crowd) counts once, then
-# re-arms. Emits `damaged` for the HUD/audio cue and can wreck the car at 0 HP, just
-# like an impact. Returns the HP actually lost (0 if on cooldown or hp_loss <= 0).
-func register_soft_hit(hp_loss: float, contact_point: Vector3, cooldown_s: float) -> float:
-	if _soft_cooldown > 0.0 or hp_loss <= 0.0:
-		return 0.0
-	_soft_cooldown = maxf(0.0, cooldown_s)
-	apply_loss(hp_loss)
-	damaged.emit(hp_loss, contact_point)
-	return hp_loss
 
 
 # Drain HP by `amount`, wrecking the car if it hits 0.

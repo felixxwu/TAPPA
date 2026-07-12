@@ -414,25 +414,30 @@ var peak_torque_rpm := 4500.0
 # Damage is keyed to the SPEED the car was travelling at when it hit something:
 # nothing at a crawl, then a square-law (kinetic-energy) climb so a moderate-speed
 # crash hurts far more than a low-speed nudge. See DamageModel.hp_loss_for_speed.
-## Impact speed (km/h) below which a hit costs no HP — at a crawl the car just
-## leans on obstacles, so low-speed bumps and parking nudges never chip it.
-@export_range(0.0, 60.0) var impact_min_speed_kmh := 10.0
-## Reference impact speed (km/h) at which a hit costs impact_ref_hp_loss. HP loss
-## grows with the SQUARE of speed (kinetic energy) from impact_min_speed_kmh up to
-## here, so a 20 km/h tap barely scratches while a moderate crash bites.
+# Damage is UNIFIED on deceleration (features/damage.md): HP loss is keyed to how much
+# velocity the car sheds in one physics tick, whatever caused it. A crash arrests the
+# body in a single tick (tens of g); braking and clean landings stay under the
+# braking-proof threshold below. See DamageModel.register_deceleration.
+## Deceleration (in g) a single physics tick must exceed before it costs any HP. Tyres
+## and brakes cap real deceleration at ~1-1.5 g, so ~2 keeps hard braking and clean
+## wheel-landings free while any solid crash (tens of g) clears it easily; the small
+## drag impulse of a brushed bush/crowd just tips over it for a light chip. Raise it if
+## hard landings feel too twitchy. This is the single sensitivity knob.
+@export_range(0.5, 20.0) var impact_threshold_g := 2.0
+## Reference impact speed (km/h) — the velocity shed at which a hit costs
+## impact_ref_hp_loss. HP loss grows with the SQUARE of the shed velocity (kinetic
+## energy) up to here. For a full solid arrest the shed velocity ≈ the approach speed,
+## so this maps to a real-world crash speed.
 @export_range(1.0, 200.0) var impact_ref_speed_kmh := 60.0
 ## HP a reference-speed (impact_ref_speed_kmh) hit costs. With per-car max HP of
 ## ~800-1100, ~200 means most cars survive 4-5 such moderate hits; the square law
 ## then makes a 20 km/h hit cost only a small fraction of this (barely any damage).
 @export_range(0.0, 2000.0) var impact_ref_hp_loss := 200.0
-## Cap on the HP a SINGLE impact can cost, as a fraction of max HP — so no one
-## high-speed crash can wreck the car outright (it still survives a couple).
+## Cap on the HP a SINGLE tick's deceleration can cost, as a fraction of max HP — so no
+## one crash wrecks the car outright (it survives a couple). A pinned car sheds ~0
+## velocity/tick so grinding self-limits; a real multi-bounce tumble racks up several
+## capped hits, so a long fall down a drop can still wreck.
 @export_range(0.0, 1.0) var impact_max_loss_frac := 0.34
-## After a damaging hit, ignore further impacts for this long (s). The window re-arms
-## on each continuing obstacle contact, so it only starts counting down once the car
-## breaks free — a sustained crash (pinned against / grinding through obstacles for
-## seconds) stays ONE hit, not 30 per tick nor a fresh hit every cooldown.
-@export_range(0.0, 5.0) var impact_cooldown_s := 0.7
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
 ## power in stumbling bursts instead of a smooth derate — fully simulated (crank
 ## torque drops to friction) and audible (the synth ducks + crackles on the cut).
@@ -463,31 +468,29 @@ var peak_torque_rpm := 4500.0
 ## Per-wheel clamp on accumulated toe (radians) — a wheel can't bend past this no
 ## matter how many hits it takes, so a heavily-crashed car stays (barely) drivable.
 @export_range(0.0, 0.5) var damage_wheel_toe_max := 0.14
-## Soft contacts (bushes, spectators) that are NOT solid-obstacle impacts: a flat HP
-## loss per contact (DamageModel.register_soft_hit), independent of the speed square
-## law, guarded by their own short cooldown so one continuous graze counts once.
-## Bushes stay pass-through (a per-tick proximity check, not a solid collider) — see
-## BushField / features/damage.md.
-## Flat HP a single bush graze costs (small — bushes just scuff the car).
-@export_range(0.0, 500.0) var bush_hp_loss := 12.0
+## Soft contacts (bushes, spectators) are NOT solid-obstacle impacts: they stay
+## pass-through (a per-tick proximity check, not a solid collider), but instead of a
+## flat HP loss they now apply a small speed-scaled DRAG IMPULSE to the car — the
+## resulting deceleration then feeds the unified damage rule for a light chip. See
+## BushField / SpectatorGroup / features/damage.md.
+## Fraction of the car's horizontal speed a single bush graze sheds (small — bushes
+## just scuff you). Tuned so it clears impact_threshold_g for a minor HP chip.
+@export_range(0.0, 0.5) var bush_drag_strength := 0.04
 ## Yaw drag-torque coefficient a bush applies as it snags a corner of the car: the
 ## angular impulse is this times the car's speed (m/s) times sin(angle to the bush),
 ## so faster grazes tug harder and a head-on brush barely twists. Sign swings the
 ## nose toward the bush (the snagged corner drags back).
-@export_range(0.0, 500.0) var bush_drag_torque := 60.0
+@export_range(0.0, 500.0) var bush_drag_torque := 200.0
 ## Below this speed (km/h) a bush neither damages nor tugs the car — a parked car
 ## sitting in a bush isn't dragged.
 @export_range(0.0, 60.0) var bush_min_speed_kmh := 8.0
 ## Bush interaction radius as a fraction of the bush mesh's visual XZ radius (<1 gives
 ## the player leeway to clip the visible edge without being penalised).
 @export_range(0.1, 1.0) var bush_hit_radius_frac := 0.8
-## Soft-hit cooldown (s), shared by bush grazes and spectator hits: after any soft
-## contact the next one is ignored until this window elapses, so sitting in a bush or
-## mowing a tight crowd counts as one hit, not one per member/tick.
-@export_range(0.0, 5.0) var soft_hit_cooldown_s := 0.5
-## Flat HP a spectator hit costs (a bit more than a bush — you shouldn't mow the
-## crowd for free). Applied when a member is knocked over.
-@export_range(0.0, 500.0) var spectator_hp_loss := 30.0
+## Fraction of the car's horizontal speed knocking a spectator sheds (a bit more than a
+## bush — you shouldn't mow the crowd for free). The resulting deceleration feeds the
+## unified damage rule; grouping is natural (a stopped car sheds ~0/tick).
+@export_range(0.0, 0.5) var spectator_drag_strength := 0.08
 ## Show the in-run HP gauge (mirrors hud_enabled).
 @export var hud_hp_enabled := true
 ## HP fraction below which the gauge flashes a low-HP warning.
@@ -497,6 +500,27 @@ var peak_torque_rpm := 4500.0
 ## start-line orbit knobs). This caps how long (s) we wait for the wreck to settle
 ## before showing the menu, in case the car never fully comes to rest.
 @export_range(0.0, 10.0) var wreck_settle_max_seconds := 4.0
+
+@export_group("Recovery")
+# Automatic stuck-car recovery (features/progress.md): with big cliffs/drops a car can
+# get trapped INSIDE the lateral reset leash (nose-down in a pit, flipped, or pinned).
+# TrackProgress runs a watchdog that teleports it back to the last on-road pose (free —
+# no penalty) once it's been stationary and unable to self-recover for a short while.
+## Master toggle for the stuck watchdog. Off ⇒ only the lateral off-track reset runs.
+@export var recovery_enabled := true
+## Seconds the car must stay stuck (stationary + can't self-recover) before the
+## auto-reset fires. Long enough not to interrupt a brief scrabble out of trouble.
+@export_range(0.5, 15.0) var recovery_timeout_s := 3.0
+## Speed (m/s) below which the car counts as "not moving" for the watchdog. While it's
+## still moving (driving, falling, sliding) the stuck timer stays at zero.
+@export_range(0.0, 5.0) var recovery_speed_mps := 0.7
+## Metres below the road surface (at the car's progress point) that count as "fallen
+## into a pit it can't climb out of" — a drop deeper than this auto-recovers even with
+## no throttle input.
+@export_range(0.5, 30.0) var recovery_depth_m := 3.0
+## The car's up-vector · world-up below which it counts as flipped (rolled onto its
+## side/roof). 0.3 ≈ tipped more than ~70° from upright.
+@export_range(0.0, 1.0) var recovery_upright_dot := 0.3
 
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).
@@ -857,6 +881,35 @@ var peak_torque_rpm := 4500.0
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
 
+@export_group("Cliffs")
+## Master toggle for track-side cliffs & drops (features/terrain.md). Off ⇒ the
+## terrain bake skips the cliff pass entirely (identity behaviour, zero cost).
+@export var cliff_enabled := true
+## Along-track period, in metres, of the 1-D camber noise that drives the cliffs —
+## how quickly a cliff swaps sides. GLOBAL (same for every event); only the height
+## is scaled per event (cliff_amount / RallyLibrary.event_cliffiness).
+@export_range(5.0, 500.0) var cliff_wavelength_m := 100.0
+## Scales the raw camber noise before the [-1, 1] clamp. Higher ⇒ the signal spends
+## more time saturated at ±1 (frequent full-height cliffs); lower ⇒ mostly gentle.
+@export_range(0.1, 5.0) var cliff_gain := 1.6
+## Global height ceiling, in metres: the cliff height (and equal drop depth) at
+## |camber| = 1 for a maximally cliffy event (cliffiness = 1). Scaled down per event
+## by cliff_amount.
+@export_range(0.0, 40.0) var cliff_max_height_m := 12.0
+## Horizontal run, in metres, from the road-edge band out to full height. Small ⇒
+## steep near-walls; large ⇒ gentle banks. (Heightfield terrain → no true overhangs.)
+@export_range(0.5, 40.0) var cliff_run_m := 2.0
+## Horizontal run, in metres, from full height back to natural grade, so the feature
+## is a localized berm/ditch that returns to grade (no backdrop seam), not a shelf.
+@export_range(0.5, 40.0) var cliff_fade_m := 30.0
+## Bearing-span band, in degrees past 180°, over which a vertex the road wraps around
+## (a hairpin crook) tapers to flat. Larger = gentler taper into the crook.
+@export_range(0.0, 180.0) var cliff_pinch_angle_deg := 45.0
+## Runtime per-event scale on cliff_max_height_m, in [0, 1]. Written by RallySession
+## from the event's cliffiness; the value shipped here is only the fallback for
+## standalone/editor main.tscn runs.
+@export_range(0.0, 1.0) var cliff_amount := 1.0
+
 @export_group("Road Markings")
 ## Painted lane lines (two solid edge lines + a dashed centre line) laid along the
 ## TARMAC sections of the track so tarmac reads as tarmac (gravel stays bare). A
@@ -1013,6 +1066,16 @@ var peak_torque_rpm := 4500.0
 @export_range(0.05, 5.0) var tree_collision_radius_m := 0.5
 ## Height (m) of each tree's box hitbox.
 @export_range(0.5, 20.0) var tree_collision_height_m := 4.0
+## Approach speed (km/h) at or above which crashing into a tree topples it and
+## removes its hitbox. The car still comes to a stop against the tree as it does
+## today; the tree then falls over and stops colliding, so you can drive on
+## through where it stood. Below this speed a tree stays a solid obstacle. Felling is
+## now decoupled from damage (damage is keyed to deceleration, not the contact), so this
+## only governs when a tree tips over, independent of HP. 0 disables felling.
+@export_range(0.0, 200.0) var tree_fell_speed_kmh := 45.0
+## Seconds a felled tree takes to tilt from upright to flat on the ground. Purely
+## a look value (the hitbox is gone the instant it's felled).
+@export_range(0.1, 5.0) var tree_fell_duration_s := 2
 ## Distance (m) past which trees are fully culled. Defaults near the loaded
 ## terrain extent (RADIUS=1, CHUNK_M=50 -> ~75 m).
 @export_range(10.0, 500.0) var tree_render_distance_m := 80.0
@@ -1272,6 +1335,21 @@ func apply_terrain_light(tm: TerrainManager) -> void:
 	tm.ground_color = ground_color
 
 
+# Push the Cliffs group onto the terrain manager before bake_track (mirrors
+# apply_terrain_light). cliff_seed derives the camber noise from the stage's
+# track_seed so the whole stage is one deterministic function of the seed.
+func apply_cliffs(tm: TerrainManager) -> void:
+	tm.cliff_enabled = cliff_enabled
+	tm.cliff_wavelength_m = cliff_wavelength_m
+	tm.cliff_gain = cliff_gain
+	tm.cliff_max_height_m = cliff_max_height_m
+	tm.cliff_run_m = cliff_run_m
+	tm.cliff_fade_m = cliff_fade_m
+	tm.cliff_pinch_angle_deg = cliff_pinch_angle_deg
+	tm.cliff_amount = cliff_amount
+	tm.cliff_seed = track_seed
+
+
 # The scalar tree-scatter knobs packed into the Dictionary TreeScatter.scatter
 # expects. tree_size_m is rendering-only and passed separately to BillboardField.
 func tree_params() -> Dictionary:
@@ -1351,8 +1429,7 @@ func spectator_params() -> Dictionary:
 		"knock_spin": spectator_knock_spin,
 		"ragdoll_mass_kg": spectator_ragdoll_mass_kg,
 		"despawn_behind_m": spectator_despawn_behind_m,
-		"hp_loss": spectator_hp_loss,
-		"soft_hit_cooldown_s": soft_hit_cooldown_s,
+		"drag_strength": spectator_drag_strength,
 		"ragdoll_layer": 1 << 4,
 		"ragdoll_mask": 1,
 		"seed": 0,

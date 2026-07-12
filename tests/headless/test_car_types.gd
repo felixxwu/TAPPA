@@ -104,6 +104,37 @@ func test_apply_car_on_a_second_instance_does_not_resize_the_first(
 			"%s: %s physics radius keeps its own value" % [first_spec["name"], wheel.name])
 
 
+# Regression for a bug where a charger-swapped Acty in a rally collided at the
+# Charger's hitbox size: car.tscn's chassis collision BoxShape3D (shape_chassis)
+# is a shared sub-resource across ALL car.tscn instances, and _apply_body_meshes
+# resizes it in place. start_line.gd's queue spawns extra car instances and calls
+# apply_car on THEM too, after the player's car was already sized — stomping the
+# player's HITBOX to the last-applied car's dimensions (the meshes are isolated,
+# so it still LOOKED right). car.gd._ready() now gives every instance its own
+# shape copy; simulate the queue (two instances, two distinct bodies) and assert
+# the first keeps ITS OWN collision box, not the second's.
+func test_apply_body_on_a_second_instance_does_not_resize_the_first_hitbox(
+		) -> void:
+	var first := _car
+	var second: Node = load("res://car.tscn").instantiate()
+	add_child_autofree(second)
+
+	# Synthetic specs (not catalogue entries) with deliberately distinct bodies,
+	# so the assertion can't pass by accident on two same-sized cars.
+	var small := {"body": Vector3(1.4, 0.7, 3.3), "cabin": Vector3(1.2, 0.5, 1.6), "cabin_z": 0.0}
+	var large := {"body": Vector3(1.9, 0.55, 5.3), "cabin": Vector3(1.6, 0.5, 2.4), "cabin_z": 0.0}
+
+	first._apply_body_meshes(small)
+	# The queue prop applies its (larger) body AFTER the player is already sized.
+	second._apply_body_meshes(large)
+
+	var first_box := (first.get_node("CollisionShape3D").shape as BoxShape3D)
+	var expected := Vector3(small["body"].x, small["body"].y - 0.3, small["body"].z)
+	assert_true(first_box.size.is_equal_approx(expected),
+		"first car's hitbox keeps its own size (%s) after a second car is sized (%s)"
+			% [expected, first_box.size])
+
+
 func test_every_car_sits_on_the_ground() -> void:
 	for i in CarLibrary.CARS.size():
 		var spec: Dictionary = CarLibrary.CARS[i]

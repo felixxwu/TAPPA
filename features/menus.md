@@ -386,7 +386,17 @@ stream finishes. The props **drop in live**
 `menu_car_settle_seconds` (both the per-frame stream and the freeze are guarded by the
 same `_settle_generation` id so re-entering the lot — or backing out — abandons a
 half-spawned lineup and cancels a stale freeze) — so a full car park costs nothing to
-keep parked. `◄ ►` (or
+keep parked. Re-entry is also cheap: a **reuse cache** (`_car_cache`, keyed by the
+owned car's `instance_id` → the built node + a deep `owned.hash()`) means
+`_build_lineup` **rebuilds only the cars whose data actually changed** — an unchanged
+car is shown at its new bay from the cache with no re-instance, mesh duplication, or
+settle (`_obtain_parked_car`), so an unchanged re-entry parks instantly and only a
+freshly-built car pays the per-frame stream + settle. `_clear_lineup` **hides + detaches**
+the parked cars instead of freeing them (they stay parented to HQ, frozen at their
+settled pose); the cache is shared across the car-select, title, and overflow lineups
+(all build from the same owned cars), **evicts** entries for cars the player has sold
+(`_evict_unowned_cached_cars`, run each build), and is freed wholesale with the HQ node
+on exit-to-race. `◄ ►` (or
 `menu_left`/`menu_right`) move the focus and the camera eases to a **front 3/4 hero
 shot from in front of the car** (`menu_camera_offset` is added in world space; +Z sits
 the eye ahead of the nose-out car, looking back past it at the garage) over

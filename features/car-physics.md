@@ -17,6 +17,23 @@ reset feature, and delegates wheel/engine simulation to `Drivetrain`.
 - `_reset()` — restores `_start_transform`, zeroes linear/angular velocity, and
   resets the drivetrain/engine. Bound to **R**.
 
+### Per-instance resource isolation
+
+`car.tscn` authors the chassis/cabin boxes, the wheel tyre/spoke meshes, and the
+chassis **collision `BoxShape3D`** as `[sub_resource]`s. Godot shares one copy of a
+sub-resource across **every instance** of the scene, and `apply_car()` resizes these
+in place per car (`_apply_body_meshes` / `_relocate_wheels`). So without isolation, a
+second live car — the [start-line](start-line.md) queue leader/trailer, spawned and
+`apply_car`'d **after** the player is already sized — reshapes the shared resource and
+the change bleeds back onto the player: wrong wheel visuals, or (the subtler one) the
+player's **hitbox** taking the last-applied car's body size while the meshes still look
+right. `car.gd._ready()` defends against this by giving each instance its own copies up
+front (`.duplicate()` of the Chassis/Cabin meshes, each wheel's tyre/spoke mesh, and
+the collision shape) before any `apply_car` can run. Any *new* shared sub-resource that
+`apply_car` mutates must be added to that list, or it will silently leak across
+instances — this class of bug has bitten wheels and the hitbox already
+(`tests/headless/test_car_types.gd` has a regression for each).
+
 ## Per-step loop (`_physics_process`)
 
 1. **Mode inputs:** `toggle_gearbox` (T) flips `engine.auto`; `cycle_drive_mode`

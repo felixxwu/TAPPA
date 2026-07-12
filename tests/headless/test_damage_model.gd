@@ -37,13 +37,12 @@ func _mps(kmh: float) -> float:
 	return kmh / DamageModel.MPS_TO_KMH
 
 
-func test_low_speed_below_threshold_costs_nothing() -> void:
+func test_hp_loss_is_zero_at_rest_and_positive_above() -> void:
+	# hp_loss_for_speed is a pure v² curve from zero (no low-speed floor — the
+	# braking-proof gate lives in register_deceleration, tested separately).
 	var cfg: GameConfig = Config.data
-	assert_eq(DamageModel.hp_loss_for_speed(0.0, cfg), 0.0, "stationary, no loss")
-	assert_eq(DamageModel.hp_loss_for_speed(_mps(cfg.impact_min_speed_kmh), cfg), 0.0,
-		"a hit exactly at the threshold speed still costs nothing")
-	assert_eq(DamageModel.hp_loss_for_speed(_mps(cfg.impact_min_speed_kmh - 1.0), cfg), 0.0,
-		"a crawl below the threshold speed costs nothing")
+	assert_eq(DamageModel.hp_loss_for_speed(0.0, cfg), 0.0, "no shed velocity, no loss")
+	assert_gt(DamageModel.hp_loss_for_speed(_mps(5.0), cfg), 0.0, "any real shed velocity costs some HP")
 
 
 func test_hp_loss_grows_with_square_of_speed() -> void:
@@ -59,9 +58,28 @@ func test_hp_loss_grows_with_square_of_speed() -> void:
 	assert_gt(fast, slow, "faster hits always cost more")
 
 
-# The behaviour the design calls for: a ~60 km/h hit lets most cars (max HP
-# 800-1100) survive ~3 hits, while a ~20 km/h hit barely scratches them.
-func test_register_impact_reduces_hp_and_emits_damaged() -> void:
+# --- Unified deceleration damage ---------------------------------------------
+
+const DT := 1.0 / 60.0
+
+
+# The shed-velocity (m/s) whose per-tick deceleration is `g` gravities.
+func _dv_at_g(g: float) -> float:
+	return g * DamageModel.GRAVITY_MPS2 * DT
+
+
+func test_below_threshold_g_costs_nothing() -> void:
+	# Hard braking (~1 g) is a real deceleration but stays under the ~2 g threshold, so
+	# it never chips HP — the whole point of keying damage to sudden deceleration.
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	assert_eq(dm.register_deceleration(_dv_at_g(1.0), DT, Vector3.ZERO, cfg), 0.0,
+		"a braking-magnitude deceleration costs nothing")
+	assert_almost_eq(dm.hp, 1000.0, 1e-6, "HP unchanged below threshold")
+
+
+func test_above_threshold_costs_hp_and_emits() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
@@ -70,138 +88,82 @@ func test_register_impact_reduces_hp_and_emits_damaged() -> void:
 		got["loss"] = loss
 		got["point"] = point
 		got["count"] += 1)
-	var speed := _mps(cfg.impact_ref_speed_kmh)
+	# A full arrest at the reference speed sheds ref_speed of velocity in one tick.
+	var dv := _mps(cfg.impact_ref_speed_kmh)
 	var expected := cfg.impact_ref_hp_loss  # below the per-hit cap for a 1000 HP car
-	var hit_loss := dm.register_impact(speed, Vector3(1, 2, 3), cfg)
-	assert_almost_eq(hit_loss, expected, 1e-3, "register_impact returns the HP lost")
+	var loss := dm.register_deceleration(dv, DT, Vector3(1, 2, 3), cfg)
+	assert_almost_eq(loss, expected, 1e-3, "register_deceleration returns the HP lost")
 	assert_almost_eq(dm.hp, 1000.0 - expected, 1e-3, "HP drained by the loss")
 	assert_almost_eq(got["loss"], expected, 1e-3, "damaged carries the loss")
 	assert_eq(got["point"], Vector3(1, 2, 3), "damaged carries the contact point")
-	# A below-threshold hit costs nothing and does NOT emit. (The earlier hit started
-	# a cooldown, but a crawl would cost nothing regardless.)
-	got["count"] = 0
-	assert_eq(dm.register_impact(_mps(1.0), Vector3.ZERO, cfg), 0.0, "low-speed nudge costs nothing")
-	assert_eq(got["count"], 0, "no damaged signal for a no-cost hit")
+	assert_eq(got["count"], 1, "damaged emitted once")
 
 
-func test_single_impact_is_capped_and_cannot_wreck() -> void:
+func test_full_arrest_matches_capped_square_law() -> void:
+	# Continuity with the old speed-keyed model: a full solid arrest deals the same HP
+	# as the (capped) square law for that shed velocity — so the existing tuning carries.
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	var dv := _mps(cfg.impact_ref_speed_kmh)
+	var expected := minf(DamageModel.hp_loss_for_speed(dv, cfg), 1000.0 * cfg.impact_max_loss_frac)
+	assert_almost_eq(dm.register_deceleration(dv, DT, Vector3.ZERO, cfg), expected, 1e-3,
+		"deceleration damage == capped square law for the shed velocity")
+
+
+func test_single_spike_is_capped_and_cannot_wreck() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	# A colossal single impact (huge speed) is capped to a fraction of max HP, so it can't wreck.
-	var loss := dm.register_impact(_mps(1.0e6), Vector3.ZERO, cfg)
+	# A colossal single spike is capped to a fraction of max HP, so it can't wreck.
+	var loss := dm.register_deceleration(1.0e6, DT, Vector3.ZERO, cfg)
 	assert_almost_eq(loss, 1000.0 * cfg.impact_max_loss_frac, 1e-3,
-		"a single impact is capped to impact_max_loss_frac of max HP")
+		"a single spike is capped to impact_max_loss_frac of max HP")
 	assert_gt(dm.hp, 0.0, "one crash cannot wreck the car")
 	assert_eq(wrecks["n"], 0, "no wreck from a single hit")
 
 
-func test_cooldown_groups_a_crash_and_it_takes_several_hits_to_wreck() -> void:
+func test_stopped_car_self_limits_without_a_cooldown() -> void:
+	# No cooldown: once the car is stopped it sheds ~0 velocity/tick, so grinding against
+	# a wall costs nothing more on its own — the physics self-limits without a timer.
+	var cfg: GameConfig = Config.data
+	var dm := DamageModel.new()
+	dm.field(1000.0, 1000.0)
+	dm.register_deceleration(1.0e6, DT, Vector3.ZERO, cfg)
+	var after_one := dm.hp
+	for _i in 200:
+		dm.register_deceleration(0.0, DT, Vector3.ZERO, cfg)  # pinned/stopped: no Δv
+	assert_almost_eq(dm.hp, after_one, 1e-6, "a stopped car takes no further damage")
+
+
+func test_repeated_spikes_accumulate_and_wreck() -> void:
+	# A real multi-bounce tumble is several genuine Δv spikes; with no cooldown each
+	# capped hit lands, so enough of them wreck the car (tall drops are dangerous).
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	var big := _mps(1.0e6)  # huge speed -> capped per-hit loss
-	dm.register_impact(big, Vector3.ZERO, cfg)
-	var after_one := dm.hp
-	# A second impact during the cooldown (same crash, next tick) is ignored.
-	dm.register_impact(big, Vector3.ZERO, cfg)
-	assert_almost_eq(dm.hp, after_one, 1e-5, "impacts during the cooldown count as one hit")
-	# Separated big hits eventually wreck it, each one grouped as a distinct hit.
-	var hits := 1
-	while dm.hp > 0.0 and hits < 10:
-		dm.tick_cooldown(cfg.impact_cooldown_s)  # let the cooldown expire
-		dm.register_impact(big, Vector3.ZERO, cfg)
+	var hits := 0
+	while dm.hp > 0.0 and hits < 20:
+		dm.register_deceleration(1.0e6, DT, Vector3.ZERO, cfg)
 		hits += 1
-	assert_lt(hits, 10, "separated hits do eventually wreck the car")
+	assert_lt(hits, 20, "repeated capped spikes eventually wreck the car")
 	assert_eq(wrecks["n"], 1, "wrecked exactly once, on the final hit")
 
 
-func test_sustained_contact_stays_one_hit() -> void:
-	# Staying jammed against an obstacle reports a contact EVERY physics tick. The
-	# cooldown re-arms on each continuing contact, so a multi-second grind/pin counts
-	# as ONE hit, not a fresh hit every impact_cooldown_s. Mirrors car.gd's per-tick
-	# tick_cooldown(delta) + register_impact() loop while in contact.
+func test_soft_drag_deceleration_deals_small_damage() -> void:
+	# A soft contact (bush/crowd) sheds a small slice of speed; that deceleration must
+	# clear the threshold for a SMALL chip — not zero, not a full crash.
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
-	var big := _mps(1.0e6)
-	dm.register_impact(big, Vector3.ZERO, cfg)
-	var after_one := dm.hp
-	var dt := 1.0 / 60.0
-	# ~3 s of continuous contact — well past the 0.7 s window, so the old fixed
-	# cooldown would have expired and re-chipped several times.
-	for _i in int(3.0 / dt):
-		dm.tick_cooldown(dt)
-		dm.register_impact(big, Vector3.ZERO, cfg)
-	assert_almost_eq(dm.hp, after_one, 1e-5,
-		"a multi-second sustained crash still costs only one hit")
-
-
-# --- Soft hits (bushes / spectators) -----------------------------------------
-
-func test_soft_hit_applies_flat_loss_and_emits() -> void:
-	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0)
-	var got := {"loss": -1.0, "point": Vector3.ZERO, "count": 0}
-	dm.damaged.connect(func(loss: float, point: Vector3) -> void:
-		got["loss"] = loss
-		got["point"] = point
-		got["count"] += 1)
-	var lost := dm.register_soft_hit(12.0, Vector3(4, 5, 6), 0.5)
-	assert_almost_eq(lost, 12.0, 1e-6, "soft hit returns the flat HP lost (no speed law)")
-	assert_almost_eq(dm.hp, 988.0, 1e-6, "HP drained by the flat loss")
-	assert_almost_eq(got["loss"], 12.0, 1e-6, "damaged carries the flat loss")
-	assert_eq(got["point"], Vector3(4, 5, 6), "damaged carries the contact point")
-	assert_eq(got["count"], 1, "damaged emitted once")
-
-
-func test_soft_hit_cooldown_groups_repeated_contacts() -> void:
-	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0)
-	assert_almost_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 12.0, 1e-6, "first graze lands")
-	assert_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 0.0,
-		"a second graze inside the cooldown costs nothing")
-	assert_almost_eq(dm.hp, 988.0, 1e-6, "only one graze drained HP")
-	dm.tick_cooldown(0.5)  # window elapses
-	assert_almost_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 12.0, 1e-6,
-		"a graze after the cooldown lands again")
-
-
-func test_soft_hit_cooldown_is_separate_from_impact() -> void:
-	# A tree impact must not mask a following bush graze (and vice versa) — the two
-	# cooldowns are independent.
-	var cfg: GameConfig = Config.data
-	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0)
-	dm.register_impact(_mps(cfg.impact_ref_speed_kmh), Vector3.ZERO, cfg)  # arms impact cooldown
-	var after_impact := dm.hp
-	assert_almost_eq(dm.register_soft_hit(12.0, Vector3.ZERO, 0.5), 12.0, 1e-6,
-		"a bush graze still lands during an impact cooldown")
-	assert_almost_eq(dm.hp, after_impact - 12.0, 1e-6, "the graze drained HP on top of the impact")
-
-
-func test_soft_hit_can_wreck_at_zero_hp() -> void:
-	var dm := DamageModel.new()
-	dm.field(1000.0, 20.0)
-	var wrecks := {"n": 0}
-	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	dm.register_soft_hit(30.0, Vector3.ZERO, 0.5)
-	assert_eq(dm.hp, 0.0, "a soft hit that overruns remaining HP floors it at 0")
-	assert_eq(wrecks["n"], 1, "and wrecks the car, like an impact")
-
-
-func test_soft_hit_zero_loss_does_nothing() -> void:
-	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0)
-	var got := {"count": 0}
-	dm.damaged.connect(func(_l: float, _p: Vector3) -> void: got["count"] += 1)
-	assert_eq(dm.register_soft_hit(0.0, Vector3.ZERO, 0.5), 0.0, "a zero-loss soft hit costs nothing")
-	assert_eq(got["count"], 0, "no damaged signal for a zero-loss hit")
-	assert_almost_eq(dm.hp, 1000.0, 1e-6, "HP unchanged")
+	# ~0.9 m/s shed in a tick (a graze at speed) is well over the ~2 g floor.
+	var loss := dm.register_deceleration(0.9, DT, Vector3.ZERO, cfg)
+	assert_gt(loss, 0.0, "a soft graze's deceleration costs a little HP")
+	assert_lt(loss, cfg.impact_ref_hp_loss * 0.25, "but far less than a real crash")
 
 
 # --- Damage fraction (drives the engine misfire) -----------------------------
@@ -289,12 +251,12 @@ func test_reset_wheel_toe_straightens() -> void:
 	assert_eq(dm.toe_array(), [0.0, 0.0, 0.0, 0.0], "a repair straightens every wheel")
 
 
-func test_register_impact_bends_wheels() -> void:
+func test_deceleration_bends_wheels() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
-	# A fast solid impact both costs HP and bends the wheels.
-	var loss := dm.register_impact(30.0, Vector3.ZERO, cfg)
+	# A fast deceleration both costs HP and bends the wheels.
+	var loss := dm.register_deceleration(30.0, DT, Vector3.ZERO, cfg)
 	assert_gt(loss, 0.0, "the hit cost HP")
 	var any_bent := false
 	for a in dm.toe_array():
@@ -344,7 +306,7 @@ func test_every_car_takes_damage_and_can_wreck() -> void:
 	dm.field(800.0, 800.0)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	assert_gt(dm.register_impact(100000.0, Vector3.ZERO, cfg), 0.0, "a hard impact costs HP")
+	assert_gt(dm.register_deceleration(100000.0, DT, Vector3.ZERO, cfg), 0.0, "a hard impact costs HP")
 	assert_lt(dm.hp, 800.0, "HP falls after an impact")
 	dm.apply_loss(100000.0)
 	assert_eq(dm.hp, 0.0, "lethal damage floors HP at 0")

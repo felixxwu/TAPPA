@@ -32,10 +32,11 @@ arrays (`_pos`, `_vel`, `_home`, `_yaw`, `_upright`) plus one `MultiMesh` for
 rendering. So 50+ spectators cost almost nothing and never touch the vehicle
 solver: no `MAX_CONTACTS_REPORTED` pressure, and they are **not** in
 `DamageModel.OBSTACLE_GROUP` (they never block or bog the car — people aren't trees).
-Hitting one is not free, though: knocking a member over deals the car a flat
-`spectator_hp_loss` **soft hit** (`DamageModel.register_soft_hit`, a bit more than a
-bush graze — see [damage.md](damage.md) → "Soft contacts"), grouped by the shared
-`soft_hit_cooldown_s` so mowing a dense line is one hit, not one per member.
+Hitting one is not free, though: knocking a member over applies a small speed-scaled
+**soft drag** to the car (`car.apply_soft_drag(spectator_drag_strength)`, a bit more
+than a bush — see [damage.md](damage.md) → "Soft contacts"). The resulting
+deceleration feeds the unified damage rule for a light HP chip; grouping is natural (a
+slowing car sheds ~0 more per member), so mowing a dense line doesn't wildly over-count.
 
 When the car reaches a member (within `spectator_knock_radius_m`) that member
 flips to a **ragdoll**: a single `RigidBody3D` capsule (the model has no skeleton,
@@ -99,9 +100,9 @@ replaces rather than stacks them (mirrors `_place_arch`).
 `@export_group("Spectators")` in `game_config.gd` (group size, mid-progress band,
 crowd-band length/width, separation, flee/knock radii, max speed + accel, LOD radius,
 the five steering weights, ragdoll launch params, despawn distance). Disable with
-`spectators_enabled = false` or `spectator_group_size = 0`. The knock-damage knobs
-(`spectator_hp_loss`, `soft_hit_cooldown_s`) live in the **Damage** group but are
-plumbed through `spectator_params()`.
+`spectators_enabled = false` or `spectator_group_size = 0`. The knock-drag knob
+(`spectator_drag_strength`) lives in the **Damage** group but is plumbed through
+`spectator_params()`.
 
 ## Tests
 
@@ -110,8 +111,8 @@ plumbed through `spectator_params()`.
   off-road, tree-avoid, grid bucketing.
 - `tests/headless/test_spectator_steering.gd` — each steering force's direction +
   radius cutoff, and the speed clamp.
-- `tests/headless/test_spectator_damage.gd` — knocking a member over costs the car
-  `spectator_hp_loss` (more than a bush graze).
+- `tests/headless/test_spectator_damage.gd` — knocking a member over applies soft drag
+  to the car (`spectator_drag_strength`), which the unified damage rule turns into HP loss.
 - `tests/headless/test_smoke.gd` — groups spawn with standing members and are not
   obstacles.
 

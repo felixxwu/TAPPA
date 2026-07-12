@@ -164,8 +164,8 @@ const CARS: Array[Dictionary] = [
 		"name": "Honda Acty",  # HA4 kei truck: ~780 kg, 656cc mid-engine triple
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
 		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
-		"tire_compound": 0.85,  # hard commercial tyres, skinny
-		"brake_bias": 0.25,  # front share of foot-brake torque (mid-engine, tail-heavy)
+		"tire_compound": 0.8,  # hard commercial tyres, skinny
+		"brake_bias": 0.2,  # front share of foot-brake torque (mid-engine, tail-heavy)
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
@@ -208,7 +208,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
 		"brake_bias": 0.2,  # front share of foot-brake torque (rear-engine, tail-heavy)
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 8000,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 5000,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
@@ -251,9 +251,9 @@ const CARS: Array[Dictionary] = [
 		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
 		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 3,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
-		"tire_compound": 0.95,  # period touring tyres
-		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy RWD)
-		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 1000,  # long, brick-like body → real aero drag
+		"tire_compound": 1.2,  # period touring tyres
+		"brake_bias": 0.2,  # front share of foot-brake torque (nose-heavy RWD)
+		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 5000,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
@@ -320,6 +320,10 @@ const TORQUE_POWER_FALLOFF := 0.78
 # displayed one) and multiplies them by the installed engine kits / detune, so an
 # upgraded meta ranks above the base car. A raw CarLibrary entry has neither key
 # and derives from its engine's published torque/redline.
+# Convert a power-to-weight figure from power_to_weight()'s kW/kg to the hp/tonne
+# the HUD / detail panel / detune slider display (1 kW = 1.34102 hp, 1 tonne = 1000 kg).
+# Single source of truth — hq.gd and RallyLibrary both multiply by this.
+const KW_KG_TO_HP_TONNE := 1341.02
 static func power_to_weight(entry: Dictionary) -> float:
 	var eng := EngineLibrary.by_id(entry.get("engine", ""))
 	var torque: float = float(entry.get("peak_torque", eng.get("peak_torque", 0.0)))

@@ -22,10 +22,9 @@ var _points: PackedVector2Array       # bush world XZ, index-stable
 var _grid: Dictionary = {}            # Vector2i -> PackedInt32Array of indices into _points
 var _cell := 1.0                      # grid cell (== hit radius, so a 3x3 covers the query)
 var _hit_radius := 1.0
-var _hp_loss := 0.0
+var _drag_strength := 0.0             # fraction of horizontal speed a graze sheds (soft drag)
 var _drag_torque := 0.0               # N·m·s per m/s of speed (scaled by car speed)
 var _min_speed_mps := 0.0
-var _cooldown := 0.0
 # Bush indices the car is currently inside; compared tick-to-tick to detect fresh
 # ENTERs (and drop bushes the car has left).
 var _inside: Dictionary = {}
@@ -35,14 +34,13 @@ var _inside: Dictionary = {}
 # renderer; `hit_radius` is already the leeway-reduced radius (a fraction of the
 # bush's visual width — computed by the caller from TreeMeshField.xz_radius).
 func setup(positions: PackedVector2Array, car: Node, hit_radius: float,
-		hp_loss: float, drag_torque_magnitude: float, min_speed_mps: float, cooldown_s: float) -> void:
+		drag_strength: float, drag_torque_magnitude: float, min_speed_mps: float) -> void:
 	_car = car
 	_points = positions
 	_hit_radius = maxf(hit_radius, 0.01)
-	_hp_loss = hp_loss
+	_drag_strength = drag_strength
 	_drag_torque = drag_torque_magnitude
 	_min_speed_mps = min_speed_mps
-	_cooldown = cooldown_s
 	_cell = _hit_radius
 	# Bin bush indices into the hit-radius grid so each tick only tests the car's 3x3
 	# neighbourhood (cell == hit radius, so any overlapping bush is in those cells).
@@ -74,12 +72,14 @@ func _physics_process(_delta: float) -> void:
 				if car_xz.distance_to(p) >= _hit_radius:
 					continue
 				overlapping[idx] = true
-				# Fresh enter (not already inside this bush) → brush effects.
+				# Fresh enter (not already inside this bush) → brush effects. Shed a little
+				# speed (soft drag); the unified deceleration-damage rule (car._integrate_forces)
+				# turns that into the minor HP chip. Grouping is natural — _inside tracks which
+				# bushes the car is already in, so sitting in one doesn't re-apply per tick.
 				if not _inside.has(idx) and speed >= _min_speed_mps:
-					var loss := dmg.register_soft_hit(_hp_loss, Vector3(p.x, car_xf.origin.y, p.y), _cooldown)
-					# Only tug the car when the graze actually landed (not swallowed by
-					# the soft-hit cooldown) — one bush shouldn't tug for a clumpmate's hit.
-					if loss > 0.0 and _car.has_method("apply_torque_impulse"):
+					if _car.has_method("apply_soft_drag"):
+						_car.apply_soft_drag(_drag_strength)
+					if _car.has_method("apply_torque_impulse"):
 						var tq := drag_torque(forward, p - car_xz, _drag_torque) * speed
 						_car.apply_torque_impulse(Vector3(0.0, tq, 0.0))
 	_inside = overlapping
