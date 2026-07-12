@@ -81,9 +81,9 @@ camber(s) = clamp(noise_1d(s / cliff_wavelength_m) · cliff_gain, -1, 1)
   stage — track shape, surface split, cliffs — is one deterministic function of
   `track_seed`.
 
-Evaluated directly per baked centerline sample (no stored 5 m table needed —
-the bake already walks the centerline densely at `ROAD_SAMPLE_STEP_M`,
-`scripts/terrain_manager.gd:15`).
+Evaluated directly per cliff-bake centerline sample (no stored 5 m table needed
+— the bake already walks the centerline; cliffs can walk it coarser than the
+road, see *Performance* → `CLIFF_SAMPLE_STEP_M`).
 
 ### The cross-section — `profile(|d|)`
 
@@ -127,10 +127,21 @@ profile(|d|) = 0                               for |d| <= inner
    fallback** (contrast the road flatten, which has none outside the corridor
    anyway).
 3. It keeps the whole feature inside the play area. The off-track reset leash is
-   `track_progress_max_dist_m` (default **25 m**, `game_config.gd:855`), so keep
-   `R = inner + cliff_run_m + cliff_fade_m` comfortably within the cached
-   corridor. The meaningful cliff/drop action happens within ~the leash; the
-   fade beyond is rarely seen because the car resets at 25 m lateral.
+   `track_progress_max_dist_m` (default **25 m**, `game_config.gd:855`), so
+   `R = inner + cliff_run_m + cliff_fade_m` sits comfortably within it. The
+   meaningful cliff/drop action happens within ~the leash; the fade beyond is
+   rarely seen because the car resets at 25 m lateral.
+
+   **Invariant — `R` must fade out inside the cached corridor.** The offset is
+   only baked for stamped vertices; the pure-noise fallback (backdrop/editor) has
+   no cliffs. So the offset MUST reach 0 before the outermost corridor chunks, or
+   there's a step where cliff terrain meets the flat backdrop. `corridor_coords`
+   dilates the centerline by `RADIUS + ceil(leash_m/CHUNK_M) + 1` chunks
+   (`terrain_manager.gd:428`) — **~150 m at the default 25 m leash**, so any sane
+   `R` (tens of metres) is safe. But if cliff params ever push `R` beyond that
+   margin, either clamp `R` or widen the corridor dilation to
+   `max(leash-derived, R)`. Worth an `assert`/`push_warning` when `R` exceeds the
+   corridor margin.
 
 `smooth_ramp(d, inner, outer)` already exists for the road band
 (`scripts/terrain_manager.gd`) — reuse the same smoothstep style for the two
@@ -190,12 +201,21 @@ stamps a block of `reach` cells, keeping each vertex's **nearest** sample
    into a new field (keyed in the same **global vertex index** space as
    `road_heights`, i.e. `Vector2i(roundi(p.x/CELL_M)+dx, …)` — see
    `terrain_chunk_builder.gd:127`).
-4. In the **same** pass, accumulate per-vertex bearing bookkeeping (min/max
-   bearing, or a few angular buckets) so the wrap span is known at the end. This
-   must be **order-independent** — don't let the result depend on which sample
-   stamped the vertex first.
-5. After the walk, fold the bearing span into `contested[v]` and store the final
-   `cliff_offsets[v] = cliff_base[v] · (1 − contested[v]) · cliff_max_height_m`.
+4. In the **same** pass, accumulate per-vertex **bearing bookkeeping** so the
+   wrap span is known at the end. ⚠️ **Bearings are circular** — do NOT use
+   `min`/`max` of the angle (a cluster straddling 0°/360° would falsely read as a
+   near-full span). Use a fixed set of angular **buckets** (e.g. 16 bins over the
+   circle) per stamped vertex: each stamping sample sets the bucket for its
+   `atan2(sample − vertex)` bearing. This is a set union → naturally
+   **order-independent**. At the end, the wrap span = `360° − largest empty arc`
+   (largest run of consecutive unset buckets), which is the robust circular span.
+5. After the walk, fold the wrap span into `contested[v]` (0 for span ≤ 180°,
+   ramping to 1 across `cliff_pinch_angle_deg` past 180°) and store the final
+   `cliff_offsets[v] = cliff_base[v] · (1 − contested[v]) · cliff_max_height_m · cliff_amount`.
+
+   The bucket bookkeeping is a transient dict over the stamped band, freed after
+   the bake (a few bytes/vertex; sized like `cliff_base`, larger than the road
+   `v_best` because the band is wider — measure alongside the cache, below).
 
 New manager fields, alongside `road_heights` / `road_blend`
 (`scripts/terrain_manager.gd:49`):
@@ -242,11 +262,15 @@ halo** `_ph` (`terrain_chunk_builder.gd:100`, `_light_from_neighbours` fed from
 `_halo_row`). If the cliff offset is added to `_heights` but **not** reflected in
 the lighting normal, steep cliffs will be lit as if flat — they won't read as
 cliffs. To make them shade correctly, the light-normal source must include the
-cliff offset (e.g. add the same per-vertex offset into the halo the normal is
-derived from, sampling `cliff_offset` over the `SAMPLES+2` halo too). This is
-extra bake cost — flag it and measure. **Decision to confirm:** shade the
-cliffs properly (recommended — the whole point is that they're visible) vs.
-accept flat-lit cliffs for cheaper bakes.
+cliff offset: derive the normal from **noise + cliff_offset**, sampling
+`cliff_offset` over the `SAMPLES+2` halo grid vertices too (they're grid
+vertices, so the same `cliff_offsets` lookup works). Note the road flatten stays
+**excluded** from the light normal (as it is today — the near-flat road is
+deliberately ignored so seams stay consistent), so the normal is
+`noise + cliff`, *not* the fully-flattened render height. This is extra bake
+cost — flag it and measure. **Decision to confirm:** shade the cliffs properly
+(recommended — the whole point is that they're visible) vs. accept flat-lit
+cliffs for cheaper bakes.
 
 ## Gameplay & reset interaction
 
@@ -260,6 +284,32 @@ accept flat-lit cliffs for cheaper bakes.
   them, revisit if it looks wrong.
 - Road markings sit `road_marking_height_m` above the road surface via
   `terrain.height_at()` at the centerline, where the offset is 0 — unaffected.
+
+## Edge cases & interactions
+
+- **Track start / finish ends.** For a vertex beyond the first/last centerline
+  point, the "nearest point" is the endpoint and the perpendicular `d` degrades
+  into a radial distance with an ill-defined side across the centerline's
+  extension — cliffs would wrap oddly around the ends. In practice the start has
+  a straight lead-in and the finish a runoff ([features/track.md](../features/track.md)),
+  so the ends are buried in flat lead-in road; still, decide whether to taper the
+  cliff to 0 over the last few metres of `s` (a `camber` fade near both ends) so
+  the start line and finish arch sit on clean ground.
+- **Collision resolution limits steepness.** Collision is a `HeightMapShape3D` on
+  the 1 m height grid, so a near-vertical wall is a 1 m staircase and a very steep
+  face reads blocky (on-brand for PS1, but it bounds how sheer `cliff_run_m` can
+  usefully go). Keep `cliff_run_m` ≳ a couple of cells for drivable banks; accept
+  the staircase for walls meant only to block.
+- **Signs & spectators.** Roadside signs ([features/signs.md](../features/signs.md))
+  and crowds ([features/spectators.md](../features/spectators.md)) are placed at a
+  lateral offset from the centerline and sample `height_at`. If their offset lands
+  *inside* `inner` (the flat band) they sit on flat ground — ideal. If it lands on
+  the cliff/drop, a sign could tilt on a slope or a crowd stand in a ditch. Check
+  their placement offsets against `inner`; if needed, clamp roadside props to the
+  flat band or the cliff-side only.
+- **Editor preview.** `TerrainManager` is `@tool` and previews with no track, so
+  `bake_track` (and the cliff pass) doesn't run — the editor shows bare rolling
+  terrain, same as it does for the road today. Expected, not a bug.
 
 ## Configuration
 
@@ -275,6 +325,7 @@ Road Markings groups) + `config/game_config.tres`:
 | `cliff_run_m` (float) | Horizontal run road-edge → full height (small = steep) |
 | `cliff_fade_m` (float) | Horizontal run full height → back to grade |
 | `cliff_pinch_angle_deg` (float) | Bearing-span band past 180° over which `contested` ramps 0→1 |
+| `cliff_amount` (float, `[0,1]`) | Runtime per-event scale on `cliff_max_height_m`. Written by `RallySession` from the event's `cliffiness`; the value shipped in `game_config.tres` is only the fallback for standalone/editor `main.tscn` runs. |
 
 All are tunables → **not** asserted in tests (per CLAUDE.md — test the logic, not
 the values).
@@ -304,14 +355,14 @@ This mirrors the existing per-event knobs (`straightness`, `surface_mix`,
   `Config.data` before the scene loads, exactly like the others:
 
   ```gdscript
-  cfg.cliff_amplitude = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
+  cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
   ```
 
   The bake then uses an **effective** max height of
-  `cliff_max_height_m · cliff_amplitude`. (`cliff_amplitude` is the runtime
+  `cliff_max_height_m · cliff_amount`. (`cliff_amount` is the runtime
   per-event field on `GameConfig`; `cliff_max_height_m` is the authored global
   ceiling. Editor/standalone `main.tscn` runs — no `RallySession` — use whatever
-  `cliff_amplitude` ships in `game_config.tres`.)
+  `cliff_amount` ships in `game_config.tres`.)
 
 - **Balance intent** (not tested — designer territory): earlier/lower-tier events
   stay tamer; later or mountain-flavoured events crank it up. Author the values
@@ -339,6 +390,20 @@ This mirrors the existing per-event knobs (`straightness`, `surface_mix`,
   the baseline in [features/terrain.md](../features/terrain.md) ("204 chunks,
   46.2 MB") and the `./run_benchmark.sh` `compute_chunk_data` timing; if the bake
   regresses noticeably, cap `reach_cliff`.
+- **Coarser along-track sampling for the cliff pass.** The road bake walks the
+  centerline at `ROAD_SAMPLE_STEP_M = 0.25 m` (`terrain_manager.gd:15`) for a
+  crisp road edge. Cliffs don't need that density — `camber(s)` varies over
+  `cliff_wavelength_m` (metres+) and the mesh is 1 m cells — so run the cliff
+  stamp on a separate coarser `CLIFF_SAMPLE_STEP_M` (~1 m). With a stamp block
+  ~10–20× wider than the road's, that ~4× fewer samples is the main cost lever.
+  If the cliff pass shares the road walk rather than running its own, sub-sample
+  it (only do cliff work every Nth road sample).
+- **`cliff_offsets` dict memory.** It persists on the manager for the level (read
+  when chunks build/rebuild lazily), keyed per vertex over the *wide* band — so
+  it's bigger than `road_heights` (narrow band). Rough order: band area ÷ 1 m²
+  × dict overhead. Include it in the cache-size measurement; if it's heavy,
+  consider packing offsets into the cached chunk data instead of a standalone
+  dict.
 
 ## Tests (`tests/headless/`)
 
@@ -366,8 +431,12 @@ avoidable — use `SceneTestHelpers.minimal_world()` / bare `bake_track` calls):
 - **Determinism:** same `track_seed` ⇒ identical `cliff_offsets`.
 - **Cache parity:** a cached chunk's heights match a fresh `compute_chunk_data`
   with cliffs on (extend `test_cached_chunk_data_matches_fresh_compute`).
+- **Seam continuity:** with cliffs on, adjacent chunks still agree on their
+  shared-edge heights (extend the existing seam test in `test_terrain.gd`). This
+  holds by construction because `cliff_offsets` is keyed by **global** vertex
+  index, but it's the invariant most likely to break under a refactor.
 - **Per-event scaling (logic, not values):** `event_cliffiness` clamps to
-  `[0, 1]` and defaults to 0 when omitted; `cliff_amplitude = 0` ⇒ offsets all
+  `[0, 1]` and defaults to 0 when omitted; `cliff_amount = 0` ⇒ offsets all
   zero regardless of `cliff_max_height_m`. Do **not** assert any authored
   `cliffiness` value or ordering across events (moving balance number — CLAUDE.md).
   A `test_rally_library` accessor case (clamp + default) is fine, matching the
@@ -375,6 +444,11 @@ avoidable — use `SceneTestHelpers.minimal_world()` / bare `bake_track` calls):
 
 Add a scene/structure check to `test_smoke.gd` only if a new node/material is
 introduced (none expected — this is pure height data).
+
+**Manual check (visual feature — don't ship on tests alone):** run a stage with
+`cliff_amount` cranked up (`/run`, or set it in `game_config.tres`) and eyeball
+it — cliffs read as cliffs, hairpin crooks are flat, the road edge is
+undisturbed, and there's no seam where the detail terrain meets the backdrop.
 
 ## Docs to update (same piece of work)
 
@@ -384,7 +458,7 @@ introduced (none expected — this is pure height data).
 - [features/track.md](../features/track.md) — cliffs/drops as a track-side
   feature and the hairpin-flatten behaviour.
 - [features/configuration.md](../features/configuration.md) — the `Cliffs` group
-  tunables + the runtime `cliff_amplitude` per-event field.
+  tunables + the runtime `cliff_amount` per-event field.
 - [features/rally-roster.md](../features/rally-roster.md) — the new
   `event_cliffiness` accessor and the `cliffiness` authored key on events.
 
