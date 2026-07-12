@@ -258,19 +258,63 @@ Road Markings groups) + `config/game_config.tres`:
 | Field | Meaning |
 |-------|---------|
 | `cliff_enabled` (bool) | Master toggle; off ⇒ bake skips the cliff pass entirely |
-| `cliff_wavelength_m` (float) | Along-track period of the camber noise |
+| `cliff_wavelength_m` (float) | Along-track period of the camber noise (**global** — same for every event) |
 | `cliff_gain` (float) | Noise → camber scale before the `[-1,1]` clamp (higher = more full cliffs) |
-| `cliff_max_height_m` (float) | Height at `\|camber\|=1`; equals the drop depth |
+| `cliff_max_height_m` (float) | **Global ceiling**: the height at `\|camber\|=1` for a maximally cliffy event (`cliffiness=1`). Equals the drop depth. Scaled down per event (below). |
 | `cliff_run_m` (float) | Horizontal run road-edge → full height (small = steep) |
 | `cliff_fade_m` (float) | Horizontal run full height → back to grade |
 | `cliff_pinch_angle_deg` (float) | Bearing-span band past 180° over which `contested` ramps 0→1 |
 
 All are tunables → **not** asserted in tests (per CLAUDE.md — test the logic, not
-the values). Cliff geometry is a function of `track_seed`, so any code that
-derives target times from the track shape does **not** need it (cliffs don't
-change the centerline or its length — the road stays flat and lengthwise
-unchanged), but double-check nothing that bakes the corridor depends on it in a
-way that would desync opponents.
+the values).
+
+## Per-event cliffiness
+
+Each rally **event** defines *how cliffy* its stage is — the highest highs and
+lowest lows — while the noise **wavelength stays global** (`cliff_wavelength_m`).
+This mirrors the existing per-event knobs (`straightness`, `surface_mix`,
+`forestiness`, `width`) authored in the `RALLIES` event dicts
+(`scripts/rally_library.gd:85`+) and read through `event_*` accessors
+(`rally_library.gd:208`–`233`).
+
+- Add a `"cliffiness"` key to every event dict in `RALLIES` (in `[0, 1]`).
+- New accessor, alongside the others:
+
+  ```gdscript
+  # How cliffy this event's stage is, in [0, 1]: 0 = flat (no cliffs/drops),
+  # 1 = the tallest cliffs/deepest drops (cliff_max_height_m). Scales the global
+  # height ceiling; the noise wavelength is global. Default 0 keeps an event that
+  # omits it flat.
+  static func event_cliffiness(event: Dictionary) -> float:
+      return clampf(float(event.get("cliffiness", 0.0)), 0.0, 1.0)
+  ```
+
+- `RallySession._load_event_scene` (`rally_session.gd:487`–`492`) writes it into
+  `Config.data` before the scene loads, exactly like the others:
+
+  ```gdscript
+  cfg.cliff_amplitude = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
+  ```
+
+  The bake then uses an **effective** max height of
+  `cliff_max_height_m · cliff_amplitude`. (`cliff_amplitude` is the runtime
+  per-event field on `GameConfig`; `cliff_max_height_m` is the authored global
+  ceiling. Editor/standalone `main.tscn` runs — no `RallySession` — use whatever
+  `cliff_amplitude` ships in `game_config.tres`.)
+
+- **Balance intent** (not tested — designer territory): earlier/lower-tier events
+  stay tamer; later or mountain-flavoured events crank it up. Author the values
+  in `RALLIES` to taste.
+
+- **Target times are unaffected.** Cliffs don't change the centerline, its
+  length, or the flat lengthwise road profile, so `LapTimeModel` /
+  `RallySession._compute_event_targets` and the opponent field do **not** take
+  cliffiness (contrast `straightness` / `width` / `surface_mix`, which change the
+  shape or grip and *do* feed the target path, e.g. `lap_time_model.gd:130`).
+  This means cliffiness only has to reach the scene load — one write in
+  `_load_event_scene` — and nothing in the sync-sensitive target derivation.
+  Still, double-check nothing that bakes the corridor for target derivation
+  reads it.
 
 ## Performance
 
@@ -308,6 +352,12 @@ avoidable — use `SceneTestHelpers.minimal_world()` / bare `bake_track` calls):
 - **Determinism:** same `track_seed` ⇒ identical `cliff_offsets`.
 - **Cache parity:** a cached chunk's heights match a fresh `compute_chunk_data`
   with cliffs on (extend `test_cached_chunk_data_matches_fresh_compute`).
+- **Per-event scaling (logic, not values):** `event_cliffiness` clamps to
+  `[0, 1]` and defaults to 0 when omitted; `cliff_amplitude = 0` ⇒ offsets all
+  zero regardless of `cliff_max_height_m`. Do **not** assert any authored
+  `cliffiness` value or ordering across events (moving balance number — CLAUDE.md).
+  A `test_rally_library` accessor case (clamp + default) is fine, matching the
+  existing `event_*` coverage.
 
 Add a scene/structure check to `test_smoke.gd` only if a new node/material is
 introduced (none expected — this is pure height data).
@@ -320,7 +370,9 @@ introduced (none expected — this is pure height data).
 - [features/track.md](../features/track.md) — cliffs/drops as a track-side
   feature and the hairpin-flatten behaviour.
 - [features/configuration.md](../features/configuration.md) — the `Cliffs` group
-  tunables.
+  tunables + the runtime `cliff_amplitude` per-event field.
+- [features/rally-roster.md](../features/rally-roster.md) — the new
+  `event_cliffiness` accessor and the `cliffiness` authored key on events.
 
 ## Decisions settled during design
 
