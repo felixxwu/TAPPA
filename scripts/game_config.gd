@@ -1239,8 +1239,10 @@ var peak_torque_rpm := 4500.0
 # only shape the roadside presentation.
 ## Stage roadside wrecks at all. Off = a crashed rival still DNFs, just isn't shown.
 @export var opponent_wrecks_enabled := true
-## How far (m) beyond the road edge (half track width) the wreck sits off the verge.
-@export_range(0.0, 20.0) var opponent_wreck_road_offset_m := 3.5
+## Gap (m) between the road edge (half track width) and the NEAR side of the wreck —
+## the minimum; the placement then searches OUTWARD from here for the flattest patch
+## so the wreck rests on level ground beside the road instead of buried in a slope.
+@export_range(0.0, 20.0) var opponent_wreck_road_offset_m := 1.3
 ## Extra yaw (rad) the wreck is skewed by, off the road direction, so it reads as
 ## crashed rather than parked. Randomised per wreck within ±this.
 @export_range(0.0, 3.14159) var opponent_wreck_yaw_skew := 1.2
