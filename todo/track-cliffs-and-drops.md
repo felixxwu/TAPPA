@@ -91,7 +91,7 @@ A **localized** berm/ditch that returns to natural grade, *not* an infinite
 shelf. As perpendicular distance `|d|` grows from the road:
 
 ```
-inner  = track_width/2 + transition_m         # road edge (offset stays 0 across the road)
+inner  = track_width/2 + transition_m         # where the road has fully faded to grass — cliff starts HERE
 rise   = inner + cliff_run_m                   # reaches full ±1 here
 outer  = rise  + cliff_fade_m                  # back to 0 here = influence radius R
 
@@ -100,8 +100,19 @@ profile(|d|) = 0                               for |d| <= inner
              = 1 − smoothstep(rise, outer, |d|) falling (1 → 0)  (optionally hold a plateau first)
 ```
 
-- Zero across the road + transition band, so the drivable surface stays flat and
-  the road flatten is undisturbed.
+- **The cliff/drop does not begin until the road edge has fully met the grass.**
+  `inner` is the **outer edge of the transition band** (`track_width/2 +
+  transition_m`), *not* the road edge itself (`track_width/2`). Across the whole
+  band — the flat road (`|d| ≤ track_width/2`) *and* the feathered grass↔road
+  shoulder (`track_width/2 < |d| ≤ inner`) — `profile` is 0, so the offset is 0
+  there. This matters: the road flatten (`road_blend`) ramps from 1 to 0 across
+  exactly that band (`terrain_manager.gd:537`–`538`, `inner`/`outer`), so keeping
+  the cliff at 0 until `inner` means the two never overlap — the feathered
+  shoulder blends cleanly from flat road down to true terrain, *then* the cliff
+  rises/falls beyond it. If the cliff started any earlier it would tilt the
+  shoulder and lift/drop the road edge unevenly. (An optional extra flat margin
+  before the cliff — `cliff_shoulder_m` added into `inner` — could push it out
+  further, but the band edge is the minimum and the default.)
 - `cliff_run_m` — horizontal run to full height. Small ⇒ steep (near-wall)
   cliffs; large ⇒ gentle banks. Note the terrain is a **heightfield → no true
   overhangs**; a "cliff" is a very steep slope.
@@ -339,8 +350,11 @@ avoidable — use `SceneTestHelpers.minimal_world()` / bare `bake_track` calls):
 - **Zero when off/level:** `cliff_enabled=false`, or `cliff_max_height_m=0`, or a
   camber that is 0 ⇒ `cliff_offsets` empty / all zero, and `height_at` equals the
   no-cliff height.
-- **Flat road surface:** offset is 0 for every vertex within `track_width/2 +
-  transition` of the centerline (drivable surface undisturbed).
+- **Flat road surface + clean shoulder handoff:** offset is 0 for every vertex
+  within `track_width/2 + transition_m` of the centerline — i.e. across the flat
+  road *and* the full feathered transition band, so the shoulder isn't tilted and
+  the cliff only begins where the road has fully met the grass. (Assert against
+  the band-edge distance, a derived geometric quantity, not a pinned value.)
 - **Antisymmetry:** for a straight, `offset(+d) ≈ −offset(−d)` at matching
   perpendicular distances (cliff as tall as the drop is deep).
 - **Bounded:** `|offset| ≤ cliff_max_height_m` everywhere.
