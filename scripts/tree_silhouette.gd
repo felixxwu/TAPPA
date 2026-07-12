@@ -37,6 +37,9 @@ static func build(image: Image, alpha_threshold: float, simplify_epsilon: float)
 		# second the same silhouette rotated 90 deg about Y (into the ZY plane).
 		# Both share the UV, so the same cutout shows from every horizontal angle
 		# without the card having to face the camera.
+		# triangulate_polygon emits three indices per triangle, so the count is always
+		# a multiple of 3 — the division is exact and intentionally integer.
+		@warning_ignore("integer_division")
 		var tri_count := tris.size() / 3
 		for plane in 2:
 			for t in tri_count:
