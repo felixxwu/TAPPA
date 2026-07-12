@@ -45,10 +45,16 @@ event, or an unresolved car id it's a no-op. Otherwise it builds a named
   `CarLibrary.index_of`), spawned from `car.tscn` with the same display-car recipe
   as the podium / HQ props: an **isolated config** (so its reshape can't clobber the
   player car's tuning in the shared `Config.data`), its **own mesh copies**, engine
-  audio silenced. It's placed off the verge (road half-width +
-  `opponent_wreck_road_offset_m`) at the sampled centerline point, yawed along the
-  road and **skewed** (`opponent_wreck_yaw_skew`) so it reads as crashed, not parked.
-  It spawns **live** so it settles onto its wheels on the (possibly sloped) verge,
+  audio silenced. It's placed on the verge on the seeded side, its near edge
+  `opponent_wreck_road_offset_m` off the road — but the exact spot is chosen by
+  **searching a small patch near the seeded crash point for the flattest ground**
+  (`_flattest_wreck_spot` samples the terrain-height spread under the car footprint
+  over a few along-track + outward offsets, preferring the flatter shoulder), so the
+  wreck rests on **level ground next to the road** instead of buried in a slope. The
+  car is **seated on the highest point under its footprint** so it can never spawn
+  buried, yawed along the road and **skewed** (`opponent_wreck_yaw_skew`) so it reads
+  as crashed, not parked.
+  It spawns **live** so it settles onto its wheels on the verge,
   then **freezes** after `opponent_wreck_settle_seconds`. Freeze uses the default
   `FREEZE_MODE_STATIC`, so **the collider stays live** — the frozen wreck is a solid,
   immovable obstacle: crashing into it still bites (via the unified deceleration
@@ -59,10 +65,11 @@ event, or an unresolved car id it's a no-op. Otherwise it builds a named
   so it keeps puffing though the car is frozen / process-disabled. The wreck's HP is
   **zeroed** (`car.damage.hp = 0`) so the severity-timed puffer reads it as a wreck
   and smokes hardest — the same self-timed smoke a damaged parked car shows in HQ.
-- **The crowd** (`_spawn_wreck_crowd`) — `opponent_wreck_crowd_size` onlookers stood
-  in a ring (`opponent_wreck_crowd_radius_m`) around the wreck, each facing it. Pure
-  scenery in one `MultiMesh` of the shared low-poly spectator figure (no steering /
-  ragdolls, like the HQ crowd), feet on the terrain. The scatter is stored on the
+- **The crowd** (`_spawn_wreck_crowd`) — `opponent_wreck_crowd_size` onlookers in a
+  crescent (`opponent_wreck_crowd_radius_m`) on the **verge side** of the wreck (away
+  from the carriageway), each facing it. Pure scenery in one `MultiMesh` of the shared
+  low-poly spectator figure (no steering / ragdolls, like the HQ crowd), feet on the
+  terrain. The scatter is stored on the
   node's `positions` meta (headless `MultiMesh` buffers can't be read back).
 
 ## Config (`GameConfig`, *Opponent Wrecks* group)

@@ -586,33 +586,91 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	var span := finish_len if finish_len > 0.0 else baked
 	if span <= 0.0:
 		return
-	# Where along the timed track the crash sits, and how far off which verge.
+	# Seeded crash point (fraction along the timed track) + which verge.
 	var progress := clampf(float(wreck.get("progress", 0.5)), 0.0, 1.0)
-	var offset := progress * span
-	var pos2 := centerline.sample_baked(offset)
-	var tan2 := centerline.sample_baked(minf(offset + 1.0, baked)) - pos2
-	if tan2.length() < 1e-4:
-		tan2 = Vector2(0.0, 1.0)
-	tan2 = tan2.normalized()
-	var perp := Vector2(-tan2.y, tan2.x) * float(wreck.get("side", 1.0))
-	var off_dist := cfg.track_width * 0.5 + cfg.opponent_wreck_road_offset_m
-	var wpos2 := pos2 + perp * off_dist
-	var ground_y := terrain.height_at(wpos2.x, wpos2.y)
+	var side := signf(float(wreck.get("side", 1.0)))
+	if side == 0.0:
+		side = 1.0
+	# Search near the seeded point for the FLATTEST patch of verge, so the wreck rests
+	# on level ground beside the road rather than buried in a slope. `half_w`/`half_len`
+	# are a conservative car footprint (m) used both to sample flatness and to keep the
+	# car clear of the carriageway; the near side sits opponent_wreck_road_offset_m off
+	# the road edge, and the search extends outward from there.
+	var half_w := 1.1
+	var half_len := 2.0
+	var edge := cfg.track_width * 0.5
+	var base_lat := edge + half_w + cfg.opponent_wreck_road_offset_m
+	var spot := _flattest_wreck_spot(centerline, baked, progress * span, side,
+		base_lat, half_w, half_len, terrain)
+	var pos2: Vector2 = spot["pos2"]
+	var tan2: Vector2 = spot["tan2"]
+	var top_y: float = spot["top"]  # highest ground under the footprint — seat on top, never buried
+	var outward := Vector2(-tan2.y, tan2.x) * side  # away from the road
 
 	var container := Node3D.new()
 	container.name = "OpponentWreck"
 	add_child(container)
 
 	# The crashed car, skewed off the road direction so it reads as wrecked, not parked
-	# (deterministic from the seeded progress so it's stable across re-attempts).
+	# (deterministic from the seeded progress so it's stable across re-attempts). Seated
+	# just above the highest ground under it, so it can't spawn buried; it then settles.
 	var fwd := Vector3(tan2.x, 0.0, tan2.y)
 	var skew := (fmod(progress * 41.0, 1.0) - 0.5) * 2.0 * cfg.opponent_wreck_yaw_skew
 	var car_basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, skew)
-	var car_pos := Vector3(wpos2.x, ground_y + cfg.opponent_wreck_drop_height_m, wpos2.y)
+	var car_pos := Vector3(pos2.x, top_y + cfg.opponent_wreck_drop_height_m, pos2.y)
 	_spawn_wreck_car(idx, Transform3D(car_basis, car_pos), container, cfg)
 
-	# The small gathering of onlookers around the wreck.
-	_spawn_wreck_crowd(container, Vector3(wpos2.x, ground_y, wpos2.y), terrain, cfg)
+	# The small gathering of onlookers, on the verge side of the wreck (off the road).
+	_spawn_wreck_crowd(container, Vector3(pos2.x, top_y, pos2.y), outward, terrain, cfg)
+
+
+# Find the flattest patch of verge near the seeded crash point: a small deterministic
+# search over along-track and lateral offsets on the wreck's side. Returns the chosen
+# centre `pos2`, the road tangent `tan2` there, and `top` = the highest terrain height
+# under the car footprint at that centre (so the car seats on top and can't spawn
+# buried). No RNG, so the wreck stays stable across re-attempts.
+func _flattest_wreck_spot(centerline: Curve2D, baked: float, seed_offset: float,
+		side: float, base_lat: float, half_w: float, half_len: float,
+		terrain: TerrainManager) -> Dictionary:
+	var best := {}
+	var best_spread := INF
+	for d_along: float in [-12.0, -6.0, 0.0, 6.0, 12.0]:
+		var off := clampf(seed_offset + d_along, 0.05 * baked, 0.95 * baked)
+		var c := centerline.sample_baked(off)
+		var t := centerline.sample_baked(minf(off + 1.0, baked)) - c
+		if t.length() < 1e-4:
+			t = Vector2(0.0, 1.0)
+		t = t.normalized()
+		var road_out := Vector2(-t.y, t.x) * side
+		# Prefer the shoulder (closest, usually flattest); step outward for flatter ground.
+		for extra: float in [0.0, 1.0, 2.0, 3.0]:
+			var c2 := c + road_out * (base_lat + extra)
+			var fp := _footprint_terrain(terrain, c2, t, half_len, half_w)
+			if fp["spread"] < best_spread:
+				best_spread = fp["spread"]
+				best = {"pos2": c2, "tan2": t, "top": fp["top"]}
+	if best.is_empty():
+		# Degenerate curve: fall back to the seeded point.
+		var c := centerline.sample_baked(clampf(seed_offset, 0.0, baked))
+		best = {"pos2": c, "tan2": Vector2(0.0, 1.0), "top": terrain.height_at(c.x, c.y)}
+	return best
+
+
+# The terrain under a car footprint centred at `c2` (world XZ), aligned to tangent `t`:
+# the height SPREAD across a small grid (flatness — lower is flatter) and the highest
+# sampled point (`top`, so the car seats on top and no corner is buried).
+func _footprint_terrain(terrain: TerrainManager, c2: Vector2, t: Vector2,
+		half_len: float, half_w: float) -> Dictionary:
+	var right := Vector2(-t.y, t.x)
+	var lo := INF
+	var hi := -INF
+	for a: float in [-1.0, 0.0, 1.0]:
+		for b: float in [-1.0, 0.0, 1.0]:
+			var p := c2 + t * (a * half_len) + right * (b * half_w)
+			var h := terrain.height_at(p.x, p.y)
+			lo = minf(lo, h)
+			hi = maxf(hi, h)
+	return {"spread": hi - lo, "top": hi}
 
 
 # Spawn the wrecked rival's car as a frozen roadside prop under `parent`. Mirrors the
@@ -684,11 +742,13 @@ func _add_wreck_smoke(car: Node) -> void:
 	smoke.setup_synthetic(car)
 
 
-# A small standing crowd of onlookers gathered in a ring around the wreck — pure
-# scenery in one MultiMesh (no steering / ragdolls, like the HQ crowd), each facing
-# the wreck. `center` is the wreck's ground position. No-op with a zero crowd size or
-# a missing figure mesh.
-func _spawn_wreck_crowd(parent: Node, center: Vector3, terrain: TerrainManager, cfg: GameConfig) -> void:
+# A small standing crowd of onlookers gathered around the wreck — pure scenery in one
+# MultiMesh (no steering / ragdolls, like the HQ crowd), each facing the wreck. Placed
+# in a crescent on the VERGE side (`outward` points away from the road), so the crowd
+# never spills onto the carriageway. `center` is the wreck's ground position. No-op
+# with a zero crowd size or a missing figure mesh.
+func _spawn_wreck_crowd(parent: Node, center: Vector3, outward: Vector2,
+		terrain: TerrainManager, cfg: GameConfig) -> void:
 	var count := cfg.opponent_wreck_crowd_size
 	if count <= 0:
 		return
@@ -700,9 +760,13 @@ func _spawn_wreck_crowd(parent: Node, center: Vector3, terrain: TerrainManager, 
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
 	mm.instance_count = count
+	var base_ang := atan2(outward.y, outward.x)  # away from the road
 	var positions: Array = []
 	for i in count:
-		var ang := TAU * float(i) / float(count)
+		# A crescent spanning ±~115° about 'outward' — the verge side + flanks, never the
+		# road-ward hemisphere between the wreck and the carriageway.
+		var frac := 0.0 if count <= 1 else float(i) / float(count - 1)
+		var ang := base_ang + lerpf(-2.0, 2.0, frac)
 		var r: float = cfg.opponent_wreck_crowd_radius_m
 		var px := center.x + cos(ang) * r
 		var pz := center.z + sin(ang) * r
