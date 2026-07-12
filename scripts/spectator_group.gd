@@ -7,15 +7,17 @@ extends Node3D
 # are not in DamageModel.OBSTACLE_GROUP). See todo/roadside-spectators.md.
 #
 # Each physics tick (only while the car is within `active_radius_m`, an LOD gate)
-# the group batch-steers every member with a few weighted preferences:
-#   - separation : keep ~separation_m from group neighbours
+# the group batch-steers every member with a few preferences, arbitrated by
+# priority (see `combine`) and clamped to max_speed_mps:
 #   - flee       : move away from the car inside flee_radius_m (a strong near-field
 #                  term, so the crowd visibly parts/jostles as the car pushes through
 #                  — the "light push")
+#   - separation : keep ~separation_m from group neighbours; blended WITH flee at the
+#                  top tier so a fleeing crowd fans out sideways instead of piling onto
+#                  one point and freezing ("stuck in a crowd")
 #   - road       : avoid the carriageway (probes the rasterised road_cells)
 #   - obstacle   : avoid trees (probes a grid of tree points)
 #   - anchor     : drift back home when nothing is pushing them
-# clamped to max_speed_mps.
 #
 # When the car actually reaches a member (within knock_radius_m) that member flips
 # to a knocked-over RAGDOLL: a real RigidBody3D capsule (single body — the model
@@ -211,15 +213,22 @@ static func ragdoll_mesh_offset_y(foot_offset: float, capsule_height: float) -> 
 	return foot_offset - capsule_height * 0.5
 
 
-# Prioritised steering arbitration. Fleeing the car claims the speed budget first,
-# then static obstacle (road + tree) avoidance, then neighbour separation, then the
-# anchor pull — each tier only gets the budget the higher tiers leave under max_speed.
-# So the crowd always commits to escaping the car BEFORE worrying about obstacles or
-# spacing, and a tight clump no longer jitters: separation can't fight a strong flee.
+# Prioritised steering arbitration. The two URGENT local forces — fleeing the car
+# and keeping personal space from neighbours — are BLENDED at the top tier, then
+# static obstacle (road + tree) avoidance gets whatever budget is left under
+# max_speed, and the anchor pull comes last.
+#
+# Blending flee with separation (rather than gating separation behind a saturated
+# flee) is what stops a fleeing crowd from freezing: if flee alone claims the whole
+# budget, separation gets nothing, so members pile onto the same escape point with
+# no spacing force, collapse to near-coincident positions, and can never push apart
+# again (coincident/symmetric separation cancels) — the crowd goes "completely
+# stuck". Blended, the crowd fans out sideways as it flees. Flee's larger weight
+# keeps escaping the car the dominant direction, and the accel-limited integration
+# (move_toward) filters any tick-to-tick wobble, so this doesn't jitter a tight clump.
 static func combine(flee: Vector2, avoid: Vector2, separation: Vector2, anchor: Vector2, max_speed: float) -> Vector2:
-	var v := clamp_speed(flee, max_speed)
+	var v := clamp_speed(flee + separation, max_speed)
 	v = _add_priority(v, avoid, max_speed)
-	v = _add_priority(v, separation, max_speed)
 	v = _add_priority(v, anchor, max_speed)
 	return v
 
@@ -256,8 +265,9 @@ func _physics_process(delta: float) -> void:
 	for i in _pos.size():
 		if _upright[i] == 0:
 			continue
-		# Prioritised, not a flat weighted sum: fleeing the car comes FIRST, then static
-		# obstacle (road + tree) avoidance, then neighbour separation, then the anchor.
+		# Prioritised, not a flat weighted sum: fleeing the car is blended with neighbour
+		# separation at the top tier (so a fleeing crowd fans out instead of collapsing),
+		# then static obstacle (road + tree) avoidance, then the anchor pull.
 		var flee: Vector2 = flee_force(_pos[i], car_xz, _p["flee_radius_m"]) * _p["w_flee"]
 		var avoid: Vector2 = road_force(_pos[i], _road_cells, _p["road_probe_m"]) * _p["w_road"]
 		avoid += obstacle_force(_pos[i], _tree_grid, _p["tree_cell_m"], _p["tree_avoid_m"]) * _p["w_obstacle"]

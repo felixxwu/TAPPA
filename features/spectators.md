@@ -63,13 +63,23 @@ the car is `spectator_despawn_behind_m` behind a ragdoll, it is freed.
 | `separation_force` | keep ~`separation_m` apart | within-group only; O(n²) but n≈50 |
 | `anchor_force` | drift home when idle | dead-zone'd so settled agents don't jitter |
 
-**Prioritised arbitration (`combine`), not a flat weighted sum.** Fleeing the car
-claims the speed budget first, then static obstacle (road + tree) avoidance, then
-separation, then the anchor — each tier only gets the budget the higher tiers leave
-under `max_speed` (`_add_priority`). So the crowd always commits to escaping the car
-**before** dodging obstacles, and a tight clump no longer jitters: separation can't
-fight a strong flee. With no car nearby, flee is zero and the lower tiers get the
-full budget (so they still space out and avoid the road when idle).
+**Prioritised arbitration (`combine`), not a flat weighted sum.** The two *urgent
+local* forces — `flee_force` and `separation_force` — are **blended** at the top
+tier; then static obstacle (road + tree) avoidance gets whatever budget is left
+under `max_speed`, and the anchor pull comes last (`_add_priority`). So the crowd
+commits to escaping the car **before** dodging static obstacles, while still keeping
+its spacing as it flees.
+
+Blending flee *with* separation (rather than gating separation behind a saturated
+flee) is deliberate: if flee alone claimed the whole budget, a fleeing crowd would
+pile onto the same escape point with **no** spacing force, collapse to
+near-coincident positions, and never push apart again (coincident/symmetric
+separation cancels) — the crowd would go **completely stuck in a clump**. Blended,
+the crowd fans out sideways as it flees. Flee's larger weight (`w_flee > w_separation`)
+keeps escaping the car the dominant direction, and the accel-limited integration
+(`move_toward`) filters tick-to-tick wobble, so a tight clump doesn't jitter. With no
+car nearby, flee is zero and the lower tiers get the full budget (so they still space
+out and avoid the road when idle).
 
 **LOD:** only the group within `spectator_active_radius_m` of the car runs
 steering; the other two stand still until the car approaches.
