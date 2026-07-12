@@ -20,11 +20,15 @@ extends RefCounted
 # (game_config.gd) — the authored baseline track width.
 const DEFAULT_WIDTH := 6.0
 
-# Opponent-field shape (gameplay.md): 10–15 rivals, some DNF (a DNF in any event
-# disqualifies the rally).
+# Opponent-field shape (gameplay.md): 10–15 rivals. A rival can CRASH OUT of an event
+# (a wreck = a DNF; a DNF in any event disqualifies the whole rally). Wrecks are rare
+# and capped so the run scene can show at most one wrecked rival by the roadside per
+# event (features/opponent-wrecks.md): each event independently has an
+# OPPONENT_WRECK_CHANCE of wrecking exactly ONE not-yet-wrecked rival, so on average
+# about one rival wrecks every two events, and never more than one per event.
 const FIELD_MIN := 10
 const FIELD_MAX := 15
-const DNF_CHANCE := 0.18         # per-opponent, per-event
+const OPPONENT_WRECK_CHANCE := 0.5   # per-event: probability ONE rival crashes out this event
 
 # Rival pace, as multiples of each rival's OWN physics floor (optimum_ms for THEIR
 # car on the event track). Each rival gets a PERSISTENT skill (drawn once, not per
@@ -373,13 +377,21 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 # dict. Reseeded from the rally id so the leaderboard is identical across re-attempts.
 # Returns an Array of opponents:
 #   { name: String, car_id: String, car_name: String,
-#     event_times_ms: Array[int], dnf: bool, combined_ms: int }
+#     event_times_ms: Array[int], dnf: bool, combined_ms: int,
+#     wreck_event: int, wreck_progress: float, wreck_side: float }
 # Each rival is assigned a car from the rally's eligible roster (so e.g. an
 # RWD-only rally fields RWD rivals), drawn from the same seeded RNG so the line-up
 # is stable across re-attempts. Each rival's event time is derived from their OWN
 # car's physics floor (optimum_ms) scaled by a per-rival factor in the pace band,
-# so a faster car fields a faster time. A DNF in any event disqualifies the opponent
-# (combined_ms = -1, doesn't rank).
+# so a faster car fields a faster time.
+#
+# Wrecks (features/opponent-wrecks.md): after the times are drawn, each event
+# independently rolls OPPONENT_WRECK_CHANCE to crash ONE not-yet-wrecked rival out.
+# A wrecked rival has event_times_ms[wreck_event..] = -1 and DNFs the rally
+# (combined_ms = -1, doesn't rank), and carries the seeded roadside placement
+# (`wreck_progress` along the track, `wreck_side` = which verge) the run scene reads
+# to stage the wreck. `wreck_event` = -1 for a rival who finishes. At most one rival
+# wrecks per event, so the run scene shows at most one roadside wreck per stage.
 static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
@@ -394,31 +406,77 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 		var skill := rng.randf()
 		var base_pace := lerpf(band.x, band.y, skill)
 		var times: Array = []
-		var dnf := false
 		for k in event_results.size():
-			if rng.randf() < DNF_CHANCE:
-				dnf = true
-				times.append(-1)
-			else:
-				var ev: Dictionary = events[k] if k < events.size() else {}
-				var floor_ms := LapTimeModel.optimum_ms(event_results[k], car, ev)
-				var noise := 1.0 + (rng.randf() * 2.0 - 1.0) * PACE_EVENT_NOISE
-				var factor := maxf(base_pace * noise, PACE_MIN_FLOOR)
-				times.append(int(round(floor_ms * factor)))
-		var combined := -1
-		if not dnf:
-			combined = 0
-			for tm in times:
-				combined += int(tm)
+			var ev: Dictionary = events[k] if k < events.size() else {}
+			var floor_ms := LapTimeModel.optimum_ms(event_results[k], car, ev)
+			var noise := 1.0 + (rng.randf() * 2.0 - 1.0) * PACE_EVENT_NOISE
+			var factor := maxf(base_pace * noise, PACE_MIN_FLOOR)
+			times.append(int(round(floor_ms * factor)))
 		field.append({
 			"name": "Rival %d" % (i + 1),
 			"car_id": String(car.get("id", "")),
 			"car_name": String(car.get("name", "")),
 			"event_times_ms": times,
-			"dnf": dnf,
-			"combined_ms": combined,
+			"dnf": false,
+			"combined_ms": 0,
+			"wreck_event": -1,
+			"wreck_progress": 0.0,
+			"wreck_side": 1.0,
 		})
+	# Wreck pass: each event crashes at most one still-running rival out. Drawn from the
+	# SAME seeded RNG so the wreck (and its roadside placement) is stable across
+	# re-attempts, exactly like the times above.
+	for k in event_results.size():
+		if rng.randf() >= OPPONENT_WRECK_CHANCE:
+			continue
+		var candidates: Array = []
+		for i in field.size():
+			if int(field[i]["wreck_event"]) < 0:
+				candidates.append(i)
+		if candidates.is_empty():
+			continue
+		var pick: int = candidates[rng.randi_range(0, candidates.size() - 1)]
+		field[pick]["wreck_event"] = k
+		# Seeded roadside placement: a fraction along the timed track (kept off the
+		# start/finish) and which verge (±1). The run scene turns these into a world pose.
+		field[pick]["wreck_progress"] = rng.randf_range(0.15, 0.85)
+		field[pick]["wreck_side"] = 1.0 if rng.randf() < 0.5 else -1.0
+		# Crashed out here: no time for this event or any after it.
+		for kk in range(k, event_results.size()):
+			field[pick]["event_times_ms"][kk] = -1
+	# Finalise DNF + combined time now the wrecks are settled.
+	for opp in field:
+		var dnf: bool = int(opp["wreck_event"]) >= 0
+		opp["dnf"] = dnf
+		if dnf:
+			opp["combined_ms"] = -1
+		else:
+			var combined := 0
+			for tm in opp["event_times_ms"]:
+				combined += int(tm)
+			opp["combined_ms"] = combined
 	return field
+
+
+# The rival (if any) who wrecked in `event_index`, for the run scene to stage a
+# roadside wreck (features/opponent-wrecks.md). Returns the crashed rival's identity,
+# the ACTUAL car they drove, and the seeded placement:
+#   { name, car_id, car_name, progress: float (0-1 along the track), side: float (±1) }
+# or {} when no rival wrecked that event (at most one ever does). Pure read over the
+# field generate_opponent_field produced.
+static func event_wreck(field: Array, event_index: int) -> Dictionary:
+	if event_index < 0:
+		return {}
+	for opp in field:
+		if int(opp.get("wreck_event", -1)) == event_index:
+			return {
+				"name": String(opp.get("name", "Rival")),
+				"car_id": String(opp.get("car_id", "")),
+				"car_name": String(opp.get("car_name", "")),
+				"progress": float(opp.get("wreck_progress", 0.5)),
+				"side": float(opp.get("wreck_side", 1.0)),
+			}
+	return {}
 
 
 # The CarLibrary entries a rally's restriction admits — the pool its rivals are

@@ -31,6 +31,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [reward-system.md](reward-system.md) | `RewardSystem` — pure draw policy (tier clamp, per-event upgrade, per-rally car with anti-soft-lock) |
 | [rally-session.md](rally-session.md) | `RallySession` autoload — event-flow orchestrator (3 events, standings, placement, rewards, wreck/DNF, no-retry) |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, wreck at 0 HP |
+| [opponent-wrecks.md](opponent-wrecks.md) | Rival crash-outs — the rare/capped wreck decision (`RallyLibrary`) + the roadside staging (frozen car + crowd + smoke) in `world.gd` |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
 | [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift; `EngineLibrary` (`scripts/engine_library.gd`) — the catalog of real engines cars reference by id |
@@ -86,6 +87,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Rally session | `scripts/rally_session.gd` (`RallySession` autoload — event-flow orchestration) |
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
+| Opponent wrecks | `scripts/rally_library.gd` (`generate_opponent_field` / `event_wreck`), `scripts/world.gd` (`_spawn_opponent_wreck`) |
 | Wreck menu | `scripts/wreck_screen.gd` (`WreckScreen` — crash → orbit camera + Return to HQ) |
 | Settings page | `scripts/settings_menu.gd` (`SettingsMenu` — shared camera-angle + key-binding + mobile-control picker) |
 | Key rebinding | `scripts/input_remap.gd` (`InputRemap` autoload — keyboard/controller rebind over the InputMap) |
