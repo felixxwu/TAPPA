@@ -1231,6 +1231,31 @@ var peak_torque_rpm := 4500.0
 @export_range(10.0, 300.0) var spectator_despawn_behind_m := 70.0
 
 
+@export_group("Opponent Wrecks")
+# A crashed-out rival is shown as a wrecked car by the roadside for the event they
+# wrecked in (features/opponent-wrecks.md): the ACTUAL car they drove, frozen (hitbox
+# kept) with a small standing crowd around it and lazy engine smoke. The wreck ITSELF
+# (how often / how many) is decided in RallyLibrary (OPPONENT_WRECK_CHANCE); these knobs
+# only shape the roadside presentation.
+## Stage roadside wrecks at all. Off = a crashed rival still DNFs, just isn't shown.
+@export var opponent_wrecks_enabled := true
+## How far (m) beyond the road edge (half track width) the wreck sits off the verge.
+@export_range(0.0, 20.0) var opponent_wreck_road_offset_m := 3.5
+## Extra yaw (rad) the wreck is skewed by, off the road direction, so it reads as
+## crashed rather than parked. Randomised per wreck within ±this.
+@export_range(0.0, 3.14159) var opponent_wreck_yaw_skew := 1.2
+## People in the small gathering around the wreck (a static standing cluster, no AI).
+@export_range(0, 40) var opponent_wreck_crowd_size := 7
+## Radius (m) of the ring the onlookers stand in around the wreck.
+@export_range(0.5, 12.0) var opponent_wreck_crowd_radius_m := 3.2
+## Height (m) the wreck is dropped from so it settles onto its wheels on the (possibly
+## sloped) verge before its pose is frozen — like the HQ/podium display cars.
+@export_range(0.0, 3.0) var opponent_wreck_drop_height_m := 0.6
+## How long (s) the wreck settles under physics before it's frozen static. 0 freezes
+## it immediately (headless always freezes at once — nothing renders to settle for).
+@export_range(0.0, 6.0) var opponent_wreck_settle_seconds := 1.2
+
+
 @export_group("Performance")
 ## Render frame cap (FPS). The game is inherently low-end and ships one lean
 ## value; a steady cap avoids thermal throttling on phones. 0 = uncapped (desktop

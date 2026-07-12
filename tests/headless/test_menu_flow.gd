@@ -474,6 +474,46 @@ func test_free_roam_finish_next_returns_to_hq() -> void:
 	RallySession.free_roam_instance_id = -1
 
 
+# A rival who crashed out of THIS event is staged by the roadside: their ACTUAL car
+# frozen as a solid obstacle (hitbox kept), lazy engine smoke, and a small standing
+# crowd around it (features/opponent-wrecks.md). Drives the real world build with an
+# active session whose field wrecks one rival in event 0.
+func test_run_scene_stages_a_roadside_opponent_wreck() -> void:
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
+	# Overwrite the field so a known rival (in a resolvable fixture car) wrecks event 0.
+	RallySession._opponent_field = [
+		{"name": "A", "car_id": "fx_rwd_coupe", "car_name": "Fixture Coupe",
+			"event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1,
+			"wreck_event": -1, "wreck_progress": 0.0, "wreck_side": 1.0},
+		{"name": "B", "car_id": "fx_fwd_hatch", "car_name": "Fixture Hatch",
+			"event_times_ms": [-1, -1, -1], "dnf": true, "combined_ms": -1,
+			"wreck_event": 0, "wreck_progress": 0.5, "wreck_side": 1.0},
+	]
+	SceneHelpers.minimal_world()
+	Config.data.start_line_enabled = false  # skip the start-line staging; just build the world
+	var scene: Node3D = load("res://main.tscn").instantiate()
+	add_child_autofree(scene)
+	await get_tree().process_frame
+	var wreck := scene.get_node_or_null("OpponentWreck")
+	assert_not_null(wreck, "a crashed rival is staged by the roadside")
+	if wreck == null:
+		return
+	# The staged car is the ACTUAL car the crashed rival drove, frozen (its hitbox kept)
+	# so it's a solid obstacle that won't be shoved.
+	var car: VehicleBody3D = wreck.find_children("*", "VehicleBody3D", true, false)[0]
+	assert_true(car.freeze, "the wreck is frozen")
+	assert_eq(car.freeze_mode, RigidBody3D.FREEZE_MODE_STATIC,
+		"frozen static, so the collider stays a solid immovable obstacle")
+	# A small crowd of onlookers gathered around it.
+	var crowd := wreck.get_node_or_null("WreckCrowd") as MultiMeshInstance3D
+	assert_not_null(crowd, "a crowd gathers around the wreck")
+	assert_gt(crowd.multimesh.instance_count, 0, "the crowd is populated")
+	# And it smokes like a damaged HQ car (a synthetic-smoke pool parented to it).
+	assert_gt(car.find_children("*", "EngineSmoke", true, false).size(), 0,
+		"the wreck puffs engine smoke")
+
+
 # The HQ clearing is dressed like a stage verge: the framing tree ring is joined by
 # an interleaved bush ring and spectators spread around the clearing (pure scenery —
 # no steering; there is no car in HQ to react to). Spectators stand on the grass,

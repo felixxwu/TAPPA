@@ -132,8 +132,14 @@ generator also uses it per-rival.
   hidden `difficulty` tier (1–4)** via `_pace_band`, tightening toward the fast end as
   the tier rises (tier 1 `[1.1, 2.0]` → tier 4 `[1.1, 1.5]`), so higher-tier rallies
   field a more uniformly quick pack.
-  Some **DNF**; a DNF in
-  any event disqualifies the opponent (`combined_ms = -1`, doesn't rank). Each
+  Some **crash out (DNF)**; a DNF in
+  any event disqualifies the opponent (`combined_ms = -1`, doesn't rank). Wrecks are
+  rare and **capped at one per event** — a wreck pass rolls `OPPONENT_WRECK_CHANCE`
+  (0.5) per event to crash out exactly one not-yet-wrecked rival, so on average about
+  one rival wrecks every two events. A wrecked rival carries the seeded roadside
+  placement (`wreck_event` / `wreck_progress` / `wreck_side`) the run scene reads via
+  `event_wreck(field, event_index)` to stage the wreck (see
+  [opponent-wrecks.md](opponent-wrecks.md)). Each
   rival is also assigned a **car** (`car_id` / `car_name`) drawn from the rally's
   eligible roster (`_eligible_cars` filters by the restriction, so a p/w-banded
   rally fields cars inside that band and an RWD-only rally fields RWD rivals) using

@@ -294,6 +294,15 @@ func current_event_target_ms() -> int:
 	return best
 
 
+# The rival (if any) who crashed out of the CURRENT event, so the run scene can stage
+# a wrecked opponent car by the roadside (features/opponent-wrecks.md). Carries the
+# crashed rival's name, the ACTUAL car they drove (car_id/car_name), and the seeded
+# roadside placement (progress along the track + which verge). {} when no rival wrecked
+# this event (at most one ever does). Empty before a rally starts.
+func current_event_wreck() -> Dictionary:
+	return RallyLibrary.event_wreck(_opponent_field, _event_index)
+
+
 # The car_meta of the opponent posting the fastest non-DNF time for the CURRENT
 # event (the rival the "vs P1" popup tracks). {} if no classified rival has a time.
 func current_event_p1_car() -> Dictionary:

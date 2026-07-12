@@ -384,17 +384,93 @@ func test_opponents_drive_eligible_cars() -> void:
 		assert_eq(String(opp.get("car_name", "")), String(meta.get("name", "")), "car name matches the id")
 
 
-func test_dnfs_occur_somewhere_in_the_roster() -> void:
-	var any_dnf := false
+func test_wrecks_occur_somewhere_in_the_roster() -> void:
+	# The wreck mechanism actually crashes rivals out across a spread of seeds (it's not
+	# so rare it never fires). Uses the whole authored roster as a bag of seeds rather
+	# than pinning any one rally's outcome.
+	var any_wreck := false
 	for rally in RallyLibrary.RALLIES:
 		var track := _track_with_pieces()
-		var events := [{"seed": 1}]
+		var events := [{"seed": 1}, {"seed": 2}, {"seed": 3}]
 		var rally_with_events: Dictionary = rally.duplicate()
 		rally_with_events["events"] = events
-		for opp in RallyLibrary.generate_opponent_field(rally_with_events, [track], events):
+		for opp in RallyLibrary.generate_opponent_field(rally_with_events, [track, track, track], events):
 			if opp["dnf"]:
-				any_dnf = true
-	assert_true(any_dnf, "some opponents DNF across the roster")
+				any_wreck = true
+	assert_true(any_wreck, "some opponents wreck (DNF) across the roster")
+
+
+func test_at_most_one_wreck_per_event() -> void:
+	# The core wreck invariant, independent of the wreck CHANCE: no more than one rival
+	# ever wrecks in a single event, so the run scene shows at most one roadside wreck
+	# per stage. Swept over the whole roster (many seeds) so it holds broadly.
+	var track := _track_with_pieces()
+	for rally in RallyLibrary.RALLIES:
+		var events := [{"seed": 11}, {"seed": 22}, {"seed": 33}]
+		var rally_with_events: Dictionary = rally.duplicate()
+		rally_with_events["events"] = events
+		var field := RallyLibrary.generate_opponent_field(
+			rally_with_events, [track, track, track], events)
+		for k in events.size():
+			var wrecked_in_k := 0
+			for opp in field:
+				if int(opp["wreck_event"]) == k:
+					wrecked_in_k += 1
+			assert_lte(wrecked_in_k, 1,
+				"%s event %d wrecks at most one rival" % [rally["id"], k])
+
+
+func test_a_wrecked_rival_dnfs_from_its_wreck_event_on() -> void:
+	# A rival who wrecks in event k has no time for k or any later event, DNFs the rally
+	# (combined -1, doesn't rank), and carries a valid roadside placement to stage.
+	var track := _track_with_pieces()
+	var events := [{"seed": 5}, {"seed": 6}, {"seed": 7}]
+	# Sweep the roster to find a field that actually contains a wreck (deterministic).
+	var field: Array = []
+	for rally in RallyLibrary.RALLIES:
+		var rally_with_events: Dictionary = rally.duplicate()
+		rally_with_events["events"] = events
+		var f := RallyLibrary.generate_opponent_field(
+			rally_with_events, [track, track, track], events)
+		var has_wreck := false
+		for opp in f:
+			if int(opp["wreck_event"]) >= 0:
+				has_wreck = true
+				break
+		if has_wreck:
+			field = f
+			break
+	assert_false(field.is_empty(), "found a field containing a wreck")
+	for opp in field:
+		var we := int(opp["wreck_event"])
+		if we < 0:
+			continue
+		assert_true(bool(opp["dnf"]), "a wrecked rival DNFs")
+		assert_eq(int(opp["combined_ms"]), -1, "a wrecked rival does not rank")
+		for k in range(we, events.size()):
+			assert_eq(int(opp["event_times_ms"][k]), -1,
+				"no time from the wreck event onward")
+		assert_between(float(opp["wreck_progress"]), 0.0, 1.0, "placement progress in [0,1]")
+		assert_true(absf(float(opp["wreck_side"])) == 1.0, "placement side is ±1")
+
+
+func test_event_wreck_reports_the_crashed_rival_or_nothing() -> void:
+	# event_wreck() surfaces the rival who wrecked that event with the ACTUAL car they
+	# drove, and returns {} for an event with no wreck. Built from a synthetic field so
+	# it leans on the read logic, not on any authored rally's roll.
+	var field := [
+		{"name": "A", "car_id": "carA", "car_name": "Car A", "wreck_event": -1,
+			"wreck_progress": 0.0, "wreck_side": 1.0},
+		{"name": "B", "car_id": "carB", "car_name": "Car B", "wreck_event": 1,
+			"wreck_progress": 0.4, "wreck_side": -1.0},
+	]
+	var none := RallyLibrary.event_wreck(field, 0)
+	assert_true(none.is_empty(), "no rival wrecked event 0 -> {}")
+	var hit := RallyLibrary.event_wreck(field, 1)
+	assert_eq(String(hit.get("car_id", "")), "carB", "the crashed rival's actual car")
+	assert_eq(String(hit.get("name", "")), "B", "the crashed rival's name")
+	assert_almost_eq(float(hit.get("progress", 0.0)), 0.4, 0.001, "carries the placement")
+	assert_eq(float(hit.get("side", 0.0)), -1.0, "carries the verge side")
 
 
 func test_opponent_faster_car_posts_faster_time():

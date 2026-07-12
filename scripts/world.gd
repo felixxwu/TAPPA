@@ -4,6 +4,12 @@ extends Node3D
 
 const BUSH_SEED_OFFSET := 1013
 
+# Assets for a staged roadside opponent wreck (features/opponent-wrecks.md). The car
+# is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
+# display cars); the onlookers reuse the shared low-poly spectator figure.
+const WRECK_CAR_SCENE := "res://car.tscn"
+const WRECK_SPECTATOR_SCENE := "res://blender/spectator/spectator.glb"
+
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
 # world the instant main.tscn is instantiated, exactly as before this overlay.
@@ -293,6 +299,11 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Finish + start inflatable arches straddling the road.
 	_build_arches(road_centerline, finish_len, start_pos, start_heading, cfg)
 
+	# Roadside opponent wreck: if a rival crashed out of THIS event, stage their ACTUAL
+	# car by the verge — frozen (hitbox kept), smoking, with a small crowd around it
+	# (features/opponent-wrecks.md). Uses the built centerline + terrain.
+	_spawn_opponent_wreck(road_centerline, finish_len, $Floor as TerrainManager, cfg)
+
 	# Persistent per-stage managers (progress, tire marks, road paint, wheel dust,
 	# engine smoke, stage flow) + the in-stage "vs P1" pace splits.
 	_build_persistent_managers(cfg, result, road_centerline, finish_len, staged)
@@ -546,6 +557,169 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 	var params := cfg.spectator_params()
 	params["seed"] = seed_value
 	group.setup(members, $Car, terrain, road_cells, tree_grid, params)
+
+
+# --- Roadside opponent wreck (features/opponent-wrecks.md) -------------------
+
+# Stage the crashed rival's car by the roadside for the CURRENT event, if a rival
+# wrecked in it. The ACTUAL car the rival drove is spawned off the verge as a frozen
+# prop (its hitbox kept, so crashing into it still bites — it just won't be shoved),
+# lazy engine smoke rising from it like a damaged HQ car, and a small standing crowd
+# gathered around it. Named "OpponentWreck" so entering a new event replaces rather
+# than stacks it. No-op without an active session, the feature disabled, no wreck this
+# event, or a car id that no longer resolves.
+func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
+		terrain: TerrainManager, cfg: GameConfig) -> void:
+	var existing := get_node_or_null("OpponentWreck")
+	if existing != null:
+		remove_child(existing)
+		existing.free()
+	if not cfg.opponent_wrecks_enabled or not RallySession.is_active():
+		return
+	var wreck := RallySession.current_event_wreck()
+	if wreck.is_empty():
+		return
+	var idx := CarLibrary.index_of(String(wreck.get("car_id", "")))
+	if idx < 0:
+		return
+	var baked := centerline.get_baked_length()
+	var span := finish_len if finish_len > 0.0 else baked
+	if span <= 0.0:
+		return
+	# Where along the timed track the crash sits, and how far off which verge.
+	var progress := clampf(float(wreck.get("progress", 0.5)), 0.0, 1.0)
+	var offset := progress * span
+	var pos2 := centerline.sample_baked(offset)
+	var tan2 := centerline.sample_baked(minf(offset + 1.0, baked)) - pos2
+	if tan2.length() < 1e-4:
+		tan2 = Vector2(0.0, 1.0)
+	tan2 = tan2.normalized()
+	var perp := Vector2(-tan2.y, tan2.x) * float(wreck.get("side", 1.0))
+	var off_dist := cfg.track_width * 0.5 + cfg.opponent_wreck_road_offset_m
+	var wpos2 := pos2 + perp * off_dist
+	var ground_y := terrain.height_at(wpos2.x, wpos2.y)
+
+	var container := Node3D.new()
+	container.name = "OpponentWreck"
+	add_child(container)
+
+	# The crashed car, skewed off the road direction so it reads as wrecked, not parked
+	# (deterministic from the seeded progress so it's stable across re-attempts).
+	var fwd := Vector3(tan2.x, 0.0, tan2.y)
+	var skew := (fmod(progress * 41.0, 1.0) - 0.5) * 2.0 * cfg.opponent_wreck_yaw_skew
+	var car_basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, skew)
+	var car_pos := Vector3(wpos2.x, ground_y + cfg.opponent_wreck_drop_height_m, wpos2.y)
+	_spawn_wreck_car(idx, Transform3D(car_basis, car_pos), container, cfg)
+
+	# The small gathering of onlookers around the wreck.
+	_spawn_wreck_crowd(container, Vector3(wpos2.x, ground_y, wpos2.y), terrain, cfg)
+
+
+# Spawn the wrecked rival's car as a frozen roadside prop under `parent`. Mirrors the
+# podium/HQ display-car recipe: an isolated config so its reshape can't clobber the
+# player car's tuning, its own mesh copies, engine silenced. It spawns live so it
+# settles onto its wheels on the (possibly sloped) verge, then freezes — FREEZE_MODE_STATIC
+# (the default) keeps the collider, so the frozen wreck is a solid, immovable obstacle.
+# Its HP is zeroed so the synthetic engine smoke reads it as a wreck and puffs hardest.
+func _spawn_wreck_car(library_index: int, xform: Transform3D, parent: Node, cfg: GameConfig) -> Node3D:
+	# Variant (not :=) so the dynamic car-script calls don't depend on the analyzer
+	# resolving car.tscn's root script type at parse time (see podium.gd._spawn_car).
+	var car: Variant = load(WRECK_CAR_SCENE).instantiate()
+	parent.add_child(car)
+	car.use_isolated_config()
+	car.apply_car(library_index)
+	for mi in car.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if m.mesh != null:
+			m.mesh = m.mesh.duplicate()
+	car.global_transform = xform
+	# Lock its controls: it's a driverless prop, so it must ignore live driving input
+	# during its settle (the player may be holding throttle at the start line) — and the
+	# lock also engages its handbrake, so it can't roll downhill before it freezes.
+	car.controls_locked = true
+	# Read as a wreck: 0 HP drives the synthetic smoke below (a wrecked car smokes
+	# hardest), exactly as a damaged HQ car does.
+	if car.get("damage") != null:
+		car.damage.hp = 0.0
+	# A wreck makes no engine noise.
+	var audio: Variant = car.get_node_or_null("EngineAudio")
+	if audio != null:
+		audio.process_mode = Node.PROCESS_MODE_DISABLED
+		if audio is AudioStreamPlayer:
+			audio.playing = false
+			audio.volume_db = -80.0
+	if _headless:
+		_freeze_wreck_car(car)
+	else:
+		car.freeze = false  # live so it settles onto its wheels, then frozen below
+		var settle: float = maxf(cfg.opponent_wreck_settle_seconds, 0.0)
+		if settle > 0.0:
+			get_tree().create_timer(settle).timeout.connect(
+				func() -> void: _freeze_wreck_car(car))
+		else:
+			_freeze_wreck_car(car)
+	_add_wreck_smoke(car)
+	return car
+
+
+# Freeze a settled wreck car into a static, immovable obstacle. FREEZE_MODE_STATIC (the
+# default) keeps its collider live, so crashing into it still bites — it just won't move.
+func _freeze_wreck_car(car: Variant) -> void:
+	if not is_instance_valid(car):
+		return
+	car.freeze = true
+	car.process_mode = Node.PROCESS_MODE_DISABLED
+
+
+# Give the wreck lazy engine smoke like a damaged HQ display car: the frozen prop's
+# engine never runs, so EngineSmoke self-times puffs from the car's (zeroed) damage
+# severity. Parented to the car so it's freed with it, PROCESS_MODE_ALWAYS so it keeps
+# puffing though the car itself is frozen / process-disabled.
+func _add_wreck_smoke(car: Node) -> void:
+	if not Config.data.engine_smoke_enabled:
+		return
+	var smoke := EngineSmoke.new()
+	car.add_child(smoke)
+	smoke.process_mode = Node.PROCESS_MODE_ALWAYS
+	smoke.setup_synthetic(car)
+
+
+# A small standing crowd of onlookers gathered in a ring around the wreck — pure
+# scenery in one MultiMesh (no steering / ragdolls, like the HQ crowd), each facing
+# the wreck. `center` is the wreck's ground position. No-op with a zero crowd size or
+# a missing figure mesh.
+func _spawn_wreck_crowd(parent: Node, center: Vector3, terrain: TerrainManager, cfg: GameConfig) -> void:
+	var count := cfg.opponent_wreck_crowd_size
+	if count <= 0:
+		return
+	var mesh := MeshUtil.first_mesh(load(WRECK_SPECTATOR_SCENE))
+	if mesh == null:
+		return
+	var foot := -mesh.get_aabb().position.y  # feet on the ground, as SpectatorGroup does
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = count
+	var positions: Array = []
+	for i in count:
+		var ang := TAU * float(i) / float(count)
+		var r: float = cfg.opponent_wreck_crowd_radius_m
+		var px := center.x + cos(ang) * r
+		var pz := center.z + sin(ang) * r
+		var py := terrain.height_at(px, pz)
+		# Face the wreck at the centre (the figure's default facing is +Z).
+		var to_center := Vector2(center.x - px, center.z - pz)
+		var yaw := atan2(to_center.x, to_center.y)
+		mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, yaw),
+			Vector3(px, py + foot, pz)))
+		positions.append(Vector2(px, pz))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "WreckCrowd"
+	mmi.multimesh = mm
+	# The scatter, readable by tests: headless MultiMesh transform buffers are
+	# RenderingServer no-op stubs and can't be read back (see hq_environment.gd).
+	mmi.set_meta("positions", positions)
+	parent.add_child(mmi)
 
 
 # The live event data the arch banners display (rally name, which stage and the

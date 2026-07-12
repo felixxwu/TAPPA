@@ -124,6 +124,30 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 		assert_ne(String(e["name"]), "C", "a rival who DNF'd this event is omitted")
 
 
+# current_event_wreck surfaces the rival who crashed out of the CURRENT event (with the
+# actual car they drove), tracking the event index, and is empty for an event nobody
+# wrecked in. Built from a synthetic field so it leans on the delegation, not on a roll.
+func test_current_event_wreck_tracks_the_crashed_rival_per_event() -> void:
+	assert_true(RallySession.current_event_wreck().is_empty(), "idle: no wreck")
+	_start("coastal_sprint")
+	RallySession._opponent_field = [
+		{"name": "A", "car_id": "carA", "car_name": "Car A", "event_times_ms": [50000, 82000, 82000],
+			"dnf": false, "combined_ms": 214000, "wreck_event": -1, "wreck_progress": 0.0, "wreck_side": 1.0},
+		{"name": "B", "car_id": "carB", "car_name": "Car B", "event_times_ms": [45000, -1, -1],
+			"dnf": true, "combined_ms": -1, "wreck_event": 1, "wreck_progress": 0.3, "wreck_side": -1.0},
+	]
+	# Event 0: nobody wrecked.
+	assert_true(RallySession.current_event_wreck().is_empty(), "event 0: no wreck to stage")
+	RallySession.report_event_result(60000)   # -> standings
+	RallySession.continue_to_next_event()      # -> event 1
+	assert_eq(RallySession.event_index(), 1, "advanced to event 1")
+	# Event 1: B crashed out — surfaced with the actual car B drove.
+	var w := RallySession.current_event_wreck()
+	assert_false(w.is_empty(), "event 1: a wreck to stage")
+	assert_eq(String(w.get("car_id", "")), "carB", "the crashed rival's actual car")
+	assert_eq(String(w.get("name", "")), "B", "the crashed rival's name")
+
+
 # The leaderboard carries the car each entrant drove — the rivals' and the
 # player's fielded car.
 func test_standings_carry_the_player_and_rival_cars() -> void:
