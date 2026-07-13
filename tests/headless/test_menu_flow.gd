@@ -1581,10 +1581,10 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	assert_false(_turbo_button(hq._lift_upgrades_box, kit_name).disabled,
 		"the kit option ungreys once fitted")
 	# Picking the kit enables the part; picking None parks it (still fitted, effect off).
-	_press_button_with_text(hq._lift_upgrades_box, kit_name)
+	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", kit_name)
 	await get_tree().process_frame
 	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"), "picking the kit enables it")
-	_press_button_with_text(hq._lift_upgrades_box, "NONE")
+	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", "NONE")
 	await get_tree().process_frame
 	var car: Dictionary = _save.get_car(id)
 	assert_true(car["installed_upgrades"].has("brake_kit"), "a parked part stays fitted to the car")
@@ -2300,6 +2300,37 @@ func _press_button_with_text(box: Node, needle: String) -> void:
 	fail_test("no button found containing '%s'" % needle)
 
 
+# The option-selector rows share button labels — every slot renders a "None" — so a
+# whole-box search over-counts and can press the wrong slot's button. Each option
+# button carries an "opt:<slot>:..." focus-key meta (hq.gd _make_option_selector), so
+# scope by that meta to confine a count / press to a single selector row.
+func _slot_buttons(box: Node, slot: String) -> Array:
+	var out: Array = []
+	var prefix := "opt:%s:" % slot
+	for b in box.find_children("*", "Button", true, false):
+		if String(b.get_meta("upgrade_focus_key", "")).begins_with(prefix):
+			out.append(b)
+	return out
+
+
+func _count_slot_buttons_with_text(box: Node, slot: String, needles: Array) -> int:
+	var count := 0
+	for b in _slot_buttons(box, slot):
+		for needle in needles:
+			if String(b.text).contains(needle):
+				count += 1
+				break
+	return count
+
+
+func _press_slot_button_with_text(box: Node, slot: String, needle: String) -> void:
+	for b in _slot_buttons(box, slot):
+		if String(b.text).contains(needle):
+			b.pressed.emit()
+			return
+	fail_test("no button in slot '%s' containing '%s'" % [slot, needle])
+
+
 func test_drivetrain_selector_present_only_when_unlocked() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -2396,7 +2427,7 @@ func test_turbo_selector_is_earn_gated() -> void:
 	await get_tree().process_frame
 	# All three options always render; the turbo slot has no Enable/Disable toggles.
 	# (Button labels render uppercased by the theme, so match on the upper-cased text.)
-	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["NONE", "SMALL", "BIG"]), 3,
+	assert_eq(_count_slot_buttons_with_text(hq._lift_upgrades_box, "turbo", ["NONE", "SMALL", "BIG"]), 3,
 		"None / Small / Big always shown")
 	# With no kit won, None is selectable but Small / Big are greyed until earned.
 	assert_false(_turbo_button(hq._lift_upgrades_box, "NONE").disabled, "None is always available")

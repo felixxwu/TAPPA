@@ -143,7 +143,7 @@ func get_fail_text_for_errors(test_id=_current_test_id) -> String:
 	if(errors.items.has(test_id)):
 		for error in errors.items[test_id]:
 			if(_is_error_failable(error)):
-				error_texts.append(str('<', error.get_error_type_name(), '>', error.code))
+				error_texts.append(str('<', error.get_error_type_name(), '>', error.code, ' | ', error.file, ':', error.line, ' | ', error.description))
 
 	var to_return = ""
 	for i in error_texts.size():
