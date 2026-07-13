@@ -41,6 +41,12 @@ var _wheels: Array = []     # nodes exposing is_in_contact() + global_position
 var _ribbons: Array = []    # MeshInstance3D, one ribbon per wheel
 var _pairs: Array = []      # per wheel: Array of [left:Vector3, right:Vector3] (ring buffer)
 var _last_pos: Array = []   # per wheel: Vector2 last emit XZ, or null = ribbon broken
+# Incremental triangle buffers, kept in lock-step with _pairs so a new segment
+# appends one quad (and a dropped one trims a quad off the front) instead of
+# rebuilding the whole ribbon from _pairs on every emit. _build_ribbon() is the
+# reference these must always equal (asserted in tests).
+var _verts: Array = []      # per wheel: PackedVector3Array (ribbon triangle verts)
+var _cols: Array = []       # per wheel: PackedColorArray (matching per-vertex colours)
 
 
 # Wire to a freshly generated track + the current car. half_width is the road
@@ -70,6 +76,8 @@ func _retarget_internal(car: Node) -> void:
 	_ribbons = []
 	_pairs = []
 	_last_pos = []
+	_verts = []
+	_cols = []
 	for i in _wheels.size():
 		var mi := MeshInstance3D.new()
 		mi.mesh = ArrayMesh.new()
@@ -77,6 +85,8 @@ func _retarget_internal(car: Node) -> void:
 		_ribbons.append(mi)
 		_pairs.append([])
 		_last_pos.append(null)
+		_verts.append(PackedVector3Array())
+		_cols.append(PackedColorArray())
 
 
 # A car's wheels — duck-typed on is_in_contact() so VehicleWheel3D (real play) and
@@ -172,49 +182,85 @@ func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, connected: bool,
 	var center := Vector3(wheel_pos.x, y, wheel_pos.z)
 	var across := Vector3(road_n.x, 0.0, road_n.y) * (Config.data.tire_mark_width_m * 0.5)
 	var pairs: Array = _pairs[i]
+	var left := center + across
+	var right := center - across
+	# Bridge a quad back to the previous point unless this starts a new strip (a
+	# break leaves a real gap). The quad takes the LATER point's colour, matching
+	# _build_ribbon. `connected` implies a prior consecutive point still in the ring
+	# (pops only drop the oldest), but guard anyway.
+	if connected and not pairs.is_empty():
+		var prev: Array = pairs[pairs.size() - 1]
+		_append_quad(i, prev[0], prev[1], left, right, color)
 	# [left, right, connected, color] — `connected` = bridge a quad back to the
 	# previous point (a strip start after a break is false, so jumps leave a real
 	# gap); `color` is the per-segment vertex colour (gravel rut vs tarmac skid).
-	pairs.append([center + across, center - across, connected, color])
+	pairs.append([left, right, connected, color])
 	var cap: int = maxi(2, Config.data.tire_mark_max_segments)
 	while pairs.size() > cap:
 		pairs.pop_front()
-	_rebuild(i)
+		# The quad the dropped front point fed (its bridge to the next point) is the
+		# oldest one in the buffer; it exists iff the point NOW at the front was laid
+		# `connected` (a strip start there means no quad crossed the drop).
+		if not pairs.is_empty() and bool(pairs[0][2]):
+			_drop_front_quad(i)
+	_upload(i)
 
 
-# Rebuild a wheel's ribbon ArrayMesh from its segment pairs: a quad between each
-# CONSECUTIVE pair, but only where the later point is `connected` — a break (the
-# wheel left the ground / the gravel) leaves a gap instead of a stretched quad.
-# (Cull disabled, so winding doesn't matter for the flat-on-ground ribbon.)
-func _rebuild(i: int) -> void:
+# Append one ribbon quad (two triangles, 6 verts) bridging the previous segment
+# pair (l0/r0) to the new one (l1/r1). Cull disabled, so winding is cosmetic.
+func _append_quad(i: int, l0: Vector3, r0: Vector3, l1: Vector3, r1: Vector3, color: Color) -> void:
+	var v: PackedVector3Array = _verts[i]
+	v.push_back(l0); v.push_back(l1); v.push_back(r0)
+	v.push_back(r0); v.push_back(l1); v.push_back(r1)
+	_verts[i] = v
+	var c: PackedColorArray = _cols[i]
+	for _n in 6:
+		c.push_back(color)
+	_cols[i] = c
+
+
+# Trim the oldest quad (6 verts/colours) off the front of a wheel's buffer.
+func _drop_front_quad(i: int) -> void:
+	_verts[i] = (_verts[i] as PackedVector3Array).slice(6)
+	_cols[i] = (_cols[i] as PackedColorArray).slice(6)
+
+
+# Push the maintained triangle buffer for a wheel onto its ribbon ArrayMesh.
+func _upload(i: int) -> void:
 	var mesh := _ribbons[i].mesh as ArrayMesh
 	mesh.clear_surfaces()
-	var pairs: Array = _pairs[i]
-	if pairs.size() < 2:
+	var verts: PackedVector3Array = _verts[i]
+	if verts.is_empty():
 		return
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_COLOR] = _cols[i]
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	mesh.surface_set_material(0, _material)
+
+
+# Reference full-ribbon build from a segment-pair array: a quad between each
+# CONSECUTIVE pair, but only where the later point is `connected` (a break leaves
+# a gap instead of a stretched quad). The incremental buffers maintained above
+# must always equal this — asserted in test_tire_marks. Kept as the source of
+# truth for that geometry, not called on the hot path.
+static func _build_ribbon(pairs: Array) -> Dictionary:
 	var verts := PackedVector3Array()
 	var cols := PackedColorArray()
 	for k in range(1, pairs.size()):
 		if not bool(pairs[k][2]):
-			continue  # gap: this point starts a new strip, don't bridge across the jump
+			continue
 		var l0: Vector3 = pairs[k - 1][0]
 		var r0: Vector3 = pairs[k - 1][1]
 		var l1: Vector3 = pairs[k][0]
 		var r1: Vector3 = pairs[k][1]
 		verts.append(l0); verts.append(l1); verts.append(r0)
 		verts.append(r0); verts.append(l1); verts.append(r1)
-		# This quad takes the later point's colour (gravel rut or tarmac skid).
 		var col: Color = pairs[k][3]
 		for _v in 6:
 			cols.append(col)
-	if verts.is_empty():
-		return
-	var arr := []
-	arr.resize(Mesh.ARRAY_MAX)
-	arr[Mesh.ARRAY_VERTEX] = verts
-	arr[Mesh.ARRAY_COLOR] = cols
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-	mesh.surface_set_material(0, _material)
+	return {"verts": verts, "cols": cols}
 
 
 # The left road normal at an offset (for the ribbon's width direction).
@@ -294,12 +340,10 @@ func clear_warm_up() -> void:
 func _ensure_material() -> void:
 	if _material != null:
 		return
-	_material = StandardMaterial3D.new()
-	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	# Each segment carries its own colour (gravel rut vs tarmac skid) as a vertex
 	# colour, so one ribbon mesh per wheel can show both surfaces.
-	_material.vertex_color_use_as_albedo = true
+	_material = PS1Material.unshaded(null, true)
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 
 # --- Readouts (tests) --------------------------------------------------------

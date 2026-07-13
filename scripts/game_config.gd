@@ -29,8 +29,8 @@ var peak_torque_rpm := 4500.0
 # axle, ~150 N·m at μ 0.7) or the wheels can't lock against grippy ground.
 @export var brake_torque := 1500.0  # N·m per axle from the foot brake (S)
 @export var handbrake_torque := 5000.0  # N·m on the rear axle (Space)
-@export var engine_friction_base := 10.0  # N·m always-on crank friction at 0 rpm (FMEP constant term)
-@export var engine_friction_slope := 4.0  # N·m of extra crank friction per 1000 rpm (FMEP linear term)
+@export var engine_friction_base := 20.0  # N·m always-on crank friction at 0 rpm (FMEP constant term). FALLBACK ONLY: EngineLibrary.apply overwrites this per-engine (scaled ~cylinder count); this default just covers the baseline car before any engine is fielded.
+@export var engine_friction_slope := 1.0  # N·m of extra crank friction per 1000 rpm (FMEP linear term)
 @export var axle_inertia := 2.645  # kg·m² rear axle spin inertia; fronts use half each
 @export var drag_coefficient := 3.527  # quadratic aero drag on the chassis
 ## Fraction of the chassis WIDTH cut off each of the four vertical corners of the
@@ -228,7 +228,7 @@ var peak_torque_rpm := 4500.0
 ## Bouncing rev limiter width (rpm): fuel cuts at redline and only restores once
 ## the revs fall this far below it, so they oscillate across the band — an
 ## audible bounce off the limiter rather than a silent pin.
-@export_range(10.0, 1500.0) var rev_limiter_band := 100.0
+@export_range(10.0, 1500.0) var rev_limiter_band := 300.0
 @export var engine_inertia := 0.0882  # kg·m² flywheel; small = fast revving
 @export var gear_ratios: Array[float] = [6.0, 4.0, 2.9, 2.2, 1.2]
 @export var reverse_ratio := 6.0
@@ -554,8 +554,11 @@ var peak_torque_rpm := 4500.0
 @export_range(0.0000001, 0.001) var debug_assist_arrow_scale := 0.0001
 
 @export_group("Camera")
-@export var follow_distance := 6.0
-@export var follow_height := 3.0
+@export var follow_distance := 2.5
+## Chase camera height above the ground, expressed as a multiple of
+## follow_distance (so a 1.0 ratio keeps height == distance). Scaling off the
+## follow distance keeps the camera pitch stable when the distance changes.
+@export var follow_height_ratio := 0.7
 @export var smoothing := 5.0
 ## Bonnet (hood) camera local offset on the car. Front of the car is -Z, so a
 ## negative Z sits the camera over the bonnet; +Y raises it to eye height.

@@ -25,12 +25,10 @@ func _init() -> void:
 	_mesh_instance = MeshInstance3D.new()
 	_mesh_instance.name = "MeshInstance3D"
 	add_child(_mesh_instance)
-	_material = StandardMaterial3D.new()
-	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	# Per-vertex colour = paint colour × baked terrain light (see _emit_line), so the
 	# lines shade with the floor. Unshaded otherwise, like the tyre-mark ribbons.
-	_material.vertex_color_use_as_albedo = true
+	_material = PS1Material.unshaded(null, true)
+	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 
 # (Re)build the paint mesh from a freshly generated centerline + surface split.

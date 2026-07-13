@@ -60,6 +60,8 @@ func test_apply_writes_the_whole_profile_onto_config() -> void:
 	assert_almost_eq(cfg.peak_torque, float(eng["peak_torque"]), 0.001, "peak_torque")
 	assert_almost_eq(cfg.peak_torque_rpm, float(eng["peak_torque_rpm"]), 0.001, "peak_torque_rpm")
 	assert_almost_eq(cfg.engine_inertia, float(eng["engine_inertia"]), 0.001, "inertia")
+	# Per-engine crank friction is copied onto the config (the copy LOGIC, not the value).
+	assert_almost_eq(cfg.engine_friction_base, float(eng["engine_friction_base"]), 0.001, "engine_friction_base")
 	assert_almost_eq(cfg.engine_low_octave_mix, float(eng["low_octave_mix"]), 0.001, "octave mix")
 	assert_almost_eq(cfg.engine_volume_db, float(eng["volume_db"]), 0.001, "volume_db")
 	assert_almost_eq(cfg.engine_noise_level, db_to_linear(float(eng["noise_db"])), 0.0001, "noise_db -> linear")
@@ -96,6 +98,29 @@ func test_apply_copies_forced_induction_fields() -> void:
 	EngineLibrary.apply(na_engine, cfg2)
 	assert_false(cfg2.turbo_enabled, "an engine without turbo keys stays NA")
 	assert_false(cfg2.supercharger_enabled, "an engine without supercharger key stays unblown")
+
+
+func test_apply_falls_back_to_the_config_friction_when_omitted() -> void:
+	# A synthetic engine dict without engine_friction_base keeps the config's own value —
+	# the .get fallback path, so a hand-authored engine (or the baseline car) still works.
+	var cfg := GameConfig.new()
+	cfg.engine_friction_base = 33.0
+	var na_engine := {
+		"layout": "i4", "redline_rpm": 7000.0, "peak_torque": 200.0, "peak_torque_rpm": 4500.0,
+		"engine_inertia": 0.15, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0,
+		"soft_clip_post_gain": 0.07,
+	}
+	EngineLibrary.apply(na_engine, cfg)
+	assert_almost_eq(cfg.engine_friction_base, 33.0, 0.001, "friction untouched when the engine omits it")
+
+
+func test_every_engine_declares_a_positive_friction_base() -> void:
+	# Sanity guard only (not a value pin): apply() reads engine_friction_base off every
+	# shipped engine, and negative/zero crank friction would be non-physical.
+	for eng in EngineLibrary.ENGINES:
+		assert_true(eng.has("engine_friction_base"), "%s declares engine_friction_base" % eng["id"])
+		assert_gt(float(eng["engine_friction_base"]), 0.0, "%s friction base is positive" % eng["id"])
+		assert_true(is_finite(float(eng["engine_friction_base"])), "%s friction base is finite" % eng["id"])
 
 
 func test_every_engine_has_a_positive_mass() -> void:

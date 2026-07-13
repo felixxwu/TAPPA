@@ -29,9 +29,7 @@ func _init(p_car: VehicleBody3D) -> void:
 	car = p_car
 	mesh = _mesh
 	top_level = true  # draw in world space, ignore the car's transform
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.vertex_color_use_as_albedo = true
+	var mat := PS1Material.unshaded(null, true)
 	mat.no_depth_test = true
 	material_override = mat
 
@@ -96,15 +94,9 @@ func _physics_process(delta: float) -> void:
 
 
 func _timed_physics_process(_delta: float) -> void:
-	# The H-key toggle is a dev-only affordance: only honour it in a debug build
-	# (editor / debug export). Release exports (e.g. the web build) never show the
-	# arrows via the key. A config that starts them visible still works either way.
-	if OS.is_debug_build() and Input.is_action_just_pressed("toggle_debug_arrows"):
-		visible = not visible
-		# Hide the car body while the overlay is up so the (now slightly smaller)
-		# hitbox hull isn't obscured; restore it when the overlay is dismissed.
-		if car.has_method("set_body_hidden"):
-			car.set_body_hidden(visible)
+	# The H-key toggle (a dev-only affordance) is handled by the car BEFORE its
+	# drivetrain step — see car.gd. It flips this node's `visible` and hides the body;
+	# this overlay just renders whatever visibility it's left in.
 	if _collision_box != null:
 		_collision_box.visible = visible
 		if visible:
@@ -112,6 +104,10 @@ func _timed_physics_process(_delta: float) -> void:
 			if shape != null and shape.points != _hull_points:
 				_hull_points = shape.points
 				_rebuild_collision_mesh(_hull_points)
+	# NB: the drivetrain's `publish_readouts` gate is set by the car BEFORE its step
+	# (car.gd), not here — this overlay is a child and runs after the step, so setting
+	# it here would lag the readouts by a frame and the arrows would draw in empty on
+	# the frame the overlay is toggled on.
 	if not visible:
 		_mesh.clear_surfaces()
 		return

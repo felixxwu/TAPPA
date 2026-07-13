@@ -75,14 +75,12 @@ func _build_pool() -> void:
 	var cfg: GameConfig = Config.data
 	var quad := QuadMesh.new()
 	quad.size = Vector2(cfg.engine_smoke_size_m, cfg.engine_smoke_size_m)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	# Per-instance colour (the fade) drives albedo; disable depth write so stacked
+	# transparent puffs don't fight the depth buffer.
+	var mat := PS1Material.unshaded(null, true)
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	# Per-instance colour (the fade) drives albedo; disable depth write so stacked
-	# transparent puffs don't fight the depth buffer.
-	mat.vertex_color_use_as_albedo = true
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	material_override = mat
 	var mm := MultiMesh.new()

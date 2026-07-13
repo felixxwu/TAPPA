@@ -230,9 +230,9 @@ func test_qualifying_detune_full_power_and_unfixable_cases() -> void:
 
 func test_track_generation_is_deterministic() -> void:
 	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
-	var a := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+	var a := await TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
 		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
-	var b := TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+	var b := await TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
 		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
 	assert_almost_eq((a["centerline"] as Curve2D).get_baked_length(),
 		(b["centerline"] as Curve2D).get_baked_length(), 0.001, "same seed -> same track length")

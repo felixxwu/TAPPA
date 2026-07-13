@@ -11,6 +11,15 @@ build** (`OS.is_debug_build()` — editor / debug export); release exports such 
 the web build ignore the key, so players can't summon the dev arrows. A config
 that starts them visible (`debug_wheel_forces`) still works in any build.
 
+The **H** toggle is handled in `car.gd._timed_physics_process`, **before** the
+drivetrain step — not in the overlay. The car flips the overlay's `visible`, hides
+the body, and sets `drivetrain.publish_readouts = <overlay visible>`. The drivetrain
+only builds its per-wheel `readouts` dicts while `publish_readouts` is on (pure waste
+otherwise). Deciding it before the step is essential: the overlay is a **child** of
+the car, so it runs *after* the parent's step — if it flipped the gate itself the
+readouts would lag a frame and the arrows would draw in empty the frame they're
+toggled on. The overlay now just renders whatever visibility it's left in.
+
 | Color | Force |
 |-------|-------|
 | Green | suspension normal force |

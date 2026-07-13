@@ -44,8 +44,12 @@ var rear_omega := 0.0  # rad/s, locked axle (both rear wheels)
 var front_omega: Dictionary = {}  # front wheel -> rad/s
 var spin_angle: Dictionary = {}  # wheel -> accumulated visual angle (rad)
 var visuals: Dictionary = {}  # wheel -> Node3D spun about the axle
-# wheel -> {normal: float, demand: Vector3, applied: Vector3} for debug arrows
+# wheel -> {normal: float, demand: Vector3, applied: Vector3} for debug arrows.
+# Only populated while `publish_readouts` is on (the WheelForceDebug overlay sets
+# it to its own visibility) — building these per-wheel dicts every physics tick is
+# pure waste in a normal run where nothing reads them.
 var readouts: Dictionary = {}
+var publish_readouts := false
 
 
 func _init(p_car: VehicleBody3D) -> void:
@@ -121,12 +125,15 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 	var front_n := float(front_wheels.size())
 	var front_spool_inertia := front_inertia * front_n
 	var front_spool_brake := front_brake * front_n
+	# Per front wheel (open RWD). Hoisted out of the substep loop and cleared each
+	# pass so it isn't reallocated on every substep (only read in the RWD branch).
+	var front_reaction_each: Dictionary = {}
 	for k in SPIN_SUBSTEPS:
 		# Tire forces at the current spin state; accumulate their impulse and
 		# collect the reaction torques on the spin states.
 		var rear_reaction := 0.0  # N·m slowing the rear axle
 		var front_reaction := 0.0  # summed over front contacts (spool)
-		var front_reaction_each: Dictionary = {}  # per front wheel (open RWD)
+		front_reaction_each.clear()
 		for c in contacts:
 			var f := _tire_force(cfg, c, _omega_of(c.wheel) * r, h)
 			c.impulse_long += f.x * h
@@ -208,13 +215,14 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		var rolled_offset: Vector3 = (offset - vertical) + vertical * cfg.wheel_roll_influence
 		car.apply_force(long_force, rolled_offset)
 		car.apply_force(lat_force, rolled_offset)
-		readouts[c.wheel] = {
-			normal = c.n_force,
-			demand = (
-				c.fwd * (_omega_of(c.wheel) * r - c.v_long) + c.side * c.s_lat
-			) * share / delta,
-			applied = long_force + lat_force,
-		}
+		if publish_readouts:
+			readouts[c.wheel] = {
+				normal = c.n_force,
+				demand = (
+					c.fwd * (_omega_of(c.wheel) * r - c.v_long) + c.side * c.s_lat
+				) * share / delta,
+				applied = long_force + lat_force,
+			}
 
 	for wheel in hardpoints:
 		spin_angle[wheel] = fmod(spin_angle[wheel] + _omega_of(wheel) * delta, TAU)

@@ -54,8 +54,7 @@ func _build_pool() -> void:
 	var cfg: GameConfig = Config.data
 	var quad := QuadMesh.new()
 	quad.size = Vector2(cfg.wheel_particle_size_m, cfg.wheel_particle_size_m)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var mat := PS1Material.unshaded()
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	mat.albedo_color = cfg.wheel_particle_color

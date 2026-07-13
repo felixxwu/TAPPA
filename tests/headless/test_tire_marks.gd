@@ -245,6 +245,27 @@ func test_airborne_wheel_stops_marking() -> void:
 	assert_eq(tm.segment_count(0), before, "an airborne wheel lays no new segment")
 
 
+func test_incremental_buffer_matches_full_rebuild() -> void:
+	# The ribbon mesh is maintained incrementally (append a quad per segment, trim
+	# one off the front when the ring buffer drops a point) rather than rebuilt from
+	# _pairs each emit. That incremental buffer must always equal a from-scratch
+	# rebuild — exercise growth, a mid-strip gap (airborne), and the cap, then compare.
+	Config.data.tire_mark_max_segments = 4
+	var tm := _make()
+	_drive(tm, 0.0, [])          # strip start
+	_drive(tm, 1.0, [])          # connected
+	_drive(tm, 2.0, [])          # connected
+	_wheels[0]._contact = false  # airborne: breaks the strip
+	_drive(tm, 3.0, [])
+	_wheels[0]._contact = true
+	_drive(tm, 4.0, [])          # landing point: starts a NEW strip (a gap here)
+	for s in range(5, 12):       # keep laying so the ring buffer pops from the front
+		_drive(tm, float(s), [])
+	var expected: Dictionary = TireMarks._build_ribbon(tm._pairs[0])
+	assert_eq(tm._verts[0], expected["verts"], "incremental verts match a full rebuild")
+	assert_eq(tm._cols[0], expected["cols"], "incremental colours match a full rebuild")
+
+
 func test_jump_leaves_a_gap_not_a_stretched_quad() -> void:
 	var tm := _make()
 	_drive(tm, 0.0, [])          # strip start (point 0)

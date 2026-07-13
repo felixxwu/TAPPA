@@ -67,6 +67,87 @@ func test_accelerate_moves_car_forward() -> void:
 		"W must move the car along its -Z forward (regression: reversed controls)")
 
 
+func test_locked_car_ignores_accelerate() -> void:
+	# The lock world.gd holds the car under while the world builds (loading
+	# overlay up): with controls_locked set, W must not drive the car — the
+	# driver throttle is neutralised and the handbrake is forced on, so the car
+	# stays put. (Regression: player could drive off behind the loading screen.)
+	_car.controls_locked = true
+	var start_pos := _car.global_position
+	Input.action_press("accelerate")
+	await _wait_physics(90)
+	Input.action_release("accelerate")
+	assert_lt((_car.global_position - start_pos).length(), 0.3,
+		"a locked car does not move under W (held still during loading)")
+
+
+func test_is_held_true_under_either_hold_flag() -> void:
+	# is_held() is the single "car parked on purpose at the line" predicate: true
+	# under the full staging/finish lock OR the countdown handbrake-only hold, and
+	# under both; false when neither is set. Consumers route through it so none can
+	# re-derive the OR and forget a term (the countdown-rev stuck-reset bug).
+	_car.controls_locked = false
+	_car.handbrake_locked = false
+	assert_false(_car.is_held(), "not held when neither flag is set")
+	_car.controls_locked = true
+	_car.handbrake_locked = false
+	assert_true(_car.is_held(), "held under the full staging/finish lock")
+	_car.controls_locked = false
+	_car.handbrake_locked = true
+	assert_true(_car.is_held(), "held under the countdown handbrake-only hold")
+	_car.controls_locked = true
+	_car.handbrake_locked = true
+	assert_true(_car.is_held(), "held when both flags are set")
+	_car.controls_locked = false
+	_car.handbrake_locked = false
+
+
+func test_countdown_hold_does_not_read_as_throttling() -> void:
+	# During the 3·2·1 countdown the car is held by handbrake_locked (not
+	# controls_locked) so the player can rev and launch on GO. The stuck-car
+	# watchdog reads is_throttling() to tell "flooring it and going nowhere"
+	# from a car parked on purpose — a car intentionally held at the line must
+	# NOT read as throttling, or holding the gas through the countdown trips the
+	# stuck reset. (Regression: gas-through-countdown fired the stuck action.)
+	# The key invariant: input stays LIVE during the countdown, yet is_throttling()
+	# still reads false — "input live but car held".
+	_car.controls_locked = false
+	_car.handbrake_locked = true
+	Input.action_press("accelerate")
+	var throttling: bool = _car.is_throttling()
+	var input_live: bool = _car._driver_input_live()
+	Input.action_release("accelerate")
+	assert_false(throttling,
+		"a car held at the line (handbrake_locked) must not read as throttling")
+	assert_true(input_live,
+		"driver input stays live during the countdown even though the car is held")
+
+
+func test_fully_locked_car_does_not_read_as_throttling() -> void:
+	# The staging / post-finish hold (controls_locked) also parks the car on
+	# purpose — flooring it there must not read as throttling either.
+	_car.controls_locked = true
+	_car.handbrake_locked = false
+	Input.action_press("accelerate")
+	var throttling: bool = _car.is_throttling()
+	Input.action_release("accelerate")
+	_car.controls_locked = false
+	assert_false(throttling,
+		"a fully locked car (controls_locked) must not read as throttling")
+
+
+func test_free_car_flooring_it_reads_as_throttling() -> void:
+	# Positive baseline: with no hold flags, holding the throttle DOES read as
+	# throttling — so "always false" can't pass degenerately.
+	_car.controls_locked = false
+	_car.handbrake_locked = false
+	Input.action_press("accelerate")
+	var throttling: bool = _car.is_throttling()
+	Input.action_release("accelerate")
+	assert_true(throttling,
+		"a free car flooring the throttle reads as throttling")
+
+
 func test_reset_returns_to_start() -> void:
 	# Reset returns to the spawn transform captured in car._ready(). On the
 	# flat fixture the car does not slide during settling, so the spawn and

@@ -155,6 +155,19 @@ func replay_cursor() -> float:
 func _driver_input_live() -> bool:
 	return not controls_locked and not ai_controlled and not replay_playback
 
+
+# True when the car is being deliberately held stationary at the start line — by the
+# full staging/finish lock (controls_locked) OR the countdown handbrake-only hold
+# (handbrake_locked). This says NOTHING about whether driver input is live: during the
+# countdown input IS live (the player revs) yet the car is held, which is exactly why
+# this is a SEPARATE predicate from _driver_input_live() (that one keys off
+# controls_locked alone). Consumers asking "is the car parked on purpose?" — the
+# handbrake resolution and the stuck-watchdog's is_throttling() — must route through
+# here so no site re-derives the OR and forgets a term (the countdown-rev stuck-reset
+# bug was exactly that drift).
+func is_held() -> bool:
+	return controls_locked or handbrake_locked
+
 func begin_replay(recorder: ReplayRecorder) -> void:
 	_replay = recorder
 	_replay_t = 0.0
@@ -426,6 +439,20 @@ func _timed_physics_process(delta: float) -> void:
 	# stumbling bursts once HP falls below the health threshold (0 = healthy, never
 	# cuts; ramps to 1 at 0 HP). See features/damage.md.
 	engine.misfire_level = damage.misfire_level(cfg)
+	# The H-key debug-arrow toggle is handled HERE, before the step, rather than in the
+	# overlay: the overlay is a child (runs after this parent), so flipping visibility
+	# there would lag the drivetrain's readout gate by a frame and the arrows would draw
+	# in empty on the frame they're toggled on. Dev-only, so gated to debug builds.
+	if _debug_overlay != null and OS.is_debug_build() \
+			and Input.is_action_just_pressed("toggle_debug_arrows"):
+		_debug_overlay.visible = not _debug_overlay.visible
+		# Hide the car body while the overlay is up so the (slightly smaller) hitbox
+		# hull isn't obscured; restore it when the overlay is dismissed.
+		set_body_hidden(_debug_overlay.visible)
+	# Tell the drivetrain whether to build its per-wheel force readouts, decided BEFORE
+	# the step so this frame's forces are captured and appear the same frame the overlay
+	# turns on.
+	drivetrain.publish_readouts = _debug_overlay != null and _debug_overlay.visible
 	drivetrain.step(delta, drive, brake_input, handbrake, declutch)
 
 	# Quadratic aero drag + speed-squared per-axle downforce (and the debug readout).
@@ -541,7 +568,7 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 			brake_input = rev_pedal
 		if drive < 0.01 and brake_input < 0.01 and speed < 2.0:
 			brake_input = 1.0  # parking brake: hold the car on slopes
-	var handbrake := ai_handbrake if ai_controlled else (controls_locked or handbrake_locked or Input.is_action_pressed("handbrake"))
+	var handbrake := ai_handbrake if ai_controlled else (is_held() or Input.is_action_pressed("handbrake"))
 	# Declutch normally follows the handbrake (a held handbrake opens the clutch so the
 	# engine can rev free — used for launches). The finish stop is the exception.
 	var declutch := handbrake
@@ -557,10 +584,14 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 
 # True when the driver is asking for forward throttle — read by TrackProgress' stuck
 # watchdog to tell "flooring it and going nowhere" from a car parked on purpose. Mirrors
-# the throttle source in _resolve_drive_inputs; false while controls are locked
-# (countdown / post-finish) so a car held at the line never reads as throttling.
+# the throttle source in _resolve_drive_inputs; false while the car is held at the
+# line — controls_locked (staging / post-finish) OR handbrake_locked (the 3·2·1
+# countdown, where input is live so the player can rev). Either way the car is
+# stationary on purpose and must never read as throttling, or holding the gas
+# through the countdown would trip the stuck-car reset. Both holds are folded into
+# is_held() so this can't drift to the wrong subset of flags.
 func is_throttling() -> bool:
-	if controls_locked:
+	if is_held():
 		return false
 	var t := ai_throttle if ai_controlled else Input.get_axis("brake_reverse", "accelerate")
 	return t > 0.5
@@ -895,6 +926,16 @@ func bonnet_cam_offset() -> Vector3:
 	return CarLibrary.all()[_car_index].get("bonnet_cam_offset", Vector3.ZERO)
 
 
+# Half the current body length (metres, along the car's Z / travel axis). The chase
+# camera adds this to its follow distance so a longer car gets pushed back enough to
+# keep its nose/tail in frame. Zero before a car is fielded.
+func half_length() -> float:
+	if _car_index < 0:
+		return 0.0
+	var body: Vector3 = CarLibrary.all()[_car_index]["body"]
+	return body.z * 0.5
+
+
 # Give this car its OWN private GameConfig (a deep copy of the current global
 # baseline) so its apply_car / apply_owned reshape mutates that copy instead of the
 # shared Config.data. Call on a non-simulating PROP/display car BEFORE apply_car so
@@ -1090,6 +1131,19 @@ func set_body_hidden(hidden: bool) -> void:
 				model_body.visible = false
 	else:
 		_apply_model_visibility(CarLibrary.all()[_car_index])
+
+
+# Silence + stop this car's engine voice — used when the car becomes a static
+# prop (HQ lift / parked display, world wreck) that must make no sound. Disables
+# the EngineAudio node's processing and hard-mutes any AudioStreamPlayer under it.
+func silence_engine_audio() -> void:
+	var audio := get_node_or_null("EngineAudio")
+	if audio == null:
+		return
+	audio.process_mode = Node.PROCESS_MODE_DISABLED
+	if audio is AudioStreamPlayer:
+		audio.playing = false
+		audio.volume_db = -80.0
 
 
 # Reposition + resize each wheel to the spec's track / wheelbase / radius / width

@@ -90,6 +90,11 @@ Declared in `project.godot` `[autoload]`:
    world-gen that runs afterwards. Under headless the per-step `await`s are
    no-ops, so generation stays synchronous (tests see a fully-built world right
    after instantiating `main.tscn`). The overlay is freed once the world is up.
+   Before generation begins, `_ready` also sets `$Car.controls_locked = true` so
+   the player can't press W and drive off behind the overlay during those awaited
+   frames (the car is already in the tree and physics-processing); every
+   end-of-generation spawn path resets `controls_locked` (`StageManager.setup`,
+   `BenchmarkRunner.setup`), so the lock only governs the loading window.
    During the track stage the overlay also shows a growing line of the track
    above the loading text, driven by real generation progress via
    `LoadingScreen.update_track_preview` (see [track.md](track.md)) and held once

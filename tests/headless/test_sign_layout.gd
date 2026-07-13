@@ -9,7 +9,7 @@ const START_HEADING := Vector2(0.0, 1.0)
 
 
 func _generate(seed_value: int, turns: int = 10, width: float = 6.0) -> Dictionary:
-	return TrackGenerator.generate(START_POS, START_HEADING, seed_value, turns, width)
+	return await TrackGenerator.generate(START_POS, START_HEADING, seed_value, turns, width)
 
 
 func _plan(result: Dictionary) -> Array:
@@ -27,7 +27,7 @@ func _of_kind(layout: Array, kind: String) -> Array:
 func test_only_turn_signs_are_planted() -> void:
 	# Start/finish are the inflatable arches and the stage is no longer split into
 	# signed sectors, so turn arrows are the ONLY signs planted now.
-	var r := _generate(3)
+	var r := await _generate(3)
 	var layout := _plan(r)
 	assert_gt(layout.size(), 0, "the track plants some turn signs")
 	assert_eq(_of_kind(layout, "start").size(), 0, "no start boards")
@@ -37,7 +37,7 @@ func test_only_turn_signs_are_planted() -> void:
 
 
 func test_turn_signs_only_for_sharp_corners_with_correct_keys() -> void:
-	var r := _generate(7, 12)
+	var r := await _generate(7, 12)
 	var turns := _of_kind(_plan(r), "turn")
 	# Count the sharp turns in the generated track ourselves.
 	var sharp := 0
@@ -81,13 +81,13 @@ func test_gentle_corners_5_and_6_are_unsigned() -> void:
 
 
 func test_tangents_are_unit_length() -> void:
-	for s in _plan(_generate(2)):
+	for s in _plan(await _generate(2)):
 		assert_almost_eq(Vector2(s["tangent"]).length(), 1.0, 1e-3,
 			"every placement carries a unit tangent")
 
 
 func test_plan_is_deterministic() -> void:
-	var r := _generate(5)
+	var r := await _generate(5)
 	var a := _plan(r)
 	var b := _plan(r)
 	assert_eq(a.size(), b.size(), "same track -> same sign count")
@@ -98,7 +98,7 @@ func test_plan_is_deterministic() -> void:
 
 
 func test_sector_offsets_helper_matches_boundaries() -> void:
-	var r := _generate(3)
+	var r := await _generate(3)
 	var curve: Curve2D = r["centerline"]
 	var offsets := SignLayout.sector_offsets(curve, 4)
 	assert_eq(offsets.size(), 3, "count-1 interior boundaries")

@@ -75,9 +75,18 @@ shipped de-rate is retuned.
 Off throttle (and during fuel-cut/shifts) the gross term is zero, so `crank`
 is just `−friction` — that is the **engine braking**, and because friction
 rises with revs the braking is stronger at high RPM (and bounces the revs off
-the limiter). The no-stall idle clamp still holds the bottom. Defaults
-(`engine_friction_base = 10`, `engine_friction_slope = 4`) give ≈28 N·m of
-drag at the 4500-rpm peak and ≈42 N·m at 8000 rpm.
+the limiter). The no-stall idle clamp still holds the bottom.
+
+`engine_friction_base` is **per-engine**, authored in `EngineLibrary` and written
+onto the config by `apply()` (see below): it scales vaguely with cylinder count /
+displacement, so a big-block V8 or the 27 L Merlin carries far more parasitic drag
+than a 0.66 L kei triple. A single global term couldn't serve both ends — enough
+friction to give the big engines authority stalled the tiny ones (the kei Acty
+couldn't pull away). The GameConfig `engine_friction_base` (**20**) is now only a
+**fallback** for the baseline car before an engine is fielded (or a synthetic engine
+dict that omits the field). The rpm-dependent `engine_friction_slope` (**4**) stays
+global. As a feel anchor, a 3.0 L flat-6 (`engine_friction_base = 30`) gives ≈48 N·m
+of drag at its 4000-rpm peak.
 
 `peak_torque`, `peak_torque_rpm`, `redline_rpm`, `cylinders`, and
 `firing_angles` all come from the fielded car's referenced **engine** in

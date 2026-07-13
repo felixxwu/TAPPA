@@ -47,6 +47,31 @@ func after_each() -> void:
 	RallySession.auto_load_scenes = true
 
 
+# The menu is default-inert (fail-closed) until the world is generated: a fresh,
+# un-armed PauseMenu must NOT open or freeze the tree. This is the guard against
+# pausing mid-world-generation (the loading window) and quitting/resuming into a
+# half-built world.
+func test_unarmed_pause_menu_is_inert() -> void:
+	var fresh := PauseMenu.new()
+	add_child_autofree(fresh)
+	assert_false(get_tree().paused, "precondition: tree not paused")
+	fresh.open()
+	assert_false(get_tree().paused, "an un-armed pause menu does not freeze the tree")
+	assert_false(fresh.is_open(), "an un-armed pause menu does not open")
+	# Arming it makes open() work as normal.
+	fresh.set_input_enabled(true)
+	fresh.open()
+	assert_true(fresh.is_open(), "once armed, the menu opens")
+	fresh.resume()  # don't leak a paused tree
+
+
+# world.gd arms the pause menu once the world has finished generating, so pause
+# is live for the actual run but was inert during loading.
+func test_world_boot_arms_the_pause_menu() -> void:
+	assert_true(_pause._input_enabled,
+		"world.gd enables the pause menu after generation completes")
+
+
 func test_pause_freezes_game_and_opens_menu() -> void:
 	assert_false(get_tree().paused, "the game runs before pausing")
 	assert_false(_pause.is_open(), "the overlay starts hidden")
@@ -77,9 +102,38 @@ func test_pause_menu_is_keyboard_navigable() -> void:
 	await get_tree().process_frame  # let the deferred grab_focus run
 	assert_eq(_pause._resume_button.focus_mode, Control.FOCUS_ALL, "menu buttons are focusable")
 	assert_eq(_pause._quit_button.focus_mode, Control.FOCUS_ALL, "Quit is focusable too")
+	assert_eq(_pause._reset_button.focus_mode, Control.FOCUS_ALL, "Reset to track is focusable too")
 	assert_eq(_pause.get_viewport().gui_get_focus_owner(), _pause._resume_button,
 		"opening the menu focuses Resume")
 	_pause.resume()
+
+
+# "Reset to track" delegates the reset upward (the menu owns no car) via a signal,
+# then unfreezes and closes the overlay so the player drops back into the run.
+func test_reset_to_track_emits_and_resumes() -> void:
+	assert_not_null(_pause._reset_button, "the pause menu has a Reset to track button")
+	watch_signals(_pause)
+	_pause.open()
+	_pause._on_reset_to_track_pressed()
+	assert_signal_emitted(_pause, "reset_to_track_requested",
+		"pressing Reset to track requests the reset")
+	assert_false(get_tree().paused, "Reset to track unfreezes the game")
+	assert_false(_pause.is_open(), "Reset to track closes the overlay")
+
+
+# world.gd's handler snaps the live car onto the track's recovery pose (its current
+# progress), not back to the start line. Driving the car well away and firing the
+# request lands it exactly on TrackProgress.recovery_pose().
+func test_reset_to_track_snaps_car_onto_recovery_pose() -> void:
+	var car: Node3D = _scene.get_node("Car")
+	var track_progress = _scene._track_progress
+	assert_not_null(track_progress, "the run has a live TrackProgress")
+	var target: Transform3D = track_progress.recovery_pose()
+	# Shove the car far from the road so the reset has something to undo.
+	car.global_transform = target.translated(Vector3(500, 20, 500))
+	_scene._on_reset_to_track_requested()
+	assert_almost_eq(car.global_transform.origin.distance_to(target.origin), 0.0, 0.01,
+		"Reset to track puts the car back on the recovery pose")
 
 
 func test_settings_exposes_the_shared_menu() -> void:

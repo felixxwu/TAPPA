@@ -72,7 +72,10 @@ func _timed_physics_process(_delta: float) -> void:
 	var base := SpatialGrid.cell_key(car_xz, _cell)
 	for ox in range(-1, 2):
 		for oz in range(-1, 2):
-			var arr: PackedInt32Array = _grid.get(Vector2i(base.x + ox, base.y + oz), PackedInt32Array())
+			var key := Vector2i(base.x + ox, base.y + oz)
+			if not _grid.has(key):
+				continue
+			var arr: PackedInt32Array = _grid[key]
 			for idx in arr:
 				var p := _points[idx]
 				if car_xz.distance_to(p) >= _hit_radius:

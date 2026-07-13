@@ -243,7 +243,11 @@ func test_car_in_a_pit_recovers_without_throttle() -> void:
 
 
 func test_parked_upright_on_road_never_recovers() -> void:
-	# Stationary but upright, on the road, no throttle → the player just stopped; leave it.
+	# Stationary but upright, on the road, not throttling → leave it. Covers both a
+	# player who just stopped AND a car deliberately held at the line (staging /
+	# countdown): a held car reports is_throttling() == false (see Car.is_held), so
+	# from the watchdog's view it is indistinguishable from a parked car and must
+	# never be auto-reset. (Regression: revving through the countdown once fired it.)
 	_put_car(0, 20)
 	var tp := _make_progress()
 	_car.linear_velocity = Vector3.ZERO

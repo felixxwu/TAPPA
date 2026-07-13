@@ -79,7 +79,7 @@ the `.tres` requires a scene reload to take effect.
 | `tilt_sensitivity` | 2.0 | TILT scheme: multiplier on device roll → steer (higher = full lock at a gentler tilt) |
 | `tilt_deadzone` | 0.05 | TILT scheme: device roll (fraction of 1 g) ignored around level |
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
-| `follow_height` | 3.0 | Chase camera height above (m) |
+| `follow_height_ratio` | 1.0 | Chase camera height as a multiple of `follow_distance` |
 | `smoothing` | 5.0 | Camera follow smoothing rate |
 | `fog_density` | 0.02 | Environment fog thickness |
 | `background_color` | (0.35,0.3,0.45) | Sky + fog color |

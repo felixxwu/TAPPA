@@ -95,6 +95,14 @@ func mark_start() -> void:
 	_prev_offset = _best_offset  # re-anchored here; next tick's jump is measured from the line
 
 
+# The pose the off-track / stuck recovery would snap the car to: on the centerline
+# at the furthest progress reached so far, facing along the road. Shared with the
+# pause menu's "Reset to track" button so a manual reset lands the car back on the
+# road at its current progress (not all the way back at the start line).
+func recovery_pose() -> Transform3D:
+	return _best_reset
+
+
 # Re-point at a freshly spawned car on the same track (a car swap), resetting
 # progress to the new car's spawn offset.
 func retarget(car: Node, terrain: Node) -> void:

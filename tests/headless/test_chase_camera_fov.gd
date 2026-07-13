@@ -82,6 +82,31 @@ func test_zero_mix_leaves_distance_unchanged() -> void:
 		"zero mix keeps the follow distance constant (pure FOV zoom)")
 
 
+# A target exposing half_length() reports its body's half length; the camera adds
+# it to the follow distance (see chase_camera.gd).
+class _LongCar extends RigidBody3D:
+	var _half := 0.0
+	func half_length() -> float:
+		return _half
+
+
+func test_half_length_pushes_camera_back() -> void:
+	# Standstill + no dolly, so the camera sits at exactly the follow distance.
+	_cam._dolly_mix = 0.0
+	var long_car := _LongCar.new()
+	long_car.gravity_scale = 0.0
+	long_car._half = 3.0
+	add_child(long_car)
+	_cam.target = long_car
+	for _i in 240:
+		long_car.linear_velocity = Vector3.ZERO
+		_cam._physics_process(1.0 / 60.0)
+	var dist := _cam.global_position.distance_to(long_car.global_position)
+	# 6.0 base follow distance + 3.0 half length.
+	assert_almost_eq(dist, 9.0, 0.05, "half length is added to the follow distance")
+	long_car.free()
+
+
 func test_more_mix_pulls_camera_closer() -> void:
 	# A stronger mix should pull the camera in more at speed than a weaker one.
 	_cam._dolly_mix = 0.25

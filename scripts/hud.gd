@@ -102,18 +102,25 @@ func _ready() -> void:
 # Build the top-centre pace-popup label in code (it has no scene node). Anchored to
 # the top centre, sitting just below the run timer, and
 # hidden until the StageManager pulses it via show_stage_delta().
-# Build the debug boost readout in code (no scene node), stacked top-left just
-# below the rpm/gear labels, matching their font size. Hidden until H reveals it.
+# Build a debug readout label in code (no scene node), stacked top-left below the
+# rpm/gear labels at font size 14. Hidden until H reveals it. `top` sets the row;
+# `right` its width.
+func _make_debug_label(node_name: String, top: float, right: float) -> Label:
+	var lbl := Label.new()
+	lbl.name = node_name
+	lbl.offset_left = 8.0
+	lbl.offset_top = top
+	lbl.offset_right = right
+	lbl.offset_bottom = top + 20.0
+	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.visible = false
+	add_child(lbl)
+	return lbl
+
+
+# Build the debug boost readout, just below the rpm/gear labels.
 func _build_boost_label() -> void:
-	_boost_label = Label.new()
-	_boost_label.name = "BoostLabel"
-	_boost_label.offset_left = 8.0
-	_boost_label.offset_top = 48.0
-	_boost_label.offset_right = 128.0
-	_boost_label.offset_bottom = 68.0
-	_boost_label.add_theme_font_size_override("font_size", 14)
-	_boost_label.visible = false
-	add_child(_boost_label)
+	_boost_label = _make_debug_label("BoostLabel", 48.0, 128.0)
 
 
 # Debug boost readout text: the live boost as a percentage of full boost, or
@@ -125,18 +132,9 @@ static func boost_text(turbo_enabled: bool, boost: float) -> String:
 	return "Boost %d%%" % roundi(clampf(boost, 0.0, 1.0) * 100.0)
 
 
-# Build the debug seed readout in code (no scene node), stacked top-left just
-# below the boost label, matching its font size. Hidden until H reveals it.
+# Build the debug seed readout, just below the boost label.
 func _build_seed_label() -> void:
-	_seed_label = Label.new()
-	_seed_label.name = "SeedLabel"
-	_seed_label.offset_left = 8.0
-	_seed_label.offset_top = 68.0
-	_seed_label.offset_right = 168.0
-	_seed_label.offset_bottom = 88.0
-	_seed_label.add_theme_font_size_override("font_size", 14)
-	_seed_label.visible = false
-	add_child(_seed_label)
+	_seed_label = _make_debug_label("SeedLabel", 68.0, 168.0)
 
 
 # Debug seed readout text. Pure so it's unit-testable without the HUD scene.

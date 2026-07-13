@@ -16,9 +16,12 @@ swap in `world.gd.cycle_car`).
 
 The project renders with `gl_compatibility` (desktop + mobile), which has **no
 `Decal` support** — so each wheel gets a **persistent ribbon mesh**: a child
-`MeshInstance3D` whose `ArrayMesh` is rebuilt as segments are appended. Same
-unshaded, cull-disabled material style as the `wheel_force_debug` overlay, but
-accumulated rather than rebuilt-from-scratch each frame. Each segment carries its
+`MeshInstance3D` whose `ArrayMesh` grows as segments are appended. The triangle
+buffer is maintained **incrementally** — a new segment appends one quad and a
+dropped one trims a quad off the front — rather than reconstructed from the whole
+segment list on every emit (`_build_ribbon` is the reference that incremental
+buffer must equal, asserted in `test_tire_marks`). Same unshaded, cull-disabled
+material style as the `wheel_force_debug` overlay. Each segment carries its
 own **vertex colour** (the shared material has `vertex_color_use_as_albedo`), so one
 ribbon per wheel shows both the gravel rut and the tarmac skid in their own shades.
 
@@ -55,8 +58,9 @@ is missing, or the car is gone):
   road in cuts/dips). On the grass, on tarmac without wheelspin, or airborne, the
   ribbon **breaks** (a fresh strip starts later, no line across the gap).
 - **Cap** — each wheel's segment list is a ring buffer of `tire_mark_max_segments`
-  (oldest recycled); only the wheel's own surface rebuilds on a new segment. Memory
-  is bounded and the chase cam looks forward, so far-behind marks are off-screen.
+  (oldest recycled, and its leading quad trimmed off the mesh buffer); only the
+  wheel's own surface re-uploads on a new segment. Memory is bounded and the chase
+  cam looks forward, so far-behind marks are off-screen.
   The trail length is `tire_mark_max_segments × tire_mark_segment_step_m` — at the
   configured 20 × 0.5 m that is a **10 m** trail behind each wheel.
 

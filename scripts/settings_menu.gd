@@ -249,16 +249,20 @@ func select_scheme(id: int) -> void:
 	scheme_changed.emit(id)
 
 
-func _refresh_camera_selection() -> void:
-	var current := int(Save.get_setting(CameraManager.SETTING_KEY, CameraManager.ORDER[0]))
-	for entry in camera_rows:
+# Highlight the row in `rows` whose "key" matches the saved setting under `key`
+# (falling back to `default`), un-highlighting the rest.
+func _refresh_selection(rows: Array, key: String, default: int) -> void:
+	var current := int(Save.get_setting(key, default))
+	for entry in rows:
 		_highlight(entry["button"], int(entry["key"]) == current)
+
+
+func _refresh_camera_selection() -> void:
+	_refresh_selection(camera_rows, CameraManager.SETTING_KEY, int(CameraManager.ORDER[0]))
 
 
 func _refresh_scheme_selection() -> void:
-	var current := int(Save.get_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME))
-	for entry in scheme_rows:
-		_highlight(entry["button"], int(entry["key"]) == current)
+	_refresh_selection(scheme_rows, MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
 
 
 # --- Key bindings ------------------------------------------------------------

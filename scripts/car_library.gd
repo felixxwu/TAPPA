@@ -252,8 +252,8 @@ const CARS: Array[Dictionary] = [
 		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 2,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.2,  # period touring tyres
-		"brake_bias": 0.2,  # front share of foot-brake torque (nose-heavy RWD)
-		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 5000,  # long, brick-like body → real aero drag
+		"brake_bias": 0.1,  # front share of foot-brake torque (nose-heavy RWD)
+		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 12000,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),

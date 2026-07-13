@@ -1748,12 +1748,7 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	car.global_transform = xform
 	car.freeze = true
 	car.process_mode = Node.PROCESS_MODE_DISABLED
-	var audio := car.get_node_or_null("EngineAudio")
-	if audio != null:
-		audio.process_mode = Node.PROCESS_MODE_DISABLED
-		if audio is AudioStreamPlayer:
-			audio.playing = false
-			audio.volume_db = -80.0
+	car.silence_engine_audio()
 	_add_synthetic_smoke(car)
 	return car
 
@@ -2458,13 +2453,7 @@ func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	# space — it must remain ray-pickable for tap-to-focus (see _car_index_at).
 	car.freeze = true
 	car.set_physics_process(false)
-	# Silence its engine — no audio from the parked cars.
-	var audio := car.get_node_or_null("EngineAudio")
-	if audio != null:
-		audio.process_mode = Node.PROCESS_MODE_DISABLED
-		if audio is AudioStreamPlayer:
-			audio.playing = false
-			audio.volume_db = -80.0
+	car.silence_engine_audio()  # no audio from the parked cars
 	_add_synthetic_smoke(car)
 	return car
 

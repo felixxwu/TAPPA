@@ -403,3 +403,8 @@ func test_main_scene_holds_car_at_boot() -> void:
 	assert_not_null(sm, "world.gd wires a StageManager into the scene")
 	var car: VehicleBody3D = _boot_scene.get_node("Car")
 	assert_true(car.handbrake_locked, "car's handbrake is held during the boot countdown")
+	# world.gd locks the car for the loading window (controls_locked = true before
+	# generation), but a non-staged boot must END with input LIVE — StageManager.setup
+	# clears the full lock, leaving only the handbrake hold. (Regression: the loading
+	# lock must not survive into the playable run and freeze the player out.)
+	assert_false(car.controls_locked, "non-staged boot leaves input live (loading lock is cleared)")

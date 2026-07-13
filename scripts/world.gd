@@ -75,6 +75,16 @@ func _ready() -> void:
 		cfg.apply_car_light(_mat(car_mesh))
 	($PostProcess.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
 
+	# Hold the car still for the entire boot. Generation below spans many awaited
+	# frames with the loading overlay up (non-headless); the car is already in the
+	# tree and physics-processing, so without this lock the player could press W and
+	# drive off behind the loading screen. Set BEFORE the car is fielded so it's
+	# inert the instant it exists (no fielding→lock gap). Every spawn path resets
+	# controls_locked at the end of generation — StageManager.setup (locked for a
+	# staged start line, unlocked otherwise) and BenchmarkRunner.setup — so this only
+	# governs the loading window itself.
+	$Car.controls_locked = true
+
 	# Field the car. With an active RallySession this event runs the player's
 	# OwnedCar (baseline + upgrades + saved HP, features/rally-session.md); a plain
 	# dev boot keeps the first library car (the Mazda MX-5).
@@ -130,6 +140,19 @@ func _ready() -> void:
 	var perf := PerfOverlay.new($Floor as TerrainManager)
 	perf.measure_viewport = get_node_or_null("PostProcess/View") as Viewport
 	add_child(perf)
+
+	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref).
+	var pause_menu := get_node_or_null("PauseMenu") as PauseMenu
+	if pause_menu != null:
+		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
+			pause_menu.reset_to_track_requested.connect(_on_reset_to_track_requested)
+		# Arm the pause menu now the world is generated — it's default-inert
+		# (fail-closed) so the Pause button / Esc can't open it during the awaited
+		# generation above, where pausing would freeze the tree mid-build and let the
+		# player quit/resume into a half-built world. This block runs after
+		# _generate_track in every mode (staged / free-roam / session; a regeneration
+		# re-runs _ready), so it's the single "world is ready" chokepoint for pause.
+		pause_menu.set_input_enabled(true)
 
 	# Benchmark mode (features/benchmark.md): force the profiler on, hide the
 	# touch controls (the HUD is already off via cfg.hud_enabled), and hand the
@@ -742,13 +765,7 @@ func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> No
 	# hardest), exactly as a damaged HQ car does.
 	if car.get("damage") != null:
 		car.damage.hp = 0.0
-	# A wreck makes no engine noise.
-	var audio: Variant = car.get_node_or_null("EngineAudio")
-	if audio != null:
-		audio.process_mode = Node.PROCESS_MODE_DISABLED
-		if audio is AudioStreamPlayer:
-			audio.playing = false
-			audio.volume_db = -80.0
+	car.silence_engine_audio()  # a wreck makes no engine noise
 	car.freeze = true  # FREEZE_MODE_STATIC (default): collider stays a solid obstacle
 	car.process_mode = Node.PROCESS_MODE_DISABLED
 	_add_wreck_smoke(car)
@@ -955,6 +972,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 	$Car.reset_to(_track_progress.jump_to_finish())
 	_stage_manager.force_complete()
+
+
+# Pause-menu "Reset to track": snap the live car back onto the road at its current
+# progress (the same recovery pose the off-track leash / stuck watchdog would use),
+# not all the way back to the start line. reset_to zeroes motion and suppresses the
+# impact damage the teleport would otherwise register, so the reset is free. No-op
+# before the track exists (TrackProgress is built during generation).
+func _on_reset_to_track_requested() -> void:
+	if _track_progress == null or not has_node("Car"):
+		return
+	$Car.reset_to(_track_progress.recovery_pose())
 
 
 # Whether this run should open with the pre-event start-line scene: a session run

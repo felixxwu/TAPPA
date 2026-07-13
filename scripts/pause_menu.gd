@@ -11,6 +11,11 @@ extends CanvasLayer
 # See features/menus.md.
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
+# Emitted when the player picks "Reset to track" — world.gd snaps the live car back
+# onto the road at its current progress (TrackProgress.recovery_pose) and the menu
+# resumes. The menu itself has no car reference, so it delegates the reset upward.
+signal reset_to_track_requested
+
 @export var camera_manager: CameraManager
 # The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
 # on-screen controls immediately (rather than only taking effect on the next run).
@@ -21,11 +26,20 @@ var _overlay: Control          # dim backdrop + panels, hidden until paused
 var _menu_panel: Control       # PAUSED + Resume + Settings + Quit to HQ
 var _settings_panel: Control   # the shared SettingsMenu + Back
 var _resume_button: Button     # default keyboard/gamepad focus when the menu opens
+var _reset_button: Button      # "Reset to track" — snaps the car back onto the road
 var _settings_button: Button   # focus returns here when backing out of Settings
 var _quit_button: Button       # "Quit to HQ" — abandons the rally
 var _quit_dialog: ConfirmationDialog  # "Abandon rally?" confirm before quitting
 
 var settings_menu: SettingsMenu
+
+# Default-CLOSED: the menu is inert until the world finishes loading and world.gd
+# calls set_input_enabled(true). Without this the Pause button / Esc are live from
+# frame 0 — including during world.gd's awaited generation window (loading overlay
+# up), where opening the menu would set get_tree().paused = true MID-generation and
+# let the player quit/resume into a half-built world. Mirrors the default-inert
+# `_armed` gate on StageManager. See features/menus.md.
+var _input_enabled := false
 
 
 func _ready() -> void:
@@ -34,12 +48,21 @@ func _ready() -> void:
 	_set_open(false)
 
 
+# Arm (or disarm) the menu. world.gd enables it once the world is generated, so
+# pause can't fire while the loading overlay is still up. Closing an open menu on
+# disable would strand get_tree().paused, so callers only disable at boot (closed).
+func set_input_enabled(on: bool) -> void:
+	_input_enabled = on
+
+
 func is_open() -> bool:
 	return _overlay.visible
 
 
 # Freeze the game and show the menu (the Resume/Settings page).
 func open() -> void:
+	if not _input_enabled:
+		return  # inert while the world is still loading (see set_input_enabled)
 	get_tree().paused = true
 	_set_open(true)
 	_show_settings(false)
@@ -50,6 +73,13 @@ func open() -> void:
 func resume() -> void:
 	get_tree().paused = false
 	_set_open(false)
+
+
+# Reset to track: hand the reset to the host (which owns the car + TrackProgress),
+# then unfreeze and close the menu so the player drops straight back into the run.
+func _on_reset_to_track_pressed() -> void:
+	reset_to_track_requested.emit()
+	resume()
 
 
 # Pop the "Abandon rally?" confirm; quit_to_hq() runs only if the player accepts.
@@ -72,6 +102,8 @@ func quit_to_hq() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not _input_enabled:
+		return  # Esc / gamepad B do nothing while the world is loading
 	if not event.is_action_pressed("ui_cancel"):
 		return
 	if not is_open():
@@ -159,6 +191,12 @@ func _build_menu_panel() -> Control:
 	_resume_button = _make_menu_button("Resume")
 	_resume_button.pressed.connect(resume)
 	col.add_child(_resume_button)
+
+	# Reset to track — snap the car back onto the road at its current progress
+	# (recovery pose), then unpause. world.gd owns the car and performs the reset.
+	_reset_button = _make_menu_button("Reset to track")
+	_reset_button.pressed.connect(_on_reset_to_track_pressed)
+	col.add_child(_reset_button)
 
 	_settings_button = _make_menu_button("Settings")
 	_settings_button.pressed.connect(_show_settings.bind(true))

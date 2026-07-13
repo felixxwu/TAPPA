@@ -30,7 +30,7 @@ var _terrain: Node = null
 func _ready() -> void:
 	var cfg: GameConfig = Config.data
 	_distance = cfg.follow_distance
-	_height = cfg.follow_height
+	_height = cfg.follow_distance * cfg.follow_height_ratio
 	_smoothing = cfg.smoothing
 	_base_fov = cfg.chase_fov
 	_fov_speed_boost = cfg.chase_fov_speed_boost
@@ -92,7 +92,13 @@ func _timed_physics_process(delta: float) -> void:
 	var half_now := deg_to_rad(fov) * 0.5
 	var full_ratio := tan(half_base) / maxf(tan(half_now), 0.0001)
 	var ratio := lerpf(1.0, full_ratio, _dolly_mix)
-	var distance := _distance * ratio
+	# Give longer cars more room: add the car's half length to the follow distance
+	# so its nose/tail stays in frame. The look-at anchors on the body origin (the
+	# wheelbase centre), so half the body length reaches from there to the tip.
+	var base_distance := _distance
+	if target.has_method("half_length"):
+		base_distance += target.half_length()
+	var distance := base_distance * ratio
 
 	# Place the camera behind the (smoothed) orbital direction. The height is
 	# measured from the terrain directly below the camera (not from the car), so

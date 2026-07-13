@@ -540,9 +540,17 @@ A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
 labels were shifted left to clear it) — a square button bearing a **proper drawn
 pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars,
 since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
-game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Settings**
-and **Quit to HQ**.
-Resume unfreezes and closes; Settings shows the **shared `SettingsMenu`** (camera
+game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Reset to
+track**, **Settings** and **Quit to HQ**.
+Resume unfreezes and closes. **Reset to track** snaps the car **back onto the road at
+its current progress** — the same *recovery pose* the off-track leash / stuck watchdog
+uses (`TrackProgress.recovery_pose()`, on the centerline at the furthest offset
+reached), **not** the start line (that's the `R` / `reset_car` key). The menu owns no
+car reference, so it emits `reset_to_track_requested`; `world.gd` connects that in
+`_ready` and performs the reset (`$Car.reset_to(_track_progress.recovery_pose())`,
+which zeroes motion and suppresses the teleport's impact damage — free), then the menu
+`resume()`s so the player drops straight back in.
+Settings shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the title-screen page), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops an *"Abandon rally?"* confirm and, on
 accept (`quit_to_hq`), unfreezes and calls `RallySession.abandon()` — the rally is
@@ -556,7 +564,13 @@ signal → `CameraManager.set_mode`), so the angle changes the moment you choose
 A **mobile-control** pick applies just as immediately to the live `MobileControls`
 (the `SettingsMenu.scheme_changed` signal → `MobileControls.set_scheme`), so the
 on-screen touch layout rebuilds the instant you choose it rather than only on the next
-run. Covered by `tests/headless/test_pause_menu.gd`.
+run.
+The menu is **default-inert** (`_input_enabled` starts `false`, mirroring
+`StageManager`'s `_armed` gate): the Pause button and `ui_cancel` do nothing until
+`world.gd` calls `set_input_enabled(true)` **after world generation completes**. This
+stops the player pausing *during* the awaited generation window (loading overlay up) —
+opening the menu then would freeze the tree mid-build and allow quit/resume into a
+half-built world. Covered by `tests/headless/test_pause_menu.gd`.
 
 ## Podium (`podium.gd`)
 

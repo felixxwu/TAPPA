@@ -15,7 +15,7 @@ const PARAMS := {
 # A small track gives a known cell set + anchors. Width 6, clearance 8 -> the
 # returned "cells" are the clearance-inflated (22 m) collision set.
 func _track() -> Dictionary:
-	return TrackGenerator.generate(Vector2(0, 0), Vector2(0, 1), 3, 6, 6.0, 8.0)
+	return await TrackGenerator.generate(Vector2(0, 0), Vector2(0, 1), 3, 6, 6.0, 8.0)
 
 # The VISIBLE road footprint (rasterized at the real track width), which is what
 # scatter rejects against — not the inflated collision set in result["cells"].
@@ -34,7 +34,7 @@ func test_turn_anchor_is_centroid_of_cell_centres() -> void:
 
 
 func test_deterministic_for_same_seed() -> void:
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var a := TreeScatter.scatter(t["pieces"], road, PARAMS, 42)
 	var b := TreeScatter.scatter(t["pieces"], road, PARAMS, 42)
@@ -42,7 +42,7 @@ func test_deterministic_for_same_seed() -> void:
 
 
 func test_different_seed_differs() -> void:
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var a := TreeScatter.scatter(t["pieces"], road, PARAMS, 1)
 	var b := TreeScatter.scatter(t["pieces"], road, PARAMS, 2)
@@ -50,7 +50,7 @@ func test_different_seed_differs() -> void:
 
 
 func test_no_tree_lands_on_a_road_cell() -> void:
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var trees := TreeScatter.scatter(t["pieces"], road, PARAMS, 7)
 	assert_gt(trees.size(), 0, "should place some trees")
@@ -60,7 +60,7 @@ func test_no_tree_lands_on_a_road_cell() -> void:
 
 func test_grid_guarantees_minimum_spacing() -> void:
 	# The jittered grid's hard floor: no two points closer than (1 - jitter) * cell.
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var trees := TreeScatter.scatter(t["pieces"], road, PARAMS, 7)
 	var cell := TreeScatter.grid_cell_size(PARAMS)
@@ -73,7 +73,7 @@ func test_grid_guarantees_minimum_spacing() -> void:
 
 
 func test_within_spawn_radius_of_some_anchor() -> void:
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var trees := TreeScatter.scatter(t["pieces"], road, PARAMS, 7)
 	var anchors: Array[Vector2] = []
@@ -91,7 +91,7 @@ func test_within_spawn_radius_of_some_anchor() -> void:
 func test_density_in_a_reasonable_band() -> void:
 	# The grid yields roughly trees_per_turn points per (non-overlapping) disc — not an
 	# exact count, but bounded above by the cells a disc's bounding box can hold.
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var trees := TreeScatter.scatter(t["pieces"], road, PARAMS, 7)
 	var cell := TreeScatter.grid_cell_size(PARAMS)
@@ -104,7 +104,7 @@ func test_density_in_a_reasonable_band() -> void:
 
 func test_zero_target_places_nothing() -> void:
 	# trees_per_turn = 0 (scene_helpers' "no foliage" mode) yields an empty set.
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var off := PARAMS.duplicate()
 	off["trees_per_turn"] = 0
@@ -117,7 +117,7 @@ func test_zero_target_places_nothing() -> void:
 func test_forestiness_one_is_unfiltered() -> void:
 	# forestiness 1.0 (the default for trees-everywhere / bushes) skips the noise gate
 	# entirely, so it matches the plain default call.
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var default_call := TreeScatter.scatter(t["pieces"], road, PARAMS, 7)
 	var explicit := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 1.0, 300.0)
@@ -126,7 +126,7 @@ func test_forestiness_one_is_unfiltered() -> void:
 
 
 func test_forestiness_zero_places_no_trees() -> void:
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var none := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 0.0, 300.0)
 	assert_eq(none.size(), 0, "forestiness 0 -> no trees anywhere")
@@ -134,7 +134,7 @@ func test_forestiness_zero_places_no_trees() -> void:
 
 func test_forestiness_only_keeps_trees_above_the_noise_threshold() -> void:
 	# A short wavelength so the forest noise varies across the small test track.
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var forestiness := 0.5
 	var wavelength := 15.0
@@ -151,7 +151,7 @@ func test_forestiness_only_keeps_trees_above_the_noise_threshold() -> void:
 func test_forestiness_is_monotonic() -> void:
 	# Raising forestiness only ever keeps a superset (lower threshold), so the count
 	# grows monotonically from 0 (bare) up to the full unfiltered scatter.
-	var t := _track()
+	var t := await _track()
 	var road := _road_cells(t)
 	var w := 15.0
 	var bare := TreeScatter.scatter(t["pieces"], road, PARAMS, 7, 0.0, w).size()
@@ -165,7 +165,7 @@ func test_forestiness_is_monotonic() -> void:
 
 func test_all_on_road_places_nothing() -> void:
 	# Every reachable cell marked road -> every point is rejected, nothing placed.
-	var t := _track()
+	var t := await _track()
 	# Mark a wide road band around each anchor so the disc has nowhere off-road to land.
 	var road: Dictionary = {}
 	for piece in t["pieces"]:

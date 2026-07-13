@@ -143,7 +143,7 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.66, 0.28),
 		"restriction": {"pw_min": 266.0, "pw_max": 378.0},  # the top non-showdown p/w band (The Beast derives to ~350 hp/t)
 		"events": [
-			{"seed": 3371549700, "turn_count": 18, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75},
+			{"seed": 1003214539, "turn_count": 18, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75},
 			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15, "cliffiness": 0.85},
 			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1, "cliffiness": 0.9},
 		],

@@ -42,8 +42,9 @@ viewpoint swings around gently.
 
 The camera's **height is measured from the terrain directly below the camera**,
 not from the car: it samples the ground height at its own horizontal position
-(via a `height_at` sibling — the hilly `Floor`) and sits `follow_height` above
-that. So the camera keeps a constant clearance over the ground it is flying
+(via a `height_at` sibling — the hilly `Floor`) and sits `follow_distance *
+follow_height_ratio` above that (height is a multiple of the follow distance, not
+an independent value). So the camera keeps a constant clearance over the ground it is flying
 over, rather than rising and falling as the car climbs and descends hills. On
 flat test fixtures (no `height_at` sibling) the ground height falls back to 0.
 
@@ -60,7 +61,7 @@ travel_dir = slerp(travel_dir, target_dir, 1 - exp(-smoothing * delta))  # eased
 # the reach depends on dy, it is solved with a couple of fixed-point iterations.
 horizontal = sqrt(follow_distance^2 - dy^2)
 position   = target.position - travel_dir * horizontal       # behind the smoothed orbit
-position.y = ground_height_at(position.xz) + follow_height    # fixed clearance over terrain
+position.y = ground_height_at(position.xz) + follow_distance * follow_height_ratio  # clearance over terrain
 look_at(target.position, UP)                 # exact — look-at is NOT smoothed
 ```
 
@@ -90,10 +91,18 @@ it's the full dolly zoom (the car keeps its size); in between softens an
 over-eager pull-in. This effective distance (not the raw `follow_distance`) is
 what feeds the terrain clearance solve below.
 
+**Per-car length.** Before the dolly ratio is applied, the target car's half
+length (`Car.half_length()` — half the spec's `body.z`) is added to
+`follow_distance`. The look-at anchors on the body origin (the wheelbase centre),
+so a longer car would otherwise poke its nose/tail out of frame; pushing the
+camera back by half the body length keeps the whole car visible. Falls back to no
+adjustment when the target doesn't expose `half_length()` (flat test fixtures).
+
 ### Exported / config
 
 - `target: Node3D` — the node to follow (set in the scene to `Car`).
-- `follow_distance` (6.0 m), `follow_height` (3.0 m) — read from `Config.data`.
+- `follow_distance` (m) and `follow_height_ratio` (height = `follow_distance *
+  follow_height_ratio`, default 1.0) — read from `Config.data`.
 - `smoothing` (5.0) — rate at which the camera's orbital position eases toward
   the travel direction; higher snaps faster, lower is more languid. The look-at
   is unaffected. See [configuration.md](configuration.md).
