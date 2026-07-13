@@ -83,23 +83,27 @@ static func _parts_at_or_below(tier: int, exclude: Array = []) -> Array:
 
 # Draw the car model id to grant for a top-3 finish. Fires on EVERY top-3
 # finish — re-winning a completed rally re-grants a car (renewable supply).
-# The draw is GUARANTEED: the standard pool (tier <= garage tier) always has
+# The draw is GUARANTEED: the standard pool (tier <= the ceiling) always has
 # the tier-1 roster in it, so a car is always granted. Two paths:
-#   * Standard: any car whose reward_tier is at or below the GARAGE TIER — the
-#     highest reward_tier among cars the player already owns (not the beaten
-#     rally's difficulty) — preferring un-owned models.
+#   * Standard: any car whose reward_tier is at or below the DRAW CEILING —
+#     the higher of the GARAGE TIER (highest reward_tier among cars already
+#     owned) and the tier the JUST-BEATEN RALLY'S DIFFICULTY maps to. So
+#     beating a difficulty-3 rally can drop a tier-3 car even from a
+#     lower-tier garage — preferring un-owned models.
 #   * Unlock fallback: if the player has completed (>=1 star) every rally their
 #     garage can currently enter — nothing new left to enter — grant a car that
 #     opens a LOCKED rally instead: candidates eligible for the lowest-difficulty
 #     still-locked rallies, preferring un-owned. This keeps a fresh rally
 #     reachable after every reward.
-# Returns a model_id (Variant only for the defensive empty-roster null); caller
-# delivers via Save.grant_car.
-static func draw_car(profile: Dictionary, rng: RandomNumberGenerator = null) -> Variant:
+# rally_difficulty defaults to 0 (garage tier alone governs). Returns a model_id
+# (Variant only for the defensive empty-roster null); caller delivers via
+# Save.grant_car.
+static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: RandomNumberGenerator = null) -> Variant:
 	rng = _ensure_rng(rng)
 	var pool := _unlock_candidates(profile)
 	if pool.is_empty():
-		pool = _cars_at_or_below_tier(garage_tier(profile))
+		var ceiling := maxi(garage_tier(profile), _difficulty_to_tier(rally_difficulty))
+		pool = _cars_at_or_below_tier(ceiling)
 	return _pick_prefer_unowned(pool, _owned_model_ids(profile), rng)
 
 

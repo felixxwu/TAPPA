@@ -128,11 +128,33 @@ func test_draw_car_never_exceeds_garage_tier() -> void:
 	var profile := _profile([], [String(starter["id"])])
 	var ceiling := RewardSystem.garage_tier(profile)
 	for i in 30:
-		var model: Variant = RewardSystem.draw_car(profile, _rng(i))
+		var model: Variant = RewardSystem.draw_car(profile, 0, _rng(i))
 		var meta := CarLibrary.by_id(String(model))
 		assert_false(meta.is_empty(), "draw returns a real catalogue car")
 		assert_lte(int(meta["reward_tier"]), ceiling,
 			"a drawn car never exceeds the highest tier already in the garage")
+
+
+func test_draw_car_difficulty_lifts_ceiling_above_garage_tier() -> void:
+	# Own only a lowest-tier car (garage tier 1) but beat a high-difficulty rally:
+	# the beaten difficulty raises the draw ceiling, so cars above the garage tier
+	# (up to the difficulty tier) become eligible. Everything incomplete -> not
+	# stuck, standard path.
+	var starter := _lowest_tier_model()
+	var profile := _profile([], [String(starter["id"])])
+	var difficulty := 3
+	var ceiling: int = maxi(RewardSystem.garage_tier(profile), difficulty)
+	var saw_above_garage := false
+	for i in 40:
+		var model: Variant = RewardSystem.draw_car(profile, difficulty, _rng(i))
+		var meta := CarLibrary.by_id(String(model))
+		assert_false(meta.is_empty(), "draw returns a real catalogue car")
+		assert_lte(int(meta["reward_tier"]), ceiling,
+			"a drawn car never exceeds max(garage tier, beaten difficulty)")
+		if int(meta["reward_tier"]) > RewardSystem.garage_tier(profile):
+			saw_above_garage = true
+	assert_true(saw_above_garage,
+		"beating a higher-difficulty rally can drop a car above the garage tier")
 
 
 func test_draw_car_prefers_unowned_within_garage_tier() -> void:
@@ -155,7 +177,7 @@ func test_draw_car_prefers_unowned_within_garage_tier() -> void:
 			owned.append(String(id))
 	var profile := _profile([], owned)
 	for i in 30:
-		assert_eq(RewardSystem.draw_car(profile, _rng(i)), target,
+		assert_eq(RewardSystem.draw_car(profile, 0, _rng(i)), target,
 			"draws the un-owned car at/below the garage tier, never an owned one")
 
 
@@ -166,7 +188,7 @@ func test_draw_car_grants_duplicate_when_everything_owned() -> void:
 	for entry in CarLibrary.all():
 		owned.append(String(entry["id"]))
 	var profile := _profile([], owned)
-	var model: Variant = RewardSystem.draw_car(profile, _rng(1))
+	var model: Variant = RewardSystem.draw_car(profile, 0, _rng(1))
 	assert_true(owned.has(model), "with every car owned, draws a duplicate of an owned one")
 
 
@@ -177,7 +199,7 @@ func test_draw_car_always_grants_even_with_everything_completed() -> void:
 	for rally in RallyLibrary.RALLIES:
 		all_ids.append(rally["id"])
 	var profile := _profile(all_ids, [])
-	var model: Variant = RewardSystem.draw_car(profile, _rng(1))
+	var model: Variant = RewardSystem.draw_car(profile, 0, _rng(1))
 	assert_not_null(model, "a car is always granted, even post-completion")
 	assert_false(CarLibrary.by_id(String(model)).is_empty(), "and it is a catalogue car")
 
@@ -226,7 +248,7 @@ func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
 	if lowest == 0:
 		return  # no locked rally admits any car at all — nothing a grant could open
 	for i in 20:
-		var model: Variant = RewardSystem.draw_car(profile, _rng(i))
+		var model: Variant = RewardSystem.draw_car(profile, 0, _rng(i))
 		var meta := CarLibrary.by_id(String(model))
 		var opens_lowest := false
 		for rally in RallyLibrary.RALLIES:

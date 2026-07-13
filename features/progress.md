@@ -87,6 +87,19 @@ Stuck-recovery knobs live in the **Recovery** group: `recovery_enabled`,
 `recovery_timeout_s` (3.0), `recovery_speed_mps` (0.7), `recovery_depth_m` (3.0),
 `recovery_upright_dot` (0.3).
 
+## Corner-cutting penalty
+
+`TrackProgress` also detects **corner cutting** off the same per-tick advance:
+it watches how far the car's nearest centerline offset jumps in a single tick,
+and bills the excess when that jump exceeds `cut_jump_threshold_m` — the
+signature of shortcutting a corner's neck, where the nearest point flips to the
+far leg and progress leaps tens of metres at once. Exposed via `cut_excess_m()`,
+`cut_penalty_s()`, and the
+`cut_billed(incident_s, total_s)` signal (fired once per coalesced run of cut
+ticks); progress itself is never nullified. Both accumulators reset in
+`setup()` alongside the rest of progress state. See
+[corner-cutting.md](corner-cutting.md).
+
 ## Readouts
 
 `progress_offset()`, `baked_length()`, `finish_offset()`, and `progress_percent()`

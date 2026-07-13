@@ -25,7 +25,8 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
 | `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top centre) |
 | `StageDeltaLabel` | `P1 ±n.ns` pace popup | driven by `StageManager` (top-centre, code-built) |
-| `StageCompletePanel` | finish panel: `FINISH` + time + `NEXT` button | driven by `StageManager` |
+| `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
+| `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
 | `HPBar` (+ `HPLabel`) | `Health NN%` over a bar | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
 
@@ -47,9 +48,18 @@ The `CountdownLabel`, `ElapsedLabel` and `StageCompletePanel` are hidden at
 these methods: `show_countdown(seconds_left)` (big centered `3·2·1·GO`;
 `ceili` maps the remaining time to the digit, `0` → `GO`), `hide_countdown()`,
 `show_elapsed(seconds)` (top-centre `m:ss.cc`, gated by `hud_elapsed_enabled`),
-and `show_stage_complete(seconds)` (the finish panel — `FINISH` + the time).
+and `show_stage_complete(seconds, penalty_s)` (the finish panel — `FINISH` +
+the time, plus a `+X.Xs cut` / `= total` breakdown line when `penalty_s > 0.0`).
 `UITheme.format_time(ms)` is the shared `m:ss.cc` formatter (the seconds-based
 call sites convert to ms first).
+
+The **`CutFlashLabel`** is a live corner-cutting flash (see
+[corner-cutting.md](corner-cutting.md)): `show_cut_flash(incident_s, total_s)`,
+pulsed by `StageManager` every time `TrackProgress` bills a cut incident while
+RUNNING. It shows the running event total (`CUT +total_s`), not the incident
+delta, so consecutive incidents read as one growing tag rather than flickering
+resets — built in code, anchored top-right just under the elapsed timer, and
+fades the same way the pace popup does. Gated by `cut_penalty_enabled`.
 
 The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
 code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**

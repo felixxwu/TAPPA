@@ -47,6 +47,19 @@ var _best_reset: Transform3D
 # at recovery_timeout_s. Zeroed the moment the car moves or recovers.
 var _stuck_time := 0.0
 
+# Corner-cutting penalty (features/corner-cutting.md). Metres of along-track
+# progress the car skipped by cutting across the inside of a corner, where the
+# centerline doubles back the long way while the car drives a short line across.
+# Detected by comparing each tick's arc-length advance against the straight-line
+# (chord) distance between the old and new centerline points — normal driving
+# keeps them equal (no reference to car speed), a cut makes the arc leap past the
+# chord. Converted to a time penalty via cut_penalty_s(). Reset in setup().
+var _cut_excess_m := 0.0
+var _prev_offset := 0.0               # car's nearest centerline offset last tick (seeded in setup())
+var _incident_excess_m := 0.0         # excess in the current unbroken run of cut ticks
+
+signal cut_billed(incident_s: float, total_s: float)
+
 
 # Wire the manager to a freshly generated track. Seeds progress at the offset
 # nearest the spawn so the car doesn't read as starting mid-track.
@@ -63,6 +76,9 @@ func setup(centerline: Curve2D, car: Node, terrain: Node, finish_off := -1.0) ->
 	_best_offset = _centerline.get_closest_offset(Vector2(p.x, p.z))
 	_origin_offset = _best_offset
 	_best_reset = _reset_xform_at(_best_offset)
+	_cut_excess_m = 0.0
+	_incident_excess_m = 0.0
+	_prev_offset = _best_offset
 
 
 # Re-anchor 0% to the car's current position — called when the stage actually
@@ -76,6 +92,7 @@ func mark_start() -> void:
 	_origin_offset = _centerline.get_closest_offset(Vector2(p.x, p.z))
 	_best_offset = _origin_offset
 	_best_reset = _reset_xform_at(_best_offset)
+	_prev_offset = _best_offset  # re-anchored here; next tick's jump is measured from the line
 
 
 # Re-point at a freshly spawned car on the same track (a car swap), resetting
@@ -104,14 +121,46 @@ func _timed_physics_process(delta: float) -> void:
 	var on_curve := _centerline.sample_baked(offset)
 	var dist := here.distance_to(on_curve)
 	if dist <= Config.data.track_progress_max_dist_m:
+		_accrue_cut(offset)
 		if offset > _best_offset:
 			_best_offset = offset
 			_best_reset = _reset_xform_at(offset)
 	elif Config.data.off_track_reset_enabled:
 		_car.reset_to(_best_reset)
 		_stuck_time = 0.0  # lateral reset already recovered it; don't double-fire
+		_close_cut_incident()
+		_prev_offset = _best_offset  # snapped back onto the road at _best_offset
 		return
+	_prev_offset = offset
 	_update_recovery(delta, p, on_curve)
+
+
+# Bill a corner cut: how far the car's nearest point on the centerline advanced
+# this tick (`offset - _prev_offset`). Normal driving advances it only about as
+# far as the car moved (~1-2 m); a cut across a corner's neck flips the nearest
+# point to the far leg and jumps it tens of metres in one tick. Progress beyond
+# `cut_jump_threshold_m` — which sits in the dead zone between the two — is stolen.
+func _accrue_cut(offset: float) -> void:
+	var cfg: GameConfig = Config.data
+	if not cfg.cut_penalty_enabled:
+		return
+	var excess := (offset - _prev_offset) - cfg.cut_jump_threshold_m
+	if excess > 0.0:
+		_cut_excess_m += excess
+		_incident_excess_m += excess
+	else:
+		_close_cut_incident()
+
+
+# A run of consecutive cut ticks is one incident (one HUD flash). Emit its total
+# when the streak ends.
+func _close_cut_incident() -> void:
+	if _incident_excess_m <= 0.0:
+		return
+	var ref: float = Config.data.cut_reference_speed_mps
+	var incident_s := (_incident_excess_m / ref) if ref > 0.0 else 0.0
+	_incident_excess_m = 0.0
+	cut_billed.emit(incident_s, cut_penalty_s())
 
 
 # Stuck-car recovery watchdog (features/progress.md). A car can get trapped INSIDE the
@@ -177,6 +226,7 @@ func jump_to_finish() -> Transform3D:
 		return Transform3D.IDENTITY
 	_best_offset = _finish_offset
 	_best_reset = _reset_xform_at(_finish_offset)
+	_prev_offset = _finish_offset  # keep cut detection from billing this dev teleport
 	return _best_reset
 
 
@@ -229,3 +279,18 @@ func progress_percent() -> float:
 	if span <= 0.0:
 		return 0.0
 	return clampf((_best_offset - _origin_offset) / span, 0.0, 1.0)
+
+
+# Stolen along-track metres accumulated this event (corner cutting).
+func cut_excess_m() -> float:
+	return _cut_excess_m
+
+
+# The stolen metres as a time penalty, at the fixed reference speed. 0 when the
+# penalty is disabled or the reference speed is non-positive.
+func cut_penalty_s() -> float:
+	var cfg: GameConfig = Config.data
+	if not cfg.cut_penalty_enabled:
+		return 0.0
+	var ref: float = cfg.cut_reference_speed_mps
+	return (_cut_excess_m / ref) if ref > 0.0 else 0.0

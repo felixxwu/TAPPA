@@ -32,6 +32,8 @@ var _phase: int = Phase.COUNTDOWN
 var _countdown_left := 0.0   # seconds remaining in the countdown
 var _elapsed := 0.0          # stage time, accrues only while RUNNING
 var _go_flash_left := 0.0    # seconds the "GO" flash stays up into RUNNING
+var _penalty_s := 0.0        # corner-cut penalty for this event, snapshot at _complete()
+var _reported_seconds := 0.0 # _elapsed + _penalty_s, frozen at the finish crossing
 
 var _car: Node          # a Car (VehicleBody3D) — toggles controls_locked
 var _hud: Node          # the HUD CanvasLayer — countdown / timer / complete panel
@@ -74,6 +76,8 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_progress = progress
 	_elapsed = 0.0
 	_go_flash_left = 0.0
+	_penalty_s = 0.0
+	_reported_seconds = 0.0
 	_results_emitted = false
 	# Clear any finish-stop braking from a previous arm (car swap / new event).
 	if car != null and "finish_stop" in car:
@@ -101,6 +105,9 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 		_mark_progress_start()  # car is on the line now -> progress reads 0% from here
 		if _hud != null and _hud.has_method("show_countdown"):
 			_hud.show_countdown(_countdown_left)
+	if _progress != null and _progress.has_signal("cut_billed") \
+			and not _progress.cut_billed.is_connected(_on_cut_billed):
+		_progress.cut_billed.connect(_on_cut_billed)
 	_armed = true
 
 
@@ -141,6 +148,16 @@ func setup_splits(turn_progress: Array, turn_time_frac: Array, p1_total_ms: int)
 func _mark_progress_start() -> void:
 	if _progress != null and _progress.has_method("mark_start"):
 		_progress.mark_start()
+
+
+# Relay a billed corner-cut incident to the HUD as a live flash, but only while
+# the stage is actually RUNNING — post-finish coast or a pre-GO countdown cut
+# (if that's ever possible) shouldn't pop a flash the player can't act on.
+func _on_cut_billed(incident_s: float, total_s: float) -> void:
+	if _phase != Phase.RUNNING:
+		return
+	if _hud != null and _hud.has_method("show_cut_flash"):
+		_hud.show_cut_flash(incident_s, total_s)
 
 
 func _process(delta: float) -> void:
@@ -217,8 +234,11 @@ func _complete() -> void:
 		# stopped. See Car.finish_stop.
 		if "finish_stop" in _car:
 			_car.finish_stop = true
+	if _progress != null and _progress.has_method("cut_penalty_s"):
+		_penalty_s = _progress.cut_penalty_s()
+	_reported_seconds = _elapsed + _penalty_s
 	if _hud != null and _hud.has_method("show_stage_complete"):
-		_hud.show_stage_complete(_elapsed)
+		_hud.show_stage_complete(_elapsed, _penalty_s)
 	# The timed run is over the instant the line is crossed; anything after this
 	# (the skid to a stop in the runoff, idling under the finish panel until NEXT)
 	# is NOT part of the driven run. Fire finish_reached so the replay recorder
@@ -235,7 +255,7 @@ func proceed_to_results() -> void:
 	if _phase != Phase.COMPLETE or _results_emitted:
 		return
 	_results_emitted = true
-	stage_completed.emit(_elapsed)
+	stage_completed.emit(_reported_seconds)
 
 
 # Dev cheat: complete the event immediately, no matter the current phase (unless

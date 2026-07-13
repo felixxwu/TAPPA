@@ -35,6 +35,11 @@ var _next_button: Button
 # + red = behind). Built in code (not the scene) and auto-hides after a moment.
 var _stage_delta_label: Label
 var _stage_delta_left := 0.0
+# Live corner-cut billing flash (features/track.md): a small top-right tag the
+# StageManager pulses each time TrackProgress bills a cut incident, showing the
+# running event total so consecutive incidents read as one growing tag.
+var _cut_flash_label: Label
+var _cut_flash_left := 0.0
 # In-run damage readout (features/damage.md): a colour-graded HP bar that
 # flashes a warning when low, plus a red screen flash on each HP-losing impact.
 @onready var _hp_label: Label = $HPLabel
@@ -83,6 +88,7 @@ func _ready() -> void:
 	_elapsed_label.add_theme_color_override("font_color", UITheme.INK)
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_build_stage_delta_label()
+	_build_cut_flash_label()
 	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
 	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
 	# onto it whenever the panel is shown (features/menus.md → "Menu navigation").
@@ -138,20 +144,50 @@ static func seed_text(track_seed: int) -> String:
 	return "Seed %d" % track_seed
 
 
+# A transient popup label built in code (no scene node): hidden until a show_*
+# call pulses it, then faded out by _tick_fade. `offsets` is (left, right, top,
+# bottom). Callers layer on colour / anchoring specifics after.
+func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
+		offsets: Vector4, align: int) -> Label:
+	var lbl := Label.new()
+	lbl.name = node_name
+	lbl.anchor_left = anchor
+	lbl.anchor_right = anchor
+	lbl.grow_horizontal = grow_dir
+	lbl.offset_left = offsets.x
+	lbl.offset_right = offsets.y
+	lbl.offset_top = offsets.z
+	lbl.offset_bottom = offsets.w
+	lbl.horizontal_alignment = align
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.visible = false
+	add_child(lbl)
+	return lbl
+
+
 func _build_stage_delta_label() -> void:
-	_stage_delta_label = Label.new()
-	_stage_delta_label.name = "StageDeltaLabel"
-	_stage_delta_label.anchor_left = 0.5
-	_stage_delta_label.anchor_right = 0.5
-	_stage_delta_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_stage_delta_label.offset_left = -80.0
-	_stage_delta_label.offset_right = 80.0
-	_stage_delta_label.offset_top = 40.0
-	_stage_delta_label.offset_bottom = 64.0
-	_stage_delta_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_stage_delta_label.add_theme_font_size_override("font_size", 20)
-	_stage_delta_label.visible = false
-	add_child(_stage_delta_label)
+	_stage_delta_label = _make_popup_label("StageDeltaLabel", 0.5,
+		Control.GROW_DIRECTION_BOTH, Vector4(-80.0, 80.0, 40.0, 64.0),
+		HORIZONTAL_ALIGNMENT_CENTER)
+
+
+# Top-right corner-cut flash, anchored just under the elapsed timer.
+func _build_cut_flash_label() -> void:
+	_cut_flash_label = _make_popup_label("CutFlashLabel", 1.0,
+		Control.GROW_DIRECTION_BEGIN, Vector4(-220.0, -12.0, 44.0, 68.0),
+		HORIZONTAL_ALIGNMENT_RIGHT)
+	_cut_flash_label.add_theme_color_override("font_color", UITheme.RED)
+
+
+# Count a popup's remaining on-screen time down by delta; hide it when it lapses.
+# Returns the new remaining time (caller stores it back).
+func _tick_fade(left: float, delta: float, label: Label) -> float:
+	if left <= 0.0:
+		return left
+	left -= delta
+	if left <= 0.0:
+		label.visible = false
+	return left
 
 
 func _process(delta: float) -> void:
@@ -192,11 +228,9 @@ func _timed_process(_delta: float) -> void:
 		_last_seed_text = seed_str
 		_seed_label.text = seed_str
 	_update_damage(_delta)
-	# Fade the pace popup out after its on-screen time elapses.
-	if _stage_delta_left > 0.0:
-		_stage_delta_left -= _delta
-		if _stage_delta_left <= 0.0:
-			_stage_delta_label.visible = false
+	# Hide each transient popup once its on-screen time elapses.
+	_stage_delta_left = _tick_fade(_stage_delta_left, _delta, _stage_delta_label)
+	_cut_flash_left = _tick_fade(_cut_flash_left, _delta, _cut_flash_label)
 
 
 # Drive the HP gauge + impact flash off the car's damage model. Hidden when
@@ -273,11 +307,17 @@ func show_elapsed(seconds: float) -> void:
 # Placeholder stage-complete panel — at minimum the final time. The menu's
 # buttons/actions are a separate todo (rally-event-flow.md / menus.md); this is
 # the stub the future flow attaches to.
-func show_stage_complete(seconds: float) -> void:
+func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
 	# Showing the panel fires its visibility_changed, which MenuNav uses to grab focus
 	# onto the NEXT button (ui_accept then triggers it; the theme paints the cursor).
 	_stage_complete_panel.visible = true
-	_stage_complete_label.text = "FINISH\n%s" % UITheme.format_time(roundi(seconds * 1000.0))
+	if penalty_s > 0.0:
+		# Clean run + cut penalty = final. Only shown when a cut was billed.
+		var total := UITheme.format_time(roundi((seconds + penalty_s) * 1000.0))
+		_stage_complete_label.text = "FINISH\n%s\n+%.1fs cut\n= %s" % [
+			UITheme.format_time(roundi(seconds * 1000.0)), penalty_s, total]
+	else:
+		_stage_complete_label.text = "FINISH\n%s" % UITheme.format_time(roundi(seconds * 1000.0))
 
 
 # Top-centre pace popup, pulsed by the StageManager every few turns: the player's
@@ -293,3 +333,14 @@ func show_stage_delta(delta_ms: int) -> void:
 	_stage_delta_label.add_theme_color_override("font_color", UITheme.GREEN if ahead else UITheme.RED)
 	_stage_delta_label.visible = true
 	_stage_delta_left = Config.data.stage_delta_show_seconds
+
+
+# Live corner-cut flash, pulsed by StageManager each time TrackProgress bills
+# an incident. Shows the running event total (not the incident delta) so
+# consecutive incidents read as one growing tag rather than flickering resets.
+func show_cut_flash(_incident_s: float, total_s: float) -> void:
+	if not Config.data.cut_penalty_enabled:
+		return
+	_cut_flash_label.text = "CUT +%.1fs" % total_s
+	_cut_flash_label.visible = true
+	_cut_flash_left = Config.data.stage_delta_show_seconds

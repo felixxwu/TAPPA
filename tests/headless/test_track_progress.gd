@@ -283,3 +283,76 @@ func test_recovery_target_is_the_last_on_road_pose() -> void:
 	var got: Transform3D = _car.reset_calls[-1]
 	assert_almost_eq(got.origin, expected.origin, Vector3.ONE * 0.5,
 		"recovery teleports to the last on-road pose, not the start")
+
+
+func _hairpin_curve() -> Curve2D:
+	# Out along +Z to z=50, a short neck across to x=6, then back down to z=0.
+	# Arc length ~= 50 + 6 + 50 = ~106 m; the two legs sit 6 m apart at the neck.
+	var c := Curve2D.new()
+	c.add_point(Vector2(0, 0))
+	c.add_point(Vector2(0, 50))
+	c.add_point(Vector2(6, 50))
+	c.add_point(Vector2(6, 0))
+	return c
+
+
+func _progress_on(curve: Curve2D) -> TrackProgress:
+	var tp := TrackProgress.new()
+	add_child_autofree(tp)
+	tp.setup(curve, _car, null)
+	return tp
+
+
+func test_clean_straight_drive_bills_no_cut() -> void:
+	# Realistic per-tick motion: the nearest-point offset advances only a little
+	# each tick, so no tick's jump reaches cut_jump_threshold_m — no cut.
+	_put_car(0, 0)
+	var tp := _make_progress()   # straight 100 m curve from before_each
+	var z := 0.0
+	while z < 90.0:
+		z += 0.5                 # small step, well under the jump threshold
+		_put_car(0, z)
+		tp._physics_process(0.0)
+	assert_almost_eq(tp.cut_excess_m(), 0.0, 0.001, "no excess on a clean straight")
+	assert_almost_eq(tp.cut_penalty_s(), 0.0, 0.001, "no penalty on a clean straight")
+
+
+func test_cutting_the_neck_bills_the_stolen_metres() -> void:
+	var curve := _hairpin_curve()
+	_put_car(0, 0)
+	var tp := _progress_on(curve)
+	# Drive a little up the entry leg (legit), then in ONE tick the nearest point
+	# flips across the neck to the exit leg — a huge single-tick progress jump.
+	_put_car(0, 5)
+	tp._physics_process(0.0)
+	var before := tp.cut_excess_m()
+	assert_almost_eq(before, 0.0, 0.001, "legit travel up the entry leg bills nothing")
+	_put_car(6, 3)   # nearest offset leaps from ~5 to ~103 in a single tick
+	tp._physics_process(0.0)
+	var stolen := tp.cut_excess_m()
+	assert_gt(stolen, 50.0, "cutting the neck bills a large chunk of stolen metres")
+	# Penalty is exactly the stolen metres over the (config) reference speed.
+	assert_almost_eq(tp.cut_penalty_s(),
+		stolen / Config.data.cut_reference_speed_mps, 0.001,
+		"penalty = stolen metres / reference speed")
+
+
+func test_cut_penalty_disabled_never_bills() -> void:
+	Config.data.cut_penalty_enabled = false
+	var curve := _hairpin_curve()
+	_put_car(0, 5)
+	var tp := _progress_on(curve)
+	_put_car(6, 3)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.cut_penalty_s(), 0.0, 0.001, "disabled -> no penalty")
+
+
+func test_setup_resets_accumulated_excess() -> void:
+	var curve := _hairpin_curve()
+	_put_car(0, 5)
+	var tp := _progress_on(curve)
+	_put_car(6, 3)
+	tp._physics_process(0.0)
+	assert_gt(tp.cut_excess_m(), 0.0, "excess accumulated")
+	tp.setup(curve, _car, null)   # re-arm for a new event
+	assert_almost_eq(tp.cut_excess_m(), 0.0, 0.001, "setup clears excess")

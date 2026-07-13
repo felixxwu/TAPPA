@@ -878,6 +878,20 @@ var peak_torque_rpm := 4500.0
 ## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
+## Master switch for the corner-cutting time penalty (features/corner-cutting.md).
+## When off, cuts are never billed and cut_penalty_s() is always 0.
+@export var cut_penalty_enabled := true
+## Metres of along-track progress in a SINGLE tick above which the tick counts as
+## a corner cut. The car's nearest point on the centerline can only advance about
+## as far as the car moved that tick (~1-2 m even flat out), so normal driving
+## never approaches this; cutting across the neck of a corner flips the nearest
+## point to the far leg and jumps the progress tens of metres in one tick. Sits
+## in the dead zone between the two. Metres beyond this are billed as stolen.
+@export_range(2.0, 50.0) var cut_jump_threshold_m := 5.0
+## Fixed reference speed (m/s) that converts stolen metres to seconds:
+## penalty_s = stolen_m / this. Fixed (not the car's live speed) so braking
+## mid-cut can't shrink the penalty.
+@export_range(1.0, 100.0) var cut_reference_speed_mps := 25.0
 
 @export_group("Cliffs")
 ## Master toggle for track-side cliffs & drops (features/terrain.md). Off ⇒ the

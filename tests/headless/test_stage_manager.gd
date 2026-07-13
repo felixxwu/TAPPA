@@ -34,19 +34,28 @@ class StubHud:
 	func show_elapsed(seconds: float) -> void:
 		elapsed_calls += 1
 		last_elapsed = seconds
-	func show_stage_complete(seconds: float) -> void:
+	var complete_penalty := -1.0
+	func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
 		complete_time = seconds
+		complete_penalty = penalty_s
 	var stage_deltas: Array = []
 	func show_stage_delta(delta_ms: int) -> void:
 		stage_deltas.append(delta_ms)
+	var flash_args := []
+	func show_cut_flash(incident_s: float, total_s: float) -> void:
+		flash_args = [incident_s, total_s]
 
 
 # Stand-in for TrackProgress: progress_percent() returns a settable 0..1 fraction.
 class StubProgress:
 	extends Node
 	var pct := 0.0
+	var penalty := 0.0
+	signal cut_billed(incident_s: float, total_s: float)
 	func progress_percent() -> float:
 		return pct
+	func cut_penalty_s() -> float:
+		return penalty
 
 
 var _car: StubCar
@@ -160,6 +169,34 @@ func test_completion_freezes_relocks_and_defers_the_signal() -> void:
 	# Pressing NEXT proceeds to the results flow with the final time.
 	sm.proceed_to_results()
 	assert_almost_eq(completed[0], 3.0, 0.0001, "proceed_to_results emits stage_completed with the final time")
+
+
+func test_reported_time_includes_the_cut_penalty() -> void:
+	var sm := _make()
+	_to_running(sm)
+	sm._process(2.0)
+	_progress.penalty = 4.0
+	_progress.pct = 1.0  # cross the finish
+	sm._process(1.0)     # elapsed reaches 3.0 on the completing frame
+	assert_almost_eq(_hud.complete_time, 3.0, 0.0001, "panel shows clean run time")
+	assert_almost_eq(_hud.complete_penalty, 4.0, 0.0001, "panel gets the penalty separately")
+	var reported := []
+	sm.stage_completed.connect(func(t: float) -> void: reported.append(t))
+	sm.proceed_to_results()
+	assert_eq(reported.size(), 1, "stage_completed fired once")
+	assert_almost_eq(reported[0], 7.0, 0.0001, "reported = clean elapsed + penalty")
+
+
+func test_no_penalty_reports_clean_elapsed() -> void:
+	var sm := _make()
+	_to_running(sm)
+	sm._process(2.0)
+	_progress.pct = 1.0  # cross the finish, penalty defaults to 0
+	sm._process(1.0)
+	var reported := []
+	sm.stage_completed.connect(func(t: float) -> void: reported.append(t))
+	sm.proceed_to_results()
+	assert_almost_eq(reported[0], 3.0, 0.0001, "clean run reports elapsed unchanged")
 
 
 func test_finish_reached_fires_on_crossing_before_stage_completed() -> void:
@@ -352,6 +389,15 @@ func test_begin_countdown_is_noop_outside_staging() -> void:
 # Integration: booting main.tscn wires a StageManager that holds the real car on
 # the line from the first frame (the scene is built once in before_all). The boot
 # is a non-staged countdown, so the handbrake is forced while input stays live.
+func test_cut_flash_relayed_to_hud_only_while_running() -> void:
+	var sm := _make()
+	_progress.cut_billed.emit(1.4, 1.4)
+	assert_eq(_hud.flash_args.size(), 0, "no flash before the stage is running")
+	_to_running(sm)
+	_progress.cut_billed.emit(1.4, 1.4)
+	assert_eq(_hud.flash_args, [1.4, 1.4], "cut flash relayed while running")
+
+
 func test_main_scene_holds_car_at_boot() -> void:
 	var sm := _boot_scene.get_node_or_null("StageManager")
 	assert_not_null(sm, "world.gd wires a StageManager into the scene")

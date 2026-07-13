@@ -60,15 +60,18 @@ enabled and the player picks a drive mode later in the garage (see
 
 ## Car draw (per top-3 finish, including re-wins)
 
-`draw_car(profile, rng=null) -> model_id`. Fires on **every** top-3 finish
-(renewable supply — re-winning a completed rally re-grants a car). The rally's
-*difficulty is not an input*: the draw keys off the save profile alone, and it
-is **guaranteed** — a car is always granted. Two paths:
+`draw_car(profile, rally_difficulty=0, rng=null) -> model_id`. Fires on
+**every** top-3 finish (renewable supply — re-winning a completed rally
+re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
 
 1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
-   is at or below the **garage tier** (`garage_tier(profile)`: the highest
-   `reward_tier` among cars the player owns; 1 for an empty garage). Owning a
-   tier-3 car means any tier ≤ 3 car can drop.
+   is at or below the **draw ceiling**: the higher of the **garage tier**
+   (`garage_tier(profile)`: the highest `reward_tier` among cars the player owns;
+   1 for an empty garage) and the tier the **just-beaten rally's difficulty**
+   maps to (`_difficulty_to_tier`, currently identity). So owning a tier-3 car
+   means any tier ≤ 3 car can drop, AND beating a difficulty-3 rally can drop a
+   tier-3 car even from a tier-1 garage. `rally_difficulty` defaults to 0 (garage
+   tier alone governs) for callers that don't supply it.
 2. **Unlock fallback** (`_unlock_candidates`) — takes over only when the player
    is *stuck*: every rally their garage can currently enter is already completed
    (each owned car is checked on its **effective** stats via
@@ -99,7 +102,8 @@ handled by the flow controller.
 monotonic + clamped; `target_tier` never exceeds the ceiling; upgrade draws land
 at the target tier with the repair kit a rare minority; a part already fitted to
 the driven car is never drawn (repair-kit fallback when the car has everything); car draws never exceed
-the garage tier and prefer un-owned before falling back to a duplicate; a stuck
+`max(garage tier, beaten difficulty)` and a higher-difficulty rally lifts the
+ceiling above the garage tier; car draws prefer un-owned before falling back to a duplicate; a stuck
 player's grant opens a locked rally at the lowest difficulty any car can enter;
 and `draw_car` still pays a real car even with everything completed (the
 guaranteed-reward property).

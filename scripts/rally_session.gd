@@ -411,7 +411,7 @@ func _resolve_results() -> void:
 			showdown_done = true
 			showdown_won.emit()
 		else:
-			var model: Variant = RewardSystem.draw_car(Save.profile)
+			var model: Variant = RewardSystem.draw_car(Save.profile, int(_rally.get("difficulty", 1)))
 			if model != null:
 				car_reward = String(model)
 				# "New" iff the player didn't already own this model before the grant.

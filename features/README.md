@@ -41,6 +41,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
+| [corner-cutting.md](corner-cutting.md) | Corner-cutting time penalty — arc-gained-vs-driven cut detection in `TrackProgress`, snapshot at the finish, live HUD flash + finish-panel breakdown |
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
 | [start-line.md](start-line.md) | `StartLine` — the pre-event start-line scene (diegetic briefing panel + atmosphere presence cars) before the countdown |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |

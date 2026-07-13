@@ -39,8 +39,12 @@ that advances to the leaderboard/podium flow.
    `finish_stop = true`): the car **brakes itself to a stop** — full foot brake +
    handbrake while rolling, foot brake released once stopped, clutch kept engaged so
    the engine winds down to idle instead of free-revving ([car-physics.md](car-physics.md)) —
-   staying visible in the runoff road past the finish ([track.md](track.md)). Then
-   show the finish panel with the run time ([hud.md](hud.md)). It **does** emit
+   staying visible in the runoff road past the finish ([track.md](track.md)). It also
+   snapshots any [corner-cutting](corner-cutting.md) penalty here — `_penalty_s =
+   TrackProgress.cut_penalty_s()` — and folds it into the **reported** event time,
+   `_reported_seconds = _elapsed + _penalty_s`; the on-screen run timer (`_elapsed`)
+   itself stays clean throughout the run and is never touched by the penalty. Then
+   show the finish panel with the run time (+ cut breakdown, [hud.md](hud.md)). It **does** emit
    `finish_reached` here — the "car crossed the line" moment, distinct from the deferred
    `stage_completed`. Anything that should reflect the *driven run* rather than the
    player's panel-dismiss must key off `finish_reached`: `world.gd` stops the replay
@@ -109,7 +113,11 @@ stays `false` and the car is freely drivable.
 - `stage_completed(elapsed_seconds: float)` — emitted by `proceed_to_results()`
   when the player presses **NEXT** on the finish panel (NOT on the raw finish),
   timer frozen. This deferral gives the car room to skid to a stop and lets the
-  player read the time before the leaderboard.
+  player read the time before the leaderboard. The value carried is the
+  **reported** event time (`_reported_seconds`, `_elapsed` plus any
+  [corner-cutting](corner-cutting.md) penalty snapshot at `_complete()`), so
+  `RallySession`'s rally-total accumulation sees the penalized time without any
+  change on its end.
 
 These are the hooks the rally/menu layer attaches to. The **post-stage flow**
 (standings, podium, rewards, back to HQ) is out of scope here and owned by

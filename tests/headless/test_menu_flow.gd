@@ -1429,7 +1429,7 @@ func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
 	# Open Tuning: its page (the sliders) takes over; the hub controls + car desc hide.
 	hq._open_lift_page(hq.LiftPage.TUNE)
 	assert_true(hq._lift_menu_bg.visible, "the sub-menu panel shows on the Tuning page")
-	assert_true(hq._lift_tune_box.visible, "the Tuning page shows the sliders")
+	assert_true(hq._tune_panel.visible, "the Tuning page shows the sliders")
 	assert_false(hq._lift_upgrades_box.visible, "the Upgrades menu is hidden on the Tuning page")
 	assert_false(hq._lift_hub_controls.visible, "the hub controls hide while a menu is open")
 	assert_false(hq._lift_info_panel.visible, "the car description hides while a menu is open")
@@ -1440,7 +1440,7 @@ func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
 	# Open Upgrades the same way, then Back-from-hub leaves the bay for the garage.
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	assert_true(hq._lift_upgrades_box.visible, "the Upgrades page shows the install list")
-	assert_false(hq._lift_tune_box.visible, "the Tuning menu is hidden on the Upgrades page")
+	assert_false(hq._tune_panel.visible, "the Tuning menu is hidden on the Upgrades page")
 	hq._lift_back()
 	hq._lift_back()
 	assert_eq(hq._view, hq.View.GARAGE, "Back from the hub returns to the garage")
