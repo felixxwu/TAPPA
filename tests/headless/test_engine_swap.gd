@@ -72,6 +72,11 @@ func test_can_swap_requires_both_cars_at_full_health() -> void:
 	assert_true(EngineSwap.can_swap(full_a, full_b), "both full -> allowed")
 	assert_false(EngineSwap.can_swap(full_a, hurt), "one hurt -> blocked")
 	assert_false(EngineSwap.can_swap(full_a, {}), "empty car -> blocked")
+	# at_full_health is the per-car probe can_swap is built from and the swap flow uses
+	# to decide how many Repair Kits a swap costs.
+	assert_true(EngineSwap.at_full_health(full_a), "a car at max HP is at full health")
+	assert_false(EngineSwap.at_full_health(hurt), "a car below max HP is not")
+	assert_false(EngineSwap.at_full_health({}), "an empty car is not at full health")
 
 
 func test_pw_after_swap_stronger_donor_raises_pw() -> void:

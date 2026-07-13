@@ -389,18 +389,20 @@ func _count_menunav(box: Node) -> int:
 	return n
 
 
-# Regression: toggling a part on the Upgrades page rebuilds the rows; the keyboard/gamepad
-# cursor must stay on THAT part's toggle, not jump to the top of the list (or go null when
-# the deferred re-grab lands on the freed old button). Uses whatever the catalogue offers
-# (opaque — no dependence on a specific entry).
+# Regression: picking an option on the Upgrades page rebuilds the rows; the keyboard/gamepad
+# cursor must stay on THAT option, not jump to the top of the list (or go null when the
+# deferred re-grab lands on the freed old button). Uses whatever the catalogue offers
+# (opaque — no dependence on a specific entry), skipping the drivetrain slot (its selector
+# needs the swap kit; the fitted part below lands in one of the generic option slots).
 func test_hq_upgrades_toggle_keeps_focus_on_same_control() -> void:
 	var item_id := ""
 	for u in UpgradeLibrary.UPGRADES:
-		if not bool(u.get("consumable", false)):
+		if not bool(u.get("consumable", false)) \
+				and String(u.get("slot", "")) != "drivetrain":
 			item_id = String(u.get("id", ""))
 			break
 	if item_id == "":
-		pass_test("no non-consumable upgrade in the catalogue to install")
+		pass_test("no non-consumable option upgrade in the catalogue to install")
 		return
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -410,25 +412,25 @@ func test_hq_upgrades_toggle_keeps_focus_on_same_control() -> void:
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	# Focus the part's toggle, then activate it (which rebuilds the rows).
-	var toggle: Button = null
+	# Focus an available option button, then activate it (which rebuilds the rows).
+	var opt: Button = null
 	for node in hq._lift_upgrades_box.find_children("*", "Button", true, false):
-		if node.has_meta("upgrade_focus_key") \
-				and String(node.get_meta("upgrade_focus_key")).begins_with("toggle:"):
-			toggle = node
+		if node is Button and not (node as Button).disabled and node.has_meta("upgrade_focus_key") \
+				and String(node.get_meta("upgrade_focus_key")).begins_with("opt:"):
+			opt = node
 			break
-	assert_true(toggle != null, "the installed part has a toggle button")
-	var key := String(toggle.get_meta("upgrade_focus_key"))
-	toggle.grab_focus()
+	assert_true(opt != null, "the slot shows a focusable option button")
+	var key := String(opt.get_meta("upgrade_focus_key"))
+	opt.grab_focus()
 	await get_tree().process_frame
-	toggle.pressed.emit()
+	opt.pressed.emit()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var after: Control = hq.get_viewport().gui_get_focus_owner()
-	assert_true(after != null, "focus is not lost after toggling")
+	assert_true(after != null, "focus is not lost after picking an option")
 	assert_true(after != null and after.has_meta("upgrade_focus_key") \
 			and String(after.get_meta("upgrade_focus_key")) == key,
-		"focus stays on the same part's toggle after the rebuild (doesn't jump to the top)")
+		"focus stays on the same option after the rebuild (doesn't jump to the top)")
 
 
 # The cursor resting on a tuning slider is enough to change it: a menu_left / menu_right
@@ -759,6 +761,12 @@ func test_hq_has_bush_and_spectator_scenery() -> void:
 	var bushes: TreeMeshField = hq.get_node_or_null("HQBushes")
 	assert_not_null(bushes, "the HQ scatters a bush field alongside the trees")
 	assert_gt(bushes.instance_positions.size(), 0, "the bush field is populated")
+	# Scale contract (same guard as the podium): the HQ bush field is normalized by the
+	# shared Foliage routine + config, never left at native GLB size. Pins the routing,
+	# not the tunable height — retuning cfg.bush_height_m moves both sides together.
+	var expect := TreeMeshField.uniform_scale_for(Foliage.bush_mesh(), Config.data.bush_height_m)
+	assert_almost_eq(bushes.instance_scale, expect, 0.0001,
+		"HQ bushes use the shared Foliage scale normalization, not native size")
 	var crowd := hq.get_node_or_null("HQSpectators") as MultiMeshInstance3D
 	assert_not_null(crowd, "spectators stand around the lot")
 	assert_gt(crowd.multimesh.instance_count, 0, "the spectator scatter is populated")
@@ -1445,12 +1453,12 @@ func test_hq_lift_tune_sliders_save_tuning_per_car() -> void:
 	hq._enter_lift()
 	await get_tree().process_frame
 	# Moving the (always-available) grip slider stores the value on the selected car.
-	hq._lift_sliders["grip_balance"].value = 0.6
+	hq._tune_panel._sliders["grip_balance"].value = 0.6
 	var owned: Dictionary = _save.selected_car()
 	assert_almost_eq(float(owned["tuning"]["grip_balance"]), 0.6, 0.001,
 		"the grip slider saves onto the selected car's tuning")
 	# Reset zeroes every axis (free + instant).
-	hq._reset_tuning()
+	hq._tune_panel._reset()
 	assert_true(_save.selected_car().get("tuning", {}).is_empty(), "Reset clears the tuning deltas")
 
 
@@ -1461,9 +1469,9 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	hq._enter_lift()
 	await get_tree().process_frame
 	# The starter has no kits: grip is tunable, brake bias + aero are locked.
-	assert_true(hq._lift_sliders["grip_balance"].editable, "grip is always tunable")
-	assert_false(hq._lift_sliders["brake_bias"].editable, "brake bias locked without the brake kit")
-	assert_false(hq._lift_sliders["aero_balance"].editable, "aero locked without the aero kit")
+	assert_true(hq._tune_panel._sliders["grip_balance"].editable, "grip is always tunable")
+	assert_false(hq._tune_panel._sliders["brake_bias"].editable, "brake bias locked without the brake kit")
+	assert_false(hq._tune_panel._sliders["aero_balance"].editable, "aero locked without the aero kit")
 	# Fit a brake kit to a fresh car and select it — its brake-bias slider unlocks.
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
@@ -1472,8 +1480,8 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	_save.set_selected_car(id)
 	hq._enter_lift()
 	await get_tree().process_frame
-	assert_true(hq._lift_sliders["brake_bias"].editable, "the brake kit unlocks brake-bias tuning")
-	assert_false(hq._lift_sliders["aero_balance"].editable, "aero still locked (no aero kit)")
+	assert_true(hq._tune_panel._sliders["brake_bias"].editable, "the brake kit unlocks brake-bias tuning")
+	assert_false(hq._tune_panel._sliders["aero_balance"].editable, "aero still locked (no aero kit)")
 
 
 func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> void:
@@ -1543,36 +1551,44 @@ func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
 		"nothing gets fitted from the pool")
 
 
-func test_hq_lift_toggles_an_applied_upgrade() -> void:
+# A single-part slot (brakes) is a None / <Kit> option selector, earn-gated like turbo:
+# None is always available, the kit is greyed until fitted, and picking it enables the part
+# (picking None parks it). Free, instant, reversible — no confirmation dialog.
+func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.add_item("turbo_small")
-	_save.install_upgrade(id, "turbo_small")
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	# The applied part gets a focusable toggle row in the upgrades menu.
-	var toggle: Button = null
-	for b in hq._lift_upgrades_box.find_children("*", "Button", true, false):
-		if String(b.text).begins_with("DISABLE"):
-			toggle = b
-			break
-	assert_not_null(toggle, "an applied part shows a Disable toggle")
-	assert_eq(toggle.focus_mode, Control.FOCUS_ALL, "the toggle is keyboard / gamepad focusable")
-	# Disabling parks the part: still fitted, but its effect is off.
-	hq._toggle_upgrade(id, "turbo_small", false)
+	# Before the kit is won: a greyed kit option sits beside an available None; no toggles.
+	var kit_name := String(UpgradeLibrary.by_id("brake_kit").get("name", "")).to_upper()
+	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["Enable", "Disable"]), 0,
+		"no Enable/Disable toggle — the slot is a selector")
+	var kit_btn := _turbo_button(hq._lift_upgrades_box, kit_name)  # matches by (upper-cased) label
+	assert_not_null(kit_btn, "the slot shows its kit as an option")
+	assert_true(kit_btn.disabled, "the kit option is greyed until it's won")
+	assert_eq(kit_btn.focus_mode, Control.FOCUS_ALL, "the option is keyboard / gamepad focusable")
+	# Win + fit the kit (disabled), reopen: the kit option ungreys.
+	_save.add_item("brake_kit")
+	_save.install_upgrade(id, "brake_kit", false)
+	hq._rebuild_upgrades_box()
+	await get_tree().process_frame
+	assert_false(_turbo_button(hq._lift_upgrades_box, kit_name).disabled,
+		"the kit option ungreys once fitted")
+	# Picking the kit enables the part; picking None parks it (still fitted, effect off).
+	_press_button_with_text(hq._lift_upgrades_box, kit_name)
+	await get_tree().process_frame
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"), "picking the kit enables it")
+	_press_button_with_text(hq._lift_upgrades_box, "NONE")
+	await get_tree().process_frame
 	var car: Dictionary = _save.get_car(id)
-	assert_true(car["installed_upgrades"].has("turbo_small"), "a disabled part stays applied to the car")
-	assert_false(UpgradeLibrary.is_enabled(car, "turbo_small"), "the toggle switches the part off")
-	# Re-enabling brings it back — free and reversible, no confirmation dialog.
-	hq._toggle_upgrade(id, "turbo_small", true)
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"),
-		"the toggle switches the part back on")
+	assert_true(car["installed_upgrades"].has("brake_kit"), "a parked part stays fitted to the car")
+	assert_false(UpgradeLibrary.is_enabled(car, "brake_kit"), "picking None switches the part off")
 
 
 func test_hq_back_steps_carpark_to_table_to_garage() -> void:
@@ -1736,10 +1752,35 @@ func test_podium_shows_the_finish_summary() -> void:
 	# directly to exercise the mesh-extraction + MultiMesh build paths and confirm
 	# every focal-area decoration lands (trees, bushes, crowd).
 	pod._build_scenery()
-	for node_name in ["Trees", "Bushes", "Crowd"]:
-		var mmi := pod.get_node_or_null(node_name)
-		assert_not_null(mmi, "scenery builds a %s MultiMesh" % node_name)
-		assert_true(mmi.multimesh.instance_count > 0, "%s has placed instances" % node_name)
+	# Trees + bushes go through the shared Foliage fields (a BillboardField or
+	# TreeMeshField per cfg.use_billboard_trees), so read their renderer-independent
+	# instance_positions mirror (headless has no MultiMesh buffer). The crowd is a
+	# plain MultiMeshInstance3D placed directly.
+	for node_name in ["Trees", "Bushes"]:
+		var field := pod.get_node_or_null(node_name)
+		assert_not_null(field, "scenery builds a %s field" % node_name)
+		assert_gt(field.instance_positions.size(), 0, "%s has placed instances" % node_name)
+	var crowd := pod.get_node_or_null("Crowd") as MultiMeshInstance3D
+	assert_not_null(crowd, "scenery builds a Crowd MultiMesh")
+	assert_gt(crowd.multimesh.instance_count, 0, "Crowd has placed instances")
+
+	# Routing contract (regression guard): the podium must build its foliage through
+	# the shared Foliage fields, NOT a hand-rolled MultiMesh at the mesh's native GLB
+	# size (the bug this replaced). The bush field is always the 3D TreeMeshField; the
+	# tree field is a BillboardField or TreeMeshField per the representation toggle.
+	var bushes := pod.get_node_or_null("Bushes")
+	assert_true(bushes is TreeMeshField, "podium bushes route through the shared bush field")
+	var trees := pod.get_node_or_null("Trees")
+	if Config.data.use_billboard_trees:
+		assert_true(trees is BillboardField, "podium trees use the shared billboard field")
+	else:
+		assert_true(trees is TreeMeshField, "podium trees use the shared 3D mesh field")
+	# Scale contract: the bush field is normalized by the SAME routine + config the
+	# rest of the game uses (never left at native GLB size). Asserts the routing, not a
+	# tunable height — retuning cfg.bush_height_m moves both sides together.
+	var expect := TreeMeshField.uniform_scale_for(Foliage.bush_mesh(), Config.data.bush_height_m)
+	assert_almost_eq(bushes.instance_scale, expect, 0.0001,
+		"podium bushes use the shared Foliage scale normalization, not native size")
 
 
 func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
@@ -1981,6 +2022,57 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 		"selected car received the target's engine")
 
 
+# A damaged car no longer blocks a swap: with a Repair Kit owned, confirming a swap
+# spends one kit per damaged car, restores it to full health, and exchanges engines.
+func test_engine_swap_repairs_a_damaged_car_and_spends_a_kit() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var a: Dictionary = _save.selected_car()
+	var a_id := int(a["instance_id"])
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
+	_save.apply_damage(a_id, 1.0)  # lift car below 100% -> a swap needs one kit
+	_save.add_item("repair_kit", 1)
+	hq._enter_engine_swap()
+	await _await_lineup(hq)
+	# The damaged lift car still has a target (no car excluded on health).
+	hq._selected_instance_id = int(b["instance_id"])
+	hq._focus_changed()
+	assert_true(hq._car_warning_label.visible, "a kit-cost warning shows for the damaged swap")
+	assert_false(hq._start_button.disabled, "the partner is never excluded on health")
+	# Confirm the swap: the popup carries the cost, OK spends the kit and exchanges engines.
+	hq._select_swap_target()
+	assert_false(hq._swap_repair_dialog.get_ok_button().disabled, "enough kits -> OK enabled")
+	hq._on_swap_repair_confirmed()
+	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), stock_b,
+		"the repaired car received the partner's engine")
+	assert_almost_eq(float(_save.get_car(a_id)["hp"]), float(CarLibrary.by_id(String(a["model_id"]))["max_hp"]),
+		0.001, "the swap restored the damaged car to full health")
+	assert_eq(_save.profile.get("inventory", {}).get("repair_kit", 0), 0, "the swap spent the kit")
+
+
+# Without enough Repair Kits, a swap involving a damaged car is blocked: the button is
+# still reachable and the popup's OK is disabled — the player is told, not excluded.
+func test_engine_swap_blocked_when_short_on_kits() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var a: Dictionary = _save.selected_car()
+	var a_id := int(a["instance_id"])
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	_save.apply_damage(a_id, 1.0)  # needs a kit, but none owned
+	hq._enter_engine_swap()
+	await _await_lineup(hq)
+	hq._selected_instance_id = int(b["instance_id"])
+	hq._focus_changed()
+	assert_true(hq._car_warning_label.visible, "the short-on-kits warning shows")
+	hq._select_swap_target()
+	assert_true(hq._swap_repair_dialog.get_ok_button().disabled, "no kits -> OK disabled")
+	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), "",
+		"no swap happened without a kit")
+
+
 func test_swap_preview_visible_only_in_swap_mode() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -2020,7 +2112,7 @@ func test_tuning_sliders_are_all_the_same_length() -> void:
 	await get_tree().process_frame
 	var widths: Array = []
 	for axis in TuningLibrary.AXES:
-		widths.append((hq._lift_sliders[axis] as HSlider).size.x)
+		widths.append((hq._tune_panel._sliders[axis] as HSlider).size.x)
 	for w in widths:
 		assert_almost_eq(float(w), float(widths[0]), 0.5, "all tuning sliders share the same length")
 
@@ -2046,8 +2138,8 @@ func test_detune_label_shows_power_to_weight() -> void:
 	await get_tree().process_frame
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.TUNE)
-	hq._on_tune_slider_changed(80.0, "engine_detune")
-	var txt := String(hq._lift_slider_values["engine_detune"].text)
+	hq._tune_panel._on_slider_changed(80.0, "engine_detune")
+	var txt := String(hq._tune_panel._slider_values["engine_detune"].text)
 	assert_true(txt.begins_with("80%"), "detune label leads with the percent")
 	assert_true(txt.to_lower().contains("hp/tonne"), "detune label shows the power-to-weight readout")
 
@@ -2058,8 +2150,8 @@ func test_detune_slider_is_present_and_focusable() -> void:
 	await get_tree().process_frame
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.TUNE)
-	assert_true(hq._lift_sliders.has("engine_detune"), "tuning page has a detune slider")
-	var slider: HSlider = hq._lift_sliders["engine_detune"]
+	assert_true(hq._tune_panel._sliders.has("engine_detune"), "tuning page has a detune slider")
+	var slider: HSlider = hq._tune_panel._sliders["engine_detune"]
 	assert_eq(slider.focus_mode, Control.FOCUS_ALL, "detune slider is keyboard/gamepad focusable")
 	assert_eq(slider.min_value, 0.0, "detune slider starts at 0%")
 	assert_eq(slider.max_value, 100.0, "detune slider tops at 100%")
@@ -2071,7 +2163,7 @@ func test_detune_slider_persists_as_fraction() -> void:
 	await get_tree().process_frame
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.TUNE)
-	hq._on_tune_slider_changed(50.0, "engine_detune")
+	hq._tune_panel._on_slider_changed(50.0, "engine_detune")
 	var id: int = _save.selected_instance_id()
 	assert_almost_eq(float(_save.get_car(id)["tuning"]["engine_detune"]), 0.5, 0.001,
 		"a 50% slider stores a 0.5 torque fraction")
@@ -2254,3 +2346,97 @@ func test_drivetrain_selector_sets_override() -> void:
 	await get_tree().process_frame
 	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), CarLibrary.AWD,
 		"pressing a mode stores the override")
+
+
+# Regression: selecting a drivetrain rebuilds the upgrade rows via _set_drivetrain →
+# _rebuild_upgrades_box. The row builders author their own font_size (15); the house
+# rule is FONT_SIZE (16). The rebuild must re-apply the house rules so the text doesn't
+# visibly shrink 16 → 15 the moment you pick a mode (the live rebuild paths don't call
+# _normalize_menus, so the enforce must live in _rebuild_upgrades_box itself).
+func test_selecting_a_drivetrain_keeps_the_house_font_size() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var owned: Dictionary = _save.grant_car("fx_awd")
+	var id := int(owned["instance_id"])
+	_save.set_selected_car(id)
+	_save.add_item("drivetrain_swap")
+	_save.install_upgrade(id, "drivetrain_swap")
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	_press_button_with_text(hq._lift_upgrades_box, "AWD")
+	await get_tree().process_frame
+	for node in hq._lift_upgrades_box.find_children("*", "Control", true, false):
+		var c := node as Control
+		if c is Label or c is Button:
+			assert_eq(c.get_theme_font_size("font_size"), UITheme.FONT_SIZE,
+				"'%s' keeps the house font size after a drivetrain rebuild" % c.name)
+
+
+# The turbo slot is an earn-gated None / Small / Big selector, not enable/disable toggles.
+func _turbo_button(box: Node, needle: String) -> Button:
+	for b in box.find_children("*", "Button", true, false):
+		if String(b.text).contains(needle):
+			return b
+	return null
+
+
+func test_turbo_selector_is_earn_gated() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var owned: Dictionary = _save.grant_car("fx_awd")
+	var id := int(owned["instance_id"])
+	_save.set_selected_car(id)
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	# All three options always render; the turbo slot has no Enable/Disable toggles.
+	# (Button labels render uppercased by the theme, so match on the upper-cased text.)
+	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["NONE", "SMALL", "BIG"]), 3,
+		"None / Small / Big always shown")
+	# With no kit won, None is selectable but Small / Big are greyed until earned.
+	assert_false(_turbo_button(hq._lift_upgrades_box, "NONE").disabled, "None is always available")
+	assert_true(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small locked until its kit is won")
+	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big locked until its kit is won")
+	# Winning the Small kit unlocks Small only; Big stays greyed.
+	_save.add_item("turbo_small")
+	_save.install_upgrade(id, "turbo_small", false)
+	hq._rebuild_upgrades_box()
+	await get_tree().process_frame
+	assert_false(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small unlocks once its kit is fitted")
+	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big still locked")
+	# Each option button is keyboard / gamepad focusable.
+	assert_eq(_turbo_button(hq._lift_upgrades_box, "NONE").focus_mode, Control.FOCUS_ALL,
+		"turbo option buttons are focusable")
+
+
+func test_turbo_selector_sets_enabled_part() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var owned: Dictionary = _save.grant_car("fx_awd")
+	var id := int(owned["instance_id"])
+	_save.set_selected_car(id)
+	_save.add_item("turbo_small")
+	_save.install_upgrade(id, "turbo_small", false)
+	_save.add_item("turbo_large")
+	_save.install_upgrade(id, "turbo_large", false)
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	# Picking Big enables the large turbo (exclusivity keeps the small one off).
+	# (Button labels render uppercased by the theme.)
+	_press_button_with_text(hq._lift_upgrades_box, "BIG")
+	await get_tree().process_frame
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_large"), "Big enables the large turbo")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "and switches the small one off")
+	# Picking None parks both — no turbo enabled.
+	_press_button_with_text(hq._lift_upgrades_box, "NONE")
+	await get_tree().process_frame
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_large"), "None disables the large turbo")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "None disables the small turbo")

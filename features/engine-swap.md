@@ -8,8 +8,11 @@ the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
 swap-mode UI in `scripts/hq.gd`.
 
 **Engine swap** lets the player move any owned car's engine into any other
-owned car — free, unlimited, and reversible — as long as **both** cars sit at
-100% HP. **Engine detune** is a per-car tuning slider (0–100%) that directly
+owned car — unlimited and reversible. Both cars must be at **100% HP** for the
+exchange itself, but a car below full health no longer blocks the swap: it's
+restored with a **Repair Kit** as part of the swap (one kit per damaged car,
+spent on confirm). A swap between two already-full cars is still free. **Engine
+detune** is a per-car tuning slider (0–100%) that directly
 scales the fitted engine's torque, letting a car be deliberately hobbled (e.g.
 to fit a rally's power-to-weight band) without touching its parts.
 
@@ -187,18 +190,24 @@ produced. See [tuning.md](tuning.md) for the full axis table.
 - **Upgrades page, engine-swap row** (`hq._make_engine_swap_row`) — shown on
   the tuning-lift's Upgrades page above the slot rows: a label with the
   car's current engine name (`EngineLibrary.by_id(current).name`) and a **Swap
-  Engine** button. The button is disabled (with a tooltip explaining why)
-  unless `EngineSwap.can_swap(owned, owned)` — i.e. this car itself is at
-  100% HP; the OTHER car's health is checked when building the swap-target
-  list.
+  Engine** button. The button is **never disabled on health or kit state** — a
+  damaged car is repaired as part of the swap, so it's only disabled when there's
+  literally no other owned car to swap with. When this car is below 100% HP the
+  tooltip notes a Repair Kit will be spent.
 - **Car-park swap mode** (`hq._enter_engine_swap` / `_carpark_swap_mode`) —
-  pressing Swap Engine opens the car park restricted to every OTHER owned car
-  that also passes `EngineSwap.can_swap` against the current car (the current
-  car itself is excluded — no self-swap). It reuses the car park's normal
-  cycle-and-frame flow; the Start button reads **"Swap Engine"**.
-  Confirming (`hq._select_swap_target`) calls
-  `Save.swap_engines(current_id, target_id)`, forces the lift prop to respawn
-  with the new engine, and returns to the lift's Upgrades page. **Back**
+  pressing Swap Engine opens the car park listing **every** OTHER owned car (the
+  current car itself is excluded — no self-swap); no car is filtered out on
+  health. It reuses the car park's normal cycle-and-frame flow; the Start button
+  reads **"Swap Engine"**. While picking a partner,
+  `hq._refresh_swap_repair_warning` shows how many Repair Kits the swap will cost
+  (one per car below 100% HP) — or, if the player is short, says so — without
+  disabling anything. Confirming (`hq._select_swap_target`): with no kit needed it
+  calls `Save.swap_engines` directly; when a car is damaged it pops
+  `_show_swap_repair_confirm` (OK **"Repair & Swap"**, disabled when the player
+  lacks the kits), and OK (`_on_swap_repair_confirmed` → `_commit_engine_swap`)
+  spends one `Save.use_repair_kit` per damaged car before the exchange. Either way
+  it forces the lift prop to respawn with the new engine, and returns to the
+  lift's Upgrades page. **Back**
   (`_car_back`) returns to the lift with no change, same as change-car and
   starter-pick modes.
   While picking a partner, `hq._refresh_swap_preview()` (called from

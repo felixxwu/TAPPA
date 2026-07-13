@@ -28,8 +28,6 @@ extends Node3D
 # can never bog it down. Once the car is well past (despawn_behind_m behind it), the
 # ragdoll is freed.
 
-const SPECTATOR_SCENE := preload("res://blender/spectator/spectator.glb")
-
 # --- agent state (parallel arrays, index = member) ----------------------------
 var _pos: PackedVector2Array      # world XZ
 var _vel: PackedVector2Array      # XZ velocity
@@ -76,10 +74,12 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	if n > 0:
 		_center /= float(n)
 
-	var mesh := MeshUtil.first_mesh(SPECTATOR_SCENE)
+	# Shared figure mesh + foot offset (Crowd owns them, so the live crowd can't drift
+	# from the decorative ones); the capsule dims are this sim's own concern.
+	var mesh := Crowd.mesh()
 	if mesh != null:
 		var aabb := mesh.get_aabb()
-		_foot_offset = -aabb.position.y
+		_foot_offset = Crowd.foot_offset(mesh)
 		_capsule_height = maxf(aabb.size.y, 0.2)
 		_capsule_radius = maxf(maxf(aabb.size.x, aabb.size.z) * 0.5, 0.1)
 	_build_multimesh(mesh, n)

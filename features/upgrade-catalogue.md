@@ -21,7 +21,7 @@ is the upgrades half.
 ## Catalogue
 
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
-(`engine` / `aero` / `chassis` / `brakes` / `drivetrain`, or `""` for consumables),
+(`turbo` / `aero` / `chassis` / `brakes` / `drivetrain`, or `""` for consumables),
 `tier` (reward-tier gating), `consumable`, and `effect` (config-field → delta/multiplier).
 
 The **`drivetrain` slot** holds the **Drivetrain Swap** kit, whose `effect` is a single
@@ -37,13 +37,28 @@ kit IS the unlock, and the selector's stock choice plays the "off" role (disabli
 just re-select the original drive mode). So its podium reveal **always installs it
 enabled** with no Apply/Keep choice (`podium.gd._offer_upgrade_choice`), and its upgrades-menu
 row shows only the selector — no toggle (`hq.gd._make_slot_row`).
-Current set: two **turbo kits** (engine slot — `turbo_small` tier 1, `turbo_large`
-tier 3), an aero kit, a **weight-reduction** kit (chassis slot, `mass_mult` 0.90),
+Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
+tier 2), an aero kit, a **weight-reduction** kit (chassis slot, `mass_mult` 0.90),
 a big brake kit, and the **repair kit** (the one consumable). The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults.
 
-The engine slot installs a **turbocharger** rather than a flat power bump: each
+**Every part slot is an earn-gated option selector** (`hq.gd._make_option_selector`), built
+to read like the drivetrain picker: `SLOT:` on the left, then `None` + one button per
+catalogue part in that slot on the right. `None` is always selectable (the "off" state);
+each part option is **greyed until that kit is fitted** to this car, and the active one is
+bracketed. The turbo slot has two parts — `None` / `Small` / `Big` (`turbo_small` /
+`turbo_large`, shown by their short `menu_label`); the single-part slots read `None` /
+`<Kit>` (e.g. `Aero: None / Aero Kit`, using the part's full `name`). Under the hood it's
+the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled` via
+`hq.gd._set_slot_option`): picking a part enables it (same-slot exclusivity switches any
+sibling off), picking `None` disables every part in the slot. So the reward flow is
+unchanged — kits are still won, fitted disabled, and the podium's Apply enables the pick;
+the selector is purely the menu presentation, replacing the old Enable/Disable toggle rows.
+Drivetrain remains the odd one out (its selector is a `drive_mode` override, not a part
+enable, and it uses a single unlock rather than per-option earn-gating — see above).
+
+The turbo slot installs a **turbocharger** rather than a flat power bump: each
 turbo kit's `effect` is a single `install_turbo` key whose value is a dict of turbo
 parameters (`turbo_boost_gain`, `turbo_inertia`, `turbo_omega_ref`,
 `turbo_drive_gain`, `turbo_drag_coef`, and the whistle/BOV audio gains). `apply`
@@ -151,7 +166,9 @@ duplicate-fit rejection, the same part fitting two different cars independently,
 the `set_upgrade_enabled` toggle, consumable/unknown rejection, repair-kit
 heal+clamp, wreck (parts stay on the car), and the v1→v2 migration stripping the
 old unbound pool are in `test_save_manager.gd` (they need the Save profile). The
-garage upgrades menu having no apply-from-pool rows and the toggle are in
+garage upgrades menu having no apply-from-pool rows, the earn-gated option selectors
+(turbo `None`/`Small`/`Big` and the single-part `None`/`<Kit>` slots — greyed until won,
+picking enables, `None` parks), and the option-selector focus-retention regression are in
 `test_menu_flow.gd`; the podium's Apply(enable)/Keep(disable) reward choice is in
 its podium-sequence test there. `test_rally_session.gd` covers won parts binding
 to the driven car with no slottable part won twice per rally (the dedup'd draw).

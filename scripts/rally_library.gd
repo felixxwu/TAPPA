@@ -116,7 +116,7 @@ const RALLIES: Array[Dictionary] = [
 		"id": "rwd_masters", "name": "RWD Masters", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.52, 0.64),
 		# p/w band (primary gate) + an RWD theme: a mid-power rear-driven field.
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 147.0, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 160.0, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
 		"events": [
 			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4},
 			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5},
@@ -135,7 +135,7 @@ const RALLIES: Array[Dictionary] = [
 		"events": [
 			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55},
 			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7},
-			{"seed": 4003, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6},
+			{"seed": 3734559043, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6},
 		],
 	},
 	{

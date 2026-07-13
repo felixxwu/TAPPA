@@ -31,6 +31,13 @@ const RESTART_SEED_STRIDE := 1_000_003
 # clearly felt without ever excluding a candidate (the DFS can still backtrack onto
 # a sharp corner when nothing gentle fits).
 const STRAIGHTNESS_BIAS := 6.0
+# Live-preview pacing (used only when generate() is given an on_progress Callable).
+# The search yields a frame — repainting the partial track — every this many search
+# steps (placements + backtracks) while an on_progress callback is set, so the drawn
+# line grows/shrinks in step with the DFS. A small interval keeps the growth smooth;
+# total yields are bounded by the search's own step budget (STEPS_BASE + restarts), so
+# even a thrashing seed can't animate unboundedly. Pacing only — never affects the RESULT.
+const PROGRESS_STEP_INTERVAL := 2
 
 
 # Transform2D mapping local corner space (x = right, y = forward/heading) to
@@ -94,6 +101,14 @@ static func exit_heading(polyline: PackedVector2Array) -> Vector2:
 	return (polyline[n - 1] - polyline[n - 2]).normalized()
 
 
+# Positions-only snapshot of the current partial track, for the live preview.
+static func _snapshot(world_points: Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for wp in world_points:
+		out.append(wp[0])
+	return out
+
+
 # Run the search. Returns:
 #   { "centerline": Curve2D, "cells": Dictionary (Vector2i -> true),
 #     "pieces": Array (each { "corner": String, "flip": bool,
@@ -116,7 +131,7 @@ static func exit_heading(polyline: PackedVector2Array) -> Vector2:
 static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int,
 		turn_count: int, width: float, clearance: float = 0.0,
 		reserve_behind_m: float = 0.0, straightness: float = 0.0,
-		runoff_m: float = 0.0) -> Dictionary:
+		runoff_m: float = 0.0, on_progress: Callable = Callable()) -> Dictionary:
 	var coll_width := width + 2.0 * clearance
 	var corners := _turn_corners()
 	# Cells of the lead-in corridor behind the start (empty when not staged). Cells
@@ -133,7 +148,7 @@ static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int
 	for restart in MAX_RESTARTS:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = seed_value + restart * RESTART_SEED_STRIDE
-		var result := _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved, straightness, runoff_m)
+		var result := await _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved, straightness, runoff_m, on_progress)
 		if result["complete"]:
 			return result
 		if best_partial.is_empty() or result["pieces"].size() > best_partial["pieces"].size():
@@ -310,7 +325,7 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		width: float, corners: Array, rng: RandomNumberGenerator,
 		reserved: Dictionary = {}, straightness: float = 0.0,
-		runoff_m: float = 0.0) -> Dictionary:
+		runoff_m: float = 0.0, on_progress: Callable = Callable()) -> Dictionary:
 	# world_points: Array of [pos, in, out]; starts with the spawn point.
 	var world_points: Array = [[start_pos, Vector2.ZERO, Vector2.ZERO]]
 	var occupied: Dictionary = {}
@@ -324,11 +339,16 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 	# this; one that exceeds it is grinding a doomed subtree, so we bail and let the
 	# caller restart with a fresh, far-apart seed (cheap — see generate()).
 	var max_steps: int = STEPS_BASE + turn_count * STEPS_PER_TURN
+	var last_yield_step := 0
 
 	while pieces.size() < turn_count:
 		steps += 1
 		if steps > max_steps:
 			break
+		if on_progress.is_valid() and steps - last_yield_step >= PROGRESS_STEP_INTERVAL:
+			last_yield_step = steps
+			on_progress.call(_snapshot(world_points))
+			await Engine.get_main_loop().process_frame
 		# Ensure the current depth has a candidate iterator (the frontier).
 		if stack.size() == pieces.size():
 			stack.append({ "cands": _candidates(corners, rng, straightness), "idx": 0 })

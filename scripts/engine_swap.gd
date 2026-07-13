@@ -64,10 +64,13 @@ static func pw_after_swap(owned: Dictionary, entry: Dictionary, donor_engine_id:
 # Two owned cars may exchange engines only when both exist, neither is wrecked,
 # and both sit at their CarLibrary max HP (100% health).
 static func can_swap(car_a: Dictionary, car_b: Dictionary) -> bool:
-	return _at_full_health(car_a) and _at_full_health(car_b)
+	return at_full_health(car_a) and at_full_health(car_b)
 
 
-static func _at_full_health(car: Dictionary) -> bool:
+# Public health probe: true when the car exists and sits at its CarLibrary max HP.
+# A car below full health can still take part in a swap, but only after a Repair
+# Kit restores it (the HQ swap flow spends one kit per damaged car — see hq.gd).
+static func at_full_health(car: Dictionary) -> bool:
 	if car.is_empty():
 		return false
 	var entry := CarLibrary.by_id(String(car.get("model_id", "")))

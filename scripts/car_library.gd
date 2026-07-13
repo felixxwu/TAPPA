@@ -183,7 +183,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
-		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 2,
+		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 1,
 		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95,  # touring tyres
 		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy RWD muscle)
@@ -223,7 +223,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Dodge Viper RT/10",  # 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
-		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 1000.0, "reward_tier": 3,
+		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 1000.0, "reward_tier": 2,
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
 		"tire_compound": 1.15,  # sticky performance tyres (period bias-belted rubber)
 		"brake_bias": 0.25,  # front share of foot-brake torque (~49/51 front-mid RWD)
@@ -249,7 +249,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
-		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 3,
+		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 2,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.2,  # period touring tyres
 		"brake_bias": 0.2,  # front share of foot-brake torque (nose-heavy RWD)

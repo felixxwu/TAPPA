@@ -30,6 +30,15 @@ class StubPlayer:
 	var ai_steer := 0.0
 	var ai_handbrake := false
 	var drivetrain := StubDrivetrain.new()
+	# Records which fielding path the start-line tune takes: retune (live-safe) is
+	# correct; apply_owned would relocate wheels + reset the pose and corrupt the body.
+	var retune_calls := 0
+	var applied_owned := false
+	func retune(_owned: Dictionary) -> void:
+		retune_calls += 1
+	func apply_owned(_owned: Dictionary) -> String:
+		applied_owned = true
+		return ""
 
 
 # A flat terrain stub at a raised elevation, so the spawn-clearance seating is testable
@@ -81,6 +90,8 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	if RallySession.is_active():
+		RallySession.abandon()  # a test that started a rally must not leak the session
 	Config.reset()
 	CarFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
@@ -312,6 +323,40 @@ func test_fade_restores_the_selected_camera_not_always_chase() -> void:
 	assert_true(_bonnet.current, "the selected (bonnet) camera is restored at hand-off")
 	assert_false(_chase.current, "the start line does not force chase over the chosen mode")
 	assert_false(sl._orbit_cam.current, "the orbit camera releases control")
+
+
+func test_start_overlay_has_a_focusable_tune_car_button() -> void:
+	var sl := _make()
+	assert_not_null(sl._tune_button, "the pre-event overlay offers a Tune Car button")
+	assert_eq(sl._tune_button.focus_mode, Control.FOCUS_ALL,
+		"the Tune Car button is keyboard/gamepad focusable (MenuNav attached)")
+
+
+func test_tune_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
+	# A live session so the tune panel binds the racing car (skip_track_gen: no scene).
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make()
+	sl._open_tune()
+	assert_true(sl._tune_layer.visible, "opening Tune Car shows the tuning overlay")
+	assert_false(sl._overlay.visible, "the start overlay hides while tuning")
+	sl._close_tune()
+	assert_true(sl._overlay.visible, "Back restores the start overlay")
+	assert_false(sl._tune_layer.visible, "Back hides the tuning overlay")
+
+
+func test_start_line_tune_uses_retune_and_preserves_the_staged_pose() -> void:
+	# Regression: the Tune Car edit must re-apply tuning via the live-safe retune path,
+	# NOT re-field via apply_owned (which relocates the wheels + resets the pose and
+	# corrupts the staged body). The staged grid pose must survive a tune untouched.
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make()
+	var pose_before: Transform3D = _player.global_transform
+	sl._open_tune()
+	sl._on_tune_changed(_save.selected_car())
+	assert_gt(_player.retune_calls, 0, "the tune routes through the live-safe retune path")
+	assert_false(_player.applied_owned,
+		"it must NOT re-field via apply_owned (that relocates wheels + resets the pose)")
+	assert_eq(_player.global_transform, pose_before, "the staged grid pose is preserved across a tune")
 
 
 func test_launch_is_idempotent() -> void:

@@ -44,3 +44,37 @@ func test_loading_overlay_removed_after_generation() -> void:
 	await get_tree().process_frame
 	for child in scene.get_children():
 		assert_false(child is LoadingScreen, "loading overlay is removed once the world is ready")
+
+
+func test_fit_points_returns_empty_below_two_points() -> void:
+	assert_eq(LoadingScreen.fit_points(PackedVector2Array(), Rect2(0, 0, 100, 100), 4.0).size(), 0,
+		"no points -> nothing to draw")
+	assert_eq(LoadingScreen.fit_points(PackedVector2Array([Vector2(1, 1)]), Rect2(0, 0, 100, 100), 4.0).size(), 0,
+		"one point -> nothing to draw")
+
+
+func test_fit_points_maps_into_padded_rect_preserving_aspect() -> void:
+	# A 10x10 square of world points fits into a 100x100 rect with pad 10 -> inner 80x80,
+	# centered. Square aspect == square inner box, so it should fill the inner box exactly.
+	var pts := PackedVector2Array([
+		Vector2(0, 0), Vector2(10, 0), Vector2(10, 10), Vector2(0, 10)])
+	var out: PackedVector2Array = LoadingScreen.fit_points(pts, Rect2(0, 0, 100, 100), 10.0)
+	assert_eq(out.size(), 4, "same number of points out")
+	for p in out:
+		assert_true(p.x >= 9.99 and p.x <= 90.01, "x stays within the padded rect")
+		assert_true(p.y >= 9.99 and p.y <= 90.01, "y stays within the padded rect")
+	# The bounding box of the output spans the full inner box on at least one axis.
+	var minx: float = out[0].x
+	var maxx: float = out[0].x
+	for p in out:
+		minx = minf(minx, p.x)
+		maxx = maxf(maxx, p.x)
+	assert_almost_eq(maxx - minx, 80.0, 0.5, "square input fills the 80px inner width")
+
+
+func test_update_track_preview_stores_points() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	var pts := PackedVector2Array([Vector2(0, 0), Vector2(5, 5)])
+	screen.update_track_preview(pts)
+	assert_eq(screen._preview._points.size(), 2, "preview stores the supplied points")

@@ -2,8 +2,10 @@
 
 **Sources:** `scripts/tuning_library.gd` (`TuningLibrary`), the brake-bias split in
 `scripts/drivetrain.gd`, the `Tuning` group in `scripts/game_config.gd`, the
-fielding hook in `scripts/car.gd` (`apply_owned`), and the tuning-lift UI in
-`scripts/hq.gd`. Player state lives on each `OwnedCar` (`Save`,
+fielding hook in `scripts/car.gd` (`apply_owned`), the reusable slider UI in
+`scripts/tuning_panel.gd` (`TuningPanel`), and its two hosts — the garage tuning
+lift (`scripts/hq.gd`) and the pre-event start line (`scripts/start_line.gd`).
+Player state lives on each `OwnedCar` (`Save`,
 [save-persistence.md](save-persistence.md)).
 
 **Tuning** is the **free, reversible** half of *Tuning & upgrades* — handling
@@ -41,7 +43,7 @@ lineup with Start relabelled **Detune to N% & Start**, which applies the
 qualifying tune (`RallyLibrary.qualifying_detune`) on agreement — see
 [menus.md](menus.md) → CARPARK. The slider's value label pairs the percent with
 the car's live power-to-weight at that setting (e.g. `80% - 200 hp/tonne`, via
-`hq.gd._detune_label_text` → `effective_meta`), so you can dial to a target band
+`TuningPanel._detune_label_text` → `effective_meta`), so you can dial to a target band
 by eye. (All tuning-lift sliders share one fixed-width label column so they line
 up to the same length regardless of value text.)
 
@@ -96,6 +98,33 @@ A Repair Kit **fully restores** a car's health (`Save.use_repair_kit`) — there
 partial-heal tunable. The lift shows **Health** as a percentage (not a raw HP number,
 which reads as horsepower) and flags a wrecked (0%) car.
 
+## The tuning UI (`TuningPanel`)
+
+The four sliders live in one reusable control, `TuningPanel`
+(`scripts/tuning_panel.gd`, a `VBoxContainer`), shared by both places tuning is
+offered. It owns the slider rows, the locked-axis greying/"needs X kit" notes,
+the **Reset to neutral** action, and the immediate `Save.set_tuning` /
+`Save.set_engine_detune` persistence; a host binds it with
+`setup(owned_car, on_change)` and calls `refresh()`, and is notified via
+`on_change` after each edit so it can re-field the car.
+
+- **Garage tuning lift** (`hq.gd`, `LiftPage.TUNE`) — embeds the panel with a
+  no-op `on_change` (the change lands on the car's next fielding).
+- **Pre-event start line** (`start_line.gd`) — a **Tune Car** button under
+  **Start** opens a centered overlay hosting the same panel, bound to the car
+  about to race (`Save.get_car(RallySession.car_instance_id())`). Its `on_change`
+  calls **`Car.retune`** (NOT `apply_owned`): tuning only shifts config fields
+  read live each physics step, so `retune` restores the pre-tuning baseline (a
+  snapshot taken in `apply_owned` before `TuningLibrary.apply`) and re-applies the
+  new tuning — no wheel relocation, pose reset, or engine rebuild. Re-fielding a
+  live, staged `VehicleBody3D` via `apply_owned` would relocate its wheels
+  (detach/re-attach) and reset its pose, corrupting the body (wheels drop through
+  the floor — see the `Car.respawn` note). The panel is also given a **detune
+  cap** = `RallyLibrary.qualifying_detune(rally, full_power_meta)`, so the
+  engine-detune slider can't be pushed back above the rally's power-to-weight
+  ceiling (a car that entered via a detune agreement can't undo it here). Tuning
+  only — upgrades / car swaps are not offered.
+
 ## The tuning lift (UI)
 
 The garage **tuning lift** ([menus.md](menus.md)) is where this is driven. The
@@ -133,3 +162,13 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
 - `tests/headless/test_menu_flow.gd` — the lift raises the selected car; sliders save
   per-car; locked sliders gate by upgrade; changing the lift car updates the
   selection; installing a part from the upgrades menu.
+- `tests/headless/test_tuning_panel.gd` — the shared `TuningPanel` in isolation: a
+  slider per axis, editing writes the axis + fires `on_change`, locked axes aren't
+  editable, Reset clears the deltas, and a tune bakes into the config via
+  `TuningLibrary.apply`.
+- `tests/headless/test_start_line.gd` — the pre-event overlay offers a focusable
+  **Tune Car** button; opening it shows the tuning overlay (hiding Start) and Back
+  returns.
+- `tests/headless/test_retune.gd` — `Car.retune` applies a changed tuning to the
+  live config, is idempotent (no compounding), and does NOT reshape/reset the body
+  (the start-line drop-through-floor regression).

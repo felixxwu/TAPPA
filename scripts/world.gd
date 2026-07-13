@@ -8,7 +8,6 @@ const BUSH_SEED_OFFSET := 1013
 # is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
 # display cars); the onlookers reuse the shared low-poly spectator figure.
 const WRECK_CAR_SCENE := "res://car.tscn"
-const WRECK_SPECTATOR_SCENE := "res://blender/spectator/spectator.glb"
 
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
@@ -218,9 +217,20 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if staged:
 		gen_start = start_pos + start_heading * cfg.start_lead_in_ahead_m
 		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
-	var result := TrackGenerator.generate(
+	# Live preview: only when an overlay is up and we're not headless. Headless keeps
+	# generation effectively synchronous (empty Callable -> the search never yields a
+	# frame) so tests still build the world within _ready and test runtime is unchanged.
+	var on_progress := Callable()
+	if loading != null and not _headless:
+		on_progress = loading.update_track_preview
+	var result := await TrackGenerator.generate(
 		gen_start, start_heading, cfg.track_seed, cfg.track_turn_count, cfg.track_width,
-		cfg.track_clearance, reserve_behind, cfg.track_straightness, cfg.track_runoff_m)
+		cfg.track_clearance, reserve_behind, cfg.track_straightness, cfg.track_runoff_m,
+		on_progress)
+	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
+	# it stays drawn through the remaining stages until finish().
+	if loading != null and not _headless:
+		loading.update_track_preview((result["centerline"] as Curve2D).tessellate())
 	# Road/progress centerline (with the lead-in for staged runs). The raw generated
 	# centerline still feeds the signs, so the start gate sits ahead of the launch
 	# point — the cars cross it as they pull away.
@@ -242,8 +252,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# Cliff params onto the terrain before the bake reads them (mirrors the Lighting
 	# group applied earlier); the cliff pass runs inside set_track → bake_track.
 	cfg.apply_cliffs($Floor as TerrainManager)
-	$Floor.set_track(road_centerline, cfg.track_width, transition_m,
-		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m)
+	# Baking the road into the terrain (flatten + surface split + cliffs) is the heaviest
+	# single step; give it its own label and let it yield frames (interactive path only —
+	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
+	await _stage(loading, "Carving road into terrain…")
+	await $Floor.set_track(road_centerline, cfg.track_width, transition_m,
+		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m,
+		loading != null and not _headless)
 	# Retained for post-build consumers outside this call (the benchmark runner
 	# follows the same road the progress manager measures).
 	_road_centerline = road_centerline
@@ -252,7 +267,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# reset leash bounds it), so in-run chunk loads are instant cache pulls and
 	# height_at/light_at serve the flattened, collidable terrain. Batched with
 	# frame awaits so the loading label paints and (on web) the tab stays alive.
-	await _stage(loading, "Precomputing terrain…")
+	await _stage(loading, "Precomputing chunks…")
 	var floor_tm := $Floor as TerrainManager
 	floor_tm.set_corridor(floor_tm.corridor_coords(
 		road_centerline, Config.data.track_progress_max_dist_m))
@@ -744,16 +759,9 @@ func _spawn_wreck_crowd(parent: Node, center: Vector3, outward: Vector2,
 	var count := cfg.opponent_wreck_crowd_size
 	if count <= 0:
 		return
-	var mesh := MeshUtil.first_mesh(load(WRECK_SPECTATOR_SCENE))
-	if mesh == null:
-		return
-	var foot := -mesh.get_aabb().position.y  # feet on the ground, as SpectatorGroup does
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = count
 	var base_ang := atan2(outward.y, outward.x)  # away from the road
-	var positions: Array = []
+	var positions := PackedVector2Array()
+	var yaws := PackedFloat32Array()
 	for i in count:
 		# A crescent spanning ±~115° about 'outward' — the verge side + flanks, never the
 		# road-ward hemisphere between the wreck and the carriageway.
@@ -762,20 +770,14 @@ func _spawn_wreck_crowd(parent: Node, center: Vector3, outward: Vector2,
 		var r: float = cfg.opponent_wreck_crowd_radius_m
 		var px := center.x + cos(ang) * r
 		var pz := center.z + sin(ang) * r
-		var py := terrain.height_at(px, pz)
-		# Face the wreck at the centre (the figure's default facing is +Z).
-		var to_center := Vector2(center.x - px, center.z - pz)
-		var yaw := atan2(to_center.x, to_center.y)
-		mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, yaw),
-			Vector3(px, py + foot, pz)))
 		positions.append(Vector2(px, pz))
-	var mmi := MultiMeshInstance3D.new()
-	mmi.name = "WreckCrowd"
-	mmi.multimesh = mm
-	# The scatter, readable by tests: headless MultiMesh transform buffers are
-	# RenderingServer no-op stubs and can't be read back (see hq_environment.gd).
-	mmi.set_meta("positions", positions)
-	parent.add_child(mmi)
+		# Face the wreck at the centre (the figure's default facing is +Z).
+		yaws.append(atan2(center.x - px, center.z - pz))
+	# The shared Crowd helper owns the figure mesh + foot offset + MultiMesh build
+	# (and the `positions` meta tests read); it seats each figure on the terrain.
+	var crowd := Crowd.multimesh_instance("WreckCrowd", positions, yaws, terrain.height_at)
+	if crowd != null:
+		parent.add_child(crowd)
 
 
 # The live event data the arch banners display (rally name, which stage and the

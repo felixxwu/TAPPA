@@ -52,7 +52,7 @@ func _offset(m: Node3D, x: float, z: float) -> float:
 func test_disabled_bakes_no_offsets() -> void:
 	var m := _make_manager()
 	m.cliff_enabled = false
-	m.bake_track(_straight(), 8.0, 4.0)
+	await m.bake_track(_straight(), 8.0, 4.0)
 	assert_eq(m.cliff_offsets.size(), 0, "no cliff offsets baked when disabled")
 
 
@@ -60,14 +60,14 @@ func test_zero_amount_bakes_no_offsets() -> void:
 	# cliff_amount 0 ⇒ every offset scales to 0 regardless of cliff_max_height_m.
 	var m := _make_manager()
 	m.cliff_amount = 0.0
-	m.bake_track(_straight(), 8.0, 4.0)
+	await m.bake_track(_straight(), 8.0, 4.0)
 	assert_eq(m.cliff_offsets.size(), 0, "no offsets when the per-event amount is 0")
 
 
 func test_zero_max_height_bakes_no_offsets() -> void:
 	var m := _make_manager()
 	m.cliff_max_height_m = 0.0
-	m.bake_track(_straight(), 8.0, 4.0)
+	await m.bake_track(_straight(), 8.0, 4.0)
 	assert_eq(m.cliff_offsets.size(), 0, "no offsets when the height ceiling is 0")
 
 
@@ -79,7 +79,7 @@ func test_offset_zero_across_road_and_transition_band() -> void:
 	var transition := 4.0
 	var inner := width / 2.0 + transition
 	var m := _make_manager()
-	m.bake_track(_straight(), width, transition)
+	await m.bake_track(_straight(), width, transition)
 	for v in m.cliff_offsets.keys():
 		var d: float = Vector2(v.x * ManagerScript.CELL_M, v.y * ManagerScript.CELL_M).distance_to(
 			Vector2(clampf(v.x * ManagerScript.CELL_M, 0.0, 200.0), 0.0))
@@ -91,7 +91,7 @@ func test_offset_antisymmetric_across_centerline() -> void:
 	# A cliff is always as tall as the drop is deep: for a straight, the two sides at
 	# matching perpendicular distance are exact negatives (same camber, opposite side).
 	var m := _make_manager()
-	m.bake_track(_straight(), 8.0, 4.0)
+	await m.bake_track(_straight(), 8.0, 4.0)
 	var found_nonzero := false
 	for x in [40.0, 60.0, 80.0, 100.0, 120.0, 140.0, 160.0]:
 		for d in [12.0, 16.0, 20.0]:
@@ -106,7 +106,7 @@ func test_offset_antisymmetric_across_centerline() -> void:
 
 func test_offset_bounded_by_max_height() -> void:
 	var m := _make_manager()
-	m.bake_track(_straight(), 8.0, 4.0)
+	await m.bake_track(_straight(), 8.0, 4.0)
 	for v in m.cliff_offsets.values():
 		assert_true(absf(v) <= m.cliff_max_height_m + 1e-4,
 			"|offset| %.3f within the height ceiling %.1f" % [absf(v), m.cliff_max_height_m])
@@ -118,7 +118,7 @@ func test_offset_fades_out_beyond_influence_radius() -> void:
 	var width := 8.0
 	var transition := 4.0
 	var m := _make_manager()
-	m.bake_track(_straight(), width, transition)
+	await m.bake_track(_straight(), width, transition)
 	var R: float = width / 2.0 + transition + float(m.cliff_run_m) + float(m.cliff_fade_m)
 	var far := R + 4.0
 	# A point well past R, mid-track: cache-free height_at is pure noise there.
@@ -130,8 +130,8 @@ func test_offset_fades_out_beyond_influence_radius() -> void:
 func test_determinism_same_seed_same_offsets() -> void:
 	var a := _make_manager(11)
 	var b := _make_manager(11)
-	a.bake_track(_straight(), 8.0, 4.0)
-	b.bake_track(_straight(), 8.0, 4.0)
+	await a.bake_track(_straight(), 8.0, 4.0)
+	await b.bake_track(_straight(), 8.0, 4.0)
 	assert_eq(a.cliff_offsets.size(), b.cliff_offsets.size(), "same key count")
 	for v in a.cliff_offsets.keys():
 		assert_almost_eq(float(a.cliff_offsets[v]), float(b.cliff_offsets.get(v, 1e9)), 1e-9,
@@ -154,7 +154,7 @@ func test_hairpin_crook_flattens_outside_edge_keeps_cliff() -> void:
 	var m := _make_manager()
 	m.cliff_run_m = 4.0
 	m.cliff_fade_m = 4.0
-	m.bake_track(_hairpin(), 2.0, 1.0)   # inner = 2
+	await m.bake_track(_hairpin(), 2.0, 1.0)   # inner = 2
 	# Inside-crook vertices: road wraps around them (arms on both sides + U ahead).
 	for z in [36.0, 38.0, 40.0]:
 		assert_almost_eq(_offset(m, 4.0, z), 0.0, 0.05,
@@ -174,7 +174,7 @@ func test_hairpin_flatten_is_continuous() -> void:
 	var m := _make_manager()
 	m.cliff_run_m = 4.0
 	m.cliff_fade_m = 4.0
-	m.bake_track(_hairpin(), 2.0, 1.0)
+	await m.bake_track(_hairpin(), 2.0, 1.0)
 	var prev := _offset(m, -6.0, 30.0)
 	for xi in range(-5, 6):
 		var cur := _offset(m, float(xi), 30.0)
@@ -188,7 +188,7 @@ func test_chunk_heights_include_cliff_offset() -> void:
 	# and collision height shifted from the pure-noise height by exactly that offset
 	# (cliffs are real, drivable geometry). Use an off-road vertex (no road flatten).
 	var m := _make_manager()
-	m.bake_track(_straight(), 8.0, 4.0)
+	await m.bake_track(_straight(), 8.0, 4.0)
 	# Find a chunk-(0,0) vertex that actually carries an offset.
 	var samples: int = ManagerScript.SAMPLES
 	var data: Dictionary = m.compute_chunk_data(Vector2i(0, 0))
@@ -216,7 +216,7 @@ func test_cliff_seam_agrees_across_adjacent_chunks() -> void:
 	var seam_x: float = ManagerScript.CHUNK_M
 	c.add_point(Vector2(seam_x, 0.0))
 	c.add_point(Vector2(seam_x, 200.0))
-	m.bake_track(c, 8.0, 4.0)
+	await m.bake_track(c, 8.0, 4.0)
 	var h0: PackedFloat32Array = m.compute_chunk_data(Vector2i(0, 0))["heights"]
 	var h1: PackedFloat32Array = m.compute_chunk_data(Vector2i(1, 0))["heights"]
 	var samples: int = ManagerScript.SAMPLES

@@ -145,6 +145,12 @@ var _drivetrain_needed: Dictionary = {}
 # eligible in the park; this dialog carries the doesn't-qualify warning and the
 # "Detune to N% & Start" agreement (_show_detune_confirm). Built lazily.
 var _detune_dialog: ConfirmationDialog
+# Confirm popup shown when a chosen engine-swap partner would need a Repair Kit (the
+# lift car and/or the partner isn't at 100% HP). Carries the kit cost, or the "not
+# enough kits" block. Built lazily. _pending_swap holds the two instance ids awaiting
+# the OK press.
+var _swap_repair_dialog: ConfirmationDialog
+var _pending_swap: Dictionary = {}
 var _cars: Array = []
 var _markers: Array = []
 # Reuse cache for parked lineup cars, shared by every lineup (rally car-select,
@@ -254,11 +260,8 @@ var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_back_button: Button   # the shared "< Back" on a sub-menu page (TUNE/UPGRADES)
-var _lift_tune_box: VBoxContainer    # the TUNE menu (sliders)
+var _tune_panel: TuningPanel         # the TUNE menu (sliders) — shared with the start line
 var _lift_upgrades_box: VBoxContainer  # the UPGRADES menu (install / repair)
-var _lift_sliders: Dictionary = {}     # axis -> HSlider
-var _lift_slider_rows: Dictionary = {} # axis -> the row Control (to grey out when locked)
-var _lift_slider_values: Dictionary = {}  # axis -> the value Label
 
 
 func _ready() -> void:
@@ -870,7 +873,8 @@ func _build_lift_overlay() -> void:
 	content.add_theme_constant_override("separation", 10)
 	scroll.add_child(content)
 
-	_build_lift_tune_box(content)
+	_tune_panel = TuningPanel.new()
+	content.add_child(_tune_panel)
 	_lift_upgrades_box = VBoxContainer.new()
 	_lift_upgrades_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_lift_upgrades_box.add_theme_constant_override("separation", 8)
@@ -880,7 +884,7 @@ func _build_lift_overlay() -> void:
 	# and UPGRADES (install / repair) sub-pages. Attached to the sub-boxes ONLY — not
 	# the lift root — so the diegetic HUB buttons (FOCUS_NONE, manual left/right
 	# cursor) are left untouched. Each box goes inert while hidden (_menu_visible).
-	MenuNav.attach(_lift_tune_box)
+	MenuNav.attach(_tune_panel)
 	MenuNav.attach(_lift_upgrades_box)
 
 	# The shared "< Back" for both sub-pages. Focusable so keyboard/gamepad can reach it:
@@ -954,120 +958,6 @@ func _build_lift_overlay() -> void:
 		[back, change_car, to_tune, to_upgrades],
 		[on_back, _enter_change_car, to_tune_cb, to_upgrades_cb])
 
-
-# Build the TUNE menu: one slider row per tuning axis. Static structure; gating /
-# values are refreshed per car by _refresh_lift_ui.
-func _build_lift_tune_box(parent: VBoxContainer) -> void:
-	_lift_tune_box = VBoxContainer.new()
-	_lift_tune_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_lift_tune_box.add_theme_constant_override("separation", 8)
-	parent.add_child(_lift_tune_box)
-
-	# One row per axis: a heading + value, then the slider. The labels at each end
-	# name the slider's directions so the player knows which way is which.
-	for spec in [
-		{"axis": "grip_balance", "name": "Grip balance", "lo": "understeer", "hi": "oversteer"},
-		{"axis": "brake_bias", "name": "Brake bias", "lo": "rearward", "hi": "forward"},
-		{"axis": "aero_balance", "name": "Aero balance", "lo": "front", "hi": "rear"},
-		{"axis": "engine_detune", "name": "Engine detune", "lo": "0%", "hi": "100%",
-			"min": 0.0, "max": 100.0, "step": 5.0, "fmt": "%d%%"},
-	]:
-		_lift_tune_box.add_child(_make_slider_row(spec))
-
-	var reset := Button.new()
-	reset.text = "Reset to neutral"
-	reset.focus_mode = Control.FOCUS_ALL
-	reset.pressed.connect(_reset_tuning)
-	_lift_tune_box.add_child(reset)
-
-
-# Paint / clear the selected-row highlight on a tuning slider's wrapping panel when
-# its slider gains / loses the keyboard/gamepad focus. The name goes bright white and
-# the panel lifts to the house focus look so the current slider stands out clearly.
-func _highlight_slider_row(panel: PanelContainer, name_label: Label, focused: bool) -> void:
-	UITheme.mark_panel_focused(panel, focused, 6)
-	if focused:
-		name_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-	else:
-		name_label.remove_theme_color_override("font_color")
-
-
-func _make_slider_row(spec: Dictionary) -> Control:
-	var axis := String(spec["axis"])
-	# Use horizontal space: a left column (name above value) sits beside a right
-	# column (the slider above its extremity labels).
-	var row := HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 16)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-
-	# Left column: name on top of the current value. FIXED width (clip, don't grow) so
-	# a longer value — e.g. the detune row's "80% - 200 hp/tonne" readout — can't widen
-	# this column and shrink only that row's slider. Every row's slider column then
-	# gets the same leftover width, so all sliders line up to the same length.
-	var label_col := VBoxContainer.new()
-	label_col.add_theme_constant_override("separation", 2)
-	label_col.custom_minimum_size = Vector2(180, 0)
-	label_col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	row.add_child(label_col)
-	var name_label := Label.new()
-	name_label.text = String(spec["name"])
-	name_label.add_theme_font_size_override("font_size", 16)
-	name_label.clip_text = true
-	label_col.add_child(name_label)
-	var value := Label.new()
-	value.add_theme_font_size_override("font_size", 14)
-	value.modulate = Color(1, 1, 1, 0.8)
-	value.clip_text = true
-	label_col.add_child(value)
-	_lift_slider_values[axis] = value
-
-	# Right column: the slider with its extremity labels beneath.
-	var slider_col := VBoxContainer.new()
-	slider_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	slider_col.add_theme_constant_override("separation", 2)
-	row.add_child(slider_col)
-
-	var slider := HSlider.new()
-	slider.min_value = float(spec.get("min", -1.0))
-	slider.max_value = float(spec.get("max", 1.0))
-	slider.step = float(spec.get("step", 0.05))
-	# Focusable: ui_up/ui_down walk between sliders, ui_left/ui_right nudge the focused
-	# one (the natural Range behaviour) — keyboard/gamepad tuning with no pointer.
-	slider.focus_mode = Control.FOCUS_ALL
-	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider.value_changed.connect(_on_tune_slider_changed.bind(axis))
-	slider_col.add_child(slider)
-	_lift_sliders[axis] = slider
-
-	var ends := HBoxContainer.new()
-	slider_col.add_child(ends)
-	var lo := Label.new()
-	lo.text = String(spec["lo"])
-	lo.add_theme_font_size_override("font_size", 11)
-	lo.modulate = Color(1, 1, 1, 0.6)
-	lo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ends.add_child(lo)
-	var hi := Label.new()
-	hi.text = String(spec["hi"])
-	hi.add_theme_font_size_override("font_size", 11)
-	hi.modulate = Color(1, 1, 1, 0.6)
-	hi.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	ends.add_child(hi)
-
-	# Wrap the row in a panel that lights up (SURFACE_HOVER face + green underline, the
-	# house focus look) while its slider holds the keyboard/gamepad cursor, so it's
-	# obvious which slider is selected. Focus signals paint it; the panel is the row
-	# Control _refresh_sliders greys out when the axis is locked.
-	var panel := PanelContainer.new()
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.add_child(row)
-	slider.focus_entered.connect(_highlight_slider_row.bind(panel, name_label, true))
-	slider.focus_exited.connect(_highlight_slider_row.bind(panel, name_label, false))
-	_highlight_slider_row(panel, name_label, false)
-	_lift_slider_rows[axis] = panel
-	return panel
 
 
 func _build_car_overlay() -> void:
@@ -1705,7 +1595,7 @@ func _lift_back() -> void:
 func _open_lift_page(page: int) -> void:
 	_lift_page = page
 	_refresh_lift_ui()
-	var box: Control = _lift_tune_box if page == LiftPage.TUNE else _lift_upgrades_box
+	var box: Control = _tune_panel if page == LiftPage.TUNE else _lift_upgrades_box
 	# Seat the cursor on the page body's first control, else on the shared Back button
 	# (a fresh car's Upgrades body has no focusable control, so it'd otherwise be dead).
 	_grab_lift_page_focus.bind(box).call_deferred()
@@ -1884,82 +1774,28 @@ func _refresh_lift_ui() -> void:
 	_lift_hub_controls.visible = _lift_page == LiftPage.HUB
 	_lift_info_panel.visible = _lift_page == LiftPage.HUB
 	_lift_menu_bg.visible = _lift_page != LiftPage.HUB
-	_lift_tune_box.visible = _lift_page == LiftPage.TUNE
+	_tune_panel.visible = _lift_page == LiftPage.TUNE
 	_lift_upgrades_box.visible = _lift_page == LiftPage.UPGRADES
 	# TUNE hides the page title to reclaim vertical space (its sliders must fit
 	# without scrolling); UPGRADES keeps its heading.
 	_lift_menu_title.visible = _lift_page != LiftPage.TUNE
 	_lift_menu_title.text = "UPGRADES"
-	_refresh_sliders()
+	# Re-bind the TUNE panel to the current owned car and reflect its stored tuning.
+	# on_change is a no-op: the HQ lift did not re-field the display car on a tune edit
+	# (the change lands on next fielding), so preserve that behaviour.
+	_tune_panel.setup(_lift_owned, Callable())
+	_tune_panel.refresh()
 	_rebuild_upgrades_box()
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
 
-# The engine-detune slider's value label: the detune percent plus the car's LIVE
-# power-to-weight at that setting (e.g. "80% - 200 hp/tonne"), so the player sees the
-# ratio each event is gated on move as they detune. effective_meta already folds in
-# the (mirrored) detune, so this recomputes off the current setting.
-func _detune_label_text(pct: int) -> String:
-	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
-	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_lift_owned, entry)) * KW_KG_TO_HP_TONNE
-	return "%d%% - %.0f hp/tonne" % [pct, pw]
 
-
-# Reflect the stored tuning + each axis's unlock state onto the sliders.
-func _refresh_sliders() -> void:
-	var tuning: Dictionary = _lift_owned.get("tuning", {})
-	for axis in TuningLibrary.AXES:
-		var slider: HSlider = _lift_sliders[axis]
-		var value: Label = _lift_slider_values[axis]
-		var row: Control = _lift_slider_rows[axis]
-		var unlocked := TuningLibrary.axis_unlocked(_lift_owned, axis)
-		slider.editable = unlocked
-		row.modulate = Color(1, 1, 1, 1.0 if unlocked else 0.4)
-		# set_value_no_signal so syncing the UI doesn't re-save the value.
-		if axis == "engine_detune":
-			slider.set_value_no_signal(clampf(float(tuning.get("engine_detune", 1.0)), 0.0, 1.0) * 100.0)
-			value.text = _detune_label_text(int(round(slider.value)))
-		else:
-			slider.set_value_no_signal(clampf(float(tuning.get(axis, 0.0)), -1.0, 1.0))
-			if unlocked:
-				value.text = "%+.2f" % slider.value
-			else:
-				value.text = "needs %s" % ("Big Brake Kit" if axis == "brake_bias" else "Aero Kit")
-
-
-func _on_tune_slider_changed(value: float, axis: String) -> void:
-	if _lift_owned.is_empty():
-		return
-	if axis == "engine_detune":
-		var frac := clampf(value / 100.0, 0.0, 1.0)
-		Save.set_engine_detune(int(_lift_owned.get("instance_id", -1)), frac)
-		var tuning_d: Dictionary = _lift_owned.get("tuning", {})
-		tuning_d["engine_detune"] = frac
-		_lift_owned["tuning"] = tuning_d
-		(_lift_slider_values[axis] as Label).text = _detune_label_text(int(round(value)))
-		return
-	var tuning: Dictionary = _lift_owned.get("tuning", {})
-	tuning[axis] = value
-	_lift_owned["tuning"] = tuning
-	Save.set_tuning(int(_lift_owned.get("instance_id", -1)), tuning)
-	(_lift_slider_values[axis] as Label).text = "%+.2f" % value
-
-
-# Zero every axis (free + instant) — the lift's Reset action (features/tuning.md).
-func _reset_tuning() -> void:
-	if _lift_owned.is_empty():
-		return
-	_lift_owned["tuning"] = {}
-	Save.set_tuning(int(_lift_owned.get("instance_id", -1)), {})
-	_refresh_sliders()
-
-
-# Rebuild the UPGRADES menu for the current car: one row per slot listing every
-# applied part with an Enable/Disable toggle (at most one enabled per slot), an
-# Apply button per matching unlocked item, plus the repair-kit action. Applying a
-# part consumes it from the unlocked pool and fits it to this car for good
-# (confirmed first); a fitted part can't be removed, only toggled off.
+# Rebuild the UPGRADES menu for the current car: one row per slot, each an earn-gated
+# option selector on the right (None + the slot's catalogue parts; drivetrain is the
+# RWD/AWD/FWD picker), plus the engine-swap row. A part option is greyed until that kit
+# is fitted to this car; picking one enables it (at most one enabled per slot), picking
+# None turns the slot off. A fitted part can't be removed, only switched off (to None).
 func _rebuild_upgrades_box() -> void:
 	# Preserve the focused control across the rebuild: a toggle / repair click rebuilds
 	# these rows, and without this the keyboard/gamepad cursor would jump back to the top
@@ -1991,6 +1827,14 @@ func _rebuild_upgrades_box() -> void:
 	# No in-box Back button: the shared "< Back" in `root` (below the scroll) serves both
 	# pages and is the focus fallback when this page's body has no focusable control (a
 	# fresh car — all slots empty, full health, Swap Engine disabled). See _open_lift_page.
+
+	# Re-apply the house font rules to the freshly-built rows. The row builders author
+	# their own font_size (15); UITheme.enforce bumps every Label/Button back to FONT_SIZE
+	# (16). Callers that rebuild via _refresh_lift_ui re-normalize afterwards, but the live
+	# rebuild paths (_set_drivetrain / _set_turbo) don't — so without this the text would
+	# visibly shrink 16 → 15 the moment you pick a drivetrain/turbo. Enforce at the shared
+	# choke point so every rebuild path stays consistent.
+	UITheme.enforce(_lift_upgrades_box)
 
 	# Re-run attach on the freshly-built rows: makes the new toggle/apply/repair/swap
 	# buttons focusable and re-seats MenuNav's `first` (its cursor-revive target) onto a
@@ -2041,39 +1885,14 @@ func _make_slot_row(slot: String, instance_id: int, installed: Array) -> Control
 			box.add_child(empty)
 		return box
 
-	# One line per part applied to this car in this slot — "SLOT: PART NAME" on the
-	# left, a bare Enable/Disable toggle on the right of the SAME row. A DISABLED
-	# part reads "— empty —" exactly like an unfilled slot (its effect is off, so
-	# the slot is effectively empty), with the Enable button kept alongside to
-	# bring it back. Enabling switches off any same-slot sibling. A slot with
-	# nothing fitted at all is a single "— empty —" line with no button.
-	var any_fitted := false
-	for item_id in installed:
-		if UpgradeLibrary.slot_of(item_id) != slot:
-			continue
-		any_fitted = true
-		var enabled := UpgradeLibrary.is_enabled(_lift_owned, item_id)
-		var row := HBoxContainer.new()
-		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var name_label := Label.new()
-		name_label.add_theme_font_size_override("font_size", 15)
-		name_label.text = "%s: %s" % [slot.capitalize(),
-			UpgradeLibrary.by_id(item_id).get("name", item_id) if enabled else "— empty —"]
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(name_label)
-		var toggle := Button.new()
-		toggle.text = "Disable" if enabled else "Enable"
-		toggle.focus_mode = Control.FOCUS_ALL
-		# Stable key so the cursor lands back on THIS toggle after the rebuild a press triggers.
-		toggle.set_meta("upgrade_focus_key", "toggle:" + item_id)
-		toggle.pressed.connect(_toggle_upgrade.bind(instance_id, item_id, not enabled))
-		row.add_child(toggle)
-		box.add_child(row)
-	if not any_fitted:
-		var empty := Label.new()
-		empty.add_theme_font_size_override("font_size", 15)
-		empty.text = "%s: — empty —" % slot.capitalize()
-		box.add_child(empty)
+	# Every other slot is an EARN-GATED option selector on the right — "SLOT:" on the
+	# left, then None + one button per catalogue part in this slot (Turbo has two, Small /
+	# Big; the rest have exactly one, e.g. "Aero: None / Aero Kit"). None is always available
+	# and plays the "off" role; each part option is greyed until its kit is fitted to this
+	# car. Reads exactly like the drivetrain picker, and is built on the same enable/disable
+	# machinery (one enabled part per slot), so the reward flow is unchanged — purely the
+	# menu presentation, unified across all part slots.
+	box.add_child(_make_option_selector(slot, instance_id, installed))
 	return box
 
 
@@ -2091,14 +1910,12 @@ func _make_drivetrain_selector(instance_id: int) -> Control:
 	label.add_theme_font_size_override("font_size", 15)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
+	# Every mode is always available once the swap kit is owned (available = true) — the
+	# earn-gating is on the whole selector, not per option. Reuses the shared _option_button
+	# builder so the bracket-active / FOCUS_ALL / focus-key construction lives in one place.
 	for mode in [CarLibrary.RWD, CarLibrary.AWD, CarLibrary.FWD]:
-		var b := Button.new()
-		b.text = "[%s]" % _drive_text(mode) if mode == current else _drive_text(mode)
-		b.focus_mode = Control.FOCUS_ALL
-		# Stable key so the cursor lands back on the pressed mode after the rebuild.
-		b.set_meta("upgrade_focus_key", "drivetrain:" + str(mode))
-		b.pressed.connect(_set_drivetrain.bind(instance_id, mode))
-		row.add_child(b)
+		row.add_child(_option_button(_drive_text(mode), mode == current, true,
+			"drivetrain:" + str(mode), _set_drivetrain.bind(instance_id, mode)))
 	return row
 
 
@@ -2108,9 +1925,78 @@ func _set_drivetrain(instance_id: int, mode: int) -> void:
 	_rebuild_upgrades_box()  # re-marks the active mode and re-seats MenuNav focus
 
 
+# The earn-gated option selector shown on every part slot except drivetrain: "SLOT:" then
+# None + one button per catalogue part in this slot (in catalogue order). None is always
+# available (the "off" state); each part is greyed until that kit is fitted to this car, and
+# the active option is bracketed. The button label is the part's `menu_label` if present
+# (Turbo's short Small / Big), else its full `name` ("Aero Kit", "Big Brake Kit", …).
+func _make_option_selector(slot: String, instance_id: int, installed: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var label := Label.new()
+	label.text = "%s:" % slot.capitalize()
+	label.add_theme_font_size_override("font_size", 15)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	# The catalogue parts for this slot, in catalogue order (Turbo: Small then Big; the
+	# rest have exactly one), and which one (if any) is currently the enabled pick.
+	var parts: Array = []
+	var current_id := ""
+	for def in UpgradeLibrary.all():
+		if String(def.get("slot", "")) != slot or bool(def.get("consumable", false)):
+			continue
+		parts.append(def)
+		var pid := String(def.get("id", ""))
+		if installed.has(pid) and UpgradeLibrary.is_enabled(_lift_owned, pid):
+			current_id = pid
+	# None is always available and plays the "off" role.
+	row.add_child(_option_button("None", current_id == "", true,
+		"opt:%s:none" % slot, _set_slot_option.bind(instance_id, slot, "")))
+	# One button per catalogue part, greyed until that kit is fitted to this car.
+	for def in parts:
+		var pid := String(def.get("id", ""))
+		var text := String(def.get("menu_label", def.get("name", pid)))
+		row.add_child(_option_button(text, current_id == pid, installed.has(pid),
+			"opt:%s:%s" % [slot, pid], _set_slot_option.bind(instance_id, slot, pid)))
+	return row
+
+
+# One selector button: bracketed when active, greyed when its option isn't available yet,
+# FOCUS_ALL so keyboard/gamepad can reach it, and tagged with a stable focus key so the
+# cursor lands back on it after the rebuild a press triggers.
+func _option_button(text: String, active: bool, available: bool, focus_key: String,
+		on_press: Callable) -> Button:
+	var b := Button.new()
+	b.text = "[%s]" % text if active else text
+	b.focus_mode = Control.FOCUS_ALL
+	b.disabled = not available
+	b.set_meta("upgrade_focus_key", focus_key)
+	b.pressed.connect(on_press)
+	return b
+
+
+func _set_slot_option(instance_id: int, slot: String, item_id: String) -> void:
+	# None (item_id == "") disables every part in the slot; otherwise enable the chosen part
+	# (same-slot exclusivity switches any sibling off). Goes through the shared enable/disable
+	# path so the one-enabled-per-slot rule and the reward flow are preserved. The spec change
+	# respawns the display prop and refreshes stats + rows (like _toggle_upgrade did).
+	if item_id == "":
+		for def in UpgradeLibrary.all():
+			if String(def.get("slot", "")) == slot:
+				Save.set_upgrade_enabled(instance_id, String(def.get("id", "")), false)
+	else:
+		Save.set_upgrade_enabled(instance_id, item_id, true)
+	_ensure_lift_car()  # the car's spec changed — the hash flips, so the prop respawns
+	_refresh_lift_ui()  # updates stats + rebuilds rows + re-seats MenuNav focus
+
+
 # The engine-swap row on the upgrades page: current engine label + a Swap button
-# that opens the car park in swap mode. Gated on the car being at 100% HP (both
-# cars must be full to swap). See features/engine-swap.md.
+# that opens the car park in swap mode. A swap needs BOTH cars at 100% HP, but a
+# damaged car no longer blocks the button — it's repaired with a Repair Kit as part
+# of the swap (one kit per damaged car, spent on confirm). The button is only
+# disabled when there's literally no other owned car to swap with; the repair-kit
+# cost (and the "you have no kits" case) is surfaced in the car park + confirm popup,
+# never by disabling. See features/engine-swap.md.
 func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 	var owned := Save.get_car(instance_id)
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
@@ -2124,32 +2010,47 @@ func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 	button.text = "Swap Engine"
 	button.focus_mode = Control.FOCUS_ALL
 	button.set_meta("upgrade_focus_key", "swap")  # keep the cursor here across a rebuild
-	var full_hp: bool = EngineSwap.can_swap(owned, owned)  # true iff this car is at max HP
+	var full_hp: bool = EngineSwap.at_full_health(owned)
 	var has_target := not _swap_targets(instance_id).is_empty()
-	button.disabled = not (full_hp and has_target)
-	if not full_hp:
-		button.tooltip_text = "This car must be at 100% health to swap engines"
-	elif not has_target:
-		button.tooltip_text = "No other 100%-health car to swap with"
+	button.disabled = not has_target  # only impossible when there's no other car at all
+	if not has_target:
+		button.tooltip_text = "No other car to swap engines with"
+	elif not full_hp:
+		button.tooltip_text = "Not at 100% health — swapping will spend a Repair Kit to restore it first"
 	button.pressed.connect(_enter_engine_swap)
 	row.add_child(button)
 	return row
 
 
-# The owned cars this car can swap engines with: every OTHER owned car that (with
-# this one) passes EngineSwap.can_swap — i.e. both at 100% HP. Shared by the swap-row
-# gating and the car-park swap lineup so they never disagree.
+# The owned cars this car can swap engines with: every OTHER owned car, full to it.
+# No car is excluded on health — a damaged partner is repaired with a Repair Kit as
+# part of the swap (see _select_swap_target). Shared by the swap-row gating and the
+# car-park swap lineup so they never disagree.
 func _swap_targets(current_id: int) -> Array:
-	var current_owned := Save.get_car(current_id)
 	var targets: Array = []
-	if current_owned.is_empty():
+	if Save.get_car(current_id).is_empty():
 		return targets
 	for car in Save.profile.get("cars", []):
 		if int(car.get("instance_id", -1)) == current_id:
 			continue
-		if EngineSwap.can_swap(current_owned, car):
-			targets.append(car)
+		targets.append(car)
 	return targets
+
+
+# Repair Kits currently held in the shared inventory.
+func _repair_kits_owned() -> int:
+	return int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
+
+
+# How many Repair Kits a swap between these two cars would consume: one per car that
+# isn't already at 100% health (the swap restores each damaged car to full first).
+func _kits_needed_for_swap(lift: Dictionary, partner: Dictionary) -> int:
+	var n := 0
+	if not lift.is_empty() and not EngineSwap.at_full_health(lift):
+		n += 1
+	if not partner.is_empty() and not EngineSwap.at_full_health(partner):
+		n += 1
+	return n
 
 
 # Toggle an applied part on/off (free, instant, reversible — no confirm needed)
@@ -2637,8 +2538,13 @@ func _focus_changed(snap := false) -> void:
 			display_name, _focus + 1, _eligible.size()]
 		_car_stats_label.text = stats
 		_refresh_swap_preview()
-		# A wrecked focused car gates Start + offers a Repair (full restore).
-		_refresh_focus_damage(owned)
+		if _carpark_swap_mode:
+			# Picking a swap partner: no car is excluded — warn about the Repair Kit
+			# cost (and the no-kits case) instead of gating on damage.
+			_refresh_swap_repair_warning(owned)
+		else:
+			# A wrecked focused car gates Start + offers a Repair (full restore).
+			_refresh_focus_damage(owned)
 	_normalize_menus()  # keep house rules on the just-updated car name / stats
 	_move_camera_to(_camera_target_xform(), snap)
 
@@ -2714,6 +2620,28 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 	else:
 		_car_warning_label.text = "Too damaged to enter — and you have no Repair Kits. Win one, or pick another car."
 		_car_repair_button.visible = false
+
+
+# Swap-partner warning (car park, swap mode): no car is ever excluded, so Start
+# stays enabled. When the lift car and/or this partner aren't at 100% HP, spell out
+# how many Repair Kits the swap will spend to restore them first — and, if the player
+# is short, tell them (the confirm popup then blocks the swap). A pair already at full
+# health needs no kit and shows nothing.
+func _refresh_swap_repair_warning(partner_owned: Dictionary) -> void:
+	_start_button.disabled = false
+	_car_repair_button.visible = false
+	var lift := Save.get_car(Save.selected_instance_id())
+	var needed := _kits_needed_for_swap(lift, partner_owned)
+	if needed == 0:
+		_car_warning_label.visible = false
+		return
+	_car_warning_label.visible = true
+	var kit_word := "Kit" if needed == 1 else "Kits"
+	var kits := _repair_kits_owned()
+	if kits >= needed:
+		_car_warning_label.text = "This swap will spend %d Repair %s to restore both cars to 100%% first." % [needed, kit_word]
+	else:
+		_car_warning_label.text = "This swap needs %d Repair %s to restore both cars, but you have %d." % [needed, kit_word, kits]
 
 
 # An over-powered focused car (parked because a detune would duck it under the
@@ -2979,13 +2907,74 @@ func _select_changed_car() -> void:
 # respawn the lift prop with its new engine and return to the upgrades page.
 func _select_swap_target() -> void:
 	var current_id := Save.selected_instance_id()
-	if _selected_instance_id >= 0:
-		Save.swap_engines(current_id, _selected_instance_id)
+	if _selected_instance_id < 0:
+		return
+	var partner_id := _selected_instance_id
+	var needed := _kits_needed_for_swap(Save.get_car(current_id), Save.get_car(partner_id))
+	if needed > 0:
+		# A damaged car is involved: confirm the Repair Kit cost (or block if short)
+		# before touching anything. The commit happens on OK (_on_swap_repair_confirmed).
+		_show_swap_repair_confirm(current_id, partner_id, needed)
+		return
+	_commit_engine_swap(current_id, partner_id)
+
+
+# Perform the swap, repairing any car that isn't at full health with a Repair Kit
+# first (each spends one kit) so Save.swap_engines' both-at-100% guard passes. Callers
+# guarantee enough kits are owned. Then respawn the lift prop with its new engine and
+# return to the upgrades page.
+func _commit_engine_swap(current_id: int, partner_id: int) -> void:
+	if not EngineSwap.at_full_health(Save.get_car(current_id)):
+		Save.use_repair_kit(current_id)
+	if not EngineSwap.at_full_health(Save.get_car(partner_id)):
+		Save.use_repair_kit(partner_id)
+	Save.swap_engines(current_id, partner_id)
 	_clear_lineup()
 	_selected_instance_id = -1
 	_carpark_swap_mode = false
 	_ensure_lift_car()  # the engine data changed — the hash flips, so the prop respawns
 	_enter_lift()
+
+
+# Popup when a swap partner needs repairing: if the player owns enough kits, an OK
+# ("Repair & Swap") commits the swap; if not, the OK is disabled and the message says
+# so — no car is excluded, the player is just told they're short on kits.
+func _show_swap_repair_confirm(current_id: int, partner_id: int, needed: int) -> void:
+	if _swap_repair_dialog == null:
+		_swap_repair_dialog = ConfirmationDialog.new()
+		_swap_repair_dialog.title = "Repair to swap?"
+		_swap_repair_dialog.get_cancel_button().text = "Cancel"
+		_swap_repair_dialog.confirmed.connect(_on_swap_repair_confirmed)
+		var label := _swap_repair_dialog.get_label()
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.custom_minimum_size = Vector2(400, 0)
+		add_child(_swap_repair_dialog)
+	var kits := _repair_kits_owned()
+	var kit_word := "Kit" if needed == 1 else "Kits"
+	if kits >= needed:
+		_pending_swap = {"current": current_id, "partner": partner_id}
+		_swap_repair_dialog.dialog_text = ("Both cars must be at 100%% to swap engines. " +
+			"This will spend %d Repair %s to restore them, then exchange engines.") % [needed, kit_word]
+		_swap_repair_dialog.ok_button_text = "Repair & Swap"
+		_swap_repair_dialog.get_ok_button().disabled = false
+	else:
+		_pending_swap = {}
+		_swap_repair_dialog.dialog_text = ("This swap needs %d Repair %s to restore both cars to 100%%, " +
+			"but you only have %d. Win more, or pick a car that's already at full health.") % [needed, kit_word, kits]
+		_swap_repair_dialog.ok_button_text = "Repair & Swap"
+		_swap_repair_dialog.get_ok_button().disabled = true
+	_swap_repair_dialog.reset_size()
+	_swap_repair_dialog.popup_centered()
+
+
+# OK on the repair-to-swap popup: spend the kits and perform the swap.
+func _on_swap_repair_confirmed() -> void:
+	if _pending_swap.is_empty():
+		return
+	var current_id := int(_pending_swap["current"])
+	var partner_id := int(_pending_swap["partner"])
+	_pending_swap = {}
+	_commit_engine_swap(current_id, partner_id)
 
 
 # True on a touch device (or when the controls are force-enabled for testing) — the

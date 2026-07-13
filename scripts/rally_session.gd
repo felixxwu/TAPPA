@@ -125,7 +125,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 		# (placeholder). Tests MUST overwrite _opponent_field before making assertions.
 		_opponent_field = RallyLibrary.generate_opponent_field(rally, [], [])
 	else:
-		var results := _generate_event_tracks(rally)
+		var results := await _generate_event_tracks(rally)
 		_opponent_field = RallyLibrary.generate_opponent_field(rally, results, rally.get("events", []))
 	_enter_event()
 
@@ -512,7 +512,7 @@ func _generate_event_tracks(rally: Dictionary) -> Array:
 	var results: Array = []
 	for event in rally.get("events", []):
 		var width := RallyLibrary.event_width(event)
-		var result := TrackGenerator.generate(
+		var result := await TrackGenerator.generate(
 			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
 			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind,
 			RallyLibrary.event_straightness(event), cfg.track_runoff_m)

@@ -105,11 +105,11 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 		# random yaw about Y (hashed off its position) — otherwise every "+" would
 		# align to the same axes and the stand would look like a grid. The quad
 		# path keeps its identity basis (that shader still billboards).
-		var basis := Basis.IDENTITY
+		var xform_basis := Basis.IDENTITY
 		if use_opaque:
 			var yaw := ScatterMath.hash01(int(round(p.x)), int(round(p.y)), 0, 7) * TAU
-			basis = Basis(Vector3.UP, yaw).scaled(instance_scale)
-		mm.set_instance_transform(i, Transform3D(basis, pos))
+			xform_basis = Basis(Vector3.UP, yaw).scaled(instance_scale)
+		mm.set_instance_transform(i, Transform3D(xform_basis, pos))
 
 	# One StaticBody3D holds every hitbox; all share one BoxShape3D resource instanced
 	# per position (cheap: one shape, N transforms). Skipped when with_collision is false.

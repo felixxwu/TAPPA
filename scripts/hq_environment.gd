@@ -13,7 +13,6 @@ extends RefCounted
 # The two pickable station areas (table / lift) route their input_event to the callbacks
 # hq passes in (its own _on_table_input / _on_lift_input), so picking still lands in hq.
 
-const SPECTATOR_PATH := "res://blender/spectator/spectator.glb"
 
 # Handles hq reads back after build().
 var camera: Camera3D
@@ -129,7 +128,7 @@ func _build_buildings(host: Node3D) -> void:
 # kept clear so none spawn inside it. Returns the scatter for the spectator layout.
 func _build_trees(host: Node3D) -> PackedVector2Array:
 	var positions := _scatter_ring(320, 20240)
-	var flat := _flat_terrain()
+	var flat := TerrainManager.flat()
 	var field := Foliage.spawn_trees(host, positions, flat, false, 1000.0, 0.0)
 	field.name = "HQTrees"
 	flat.free()
@@ -144,7 +143,7 @@ func _build_trees(host: Node3D) -> PackedVector2Array:
 func _build_bushes(host: Node3D) -> void:
 	# 1013 mirrors world.gd's BUSH_SEED_OFFSET so the two scatters interleave.
 	var positions := _scatter_ring(320, 20240 + 1013)
-	var flat := _flat_terrain()
+	var flat := TerrainManager.flat()
 	var field := Foliage.spawn_bushes(host, positions, flat, 1000.0, 0.0)
 	field.name = "HQBushes"
 	flat.free()
@@ -175,12 +174,6 @@ func _scatter_ring(count: int, seed_value: int) -> PackedVector2Array:
 # A layerless TerrainManager: the HQ ground is a plane at y = 0, so height_at
 # returns 0 everywhere — all a foliage field needs to seat its instances. Used
 # only during build(); the caller frees it.
-func _flat_terrain() -> TerrainManager:
-	var flat := TerrainManager.new()
-	flat.layers = [] as Array[TerrainLayer]
-	return flat
-
-
 # Static spectators spread all around the lot — the same headcount as a stage
 # (3 × spectator_group_size), but scattered individually across the whole clearing
 # rather than clumped into groups: the same seeded annulus as the trees/bushes,
@@ -193,10 +186,6 @@ func _build_spectators(host: Node3D, trees: PackedVector2Array) -> void:
 	var count := 3 * cfg.spectator_group_size
 	if count <= 0:
 		return
-	var mesh := MeshUtil.first_mesh(load(SPECTATOR_PATH))
-	if mesh == null:
-		return
-	var foot_offset := -mesh.get_aabb().position.y  # feet on the ground, as SpectatorGroup does
 	var tree_cell: float = maxf(cfg.spectator_tree_avoid_m, 0.5)
 	var tree_grid := SpectatorScatter.build_point_grid(trees, tree_cell)
 	# Apron half-extents (plus a margin): spectators are rejected on the tarmac.
@@ -215,24 +204,16 @@ func _build_spectators(host: Node3D, trees: PackedVector2Array) -> void:
 		positions.append(candidate)
 	if positions.is_empty():
 		return
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = positions.size()
-	for i in positions.size():
-		var p := positions[i]
-		# Face the lot centre, with jitter so the crowd doesn't stand in lockstep.
-		var yaw := Vector2(-p.x, -p.y).angle_to(Vector2(0, 1)) + (rng.randf() - 0.5) * 0.8
-		var basis := Basis(Vector3.UP, yaw)
-		mm.set_instance_transform(i, Transform3D(basis, Vector3(p.x, foot_offset, p.y)))
-	var mmi := MultiMeshInstance3D.new()
-	mmi.name = "HQSpectators"
-	mmi.multimesh = mm
-	# The scatter, readable by tests: headless MultiMesh transform buffers are
-	# RenderingServer no-op stubs and can't be read back (same reason TreeMeshField
-	# exposes instance_positions).
-	mmi.set_meta("positions", positions)
-	host.add_child(mmi)
+	# Face the lot centre, with jitter so the crowd doesn't stand in lockstep. The
+	# shared Crowd helper owns the figure mesh + foot offset + MultiMesh build (and
+	# stashes the `positions` meta tests read — headless MultiMesh buffers are
+	# RenderingServer no-op stubs). The HQ lot is a flat plane, so no ground_at.
+	var yaws := PackedFloat32Array()
+	for p in positions:
+		yaws.append(Vector2(-p.x, -p.y).angle_to(Vector2(0, 1)) + (rng.randf() - 0.5) * 0.8)
+	var crowd := Crowd.multimesh_instance("HQSpectators", positions, yaws, Callable())
+	if crowd != null:
+		host.add_child(crowd)
 
 
 # The garage shell — the two-bay service-park model (scripts/garage.gd). Open

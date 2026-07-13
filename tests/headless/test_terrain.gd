@@ -359,7 +359,7 @@ func test_bake_track_weights_inside_band_outside() -> void:
 	var curve := Curve2D.new()
 	curve.add_point(Vector2(0.0, 0.0))
 	curve.add_point(Vector2(20.0, 0.0))
-	m.bake_track(curve, 2.0, 2.0)  # inner = width/2 = 1.0, outer = 3.0
+	await m.bake_track(curve, 2.0, 2.0)  # inner = width/2 = 1.0, outer = 3.0
 	var on := Vector2i(roundi(10.0 / ManagerScript.CELL_M), 0)  # world (10, 0)
 	assert_almost_eq(m.road_blend[on], 1.0, 1e-4, "vertex on the road has full weight")
 	assert_almost_eq(m.road_heights[on], m.height_at(10.0, 0.0), 0.1, "road height sampled from terrain")
@@ -383,7 +383,7 @@ func test_bake_track_surface_split_and_surface_at() -> void:
 	var curve := Curve2D.new()
 	curve.add_point(Vector2(0.0, 0.0))
 	curve.add_point(Vector2(40.0, 0.0))
-	m.bake_track(curve, 4.0, 2.0, 0.5, false, 4.0)  # 50% tarmac, gravel first
+	await m.bake_track(curve, 4.0, 2.0, 0.5, false, 4.0)  # 50% tarmac, gravel first
 	assert_gt(m.track_surface.size(), 0, "per-cell tarmac weights baked")
 	assert_eq(m.track_surface.size(), m.track_weights.size(), "tarmac keyed like road weights")
 	# On the road near the start = gravel (tarmac weight ~0); near the end = tarmac (~1).
@@ -439,7 +439,7 @@ func test_set_track_bakes_fields_and_rebuilds_loaded_chunks() -> void:
 	var curve := Curve2D.new()  # a straight through chunk (0,0) (world [0,50])
 	curve.add_point(Vector2(5.0, 5.0))
 	curve.add_point(Vector2(45.0, 5.0))
-	m.set_track(curve, 6.0, 1.5)
+	await m.set_track(curve, 6.0, 1.5)
 	assert_gt(m.road_blend.size(), 0, "set_track baked road blend weights")
 	assert_gt(m.track_weights.size(), 0, "set_track baked road weights")
 	var chunk = m._chunks[Vector2i(0, 0)]

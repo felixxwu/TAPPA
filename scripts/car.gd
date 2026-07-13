@@ -910,6 +910,14 @@ func use_isolated_config() -> void:
 # mass, drag, engine character and drive layout onto the live config and scene,
 # then rebuilds the drivetrain (fresh hardpoints + shift speeds) and engine
 # voice so the new sound and gearing take effect. Returns the car's name.
+# Field this car to a CarLibrary entry: overlays the spec onto `config`, RELOCATES the
+# wheels (detach/re-attach from the tree) and RESETS the pose (_reset at the end). Those
+# last two are destructive to a LIVE, simulating VehicleBody3D — they corrupt its
+# suspension contact (wheels drop through the floor). So only field a FRESH/idle body
+# (a just-instantiated instance, e.g. Car.respawn), never re-field the live player car
+# mid-stage. To change a live car's tuning use retune() (config-only, no reshape); to
+# change its car re-instantiate via respawn(). Re-running it purely to re-derive config
+# (with no reliance on the body's physics afterward) is fine — the test suite does this.
 func apply_car(index: int, rebuild_audio := true) -> String:
 	var spec: Dictionary = CarLibrary.all()[index]
 	_car_index = index
@@ -1212,6 +1220,11 @@ func apply_owned(owned: Dictionary) -> String:
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
 	# installed upgrades, so it must run after step 2.
+	# Snapshot the pre-tuning baseline of the fields TuningLibrary shifts FIRST, so
+	# retune() can re-apply a changed tuning to the LIVE config (at the start line)
+	# without re-running this whole pipeline — re-fielding would relocate the wheels
+	# (detach/re-attach) and reset the pose on a live body, which corrupts it (respawn()).
+	_snapshot_pre_tune()
 	TuningLibrary.apply(owned, config)
 	_sync_suspension_to_wheels()
 	mass = config.mass
@@ -1229,6 +1242,28 @@ func apply_owned(owned: Dictionary) -> String:
 		owned.get("wheel_toe", []))
 	_owned_drive_override = -1
 	return car_name
+
+
+# The config fields TuningLibrary.apply shifts, captured at fielding BEFORE tuning is
+# applied, so retune() can restore-then-reapply without compounding (apply multiplies).
+# TuningLibrary owns the field set (TOUCHED_FIELDS) so this can't drift from apply().
+var _pre_tune := {}
+
+
+func _snapshot_pre_tune() -> void:
+	_pre_tune = TuningLibrary.snapshot(config)
+
+
+# Re-apply a CHANGED tuning to the already-fielded live config, without reshaping the
+# body. Every field TuningLibrary touches is read live each physics step, so restoring
+# the pre-tuning baseline and re-applying takes effect immediately — no wheel relocate,
+# no pose reset, no engine rebuild (unlike apply_owned, which must not run on a live
+# car mid-stage; see respawn()). Used by the start-line Tune Car menu.
+func retune(owned: Dictionary) -> void:
+	if _pre_tune.is_empty():
+		return  # not fielded from an owned car (no baseline to restore) — nothing to do
+	TuningLibrary.restore(config, _pre_tune)
+	TuningLibrary.apply(owned, config)
 
 
 # Re-field this owned car's engine when it differs from the CarLibrary stock: writes

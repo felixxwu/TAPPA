@@ -19,7 +19,7 @@ const REPAIR_KIT_ID := "repair_kit"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
-const SLOTS := ["engine", "aero", "chassis", "brakes", "drivetrain"]
+const SLOTS := ["turbo", "aero", "chassis", "brakes", "drivetrain"]
 
 
 # Each entry is an UpgradeDef. `effect` maps to GameConfig fields applied in
@@ -29,7 +29,7 @@ const SLOTS := ["engine", "aero", "chassis", "brakes", "drivetrain"]
 # are a balance pass (deferred); these are legible single-purpose defaults.
 const UPGRADES: Array[Dictionary] = [
 	{
-		"id": "turbo_small", "name": "Small Turbo", "slot": "engine", "tier": 1, "consumable": false,
+		"id": "turbo_small", "name": "Small Turbo", "menu_label": "Small", "slot": "turbo", "tier": 1, "consumable": false,
 		"effect": {"install_turbo": {
 			"turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3, "turbo_omega_ref": 10000.0,
 			"turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6,
@@ -37,7 +37,7 @@ const UPGRADES: Array[Dictionary] = [
 		}},
 	},
 	{
-		"id": "turbo_large", "name": "Big Turbo", "slot": "engine", "tier": 2, "consumable": false,
+		"id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 2, "consumable": false,
 		"effect": {"install_turbo": {
 			"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
 			"turbo_drive_gain": 0.028, "turbo_drag_coef": 1.0e-6,

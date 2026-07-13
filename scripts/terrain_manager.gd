@@ -145,6 +145,14 @@ func _connect_layer_signals() -> void:
 			layer.changed.connect(_rebuild_loaded)
 
 
+# A layerless manager: no noise, so height_at is a flat y = 0 everywhere. Used by
+# the podium / HQ dressing to seat Foliage instances on level ground.
+static func flat() -> TerrainManager:
+	var tm := TerrainManager.new()
+	tm.layers = [] as Array[TerrainLayer]
+	return tm
+
+
 func _default_layers() -> Array[TerrainLayer]:
 	var result: Array[TerrainLayer] = []
 	for params in [[60.0, 1.5], [15.0, 0.4], [3.0, 0.1]]:
@@ -558,7 +566,7 @@ static func smooth_ramp(d: float, inner: float, outer: float) -> float:
 #   track_weights[c] = colour blend weight per cell (same ramp, by cell centre)
 # `transition_m` is the band width OUTSIDE width/2. Straight spans tessellate to
 # just their endpoints, so each segment is sub-sampled at ROAD_SAMPLE_STEP_M.
-func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0) -> void:
+func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false) -> void:
 	var rh: Dictionary = {}
 	var rb: Dictionary = {}
 	var tw: Dictionary = {}
@@ -576,7 +584,12 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	for i in range(1, poly.size()):
 		total_m += poly[i - 1].distance_to(poly[i])
 	var dist_m := 0.0  # cumulative distance to the start of the current segment
+	# Release the main thread ~40 times across the walk (only when should_yield) so the
+	# loading overlay repaints during this multi-second bake instead of freezing.
+	var yield_stride := maxi(1, (poly.size() - 1) / 40)
 	for i in range(1, poly.size()):
+		if should_yield and i % yield_stride == 0:
+			await get_tree().process_frame
 		var a := poly[i - 1]
 		var b := poly[i]
 		var seg_len := a.distance_to(b)
@@ -615,7 +628,7 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	road_blend = rb
 	track_weights = tw
 	track_surface = ts
-	_bake_cliffs(centerline, width, transition_m)
+	await _bake_cliffs(centerline, width, transition_m, should_yield)
 
 
 # The camber signal's FastNoiseLite: a 1-D value along the track's arc length,
@@ -687,7 +700,7 @@ static func _bucket_span_deg(mask: int) -> float:
 # and per stamped vertex keep the NEAREST sample's side·camber·profile plus a set of
 # occupied bearing buckets. After the walk, fold the wrap span into the contested
 # flatten and scale by the effective max height. Cleared + skipped when disabled or 0.
-func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float) -> void:
+func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should_yield: bool = false) -> void:
 	cliff_offsets = {}
 	if not cliff_enabled:
 		return
@@ -708,7 +721,10 @@ func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float) -> voi
 
 	var poly := centerline.tessellate()
 	var dist_m := 0.0
+	var yield_stride := maxi(1, (poly.size() - 1) / 40)
 	for i in range(1, poly.size()):
+		if should_yield and i % yield_stride == 0:
+			await get_tree().process_frame
 		var a := poly[i - 1]
 		var b := poly[i]
 		var seg_len := a.distance_to(b)
@@ -753,8 +769,13 @@ func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float) -> voi
 # takes effect. At startup the ring is deferred (see build_initial), so _chunks is
 # empty here and nothing rebuilds; chunks loaded later read the baked fields in
 # compute_chunk_data / vertex_colors at build time.
-func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0) -> void:
-	bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first, surface_feather_m)
+# `should_yield` (true only on the interactive staged load, never headless) makes the
+# heavy bake release the main thread periodically so the loading overlay keeps painting
+# instead of freezing. It never changes the baked RESULT — only the pacing — but because
+# the bake then contains `await`, set_track/bake_track are always coroutines: call them
+# with `await` (with should_yield=false they never actually suspend, completing same-frame).
+func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false) -> void:
+	await bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first, surface_feather_m, should_yield)
 	for coord in _chunks:
 		_chunks[coord].setup(self, coord)
 

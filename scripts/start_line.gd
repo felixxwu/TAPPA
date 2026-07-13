@@ -47,6 +47,10 @@ var _mobile: CanvasLayer
 var _orbit_cam: Camera3D
 var _overlay: CanvasLayer
 var _start_button: Button
+var _tune_button: Button
+var _tune_layer: CanvasLayer         # the pre-race tuning overlay (built lazily)
+var _tune_panel: TuningPanel         # the shared four-axis tuning sliders
+var _rally: Dictionary = {}          # this event's rally (for the Tune Car detune cap)
 var _leaders_box: VBoxContainer
 var _leader_rows: Array[Label] = []   # one row per shown rival (or a single dash)
 var _subtitle_label: Label
@@ -76,6 +80,7 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 		event_index: int, leaders: Array, camera_manager: CameraManager = null,
 		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
 	_player = player
+	_rally = rally  # kept so Tune Car can cap detune at the rally's qualifying power
 	_stage_manager = stage_manager
 	_camera_manager = camera_manager
 	_hud = hud
@@ -218,7 +223,95 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	_start_button.pressed.connect(launch)
 	root.add_child(_start_button)
 
+	# Under Start: tune the car before the race (same sliders as the HQ lift).
+	_tune_button = UITheme.button("Tune Car")
+	_tune_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_tune_button.pressed.connect(_open_tune)
+	root.add_child(_tune_button)
+
 	UITheme.enforce(_overlay)  # house rules: uppercase + one font size + fixed button height
+
+	# Two buttons now: wire keyboard + gamepad focus nav (Start seated first). This
+	# replaces the old "select-anywhere launches" path in _unhandled_input.
+	MenuNav.attach(root, {"first": _start_button})
+
+
+# Open the pre-race tuning menu (the same sliders as the HQ lift). Hides the start
+# overlay; edits re-field the live car so they affect the race about to start.
+func _open_tune() -> void:
+	if _seq != Seq.ORBIT:
+		return
+	if _tune_layer == null:
+		_build_tune_overlay()
+	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+	_tune_panel.setup(owned, _on_tune_changed.bind(owned), _detune_cap(owned))
+	_tune_panel.refresh()
+	if _overlay != null:
+		_overlay.visible = false
+	_tune_layer.visible = true
+	get_viewport().gui_release_focus()
+	MenuNav.attach(_tune_layer.get_child(0), {"first": _tune_panel.first_slider(), "on_back": _close_tune})
+
+
+func _close_tune() -> void:
+	if _tune_layer != null:
+		_tune_layer.visible = false
+	if _overlay != null:
+		_overlay.visible = true
+	if _tune_button != null:
+		_tune_button.grab_focus.call_deferred()
+
+
+func _build_tune_overlay() -> void:
+	_tune_layer = CanvasLayer.new()
+	_tune_layer.layer = 6   # above the start overlay (layer 5)
+	add_child(_tune_layer)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_tune_layer.add_child(center)
+	var panel := UITheme.panel(UITheme.PANEL.a)
+	center.add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", UITheme.GAP)
+	col.custom_minimum_size = Vector2(520, 0)
+	panel.add_child(col)
+	col.add_child(UITheme.title("Tune Car"))
+	_tune_panel = TuningPanel.new()
+	col.add_child(_tune_panel)
+	var back := UITheme.button("Back")
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	back.pressed.connect(_close_tune)
+	col.add_child(back)
+	UITheme.enforce(_tune_layer)
+
+
+# An edit was made in the tune panel (it already wrote owned["tuning"] + saved). Re-apply
+# ONLY the tuning to the live config (retune) — the tuned fields are read live each
+# physics step. Deliberately NOT apply_owned: that relocates the wheels + resets the
+# pose on the staged body, which corrupts a live VehicleBody3D (drops it through the
+# floor). retune leaves the body untouched, so the staged grid pose is preserved.
+func _on_tune_changed(owned: Dictionary) -> void:
+	if _player != null and _player.has_method("retune"):
+		_player.retune(owned)
+
+
+# The highest engine-detune fraction the car may tune UP to here without breaking the
+# rally's power-to-weight ceiling: the rally's qualifying detune at full power. 1.0 when
+# the car is eligible at full power (no cap). If detuning can't qualify it (shouldn't
+# happen for a car that's racing), fall back to its current setting so it can't tune up.
+func _detune_cap(owned: Dictionary) -> float:
+	if _rally.is_empty():
+		return 1.0
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var full := owned.duplicate(true)
+	var tuning: Dictionary = full.get("tuning", {})
+	tuning["engine_detune"] = 1.0
+	full["tuning"] = tuning
+	var full_meta := UpgradeLibrary.effective_meta(full, entry)
+	var cap := RallyLibrary.qualifying_detune(_rally, full_meta)
+	if cap <= 0.0:
+		return clampf(float((owned.get("tuning", {}) as Dictionary).get("engine_detune", 1.0)), 0.0, 1.0)
+	return cap
 
 
 # A centred leaderboard row in a house role colour ("gold" for the leader, "dim"
@@ -449,8 +542,9 @@ func _player_stopped() -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if _seq != Seq.ORBIT:
 		return
-	if event.is_action_pressed("menu_select") \
-			or (event is InputEventScreenTouch and event.pressed) \
+	# The Start button owns keyboard/gamepad select now (MenuNav focus); a pointer
+	# tap on the clear band still launches for touch/mouse players.
+	if (event is InputEventScreenTouch and event.pressed) \
 			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		launch()
 

@@ -80,12 +80,20 @@ Declared in `project.godot` `[autoload]`:
    (environment fog/color, terrain layers, material colors, post-process res),
    then generates the world. It first puts up a full-screen `LoadingScreen`
    (`scripts/loading_screen.gd`, created in code) and advances its step label
-   across generation stages (track → terrain → trees → bushes), yielding a
-   frame between each so the message paints before the blocking work. Godot's
+   across generation stages (track → carve road into terrain → precompute
+   terrain → trees → bushes), yielding a frame between each so the message paints
+   before the blocking work. The road-carving bake (`TerrainManager.set_track`,
+   the heaviest single step) additionally yields frames *within* itself on the
+   interactive path (`should_yield`), so the overlay keeps painting instead of
+   freezing under the "generating track" label as it used to. Godot's
    boot bar only covers engine + `.pck` load; this overlay covers the heavy
    world-gen that runs afterwards. Under headless the per-step `await`s are
    no-ops, so generation stays synchronous (tests see a fully-built world right
    after instantiating `main.tscn`). The overlay is freed once the world is up.
+   During the track stage the overlay also shows a growing line of the track
+   above the loading text, driven by real generation progress via
+   `LoadingScreen.update_track_preview` (see [track.md](track.md)) and held once
+   generation completes.
 3. Per-system scripts (`car.gd`, `drivetrain.gd`, `engine.gd`, `chase_camera.gd`,
    `terrain_manager.gd`, `hud.gd`, `engine_audio.gd`) read `Config.data` directly for
    their own tunables.

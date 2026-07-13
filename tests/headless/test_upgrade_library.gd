@@ -148,9 +148,9 @@ func test_disabled_upgrades_are_inert_everywhere() -> void:
 	assert_true(UpgradeLibrary.aero_tuning_unlocked(car), "a re-enabled aero kit unlocks aero tuning again")
 
 
-func test_turbo_upgrades_are_engine_slot_items() -> void:
-	assert_eq(UpgradeLibrary.slot_of("turbo_small"), "engine", "small turbo is an engine-slot item")
-	assert_eq(UpgradeLibrary.slot_of("turbo_large"), "engine", "large turbo is an engine-slot item")
+func test_turbo_upgrades_are_turbo_slot_items() -> void:
+	assert_eq(UpgradeLibrary.slot_of("turbo_small"), "turbo", "small turbo is a turbo-slot item")
+	assert_eq(UpgradeLibrary.slot_of("turbo_large"), "turbo", "large turbo is a turbo-slot item")
 	# The old flat-multiplier stages are gone.
 	assert_true(UpgradeLibrary.by_id("engine_stage1").is_empty(), "Stage 1 kit removed")
 	assert_true(UpgradeLibrary.by_id("engine_stage2").is_empty(), "Stage 2 kit removed")

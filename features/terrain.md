@@ -135,7 +135,14 @@ the true terrain across a transition band just outside the road edge, using
   across its width, and feathers out over the band. Tarmac weight comes from each
   sample's cumulative distance along the polyline via `TrackSurface.tarmac_weight`.
   The surface args default to all-gravel, so callers that don't split surfaces are
-  unaffected.
+  unaffected. A trailing `should_yield: bool = false` (forwarded to `_bake_cliffs`)
+  makes the two heavy centerline walks `await get_tree().process_frame` ~40 times each,
+  so the interactive loading overlay keeps painting during this multi-second bake
+  instead of freezing; it never changes the baked result. Because the body then
+  contains `await`, `bake_track` (and `set_track`) are **always coroutines** — call
+  them with `await`. With `should_yield` false (the default, and always under headless)
+  they never suspend, completing in the same frame, so headless world-build stays
+  synchronous.
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.
@@ -164,8 +171,8 @@ the true terrain across a transition band just outside the road edge, using
   `world.gd` (`apply_terrain_light`) before the initial build. Valid because the
   terrain and sun never move; the car can't bake (it rotates) and lights in its shader.
 - `set_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
-  surface_feather_m)` — call
-  `bake_track`, and **rebuild any currently-loaded chunks** (full `setup()`, since
+  surface_feather_m, should_yield=false)` — `await`
+  `bake_track` (forwarding `should_yield`), and **rebuild any currently-loaded chunks** (full `setup()`, since
   geometry changes). At startup the ring is deferred (see below), so nothing is
   loaded here and nothing rebuilds; chunks loaded later bake the blend at build
   time. (Replaces the older binary `track_cells` + `bake_road`.)
@@ -285,7 +292,7 @@ over a bounded corridor**, done behind the loading screen. The play area is
 bounded because the off-track reset leash caps how far the car can ever get
 from the track, so the reachable chunk set is knowable in advance:
 
-1. `world.gd._generate_track` (loading stage "Precomputing terrain…") calls
+1. `world.gd._generate_track` (loading stage "Precomputing chunks…") calls
    `TerrainManager.corridor_coords(centerline, leash_m)` to get the full coord
    list, then `set_corridor(coords)` and loops `cache_chunk(coord)` in
    **batches of 8 per awaited frame** so the loading bar keeps painting.

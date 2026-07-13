@@ -97,7 +97,9 @@ func _build_ui() -> void:
 		title.text = "STANDINGS — after event %d of %d" % [done, RallySession.EVENTS_PER_RALLY]
 		subtitle.text = "%s — combined time so far" % String(rally.get("name", ""))
 		rows = RallySession.current_standings()
-		button_text = "Continue to next event >"
+		# After the final event this interstitial resolves to the podium, not
+		# another event — so the button leads to the podium instead.
+		button_text = "Continue to podium >" if done >= RallySession.EVENTS_PER_RALLY else "Continue to next event >"
 	title.add_theme_font_size_override("font_size", 28)
 	root.add_child(title)
 	subtitle.add_theme_font_size_override("font_size", 14)

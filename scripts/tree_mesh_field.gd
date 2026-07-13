@@ -183,10 +183,10 @@ func _process(delta: float) -> void:
 		rec["elapsed"] += delta
 		var angle := TreeFall.fall_angle(rec["elapsed"], rec["duration"])
 		# Tilt about the trunk base (the instance origin) from the standing basis.
-		var basis := Basis(rec["axis"], angle) * Basis(Vector3.UP, rec["yaw"]).scaled(s)
+		var tilt := Basis(rec["axis"], angle) * Basis(Vector3.UP, rec["yaw"]).scaled(s)
 		var mmi: MultiMeshInstance3D = rec["mmi"]
 		mmi.multimesh.set_instance_transform(
-			rec["j"], Transform3D(basis, rec["base_pos"] - rec["centre"]))
+			rec["j"], Transform3D(tilt, rec["base_pos"] - rec["centre"]))
 		if rec["elapsed"] < rec["duration"]:
 			still_active.append(rec)
 	_falling = still_active

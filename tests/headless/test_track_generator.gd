@@ -52,18 +52,18 @@ const START_HEADING := Vector2(0.0, 1.0)
 
 
 func _generate(seed_value: int, turns: int = 6, width: float = 6.0) -> Dictionary:
-	return TrackGenerator.generate(START_POS, START_HEADING, seed_value, turns, width)
+	return await TrackGenerator.generate(START_POS, START_HEADING, seed_value, turns, width)
 
 
 func test_generate_is_deterministic_per_seed() -> void:
-	var a := _generate(7)
-	var b := _generate(7)
+	var a := await _generate(7)
+	var b := await _generate(7)
 	assert_eq(a["cells"].size(), b["cells"].size(), "same seed -> same number of cells")
 	assert_eq(a["pieces"].size(), b["pieces"].size(), "same seed -> same number of pieces")
 
 
 func test_generate_places_requested_corner_count() -> void:
-	var r := _generate(3, 6)
+	var r := await _generate(3, 6)
 	assert_eq(r["pieces"].size(), 6, "exactly the requested number of corners are placed")
 	assert_true(r["complete"], "the search completed within the cap")
 
@@ -74,7 +74,7 @@ func test_generate_avoids_the_reserved_start_corridor() -> void:
 	var width := 6.0
 	var clearance := 8.0
 	var reserve := 38.0  # ahead (22) + behind (16), as world.gd passes
-	var r := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, width, clearance, reserve)
+	var r := await TrackGenerator.generate(START_POS, START_HEADING, 7, 10, width, clearance, reserve)
 	assert_true(r["complete"], "still generates with a reserved start corridor")
 	var coll := width + 2.0 * clearance
 	var back := START_POS - START_HEADING * reserve
@@ -91,14 +91,14 @@ func test_generate_avoids_the_reserved_start_corridor() -> void:
 
 
 func test_reservation_keeps_generation_deterministic() -> void:
-	var a := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 8.0, 38.0)
-	var b := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 8.0, 38.0)
+	var a := await TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 8.0, 38.0)
+	var b := await TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 8.0, 38.0)
 	assert_eq(a["cells"].size(), b["cells"].size(), "same inputs + reserve -> same track")
 	assert_eq(a["pieces"].size(), b["pieces"].size(), "deterministic piece count with a reservation")
 
 
 func test_generate_starts_at_the_spawn_frame() -> void:
-	var r := _generate(5)
+	var r := await _generate(5)
 	var curve: Curve2D = r["centerline"]
 	assert_gt(curve.point_count, 1, "centerline has multiple points")
 	assert_almost_eq(curve.get_point_position(0), START_POS, Vector2(1e-3, 1e-3),
@@ -109,7 +109,7 @@ func test_generate_avoids_cell_overlap_between_pieces() -> void:
 	# Each piece records the cells it added; those sets must be disjoint (the
 	# search adds a cell to the occupied set only once, on the piece that claims
 	# it), proving no later piece re-covers an earlier piece's cells.
-	var r := _generate(11, 8)
+	var r := await _generate(11, 8)
 	var seen: Dictionary = {}
 	for piece in r["pieces"]:
 		for cell in piece["cells"]:
@@ -131,8 +131,8 @@ func test_clearance_inflates_the_collision_footprint() -> void:
 func test_generate_with_clearance_is_deterministic_and_non_overlapping() -> void:
 	# generate() threads clearance through the search: still deterministic per
 	# seed, and pieces still claim disjoint cells (the core overlap invariant).
-	var a := TrackGenerator.generate(START_POS, START_HEADING, 11, 8, 6.0, 6.0)
-	var b := TrackGenerator.generate(START_POS, START_HEADING, 11, 8, 6.0, 6.0)
+	var a := await TrackGenerator.generate(START_POS, START_HEADING, 11, 8, 6.0, 6.0)
+	var b := await TrackGenerator.generate(START_POS, START_HEADING, 11, 8, 6.0, 6.0)
 	assert_eq(int(a["cells"].size()), int(b["cells"].size()),
 		"same seed + clearance -> identical footprint")
 	var seen: Dictionary = {}
@@ -146,7 +146,7 @@ func test_generate_is_g1_continuous_at_joins() -> void:
 	# Consecutive tessellated centerline segments never reverse direction: the
 	# angle between successive segment directions stays well under 90 degrees,
 	# i.e. the track has no kinks/cusps at piece joins.
-	var r := _generate(2, 8)
+	var r := await _generate(2, 8)
 	var pts: PackedVector2Array = (r["centerline"] as Curve2D).tessellate()
 	for i in range(2, pts.size()):
 		var d0 := (pts[i - 1] - pts[i - 2])
@@ -161,7 +161,7 @@ func test_generate_uses_both_left_and_right_flips() -> void:
 	var lefts := false
 	var rights := false
 	for seed_value in [1, 2, 3, 4, 5]:
-		for piece in _generate(seed_value)["pieces"]:
+		for piece in (await _generate(seed_value))["pieces"]:
 			if piece["flip"]:
 				lefts = true
 			else:
@@ -200,8 +200,8 @@ func test_straightness_bias_produces_gentler_tracks() -> void:
 	var biased := 0.0
 	var seeds := range(1, 21)
 	for s in seeds:
-		var a := TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 0.0)
-		var b := TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 1.0)
+		var a := await TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 0.0)
+		var b := await TrackGenerator.generate(START_POS, START_HEADING, s, 10, 6.0, 0.0, 0.0, 1.0)
 		plain += _avg_gentleness(a, by_name)
 		biased += _avg_gentleness(b, by_name)
 	assert_gt(biased, plain,
@@ -211,8 +211,8 @@ func test_straightness_bias_produces_gentler_tracks() -> void:
 func test_straightness_generation_is_deterministic_and_complete() -> void:
 	# A straightness-biased search is still seeded → identical run to run, and the bias
 	# only reorders candidates so the track still completes.
-	var a := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 0.0, 0.0, 0.8)
-	var b := TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 0.0, 0.0, 0.8)
+	var a := await TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 0.0, 0.0, 0.8)
+	var b := await TrackGenerator.generate(START_POS, START_HEADING, 7, 10, 6.0, 0.0, 0.0, 0.8)
 	assert_eq(a["pieces"].size(), b["pieces"].size(), "same inputs + straightness -> same piece count")
 	assert_eq(a["cells"].size(), b["cells"].size(), "same inputs + straightness -> same cells")
 	assert_true(a["complete"], "a straightness-biased track still completes")
@@ -231,7 +231,7 @@ func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 	var t0 := Time.get_ticks_msec()
 	for rally in RallyLibrary.RALLIES:
 		for event in rally["events"]:
-			var r := TrackGenerator.generate(
+			var r := await TrackGenerator.generate(
 				Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
 				int(event.get("turn_count", 10)), RallyLibrary.event_width(event), clearance,
 				0.0, RallyLibrary.event_straightness(event))
@@ -243,7 +243,7 @@ func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 
 
 func test_zero_runoff_reports_no_segment() -> void:
-	var r := TrackGenerator.generate(START_POS, START_HEADING, 7, 8, 6.0)
+	var r := await TrackGenerator.generate(START_POS, START_HEADING, 7, 8, 6.0)
 	assert_true(r.has("runoff"), "result always carries a runoff key")
 	assert_true(r["runoff"].is_empty(), "no runoff requested -> no runoff segment")
 
@@ -251,7 +251,7 @@ func test_zero_runoff_reports_no_segment() -> void:
 func test_runoff_straight_does_not_overlap_the_track() -> void:
 	var width := 6.0
 	var runoff := 20.0
-	var r := TrackGenerator.generate(START_POS, START_HEADING, 7, 8, width, 0.0, 0.0, 0.0, runoff)
+	var r := await TrackGenerator.generate(START_POS, START_HEADING, 7, 8, width, 0.0, 0.0, 0.0, runoff)
 	assert_true(r["complete"], "generates with a runoff requirement")
 	assert_false(r["runoff"].is_empty(), "a completed track reports its runoff segment")
 	# Re-derive the runoff start (the last corner's exit) and rasterize the straight.
@@ -268,3 +268,34 @@ func test_runoff_straight_does_not_overlap_the_track() -> void:
 			continue
 		assert_false(r["cells"].has(cell),
 			"runoff cell %s beyond the join must not overlap the placed track" % cell)
+
+
+func test_on_progress_does_not_change_result() -> void:
+	# Determinism: the returned track is identical with and without the callback.
+	var plain := await TrackGenerator.generate(START_POS, START_HEADING, 7, 6, 6.0)
+	var noop := func(_pts: PackedVector2Array) -> void: pass
+	var withcb: Dictionary = await TrackGenerator.generate(
+		START_POS, START_HEADING, 7, 6, 6.0, 0.0, 0.0, 0.0, 0.0, noop)
+	assert_eq(withcb["complete"], plain["complete"], "completion unchanged by on_progress")
+	assert_eq(withcb["pieces"].size(), plain["pieces"].size(), "piece count unchanged by on_progress")
+	assert_eq(str(withcb["cells"].keys()), str(plain["cells"].keys()),
+		"occupied cells unchanged by on_progress (determinism preserved)")
+
+
+func test_on_progress_receives_valid_partial_polylines() -> void:
+	var snaps: Array = []
+	var cb := func(pts: PackedVector2Array) -> void: snaps.append(pts.duplicate())
+	await TrackGenerator.generate(START_POS, START_HEADING, 7, 6, 6.0, 0.0, 0.0, 0.0, 0.0, cb)
+	assert_gt(snaps.size(), 0, "on_progress fires at least once during a search")
+	for pts in snaps:
+		assert_true(pts is PackedVector2Array, "each snapshot is a PackedVector2Array")
+		assert_gt(pts.size(), 0, "each snapshot has at least the start point")
+		assert_almost_eq(pts[0], START_POS, Vector2(1e-4, 1e-4), "snapshot starts at the search start pos")
+
+
+func test_generate_stays_synchronous_without_callback() -> void:
+	# generate() is a coroutine, but with no on_progress it never suspends —
+	# awaiting it returns the fully-built track dict the same frame.
+	var result: Dictionary = await TrackGenerator.generate(START_POS, START_HEADING, 7, 6, 6.0)
+	assert_true(result.has("centerline"), "returns the full track dict with no on_progress")
+	assert_true(result.has("pieces"), "result includes the placed pieces")

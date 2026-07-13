@@ -437,6 +437,26 @@ func test_downforce_inert_at_standstill() -> void:
 		"downforce is speed-dependent: no effect at standstill")
 
 
+func test_retune_on_a_live_settled_car_keeps_it_grounded() -> void:
+	# Regression for the start-line Tune Car bug: reconfiguring a LIVE car via the full
+	# fielding pipeline relocated its wheels + reset its pose and dropped it through the
+	# floor. retune (config-only, no reshape) must leave a settled car grounded. Field
+	# from an owned dict so retune has its pre-tune snapshot, settle on the floor, then a
+	# live retune with a changed tuning, step physics, and assert the ride height holds
+	# (an invariant that must survive ANY tuning — not a pinned value).
+	CarFixtures.install()
+	_car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {}, "upgrades": {}})
+	await _wait_physics(SETTLE_FRAMES)
+	var y_before: float = _car.global_position.y
+	assert_lt(_car.linear_velocity.length(), 1.0, "precondition: the car has settled on the floor")
+	_car.retune({"model_id": "fx_light_rwd", "instance_id": 1,
+		"tuning": {"grip_balance": 1.0, "engine_detune": 0.5}, "upgrades": {}})
+	await _wait_physics(30)
+	assert_almost_eq(_car.global_position.y, y_before, 0.3,
+		"a live retune leaves the car grounded — no wheel relocation / drop-through-floor")
+	assert_lt(_car.linear_velocity.length(), 1.0, "the car stays settled after a live retune")
+
+
 func test_apply_car_sets_downforce_from_spec_overwriting_stale() -> void:
 	# Downforce is a PER-CAR spec value: apply_car SETS (not adds) it, so a car with
 	# 0 has none (no hidden global baseline) and re-fielding can't accumulate it.

@@ -123,7 +123,7 @@ func test_seed_change_invalidates_and_refills_cache() -> void:
 func test_height_at_serves_flattened_road_height_from_cache() -> void:
 	var m := _make_manager()
 	var center := _straight_centerline()
-	m.set_track(center, 8.0, 4.0)
+	await m.set_track(center, 8.0, 4.0)
 	m.precompute_corridor(center, 25.0)
 	# Directly on the road centerline the terrain is flattened to the baked road
 	# height; the cache carries that, the raw noise does not.

@@ -33,9 +33,9 @@ const CAR_SCENE_PATH := "res://car.tscn"
 
 # Floor + scenery assets. The ground reuses the terrain road-blend shader so the
 # tarmac pads feather into grass exactly the way the generated road does; the
-# trees/bushes/spectators are the same low-poly models the world scatters, but
-# placed as plain decorative MultiMeshes (no collision, no AI).
-const SPECTATOR_SCENE := preload("res://blender/spectator/spectator.glb")
+# trees + bushes go through the shared Foliage helpers, and the spectators through
+# the shared Crowd helper (so all three use the SAME representation + scale as the
+# stage + HQ) — placed as plain decorative fields (no collision, no AI).
 
 # Floor is a square PlaneMesh side (m); subdivided finely enough that the pad
 # feather bands stay smooth.
@@ -185,35 +185,36 @@ func _build_scenery() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0xB0DE  # fixed → stable placement run-to-run
 
-	# The shared tree + bush meshes (Foliage), so the podium dressing references the
-	# same models the stage + HQ do. The podium keeps its own decorative placement
-	# (a scale-jittered ring per focal area, plain MultiMeshes) rather than the
-	# verge fields — this is a close-up hero shot where varied 3D trees read better
-	# than the distance-culled billboard field, so it always uses the 3D tree mesh.
-	var tree_mesh := Foliage.tree_mesh()
-	if tree_mesh != null:
-		_add_multimesh(tree_mesh, _scatter_ring(rng, cfg.podium_scenery_tree_count,
-				cfg.podium_scenery_ring_inner, cfg.podium_scenery_ring_outer,
-				0.85, 1.25), "Trees")
-	var bush_mesh := Foliage.bush_mesh()
-	if bush_mesh != null:
-		_add_multimesh(bush_mesh, _scatter_ring(rng, cfg.podium_scenery_bush_count,
-				cfg.podium_scenery_ring_inner * 0.7, cfg.podium_scenery_ring_outer,
-				0.8, 1.4), "Bushes")
-	var spec_mesh := MeshUtil.first_mesh(SPECTATOR_SCENE)
-	if spec_mesh != null:
-		_add_multimesh(spec_mesh, _spectator_transforms(cfg, spec_mesh), "Crowd")
+	# Trees + bushes go through the shared Foliage helpers, so the podium uses the
+	# SAME representation the stage + HQ do — a billboard cutout or the 3D mesh per
+	# cfg.use_billboard_trees for trees, always the mesh for bushes — and the SAME
+	# cfg.tree_size_m / cfg.bush_height_m scale, rather than the raw GLB mesh at its
+	# native size. A flat y = 0 terrain seats the instances (the podium ground is a
+	# plane); scenery only (no collision), render_distance 1000 = no cull (small scene).
+	var flat := TerrainManager.flat()
+	Foliage.spawn_trees(self, _scatter_ring(rng, cfg.podium_scenery_tree_count,
+			cfg.podium_scenery_ring_inner, cfg.podium_scenery_ring_outer),
+			flat, false, 1000.0, 0.0).name = "Trees"
+	Foliage.spawn_bushes(self, _scatter_ring(rng, cfg.podium_scenery_bush_count,
+			cfg.podium_scenery_ring_inner * 0.7, cfg.podium_scenery_ring_outer),
+			flat, 1000.0, 0.0).name = "Bushes"
+	flat.free()
+	var layout := _spectator_layout(cfg)
+	# The podium ground is a flat plane at y = 0 (no terrain), so no ground_at Callable.
+	var crowd := Crowd.multimesh_instance("Crowd", layout["pos"], layout["yaw"], Callable())
+	if crowd != null:
+		add_child(crowd)
 
 
-# Place `count` items in a ring [inner, outer] around each focal area (podium +
-# showroom), off the tarmac pads, with a random yaw and a uniform scale in
-# [scale_lo, scale_hi]. Deterministic given `rng`'s seed.
-func _scatter_ring(rng: RandomNumberGenerator, count: int, inner: float, outer: float,
-		scale_lo: float, scale_hi: float) -> Array[Transform3D]:
+# Scatter `count` positions in a ring [inner, outer] around each focal area
+# (podium + showroom), off the tarmac pads. Returns world XZ points for the
+# Foliage fields (which seat, yaw and scale each instance themselves).
+# Deterministic given `rng`'s seed.
+func _scatter_ring(rng: RandomNumberGenerator, count: int, inner: float, outer: float) -> PackedVector2Array:
 	var cfg: GameConfig = Config.data
 	var pad := cfg.podium_tarmac_pad_half + cfg.podium_tarmac_feather_m
 	var centers := [PODIUM_CENTER, SHOWROOM_CENTER]
-	var out: Array[Transform3D] = []
+	var out := PackedVector2Array()
 	for k in count:
 		var c: Vector3 = centers[k % centers.size()]
 		var pos := Vector3.ZERO
@@ -229,17 +230,19 @@ func _scatter_ring(rng: RandomNumberGenerator, count: int, inner: float, outer: 
 					break
 			if not on_pad:
 				break
-		var xb := Basis(Vector3.UP, rng.randf() * TAU).scaled(
-				Vector3.ONE * rng.randf_range(scale_lo, scale_hi))
-		out.append(Transform3D(xb, pos))
+		out.append(Vector2(pos.x, pos.z))
 	return out
 
 
-# A shallow crowd arc behind the podium (all facing it) plus a small cluster at
-# the showroom. Yaw points each figure at the focal centre; feet sit on y = 0.
-func _spectator_transforms(cfg: GameConfig, mesh: Mesh) -> Array[Transform3D]:
-	var foot := -mesh.get_aabb().position.y
-	var out: Array[Transform3D] = []
+# A layerless TerrainManager: the podium ground is a plane at y = 0, so height_at
+# returns 0 everywhere — all a Foliage field needs to seat its instances. Used only
+# during _build_scenery(); freed straight after (mirrors hq_environment.gd).
+# A shallow crowd arc behind the podium (all facing it) plus a small cluster at the
+# showroom, as world XZ positions + facing yaws for Crowd.multimesh_instance (which
+# seats the figures on the ground). Yaw points each figure at the focal centre.
+func _spectator_layout(cfg: GameConfig) -> Dictionary:
+	var pos := PackedVector2Array()
+	var yaw := PackedFloat32Array()
 	var pad := cfg.podium_tarmac_pad_half + cfg.podium_tarmac_feather_m
 	# Podium arc: two rows across the rear hemisphere (z < 0), facing the podium.
 	var arc := maxi(cfg.podium_spectator_count, 2)
@@ -247,37 +250,23 @@ func _spectator_transforms(cfg: GameConfig, mesh: Mesh) -> Array[Transform3D]:
 		var t := float(i) / float(maxi(arc - 1, 1))
 		var ang := lerpf(deg_to_rad(205.0), deg_to_rad(335.0), t)
 		var r := pad + 3.0 + (2.4 if i % 2 == 1 else 0.0)
-		out.append(_facing_xform(PODIUM_CENTER, ang, r, foot))
+		_append_facing(pos, yaw, PODIUM_CENTER, ang, r)
 	# Showroom cluster: a small fan facing the turntable.
 	for i in 8:
 		var t := float(i) / 7.0
 		var ang := lerpf(deg_to_rad(120.0), deg_to_rad(240.0), t)
-		out.append(_facing_xform(SHOWROOM_CENTER, ang, pad + 3.5, foot))
-	return out
+		_append_facing(pos, yaw, SHOWROOM_CENTER, ang, pad + 3.5)
+	return {"pos": pos, "yaw": yaw}
 
 
-# A transform standing at `center + r*(cos,sin)` on the ground, yawed to face
-# `center` (the mesh's default facing is +Z).
-func _facing_xform(center: Vector3, ang: float, r: float, foot: float) -> Transform3D:
-	var pos := center + Vector3(cos(ang) * r, foot, sin(ang) * r)
-	var dir := center - pos
-	var yaw := atan2(dir.x, dir.z)
-	return Transform3D(Basis(Vector3.UP, yaw), pos)
-
-
-func _add_multimesh(mesh: Mesh, transforms: Array[Transform3D], node_name: String) -> void:
-	if transforms.is_empty():
-		return
-	var mmi := MultiMeshInstance3D.new()
-	mmi.name = node_name
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = transforms.size()
-	for i in transforms.size():
-		mm.set_instance_transform(i, transforms[i])
-	mmi.multimesh = mm
-	add_child(mmi)
+# Append a figure standing at `center + r*(cos,sin)` (XZ), yawed to face `center`
+# (the mesh's default facing is +Z).
+func _append_facing(pos: PackedVector2Array, yaw: PackedFloat32Array,
+		center: Vector3, ang: float, r: float) -> void:
+	var x := center.x + cos(ang) * r
+	var z := center.z + sin(ang) * r
+	pos.append(Vector2(x, z))
+	yaw.append(atan2(center.x - x, center.z - z))
 
 
 # The three podium steps (1st centred + tallest, 2nd left, 3rd right). Each is a

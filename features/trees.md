@@ -11,13 +11,15 @@ decides tree representation and owns the shared tree/bush meshes + materials),
 **Centralised spawning (`Foliage`).** Every place that spawns foliage — the stage
 (`world.gd`), the HQ clearing (`hq_environment.gd`), and the podium's decorative
 dressing (`podium.gd`) — goes through `Foliage.spawn_trees()` /
-`Foliage.spawn_bushes()` (or `Foliage.tree_mesh()` / `Foliage.bush_mesh()` for the
-podium's own MultiMesh placement). So the billboard-vs-mesh decision and the
-shared meshes live in exactly one file: a tree is the same kind of tree wherever
-it appears, and a bush is scaled to `cfg.bush_height_m` everywhere. (The podium is
-the one deliberate exception on representation: a close-up hero shot, it always
-uses the 3D tree mesh — scale-jittered — because the distance-culled billboard
-field reads poorly up close. It still pulls that mesh from `Foliage`.)
+`Foliage.spawn_bushes()`. So the billboard-vs-mesh decision, the shared meshes,
+and the size normalization all live in exactly one file: a tree is the same kind
+of tree wherever it appears (billboard cutout or 3D mesh per
+`cfg.use_billboard_trees`), and a tree/bush is scaled to `cfg.tree_size_m` /
+`cfg.bush_height_m` everywhere — including the podium, which used to hardcode the
+3D tree mesh at its native GLB size. The podium supplies its own ring scatter
+(around the podium + showroom, off the tarmac pads) and a flat y = 0
+`TerrainManager` to seat the instances, but the representation and scale come from
+`Foliage` like everywhere else.
 
 Shared low-level helpers used across the scatter/field code: `ScatterMath`
 (`scripts/scatter_math.gd`) — seeded `hash01` + road-cell `cell_of`/`on_road`;

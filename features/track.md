@@ -83,11 +83,22 @@ to world XZ (`x → world x`, `y → world z`).
   different searches; **restart 0 keeps the authored seed**) up to `MAX_RESTARTS`,
   returning the deepest partial if all fail. A pathological seed that once took ~8
   minutes now bails and a fresh restart completes the track in well under a second.
-  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0, reserve_behind_m=0, straightness=0, runoff_m=0)`
+  `generate(start_pos, start_heading, seed, turn_count, width, clearance=0, reserve_behind_m=0, straightness=0, runoff_m=0, on_progress: Callable = Callable())`
   returns `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool, runoff: Dictionary }`. Each
   piece dict records `corner`, `flip`, `straight`, `cells`, and its `entry_pos` /
   `entry_heading` (the pose at the start of its connecting straight — used by
-  roadside-sign placement, see [signs.md](signs.md)).
+  roadside-sign placement, see [signs.md](signs.md)). `generate` is **always a
+  coroutine** (call it with `await`). The trailing `on_progress` is optional: when
+  supplied, the search yields a frame periodically and calls
+  `on_progress.call(points: PackedVector2Array)` with the partial centerline so a
+  live preview can paint it as the track is built; it never changes the returned
+  result. When omitted (the default empty `Callable`), the search never yields a
+  frame and stays effectively synchronous. `world.gd._generate_track` wires
+  `on_progress` to `LoadingScreen.update_track_preview` on the non-headless staged
+  path only, then locks the finished shape by calling `update_track_preview` once
+  more with the final tessellated centerline right after `generate` returns (so the
+  held line is exact, not a mid-backtrack snapshot) — held drawn through the
+  remaining stages until the overlay is freed.
 - **Clearance:** the overlap test rasterizes the collision footprint at
   `width + 2*clearance`, not the visible `width`. So `track_clearance` (m) forces
   non-adjacent sections to keep that much extra gap — stopping the track from

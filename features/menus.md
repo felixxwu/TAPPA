@@ -101,9 +101,14 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   afterward (using the same dying-subtree guard, `_control_dying`, so it doesn't grab the
   about-to-be-freed old one).
 
-  The **`start line`** and **`wreck screen`** are *press-anything-to-continue* screens
-  (a tap anywhere, or `menu_select` = Enter / gamepad A, proceeds), not multi-item
-  navigable menus, so they don't use `MenuNav` — there is nothing to navigate.
+  The **`start line`** pre-event overlay has two buttons — **Start** and, under it,
+  **Tune Car** (opens the shared `TuningPanel` for the car about to race, see
+  [tuning.md](tuning.md)) — so it uses `MenuNav.attach(root, {first = _start_button})`
+  for keyboard/gamepad focus; a pointer tap on the clear band still launches. Opening
+  Tune Car hides the start overlay and attaches `MenuNav` to the tune overlay (Back
+  routed via `on_back`). The **`wreck screen`** is still a *press-anything-to-continue*
+  screen (a tap anywhere, or `menu_select` = Enter / gamepad A, proceeds), not a
+  multi-item navigable menu, so it doesn't use `MenuNav`.
 - **Diegetic 3D HQ stations** can't be a focus graph — "left/right" means *cycle the
   3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
