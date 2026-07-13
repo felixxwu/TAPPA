@@ -256,9 +256,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# single step; give it its own label and let it yield frames (interactive path only —
 	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
 	await _stage(loading, "Carving road into terrain…")
+	# Interactive path: the grey track-preview line fills white as the bake walks the
+	# centerline (carve progress); headless passes empty callbacks and stays synchronous.
+	var carve_interactive := loading != null and not _headless
+	var carve_progress := loading.set_carve_progress if carve_interactive else Callable()
 	await $Floor.set_track(road_centerline, cfg.track_width, transition_m,
 		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m,
-		loading != null and not _headless)
+		carve_interactive, carve_progress)
+	if carve_interactive:
+		loading.set_carve_progress(1.0)  # snap to fully-white once carving is done
 	# Retained for post-build consumers outside this call (the benchmark runner
 	# follows the same road the progress manager measures).
 	_road_centerline = road_centerline
@@ -271,12 +277,25 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var floor_tm := $Floor as TerrainManager
 	floor_tm.set_corridor(floor_tm.corridor_coords(
 		road_centerline, Config.data.track_progress_max_dist_m))
+	# Feed loaded chunks to the loading preview (interactive path only): each cached
+	# chunk becomes a dark square behind the track line, drawn in the same world-XZ
+	# frame (coord * CHUNK_M = its world min-corner). Batched on the existing yield.
+	var show_chunks := loading != null and not _headless
+	if show_chunks:
+		loading.set_chunk_size(TerrainManager.CHUNK_M)
+	var chunk_corners := PackedVector2Array()
 	var precompute_done := 0
 	for coord in floor_tm.corridor():
 		floor_tm.cache_chunk(coord)
+		if show_chunks:
+			chunk_corners.append(Vector2(coord.x, coord.y) * TerrainManager.CHUNK_M)
 		precompute_done += 1
 		if precompute_done % 8 == 0:
+			if show_chunks:
+				loading.update_loaded_chunks(chunk_corners)
 			await _yield_frame()
+	if show_chunks:
+		loading.update_loaded_chunks(chunk_corners)  # final batch (loop count not a multiple of 8)
 	print("terrain precompute: %d chunks, %.1f MB cached"
 		% [precompute_done, floor_tm.cache_size_mb()])
 

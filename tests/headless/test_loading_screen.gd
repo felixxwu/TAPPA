@@ -78,3 +78,80 @@ func test_update_track_preview_stores_points() -> void:
 	var pts := PackedVector2Array([Vector2(0, 0), Vector2(5, 5)])
 	screen.update_track_preview(pts)
 	assert_eq(screen._preview._points.size(), 2, "preview stores the supplied points")
+
+
+func test_bounds_of_returns_min_and_span() -> void:
+	var pts := PackedVector2Array([Vector2(2, 5), Vector2(-1, 5), Vector2(4, 9)])
+	var b := LoadingScreen.bounds_of(pts)
+	assert_almost_eq(b.position, Vector2(-1, 5), Vector2(1e-4, 1e-4), "position is the min corner")
+	assert_almost_eq(b.size, Vector2(5, 4), Vector2(1e-4, 1e-4), "size is the span (max - min)")
+
+
+func test_fit_transform_maps_bounds_into_padded_rect_preserving_aspect() -> void:
+	# A 10x10 world box into a 100x100 rect, pad 10 -> inner 80x80, square aspect fills it.
+	var b := Rect2(Vector2(0, 0), Vector2(10, 10))
+	var xf := LoadingScreen.fit_transform(b, Rect2(0, 0, 100, 100), 10.0)
+	var p0 := xf * Vector2(0, 0)
+	var p1 := xf * Vector2(10, 10)
+	assert_almost_eq(p0, Vector2(10, 10), Vector2(0.5, 0.5), "world min maps to the inner top-left")
+	assert_almost_eq(p1, Vector2(90, 90), Vector2(0.5, 0.5), "world max maps to the inner bottom-right")
+
+
+func test_fit_transform_shared_frame_maps_centre_to_rect_centre() -> void:
+	# Same bounds/rect/pad -> a shared world point maps identically; this is what lets
+	# the track line and chunk squares line up in one frame.
+	var b := Rect2(Vector2(-5, -5), Vector2(20, 20))
+	var xf := LoadingScreen.fit_transform(b, Rect2(0, 0, 200, 120), 8.0)
+	var centre := b.position + b.size * 0.5
+	assert_almost_eq(xf * centre, Vector2(100, 60), Vector2(0.6, 0.6), "world centre maps to rect centre")
+
+
+func test_set_chunk_size_stored() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen.set_chunk_size(50.0)
+	assert_almost_eq(screen._preview._chunk_size, 50.0, 1e-4, "chunk size stored on the preview")
+
+
+func test_update_loaded_chunks_stores_corners() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	var corners := PackedVector2Array([Vector2(0, 0), Vector2(50, 0), Vector2(0, 50)])
+	screen.update_loaded_chunks(corners)
+	assert_eq(screen._preview._chunk_corners.size(), 3, "preview stores the supplied chunk corners")
+
+
+func test_preview_clips_contents() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	assert_true(screen._preview.clip_contents, "preview clips squares that fall outside the panel")
+
+
+func test_carve_prefix_empty_and_full() -> void:
+	var pts := PackedVector2Array([Vector2(0, 0), Vector2(10, 0), Vector2(20, 0)])
+	assert_eq(LoadingScreen.carve_prefix(pts, 0.0).size(), 0, "progress 0 -> nothing white")
+	assert_eq(LoadingScreen.carve_prefix(pts, 1.0).size(), pts.size(), "progress 1 -> whole line white")
+	assert_eq(LoadingScreen.carve_prefix(PackedVector2Array([Vector2(0, 0)]), 0.5).size(), 0,
+		"< 2 points -> empty")
+
+
+func test_carve_prefix_interpolates_boundary() -> void:
+	# 3 points along +X (0, 10, 20). progress 0.5 -> split_f = 1.0 -> ki=1, frac=0:
+	# prefix = first two points, ending exactly at the midpoint.
+	var pts := PackedVector2Array([Vector2(0, 0), Vector2(10, 0), Vector2(20, 0)])
+	var half := LoadingScreen.carve_prefix(pts, 0.5)
+	assert_eq(half.size(), 2, "half -> first two points")
+	assert_almost_eq(half[half.size() - 1], Vector2(10, 0), Vector2(1e-4, 1e-4), "prefix ends at the midpoint")
+	# progress 0.25 -> split_f = 0.5 -> ki=0, frac=0.5 -> [p0, lerp(p0, p1, 0.5) = (5, 0)].
+	var q := LoadingScreen.carve_prefix(pts, 0.25)
+	assert_eq(q.size(), 2, "quarter -> p0 + interpolated boundary")
+	assert_almost_eq(q[1], Vector2(5, 0), Vector2(1e-4, 1e-4), "boundary interpolated at 1/4 length")
+
+
+func test_set_carve_progress_clamps_and_stores() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen.set_carve_progress(1.5)
+	assert_almost_eq(screen._preview._carve_progress, 1.0, 1e-4, "clamped to 1")
+	screen.set_carve_progress(-0.2)
+	assert_almost_eq(screen._preview._carve_progress, 0.0, 1e-4, "clamped to 0")

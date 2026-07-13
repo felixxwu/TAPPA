@@ -375,6 +375,62 @@ func test_bake_track_weights_inside_band_outside() -> void:
 	assert_gt(m.track_weights.size(), 0, "per-cell colour weights baked too")
 
 
+func test_bake_track_on_progress_reports_monotonic_without_changing_result() -> void:
+	# A multi-point zigzag so tessellation yields several segments to report across.
+	var curve := Curve2D.new()
+	curve.add_point(Vector2(0.0, 0.0))
+	curve.add_point(Vector2(20.0, 5.0))
+	curve.add_point(Vector2(40.0, -5.0))
+	curve.add_point(Vector2(60.0, 5.0))
+	curve.add_point(Vector2(80.0, 0.0))
+	var m := _make_manager([_make_layer(20.0, 3.0)] as Array[TerrainLayer], 5)
+	var fractions: Array = []
+	var cb := func(f: float) -> void: fractions.append(f)
+	await m.bake_track(curve, 4.0, 2.0, 0.0, false, 6.0, false, cb)
+	assert_gt(fractions.size(), 0, "on_progress reported at least once")
+	var prev := 0.0
+	for f in fractions:
+		assert_true(f > 0.0 and f <= 1.0 + 1e-6, "reported fraction is in (0, 1]")
+		assert_true(f >= prev - 1e-6, "reported fractions are monotonic non-decreasing")
+		prev = f
+	# Determinism: an identical bake with no callback flattens the same vertices.
+	var m2 := _make_manager([_make_layer(20.0, 3.0)] as Array[TerrainLayer], 5)
+	await m2.bake_track(curve, 4.0, 2.0, 0.0, false, 6.0)
+	assert_eq(m2.road_blend.size(), m.road_blend.size(),
+		"on_progress does not change the baked result")
+
+
+func test_bake_track_carve_progress_spans_both_passes_when_cliffs_active() -> void:
+	# With cliffs on, the flatten pass fills 0->0.5 and the cliff pass fills 0.5->1,
+	# so the reported carve fraction crosses the midpoint and ends near fully carved.
+	var curve := Curve2D.new()
+	curve.add_point(Vector2(0.0, 0.0))
+	curve.add_point(Vector2(20.0, 5.0))
+	curve.add_point(Vector2(40.0, -5.0))
+	curve.add_point(Vector2(60.0, 5.0))
+	curve.add_point(Vector2(80.0, 0.0))
+	var m := _make_manager([_make_layer(20.0, 3.0)] as Array[TerrainLayer], 5)
+	m.cliff_enabled = true
+	m.cliff_amount = 1.0
+	var fractions: Array = []
+	var cb := func(f: float) -> void: fractions.append(f)
+	await m.bake_track(curve, 4.0, 2.0, 0.0, false, 6.0, false, cb)
+	assert_gt(fractions.size(), 0, "on_progress reported at least once")
+	var prev := 0.0
+	var saw_flatten := false
+	var saw_cliff := false
+	for f in fractions:
+		assert_true(f >= prev - 1e-6, "reported fractions are monotonic non-decreasing")
+		prev = f
+		if f <= 0.5 + 1e-6:
+			saw_flatten = true
+		else:
+			saw_cliff = true
+	assert_true(saw_flatten, "flatten pass reports in the first half (<= 0.5)")
+	assert_true(saw_cliff, "cliff pass reports in the second half (> 0.5)")
+	assert_almost_eq(fractions[fractions.size() - 1], 1.0, 0.05, "ends near fully carved")
+
+
 func test_bake_track_surface_split_and_surface_at() -> void:
 	# A 40 m straight along +X. 50% tarmac, gravel-first: gravel near the start,
 	# tarmac near the end, with the switch ~halfway. surface_at reports both the

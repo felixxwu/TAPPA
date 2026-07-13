@@ -142,7 +142,14 @@ the true terrain across a transition band just outside the road edge, using
   contains `await`, `bake_track` (and `set_track`) are **always coroutines** — call
   them with `await`. With `should_yield` false (the default, and always under headless)
   they never suspend, completing in the same frame, so headless world-build stays
-  synchronous.
+  synchronous. A further trailing `on_progress: Callable(fraction: float)` (forwarded
+  from `set_track` and on to `_bake_cliffs`), when valid, is called at the same stride
+  with a carve fraction (0→1) — `world.gd` wires it to `LoadingScreen.set_carve_progress`
+  so the grey preview line fills white as the bake progresses. The fraction spans BOTH
+  passes: the flatten walk fills 0→0.5 when a cliff pass will follow (`_cliffs_active()`),
+  else the whole bar 0→1; `_bake_cliffs` fills 0.5→1 — so the line keeps advancing through
+  the cliff pass rather than sitting full-white while it runs. Independent of `should_yield`
+  (reports even without yielding) and never changes the baked result.
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.

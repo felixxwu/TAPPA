@@ -93,7 +93,14 @@ Declared in `project.godot` `[autoload]`:
    During the track stage the overlay also shows a growing line of the track
    above the loading text, driven by real generation progress via
    `LoadingScreen.update_track_preview` (see [track.md](track.md)) and held once
-   generation completes.
+   generation completes. That line is drawn **grey**; during "Carving road into
+   terrain…" it fills **white** from the start as the bake walks the centerline
+   (`bake_track`'s `on_progress` → `LoadingScreen.set_carve_progress`), a spatial
+   progress indicator that ends fully white. During the "Precomputing chunks…" stage the preview
+   additionally draws each cached chunk as a dark square behind the track line
+   (`LoadingScreen.set_chunk_size` once, then `update_loaded_chunks` per yield
+   batch, fed from `world.gd`). The view stays framed on the track, so the outer
+   band of the corridor clips at the panel edge.
 3. Per-system scripts (`car.gd`, `drivetrain.gd`, `engine.gd`, `chase_camera.gd`,
    `terrain_manager.gd`, `hud.gd`, `engine_audio.gd`) read `Config.data` directly for
    their own tunables.

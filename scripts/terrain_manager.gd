@@ -566,7 +566,7 @@ static func smooth_ramp(d: float, inner: float, outer: float) -> float:
 #   track_weights[c] = colour blend weight per cell (same ramp, by cell centre)
 # `transition_m` is the band width OUTSIDE width/2. Straight spans tessellate to
 # just their endpoints, so each segment is sub-sampled at ROAD_SAMPLE_STEP_M.
-func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false) -> void:
+func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false, on_progress: Callable = Callable()) -> void:
 	var rh: Dictionary = {}
 	var rb: Dictionary = {}
 	var tw: Dictionary = {}
@@ -587,9 +587,20 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	# Release the main thread ~40 times across the walk (only when should_yield) so the
 	# loading overlay repaints during this multi-second bake instead of freezing.
 	var yield_stride := maxi(1, (poly.size() - 1) / 40)
+	var denom := maxf(float(poly.size() - 1), 1.0)
+	# Carve progress spans BOTH bake passes: the flatten walk fills the first half
+	# (0 -> 0.5) when a cliff pass will follow, else the whole bar (0 -> 1); _bake_cliffs
+	# fills 0.5 -> 1. So the preview line keeps advancing through the cliff pass instead
+	# of sitting full-white while it runs.
+	var flatten_ceiling := 0.5 if _cliffs_active() else 1.0
 	for i in range(1, poly.size()):
-		if should_yield and i % yield_stride == 0:
-			await get_tree().process_frame
+		if i % yield_stride == 0:
+			# Report carve progress (fraction of the centerline flattened so far) and,
+			# on the interactive path, release the main thread so the overlay repaints.
+			if on_progress.is_valid():
+				on_progress.call(float(i) / denom * flatten_ceiling)
+			if should_yield:
+				await get_tree().process_frame
 		var a := poly[i - 1]
 		var b := poly[i]
 		var seg_len := a.distance_to(b)
@@ -628,7 +639,7 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	road_blend = rb
 	track_weights = tw
 	track_surface = ts
-	await _bake_cliffs(centerline, width, transition_m, should_yield)
+	await _bake_cliffs(centerline, width, transition_m, should_yield, on_progress)
 
 
 # The camber signal's FastNoiseLite: a 1-D value along the track's arc length,
@@ -700,7 +711,13 @@ static func _bucket_span_deg(mask: int) -> float:
 # and per stamped vertex keep the NEAREST sample's side·camber·profile plus a set of
 # occupied bearing buckets. After the walk, fold the wrap span into the contested
 # flatten and scale by the effective max height. Cleared + skipped when disabled or 0.
-func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should_yield: bool = false) -> void:
+# Whether the cliff pass will actually stamp offsets (used by bake_track to decide
+# whether the flatten pass owns the whole carve bar or just its first half).
+func _cliffs_active() -> bool:
+	return cliff_enabled and cliff_max_height_m * clampf(cliff_amount, 0.0, 1.0) > 0.0
+
+
+func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should_yield: bool = false, on_progress: Callable = Callable()) -> void:
 	cliff_offsets = {}
 	if not cliff_enabled:
 		return
@@ -722,9 +739,15 @@ func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should
 	var poly := centerline.tessellate()
 	var dist_m := 0.0
 	var yield_stride := maxi(1, (poly.size() - 1) / 40)
+	var denom := maxf(float(poly.size() - 1), 1.0)
 	for i in range(1, poly.size()):
-		if should_yield and i % yield_stride == 0:
-			await get_tree().process_frame
+		if i % yield_stride == 0:
+			# Second half of the carve bar (0.5 -> 1): the cliff pass continues the
+			# progress the flatten pass left at 0.5.
+			if on_progress.is_valid():
+				on_progress.call(0.5 + float(i) / denom * 0.5)
+			if should_yield:
+				await get_tree().process_frame
 		var a := poly[i - 1]
 		var b := poly[i]
 		var seg_len := a.distance_to(b)
@@ -774,8 +797,8 @@ func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should
 # instead of freezing. It never changes the baked RESULT — only the pacing — but because
 # the bake then contains `await`, set_track/bake_track are always coroutines: call them
 # with `await` (with should_yield=false they never actually suspend, completing same-frame).
-func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false) -> void:
-	await bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first, surface_feather_m, should_yield)
+func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false, on_progress: Callable = Callable()) -> void:
+	await bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first, surface_feather_m, should_yield, on_progress)
 	for coord in _chunks:
 		_chunks[coord].setup(self, coord)
 
