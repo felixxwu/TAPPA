@@ -1099,7 +1099,7 @@ var peak_torque_rpm := 4500.0
 ## Albedo tint multiplied into the bush mesh (on top of the tone-matched foliage
 ## texture and the per-instance baked terrain light). Lifted a touch above the
 ## model's authored green so the ground cover reads a bit more against the grass.
-@export var bush_tint := Color(0.95, 1.0, 0.7)
+@export var bush_tint := Color(1.25, 1.25, 1.25)
 ## PERF A/B TOGGLE: when true, render TREES as the old alpha-cutout billboards
 ## (BillboardField + textures/tree.png) instead of the low-poly mesh
 ## (TreeMeshField). Bushes stay low-poly meshes regardless. Kept so the mesh vs

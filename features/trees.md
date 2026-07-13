@@ -273,6 +273,9 @@ edge. `world.gd` rasterizes this wider footprint into a bush-specific
 imported (tone-matched) foliage texture, and makes the `StandardMaterial3D`
 **unshaded** (the flat PS1 look the rest of the world uses) with
 `vertex_color_use_as_albedo` on so the baked-light instance colour multiplies in.
+The material is **double-sided** (`cull_mode = CULL_DISABLED`, like the tree
+canopy): the low-poly foliage cards are single-sided geometry, so with default
+back-face culling the bush was see-through from behind.
 Its `albedo_color` is set to `bush_tint` (lifted a touch above the model's authored
 green so the ground cover reads a bit more against the grass).
 `world.gd` builds the tree field and the bush field back to back.

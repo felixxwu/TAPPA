@@ -118,6 +118,10 @@ static func bush_mesh() -> Mesh:
 	var base := mesh.surface_get_material(0) as StandardMaterial3D
 	var albedo: Texture2D = base.albedo_texture if base != null else null
 	var mat := PS1Material.unshaded(albedo, true)
+	# Low-poly foliage cards are single-sided geometry, so render both faces —
+	# otherwise the bush is see-through from the back (matches the tree canopy,
+	# which is likewise CULL_DISABLED).
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.albedo_color = cfg.bush_tint
 	mesh.surface_set_material(0, mat)
 	return mesh
