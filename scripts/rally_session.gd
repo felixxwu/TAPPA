@@ -55,6 +55,10 @@ var _last_result: Dictionary = {}      # the most recent finish, read by the pod
 # the tune can't creep back up between events). Registered by hq's detune confirm
 # (register_detune_revert); a garage-lift detune never touches this.
 var _detune_revert: Dictionary = {}
+# Car-park drivetrain-to-enter agreements are TEMPORARY, for this rally only:
+# instance_id -> the drive_mode override to restore once the rally ENDS. Mirrors
+# _detune_revert; a garage-set drivetrain choice never touches this.
+var _drivetrain_revert: Dictionary = {}
 
 # One-shot navigation flag set by the podium's final "Continue": tells HQ to open
 # straight on the GARAGE view (not the exterior title) when it next boots. NOT
@@ -102,6 +106,15 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 			Save.set_engine_detune(int(id), float(_detune_revert[id]))
 	var pending: Variant = _detune_revert.get(_car_instance_id)
 	_detune_revert = {} if pending == null else {_car_instance_id: pending}
+	# Keep only the fielded car's pending drivetrain revert. An agreement whose start
+	# was then backed out of (it never reached start_rally) is settled NOW: that
+	# car isn't racing, so its temporary drivetrain switch is undone immediately rather than
+	# lingering to rewrite its override when THIS rally ends.
+	for id in _drivetrain_revert:
+		if int(id) != _car_instance_id:
+			Save.set_drivetrain_override(int(id), int(_drivetrain_revert[id]))
+	var pending_dm: Variant = _drivetrain_revert.get(_car_instance_id)
+	_drivetrain_revert = {} if pending_dm == null else {_car_instance_id: pending_dm}
 	_event_index = 0
 	_event_times_ms = []
 	_dnf = false
@@ -450,6 +463,13 @@ func register_detune_revert(instance_id: int, prior_frac: float) -> void:
 	_detune_revert[instance_id] = clampf(prior_frac, 0.0, 1.0)
 
 
+# Remember a car's pre-agreement drivetrain (the garage-set override, or -1) so it's
+# restored when the rally ends. Called by hq's drivetrain confirm before it applies the
+# temporary switch; a garage-lift choice never registers here.
+func register_drivetrain_revert(instance_id: int, prior_mode: int) -> void:
+	_drivetrain_revert[instance_id] = prior_mode
+
+
 func _reset_to_idle() -> void:
 	# The rally is over (finish, wreck or abandon): put back the engine tune the
 	# car-park detune agreement temporarily overrode. Only here — never at an
@@ -457,6 +477,12 @@ func _reset_to_idle() -> void:
 	for id in _detune_revert:
 		Save.set_engine_detune(int(id), float(_detune_revert[id]))
 	_detune_revert = {}
+	# The rally is over: put back the drivetrain override the car-park agreement
+	# temporarily overrode. Only here — never at an event boundary — so the
+	# drivetrain can't change mid-rally.
+	for id in _drivetrain_revert:
+		Save.set_drivetrain_override(int(id), int(_drivetrain_revert[id]))
+	_drivetrain_revert = {}
 	_rally = {}
 	_car_instance_id = -1
 	_car_model_id = ""

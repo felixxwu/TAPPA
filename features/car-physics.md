@@ -168,6 +168,34 @@ each wheel per axle via `_apply_suspension()` (dampers re-derived; the standalon
 tall roadster/muscle (MX-5, Charger) vs stiff & low supercars (911, Viper,
 XJS). The `config/game_config.tres` values are the baseline/fallback.
 
+### Static rest pose (`settled_ride_height`)
+
+Display / prop cars — the roadside opponent wreck (`world.gd`), the podium finishers
+(`podium.gd`), and the HQ parked lineup (`hq.gd`) — are placed **analytically at rest
+and frozen at once**, instead of being dropped as live physics bodies and frozen a beat
+later. That old drop-and-settle was a recurring bug source: it depended on a ground
+collider being present under the car (the wreck sank through the streamed-in-only-near-
+the-player terrain), on the car not rolling on a slope, and on not re-wrecking on the
+landing impact — plus the freeze timing.
+
+`car.settled_ride_height()` returns how far the body origin sits above flat ground at
+rest. The wheel VISUAL never moves with suspension compression (`drivetrain.
+_update_visuals` only spins/steers it), so a single body-height offset fully reproduces
+the settled look:
+
+```
+settled_ride_height = wheel_radius + axle_travel − mount_y            # wheel fully drooped
+                    − SUSPENSION_COMPRESSION_COEFF · g / suspension_stiffness   # sag under weight
+```
+
+The compression term comes from Godot's built-in `VehicleWheel3D` solver (**not** the
+game's own tire model — they disagree by ~0.1 m) and is **mass-independent** (Godot
+normalises the spring by chassis mass). `SUSPENSION_COMPRESSION_COEFF` is calibrated
+against a real settle and pinned by `test_rest_pose.gd`, which re-derives it from an
+actual `VehicleWheel3D` settle across a range of configs and fails loudly if a Godot
+upgrade shifts the solver — so the constant can't silently drift. A caller seats the car
+on its ground plane and lifts the body by this height, then freezes `FREEZE_MODE_STATIC`.
+
 ## Weight distribution (centre of mass)
 
 Each `CarLibrary` entry carries a real `weight_front` — the car's published static

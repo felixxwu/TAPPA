@@ -249,6 +249,7 @@ func grant_car(model_id: String) -> Dictionary:
 		"disabled_upgrades": [],
 		"tuning": {},
 		"wheel_toe": [0.0, 0.0, 0.0, 0.0],
+		"drivetrain_override": -1,
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
 	profile["cars"].append(car)
@@ -388,6 +389,17 @@ func set_engine_detune(instance_id: int, frac: float) -> void:
 	var tuning: Dictionary = car.get("tuning", {})
 	tuning["engine_detune"] = clampf(frac, 0.0, 1.0)
 	car["tuning"] = tuning
+	save()
+
+
+# Set a car's chosen drivetrain (0/1/2), or -1 to revert to the car's stock layout.
+# Stored per car; inert unless the drivetrain-swap kit is fitted+enabled (the gate lives
+# in UpgradeLibrary.resolve_drive_override, read by car.gd and effective_meta).
+func set_drivetrain_override(instance_id: int, mode: int) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	car["drivetrain_override"] = mode
 	save()
 
 

@@ -19,7 +19,7 @@ const REPAIR_KIT_ID := "repair_kit"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
-const SLOTS := ["engine", "aero", "chassis", "brakes"]
+const SLOTS := ["engine", "aero", "chassis", "brakes", "drivetrain"]
 
 
 # Each entry is an UpgradeDef. `effect` maps to GameConfig fields applied in
@@ -57,6 +57,10 @@ const UPGRADES: Array[Dictionary] = [
 		"id": "brake_kit", "name": "Big Brake Kit", "slot": "brakes",
 		"tier": 1, "consumable": false,
 		"effect": {"brake_torque_mult": 1.20, "unlocks_brake_bias": true},
+	},
+	{
+		"id": "drivetrain_swap", "name": "Drivetrain Swap", "slot": "drivetrain",
+		"tier": 2, "consumable": false, "effect": {"unlocks_drivetrain_swap": true},
 	},
 	{
 		"id": REPAIR_KIT_ID, "name": "Repair Kit", "slot": "",
@@ -132,6 +136,7 @@ const EFFECTS := {
 	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false},
 	"unlocks_aero_tuning": {"field": "", "op": "flag", "feeds_pw": false},
 	"unlocks_brake_bias":  {"field": "", "op": "flag", "feeds_pw": false},
+	"unlocks_drivetrain_swap": {"field": "", "op": "flag", "feeds_pw": false},
 }
 
 
@@ -221,6 +226,11 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 	# Detune scales the torque feeding power-to-weight, after the boost rating.
 	var detune := clampf(float(owned_car.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
 	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * detune
+	# Report the player's chosen drivetrain (gated by the swap kit) so the stats panel
+	# and RallyLibrary.is_eligible both see the swapped mode. -1 leaves stock in place.
+	var drive_override := resolve_drive_override(owned_car)
+	if drive_override >= 0:
+		out["drive_mode"] = drive_override
 	return out
 
 
@@ -234,6 +244,27 @@ static func aero_tuning_unlocked(owned_car: Dictionary) -> bool:
 
 static func brake_bias_unlocked(owned_car: Dictionary) -> bool:
 	return _has_flag(owned_car, "unlocks_brake_bias")
+
+
+static func drivetrain_swap_unlocked(owned_car: Dictionary) -> bool:
+	# Unlike the aero / brake gates, the drivetrain kit has NO enable/disable — owning
+	# it IS the unlock, and the selector's stock choice plays the "off" role (disabling
+	# would just re-select the original drive mode). So this checks INSTALLED, not
+	# enabled: a won-but-not-yet-podium-applied kit is usable immediately, not stranded.
+	for item_id in owned_car.get("installed_upgrades", []):
+		if bool(by_id(item_id).get("effect", {}).get("unlocks_drivetrain_swap", false)):
+			return true
+	return false
+
+
+# The drive mode the player chose for this car (0/1/2), or -1 meaning "use the car's
+# authored stock drive_mode". Gated: a stored override is inert unless the swap kit is
+# fitted AND enabled, so removing/disabling the kit reverts the car to stock. The single
+# resolver used by physics (car.gd), display/eligibility (effective_meta) and the garage.
+static func resolve_drive_override(owned_car: Dictionary) -> int:
+	if not drivetrain_swap_unlocked(owned_car):
+		return -1
+	return int(owned_car.get("drivetrain_override", -1))
 
 
 static func _has_flag(owned_car: Dictionary, flag: String) -> bool:

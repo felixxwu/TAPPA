@@ -42,8 +42,7 @@ var _on_back: Callable
 
 # Attach (or reconfigure) the framework on a flat menu. `root` is the container
 # whose descendants form the menu (an overlay Control, a panel, the menu scene
-# root). Returns the MenuNav node so callers can hold a reference and later set
-# `first` before a re-show if the focus target changes between pages.
+# root). Returns the MenuNav node so callers can hold a reference.
 static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 	if not is_instance_valid(root):
 		return null
@@ -70,13 +69,6 @@ static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 	if not root.visibility_changed.is_connected(nav._on_root_visibility):
 		root.visibility_changed.connect(nav._on_root_visibility)
 	return nav
-
-
-# Point the cursor at a different widget (e.g. a menu switching pages). Grabs it
-# now if the menu is visible; otherwise it takes effect on the next re-show.
-func set_first(ctrl: Control) -> void:
-	_first = ctrl
-	UITheme.focus_grab.bind(ctrl).call_deferred()
 
 
 func _on_root_visibility() -> void:
@@ -152,6 +144,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			_first.grab_focus()
 			vp.set_input_as_handled()
 		return
+
+	# On a slider, left/right ADJUST the value rather than moving focus, so the cursor
+	# resting on a slider is enough to change it — no "select it first" step, and WASD
+	# (A/D) nudges it the same as the arrow keys do natively. Arrows / D-pad / stick
+	# are already consumed by the Range in the GUI phase (they bind ui_left/ui_right),
+	# so only the WASD presses reach here; up/down still fall through to focus nav so
+	# the cursor can leave the slider for the next row.
+	if focused is Range and (side == SIDE_LEFT or side == SIDE_RIGHT):
+		var rng := focused as Range
+		if rng.editable:
+			var stepv: float = rng.step if rng.step > 0.0 else (rng.max_value - rng.min_value) / 20.0
+			rng.value += stepv if side == SIDE_RIGHT else -stepv
+			vp.set_input_as_handled()
+		return
+
 	var neighbour := focused.find_valid_focus_neighbor(side)
 	if neighbour != null and neighbour != focused:
 		neighbour.grab_focus()

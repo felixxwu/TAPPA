@@ -425,3 +425,17 @@ func test_set_engine_detune_clamps_and_persists() -> void:
 	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 1.0, 0.0001, "clamps above 1")
 	_save.set_engine_detune(a["instance_id"], -0.3)
 	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 0.0, 0.0001, "clamps below 0")
+
+
+func test_set_drivetrain_override_persists() -> void:
+	var car: Dictionary = _save.grant_car(CarLibrary.all()[0]["id"])
+	var id := int(car["instance_id"])
+	assert_eq(int(_save.get_car(id).get("drivetrain_override", -99)), -1, "new car defaults to stock (-1)")
+	_save.set_drivetrain_override(id, CarLibrary.AWD)
+	assert_eq(int(_save.get_car(id).get("drivetrain_override", -99)), CarLibrary.AWD, "override stored")
+
+
+func test_drivetrain_override_defaults_for_legacy_car() -> void:
+	# A car dict without the key (an older save) reads as stock via .get default.
+	var legacy := {"instance_id": 1, "model_id": "x", "installed_upgrades": [], "disabled_upgrades": []}
+	assert_eq(int(legacy.get("drivetrain_override", -1)), -1, "missing key reads as stock")

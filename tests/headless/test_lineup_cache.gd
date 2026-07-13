@@ -138,10 +138,10 @@ func _has_smoke(car: Node) -> bool:
 	return not car.find_children("*", "EngineSmoke", true, false).is_empty()
 
 
-# Repairing the car on the lift heals it immediately: the wrecked prop (which smokes)
-# is rebuilt as a healthy one that does not — the reported bug was the stale prop
-# smoking on after a repair.
-func test_repairing_on_the_lift_stops_the_smoke() -> void:
+# Repairing the selected car from the garage Repair button heals it immediately: the
+# wrecked prop (which smokes) is rebuilt as a healthy one that does not — the reported
+# bug was the stale prop smoking on after a repair.
+func test_repairing_from_the_garage_stops_the_smoke() -> void:
 	var id := int(_save.profile["cars"][0]["instance_id"])
 	_save.set_selected_car(id)
 	_save.wreck_car(id)
@@ -151,11 +151,11 @@ func test_repairing_on_the_lift_stops_the_smoke() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._ensure_lift_car()
-	assert_true(_has_smoke(hq._lift_car), "precondition: a wrecked lift car smokes")
+	assert_true(_has_smoke(hq._lift_car), "precondition: a wrecked selected car smokes")
 
-	hq._use_repair_kit(id)
-	assert_true(is_instance_valid(hq._lift_car), "the lift still holds a car after the repair")
-	assert_false(_has_smoke(hq._lift_car), "the repaired lift car no longer smokes")
+	hq._repair_selected_car()
+	assert_true(is_instance_valid(hq._lift_car), "the prop still holds a car after the repair")
+	assert_false(_has_smoke(hq._lift_car), "the repaired car no longer smokes")
 
 
 # Repairing the wrecked focused car in the car park respawns a healthy prop that no

@@ -76,7 +76,7 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	if n > 0:
 		_center /= float(n)
 
-	var mesh := _extract_mesh()
+	var mesh := MeshUtil.first_mesh(SPECTATOR_SCENE)
 	if mesh != null:
 		var aabb := mesh.get_aabb()
 		_foot_offset = -aabb.position.y
@@ -84,26 +84,6 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 		_capsule_radius = maxf(maxf(aabb.size.x, aabb.size.z) * 0.5, 0.1)
 	_build_multimesh(mesh, n)
 	_refresh_all_instances()
-
-
-# Pull the single Mesh out of the imported glb scene (used by the MultiMesh and,
-# per-instance, by the ragdolls).
-func _extract_mesh() -> Mesh:
-	var inst := SPECTATOR_SCENE.instantiate()
-	var mi := _find_mesh_instance(inst)
-	var mesh: Mesh = mi.mesh if mi != null else null
-	inst.free()
-	return mesh
-
-
-func _find_mesh_instance(n: Node) -> MeshInstance3D:
-	if n is MeshInstance3D:
-		return n
-	for c in n.get_children():
-		var found := _find_mesh_instance(c)
-		if found != null:
-			return found
-	return null
 
 
 func _build_multimesh(mesh: Mesh, n: int) -> void:

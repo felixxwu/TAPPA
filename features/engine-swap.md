@@ -123,6 +123,11 @@ When non-stock:
    [engine-and-transmission.md](engine-and-transmission.md).
 2. **Rebuilds the drivetrain** (`Drivetrain.new(self)`, re-resolving terrain
    and drive mode) so the new redline/shift-speed table takes effect, and
+   <br>(The rebuild uses the spec's stock `drive_mode`, but `apply_owned` sets
+   `_owned_drive_override` from `UpgradeLibrary.resolve_drive_override` *before*
+   this step, and `_rebuild_drivetrain` honours it — so a player's chosen
+   drivetrain (Drivetrain Swap kit) still wins after an engine swap. See
+   [drivetrain-and-tires.md](drivetrain-and-tires.md).)
    reconfigures the engine audio voice (`EngineAudio.reconfigure`) so the
    sound matches the new cylinder count/firing order
    ([engine-audio.md](engine-audio.md)).
@@ -196,6 +201,15 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   with the new engine, and returns to the lift's Upgrades page. **Back**
   (`_car_back`) returns to the lift with no change, same as change-car and
   starter-pick modes.
+  While picking a partner, `hq._refresh_swap_preview()` (called from
+  `_focus_changed`) shows a two-way hp/tonne preview in a `RichTextLabel`
+  (`hq._swap_preview_label`) below the stats panel: since a swap EXCHANGES
+  engines, both the lift car (receiving the focused partner's engine) and the
+  focused partner (receiving the lift car's engine) get a row, each with a
+  coloured ↑/↓/— arrow for the resulting delta. The pure math is
+  `EngineSwap.pw_after_swap(owned, entry, donor_engine_id)` (returns kW/kg;
+  scaled by `CarLibrary.KW_KG_TO_HP_TONNE` for display). Hidden outside swap
+  mode.
 - **Tuning page, detune slider** — a normal `TuningLibrary.AXES` row
   ("Engine detune", `0%`–`100%`), always **unlocked** (no upgrade gate,
   unlike brake-bias/aero). The slider stores `frac = value / 100.0` via

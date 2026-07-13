@@ -49,6 +49,18 @@ static func recompute_weight_front(m_total: float, wf: float, m_stock_engine: fl
 	return (chassis_front + m_new_engine * engine_pos) / new_total
 
 
+# The power-to-weight (kW/kg) `entry`'s car would have after receiving
+# `donor_engine_id`'s engine. Previews an owned dict with swapped_engine = donor and
+# runs it through the existing effective_meta -> power_to_weight path, which already
+# resolves the swapped engine, recomputes mass for the engine-mass delta, and folds
+# in installed upgrades (upgrade_library.gd). Pure — no scene / save mutation.
+# Returns kW/kg; callers multiply by CarLibrary.KW_KG_TO_HP_TONNE to display hp/tonne.
+static func pw_after_swap(owned: Dictionary, entry: Dictionary, donor_engine_id: String) -> float:
+	var preview := owned.duplicate(true)
+	preview["swapped_engine"] = donor_engine_id
+	return CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(preview, entry))
+
+
 # Two owned cars may exchange engines only when both exist, neither is wrecked,
 # and both sit at their CarLibrary max HP (100% health).
 static func can_swap(car_a: Dictionary, car_b: Dictionary) -> bool:

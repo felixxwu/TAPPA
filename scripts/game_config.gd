@@ -596,12 +596,6 @@ var peak_torque_rpm := 4500.0
 ## Front-to-back depth (m) of a parking bay: the length of the painted bay surface
 ## along Z, sized to comfortably hold a car parked nose-out toward the courtyard.
 @export var menu_carpark_bay_depth := 5.4
-## Height (m) above the lot the parked cars drop from, so they settle onto their
-## suspension under physics before being frozen at the settled pose.
-@export var menu_car_drop_height := 0.6
-## Seconds the parked cars run live physics to settle before they're frozen (so a
-## full car park costs nothing to keep parked once settled).
-@export var menu_car_settle_seconds := 1.2
 ## Maximum number of cars the player may own. Winning a rally still grants the car
 ## even when the garage is full; the next HQ visit then makes the player scrap one
 ## (the just-won car included) back down to this cap. See hq.gd's OVERFLOW station.
@@ -627,11 +621,6 @@ var peak_torque_rpm := 4500.0
 @export var rally_upgrade_reward_count := 2
 
 # --- Podium / reward-reveal sequence (podium.gd) ------------------------------
-## Height (m) above each podium step the top-3 cars drop from, so they settle onto
-## their suspension under physics (the "suspension simulated and loaded" beat).
-@export var podium_car_drop_height := 0.7
-## Seconds the podium cars run live physics to settle before being frozen.
-@export var podium_car_settle_seconds := 1.4
 ## Height (m) of the 1st-place podium step; 2nd/3rd are scaled down from it.
 @export var podium_step_height := 0.9
 ## Spacing (m) between the three podium steps (along X). The winner is centred.
@@ -1259,12 +1248,6 @@ var peak_torque_rpm := 4500.0
 @export_range(0, 40) var opponent_wreck_crowd_size := 7
 ## Radius (m) of the ring the onlookers stand in around the wreck.
 @export_range(0.5, 12.0) var opponent_wreck_crowd_radius_m := 3.2
-## Height (m) the wreck is dropped from so it settles onto its wheels on the (possibly
-## sloped) verge before its pose is frozen — like the HQ/podium display cars.
-@export_range(0.0, 3.0) var opponent_wreck_drop_height_m := 0.6
-## How long (s) the wreck settles under physics before it's frozen static. 0 freezes
-## it immediately (headless always freezes at once — nothing renders to settle for).
-@export_range(0.0, 6.0) var opponent_wreck_settle_seconds := 1.2
 
 
 @export_group("Performance")

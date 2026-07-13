@@ -53,8 +53,7 @@ var _reveal_done := true
 
 # 3D staging.
 var _camera: Camera3D
-var _podium_cars: Array = []          # the top-3 settling car props
-var _settle_generation := 0
+var _podium_cars: Array = []          # the top-3 finisher car props
 var _turntable_pivot: Node3D          # rotates the showroom car
 var _showroom_car: Node3D
 
@@ -201,7 +200,7 @@ func _build_scenery() -> void:
 		_add_multimesh(bush_mesh, _scatter_ring(rng, cfg.podium_scenery_bush_count,
 				cfg.podium_scenery_ring_inner * 0.7, cfg.podium_scenery_ring_outer,
 				0.8, 1.4), "Bushes")
-	var spec_mesh := _mesh_from_scene(SPECTATOR_SCENE)
+	var spec_mesh := MeshUtil.first_mesh(SPECTATOR_SCENE)
 	if spec_mesh != null:
 		_add_multimesh(spec_mesh, _spectator_transforms(cfg, spec_mesh), "Crowd")
 
@@ -281,15 +280,6 @@ func _add_multimesh(mesh: Mesh, transforms: Array[Transform3D], node_name: Strin
 	add_child(mmi)
 
 
-# Pull the first MeshInstance3D's mesh out of an imported glb PackedScene.
-func _mesh_from_scene(scene: PackedScene) -> Mesh:
-	var inst := scene.instantiate()
-	var hits := inst.find_children("*", "MeshInstance3D", true, false)
-	var mesh: Mesh = (hits[0] as MeshInstance3D).mesh if not hits.is_empty() else null
-	inst.free()
-	return mesh
-
-
 # The three podium steps (1st centred + tallest, 2nd left, 3rd right). Each is a
 # coloured block with a matching collision box so a car lands on its top face.
 func _build_podium_steps() -> void:
@@ -320,16 +310,17 @@ func _build_podium_steps() -> void:
 		add_child(mi)
 
 
-# Spawn the top-3 finishers' cars above their steps so they drop in and settle on
-# their suspension, then freeze the settled pose. Reads the ranked standings.
+# Spawn the top-3 finishers' cars resting on their steps, frozen. Each car is placed
+# with its wheels on its step top via the analytic rest ride height (car.gd:
+# settled_ride_height) rather than dropped as a live physics body and frozen a beat
+# later — no live settle to mistime, bounce off the narrow step, or damage the model.
+# Reads the ranked standings.
 func _spawn_podium_cars() -> void:
 	var cfg: GameConfig = Config.data
 	var h1: float = cfg.podium_step_height
 	var heights := [h1, h1 * 0.66, h1 * 0.45]
 	var xs := [0.0, -cfg.podium_step_spacing, cfg.podium_step_spacing]
 	var top3 := _top_finishers(3)
-	_settle_generation += 1
-	var live := false
 	for i in top3.size():
 		var car_id := String(top3[i].get("car_id", ""))
 		if car_id == "":
@@ -337,19 +328,15 @@ func _spawn_podium_cars() -> void:
 		var idx := CarLibrary.index_of(car_id)
 		if idx < 0:
 			continue
-		var drop := Vector3(xs[i], heights[i] + cfg.podium_car_drop_height, 0.0)
-		var car := _spawn_car(idx, PODIUM_CENTER + drop, not _headless)
+		# Seat on the step top, then lift by the car's resting ride height so its wheels
+		# sit on the step; spawn frozen.
+		var seat := PODIUM_CENTER + Vector3(xs[i], heights[i], 0.0)
+		var car := _spawn_car(idx, seat, false)
+		car.global_position += Vector3.UP * car.settled_ride_height()
 		# Face the camera: the car's forward is -Z and the podium camera sits on the
 		# +Z side, so an unrotated car shows its rear. Yaw it half a turn.
 		car.rotate_y(PI)
 		_podium_cars.append(car)
-		live = live or not _headless
-	# Let them settle under physics for a beat, then freeze the settled pose. In
-	# headless they spawn already frozen (no wait), so the timer is real-play only.
-	if live and cfg.podium_car_settle_seconds > 0.0:
-		var gen := _settle_generation
-		get_tree().create_timer(cfg.podium_car_settle_seconds).timeout.connect(
-			func() -> void: _freeze_podium(gen))
 
 
 # The classified top-N finishers (placed 1..N), in finishing order, from the
@@ -362,15 +349,6 @@ func _top_finishers(n: int) -> Array:
 			out.append(entry)
 	out.sort_custom(func(a, b): return int(a["placed"]) < int(b["placed"]))
 	return out
-
-
-func _freeze_podium(generation: int) -> void:
-	if generation != _settle_generation:
-		return
-	for car in _podium_cars:
-		if is_instance_valid(car):
-			car.freeze = true
-			car.process_mode = Node.PROCESS_MODE_DISABLED
 
 
 # Spawn a car-library car as a silent prop at a world position. `live` leaves it
@@ -639,6 +617,13 @@ func _offer_upgrade_choice(item_id: String, item_name: String) -> void:
 		_slot_caption.text = UITheme.caps("%s — added to your inventory" % item_name)
 		return
 	var car_name := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
+	# The drivetrain kit has NO enable/disable — it ALWAYS installs. Enable it now and
+	# skip the Apply/Keep choice; the FWD/RWD/AWD selection is made later in the garage
+	# (and selecting the stock mode is the "off" state).
+	if UpgradeLibrary.slot_of(item_id) == "drivetrain":
+		Save.set_upgrade_enabled(int(_result.get("car_instance_id", -1)), item_id, true)
+		_slot_caption.text = UITheme.caps("%s installed on your %s — pick a drive mode in the garage" % [item_name, car_name])
+		return
 	_choice_item_id = item_id
 	_choice_pending = true
 	_slot_caption.text = UITheme.caps("Fit %s to the %s you just drove?" % [item_name, car_name])

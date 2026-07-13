@@ -619,13 +619,13 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	add_child(container)
 
 	# The crashed car, skewed off the road direction so it reads as wrecked, not parked
-	# (deterministic from the seeded progress so it's stable across re-attempts). Seated
-	# just above the highest ground under it, so it can't spawn buried; it then settles.
+	# (deterministic from the seeded progress so it's stable across re-attempts). Placed
+	# ON the highest ground under it (top_y is the seat plane); _spawn_wreck_car lifts it
+	# by the car's analytic rest ride height so its wheels sit on the ground.
 	var fwd := Vector3(tan2.x, 0.0, tan2.y)
 	var skew := (fmod(progress * 41.0, 1.0) - 0.5) * 2.0 * cfg.opponent_wreck_yaw_skew
 	var car_basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, skew)
-	var car_pos := Vector3(pos2.x, top_y + cfg.opponent_wreck_drop_height_m, pos2.y)
-	_spawn_wreck_car(idx, Transform3D(car_basis, car_pos), container, cfg)
+	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container)
 
 	# The small gathering of onlookers, on the verge side of the wreck (off the road).
 	_spawn_wreck_crowd(container, Vector3(pos2.x, top_y, pos2.y), outward, terrain, cfg)
@@ -682,11 +682,14 @@ func _footprint_terrain(terrain: TerrainManager, c2: Vector2, t: Vector2,
 
 # Spawn the wrecked rival's car as a frozen roadside prop under `parent`. Mirrors the
 # podium/HQ display-car recipe: an isolated config so its reshape can't clobber the
-# player car's tuning, its own mesh copies, engine silenced. It spawns live so it
-# settles onto its wheels on the (possibly sloped) verge, then freezes — FREEZE_MODE_STATIC
-# (the default) keeps the collider, so the frozen wreck is a solid, immovable obstacle.
-# Its HP is zeroed so the synthetic engine smoke reads it as a wreck and puffs hardest.
-func _spawn_wreck_car(library_index: int, xform: Transform3D, parent: Node, cfg: GameConfig) -> Node3D:
+# player car's tuning, its own mesh copies, engine silenced. `seat` places the car on
+# the ground plane (origin at the highest terrain under it); the car is lifted by its
+# analytic rest ride height (car.gd:settled_ride_height) so its wheels sit on the ground
+# and then frozen at once — no live physics, so it can't fall through the un-streamed
+# verge, roll down a slope, or re-wreck on landing (all past bugs of the old drop-and-
+# settle approach). FREEZE_MODE_STATIC (the default) keeps the collider, so the frozen
+# wreck is a solid, immovable obstacle. Its HP is zeroed so the smoke reads it as a wreck.
+func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> Node3D:
 	# Variant (not :=) so the dynamic car-script calls don't depend on the analyzer
 	# resolving car.tscn's root script type at parse time (see podium.gd._spawn_car).
 	var car: Variant = load(WRECK_CAR_SCENE).instantiate()
@@ -697,11 +700,10 @@ func _spawn_wreck_car(library_index: int, xform: Transform3D, parent: Node, cfg:
 		var m := mi as MeshInstance3D
 		if m.mesh != null:
 			m.mesh = m.mesh.duplicate()
-	car.global_transform = xform
-	# Lock its controls: it's a driverless prop, so it must ignore live driving input
-	# during its settle (the player may be holding throttle at the start line) — and the
-	# lock also engages its handbrake, so it can't roll downhill before it freezes.
-	car.controls_locked = true
+	# Lift the car off its ground seat by its resting ride height so the wheels sit on
+	# the ground, then place and freeze immediately.
+	car.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * car.settled_ride_height())
+	car.controls_locked = true  # driverless prop: ignore any live input, hold the handbrake
 	# Read as a wreck: 0 HP drives the synthetic smoke below (a wrecked car smokes
 	# hardest), exactly as a damaged HQ car does.
 	if car.get("damage") != null:
@@ -713,27 +715,10 @@ func _spawn_wreck_car(library_index: int, xform: Transform3D, parent: Node, cfg:
 		if audio is AudioStreamPlayer:
 			audio.playing = false
 			audio.volume_db = -80.0
-	if _headless:
-		_freeze_wreck_car(car)
-	else:
-		car.freeze = false  # live so it settles onto its wheels, then frozen below
-		var settle: float = maxf(cfg.opponent_wreck_settle_seconds, 0.0)
-		if settle > 0.0:
-			get_tree().create_timer(settle).timeout.connect(
-				func() -> void: _freeze_wreck_car(car))
-		else:
-			_freeze_wreck_car(car)
+	car.freeze = true  # FREEZE_MODE_STATIC (default): collider stays a solid obstacle
+	car.process_mode = Node.PROCESS_MODE_DISABLED
 	_add_wreck_smoke(car)
 	return car
-
-
-# Freeze a settled wreck car into a static, immovable obstacle. FREEZE_MODE_STATIC (the
-# default) keeps its collider live, so crashing into it still bites — it just won't move.
-func _freeze_wreck_car(car: Variant) -> void:
-	if not is_instance_valid(car):
-		return
-	car.freeze = true
-	car.process_mode = Node.PROCESS_MODE_DISABLED
 
 
 # Give the wreck lazy engine smoke like a damaged HQ display car: the frozen prop's

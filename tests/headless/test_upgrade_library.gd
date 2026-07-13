@@ -178,3 +178,49 @@ func test_effective_meta_rates_turbo_at_peak_boost() -> void:
 	var turbo := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large"], "disabled_upgrades": []}, base)
 	assert_gt(float(turbo["peak_torque"]), float(na["peak_torque"]),
 		"a fitted turbo rates the car at a higher (boosted) peak torque")
+
+
+func test_drivetrain_slot_is_valid() -> void:
+	assert_true(UpgradeLibrary.SLOTS.has("drivetrain"), "drivetrain is a known slot")
+	var kit := UpgradeLibrary.by_id("drivetrain_swap")
+	assert_eq(UpgradeLibrary.slot_of("drivetrain_swap"), "drivetrain", "kit occupies the drivetrain slot")
+	assert_false(bool(kit.get("consumable", false)), "kit is not a consumable")
+	assert_true(bool(kit.get("effect", {}).get("unlocks_drivetrain_swap", false)), "kit carries the unlock flag")
+
+
+func test_drivetrain_swap_unlocked_gate() -> void:
+	var no_kit := {"installed_upgrades": [], "disabled_upgrades": []}
+	var fitted := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": []}
+	# The drivetrain kit has no enable/disable — owning it is the unlock, so a kit sitting
+	# in disabled_upgrades (e.g. won but not podium-applied) is still unlocked.
+	var disabled := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": ["drivetrain_swap"]}
+	assert_false(UpgradeLibrary.drivetrain_swap_unlocked(no_kit), "no kit -> locked")
+	assert_true(UpgradeLibrary.drivetrain_swap_unlocked(fitted), "owned kit -> unlocked")
+	assert_true(UpgradeLibrary.drivetrain_swap_unlocked(disabled), "owned kit unlocks even if disabled")
+
+
+func test_resolve_drive_override() -> void:
+	var locked := {"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": CarLibrary.FWD}
+	assert_eq(UpgradeLibrary.resolve_drive_override(locked), -1, "override ignored without the kit")
+	var stock := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": []}
+	assert_eq(UpgradeLibrary.resolve_drive_override(stock), -1, "no override set -> -1 (use stock)")
+	var picked := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": CarLibrary.AWD}
+	assert_eq(UpgradeLibrary.resolve_drive_override(picked), CarLibrary.AWD, "unlocked + set -> chosen mode")
+
+
+func test_effective_meta_reports_override_drive_mode() -> void:
+	var meta := {"engine": "", "mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0,
+		"drive_mode": CarLibrary.FWD}
+	var owned := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [],
+		"drivetrain_override": CarLibrary.RWD}
+	var out := UpgradeLibrary.effective_meta(owned, meta)
+	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.RWD, "reports the chosen mode when unlocked")
+	assert_eq(int(meta["drive_mode"]), CarLibrary.FWD, "source meta is not mutated")
+
+
+func test_effective_meta_keeps_stock_mode_without_kit() -> void:
+	var meta := {"engine": "", "mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0,
+		"drive_mode": CarLibrary.FWD}
+	var owned := {"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": CarLibrary.RWD}
+	var out := UpgradeLibrary.effective_meta(owned, meta)
+	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.FWD, "override inert without the kit")

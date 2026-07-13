@@ -72,3 +72,27 @@ func test_can_swap_requires_both_cars_at_full_health() -> void:
 	assert_true(EngineSwap.can_swap(full_a, full_b), "both full -> allowed")
 	assert_false(EngineSwap.can_swap(full_a, hurt), "one hurt -> blocked")
 	assert_false(EngineSwap.can_swap(full_a, {}), "empty car -> blocked")
+
+
+func test_pw_after_swap_stronger_donor_raises_pw() -> void:
+	var entry := CarLibrary.by_id("fx_light_rwd")
+	var owned := {"model_id": "fx_light_rwd"}
+	var current := CarLibrary.power_to_weight(entry)          # running stock fx_i4
+	var swapped_v8 := EngineSwap.pw_after_swap(owned, entry, "fx_v8")
+	assert_gt(swapped_v8, current, "receiving the stronger V8 raises p/w")
+
+
+func test_pw_after_swap_weaker_donor_lowers_pw() -> void:
+	var entry := CarLibrary.by_id("fx_rwd_coupe")            # runs fx_v8 stock (heavy/strong)
+	var owned := {"model_id": "fx_rwd_coupe"}
+	var current := CarLibrary.power_to_weight(entry)
+	var swapped_i4 := EngineSwap.pw_after_swap(owned, entry, "fx_i4")
+	assert_lt(swapped_i4, current, "receiving the weaker i4 lowers p/w")
+
+
+func test_pw_after_swap_same_engine_is_noop() -> void:
+	var entry := CarLibrary.by_id("fx_light_rwd")            # stock fx_i4
+	var owned := {"model_id": "fx_light_rwd"}
+	var current := CarLibrary.power_to_weight(entry)
+	var same := EngineSwap.pw_after_swap(owned, entry, "fx_i4")
+	assert_almost_eq(same, current, 0.0001, "receiving your own engine leaves p/w unchanged")

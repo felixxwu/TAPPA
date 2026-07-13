@@ -22,6 +22,10 @@ var _dolly_mix: float
 # Last known horizontal direction of travel (pointing the way the car moves).
 var _travel_dir := Vector3.FORWARD
 
+# Cached sibling that exposes height_at (the hilly Floor); resolved once on first
+# use so the per-frame ground query doesn't re-scan the sibling list.
+var _terrain: Node = null
+
 
 func _ready() -> void:
 	var cfg: GameConfig = Config.data
@@ -120,9 +124,12 @@ func _timed_physics_process(delta: float) -> void:
 # (the hilly Floor in the main scene); on flat test fixtures there is none, so it
 # falls back to 0.
 func _ground_height_at(x: float, z: float) -> float:
-	var parent := get_parent()
-	if parent != null:
-		for sibling in parent.get_children():
-			if sibling != self and sibling.has_method("height_at"):
-				return sibling.height_at(x, z)
-	return 0.0
+	if not is_instance_valid(_terrain):
+		_terrain = null
+		var parent := get_parent()
+		if parent != null:
+			for sibling in parent.get_children():
+				if sibling != self and sibling.has_method("height_at"):
+					_terrain = sibling
+					break
+	return _terrain.height_at(x, z) if _terrain != null else 0.0

@@ -54,12 +54,19 @@ event, or an unresolved car id it's a no-op. Otherwise it builds a named
   car is **seated on the highest point under its footprint** so it can never spawn
   buried, yawed along the road and **skewed** (`opponent_wreck_yaw_skew`) so it reads
   as crashed, not parked.
-  It spawns **live** so it settles onto its wheels on the verge,
-  then **freezes** after `opponent_wreck_settle_seconds`. Freeze uses the default
+  It is placed **at rest and frozen at once** — the ground seat lifted by the car's
+  **analytic rest ride height** (`car.gd:settled_ride_height`, see
+  [car-physics.md](car-physics.md) → "Static rest pose") so its wheels sit on the
+  ground — with **no live physics settle**. This is what keeps the wreck reliable out
+  on the course, where it spawns far from the player: terrain collision is streamed
+  only around the player car ([terrain-manager](terrain.md)), so at spawn there is no
+  ground collider under the wreck at all — a live car would free-fall through the world
+  and sink out of sight (leaving the crowd, placed by cached height sampling, around
+  empty ground). Placing it analytically sidesteps that entirely; it also can't roll
+  down the verge or re-wreck itself on landing. Freeze uses the default
   `FREEZE_MODE_STATIC`, so **the collider stays live** — the frozen wreck is a solid,
   immovable obstacle: crashing into it still bites (via the unified deceleration
-  [damage model](damage.md)), it just won't be shoved. Headless freezes at once
-  (nothing renders to settle for).
+  [damage model](damage.md)), it just won't be shoved.
 - **The smoke** (`_add_wreck_smoke`) — an `EngineSmoke` in **synthetic mode**
   ([engine-smoke.md](engine-smoke.md)), parented to the car and `PROCESS_MODE_ALWAYS`
   so it keeps puffing though the car is frozen / process-disabled. The wreck's HP is
@@ -76,8 +83,7 @@ event, or an unresolved car id it's a no-op. Otherwise it builds a named
 
 `opponent_wrecks_enabled` (off = a crashed rival still DNFs, just isn't staged),
 `opponent_wreck_road_offset_m`, `opponent_wreck_yaw_skew`, `opponent_wreck_crowd_size`,
-`opponent_wreck_crowd_radius_m`, `opponent_wreck_drop_height_m`,
-`opponent_wreck_settle_seconds`. The wreck *rate* is not here — how often / how many
+`opponent_wreck_crowd_radius_m`. The wreck *rate* is not here — how often / how many
 rivals wreck is `RallyLibrary.OPPONENT_WRECK_CHANCE` (see above).
 
 ## Tests

@@ -477,3 +477,18 @@ func test_stale_detune_revert_for_an_unfielded_car_is_settled_at_start() -> void
 	RallySession.abandon()
 	assert_almost_eq(_detune_of(stale_id), 1.0, 0.0001,
 		"and the later rally end leaves it alone")
+
+
+# --- Temporary drivetrain revert (parallel to detune revert) --------------------------
+
+func test_drivetrain_revert_restores_prior_mode_on_reset() -> void:
+	var owned: Dictionary = _save.grant_car(String(CarLibrary.all()[0].get("id", "")))
+	var id := int(owned["instance_id"])
+	_save.install_upgrade(id, "drivetrain_swap", true)
+	_save.set_drivetrain_override(id, CarLibrary.RWD)  # garage-set choice
+	# Simulate the car-park agreement: register the prior, then override for the rally.
+	RallySession.register_drivetrain_revert(id, CarLibrary.RWD)
+	_save.set_drivetrain_override(id, CarLibrary.AWD)
+	RallySession._reset_to_idle()
+	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), CarLibrary.RWD,
+		"drivetrain restored to the garage-set mode after the rally")

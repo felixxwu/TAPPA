@@ -53,7 +53,10 @@ car, so the choice is only enable-now vs enable-later: *Apply* enables it
 (`Save.set_upgrade_enabled(..., true)`), *Keep* leaves it disabled to enable later
 from the garage upgrades menu (see `features/upgrade-catalogue.md`). A won part
 never moves to another car and a car never holds two of the same (per-car dedup);
-repair kits skip the choice and just land in inventory.
+repair kits skip the choice and just land in inventory. The **Drivetrain Swap** kit
+also skips the choice — it has no enable/disable, so the reveal always installs it
+enabled and the player picks a drive mode later in the garage (see
+`features/upgrade-catalogue.md`).
 
 ## Car draw (per top-3 finish, including re-wins)
 

@@ -135,11 +135,16 @@ func _build() -> void:
 		var car_id := String(car["id"])
 		var car_name := String(car["name"])
 		_dev_page.add_child(_make_action_button("Unlock %s" % car_name, _grant_car.bind(car_id, car_name)))
-	_dev_page.add_child(_make_sub("Add an upgrade to inventory:"))
+	_dev_page.add_child(_make_sub("Fit an upgrade to the selected car (repair kit -> inventory):"))
 	for up in UpgradeLibrary.UPGRADES:
 		var up_id := String(up["id"])
 		var up_name := String(up["name"])
-		_dev_page.add_child(_make_action_button("Add %s" % up_name, _add_upgrade.bind(up_id, up_name)))
+		# Slottable parts are car-bound now, so fit them straight onto the selected
+		# car; the repair kit is the one true consumable, so it still goes to inventory.
+		if UpgradeLibrary.is_consumable(up_id):
+			_dev_page.add_child(_make_action_button("Add %s" % up_name, _add_upgrade.bind(up_id, up_name)))
+		else:
+			_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
 
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
@@ -382,10 +387,23 @@ func _grant_car(model_id: String, display_name: String) -> void:
 	_dev_status.text = "Granted %s." % display_name
 
 
-# Drop one of any upgrade (or the repair kit) into the inventory to fit later.
+# Drop a consumable (the repair kit) into the shared inventory.
 func _add_upgrade(item_id: String, display_name: String) -> void:
 	Save.add_item(item_id)
 	_dev_status.text = "Added %s." % display_name
+
+
+# Fit a slottable part straight onto the selected car — upgrades are car-bound, so
+# there's no inventory to stash them in; they live on the car that unlocks them.
+func _fit_upgrade(item_id: String, display_name: String) -> void:
+	var iid := Save.selected_instance_id()
+	if iid < 0:
+		_dev_status.text = "Own a car first — nothing to fit %s to." % display_name
+		return
+	if Save.install_upgrade(iid, item_id):
+		_dev_status.text = "Fitted %s to the selected car." % display_name
+	else:
+		_dev_status.text = "Couldn't fit %s (already fitted?)." % display_name
 
 
 # --- Row builders ------------------------------------------------------------

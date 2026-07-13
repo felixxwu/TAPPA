@@ -85,6 +85,9 @@ var downforce_readouts: Array = []  # [global point, force vector] pairs for the
 # Read by the debug overlay to draw a single left/right assist arrow.
 var steer_assist_readout: float = 0.0
 var _car_index := -1  # selected CarLibrary entry, or -1 for the untouched baseline
+# Per-fielding drivetrain override (0/1/2), or -1 = use the spec's stock drive_mode.
+# Set by apply_owned before the drivetrain rebuilds; -1 for free-roam apply_car.
+var _owned_drive_override := -1
 var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount origin (scene rest pose)
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
@@ -136,8 +139,10 @@ var replay_playback := false
 var _replay: ReplayRecorder = null
 var _replay_t := 0.0
 var _replay_xform := Transform3D()
-var _replay_vel := Vector3.ZERO
 var _saved_process_priority := 0
+# Project gravity, cached once (never changes at runtime) so the parking-hold path
+# doesn't do a string-keyed ProjectSettings lookup every physics frame.
+var _default_gravity := 9.8
 
 func replay_cursor() -> float:
 	return _replay_t
@@ -154,7 +159,6 @@ func begin_replay(recorder: ReplayRecorder) -> void:
 	_replay = recorder
 	_replay_t = 0.0
 	_replay_xform = global_transform
-	_replay_vel = Vector3.ZERO
 	replay_playback = true
 	# The physics server will NOT reliably move this body from script (setting
 	# global_transform is overridden; a frozen body renders at its freeze pose;
@@ -193,6 +197,7 @@ func _ready() -> void:
 	if config == null:
 		config = Config.data
 	var cfg: GameConfig = config
+	_default_gravity = float(ProjectSettings.get_setting("physics/3d/default_gravity"))
 	# Spawn the car spawn_clearance metres above the ground at its xz, so the
 	# wheels never start clipping under the terrain regardless of how high the
 	# surface is there. This transform is also what reset / car swaps restore.
@@ -400,8 +405,6 @@ func _timed_physics_process(delta: float) -> void:
 	if _driver_input_live():
 		if Input.is_action_just_pressed("toggle_gearbox"):
 			engine.auto = not engine.auto
-		if Input.is_action_just_pressed("cycle_drive_mode"):
-			drivetrain.cycle_drive_mode()
 		if not engine.auto:
 			if Input.is_action_just_pressed("shift_up"):
 				engine.request_shift(1)
@@ -462,7 +465,6 @@ func _step_replay(delta: float) -> void:
 	# fix). Feed the recorded velocity to the script linear_velocity so effects that
 	# read it (tire_marks speed gate) see the real speed.
 	_replay_xform = f["xform"]
-	_replay_vel = f["velocity"]
 	linear_velocity = f["velocity"]
 	# Pin the engine note + smoke to the recorded engine state. engine.step() does NOT
 	# run during replay, so besides rpm/throttle/misfire we must neutralise the ducking
@@ -802,7 +804,7 @@ func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 	var v_h := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
 	var hold := -v_h * mass / delta
 	# Clamp to μ·m·g so it behaves like static friction, not an infinite clamp.
-	var cap := config.parking_hold_grip * mass * float(ProjectSettings.get_setting("physics/3d/default_gravity"))
+	var cap := config.parking_hold_grip * mass * _default_gravity
 	if hold.length() > cap:
 		hold = hold.normalized() * cap
 	apply_central_force(hold)
@@ -1140,9 +1142,11 @@ func _relocate_wheels(spec: Dictionary) -> void:
 # recompute the axle midpoints. Shared by apply_car and _apply_engine_swap; _ready
 # builds its own (it interleaves other setup and keeps the config-derived drive_mode).
 func _rebuild_drivetrain(drive_mode: Drivetrain.DriveMode) -> void:
+	var mode: Drivetrain.DriveMode = (_owned_drive_override as Drivetrain.DriveMode) if _owned_drive_override >= 0 else drive_mode
 	drivetrain = Drivetrain.new(self)
 	drivetrain.terrain = _resolve_terrain()
-	drivetrain.drive_mode = drive_mode
+	drivetrain.drive_mode = mode
+	config.drive_mode = mode
 	_recompute_axles()
 
 
@@ -1191,6 +1195,9 @@ func apply_owned(owned: Dictionary) -> String:
 	# Defer the audio rebuild: the engine swap and the upgrades below can both change
 	# the audio voicing, so the synth is rebuilt ONCE at the end (see below) rather
 	# than by apply_car here and again per step.
+	# Resolve the player's chosen drivetrain (gated by the swap kit) so both apply_car's
+	# baseline rebuild and the engine-swap rebuild adopt it. -1 = keep the stock layout.
+	_owned_drive_override = UpgradeLibrary.resolve_drive_override(owned)
 	var car_name := apply_car(idx, false)
 	# Step 1b: engine swap — if this car runs a non-stock engine, overwrite the
 	# engine profile + recompute mass / weight distribution BEFORE upgrades (so a
@@ -1220,6 +1227,7 @@ func apply_owned(owned: Dictionary) -> String:
 	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
 	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)),
 		owned.get("wheel_toe", []))
+	_owned_drive_override = -1
 	return car_name
 
 
@@ -1306,6 +1314,41 @@ func _apply_suspension(wheel: VehicleWheel3D) -> void:
 func _sync_suspension_to_wheels() -> void:
 	for wheel in find_children("*", "VehicleWheel3D", false):
 		_apply_suspension(wheel)
+
+
+# --- Analytic rest pose (for static display / prop cars) ---------------------
+# The height a settled car's body origin rests above flat ground, computed directly
+# instead of by dropping a live physics body and freezing it seconds later (which was
+# a recurring bug source — it depends on a collider being present under the car, the
+# car not rolling on a slope, not re-wrecking on landing, and the freeze timing). See
+# features/opponent-wrecks.md and features/car-physics.md → "Static rest pose".
+#
+# At rest the body sits at `wheel_radius + suspension_travel - mount_y` (the wheel
+# fully drooped) MINUS the suspension compression under the car's own weight. The wheel
+# VISUAL never moves with compression (drivetrain._update_visuals only spins/steers it,
+# never translates it), so this single body offset fully reproduces the settled look.
+#
+# The compression term comes from Godot's built-in VehicleWheel3D solver, NOT the game's
+# own tire model (they disagree by ~0.1 m). It's MASS-INDEPENDENT (Godot normalises the
+# spring by chassis mass) and, per calibration, is `SUSPENSION_COMPRESSION_COEFF · g /
+# suspension_stiffness`. The coefficient is calibrated against a real settle and pinned
+# by test_rest_pose.gd, which re-derives it and fails loudly if a Godot upgrade shifts
+# the solver — so the constant can never silently drift.
+const SUSPENSION_COMPRESSION_COEFF := 0.3545
+
+func settled_ride_height() -> float:
+	var cfg: GameConfig = config
+	var g: float = _default_gravity
+	# Representative front wheel; props sit level (front/rear compression is kept equal
+	# by the weight-split axle rates), so one axle's geometry defines the offset.
+	var front_mount_y := -0.1
+	for wheel in _wheel_mounts:
+		if _wheel_is_front(wheel):
+			front_mount_y = float(_wheel_mounts[wheel].y)
+			break
+	var geometry: float = cfg.wheel_radius + cfg.axle_travel(true) - front_mount_y
+	var compression: float = SUSPENSION_COMPRESSION_COEFF * g / cfg.suspension_stiffness
+	return geometry - compression
 
 
 # Give every MeshInstance3D in the authored body model the lit PS1 material

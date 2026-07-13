@@ -276,10 +276,27 @@ static func first_focusable(root: Node) -> Control:
 		return null
 	for node in root.find_children("*", "Control", true, false):
 		var c := node as Control
-		if c != null and c.focus_mode != Control.FOCUS_NONE and c.is_visible_in_tree() \
+		# Skip nodes in a dying subtree: a rebuilt menu (e.g. the HQ upgrades page)
+		# queue_frees its old ROW containers and adds fresh ones in the SAME frame. A
+		# button under a queued row isn't itself is_queued_for_deletion() (only the
+		# explicitly-freed ancestor is), so we must walk up — otherwise a deferred grab
+		# lands on a doomed button and loses focus when its parent is freed next frame.
+		if c != null and not in_dying_subtree(c) \
+				and c.focus_mode != Control.FOCUS_NONE and c.is_visible_in_tree() \
 				and not (c is BaseButton and (c as BaseButton).disabled):
 			return c
 	return null
+
+
+# True if `node` or any of its ancestors is queued for deletion — i.e. it's part of a
+# subtree that will be freed at the end of the frame, so it must not be a focus target.
+static func in_dying_subtree(node: Node) -> bool:
+	var n: Node = node
+	while n != null:
+		if n.is_queued_for_deletion():
+			return true
+		n = n.get_parent()
+	return false
 
 
 # Grab focus on the first focusable control under `root` (see first_focusable).

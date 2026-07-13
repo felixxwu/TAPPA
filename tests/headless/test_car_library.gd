@@ -227,6 +227,20 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 	assert_almost_eq(_car.mass, base_mass * 0.90, 0.001, "rigidbody mass re-synced to the lighter config")
 
 
+func test_apply_owned_applies_drivetrain_override() -> void:
+	CarFixtures.install()
+	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["drivetrain_swap"],
+		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD})
+	assert_eq(_car.drivetrain.drive_mode, Drivetrain.DriveMode.AWD, "override fielded onto the drivetrain")
+
+
+func test_apply_owned_ignores_override_without_kit() -> void:
+	CarFixtures.install()
+	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": [],
+		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD})
+	assert_eq(_car.drivetrain.drive_mode, Drivetrain.DriveMode.RWD, "stays stock RWD without the kit")
+
+
 func test_cycle_car_advances_and_wraps() -> void:
 	# The HUD button drives World.cycle_car(), which re-instantiates the car and
 	# re-points the camera/HUD. Boots on car 0; cycling N times returns to car 0.

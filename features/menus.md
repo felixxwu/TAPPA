@@ -43,7 +43,11 @@ space:
   the game's `menu_up/down/left/right` actions (which bind W/A/S/D) into focus-neighbour
   moves. Native `ui_*` still consumes arrows / stick / D-pad in the GUI phase *before*
   `_unhandled_input`, so only the WASD presses reach `MenuNav` — no double-movement, and
-  no fragile `project.godot` surgery; (4) routes **both** `ui_cancel` **and** `menu_back`
+  no fragile `project.godot` surgery. **On a slider** (any `Range`) left/right instead
+  *adjusts the value* by its `step` rather than moving focus, so the cursor merely
+  resting on a slider is enough to change it (WASD matches what arrows / D-pad / stick
+  already do natively) — up/down still move focus off to the next row; (4) routes
+  **both** `ui_cancel` **and** `menu_back`
   to `on_back` (omit it and the host keeps its own back handling). `MenuNav` goes inert
   while its `root` is hidden — including a hidden `CanvasLayer` ancestor (how HQ toggles
   overlays), which `Control.is_visible_in_tree()` alone misses — so a hidden overlay never
@@ -67,7 +71,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `_build_ui()` rebuilds for a page switch (event page ↔ combined page), so the
   cursor never drops when the button text/target changes — the **podium** Next, and
   the tuning-lift **Tune** (sliders — left/right nudges the focused one) and
-  **Upgrades** (install / repair) pages. On the standings interstitial specifically,
+  **Upgrades** (install parts / engine swap) pages. On the standings interstitial specifically,
   the `MenuNav` `on_back` callback (`_on_back_pressed`) steps **back** from the combined
   page to the event page — but only when there's an event page to return to (2+ events
   completed); on the first event (combined-only) and while showing the event page
@@ -82,7 +86,20 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   owns `menu_back`. There they lean on `MenuNav` purely for the WASD gap + `FOCUS_ALL`.
   The HQ lift attaches `MenuNav` to the **Tune/Upgrades sub-boxes only** — never the lift
   root — so the diegetic HUB buttons (`FOCUS_NONE`, manual left/right cursor) stay
-  untouched.
+  untouched. The **Upgrades** box rebuilds its rows on every refresh (per car / after a
+  toggle); `_rebuild_upgrades_box` clears only the row children (**not** the `MenuNav`
+  child — freeing it would kill WASD/gamepad nav) and re-runs `MenuNav.attach` so the new
+  buttons become focusable and its cursor-revive `first` re-seats on a live control. Note
+  `UITheme.first_focusable` skips any control in a **dying subtree** (an ancestor
+  `queue_free`d this frame) — the rebuild frees whole row containers, whose descendant
+  buttons aren't themselves `is_queued_for_deletion()`, so a deferred grab that ignored
+  ancestors would land on a doomed button and lose focus next frame. To keep the cursor
+  put when a **toggle/repair press** triggers the rebuild (rather than flinging it to the
+  top of the list), each interactive row control carries a stable `upgrade_focus_key` meta
+  (`toggle:<item>`, `swap`, …); `_rebuild_upgrades_box` captures the focused control's key
+  before clearing and `_restore_upgrade_focus` re-grabs the FRESH control with that key
+  afterward (using the same dying-subtree guard, `_control_dying`, so it doesn't grab the
+  about-to-be-freed old one).
 
   The **`start line`** and **`wreck screen`** are *press-anything-to-continue* screens
   (a tap anywhere, or `menu_select` = Enter / gamepad A, proceeds), not multi-item
@@ -118,7 +135,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   drops into the car park in change-car mode; the cursor seats on Change Car on entry
   (`menu_back` is also a shortcut back to the garage). The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
-  `_activate_garage_focus`) over its side-by-side **Back / Career / Tune Car / Free Roam**
+  `_activate_garage_focus`) over its side-by-side **Back / Career / Tune Car / Repair**
   row, seated on Career on entry (`menu_back` shortcuts to the exterior). Both of these
   manual rows share a small **`ButtonCursor`** helper (`scripts/button_cursor.gd`):
   `hq.gd` keeps the index (`_garage_focus` / `_hub_focus`), the cursor owns the shared
@@ -126,7 +143,8 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   cursor's action for that index, so a mouse click and a keyboard/gamepad select can
   never fall out of step. (The map-table pin cursor stays bespoke — it paints a
   billboarded pin panel and pans the camera, not a flat button row.) **Free Roam**
-  (`_enter_free_roam`) opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
+  (`_enter_free_roam`, launched from the **EXTERIOR title screen**, not the garage)
+  opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
   parking the whole owned collection); Start (`_start_free_roam`) hands the picked
   instance to `RallySession.free_roam_instance_id`, writes a fresh random seed + neutral
   (0.5) terrain settings into the live Config (`_prepare_free_roam`), and loads the run
@@ -205,18 +223,21 @@ white bay dividers (one bay per `max_owned_cars`, `menu_car_spacing` wide) gener
 procedurally as an `ImageTexture` (`_carpark_bay_texture`), so each parked car sits in
 its own marked bay.
 
-**EXTERIOR (boot/title).** A **Start** button and a **Settings** button over an
-establishing shot of the outdoor car park, with a block skyline **behind the
-garage** and trees framing the lot. The player's **whole owned collection** is
-parked in the car park here (`_build_title_lineup`, rebuilt on entering EXTERIOR) so
-the title shows off every car. The **build version** (`v0.<n> (<sha>)`) is shown in
-the bottom-right corner here only — not on the in-run HUD (see [hud.md](hud.md) →
-Build version). This is a flat two-button menu driven by **native focus** —
-`menu_select`/`ui_accept` fires whichever button is focused (Start grabs focus on
-entry; `menu_up`/`menu_down` move between the two). Start flies the camera into the
-garage; Settings opens the SETTINGS overlay. (The EXTERIOR branch in
-`_unhandled_input` deliberately does *not* route `menu_select` to Start, or accepting
-on Settings would start the run instead.)
+**EXTERIOR (boot/title).** A **Start** button, a **Free Roam** button, and a
+**Settings** button (in that top-to-bottom order) over an establishing shot of the
+outdoor car park, with a block skyline **behind the garage** and trees framing the
+lot. The player's **whole owned collection** is parked in the car park here
+(`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
+car. The **build version** (`v0.<n> (<sha>)`) is shown in the bottom-right corner
+here only — not on the in-run HUD (see [hud.md](hud.md) → Build version). This is a
+flat three-button menu driven by **native focus** — `menu_select`/`ui_accept` fires
+whichever button is focused (Start grabs focus on entry; `menu_up`/`menu_down` move
+between them). Start flies the camera into the garage; **Free Roam** opens the car
+park to pick which owned car to drive, then drops into a freshly-seeded, opponent-less
+stage (`_enter_free_roam` → `_start_free_roam`; Back returns to the title); Settings
+opens the SETTINGS overlay. (The EXTERIOR branch in `_unhandled_input` deliberately
+does *not* route `menu_select` to Start, or accepting on Settings/Free Roam would
+start the run instead.)
 
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
@@ -247,8 +268,11 @@ into **its own sub-page**:
   load). Toggle states are session-scoped, not saved.
 - **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
   fresh new game), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
-  and per upgrade/repair-kit (`Save.add_item`, from `UpgradeLibrary.UPGRADES`) to
-  unlock anything in the game. A status line reports the last action.
+  and per upgrade (from `UpgradeLibrary.UPGRADES`) to unlock anything in the game.
+  Upgrades are car-bound, so a slottable part **fits straight onto the selected car**
+  (`Save.install_upgrade` — no-op with a "own a car first" note when nothing's owned);
+  only the repair kit, the one true consumable, still goes to the inventory
+  (`Save.add_item`). A status line reports the last action.
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
 `show_schemes()` / `show_benchmark()` / `show_dev()` swap which page is visible (only the visible page contributes
@@ -282,7 +306,15 @@ car park, the lift prop is **reused only while both its instance id and a deep
 toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a rebuild. In the
 garage the car rests **lowered on the ground** (`hq_lift_car_lowered_height`).
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
-(LIFT view). A HUD hint + Back (to the exterior) + convenience buttons sit on top.
+(LIFT view). A HUD hint + Back (to the exterior) + convenience buttons sit on top: the
+garage station row is **Back / Career / Tune Car / Repair**. **Repair**
+(`_repair_selected_car`) spends one **Repair Kit** on the selected car for a full
+restore; its label reflects state — `Repair (x kit)` when the car is damaged and a kit
+is owned, `Repair — full health` / `Repair — no kits` otherwise — recomputed on garage
+entry (`_refresh_garage_repair_button`, which also runs the wreck-recovery safety net so
+a stranded player is never left with "no kits" and no way to win one). Pressing Repair
+with nothing to do is a no-op. (Repair used to be a row on the **Upgrades** lift page;
+it moved here.)
 
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
@@ -306,15 +338,20 @@ itself** and doesn't need to scroll. The two pages:
 
 - **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero /
   **engine detune**; locked axes greyed with a "needs X kit" note — detune is never
-  locked) plus **Reset to neutral**; each change saves via `Save.set_tuning`. See
+  locked) plus **Reset to neutral**; each change saves via `Save.set_tuning`. The
+  slider holding the cursor lights up (its row wraps in a panel painted by
+  `UITheme.mark_panel_focused` on `focus_entered`/`focus_exited`) so it's obvious which
+  is selected, and left/right nudges it in place (see the `MenuNav` slider note above).
+  No page title/subtitle — the sliders take the full height. See
   [engine-swap.md](engine-swap.md) for the detune axis.
 - **Upgrades** (`LiftPage.UPGRADES`) — per slot: every part **applied** to the car
   gets an **Enable/Disable toggle** (`Save.set_upgrade_enabled`; free, instant, at
   most one enabled per slot — enabling one switches off a same-slot sibling), and
   each matching **unlocked** item gets an **Apply** button (`Save.install_upgrade`;
   applying consumes the item from the unlocked pool and fits it to this car for
-  good, confirmed via a dialog first since it can't be moved or recovered) plus
-  the **Repair Kit** action `Save.use_repair_kit`. Above the slot rows sits an
+  good, confirmed via a dialog first since it can't be moved or recovered).
+  (Repair is **not** here anymore — it moved to the **garage station row** as a
+  `Repair` button, `_repair_selected_car`; see GARAGE above.) Above the slot rows sits an
   **engine-swap row** (`_make_engine_swap_row`): the car's current engine name and
   a **Swap Engine** button, disabled (with a tooltip) unless this car is at 100%
   HP. Pressing it opens the car park in **swap mode** (`_enter_engine_swap` /
@@ -322,9 +359,16 @@ itself** and doesn't need to scroll. The two pages:
   HP (self excluded) — where the normal car-park cycle/confirm/back flow exchanges
   the two cars' engines (`Save.swap_engines`) and returns to this page. See
   [engine-swap.md](engine-swap.md).
-  The repair row also shows a green note **"All your cars were wrecked — a free Repair
-  Kit was provided."** on the refresh where `Save.ensure_repair_safety_net` (called from
-  `_refresh_lift_ui`) just granted a free kit (all owned cars wrecked + none held).
+  The wreck-recovery safety net (`Save.ensure_repair_safety_net`, a free kit when all
+  owned cars are wrecked + none held) runs on save load, on garage entry, and on
+  `_refresh_lift_ui`; the garage Repair button's label surfaces the resulting kit count.
+  Both sub-pages share one **`< Back`** button (`_lift_back_button`, returns to the hub)
+  that sits in the page `root` **below** the scroll container — a different node level
+  from the tune/upgrades body — but it's `FOCUS_ALL`, so `menu_down` off the last body
+  control reaches it by geometry (the box `MenuNav`s move focus across container
+  boundaries). It's also the focus fallback (`_grab_lift_page_focus`) when a page body
+  has no focusable control at all — a fresh car's Upgrades page (all slots empty, full
+  health, Swap Engine disabled) — so the page is never dead to keyboard/gamepad.
 
 `_refresh_lift_ui` toggles which face (hub vs. a menu page) is shown from `_lift_page`.
 See [tuning.md](tuning.md) for the underlying config pipeline.

@@ -21,8 +21,22 @@ is the upgrades half.
 ## Catalogue
 
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
-(`engine` / `aero` / `chassis` / `brakes`, or `""` for consumables), `tier`
-(reward-tier gating), `consumable`, and `effect` (config-field → delta/multiplier).
+(`engine` / `aero` / `chassis` / `brakes` / `drivetrain`, or `""` for consumables),
+`tier` (reward-tier gating), `consumable`, and `effect` (config-field → delta/multiplier).
+
+The **`drivetrain` slot** holds the **Drivetrain Swap** kit, whose `effect` is a single
+`unlocks_drivetrain_swap` flag (skipped by `apply`, like the other `unlocks_*` gates).
+It gates the garage FWD/RWD/AWD selector and, via `resolve_drive_override`, lets
+`effective_meta` report the player's chosen `drive_mode` — so a swap changes handling
+AND rally eligibility (`resolve_drive_override`, and the per-car
+`OwnedCar.drivetrain_override`; see `features/drivetrain-and-tires.md`).
+
+**The drivetrain kit is the one slot with NO enable/disable.** Unlike every other
+fitted part, `drivetrain_swap_unlocked` checks **installed** (not enabled): owning the
+kit IS the unlock, and the selector's stock choice plays the "off" role (disabling would
+just re-select the original drive mode). So its podium reveal **always installs it
+enabled** with no Apply/Keep choice (`podium.gd._offer_upgrade_choice`), and its upgrades-menu
+row shows only the selector — no toggle (`hq.gd._make_slot_row`).
 Current set: two **turbo kits** (engine slot — `turbo_small` tier 1, `turbo_large`
 tier 3), an aero kit, a **weight-reduction** kit (chassis slot, `mass_mult` 0.90),
 a big brake kit, and the **repair kit** (the one consumable). The concrete part

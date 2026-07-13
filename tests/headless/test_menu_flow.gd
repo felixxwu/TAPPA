@@ -208,8 +208,9 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 
 # --- Keyboard / gamepad navigation -------------------------------------------
 
-# The title is a flat two-button menu driven by native focus: Start is focused on
-# entry so ui_up/ui_down + ui_accept work the menu with no pointer.
+# The title is a flat three-button menu (Start / Free Roam / Settings) driven by native
+# focus: Start is focused on entry so ui_up/ui_down + ui_accept work the menu with no
+# pointer. Free Roam sits between Start and Settings.
 func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -219,6 +220,15 @@ func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 	assert_eq(hq._title_start_button.focus_mode, Control.FOCUS_ALL, "Start is focusable")
 	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
 		"the title focuses Start for keyboard / gamepad")
+	assert_eq(hq._title_free_roam_button.focus_mode, Control.FOCUS_ALL, "Free Roam is focusable")
+	# Free Roam sits between Start and Settings in the flat overlay's child order.
+	var parent: Node = hq._title_start_button.get_parent()
+	assert_eq(parent.get_children().find(hq._title_free_roam_button),
+		parent.get_children().find(hq._title_start_button) + 1,
+		"Free Roam sits directly after Start")
+	assert_eq(parent.get_children().find(hq._title_settings_button),
+		parent.get_children().find(hq._title_free_roam_button) + 1,
+		"Settings sits directly after Free Roam")
 
 
 # Regression: menu_select on the title must fire the FOCUSED button (native focus),
@@ -332,6 +342,151 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 		"opening the Tune page focuses a tuning slider for keyboard/gamepad")
 
 
+# Regression: the Upgrades page must seat keyboard/gamepad focus on a real control.
+# On a fresh car it has no installed parts, is at full health (no repair button) and
+# its Swap Engine button is disabled, so without an always-enabled control (the Back
+# button) focus would land on nothing and the page would be dead to non-pointer input.
+func test_hq_upgrades_page_is_keyboard_navigable() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	var focused: Control = hq.get_viewport().gui_get_focus_owner()
+	assert_true(focused != null, "opening the Upgrades page seats focus for keyboard/gamepad")
+	if focused is BaseButton:
+		assert_false((focused as BaseButton).disabled,
+			"the focused control is interactive (not a disabled button)")
+
+
+# Regression: the Upgrades page rebuilds its rows on every refresh (per car / after a
+# toggle), and the WASD/gamepad focus nav is a MenuNav node parented to the box. The
+# rebuild must NOT free that MenuNav (it clears only the row children) or the page loses
+# keyboard nav, so exactly one survives across a rebuild.
+func test_hq_upgrades_menunav_survives_rebuild() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
+		"the Upgrades box has its focus-nav helper after opening")
+	hq._rebuild_upgrades_box()  # a fresh rebuild (as a car swap / toggle would trigger)
+	await get_tree().process_frame
+	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
+		"the rebuild preserves exactly one focus-nav helper (WASD/gamepad nav survives)")
+
+
+func _count_menunav(box: Node) -> int:
+	var n := 0
+	for c in box.get_children():
+		if c is MenuNav and not c.is_queued_for_deletion():
+			n += 1
+	return n
+
+
+# Regression: toggling a part on the Upgrades page rebuilds the rows; the keyboard/gamepad
+# cursor must stay on THAT part's toggle, not jump to the top of the list (or go null when
+# the deferred re-grab lands on the freed old button). Uses whatever the catalogue offers
+# (opaque — no dependence on a specific entry).
+func test_hq_upgrades_toggle_keeps_focus_on_same_control() -> void:
+	var item_id := ""
+	for u in UpgradeLibrary.UPGRADES:
+		if not bool(u.get("consumable", false)):
+			item_id = String(u.get("id", ""))
+			break
+	if item_id == "":
+		pass_test("no non-consumable upgrade in the catalogue to install")
+		return
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	Save.install_upgrade(int(Save.selected_car().get("instance_id", -1)), item_id, true)
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	# Focus the part's toggle, then activate it (which rebuilds the rows).
+	var toggle: Button = null
+	for node in hq._lift_upgrades_box.find_children("*", "Button", true, false):
+		if node.has_meta("upgrade_focus_key") \
+				and String(node.get_meta("upgrade_focus_key")).begins_with("toggle:"):
+			toggle = node
+			break
+	assert_true(toggle != null, "the installed part has a toggle button")
+	var key := String(toggle.get_meta("upgrade_focus_key"))
+	toggle.grab_focus()
+	await get_tree().process_frame
+	toggle.pressed.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var after: Control = hq.get_viewport().gui_get_focus_owner()
+	assert_true(after != null, "focus is not lost after toggling")
+	assert_true(after != null and after.has_meta("upgrade_focus_key") \
+			and String(after.get_meta("upgrade_focus_key")) == key,
+		"focus stays on the same part's toggle after the rebuild (doesn't jump to the top)")
+
+
+# The cursor resting on a tuning slider is enough to change it: a menu_left / menu_right
+# press (WASD/stick, which don't natively drive the Range) nudges the value by its step
+# instead of jumping focus to a neighbour — no "select the slider first" step.
+func test_hq_tune_slider_changes_on_left_right_without_selecting() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	await get_tree().process_frame
+	var slider: HSlider = hq.get_viewport().gui_get_focus_owner()
+	assert_true(slider is HSlider, "a tuning slider holds the cursor")
+	slider.value = 0.0
+	var before := slider.value
+	_press_action("menu_right")
+	await get_tree().process_frame
+	assert_gt(slider.value, before, "menu_right raises the focused slider's value")
+	assert_eq(hq.get_viewport().gui_get_focus_owner(), slider,
+		"the cursor stays on the slider (left/right doesn't jump to a neighbour)")
+	var mid := slider.value
+	_press_action("menu_left")
+	await get_tree().process_frame
+	assert_lt(slider.value, mid, "menu_left lowers the focused slider's value")
+
+
+# Regression: the shared "< Back" button on a sub-page lives outside the scroll
+# container (a different node level), but must still be reachable by keyboard/gamepad —
+# menu_down off the last slider walks through Reset and lands on Back.
+func test_hq_tune_page_can_navigate_down_to_back_button() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	await get_tree().process_frame
+	assert_true(hq.get_viewport().gui_get_focus_owner() is HSlider, "starts on a slider")
+	assert_eq(hq._lift_back_button.focus_mode, Control.FOCUS_ALL, "the Back button is focusable")
+	var reached := false
+	for i in range(8):
+		if hq.get_viewport().gui_get_focus_owner() == hq._lift_back_button:
+			reached = true
+			break
+		_press_action("menu_down")
+		await get_tree().process_frame
+	assert_true(reached, "menu_down from the sliders reaches the shared Back button")
+
+
+func _press_action(action: String) -> void:
+	var ev := InputEventAction.new()
+	ev.action = action
+	ev.pressed = true
+	get_viewport().push_input(ev)
+
+
 func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -345,10 +500,17 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	var before: int = _save.profile["cars"].size()
 	dev._grant_car("fx_awd", "Fixture AWD")
 	assert_eq(int(_save.profile["cars"].size()), before + 1, "unlocking grants a car instance")
-	# Add any upgrade: it lands in the inventory.
-	dev._add_upgrade("turbo_small", "Small Turbo")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 1,
-		"adding an upgrade puts it in inventory")
+	# Fit any slottable upgrade: parts are car-bound, so it installs onto the
+	# selected car (not a shared inventory, which no longer holds parts).
+	dev._fit_upgrade("turbo_small", "Small Turbo")
+	assert_true((_save.selected_car().get("installed_upgrades", []) as Array).has("turbo_small"),
+		"fitting an upgrade installs it on the selected car")
+	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0,
+		"fitting an upgrade does not touch the consumable inventory")
+	# The repair kit is the one true consumable — it still lands in inventory.
+	dev._add_upgrade(UpgradeLibrary.REPAIR_KIT_ID, "Repair Kit")
+	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.REPAIR_KIT_ID, 0)), 1,
+		"adding the repair kit puts it in inventory")
 	# Wipe: everything resets to a fresh new game.
 	dev._wipe_progress()
 	assert_eq(int(_save.profile["cars"].size()), 0, "wipe clears all owned cars")
@@ -366,6 +528,54 @@ func test_hq_title_parks_all_owned_cars() -> void:
 	assert_eq(hq._cars.size(), 2, "the title parks every owned car (starter + XJS)")
 
 
+# The garage Repair button (where Free Roam used to sit) reflects the SELECTED car's
+# state: it's DISABLED when there's nothing to do — full health, or damaged with no kit —
+# and only enabled when a kit can restore a damaged car; its label spells out the case.
+# Enabled, pressing it spends one Repair Kit to fully restore the car.
+func test_hq_garage_repair_button_reflects_state_and_repairs() -> void:
+	# A second, healthy car so the wreck-recovery safety net (a free kit when EVERY car is
+	# wrecked) doesn't fire and mask the "no kits" state under test.
+	_save.grant_car("fx_fwd_hatch")
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.set_selected_car(id)
+	var max_hp := float(CarLibrary.by_id(String(_save.get_car(id)["model_id"]))["max_hp"])
+
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	# Healthy selected car: nothing to repair, so the button is disabled.
+	hq._go_to(hq.View.GARAGE)
+	assert_string_contains(hq._garage_repair_button.text.to_lower(), "full health",
+		"a full-health selected car reads 'Repair — full health'")
+	assert_true(hq._garage_repair_button.disabled, "a full-health car disables Repair")
+
+	# Wreck it with no kits: still disabled (nothing can be done), label flags the kit.
+	_save.wreck_car(id)
+	_save.profile["inventory"] = {}
+	hq._refresh_garage_repair_button()
+	assert_string_contains(hq._garage_repair_button.text.to_lower(), "no kits",
+		"a damaged car with no kit reads 'Repair — no kits'")
+	assert_true(hq._garage_repair_button.disabled, "no kit disables Repair")
+
+	# Grant a kit: the button ENABLES, and pressing it fully restores the car.
+	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
+	hq._refresh_garage_repair_button()
+	assert_string_contains(hq._garage_repair_button.text.to_lower(), "kit",
+		"a damaged car with a kit reads 'Repair (n kit)'")
+	assert_false(hq._garage_repair_button.disabled, "a damaged car with a kit enables Repair")
+	hq._repair_selected_car()
+	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
+		"repairing from the garage restores the selected car to full health")
+	assert_true(hq._garage_repair_button.disabled, "once restored, Repair disables again")
+
+	# Full health again: pressing Repair is a no-op — no further kit is spent.
+	var kits_before := int(_save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
+	hq._repair_selected_car()
+	assert_eq(int(_save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0)), kits_before,
+		"repairing a full-health car spends no kit")
+
+
 func test_hq_start_flies_into_the_garage() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -377,7 +587,8 @@ func test_hq_start_flies_into_the_garage() -> void:
 
 
 # The garage overlay is a left/right cursor over Back (0) / Map (1) / Tune Car (2) /
-# Free Roam (3), wrapping at both ends, with select firing the item under the cursor.
+# Repair (3), wrapping at both ends, with select firing the item under the cursor.
+# (Free Roam lives on the EXTERIOR title screen, not the garage.)
 func test_hq_garage_is_a_left_right_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -388,11 +599,11 @@ func test_hq_garage_is_a_left_right_cursor() -> void:
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 2, "right moves the cursor to Tune Car")
 	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 3, "right moves the cursor to Free Roam")
+	assert_eq(hq._garage_focus, 3, "right moves the cursor to Repair")
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
 	hq._move_garage_focus(-1)
-	assert_eq(hq._garage_focus, 3, "left from Back wraps to Free Roam")
+	assert_eq(hq._garage_focus, 3, "left from Back wraps to Repair")
 
 	# Select on the map-table item opens the map.
 	hq._garage_focus = 1
@@ -426,14 +637,14 @@ func test_hq_free_roam_prepares_a_fresh_unseeded_run() -> void:
 	assert_ne(Config.data.track_seed, first_seed, "free roam re-seeds the track on every entry")
 
 
-# Free Roam opens the car park to pick which owned car to drive: the whole owned
-# collection is parked, and Back returns to the garage (not the map).
+# Free Roam (from the EXTERIOR title screen) opens the car park to pick which owned car
+# to drive: the whole owned collection is parked, and Back returns to the title.
 func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
 	_save.grant_car("fx_fwd_hatch")  # a second car so the collection isn't just the starter
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_exterior_start()
+	assert_eq(hq._view, hq.View.EXTERIOR, "the title screen is the entry point")
 
 	hq._enter_free_roam()
 	await _await_lineup(hq)
@@ -442,10 +653,10 @@ func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
 	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
 		"the whole owned collection is parked to pick from")
 
-	# Back leaves free roam for the garage.
+	# Back leaves free roam for the title screen.
 	hq._car_back()
 	assert_false(hq._carpark_freeroam_mode, "backing out clears free-roam mode")
-	assert_eq(hq._view, hq.View.GARAGE, "Back from free-roam car pick returns to the garage")
+	assert_eq(hq._view, hq.View.EXTERIOR, "Back from free-roam car pick returns to the title")
 
 
 # The run scene fields the owned car the player picked for free roam, with no active
@@ -517,6 +728,14 @@ func test_run_scene_stages_a_roadside_opponent_wreck() -> void:
 	assert_true(car.freeze, "the wreck is frozen")
 	assert_eq(car.freeze_mode, RigidBody3D.FREEZE_MODE_STATIC,
 		"frozen static, so the collider stays a solid immovable obstacle")
+	# It's placed ANALYTICALLY (car.gd:settled_ride_height) and frozen at once — no live
+	# settle — so it rests with wheels on the ground, never sunk through the un-streamed
+	# verge nor floating. Its body sits ~one ride-height above the terrain under it.
+	var terrain := scene.get_node_or_null("Floor")
+	var ground: float = terrain.height_at(car.global_position.x, car.global_position.z)
+	assert_almost_eq(car.global_position.y, ground + car.settled_ride_height(), 0.25,
+		"wreck rests one ride-height above the ground under it (wheels on the ground)")
+	assert_gt(car.global_position.y, ground - 0.1, "wreck is not sunk into the terrain")
 	# A small crowd of onlookers gathered around it.
 	var crowd := wreck.get_node_or_null("WreckCrowd") as MultiMeshInstance3D
 	assert_not_null(crowd, "a crowd gathers around the wreck")
@@ -749,9 +968,9 @@ func test_hq_open_rally_parks_the_whole_lineup_with_per_car_meshes() -> void:
 		"parked cars do NOT share one mesh (per-instance duplication)")
 
 
-func test_hq_parked_cars_settle_live_then_freeze() -> void:
-	# Parked cars drop in LIVE (so they settle onto their suspension), then freeze at
-	# the settled pose so a full car park costs nothing to keep parked.
+func test_hq_parked_cars_rest_on_their_wheels_frozen() -> void:
+	# Parked cars are placed at their analytic rest ride height (wheels on the bay) and
+	# frozen at once — no live physics — so a full car park costs nothing to keep parked.
 	_save.grant_car("fx_awd")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -761,22 +980,15 @@ func test_hq_parked_cars_settle_live_then_freeze() -> void:
 	await get_tree().process_frame
 	await _await_lineup(hq)
 	assert_gt(hq._cars.size(), 0, "the lineup is parked")
-	for car in hq._cars:
-		assert_false(car.freeze, "parked cars start live so they settle on their suspension")
-	# The settle timer freezes them; drive that directly (deterministic, no waiting).
-	hq._freeze_lineup(hq._settle_generation)
-	for car in hq._cars:
-		assert_true(car.freeze, "settled cars are frozen at their pose")
-	# A stale freeze (old generation) must not touch a freshly-rebuilt lineup. Clear the
-	# reuse cache first so this re-entry spawns FRESH (live-settling) cars rather than
-	# reusing the frozen ones — the cache-reuse path is covered by test_lineup_cache.
-	hq._car_cache.clear()
-	hq._enter_car_screen()
-	await get_tree().process_frame
-	await _await_lineup(hq)
-	hq._freeze_lineup(hq._settle_generation - 1)
-	for car in hq._cars:
-		assert_false(car.freeze, "a superseded freeze leaves the new lineup live")
+	for i in hq._cars.size():
+		var car = hq._cars[i]
+		assert_true(car.freeze, "parked cars are frozen at once (no live settle)")
+		# Body rests one ride-height above its bay marker (wheels on the ground), not
+		# dropped to marker level (which would sink the body).
+		if i < hq._markers.size():
+			var marker_y: float = hq._markers[i].global_position.y
+			assert_almost_eq(car.global_position.y, marker_y + car.settled_ride_height(), 0.02,
+				"parked car sits on its wheels at the bay, not sunk to marker level")
 
 
 func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
@@ -1118,6 +1330,53 @@ func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
 	RallySession.abandon()
 	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
 		"the popup detune reverts to the pre-rally tune once the rally ends")
+
+
+func test_swap_car_qualifies_for_restricted_rally() -> void:
+	# A car whose STOCK mode fails a RWD-only rally becomes eligible once it carries the
+	# swap kit (it can switch to RWD); without the kit it stays ineligible.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var rally := {"id": "t_rwd", "name": "T", "restriction": {"drive_mode": CarLibrary.RWD}}
+	var entry := {"id": "t_fwd", "name": "FWD car", "drive_mode": CarLibrary.FWD, "engine": "", "mass": 1200.0, "max_hp": 1000.0}
+	var with_kit := {"instance_id": 1, "model_id": "t_fwd", "hp": 1000.0,
+		"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": -1}
+	var no_kit := {"instance_id": 2, "model_id": "t_fwd", "hp": 1000.0,
+		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
+	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
+			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
+		"kitted car can switch to the required RWD")
+	assert_eq(hq._qualifying_drivetrain_for(rally, no_kit, entry,
+			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
+		"un-kitted car cannot switch, so no qualifying mode")
+
+
+func test_swap_and_detune_stack_for_a_rally_restricting_both() -> void:
+	# A rally that restricts BOTH drive_mode AND pw_max should be reachable by a car
+	# that needs to STACK a drivetrain switch with an engine detune — neither move
+	# alone qualifies it, but the two together do.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var entry := {"id": "t_fwd_stack", "name": "FWD stack car", "drive_mode": CarLibrary.FWD,
+		"engine": "", "peak_torque": 300.0, "redline": 6000.0, "mass": 1200.0}
+	var full_pw := CarLibrary.power_to_weight(entry) * CarLibrary.KW_KG_TO_HP_TONNE
+	# The cap sits well under the car's full-tune p/w (full pw ~= 1.5x the cap), so a
+	# partial detune is needed on top of the switch — comfortably inside (0, 1).
+	var pw_max := full_pw / 1.5
+	var rally := {"id": "t_rwd_pw", "name": "T2",
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_max": pw_max}}
+	var with_kit := {"instance_id": 3, "model_id": "t_fwd_stack",
+		"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": -1}
+	var no_kit := {"instance_id": 4, "model_id": "t_fwd_stack",
+		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
+	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
+			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
+		"switch+detune stack qualifies the kitted car for the dual-restricted rally")
+	assert_eq(hq._qualifying_drivetrain_for(rally, no_kit, entry,
+			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
+		"un-kitted car cannot switch, so no qualifying mode even with a detune available")
 
 
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
@@ -1590,6 +1849,33 @@ func test_podium_sequence_reveals_leaderboard_then_upgrades_then_car() -> void:
 	assert_eq(pod._next_button.text, "CONTINUE TO HQ", "the final stage's button returns to HQ")
 
 
+func test_podium_drivetrain_swap_always_installs_without_apply_keep() -> void:
+	# The drivetrain kit has no enable/disable, so its podium reveal skips the Apply/Keep
+	# choice entirely and installs it ENABLED (no "Keep disabled" path to strand it).
+	var driven: Dictionary = _save.grant_car("fx_awd")
+	var driven_id := int(driven["instance_id"])
+	_save.install_upgrade(driven_id, "drivetrain_swap", false)  # reward loop fits it disabled
+	RallySession._last_result = {
+		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
+		"rally_name": "Coastal Sprint", "showdown_won": false, "car_reward": "",
+		"upgrades": ["drivetrain_swap"], "car_instance_id": driven_id,
+		"standings": [
+			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},
+		],
+	}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	while pod._stage != pod.Stage.UPGRADE_REVEAL:
+		pod._on_next()
+		await get_tree().process_frame
+	await get_tree().process_frame  # let the slot land + _offer_upgrade_choice run
+	assert_false(pod._choice_pending, "the drivetrain kit reveal shows no Apply/Keep choice")
+	assert_false(pod._choice_box.visible, "no choice buttons for the drivetrain kit")
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(driven_id), "drivetrain_swap"),
+		"the drivetrain kit installs ENABLED at the podium")
+
+
 func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 	# A DNF earns no car and no upgrade, so only the podium + leaderboard show.
 	RallySession._last_result = {
@@ -1693,6 +1979,25 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 	hq._on_start_pressed()
 	assert_eq(String(_save.get_car(int(a["instance_id"])).get("swapped_engine", "")), stock_b,
 		"selected car received the target's engine")
+
+
+func test_swap_preview_visible_only_in_swap_mode() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	# Needs >=2 owned full-health cars so a swap target exists (before_each already
+	# granted the starter car for the lift; grant a second, healthy fixture car).
+	_save.grant_car("fx_rwd_coupe")
+	hq._enter_engine_swap()
+	await _await_lineup(hq)
+	assert_true(hq._eligible.size() >= 1, "swap lineup lists the other owned car(s)")
+	hq._focus_changed(true)
+	assert_true(hq._swap_preview_label.visible, "preview shows in swap mode")
+	assert_string_contains(hq._swap_preview_label.text, "hp/tonne", "preview names the unit")
+	# Leaving swap mode for the normal car-select hides it.
+	hq._carpark_swap_mode = false
+	hq._focus_changed(true)
+	assert_false(hq._swap_preview_label.visible, "preview hidden outside swap mode")
 
 
 func test_display_name_reflects_swap() -> void:
@@ -1880,3 +2185,72 @@ func test_final_event_shows_combined_page_before_proceeding() -> void:
 	assert_true(s.showing_event_page(), "final event opens on the event page")
 	s._on_action()                                 # advance from the event page
 	assert_false(s.showing_event_page(), "final event now shows the combined page")
+
+
+# Drivetrain selector on the upgrades page's drivetrain slot row (todo/drivetrain-swap):
+# absent until the drivetrain_swap kit is fitted+enabled, then three FOCUS_ALL mode
+# buttons (RWD/AWD/FWD) appear, and pressing one stores the override on the car.
+func _count_buttons_with_text(box: Node, needles: Array) -> int:
+	var count := 0
+	for b in box.find_children("*", "Button", true, false):
+		for needle in needles:
+			if String(b.text).contains(needle):
+				count += 1
+				break
+	return count
+
+
+func _press_button_with_text(box: Node, needle: String) -> void:
+	for b in box.find_children("*", "Button", true, false):
+		if String(b.text).contains(needle):
+			b.pressed.emit()
+			return
+	fail_test("no button found containing '%s'" % needle)
+
+
+func test_drivetrain_selector_present_only_when_unlocked() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var owned: Dictionary = _save.grant_car("fx_awd")
+	var id := int(owned["instance_id"])
+	_save.set_selected_car(id)
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["RWD", "AWD", "FWD"]), 0,
+		"no selector without the kit")
+	# The kit has no enable/disable — owning it is the unlock. Install it DISABLED (the
+	# won-but-not-podium-applied state) and the selector still appears.
+	_save.add_item("drivetrain_swap")
+	_save.install_upgrade(id, "drivetrain_swap", false)
+	hq._rebuild_upgrades_box()
+	await get_tree().process_frame
+	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["RWD", "AWD", "FWD"]), 3,
+		"selector appears once the kit is owned, even if disabled")
+	# No Enable/Disable toggle for the drivetrain slot — the selector's stock choice is off.
+	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["Enable", "Disable"]), 0,
+		"drivetrain slot has no enable/disable toggle")
+	for b in hq._lift_upgrades_box.find_children("*", "Button", true, false):
+		if String(b.text).contains("RWD") or String(b.text).contains("AWD") or String(b.text).contains("FWD"):
+			assert_eq(b.focus_mode, Control.FOCUS_ALL, "each mode button is keyboard / gamepad focusable")
+
+
+func test_drivetrain_selector_sets_override() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var owned: Dictionary = _save.grant_car("fx_awd")
+	var id := int(owned["instance_id"])
+	_save.set_selected_car(id)
+	_save.add_item("drivetrain_swap")
+	_save.install_upgrade(id, "drivetrain_swap")
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	_press_button_with_text(hq._lift_upgrades_box, "AWD")
+	await get_tree().process_frame
+	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), CarLibrary.AWD,
+		"pressing a mode stores the override")
