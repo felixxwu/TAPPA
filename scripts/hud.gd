@@ -249,7 +249,7 @@ func _update_damage(delta: float) -> void:
 		var pct := 0 if dmg.hp <= 0.0 else maxi(1, roundi(frac * 100.0))
 		if pct != _last_hp_pct:
 			_last_hp_pct = pct
-			_hp_label.text = "Health %d%%" % pct
+			_hp_label.text = "HEALTH %d%%" % pct
 		# Green (full) → amber → red (empty) via hue; flash by modulating alpha when
 		# below the low-HP warning fraction so the danger is unmissable.
 		var col := Color.from_hsv(frac * 0.33, 0.8, 0.95)

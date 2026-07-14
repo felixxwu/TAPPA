@@ -277,10 +277,10 @@ func test_health_percent_reserves_zero_for_a_real_wreck() -> void:
 	dmg.field(1000.0, 1.0)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	assert_eq(label.text, "Health 1%", "a still-alive car never reads 0%")
+	assert_eq(label.text, "HEALTH 1%", "a still-alive car never reads 0%")
 
 	# A genuine wreck (0 HP) is the only thing that reads 0%.
 	dmg.hp = 0.0
 	await get_tree().process_frame
 	await get_tree().process_frame
-	assert_eq(label.text, "Health 0%", "0% is reserved for hp == 0")
+	assert_eq(label.text, "HEALTH 0%", "0% is reserved for hp == 0")

@@ -28,7 +28,7 @@ extends Node
 
 # Logical frame height the game is laid out against (project.godot
 # window/size/viewport_height, locked by the original "keep_height" aspect).
-const DESIGN_HEIGHT := 360.0
+const DESIGN_HEIGHT := 400.0
 
 
 var _last_window_size := Vector2i.ZERO

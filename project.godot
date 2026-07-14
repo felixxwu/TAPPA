@@ -29,7 +29,7 @@ PerfLog="*res://scripts/perf_log.gd"
 [display]
 
 window/size/viewport_width=100
-window/size/viewport_height=360
+window/size/viewport_height=400
 window/size/window_width_override=1280
 window/size/window_height_override=960
 window/stretch/mode="viewport"
