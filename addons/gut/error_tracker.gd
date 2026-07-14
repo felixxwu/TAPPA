@@ -143,7 +143,13 @@ func get_fail_text_for_errors(test_id=_current_test_id) -> String:
 	if(errors.items.has(test_id)):
 		for error in errors.items[test_id]:
 			if(_is_error_failable(error)):
-				error_texts.append(str('<', error.get_error_type_name(), '>', error.code, ' | ', error.file, ':', error.line, ' | ', error.description))
+				# LOCAL PATCH: upstream reads error.description, which GutTrackedError
+				# never sets — the bad access crashes get_fail_text_for_errors and
+				# triggers a debugger break that aborts the ENTIRE run whenever any
+				# engine error/warning is tracked (e.g. a transient Jolt job-system
+				# warning). Use error.rationale (the field add_error actually sets).
+				# Re-apply if GUT is re-vendored/upgraded.
+				error_texts.append(str('<', error.get_error_type_name(), '>', error.code, ' | ', error.file, ':', error.line, ' | ', error.rationale))
 
 	var to_return = ""
 	for i in error_texts.size():
