@@ -275,8 +275,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if cfg.water_enabled and loading != null and not _headless:
 		var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
 		var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)
+		var aspect := LoadingScreen.aspect_of(loading.preview_size())
+		box = LoadingScreen.expand_to_aspect(box, aspect)
 		var wp: Array = LakeField.preview_cells(params, box)
-		loading.update_water(wp[0], wp[1])
+		loading.update_water(wp[0], wp[1], box)
 	var result := await TrackGenerator.generate(params, on_progress)
 	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
 	# it stays drawn through the remaining stages until finish().
@@ -290,8 +292,9 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# spans the whole stage instead of the rough origin box (no more box-edge clip).
 	if cfg.water_enabled and loading != null and not _headless:
 		var tb := LoadingScreen.bounds_of((result["centerline"] as Curve2D).tessellate()).grow(80.0)
+		tb = LoadingScreen.expand_to_aspect(tb, LoadingScreen.aspect_of(loading.preview_size()))
 		var wp2: Array = LakeField.preview_cells(params, tb)
-		loading.update_water(wp2[0], wp2[1])
+		loading.update_water(wp2[0], wp2[1], tb)
 	if staged:
 		road_centerline = _with_start_lead_in(road_centerline, start_pos, start_heading, cfg)
 	# The FINISH is the END of the generated track (plus lead-in) — capture its arc

@@ -168,7 +168,7 @@ const RALLIES: Array[Dictionary] = [
 		"events": [
 			{"seed": 7031, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0, "cliffiness": 0.1},
 			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.15},
-			{"seed": 7023, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.2},
+			{"seed": 7033, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.2},
 		],
 	},
 	{

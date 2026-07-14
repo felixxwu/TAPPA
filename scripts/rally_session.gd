@@ -47,7 +47,8 @@ var _event_index := 0                  # 0..2
 var _event_times_ms: Array[int] = []   # accumulated, one per completed event
 var _opponent_field: Array = []        # fixed per rally seed (never saved)
 var _dnf := false
-var _upgrades_won: Array[String] = []  # the single upgrade id drawn this rally (reveal)
+var _upgrades_won: Array[String] = []  # every per-event upgrade id drawn this rally (record)
+var _event_upgrade := ""               # the upgrade id won for the just-completed event ("" if none)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
 # Car-park detune-to-enter agreements are TEMPORARY, for this rally only:
 # instance_id -> the engine_detune to restore once the rally ENDS (finish, wreck
@@ -131,23 +132,43 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 
 
 # An event finished cleanly (from StageManager.stage_completed in the run scene).
-# Accumulate the time, persist chip damage, then either advance to the next event
-# (via standings) or resolve the rally. The reward upgrades are drawn at rally
-# resolution (cfg.rally_upgrade_reward_count per rally, not per event) — see
-# _resolve_results.
+# Accumulate the time, persist chip damage, award one upgrade for a NON-FINAL event,
+# then pause on the standings interstitial. The player resumes / finishes with
+# continue_to_next_event().
 func report_event_result(elapsed_ms: int, hp_lost: float = 0.0) -> void:
 	if _phase != Phase.RUNNING:
 		return
 	_event_times_ms.append(elapsed_ms)
-	# HP persists at each event boundary (Save debounces/autosaves). Only a fielded
-	# (bound) car has an instance to write back to.
-	if _car_instance_id >= 0 and hp_lost > 0.0:
+	# HP persists at each event boundary. Only a fielded (bound) car has an instance
+	# to write back to. The damage + the upgrade write below share a single Save.save()
+	# at the end so a damaged non-final event doesn't serialise/write the file twice.
+	var damaged := _car_instance_id >= 0 and hp_lost > 0.0
+	if damaged:
 		Save.apply_damage(_car_instance_id, hp_lost)
-		Save.save()
 	_event_index += 1
+	# One upgrade is awarded for FINISHING each NON-FINAL event (events before the
+	# last). Earned by completing the event — kept even if the player later DNFs.
+	# Drawn + installed + saved here so the standings reveal only enables the pick,
+	# and so the unseeded draw is savescum-proof (reward-system.md). The final event
+	# awards no upgrade (the podium reveals the car instead).
+	_event_upgrade = ""
+	var awarded := _event_index < EVENTS_PER_RALLY
+	if awarded:
+		var difficulty := int(_rally.get("difficulty", 1))
+		var driven: Dictionary = Save.get_car(_car_instance_id)
+		var item_id: String = RewardSystem.draw_upgrade(difficulty, Save.profile, null, driven)
+		if UpgradeLibrary.is_consumable(item_id):
+			Save.add_item(item_id, 1, false)
+		else:
+			Save.install_upgrade(_car_instance_id, item_id, false)
+		_event_upgrade = item_id
+		_upgrades_won.append(item_id)
+	if damaged or awarded:
+		Save.save()
+	if awarded:
+		upgrade_revealed.emit(_event_upgrade)
 	# The rally now PAUSES on a standings interstitial after EVERY event — including
 	# the last, which shows an event-only leaderboard and then resolves to the podium.
-	# The player resumes / finishes with continue_to_next_event().
 	_set_phase(Phase.STANDINGS)
 	standings_ready.emit(_event_index)
 	if auto_load_scenes:
@@ -349,11 +370,18 @@ func current_event() -> Dictionary:
 	return events[_event_index] if _event_index >= 0 and _event_index < events.size() else {}
 
 
+# The upgrade id won for the just-completed non-final event, read by the standings
+# reveal. "" after the final event (no per-event award) or before any draw.
+func current_event_upgrade() -> String:
+	return _event_upgrade
+
+
 # --- Internals ---------------------------------------------------------------
 
 # Enter the current event: announce it (presence + StageManager handoff happen in
 # the run scene) and, in real play, load that event's run scene with its seed.
 func _enter_event() -> void:
+	_event_upgrade = ""
 	_set_phase(Phase.RUNNING)
 	var event := current_event()
 	event_started.emit(_event_index, event)
@@ -374,30 +402,8 @@ func _resolve_results() -> void:
 		placed = RallyLibrary.placement(_opponent_field, combined)
 	var top3 := not _dnf and placed >= 1 and placed <= 3
 
-	# Reward upgrades per FINISHED rally — cfg.rally_upgrade_reward_count of them, each
-	# drawn independently and revealed with its own slot-machine spin on the podium. A
-	# DNF rally earns nothing. Granted + saved at once so the unseeded draws are
-	# savescum-proof (reward-system.md).
-	if not _dnf:
-		var difficulty := int(_rally.get("difficulty", 1))
-		var count: int = maxi(Config.data.rally_upgrade_reward_count, 0)
-		# Upgrades are CAR-BOUND: each won part is fitted straight onto the driven
-		# car (disabled — the podium's Apply enables the player's pick). Fitting it
-		# before the next draw is also what dedups the multi-reward draw: draw_upgrade
-		# excludes the car's installed parts, so re-reading the live car each pass
-		# stops the same slottable part being won twice in one rally. Repair kits
-		# (consumable, exempt from dedup) go to the pooled inventory and may repeat.
-		for _i in count:
-			var driven: Dictionary = Save.get_car(_car_instance_id)
-			var item_id: String = RewardSystem.draw_upgrade(difficulty, Save.profile, null, driven)
-			if UpgradeLibrary.is_consumable(item_id):
-				Save.add_item(item_id, 1, false)
-			else:
-				Save.install_upgrade(_car_instance_id, item_id, false)
-			_upgrades_won.append(item_id)
-			upgrade_revealed.emit(item_id)
-		Save.save()
-
+	# Upgrades are awarded per NON-FINAL event (in report_event_result), not at
+	# resolve. The podium reveals only the car reward below.
 	_set_phase(Phase.PODIUM)
 	# Reward outcome, captured for the podium reveal (todo/menus.md rig 5).
 	var car_reward := ""
@@ -491,6 +497,7 @@ func _reset_to_idle() -> void:
 	_opponent_field = []
 	_dnf = false
 	_upgrades_won = []
+	_event_upgrade = ""
 	_set_phase(Phase.IDLE)
 
 

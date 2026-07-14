@@ -81,6 +81,31 @@ static func bounds_of(points: PackedVector2Array) -> Rect2:
 	return Rect2(Vector2(min_x, min_y), Vector2(max_x - min_x, max_y - min_y))
 
 
+# Grow `bounds` (world XZ) so its aspect ratio matches `aspect` (= panel w / h),
+# keeping it centred and never shrinking. When the fit then maps this into a panel
+# of that aspect, it fills the panel edge-to-edge with no letterbox bands — so water
+# sampled over the returned rect reaches the container edges. Pure. Returns `bounds`
+# unchanged for a non-positive aspect or empty bounds.
+static func expand_to_aspect(bounds: Rect2, aspect: float) -> Rect2:
+	if aspect <= 0.0 or bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return bounds
+	var w := bounds.size.x
+	var h := bounds.size.y
+	if w / h < aspect:
+		w = h * aspect  # too tall -> widen
+	else:
+		h = w / aspect  # too wide -> heighten
+	var center := bounds.position + bounds.size * 0.5
+	return Rect2(center - Vector2(w, h) * 0.5, Vector2(w, h))
+
+
+# Aspect ratio (w / h) of a laid-out panel `size`, for feeding `expand_to_aspect`
+# so water fills the panel edge-to-edge. Falls back to 16:9 before the panel has
+# been laid out (zero size). Pure.
+static func aspect_of(size: Vector2) -> float:
+	return size.x / size.y if size.x > 0.0 and size.y > 0.0 else 16.0 / 9.0
+
+
 # World-XZ -> screen map that fits `bounds` into `rect` (inset by `pad` on all
 # sides), preserving aspect ratio and centering. `screen = xform * world`. Pure.
 static func fit_transform(bounds: Rect2, rect: Rect2, pad: float) -> Transform2D:
@@ -112,6 +137,12 @@ static func fit_points(points: PackedVector2Array, rect: Rect2, pad: float) -> P
 func set_chunk_size(world_m: float) -> void:
 	if _preview != null:
 		_preview.set_chunk_size(world_m)
+
+
+# The preview panel's pixel size, so water sampling can match its aspect ratio and
+# fill it edge-to-edge. Zero until the panel is laid out.
+func preview_size() -> Vector2:
+	return _preview.size if _preview != null else Vector2.ZERO
 
 
 # The growing list of loaded-chunk world-XZ min-corners, drawn as dark squares
@@ -153,9 +184,9 @@ static func carve_prefix(mapped: PackedVector2Array, progress: float) -> PackedV
 # Below-water cell centres (world XZ) + edge length, drawn behind the track line.
 # Fed by world.gd during generation so the author watches the road route around
 # the water live (features/lakes.md).
-func update_water(cells: PackedVector2Array, cell_size: float) -> void:
+func update_water(cells: PackedVector2Array, cell_size: float, frame := Rect2()) -> void:
 	if _preview != null:
-		_preview.set_water(cells, cell_size)
+		_preview.set_water(cells, cell_size, frame)
 
 
 # Tear the overlay down once the world is ready.

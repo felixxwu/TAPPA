@@ -44,15 +44,17 @@ list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults.
 
 **Every part slot is an earn-gated option selector** (`hq.gd._make_option_selector`), built
-to read like the drivetrain picker: `SLOT:` on the left, then `None` + one button per
-catalogue part in that slot on the right. `None` is always selectable (the "off" state);
-each part option is **greyed until that kit is fitted** to this car, and the active one is
-bracketed. The turbo slot has two parts — `None` / `Small` / `Big` (`turbo_small` /
-`turbo_large`, shown by their short `menu_label`); the single-part slots read `None` /
-`<Kit>` (e.g. `Aero: None / Aero Kit`, using the part's full `name`). Under the hood it's
+to read like the drivetrain picker: `SLOT:` on the left, then `Stock` + one button per
+catalogue part in that slot on the right. `Stock` is always selectable (the "off" state —
+the car's un-upgraded factory config, hence the label rather than `None`); each part option
+is **greyed until that kit is fitted** to this car, and the active one is
+bracketed. The turbo slot has two parts — `Stock` / `Small` / `Big` (`turbo_small` /
+`turbo_large`, shown by their short `menu_label`); the single-part slots read `Stock` /
+`<Kit>` (e.g. `Aero: Stock / Aero Kit`, using the part's full `name`). Under the hood it's
 the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled` via
 `hq.gd._set_slot_option`): picking a part enables it (same-slot exclusivity switches any
-sibling off), picking `None` disables every part in the slot. So the reward flow is
+sibling off), picking `Stock` disables every part in the slot (the underlying id is still
+`""`). So the reward flow is
 unchanged — kits are still won, fitted disabled, and the podium's Apply enables the pick;
 the selector is purely the menu presentation, replacing the old Enable/Disable toggle rows.
 Drivetrain remains the odd one out (its selector is a `drive_mode` override, not a part
@@ -143,12 +145,15 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 
 ## Reward integration
 
-Upgrades are the per-rally reward (cars are per-rally too). The reward draw picks
-an `UpgradeDef` by `tier`, clamped by progress, excluding parts already on the
-driven car — that policy is reward-system logic (`todo/reward-system.md`); this
-library just provides the tier-keyed pool. The flow controller fits each won part
-straight onto the driven car via `Save.install_upgrade(..., enabled=false)`
-(repair kits, being consumable, go to `Save.add_item` instead).
+Upgrades are the **per-event** reward: one is drawn at each non-final event
+boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward. The
+reward draw picks an `UpgradeDef` by `tier`, clamped by progress, excluding parts
+already on the driven car — that policy is reward-system logic
+(`todo/reward-system.md`); this library just provides the tier-keyed pool. The flow
+controller fits each won part straight onto the driven car via
+`Save.install_upgrade(..., enabled=false)` (repair kits, being consumable, go to
+`Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,
+not the podium) offers the Apply/Keep choice — see `features/reward-system.md`.
 
 ## Tests
 
@@ -167,8 +172,10 @@ the `set_upgrade_enabled` toggle, consumable/unknown rejection, repair-kit
 heal+clamp, wreck (parts stay on the car), and the v1→v2 migration stripping the
 old unbound pool are in `test_save_manager.gd` (they need the Save profile). The
 garage upgrades menu having no apply-from-pool rows, the earn-gated option selectors
-(turbo `None`/`Small`/`Big` and the single-part `None`/`<Kit>` slots — greyed until won,
-picking enables, `None` parks), and the option-selector focus-retention regression are in
-`test_menu_flow.gd`; the podium's Apply(enable)/Keep(disable) reward choice is in
-its podium-sequence test there. `test_rally_session.gd` covers won parts binding
-to the driven car with no slottable part won twice per rally (the dedup'd draw).
+(turbo `Stock`/`Small`/`Big` and the single-part `Stock`/`<Kit>` slots — greyed until won,
+picking enables, `Stock` parks), and the option-selector focus-retention regression are in
+`test_menu_flow.gd`. The reward reveal's Apply(enable)/Keep(disable) choice — and the
+consumable / drivetrain-kit skip — is in `test_upgrade_reveal.gd`; the standings
+Collect-reward flow that hosts it is in `test_menu_flow.gd`.
+`test_rally_session.gd` covers per-event won parts binding to the driven car with no
+slottable part won twice per rally (the dedup'd draw).

@@ -14,6 +14,7 @@ var _chunk_size := 0.0                        # chunk edge length, world metres
 var _carve_progress := 0.0                    # fraction of the line carved (white)
 var _water_cells := PackedVector2Array()      # below-water cell CENTRES, world XZ
 var _water_cell_size := 0.0                   # water cell edge length, world metres
+var _frame := Rect2()                         # explicit fit region (world XZ); empty = derive from content
 
 
 func _init() -> void:
@@ -44,10 +45,14 @@ func set_chunks(corners: PackedVector2Array) -> void:
 
 
 # Below-water cell centres (world XZ) + their edge length, drawn as blue blocks
-# behind the road line. Doubles as the seed/water-level debug view.
-func set_water(cells: PackedVector2Array, cell_size: float) -> void:
+# behind the road line. Doubles as the seed/water-level debug view. `frame` is the
+# world-XZ region the water was sampled over; when given it also anchors the fit so
+# the water fills the panel to its edges (matching the real game's full water plane),
+# instead of the fit shrinking to the track and leaving dry letterbox bands.
+func set_water(cells: PackedVector2Array, cell_size: float, frame := Rect2()) -> void:
 	_water_cells = cells
 	_water_cell_size = cell_size
+	_frame = frame
 	queue_redraw()
 
 
@@ -62,8 +67,14 @@ func _draw() -> void:
 	# Fit to whatever content exists — water alone is enough to paint (it's known
 	# up-front, before the track animates), so it shows first and the road draws over it.
 	var content := _points.duplicate()
-	for c in _water_cells:
-		content.append(c)
+	# The explicit water frame (if set) anchors the fit so water reaches the panel
+	# edges; otherwise fall back to the water cells / track for the bounds.
+	if _frame.size.x > 0.0 and _frame.size.y > 0.0:
+		content.append(_frame.position)
+		content.append(_frame.position + _frame.size)
+	else:
+		for c in _water_cells:
+			content.append(c)
 	if content.size() < 2:
 		return
 	# One transform from the combined bounds (track + water), shared by everything.

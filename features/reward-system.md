@@ -44,19 +44,28 @@ at/below the tier fitted, only the repair kit remains (the draw still always pay
 out). Weighted pick → returns an `item_id`; most rolls are a part, occasionally
 the repair kit.
 
+**When:** one upgrade is drawn at each **non-final event boundary** — i.e. after
+events 1 and 2 of a 3-event rally, in `RallySession.report_event_result` (not once
+per rally at resolve). It's **earned by finishing the event**: no top-3/placement
+gate, and the part is **kept even if the player later DNFs or places poorly**. The
+final event awards no upgrade (the podium reveals the **car** instead).
+
 **Delivery:** upgrades are **car-bound** — the flow controller fits each drawn
 part straight onto the driven car **disabled**
-(`Save.install_upgrade(car_instance_id, item_id, false)`) and saves; a drawn
-repair kit (consumable) goes to `Save.add_item` instead. The podium's upgrade
-reveal then offers an **Apply/Keep choice** per part — the part is already on the
-car, so the choice is only enable-now vs enable-later: *Apply* enables it
-(`Save.set_upgrade_enabled(..., true)`), *Keep* leaves it disabled to enable later
-from the garage upgrades menu (see `features/upgrade-catalogue.md`). A won part
-never moves to another car and a car never holds two of the same (per-car dedup);
-repair kits skip the choice and just land in inventory. The **Drivetrain Swap** kit
-also skips the choice — it has no enable/disable, so the reveal always installs it
-enabled and the player picks a drive mode later in the garage (see
-`features/upgrade-catalogue.md`).
+(`Save.install_upgrade(car_instance_id, item_id, false)`) and saves immediately
+(savescum-proof); a drawn repair kit (consumable) goes to `Save.add_item` instead.
+The reward is then revealed on **that event's standings interstitial** via the
+shared `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — same slot-machine
+spinner as the podium — behind a **Collect reward** button that hides the
+leaderboard (see `features/menus.md`). The reveal offers an **Apply/Keep choice**
+per part — the part is already on the car, so the choice is only enable-now vs
+enable-later: *Apply* enables it (`Save.set_upgrade_enabled(..., true)`), *Keep*
+leaves it disabled to enable later from the garage upgrades menu (see
+`features/upgrade-catalogue.md`). A won part never moves to another car and a car
+never holds two of the same (per-car dedup); repair kits skip the choice and just
+land in inventory. The **Drivetrain Swap** kit also skips the choice — it has no
+enable/disable, so the reveal always installs it enabled and the player picks a
+drive mode later in the garage (see `features/upgrade-catalogue.md`).
 
 ## Car draw (per top-3 finish, including re-wins)
 

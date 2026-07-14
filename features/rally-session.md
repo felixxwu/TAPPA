@@ -33,12 +33,13 @@ re-implementing them.
 | Call | Effect |
 |------|--------|
 | `start_rally(rally, owned_car, event_targets_ms := [])` | seed state, build the opponent field, kick event 0. Targets are derived from each event's track when omitted; tests pass them in to skip generation. |
-| `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), then always **enter `STANDINGS`** and emit `standings_ready` — every event pauses on the interstitial, including the last. The reward upgrade is drawn **once per rally** at resolve, not per event. |
+| `report_event_result(elapsed_ms, hp_lost)` | accumulate the time, persist chip damage (`Save.apply_damage`), draw **one upgrade for a non-final event** (events before the last — installed disabled + saved, emits `upgrade_revealed`; earned by finishing the event, kept on a later DNF), then always **enter `STANDINGS`** and emit `standings_ready` — every event pauses on the interstitial, including the last. |
+| `current_event_upgrade()` | the upgrade id won for the just-completed non-final event (`""` after the final event / before any draw). Read by the standings reveal (`features/reward-system.md`). |
 | `continue_to_next_event()` | resume from the between-event standings interstitial: enters the next event, or — once `_event_index >= EVENTS_PER_RALLY` (the final event) — calls `_resolve_results()` (→ podium) instead. |
 | `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time **and the car each drove**, ranked via `build_standings`); read by the standings scene's combined page. `events_completed()` gives the count for its header. |
 | `current_event_standings()` | the leaderboard for the **JUST-COMPLETED event alone**: each racer's time for that one event, fastest first (a rival who DNF'd that event sinks to the bottom). The row's `combined_ms` field carries the single-event time, not a cumulative sum. Empty before any event completes. Read by the standings scene's event-only page. |
 | `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_name, time_ms}`); DNF-this-event omitted. Drives the start-line "times to beat" reveal. |
-| `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. A DNF earns **no** upgrades (the per-rally draws only fire on a finished rally). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
+| `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. Any per-event upgrades already earned this rally are **kept**; a DNF earns **no car** (the car reward only fires on a top-3 finish). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
@@ -49,8 +50,9 @@ event)`, `standings_ready(i)`, `upgrade_revealed(item_id)`,
 `{placed, completed, combined_ms, dnf}` plus, for the reveal/standings:
 `rally_id`, `rally_name`, `standings` (the full ranked field +
 player via `RallyLibrary.build_standings`, each entry carrying `car_id` so the
-podium can spawn the top-3 cars), `upgrades` (the single id won this rally — a
-one-element array, `[]` on a DNF), `car_reward` (model id, `""` if none),
+podium can spawn the top-3 cars), `upgrades` (the per-event ids won this rally —
+recorded here, but revealed earlier on the standings screens, not the podium),
+`car_reward` (model id, `""` if none),
 `car_reward_is_new` (bool), and `showdown_won` (bool).
 
 `return_to_garage` is a one-shot navigation flag (not part of the result): the
@@ -65,8 +67,10 @@ completion + best placement (`Save.complete_rally(id, combined, placed)`,
 idempotent; the placement drives the world-map stars) and grants a reward — a **car** for
 a normal rally (`RewardSystem.draw_car`, fires on **every** top-3 including
 re-wins → renewable supply), or the **win beat** (`showdown_won`) for the
-showdown. Non-top-3 / DNF grants nothing and leaves the rally incomplete (**no
+showdown. Non-top-3 / DNF grants **no car** and leaves the rally incomplete (**no
 retry** — re-enter from the map later; damage and the opponent field persist).
+Upgrades are **not** granted here — they're awarded per non-final event in
+`report_event_result` (above) and kept regardless of the final result.
 
 ## Scene transitions
 
@@ -125,6 +129,7 @@ deferred full menus build — RallySession already emits the signals it hooks.
 ## Tests
 
 `tests/headless/test_rally_session.gd` — happy path + placement, the per-rally
-upgrade grants (`cfg.rally_upgrade_reward_count`, drawn at resolve, not per event), wreck DNF (no upgrade,
-instance destroyed), no-retry re-entry (state reset, field fixed), showdown win
-beat, farming re-win, idle-at-rest.
+per-event upgrade grants (one per non-final event, fitted disabled, no slottable
+duplicate; `current_event_upgrade`; the final event awards none), wreck DNF (the
+earned upgrade is kept, instance wrecked), no-retry re-entry (state reset, field
+fixed), showdown win beat, farming re-win, idle-at-rest.

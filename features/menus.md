@@ -79,6 +79,20 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   on every `_build_ui()` rebuild; `attach` reuses the existing node rather than stacking
   handlers, and re-seats the cursor on the freshly-built button.
 
+  **Collect reward on the standings.** On the combined page of a **non-final event**
+  that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`), the
+  action button reads **`Collect reward >`** instead of `Continue to next event >`.
+  Pressing it clears the leaderboard and takes over the screen with the shared
+  `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
+  as the podium** — which lands on the won part and offers **Apply/Keep** (the
+  repair kit / drivetrain kit auto-resolve). A **Continue to next event >** button
+  appears only once the reveal + choice resolves, then resumes the rally
+  (`continue_to_next_event`). The `UpgradeReveal` wires its own `MenuNav` across
+  Apply/Keep, and standings re-attaches `MenuNav` on Continue when it's shown, so the
+  whole flow is keyboard/gamepad navigable. The **final event** keeps
+  `Continue to podium >` with no reward step (the podium reveals the car). See
+  [reward-system.md](reward-system.md).
+
   A few flat menus keep their own `_unhandled_input` and attach `MenuNav` **without**
   `on_back`: the **pause** menu (its handler also *opens* the menu when closed, and
   steps sub-page → list → menu, which a plain back callback can't express), and the HQ
@@ -247,8 +261,9 @@ start the run instead.)
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
 SettingsMenu`) — the SAME component the in-run pause menu uses, so the two pages
-match. It opens on a **category list** with one row per area, and each row drills
-into **its own sub-page**:
+match. It opens on a **category list** — one button per area, laid out in a
+**2-column grid** so the list stays short instead of overflowing into a scroll —
+and each button drills into **its own sub-page**:
 
 - **Camera** — pick the **camera angle** (chase / bonnet, from `CameraManager.MODES`);
   the choice persists under `CameraManager.SETTING_KEY` and is applied on the next run
@@ -587,26 +602,20 @@ only when something was won.
    over it.
 2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
    position, name + car, time / `WRECKED`, the player's row tinted + marked.
-3. **UPGRADE_REVEAL** (one stage **per won upgrade** — a rally grants
-   `cfg.rally_upgrade_reward_count`, default 2) — a slot-machine spin for each
-   per-rally upgrade, landing on its name. These come **before the car reveal**
-   and are staged at the **podium camera**, so the upgrades are handed out while
-   the player's car still stands on the podium. The lock-in opens an
-   **Apply/Keep choice** (two focusable buttons, Apply focused first): *Apply*
-   fits the part straight onto the owned car the player just drove
-   (`Save.install_upgrade` on the result's `car_instance_id`); *Keep for later*
-   leaves it unlocked for the garage upgrades menu. Next is **hidden until the
-   choice is made** (`_choice_pending`). Repair kits and a missing driven car
-   skip the choice — the item just lands in the unlocked pool.
-4. **CAR_REVEAL** (only if `car_reward != ""`) — the camera **flies over to the
-   showroom** and the same slot-machine reel spins through the car catalogue's
+3. **CAR_REVEAL** (only if `car_reward != ""`) — the camera **flies over to the
+   showroom** and a slot-machine reel spins through the car catalogue's
    names, decelerating onto the won car; on the lock-in the car appears on the
    showroom turntable (hidden until then) and the card collapses to a **single
    line**: the big slot label hides and the caption alone carries
    `"<car> (NEW) — delivered to your garage"` (the `(NEW)` tag only when first
    owned), so the name isn't shown twice.
 
-During the two reveals the overlay's content stack drops to the **bottom of the
+**Upgrades are no longer revealed on the podium** — the per-event upgrades are
+awarded and revealed on the between-event **standings** screens (see the
+Collect-reward flow above and [reward-system.md](reward-system.md)); the podium
+closes on the car reward only.
+
+During the car reveal the overlay's content stack drops to the **bottom of the
 screen** (`_middle.alignment = ALIGNMENT_END`) so the slot card clears the
 camera's view of the revealed car; the podium + leaderboard stay centred.
 
@@ -631,7 +640,7 @@ spectators just face the podium / showroom). Scenery is **skipped under headless
 are `podium_*` `GameConfig` tunables.
 
 `last_result` carries `rally_name`, `standings` (each entry with `car_id`),
-`upgrades` (the one id won, `[]` on a DNF), `car_reward`, `car_reward_is_new`, and
+`upgrades` (the per-event ids won, revealed on the standings not here), `car_reward`, `car_reward_is_new`, and
 `showdown_won` alongside the original `placed`/`completed`/`combined_ms`/`dnf`.
 
 ## Start line (location 2)

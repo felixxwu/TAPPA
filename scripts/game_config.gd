@@ -618,11 +618,6 @@ var peak_torque_rpm := 4500.0
 ## menu_swipe_min_px the gesture is neither and does nothing.
 @export var menu_tap_max_px := 14.0
 
-# --- Rewards (reward_system.gd / rally_session.gd) ----------------------------
-## How many per-event upgrade items a FINISHED (non-DNF) rally grants — each one
-## drawn independently and revealed with its own slot-machine spin on the podium.
-@export var rally_upgrade_reward_count := 2
-
 # --- Podium / reward-reveal sequence (podium.gd) ------------------------------
 ## Height (m) of the 1st-place podium step; 2nd/3rd are scaled down from it.
 @export var podium_step_height := 0.9

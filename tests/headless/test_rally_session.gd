@@ -208,8 +208,8 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	_report_events([20000, 20000, 20000])
 	var r: Dictionary = finish[0]
 	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
-	assert_eq(r["upgrades"].size(), Config.data.rally_upgrade_reward_count,
-		"a finished rally captures rally_upgrade_reward_count upgrade ids for the reveal")
+	assert_eq((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
+		"a finished rally captures one upgrade id per non-final event for the record")
 	# The reward must be a real catalogue car (the draw policy itself — garage
 	# tier cap, unlock fallback — is covered by test_reward_system.gd with
 	# controlled profiles) and the is_new flag must reflect whether the player
@@ -260,57 +260,65 @@ func test_between_event_standings_pause_and_leaderboard() -> void:
 	assert_eq(RallySession.event_index(), 1, "now running event index 1")
 
 
-func test_upgrades_won_per_rally_bind_to_the_driven_car_without_duplicates() -> void:
-	# Upgrades are CAR-BOUND and the multi-reward draw dedups: each won slottable
-	# part is fitted (disabled) to the driven car, and no slottable part is won
-	# twice in one rally (the re-roll now excludes what's already on the car). Crank
-	# the reward count well past the eligible slottable pool so, without dedup, a
-	# duplicate would be forced — then assert none occurs.
-	var original_count: int = Config.data.rally_upgrade_reward_count
-	Config.data.rally_upgrade_reward_count = 8
+func test_per_event_upgrades_bind_to_the_driven_car_without_duplicates() -> void:
+	# One upgrade is drawn per NON-FINAL event (EVENTS_PER_RALLY - 1 total), each
+	# fitted to the driven car DISABLED, with no slottable part won twice (the
+	# re-roll excludes what's already on the car).
 	var finish := _capture_finish()
 	var driven := _start("shakedown")
 	var driven_id := int(driven["instance_id"])
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	_report_events([10000, 10000, 10000])
-	Config.data.rally_upgrade_reward_count = original_count
 	var r: Dictionary = finish[0]
+	assert_eq((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
+		"one upgrade is won per non-final event")
 
 	var slottable_wins: Array = []
-	var repair_wins := 0
 	for item_id in r["upgrades"]:
-		if UpgradeLibrary.is_consumable(item_id):
-			repair_wins += 1
-		else:
+		if not UpgradeLibrary.is_consumable(item_id):
 			slottable_wins.append(item_id)
-
-	# The re-roll fix: no slottable part is won twice in the same rally.
 	var uniq := {}
 	for item_id in slottable_wins:
 		uniq[item_id] = true
 	assert_eq(uniq.size(), slottable_wins.size(), "no slottable upgrade is won twice in one rally")
 
-	# Each won slottable part is bound to the driven car — fitted, and disabled
-	# (the podium's Apply is what enables the player's pick).
 	var live: Dictionary = _save.get_car(driven_id)
 	var installed: Array = live["installed_upgrades"]
 	for item_id in slottable_wins:
 		assert_true(installed.has(item_id), "the won part is fitted to the driven car")
-		assert_false(UpgradeLibrary.is_enabled(live, item_id), "and lands disabled until Apply")
-	# Repair kits (consumable, exempt) go to the pooled inventory, not the car.
-	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.REPAIR_KIT_ID, 0)), repair_wins,
-		"won repair kits land in inventory, not on the car")
+		assert_false(UpgradeLibrary.is_enabled(live, item_id), "and lands disabled until collected")
 
 
-func test_wreck_midrally_is_dnf_and_grants_no_upgrade() -> void:
+func test_final_event_awards_no_upgrade() -> void:
+	_start("shakedown")
+	RallySession._opponent_field = _field([90000])
+	RallySession.report_event_result(10000)  # event 1
+	RallySession.continue_to_next_event()
+	RallySession.report_event_result(10000)  # event 2
+	RallySession.continue_to_next_event()
+	RallySession.report_event_result(10000)  # event 3 (final) -> no draw
+	assert_eq(RallySession.current_event_upgrade(), "",
+		"the final event awards no per-event upgrade")
+
+
+func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
+	# The per-event upgrade is earned by FINISHING event 1; a later wreck (DNF)
+	# keeps it. The final rally still records no car reward on a DNF.
 	var finish := _capture_finish()
 	var owned := _start("shakedown")
 	var id := int(owned["instance_id"])
 	RallySession._opponent_field = _field([50000])
-	RallySession.report_event_result(20000)  # event 1 completes (no per-event upgrade now)
-	assert_eq(_total_items(), 0, "no upgrade is granted mid-rally")
-	RallySession.continue_to_next_event()  # resume from the standings into event 2
-	RallySession.report_wreck()  # wreck during event 2
+	RallySession.report_event_result(20000)  # event 1 finishes -> one upgrade drawn
+	var won := RallySession.current_event_upgrade()
+	assert_ne(won, "", "finishing a non-final event awards one upgrade")
+	var live: Dictionary = _save.get_car(id)
+	if UpgradeLibrary.is_consumable(won):
+		assert_eq(int(_save.profile["inventory"].get(won, 0)), 1, "a won consumable lands in inventory")
+	else:
+		assert_true((live["installed_upgrades"] as Array).has(won), "a won part is fitted to the driven car")
+		assert_false(UpgradeLibrary.is_enabled(live, won), "and lands disabled until collected/Applied")
+	RallySession.continue_to_next_event()  # into event 2
+	RallySession.report_wreck()            # DNF during event 2
 	var r: Dictionary = finish[0]
 	assert_true(r["dnf"], "a wreck is a DNF")
 	assert_false(r["completed"], "DNF never completes the rally")
@@ -319,7 +327,10 @@ func test_wreck_midrally_is_dnf_and_grants_no_upgrade() -> void:
 	# A wrecked car is kept (repairable), not destroyed — it sits at 0 HP in the save.
 	assert_false(_save.get_car(id).is_empty(), "the wrecked car is kept, not destroyed")
 	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "the wrecked car is left at 0 HP")
-	assert_eq(_total_items(), 0, "a DNF rally grants no upgrade (one per FINISHED rally)")
+	# The event-1 upgrade is KEPT despite the DNF.
+	var after: Dictionary = _save.get_car(id)
+	if not UpgradeLibrary.is_consumable(won):
+		assert_true((after["installed_upgrades"] as Array).has(won), "the earned upgrade survives a later DNF")
 	assert_false(_save.rally_completed("shakedown"), "a DNF leaves the rally incomplete")
 
 

@@ -115,6 +115,14 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
 - The **loading screen** (`loading_screen.gd.update_water`) paints the waterline
   up-front (before generation) over the track bounds, so the road animates over it —
   eye-candy + authoring/debug aid.
+- **Water fills the panel edge-to-edge.** The 2D fit preserves aspect ratio, so
+  sampling water over just the track's bounding box left dry letterbox bands wherever
+  the track's aspect differed from the panel's — the water looked "cut off" at a fixed
+  distance, unlike the real game's full 10 km plane. Both callers expand the sample
+  bounds to the panel aspect via `LoadingScreen.expand_to_aspect(bounds, w/h)` and pass
+  that rect to `set_water(cells, size, frame)`; `TrackPreview` fits to the explicit
+  `frame` so the sampled water reaches the container edges (`world.gd._preview_aspect`,
+  `settings_menu.gd._seedlab_aspect`).
 - The **dev seed-lab** (Settings → Seed lab, `settings_menu.gd`) trials
   `(seed, water_level, turns, straightness)` via typeable SpinBox fields + a
   Randomize / Back action row (`go_back` returns to the category list)

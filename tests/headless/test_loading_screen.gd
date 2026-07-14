@@ -106,6 +106,26 @@ func test_fit_transform_shared_frame_maps_centre_to_rect_centre() -> void:
 	assert_almost_eq(xf * centre, Vector2(100, 60), Vector2(0.6, 0.6), "world centre maps to rect centre")
 
 
+func test_expand_to_aspect_matches_target_without_shrinking() -> void:
+	# A tall 10x40 box expanded to a 2:1 (wide) panel aspect: the width grows to 80
+	# (= 40 * 2), the height stays 40, and it stays centred on the original centre.
+	var b := Rect2(Vector2(0, 0), Vector2(10, 40))
+	var out := LoadingScreen.expand_to_aspect(b, 2.0)
+	assert_almost_eq(out.size, Vector2(80, 40), Vector2(1e-3, 1e-3), "grown to the 2:1 aspect, only widening")
+	assert_true(out.size.x >= b.size.x - 1e-3 and out.size.y >= b.size.y - 1e-3, "never shrinks either axis")
+	assert_almost_eq(out.position + out.size * 0.5, b.position + b.size * 0.5, Vector2(1e-3, 1e-3),
+		"stays centred on the original box")
+	# The output aspect now matches the panel, so a fit into that panel leaves no bands.
+	assert_almost_eq(out.size.x / out.size.y, 2.0, 1e-3, "output aspect equals the target")
+
+
+func test_expand_to_aspect_ignores_degenerate_input() -> void:
+	var b := Rect2(Vector2(1, 2), Vector2(10, 10))
+	assert_eq(LoadingScreen.expand_to_aspect(b, 0.0), b, "non-positive aspect -> unchanged")
+	assert_eq(LoadingScreen.expand_to_aspect(Rect2(Vector2(1, 2), Vector2(0, 5)), 1.5),
+		Rect2(Vector2(1, 2), Vector2(0, 5)), "empty bounds -> unchanged")
+
+
 func test_set_chunk_size_stored() -> void:
 	var screen := LoadingScreen.new()
 	add_child_autofree(screen)

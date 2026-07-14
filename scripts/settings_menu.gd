@@ -86,16 +86,24 @@ func _ready() -> void:
 
 
 func _build() -> void:
-	# Category list — one nav row per sub-page.
+	# Category list — one nav button per sub-page, laid out in a 2-column grid so the
+	# list stays short (about half the height) instead of a long single column that
+	# overflows and scrolls.
 	_list_page = _make_page()
 	add_child(_list_page)
 	_list_page.add_child(_make_sub("Choose a category:"))
-	_list_page.add_child(_make_nav_button("Camera", show_camera))
-	_list_page.add_child(_make_nav_button("Key bindings", show_controls))
-	_list_page.add_child(_make_nav_button("Mobile controls", show_schemes))
-	_list_page.add_child(_make_nav_button("Benchmark", show_benchmark))
-	_list_page.add_child(_make_nav_button("Dev", show_dev))
-	_list_page.add_child(_make_nav_button("Seed lab", show_seedlab))
+	var list_grid := GridContainer.new()
+	list_grid.columns = 2
+	list_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_grid.add_theme_constant_override("h_separation", 10)
+	list_grid.add_theme_constant_override("v_separation", 10)
+	_list_page.add_child(list_grid)
+	list_grid.add_child(_make_nav_button("Camera", show_camera))
+	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
+	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
+	list_grid.add_child(_make_nav_button("Benchmark", show_benchmark))
+	list_grid.add_child(_make_nav_button("Dev", show_dev))
+	list_grid.add_child(_make_nav_button("Seed lab", show_seedlab))
 
 	# Camera sub-page.
 	_camera_page = _make_page()
@@ -691,8 +699,9 @@ func _regen_seedlab() -> void:
 	# Paint the waterline first (known up-front) over a rough box, then animate.
 	var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
 	var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)
+	box = LoadingScreen.expand_to_aspect(box, LoadingScreen.aspect_of(_seedlab_preview.size))
 	var wp: Array = LakeField.preview_cells(params, box)
-	_seedlab_preview.set_water(wp[0], wp[1])
+	_seedlab_preview.set_water(wp[0], wp[1], box)
 	var on_prog := func(pts: PackedVector2Array) -> void:
 		if gen == _sl_gen:
 			_seedlab_preview.set_points(pts)
@@ -706,8 +715,9 @@ func _regen_seedlab() -> void:
 	_seedlab_preview.set_points(poly)
 	# Refine water to the actual track bounds.
 	var tb := LoadingScreen.bounds_of(poly).grow(60.0)
+	tb = LoadingScreen.expand_to_aspect(tb, LoadingScreen.aspect_of(_seedlab_preview.size))
 	var wp2: Array = LakeField.preview_cells(params, tb)
-	_seedlab_preview.set_water(wp2[0], wp2[1])
+	_seedlab_preview.set_water(wp2[0], wp2[1], tb)
 
 
 func _make_row_button(min_height: float) -> Button:

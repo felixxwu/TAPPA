@@ -10,6 +10,9 @@ extends Control
 
 signal leaderboard_hidden_changed(hidden: bool)
 
+var _reward_collected := false
+var _reveal: UpgradeReveal = null
+
 # Overlay mode (features/menus.md, event-replay feature): when hosted as an in-world
 # overlay over the replay (Task 7 wires this), the host sets overlay_mode = true
 # BEFORE _ready — transparent background so the 3D replay shows through, and the
@@ -39,6 +42,14 @@ func showing_event_page() -> bool:
 
 func is_final_event() -> bool:
 	return RallySession.events_completed() >= RallySession.EVENTS_PER_RALLY
+
+
+# True on the combined page of a non-final event that awarded an upgrade still to
+# be collected. The event-only page never collects (it's page 1 of 2).
+func _reward_pending() -> bool:
+	return not _showing_event_page and not _reward_collected \
+		and RallySession.events_completed() < RallySession.EVENTS_PER_RALLY \
+		and RallySession.current_event_upgrade() != ""
 
 
 func _build_ui() -> void:
@@ -97,9 +108,15 @@ func _build_ui() -> void:
 		title.text = "STANDINGS — after event %d of %d" % [done, RallySession.EVENTS_PER_RALLY]
 		subtitle.text = "%s — combined time so far" % String(rally.get("name", ""))
 		rows = RallySession.current_standings()
-		# After the final event this interstitial resolves to the podium, not
-		# another event — so the button leads to the podium instead.
-		button_text = "Continue to podium >" if done >= RallySession.EVENTS_PER_RALLY else "Continue to next event >"
+		# A non-final event awards an upgrade: the button collects it (reveal + Apply/
+		# Keep) before continuing. After the final event the interstitial resolves to
+		# the podium instead of another event.
+		if _reward_pending():
+			button_text = "Collect reward >"
+		elif done >= RallySession.EVENTS_PER_RALLY:
+			button_text = "Continue to podium >"
+		else:
+			button_text = "Continue to next event >"
 	title.add_theme_font_size_override("font_size", 28)
 	root.add_child(title)
 	subtitle.add_theme_font_size_override("font_size", 14)
@@ -143,8 +160,59 @@ func _on_action() -> void:
 	if _showing_event_page:
 		_showing_event_page = false
 		_build_ui()
+	elif _reward_pending():
+		_collect_reward()
 	else:
 		RallySession.continue_to_next_event()
+
+
+# Hide the leaderboard and take over the screen with the reward reveal (same card
+# as the podium). The card stays up; once the reveal + Apply/Keep choice resolves a
+# Continue button appears beneath it that resumes into the next event.
+func _collect_reward() -> void:
+	_reward_collected = true  # so _reward_pending() is false once we continue
+	for c in get_children():
+		c.queue_free()
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+	var bg := ColorRect.new()
+	bg.name = "Background"
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(UITheme.BLACK, 0.0) if overlay_mode else UITheme.BLACK
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bg)
+
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = 16.0
+	root.offset_top = 16.0
+	root.offset_right = -16.0
+	root.offset_bottom = -16.0
+	root.add_theme_constant_override("separation", 8)
+	add_child(root)
+
+	_reveal = UpgradeReveal.new()
+	_reveal.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(_reveal)
+
+	# Continue appears only once the reveal (and any Apply/Keep choice) resolves, so
+	# the player can't skip past the reward card before deciding.
+	var cont := Button.new()
+	cont.text = "Continue to next event >"
+	cont.focus_mode = Control.FOCUS_ALL
+	cont.visible = false
+	cont.pressed.connect(_on_action)  # _reward_collected is set, so this continues
+	root.add_child(cont)
+	_action_button = cont
+
+	_reveal.finished.connect(_on_reward_collected.bind(cont), CONNECT_ONE_SHOT)
+	_reveal.reveal(RallySession.current_event_upgrade(), RallySession.car_instance_id())
+
+
+func _on_reward_collected(cont: Button) -> void:
+	cont.visible = true
+	UITheme.enforce(self)  # house rules on the freshly-shown button
+	# Framework wires focus + WASD/arrow/gamepad nav to Continue now that it's shown.
+	MenuNav.attach(self, {first = cont, on_back = _on_back_pressed})
 
 
 # Back (keyboard/gamepad, via MenuNav on_back): from the combined page (reached from

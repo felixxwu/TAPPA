@@ -1945,7 +1945,7 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 		if installed.has(pid) and UpgradeLibrary.is_enabled(_lift_owned, pid):
 			current_id = pid
 	# None is always available and plays the "off" role.
-	row.add_child(_option_button("None", current_id == "", true,
+	row.add_child(_option_button("Stock", current_id == "", true,
 		"opt:%s:none" % slot, _set_slot_option.bind(instance_id, slot, "")))
 	# One button per catalogue part, greyed until that kit is fitted to this car.
 	for def in parts:
