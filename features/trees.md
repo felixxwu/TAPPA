@@ -37,8 +37,18 @@ same `TreeMeshField` by default. Both share the same `TreeScatter` placement.
 **trees** as opaque tight-cutout billboards instead of the low-poly 3D mesh
 (`TreeMeshField`). **Bushes always stay meshes** regardless of the toggle.
 
+**Per-region billboard tree.** Independently of the A/B toggle, a region can
+FORCE the billboard path with its own texture by passing `billboard_texture` to
+`Foliage.spawn_trees()` (from the region's `tree_billboard` look key — see
+[regions.md](regions.md)). Greece does this with `textures/tree-greece.webp`,
+sized to `cfg.region_tree_billboard_size_m` (a large, low canopy) instead of
+`cfg.tree_size_m`. It traces the same "+" cross silhouette; the mesh is cached
+per source-texture path in `Foliage.tree_silhouette_mesh(tex)` so each distinct
+cutout (home `tree.png` + any region texture) is built once.
+
 The billboard cutout is baked into GEOMETRY, not the shader: `TreeSilhouette`
-(`scripts/tree_silhouette.gd`) traces `textures/tree.png`'s alpha into a
+(`scripts/tree_silhouette.gd`) traces the tree texture's alpha (home:
+`textures/tree.png`) into a
 low-poly silhouette `ArrayMesh` once at load (cached by `Foliage.tree_silhouette_mesh()`),
 triangulating every opaque cluster `opaque_to_polygons` returns so the gaps
 between clusters are real geometry holes. The silhouette is emitted as a **"+"

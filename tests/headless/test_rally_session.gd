@@ -357,15 +357,35 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 
 
 func test_showdown_win_beat_instead_of_car_draw() -> void:
+	# The win/credits beat fires only for the FINAL region's showdown — "the_showdown"
+	# (region "home") no longer triggers it now that "greece" is a later region;
+	# use the actual final region's showdown ("gr_showdown") to exercise it.
 	var won: Array = [false]
 	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
-	_start("the_showdown")
+	_start("gr_showdown")
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	var cars_before: int = _save.profile["cars"].size()
 	_report_events([10000, 10000, 10000])
-	assert_true(won[0], "a top-3 showdown finish fires the win beat")
+	assert_true(won[0], "a top-3 final-region showdown finish fires the win beat")
 	assert_eq(_save.profile["cars"].size(), cars_before, "the showdown grants no car reward")
-	assert_true(_save.rally_completed("the_showdown"), "the showdown records completion")
+	assert_true(_save.rally_completed("gr_showdown"), "the showdown records completion")
+
+
+func test_non_final_region_showdown_completes_without_win_beat() -> void:
+	# "the_showdown" (region "home") is not the final region's showdown (greece
+	# comes after) — a top-3 finish should complete it like any normal rally win
+	# (including a car draw), but must NOT fire the win/credits beat or flag the
+	# endgame podium.
+	var won: Array = [false]
+	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
+	var result_box := _capture_finish()
+	_start("the_showdown")
+	RallySession._opponent_field = _field([90000])  # player will be top-3
+	_report_events([10000, 10000, 10000])
+	assert_false(won[0], "a non-final region's showdown does not fire the win beat")
+	var result: Dictionary = result_box[0]
+	assert_false(result["showdown_won"], "non-final showdown must not flag the endgame/credits podium")
+	assert_true(_save.rally_completed("the_showdown"), "the showdown still records completion")
 
 
 func test_farming_rewin_grants_car_without_new_completion() -> void:
@@ -503,3 +523,36 @@ func test_drivetrain_revert_restores_prior_mode_on_reset() -> void:
 	RallySession._reset_to_idle()
 	assert_eq(int(_save.get_car(id).get("drivetrain_override", -1)), CarLibrary.RWD,
 		"drivetrain restored to the garage-set mode after the rally")
+
+
+# --- Per-event config application (apply_event_config) ------------------------
+# These test the OVERRIDE/FALLBACK LOGIC, not any authored value: a synthetic
+# event dict flows into the config, and omitted keys resolve to the pristine
+# baseline — never to a value a prior event left on the shared session config.
+
+func test_event_terrain_override_flows_into_config() -> void:
+	var cfg := GameConfig.new()
+	RallySession.apply_event_config(cfg, {
+		"terrain_layer1_wavelength": 123.0, "terrain_layer1_amplitude": 45.0,
+		"terrain_layer3_amplitude": 6.0, "water_level": -20.0,
+	})
+	assert_eq(cfg.terrain_layer1_wavelength, 123.0, "layer1 wavelength override applied")
+	assert_eq(cfg.terrain_layer1_amplitude, 45.0, "layer1 amplitude override applied")
+	assert_eq(cfg.terrain_layer3_amplitude, 6.0, "layer3 amplitude override applied")
+	assert_eq(cfg.track_water_level_m, -20.0, "water_level override applied")
+
+
+func test_omitted_keys_fall_back_to_authored_baseline_not_prior_event() -> void:
+	var base: GameConfig = load(Config.CONFIG_PATH)
+	var cfg := GameConfig.new()
+	# Event A overrides two fields on the shared config...
+	RallySession.apply_event_config(cfg, {
+		"terrain_layer2_wavelength": 999.0, "water_level": -30.0,
+	})
+	assert_eq(cfg.terrain_layer2_wavelength, 999.0, "event A override took effect")
+	# ...event B omits them and must NOT inherit A's values — it gets the baseline.
+	RallySession.apply_event_config(cfg, {})
+	assert_eq(cfg.terrain_layer2_wavelength, base.terrain_layer2_wavelength,
+		"omitted terrain key resolves to the authored baseline, not event A's override")
+	assert_eq(cfg.track_water_level_m, base.track_water_level_m,
+		"omitted water_level resolves to the authored baseline, not event A's override")

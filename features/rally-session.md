@@ -67,7 +67,10 @@ completion + best placement (`Save.complete_rally(id, combined, placed)`,
 idempotent; the placement drives the world-map stars) and grants a reward — a **car** for
 a normal rally (`RewardSystem.draw_car`, fires on **every** top-3 including
 re-wins → renewable supply), or the **win beat** (`showdown_won`) for the
-showdown. Non-top-3 / DNF grants **no car** and leaves the rally incomplete (**no
+showdown **of the final region only** (`RegionLibrary.is_final`) — a non-final
+region's showdown (e.g. home's `the_showdown`) completes and pays a normal car
+reward like any other rally; its completion is what unlocks the next region
+(derived, see [regions.md](regions.md)). Non-top-3 / DNF grants **no car** and leaves the rally incomplete (**no
 retry** — re-enter from the map later; damage and the opponent field persist).
 Upgrades are **not** granted here — they're awarded per non-final event in
 `report_event_result` (above) and kept regardless of the final result.
@@ -78,6 +81,17 @@ In real play (`auto_load_scenes = true`) each event writes its
 `(seed, turn_count, width, water_level, …)` into `Config.data` and reloads
 `main.tscn`. After EVERY event — including the last — `report_event_result` emits
 `standings_ready` and waits at `Phase.STANDINGS`.
+
+The config write is `apply_event_config(cfg, event)` — a static, scene-free seam
+(extracted from `_load_event_scene` so its fallback semantics are directly
+testable). **Every field an event may omit resolves to the AUTHORED baseline**
+(the pristine cached `.tres`; `Config.data` is a duplicate of it), *not* the
+current `cfg` value. This matters because `Config.data` is a persistent session
+working copy that is never reset between events — a cfg-value fallback would let
+one event's override (`water_level`, a `terrain_layer*` key, …) leak into a later
+event that omits the key. Overridable per-event keys include `water_enabled`,
+`water_level`, and the 6 hill-shape keys `terrain_layer{1,2,3}_{wavelength,amplitude}`
+(see [terrain.md](terrain.md)).
 
 **Target-time derivation and lakes.** `_generate_event_tracks` derives rival times
 by generating each event's track via `TrackGenParams.for_event(event, cfg)` — the

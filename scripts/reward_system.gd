@@ -142,13 +142,12 @@ static func _unlock_candidates(profile: Dictionary) -> Array:
 		if not RallyLibrary.incomplete_rallies_enterable_by(meta, profile).is_empty():
 			return []  # a new rally is already enterable — standard draw applies
 	var rallies: Dictionary = profile.get("rallies", {})
-	var sd_unlocked := RallyLibrary.showdown_unlocked(profile)
 	# Locked rallies grouped by difficulty, so we can walk difficulties ascending.
 	var locked_by_difficulty := {}
-	for rally in RallyLibrary.RALLIES:
+	for rally in RallyLibrary.all():
 		if rallies.get(rally["id"], {}).get("completed", false):
 			continue
-		if rally["showdown"] and not sd_unlocked:
+		if not RegionLibrary.rally_showdown_gate_open(rally, profile):
 			continue
 		var d := int(rally.get("difficulty", 1))
 		if not locked_by_difficulty.has(d):

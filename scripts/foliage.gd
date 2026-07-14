@@ -27,22 +27,33 @@ const TREE_SILHOUETTE_EPSILON := 3.0
 const TREE_CANOPY_SHADER := preload("res://shaders/tree_canopy.gdshader")
 
 static var _tree_mesh_cache: Mesh
-static var _tree_silhouette_cache: Mesh
+# Silhouette meshes are traced per source texture (the home tree.png plus any region
+# billboard texture, e.g. tree-greece.webp) and cached by the texture's resource path,
+# so each distinct cutout is built once and shared across every instance in its field.
+static var _tree_silhouette_cache: Dictionary = {}
 
 
 # Spawn a tree field as a child of `parent`: a BillboardField (opaque cutout) when
 # cfg.use_billboard_trees, else a 3D TreeMeshField. Positions are lifted onto
 # `terrain`; `with_collision` gates the per-instance hitboxes (stages want them,
 # decorative clearings don't). Returns the created field node.
+#
+# `billboard_texture`, when non-null, FORCES the billboard path (regardless of
+# cfg.use_billboard_trees) using that texture's star-shaped cutout at
+# cfg.region_tree_billboard_size_m — this is how a region swaps in its own tree
+# (e.g. Greece's tree-greece.webp) in place of the home region's tree.
 static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: TerrainManager,
-		with_collision: bool, render_distance: float, render_fade: float) -> Node:
+		with_collision: bool, render_distance: float, render_fade: float,
+		billboard_texture: Texture2D = null) -> Node:
 	var cfg: GameConfig = Config.data
-	if cfg.use_billboard_trees:
+	if cfg.use_billboard_trees or billboard_texture != null:
+		var tex: Texture2D = billboard_texture if billboard_texture != null else TREE_TEXTURE
+		var size := cfg.region_tree_billboard_size_m if billboard_texture != null else cfg.tree_size_m
 		var billboards := BillboardField.new()
 		parent.add_child(billboards)
-		billboards.build(positions, terrain, cfg.tree_size_m, TREE_TEXTURE,
+		billboards.build(positions, terrain, size, tex,
 			cfg.tree_collision_radius_m, cfg.tree_collision_height_m, with_collision,
-			render_distance, render_fade, 0.0, tree_silhouette_mesh(), true)
+			render_distance, render_fade, 0.0, tree_silhouette_mesh(tex), true)
 		return billboards
 	var field := TreeMeshField.new()
 	parent.add_child(field)
@@ -96,14 +107,18 @@ static func tree_mesh() -> Mesh:
 	return _tree_mesh_cache
 
 
-# The opaque billboard-tree silhouette mesh, traced once from TREE_TEXTURE's alpha
-# and shared by every instance in the tree BillboardField.
-static func tree_silhouette_mesh() -> Mesh:
-	if _tree_silhouette_cache != null:
-		return _tree_silhouette_cache
-	_tree_silhouette_cache = TreeSilhouette.build(
-		TREE_TEXTURE.get_image(), TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON)
-	return _tree_silhouette_cache
+# The opaque billboard-tree silhouette mesh, traced once from `tex`'s alpha (default
+# the home TREE_TEXTURE) and shared by every instance in a tree BillboardField.
+# Cached per texture path so each distinct cutout (home + any region tree) is built
+# once. Region textures (tree-greece.webp) trace the same crossed-quad "+" star.
+static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
+	var key := tex.resource_path
+	if _tree_silhouette_cache.has(key):
+		return _tree_silhouette_cache[key]
+	var mesh := TreeSilhouette.build(
+		tex.get_image(), TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON)
+	_tree_silhouette_cache[key] = mesh
+	return mesh
 
 
 # The ground-cover bush mesh: the low-poly GLB mesh, its imported (tone-matched)

@@ -40,6 +40,7 @@ func after_each() -> void:
 	Config.reset()
 	CarFixtures.restore()
 	RallyLibrary.reset()  # drop any synthetic rally roster a test installed
+	RegionLibrary.reset()  # drop any synthetic region roster a test installed
 
 
 func _clean() -> void:
@@ -111,6 +112,12 @@ func _pin_label_sprite(pin: Node3D) -> Sprite3D:
 	return pin.find_children("*", "Sprite3D", true, false)[0]
 
 
+# The text on an arrow's floating label (read via the arrow's label_panel meta).
+func _arrow_label_text(arrow: Area3D) -> String:
+	var panel: PanelContainer = arrow.get_meta("label_panel")
+	return (panel.find_children("*", "Label", true, false)[0] as Label).text
+
+
 func test_hq_boots_to_the_exterior_title() -> void:
 	_reset_to_first_run()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -127,7 +134,8 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 0, "an empty garage parks no cars on the title")
 	# The 3D map table is populated with one pin per rally.
-	assert_eq(hq._pins.size(), RallyLibrary.RALLIES.size(), "one map pin per rally")
+	assert_eq(hq._pins.size(), RegionLibrary.rallies_in(hq._viewed_region_id()).size(),
+		"one map pin per rally in the viewed region")
 
 
 func test_hq_frames_the_lot_with_config_matched_trees() -> void:
@@ -269,39 +277,188 @@ func test_hq_title_shows_build_version() -> void:
 		"the version label lives on the title overlay (shown only there)")
 
 
-# The 3D map table can't take native focus (left/right pans / the pins are spatial),
-# so it carries a keyboard cursor: a selected pin that cycles (wrapping), gets the
-# hover-style highlight (all pins stay one size), and opens its rally detail on select.
-func test_hq_map_table_has_a_keyboard_pin_cursor() -> void:
+# The map table carries a spatial keyboard/gamepad cursor: pressing a direction moves
+# focus to the pin physically that way on the table (not the next array index), and a
+# direction with no target that way leaves focus put. Select opens the focused rally.
+func test_hq_map_table_navigates_pins_spatially() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	# Three pins at known map_pos: b is "up-map" of a (smaller y), c is off to +x.
+	RallyLibrary.override_for_test([
+		{"id": "a", "name": "A", "region": "home", "showdown": false, "map_pos": Vector2(0.5, 0.8), "restriction": {}, "events": []},
+		{"id": "b", "name": "B", "region": "home", "showdown": false, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+		{"id": "c", "name": "C", "region": "home", "showdown": false, "map_pos": Vector2(0.85, 0.5), "restriction": {}, "events": []},
+	])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._enter_table()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.TABLE, "the map table is open")
-	var pins: Array = hq._unlocked_pins()
-	assert_gt(pins.size(), 1, "there is more than one unlocked rally to cycle between")
-	assert_eq(hq._table_pin_index, 0, "the cursor seats on the first pin")
-	# Selection is shown by the hover-style highlight on the readout box, not by size:
-	# every pin keeps scale 1, and only the selected one gets the green underline.
-	assert_almost_eq(float((pins[0] as Node3D).scale.x), 1.0, 0.01, "the selected pin is NOT scaled up")
-	assert_almost_eq(float((pins[1] as Node3D).scale.x), 1.0, 0.01, "an unselected pin is the same size")
-	var sel_box: StyleBoxFlat = (pins[0] as Node3D).get_meta("label_panel").get_theme_stylebox("panel")
-	var idle_box: StyleBoxFlat = (pins[1] as Node3D).get_meta("label_panel").get_theme_stylebox("panel")
-	assert_eq(sel_box.border_width_bottom, 3, "the selected pin gets the hover-style underline")
-	assert_eq(idle_box.border_width_bottom, 0, "an unselected pin has no underline")
+	assert_gt(hq._table_focus_index, -1, "the cursor seats on a pin on entry")
 
-	hq._cycle_table_pin(1)
-	assert_eq(hq._table_pin_index, 1, "cycling advances the cursor")
-	hq._select_table_pin(0)
-	hq._cycle_table_pin(-1)
-	assert_eq(hq._table_pin_index, pins.size() - 1, "cycling back from the first wraps to the last")
+	var axes: Array = hq._table_plane_axes()
+	var up: Vector3 = axes[0]
+	var right: Vector3 = axes[1]
 
-	hq._select_table_pin(0)
-	hq._open_selected_pin()
+	# Focus a known pin, then press up: focus must land on a pin further along the
+	# screen-up axis than where we started (physically above), not merely index+1.
+	hq._focus_nearest_pin(_pin_for(hq, "a").position)
+	var focused_a: Node3D = hq._table_targets()[hq._table_focus_index]["node"]
+	var start_up: float = focused_a.position.dot(up)
+	hq._nav_table(Vector2.UP)
+	var after_up: Node3D = hq._table_targets()[hq._table_focus_index]["node"]
+	assert_gt(after_up.position.dot(up), start_up, "pressing up moves to a pin higher on the table")
+
+	# From the top pin, pressing up again finds nothing that way and stays put.
+	var top_idx: int = hq._table_focus_index
+	hq._nav_table(Vector2.UP)
+	assert_eq(hq._table_focus_index, top_idx, "no target above → focus unchanged")
+
+	# Right moves to a pin further along the screen-right axis.
+	hq._focus_nearest_pin(_pin_for(hq, "a").position)
+	var start_right: float = hq._table_targets()[hq._table_focus_index]["node"].position.dot(right)
+	hq._nav_table(Vector2.RIGHT)
+	assert_gt(hq._table_targets()[hq._table_focus_index]["node"].position.dot(right), start_right,
+		"pressing right moves to a pin further right on the table")
+
+	# The focused pin gets the hover-style underline; a pin stays scale 1.
+	hq._focus_nearest_pin(_pin_for(hq, "a").position)
+	var sel: Node3D = hq._table_targets()[hq._table_focus_index]["node"]
+	var box: StyleBoxFlat = sel.get_meta("label_panel").get_theme_stylebox("panel")
+	assert_eq(box.border_width_bottom, 3, "the focused pin gets the hover-style underline")
+	assert_almost_eq(float(sel.scale.x), 1.0, 0.01, "the focused pin is NOT scaled up")
+
+	# Select on a focused pin opens its rally detail.
+	hq._activate_table_focus()
 	assert_true(hq._detail_open, "selecting the focused pin opens its rally detail")
-	assert_eq(hq._selected_rally_id, String((pins[0] as Node3D).get_meta("rally_id")),
-		"it opens the focused pin's rally")
+	assert_eq(hq._selected_rally_id, String(sel.get_meta("rally_id")), "it opens the focused pin's rally")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+# The two regions sit left/right of the map; navigating right from the right-most pin
+# lands focus on the RIGHT ARROW (a focus target, highlighted), and select on it swaps
+# the region and re-seats focus onto a pin. Left/right no longer swap directly.
+func test_table_arrow_is_a_focus_target_that_swaps_on_select() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "home", "name": "Home"},
+		{"id": "greece", "name": "Greece", "map_image": "res://textures/greece.png"},
+	])
+	RallyLibrary.override_for_test([
+		{"id": "h1", "name": "H1", "region": "home", "showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "h_sd", "name": "HSD", "region": "home", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+		{"id": "g1", "name": "G1", "region": "greece", "showdown": false, "map_pos": Vector2(0.4, 0.5), "restriction": {}, "events": []},
+		{"id": "g_sd", "name": "GSD", "region": "greece", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+	])
+	_save.profile["rallies"] = {"h1": {"completed": true}, "h_sd": {"completed": true}}
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._go_to(hq.View.TABLE)
+	hq._set_viewed_region_for_test(0)  # home
+	await get_tree().process_frame
+
+	# The right arrow is in the focus set (a further region exists); the left arrow is not.
+	var kinds: Array = []
+	for t in hq._table_targets():
+		kinds.append(t["kind"])
+	assert_true(kinds.has("arrow_right"), "the right arrow is a focus target when a next region exists")
+	assert_false(kinds.has("arrow_left"), "no left arrow target at the first region")
+
+	# Walk right until focus reaches the right arrow (pins first, then the edge arrow).
+	var guard := 0
+	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 10:
+		hq._nav_table(Vector2.RIGHT)
+		guard += 1
+	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right",
+		"navigating right eventually lands on the right arrow")
+	assert_eq(_arrow_label_text(hq._env.arrow_right).to_lower(), "change map",
+		"an unlocked forward arrow reads 'change map'")
+
+	# Select on the arrow swaps the region and re-seats focus on a pin.
+	hq._activate_table_focus()
+	assert_eq(hq._viewed_region_index, 1, "select on the right arrow advances the viewed region")
+	for pin in hq._pins:
+		assert_eq(RegionLibrary.region_for_rally(String(pin.get_meta("rally_id"))).get("id", ""),
+			"greece", "every pin now belongs to the newly-viewed region")
+	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "pin",
+		"focus re-seats on a pin after the swap")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+func test_table_arrows_hide_at_the_ends_of_the_region_list() -> void:
+	# A swap arrow is only shown when a region exists that way: no left arrow at the
+	# first region, no right arrow at the furthest unlocked one. Two unlocked regions
+	# (home's showdown completed unlocks greece) → each end hides one arrow.
+	RegionLibrary.override_for_test([
+		{"id": "home", "name": "Home"},
+		{"id": "greece", "name": "Greece"},
+	])
+	RallyLibrary.override_for_test([
+		{"id": "h_sd", "name": "HSD", "region": "home", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+		{"id": "g_sd", "name": "GSD", "region": "greece", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+	])
+	_save.profile["rallies"] = {"h_sd": {"completed": true}}  # unlocks greece
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._go_to(hq.View.TABLE)
+	hq._set_viewed_region_for_test(0)  # first region
+	assert_false(hq._env.arrow_left.visible, "no left arrow at the first region")
+	assert_false(hq._env.arrow_left.input_ray_pickable, "hidden left arrow is not clickable")
+	assert_true(hq._env.arrow_right.visible, "right arrow shown when a next region exists")
+	hq._set_viewed_region_for_test(1)  # furthest unlocked
+	assert_true(hq._env.arrow_left.visible, "left arrow shown when a prev region exists")
+	assert_false(hq._env.arrow_right.visible, "no right arrow at the furthest unlocked region")
+	assert_false(hq._env.arrow_right.input_ray_pickable, "hidden right arrow is not clickable")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+# The forward arrow is shown even when the next region is LOCKED, floating a dimmed
+# "Complete showdown to unlock" label; it is a landable focus target but select on it
+# is inert (no swap). An unlocked/back arrow instead reads "Change map".
+func test_table_arrow_labels_reflect_lock_state() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "home", "name": "Home"},
+		{"id": "greece", "name": "Greece"},
+		{"id": "alps", "name": "Alps"},
+	])
+	RallyLibrary.override_for_test([
+		{"id": "h1", "name": "H1", "region": "home", "showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "h_sd", "name": "HSD", "region": "home", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+		{"id": "g1", "name": "G1", "region": "greece", "showdown": false, "map_pos": Vector2(0.4, 0.5), "restriction": {}, "events": []},
+	])
+	# No rallies completed → greece and alps stay locked.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._go_to(hq.View.TABLE)
+	hq._set_viewed_region_for_test(0)  # home (first region)
+	await get_tree().process_frame
+
+	assert_true(hq._env.arrow_right.visible, "forward arrow is shown even when the next region is locked")
+	assert_eq(_arrow_label_text(hq._env.arrow_right).to_lower(), "complete showdown to unlock",
+		"a locked forward arrow prompts to complete the showdown")
+
+	# The locked arrow is a landable focus target.
+	var kinds: Array = []
+	for t in hq._table_targets():
+		kinds.append(t["kind"])
+	assert_true(kinds.has("arrow_right"), "the locked forward arrow is a focus target")
+
+	# Navigate onto it and select: inert — the region does not change and focus stays.
+	var guard := 0
+	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 10:
+		hq._nav_table(Vector2.RIGHT)
+		guard += 1
+	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right", "cursor reached the locked arrow")
+	hq._activate_table_focus()
+	assert_eq(hq._viewed_region_index, 0, "select on a locked forward arrow does not swap the region")
+	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right", "focus stays on the locked arrow")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
 
 
 # The tuning hub is a manual up/down cursor over Change Car / Tuning / Upgrades;
@@ -637,6 +794,23 @@ func test_hq_free_roam_prepares_a_fresh_unseeded_run() -> void:
 	# (randi() collisions are astronomically unlikely, so a mismatch is a safe assert.)
 	hq._prepare_free_roam()
 	assert_ne(Config.data.track_seed, first_seed, "free roam re-seeds the track on every entry")
+
+
+# Free roam rolls a random lake depth, large-scale relief, and home/Greece location
+# each entry — every roll must land inside the requested ranges / region set.
+func test_hq_free_roam_randomises_water_relief_and_location() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	for _i in 20:
+		hq._prepare_free_roam()
+		assert_between(Config.data.track_water_level_m, -15.0, -5.0,
+			"free-roam water level stays in the -15..-5 band")
+		assert_between(Config.data.terrain_layer1_amplitude, 10.0, 35.0,
+			"free-roam layer-1 amplitude stays in the 10..35 band")
+		assert_true(RallySession.free_roam_region_id in ["home", "greece"],
+			"free-roam location is home or Greece")
 
 
 # Free Roam (from the EXTERIOR title screen) opens the car park to pick which owned car
@@ -1590,7 +1764,7 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", kit_name)
 	await get_tree().process_frame
 	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"), "picking the kit enables it")
-	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", "NONE")
+	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", "STOCK")
 	await get_tree().process_frame
 	var car: Dictionary = _save.get_car(id)
 	assert_true(car["installed_upgrades"].has("brake_kit"), "a parked part stays fitted to the car")
@@ -2412,10 +2586,10 @@ func test_turbo_selector_is_earn_gated() -> void:
 	await get_tree().process_frame
 	# All three options always render; the turbo slot has no Enable/Disable toggles.
 	# (Button labels render uppercased by the theme, so match on the upper-cased text.)
-	assert_eq(_count_slot_buttons_with_text(hq._lift_upgrades_box, "turbo", ["NONE", "SMALL", "BIG"]), 3,
-		"None / Small / Big always shown")
-	# With no kit won, None is selectable but Small / Big are greyed until earned.
-	assert_false(_turbo_button(hq._lift_upgrades_box, "NONE").disabled, "None is always available")
+	assert_eq(_count_slot_buttons_with_text(hq._lift_upgrades_box, "turbo", ["STOCK", "SMALL", "BIG"]), 3,
+		"Stock / Small / Big always shown")
+	# With no kit won, Stock is selectable but Small / Big are greyed until earned.
+	assert_false(_turbo_button(hq._lift_upgrades_box, "STOCK").disabled, "Stock is always available")
 	assert_true(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small locked until its kit is won")
 	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big locked until its kit is won")
 	# Winning the Small kit unlocks Small only; Big stays greyed.
@@ -2426,7 +2600,7 @@ func test_turbo_selector_is_earn_gated() -> void:
 	assert_false(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small unlocks once its kit is fitted")
 	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big still locked")
 	# Each option button is keyboard / gamepad focusable.
-	assert_eq(_turbo_button(hq._lift_upgrades_box, "NONE").focus_mode, Control.FOCUS_ALL,
+	assert_eq(_turbo_button(hq._lift_upgrades_box, "STOCK").focus_mode, Control.FOCUS_ALL,
 		"turbo option buttons are focusable")
 
 
@@ -2451,8 +2625,8 @@ func test_turbo_selector_sets_enabled_part() -> void:
 	await get_tree().process_frame
 	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_large"), "Big enables the large turbo")
 	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "and switches the small one off")
-	# Picking None parks both — no turbo enabled.
-	_press_button_with_text(hq._lift_upgrades_box, "NONE")
+	# Picking Stock parks both — no turbo enabled.
+	_press_button_with_text(hq._lift_upgrades_box, "STOCK")
 	await get_tree().process_frame
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_large"), "None disables the large turbo")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "None disables the small turbo")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_large"), "Stock disables the large turbo")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "Stock disables the small turbo")

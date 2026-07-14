@@ -84,8 +84,9 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   action button reads **`Collect reward >`** instead of `Continue to next event >`.
   Pressing it clears the leaderboard and takes over the screen with the shared
   `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
-  as the podium** — which lands on the won part and offers **Apply/Keep** (the
-  repair kit / drivetrain kit auto-resolve). A **Continue to next event >** button
+  as the podium** — which lands on the won part and offers **Apply/Keep** (a won
+  repair kit offers **Repair now / Save it** when the driven car is damaged, else it
+  auto-resolves; the drivetrain kit auto-resolves). A **Continue to next event >** button
   appears only once the reveal + choice resolves, then resumes the rally
   (`continue_to_next_event`). The `UpgradeReveal` wires its own `MenuNav` across
   Apply/Keep, and standings re-attaches `MenuNav` on Continue when it's shown, so the
@@ -143,12 +144,21 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   is the same station reused with a mode flag, so it inherits this nav for free: left/right
   cycles the swap-eligible target cars, select confirms the swap (`_select_swap_target`),
   and back (`_car_back`) returns to the tuning-lift Upgrades page instead of the map table;
-  the
-  **map table** carries a **keyboard pin cursor** (`_table_pin_index`) that cycles the
-  unlocked pins (left/right or up/down, wrapping), highlights the selected pin's
-  readout box with the same hover-style lift a menu button gets (`UITheme.mark_panel_focused`
-  — all pins stay one size, no scale-up), centres the camera on it, and opens its detail
-  on select; the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
+  the **map table** carries a **spatial keyboard/gamepad cursor** over a unified focus
+  set: every unlocked rally pin plus the two map-swap arrows (each arrow present whenever a
+  region exists that way, floating a house-style label like the rally-pin readout boxes).
+  All four directions (`menu_up/down/left/right`) move the cursor to the nearest target in
+  that direction within the table's XZ plane — so pressing up goes to the pin physically
+  above, matching what the player sees through the fixed table camera (`_table_plane_axes`
+  derives on-screen up/right from the camera pose). No wrap: if nothing lies that way, the
+  cursor stays put. The focused pin gets the hover-style readout underline; a focused arrow
+  glows. `menu_select` fires the focused target — a pin opens its rally detail; an unlocked
+  arrow (back arrow, or a forward arrow whose region is now reachable) swaps the region and
+  re-seats focus onto the pin nearest that edge; a locked forward arrow (whose region exists
+  but the showdown is not yet completed) shows **"Complete showdown to unlock"** on its label
+  and is inert (select/click does nothing). `menu_back`
+  exits to the garage. Clicking a pin or arrow with the pointer still works (`_on_rally_pin` /
+  `_on_arrow_input`), and mouse drag still pans the map; the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
   `UITheme.mark_focused`) over **Back / Change Car / Tuning / Upgrades** (its buttons
   sit side by side in one row), fired with select (`_activate_hub_focus`) — Change Car
   drops into the car park in change-car mode; the cursor seats on Change Car on entry
@@ -166,7 +176,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
   parking the whole owned collection); Start (`_start_free_roam`) hands the picked
   instance to `RallySession.free_roam_instance_id`, writes a fresh random seed + neutral
-  (0.5) terrain settings into the live Config (`_prepare_free_roam`), and loads the run
+  (0.5) terrain settings into the live Config (`_prepare_free_roam`) — plus a randomised
+  landscape each entry: lake depth (`track_water_level_m` in −15..−5), large-scale relief
+  (`terrain_layer1_amplitude` in 10..35), and a random home/Greece location
+  (`RallySession.free_roam_region_id`, read by `world.gd._current_region_look`) — and loads the run
   scene with NO active `RallySession`. `world.gd` fields that owned car (falling back to
   the default library car) and skips the rally/start-line/podium wiring; the player
   leaves via Pause → Quit to HQ, or by finishing the track — with no session to report
@@ -396,8 +409,21 @@ See [tuning.md](tuning.md) for the underlying config pipeline.
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
 plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal in
 X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
-albedo texture so the aerial colours read true under the garage lighting). Every
-rally is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
+albedo texture so the aerial colours read true under the garage lighting). The table
+now shows one **region** at a time: two diegetic **left/right arrows**
+(`HQEnvironment.arrow_left`/`arrow_right`) on the table's side edges. Each arrow floats
+a house-style label (like the rally-pin readout boxes): **"Change map"** on the back arrow
+and on an unlocked forward arrow (whose region the player has reached), and
+**"Complete showdown to unlock"** (dimmed) on a forward arrow whose region exists but the
+showdown is not yet completed. An arrow is absent only when no region exists that way.
+Unlocked arrows swap the **viewed** region — clicked/tapped (`_on_arrow_input`), or landed
+on by the spatial cursor and fired with `menu_select` (the arrows are focus targets in the
+same nav set as the pins; see the map-table nav description above), clamped to the
+furthest region the player has unlocked (`hq.gd._swap_region`/`_furthest_unlocked_index`).
+Locked arrows are shown but inert (select/click does nothing). Swapping re-textures the
+map plane to the region's `map_image` and rebuilds pins from only that region's rallies.
+See [regions.md](regions.md) for the full region-swap + unlock model. Every
+rally in the viewed region is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
 **state-driven flag marker** (`RallyFlag` — a small **base disk** the pin
 stands on + a pole + waving pennant + finial bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
@@ -557,14 +583,18 @@ pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars
 since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
 game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Reset to
 track**, **Settings** and **Quit to HQ**.
-Resume unfreezes and closes. **Reset to track** snaps the car **back onto the road at
-its current progress** — the same *recovery pose* the off-track leash / stuck watchdog
-uses (`TrackProgress.recovery_pose()`, on the centerline at the furthest offset
-reached), **not** the start line (that's the `R` / `reset_car` key). The menu owns no
-car reference, so it emits `reset_to_track_requested`; `world.gd` connects that in
-`_ready` and performs the reset (`$Car.reset_to(_track_progress.recovery_pose())`,
-which zeroes motion and suppresses the teleport's impact damage — free), then the menu
-`resume()`s so the player drops straight back in.
+Resume unfreezes and closes. **Reset to track** snaps the car **onto the centerline
+beside its current position** — "the middle of the road, regardless of where the car
+is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query).
+This is deliberately **not** `recovery_pose()` (which the off-track leash / stuck
+watchdog use): that pose is pinned to the *furthest* offset reached and freezes the
+moment the car leaves the leash, so a strayed car would reset to a stale point that's
+no longer beside it — feeling like the button does nothing. It's also **not** the
+start line (that's the `R` / `reset_car` key). The menu owns no car reference, so it
+emits `reset_to_track_requested`; `world.gd` connects that in `_ready` and performs
+the reset (`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion
+and suppresses the teleport's impact damage — free), then the menu `resume()`s so the
+player drops straight back in.
 Settings shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the title-screen page), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops an *"Abandon rally?"* confirm and, on

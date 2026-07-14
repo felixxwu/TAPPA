@@ -151,12 +151,12 @@ func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
 	lbl.name = node_name
 	lbl.anchor_left = anchor
 	lbl.anchor_right = anchor
-	lbl.grow_horizontal = grow_dir
+	lbl.grow_horizontal = grow_dir as Control.GrowDirection
 	lbl.offset_left = offsets.x
 	lbl.offset_right = offsets.y
 	lbl.offset_top = offsets.z
 	lbl.offset_bottom = offsets.w
-	lbl.horizontal_alignment = align
+	lbl.horizontal_alignment = align as HorizontalAlignment
 	lbl.add_theme_font_size_override("font_size", 20)
 	lbl.visible = false
 	add_child(lbl)

@@ -24,7 +24,6 @@ func after_each() -> void:
 
 func test_roster_is_well_formed() -> void:
 	var ids := {}
-	var showdowns := 0
 	for rally in RallyLibrary.RALLIES:
 		assert_false(ids.has(rally["id"]), "rally id '%s' is unique" % rally["id"])
 		ids[rally["id"]] = true
@@ -38,9 +37,24 @@ func test_roster_is_well_formed() -> void:
 			assert_between(t, 0.0, 1.0, "%s event tarmac fraction is in [0, 1]" % rally["id"])
 			var s := RallyLibrary.event_straightness(ev)
 			assert_between(s, 0.0, 1.0, "%s event straightness is in [0, 1]" % rally["id"])
-		if rally["showdown"]:
-			showdowns += 1
-	assert_eq(showdowns, 1, "exactly one showdown rally")
+
+
+func test_every_rally_has_a_known_region() -> void:
+	for rally in RallyLibrary.all():
+		var region_id := String(rally.get("region", ""))
+		assert_ne(region_id, "", "rally %s has no region" % rally.get("id", "?"))
+		assert_ne(RegionLibrary.index_of(region_id), -1,
+			"rally %s region %s is not in RegionLibrary" % [rally.get("id", "?"), region_id])
+
+
+func test_exactly_one_showdown_per_region() -> void:
+	for region in RegionLibrary.all():
+		var region_id := String(region["id"])
+		var showdowns := 0
+		for rally in RallyLibrary.all():
+			if String(rally.get("region", "")) == region_id and bool(rally.get("showdown", false)):
+				showdowns += 1
+		assert_eq(showdowns, 1, "region %s must have exactly one showdown" % region_id)
 
 
 func test_event_forestiness_defaults_to_fully_wooded() -> void:

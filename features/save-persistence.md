@@ -49,6 +49,10 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   `best_placed` is the best (lowest) finishing position ever achieved there (drives
   the world-map star rating).
 - `showdown_unlocked` / `showdown_completed` — the end-game beat.
+  **Region unlock is not stored here or anywhere else** — `RegionLibrary.unlocked`
+  (see [regions.md](regions.md)) derives it on every call from the previous
+  region's showdown-rally `completed` flag in `rallies`, so no new profile
+  field/schema bump was needed for the region system.
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
   `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old

@@ -38,6 +38,7 @@ func _ready() -> void:
 	# above the distant haze; the panorama's own horizon + the fog colour (matched
 	# to the sky horizon, see background_color) blend the terrain edge into the sky.
 	env.fog_sky_affect = cfg.fog_sky_affect
+	_apply_region_look()
 
 	# Setting this property triggers a full terrain regeneration; skip when equal.
 	if $Floor.texture_tile_per_meter != cfg.terrain_tile_per_meter:
@@ -382,7 +383,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# track DFS already routed the road above water; road cells are excluded here
 	# too as a coarse guard. The car gets soft-hazard drag over any lake.
 	if cfg.water_enabled:
-		await _build_lakes(cfg, road_centerline, loading)
+		await _build_lakes(cfg, loading)
 
 	# Roadside turn-arrow signs along the stage.
 	if cfg.signs_enabled:
@@ -452,7 +453,7 @@ func _drop_submerged(points: PackedVector2Array, cfg: GameConfig) -> PackedVecto
 	return out
 
 
-func _build_lakes(cfg: GameConfig, road_centerline: Curve2D, loading: LoadingScreen = null) -> void:
+func _build_lakes(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	await _stage(loading, "Filling lakes…")
 	var floor_tm := $Floor as TerrainManager
 	# One big flat plane at the water level; terrain above it occludes it via the
@@ -503,9 +504,20 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	trees = _drop_submerged(trees, cfg)  # keep trees out of the lakes
 	# Trees render as billboards or 3D meshes per cfg.use_billboard_trees — the
 	# choice (and the shared mesh/material) live in Foliage so every scene matches.
-	# Stage trees collide (they're obstacles).
+	# Stage trees collide (they're obstacles). A region can override the tree with its
+	# own star-shaped billboard (tree_billboard look key, e.g. Greece's tree-greece.webp);
+	# home / free-roam leaves it null and follows cfg.use_billboard_trees.
+	var region_look := _current_region_look()
+	var region_tree_tex: Texture2D = null
+	if region_look.has("tree_billboard"):
+		region_tree_tex = load(region_look["tree_billboard"])
 	Foliage.spawn_trees(self, trees, $Floor as TerrainManager, true,
-		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
+		cfg.tree_render_distance_m, cfg.tree_render_fade_m, region_tree_tex)
+
+	# A region can suppress the 3D ground-cover bushes entirely (suppress_bush_mesh —
+	# e.g. Greece's arid map has no lush undergrowth); skip the whole bush pass then.
+	if bool(region_look.get("suppress_bush_mesh", false)):
+		return {"trees": trees, "road_cells": road_cells}
 
 	await _stage(loading, "Scattering bushes…")
 	# Bushes: same scatter as trees (offset seed so they interleave; NOT forest-gated,
@@ -1056,15 +1068,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	_stage_manager.force_complete()
 
 
-# Pause-menu "Reset to track": snap the live car back onto the road at its current
-# progress (the same recovery pose the off-track leash / stuck watchdog would use),
-# not all the way back to the start line. reset_to zeroes motion and suppresses the
-# impact damage the teleport would otherwise register, so the reset is free. No-op
-# before the track exists (TrackProgress is built during generation).
+# Pause-menu "Reset to track": snap the live car onto the centerline beside its
+# CURRENT position ("the middle of the road, regardless of where the car is right
+# now") — TrackProgress.manual_reset_pose() does a fresh nearest-point query, so it
+# works even when the car has strayed off the leash (where recovery_pose() would be
+# frozen at the furthest progress reached and no longer beside the car). reset_to
+# zeroes motion and suppresses the impact damage the teleport would otherwise
+# register, so the reset is free. No-op before the track exists (TrackProgress is
+# built during generation).
 func _on_reset_to_track_requested() -> void:
 	if _track_progress == null or not has_node("Car"):
 		return
-	$Car.reset_to(_track_progress.recovery_pose())
+	$Car.reset_to(_track_progress.manual_reset_pose())
 
 
 # Whether this run should open with the pre-event start-line scene: a session run
@@ -1332,3 +1347,43 @@ func _layers_match(layers: Array[TerrainLayer], params: Array[Vector2]) -> bool:
 
 func _mat(mesh_instance: MeshInstance3D) -> ShaderMaterial:
 	return mesh_instance.get_surface_override_material(0) as ShaderMaterial
+
+
+# The look overrides for the driven rally's region (empty for home / free-roam).
+# Shared by _apply_region_look (materials/sky/fog) and the foliage spawn (tree
+# billboard + bush suppression) so both read the same region. The region is fixed
+# for the world's lifetime, so the result is computed once and cached.
+var _region_look_cache: Dictionary = {}
+var _region_look_ready := false
+func _current_region_look() -> Dictionary:
+	if _region_look_ready:
+		return _region_look_cache
+	var region_id := "home"
+	if RallySession.is_active():
+		region_id = String(RegionLibrary.region_for_rally(RallySession.rally_id()).get("id", "home"))
+	elif RallySession.free_roam_instance_id >= 0 and RallySession.free_roam_region_id != "":
+		region_id = RallySession.free_roam_region_id
+	_region_look_cache = RegionLibrary.look_of(region_id)
+	_region_look_ready = true
+	return _region_look_cache
+
+
+func _apply_region_look() -> void:
+	var look := _current_region_look()
+	if look.is_empty():
+		return
+	var floor_mat := $Floor.chunk_material as ShaderMaterial
+	if look.has("grass_texture"):
+		floor_mat.set_shader_parameter("albedo_texture", load(look["grass_texture"]))
+	if look.has("gravel_texture"):
+		floor_mat.set_shader_parameter("road_texture", load(look["gravel_texture"]))
+	var env: Environment = $WorldEnvironment.environment
+	if look.has("sky_panorama"):
+		var sky_mat := env.sky.sky_material as PanoramaSkyMaterial
+		if sky_mat:
+			sky_mat.panorama = load(look["sky_panorama"])
+	if look.has("background_color"):
+		env.background_color = look["background_color"]
+		env.fog_light_color = look["background_color"]
+	# terrain_tint / terrain_layers overrides: apply here if authored (Greece ships
+	# without them for now; leave hooks for later).

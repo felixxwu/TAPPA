@@ -581,6 +581,21 @@ func rally_completed(rally_id: String) -> bool:
 	return profile["rallies"].get(rally_id, {}).get("completed", false)
 
 
+# Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so region
+# unlocks — which are derived from each region's showdown being completed
+# (RegionLibrary.unlocked) — can be exercised without grinding the whole ladder.
+func dev_three_star_all_rallies() -> void:
+	var rallies: Dictionary = profile["rallies"]
+	for rally in RallyLibrary.all():
+		var rid := String(rally["id"])
+		var rec: Dictionary = rallies.get(rid, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
+		rec["completed"] = true
+		rec["best_placed"] = 1  # 1st place → 3 stars (best_placement)
+		rallies[rid] = rec
+	_recompute_showdown()
+	save()
+
+
 # Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.
 # Drives the world-map star rating (1st → 3 stars, 2nd → 2, 3rd → 1, else 0).
 func best_placement(rally_id: String) -> int:

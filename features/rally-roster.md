@@ -61,6 +61,10 @@ Each `RALLIES` entry:
   opponent target-time derivation. See [terrain.md](terrain.md) → *Cliffs & drops*.
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
   world map (`hq.gd`). Pure UI data; no effect on the sim.
+- `region` — the `RegionLibrary` region id this rally belongs to (`"home"` or
+  `"greece"`). Groups rallies for the HQ table's per-region map/pins and scopes
+  the showdown-unlock gate: the roster invariant is **exactly one `showdown`
+  rally per region**, not one globally. See [regions.md](regions.md).
 
 A rally's result is the **combined time across its 3 events**.
 
@@ -159,7 +163,9 @@ generator also uses it per-rival.
 - `completed_count(profile)` — the single progression metric (caps reward tier +
   gates the showdown).
 - `showdown_unlocked(profile)` — true only when every non-showdown rally is
-  completed.
+  completed. Superseded for region-scoped gating by
+  `RegionLibrary.showdown_unlocked(region_id, profile)` (per-region form used
+  by `hq.gd` and `reward_system.gd`); see [regions.md](regions.md).
 - `incomplete_rallies_enterable_by(car_meta, profile)` — the anti-soft-lock
   query the reward system uses (incomplete ∧ eligible ∧ showdown-only-if-unlocked).
 

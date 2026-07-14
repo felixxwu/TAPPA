@@ -566,7 +566,7 @@ func test_tree_canopy_uses_near_camera_dissolve_shader() -> void:
 
 func test_billboard_field_without_collision_has_no_body() -> void:
 	var floor_node := _scene.get_node("Floor") as TerrainManager
-	var tex := load("res://textures/bush.webp") as Texture2D
+	var tex := load("res://textures/tree-greece.webp") as Texture2D
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(3, 4), Vector2(6, 9)])
@@ -582,6 +582,39 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 	var origin := field.instance_positions[0]
 	assert_almost_eq(origin, Vector3(p.x, floor_node.height_at(p.x, p.y) - 0.5, p.y),
 		Vector3(1e-3, 1e-3, 1e-3), "bush sunk into ground by the y_offset")
+
+
+func test_spawn_trees_billboard_texture_forces_billboard_path() -> void:
+	# A region tree texture (Foliage.spawn_trees billboard_texture arg) must FORCE
+	# the billboard path even when the perf toggle prefers the 3D mesh — that's how
+	# a region (e.g. Greece) swaps in its own star-shaped tree. Drive it with the
+	# mesh path selected so the override is what produces a BillboardField.
+	var cfg: GameConfig = Config.data
+	var prev := cfg.use_billboard_trees
+	cfg.use_billboard_trees = false
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var tex := load("res://textures/tree-greece.webp") as Texture2D
+	var parent := Node3D.new()
+	add_child_autofree(parent)
+	var field := Foliage.spawn_trees(parent, PackedVector2Array([Vector2(2, 2)]),
+		floor_node, false, 80.0, 15.0, tex)
+	cfg.use_billboard_trees = prev
+	assert_true(field is BillboardField,
+		"a billboard_texture override forces the BillboardField path")
+
+
+func test_tree_silhouette_mesh_caches_per_texture() -> void:
+	# The silhouette cutout is traced per source texture and cached by path, so each
+	# distinct tree texture yields its own (reused) mesh — the home tree and a region
+	# tree don't collide, and asking twice returns the same instance.
+	var home := Foliage.tree_silhouette_mesh()
+	var greece_tex := load("res://textures/tree-greece.webp") as Texture2D
+	var region := Foliage.tree_silhouette_mesh(greece_tex)
+	assert_not_null(region, "a region texture traces a real silhouette mesh")
+	assert_true(region.get_surface_count() > 0, "the region silhouette has geometry")
+	assert_ne(home, region, "distinct textures produce distinct cached silhouettes")
+	assert_eq(region, Foliage.tree_silhouette_mesh(greece_tex),
+		"the same texture returns the cached silhouette instance")
 
 
 func test_tree_mesh_field_for_bushes_skips_collision_and_bakes_light() -> void:

@@ -121,19 +121,19 @@ func test_reset_to_track_emits_and_resumes() -> void:
 	assert_false(_pause.is_open(), "Reset to track closes the overlay")
 
 
-# world.gd's handler snaps the live car onto the track's recovery pose (its current
-# progress), not back to the start line. Driving the car well away and firing the
-# request lands it exactly on TrackProgress.recovery_pose().
-func test_reset_to_track_snaps_car_onto_recovery_pose() -> void:
+# world.gd's handler snaps the live car onto the centerline beside its CURRENT
+# position (TrackProgress.manual_reset_pose), not back to the start line and not to
+# the frozen furthest progress. Firing the request lands the car exactly on that pose.
+func test_reset_to_track_snaps_car_onto_manual_reset_pose() -> void:
 	var car: Node3D = _scene.get_node("Car")
 	var track_progress = _scene._track_progress
 	assert_not_null(track_progress, "the run has a live TrackProgress")
-	var target: Transform3D = track_progress.recovery_pose()
-	# Shove the car far from the road so the reset has something to undo.
-	car.global_transform = target.translated(Vector3(500, 20, 500))
+	# Shove the car off the road; the manual reset pose is computed from where it is now.
+	car.global_transform = car.global_transform.translated(Vector3(30, 5, 0))
+	var target: Transform3D = track_progress.manual_reset_pose()
 	_scene._on_reset_to_track_requested()
 	assert_almost_eq(car.global_transform.origin.distance_to(target.origin), 0.0, 0.01,
-		"Reset to track puts the car back on the recovery pose")
+		"Reset to track puts the car on the centerline beside its current position")
 
 
 func test_settings_exposes_the_shared_menu() -> void:

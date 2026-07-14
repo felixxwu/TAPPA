@@ -74,7 +74,7 @@ var peak_torque_rpm := 4500.0
 ## Minimum speed (m/s) before the steer-assist yaw torque kicks in. Below this
 ## the car is too slow for understeer to matter and the aid only makes low-speed
 ## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.
-@export_range(0.0, 50.0) var steer_assist_min_speed := 10
+@export_range(0.0, 50.0) var steer_assist_min_speed := 15
 ## Spin protection: corrective yaw torque (N·m) that pulls the nose back toward
 ## the direction of travel once the car has rotated further than
 ## spin_assist_angle into a slide — the counterpart to steer_assist_torque
@@ -322,7 +322,7 @@ var peak_torque_rpm := 4500.0
 @export_range(100.0, 4000.0) var engine_turbo_whistle_freq_min := 350.0
 @export_range(1000.0, 9000.0) var engine_turbo_whistle_freq_max := 2500.0
 ## Filter resonance: low Q = airier / breathier rush; high Q = a more tonal whistle.
-@export_range(0.5, 12.0) var engine_turbo_whistle_q := 0.7
+@export_range(0.5, 12.0) var engine_turbo_whistle_q := 2
 ## Blend of the broadband air-rush layer under the resonant whine: 0 = pure resonant
 ## whine, 1 = mostly airflow "whoosh". Keeps it from sounding like a test tone.
 @export_range(0.0, 1.0) var engine_turbo_air_mix := 0.45
@@ -1141,6 +1141,11 @@ var peak_torque_rpm := 4500.0
 ## (TreeMeshField). Bushes stay low-poly meshes regardless. Kept so the mesh vs
 ## billboard tree cost can be measured side by side. See features/trees.md.
 @export var use_billboard_trees := false
+## Size (width x height, m) of a region billboard tree — the star-shaped cutout a
+## region forces via its `tree_billboard` look override (e.g. Greece's
+## tree-greece.webp). Larger than the home tree_size_m: a big, low Mediterranean
+## canopy that stands in for the home region's trees on that map.
+@export var region_tree_billboard_size_m := Vector2(4.0, 3.0)
 
 
 @export_group("Roadside Signs")

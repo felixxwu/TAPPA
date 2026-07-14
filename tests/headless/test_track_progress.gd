@@ -99,6 +99,30 @@ func test_jump_to_finish_uses_the_finish_offset() -> void:
 	assert_almost_eq(pose.origin.z, 60.0, 1.0, "finish pose is at the finish offset, not the curve end")
 
 
+# The pause-menu "Reset to track" is a MANUAL reset: it snaps the car onto the
+# centerline beside its CURRENT position, regardless of how far along it had
+# progressed. Unlike recovery_pose() (pinned to the furthest offset reached, which
+# freezes when the car leaves the leash), manual_reset_pose() does a fresh nearest-
+# point query, so a car sitting off-road well behind its best offset still resets to
+# the road right where it is — "the middle of the road regardless of where you are".
+func test_manual_reset_pose_uses_current_position_not_furthest_progress() -> void:
+	_put_car(0, 0)
+	var tp := _make_progress()
+	# Drive forward to the furthest point (z = 60): best offset locks to ~60.
+	_put_car(0, 60)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_offset(), 60.0, 0.5, "best offset reached ~60 m")
+	# Now the car sits OFF the road, well behind its furthest progress (z = 30, 8 m aside).
+	_put_car(8, 30)
+	# recovery_pose (auto-reset) still points at the frozen furthest offset (~60 m)...
+	assert_almost_eq(tp.recovery_pose().origin.z, 60.0, 1.0,
+		"auto-reset pose stays pinned to the furthest offset reached")
+	# ...but a MANUAL reset snaps to the centerline beside where the car is NOW (~z 30, x 0).
+	var manual := tp.manual_reset_pose()
+	assert_almost_eq(manual.origin.z, 30.0, 1.0, "manual reset lands beside the current position")
+	assert_almost_eq(manual.origin.x, 0.0, 0.5, "manual reset lands on the centerline (middle of the road)")
+
+
 func test_progress_gated_by_distance() -> void:
 	_put_car(0, 0)
 	var tp := _make_progress()

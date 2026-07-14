@@ -156,6 +156,7 @@ func _build() -> void:
 	_dev_status = _make_sub("Wipe progress or unlock anything.")
 	_dev_page.add_child(_dev_status)
 	_dev_page.add_child(_make_action_button("Wipe all progress", _wipe_progress))
+	_dev_page.add_child(_make_action_button("3-star all rallies (unlock all regions)", _three_star_all_rallies))
 	_dev_page.add_child(_make_sub("Unlock a car:"))
 	for car in CarLibrary.all():
 		var car_id := String(car["id"])
@@ -478,6 +479,13 @@ func _wipe_progress() -> void:
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
 	_dev_status.text = "Wiped all progress."
+
+
+# Dev: 3-star every rally so all regions unlock (regions gate on each region's
+# showdown being completed — see RegionLibrary.unlocked / features/regions.md).
+func _three_star_all_rallies() -> void:
+	Save.dev_three_star_all_rallies()
+	_dev_status.text = "3-starred all rallies — all regions unlocked."
 
 
 # Grant a fresh owned instance of any car in the library (no rally required).

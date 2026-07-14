@@ -19,11 +19,13 @@ var camera: Camera3D
 var map_table: MapTable          # the wooden table model the map plane sits on
 var map_plane: MeshInstance3D    # the flat map laid on the table top
 var pins_root: Node3D            # parent of the rally pins (hq fills it in _refresh_map_pins)
+var arrow_left: Area3D           # diegetic left arrow — swap to the previous region
+var arrow_right: Area3D          # diegetic right arrow — swap to the next region
 
 
 # Build the whole static HQ world as children of `host`, wiring the map-table and lift
 # pickable areas to the given click callbacks. Populates the handles above.
-func build(host: Node3D, on_table_input: Callable, on_lift_input: Callable) -> void:
+func build(host: Node3D, on_table_input: Callable, on_lift_input: Callable, on_arrow_input: Callable) -> void:
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
 	# Same skybox as the run scene (main.tscn) so HQ shares the look. The garage
@@ -77,7 +79,7 @@ func build(host: Node3D, on_table_input: Callable, on_lift_input: Callable) -> v
 	_build_spectators(host, trees)
 	_build_garage(host)
 	_build_carpark(host)
-	_build_map_table(host, on_table_input)
+	_build_map_table(host, on_table_input, on_arrow_input)
 	_build_lift(host, on_lift_input)
 
 	camera = Camera3D.new()
@@ -305,7 +307,7 @@ func _carpark_bay_texture(bays: int) -> ImageTexture:
 
 # The map table: a block with the flat 3D map plane on top + a pickable area so a tap
 # (in the garage view) drops the camera to the table view.
-func _build_map_table(host: Node3D, on_table_input: Callable) -> void:
+func _build_map_table(host: Node3D, on_table_input: Callable, on_arrow_input: Callable) -> void:
 	var cfg: GameConfig = Config.data
 	var p: Vector3 = cfg.hq_table_pos
 	var s: Vector3 = cfg.hq_table_size
@@ -346,6 +348,71 @@ func _build_map_table(host: Node3D, on_table_input: Callable) -> void:
 	area.monitorable = false
 	area.input_event.connect(on_table_input)
 	host.add_child(area)
+
+	# Arrows sit ON the map plane (just above its surface), near its left/right
+	# edges, rather than floating off the table sides — inset from the map half-width
+	# so they stay on the printed map.
+	var edge := cfg.hq_map_plane_size.x * 0.5 - 0.4
+	arrow_left = _build_map_arrow(host, Vector3(p.x - edge, top_y + 0.02, p.z), -1, on_arrow_input)
+	arrow_right = _build_map_arrow(host, Vector3(p.x + edge, top_y + 0.02, p.z), 1, on_arrow_input)
+
+
+# A diegetic map-swap arrow lying flat on the map plane. `dir` = -1 (left) / +1
+# (right); its input_event routes back to hq via on_arrow_input.call(event, dir).
+# The mesh is a real arrow silhouette (shaft + triangular head) in the XZ plane
+# pointing +X, rotated 180° about Y for the left arrow so it points -X.
+func _build_map_arrow(host: Node3D, pos: Vector3, dir: int, on_arrow_input: Callable) -> Area3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.85, 0.78, 0.5)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # crisp from the top-down table cam
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED             # flat card readable from either side
+	var mesh := _build_arrow_mesh(mat)
+	mesh.rotation.y = 0.0 if dir > 0 else PI
+	var root := Area3D.new()
+	root.position = pos
+	root.input_ray_pickable = true
+	root.monitoring = false
+	root.add_child(mesh)
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	# Tall + raised so the box top clears the table's own pickable area (which spans
+	# top_y ± 0.3): the arrow lies flat on the surface, but its click target must stick
+	# up ABOVE the table box or the near-top-down ray picks the table first and the
+	# arrow can't be clicked.
+	box.size = Vector3(0.8, 0.9, 0.6)
+	cs.shape = box
+	cs.position.y = 0.4
+	root.add_child(cs)
+	root.input_event.connect(func(_c, e, _p, _n, _s): on_arrow_input.call(e, dir))
+	host.add_child(root)
+	return root
+
+
+# A flat filled arrow silhouette in the XZ plane (y = 0), pointing +X: a
+# rectangular shaft joined to a wider triangular head. Built as two shaft
+# triangles + one head triangle; the material is double-sided so winding is moot.
+func _build_arrow_mesh(mat: Material) -> MeshInstance3D:
+	# Outline vertices (x forward, z lateral). Shaft spans x -0.35..0.05, head
+	# 0.05..0.4; shaft half-width 0.1, head half-width 0.24.
+	var p := [
+		Vector3(-0.35, 0.0, -0.10),  # 0 shaft back, -z
+		Vector3(0.05, 0.0, -0.10),   # 1 shaft front, -z
+		Vector3(0.05, 0.0, 0.10),    # 2 shaft front, +z
+		Vector3(-0.35, 0.0, 0.10),   # 3 shaft back, +z
+		Vector3(0.05, 0.0, -0.24),   # 4 head base, -z
+		Vector3(0.40, 0.0, 0.0),     # 5 head tip
+		Vector3(0.05, 0.0, 0.24),    # 6 head base, +z
+	]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for tri in [[0, 1, 2], [0, 2, 3], [4, 5, 6]]:
+		for idx in tri:
+			st.set_normal(Vector3.UP)
+			st.add_vertex(p[idx])
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	return mi
 
 
 # The tuning lift: a platform + two posts, with a pickable area. Tapping it (in the

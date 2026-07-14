@@ -62,8 +62,12 @@ per part — the part is already on the car, so the choice is only enable-now vs
 enable-later: *Apply* enables it (`Save.set_upgrade_enabled(..., true)`), *Keep*
 leaves it disabled to enable later from the garage upgrades menu (see
 `features/upgrade-catalogue.md`). A won part never moves to another car and a car
-never holds two of the same (per-car dedup); repair kits skip the choice and just
-land in inventory. The **Drivetrain Swap** kit also skips the choice — it has no
+never holds two of the same (per-car dedup). A won **repair kit** lands in
+inventory, but if the car you just drove is below full health
+(`EngineSwap.at_full_health`) the reveal first offers a **Repair now / Save it**
+choice: *Repair now* spends the just-won kit on the driven car immediately
+(`Save.use_repair_kit`), *Save it* banks it for the garage. A full-health car
+skips the choice and the kit just lands in inventory. The **Drivetrain Swap** kit also skips the choice — it has no
 enable/disable, so the reveal always installs it enabled and the player picks a
 drive mode later in the garage (see `features/upgrade-catalogue.md`).
 
@@ -85,7 +89,10 @@ re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
    is *stuck*: every rally their garage can currently enter is already completed
    (each owned car is checked on its **effective** stats via
    `UpgradeLibrary.effective_meta`, so installed upgrades count, against
-   `RallyLibrary.incomplete_rallies_enterable_by`). Candidates then become the
+   `RallyLibrary.incomplete_rallies_enterable_by`, which is region-aware — a
+   locked rally's own showdown only counts as enterable once
+   `RegionLibrary.showdown_unlocked(rally.region, profile)` is true for that
+   rally's region, see [regions.md](regions.md)). Candidates then become the
    models eligible for the still-locked rallies (incomplete, showdown only once
    unlocked) at the **lowest difficulty any catalogue car can actually enter** —
    e.g. all tier-1/2 rallies beaten with nothing new enterable ⇒ a car for a

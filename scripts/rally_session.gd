@@ -72,6 +72,11 @@ var return_to_garage := false
 # Cleared when a real rally starts so it can't leak into a rally event's fielding.
 var free_roam_instance_id := -1
 
+# Region the current free-roam drive should wear (id from RegionLibrary). Chosen at
+# random when hq.gd prepares free roam; "" / a plain dev boot falls back to home.
+# Only consulted while free_roam_instance_id >= 0 (see world.gd _current_region_look).
+var free_roam_region_id := ""
+
 # When true (the default for real play) RallySession performs the per-event scene
 # loads itself. Headless tests set it false and drive report_* directly with
 # precomputed target times, so no track generation or scene reload happens.
@@ -413,10 +418,17 @@ func _resolve_results() -> void:
 		# complete_rally records the FIRST completion (idempotent); the car reward
 		# fires on EVERY top-3 finish, including re-wins (renewable supply).
 		Save.complete_rally(String(_rally.get("id", "")), combined, placed)
-		if bool(_rally.get("showdown", false)):
+		var region_id := String(_rally.get("region", ""))
+		var is_final_showdown := bool(_rally.get("showdown", false)) and RegionLibrary.is_final(region_id)
+		if is_final_showdown:
+			# The LAST region's showdown is the endgame: fire the win/credits beat,
+			# no car draw (the finale rewards completion, not a car).
 			showdown_done = true
 			showdown_won.emit()
 		else:
+			# Every other top-3 finish - including a NON-FINAL region's showdown, which
+			# just unlocks the next region (RegionLibrary.unlocked is derived) - is a
+			# normal rally win: draw a car (renewable supply).
 			var model: Variant = RewardSystem.draw_car(Save.profile, int(_rally.get("difficulty", 1)))
 			if model != null:
 				car_reward = String(model)
@@ -527,17 +539,37 @@ func _generate_event_tracks(rally: Dictionary) -> Array:
 # scene. The load hides under the menus fly-through/fade (todo/menus.md). Mirrors
 # apply_car's runtime Config.data mutation.
 func _load_event_scene(event: Dictionary) -> void:
-	var cfg: GameConfig = Config.data
-	cfg.track_seed = int(event.get("seed", cfg.track_seed))
-	cfg.track_turn_count = int(event.get("turn_count", cfg.track_turn_count))
+	apply_event_config(Config.data, event)
+	get_tree().change_scene_to_file("res://main.tscn")
+
+
+# Write an event's track parameters into `cfg`. Extracted from _load_event_scene
+# as a pure (scene-free) seam so the fallback semantics can be tested directly.
+#
+# Fields an event may OMIT fall back to the AUTHORED baseline (the pristine cached
+# .tres — Config.data is a duplicate of it), NOT the current cfg value. Config.data
+# is a persistent session working copy that's never reset between events, so a
+# cfg-value fallback would let one event's override leak into a later event that
+# omits the key. `base` pins every omitted field to its global default.
+static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
+	var base: GameConfig = load(Config.CONFIG_PATH)
+	cfg.track_seed = int(event.get("seed", base.track_seed))
+	cfg.track_turn_count = int(event.get("turn_count", base.track_turn_count))
 	cfg.track_straightness = RallyLibrary.event_straightness(event)
 	cfg.track_width = RallyLibrary.event_width(event)
 	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
 	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
 	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
-	cfg.water_enabled = bool(event.get("water_enabled", cfg.water_enabled))
-	cfg.track_water_level_m = float(event.get("water_level", cfg.track_water_level_m))
-	get_tree().change_scene_to_file("res://main.tscn")
+	cfg.water_enabled = bool(event.get("water_enabled", base.water_enabled))
+	cfg.track_water_level_m = float(event.get("water_level", base.track_water_level_m))
+	# Per-event terrain hill shape: any of the 3 Perlin layers' wavelength/amplitude
+	# may be overridden; omitted ones use the authored global default (features/terrain.md).
+	cfg.terrain_layer1_wavelength = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))
+	cfg.terrain_layer1_amplitude = float(event.get("terrain_layer1_amplitude", base.terrain_layer1_amplitude))
+	cfg.terrain_layer2_wavelength = float(event.get("terrain_layer2_wavelength", base.terrain_layer2_wavelength))
+	cfg.terrain_layer2_amplitude = float(event.get("terrain_layer2_amplitude", base.terrain_layer2_amplitude))
+	cfg.terrain_layer3_wavelength = float(event.get("terrain_layer3_wavelength", base.terrain_layer3_wavelength))
+	cfg.terrain_layer3_amplitude = float(event.get("terrain_layer3_amplitude", base.terrain_layer3_amplitude))
 
 
 # Show the between-event standings interstitial; its Continue calls

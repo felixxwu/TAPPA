@@ -11,9 +11,9 @@ extends CanvasLayer
 # See features/menus.md.
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
-# Emitted when the player picks "Reset to track" — world.gd snaps the live car back
-# onto the road at its current progress (TrackProgress.recovery_pose) and the menu
-# resumes. The menu itself has no car reference, so it delegates the reset upward.
+# Emitted when the player picks "Reset to track" — world.gd snaps the live car onto
+# the centerline beside its current position (TrackProgress.manual_reset_pose) and the
+# menu resumes. The menu itself has no car reference, so it delegates the reset upward.
 signal reset_to_track_requested
 
 @export var camera_manager: CameraManager

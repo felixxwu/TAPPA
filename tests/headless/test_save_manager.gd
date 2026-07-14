@@ -32,6 +32,21 @@ func _clean() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
+func test_dev_three_star_all_rallies_completes_everything_and_unlocks_regions() -> void:
+	# Dev cheat: every rally becomes completed + 3-starred (1st place), and — since
+	# region unlock is derived from each region's showdown completion — every region
+	# ends up unlocked. Treats the catalogues as opaque (no dependency on any entry).
+	_save.dev_three_star_all_rallies()
+	for rally in RallyLibrary.all():
+		var rid := String(rally["id"])
+		assert_true(_save.rally_completed(rid), "rally %s marked completed" % rid)
+		assert_eq(_save.best_placement(rid), 1, "rally %s is 3-starred (1st place)" % rid)
+	for region in RegionLibrary.all():
+		var region_id := String(region["id"])
+		assert_true(RegionLibrary.unlocked(region_id, _save.profile),
+			"region %s unlocked after 3-starring all rallies" % region_id)
+
+
 func test_default_profile_is_empty_and_valid() -> void:
 	assert_false(_save.has_save(), "no file on disk yet -> has_save() false")
 	assert_eq(_save.profile["schema_version"], _save.SCHEMA_VERSION, "default carries current schema")

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d32s7lcgw1eus"
-path="res://.godot/imported/bush.webp-d80c948058df1d698f8b90a7352df38d.ctex"
+uid="uid://dc2ea8mlleg41"
+path="res://.godot/imported/sky-greece.jpg-bbdbc4e0bda5d260afbd7937788f7891.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://textures/bush.webp"
-dest_files=["res://.godot/imported/bush.webp-d80c948058df1d698f8b90a7352df38d.ctex"]
+source_file="res://textures/sky-greece.jpg"
+dest_files=["res://.godot/imported/sky-greece.jpg-bbdbc4e0bda5d260afbd7937788f7891.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

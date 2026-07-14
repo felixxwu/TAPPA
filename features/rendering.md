@@ -260,7 +260,7 @@ shipped knobs in `GameConfig`:
 - **`texture_lod_bias`** (default 0.75) — biases distant foliage sampling toward
   cheaper mip levels (a `lod_bias` uniform in `shaders/billboard.gdshader`, set
   from `BillboardField.build()`). The tree/bush textures now have **mipmaps
-  enabled** (`textures/tree.png.import`, `textures/bush.webp.import`), so distant
+  enabled** (`textures/tree.png.import`, `textures/tree-greece.webp.import`), so distant
   billboards no longer thrash the texture cache. `filter_nearest` is kept (PS1
   look) — mipmapping is independent of the magnification filter.
 

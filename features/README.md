@@ -25,6 +25,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [configuration.md](configuration.md) | `GameConfig` resource — every tunable, the `Config` autoload |
 | [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, rally completion) at `user://profile.json` |
 | [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`, opponent field, showdown gating) |
+| [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, the HQ table's diegetic region swap, sequential unlock + per-region showdown + final-region credits |
 | [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, repair kit, tuning gates) |
 | [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) + the tuning-lift UI |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars (gated on 100% HP), engine mass + weight-distribution recompute, and the engine-detune tuning axis |
@@ -85,6 +86,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
 | Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) |
+| Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, sequential unlock) |
 | Upgrade catalogue | `scripts/upgrade_library.gd` (`UpgradeLibrary` — items, effects, slots, repair kit) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/hq.gd` (tuning lift) |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, mass/weight-front recompute, swap eligibility), `scripts/save_manager.gd` (`Save.swap_engines`/`set_engine_detune`), `scripts/car.gd` (`_apply_engine_swap`) |

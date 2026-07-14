@@ -103,6 +103,22 @@ func recovery_pose() -> Transform3D:
 	return _best_reset
 
 
+# The pose the pause-menu "Reset to track" button snaps the car to: the centerline
+# beside the car's CURRENT position, facing along the road — "the middle of the road,
+# regardless of where the car is right now". Unlike recovery_pose() (pinned to the
+# furthest offset reached, which freezes the moment the car leaves the leash and so
+# can sit anywhere relative to a strayed car), this does a fresh global nearest-point
+# query, so a car sitting off-road — behind or ahead of its best progress — always
+# resets to the road right where it is. Falls back to the recovery pose if the track
+# isn't set up yet.
+func manual_reset_pose() -> Transform3D:
+	if _centerline == null or _car == null:
+		return _best_reset
+	var p: Vector3 = _car.global_transform.origin
+	var offset := _centerline.get_closest_offset(Vector2(p.x, p.z))
+	return _reset_xform_at(offset)
+
+
 # Re-point at a freshly spawned car on the same track (a car swap), resetting
 # progress to the new car's spawn offset.
 func retarget(car: Node, terrain: Node) -> void:

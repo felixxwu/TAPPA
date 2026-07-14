@@ -231,10 +231,9 @@ func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
 	# that at least one catalogue car can actually enter — a locked rally whose
 	# restriction band no car fits can't be opened by ANY grant, so the draw steps
 	# past it to the next difficulty up rather than giving up (anti-soft-lock).
-	var sd := RallyLibrary.showdown_unlocked(profile)
 	var lowest := 0
 	for rally in RallyLibrary.RALLIES:
-		if completed.has(rally["id"]) or (rally["showdown"] and not sd):
+		if completed.has(rally["id"]) or (rally["showdown"] and not RegionLibrary.showdown_unlocked(String(rally.get("region", "")), profile)):
 			continue
 		var any_eligible := false
 		for entry in CarLibrary.all():
@@ -252,7 +251,7 @@ func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
 		var meta := CarLibrary.by_id(String(model))
 		var opens_lowest := false
 		for rally in RallyLibrary.RALLIES:
-			if completed.has(rally["id"]) or (rally["showdown"] and not sd):
+			if completed.has(rally["id"]) or (rally["showdown"] and not RegionLibrary.showdown_unlocked(String(rally.get("region", "")), profile)):
 				continue
 			if int(rally["difficulty"]) == lowest and RallyLibrary.is_eligible(rally, meta):
 				opens_lowest = true
@@ -262,3 +261,23 @@ func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
 		# And the grant really re-opens progression.
 		assert_false(RallyLibrary.incomplete_rallies_enterable_by(meta, profile).is_empty(),
 			"the granted car can enter a still-incomplete rally")
+
+
+# --- Per-region showdown gating ----------------------------------------------
+
+func test_draw_excludes_a_locked_regions_showdown() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "home", "name": "Home"}, {"id": "greece", "name": "Greece"},
+	])
+	RallyLibrary.override_for_test([
+		{"id": "h1", "region": "home", "showdown": false, "restriction": {}},
+		{"id": "h_sd", "region": "home", "showdown": true, "restriction": {}},
+		{"id": "g_sd", "region": "greece", "showdown": true, "restriction": {}},
+	])
+	# Nothing completed → greece locked, home's showdown not yet open either.
+	var car := {"pw": 150.0}  # synthetic; is_eligible reads restriction only
+	var out := RallyLibrary.incomplete_rallies_enterable_by(car, {"rallies": {}})
+	var ids := []
+	for r in out: ids.append(r["id"])
+	assert_does_not_have(ids, "g_sd")  # greece showdown gated
+	RegionLibrary.reset(); RallyLibrary.reset()

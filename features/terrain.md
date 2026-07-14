@@ -32,6 +32,12 @@ Owns all terrain state and the chunk lifecycle.
   has its own landscape — and its own lake layout (see [lakes.md](lakes.md)).
 - `layers: Array[TerrainLayer]` — each layer is a (`wavelength_m`,
   `amplitude_m`) pair. Defaults set in `_default_layers` on `_ready` if empty.
+  `world.gd` (re)builds this from `cfg.terrain_layers()` whenever it changes
+  (`_layers_match` guard), so the hill shape follows the live config.
+  **Per-event override:** an event may set any of the 6 flat keys
+  `terrain_layer{1,2,3}_{wavelength,amplitude}` to reshape its hills; omitted
+  keys fall back to the authored `GameConfig` global default (never to a prior
+  event's override — see `RallySession.apply_event_config`, [rally-session.md](rally-session.md)).
 - `texture_tile_per_meter: float` — UV tiling for the ground texture (the road
   texture tiles independently via `road_tile_per_meter`, applied as the shader's
   `road_uv_scale`; see [rendering.md](rendering.md)).
@@ -364,6 +370,19 @@ within the leash band, including straight-span sub-sampling), `set_corridor`/
 `cache_chunk`/`precompute_corridor`, cache-first `height_at`/`light_at`
 (matches the flattened/lit chunk data, not raw noise), and the empty-cache /
 populated-cache-miss fallback behaviour in `_reconcile`.
+
+## Region look overrides
+
+A rally's `region` (see [regions.md](regions.md)) can override the ground
+textures the floor shader reads. `world.gd._apply_region_look` (called right
+after the base environment is built) sets the floor's `chunk_material` shader
+params — `albedo_texture` from the region's `grass_texture`, `road_texture`
+from `gravel_texture` — whenever the region authors them; a region that omits
+a key (home authors none) leaves the `main.tscn`-baked baseline untouched. The
+`WorldEnvironment` sky panorama and `background_color`/`fog_light_color` get
+the same treatment; see [rendering.md](rendering.md) for the shader/sky
+plumbing itself. Terrain tints/layers per region are a reserved, unused hook —
+no region ships them yet.
 
 ## Related config
 

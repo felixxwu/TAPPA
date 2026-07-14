@@ -156,11 +156,11 @@ phone the bandwidth cost outweighs the aesthetic.
 - `textures/tree.png.import`: `mipmaps/generate=false`, `compress/mode=0`
   (lossless/uncompressed). **This is the one to fix** — it's the most-instanced
   texture (~6,000 billboards) and the most minified at distance.
-- `textures/bush.webp.import`: verify (expected same as tree — mipmaps off).
+- `textures/tree-greece.webp.import`: verify (expected same as tree — mipmaps off).
 
 ### Plan
 1. Set `mipmaps/generate=true` in `textures/tree.png.import` and
-   `textures/bush.webp.import`. Re-import (delete `.godot/imported/` entries or
+   `textures/tree-greece.webp.import`. Re-import (delete `.godot/imported/` entries or
    let the editor regenerate).
 2. "Aggressive LOD": bias sampling toward lower mip levels so distant
    foliage/ground resolves to a cheaper mip sooner. Two options:
@@ -178,7 +178,7 @@ phone the bandwidth cost outweighs the aesthetic.
    texels but cheaper minified sampling.
 
 ### Files
-`textures/tree.png.import`, `textures/bush.webp.import`,
+`textures/tree.png.import`, `textures/tree-greece.webp.import`,
 `shaders/billboard.gdshader`, `shaders/ps1_models.gdshader`,
 `scripts/game_config.gd` (+ `config/game_config.tres`), `features/rendering.md`.
 

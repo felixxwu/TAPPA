@@ -2,7 +2,8 @@ extends Control
 class_name UpgradeReveal
 # A self-contained reward card: a slot-machine spin that lands on a won upgrade,
 # then an Apply/Keep choice (enable now vs leave fitted-disabled for the garage).
-# Consumables (repair kit) and the drivetrain kit skip the choice. Emits `finished`
+# A won repair kit offers a Repair-now/Save-it choice when the driven car is below
+# full health; otherwise consumables and the drivetrain kit skip the choice. Emits `finished`
 # once the reveal + choice resolves. Used by the standings interstitial; visually
 # matches the podium reward card (features/menus.md, features/reward-system.md).
 
@@ -11,6 +12,9 @@ signal finished()
 var _car_instance_id := -1
 var _choice_item_id := ""
 var _choice_pending := false
+# Which choice the buttons resolve: "upgrade" (Apply/Keep a slotted part) or
+# "repair" (use the just-won repair kit on the driven car now vs save it).
+var _choice_mode := "upgrade"
 var _reveal_done := false
 var _headless := false
 var _slot_tween: Tween
@@ -165,6 +169,25 @@ func _start_slot(reel_names: Array, target: String, on_done: Callable) -> void:
 # enabled (its FWD/RWD/AWD selection is made later in the garage).
 func _offer_choice(item_id: String, item_name: String) -> void:
 	var driven := Save.get_car(_car_instance_id)
+	# The repair kit is a consumable — but if the car you just drove is below full
+	# health, offer to spend the just-won kit on it right now (it's already in your
+	# inventory), instead of only banking it for the garage. Full-health cars fall
+	# through to the plain "added to your inventory" path.
+	if item_id == UpgradeLibrary.REPAIR_KIT_ID and not driven.is_empty() \
+			and not EngineSwap.at_full_health(driven):
+		var repair_car := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
+		_choice_mode = "repair"
+		_choice_item_id = item_id
+		_choice_pending = true
+		_slot_caption.text = UITheme.caps("Repair your %s now? (uses 1 kit)" % repair_car)
+		_apply_button.text = UITheme.caps("Repair now")
+		_keep_button.text = UITheme.caps("Save it")
+		_choice_box.visible = true
+		UITheme.enforce(self)
+		# Framework: focus + WASD/arrow/gamepad nav across Repair/Save (no on_back —
+		# the host owns back). Seats the cursor on Repair.
+		MenuNav.attach(self, {first = _apply_button})
+		return
 	if driven.is_empty() or UpgradeLibrary.slot_of(item_id) == "" or UpgradeLibrary.is_consumable(item_id):
 		_slot_caption.text = UITheme.caps("%s — added to your inventory" % item_name)
 		finished.emit()
@@ -175,10 +198,12 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 		_slot_caption.text = UITheme.caps("%s installed on your %s — pick a drive mode in the garage" % [item_name, car_name])
 		finished.emit()
 		return
+	_choice_mode = "upgrade"
 	_choice_item_id = item_id
 	_choice_pending = true
 	_slot_caption.text = UITheme.caps("Fit %s to the %s you just drove?" % [item_name, car_name])
 	_apply_button.text = UITheme.caps("Apply to %s" % car_name)
+	_keep_button.text = UITheme.caps("Keep for later")
 	_choice_box.visible = true
 	UITheme.enforce(self)
 	# Framework: focus + WASD/arrow/gamepad nav across Apply/Keep (no on_back — the
@@ -187,6 +212,12 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 
 
 func _on_apply() -> void:
+	if _choice_mode == "repair":
+		var car_name := String(CarLibrary.by_id(String(Save.get_car(_car_instance_id).get("model_id", ""))).get("name", "your car"))
+		Save.use_repair_kit(_car_instance_id)
+		_slot_caption.text = UITheme.caps("%s repaired to full health" % car_name)
+		_resolve_choice()
+		return
 	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
 	Save.set_upgrade_enabled(_car_instance_id, _choice_item_id, true)
 	_slot_caption.text = UITheme.caps("%s fitted & enabled — toggle it any time in the garage" % item_name)
@@ -194,6 +225,10 @@ func _on_apply() -> void:
 
 
 func _on_keep() -> void:
+	if _choice_mode == "repair":
+		_slot_caption.text = UITheme.caps("Repair kit saved to your inventory")
+		_resolve_choice()
+		return
 	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
 	Save.set_upgrade_enabled(_car_instance_id, _choice_item_id, false)
 	_slot_caption.text = UITheme.caps("%s fitted (disabled) — enable it any time in the garage" % item_name)
@@ -202,6 +237,7 @@ func _on_keep() -> void:
 
 func _resolve_choice() -> void:
 	_choice_item_id = ""
+	_choice_mode = "upgrade"
 	_choice_pending = false
 	_choice_box.visible = false
 	finished.emit()
