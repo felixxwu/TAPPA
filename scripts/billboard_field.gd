@@ -19,10 +19,16 @@ var _collision_shape: BoxShape3D
 # can disable one instance's box in place via the physics server.
 var _collision_body: StaticBody3D
 
-# True when this field renders the opaque cross path (trees). Only that path is
-# fellable — the quad path is camera-billboarded by its shader, so tilting the
-# transform basis wouldn't show. Set in build().
+# True when this field renders the opaque tree path (silhouette card + opaque
+# shader). Only that path is fellable: its shader honours the instance rotation,
+# so a topple tilt shows; the legacy quad path ignores the basis. Set in build().
 var _use_opaque: bool = false
+
+# Minimum per-instance size multiplier for the opaque path: each tree is scaled by a
+# deterministic random factor in [_size_jitter_min, 1.0] (hashed off its position), so
+# a stand varies in height. 1.0 means no jitter (every instance at full authored size).
+# Set in build(); recomputed in _upright_basis so felling restores the same size.
+var _size_jitter_min: float = 1.0
 
 # Felling bookkeeping (see TreeMeshField for the mirror). Unlike TreeMeshField this
 # is ONE unbinned MultiMesh, so the instance index IS the build/shape index — no
@@ -50,7 +56,8 @@ var instance_scale: Vector3 = Vector3.ONE
 func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2,
 		texture: Texture2D, collision_radius: float, collision_height: float,
 		with_collision: bool, render_distance: float, render_fade: float,
-		y_offset: float = 0.0, mesh: Mesh = null, opaque: bool = false) -> void:
+		y_offset: float = 0.0, mesh: Mesh = null, opaque: bool = false,
+		size_jitter_min: float = 1.0) -> void:
 	# Two render paths share this field:
 	#  - Quad + alpha-cutout shader (mesh == null): the classic sprite billboard.
 	#  - Supplied silhouette mesh + opaque shader (mesh != null and opaque): the
@@ -59,6 +66,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	#    instance scale so the opaque shader reads it from MODEL_MATRIX.
 	var use_opaque := mesh != null and opaque
 	_use_opaque = use_opaque
+	_size_jitter_min = clampf(size_jitter_min, 0.0, 1.0)
 	var render_mesh: Mesh
 	if use_opaque:
 		render_mesh = mesh
@@ -90,6 +98,11 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
+	# The opaque tree path carries a per-instance FELLED flag in custom data
+	# (INSTANCE_CUSTOM.x): 0 while standing (shader billboards a single card), 1 once
+	# knocked over (shader locks the full "+" cross and topples it). The quad path
+	# doesn't read custom data, so only enable it for the opaque path.
+	mm.use_custom_data = use_opaque
 	mm.mesh = render_mesh
 	mm.instance_count = positions.size()
 	instance_positions = PackedVector3Array()
@@ -107,15 +120,16 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 		var y := terrain.height_at(p.x, p.y) + y_offset
 		var pos := Vector3(p.x, y, p.y)
 		instance_positions[i] = pos
-		# The cross no longer faces the camera, so give each tree a deterministic
-		# random yaw about Y (hashed off its position) — otherwise every "+" would
-		# align to the same axes and the stand would look like a grid. The quad
-		# path keeps its identity basis (that shader still billboards).
+		# Trees billboard toward the camera in the shader, so the instance basis
+		# carries only the authored size scale (rotation stays identity) — no
+		# per-instance yaw, which would pre-rotate the card off the camera. A felled
+		# tree's topple tilt is applied on top of this identity basis later.
 		var xform_basis := Basis.IDENTITY
 		if use_opaque:
-			var yaw := ScatterMath.hash01(int(round(p.x)), int(round(p.y)), 0, 7) * TAU
-			xform_basis = Basis(Vector3.UP, yaw).scaled(instance_scale)
+			xform_basis = Basis.IDENTITY.scaled(instance_scale * _size_factor(pos))
 		mm.set_instance_transform(i, Transform3D(xform_basis, pos))
+		if use_opaque:
+			mm.set_instance_custom_data(i, Color(0.0, 0.0, 0.0, 0.0))
 
 	# One StaticBody3D holds every hitbox; all share one BoxShape3D resource instanced
 	# per position (cheap: one shape, N transforms). Skipped when with_collision is false.
@@ -128,15 +142,28 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	set_process(false)
 
 
+# The deterministic per-instance size multiplier in [_size_jitter_min, 1.0], hashed
+# off the instance's world XZ so the same position always yields the same size (build
+# and felling-restore agree). Returns 1.0 when jitter is disabled (_size_jitter_min ==
+# 1.0). Only the opaque tree path calls this.
+func _size_factor(pos: Vector3) -> float:
+	if _size_jitter_min >= 1.0:
+		return 1.0
+	var r := ScatterMath.hash01(int(round(pos.x)), int(round(pos.z)), 0, 11)
+	return lerpf(_size_jitter_min, 1.0, r)
+
+
 # The upright instance basis build() authored for the instance at world `pos`, so a
 # fall animation can rebuild the transform. Mirrors the build() loop: the opaque
-# cross carries a deterministic per-instance yaw + the authored size scale; the quad
-# path is identity (and not fellable — see _use_opaque).
+# tree path is identity rotation + authored size scale (the shader billboards it);
+# the legacy quad path is identity (and not fellable — see _use_opaque).
 func _upright_basis(pos: Vector3) -> Basis:
 	if not _use_opaque:
 		return Basis.IDENTITY
-	var yaw := ScatterMath.hash01(int(round(pos.x)), int(round(pos.z)), 0, 7) * TAU
-	return Basis(Vector3.UP, yaw).scaled(instance_scale)
+	# Identity rotation + authored size scale (times the per-instance jitter factor);
+	# the shader yaws the card to the camera, so there is no authored yaw to restore.
+	# A topple tilt is composed on top of this in _process / knock_down.
+	return Basis.IDENTITY.scaled(instance_scale * _size_factor(pos))
 
 
 # Fell instance `idx`, toppling it in horizontal unit direction `dir` over
@@ -152,6 +179,9 @@ func knock_down(idx: int, dir: Vector3, duration: float) -> void:
 	# Disable in place — body_remove_shape would shift every higher shape index and
 	# break the shape-index -> instance-index mapping this relies on.
 	PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, true)
+	# Flip the FELLED flag so the shader locks this instance into the "+" cross and
+	# stops billboarding it — the topple below then tilts the fixed cross.
+	multimesh.set_instance_custom_data(idx, Color(1.0, 0.0, 0.0, 0.0))
 	_fallen[idx] = true
 	_falling.append({
 		"idx": idx, "base_pos": instance_positions[idx],
@@ -180,6 +210,8 @@ func reset_fallen() -> void:
 			PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, false)
 		var pos := instance_positions[idx]
 		multimesh.set_instance_transform(idx, Transform3D(_upright_basis(pos), pos))
+		# Back to standing: clear the FELLED flag so the shader billboards it again.
+		multimesh.set_instance_custom_data(idx, Color(0.0, 0.0, 0.0, 0.0))
 	_fallen.clear()
 	_falling.clear()
 	set_process(false)

@@ -1,16 +1,24 @@
-// Opaque tight-cutout billboard: each instanced silhouette mesh is a fixed "+"
-// cross of two planes (see TreeSilhouette), planted at its own per-instance yaw
-// -- it does NOT rotate to face the camera, so a stand of trees reads as varied
-// solid foliage from any angle. The cutout is baked into the MESH, so this shader
-// has NO alpha-test for the cutout -> early-Z stays on and overdraw collapses on
-// tile-based mobile GPUs. Distance fade is a geometry shrink-out (opaque), NOT
-// the screen-door dither of billboard.gdshader.
+// Opaque tight-cutout billboard that becomes a cross when felled. The instanced
+// silhouette mesh (see TreeSilhouette) is a "+" of two planes; each vertex carries
+// a plane FLAG in COLOR.r (0 = XY plane, 1 = ZY plane) and each instance a FELLED
+// flag in INSTANCE_CUSTOM.x (0 = standing, 1 = knocked over).
 //
-// It DOES carry the same NEAR-CAMERA dither dissolve as tree_canopy.gdshader:
-// fragments within `near_fade_end` metres of the camera dissolve out via a
-// screen-door (Bayer) dither, so a tree the camera pushes inside (the chase cam,
-// or a planted replay cam) stops blocking the view — a clear pocket opens around
-// the camera with no transparency sorting and no per-frame CPU work.
+//  - STANDING (INSTANCE_CUSTOM.x == 0): plane 0 is Y-billboarded to face the camera
+//    (cylindrical, world-Y up) and plane 1 is collapsed to a point, so a standing
+//    tree is a single camera-facing card — always presents its cutout, no doubled
+//    overdraw. The cutout is baked into the MESH (no alpha-test), so early-Z stays
+//    on and overdraw collapses on tile-based mobile GPUs.
+//  - FELLED (INSTANCE_CUSTOM.x == 1): BOTH planes render at their authored positions
+//    and the instance's MODEL transform (a topple tilt about the base) is applied
+//    verbatim — the card is locked into the "+" cross and toppled, so a fallen tree
+//    reads as a solid 3D shape instead of a flat sheet lying on the ground.
+//
+// Distance fade is a geometry shrink-out (opaque), NOT a screen-door dither. It DOES
+// carry the same NEAR-CAMERA dither dissolve as tree_canopy.gdshader: fragments
+// within `near_fade_end` metres of the camera dissolve out via a Bayer dither, so a
+// tree the camera pushes inside (the chase cam, or a planted replay cam) stops
+// blocking the view — a clear pocket opens around the camera with no transparency
+// sorting and no per-frame CPU work.
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_opaque;
 
@@ -45,14 +53,38 @@ void vertex() {
 	// Per-instance world origin (column 3 of the model matrix).
 	vec3 origin = MODEL_MATRIX[3].xyz;
 	float cam_dist = distance(INV_VIEW_MATRIX[3].xyz, origin);
-	// Shrink-out fade: 1 up close, 0 at the cutoff. Scales the normalized mesh
-	// toward its bottom-centre pivot (x/z -> 0 horizontally, y -> 0 at ground)
-	// so the cross shrinks away (opaque, no discard). The MODEL matrix (carrying
-	// the per-instance yaw + authored tree_size_m scale) does the rest.
+	// Shrink-out fade: 1 up close, 0 at the cutoff (opaque, no discard).
 	float fade = clamp((render_distance - cam_dist) / max(fade_band, 0.001), 0.0, 1.0);
-	VERTEX *= fade;
-	// World position of the (shrunk) vertex, for the per-fragment near dissolve.
-	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+
+	bool felled = INSTANCE_CUSTOM.x > 0.5;
+	vec3 world_pos;
+	if (felled) {
+		// Locked cross: the MODEL transform already carries the topple tilt + the
+		// authored size scale, so the standard model transform places both planes
+		// as a fixed cross that lies down. Shrink toward the base pivot for the
+		// distance fade.
+		world_pos = (MODEL_MATRIX * vec4(VERTEX * fade, 1.0)).xyz;
+	} else if (COLOR.r > 0.5) {
+		// Standing: collapse plane 1 (the ZY plane) to the origin so only the
+		// billboarded front card is visible — a standing tree is one camera-facing
+		// card, not a "+", and pays no doubled overdraw.
+		world_pos = origin;
+	} else {
+		// Standing: Y-billboard plane 0 toward the camera (flattened to XZ so it
+		// stays upright). Authored size lives as the instance scale (column lengths).
+		vec3 to_cam = INV_VIEW_MATRIX[3].xyz - origin;
+		to_cam.y = 0.0;
+		to_cam = normalize(to_cam);
+		vec3 up = vec3(0.0, 1.0, 0.0);
+		vec3 right = normalize(cross(up, to_cam));
+		float sx = length(MODEL_MATRIX[0].xyz);
+		float sy = length(MODEL_MATRIX[1].xyz);
+		vec3 local = (right * (VERTEX.x * sx) + up * (VERTEX.y * sy)) * fade;
+		world_pos = origin + local;
+	}
+	v_world = world_pos;
+	// Rewrite to clip space directly; the default MODELVIEW path is bypassed.
+	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world_pos, 1.0);
 }
 
 void fragment() {

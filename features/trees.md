@@ -44,7 +44,20 @@ FORCE the billboard path with its own texture by passing `billboard_texture` to
 sized to `cfg.region_tree_billboard_size_m` (a large, low canopy) instead of
 `cfg.tree_size_m`. It traces the same "+" cross silhouette; the mesh is cached
 per source-texture path in `Foliage.tree_silhouette_mesh(tex)` so each distinct
-cutout (home `tree.png` + any region texture) is built once.
+cutout (home `tree.png` + any region texture) is built once. Both billboard paths
+get **per-instance random size jitter**: each tree is scaled by a deterministic
+factor in `[floor, 1.0]` (hashed off its world XZ in `BillboardField._size_factor`),
+so a stand varies in height instead of every tree being identical. The floor is a
+separate tunable per path — `cfg.tree_billboard_min_scale` for the home
+(`use_billboard_trees`) path and `cfg.region_tree_billboard_min_scale` for the
+region-forced path (e.g. Greece). `1.0` disables the jitter. The factor is
+recomputed on felling-restore so it stays consistent.
+
+Each billboard path also has its own **ground-sink offset** (`BillboardField.build`'s
+`y_offset`, added to the terrain height per instance): `cfg.tree_billboard_ground_offset_m`
+for the home path and `cfg.region_tree_billboard_ground_offset_m` for the region path.
+A negative value pushes the card's bottom edge below the terrain to hide the seam where
+the trunk meets a sloped surface; positive lifts it.
 
 The billboard cutout is baked into GEOMETRY, not the shader: `TreeSilhouette`
 (`scripts/tree_silhouette.gd`) traces the tree texture's alpha (home:
@@ -53,7 +66,9 @@ low-poly silhouette `ArrayMesh` once at load (cached by `Foliage.tree_silhouette
 triangulating every opaque cluster `opaque_to_polygons` returns so the gaps
 between clusters are real geometry holes. The silhouette is emitted as a **"+"
 (cross)** — the traced triangles are added twice, once in the XY plane and once
-rotated 90° about Y into the ZY plane (sharing the same UVs). `BillboardField`
+rotated 90° about Y into the ZY plane (sharing the same UVs), and each vertex
+carries a **plane flag** in its vertex `COLOR.r` (0 = XY plane, 1 = ZY plane) so
+the shader can treat the two planes differently. `BillboardField`
 instances that mesh in a single MultiMesh (one draw call) with
 `shaders/billboard_opaque.gdshader` — `unshaded, cull_disabled,
 depth_draw_opaque`, **no `discard`**. Because there is no per-fragment
@@ -61,15 +76,22 @@ alpha test, early-Z stays enabled and overdraw collapses to actual coverage,
 which is the win on tile-based mobile-web GPUs (an alpha-`discard` billboard
 disables early-Z for the whole draw and pays overdraw every frame).
 
-**The cross does NOT face the camera.** Unlike a classic sprite billboard, the
-"+" is planted at a fixed, deterministic **random yaw** per tree (hashed off the
-instance's world XZ via `ScatterMath.hash01`, baked into the MultiMesh transform
-basis in `BillboardField.build`). Because it's a cross, the silhouette still
-reads as solid foliage from any horizontal angle, and the per-tree random yaw
-stops a stand from looking like an aligned grid. The shader therefore no longer
-rotates the card toward the camera — it just applies the model transform (yaw +
-`tree_size_m` scale, with Z scaled by the horizontal `size.x` for the second
-plane). Distance
+**Standing = one camera-facing card; felled = locked cross.** Each instance
+carries a **felled flag** in its MultiMesh custom data (`INSTANCE_CUSTOM.x`: 0
+standing, 1 knocked over), and `billboard_opaque.gdshader` branches on it:
+- **Standing** — plane 0 (XY) is Y-billboarded about world Y so its face always
+  points at the camera (upright, like `billboard.gdshader`), and plane 1 (ZY, the
+  vertex-`COLOR.r == 1` plane) is **collapsed to a point**. A standing tree is thus
+  a single camera-facing card — no "+" grid look, and no doubled overdraw. The
+  instance basis carries only the `tree_size_m` scale (identity rotation), which the
+  shader reads from the column lengths.
+- **Felled** — the flag flips (`BillboardField.knock_down`), so the shader stops
+  billboarding and locks BOTH planes in place, applying the instance's MODEL
+  transform (a **topple tilt** about the base + the size scale) verbatim. The card
+  snaps into the fixed "+" cross and topples, so a fallen tree reads as a solid 3D
+  shape instead of a flat sheet lying on the ground. `reset_fallen` clears the flag.
+
+Distance
 fade is a vertex **shrink-out** over `tree_render_fade_m` before
 `tree_render_distance_m` (opaque, replacing the old screen-door dither, which
 needed `discard`): the shader scales the whole normalized vertex toward the
@@ -251,10 +273,11 @@ physics step, so the tree arrests you now and then falls.
 **Billboard trees fall too.** `BillboardField` (used when `use_billboard_trees` is
 true — the shipped default in `game_config.tres`) carries the same `knock_down` /
 `is_fallen` / `_process`. It's simpler there: one unbinned MultiMesh, so the contact
-shape index IS the instance index (no `_slot_of`). Only the **opaque cross path**
-(trees) is fellable — the quad path is camera-billboarded by its shader, so tilting
-the transform basis wouldn't show; `_upright_basis` rebuilds the instance's authored
-yaw+scale so the tilt starts from upright. Config knobs `tree_fell_speed_kmh` /
+shape index IS the instance index (no `_slot_of`). Only the **opaque tree path** is
+fellable: `knock_down` flips the instance's felled flag so the shader locks the "+"
+cross and stops billboarding, then the usual topple tilt (via the instance MODEL
+transform) shows. `_upright_basis` rebuilds the instance's identity-rotation + size
+scale so the tilt starts from upright. Config knobs `tree_fell_speed_kmh` /
 `tree_fell_duration_s` are
 balance values (see Configuration); tests assert the felling *logic*, never the
 chosen numbers.

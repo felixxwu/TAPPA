@@ -379,6 +379,37 @@ func test_billboard_field_knock_down_safe_without_collision_or_quad_path() -> vo
 	assert_false(opaque_field.is_fallen(99), "out-of-range index is a safe no-op")
 
 
+func test_opaque_billboard_size_jitter_scales_within_range_deterministically() -> void:
+	# A jitter floor < 1.0 (region trees, e.g. Greece) gives each opaque tree a
+	# deterministic per-position size multiplier in [floor, 1.0] — a stand varies in
+	# height, but a given position always resolves to the same size so build and
+	# felling-restore agree. Passing the floor explicitly keeps this test independent
+	# of the config value. Floor 1.0 (home trees) disables the jitter entirely.
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var tex := load("res://textures/tree.png") as Texture2D
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for uv in [Vector2(0, 1), Vector2(1, 1), Vector2(1, 0)]:
+		st.set_uv(uv)
+		st.add_vertex(Vector3(uv.x - 0.5, 1.0 - uv.y, 0.0))
+	var mesh := st.commit()
+
+	var jittered := BillboardField.new()
+	add_child_autofree(jittered)
+	jittered.build(PackedVector2Array([Vector2(3, 4), Vector2(-8, 9), Vector2(15, -6)]),
+		floor_node, Vector2(4, 6), tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 0.5)
+	for pos in jittered.instance_positions:
+		var f := jittered._size_factor(pos)
+		assert_between(f, 0.5, 1.0, "jittered size factor stays within [floor, 1.0]")
+		assert_almost_eq(jittered._size_factor(pos), f, 1e-9, "same position -> same factor")
+
+	var plain := BillboardField.new()
+	add_child_autofree(plain)
+	plain.build(PackedVector2Array([Vector2(3, 4)]), floor_node,
+		Vector2(4, 6), tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 1.0)
+	assert_eq(plain._size_factor(plain.instance_positions[0]), 1.0, "floor 1.0 disables jitter")
+
+
 func _load_tree_mesh() -> Mesh:
 	var scene := (load("res://models/low_poly_tree.glb") as PackedScene).instantiate()
 	var stack: Array[Node] = [scene]

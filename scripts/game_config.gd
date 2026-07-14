@@ -1095,7 +1095,18 @@ var peak_torque_rpm := 4500.0
 ## Tree size in metres: width (x) by height (y). Trees are now solid low-poly
 ## meshes (TreeMeshField), scaled uniformly so the model's height matches y
 ## (x is legacy from the billboard era and only informs the rough footprint).
-@export var tree_size_m := Vector2(4.0, 6.0)
+@export var tree_size_m := Vector2(7.5, 7.5)
+## Minimum per-instance size multiplier for HOME billboard trees (the
+## `use_billboard_trees` path, `textures/tree.png`): each one is scaled by a random
+## factor in [this, 1.0] (hashed off its position), so a home stand varies in height
+## instead of every tree being identical. 1.0 disables the jitter. The region-forced
+## billboard path has its own floor (`region_tree_billboard_min_scale`).
+@export_range(0.1, 1.0) var tree_billboard_min_scale := 0.3
+## Vertical offset (m) applied to HOME billboard trees to sink them into the
+## ground: negative pushes the card's bottom edge below the terrain (hiding the
+## seam where the trunk meets the slope), positive lifts it. Region billboards have
+## their own offset (`region_tree_billboard_ground_offset_m`).
+@export_range(-3.0, 3.0) var tree_billboard_ground_offset_m := -0.5
 ## Half-extent (m) in X/Z of each tree's box hitbox — a square trunk footprint.
 @export_range(0.05, 5.0) var tree_collision_radius_m := 0.5
 ## Height (m) of each tree's box hitbox.
@@ -1145,7 +1156,17 @@ var peak_torque_rpm := 4500.0
 ## region forces via its `tree_billboard` look override (e.g. Greece's
 ## tree-greece.webp). Larger than the home tree_size_m: a big, low Mediterranean
 ## canopy that stands in for the home region's trees on that map.
-@export var region_tree_billboard_size_m := Vector2(4.0, 3.0)
+@export var region_tree_billboard_size_m := Vector2(4.0, 4.0)
+## Minimum per-instance size multiplier for region billboard trees: each one is
+## scaled by a random factor in [this, 1.0] (hashed off its position), so a Greece
+## stand varies in height instead of every tree being identical. 1.0 disables the
+## jitter. Only affects the region-forced billboard path (e.g. tree-greece.webp).
+@export_range(0.1, 1.0) var region_tree_billboard_min_scale := 0.3
+## Vertical offset (m) applied to REGION billboard trees (e.g. Greece) to sink them
+## into the ground: negative pushes the card's bottom edge below the terrain (hiding
+## the seam where the trunk meets the slope), positive lifts it. The home billboard
+## path has its own offset (`tree_billboard_ground_offset_m`).
+@export_range(-3.0, 3.0) var region_tree_billboard_ground_offset_m := -0.5
 
 
 @export_group("Roadside Signs")

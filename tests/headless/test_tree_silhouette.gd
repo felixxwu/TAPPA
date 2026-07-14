@@ -31,13 +31,33 @@ func test_solid_image_fills_normalized_card_bounds() -> void:
 	for uv in uvs:
 		assert_between(uv.x, 0.0, 1.0, "u in [0,1]")
 		assert_between(uv.y, 0.0, 1.0, "v in [0,1]")
-	# Cross ("+") billboard: two crossed planes, so every vertex lies on EITHER the XY
-	# plane (z=0) or the ZY plane (x=0), and the second plane gives the card depth in z
-	# spanning the same normalized width [-0.5, 0.5].
+	# Cross ("+") of two planes: every vertex lies on EITHER the XY plane (z=0) or
+	# the ZY plane (x=0), and the second plane gives the card depth in z spanning
+	# the same normalized width [-0.5, 0.5]. (The shader shows only the billboarded
+	# XY card while a tree stands, and locks the whole cross in once it is felled.)
 	for v in verts:
 		assert_true(absf(v.z) < 1e-4 or absf(v.x) < 1e-4, "vertex lies on one of the crossed planes")
 	assert_almost_eq(aabb.position.z, -0.5, 0.05, "cross depth front ~ -0.5")
 	assert_almost_eq(aabb.end.z, 0.5, 0.05, "cross depth back ~ 0.5")
+	# Each vertex carries a plane FLAG in its vertex COLOR red channel (0 = XY plane,
+	# 1 = ZY plane) that the shader reads to collapse the second plane while upright.
+	# The flag is always 0 or 1, and both planes are present.
+	var colors := mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] as PackedColorArray
+	assert_eq(colors.size(), verts.size(), "every vertex carries a plane flag colour")
+	var saw_plane0 := false
+	var saw_plane1 := false
+	for i in verts.size():
+		var flag := colors[i].r
+		assert_true(flag < 1e-4 or flag > 1.0 - 1e-4, "plane flag is 0 or 1")
+		# The ZY plane (x=0, z varies) is the flagged one; the XY plane (z=0) is not.
+		if absf(verts[i].z) > 1e-4:
+			assert_gt(flag, 0.5, "ZY-plane vertex flagged 1")
+			saw_plane1 = true
+		elif absf(verts[i].x) > 1e-4:
+			assert_lt(flag, 0.5, "XY-plane vertex flagged 0")
+			saw_plane0 = true
+	assert_true(saw_plane0, "some vertices are on the XY (billboarded) plane")
+	assert_true(saw_plane1, "some vertices are on the ZY (fell-only) plane")
 
 
 func test_two_separated_blobs_leave_a_gap_between_them() -> void:

@@ -49,11 +49,18 @@ static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: 
 	if cfg.use_billboard_trees or billboard_texture != null:
 		var tex: Texture2D = billboard_texture if billboard_texture != null else TREE_TEXTURE
 		var size := cfg.region_tree_billboard_size_m if billboard_texture != null else cfg.tree_size_m
+		# Both billboard paths get per-instance random size jitter so a stand isn't
+		# uniform, each with its own tunable floor: the region-forced path (e.g. Greece)
+		# uses region_tree_billboard_min_scale, the home path tree_billboard_min_scale.
+		var size_jitter := cfg.region_tree_billboard_min_scale if billboard_texture != null else cfg.tree_billboard_min_scale
+		# Sink the cards into the ground by a per-path tunable offset (negative) to hide
+		# the seam where the trunk meets a sloped surface — same split as size_jitter.
+		var ground_offset := cfg.region_tree_billboard_ground_offset_m if billboard_texture != null else cfg.tree_billboard_ground_offset_m
 		var billboards := BillboardField.new()
 		parent.add_child(billboards)
 		billboards.build(positions, terrain, size, tex,
 			cfg.tree_collision_radius_m, cfg.tree_collision_height_m, with_collision,
-			render_distance, render_fade, 0.0, tree_silhouette_mesh(tex), true)
+			render_distance, render_fade, ground_offset, tree_silhouette_mesh(tex), true, size_jitter)
 		return billboards
 	var field := TreeMeshField.new()
 	parent.add_child(field)
@@ -110,7 +117,7 @@ static func tree_mesh() -> Mesh:
 # The opaque billboard-tree silhouette mesh, traced once from `tex`'s alpha (default
 # the home TREE_TEXTURE) and shared by every instance in a tree BillboardField.
 # Cached per texture path so each distinct cutout (home + any region tree) is built
-# once. Region textures (tree-greece.webp) trace the same crossed-quad "+" star.
+# once. Region textures (tree-greece.webp) trace the same single camera-facing card.
 static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
 	var key := tex.resource_path
 	if _tree_silhouette_cache.has(key):

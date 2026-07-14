@@ -31,23 +31,28 @@ static func build(image: Image, alpha_threshold: float, simplify_epsilon: float)
 		var tris := Geometry2D.triangulate_polygon(outline)
 		if tris.is_empty():
 			continue  # degenerate/self-touching contour; skip it
-		# Emit each triangle twice, one per plane, keeping the three verts of a
-		# triangle contiguous so PRIMITIVE_TRIANGLES winds correctly. Two crossed
-		# planes form a "+" (cross) billboard: the first in the XY plane, the
-		# second the same silhouette rotated 90 deg about Y (into the ZY plane).
-		# Both share the UV, so the same cutout shows from every horizontal angle
-		# without the card having to face the camera.
-		# triangulate_polygon emits three indices per triangle, so the count is always
-		# a multiple of 3 — the division is exact and intentionally integer.
+		# Emit the silhouette as a "+" cross of two planes: plane 0 in the XY plane
+		# (z = 0), plane 1 the same silhouette rotated 90 deg about Y (into the ZY
+		# plane), sharing UVs. Each vertex carries a plane FLAG in its vertex COLOR
+		# (red 0 = plane 0, red 1 = plane 1). billboard_opaque.gdshader reads that flag:
+		# while the tree is upright it Y-billboards plane 0 toward the camera and
+		# collapses plane 1 (so a standing tree is a single camera-facing card, no
+		# overdraw); once the tree is FELLED it locks BOTH planes in place as the cross
+		# and topples them, so a fallen tree reads as a solid 3D shape, not flat paper.
+		# Keep the three verts of a triangle contiguous so PRIMITIVE_TRIANGLES winds
+		# correctly. triangulate_polygon emits three indices per triangle, so the count
+		# is always a multiple of 3 — the division is exact and intentionally integer.
 		@warning_ignore("integer_division")
 		var tri_count := tris.size() / 3
 		for plane in 2:
+			var plane_flag := Color(0.0, 0.0, 0.0) if plane == 0 else Color(1.0, 0.0, 0.0)
 			for t in tri_count:
 				for k in 3:
 					var px := outline[tris[t * 3 + k]]
 					var nx := px.x / float(w) - 0.5
 					var ny := 1.0 - px.y / float(h)
 					st.set_uv(Vector2(px.x / float(w), px.y / float(h)))
+					st.set_color(plane_flag)
 					if plane == 0:
 						st.add_vertex(Vector3(nx, ny, 0.0))
 					else:
