@@ -11,7 +11,14 @@ func _regions() -> Array[Dictionary]:
 	return [
 		{"id": R_A, "name": "A"},
 		{"id": R_B, "name": "B", "grass_texture": "res://x.png"},
-		{"id": R_C, "name": "C"},
+		{
+			"id": R_C, "name": "C",
+			"tree_mix": [
+				{"texture": "res://a.png", "profile": "region", "weight": 0.6},
+				{"texture": "res://b.png", "profile": "home", "weight": 0.4},
+			],
+			"spawn_bush_mesh": false,
+		},
 	]
 
 # rallies: each region has 1 non-showdown + 1 showdown.
@@ -73,3 +80,24 @@ func test_look_of_returns_only_present_overrides() -> void:
 	var look := RegionLibrary.look_of(R_B)
 	assert_eq(look.get("grass_texture", ""), "res://x.png")
 	assert_false(look.has("sky_panorama"))
+
+func test_tree_mix_defaults_when_unauthored() -> void:
+	# A region with no tree_mix falls back to the single default home tree at 100%.
+	var mix := RegionLibrary.tree_mix(RegionLibrary.look_of(R_A))
+	assert_eq(mix, RegionLibrary.DEFAULT_TREE_MIX,
+		"an unauthored region uses the default single-tree mix")
+
+func test_tree_mix_returns_authored_split() -> void:
+	var mix := RegionLibrary.tree_mix(RegionLibrary.look_of(R_C))
+	assert_eq(mix.size(), 2, "the authored two-species split is surfaced")
+	# Weights sum to the whole (the split covers everything) — a contract, not a value.
+	var total := 0.0
+	for e in mix:
+		total += float(e["weight"])
+	assert_almost_eq(total, 1.0, 0.0001, "authored mix weights cover the whole")
+
+func test_spawns_bush_mesh_defaults_true_and_honours_override() -> void:
+	assert_true(RegionLibrary.spawns_bush_mesh(RegionLibrary.look_of(R_A)),
+		"a region that authors nothing keeps the bushes")
+	assert_false(RegionLibrary.spawns_bush_mesh(RegionLibrary.look_of(R_C)),
+		"spawn_bush_mesh = false suppresses the bush pass")

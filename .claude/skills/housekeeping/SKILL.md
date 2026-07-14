@@ -1,0 +1,148 @@
+---
+name: housekeeping
+description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, or tests that violate project conventions.
+---
+
+# Housekeeping
+
+## Overview
+
+A periodic health sweep for the `rally` repo: catch the things that quietly rot
+over time — tests breaking, `features/` docs drifting from the code, `todo/`
+specs left stale after work lands, config fields diverging, scripts growing past
+the point they should be split, and assets/tests going stale.
+
+This is a **report-first** skill. Run the checks, then present findings grouped
+by category with concrete file/line references and a recommended action for
+each. **Do not fix things silently** — surface everything, let the user pick
+what to act on. Small, obviously-safe fixes (a broken doc link, a stale todo
+line) can be offered as a batch to apply after the user confirms.
+
+## How to run it
+
+Work through the checklist below. Run independent checks in parallel where you
+can (grep sweeps, `wc`, git). For anything noisy (full-repo greps, log
+trawling), spawn an `Explore` or `general-purpose` subagent and keep only the
+findings here. Then write up a grouped report.
+
+Scope control: if the user names an area ("just the docs", "check the tests"),
+run only those sections. A bare `/housekeeping` runs everything.
+
+## Checklist
+
+### 1. Tests green
+
+- Run the full suite: `./run_tests.sh`. It's CPU-bound and should finish in
+  **~5 minutes** (see `features/testing.md`).
+- Report any failures with the assertion + file.
+- **Cross-check against known baseline failures** before calling anything a
+  regression — check the auto-memory index (`MEMORY.md`) for pre-existing
+  failures (e.g. reward-system stuck-player grant, car-spawns, chase-camera
+  orbit). A failure already recorded there is not new; a failure NOT recorded
+  there is the interesting one.
+
+### 2. Test-suite runtime hasn't regressed
+
+- If the full run took noticeably longer than ~5 min, flag it. Per
+  `features/testing.md` the usual culprit is a test re-instantiating
+  `main.tscn` (full terrain + track generation, ~15 s each) in `before_each`
+  where a shared `before_all` or `SceneTestHelpers.minimal_world()` would do.
+- Grep for the smell: `grep -rn "before_each" tests/headless/` and check which
+  ones build a full world per test.
+
+### 3. Tests that violate project conventions
+
+Per `CLAUDE.md` (Testing section), flag tests that:
+- **Pin tunable/balance values** — assert a specific stat, reward tier,
+  ordering across authored entries, or an exported enum hint string. Ask "would
+  a designer retuning this in the inspector break this test?"
+- **Depend on a specific catalogue entry** — `CarLibrary.by_id("mx5")`,
+  `EngineLibrary.by_id(...)`, `RallyLibrary`/`UpgradeLibrary` lookups by id in a
+  logic/physics test. Grep: `grep -rn "by_id(" tests/headless/`. Iterating a
+  whole table as opaque input is fine; leaning on one entry's identity is not.
+- **Skip `CarFixtures.install()`** where a synthetic roster belongs (catalogue-
+  dependent tests that aren't catalogue-contract tests).
+
+### 4. Docs (`features/`) in sync with code
+
+- Every file in `features/` should be listed in `features/README.md`'s index —
+  diff the directory against the index.
+- Spot-check that recently-changed systems (look at recent commits /
+  `git status`) had their matching `features/` file updated in the same work.
+  Untouched doc + changed code = drift.
+- Check for broken cross-reference links between feature files and to
+  `scripts/*.gd` paths that no longer exist.
+
+### 5. `todo/` specs current
+
+- For each spec in `todo/`, check whether its items have already landed in code
+  (grep for the functions/files it cites). A spec describing work that's done is
+  stale — per `CLAUDE.md`, ask the user whether to remove completed points, and
+  if every item in a spec is done, whether to delete the file.
+- Flag specs that cite files/line numbers/symbols that no longer exist (they
+  were supposed to be kept grounded in real code).
+
+### 6. Config drift (`GameConfig`)
+
+- `config/game_config.tres` is authored data for the `GameConfig` resource
+  (`scripts/game_config.gd`, ~1550 lines). Check the `.tres` for properties that
+  no longer exist as `@export`s in the script (orphaned authored values) and
+  `@export`s with no counterpart being exercised.
+- Reminder to surface: tuning values belong in the `.tres`, not script/scene
+  literals. Flag any newly-hardcoded gameplay/look constants in scripts that
+  should be config fields.
+
+### 7. Oversized scripts / refactor candidates
+
+- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~3400),
+  `game_config.gd`, `car.gd`, `world.gd` (each >1000). Flag scripts that have
+  grown a lot since the last sweep or that mix several responsibilities — these
+  are refactor candidates. Don't refactor here; note it and suggest a split.
+- Also worth flagging: a single function that's very long, deeply nested
+  `_process`/`_physics_process` bodies, copy-pasted blocks across scripts.
+
+### 8. Orphaned / stale assets
+
+- Assets deleted from disk but still referenced (check `git status` for deleted
+  `models/`, `textures/`, `tools/` and grep the codebase for references to
+  them). At time of writing `low_poly_tree.glb`, `leaves.png`, and
+  `tools/lowpoly_tree.gd` were deleted — confirm nothing still loads them.
+- `.import` / `.uid` files whose source asset is gone, or assets with no
+  `.import` sibling.
+- Scripts in `scripts/` that nothing references (no `preload`/`load`/`class_name`
+  usage, not attached to any scene) — potential dead code.
+
+### 9. Menu navigability
+
+Per `CLAUDE.md`, every menu must be keyboard + gamepad navigable. Spot-check
+that menus built recently call `MenuNav.attach(...)` (flat overlays) or wire a
+`menu_*` branch in `hq.gd._unhandled_input` (diegetic HQ stations), and have a
+nav test. Grep new/changed menu scripts for `MenuNav.attach`.
+
+### 10. Loose ends in code
+
+- `grep -rn "TODO\|FIXME\|HACK\|XXX" scripts/ shaders/` — surface stragglers,
+  especially ones referencing work that's since been done.
+- Uncommitted work: summarize `git status` so the user knows what's in flight
+  (don't commit anything without being asked).
+
+## Report format
+
+Group findings under the section headings above. For each finding give:
+`file:line` · what's wrong · recommended action (fix / update doc / delete /
+refactor / ask designer). Put a short summary at the top: how many checks ran,
+how many are clean, how many need attention. End with a `result:` line.
+
+## Common mistakes
+
+- **Fixing instead of reporting.** Default to surfacing. Only apply fixes after
+  the user picks them.
+- **Calling a baseline failure a regression.** Always cross-check `MEMORY.md`
+  first (section 1).
+- **Flagging tunable values as bugs.** A config value being "wrong" is a
+  designer's call, not a housekeeping fix — only flag genuinely broken values
+  (mass ≤ 0, non-finite grip) or convention violations (tests pinning them).
+- **Deleting todo specs or doc content without asking** — `CLAUDE.md` requires
+  confirming first.
+- **Running the full test suite twice** — if you just ran it for section 1,
+  reuse that result.

@@ -173,10 +173,10 @@ func _build_scenery() -> void:
 	rng.seed = 0xB0DE  # fixed → stable placement run-to-run
 
 	# Trees + bushes go through the shared Foliage helpers, so the podium uses the
-	# SAME representation the stage + HQ do — a billboard cutout or the 3D mesh per
-	# cfg.use_billboard_trees for trees, always the mesh for bushes — and the SAME
-	# cfg.tree_size_m / cfg.bush_height_m scale, rather than the raw GLB mesh at its
-	# native size. A flat y = 0 terrain seats the instances (the podium ground is a
+	# SAME representation the stage + HQ do — a billboard cutout for trees, the 3D
+	# mesh for bushes — and the SAME cfg.tree_size_m / cfg.bush_height_m scale,
+	# rather than the raw GLB mesh at its native size. A flat y = 0 terrain seats
+	# the instances (the podium ground is a
 	# plane); scenery only (no collision), render_distance 1000 = no cull (small scene).
 	var flat := TerrainManager.flat()
 	Foliage.spawn_trees(self, _scatter_ring(rng, cfg.podium_scenery_tree_count,

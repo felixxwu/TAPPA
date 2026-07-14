@@ -14,7 +14,9 @@
 > replaced.
 >
 > Status: **PARTIALLY DONE.** The unblocked, decision-free, low-risk items are
-> implemented: **item 4** (frame cap — `GameConfig.target_fps`=30, applied in
+> implemented: **item 4** (frame cap — split into `GameConfig.target_fps`=60 for
+> desktop and `target_fps_mobile`=30 for mobile+web, selected via
+> `target_fps_for(Platform.is_mobile_or_web())`, applied in
 > `world._ready`, skipped under `--headless`), **item 1** (mipmaps on
 > tree/bush `.import` + `lod_bias` uniform in `billboard.gdshader` driven by
 > `GameConfig.texture_lod_bias`), **item 6** (engine-audio: per-harmonic `pow`
@@ -583,7 +585,19 @@ Single-threaded terrain gen reintroduces the startup/boundary hitch the threads
 were added to hide; the fog masks far pop-in but not a frame stall. Time-slicing
 `compute_chunk_data` is the mitigation and needs care (partial-chunk state).
 
-## 8. Physics hot-path allocation churn
+## 8. Physics hot-path allocation churn — ✅ DONE
+
+> **Resolved.** The `contacts`/`WheelContact` pooling described below was already
+> in place (pooled `WheelContact` per wheel, refilled each tick). The remaining
+> per-physics-tick allocations were then killed: (a) `drivetrain.surface_tire_params()`
+> now fills and returns a reused `_surf_scratch` dict instead of allocating one per
+> contact per tick; (b) `car._resolve_drive_inputs()` fills and returns a reused
+> `_inputs_scratch` dict instead of a fresh `{drive,brake_input,handbrake,declutch}`
+> each tick; (c) `WheelParticles._emit_from_wheels()` iterates a cached
+> `Drivetrain.all_wheels` (built once in `_init`) instead of allocating
+> `front_wheels + rear_wheels` every tick. Behaviour-preserving (each scratch is
+> read immediately by its sole/immediate caller); guarded green by the existing
+> drivetrain/car/wheel-particle/smoke tests.
 
 ### Why
 `scripts/drivetrain.gd step()` rebuilds a `contacts` array of ~10-key

@@ -662,9 +662,10 @@ per-vertex `COLOR.a`/`UV2.x` drive `shaders/ps1_models.gdshader`, the **same
 grass↔tarmac crossfade the generated road uses**, so each pad feathers softly into
 the grass. Its triangles are **wound front-face-up** — that shader culls back
 faces, so a downward-wound floor draws nothing when viewed from above. Both focal areas are dressed with **trees, bushes and a standing
-crowd** (`_build_scenery`): the same low-poly `low_poly_tree.glb` /
-`groundcover_opaque.glb` / `spectator.glb` models the world scatters, placed as
-plain decorative `MultiMesh`es (seeded, no collision, no steering AI — the
+crowd** (`_build_scenery`): the same billboard trees (`textures/tree.png`),
+`groundcover_opaque.glb` bushes and `spectator.glb` crowd the world uses, routed
+through `Foliage` / placed as plain decorative `MultiMesh`es (seeded, no
+collision, no steering AI — the
 spectators just face the podium / showroom). Scenery is **skipped under headless**
 (pure dressing; keeps the test budget). Counts / ring radii / pad size + feather
 are `podium_*` `GameConfig` tunables.

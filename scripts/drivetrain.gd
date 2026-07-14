@@ -75,6 +75,16 @@ class WheelContact extends RefCounted:
 var _contact_pool: Dictionary = {}  # wheel -> reusable WheelContact
 var _contacts: Array = []           # the in-contact subset this tick (reused)
 
+# All wheels (front + rear), cached once in _init so per-tick callers (e.g.
+# WheelParticles) can iterate every wheel without allocating `front_wheels +
+# rear_wheels` each frame.
+var all_wheels: Array = []
+
+# Reusable return buffer for surface_tire_params — filled and returned every call
+# so the hot per-contact path allocates no Dictionary. Callers read its fields
+# immediately (before the next call overwrites them), which they all do.
+var _surf_scratch := {mu_mult = 1.0, slip_peak = 0.0, slide_ratio = 0.0}
+
 
 func _init(p_car: VehicleBody3D) -> void:
 	car = p_car
@@ -88,6 +98,7 @@ func _init(p_car: VehicleBody3D) -> void:
 		spin_angle[wheel] = 0.0
 		visuals[wheel] = wheel.get_node_or_null("Visual")
 		_contact_pool[wheel] = WheelContact.new()
+		all_wheels.append(wheel)
 		if wheel.use_as_traction:
 			rear_wheels.append(wheel)
 		else:
@@ -398,17 +409,15 @@ func surface_grip(cfg: GameConfig, cp: Vector3) -> float:
 # the shape falls back to the global tire_slip_peak / sliding_grip_ratio.
 func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 	if terrain == null or not terrain.has_method("surface_at"):
-		return {
-			mu_mult = 1.0,
-			slip_peak = cfg.tire_slip_peak,
-			slide_ratio = cfg.sliding_grip_ratio,
-		}
+		_surf_scratch.mu_mult = 1.0
+		_surf_scratch.slip_peak = cfg.tire_slip_peak
+		_surf_scratch.slide_ratio = cfg.sliding_grip_ratio
+		return _surf_scratch
 	var s: Vector2 = terrain.surface_at(cp.x, cp.z)
-	return {
-		mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s),
-		slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s),
-		slide_ratio = _surface_blend(cfg.grass_slide_ratio, cfg.gravel_slide_ratio, cfg.tarmac_slide_ratio, s),
-	}
+	_surf_scratch.mu_mult = _surface_blend(cfg.grass_grip, cfg.gravel_grip, cfg.tarmac_grip, s)
+	_surf_scratch.slip_peak = _surface_blend(cfg.grass_slip_peak, cfg.gravel_slip_peak, cfg.tarmac_slip_peak, s)
+	_surf_scratch.slide_ratio = _surface_blend(cfg.grass_slide_ratio, cfg.gravel_slide_ratio, cfg.tarmac_slide_ratio, s)
+	return _surf_scratch
 
 
 # Blend a per-surface value across the terrain's (road, tarmac) weights: tarmac

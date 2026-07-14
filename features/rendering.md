@@ -18,8 +18,8 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
   `texture_filter = TEXTURE_FILTER_NEAREST_WITH_MIPMAPS` (nearest magnification,
   mipmaps kept for distance — see the mipmap note below). This includes
   GLB-baked materials whose importer-default linear filter is overridden to
-  nearest: the tree canopy in `world.gd._tree_mesh()` and the ground-cover bush
-  in `world.gd._bush_mesh()`. The sole exception is the panorama sky, a smooth
+  nearest, e.g. the ground-cover bush in `Foliage.bush_mesh()`. The sole
+  exception is the panorama sky, a smooth
   gradient where filtering is intended.
 
 ## Horizontal stretch (`scripts/display_stretch.gd`)
@@ -51,7 +51,8 @@ block, because a screen-door dither read as noise against the low-res pixelation
 reflections, no transparency, no screen-texture read (preserves the Compatibility
 no-backbuffer choice). A faint scrolling ripple tint (world position × `TIME`) plus
 a sparkle band give the surface a little life. One shared material across all of a
-stage's lake meshes.
+stage's lake meshes. `cull_back` (the lake is only ever seen from above, so back
+faces are pure waste).
 
 ### `ps1_models.gdshader` — `spatial`, `unshaded`
 Terrain material. The shader itself runs no lighting math and has **no
@@ -254,15 +255,45 @@ model. Each per-car material also carries the tread `albedo_color`
 
 The game ships one lean pipeline for every device (no quality tiers). Relevant
 shipped knobs in `GameConfig`:
-- **`target_fps`** (default 30) — a render frame cap applied in `world._ready()`
-  (skipped under `--headless`, so it never throttles the test runner) to avoid
-  thermal throttling on phones. Physics stays at the project physics tick.
+- **`target_fps`** (desktop, default 60) / **`target_fps_mobile`** (mobile + web,
+  default 30) — a render frame cap applied in `world._ready()` (skipped under
+  `--headless`, so it never throttles the test runner) to avoid thermal throttling
+  on phones. `world._ready()` picks between them via
+  `GameConfig.target_fps_for(Platform.is_mobile_or_web())` — mobile/web get the
+  aggressive 30 cap, desktop keeps 60. `0` = uncapped (either field). Physics stays
+  at the project physics tick.
 - **`texture_lod_bias`** (default 0.75) — biases distant foliage sampling toward
   cheaper mip levels (a `lod_bias` uniform in `shaders/billboard.gdshader`, set
   from `BillboardField.build()`). The tree/bush textures now have **mipmaps
   enabled** (`textures/tree.png.import`, `textures/tree-greece.webp.import`), so distant
   billboards no longer thrash the texture cache. `filter_nearest` is kept (PS1
   look) — mipmapping is independent of the magnification filter.
+
+### Shared render distance
+
+Every roadside prop culls at **one shared distance** — `cfg.tree_render_distance_m`
+(fade `tree_render_fade_m`) — so foliage, spectators, signs and the start/finish
+arches all pop in at the same range instead of each system choosing its own (or
+drawing across the whole stage). The mechanism is a `GeometryInstance3D`
+`visibility_range_end` + `visibility_range_end_margin` (fade mode `SELF`, so the
+cull dithers rather than pops):
+
+- **Trees / bushes** set it per-bin in `TreeMeshField` (`foliage.gd` passes the
+  distance).
+- **Spectators** set it on the group `MultiMeshInstance3D` (anchored at the crowd
+  centroid so the single test measures camera→crowd distance) — see
+  [spectators.md](spectators.md).
+- **Signs** set it on each resting-sign `MultiMeshInstance3D` (`sign_field.gd`).
+- **Start / finish arches** apply it to the whole arch subtree (structure, banners,
+  ropes) after build — see [finish-arch.md](finish-arch.md).
+
+Non-foliage props go through `MeshUtil.apply_visibility_range(root, end_m, fade_m)`,
+which walks a subtree and sets the fields on every `GeometryInstance3D`
+(MeshInstance3D / MultiMeshInstance3D / Label3D); `end_m <= 0` leaves the subtree
+uncapped (flat test fixtures). The distance reaches spectators/signs via their
+`GameConfig` param dicts (`render_distance_m` / `render_fade_m`). Because it's one
+field, the benchmark's **Full render distance** toggle (which halves
+`tree_render_distance_m`) now scales every prop's cull together.
 
 Rendering **setup** (environment, mesh shader materials, post-process shader,
 shader sources) is covered by `test_render_smoke.gd` — see

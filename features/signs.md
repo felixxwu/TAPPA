@@ -57,7 +57,11 @@ per-sector splits later ([stage.md](stage.md), §5 of the brief).
 per sign for physics, but resting signs are RENDERED through shared MultiMeshes:
 one `MultiMeshInstance3D` per distinct face material (texture key), two panel
 instances per sign, so the whole field costs a handful of draw calls. Materials
-are cached per texture key (`_materials`) so same-faced signs batch. A sign only
+are cached per texture key (`_materials`) so same-faced signs batch. Each resting
+`MultiMeshInstance3D` is culled at the **shared world-prop render distance**
+(`cfg.tree_render_distance_m` / `tree_render_fade_m`, via `sign_render_params()` →
+`MeshUtil.apply_visibility_range`), so far signs stop drawing with the rest of the
+roadside dressing — see [rendering.md](rendering.md) → "Shared render distance". A sign only
 gains its own panel `MeshInstance3D`s when knocked: `_wake_sign` zero-scales its
 MultiMesh instances (`_materialize_sign`; a MultiMesh can't remove single
 instances) and attaches real panels to the body, which then tumbles as one with

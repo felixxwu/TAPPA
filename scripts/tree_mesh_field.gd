@@ -171,6 +171,13 @@ func knock_down(idx: int, dir: Vector3, duration: float) -> void:
 	set_process(true)
 
 
+# Public: per-instance size multiplier. Mesh trees all share one uniform
+# instance_scale, so every tree is "full size" (1.0) for felling / plough-through.
+# Kept so car.gd can treat mesh and billboard fields through one interface.
+func size_factor(_idx: int) -> float:
+	return 1.0
+
+
 # True once tree `idx` has been felled (hitbox disabled, toppling or flat).
 func is_fallen(idx: int) -> bool:
 	return _fallen.has(idx)

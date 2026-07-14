@@ -533,11 +533,16 @@ func _step_replay(delta: float) -> void:
 		drivetrain.replay_omega = omap
 
 
+# Reusable return buffer for _resolve_drive_inputs — filled and returned every
+# physics tick so it allocates no Dictionary. The sole caller unpacks all four
+# fields immediately.
+var _inputs_scratch := {"drive": 0.0, "brake_input": 0.0, "handbrake": false, "declutch": false}
+
 # Resolve the driver's continuous controls into the drivetrain step's inputs: the
 # throttle/brake pedal split, the driven direction (drive), foot brake, handbrake
 # and clutch (declutch). Handles the automatic vs manual gearbox logic and the
 # locked / scripted-AI / finish-stop special cases. Returns
-# {drive, brake_input, handbrake, declutch}.
+# {drive, brake_input, handbrake, declutch} (a reused buffer; read it immediately).
 func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 	# Neutralise driver input while locked; the forced handbrake below holds the
 	# car on a slope without freezing the whole simulation.
@@ -587,7 +592,11 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 		# the open handbrake clutch. Release the foot brake once stopped.
 		declutch = false
 		brake_input = 1.0 if speed > FINISH_STOP_SPEED else 0.0
-	return {"drive": drive, "brake_input": brake_input, "handbrake": handbrake, "declutch": declutch}
+	_inputs_scratch["drive"] = drive
+	_inputs_scratch["brake_input"] = brake_input
+	_inputs_scratch["handbrake"] = handbrake
+	_inputs_scratch["declutch"] = declutch
+	return _inputs_scratch
 
 
 # True when the driver is asking for forward throttle — read by TrackProgress' stuck
@@ -768,6 +777,9 @@ func _apply_level_assist() -> void:
 #
 # REACTIONS (felling / knock-over) still need to know WHICH object was hit, so they
 # stay contact-driven here — but on their own speed thresholds; they no longer touch HP.
+# They now run BEFORE the damage measurement: felling a small tree restores some of the
+# arrested forward momentum (a central, torque-free impulse — the solver's off-center
+# spin survives), so the post-restore velocity is what the deceleration damage keys off.
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if damage == null:
 		return
@@ -778,27 +790,49 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		return
 	var cfg: GameConfig = config
 	var contacts := state.get_contact_count()
-	# Unified deceleration damage (skipped for a couple of ticks after a reset/teleport,
-	# whose discontinuous velocity zeroing would read as a false dv).
+	# Object reactions run FIRST: fell trees on a per-contact, size-scaled speed
+	# threshold, and restore a size-scaled slice of the shed FORWARD momentum for
+	# felled trees so a small tree lets the car plough on through instead of stopping
+	# it dead. The restore is CENTRAL (linear velocity only, via
+	# TreeFall.plough_restore_velocity) so the solver's off-center contact response —
+	# the spin a rear-quarter clip imparts — is left untouched. Because the threshold
+	# is now per-tree (size-dependent), the contacts are walked unconditionally rather
+	# than gated once on approach speed.
+	var keep := 1.0            # min plough_keep across felled contacts; starts high
+	var any_felled := false
+	var solid_wall := false    # a reported obstacle contact that did NOT fell
+	for i in contacts:
+		var collider := state.get_contact_collider_object(i) as Node
+		if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
+			continue
+		var field := collider.get_parent()
+		if field == null or not field.has_method("knock_down") or not field.has_method("size_factor"):
+			# An obstacle we can't fell (e.g. a wall) — it legitimately stops the car.
+			solid_wall = true
+			continue
+		var shape_idx := state.get_contact_collider_shape(i)
+		var size: float = field.size_factor(shape_idx)
+		if TreeFall.should_fell_sized(_approach_speed, size, cfg):
+			field.knock_down(shape_idx, _approach_dir, cfg.tree_fell_duration_s)
+			keep = minf(keep, TreeFall.plough_keep(size, cfg))
+			any_felled = true
+		else:
+			solid_wall = true  # a standing tree below its threshold is still a wall
+	# Restore forward momentum only if every obstacle we touched was felled — a still-
+	# standing wall (a big tree below its threshold, or a non-tree obstacle) legitimately
+	# stops the car, so don't shove it through.
+	if any_felled and not solid_wall:
+		state.linear_velocity = TreeFall.plough_restore_velocity(
+			_approach_velocity, state.linear_velocity, keep, _approach_speed)
+	# Unified deceleration damage, computed from the POST-restore velocity so a tree the
+	# car ploughs through costs little HP. Skipped for a couple of ticks after a
+	# reset/teleport, whose discontinuous velocity zeroing would read as a false dv.
 	if _suppress_impact_frames > 0:
 		_suppress_impact_frames -= 1
 	else:
 		var dv := (_approach_velocity - state.linear_velocity).length()
 		var contact_point := state.get_contact_local_position(0) if contacts > 0 else global_position
 		damage.register_deceleration(dv, state.step, contact_point, cfg)
-	# Object reactions — trees fall (etc.) on their own approach-speed threshold. The
-	# threshold depends only on the (loop-invariant) approach speed, so gate once: a
-	# too-slow crash skips walking the contacts entirely. Ploughing into a line of trees
-	# still drops each one (the hitbox is disabled next step, so the car stops here now).
-	if TreeFall.should_fell(_approach_speed, cfg):
-		for i in contacts:
-			var collider := state.get_contact_collider_object(i) as Node
-			if collider == null or not collider.is_in_group(DamageModel.OBSTACLE_GROUP):
-				continue
-			var field := collider.get_parent()
-			if field != null and field.has_method("knock_down"):
-				field.knock_down(state.get_contact_collider_shape(i),
-					_approach_dir, cfg.tree_fell_duration_s)
 
 
 # DamageModel reached 0 HP. Re-emit for the rally/menu layer. In free-roam (an

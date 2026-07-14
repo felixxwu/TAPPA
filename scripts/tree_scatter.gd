@@ -31,6 +31,9 @@ const CELL_M := TrackGenerator.CELL_M  # 0.5 m track cell grid (road rasterisati
 const _JITTER_SALT := 0x6D2B79F5
 const _PHASE_SALT_X := 0x27D4EB2F
 const _PHASE_SALT_Z := 0x165667B1
+# Decorrelates the per-species partition hash from the jitter/phase hashes above, so a
+# tree's assigned species is independent of where the jitter nudged it.
+const _SPECIES_SALT := 0x9E3779B9
 
 
 # Centroid of a piece's rasterized cells, in world XZ.
@@ -85,6 +88,40 @@ static func make_forest_noise(seed_value: int, wavelength: float) -> FastNoiseLi
 # A noise sample remapped from ~[-1, 1] to [0, 1] — the "forestiness" at a point.
 static func forest_density(noise: FastNoiseLite, p: Vector2) -> float:
 	return noise.get_noise_2d(p.x, p.y) * 0.5 + 0.5
+
+
+# Split scattered positions into one group per species by WEIGHT, deterministically.
+# `weights` need not sum to 1 (they're normalised here). Returns weights.size() groups;
+# groups[i] holds the points assigned to species i. Each point hashes (off its 0.5 m
+# grid cell + seed) into [0, total) and falls into the cumulative weight band it lands
+# in, so the same seed reproduces the same split (felling-restore stays consistent) and
+# a point's species is independent of every other point's. An all-zero (or empty)
+# weight set puts everything in the first group.
+static func partition_by_weight(positions: PackedVector2Array, weights: Array, seed_value: int) -> Array:
+	var groups: Array = []
+	for _i in range(weights.size()):
+		groups.append(PackedVector2Array())
+	if weights.is_empty():
+		return groups
+	var total := 0.0
+	for w in weights:
+		total += maxf(float(w), 0.0)
+	if total <= 0.0:
+		for p in positions:
+			groups[0].append(p)
+		return groups
+	for p in positions:
+		var cell := ScatterMath.cell_of(p)
+		var r := ScatterMath.hash01(cell.x, cell.y, seed_value, _SPECIES_SALT) * total
+		var acc := 0.0
+		var idx := weights.size() - 1  # numerical safety: last band absorbs r == total
+		for i in range(weights.size()):
+			acc += maxf(float(weights[i]), 0.0)
+			if r < acc:
+				idx = i
+				break
+		groups[idx].append(p)
+	return groups
 
 
 # Scatter foliage. `forestiness` in [0, 1] gates trees by the forest noise: a point is

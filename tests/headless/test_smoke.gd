@@ -242,8 +242,8 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(10, 10), Vector2(20, 12), Vector2(-5, 8)])
 	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0)
-	assert_not_null(field.multimesh, "field has a MultiMesh")
-	assert_eq(field.multimesh.instance_count, positions.size(),
+	assert_gt(field.bin_count, 0, "field builds per-bin MultiMeshes")
+	assert_eq(field.instance_positions.size(), positions.size(),
 		"one instance per scattered position")
 	# Collision: one box shape per tree on a StaticBody3D child.
 	var body := field.get_node_or_null("Collision") as StaticBody3D
@@ -258,7 +258,7 @@ func test_billboard_field_builds_instances_and_collision() -> void:
 	assert_almost_eq(origin, Vector3(p.x, expected_y, p.y), Vector3(1e-3, 1e-3, 1e-3),
 		"box rests on the ground at the tree position")
 	# Render distance is wired into the billboard material as shader params.
-	var smat := field.multimesh.mesh.surface_get_material(0) as ShaderMaterial
+	var smat := field.render_mesh.surface_get_material(0) as ShaderMaterial
 	assert_not_null(smat, "quad has a ShaderMaterial")
 	assert_eq(smat.get_shader_parameter("render_distance"), 80.0, "render_distance param set")
 	assert_eq(smat.get_shader_parameter("fade_band"), 15.0, "fade_band param set")
@@ -282,10 +282,10 @@ func test_billboard_field_opaque_mesh_path_uses_silhouette_and_opaque_shader() -
 	field.build(positions, floor_node, Vector2(4, 6), tex, 0.5, 4.0, true, 80.0, 15.0,
 		0.0, silhouette, true)
 
-	assert_eq(field.multimesh.mesh, silhouette, "field instances the supplied silhouette mesh")
-	assert_false(field.multimesh.mesh is QuadMesh, "not a QuadMesh in the opaque path")
-	assert_eq(field.multimesh.instance_count, positions.size(), "one instance per position")
-	var smat := field.multimesh.mesh.surface_get_material(0) as ShaderMaterial
+	assert_eq(field.render_mesh, silhouette, "field instances the supplied silhouette mesh")
+	assert_false(field.render_mesh is QuadMesh, "not a QuadMesh in the opaque path")
+	assert_eq(field.instance_positions.size(), positions.size(), "one instance per position")
+	var smat := field.render_mesh.surface_get_material(0) as ShaderMaterial
 	assert_not_null(smat, "silhouette surface has a ShaderMaterial")
 	assert_eq(smat.shader, load("res://shaders/billboard_opaque.gdshader"),
 		"opaque path uses the discard-free billboard shader")
@@ -410,146 +410,59 @@ func test_opaque_billboard_size_jitter_scales_within_range_deterministically() -
 	assert_eq(plain._size_factor(plain.instance_positions[0]), 1.0, "floor 1.0 disables jitter")
 
 
-func _load_tree_mesh() -> Mesh:
-	var scene := (load("res://models/low_poly_tree.glb") as PackedScene).instantiate()
-	var stack: Array[Node] = [scene]
-	var mesh: Mesh = null
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is MeshInstance3D:
-			mesh = (n as MeshInstance3D).mesh
-			break
-		for c in n.get_children():
-			stack.append(c)
-	scene.free()  # immediate (not queue_free) so no orphan lingers past the test
-	return mesh
-
-
-func test_tree_mesh_field_bins_instances_with_collision_and_scale() -> void:
+func test_opaque_billboard_aspect_jitter_stretches_x_and_y_independently() -> void:
+	# Aspect jitter (the "how drastic" shape dial) scales width (x/z) and height (y) by
+	# independent random factors in [1-k, 1+k] on top of the uniform size — so some
+	# trees read taller-and-narrower and others shorter-and-wider. Passing k explicitly
+	# keeps this independent of the config value. k=0 collapses to pure size jitter (a
+	# square-aspect scale). Deterministic per position so felling-restore agrees.
 	var floor_node := _scene.get_node("Floor") as TerrainManager
-	var mesh := _load_tree_mesh()
-	assert_not_null(mesh, "tree .glb yields a mesh")
-	var field := TreeMeshField.new()
+	var tex := load("res://textures/tree.png") as Texture2D
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for uv in [Vector2(0, 1), Vector2(1, 1), Vector2(1, 0)]:
+		st.set_uv(uv)
+		st.add_vertex(Vector3(uv.x - 0.5, 1.0 - uv.y, 0.0))
+	var mesh := st.commit()
+	var size := Vector2(4.0, 6.0)
+	var k := 0.3
+
+	# size_jitter floor 1.0 so the uniform factor is exactly 1 — isolates the aspect
+	# stretch. base scale is (size.x, size.y, size.x) for the opaque cross.
+	var field := BillboardField.new()
 	add_child_autofree(field)
-	# (2,2)->bin(0,0); (40,40) & (41,41)->bin(1,1) at bin_size 25 -> 2 bins.
-	var positions := PackedVector2Array([Vector2(2, 2), Vector2(40, 40), Vector2(41, 41)])
-	field.build(positions, floor_node, mesh, 6.0, 0.5, 4.0, 80.0, 15.0, 25.0)
-	assert_eq(field.instance_positions.size(), positions.size(), "one placed position per tree")
-	assert_eq(field.bin_count, 2, "trees binned into per-cell MultiMeshes")
+	field.build(PackedVector2Array([Vector2(3, 4), Vector2(-8, 9), Vector2(15, -6)]),
+		floor_node, size, tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 1.0, k)
+	var saw_non_square := false
+	for pos in field.instance_positions:
+		var s := field._instance_scale(pos)
+		var fx := s.x / size.x
+		var fy := s.y / size.y
+		assert_between(fx, 1.0 - k, 1.0 + k, "width factor within [1-k, 1+k]")
+		assert_between(fy, 1.0 - k, 1.0 + k, "height factor within [1-k, 1+k]")
+		assert_almost_eq(s.z / size.x, fx, 1e-6, "cross depth (z) tracks width (x)")
+		assert_almost_eq((field._instance_scale(pos) - s).length(), 0.0, 1e-9,
+			"same position -> same scale (felling-restore agrees)")
+		if absf(fx - fy) > 1e-6:
+			saw_non_square = true
+	assert_true(saw_non_square, "x and y jitter independently (aspect varies across the stand)")
 
-	var mmis: Array[MultiMeshInstance3D] = []
-	for c in field.get_children():
-		if c is MultiMeshInstance3D:
-			mmis.append(c)
-	assert_eq(mmis.size(), 2, "one MultiMeshInstance3D per bin")
-	var total := 0
-	for m in mmis:
-		total += m.multimesh.instance_count
-		assert_eq(m.multimesh.mesh, mesh, "bins share the tree mesh")
-		assert_eq(m.visibility_range_end, 80.0, "far cull wired to render distance")
-		assert_eq(m.visibility_range_end_margin, 15.0, "fade band wired to render fade")
-	assert_eq(total, positions.size(), "every tree lands in some bin")
-
-	# Uniform scale matches the configured tree height.
-	var expected_scale := 6.0 / mesh.get_aabb().size.y
-	assert_almost_eq(field.instance_scale, expected_scale, 1e-4, "instances scaled to tree height")
-
-	# Collision: one box per tree, resting on the ground.
-	var body := field.get_node_or_null("Collision") as StaticBody3D
-	assert_not_null(body, "tree field builds a Collision StaticBody3D")
-	var rid := body.get_rid()
-	assert_eq(PhysicsServer3D.body_get_shape_count(rid), positions.size(), "one box per tree")
-	assert_eq(body.collision_layer, 1, "tree body on layer 1 like terrain")
-	var p := positions[0]
-	var expected_y := floor_node.height_at(p.x, p.y) + 4.0 / 2.0
-	var origin := PhysicsServer3D.body_get_shape_transform(rid, 0).origin
-	assert_almost_eq(origin, Vector3(p.x, expected_y, p.y), Vector3(1e-3, 1e-3, 1e-3),
-		"box rests on the ground at the tree position")
-
-
-func test_tree_mesh_field_knock_down_fells_once_and_disables_hitbox() -> void:
-	# Felling logic: a struck tree is marked fallen, its box is disabled in place
-	# (no reindexing of other shapes), and a second hit is an idempotent no-op.
-	# Balance-agnostic per CLAUDE.md — no tunable values are asserted.
-	var floor_node := _scene.get_node("Floor") as TerrainManager
-	var mesh := _load_tree_mesh()
-	var field := TreeMeshField.new()
-	add_child_autofree(field)
-	var positions := PackedVector2Array([Vector2(2, 2), Vector2(3, 3), Vector2(4, 4)])
-	field.build(positions, floor_node, mesh, 6.0, 0.5, 4.0, 80.0, 15.0, 25.0)
-	var rid := (field.get_node("Collision") as StaticBody3D).get_rid()
-
-	assert_false(field.is_fallen(1), "tree starts standing")
-	field.knock_down(1, Vector3(1, 0, 0), 0.6)
-	assert_true(field.is_fallen(1), "tree is felled after knock_down")
-	# The physics server has no public "is shape disabled" getter, so we verify the
-	# shape was disabled IN PLACE rather than removed: the box count is unchanged,
-	# so no reindexing shifted the shape-index -> tree-index mapping.
-	assert_eq(PhysicsServer3D.body_get_shape_count(rid), positions.size(),
-		"disabling a felled tree's box keeps all shapes (no reindex)")
-	assert_false(field.is_fallen(0), "neighbour tree 0 still standing")
-	assert_false(field.is_fallen(2), "neighbour tree 2 still standing")
-
-	# Idempotent: felling again changes nothing (no second active fall queued).
-	field.knock_down(1, Vector3(1, 0, 0), 0.6)
-	assert_eq(field._falling.size(), 1, "second knock_down on same tree is a no-op")
-
-	# The fall animation retires itself once flat, so a settled forest is idle.
-	field._process(1.0)  # > duration
-	assert_eq(field._falling.size(), 0, "fall record retired when flat")
-	assert_false(field.is_processing(), "field stops ticking once nothing is falling")
-
-
-func test_tree_mesh_field_reset_fallen_stands_trees_back_up() -> void:
-	# reset_fallen (stage reset before a replay): every felled tree is unmarked and its
-	# box re-enabled in place, shape count unchanged (no reindex). Same observable
-	# contract as knock_down — no public is-shape-disabled getter. Tunable-agnostic.
-	var floor_node := _scene.get_node("Floor") as TerrainManager
-	var mesh := _load_tree_mesh()
-	var field := TreeMeshField.new()
-	add_child_autofree(field)
-	var positions := PackedVector2Array([Vector2(2, 2), Vector2(3, 3), Vector2(4, 4)])
-	field.build(positions, floor_node, mesh, 6.0, 0.5, 4.0, 80.0, 15.0, 25.0)
-	var rid := (field.get_node("Collision") as StaticBody3D).get_rid()
-	field.knock_down(0, Vector3(1, 0, 0), 0.6)
-	field.knock_down(2, Vector3(1, 0, 0), 0.6)
-	assert_true(field.is_fallen(0) and field.is_fallen(2), "sanity: two trees felled")
-
-	field.reset_fallen()
-
-	assert_false(field.is_fallen(0), "reset stands the felled tree back up")
-	assert_false(field.is_fallen(2), "reset stands every felled tree back up")
-	assert_eq(PhysicsServer3D.body_get_shape_count(rid), positions.size(),
-		"reset keeps all shapes (no reindex)")
-	assert_eq(field._falling.size(), 0, "no lingering fall animation after reset")
-	assert_false(field.is_processing(), "field stops ticking after reset")
-	# A reset tree can be felled again on the next run.
-	field.knock_down(0, Vector3(1, 0, 0), 0.6)
-	assert_true(field.is_fallen(0), "a reset tree can be knocked over again")
-
-
-func test_tree_mesh_field_knock_down_safe_without_collision_or_bad_index() -> void:
-	# A collision-less field (bushes) and out-of-range indices must not crash.
-	var floor_node := _scene.get_node("Floor") as TerrainManager
-	var mesh := _load_tree_mesh()
-	var field := TreeMeshField.new()
-	add_child_autofree(field)
-	var positions := PackedVector2Array([Vector2(2, 2)])
-	field.build(positions, floor_node, mesh, 6.0, 0.0, 0.0, 80.0, 15.0, 25.0, false)
-	field.knock_down(0, Vector3(1, 0, 0), 0.6)   # no Collision body
-	field.knock_down(999, Vector3(1, 0, 0), 0.6)  # unknown index
-	assert_false(field.is_fallen(0), "no-op on a field with no collision")
-	assert_false(field.is_fallen(999), "no-op on an out-of-range index")
+	# k = 0 disables the aspect stretch: width and height share the uniform factor, so
+	# the aspect ratio matches the authored size exactly.
+	var plain := BillboardField.new()
+	add_child_autofree(plain)
+	plain.build(PackedVector2Array([Vector2(3, 4)]), floor_node,
+		size, tex, 0.5, 4.0, false, 80.0, 15.0, 0.0, mesh, true, 1.0, 0.0)
+	var ps := plain._instance_scale(plain.instance_positions[0])
+	assert_almost_eq(ps.x / size.x, ps.y / size.y, 1e-6, "k=0 keeps the authored aspect")
 
 
 func test_world_uses_tree_mesh_field_for_trees_and_bushes() -> void:
-	# Trees + bushes render as one colliding foliage field (trees) and one
-	# non-colliding field (bushes). The renderer depends on the
-	# use_billboard_foliage A/B toggle: TreeMeshField (solid low-poly meshes) by
-	# default, BillboardField (old alpha-cutout billboards) when the toggle is on.
-	# Either way the invariant holds: at least one colliding + one non-colliding
-	# field exists. (The shared scene may be re-generated by an earlier test, so
-	# don't assume an exact field count.)
+	# Trees + bushes render as one colliding foliage field (trees, opaque
+	# BillboardField) and one non-colliding field (bushes, 3D-mesh TreeMeshField).
+	# The invariant: at least one colliding + one non-colliding field exists.
+	# (The shared scene may be re-generated by an earlier test, so don't assume an
+	# exact field count.)
 	var with_collision := 0
 	var without_collision := 0
 	for c in _scene.get_children():
@@ -571,30 +484,6 @@ func test_world_uses_tree_mesh_field_for_trees_and_bushes() -> void:
 	assert_gt(without_collision, 0, "world builds a non-colliding foliage field for bushes")
 
 
-func test_tree_canopy_uses_near_camera_dissolve_shader() -> void:
-	# The canopy surface is swapped to the near-camera dissolve ShaderMaterial
-	# (so trees the chase camera enters stop blocking the view), with its fade
-	# range wired from GameConfig. The trunk surface keeps its StandardMaterial3D.
-	var mesh := Foliage.tree_mesh() as Mesh
-	assert_not_null(mesh, "Foliage exposes the shared tree mesh")
-	var cfg: GameConfig = Config.data
-	var canopy: ShaderMaterial = null
-	for s in mesh.get_surface_count():
-		var sm := mesh.surface_get_material(s)
-		if sm is ShaderMaterial:
-			canopy = sm as ShaderMaterial
-	assert_not_null(canopy, "tree mesh has a ShaderMaterial canopy surface")
-	if canopy != null:
-		assert_eq(canopy.shader, load("res://shaders/tree_canopy.gdshader"),
-			"canopy uses the near-camera dissolve shader")
-		assert_not_null(canopy.get_shader_parameter("albedo"),
-			"canopy keeps its leaf texture")
-		assert_eq(canopy.get_shader_parameter("near_fade_start"), cfg.tree_near_fade_start_m,
-			"near fade start wired from config")
-		assert_eq(canopy.get_shader_parameter("near_fade_end"), cfg.tree_near_fade_end_m,
-			"near fade end wired from config")
-
-
 func test_billboard_field_without_collision_has_no_body() -> void:
 	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var tex := load("res://textures/tree-greece.webp") as Texture2D
@@ -602,7 +491,7 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(3, 4), Vector2(6, 9)])
 	field.build(positions, floor_node, Vector2(1, 1.5), tex, 0.5, 4.0, false, 80.0, 15.0, -0.5)
-	assert_eq(field.multimesh.instance_count, positions.size(),
+	assert_eq(field.instance_positions.size(), positions.size(),
 		"bush field still renders one instance per position")
 	assert_null(field.get_node_or_null("Collision"),
 		"with_collision == false builds no Collision body")
@@ -615,23 +504,18 @@ func test_billboard_field_without_collision_has_no_body() -> void:
 		Vector3(1e-3, 1e-3, 1e-3), "bush sunk into ground by the y_offset")
 
 
-func test_spawn_trees_billboard_texture_forces_billboard_path() -> void:
-	# A region tree texture (Foliage.spawn_trees billboard_texture arg) must FORCE
-	# the billboard path even when the perf toggle prefers the 3D mesh — that's how
-	# a region (e.g. Greece) swaps in its own star-shaped tree. Drive it with the
-	# mesh path selected so the override is what produces a BillboardField.
-	var cfg: GameConfig = Config.data
-	var prev := cfg.use_billboard_trees
-	cfg.use_billboard_trees = false
+func test_spawn_trees_billboard_texture_selects_region_billboard() -> void:
+	# A region tree texture (Foliage.spawn_trees billboard_texture arg) selects that
+	# texture's star-shaped billboard cutout — that's how a region (e.g. Greece)
+	# swaps in its own tree. Trees are always a BillboardField.
 	var floor_node := _scene.get_node("Floor") as TerrainManager
 	var tex := load("res://textures/tree-greece.webp") as Texture2D
 	var parent := Node3D.new()
 	add_child_autofree(parent)
 	var field := Foliage.spawn_trees(parent, PackedVector2Array([Vector2(2, 2)]),
 		floor_node, false, 80.0, 15.0, tex)
-	cfg.use_billboard_trees = prev
 	assert_true(field is BillboardField,
-		"a billboard_texture override forces the BillboardField path")
+		"spawn_trees produces a BillboardField")
 
 
 func test_tree_silhouette_mesh_caches_per_texture() -> void:

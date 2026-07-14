@@ -140,19 +140,15 @@ func test_hq_boots_to_the_exterior_title() -> void:
 
 func test_hq_frames_the_lot_with_config_matched_trees() -> void:
 	# HQ trees are spawned through the shared Foliage helper, so they match the
-	# game's tree representation (billboard cutout or 3D mesh, per
-	# cfg.use_billboard_trees) instead of a hardcoded mesh — and they're scenery
-	# (no collision).
+	# game's tree representation (opaque billboard cutout) instead of a hardcoded
+	# mesh — and they're scenery (no collision).
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var field := hq.get_node_or_null("HQTrees")
 	assert_not_null(field, "HQ frames the lot with a tree field")
-	# The field type must match what the config selects for the stage.
-	if Config.data.use_billboard_trees:
-		assert_true(field is BillboardField, "billboard config → HQ frames with billboard trees")
-	else:
-		assert_true(field is TreeMeshField, "mesh config → HQ frames with 3D tree meshes")
+	# Trees are always billboards.
+	assert_true(field is BillboardField, "HQ frames the lot with billboard trees")
 	assert_null(field.get_node_or_null("Collision"), "HQ trees are scenery (no collision)")
 
 
@@ -1992,10 +1988,10 @@ func test_podium_shows_the_finish_summary() -> void:
 	# directly to exercise the mesh-extraction + MultiMesh build paths and confirm
 	# every focal-area decoration lands (trees, bushes, crowd).
 	pod._build_scenery()
-	# Trees + bushes go through the shared Foliage fields (a BillboardField or
-	# TreeMeshField per cfg.use_billboard_trees), so read their renderer-independent
-	# instance_positions mirror (headless has no MultiMesh buffer). The crowd is a
-	# plain MultiMeshInstance3D placed directly.
+	# Trees + bushes go through the shared Foliage fields (trees a BillboardField,
+	# bushes a TreeMeshField), so read their renderer-independent instance_positions
+	# mirror (headless has no MultiMesh buffer). The crowd is a plain
+	# MultiMeshInstance3D placed directly.
 	for node_name in ["Trees", "Bushes"]:
 		var field := pod.get_node_or_null(node_name)
 		assert_not_null(field, "scenery builds a %s field" % node_name)
@@ -2006,15 +2002,12 @@ func test_podium_shows_the_finish_summary() -> void:
 
 	# Routing contract (regression guard): the podium must build its foliage through
 	# the shared Foliage fields, NOT a hand-rolled MultiMesh at the mesh's native GLB
-	# size (the bug this replaced). The bush field is always the 3D TreeMeshField; the
-	# tree field is a BillboardField or TreeMeshField per the representation toggle.
+	# size (the bug this replaced). The bush field is always the 3D TreeMeshField;
+	# the tree field is always a BillboardField.
 	var bushes := pod.get_node_or_null("Bushes")
 	assert_true(bushes is TreeMeshField, "podium bushes route through the shared bush field")
 	var trees := pod.get_node_or_null("Trees")
-	if Config.data.use_billboard_trees:
-		assert_true(trees is BillboardField, "podium trees use the shared billboard field")
-	else:
-		assert_true(trees is TreeMeshField, "podium trees use the shared 3D mesh field")
+	assert_true(trees is BillboardField, "podium trees use the shared billboard field")
 	# Scale contract: the bush field is normalized by the SAME routine + config the
 	# rest of the game uses (never left at native GLB size). Asserts the routing, not a
 	# tunable height — retuning cfg.bush_height_m moves both sides together.

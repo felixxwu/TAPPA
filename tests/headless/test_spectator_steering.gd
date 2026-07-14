@@ -27,6 +27,32 @@ func test_separation_ignores_distant_and_knocked_neighbours() -> void:
 		"knocked-over neighbours don't crowd the living")
 
 
+func test_binned_separation_matches_the_unbinned_scan() -> void:
+	# The spatial-grid path (used per-tick to bound the O(N^2) crowd cost) must
+	# compute the SAME force as the full scan — it only prunes members provably
+	# beyond the radius. Spread agents so some share a cell and some don't.
+	var radius := 0.6
+	var pos := PackedVector2Array([
+		Vector2(0, 0), Vector2(0.3, 0.1), Vector2(-0.4, 0.2),
+		Vector2(5, 5), Vector2(0.2, -0.3), Vector2(-3, 4)])
+	var up := PackedByteArray([1, 1, 1, 1, 0, 1])  # index 4 knocked
+	var grid := SpectatorGroup.build_separation_grid(pos, up, radius)
+	assert_false(grid.is_empty(), "grid bins the upright members")
+	for i in pos.size():
+		var full := SpectatorGroup.separation_force(i, pos, up, radius)
+		var binned := SpectatorGroup.separation_force(i, pos, up, radius, grid, radius)
+		assert_almost_eq(binned.x, full.x, 1e-5, "binned x matches full scan for member %d" % i)
+		assert_almost_eq(binned.y, full.y, 1e-5, "binned y matches full scan for member %d" % i)
+
+
+func test_separation_grid_skips_knocked_members() -> void:
+	var pos := PackedVector2Array([Vector2(0, 0), Vector2(0.3, 0)])
+	var up := PackedByteArray([1, 0])  # neighbour is a ragdoll
+	var grid := SpectatorGroup.build_separation_grid(pos, up, 0.5)
+	assert_eq(SpectatorGroup.separation_force(0, pos, up, 0.5, grid, 0.5), Vector2.ZERO,
+		"a knocked neighbour exerts no push through the binned path either")
+
+
 # --- flee ---------------------------------------------------------------------
 
 func test_flee_pushes_away_from_car_within_radius() -> void:

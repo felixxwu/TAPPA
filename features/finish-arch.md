@@ -114,6 +114,15 @@ it always matches the event):
 Empty/zero `info` fields are skipped, so a dev boot or direct play with no active
 rally shows just the `START` / `FINISH` wordmark — no misleading stage text.
 
+**Render cull.** After the gate is built and placed, `world.gd._place_arch()` runs
+`MeshUtil.apply_visibility_range()` over the whole arch subtree (structure, banners,
+ropes, anchors) at the **shared world-prop render distance**
+(`cfg.tree_render_distance_m` / `tree_render_fade_m`), so the arch pops in with the
+foliage/signs/spectators rather than floating in the far fog — see
+[rendering.md](rendering.md) → "Shared render distance". NB the arch is a large
+landmark: if it pops too abruptly at speed, raise the shared distance (it governs
+all props) rather than special-casing the gate.
+
 ## Visual iteration (`tools/render_model.gd`)
 
 Headless rendering uses the dummy renderer and can't read back pixels, so the

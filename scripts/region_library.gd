@@ -13,27 +13,47 @@ const DEFAULT_MAP_IMAGE := "res://textures/map_table.jpg"
 # Whitelisted look-override keys (used by look_of + world.gd).
 const LOOK_KEYS := [
 	"map_image", "sky_panorama", "grass_texture", "gravel_texture",
-	"tree_billboard", "bush_billboard", "suppress_bush_mesh", "background_color",
+	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
 	"terrain_tint", "terrain_layers",
 ]
 
+# The home region's billboard tree (also the fallback when a region authors no
+# `tree_mix`). Its "profile" selects the GameConfig sizing/jitter block a species
+# uses — "home" → tree_size_m et al., "region" → region_tree_billboard_size_m et al.
+# (see Foliage.spawn_trees). All balance values stay in GameConfig; the region only
+# authors WHICH texture, WHICH profile, and the mix WEIGHT.
+const DEFAULT_TREE_MIX: Array = [
+	{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
+]
+
 const REGIONS: Array[Dictionary] = [
-	# Region 0 — the existing world. NO look overrides: uses the scene (main.tscn /
-	# hq_environment) + GameConfig baseline unchanged, so the home world is
-	# byte-identical to today.
-	{"id": "home", "name": "Rally Country"},
-	# Region 1 — Greece. Ships the three swapped textures + sky, plus a Greek tree:
-	# tree_billboard forces the star-shaped billboard tree (from tree-greece.webp,
-	# a large low, dry Mediterranean canopy) in place of the home region's tree,
-	# and suppress_bush_mesh drops the green 3D ground-cover bushes entirely (the
-	# arid map has no lush undergrowth). Tints inherit home for now.
+	# Region 0 — the existing world. It authors its foliage split explicitly so the
+	# split is config-driven everywhere (100% home tree.png, 3D ground-cover bushes
+	# on); every other look field inherits the scene (main.tscn / hq_environment) +
+	# GameConfig baseline unchanged, so the home world still looks byte-identical.
+	{
+		"id": "home", "name": "Rally Country",
+		"tree_mix": [
+			{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
+		],
+		"spawn_bush_mesh": true,
+	},
+	# Region 1 — Greece. Ships the three swapped textures + sky, plus a Greek tree
+	# split: 70% the star-shaped Greek billboard (tree-greece.webp, a large low, dry
+	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
+	# (the smaller "home" profile), so the arid stands read as mostly-olive with a few
+	# ordinary trees mixed in. spawn_bush_mesh = false drops the green 3D ground-cover
+	# bushes entirely (the arid map has no lush undergrowth). Tints inherit home for now.
 	{
 		"id": "greece", "name": "Greece",
 		"map_image": "res://textures/greece.png",
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
-		"tree_billboard": "res://textures/tree-greece.webp",
-		"suppress_bush_mesh": true,
+		"tree_mix": [
+			{"texture": "res://textures/tree-greece.webp", "profile": "region", "weight": 0.7},
+			{"texture": "res://textures/tree.png", "profile": "home", "weight": 0.3},
+		],
+		"spawn_bush_mesh": false,
 		"gravel_texture": "res://textures/gravel-greece.jpg",
 	},
 ]
@@ -113,6 +133,19 @@ static func rally_showdown_gate_open(rally: Dictionary, profile: Dictionary) -> 
 	if not bool(rally.get("showdown", false)):
 		return true
 	return showdown_unlocked(String(rally.get("region", "")), profile)
+
+# The tree species split for a resolved region look: the authored `tree_mix`, or the
+# default single home tree when a region authors none (free roam / unknown id). Each
+# entry is {texture, profile, weight}; see DEFAULT_TREE_MIX. Pure — takes the look
+# dict (from look_of), so callers don't re-resolve the region.
+static func tree_mix(look: Dictionary) -> Array:
+	var mix: Array = look.get("tree_mix", [])
+	return mix if not mix.is_empty() else DEFAULT_TREE_MIX
+
+# Whether the 3D ground-cover bush mesh spawns for this region look — config-driven,
+# defaults true (a region that authors nothing keeps the bushes, like the base scene).
+static func spawns_bush_mesh(look: Dictionary) -> bool:
+	return bool(look.get("spawn_bush_mesh", true))
 
 static func look_of(region_id: String) -> Dictionary:
 	var region := by_id(region_id)

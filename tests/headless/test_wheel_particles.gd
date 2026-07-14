@@ -32,6 +32,7 @@ class StubDrivetrain:
 	extends RefCounted
 	var front_wheels: Array = []
 	var rear_wheels: Array = []
+	var all_wheels: Array = []  # front + rear, cached like the real drivetrain
 	var ground_vel := Vector3.ZERO  # ground velocity at the contact (uniform stub)
 	var terrain
 	func is_wheel_driven(w) -> bool:
@@ -74,6 +75,7 @@ func before_each() -> void:
 		_car.add_child(w)  # in-tree so global_position resolves
 		_wheels.append(w)
 		(_dt.rear_wheels if i >= 2 else _dt.front_wheels).append(w)
+		_dt.all_wheels.append(w)
 
 
 func after_each() -> void:

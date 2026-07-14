@@ -994,7 +994,7 @@ var peak_torque_rpm := 4500.0
 @export var tire_mark_max_segments := 200
 ## Height the ribbon sits above the wheel's contact patch, in metres (lifts it
 ## clear of the road surface so it never z-fights or clips under the terrain).
-@export var tire_mark_ground_offset_m := 0.15
+@export var tire_mark_ground_offset_m := 0.05
 ## Extra lateral allowance beyond the road half-width within which marks still lay
 ## (so the verge of the gravel still marks), in metres.
 @export var tire_mark_gravel_margin_m := 0.3
@@ -1092,12 +1092,11 @@ var peak_torque_rpm := 4500.0
 ## (0 = a rigid lattice, 1 = anywhere in the cell). Spacing is inherent: two trees are
 ## never closer than (1 - tree_jitter) x cell, so lower values look more regular.
 @export_range(0.0, 1.0) var tree_jitter := 0.6
-## Tree size in metres: width (x) by height (y). Trees are now solid low-poly
-## meshes (TreeMeshField), scaled uniformly so the model's height matches y
-## (x is legacy from the billboard era and only informs the rough footprint).
+## Tree size in metres: width (x) by height (y). Trees are opaque billboard
+## cutouts, scaled so the card's height matches y and its width matches x.
 @export var tree_size_m := Vector2(7.5, 7.5)
-## Minimum per-instance size multiplier for HOME billboard trees (the
-## `use_billboard_trees` path, `textures/tree.png`): each one is scaled by a random
+## Minimum per-instance size multiplier for HOME billboard trees
+## (`textures/tree.png`): each one is scaled by a random
 ## factor in [this, 1.0] (hashed off its position), so a home stand varies in height
 ## instead of every tree being identical. 1.0 disables the jitter. The region-forced
 ## billboard path has its own floor (`region_tree_billboard_min_scale`).
@@ -1107,6 +1106,12 @@ var peak_torque_rpm := 4500.0
 ## seam where the trunk meets the slope), positive lifts it. Region billboards have
 ## their own offset (`region_tree_billboard_ground_offset_m`).
 @export_range(-3.0, 3.0) var tree_billboard_ground_offset_m := -0.5
+## Aspect-jitter amplitude for HOME billboard trees: on top of the uniform size
+## jitter, width and height each get an independent random multiplier in
+## [1 - this, 1 + this], so some trees read taller-and-narrower and others
+## shorter-and-wider. This dial sets how DRASTIC the shape variation is; 0 disables
+## it. Region billboards have their own (`region_tree_billboard_aspect_jitter`).
+@export_range(0.0, 0.9) var tree_billboard_aspect_jitter := 0.15
 ## Half-extent (m) in X/Z of each tree's box hitbox — a square trunk footprint.
 @export_range(0.05, 5.0) var tree_collision_radius_m := 0.5
 ## Height (m) of each tree's box hitbox.
@@ -1117,10 +1122,18 @@ var peak_torque_rpm := 4500.0
 ## through where it stood. Below this speed a tree stays a solid obstacle. Felling is
 ## now decoupled from damage (damage is keyed to deceleration, not the contact), so this
 ## only governs when a tree tips over, independent of HP. 0 disables felling.
+## This is now the FULL-SIZE threshold: a tree of visual size `s` fells at
+## `tree_fell_speed_kmh * s`, so smaller trees topple sooner (see TreeFall).
 @export_range(0.0, 200.0) var tree_fell_speed_kmh := 45.0
 ## Seconds a felled tree takes to tilt from upright to flat on the ground. Purely
 ## a look value (the hitbox is gone the instant it's felled).
 @export_range(0.1, 5.0) var tree_fell_duration_s := 2
+## Maximum fraction of shed forward momentum a felled tree returns to the car,
+## approached as tree size -> the smallest tree. A felled full-size tree returns
+## 0 (hard stop, as before); a small tree returns up to this fraction so the car
+## ploughs on through. 0 disables plough-through entirely (every felled tree
+## hard-stops). See TreeFall.plough_keep and features/trees.md.
+@export_range(0.0, 1.0) var tree_plough_keep_max := 0.8
 ## Distance (m) past which trees are fully culled. Defaults near the loaded
 ## terrain extent (RADIUS=2, CHUNK_M=50 -> ~125 m).
 @export_range(10.0, 500.0) var tree_render_distance_m := 80.0
@@ -1139,21 +1152,16 @@ var peak_torque_rpm := 4500.0
 ## but more draw calls; ~25 m balances both against the ~75 m loaded terrain.
 @export_range(5.0, 100.0) var tree_bin_size_m := 25.0
 ## Height (m) the ground-cover bush mesh (models/vegetation/groundcover_opaque.glb)
-## is scaled to. Bushes render through the same TreeMeshField as trees (binned,
-## LOD/visibility-culled) but without collision; everything else about their
-## scatter/render reuses the tree_* params.
+## is scaled to. Bushes are 3D low-poly meshes rendered through TreeMeshField
+## (binned, LOD/visibility-culled) but without collision; everything else about
+## their scatter/render reuses the tree_* params.
 @export_range(0.1, 5.0) var bush_height_m := 0.6
 ## Albedo tint multiplied into the bush mesh (on top of the tone-matched foliage
 ## texture and the per-instance baked terrain light). Lifted a touch above the
 ## model's authored green so the ground cover reads a bit more against the grass.
 @export var bush_tint := Color(1.25, 1.25, 1.25)
-## PERF A/B TOGGLE: when true, render TREES as the old alpha-cutout billboards
-## (BillboardField + textures/tree.png) instead of the low-poly mesh
-## (TreeMeshField). Bushes stay low-poly meshes regardless. Kept so the mesh vs
-## billboard tree cost can be measured side by side. See features/trees.md.
-@export var use_billboard_trees := false
 ## Size (width x height, m) of a region billboard tree — the star-shaped cutout a
-## region forces via its `tree_billboard` look override (e.g. Greece's
+## `tree_mix` species selects with the `region` profile (e.g. Greece's
 ## tree-greece.webp). Larger than the home tree_size_m: a big, low Mediterranean
 ## canopy that stands in for the home region's trees on that map.
 @export var region_tree_billboard_size_m := Vector2(4.0, 4.0)
@@ -1167,6 +1175,12 @@ var peak_torque_rpm := 4500.0
 ## the seam where the trunk meets the slope), positive lifts it. The home billboard
 ## path has its own offset (`tree_billboard_ground_offset_m`).
 @export_range(-3.0, 3.0) var region_tree_billboard_ground_offset_m := -0.5
+## Aspect-jitter amplitude for REGION billboard trees (e.g. Greece): on top of the
+## uniform size jitter, width and height each get an independent random multiplier in
+## [1 - this, 1 + this], so silhouettes vary in shape (taller-and-narrower vs
+## shorter-and-wider). Sets how DRASTIC that variation is; 0 disables it. The home
+## billboard path has its own (`tree_billboard_aspect_jitter`).
+@export_range(0.0, 0.9) var region_tree_billboard_aspect_jitter := 0.15
 
 
 @export_group("Roadside Signs")
@@ -1313,10 +1327,14 @@ var peak_torque_rpm := 4500.0
 
 
 @export_group("Performance")
-## Render frame cap (FPS). The game is inherently low-end and ships one lean
-## value; a steady cap avoids thermal throttling on phones. 0 = uncapped (desktop
-## dev). Physics runs independently at the project physics tick.
+## Render frame cap (FPS) on desktop targets. 0 = uncapped. Physics runs
+## independently at the project physics tick. Mobile/web use target_fps_mobile
+## instead (see target_fps_for()).
 @export_range(0, 240) var target_fps := 60
+## Render frame cap (FPS) on mobile + web targets, where a steady low ceiling
+## avoids thermal throttling on phones. 0 = uncapped. Selected over target_fps by
+## target_fps_for() when running on a mobile or web export.
+@export_range(0, 240) var target_fps_mobile := 30
 ## Texture LOD bias for the foliage/ground shaders: positive values pull distant
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
@@ -1326,6 +1344,13 @@ var peak_torque_rpm := 4500.0
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
 # static weight fraction, so each axle's rate is proportional to the load it carries
 # and the car sits LEVEL at rest (compression = load / rate is then equal front and
+# Frame cap to apply for the current target: the aggressive mobile/web ceiling
+# (thermal throttling) or the higher desktop one. Pure so world.gd can pass
+# Platform.is_mobile_or_web() and tests can pin either branch. 0 = uncapped.
+func target_fps_for(mobile_or_web: bool) -> int:
+	return target_fps_mobile if mobile_or_web else target_fps
+
+
 # rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car
 # gets the base rate on both axles (unchanged), a nose-heavy car a stiffer front.
 func axle_stiffness(front: bool) -> float:
@@ -1463,6 +1488,10 @@ func sign_render_params() -> Dictionary:
 		# shares the world layer, so SignField also adds an explicit exception on contact.
 		"knock_layer": 1 << 4,
 		"knock_mask": 1,
+		# Shared world-prop render distance (same field foliage uses) so resting signs
+		# cull at the same range as the trees/spectators. See MeshUtil.apply_visibility_range.
+		"render_distance_m": tree_render_distance_m,
+		"render_fade_m": tree_render_fade_m,
 	}
 
 
@@ -1514,4 +1543,8 @@ func spectator_params() -> Dictionary:
 		"ragdoll_layer": 1 << 4,
 		"ragdoll_mask": 1,
 		"seed": 0,
+		# Shared world-prop render distance (same field foliage uses) so the crowd
+		# and the trees it stands among cull at one range. See MeshUtil.apply_visibility_range.
+		"render_distance_m": tree_render_distance_m,
+		"render_fade_m": tree_render_fade_m,
 	}

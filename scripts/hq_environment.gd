@@ -117,9 +117,9 @@ func _build_buildings(host: Node3D) -> void:
 
 # Trees framing the lot so HQ reads as an outdoor clearing under the open-field
 # skybox, instead of floating on a bare plane. Spawned through the shared Foliage
-# helper, so they use the SAME representation the stage does (billboard cutout or
-# 3D mesh, per cfg.use_billboard_trees) — never a hardcoded mesh that drifts from
-# the game. Scenery only (no collision, render_distance 1000 = no cull, HQ is
+# helper, so they use the SAME representation the stage does (opaque billboard
+# cutout) — never a hardcoded mesh that drifts from the game. Scenery only (no
+# collision, render_distance 1000 = no cull, HQ is
 # small). A close-in annulus with the front-centre corridor kept clear so trees
 # never block the title camera's view of the car park, and the garage footprint
 # kept clear so none spawn inside it. Returns the scatter for the spectator layout.

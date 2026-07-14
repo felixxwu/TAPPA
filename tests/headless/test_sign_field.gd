@@ -52,11 +52,13 @@ func test_resting_signs_render_via_multimesh_not_nodes() -> void:
 	var field := _field(4, ["left_1", "right_1"])
 	assert_eq(field.sign_count, 4, "one sign per layout entry")
 	var mms := _multimeshes(field)
-	assert_eq(mms.size(), 2, "one MultiMesh per distinct face material")
+	# One MultiMeshInstance3D PER SIGN (anchored at the sign so the render-distance
+	# cull works), not one batch per material.
+	assert_eq(mms.size(), 4, "one MultiMesh per sign")
 	var instances := 0
 	for mmi in mms:
 		instances += (mmi as MultiMeshInstance3D).multimesh.instance_count
-		assert_not_null(mmi.material_override, "batched panels carry the face material")
+		assert_not_null(mmi.material_override, "each sign's panels carry the face material")
 	assert_eq(instances, 8, "two panel instances per sign")
 	for i in field.sign_count:
 		assert_eq(_body_panels(field, i).size(), 0,

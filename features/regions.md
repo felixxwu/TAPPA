@@ -22,21 +22,45 @@ a missing key inherits the scene/`GameConfig` baseline, so `home` (index 0)
 authors **no** overrides and the home world stays byte-identical to before
 regions existed. Ships today:
 
-- `home` — `{"id": "home", "name": "Rally Country"}`, no overrides.
+- `home` — authors its **foliage split explicitly** (`tree_mix` = 100%
+  `res://textures/tree.png` at the home profile, `spawn_bush_mesh` = `true`) so
+  the split is config-driven everywhere; every OTHER look field is left at the
+  scene/`GameConfig` baseline, so the home world still looks byte-identical.
 - `greece` — `map_image`, `sky_panorama`, `grass_texture`, `gravel_texture`
-  (all `res://textures/*`), plus a Greek tree: `tree_billboard` =
-  `res://textures/tree-greece.webp` and `suppress_bush_mesh` = `true`. The
-  billboard tree replaces the home region's tree (star-shaped cutout, see
-  below), and the 3D ground-cover bushes are dropped entirely (the arid map has
-  no lush undergrowth). Terrain tints are still **not** overridden — Greece
-  inherits the home tints.
+  (all `res://textures/*`), plus a Greek tree **split**: `tree_mix` = 70%
+  `res://textures/tree-greece.webp` (the `region` sizing profile) + 30%
+  `res://textures/tree.png` (the `home` profile), and `spawn_bush_mesh` =
+  `false`. The mix reads as mostly the large low Mediterranean canopy with a few
+  ordinary trees mixed in, and the 3D ground-cover bushes are dropped entirely
+  (the arid map has no lush undergrowth). Terrain tints are still **not**
+  overridden — Greece inherits the home tints.
 
 `LOOK_KEYS` is the whitelist of override fields a region may carry:
 `map_image`, `sky_panorama`, `grass_texture`, `gravel_texture`,
-`tree_billboard`, `bush_billboard`, `suppress_bush_mesh`, `background_color`,
+`tree_mix`, `bush_billboard`, `spawn_bush_mesh`, `background_color`,
 `terrain_tint`, `terrain_layers`. `bush_billboard`/`terrain_tint`/
 `terrain_layers` are reserved slots — schema support exists, nothing authors
-them yet. `tree_billboard` and `suppress_bush_mesh` are live (Greece).
+them yet. `tree_mix` and `spawn_bush_mesh` are live (home + Greece).
+
+### Tree species split (`tree_mix`)
+
+`tree_mix` is a weighted list of billboard tree **species** — each entry is
+`{"texture": <res path>, "profile": "home" | "region", "weight": <float>}`.
+`world.gd` splits the scattered tree positions across the species by weight
+(`TreeScatter.partition_by_weight`) and spawns **one `BillboardField` per
+species**, so a stage can be a mix (Greece: 70/30). The `profile` selects the
+`GameConfig` sizing/jitter block that species renders at — `"home"` →
+`tree_size_m` et al., `"region"` → `region_tree_billboard_size_m` et al. — so
+the mixed-in home tree.png keeps its smaller home size while Greece's own tree
+uses the tall canopy size. **All balance values stay in `GameConfig`**; the
+region only authors WHICH texture, WHICH profile, and the WEIGHT. Helpers:
+`RegionLibrary.tree_mix(look)` returns the authored mix or
+`DEFAULT_TREE_MIX` (single home tree at 100%) when a region authors none (free
+roam / unknown id); `RegionLibrary.spawns_bush_mesh(look)` returns the
+`spawn_bush_mesh` flag, defaulting `true`. The partition is deterministic per
+`track_seed` (hashed off each point's grid cell), so felling-restore keeps a
+tree its species, and multiple `BillboardField`s replay-reset fine (`world.gd`
+walks every foliage child for `reset_fallen`).
 
 Like `RallyLibrary`/`CarLibrary`, `RegionLibrary` sits behind a `Registry.Seam`
 (`static var _seam := Registry.Seam.new(REGIONS)`) so tests can
@@ -65,9 +89,12 @@ CLAUDE.md's catalogue-testing rule).
   is simply unreached) would vacuously read as "showdown unlocked."
 - `look_of(region_id)` — returns **only the keys the region actually
   overrides** (filtered through `LOOK_KEYS`), not a fully-merged dict against
-  the `GameConfig`/scene baseline. `home` returns `{}`. Callers (`world.gd`,
-  `hq.gd`) check `.has(key)` per field and only touch what's present, leaving
-  everything else at its existing scene/`GameConfig` value.
+  the `GameConfig`/scene baseline. `home` returns just its foliage keys
+  (`tree_mix` + `spawn_bush_mesh`), which resolve to the unchanged home look;
+  every non-foliage field is still absent, so map/sky/ground stay at the scene
+  baseline. Callers (`world.gd`, `hq.gd`) check `.has(key)` per field and only
+  touch what's present, leaving everything else at its existing scene/`GameConfig`
+  value.
 
 **Deviation from the design doc:** the spec described a `resolve_look(region_id)`
 that *merges* each field with an explicit `GameConfig` baseline. The shipped
@@ -123,13 +150,15 @@ settles):
 4. Foliage is region-aware in `world.gd`'s stage-generation (NOT
    `_apply_region_look`, which only touches materials/sky/fog): it reads the
    same `_current_region_look()` before scattering.
-   - `tree_billboard` → passed to `Foliage.spawn_trees(...)` as the
-     `billboard_texture` arg, which **forces** the star-shaped billboard path
-     (regardless of `cfg.use_billboard_trees`) using that texture's cutout at
-     `cfg.region_tree_billboard_size_m` (a large canopy). Home / free-roam leave
-     it null and follow `cfg.use_billboard_trees`. See [trees.md](trees.md).
-   - `suppress_bush_mesh` → when true, `world.gd` skips the entire bush pass
-     (no `Foliage.spawn_bushes`, no `BushField` interaction node).
+   - `tree_mix` → `world.gd` splits the scattered points by weight
+     (`TreeScatter.partition_by_weight`) and calls `Foliage.spawn_trees(...)`
+     once per species, passing that species' `texture` and a
+     `use_region_profile` flag (from its `profile`). Trees are always opaque
+     billboards; an unauthored region falls back to the default single
+     `textures/tree.png` home tree. See the `tree_mix` section above +
+     [trees.md](trees.md).
+   - `spawn_bush_mesh` → when false, `world.gd` skips the entire bush pass
+     (no `Foliage.spawn_bushes`, no `BushField` interaction node); defaults true.
    - `bush_billboard` is still a reserved slot — nothing authors it yet.
 
 This is the single place the region look reaches the run scene; the rally
@@ -160,7 +189,7 @@ region's pins):
 - **On swap**, the table view rebuilds around `_viewed_region_id()`:
   - re-textures `map_plane` to `RegionLibrary.look_of(region_id).get("map_image",
     "res://textures/map_table.jpg")` (home's fallback is the original map
-    texture, since `look_of("home")` is empty);
+    texture, since `look_of("home")` authors no `map_image`);
   - rebuilds pins from `RegionLibrary.rallies_in(region_id)` only — **not**
     the flat `RallyLibrary.all()` — so a viewed region only ever shows its own
     pins;

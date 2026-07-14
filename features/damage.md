@@ -42,7 +42,15 @@ dv = (_approach_velocity - state.linear_velocity).length()   # m/s shed this tic
 `_physics_process`; `state.linear_velocity` is **post-solve**. Godot resolves
 collisions (and, on a head-on hit, arrests the body) *before* `_integrate_forces`
 sees the state, so a collision's full velocity loss shows up in `dv` — with **no
-contact inspection**. Gravity/engine/drag each move the velocity only ~0.1–0.3 m/s
+contact inspection**.
+
+> **Tree plough-through feeds this for free.** The object-reaction loop runs
+> *before* this measurement and, when it fells a small tree, restores some of the
+> arrested forward momentum back into `state.linear_velocity` (see
+> [trees.md](trees.md) → "Plough-through"). Because `dv` is read *after* that
+> restore, ploughing through a small tree yields a small `dv` and therefore small
+> HP loss automatically — the damage scales with tree size with no separate path.
+> A full-size tree restores nothing, so `dv ≈ approach speed` as before. Gravity/engine/drag each move the velocity only ~0.1–0.3 m/s
 per tick, far under threshold, so only real collisions and the soft-drag impulses
 (below) produce a damaging `dv`. Using the full **vector** (not scalar speed change)
 captures glancing redirects and vertical face-plants alike.

@@ -5,12 +5,16 @@ extends Node3D
 # joined at a top ridge and splayed apart at the bottom, oriented so the large
 # faces point up-track / down-track and read for an approaching driver.
 #
-# RENDERING: signs at rest are drawn by one MultiMeshInstance3D per distinct face
-# material (texture key) — two panel instances per sign — so the whole field costs
-# a handful of draw calls instead of two MeshInstance3Ds per sign. A sign only
-# becomes an individually-rendered node when the car knocks it over: _wake_sign
-# zero-scales its MultiMesh instances and attaches real panel meshes to the body,
-# which then tumbles under physics. Knocked signs are few, so the swap is cheap.
+# RENDERING: each resting sign is drawn by its OWN MultiMeshInstance3D (two panel
+# instances, local to the node) anchored at the sign's pose. Per-sign rather than
+# one batch per material so the shared world-prop render-distance cull works:
+# visibility_range measures camera→node origin, so the node must sit at the sign
+# (a single whole-track batch at the world origin would test camera→origin and hide
+# every sign until hit). Only signs within the render distance draw, so the field
+# still costs just a handful of draw calls in practice. A sign becomes an
+# individually-rendered node when the car knocks it over: _wake_sign zero-scales its
+# MultiMesh instances and attaches real panel meshes to the body, which then tumbles
+# under physics. Knocked signs are few, so the swap is cheap.
 #
 # Each sign is a light RigidBody3D, but it behaves like a knocked spectator rather
 # than a solid prop: it never runs real collision physics against the car. It lives
@@ -81,9 +85,9 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 	_panel_size = panel_size
 	_thickness = thickness
 	_splay = splay
-	# material -> Array of {body, xform} panel instances, collected while placing
-	# bodies, then baked into one MultiMesh per material below.
-	var batches := {}
+	# One {body, mat} per placed sign, collected while placing bodies, then each
+	# baked into its OWN MultiMesh (anchored at the sign) below — see _build_multimeshes.
+	var sign_specs: Array = []
 
 	for entry in layout:
 		var pos: Vector2 = entry["pos"]
@@ -125,47 +129,54 @@ func build(layout: Array, terrain: TerrainManager, params: Dictionary) -> void:
 			Vector3(edge.x, y, edge.y))
 		add_child(sign_body)
 
-		# Materials are shared per texture key so panels with the same face batch
-		# into one MultiMesh (and one draw call).
+		# Materials are shared per texture key so same-faced signs reuse one material.
 		var key := String(entry["texture_key"])
 		if not _materials.has(key):
 			_materials[key] = _material_for(String(entry["kind"]), key, textures)
 		var mat: ShaderMaterial = _materials[key]
-		if not batches.has(mat):
-			batches[mat] = []
-		for local in _panel_transforms():
-			batches[mat].append({"body": sign_body, "xform": sign_body.transform * local})
+		sign_specs.append({"body": sign_body, "mat": mat})
 		_add_collision_shape(sign_body, panel_size, base_depth)
 		_add_waker(sign_body, panel_size, base_depth)
 		sign_count += 1
 
-	_build_multimeshes(batches)
+	_build_multimeshes(sign_specs)
 
 
-# One MultiMeshInstance3D per face material, holding every resting sign's two
-# panels. Records each body's instance indices so _wake_sign can hide them.
-func _build_multimeshes(batches: Dictionary) -> void:
+# One MultiMeshInstance3D PER SIGN, anchored at the sign's pose and holding its two
+# panels as instances LOCAL to that node. Per-sign (not per-material) so the shared
+# render-distance cull works: visibility_range measures camera→node origin, so the
+# node must sit AT the sign — a single whole-track batch anchored at the world origin
+# would test camera→origin and hide every resting sign until it was hit. Records each
+# body's instance indices so _wake_sign can hide them.
+func _build_multimeshes(specs: Array) -> void:
 	var mesh := _panel_mesh(_panel_size, _thickness)
-	for mat in batches:
-		var items: Array = batches[mat]
+	var locals := _panel_transforms()
+	var render_dist := float(_knock.get("render_distance_m", 0.0))
+	var render_fade := float(_knock.get("render_fade_m", 0.0))
+	for spec in specs:
+		var body: RigidBody3D = spec["body"]
+		var mat: ShaderMaterial = spec["mat"]
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = mesh
-		mm.instance_count = items.size()
-		for i in items.size():
-			mm.set_instance_transform(i, items[i]["xform"])
-			var body: RigidBody3D = items[i]["body"]
-			if not _rendered.has(body):
-				# A plain Array, NOT a packed array: packed arrays are value types,
-				# so appending through the dictionary would mutate a copy. _rendered and
-				# _home share the one Array (it isn't mutated after build).
-				var idx_arr: Array = []
-				_rendered[body] = {"mm": mm, "indices": idx_arr, "mat": mat}
-				_home[body] = {"mm": mm, "indices": idx_arr, "mat": mat, "rest": body.transform}
-			(_rendered[body]["indices"] as Array).append(i)
+		mm.instance_count = locals.size()
+		# A plain Array, NOT a packed array: packed arrays are value types, so
+		# _rendered and _home can share the one Array (it isn't mutated after build).
+		var idx_arr: Array = []
+		for i in locals.size():
+			mm.set_instance_transform(i, locals[i])  # local to the anchored MMI
+			idx_arr.append(i)
+		_rendered[body] = {"mm": mm, "indices": idx_arr, "mat": mat}
+		_home[body] = {"mm": mm, "indices": idx_arr, "mat": mat, "rest": body.transform}
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = mat
+		# Anchor at the sign so the single visibility_range test measures camera→sign;
+		# instance transforms above are LOCAL to this node.
+		mmi.transform = body.transform
+		# Shared world-prop render distance (same field foliage/spectators use) so
+		# resting signs cull at one range with the rest of the roadside dressing.
+		MeshUtil.apply_visibility_range(mmi, render_dist, render_fade)
 		add_child(mmi)
 
 
@@ -257,12 +268,13 @@ func reset_knocked() -> void:
 		for child in body.get_children():
 			if child is MeshInstance3D:
 				child.queue_free()
-		# Un-hide the shared MultiMesh panels: rebuild each instance transform from the
-		# restored resting pose (mirrors _build_multimeshes: rest * panel-local).
+		# Un-hide the per-sign MultiMesh panels: restore each instance to its LOCAL
+		# panel pose (the MMI node is anchored at the sign, so instances are local and
+		# the node never moved — mirrors _build_multimeshes).
 		var mm: MultiMesh = home["mm"]
 		var indices: Array = home["indices"]
 		for k in indices.size():
-			mm.set_instance_transform(indices[k], home["rest"] * locals[k])
+			mm.set_instance_transform(indices[k], locals[k])
 		_rendered[body] = {"mm": mm, "indices": indices, "mat": home["mat"]}
 
 

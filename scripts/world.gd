@@ -25,11 +25,13 @@ func _ready() -> void:
 
 	var cfg: GameConfig = Config.data
 	# Frame cap: a steady ceiling keeps phones cool (avoids thermal throttling).
-	# 0 = uncapped for desktop dev. Physics stays at the project physics tick.
-	# Skipped under --headless (no rendering to pace) so it can't throttle the
-	# frame-awaiting test runner.
-	if cfg.target_fps > 0 and not Platform.is_headless():
-		Engine.max_fps = cfg.target_fps
+	# Mobile + web get the aggressive cap (target_fps_mobile, 30); desktop keeps
+	# the higher one (target_fps, 60). 0 = uncapped. Physics stays at the project
+	# physics tick. Skipped under --headless (no rendering to pace) so it can't
+	# throttle the frame-awaiting test runner.
+	var fps_cap := cfg.target_fps_for(Platform.is_mobile_or_web())
+	if fps_cap > 0 and not Platform.is_headless():
+		Engine.max_fps = fps_cap
 	var env: Environment = $WorldEnvironment.environment
 	env.fog_density = cfg.fog_density
 	env.background_color = cfg.background_color
@@ -502,21 +504,26 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed, cfg.track_forestiness, cfg.forest_wavelength_m)
 	trees = _drop_submerged(trees, cfg)  # keep trees out of the lakes
-	# Trees render as billboards or 3D meshes per cfg.use_billboard_trees — the
-	# choice (and the shared mesh/material) live in Foliage so every scene matches.
-	# Stage trees collide (they're obstacles). A region can override the tree with its
-	# own star-shaped billboard (tree_billboard look key, e.g. Greece's tree-greece.webp);
-	# home / free-roam leaves it null and follows cfg.use_billboard_trees.
+	# Trees render as opaque billboards — the shared mesh/material lives in Foliage so
+	# every scene matches. Stage trees collide (they're obstacles). The region defines
+	# its tree species SPLIT (tree_mix: weighted {texture, profile} entries); we split
+	# the scattered points by weight and spawn one billboard field per species, each at
+	# its own sizing profile. Home is 100% tree.png; Greece is 70/30 (see regions.md).
 	var region_look := _current_region_look()
-	var region_tree_tex: Texture2D = null
-	if region_look.has("tree_billboard"):
-		region_tree_tex = load(region_look["tree_billboard"])
-	Foliage.spawn_trees(self, trees, $Floor as TerrainManager, true,
-		cfg.tree_render_distance_m, cfg.tree_render_fade_m, region_tree_tex)
+	var mix := RegionLibrary.tree_mix(region_look)
+	var weights: Array = []
+	for entry in mix:
+		weights.append(entry.get("weight", 1.0))
+	var tree_groups := TreeScatter.partition_by_weight(trees, weights, cfg.track_seed)
+	for i in range(mix.size()):
+		var entry: Dictionary = mix[i]
+		Foliage.spawn_trees(self, tree_groups[i], $Floor as TerrainManager, true,
+			cfg.tree_render_distance_m, cfg.tree_render_fade_m,
+			load(entry["texture"]), String(entry.get("profile", "home")) == "region")
 
-	# A region can suppress the 3D ground-cover bushes entirely (suppress_bush_mesh —
-	# e.g. Greece's arid map has no lush undergrowth); skip the whole bush pass then.
-	if bool(region_look.get("suppress_bush_mesh", false)):
+	# The region also defines whether the 3D ground-cover bushes spawn (spawn_bush_mesh —
+	# e.g. Greece's arid map has no lush undergrowth); skip the whole bush pass if off.
+	if not RegionLibrary.spawns_bush_mesh(region_look):
 		return {"trees": trees, "road_cells": road_cells}
 
 	await _stage(loading, "Scattering bushes…")
@@ -956,6 +963,10 @@ func _place_arch(node_name: String, pos: Vector2, heading: Vector2,
 	var ground_y := terrain.height_at(pos.x, pos.y)
 	arch.transform = Transform3D(Basis.looking_at(fwd3, Vector3.UP),
 		Vector3(pos.x, ground_y, pos.y))
+	# Cull the whole arch (structure, banners, ropes) at the shared world-prop render
+	# distance so it pops in with the foliage/signs/spectators rather than floating in
+	# the far fog. build() has already run (add_child -> _ready), so the subtree is complete.
+	MeshUtil.apply_visibility_range(arch, cfg.tree_render_distance_m, cfg.tree_render_fade_m)
 
 
 # The authored car spawn transform, captured at boot so each car swap spawns in

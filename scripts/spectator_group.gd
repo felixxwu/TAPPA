@@ -47,6 +47,7 @@ var _foot_offset := 0.0           # lifts the mesh so its feet sit on the ground
 var _capsule_height := 1.6
 var _capsule_radius := 0.3
 var _center := Vector2.ZERO       # group centroid, for the LOD distance test
+var _mm_origin := Vector3.ZERO     # MultiMeshInstance3D node origin (= centroid); instance transforms are relative to it
 var _ragdolls: Array[RigidBody3D] = []
 var _rng := RandomNumberGenerator.new()
 var _drag_strength := 0.0         # fraction of horizontal speed a knock sheds (soft drag)
@@ -91,11 +92,24 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 func _build_multimesh(mesh: Mesh, n: int) -> void:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = "Crowd"
+	# Anchor the (single) instance node at the group centroid so its ONE
+	# visibility_range test measures camera→crowd distance rather than
+	# camera→world-origin; instance transforms below are written RELATIVE to it.
+	_mm_origin = Vector3(_center.x, _ground(_center.x, _center.y), _center.y)
+	mmi.position = _mm_origin
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.mesh = mesh
 	_mm.instance_count = n
 	mmi.multimesh = _mm
+	# Shared world-prop render distance (params carry cfg.tree_render_distance_m /
+	# tree_render_fade_m) so the crowd pops in at the same range as the surrounding
+	# foliage/signs. 0 = uncapped (flat fixtures leave it disabled).
+	var end_m := float(_p.get("render_distance_m", 0.0))
+	if end_m > 0.0:
+		mmi.visibility_range_end = end_m
+		mmi.visibility_range_end_margin = float(_p.get("render_fade_m", 0.0))
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	add_child(mmi)
 
 
@@ -103,18 +117,56 @@ func _build_multimesh(mesh: Mesh, n: int) -> void:
 
 # Push away from group neighbours closer than `radius` (sum of inverse-weighted
 # offsets). Zero when nobody is too close.
-static func separation_force(i: int, positions: PackedVector2Array, upright: PackedByteArray, radius: float) -> Vector2:
+#
+# Pass a `grid` from `build_separation_grid` (cell size >= radius) to bound the
+# work: only the 3x3 cell neighbourhood around member i is scanned instead of all
+# N members, turning the per-tick crowd cost from O(N^2) to ~O(N) for a bounded
+# density. With no grid (the default) it falls back to the full O(N) scan — used by
+# the direct unit tests and safe for tiny groups. Both paths compute the identical
+# force (the grid only prunes members that are provably beyond `radius`).
+static func separation_force(i: int, positions: PackedVector2Array, upright: PackedByteArray,
+		radius: float, grid: Dictionary = {}, cell: float = 0.0) -> Vector2:
 	var force := Vector2.ZERO
 	if radius <= 0.0:
 		return force
 	var here := positions[i]
-	for j in positions.size():
-		if j == i or upright[j] == 0:
-			continue
-		var d := here.distance_to(positions[j])
-		if d > 0.0001 and d < radius:
-			force += (here - positions[j]) / d * (1.0 - d / radius)
+	if grid.is_empty() or cell <= 0.0:
+		for j in positions.size():
+			if j == i or upright[j] == 0:
+				continue
+			var d := here.distance_to(positions[j])
+			if d > 0.0001 and d < radius:
+				force += (here - positions[j]) / d * (1.0 - d / radius)
+		return force
+	var base := SpatialGrid.cell_key(here, cell)
+	for ox in range(-1, 2):
+		for oz in range(-1, 2):
+			var idxs: PackedInt32Array = grid.get(Vector2i(base.x + ox, base.y + oz), PackedInt32Array())
+			for j in idxs:
+				if j == i or upright[j] == 0:
+					continue
+				var d := here.distance_to(positions[j])
+				if d > 0.0001 and d < radius:
+					force += (here - positions[j]) / d * (1.0 - d / radius)
 	return force
+
+
+# Bin the upright members' start-of-tick positions into a SpatialGrid (index grid)
+# for the bounded separation query above. Cell = separation radius so the 3x3
+# neighbourhood is guaranteed to cover it. Knocked (ragdoll) members are skipped —
+# they exert no separation force. Built once per tick in _timed_physics_process.
+static func build_separation_grid(positions: PackedVector2Array, upright: PackedByteArray, cell: float) -> Dictionary:
+	var grid := {}
+	if cell <= 0.0:
+		return grid
+	for i in positions.size():
+		if upright[i] == 0:
+			continue
+		var key := SpatialGrid.cell_key(positions[i], cell)
+		if not grid.has(key):
+			grid[key] = PackedInt32Array()
+		grid[key].append(i)
+	return grid
 
 
 # Push directly away from the car, scaled up near-field (squared falloff) so the
@@ -249,6 +301,10 @@ func _timed_physics_process(delta: float) -> void:
 	var accel: float = _p["accel_mps2"]
 	var knock_r: float = _p["knock_radius_m"]
 	var to_knock: Array[int] = []
+	# Bin members once per tick so separation is a bounded 3x3 neighbour scan (O(N))
+	# instead of the every-pair O(N^2) it was. Cell = separation radius.
+	var sep_radius: float = _p["separation_m"]
+	var sep_grid := build_separation_grid(_pos, _upright, sep_radius)
 
 	for i in _pos.size():
 		if _upright[i] == 0:
@@ -259,7 +315,7 @@ func _timed_physics_process(delta: float) -> void:
 		var flee: Vector2 = flee_force(_pos[i], car_xz, _p["flee_radius_m"]) * _p["w_flee"]
 		var avoid: Vector2 = road_force(_pos[i], _road_cells, _p["road_probe_m"]) * _p["w_road"]
 		avoid += obstacle_force(_pos[i], _tree_grid, _p["tree_cell_m"], _p["tree_avoid_m"]) * _p["w_obstacle"]
-		var sep: Vector2 = separation_force(i, _pos, _upright, _p["separation_m"]) * _p["w_separation"]
+		var sep: Vector2 = separation_force(i, _pos, _upright, sep_radius, sep_grid, sep_radius) * _p["w_separation"]
 		var anchor: Vector2 = anchor_force(_pos[i], _home[i], _p["anchor_dead_zone_m"]) * _p["w_anchor"]
 		var desired := combine(flee, avoid, sep, anchor, max_speed)
 		# Steer current velocity toward the target, then advance.
@@ -284,7 +340,9 @@ func _write_instance(i: int) -> void:
 	var z := _pos[i].y
 	var y := _ground(x, z) + _foot_offset
 	var yaw_basis := Basis(Vector3.UP, _yaw[i])
-	_mm.set_instance_transform(i, Transform3D(yaw_basis, Vector3(x, y, z)))
+	# Local to the MMI node (anchored at the centroid) so visibility_range measures
+	# camera→crowd, not camera→world-origin.
+	_mm.set_instance_transform(i, Transform3D(yaw_basis, Vector3(x, y, z) - _mm_origin))
 
 
 func _refresh_all_instances() -> void:

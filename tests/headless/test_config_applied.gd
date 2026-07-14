@@ -34,6 +34,23 @@ func test_bonnet_camera_config_present() -> void:
 	assert_gt(cfg.bonnet_fov, 0.0, "bonnet_fov is a positive FOV")
 
 
+func test_target_fps_for_selects_by_platform() -> void:
+	var cfg := GameConfig.new()
+	cfg.target_fps = 60
+	cfg.target_fps_mobile = 30
+	assert_eq(cfg.target_fps_for(true), 30, "mobile/web get the aggressive cap")
+	assert_eq(cfg.target_fps_for(false), 60, "desktop gets the higher cap")
+
+
+func test_target_fps_for_passes_through_uncapped() -> void:
+	# 0 means uncapped; the selector must not coerce it (world.gd gates on > 0).
+	var cfg := GameConfig.new()
+	cfg.target_fps = 0
+	cfg.target_fps_mobile = 0
+	assert_eq(cfg.target_fps_for(true), 0, "uncapped mobile stays 0")
+	assert_eq(cfg.target_fps_for(false), 0, "uncapped desktop stays 0")
+
+
 func test_config_resource_loads() -> void:
 	var cfg := load("res://config/game_config.tres") as GameConfig
 	assert_not_null(cfg, "game_config.tres loads as a GameConfig")

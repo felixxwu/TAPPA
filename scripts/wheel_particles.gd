@@ -160,7 +160,7 @@ func _emit_from_wheels() -> bool:
 	var r: float = cfg.wheel_radius
 	var min_slip: float = cfg.wheel_particle_min_slip_mps
 	var emitted := false
-	for wheel in dt.front_wheels + dt.rear_wheels:
+	for wheel in dt.all_wheels:
 		# Undriven wheels free-roll — they never fling dirt however fast they turn.
 		if not dt.is_wheel_driven(wheel):
 			continue

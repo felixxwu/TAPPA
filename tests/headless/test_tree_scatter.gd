@@ -185,3 +185,48 @@ func test_all_on_road_places_nothing() -> void:
 	tiny["spawn_radius_m"] = 5.0
 	assert_eq(TreeScatter.scatter(t["pieces"], road, tiny, 7).size(), 0,
 		"all candidates on-road -> places nothing")
+
+
+# --- partition_by_weight: the per-region tree species split -------------------
+
+func _sample_positions() -> PackedVector2Array:
+	# A spread of distinct points (distinct 0.5 m cells) to partition.
+	var pts := PackedVector2Array()
+	for i in range(400):
+		pts.append(Vector2(float(i) * 3.0, float(i % 7) * 5.0))
+	return pts
+
+func test_partition_covers_all_points_once() -> void:
+	# Every input point lands in exactly one group; nothing is dropped or duplicated.
+	var pts := _sample_positions()
+	var groups := TreeScatter.partition_by_weight(pts, [0.7, 0.3], 42)
+	assert_eq(groups.size(), 2, "one group per weight")
+	assert_eq(groups[0].size() + groups[1].size(), pts.size(),
+		"partition is a cover: total across groups equals input count")
+
+func test_partition_is_deterministic_per_seed() -> void:
+	var pts := _sample_positions()
+	var a := TreeScatter.partition_by_weight(pts, [0.7, 0.3], 42)
+	var b := TreeScatter.partition_by_weight(pts, [0.7, 0.3], 42)
+	assert_eq(a[0], b[0], "same seed reproduces the same split")
+	assert_eq(a[1], b[1], "same seed reproduces the same split")
+
+func test_partition_weight_shifts_the_split() -> void:
+	# A heavier weight on a species claims (roughly) more points than a lighter one —
+	# tested only as an ordering, never a pinned ratio.
+	var pts := _sample_positions()
+	var groups := TreeScatter.partition_by_weight(pts, [0.8, 0.2], 42)
+	assert_gt(groups[0].size(), groups[1].size(),
+		"the heavier-weighted species gets more points")
+
+func test_partition_single_species_takes_everything() -> void:
+	var pts := _sample_positions()
+	var groups := TreeScatter.partition_by_weight(pts, [1.0], 42)
+	assert_eq(groups.size(), 1, "one group")
+	assert_eq(groups[0].size(), pts.size(), "the only species gets every point")
+
+func test_partition_zero_weights_fall_back_to_first_group() -> void:
+	var pts := _sample_positions()
+	var groups := TreeScatter.partition_by_weight(pts, [0.0, 0.0], 42)
+	assert_eq(groups[0].size(), pts.size(), "degenerate all-zero weights -> first group")
+	assert_eq(groups[1].size(), 0, "the second group is empty")

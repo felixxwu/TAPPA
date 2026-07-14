@@ -1,21 +1,19 @@
 class_name Foliage
 extends RefCounted
-# Centralised foliage spawning. ONE place decides how a tree is represented
-# (opaque billboard cutout vs 3D low-poly mesh, per cfg.use_billboard_trees) and
-# owns the shared mesh/material construction, so trees + bushes look identical
-# everywhere they appear — the stage (world.gd), the HQ clearing
-# (hq_environment.gd), and any future scene. Before this, world.gd honoured the
-# billboard toggle but the HQ hardcoded the 3D mesh, so the two never matched;
-# route every spawn through here and they can't drift again.
+# Centralised foliage spawning. ONE place owns how trees + bushes are represented
+# and builds the shared mesh/material, so they look identical everywhere they
+# appear — the stage (world.gd), the HQ clearing (hq_environment.gd), and any
+# future scene. Trees are ALWAYS opaque billboard cutouts (BillboardField);
+# bushes are ALWAYS 3D low-poly meshes (TreeMeshField). Routing every spawn
+# through here keeps the scenes from drifting apart.
 #
 # The extracted meshes are cached statically (process-wide) — they are shared,
 # immutable render resources, so building them once and reusing them across
 # scenes is both correct and cheaper.
 
-const TREE_MODEL := preload("res://models/low_poly_tree.glb")
 const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.glb")
-# Old billboard tree texture, used when cfg.use_billboard_trees is true (the perf
-# A/B path — see features/trees.md).
+# Default (home region) billboard tree texture. Region overrides pass their own
+# texture to spawn_trees; see features/trees.md.
 const TREE_TEXTURE := preload("res://textures/tree.png")
 # Silhouette build params for the opaque billboard tree cutout (rendering
 # constants, not gameplay balance). Higher threshold = airier/more fragmented
@@ -26,48 +24,47 @@ const TREE_SILHOUETTE_EPSILON := 3.0
 # chase camera when it pushes inside them (see shaders/tree_canopy.gdshader).
 const TREE_CANOPY_SHADER := preload("res://shaders/tree_canopy.gdshader")
 
-static var _tree_mesh_cache: Mesh
 # Silhouette meshes are traced per source texture (the home tree.png plus any region
 # billboard texture, e.g. tree-greece.webp) and cached by the texture's resource path,
 # so each distinct cutout is built once and shared across every instance in its field.
 static var _tree_silhouette_cache: Dictionary = {}
 
 
-# Spawn a tree field as a child of `parent`: a BillboardField (opaque cutout) when
-# cfg.use_billboard_trees, else a 3D TreeMeshField. Positions are lifted onto
-# `terrain`; `with_collision` gates the per-instance hitboxes (stages want them,
-# decorative clearings don't). Returns the created field node.
+# Spawn a tree field as a child of `parent`: always a BillboardField (opaque
+# cutout). Positions are lifted onto `terrain`; `with_collision` gates the
+# per-instance hitboxes (stages want them, decorative clearings don't). Returns
+# the created field node.
 #
-# `billboard_texture`, when non-null, FORCES the billboard path (regardless of
-# cfg.use_billboard_trees) using that texture's star-shaped cutout at
-# cfg.region_tree_billboard_size_m — this is how a region swaps in its own tree
-# (e.g. Greece's tree-greece.webp) in place of the home region's tree.
+# `billboard_texture`, when non-null, selects that texture's star-shaped cutout in
+# place of the home tree.png. `use_region_profile` picks the GameConfig sizing/jitter
+# block independently of the texture: true → the region canopy profile
+# (region_tree_billboard_size_m etc., e.g. Greece's tall olive), false → the home
+# profile (tree_size_m etc.). The two are decoupled so a region's mix can carry the
+# home tree.png at HOME sizing alongside its own tree at region sizing (see
+# RegionLibrary.tree_mix / features/regions.md).
 static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: TerrainManager,
 		with_collision: bool, render_distance: float, render_fade: float,
-		billboard_texture: Texture2D = null) -> Node:
+		billboard_texture: Texture2D = null, use_region_profile: bool = false) -> Node:
 	var cfg: GameConfig = Config.data
-	if cfg.use_billboard_trees or billboard_texture != null:
-		var tex: Texture2D = billboard_texture if billboard_texture != null else TREE_TEXTURE
-		var size := cfg.region_tree_billboard_size_m if billboard_texture != null else cfg.tree_size_m
-		# Both billboard paths get per-instance random size jitter so a stand isn't
-		# uniform, each with its own tunable floor: the region-forced path (e.g. Greece)
-		# uses region_tree_billboard_min_scale, the home path tree_billboard_min_scale.
-		var size_jitter := cfg.region_tree_billboard_min_scale if billboard_texture != null else cfg.tree_billboard_min_scale
-		# Sink the cards into the ground by a per-path tunable offset (negative) to hide
-		# the seam where the trunk meets a sloped surface — same split as size_jitter.
-		var ground_offset := cfg.region_tree_billboard_ground_offset_m if billboard_texture != null else cfg.tree_billboard_ground_offset_m
-		var billboards := BillboardField.new()
-		parent.add_child(billboards)
-		billboards.build(positions, terrain, size, tex,
-			cfg.tree_collision_radius_m, cfg.tree_collision_height_m, with_collision,
-			render_distance, render_fade, ground_offset, tree_silhouette_mesh(tex), true, size_jitter)
-		return billboards
-	var field := TreeMeshField.new()
-	parent.add_child(field)
-	field.build(positions, terrain, tree_mesh(),
-		cfg.tree_size_m.y, cfg.tree_collision_radius_m, cfg.tree_collision_height_m,
-		render_distance, render_fade, cfg.tree_bin_size_m, with_collision)
-	return field
+	var tex: Texture2D = billboard_texture if billboard_texture != null else TREE_TEXTURE
+	var size := cfg.region_tree_billboard_size_m if use_region_profile else cfg.tree_size_m
+	# Both billboard paths get per-instance random size jitter so a stand isn't
+	# uniform, each with its own tunable floor: the region path (e.g. Greece)
+	# uses region_tree_billboard_min_scale, the home path tree_billboard_min_scale.
+	var size_jitter := cfg.region_tree_billboard_min_scale if use_region_profile else cfg.tree_billboard_min_scale
+	# Sink the cards into the ground by a per-path tunable offset (negative) to hide
+	# the seam where the trunk meets a sloped surface — same split as size_jitter.
+	var ground_offset := cfg.region_tree_billboard_ground_offset_m if use_region_profile else cfg.tree_billboard_ground_offset_m
+	# Per-instance width/height aspect jitter, same per-path split as size_jitter:
+	# how drastically silhouettes vary in shape (taller-narrower vs shorter-wider).
+	var aspect_jitter := cfg.region_tree_billboard_aspect_jitter if use_region_profile else cfg.tree_billboard_aspect_jitter
+	var billboards := BillboardField.new()
+	parent.add_child(billboards)
+	billboards.build(positions, terrain, size, tex,
+		cfg.tree_collision_radius_m, cfg.tree_collision_height_m, with_collision,
+		render_distance, render_fade, ground_offset, tree_silhouette_mesh(tex), true,
+		size_jitter, aspect_jitter)
+	return billboards
 
 
 # Spawn the ground-cover bush field as a child of `parent`: always a 3D
@@ -85,33 +82,6 @@ static func spawn_bushes(parent: Node3D, positions: PackedVector2Array, terrain:
 		cfg.bush_height_m, 0.0, 0.0,
 		render_distance, render_fade, cfg.tree_bin_size_m, false, true)
 	return field
-
-
-# The 3D tree ArrayMesh, extracted once from the GLB and shared by every mesh-path
-# field. A single ArrayMesh carrying the trunk + canopy as separate surfaces: the
-# GLB's baked StandardMaterials import with linear filtering (blurs the leaves), so
-# force nearest, and swap the textured canopy surface to the tree_canopy
-# ShaderMaterial (unshaded, double-sided, vertex-tinted, dither-dissolving near the
-# camera so a tree the chase camera enters stops blocking the view).
-static func tree_mesh() -> Mesh:
-	if _tree_mesh_cache != null:
-		return _tree_mesh_cache
-	_tree_mesh_cache = MeshUtil.first_mesh(TREE_MODEL)
-	if _tree_mesh_cache != null:
-		var cfg: GameConfig = Config.data
-		for s in _tree_mesh_cache.get_surface_count():
-			var sm := _tree_mesh_cache.surface_get_material(s) as BaseMaterial3D
-			if sm == null:
-				continue
-			sm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-			if sm.albedo_texture != null:
-				var canopy := ShaderMaterial.new()
-				canopy.shader = TREE_CANOPY_SHADER
-				canopy.set_shader_parameter("albedo", sm.albedo_texture)
-				canopy.set_shader_parameter("near_fade_start", cfg.tree_near_fade_start_m)
-				canopy.set_shader_parameter("near_fade_end", cfg.tree_near_fade_end_m)
-				_tree_mesh_cache.surface_set_material(s, canopy)
-	return _tree_mesh_cache
 
 
 # The opaque billboard-tree silhouette mesh, traced once from `tex`'s alpha (default

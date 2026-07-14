@@ -62,7 +62,7 @@ the car is `spectator_despawn_behind_m` behind a ragdoll, it is freed.
 | `flee_force` | move away from the car within `flee_radius_m` | squared near-field falloff = the "light push": the crowd parts/jostles hard as the car arrives |
 | `road_force` | avoid the carriageway | 8-direction probe of the rasterised `road_cells` |
 | `obstacle_force` | avoid trees | probes a grid of tree points (`SpectatorScatter.build_point_grid`) |
-| `separation_force` | keep ~`separation_m` apart | within-group only; O(n²) but n≈50 |
+| `separation_force` | keep ~`separation_m` apart | within-group only; a per-tick spatial grid (`build_separation_grid`, cell = radius) bounds it to a 3×3 neighbour scan (~O(n)), not every pair. Passing no grid falls back to the full O(n²) scan for the pure unit tests; both paths compute the identical force |
 | `anchor_force` | drift home when idle | dead-zone'd so settled agents don't jitter |
 
 **Prioritised arbitration (`combine`), not a flat weighted sum.** The two *urgent
@@ -85,6 +85,14 @@ out and avoid the road when idle).
 
 **LOD:** only the group within `spectator_active_radius_m` of the car runs
 steering; the other two stand still until the car approaches.
+
+**Render cull:** the group's single `MultiMeshInstance3D` is anchored at the crowd
+centroid (`_mm_origin`; instance transforms are written relative to it) and carries
+a `visibility_range_end`/fade set to the **shared world-prop render distance**
+(`cfg.tree_render_distance_m` / `tree_render_fade_m`, threaded through
+`spectator_params()`), so a crowd pops in at the same distance as the foliage/signs
+it stands among instead of drawing across the whole stage. See
+[rendering.md](rendering.md) → "Shared render distance".
 
 ### Placement
 

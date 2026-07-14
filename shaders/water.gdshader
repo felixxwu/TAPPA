@@ -1,5 +1,7 @@
 shader_type spatial;
-render_mode unshaded, cull_disabled;
+// cull_back: the lake is a flat plane only ever seen from above, so back faces are
+// pure waste — culling them halves the surface's fragment setup for free.
+render_mode unshaded, cull_back;
 // PS1-style lake surface. Opaque (no screen-door dither — it read as noise against
 // the low-res pixelation) with a SEAMLESS tiling water texture scrolled in two
 // directions for visible movement, tinted between deep and shore colours. No
