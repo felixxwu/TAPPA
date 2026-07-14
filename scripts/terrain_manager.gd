@@ -11,7 +11,7 @@ class_name TerrainManager
 const CHUNK_M := 50.0                        # chunk edge length in metres
 const CELL_M := 1.0                          # grid cell size (PS1 low-poly terrain)
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
-const RADIUS := 2                            # ring radius -> (2*RADIUS+1)^2 = 5x5
+const RADIUS := 3                            # ring radius -> (2*RADIUS+1)^2 = 7x7
 const ROAD_SAMPLE_STEP_M := 0.25        # centerline sampling density for bake_road
 # Cliffs & drops (features/terrain.md). The cliff pass walks the centerline coarser
 # than the road (camber varies over cliff_wavelength_m ≫ a cell, and the stamp band
@@ -99,6 +99,24 @@ var sun_dir: Vector3 = Vector3(0.4, 0.9, 0.35).normalized()
 var sun_color: Color = Color(0.5, 0.5, 0.5)
 var sky_color: Color = Color(0.5, 0.5, 0.5)
 var ground_color: Color = Color(0.35, 0.35, 0.35)
+
+# Terrain LOD (features/terrain.md). The display mesh is decimated by distance:
+# each loaded chunk carries one MeshInstance per TerrainLod.LOD_STRIDES level, and
+# the engine picks the level by real camera distance via visibility_range (a HARD
+# cutoff — the dithered fade is a Forward+/Mobile feature the Compatibility renderer
+# ignores, and the alpha-hash discard would defeat early-Z on our opaque terrain).
+# `lod_band_ends_m` is the far cutoff (metres) for each level EXCEPT the last (the
+# coarsest draws to the ring edge); size = levels - 1. `lod_skirt_m` is the downward
+# seam skirt that hides the crack between neighbours at different levels. Set from
+# GameConfig.apply_terrain_lod. Collision is a per-frame-free near-band cost: only
+# chunks within `collision_ring` (Chebyshev, in chunks) of the focus get live
+# collision — farther loaded chunks are render-only.
+var lod_band_ends_m: PackedFloat32Array = PackedFloat32Array([20.0, 45.0, 80.0, 130.0])
+var lod_skirt_m: float = 3.0
+var collision_ring: int = 1
+
+# Debug chunk-border overlay (H toggle, debug builds). Lazily created on first use.
+var _border_debug: ChunkBorderDebug = null
 
 # Node whose position drives chunk loading (the car). Resolved lazily.
 @export var focus_path: NodePath = NodePath("../Car")
@@ -497,8 +515,18 @@ func corridor() -> Array[Vector2i]:
 	return _corridor_coords
 
 
+# The per-level far-cutoff distances (metres). Read by TerrainChunk to configure
+# each level MeshInstance's visibility_range band.
+func lod_band_ends() -> PackedFloat32Array:
+	return lod_band_ends_m
+
+
 func cache_chunk(coord: Vector2i) -> void:
-	_chunk_cache[coord] = compute_chunk_data(coord)
+	var data := compute_chunk_data(coord)
+	# Prebake the decimated LOD display meshes at load (behind the loading screen),
+	# so runtime chunk spawns are a cheap node build + mesh assign, not a mesh build.
+	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m)
+	_chunk_cache[coord] = data
 
 
 # Synchronous convenience: compute + cache the whole corridor in one call.
@@ -830,9 +858,24 @@ func _process(delta: float) -> void:
 
 
 func _timed_process(_delta: float) -> void:
+	# H (`toggle_debug_arrows`, the shared debug key) toggles the chunk-border
+	# overlay in debug builds — lazily created so release/editor pay nothing.
+	if OS.is_debug_build() and not Engine.is_editor_hint() \
+			and Input.is_action_just_pressed("toggle_debug_arrows"):
+		_toggle_chunk_borders()
 	var focus := _focus_node()
 	if focus != null:
 		update_focus(focus.global_position)
+
+
+# Create-on-first-use, then flip visibility; rebuild when turning on.
+func _toggle_chunk_borders() -> void:
+	if _border_debug == null:
+		_border_debug = ChunkBorderDebug.new()
+		_border_debug.name = "ChunkBorderDebug"
+		add_child(_border_debug)
+	_border_debug.visible = not _border_debug.visible
+	_border_debug.rebuild(self, _chunks.keys(), _last_focus_coord)
 
 
 func _focus_node() -> Node3D:
@@ -868,6 +911,14 @@ func _reconcile(center: Vector2i) -> void:
 		else:
 			push_error("terrain cache miss at %s — corridor region/leash invariant broke" % coord)
 			_spawn_chunk(coord, compute_chunk_data(coord))
+	# Collision only on the near band: chunks within `collision_ring` of the focus
+	# carry live collision, farther loaded (render-only) chunks disable theirs.
+	for coord in _chunks:
+		var d := maxi(absi(coord.x - center.x), absi(coord.y - center.y))
+		_chunks[coord].set_collision_enabled(d <= collision_ring)
+	# Keep the debug overlay in sync when the loaded set changes (crossing).
+	if _border_debug != null and _border_debug.visible:
+		_border_debug.rebuild(self, _chunks.keys(), center)
 
 
 func _spawn_chunk(coord: Vector2i, data: Dictionary) -> void:

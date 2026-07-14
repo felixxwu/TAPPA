@@ -406,6 +406,15 @@ factor the "apply settings" into a testable helper). Low-risk.
 
 ## 5. Heightmap-terrain collision culling — ADVICE (likely NOT worth it)
 
+> **2026-07 update: superseded.** The terrain deep-dive found terrain is the
+> dominant per-frame GPU cost (~93% of primitives — ~125k of ~134k tris, uniform
+> 1 m cells over a 5×5 ring). The structural fix is a distance-scaled prebaked
+> LOD field — see [`todo/terrain-lod.md`](terrain-lod.md), which folds
+> "collision on the near band only" into itself and retires `DistantTerrain`. The
+> advice below (don't cull heightmap collision in isolation) still holds; the LOD
+> spec is the right home for the terrain work now.
+
+
 The request: spatially cull the heightmap collision to just the 1–2 chunks the
 car is over, and/or shrink `CHUNK_M` while raising `RADIUS` to keep the same
 rendered area but reduce the collision surface per body.

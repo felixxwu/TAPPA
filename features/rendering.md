@@ -100,13 +100,13 @@ vertex, interpolated for free by the rasteriser. `light_amount`
 (`mix(vec3(1.0), lit, light_amount)`) blends the whole effect in: 0 = flat,
 1 = full. Uniforms `albedo_texture`, `albedo_color`, `texture_tile`,
 `light_amount`, `light_dir`, `sun_color`, `sky_color`, `ground_color`.
-`world.gd` calls `cfg.apply_car_light()` on the chassis/cabin/wheel/spoke
+`world.gd` calls `cfg.apply_car_light()` on the chassis/cabin/wheel
 materials, and `car.gd._apply_model_material()` does the same for the authored bodies (MX-5, Focus, Twingo).
 The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
 `sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
 alongside `terrain_light_amount` for the baked terrain shading.
 
-Used by: car chassis/cabin/wheels/spokes, and the authored body models (MX-5, Focus, Twingo)
+Used by: car chassis/cabin/wheels, and the authored body models (MX-5, Focus, Twingo)
 (see below).
 
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
@@ -208,7 +208,6 @@ model. Each per-car material also carries the tread `albedo_color`
 | Car/Chassis | `albedo_color` | `chassis_color` (red) |
 | Car/Cabin | `albedo_color` | `cabin_color` (dark blue) |
 | Wheels (all 4) | `albedo_color` | `wheel_color` (black) — now carried by each per-car tire material (see "Per-car wheel-cap textures") |
-| Spokes (all 8) | `albedo_color` | `wheel_spoke_color` (silver) |
 | Car meshes + authored body | fake-light uniforms | Lighting group (`cfg.apply_car_light`) |
 | Floor (terrain) | baked vertex-colour shading | Lighting group (`cfg.apply_terrain_light`) |
 | PostProcess (SubViewportContainer) | `virtual_resolution` | `virtual_resolution` [480,360] |

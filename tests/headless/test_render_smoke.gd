@@ -87,8 +87,8 @@ func test_terrain_chunks_have_shader_materials() -> void:
 	var floor_node := _scene.get_node("Floor")
 	assert_gt(floor_node.loaded_coords().size(), 0, "chunks loaded around the car")
 	var chunk = floor_node._chunks[floor_node.loaded_coords()[0]]
-	var chunk_mesh := chunk.get_node("MeshInstance3D") as MeshInstance3D
-	assert_not_null(chunk_mesh, "chunk MeshInstance3D present")
+	var chunk_mesh := chunk.get_node("LOD0") as MeshInstance3D
+	assert_not_null(chunk_mesh, "chunk LOD0 MeshInstance3D present")
 	_assert_shader_material(chunk_mesh.material_override, "chunk mesh")
 
 
