@@ -27,7 +27,9 @@ the manager at runtime via `world.gd`.
 
 Owns all terrain state and the chunk lifecycle.
 
-- `noise_seed: int` — deterministic; changing it rebuilds loaded chunks.
+- `noise_seed: int` — deterministic; changing it rebuilds loaded chunks. **Driven
+  from the per-event `track_seed`** by `world.gd` (was a fixed 1337), so each event
+  has its own landscape — and its own lake layout (see [lakes.md](lakes.md)).
 - `layers: Array[TerrainLayer]` — each layer is a (`wavelength_m`,
   `amplitude_m`) pair. Defaults set in `_default_layers` on `_ready` if empty.
 - `texture_tile_per_meter: float` — UV tiling for the ground texture (the road

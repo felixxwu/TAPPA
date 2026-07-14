@@ -15,7 +15,7 @@ const _LAYER := 100
 
 var _title: Label
 var _step: Label
-var _preview: _TrackPreview
+var _preview: TrackPreview
 
 
 func _init() -> void:
@@ -31,7 +31,7 @@ func _init() -> void:
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(box)
 
-	_preview = _TrackPreview.new()
+	_preview = TrackPreview.new()
 	box.add_child(_preview)
 
 	_title = Label.new()
@@ -150,64 +150,14 @@ static func carve_prefix(mapped: PackedVector2Array, progress: float) -> PackedV
 	return out
 
 
+# Below-water cell centres (world XZ) + edge length, drawn behind the track line.
+# Fed by world.gd during generation so the author watches the road route around
+# the water live (features/lakes.md).
+func update_water(cells: PackedVector2Array, cell_size: float) -> void:
+	if _preview != null:
+		_preview.set_water(cells, cell_size)
+
+
 # Tear the overlay down once the world is ready.
 func finish() -> void:
 	queue_free()
-
-
-# Simple drawing of the track (a line) plus loaded terrain chunks (dark squares
-# behind it) as the world builds. All in the generator's 2D world-XZ frame; the
-# shared fit_transform (from the track bounds) maps both into the panel.
-class _TrackPreview extends Control:
-	const PAD := 16.0
-
-	var _points := PackedVector2Array()          # track centerline, world XZ
-	var _chunk_corners := PackedVector2Array()   # loaded-chunk min-corners, world XZ
-	var _chunk_size := 0.0                        # chunk edge length, world metres
-	var _carve_progress := 0.0                    # fraction of the line carved (white)
-
-	func _init() -> void:
-		custom_minimum_size = Vector2(0, 220)
-		size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		clip_contents = true  # chunk squares beyond the track's frame clip at the edge
-
-	func set_points(points: PackedVector2Array) -> void:
-		_points = points
-		queue_redraw()
-
-	func set_carve_progress(fraction: float) -> void:
-		_carve_progress = clampf(fraction, 0.0, 1.0)
-		queue_redraw()
-
-	func set_chunk_size(world_m: float) -> void:
-		_chunk_size = world_m
-		queue_redraw()
-
-	func set_chunks(corners: PackedVector2Array) -> void:
-		_chunk_corners = corners
-		queue_redraw()
-
-	func _draw() -> void:
-		if _points.size() < 2:
-			return
-		# One transform, from the track bounds, shared by the squares and the line.
-		var xf := LoadingScreen.fit_transform(
-			LoadingScreen.bounds_of(_points), Rect2(Vector2.ZERO, size), PAD)
-		# Dark chunk squares first (behind the line), inset 1px for a subtle grid gap.
-		if _chunk_size > 0.0:
-			var sz := Vector2(_chunk_size, _chunk_size)
-			for c in _chunk_corners:
-				var s0 := xf * c
-				var s1 := xf * (c + sz)
-				draw_rect(Rect2(s0 + Vector2.ONE, (s1 - s0) - Vector2.ONE * 2.0),
-					UITheme.SURFACE, true)
-		# Track line: grey (uncarved) full length, then the carved prefix white on top.
-		var line := PackedVector2Array()
-		for p in _points:
-			line.append(xf * p)
-		draw_polyline(line, UITheme.INK_DIM, 2.0, true)
-		var carved := LoadingScreen.carve_prefix(line, _carve_progress)
-		if carved.size() >= 2:
-			draw_polyline(carved, UITheme.INK, 2.0, true)
-		draw_circle(line[0], 4.0, UITheme.GREEN)

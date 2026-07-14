@@ -877,7 +877,7 @@ var peak_torque_rpm := 4500.0
 ## before being snapped back. The distance is measured against a LOCAL window of
 ## the centerline (TrackProgress._local_closest_offset), so this is independent of
 ## `track_clearance` and won't snap onto a different track section.
-@export var track_progress_max_dist_m := 25.0
+@export var track_progress_max_dist_m := 50.0
 ## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
@@ -895,6 +895,30 @@ var peak_torque_rpm := 4500.0
 ## penalty_s = stolen_m / this. Fixed (not the car's live speed) so braking
 ## mid-cut can't shrink the penalty.
 @export_range(1.0, 100.0) var cut_reference_speed_mps := 25.0
+
+@export_group("Water")
+## Master on/off for roadside lakes (features/lakes.md). Off ⇒ no water is built
+## and the track generator ignores water entirely (existing events unaffected).
+@export var water_enabled := false
+## Flood height (world Y): terrain below this fills with water. Set per rally event
+## by event["water_level"]. Higher ⇒ more/bigger lakes in the same valleys.
+@export var track_water_level_m := 0.0
+## Small vertical margin (m) above the water level a cell must clear to carry road
+## or the start — keeps the road just off the waterline rather than skimming it.
+## Kept small: it's ADDED to water_level in the reject test, so a large value would
+## exclude most of the (low-amplitude) terrain and starve the track search.
+@export_range(0.0, 2.0) var water_shore_clearance_m := 0.3
+## Extra linear drag applied to the chassis while in water (soft hazard — the car
+## slows but can still drive out; no reset).
+@export_range(0.0, 30.0) var water_drag := 6.0
+## Deep-water colour (flat, opaque — the surface is a solid PS1 colour block).
+@export var water_color := Color(0.16, 0.32, 0.5)
+## Shore/highlight colour blended in by the faint ripple.
+@export var water_shore_color := Color(0.32, 0.52, 0.62)
+## Speed of the scrolling ripple animation on the water surface.
+@export_range(0.0, 2.0) var water_ripple_speed := 0.15
+## Strength of the faint moving sparkle band on the water surface.
+@export_range(0.0, 1.0) var water_sparkle_strength := 0.25
 
 @export_group("Cliffs")
 ## Master toggle for track-side cliffs & drops (features/terrain.md). Off ⇒ the

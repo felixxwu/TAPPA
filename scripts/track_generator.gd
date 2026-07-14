@@ -19,6 +19,13 @@ const RASTER_STEP_M := 0.25                          # centerline sampling for c
 # ~274 steps for a 14-corner track and took minutes; a fresh seed does it in ~14.)
 const STEPS_BASE := 20
 const STEPS_PER_TURN := 3
+# Water tolerance (see _collide_and_cells): a piece is rejected only if more than
+# max(WATER_CLIP_CELLS, WATER_MAX_WET_FRACTION · footprint) of its cells are below
+# the waterline — so the road detours real lakes but may skim a shoreline (the
+# soft-hazard drag handles a skim). Strict per-cell rejection starves the DFS on
+# scattered terrain where any long piece clips a wet cell.
+const WATER_CLIP_CELLS := 6
+const WATER_MAX_WET_FRACTION := 0.15
 const MAX_RESTARTS := 24                             # random restarts before giving up
 # Restarts are spread far apart in seed space (not seed+1, seed+2, …) so each explores
 # a genuinely different search rather than a neighbouring one that tends to fail the
@@ -128,32 +135,38 @@ static func _snapshot(world_points: Array) -> PackedVector2Array:
 # connecting straights (see _candidates): 0 = no bias (the original layout), higher
 # = an easier, less twisty track. It changes the generated SHAPE, so the same value
 # must be passed wherever a track's target time is derived.
-static func generate(start_pos: Vector2, start_heading: Vector2, seed_value: int,
-		turn_count: int, width: float, clearance: float = 0.0,
-		reserve_behind_m: float = 0.0, straightness: float = 0.0,
-		runoff_m: float = 0.0, on_progress: Callable = Callable()) -> Dictionary:
-	var coll_width := width + 2.0 * clearance
+# `should_abort` (optional): a Callable() -> bool polled during the search; when it
+# returns true the search bails immediately and returns its best partial. Lets an
+# animated caller (the dev seed lab) CANCEL an in-flight generation when the inputs
+# change or the screen is left, instead of leaving the coroutine running every frame.
+static func generate(params: TrackGenParams, on_progress: Callable = Callable(),
+		should_abort: Callable = Callable()) -> Dictionary:
+	var coll_width := params.width + 2.0 * params.clearance
 	var corners := _turn_corners()
 	# Cells of the lead-in corridor behind the start (empty when not staged). Cells
 	# within the join buffer of the start are still allowed to overlap (the track
 	# emerges from there); only loop-backs further out are blocked.
 	var reserved: Dictionary = {}
-	if reserve_behind_m > 0.0:
-		var back := start_pos - start_heading.normalized() * reserve_behind_m
-		reserved = rasterize_cells(PackedVector2Array([start_pos, back]), coll_width)
+	if params.reserve_behind > 0.0:
+		var back := params.origin - params.heading.normalized() * params.reserve_behind
+		reserved = rasterize_cells(PackedVector2Array([params.origin, back]), coll_width)
 	# Track the deepest partial across restarts so a give-up still renders the best
 	# attempt (not just the last one). Each restart is bounded by the per-attempt step
 	# budget (see _search / STEPS_PER_TURN), so trying many is cheap.
 	var best_partial: Dictionary = {}
 	for restart in MAX_RESTARTS:
+		if should_abort.is_valid() and should_abort.call():
+			break
 		var rng := RandomNumberGenerator.new()
-		rng.seed = seed_value + restart * RESTART_SEED_STRIDE
-		var result := await _search(start_pos, start_heading, turn_count, coll_width, corners, rng, reserved, straightness, runoff_m, on_progress)
+		rng.seed = params.seed + restart * RESTART_SEED_STRIDE
+		var result := await _search(params.origin, params.heading.normalized(),
+			params.turn_count, coll_width, corners, rng, reserved,
+			params.straightness, params.runoff_m, on_progress, params, should_abort)
 		if result["complete"]:
 			return result
 		if best_partial.is_empty() or result["pieces"].size() > best_partial["pieces"].size():
 			best_partial = result
-	push_warning("TrackGenerator: only placed %d/%d corners" % [best_partial["pieces"].size(), turn_count])
+	push_warning("TrackGenerator: only placed %d/%d corners" % [best_partial["pieces"].size(), params.turn_count])
 	return best_partial
 
 
@@ -217,6 +230,17 @@ static func _corner_straightness(spec: Dictionary) -> float:
 	var poly := CornerLibrary.build_curve(spec).tessellate()
 	var angle := absf(Vector2(0.0, 1.0).angle_to(exit_heading(poly)))
 	return clampf(1.0 - angle / PI, 0.0, 1.0)
+
+
+# Corners to undo for a given `backoff_level` (0-based). Doubling growth from 1
+# (level 0 -> 1, 1 -> 2, 2 -> 4, 3 -> 8, …), clamped to `cap` (itself floored at
+# 1) so a boxed-in search escapes deep traps in a few steps. The shift is bounded
+# before clamping to avoid overflow at large levels. Pure and deterministic — no
+# RNG, no state — so the escalating retreat in _search keeps generate()
+# deterministic. See docs/superpowers/specs/
+# 2026-07-13-escalating-backtrack-retreat-design.md.
+static func _retreat_depth(backoff_level: int, cap: int) -> int:
+	return mini(1 << mini(maxi(backoff_level, 0), 30), maxi(cap, 1))
 
 
 # Build the world points + tessellated polyline a candidate would add, given the
@@ -292,11 +316,23 @@ static func _point_seg_dist_sq(p: Vector2, a: Vector2, b: Vector2) -> float:
 # the same cells ~half/RASTER_STEP times over, which made each candidate ~70 ms and
 # turned a heavy-backtracking seed into a multi-minute hang.
 static func _collide_and_cells(polyline: PackedVector2Array, width: float,
-		occupied: Dictionary, reserved: Dictionary, frame_pos: Vector2) -> Dictionary:
+		occupied: Dictionary, reserved: Dictionary, frame_pos: Vector2,
+		params: TrackGenParams = null) -> Dictionary:
 	var cells: Dictionary = {}
 	var half := width / 2.0
 	var half_sq := half * half
 	var buffer_sq := width * width
+	# Below-water cells are treated as obstacles so the road routes around lakes.
+	# Water is a SOFT constraint: reject a piece only if it crosses water
+	# substantially (a real lake), not if it merely clips a shoreline cell — the
+	# soft-hazard drag covers a skim, and strict per-cell rejection starves the
+	# search on scattered terrain. See features/lakes.md.
+	# Reject against the actual water level (submerged terrain). shore_clearance is a
+	# start-pad margin (TrackGenParams dry-start), not a road-routing band — adding it
+	# here would widen the avoid-zone enough to starve the search on low-amplitude terrain.
+	var water := params != null and params.water_enabled and params.water_sampler.is_valid()
+	var water_ceiling := params.water_level if water else 0.0
+	var wet_count := 0
 	for i in range(1, polyline.size()):
 		var a := polyline[i - 1]
 		var b := polyline[i]
@@ -313,11 +349,20 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 				if _point_seg_dist_sq(centre, a, b) > half_sq:
 					continue
 				cells[cell] = true
+				# Tally cells whose terrain sits below the waterline (+ shore clearance);
+				# the substantial-crossing test happens once, after the footprint is known.
+				if water and float(params.water_sampler.call(centre.x, centre.y)) < water_ceiling:
+					wet_count += 1
 				# Collide against placed track OR the reserved lead-in corridor; cells
 				# within the join buffer of the current frame are allowed to touch.
 				if (occupied.has(cell) or reserved.has(cell)) \
 						and centre.distance_squared_to(frame_pos) > buffer_sq:
 					return { "collides": true, "cells": cells }
+	# Substantial water crossing ⇒ the piece is IN a lake, not skimming a shore.
+	if water and cells.size() > 0:
+		var limit := maxi(WATER_CLIP_CELLS, int(WATER_MAX_WET_FRACTION * float(cells.size())))
+		if wet_count > limit:
+			return { "collides": true, "cells": cells }
 	return { "collides": false, "cells": cells }
 
 
@@ -325,7 +370,8 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		width: float, corners: Array, rng: RandomNumberGenerator,
 		reserved: Dictionary = {}, straightness: float = 0.0,
-		runoff_m: float = 0.0, on_progress: Callable = Callable()) -> Dictionary:
+		runoff_m: float = 0.0, on_progress: Callable = Callable(),
+		params: TrackGenParams = null, should_abort: Callable = Callable()) -> Dictionary:
 	# world_points: Array of [pos, in, out]; starts with the spawn point.
 	var world_points: Array = [[start_pos, Vector2.ZERO, Vector2.ZERO]]
 	var occupied: Dictionary = {}
@@ -340,10 +386,31 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 	# caller restart with a fresh, far-apart seed (cheap — see generate()).
 	var max_steps: int = STEPS_BASE + turn_count * STEPS_PER_TURN
 	var last_yield_step := 0
+	# Escalating backtrack retreat: undo 2^backoff_level corners on a dead end, so a
+	# boxed-in search reels back a chunk (and the live preview retreats decisively)
+	# instead of churning candidates at the frontier. backoff_level RISES on each dead
+	# end and resets to 0 only when a retreat unwinds the whole track back to empty
+	# (nothing left to be trapped by — see the reset below) or at the next restart
+	# (it's a per-_search local). No per-placement decay is deliberate: a thrash
+	# alternates dead-end
+	# / lucky-placement / dead-end, so ANY per-placement decay lets that cancel out
+	# and pins the level near 0, and the search never backs off hard enough to escape
+	# (observed: seed 2 / 30 turns thrashed at depth ~24 for ~60 steps stuck at level
+	# 0-2, ~28 s; monotonic reaches level 8, retreats to empty, and hands off to a
+	# fresh restart that completes — ~9 s). The longer THIS attempt struggles the
+	# harder it retreats, until it either completes or empties its stack and yields to
+	# a cheaper fresh seed (the restart machinery is built for exactly this). A
+	# healthy seed hits few dead ends, so backoff stays ~0 and behaviour is unchanged.
+	# Cap keeps a single retreat from wiping more than half the track in one jump.
+	var backoff_level := 0
+	var retreat_cap: int = maxi(1, turn_count / 2)
 
 	while pieces.size() < turn_count:
 		steps += 1
 		if steps > max_steps:
+			break
+		# Cancelled by the caller (inputs changed / screen left) — stop doing work.
+		if should_abort.is_valid() and should_abort.call():
 			break
 		if on_progress.is_valid() and steps - last_yield_step >= PROGRESS_STEP_INTERVAL:
 			last_yield_step = steps
@@ -359,7 +426,7 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			top["idx"] += 1
 			var built := _build_candidate(cand, corners, frame_pos, frame_heading)
 			# Overlap test (early-exits on the first overlapping cell) + footprint cells.
-			var hit := _collide_and_cells(built["poly"], width, occupied, reserved, frame_pos)
+			var hit := _collide_and_cells(built["poly"], width, occupied, reserved, frame_pos, params)
 			if hit["collides"]:
 				continue
 			# If this candidate finishes the track, a runoff straight of runoff_m must
@@ -376,7 +443,7 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 				for c in hit["cells"]:
 					occ_with[c] = true
 				var r_hit := _collide_and_cells(
-					PackedVector2Array([exit_pos, runoff_end]), width, occ_with, reserved, exit_pos)
+					PackedVector2Array([exit_pos, runoff_end]), width, occ_with, reserved, exit_pos, params)
 				if r_hit["collides"]:
 					continue  # runoff won't fit -> reject this last corner, backtrack
 				this_runoff = { "end_pos": runoff_end, "heading": exit_head }
@@ -416,25 +483,43 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			break
 		if placed:
 			continue
-		# Dead end: discard this depth's exhausted candidate iterator, then undo
-		# the last PLACED corner so we can retry its next candidate.
+		# Dead end: discard this depth's exhausted candidate iterator, then retreat.
+		# The retreat grows with consecutive dead ends (escalating backtrack): undo
+		# `retreat` placed corners at once. The shallowest undone corner (the retreat
+		# target) keeps its iterator so it resumes at its NEXT candidate; every corner
+		# between it and the frontier has its iterator discarded so it regenerates a
+		# fresh candidate list on re-descent (its old idx was relative to a parent
+		# geometry that no longer exists). Both are forced by the stack invariant, not
+		# tunable choices.
 		stack.pop_back()
 		if pieces.is_empty():
 			break  # nothing placed and no candidate worked -> unsolvable
-		# The placed corner's entry is now the top; keep it on the stack so its
-		# iterator (already advanced) resumes next loop, and undo its placement.
-		var entry: Dictionary = stack[stack.size() - 1]
-		var restore: Dictionary = entry["restore"]
-		for _i in restore["points_added"]:
-			world_points.pop_back()
-		world_points[world_points.size() - 1][2] = restore["prev_out"]
-		for cell in restore["cells_added"]:
-			occupied.erase(cell)
-		frame_pos = restore["frame_pos"]
-		frame_heading = restore["frame_heading"]
-		pieces.pop_back()
-		# stack.size() == pieces.size() + 1 now, so the loop does NOT append a new
-		# iterator — it resumes `entry` at its next untried candidate.
+		var retreat: int = mini(_retreat_depth(backoff_level, retreat_cap), pieces.size())
+		for undo_i in retreat:
+			var entry: Dictionary = stack[stack.size() - 1]
+			var restore: Dictionary = entry["restore"]
+			for _i in restore["points_added"]:
+				world_points.pop_back()
+			world_points[world_points.size() - 1][2] = restore["prev_out"]
+			for cell in restore["cells_added"]:
+				occupied.erase(cell)
+			frame_pos = restore["frame_pos"]
+			frame_heading = restore["frame_heading"]
+			pieces.pop_back()
+			if undo_i < retreat - 1:
+				stack.pop_back()  # intermediate corner: discard iterator -> fresh on re-descent
+			# last iteration: leave `entry` on the stack so it resumes its next candidate.
+			# stack.size() == pieces.size() + 1 now, so the loop does NOT append a new
+			# iterator for the retreat target — it resumes `entry` at its next candidate.
+		# A retreat that unwound the whole track resets the eagerness: an empty track
+		# can't be trapped by anything, so the accumulated backoff is stale. Give the
+		# early corners a fresh, fine-grained crack before escalating again (otherwise
+		# a high level clamps every shallow retreat back to empty — a pointless
+		# place-one/nuke-to-empty churn until corner 0's candidates run out).
+		if pieces.is_empty():
+			backoff_level = 0
+		else:
+			backoff_level += 1
 
 	var centerline := Curve2D.new()
 	for wp in world_points:

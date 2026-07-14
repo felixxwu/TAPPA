@@ -504,18 +504,14 @@ func _set_phase(p: int) -> void:
 # skip_track_gen=true to start_rally so no track generation happens.
 func _generate_event_tracks(rally: Dictionary) -> Array:
 	var cfg: GameConfig = Config.data
-	# Match the run scene's start-line lead-in reservation (world.gd) so the
-	# track shape — and thus the rival times — equal what the player drives.
-	var reserve_behind := 0.0
-	if cfg.start_line_enabled:
-		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
 	var results: Array = []
 	for event in rally.get("events", []):
-		var width := RallyLibrary.event_width(event)
-		var result := await TrackGenerator.generate(
-			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
-			int(event.get("turn_count", 10)), width, cfg.track_clearance, reserve_behind,
-			RallyLibrary.event_straightness(event), cfg.track_runoff_m)
+		# Same TrackGenParams the run scene builds (world.gd) — including the staged
+		# lead-in reservation and water avoidance — so the derived rival times equal
+		# the shape the player drives. Water makes the shape depend on the world
+		# origin, so both sites must share this factory (see track_gen_params.gd §6).
+		var params := TrackGenParams.for_event(event, cfg)
+		var result := await TrackGenerator.generate(params)
 		results.append(result)
 	return results
 
@@ -532,6 +528,8 @@ func _load_event_scene(event: Dictionary) -> void:
 	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
 	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
 	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
+	cfg.water_enabled = bool(event.get("water_enabled", cfg.water_enabled))
+	cfg.track_water_level_m = float(event.get("water_level", cfg.track_water_level_m))
 	get_tree().change_scene_to_file("res://main.tscn")
 
 

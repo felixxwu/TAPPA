@@ -138,6 +138,13 @@ Three (wavelength, amplitude) pairs — `terrain_layerN_wavelength` /
 `terrain_layerN_amplitude` for N = 1,2,3 (large hills → fine bumps). See
 [terrain.md](terrain.md).
 
+### Water
+Roadside lakes (see [lakes.md](lakes.md)). `water_enabled` (off by default),
+`track_water_level_m` (per-event flood height), `water_shore_clearance_m` (start-pad
+margin), `water_drag` (soft-hazard drag), `water_min_basin_area_m2`, and the
+`water_color` / `water_shore_color` / `water_ripple_speed` / `water_sparkle_strength`
+look knobs.
+
 ### Cliffs
 Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
 | Property | Default | Purpose |

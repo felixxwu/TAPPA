@@ -394,6 +394,14 @@ func _process(delta: float) -> void:
 			drivetrain.replay_spin(delta)
 
 
+# Soft-hazard water predicate, wired by world.gd from the LakeField: takes the
+# chassis world position and returns whether it's in a lake. Empty ⇒ no water.
+var _water_query: Callable = Callable()
+
+func set_water_query(q: Callable) -> void:
+	_water_query = q
+
+
 func _physics_process(delta: float) -> void:
 	if replay_playback:
 		_step_replay(delta)
@@ -603,6 +611,10 @@ func is_throttling() -> bool:
 func _apply_aero() -> void:
 	var cfg: GameConfig = config
 	apply_central_force(-linear_velocity * linear_velocity.length() * cfg.drag_coefficient)
+	# Soft hazard: extra linear drag while in a lake — the car slows but can drive
+	# out (no reset). See features/lakes.md.
+	if _water_query.is_valid() and _water_query.call(global_position):
+		apply_central_force(-linear_velocity * cfg.water_drag)
 	var v2 := linear_velocity.length_squared()
 	var down := -global_transform.basis.y
 	apply_force(down * v2 * cfg.downforce_front, global_transform.basis * _front_axle)

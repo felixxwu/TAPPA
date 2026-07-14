@@ -5,6 +5,13 @@ extends GutTest
 # test_car_library.gd. See todo/rally-roster.md.
 
 
+const _TGP = preload("res://scripts/track_gen_params.gd")
+
+
+func _params(start_pos: Vector2, start_heading: Vector2, seed_value: int, turn_count: int, width: float, clearance := 0.0, reserve := 0.0, straightness := 0.0, runoff := 0.0) -> _TGP:
+	return _TGP.of(start_pos, start_heading, seed_value, turn_count, width, clearance, reserve, straightness, runoff)
+
+
 func before_each() -> void:
 	CarFixtures.install()
 
@@ -230,10 +237,10 @@ func test_qualifying_detune_full_power_and_unfixable_cases() -> void:
 
 func test_track_generation_is_deterministic() -> void:
 	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
-	var a := await TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
-		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
-	var b := await TrackGenerator.generate(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
-		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0)
+	var a := await TrackGenerator.generate(_params(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0))
+	var b := await TrackGenerator.generate(_params(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
+		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0))
 	assert_almost_eq((a["centerline"] as Curve2D).get_baked_length(),
 		(b["centerline"] as Curve2D).get_baked_length(), 0.001, "same seed -> same track length")
 	assert_eq(a["pieces"].size(), b["pieces"].size(), "same seed -> same piece count")

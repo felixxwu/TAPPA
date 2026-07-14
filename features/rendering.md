@@ -45,6 +45,14 @@ The width math is the pure static `DisplayStretch.logical_size()`, unit-tested i
 
 ## Shaders (`shaders/`)
 
+### `water.gdshader` — `spatial`, `unshaded`
+Lake surface (see [lakes.md](lakes.md)). **Flat and opaque** — a solid PS1 colour
+block, because a screen-door dither read as noise against the low-res pixelation. No
+reflections, no transparency, no screen-texture read (preserves the Compatibility
+no-backbuffer choice). A faint scrolling ripple tint (world position × `TIME`) plus
+a sparkle band give the surface a little life. One shared material across all of a
+stage's lake meshes.
+
 ### `ps1_models.gdshader` — `spatial`, `unshaded`
 Terrain material. The shader itself runs no lighting math and has **no
 `vertex()` stage** — a deliberate performance choice, since the terrain is the

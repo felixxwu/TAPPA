@@ -71,9 +71,17 @@ retry** — re-enter from the map later; damage and the opponent field persist).
 ## Scene transitions
 
 In real play (`auto_load_scenes = true`) each event writes its
-`(seed, turn_count, width)` into `Config.data` and reloads `main.tscn`. After
-EVERY event — including the last — `report_event_result` emits `standings_ready` and
-waits at `Phase.STANDINGS`.
+`(seed, turn_count, width, water_level, …)` into `Config.data` and reloads
+`main.tscn`. After EVERY event — including the last — `report_event_result` emits
+`standings_ready` and waits at `Phase.STANDINGS`.
+
+**Target-time derivation and lakes.** `_generate_event_tracks` derives rival times
+by generating each event's track via `TrackGenParams.for_event(event, cfg)` — the
+same factory `world.gd` uses for the real run. This matters because water avoidance
+makes the shape depend on the world origin, so both sites must share the factory or
+opponent times desync (see [lakes.md](lakes.md) → *shape-determinism invariant*).
+`_load_event_scene` also copies the event's `water_enabled` / `water_level` into
+`Config.data` for the run scene.
 
 **Standings presentation is now an in-world overlay, not a scene swap.**
 `world.gd` connects `standings_ready` to `_present_standings_overlay`, which — for a

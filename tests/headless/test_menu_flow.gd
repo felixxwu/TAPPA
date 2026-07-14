@@ -735,9 +735,15 @@ func test_run_scene_stages_a_roadside_opponent_wreck() -> void:
 	# verge nor floating. Its body sits ~one ride-height above the terrain under it.
 	var terrain := scene.get_node_or_null("Floor")
 	var ground: float = terrain.height_at(car.global_position.x, car.global_position.z)
-	assert_almost_eq(car.global_position.y, ground + car.settled_ride_height(), 0.25,
-		"wreck rests one ride-height above the ground under it (wheels on the ground)")
-	assert_gt(car.global_position.y, ground - 0.1, "wreck is not sunk into the terrain")
+	# The wreck is seated on the HIGHEST ground under its footprint (world.gd
+	# _flattest_wreck_spot → top_y), so on a slope it legitimately sits somewhat above
+	# the single centre sample. Assert the behaviour that must hold for ANY terrain
+	# seed (the per-event terrain seed varies the verge slope): wheels on the ground
+	# (not sunk) and not floating absurdly high — rather than pinning an exact gap
+	# that only held for the old fixed terrain.
+	var gap := car.global_position.y - ground
+	assert_between(gap, car.settled_ride_height() - 0.1, car.settled_ride_height() + 1.0,
+		"wreck rests on the verge — wheels down, not sunk, not floating (slope-tolerant)")
 	# A small crowd of onlookers gathered around it.
 	var crowd := wreck.get_node_or_null("WreckCrowd") as MultiMeshInstance3D
 	assert_not_null(crowd, "a crowd gathers around the wreck")

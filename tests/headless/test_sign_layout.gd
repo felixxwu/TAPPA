@@ -6,10 +6,15 @@ extends GutTest
 
 const START_POS := Vector2(0.0, 0.0)
 const START_HEADING := Vector2(0.0, 1.0)
+const _TGP = preload("res://scripts/track_gen_params.gd")
+
+
+func _params(start_pos: Vector2, start_heading: Vector2, seed_value: int, turn_count: int, width: float, clearance := 0.0, reserve := 0.0, straightness := 0.0, runoff := 0.0) -> _TGP:
+	return _TGP.of(start_pos, start_heading, seed_value, turn_count, width, clearance, reserve, straightness, runoff)
 
 
 func _generate(seed_value: int, turns: int = 10, width: float = 6.0) -> Dictionary:
-	return await TrackGenerator.generate(START_POS, START_HEADING, seed_value, turns, width)
+	return await TrackGenerator.generate(_params(START_POS, START_HEADING, seed_value, turns, width))
 
 
 func _plan(result: Dictionary) -> Array:

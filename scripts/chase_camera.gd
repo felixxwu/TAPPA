@@ -121,8 +121,13 @@ func _timed_physics_process(delta: float) -> void:
 	final_pos.y = _ground_height_at(final_pos.x, final_pos.z) + _height
 	global_position = final_pos
 
-	# Point straight at the car (un-smoothed).
-	look_at(target.global_position, Vector3.UP)
+	# Point straight at the car (un-smoothed). Guard the degenerate cases look_at
+	# can't handle: the camera coinciding with the car, or sitting directly
+	# above/below it (view direction parallel to UP) — both leave the aim from the
+	# previous frame rather than erroring.
+	var to_target := target.global_position - global_position
+	if to_target.length() > 0.001 and absf(to_target.normalized().dot(Vector3.UP)) < 0.999:
+		look_at(target.global_position, Vector3.UP)
 
 
 # Terrain surface height at a world (x, z), used to seat the camera a fixed

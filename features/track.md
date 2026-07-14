@@ -36,9 +36,17 @@ dot, and a name label. Used to eyeball and tune the shapes.
 
 ## Track generation (`TrackGenerator`)
 
-`scripts/track_generator.gd` is a **pure-2D** search (no scene nodes, no
-terrain) that chains corners into a stage. It works in a plane mapping directly
-to world XZ (`x → world x`, `y → world z`).
+`scripts/track_generator.gd` is a **pure-2D** search (no scene nodes) that chains
+corners into a stage. It works in a plane mapping directly to world XZ
+(`x → world x`, `y → world z`).
+
+`generate` takes a single **`TrackGenParams`** object (`scripts/track_gen_params.gd`)
+holding every shape determinant — there is no positional form. Build it only via
+`TrackGenParams.for_event` / `for_config` / `for_trial`, which all require a water
+level, so a shape can't be generated without one (this is what keeps opponent times
+in sync once water makes the shape origin-dependent — see [lakes.md](lakes.md)).
+When water is enabled the search treats below-water cells as obstacles and routes
+the road around lakes.
 
 - **Chain shape:** corner → connecting straight → corner. Each step places a
   *piece* = (straight length) + (corner type, L/R flip). Candidates are
@@ -75,6 +83,28 @@ to world XZ (`x → world x`, `y → world z`).
   first valid candidate is placed; when a depth's candidates are exhausted, the
   last placed corner is undone (cells/points/frame restored) and the previous
   depth resumes at its next untried candidate.
+- **Escalating retreat:** a `backoff_level` drives how far a dead end retreats —
+  `_retreat_depth` undoes `2^level` corners (1, 2, 4, 8…, doubling, capped at
+  half the turn count and never more corners than are placed). The level **rises
+  by 1 on each dead end and does not decay on placement**; it resets to 0 only
+  when a retreat unwinds the whole track back to empty (an empty track can't be
+  trapped, so the accumulated eagerness is stale — this gives the early corners a
+  fresh fine-grained crack instead of a place-one/nuke-to-empty churn) and for
+  free at the next restart, since it lives on the `_search` call. This
+  is deliberately monotonic: a thrash zone alternates dead-end / lucky-placement
+  / dead-end, so *any* per-placement decay lets that cancel out and pins the
+  level near 0, and the search never backs off hard enough to escape. Rising
+  monotonically, a boxed-in search reels back ever-larger chunks until it either
+  completes or empties its stack and hands off to a fresh far-apart restart
+  (cheap — that's what the restart machinery is for), instead of churning
+  candidates at the frontier. So the live preview backs off decisively rather
+  than jittering ±1 corner at the tip. A healthy seed hits few dead ends, so the
+  level stays ~0 and its layout is unchanged. The retreat target keeps its
+  iterator (resumes at its next candidate); the corners between it and the
+  frontier discard theirs and regenerate fresh on re-descent. The retreat uses no
+  RNG, so generation stays deterministic per seed.
+  (Measured: seed 2 / 30 turns / water level 0 went from ~28 s of frontier thrash
+  to ~9 s by reaching level 8 and yielding to a restart that completes fast.)
 - **Safety / no hang:** each attempt is capped at `STEPS_BASE + turn_count *
   STEPS_PER_TURN` steps — generous over a healthy search (~`turn_count` steps) but
   tight enough that a seed that boxes itself in and backtracks exponentially is

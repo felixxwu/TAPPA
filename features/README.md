@@ -39,6 +39,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (audio-only) — engine property, stock or via `turbo_small`/`turbo_large` upgrades |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
+| [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset |
 | [corner-cutting.md](corner-cutting.md) | Corner-cutting time penalty — arc-gained-vs-driven cut detection in `TrackProgress`, snapshot at the finish, live HUD flash + finish-panel breakdown |
@@ -74,6 +75,8 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Terrain | `scripts/terrain_manager.gd`, `scripts/terrain_chunk.gd`, `scripts/terrain_layer.gd` |
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |
 | Track generation | `scripts/track_generator.gd` |
+| Lakes / water | `scripts/lake_field.gd` (`LakeField`), `scripts/track_gen_params.gd` (`TrackGenParams`), `scripts/terrain_noise.gd` (`TerrainNoise`), `shaders/water.gdshader` |
+| Track shape params | `scripts/track_gen_params.gd` (`TrackGenParams` — the required shape contract for `TrackGenerator.generate`) |
 | Trees & bushes | `scripts/tree_scatter.gd`, `scripts/billboard_field.gd`, `shaders/billboard.gdshader` |
 | Roadside signs | `scripts/sign_layout.gd` (`SignLayout` planner), `scripts/sign_field.gd` (`SignField` builder) |
 | Finish arch | `scripts/finish_arch.gd` (`FinishArch`), `tools/render_model.gd` |

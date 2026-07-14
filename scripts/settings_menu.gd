@@ -56,6 +56,17 @@ var _benchmark_page: VBoxContainer
 var _dev_page: VBoxContainer
 var _dev_status: Label  # feedback line on the dev page ("Granted …", "Wiped …")
 
+# Seed-lab page: trial (seed, water level, …) combinations against a live
+# TrackPreview that animates the generation just like the loading screen
+# (features/lakes.md). Typeable SpinBox inputs.
+var _seedlab_page: Control          # full-screen overlay (top_level), not a VBox page
+var _seedlab_preview: TrackPreview
+var _seed_spin: SpinBox
+var _level_spin: SpinBox
+var _turns_spin: SpinBox
+var _straight_spin: SpinBox
+var _sl_gen := 0  # generation token — stale async runs stop updating the preview
+
 # While the player is reassigning a control, the pending capture:
 # {action: String, slot: String, button: Button}; empty when not listening.
 var _listening: Dictionary = {}
@@ -66,6 +77,11 @@ func _ready() -> void:
 	_build()
 	UITheme.enforce(self)  # house rules: uppercase + one font size
 	show_list()
+	# Cancel any in-flight seed-lab generation when the menu is hidden (e.g. the
+	# pause menu closes without navigating back), so no search keeps running.
+	visibility_changed.connect(func() -> void:
+		if not visible:
+			_sl_gen += 1)
 
 
 func _build() -> void:
@@ -78,6 +94,7 @@ func _build() -> void:
 	_list_page.add_child(_make_nav_button("Mobile controls", show_schemes))
 	_list_page.add_child(_make_nav_button("Benchmark", show_benchmark))
 	_list_page.add_child(_make_nav_button("Dev", show_dev))
+	_list_page.add_child(_make_nav_button("Seed lab", show_seedlab))
 
 	# Camera sub-page.
 	_camera_page = _make_page()
@@ -146,6 +163,61 @@ func _build() -> void:
 		else:
 			_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
 
+	# Seed lab — a FULL-SCREEN overlay (like the loading screen), NOT a scrolling
+	# settings page: a black background over the whole screen, the animated track
+	# preview pinned to the top (always visible), and the typeable controls docked at
+	# the bottom. top_level escapes the settings VBox/ScrollContainer layout.
+	_seedlab_page = Control.new()
+	_seedlab_page.top_level = true
+	_seedlab_page.z_index = 100
+	_seedlab_page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_seedlab_page.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_seedlab_page)
+	var sl_bg := ColorRect.new()
+	sl_bg.color = UITheme.BLACK
+	sl_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	sl_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_seedlab_page.add_child(sl_bg)
+	# Track preview fills the top ~62%, always on screen.
+	_seedlab_preview = TrackPreview.new()
+	_seedlab_preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_seedlab_preview.anchor_bottom = 0.62
+	_seedlab_preview.offset_bottom = 0.0
+	_seedlab_page.add_child(_seedlab_preview)
+	# Controls docked along the bottom. A ScrollContainer guards against very short
+	# screens (nothing gets cut off) while a compact 2-column grid means everything
+	# fits without scrolling in the common case.
+	var cfg0: GameConfig = Config.data
+	_seed_spin = _make_spin(0.0, 1_000_000_000.0, 1.0, float(cfg0.track_seed))
+	_level_spin = _make_spin(-40.0, 10.0, 0.5, cfg0.track_water_level_m)
+	_turns_spin = _make_spin(3.0, 40.0, 1.0, float(cfg0.track_turn_count))
+	_straight_spin = _make_spin(0.0, 1.0, 0.05, cfg0.track_straightness)
+	var sl_scroll := ScrollContainer.new()
+	sl_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	sl_scroll.anchor_top = 0.63
+	sl_scroll.offset_left = 40.0
+	sl_scroll.offset_right = -40.0
+	sl_scroll.offset_top = 8.0
+	sl_scroll.offset_bottom = -16.0
+	sl_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_seedlab_page.add_child(sl_scroll)
+	var sl_panel := VBoxContainer.new()
+	sl_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_panel.add_theme_constant_override("separation", 8)
+	sl_scroll.add_child(sl_panel)
+	var sl_grid := GridContainer.new()
+	sl_grid.columns = 2
+	sl_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_grid.add_theme_constant_override("h_separation", 24)
+	sl_grid.add_theme_constant_override("v_separation", 8)
+	sl_panel.add_child(sl_grid)
+	sl_grid.add_child(_spin_row("Seed", _seed_spin))
+	sl_grid.add_child(_spin_row("Water level", _level_spin))
+	sl_grid.add_child(_spin_row("Turns", _turns_spin))
+	sl_grid.add_child(_spin_row("Straightness", _straight_spin))
+	sl_panel.add_child(_make_action_button("Randomize seed", _randomize_seed))
+	_seedlab_page.visible = false  # shown only via show_seedlab()
+
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
 	_refresh_controls_selection()
@@ -174,12 +246,13 @@ func go_back() -> bool:
 # showing — called (deferred) by the host once it has revealed the Settings overlay,
 # and on every page switch, so a controller always has a live cursor.
 func focus_current_page() -> void:
-	var page := _list_page
+	var page: Control = _list_page
 	if _camera_page.visible: page = _camera_page
 	elif _controls_page.visible: page = _controls_page
 	elif _scheme_page.visible: page = _scheme_page
 	elif _benchmark_page.visible: page = _benchmark_page
 	elif _dev_page.visible: page = _dev_page
+	elif _seedlab_page.visible: page = _seedlab_page
 	_focus_first_in(page)
 
 
@@ -217,14 +290,23 @@ func show_dev() -> void:
 	_show_page(_dev_page)
 
 
+func show_seedlab() -> void:
+	_show_page(_seedlab_page)
+	_regen_seedlab()
+
+
 func _show_page(page: Control) -> void:
 	cancel_listen()  # leaving a page abandons any pending key capture
+	# Cancel any in-flight seed-lab generation whenever the page changes (including
+	# leaving the seed lab) so its animated search stops doing per-frame work.
+	_sl_gen += 1
 	_list_page.visible = page == _list_page
 	_camera_page.visible = page == _camera_page
 	_controls_page.visible = page == _controls_page
 	_scheme_page.visible = page == _scheme_page
 	_benchmark_page.visible = page == _benchmark_page
 	_dev_page.visible = page == _dev_page
+	_seedlab_page.visible = page == _seedlab_page
 	page_changed.emit(at_root())
 	# Move the focus cursor onto the newly-shown page (deferred so it runs after the
 	# visibility change settles; no-op while the whole menu is still hidden on _ready).
@@ -556,6 +638,71 @@ func _make_sub(text: String) -> Label:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return label
+
+
+# --- Seed lab ----------------------------------------------------------------
+
+# A typeable numeric field, re-rendering the preview on every change.
+func _make_spin(mn: float, mx: float, stp: float, val: float) -> SpinBox:
+	var spin := SpinBox.new()
+	spin.min_value = mn
+	spin.max_value = mx
+	spin.step = stp
+	spin.value = val
+	spin.update_on_text_changed = true  # type a value, not just click arrows
+	spin.custom_minimum_size = Vector2(130, 0)
+	spin.value_changed.connect(func(_v: float): _regen_seedlab())
+	return spin
+
+
+# A [title    <spin>] row.
+func _spin_row(title: String, spin: SpinBox) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 8)
+	var name_lbl := Label.new()
+	name_lbl.text = title
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(name_lbl)
+	row.add_child(spin)
+	return row
+
+
+func _randomize_seed() -> void:
+	_seed_spin.value = float(randi() % 1_000_000)  # fires value_changed -> _regen_seedlab
+
+
+# Generate the trial track and paint the preview, ANIMATING the DFS like the
+# loading screen (on_progress yields a frame per step). A generation token drops
+# stale runs so rapid edits don't fight over the preview.
+func _regen_seedlab() -> void:
+	if _seedlab_preview == null:
+		return
+	_sl_gen += 1
+	var gen := _sl_gen
+	var cfg: GameConfig = Config.data
+	var params := TrackGenParams.for_trial(int(_seed_spin.value), _level_spin.value,
+		int(_turns_spin.value), _straight_spin.value, cfg)
+	# Paint the waterline first (known up-front) over a rough box, then animate.
+	var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
+	var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)
+	var wp: Array = LakeField.preview_cells(params, box)
+	_seedlab_preview.set_water(wp[0], wp[1])
+	var on_prog := func(pts: PackedVector2Array) -> void:
+		if gen == _sl_gen:
+			_seedlab_preview.set_points(pts)
+	# should_abort stops the search the instant a newer request (or leaving the page)
+	# bumps the token — so stale generations don't keep running every frame.
+	var abort := func() -> bool: return gen != _sl_gen
+	var res: Dictionary = await TrackGenerator.generate(params, on_prog, abort)
+	if gen != _sl_gen:
+		return  # a newer request superseded this one
+	var poly := (res["centerline"] as Curve2D).tessellate()
+	_seedlab_preview.set_points(poly)
+	# Refine water to the actual track bounds.
+	var tb := LoadingScreen.bounds_of(poly).grow(60.0)
+	var wp2: Array = LakeField.preview_cells(params, tb)
+	_seedlab_preview.set_water(wp2[0], wp2[1])
 
 
 func _make_row_button(min_height: float) -> Button:

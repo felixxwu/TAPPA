@@ -12,10 +12,17 @@ const PARAMS := {
 	"jitter": 0.6,
 }
 
+const _TGP = preload("res://scripts/track_gen_params.gd")
+
+
+func _params(start_pos: Vector2, start_heading: Vector2, seed_value: int, turn_count: int, width: float, clearance := 0.0, reserve := 0.0, straightness := 0.0, runoff := 0.0) -> _TGP:
+	return _TGP.of(start_pos, start_heading, seed_value, turn_count, width, clearance, reserve, straightness, runoff)
+
+
 # A small track gives a known cell set + anchors. Width 6, clearance 8 -> the
 # returned "cells" are the clearance-inflated (22 m) collision set.
 func _track() -> Dictionary:
-	return await TrackGenerator.generate(Vector2(0, 0), Vector2(0, 1), 3, 6, 6.0, 8.0)
+	return await TrackGenerator.generate(_params(Vector2(0, 0), Vector2(0, 1), 3, 6, 6.0, 8.0))
 
 # The VISIBLE road footprint (rasterized at the real track width), which is what
 # scatter rejects against — not the inflated collision set in result["cells"].

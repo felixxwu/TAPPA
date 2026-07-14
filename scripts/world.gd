@@ -51,6 +51,12 @@ func _ready() -> void:
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("road_uv_scale", road_uv_scale)
 	# Flat tarmac fill colour (TODO: a real tarmac texture — todo/tarmac-texture.md).
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("tarmac_color", cfg.tarmac_color)
+	# Terrain seed follows the per-event track_seed so each event has its own
+	# landscape (and lake layout). The road DFS doesn't read terrain when water is
+	# off, so this changes only the visible elevation for water-off events, not the
+	# road shape or opponent times. (Setter invalidates the noise cache + rebuilds.)
+	if $Floor.noise_seed != cfg.track_seed:
+		$Floor.noise_seed = cfg.track_seed
 	# Assigning layers triggers a full terrain regeneration; skip when equal.
 	if not _layers_match($Floor.layers, cfg.terrain_layers()):
 		var layers: Array[TerrainLayer] = []
@@ -233,23 +239,45 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# pass the same reserve at a canonical pose (RallySession._compute_event_targets)
 	# — stay in sync.
 	var staged := _should_stage()
-	var gen_start := start_pos
-	# Corridor reserved behind the generation start = the whole lead-in (the ahead
-	# straight start→gen_start plus the behind stub). 0 when not staged.
-	var reserve_behind := 0.0
-	if staged:
-		gen_start = start_pos + start_heading * cfg.start_lead_in_ahead_m
-		reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
+	# The staged lead-in origin + reserved corridor now live in TrackGenParams
+	# (seated from cfg.start_line_enabled), so both the run scene and the target
+	# derivation get the identical origin. `staged` still gates the lead-in prepend.
 	# Live preview: only when an overlay is up and we're not headless. Headless keeps
 	# generation effectively synchronous (empty Callable -> the search never yields a
 	# frame) so tests still build the world within _ready and test runtime is unchanged.
 	var on_progress := Callable()
 	if loading != null and not _headless:
 		on_progress = loading.update_track_preview
-	var result := await TrackGenerator.generate(
-		gen_start, start_heading, cfg.track_seed, cfg.track_turn_count, cfg.track_width,
-		cfg.track_clearance, reserve_behind, cfg.track_straightness, cfg.track_runoff_m,
-		on_progress)
+	# Build the shape contract. In a rally, use the current event so the shape (and
+	# its water avoidance) matches the times RallySession derived; free-roam uses the
+	# live cfg. The factory seats the staged origin from cfg and relocates it onto dry
+	# ground if the start would be underwater — identical logic to the target
+	# derivation, so the shapes stay in sync.
+	var event := RallySession.current_event()
+	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
+		else TrackGenParams.for_config(cfg)
+	# The dry-start search may relocate the generation origin onto dry ground. Derive
+	# the start-LINE pose from params (absolute, idempotent — never accumulates across
+	# re-generation on a reused car) and seat the car + start_pos there. For a staged
+	# run the start line sits one lead-in ahead behind the generation origin.
+	var relocate := params.origin - params.base_origin
+	if relocate != Vector2.ZERO:
+		var start_line := params.origin
+		if staged:
+			start_line = params.origin - params.heading.normalized() * cfg.start_lead_in_ahead_m
+		start_pos = start_line
+		var car := $Car as Node3D
+		car.global_position = Vector3(start_line.x, car.global_position.y, start_line.y)
+	# Paint the waterline into the preview BEFORE generation — it's a pure function
+	# of (seed, water_level), so it can show first and the road animates over it. This
+	# early pass covers a rough box around the origin (the track extent isn't known
+	# yet); it's refined to the true track bounds once generation completes (below).
+	if cfg.water_enabled and loading != null and not _headless:
+		var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
+		var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)
+		var wp: Array = LakeField.preview_cells(params, box)
+		loading.update_water(wp[0], wp[1])
+	var result := await TrackGenerator.generate(params, on_progress)
 	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
 	# it stays drawn through the remaining stages until finish().
 	if loading != null and not _headless:
@@ -258,6 +286,12 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# centerline still feeds the signs, so the start gate sits ahead of the launch
 	# point — the cars cross it as they pull away.
 	var road_centerline := result["centerline"] as Curve2D
+	# Refine the preview water to the ACTUAL track bounds now they're known, so it
+	# spans the whole stage instead of the rough origin box (no more box-edge clip).
+	if cfg.water_enabled and loading != null and not _headless:
+		var tb := LoadingScreen.bounds_of((result["centerline"] as Curve2D).tessellate()).grow(80.0)
+		var wp2: Array = LakeField.preview_cells(params, tb)
+		loading.update_water(wp2[0], wp2[1])
 	if staged:
 		road_centerline = _with_start_lead_in(road_centerline, start_pos, start_heading, cfg)
 	# The FINISH is the END of the generated track (plus lead-in) — capture its arc
@@ -341,6 +375,12 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# tree points and road-margin cells the spectator layout reuses.
 	var foliage := await _build_foliage(cfg, result, road_centerline, loading)
 
+	# Lakes: flood the natural basins beside the road below the water level. The
+	# track DFS already routed the road above water; road cells are excluded here
+	# too as a coarse guard. The car gets soft-hazard drag over any lake.
+	if cfg.water_enabled:
+		await _build_lakes(cfg, road_centerline, loading)
+
 	# Roadside turn-arrow signs along the stage.
 	if cfg.signs_enabled:
 		await _build_signs(cfg, result, loading)
@@ -392,6 +432,42 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		loading.finish()
 
 
+# Below-water cell CENTRES + the sample step, over `bounds` (world XZ), for the
+# loading preview. Uses the params' pure water sampler (no track/terrain needed).
+# The step adapts so a large region stays ~cheap and the drawn squares still tile.
+# Returns [PackedVector2Array cells, float step].
+# Drop any XZ points whose terrain sits at/below the water level, so scattered
+# props (trees, bushes, spectators) never spawn in a lake. No-op when water is off.
+func _drop_submerged(points: PackedVector2Array, cfg: GameConfig) -> PackedVector2Array:
+	if not cfg.water_enabled:
+		return points
+	var tm := $Floor as TerrainManager
+	var out := PackedVector2Array()
+	for p in points:
+		if tm.height_at(p.x, p.y) > cfg.track_water_level_m:
+			out.append(p)
+	return out
+
+
+func _build_lakes(cfg: GameConfig, road_centerline: Curve2D, loading: LoadingScreen = null) -> void:
+	await _stage(loading, "Filling lakes…")
+	var floor_tm := $Floor as TerrainManager
+	# One big flat plane at the water level; terrain above it occludes it via the
+	# depth test, so no per-lake geometry or flood-fill is needed (features/lakes.md).
+	var lake := LakeField.new()
+	lake.name = "LakeField"
+	add_child(lake)
+	lake.build(cfg.track_water_level_m, cfg)
+	# Soft-hazard query: the car is in water wherever the ground under it is
+	# submerged (terrain below the water level).
+	var wl := cfg.track_water_level_m
+	if has_node("Car"):
+		($Car as Node).call("set_water_query",
+			func(p: Vector3) -> bool: return floor_tm.height_at(p.x, p.z) < wl)
+	# The loading preview already painted the waterline up-front (before generation,
+	# see _generate_track → LakeField.preview_cells), so nothing to feed here.
+
+
 # Scatter trees + ground-cover bushes around the stage and render both as binned
 # MultiMesh fields (TreeMeshField), plus the pass-through bush hit volume. Takes the
 # already-generated track `result` + rendered `road_centerline`; owns the two
@@ -421,6 +497,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 	# spawn inside the forest patches, breaking up the otherwise-continuous tree line.
 	var trees := TreeScatter.scatter(result["pieces"], road_cells, cfg.tree_params(),
 		cfg.track_seed, cfg.track_forestiness, cfg.forest_wavelength_m)
+	trees = _drop_submerged(trees, cfg)  # keep trees out of the lakes
 	# Trees render as billboards or 3D meshes per cfg.use_billboard_trees — the
 	# choice (and the shared mesh/material) live in Foliage so every scene matches.
 	# Stage trees collide (they're obstacles).
@@ -444,6 +521,7 @@ func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2
 		road_centerline.tessellate(), bush_footprint)
 	var bushes := TreeScatter.scatter(result["pieces"], bush_road_cells, cfg.tree_params(),
 		cfg.track_seed + BUSH_SEED_OFFSET)
+	bushes = _drop_submerged(bushes, cfg)  # keep bushes out of the lakes
 	Foliage.spawn_bushes(self, bushes, $Floor as TerrainManager,
 		cfg.tree_render_distance_m, cfg.tree_render_fade_m)
 
@@ -613,6 +691,7 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 		cfg.spectator_area_length_m * 0.5, cfg.spectator_area_width_m * 0.5,
 		cfg.spectator_group_size, cfg.spectator_separation_m, road_cells,
 		tree_grid, tree_cell, cfg.spectator_tree_avoid_m, seed_value)
+	members = _drop_submerged(members, cfg)  # no spectators standing in a lake
 	if members.is_empty():
 		return
 	var group := SpectatorGroup.new()

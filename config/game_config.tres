@@ -5,6 +5,8 @@
 [resource]
 script = ExtResource("1")
 distant_terrain_enabled = false
+water_enabled = true
+track_water_level_m = -5.0
 drag_coefficient = 2.645
 hitbox_chamfer_fraction = 0.333333
 spin_assist_angle = 0.6
@@ -35,7 +37,7 @@ smoothing = 3.0
 hq_table_cam_eye = Vector3(-3, 2.15, 0.2)
 terrain_tile_per_meter = 0.5
 road_tile_per_meter = 1.0
-terrain_layer1_wavelength = 500.0
+terrain_layer1_wavelength = 300.0
 terrain_layer1_amplitude = 30.0
 terrain_layer2_wavelength = 40.0
 terrain_layer2_amplitude = 0.5
