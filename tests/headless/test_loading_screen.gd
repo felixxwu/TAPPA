@@ -9,6 +9,7 @@ extends GutTest
 # attributed to the running test as an "unexpected error" in an isolated --fast
 # run (GUT blames whatever test is executing when the engine logs the warning).
 const MAIN_SCENE := preload("res://main.tscn")
+const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 
 func test_set_step_updates_label() -> void:
@@ -31,6 +32,10 @@ func test_world_generation_completes_synchronously_when_headless() -> void:
 	# staged generation chain runs within instantiate()+add_child. The TrackProgress
 	# node is wired at the very end of that chain, so its presence proves the whole
 	# chain ran — i.e. staging didn't accidentally defer world-gen across frames.
+	# The staged chain runs identically on a 1-turn / no-foliage track, so trim the
+	# generation (minimal_world) rather than paying the full ~18s build here — this
+	# test asserts the chain RAN, not the track's size or tree count.
+	SceneHelpers.minimal_world()
 	var scene: Node3D = MAIN_SCENE.instantiate()
 	add_child_autofree(scene)
 	assert_not_null(scene.get_node_or_null("TrackProgress"),
@@ -38,6 +43,7 @@ func test_world_generation_completes_synchronously_when_headless() -> void:
 
 
 func test_loading_overlay_removed_after_generation() -> void:
+	SceneHelpers.minimal_world()  # the overlay lifecycle is the same on a trimmed track
 	var scene: Node3D = MAIN_SCENE.instantiate()
 	add_child_autofree(scene)
 	# finish() queue_frees the overlay during _ready; one frame later it's gone.
