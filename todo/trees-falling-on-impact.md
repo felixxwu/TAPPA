@@ -1,6 +1,9 @@
 # Trees fall over when you crash into them fast enough — implementation spec
 
-> Status: **planned, not yet implemented.** Implementation brief for felling a
+> Status: **DONE / implemented.** Shipped as `scripts/tree_fall.gd` (`TreeFall`,
+> with `fall_angle`/`should_fell`), consumed by `scripts/car.gd` and
+> `scripts/tree_mesh_field.gd`, documented in `features/trees.md`, and covered by
+> `tests/headless/test_tree_fall.gd`. Original implementation brief for felling a
 > tree when the car hits it above a speed threshold: the struck tree topples over
 > and **loses its hitbox**, so you plough straight through instead of pinning
 > against it. Below the threshold, trees behave exactly as they do today (solid

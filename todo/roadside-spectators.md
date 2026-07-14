@@ -5,8 +5,12 @@ around with simple steering preferences while upright, and get knocked flying
 when the car hits them. Three groups per stage — one at the start, one at the
 end, and one at a random mid-stage point.
 
-Status: **spec / not yet implemented.** Brainstormed with the user 2026-06; all
-four design forks below were deferred to the recommended option.
+Status: **DONE / implemented.** Shipped as `scripts/spectator_scatter.gd`
+(`SpectatorScatter`), `scripts/crowd.gd`, and `scripts/spectator_group.gd`, wired
+into `scripts/world.gd`, documented in `features/spectators.md`, and covered by
+`tests/headless/test_spectator_scatter.gd`, `test_spectator_steering.gd`,
+`test_spectator_damage.gd`. Brainstormed with the user 2026-06; all four design
+forks below were deferred to the recommended option.
 
 ## Design decisions (locked)
 

@@ -1,6 +1,8 @@
 # Track cliffs & drops
 
-**Status:** planned (not implemented). Branch: `claude/track-cliffs-drops-*`.
+**Status:** DONE / implemented. The cliff/drop height offsets are driven from
+`GameConfig` (`scripts/game_config.gd`, `cliff_enabled`, `cliff_wavelength_m`,
+etc.) through the terrain-height pipeline and documented in `features/terrain.md`.
 
 Sculpt artificial **cliffs** and **drops** into the terrain along the sides of
 the generated track, so a rally stage can run along a ledge — a wall rising on

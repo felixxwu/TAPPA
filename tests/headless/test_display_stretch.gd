@@ -4,7 +4,7 @@ extends GutTest
 # whole frame by shrinking only the logical WIDTH the window scales back out from.
 
 const DisplayStretch := preload("res://scripts/display_stretch.gd")
-const DESIGN_HEIGHT := 360.0
+const DESIGN_HEIGHT := 400.0
 
 
 # The realised stretch = (horizontal scale-to-window) / (vertical scale-to-window).
