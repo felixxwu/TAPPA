@@ -173,8 +173,8 @@ map table alongside the `MapTable` model: `arrow_left` / `arrow_right`
 edges, wired back to `hq.gd`'s click handlers the same way the map pins are.
 
 `hq.gd` tracks `_viewed_region_index` (which region's map/pins the table is
-currently showing), separate from `_table_pin_index` (the cursor over that
-region's pins):
+currently showing), separate from `_table_focus_index` (the currently-selected
+target — see the Nav section below):
 
 - **Entry default:** entering the TABLE view seeds
   `_viewed_region_index = _furthest_unlocked_index()` — the player always lands
@@ -193,8 +193,8 @@ region's pins):
   - rebuilds pins from `RegionLibrary.rallies_in(region_id)` only — **not**
     the flat `RallyLibrary.all()` — so a viewed region only ever shows its own
     pins;
-  - resets `_table_pin_index = -1` (re-seat the cursor fresh for the new pin
-    set);
+  - re-seats selection via `_select_target_under_center()` (the target nearest
+    the view centre in the new pin set);
   - the showdown-lock check (`RegionLibrary.showdown_unlocked(region_id,
     Save.profile)`) and the progress meter are both scoped to the **viewed**
     region, not the whole game.
@@ -202,22 +202,36 @@ region's pins):
   an index (bypassing the arrow clamp) and refreshes pins, for tests that need
   to inspect a specific region's pins without walking the swap sequence.
 
-### Nav split (`View.TABLE`)
+### Nav — camera glide + nearest-to-centre selection (`View.TABLE`)
 
-The design doc flagged a pin-cursor vs. region-swap key conflict as an open
-question; the shipped resolution is: **up/down moves the pin cursor,
-left/right swaps the viewed region.** In `hq.gd._unhandled_input`'s `TABLE`
-branch, `menu_left`/`menu_right` (on press) call `_swap_region(±1)` when not in
-the rally-detail sub-panel; `menu_up`/`menu_down` still move `_table_pin_index`
-within the current region's pins as before. (The diegetic arrow *props* on the
-table use the separate `_on_arrow_input` click handler, which fires on pointer
-*release* via `_is_release`.) This reuses the existing keyboard +
-gamepad action names (`menu_left`/`menu_right`/`menu_up`/`menu_down`, already
-bound to arrows/WASD/D-pad/stick), so no new input actions were needed —
-mouse/touch clicks on the arrow props reach the same `_swap_region` calls.
+The table has no discrete pin cursor. **Up/down/left/right glide the camera
+smoothly over the map** and selection tracks whatever sits under the view
+centre — a reticle over the map, not a jump between pins. The map-swap arrows
+are just two more targets, selected the same way when they're nearest the
+centre (so gliding to the map's right edge selects `arrow_right`).
 
-See [menus.md](menus.md) → TABLE for how this sits alongside the existing pin
-cursor, drag-to-pan, and pin-detail flow.
+- **Glide:** `hq.gd._process` polls the held `menu_up`/`menu_down`/`menu_left`/
+  `menu_right` actions each frame (only in `View.TABLE`, detail panel closed)
+  and calls `_pan_table_step(dir2, hq_table_pan_glide · delta)`, which slides
+  `_table_pan` in the screen-direction (clamped to the map extents), snaps the
+  camera (`_move_camera_to(..., true)`), then re-selects.
+- **Selection:** `_select_target_under_center()` seats `_table_focus_index` on
+  whichever `_table_targets()` entry (pin or arrow) is nearest `_table_center_pos()`
+  — the look point offset by the live `_table_pan`, i.e. where the camera's
+  centre ray meets the map. Drag-pan (`_pan_table`) and table entry
+  (`_enter_table` / `_refresh_map_pins`) re-select through the same call, so
+  pointer, keyboard, and gamepad all agree.
+- **Select / back:** `menu_select` → `_activate_table_focus()` opens the
+  selected pin's rally detail, or (on an arrow) calls `_swap_region(±1)` and
+  re-seats via `_focus_nearest_pin`. A locked forward arrow's swap is inert.
+- The diegetic arrow *props* remain pointer-clickable via `_on_arrow_input`
+  (fires on release), reaching the same `_swap_region` calls.
+
+This reuses the existing keyboard + gamepad action names (already bound to
+arrows/WASD/D-pad/stick), so no new input actions were needed.
+
+See [menus.md](menus.md) → TABLE for how this sits alongside the drag-to-pan
+and pin-detail flow.
 
 ## Progression: sequential unlock, per-region showdown, final-region credits
 

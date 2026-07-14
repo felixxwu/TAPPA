@@ -144,21 +144,26 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   is the same station reused with a mode flag, so it inherits this nav for free: left/right
   cycles the swap-eligible target cars, select confirms the swap (`_select_swap_target`),
   and back (`_car_back`) returns to the tuning-lift Upgrades page instead of the map table;
-  the **map table** carries a **spatial keyboard/gamepad cursor** over a unified focus
-  set: every unlocked rally pin plus the two map-swap arrows (each arrow present whenever a
-  region exists that way, floating a house-style label like the rally-pin readout boxes).
-  All four directions (`menu_up/down/left/right`) move the cursor to the nearest target in
-  that direction within the table's XZ plane — so pressing up goes to the pin physically
-  above, matching what the player sees through the fixed table camera (`_table_plane_axes`
-  derives on-screen up/right from the camera pose). No wrap: if nothing lies that way, the
-  cursor stays put. The focused pin gets the hover-style readout underline; a focused arrow
-  glows. `menu_select` fires the focused target — a pin opens its rally detail; an unlocked
-  arrow (back arrow, or a forward arrow whose region is now reachable) swaps the region and
-  re-seats focus onto the pin nearest that edge; a locked forward arrow (whose region exists
-  but the showdown is not yet completed) shows **"Complete showdown to unlock"** on its label
-  and is inert (select/click does nothing). `menu_back`
+  the **map table** is driven by a **camera glide**: holding
+  `menu_up/down/left/right` slides the camera smoothly over the map (polled in
+  `hq.gd._process`, glide speed `hq_table_pan_glide`), and selection tracks whichever
+  target sits nearest the view centre — a reticle over the map, not a jump between pins.
+  The unified target set is every unlocked rally pin plus the two map-swap arrows (each
+  arrow present whenever a region exists that way, floating a house-style label like the
+  rally-pin readout boxes); the arrows are selected the same way, so gliding to the map's
+  edge selects one. `_select_target_under_center()` seats `_table_focus_index` on the
+  target nearest `_table_center_pos()` (the fixed table camera's look point offset by the
+  live `_table_pan` — `_table_plane_axes` derives on-screen up/right from the camera pose).
+  Pan is clamped to the map extents, so at an edge the camera simply stops. The selected
+  pin gets the hover-style readout underline; a selected arrow glows. `menu_select` fires
+  the selected target — a pin opens its rally detail; an unlocked arrow (back arrow, or a
+  forward arrow whose region is now reachable) swaps the region and re-seats onto the pin
+  nearest that edge; a locked forward arrow (whose region exists but the showdown is not
+  yet completed) shows **"Complete showdown to unlock"** on its label and is inert
+  (select/click does nothing). `menu_back`
   exits to the garage. Clicking a pin or arrow with the pointer still works (`_on_rally_pin` /
-  `_on_arrow_input`), and mouse drag still pans the map; the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
+  `_on_arrow_input`), and mouse drag still pans the map (selection re-tracks the centre as it
+  slides); the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
   `UITheme.mark_focused`) over **Back / Change Car / Tuning / Upgrades** (its buttons
   sit side by side in one row), fired with select (`_activate_hub_focus`) — Change Car
   drops into the car park in change-car mode; the cursor seats on Change Car on entry
@@ -629,7 +634,10 @@ only when something was won.
    in live so they **settle onto their suspension** (then freeze the settled pose,
    like the HQ car park), reading the `car_id` now carried on each standings entry.
    The headline result (rally, placement + time, or DNF; top-3 → `RALLY WON!`) sits
-   over it.
+   over it. The camera (`_podium_cam`) sits **low and close, looking up** at the cars
+   from just off head-on, and **always frames the player's car** — whichever step
+   they finished on, not just the centre P1 step (tracked as `_player_car` when the
+   player is in the top 3; falls back to the podium centre otherwise).
 2. **LEADERBOARD** — the full ranked field (`RallyLibrary.build_standings`):
    position, name + car, time / `WRECKED`, the player's row tinted + marked.
 3. **CAR_REVEAL** (only if `car_reward != ""`) — the camera **flies over to the

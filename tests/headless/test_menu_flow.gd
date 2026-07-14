@@ -95,6 +95,21 @@ func _pin_for(hq: Node3D, rally_id: String) -> Node3D:
 	return null
 
 
+# The table target (pin/arrow node) whose position is nearest `center` in the map (XZ)
+# plane — the same "reticle over the map" rule the table selection uses.
+func _nearest_target_to(hq: Node3D, center: Vector3) -> Node3D:
+	var best: Node3D = null
+	var best_d := INF
+	for t in hq._table_targets():
+		var off: Vector3 = Vector3(t["pos"]) - center
+		off.y = 0.0
+		var d := off.length()
+		if d < best_d:
+			best_d = d
+			best = t["node"]
+	return best
+
+
 # The billboarded readout-box sprite a pin floats above its flag.
 # The player's currently-owned car (before_each already grants a starter via
 # _pick_starter) — the first entry in the profile's garage.
@@ -273,10 +288,10 @@ func test_hq_title_shows_build_version() -> void:
 		"the version label lives on the title overlay (shown only there)")
 
 
-# The map table carries a spatial keyboard/gamepad cursor: pressing a direction moves
-# focus to the pin physically that way on the table (not the next array index), and a
-# direction with no target that way leaves focus put. Select opens the focused rally.
-func test_hq_map_table_navigates_pins_spatially() -> void:
+# The map table pans the camera directly: pressing a direction slides the view centre
+# that way, and selection snaps to whichever pin/arrow now sits nearest the centre (a
+# reticle over the map, not discrete jumps). Select opens the selected rally.
+func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	# Three pins at known map_pos: b is "up-map" of a (smaller y), c is off to +x.
 	RallyLibrary.override_for_test([
@@ -290,44 +305,48 @@ func test_hq_map_table_navigates_pins_spatially() -> void:
 	hq._enter_table()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.TABLE, "the map table is open")
-	assert_gt(hq._table_focus_index, -1, "the cursor seats on a pin on entry")
+	assert_gt(hq._table_focus_index, -1, "a target is selected on entry")
 
 	var axes: Array = hq._table_plane_axes()
 	var up: Vector3 = axes[0]
-	var right: Vector3 = axes[1]
 
-	# Focus a known pin, then press up: focus must land on a pin further along the
-	# screen-up axis than where we started (physically above), not merely index+1.
-	hq._focus_nearest_pin(_pin_for(hq, "a").position)
-	var focused_a: Node3D = hq._table_targets()[hq._table_focus_index]["node"]
-	var start_up: float = focused_a.position.dot(up)
-	hq._nav_table(Vector2.UP)
-	var after_up: Node3D = hq._table_targets()[hq._table_focus_index]["node"]
-	assert_gt(after_up.position.dot(up), start_up, "pressing up moves to a pin higher on the table")
+	# Core contract: the selected target is always the one nearest the view centre.
+	assert_eq(hq._table_targets()[hq._table_focus_index]["node"],
+		_nearest_target_to(hq, hq._table_center_pos()),
+		"selection = the target nearest the camera centre on entry")
 
-	# From the top pin, pressing up again finds nothing that way and stays put.
-	var top_idx: int = hq._table_focus_index
-	hq._nav_table(Vector2.UP)
-	assert_eq(hq._table_focus_index, top_idx, "no target above → focus unchanged")
+	# Gliding up slides the camera centre in the screen-up direction...
+	var before_up: float = hq._table_center_pos().dot(up)
+	hq._pan_table_step(Vector2.UP, 0.4)
+	assert_gt(hq._table_center_pos().dot(up), before_up, "gliding up pans the view centre upward")
+	# ...and selection re-snaps to whatever is now nearest the centre.
+	assert_eq(hq._table_targets()[hq._table_focus_index]["node"],
+		_nearest_target_to(hq, hq._table_center_pos()),
+		"selection tracks the view centre after panning")
 
-	# Right moves to a pin further along the screen-right axis.
-	hq._focus_nearest_pin(_pin_for(hq, "a").position)
-	var start_right: float = hq._table_targets()[hq._table_focus_index]["node"].position.dot(right)
-	hq._nav_table(Vector2.RIGHT)
-	assert_gt(hq._table_targets()[hq._table_focus_index]["node"].position.dot(right), start_right,
-		"pressing right moves to a pin further right on the table")
+	# Glide fully up (past the clamp): the up-most pin (b) ends up nearest the centre.
+	for _i in 12:
+		hq._pan_table_step(Vector2.UP, 0.4)
+	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "b",
+		"panning to the top of the map selects the up-most pin")
 
-	# The focused pin gets the hover-style underline; a pin stays scale 1.
-	hq._focus_nearest_pin(_pin_for(hq, "a").position)
+	# Fresh view, then glide fully right: the right-most pin (c) ends up selected.
+	hq._enter_table()
+	await get_tree().process_frame
+	for _i in 12:
+		hq._pan_table_step(Vector2.RIGHT, 0.4)
 	var sel: Node3D = hq._table_targets()[hq._table_focus_index]["node"]
-	var box: StyleBoxFlat = sel.get_meta("label_panel").get_theme_stylebox("panel")
-	assert_eq(box.border_width_bottom, 3, "the focused pin gets the hover-style underline")
-	assert_almost_eq(float(sel.scale.x), 1.0, 0.01, "the focused pin is NOT scaled up")
+	assert_eq(String(sel.get_meta("rally_id")), "c", "panning to the right of the map selects the right-most pin")
 
-	# Select on a focused pin opens its rally detail.
+	# The selected pin gets the hover-style underline; a pin stays scale 1.
+	var box: StyleBoxFlat = sel.get_meta("label_panel").get_theme_stylebox("panel")
+	assert_eq(box.border_width_bottom, 3, "the selected pin gets the hover-style underline")
+	assert_almost_eq(float(sel.scale.x), 1.0, 0.01, "the selected pin is NOT scaled up")
+
+	# Select on the selected pin opens its rally detail.
 	hq._activate_table_focus()
-	assert_true(hq._detail_open, "selecting the focused pin opens its rally detail")
-	assert_eq(hq._selected_rally_id, String(sel.get_meta("rally_id")), "it opens the focused pin's rally")
+	assert_true(hq._detail_open, "selecting the pin opens its rally detail")
+	assert_eq(hq._selected_rally_id, String(sel.get_meta("rally_id")), "it opens the selected pin's rally")
 	RegionLibrary.reset()
 	RallyLibrary.reset()
 
@@ -361,13 +380,13 @@ func test_table_arrow_is_a_focus_target_that_swaps_on_select() -> void:
 	assert_true(kinds.has("arrow_right"), "the right arrow is a focus target when a next region exists")
 	assert_false(kinds.has("arrow_left"), "no left arrow target at the first region")
 
-	# Walk right until focus reaches the right arrow (pins first, then the edge arrow).
+	# Glide right until the right arrow (near the map's right edge) is nearest the centre.
 	var guard := 0
-	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 10:
-		hq._nav_table(Vector2.RIGHT)
+	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 20:
+		hq._pan_table_step(Vector2.RIGHT, 0.4)
 		guard += 1
 	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right",
-		"navigating right eventually lands on the right arrow")
+		"gliding right eventually selects the right arrow")
 	assert_eq(_arrow_label_text(hq._env.arrow_right).to_lower(), "change map",
 		"an unlocked forward arrow reads 'change map'")
 
@@ -444,10 +463,10 @@ func test_table_arrow_labels_reflect_lock_state() -> void:
 		kinds.append(t["kind"])
 	assert_true(kinds.has("arrow_right"), "the locked forward arrow is a focus target")
 
-	# Navigate onto it and select: inert — the region does not change and focus stays.
+	# Glide onto it and select: inert — the region does not change and focus stays.
 	var guard := 0
-	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 10:
-		hq._nav_table(Vector2.RIGHT)
+	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 20:
+		hq._pan_table_step(Vector2.RIGHT, 0.4)
 		guard += 1
 	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right", "cursor reached the locked arrow")
 	hq._activate_table_focus()
@@ -2014,6 +2033,39 @@ func test_podium_shows_the_finish_summary() -> void:
 	var expect := TreeMeshField.uniform_scale_for(Foliage.bush_mesh(), Config.data.bush_height_m)
 	assert_almost_eq(bushes.instance_scale, expect, 0.0001,
 		"podium bushes use the shared Foliage scale normalization, not native size")
+
+
+func test_podium_camera_points_at_the_player_car_off_pole() -> void:
+	# The podium camera always frames the PLAYER's car, even when they didn't win —
+	# here the player is P2 (on the left step), so the camera must aim at that car,
+	# not the centre P1 step. Uses opaque catalogue ids (iterating the roster is the
+	# code's contract, not a dependency on any one entry).
+	var ids: Array = []
+	for entry in CarLibrary.all():
+		ids.append(String(entry.get("id", "")))
+		if ids.size() >= 3:
+			break
+	assert_gt(ids.size(), 1, "roster has enough cars to stage a podium")
+	RallySession._last_result = {
+		"placed": 2, "completed": true, "combined_ms": 65000, "dnf": false,
+		"standings": [
+			{"name": "Rival 1", "car_id": ids[0], "combined_ms": 60000, "dnf": false, "is_player": false, "placed": 1},
+			{"name": "You", "car_id": ids[min(1, ids.size() - 1)], "combined_ms": 65000, "dnf": false, "is_player": true, "placed": 2},
+		],
+	}
+	var pod: Node3D = load("res://podium.tscn").instantiate()
+	add_child_autofree(pod)
+	await get_tree().process_frame
+	assert_true(is_instance_valid(pod._player_car), "the player's car is tracked among the podium props")
+	# The camera's -Z looks at its target; confirm that ray points at the player car
+	# (left step, x < 0), not the centre P1 step.
+	var cam: Camera3D = pod._camera
+	var to_player: Vector3 = (pod._player_car.global_position - cam.global_position).normalized()
+	var fwd := -cam.global_transform.basis.z.normalized()
+	assert_gt(fwd.dot(to_player), 0.9, "the camera looks toward the player's (off-pole) car")
+	# Low and close: below the player car (looking up) and nearer than the old wide shot.
+	assert_lt(cam.global_position.y, pod._player_car.global_position.y,
+		"the camera sits below the car so it looks up at it")
 
 
 func test_podium_sequence_reveals_leaderboard_then_car() -> void:

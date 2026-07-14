@@ -385,11 +385,11 @@ func _refresh_map_pins() -> void:
 		_pins_root.add_child(pin)
 		_pins.append(pin)
 	_update_region_arrows()
-	# Re-seat the cursor on the first target (highlight only, no camera pan) so it
-	# never sits at -1 while the table actually has pins/arrows to focus — every
-	# entry point into the table (fresh open, region swap, test harness) goes
+	# Re-seat the cursor on whatever target sits nearest the view centre (no camera
+	# pan) so it never sits at -1 while the table actually has pins/arrows to focus —
+	# every entry point into the table (fresh open, region swap, test harness) goes
 	# through here.
-	_focus_table_target(0, false)
+	_select_target_under_center()
 	_refresh_meter()
 
 
@@ -1550,9 +1550,9 @@ func _enter_table() -> void:
 	_table_dragged = false
 	_table_panning = false
 	_refresh_map_pins()  # reflect any newly-earned stars / showdown unlock
-	# Seat the cursor on the first target (highlight only) but leave the map centred —
-	# the camera follows the cursor once the player actually navigates.
-	_focus_table_target(0, false)
+	# The map opens centred; select whatever target sits nearest that centre. From here
+	# the player pans the camera (arrows / drag) and selection tracks the view centre.
+	_select_target_under_center()
 	_go_to(View.TABLE)
 
 
@@ -1594,41 +1594,78 @@ func _table_plane_axes() -> Array:
 	return [up, right]
 
 
-# Move the table cursor to the nearest target in screen-direction `dir2` (UP/DOWN/
-# LEFT/RIGHT). Candidates must lie within a 45° cone of that direction; the closest
-# along it (with a perpendicular-offset penalty) wins. No wrap: if nothing lies that
-# way, the cursor stays put.
-func _nav_table(dir2: Vector2) -> void:
-	var targets := _table_targets()
-	if targets.is_empty():
+# Poll the held menu directions each frame and glide the table camera smoothly while
+# any are down (no discrete jumps — hold a direction and the map slides under a fixed
+# reticle). Only active in the TABLE view with the detail panel closed.
+func _process(delta: float) -> void:
+	if _view != View.TABLE or _detail_open:
 		return
-	if _table_focus_index < 0 or _table_focus_index >= targets.size():
-		_focus_table_target(0)
+	var dir2 := Vector2.ZERO
+	if Input.is_action_pressed("menu_up"):
+		dir2 += Vector2.UP
+	if Input.is_action_pressed("menu_down"):
+		dir2 += Vector2.DOWN
+	if Input.is_action_pressed("menu_left"):
+		dir2 += Vector2.LEFT
+	if Input.is_action_pressed("menu_right"):
+		dir2 += Vector2.RIGHT
+	if dir2 != Vector2.ZERO:
+		_pan_table_step(dir2, Config.data.hq_table_pan_glide * delta)
+
+
+# Slide the table camera `dist` world-metres in screen-direction `dir2` (UP/DOWN/LEFT/
+# RIGHT, or a diagonal sum), then snap selection to whichever target now sits nearest
+# the view centre. The player drives the camera directly; the "cursor" is just whatever
+# the camera reticle is pointed at, so there are no discrete jumps between pins. Both the
+# held-glide (_process, dist = speed·delta) and tests drive this.
+func _pan_table_step(dir2: Vector2, dist: float) -> void:
+	if dir2 == Vector2.ZERO or dist <= 0.0:
 		return
+	var cfg: GameConfig = Config.data
 	var axes := _table_plane_axes()
 	# Godot's Vector2.UP/DOWN use screen convention (y+ = down), so the y term is
 	# negated to line up with axes[0] ("up" as a world-space direction).
-	var want: Vector3 = (axes[1] * dir2.x - axes[0] * dir2.y).normalized()
-	var cur: Vector3 = targets[_table_focus_index]["pos"]
+	var want: Vector3 = axes[1] * dir2.x - axes[0] * dir2.y
+	if want.length() < 0.001:
+		return
+	want = want.normalized()
+	var half := cfg.hq_map_plane_size
+	_table_pan.x = clampf(_table_pan.x + want.x * dist, -half.x * 0.5, half.x * 0.5)
+	_table_pan.z = clampf(_table_pan.z + want.z * dist, -half.y * 0.5, half.y * 0.5)
+	if _view == View.TABLE:
+		_move_camera_to(_station_xform(View.TABLE), true)
+	_select_target_under_center()
+
+
+# The map-plane point currently under the table camera's centre. The camera looks at
+# hq_table_cam_look, offset by the live pan (see _station_xform), so the centre is just
+# that look point shifted by _table_pan — i.e. where a ray down the camera's centre
+# meets the map. Selection tracks whichever target lies nearest here.
+func _table_center_pos() -> Vector3:
+	var cfg: GameConfig = Config.data
+	return Vector3(cfg.hq_table_cam_look.x + _table_pan.x, 0.0, cfg.hq_table_cam_look.z + _table_pan.z)
+
+
+# Seat the cursor on whichever target (pin or map-swap arrow) sits nearest the view
+# centre, without moving the camera (the player already put it there). This is the
+# raycast-to-centre selection that keyboard pan, drag pan, and table entry all share.
+func _select_target_under_center() -> void:
+	var targets := _table_targets()
+	if targets.is_empty():
+		_table_focus_index = -1
+		return
+	var center := _table_center_pos()
 	var best := -1
-	var best_score := INF
+	var best_d := INF
 	for i in targets.size():
-		if i == _table_focus_index:
-			continue
-		var off: Vector3 = targets[i]["pos"] - cur
+		var off: Vector3 = Vector3(targets[i]["pos"]) - center
 		off.y = 0.0
-		var along := off.dot(want)
-		if along <= 0.001:
-			continue  # not in the pressed direction
-		var perp := (off - want * along).length()
-		if perp > along:
-			continue  # outside the 45° cone
-		var score := along + perp * 2.0
-		if score < best_score:
-			best_score = score
+		var d := off.length()
+		if d < best_d:
+			best_d = d
 			best = i
 	if best >= 0:
-		_focus_table_target(best)
+		_focus_table_target(best, false)
 
 
 # Seat the cursor on target `i`, paint the focus highlight (pins: the hover-style
@@ -3284,17 +3321,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					_hide_detail()
 			elif event.is_action_pressed("menu_back"):
 				_go_to(View.GARAGE)
-			elif event.is_action_pressed("menu_up"):
-				_nav_table(Vector2.UP)
-			elif event.is_action_pressed("menu_down"):
-				_nav_table(Vector2.DOWN)
-			elif event.is_action_pressed("menu_left"):
-				_nav_table(Vector2.LEFT)
-			elif event.is_action_pressed("menu_right"):
-				_nav_table(Vector2.RIGHT)
 			elif event.is_action_pressed("menu_select"):
 				_activate_table_focus()
 			else:
+				# Up/down/left/right glide the camera continuously while held — polled
+				# in _process, not per-press — so only pointer drag is handled here.
 				_table_pan_input(event)
 		View.CARPARK:
 			_cars_input(event)
@@ -3333,6 +3364,7 @@ func _pan_table(rel: Vector2) -> void:
 	_table_pan.x = clampf(_table_pan.x - rel.x * cfg.hq_table_pan_speed, -half.x * 0.5, half.x * 0.5)
 	_table_pan.z = clampf(_table_pan.z - rel.y * cfg.hq_table_pan_speed, -half.y * 0.5, half.y * 0.5)
 	_move_camera_to(_station_xform(View.TABLE), true)
+	_select_target_under_center()  # selection tracks the view centre as the map slides
 
 
 func _cars_input(event: InputEvent) -> void:

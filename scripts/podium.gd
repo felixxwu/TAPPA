@@ -48,6 +48,7 @@ var _reveal_done := true
 # 3D staging.
 var _camera: Camera3D
 var _podium_cars: Array = []          # the top-3 finisher car props
+var _player_car: Node3D               # the player's car among the podium props (null if outside top 3)
 var _turntable_pivot: Node3D          # rotates the showroom car
 var _showroom_car: Node3D
 
@@ -313,6 +314,8 @@ func _spawn_podium_cars() -> void:
 		# +Z side, so an unrotated car shows its rear. Yaw it half a turn.
 		car.rotate_y(PI)
 		_podium_cars.append(car)
+		if bool(top3[i].get("is_player", false)):
+			_player_car = car
 
 
 # The classified top-N finishers (placed 1..N), in finishing order, from the
@@ -613,9 +616,18 @@ func _go_to_hq() -> void:
 # --- Camera ------------------------------------------------------------------
 
 func _podium_cam() -> Transform3D:
-	# Offset in X so the shot sits a little off the podium's axis — a 3/4-ish view
-	# of the cars (which face the camera) instead of a flat head-on line-up.
-	return _look_xform(PODIUM_CENTER + Vector3(4.2, 4.4, 10.2), PODIUM_CENTER + Vector3(0.0, 1.2, 0.0))
+	# Frame the PLAYER's car (whichever step they're on — 1st, 2nd or 3rd), not a
+	# fixed centre, so the shot always celebrates the player. Falls back to the
+	# podium centre if the player finished outside the top 3 (no car on the podium).
+	var focus := PODIUM_CENTER + Vector3(0.0, Config.data.podium_step_height, 0.0)
+	if is_instance_valid(_player_car):
+		focus = _player_car.global_position
+	# Sit low (near the ground) and close in, with a slight sideways offset in X so the
+	# shot is a hair off head-on. Aim up at the car so the camera looks UP at it from
+	# just above ground level.
+	var eye := focus + Vector3(1.8, -0.6, 5.2)
+	eye.y = maxf(eye.y, 0.8)  # never dip below ~ground level (the P3 step is low)
+	return _look_xform(eye, focus + Vector3(0.0, 0.6, 0.0))
 
 
 func _showroom_cam() -> Transform3D:
