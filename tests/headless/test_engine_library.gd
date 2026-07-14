@@ -114,12 +114,13 @@ func test_apply_falls_back_to_the_config_friction_when_omitted() -> void:
 	assert_almost_eq(cfg.engine_friction_base, 33.0, 0.001, "friction untouched when the engine omits it")
 
 
-func test_every_engine_declares_a_positive_friction_base() -> void:
+func test_every_engine_declares_a_non_negative_friction_base() -> void:
 	# Sanity guard only (not a value pin): apply() reads engine_friction_base off every
-	# shipped engine, and negative/zero crank friction would be non-physical.
+	# shipped engine. Negative or non-finite crank friction would be non-physical; zero
+	# is legitimate (tiny/low-displacement engines can carry negligible modelled friction).
 	for eng in EngineLibrary.ENGINES:
 		assert_true(eng.has("engine_friction_base"), "%s declares engine_friction_base" % eng["id"])
-		assert_gt(float(eng["engine_friction_base"]), 0.0, "%s friction base is positive" % eng["id"])
+		assert_true(float(eng["engine_friction_base"]) >= 0.0, "%s friction base is non-negative" % eng["id"])
 		assert_true(is_finite(float(eng["engine_friction_base"])), "%s friction base is finite" % eng["id"])
 
 

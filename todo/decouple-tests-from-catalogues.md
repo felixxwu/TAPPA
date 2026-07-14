@@ -1,5 +1,10 @@
 # Decouple tests from the car/engine catalogues
 
+> Status: **DONE / implemented.** The injectable seam described below shipped as
+> `CarLibrary.override_for_test` (`scripts/car_library.gd`) and
+> `EngineLibrary.override_for_test` (`scripts/engine_library.gd`), used via
+> `tests/headless/car_fixtures.gd` (`CarFixtures.install()`).
+
 ## Problem
 
 Tests break whenever the authored catalogues change. Two recent examples:
@@ -7,8 +12,8 @@ renaming the LFA→Viper / Aventador→XJS churned ~40 test lines that hardcoded
 `"lfa"` / `"aventador"` ids and display names; renaming the 911
 (`"911 (930)"` → `"911 Turbo"`) broke a podium test that pinned the old name.
 
-The catalogues (`CarLibrary.CARS`, `scripts/car_library.gd:91`; and
-`EngineLibrary.ENGINES`, `scripts/engine_library.gd:45`) are *authored data*
+The catalogues (`CarLibrary.CARS`, `scripts/car_library.gd:101`; and
+`EngineLibrary.ENGINES`, `scripts/engine_library.gd:59`) are *authored data*
 that a designer retunes, renames, adds to, and removes from freely. Tests that
 reach for a specific real entry by id — or assert its authored values — are
 brittle by construction (this is exactly what `CLAUDE.md` › *Testing* already

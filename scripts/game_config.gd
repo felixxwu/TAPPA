@@ -746,7 +746,7 @@ var peak_torque_rpm := 4500.0
 @export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.18
 
 @export_group("PS1 Look")
-@export var virtual_resolution := Vector2(480, 360)  # keep matching [display] in project.godot
+@export var virtual_resolution := Vector2(533, 400)  # keep matching [display] in project.godot
 ## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
 ## and UI alike. 1.0 = off; 1.1 draws everything 10% wider than reality. Applied
 ## globally by the DisplayStretch autoload (scripts/display_stretch.gd).
