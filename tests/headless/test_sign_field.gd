@@ -89,3 +89,53 @@ func test_wake_is_one_shot_per_sign() -> void:
 	field._wake_sign(car, body)
 	field._wake_sign(car, body)  # second hit: already dynamic, must not double-panel
 	assert_eq(_body_panels(field, 0).size(), 2, "panels are attached exactly once")
+
+
+func test_reset_knocked_stands_a_knocked_sign_back_up() -> void:
+	var field := _field(2, ["left_1"])
+	var body := field.get_node("Sign0") as RigidBody3D
+	var rest := body.transform
+	var car := FakeCar.new()
+	add_child_autofree(car)
+	field._wake_sign(car, body)
+	assert_false(body.freeze, "sanity: the sign was knocked dynamic")
+
+	field.reset_knocked()
+	await get_tree().process_frame  # queue_free of the panel meshes settles next frame
+
+	assert_true(body.freeze, "reset re-freezes the knocked sign")
+	assert_true(body.transform.is_equal_approx(rest),
+		"reset restores the sign's resting pose")
+	assert_eq(_body_panels(field, 0).size(), 0,
+		"reset drops the per-node panel meshes (back to MultiMesh rendering)")
+	assert_true(field._rendered.has(body), "reset returns the sign to the MultiMesh batch")
+
+
+func test_reset_leaves_standing_signs_untouched() -> void:
+	var field := _field(2, ["left_1"])
+	var knocked := field.get_node("Sign0") as RigidBody3D
+	var standing := field.get_node("Sign1") as RigidBody3D
+	var car := FakeCar.new()
+	add_child_autofree(car)
+	field._wake_sign(car, knocked)
+
+	field.reset_knocked()
+
+	# The un-knocked sign never left the batch, so reset is a no-op for it — it must not
+	# gain phantom panel meshes or be re-processed.
+	assert_true(field._rendered.has(standing), "the standing sign stays batched throughout")
+	assert_eq(_body_panels(field, 1).size(), 0, "the standing sign gains no panel meshes")
+
+
+func test_a_reset_sign_can_be_knocked_again() -> void:
+	var field := _field(1, ["left_1"])
+	var body := field.get_node("Sign0") as RigidBody3D
+	var car := FakeCar.new()
+	add_child_autofree(car)
+	field._wake_sign(car, body)
+	field.reset_knocked()
+	await get_tree().process_frame
+
+	field._wake_sign(car, body)  # a fresh run knocks it over once more
+	assert_false(body.freeze, "a reset sign wakes again on the next hit")
+	assert_eq(_body_panels(field, 0).size(), 2, "and re-materialises exactly its two panels")

@@ -107,21 +107,25 @@ static func tree_silhouette_mesh() -> Mesh:
 
 
 # The ground-cover bush mesh: the low-poly GLB mesh, its imported (tone-matched)
-# foliage texture kept but the surface rebuilt as the flat unshaded PS1 material
-# with vertex_color_use_as_albedo — so the per-instance baked terrain light
-# TreeMeshField writes into the MultiMesh COLOR multiplies the albedo (matching the
-# ground tint everywhere). Duplicated so the cached scene resource is not mutated.
-# NOT cached: the caller-agnostic material carries cfg.bush_tint, cheap to rebuild.
+# foliage texture kept but the surface rebuilt as the shared foliage near-fade
+# ShaderMaterial (TREE_CANOPY_SHADER). It multiplies the texture by the per-instance
+# MultiMesh COLOR (the baked terrain light TreeMeshField writes, matching the ground
+# tint everywhere) AND by cfg.bush_tint, is double-sided (the shader is cull_disabled,
+# so the single-sided cards don't vanish from behind), and — the point of the swap —
+# dithers out near the camera just like the trees, so a bush right in front of the
+# camera (chase cam brushing one, or a planted replay cam sitting among them) turns
+# see-through instead of filling the frame. Duplicated so the cached scene resource is
+# not mutated; NOT cached (the material carries cfg.bush_tint, cheap to rebuild).
 static func bush_mesh() -> Mesh:
 	var cfg: GameConfig = Config.data
 	var mesh: Mesh = MeshUtil.first_mesh(GROUNDCOVER_SCENE).duplicate()
 	var base := mesh.surface_get_material(0) as StandardMaterial3D
 	var albedo: Texture2D = base.albedo_texture if base != null else null
-	var mat := PS1Material.unshaded(albedo, true)
-	# Low-poly foliage cards are single-sided geometry, so render both faces —
-	# otherwise the bush is see-through from the back (matches the tree canopy,
-	# which is likewise CULL_DISABLED).
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.albedo_color = cfg.bush_tint
+	var mat := ShaderMaterial.new()
+	mat.shader = TREE_CANOPY_SHADER
+	mat.set_shader_parameter("albedo", albedo)
+	mat.set_shader_parameter("tint", cfg.bush_tint)
+	mat.set_shader_parameter("near_fade_start", cfg.tree_near_fade_start_m)
+	mat.set_shader_parameter("near_fade_end", cfg.tree_near_fade_end_m)
 	mesh.surface_set_material(0, mat)
 	return mesh

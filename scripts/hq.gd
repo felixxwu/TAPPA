@@ -269,7 +269,7 @@ func _ready() -> void:
 	_ensure_selection()
 	# Headless (the test runner): build synchronously so tests see a ready HQ after one
 	# frame, with no loading cover. A real display gets the covered build below.
-	if DisplayServer.get_name() == "headless":
+	if Platform.is_headless():
 		_build_hq()
 		return
 	# Godot's boot bar only covers the engine + .pck download + script compile. Building
@@ -2588,13 +2588,9 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 # confirm popup on Start (_show_detune_confirm).
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Change-car mode just swaps the car on the lift, so a wrecked car is still a valid
-	# pick (it can be repaired in the bay). Never gate Select on damage there.
-	if _carpark_change_mode:
-		_start_button.disabled = false
-		_car_warning_label.visible = false
-		_car_repair_button.visible = false
-		return
-	if not Save.car_is_wrecked(owned):
+	# pick (it can be repaired in the bay). Never gate Select on damage there; nor when
+	# the focused car isn't wrecked.
+	if _carpark_change_mode or not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
 		_car_warning_label.visible = false
 		_car_repair_button.visible = false

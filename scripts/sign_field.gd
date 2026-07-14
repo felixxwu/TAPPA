@@ -56,8 +56,14 @@ var _splay: float
 # the same face texture batch into one draw).
 var _materials := {}
 # body -> {"mm": MultiMesh, "indices": PackedInt32Array, "mat": ShaderMaterial}
-# — how to find (and later hide) a resting sign's MultiMesh panel instances.
+# — how to find (and later hide) a resting sign's MultiMesh panel instances. An entry
+# is erased when the sign is knocked over (it leaves the batch).
 var _rendered := {}
+# body -> {"mm", "indices", "mat", "rest": Transform3D} for EVERY sign, kept for the
+# body's whole lifetime (never erased on knock). Carries the build-time resting pose so
+# reset_knocked() can stand a knocked sign back up. Shares the same "indices" Array as
+# the matching _rendered entry (never mutated after build).
+var _home := {}
 
 
 # Build one sign per layout entry. `params` is GameConfig.sign_render_params().
@@ -151,8 +157,11 @@ func _build_multimeshes(batches: Dictionary) -> void:
 			var body: RigidBody3D = items[i]["body"]
 			if not _rendered.has(body):
 				# A plain Array, NOT a packed array: packed arrays are value types,
-				# so appending through the dictionary would mutate a copy.
-				_rendered[body] = {"mm": mm, "indices": [], "mat": mat}
+				# so appending through the dictionary would mutate a copy. _rendered and
+				# _home share the one Array (it isn't mutated after build).
+				var idx_arr: Array = []
+				_rendered[body] = {"mm": mm, "indices": idx_arr, "mat": mat}
+				_home[body] = {"mm": mm, "indices": idx_arr, "mat": mat, "rest": body.transform}
 			(_rendered[body]["indices"] as Array).append(i)
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
@@ -224,6 +233,37 @@ func _materialize_sign(body: RigidBody3D) -> void:
 	for i: int in entry["indices"]:
 		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
 	_add_panels(body, _panel_size, _thickness, entry["mat"])
+
+
+# Stand every knocked-over sign back up at its build-time resting pose — the inverse of
+# _wake_sign/_materialize_sign. Used to reset the stage between the driven run and the
+# replay so the replay shows the signs intact. Re-freezes the body, restores its resting
+# transform, frees the individual panel meshes _materialize_sign attached, and un-hides
+# its shared MultiMesh panels. Only touches signs actually knocked over (in _home but no
+# longer in _rendered) — resting signs are untouched, so an undamaged stage costs nothing.
+func reset_knocked() -> void:
+	var locals := _panel_transforms()
+	for body: RigidBody3D in _home:
+		if _rendered.has(body):
+			continue  # still standing — never knocked, leave it batched
+		var home: Dictionary = _home[body]
+		# Back to a frozen prop resting exactly where it was placed.
+		body.freeze = true
+		body.linear_velocity = Vector3.ZERO
+		body.angular_velocity = Vector3.ZERO
+		body.transform = home["rest"]
+		# Drop the per-node panel meshes _materialize_sign attached (the collision shape
+		# and waker Area are not MeshInstance3Ds, so they survive).
+		for child in body.get_children():
+			if child is MeshInstance3D:
+				child.queue_free()
+		# Un-hide the shared MultiMesh panels: rebuild each instance transform from the
+		# restored resting pose (mirrors _build_multimeshes: rest * panel-local).
+		var mm: MultiMesh = home["mm"]
+		var indices: Array = home["indices"]
+		for k in indices.size():
+			mm.set_instance_transform(indices[k], home["rest"] * locals[k])
+		_rendered[body] = {"mm": mm, "indices": indices, "mat": home["mat"]}
 
 
 # Fling a just-knocked sign along the car's velocity, with an upward bias and a random

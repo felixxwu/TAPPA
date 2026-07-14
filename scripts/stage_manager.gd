@@ -37,6 +37,9 @@ var _reported_seconds := 0.0 # _elapsed + _penalty_s, frozen at the finish cross
 
 var _car: Node          # a Car (VehicleBody3D) — toggles controls_locked
 var _hud: Node          # the HUD CanvasLayer — countdown / timer / complete panel
+# HUD method availability, resolved once in setup() instead of has_method()-ing
+# every frame in the countdown/running tick. Keyed by method name.
+var _hud_can: Dictionary = {}
 var _progress: Node     # a TrackProgress — progress_percent() drives the end edge
 var _armed := false     # true once setup() has wired the refs and locked the car
 var _results_emitted := false  # true once proceed_to_results() has fired stage_completed
@@ -73,6 +76,10 @@ func _cfg() -> GameConfig:
 func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_car = car
 	_hud = hud
+	_hud_can.clear()
+	for m in ["show_countdown", "hide_countdown", "show_elapsed",
+			"show_stage_complete", "show_stage_delta", "show_cut_flash"]:
+		_hud_can[m] = _hud != null and _hud.has_method(m)
 	_progress = progress
 	_elapsed = 0.0
 	_go_flash_left = 0.0
@@ -103,7 +110,7 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 		_phase = Phase.COUNTDOWN
 		_countdown_left = _cfg().stage_countdown_seconds
 		_mark_progress_start()  # car is on the line now -> progress reads 0% from here
-		if _hud != null and _hud.has_method("show_countdown"):
+		if _hud_can["show_countdown"]:
 			_hud.show_countdown(_countdown_left)
 	if _progress != null and _progress.has_signal("cut_billed") \
 			and not _progress.cut_billed.is_connected(_on_cut_billed):
@@ -125,7 +132,7 @@ func begin_countdown() -> void:
 	_countdown_left = _cfg().stage_countdown_seconds
 	# The start-line sequence has just snapped the car onto the line; anchor 0% here.
 	_mark_progress_start()
-	if _hud != null and _hud.has_method("show_countdown"):
+	if _hud_can["show_countdown"]:
 		_hud.show_countdown(_countdown_left)
 
 
@@ -156,7 +163,7 @@ func _mark_progress_start() -> void:
 func _on_cut_billed(incident_s: float, total_s: float) -> void:
 	if _phase != Phase.RUNNING:
 		return
-	if _hud != null and _hud.has_method("show_cut_flash"):
+	if _hud_can["show_cut_flash"]:
 		_hud.show_cut_flash(incident_s, total_s)
 
 
@@ -183,7 +190,7 @@ func _timed_process(delta: float) -> void:
 func _tick_countdown(delta: float) -> void:
 	_countdown_left -= delta
 	if _countdown_left > 0.0:
-		if _hud != null and _hud.has_method("show_countdown"):
+		if _hud_can["show_countdown"]:
 			_hud.show_countdown(_countdown_left)
 		return
 	# Countdown done: unlock, start the timer, flash "GO" briefly.
@@ -191,7 +198,7 @@ func _tick_countdown(delta: float) -> void:
 	if _car != null:
 		_car.controls_locked = false
 		_car.handbrake_locked = false
-	if _hud != null and _hud.has_method("show_countdown"):
+	if _hud_can["show_countdown"]:
 		_hud.show_countdown(0.0)  # "GO"
 	_go_flash_left = GO_FLASH_SECONDS
 	# Audio hook (todo/audio.md): a countdown beep per tick + a GO sting would
@@ -201,13 +208,13 @@ func _tick_countdown(delta: float) -> void:
 
 func _tick_running(delta: float) -> void:
 	_elapsed += delta
-	if _hud != null and _hud.has_method("show_elapsed"):
+	if _hud_can["show_elapsed"]:
 		_hud.show_elapsed(_elapsed)
 	_maybe_show_split()
 	# Hold the "GO" flash a moment, then clear it.
 	if _go_flash_left > 0.0:
 		_go_flash_left -= delta
-		if _go_flash_left <= 0.0 and _hud != null and _hud.has_method("hide_countdown"):
+		if _go_flash_left <= 0.0 and _hud_can["hide_countdown"]:
 			_hud.hide_countdown()
 	# End condition: progress_percent() is a 0..1 fraction (TrackProgress), so
 	# scale to the 0..100 stage_complete_percent. Monotonic, so this is a one-way
@@ -237,7 +244,7 @@ func _complete() -> void:
 	if _progress != null and _progress.has_method("cut_penalty_s"):
 		_penalty_s = _progress.cut_penalty_s()
 	_reported_seconds = _elapsed + _penalty_s
-	if _hud != null and _hud.has_method("show_stage_complete"):
+	if _hud_can["show_stage_complete"]:
 		_hud.show_stage_complete(_elapsed, _penalty_s)
 	# The timed run is over the instant the line is crossed; anything after this
 	# (the skid to a stop in the runoff, idling under the finish panel until NEXT)
@@ -283,7 +290,7 @@ func _maybe_show_split() -> void:
 		_split_cursor += 1  # _split_cursor now equals the number of turns passed
 		if _split_cursor % _split_interval == 0:
 			fire_idx = _split_cursor - 1
-	if fire_idx < 0 or _hud == null or not _hud.has_method("show_stage_delta"):
+	if fire_idx < 0 or not _hud_can["show_stage_delta"]:
 		return
 	var player_ms := int(round(_elapsed * 1000.0))
 	var p1_est_ms := int(round(_p1_total_ms * float(_turn_time_frac[fire_idx])))

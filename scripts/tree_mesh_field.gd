@@ -17,9 +17,9 @@ extends Node3D
 # When with_collision is true a shared StaticBody3D carries a box hitbox per
 # instance: one BoxShape3D resource, N transforms via the physics server. When
 # bake_terrain_light is true each instance is tinted by the terrain's baked light
-# at its position (per-instance MultiMesh colour); the mesh's material must enable
-# vertex_color_use_as_albedo to pick it up (the bushes do, so they match the
-# ground tint everywhere, as the old foliage shader did).
+# at its position (per-instance MultiMesh colour); the mesh's material must consume
+# that instance COLOR to pick it up (the bush material's foliage dissolve shader
+# multiplies by COLOR, so bushes match the ground tint everywhere).
 
 # Held so the shape RID added to the body stays alive for the body's lifetime.
 var _collision_shape: BoxShape3D
@@ -174,6 +174,31 @@ func knock_down(idx: int, dir: Vector3, duration: float) -> void:
 # True once tree `idx` has been felled (hitbox disabled, toppling or flat).
 func is_fallen(idx: int) -> bool:
 	return _fallen.has(idx)
+
+
+# Stand every felled tree back up: re-enable its hitbox and restore its MultiMesh
+# instance to the upright pose recorded in _slot_of at build (base_pos + standing
+# yaw). Used to reset the stage between the driven run and the replay so the replay
+# shows an intact forest. Only touches trees in the _fallen set, so a stage with
+# nothing knocked over costs nothing (the common case).
+func reset_fallen() -> void:
+	if _fallen.is_empty():
+		return
+	var s := Vector3(instance_scale, instance_scale, instance_scale)
+	for idx: int in _fallen:
+		if not _slot_of.has(idx):
+			continue
+		var slot: Dictionary = _slot_of[idx]
+		if _collision_body != null:
+			PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, false)
+		var upright := Basis(Vector3.UP, slot["yaw"]).scaled(s)
+		var mmi: MultiMeshInstance3D = slot["mmi"]
+		mmi.multimesh.set_instance_transform(
+			slot["j"], Transform3D(upright, slot["base_pos"] - slot["centre"]))
+	_fallen.clear()
+	_falling.clear()
+	# Every tree is upright again; nothing to animate.
+	set_process(false)
 
 
 func _process(delta: float) -> void:

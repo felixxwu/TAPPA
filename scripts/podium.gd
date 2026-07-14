@@ -78,7 +78,7 @@ var _slot_tween: Tween
 
 func _ready() -> void:
 	_result = RallySession.last_result()
-	_headless = DisplayServer.get_name() == "headless"
+	_headless = Platform.is_headless()
 	_build_environment()
 	if not _headless:
 		_build_scenery()  # visual dressing only — skipped in tests to stay fast

@@ -86,7 +86,7 @@ func start() -> void:
 	# cap/vsync so exit_to_hq restores the pre-benchmark state, not our override.
 	if not active:
 		_saved_max_fps = Engine.max_fps
-		if DisplayServer.get_name() != "headless":
+		if not Platform.is_headless():
 			_saved_vsync = DisplayServer.window_get_vsync_mode(0)
 	apply_overrides(Config.data)
 	results = {}
@@ -96,11 +96,11 @@ func start() -> void:
 	# pacing so flipping it between runs takes effect. Headless has no window.
 	if get_option("uncap_fps"):
 		Engine.max_fps = 0
-		if DisplayServer.get_name() != "headless":
+		if not Platform.is_headless():
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	else:
 		Engine.max_fps = _saved_max_fps
-		if DisplayServer.get_name() != "headless":
+		if not Platform.is_headless():
 			DisplayServer.window_set_vsync_mode(_saved_vsync)
 	get_tree().change_scene_to_file("res://main.tscn")
 
@@ -116,7 +116,7 @@ func exit_to_hq() -> void:
 	active = false
 	restore(Config.data)
 	Engine.max_fps = _saved_max_fps
-	if DisplayServer.get_name() != "headless":
+	if not Platform.is_headless():
 		DisplayServer.window_set_vsync_mode(_saved_vsync)
 	get_tree().change_scene_to_file("res://hq.tscn")
 

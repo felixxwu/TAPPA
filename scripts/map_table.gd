@@ -94,12 +94,7 @@ func build() -> void:
 
 # A box mesh of `size` centred at local `pos`, carrying `mat`.
 func _box(pos: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = mat
-	mi.position = pos
+	var mi := MeshUtil.box(size, mat, pos)
 	add_child(mi)
 	return mi
 
@@ -107,14 +102,9 @@ func _box(pos: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
 # A wood material: the shared grain texture, tinted, tiled by `uv`. Lightly glossy
 # so the varnished top catches the garage lights.
 func _wood_mat(tex: Texture2D, tint: Color, uv: Vector3) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = tex
-	m.albedo_color = tint
-	m.uv1_scale = uv
-	m.roughness = 0.62
+	var m := PS1Material.lit_textured(tex, uv, tint, 0.62)
 	m.metallic = 0.0
-	m.metallic_specular = 0.35
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.metallic_specular = 0.35  # slightly duller than the default 0.5 varnish sheen
 	return m
 
 

@@ -26,12 +26,18 @@ var _travel_dir := Vector3.FORWARD
 # use so the per-frame ground query doesn't re-scan the sibling list.
 var _terrain: Node = null
 
+# Lake water surface height — the ground the camera seats above is never taken below
+# this, so over a submerged basin the camera stays above the water instead of dunking
+# under it (matches the roadside replay cam). Read from config on ready.
+var _water_level := -INF
+
 
 func _ready() -> void:
 	var cfg: GameConfig = Config.data
 	_distance = cfg.follow_distance
 	_height = cfg.follow_distance * cfg.follow_height_ratio
 	_smoothing = cfg.smoothing
+	_water_level = cfg.track_water_level_m
 	_base_fov = cfg.chase_fov
 	_fov_speed_boost = cfg.chase_fov_speed_boost
 	_fov_speed = cfg.chase_fov_speed
@@ -133,7 +139,8 @@ func _timed_physics_process(delta: float) -> void:
 # Terrain surface height at a world (x, z), used to seat the camera a fixed
 # distance above the ground below it. Looks for a sibling that exposes height_at
 # (the hilly Floor in the main scene); on flat test fixtures there is none, so it
-# falls back to 0.
+# falls back to 0. Clamped up to the water surface so the camera never seats below a
+# lake (it would otherwise dunk under the water plane over a submerged basin).
 func _ground_height_at(x: float, z: float) -> float:
 	if not is_instance_valid(_terrain):
 		_terrain = null
@@ -143,4 +150,5 @@ func _ground_height_at(x: float, z: float) -> float:
 				if sibling != self and sibling.has_method("height_at"):
 					_terrain = sibling
 					break
-	return _terrain.height_at(x, z) if _terrain != null else 0.0
+	var ground: float = _terrain.height_at(x, z) if _terrain != null else 0.0
+	return maxf(ground, _water_level)

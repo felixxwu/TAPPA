@@ -127,7 +127,7 @@ Two non-consumable `"engine"`-slot items replace the old flat `engine_stage1`
     "id": "turbo_large", "name": "Big Turbo", "slot": "engine", "tier": 3, "consumable": false,
     "effect": {"install_turbo": {
         "turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
-        "turbo_drive_gain": 0.028, "turbo_drag_coef": 1.0e-6,
+        "turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7,
         "engine_turbo_whistle_gain": 0.5, "engine_turbo_bov_gain": 0.6,
     }},
 },
@@ -171,6 +171,17 @@ i.e. the displayed/eligibility torque is rated **at full (peak) boost**, the
 same multiplier the sim itself applies at `boost == 1.0`. This runs before
 the engine-detune scaling, so a boosted-but-detuned car's rating reflects
 both.
+
+**Rival pace floors go through the same path.**
+`RallyLibrary.generate_opponent_field` boosts each rival's raw `CarLibrary`
+entry via `effective_meta({}, car)` (empty owned-car → no upgrades, no detune,
+just the engine's stock `turbo_boost_gain`) before feeding it to
+`LapTimeModel.optimum_ms`. Without this the floor would fall back to the
+engine's unboosted `peak_torque`, so a turbo car's rival would run
+artificially slow — out of step with the player's boosted stats and the car's
+real on-track physics. `RallyLibrary._best_eligible_car` boosts the same way,
+so the "fastest possible car" bound rivals are clamped against reflects the
+same forced induction.
 
 ## Supercharger
 

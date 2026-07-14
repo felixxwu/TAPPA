@@ -1,5 +1,6 @@
-// Tree canopy: unshaded, double-sided leaf shell with a NEAR-CAMERA dither
-// dissolve. The canopy is kept double-sided (cull_disabled) because single-sided
+// Foliage near-camera dither dissolve (shared): unshaded, double-sided leaf/frond
+// shell used by BOTH the ground bushes (scripts/foliage.gd bush_mesh) and the legacy
+// 3D tree canopy. The mesh is kept double-sided (cull_disabled) because single-sided
 // back-face culling rendered it concave / "front faces missing" on some web/device
 // GL targets (see features/trees.md). Double-sided is robust everywhere, but it
 // means the inward-facing leaves still draw when the chase camera pushes inside a
@@ -13,8 +14,11 @@ shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_opaque;
 
 uniform sampler2D albedo : source_color, filter_nearest_mipmap;
+// Flat tint multiplied over the texture (the bushes' cfg.bush_tint); white = no tint,
+// so the tree canopy leaves it at the default.
+uniform vec4 tint : source_color = vec4(1.0);
 // Fragments closer than this to the camera are fully dissolved; beyond
-// `near_fade_end` the canopy is fully solid. Between, it dithers in.
+// `near_fade_end` the foliage is fully solid. Between, it dithers in.
 uniform float near_fade_start = 0.5;
 uniform float near_fade_end = 3.0;
 
@@ -48,5 +52,5 @@ void fragment() {
 		discard;
 	}
 	vec4 tex = texture(albedo, UV);
-	ALBEDO = tex.rgb * COLOR.rgb;
+	ALBEDO = tex.rgb * COLOR.rgb * tint.rgb;
 }

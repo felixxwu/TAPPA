@@ -226,14 +226,13 @@ func _peak_lateral_slip_angle_deg(v: float, slip_peak := -1.0, slide_ratio := -1
 		var a := deg_to_rad(deg)
 		# Car moving at speed v with its velocity offset by the slip angle from
 		# the nose: longitudinal ground vel = v·cos(a), lateral = v·sin(a).
-		var c := {
-			v_long = v * cos(a),
-			s_lat = v * sin(a),
-			mu = 1.0,
-			n_force = 4000.0,
-			slip_peak = slip_peak,
-			slide_ratio = slide_ratio,
-		}
+		var c := Drivetrain.WheelContact.new()
+		c.v_long = v * cos(a)
+		c.s_lat = v * sin(a)
+		c.mu = 1.0
+		c.n_force = 4000.0
+		c.slip_peak = slip_peak
+		c.slide_ratio = slide_ratio
 		# surface_vel = v_long -> zero longitudinal slip, pure lateral.
 		var f_lat: float = absf(dt._tire_force(cfg, c, c.v_long, 1.0 / 60.0).y)
 		if f_lat > best_f:

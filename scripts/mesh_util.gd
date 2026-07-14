@@ -21,6 +21,20 @@ static func first_mesh(scene: PackedScene) -> Mesh:
 	return mesh
 
 
+# A MeshInstance3D holding a BoxMesh of `size`, carrying `material`, positioned
+# at `pos`. NOT parented — the caller adds it to whatever node it wants. Shared
+# by the placeholder HQ art (garage / map table / hq environment), which all
+# built this same BoxMesh + material_override + position instance by hand.
+static func box(size: Vector3, material: Material, pos := Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = material
+	mi.position = pos
+	return mi
+
+
 # A flat, subdivided square ground grid (size × size, centred on the origin)
 # carrying per-vertex the grass→tarmac blend the road-blend shader
 # (ps1_models.gdshader, blend_road = true) consumes: COLOR.a is the tarmac

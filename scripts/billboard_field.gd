@@ -76,6 +76,12 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	mat.set_shader_parameter("fade_band", render_fade)
 	# Bias distant foliage to cheaper mips (mobile texture-bandwidth win).
 	mat.set_shader_parameter("lod_bias", Config.data.texture_lod_bias)
+	# The opaque tree cutout dissolves near the camera (same dither as the 3D canopy)
+	# so a tree the camera pushes inside stops blocking the view — the quad path uses
+	# its own alpha-cutout distance fade and has no such uniforms.
+	if use_opaque:
+		mat.set_shader_parameter("near_fade_start", Config.data.tree_near_fade_start_m)
+		mat.set_shader_parameter("near_fade_end", Config.data.tree_near_fade_end_m)
 	# A supplied silhouette mesh can be empty (0 surfaces) if its source texture
 	# had no opaque area; skip material assignment then (the field renders nothing)
 	# rather than indexing a missing surface.
@@ -158,6 +164,25 @@ func knock_down(idx: int, dir: Vector3, duration: float) -> void:
 # True once instance `idx` has been felled (hitbox disabled, toppling or flat).
 func is_fallen(idx: int) -> bool:
 	return _fallen.has(idx)
+
+
+# Stand every felled instance back up: re-enable its hitbox and restore its MultiMesh
+# transform to the upright pose build() authored. The BillboardField twin of
+# TreeMeshField.reset_fallen — used to reset the stage before the replay. Only touches
+# felled instances, so a stand with nothing knocked over costs nothing.
+func reset_fallen() -> void:
+	if _fallen.is_empty():
+		return
+	for idx: int in _fallen:
+		if idx < 0 or idx >= instance_positions.size():
+			continue
+		if _collision_body != null:
+			PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, false)
+		var pos := instance_positions[idx]
+		multimesh.set_instance_transform(idx, Transform3D(_upright_basis(pos), pos))
+	_fallen.clear()
+	_falling.clear()
+	set_process(false)
 
 
 func _process(delta: float) -> void:

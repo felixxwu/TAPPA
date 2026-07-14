@@ -52,6 +52,30 @@ var readouts: Dictionary = {}
 var publish_readouts := false
 
 
+# Per-wheel contact context for one physics tick: chassis-derived state that's
+# fixed across the spin substeps, plus the impulses the substeps accumulate.
+# Pooled (one instance per wheel, built once in _init and reused every tick) so
+# the hot solver path allocates nothing and reads typed fields instead of
+# hashing string keys — step() runs every physics frame, SPIN_SUBSTEPS times
+# over these.
+class WheelContact extends RefCounted:
+	var wheel: VehicleWheel3D
+	var cp: Vector3
+	var fwd: Vector3
+	var side: Vector3
+	var v_long: float
+	var s_lat: float
+	var n_force: float
+	var slip_peak: float
+	var slide_ratio: float
+	var mu: float
+	var impulse_long: float
+	var impulse_lat: float
+
+var _contact_pool: Dictionary = {}  # wheel -> reusable WheelContact
+var _contacts: Array = []           # the in-contact subset this tick (reused)
+
+
 func _init(p_car: VehicleBody3D) -> void:
 	car = p_car
 	# EngineSim + this drivetrain read the CAR's own config (Config.data for the active
@@ -63,6 +87,7 @@ func _init(p_car: VehicleBody3D) -> void:
 		hardpoints[wheel] = wheel.position
 		spin_angle[wheel] = 0.0
 		visuals[wheel] = wheel.get_node_or_null("Visual")
+		_contact_pool[wheel] = WheelContact.new()
 		if wheel.use_as_traction:
 			rear_wheels.append(wheel)
 		else:
@@ -81,8 +106,9 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 	var r := cfg.wheel_radius
 
 	# Per-wheel contact context, fixed for the whole tick (chassis state is
-	# held constant across substeps; only the spin states evolve).
-	var contacts: Array = []
+	# held constant across substeps; only the spin states evolve). Filled into the
+	# pooled WheelContact objects so nothing is allocated in this hot path.
+	_contacts.clear()
 	for wheel in hardpoints:
 		if not wheel.is_in_contact():
 			continue
@@ -96,21 +122,26 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		# One terrain query for all three surface-dependent tire params (μ mult,
 		# optimum-slip location, sliding plateau) at this contact.
 		var surf := surface_tire_params(cfg, cp)
-		contacts.append({
-			wheel = wheel, cp = cp, fwd = fwd, side = side,
-			v_long = fwd.dot(vel), s_lat = -side.dot(vel),
-			n_force = n_force,
-			slip_peak = surf.slip_peak,
-			slide_ratio = surf.slide_ratio,
-			mu = (
-				cfg.wheel_friction_slip_front if wheel.use_as_steering
-				else cfg.wheel_friction_slip_rear
-			) * surf.mu_mult * cfg.tire_load_factor(
-				n_force,
-				cfg.wheel_width_front if wheel.use_as_steering else cfg.wheel_width_rear
-			),
-			impulse_long = 0.0, impulse_lat = 0.0,
-		})
+		var c: WheelContact = _contact_pool[wheel]
+		c.wheel = wheel
+		c.cp = cp
+		c.fwd = fwd
+		c.side = side
+		c.v_long = fwd.dot(vel)
+		c.s_lat = -side.dot(vel)
+		c.n_force = n_force
+		c.slip_peak = surf.slip_peak
+		c.slide_ratio = surf.slide_ratio
+		c.mu = (
+			cfg.wheel_friction_slip_front if wheel.use_as_steering
+			else cfg.wheel_friction_slip_rear
+		) * surf.mu_mult * cfg.tire_load_factor(
+			n_force,
+			cfg.wheel_width_front if wheel.use_as_steering else cfg.wheel_width_rear
+		)
+		c.impulse_long = 0.0
+		c.impulse_lat = 0.0
+		_contacts.append(c)
 
 	var h := delta / float(SPIN_SUBSTEPS)
 	# Foot-brake torque split front/rear by cfg.brake_bias (the brake_bias tuning
@@ -134,7 +165,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		var rear_reaction := 0.0  # N·m slowing the rear axle
 		var front_reaction := 0.0  # summed over front contacts (spool)
 		front_reaction_each.clear()
-		for c in contacts:
+		for c in _contacts:
 			var f := _tire_force(cfg, c, _omega_of(c.wheel) * r, h)
 			c.impulse_long += f.x * h
 			c.impulse_lat += f.y * h
@@ -207,7 +238,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 	# and the longitudinal force still acts along the contact patch.
 	var share := car.mass / float(hardpoints.size())
 	var up := car.global_transform.basis.y
-	for c in contacts:
+	for c in _contacts:
 		var long_force: Vector3 = c.fwd * c.impulse_long / delta
 		var lat_force: Vector3 = c.side * c.impulse_lat / delta
 		var offset: Vector3 = c.cp - car.global_position
@@ -311,7 +342,7 @@ func _front_avg_omega() -> float:
 # (longitudinal, lateral) newtons. h is the substep duration for the
 # stability caps; the contact context c is fixed for the tick. cfg is passed in
 # (rather than re-fetched) — this runs once per contact per substep.
-func _tire_force(cfg: GameConfig, c: Dictionary, surface_vel: float, h: float) -> Vector2:
+func _tire_force(cfg: GameConfig, c: WheelContact, surface_vel: float, h: float) -> Vector2:
 	# Slip velocity of the contact patch vs the ground (m/s). Positive s_long_v =
 	# wheel surface running ahead of the ground (wheelspin) -> force forward.
 	var s_long_v: float = surface_vel - c.v_long

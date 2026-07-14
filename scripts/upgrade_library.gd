@@ -40,7 +40,7 @@ const UPGRADES: Array[Dictionary] = [
 		"id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 2, "consumable": false,
 		"effect": {"install_turbo": {
 			"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
-			"turbo_drive_gain": 0.028, "turbo_drag_coef": 1.0e-6,
+			"turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7,
 			"engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
 		}},
 	},

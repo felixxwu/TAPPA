@@ -20,3 +20,19 @@ static func unshaded(albedo: Texture2D = null, vertex_color: bool = false) -> St
 	if albedo != null:
 		mat.albedo_texture = albedo
 	return mat
+
+
+# Build a LIT StandardMaterial3D with the same nearest-neighbour (mip-mapped)
+# PS1 texture filtering, tinted by `tint`, tiled by `uv`, at `rough` roughness.
+# `albedo` is optional (skipped if null, so the tint acts as a fallback colour).
+# Shared by the placeholder HQ props (garage tools, map-table wood, car-park
+# apron) that each hand-built this same lit textured material.
+static func lit_textured(albedo: Texture2D = null, uv := Vector3.ONE, tint := Color.WHITE, rough := 0.9) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	if albedo != null:
+		mat.albedo_texture = albedo
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	mat.albedo_color = tint
+	mat.uv1_scale = uv
+	mat.roughness = rough
+	return mat

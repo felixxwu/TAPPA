@@ -337,6 +337,31 @@ func test_billboard_field_knock_down_fells_once_and_keeps_shapes() -> void:
 	assert_false(field.is_processing(), "field stops ticking once nothing is falling")
 
 
+func test_billboard_field_reset_fallen_stands_trees_back_up() -> void:
+	# reset_fallen (used to reset the stage before a replay): every felled instance is
+	# unmarked and its box re-enabled in place, with the shape count unchanged (no
+	# reindex). There's no public is-shape-disabled getter, so the shape count + is_fallen
+	# state are the observable contract. Tunable-agnostic.
+	var positions := PackedVector2Array([Vector2(10, 10), Vector2(20, 12), Vector2(-5, 8)])
+	var field := _opaque_billboard_field(positions)
+	var rid := (field.get_node("Collision") as StaticBody3D).get_rid()
+	field.knock_down(0, Vector3(1, 0, 0), 0.6)
+	field.knock_down(2, Vector3(1, 0, 0), 0.6)
+	assert_true(field.is_fallen(0) and field.is_fallen(2), "sanity: two trees felled")
+
+	field.reset_fallen()
+
+	assert_false(field.is_fallen(0), "reset stands the felled tree back up")
+	assert_false(field.is_fallen(2), "reset stands every felled tree back up")
+	assert_eq(PhysicsServer3D.body_get_shape_count(rid), positions.size(),
+		"reset keeps all shapes (no reindex)")
+	assert_eq(field._falling.size(), 0, "no lingering fall animation after reset")
+	assert_false(field.is_processing(), "field stops ticking after reset")
+	# A reset tree can be felled again on the next run.
+	field.knock_down(0, Vector3(1, 0, 0), 0.6)
+	assert_true(field.is_fallen(0), "a reset tree can be knocked over again")
+
+
 func test_billboard_field_knock_down_safe_without_collision_or_quad_path() -> void:
 	# Quad path (no supplied mesh) is camera-billboarded, so it isn't fellable; a
 	# collision-less field and out-of-range indices must also be safe no-ops.
@@ -442,6 +467,34 @@ func test_tree_mesh_field_knock_down_fells_once_and_disables_hitbox() -> void:
 	field._process(1.0)  # > duration
 	assert_eq(field._falling.size(), 0, "fall record retired when flat")
 	assert_false(field.is_processing(), "field stops ticking once nothing is falling")
+
+
+func test_tree_mesh_field_reset_fallen_stands_trees_back_up() -> void:
+	# reset_fallen (stage reset before a replay): every felled tree is unmarked and its
+	# box re-enabled in place, shape count unchanged (no reindex). Same observable
+	# contract as knock_down — no public is-shape-disabled getter. Tunable-agnostic.
+	var floor_node := _scene.get_node("Floor") as TerrainManager
+	var mesh := _load_tree_mesh()
+	var field := TreeMeshField.new()
+	add_child_autofree(field)
+	var positions := PackedVector2Array([Vector2(2, 2), Vector2(3, 3), Vector2(4, 4)])
+	field.build(positions, floor_node, mesh, 6.0, 0.5, 4.0, 80.0, 15.0, 25.0)
+	var rid := (field.get_node("Collision") as StaticBody3D).get_rid()
+	field.knock_down(0, Vector3(1, 0, 0), 0.6)
+	field.knock_down(2, Vector3(1, 0, 0), 0.6)
+	assert_true(field.is_fallen(0) and field.is_fallen(2), "sanity: two trees felled")
+
+	field.reset_fallen()
+
+	assert_false(field.is_fallen(0), "reset stands the felled tree back up")
+	assert_false(field.is_fallen(2), "reset stands every felled tree back up")
+	assert_eq(PhysicsServer3D.body_get_shape_count(rid), positions.size(),
+		"reset keeps all shapes (no reindex)")
+	assert_eq(field._falling.size(), 0, "no lingering fall animation after reset")
+	assert_false(field.is_processing(), "field stops ticking after reset")
+	# A reset tree can be felled again on the next run.
+	field.knock_down(0, Vector3(1, 0, 0), 0.6)
+	assert_true(field.is_fallen(0), "a reset tree can be knocked over again")
 
 
 func test_tree_mesh_field_knock_down_safe_without_collision_or_bad_index() -> void:

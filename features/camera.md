@@ -46,7 +46,11 @@ not from the car: it samples the ground height at its own horizontal position
 follow_height_ratio` above that (height is a multiple of the follow distance, not
 an independent value). So the camera keeps a constant clearance over the ground it is flying
 over, rather than rising and falling as the car climbs and descends hills. On
-flat test fixtures (no `height_at` sibling) the ground height falls back to 0.
+flat test fixtures (no `height_at` sibling) the ground height falls back to 0. The
+sampled ground is **clamped up to the lake water surface** (`maxf(ground,
+track_water_level_m)` in `_ground_height_at`), so over a submerged basin the camera
+stays above the water instead of dunking under the lake plane (the roadside replay cam
+does the same).
 
 ### Behavior (`_physics_process`)
 
@@ -152,12 +156,16 @@ the `CameraManager` cycle — it's a **standalone camera created on demand** by
 [event-replay.md](event-replay.md)), not one of the player-selectable modes above.
 
 `world._present_standings_overlay` instantiates a fresh `ReplayCamera`, calls
-`setup(target, recorder)` (target = `$Car`), and sets `current = true` to take over the
-viewport for the duration of the standings screen. A deterministic, testable
-`_tick(delta)` (no RNG, no engine-clock reads) cycles through four shots
-(`enum Shot { ORBIT, FLYBY, LOW_CHASE, HIGH_WIDE }`), dwelling `SHOT_DWELL := 4.0`
-seconds on each before advancing to the next (`_shot = (_shot + 1) % Shot.size()`):
-an orbiting shot circling the car at radius 9 m, a fixed offset flyby, a low shot
-parked behind the car's facing, and a high wide establishing shot — each frame
-`look_at`s the target. It goes away with the overlay once the standings screen closes
-(the player's chosen `CameraManager` mode resumes on the next event / return to HQ).
+`setup(target, recorder, terrain, water_level)` (target = `$Car`, terrain = `$Floor`,
+`water_level` = `track_water_level_m` so the roadside plant stays above any lake), and
+sets `current = true`
+to take over the viewport for the duration of the standings screen. A deterministic,
+testable `_tick(delta)` (no RNG, no engine-clock reads) cycles through five shots
+(`enum Shot { ORBIT, FLYBY, WHEEL, HIGH_WIDE, ROADSIDE }`): an orbiting shot circling the
+car, a fixed offset flyby, an onboard **wheel cam** by the front wheel looking forward
+down the road, a high wide establishing shot, and a planted **roadside** "filming from
+the verge" shot. The four tracking shots dwell `SHOT_DWELL := 4.0` s each; ROADSIDE
+instead holds a fixed trackside spot and cuts only after the car passes and drives off.
+See [event-replay.md](event-replay.md) for the full shot list. It goes away with the
+overlay once the standings screen closes (the player's chosen `CameraManager` mode
+resumes on the next event / return to HQ).

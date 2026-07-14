@@ -37,6 +37,7 @@ var _yaw: PackedFloat32Array      # facing, radians
 
 var _car: Node                    # VehicleBody3D-ish: global_transform (+ linear_velocity)
 var _terrain: Node                # TerrainManager (height_at) or null on flat fixtures
+var _terrain_has_height := false  # cached in setup(); _ground() runs per agent per frame
 var _road_cells: Dictionary       # Vector2i -> true, the visible carriageway
 var _tree_grid: Dictionary        # Vector2i -> PackedVector2Array (built by SpectatorScatter)
 var _p: Dictionary                # spectator_params() snapshot
@@ -56,6 +57,7 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 		road_cells: Dictionary, tree_grid: Dictionary, params: Dictionary) -> void:
 	_car = car
 	_terrain = terrain
+	_terrain_has_height = terrain != null and terrain.has_method("height_at")
 	_road_cells = road_cells
 	_tree_grid = tree_grid
 	_p = params
@@ -292,7 +294,7 @@ func _refresh_all_instances() -> void:
 
 
 func _ground(x: float, z: float) -> float:
-	if _terrain != null and _terrain.has_method("height_at"):
+	if _terrain_has_height:
 		return _terrain.height_at(x, z)
 	return 0.0
 

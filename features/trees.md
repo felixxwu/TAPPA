@@ -63,9 +63,14 @@ plane). Distance
 fade is a vertex **shrink-out** over `tree_render_fade_m` before
 `tree_render_distance_m` (opaque, replacing the old screen-door dither, which
 needed `discard`): the shader scales the whole normalized vertex toward the
-bottom-centre pivot. Trees keep the same `TreeScatter` placement and box collision.
-The silhouette airiness/triangle budget is set by `TREE_SILHOUETTE_ALPHA` /
-`TREE_SILHOUETTE_EPSILON` in `Foliage`.
+bottom-centre pivot. It ALSO carries the same **near-camera dither dissolve** as the
+3D canopy (see below): fragments within `tree_near_fade_end_m` of the camera dissolve
+out via the Bayer screen-door, so a billboard tree the camera pushes inside (the chase
+cam, or a planted replay cam) stops filling the frame — wired in `BillboardField.build`
+for the opaque path only (the quad path has its own alpha-cutout distance fade). Trees
+keep the same `TreeScatter` placement and box collision. The silhouette
+airiness/triangle budget is set by `TREE_SILHOUETTE_ALPHA` / `TREE_SILHOUETTE_EPSILON`
+in `Foliage`.
 
 ## Placement (`TreeScatter`)
 
@@ -219,9 +224,19 @@ physics step, so the tree arrests you now and then falls.
   along `dir`). `fall_angle` is an eased 0 → `FLAT_ANGLE` (just past PI/2), monotone,
   clamped. Records retire when flat and `set_process(false)` when none remain, so a
   settled forest costs nothing per frame.
+- **`reset_fallen()`** stands every felled tree back up: re-enables each box in place
+  (`body_set_shape_disabled(..., idx, false)`), restores the MultiMesh instance to its
+  upright pose from `_slot_of` (`base_pos` + standing `yaw`), and clears `_fallen` /
+  `_falling` (`set_process(false)`). Only the `_fallen` set is touched, so a stand with
+  nothing knocked over is a cheap early-out. `BillboardField` carries the twin (upright
+  from `_upright_basis`). The **event replay** calls it — see Persistence.
 - **Persistence.** Run-local and transient — a fresh run regenerates standing trees.
   A mid-run off-track auto-reset (`TrackProgress`) does not regenerate the world, so
-  **felled trees stay felled** after a reset (you broke them, they're broken).
+  **felled trees stay felled** after a reset (you broke them, they're broken). BUT when
+  the run ends and the **replay** begins, `world.gd._present_standings_overlay` calls
+  `_reset_props_for_replay()` (which invokes `reset_fallen()` on every foliage field and
+  `reset_knocked()` on the `SignField`) so the replay plays back against a pristine,
+  intact stage rather than the wreckage the driven run left behind.
 
 **Billboard trees fall too.** `BillboardField` (used when `use_billboard_trees` is
 true — the shipped default in `game_config.tres`) carries the same `knock_down` /
@@ -271,16 +286,18 @@ per-instance yaw, while still leaving the `tree_road_margin_m` gap from the road
 edge. `world.gd` rasterizes this wider footprint into a bush-specific
 `road_cells`; the trees keep the un-inflated one.
 
-`world.gd._bush_mesh()` builds the render mesh: it takes the GLB's mesh, keeps the
-imported (tone-matched) foliage texture, and makes the `StandardMaterial3D`
-**unshaded** (the flat PS1 look the rest of the world uses) with
-`vertex_color_use_as_albedo` on so the baked-light instance colour multiplies in.
-The material is **double-sided** (`cull_mode = CULL_DISABLED`, like the tree
-canopy): the low-poly foliage cards are single-sided geometry, so with default
-back-face culling the bush was see-through from behind.
-Its `albedo_color` is set to `bush_tint` (lifted a touch above the model's authored
-green so the ground cover reads a bit more against the grass).
-`world.gd` builds the tree field and the bush field back to back.
+`Foliage.bush_mesh()` builds the render mesh: it takes the GLB's mesh, keeps the
+imported (tone-matched) foliage texture, and rebuilds the surface as the **shared
+foliage near-fade `ShaderMaterial`** (`shaders/tree_canopy.gdshader`, the same shader
+the 3D tree canopy uses). It's unshaded and **double-sided** (`cull_disabled`, so the
+single-sided foliage cards don't vanish from behind), multiplies the texture by the
+per-instance MultiMesh `COLOR` (the baked-light instance tint) and by a `tint` uniform
+set to `bush_tint` (lifted a touch above the model's authored green so the ground cover
+reads against the grass), and — the reason for the swap — **dither-dissolves near the
+camera** (`tree_near_fade_start_m` / `tree_near_fade_end_m`), so a bush right in front
+of the camera (the chase cam brushing one, or a planted replay cam sitting among them)
+turns see-through instead of filling the frame. `world.gd` builds the tree field and
+the bush field back to back.
 
 ## Configuration
 

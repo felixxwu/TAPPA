@@ -134,7 +134,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"pw_min": 210.0, "pw_max": 301.0},
 		"events": [
 			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55},
-			{"seed": 4002, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7},
+			{"seed": 4004, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7},
 			{"seed": 3734559043, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6},
 		],
 	},
@@ -166,9 +166,9 @@ const RALLIES: Array[Dictionary] = [
 		# ceiling that only the true shitboxes (Twingo, Acty) squeeze under.
 		"restriction": {"pw_max": 91.0},
 		"events": [
-			{"seed": 7001, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0, "cliffiness": 0.1},
+			{"seed": 7031, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0, "cliffiness": 0.1},
 			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.15},
-			{"seed": 7003, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.2},
+			{"seed": 7023, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.2},
 		],
 	},
 	{
@@ -310,10 +310,14 @@ static func _best_eligible_car(rally: Dictionary) -> Dictionary:
 	var best: Dictionary = {}
 	var best_pw := -1.0
 	for car in pool:
-		var pw := CarLibrary.power_to_weight(car)
+		# Rank by the STOCK-boosted meta (mirrors how rivals actually drive in
+		# generate_opponent_field), so the "fastest possible car" reflects the same
+		# forced induction a turbo car's rival gets — not the unboosted figure.
+		var meta := UpgradeLibrary.effective_meta({}, car)
+		var pw := CarLibrary.power_to_weight(meta)
 		if pw > best_pw:
 			best_pw = pw
-			best = car
+			best = meta
 	return best
 
 
@@ -401,6 +405,12 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	var field: Array = []
 	for i in count:
 		var car: Dictionary = car_pool[rng.randi_range(0, car_pool.size() - 1)]
+		# Boost the raw CarLibrary entry through effective_meta (with no owned-car
+		# state) so the rival's pace floor reflects the car's STOCK forced induction —
+		# e.g. the 911's turbo. Without this, power_to_weight falls back to the engine's
+		# unboosted peak_torque and turbo cars produce artificially slow rival times,
+		# out of step with the player's boosted stats and the car's real physics.
+		var car_meta := UpgradeLibrary.effective_meta({}, car)
 		# Persistent per-rival skill (drawn ONCE): sets a base pace held across every
 		# event, so fast rivals stay fast and the field forms a ranked ladder.
 		var skill := rng.randf()
@@ -408,7 +418,7 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 		var times: Array = []
 		for k in event_results.size():
 			var ev: Dictionary = events[k] if k < events.size() else {}
-			var floor_ms := LapTimeModel.optimum_ms(event_results[k], car, ev)
+			var floor_ms := LapTimeModel.optimum_ms(event_results[k], car_meta, ev)
 			var noise := 1.0 + (rng.randf() * 2.0 - 1.0) * PACE_EVENT_NOISE
 			var factor := maxf(base_pace * noise, PACE_MIN_FLOOR)
 			times.append(int(round(floor_ms * factor)))

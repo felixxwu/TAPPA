@@ -89,14 +89,9 @@ func build(host: Node3D, on_table_input: Callable, on_lift_input: Callable) -> v
 # is deliberately placeholder (todo/diegetic-hq.md defers HQ art); the camera framing
 # and the table/lift/car-park positions that the flow depends on live in GameConfig.
 func _block(host: Node3D, pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
-	mi.material_override = m
-	mi.position = pos
+	var mi := MeshUtil.box(size, m, pos)
 	host.add_child(mi)
 	return mi
 
@@ -264,11 +259,7 @@ func _build_carpark(host: Node3D) -> void:
 	# A hair above the concrete apron (y = 0) so the markings win over it without
 	# z-fighting; the cars settle onto y = 0, so this sits just under their tyres.
 	surface.position = Vector3(center.x, 0.012, center.z)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = _carpark_bay_texture(bays)
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	mat.roughness = 0.95
-	surface.material_override = mat
+	surface.material_override = PS1Material.lit_textured(_carpark_bay_texture(bays), Vector3.ONE, Color.WHITE, 0.95)
 	host.add_child(surface)
 
 

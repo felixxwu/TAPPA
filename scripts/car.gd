@@ -1118,16 +1118,27 @@ static func _chassis_hull_points(size: Vector3, chamfer: float) -> PackedVector3
 func _apply_model_visibility(spec: Dictionary) -> void:
 	var use_model: bool = spec.get("use_model", false)
 	var active_node := String(spec.get("model_node", ""))
+	# Start from every body hidden, then reveal the one this spec wants.
+	_hide_all_bodies()
+	if use_model:
+		var model_body := get_node_or_null(NodePath(active_node)) as Node3D
+		if model_body != null:
+			model_body.visible = true
+			_apply_model_material(model_body, load(String(spec.get("model_texture", ""))))
+	else:
+		($Chassis as MeshInstance3D).visible = true
+		($Cabin as MeshInstance3D).visible = true
+
+
+# Hide the procedural chassis/cabin boxes AND every glb model body. Shared by
+# set_body_hidden(true) and _apply_model_visibility (which then re-reveals one).
+func _hide_all_bodies() -> void:
+	($Chassis as MeshInstance3D).visible = false
+	($Cabin as MeshInstance3D).visible = false
 	for node_name in _model_node_names():
 		var model_body := get_node_or_null(NodePath(node_name)) as Node3D
-		if model_body == null:
-			continue
-		var is_active := use_model and node_name == active_node
-		model_body.visible = is_active
-		if is_active:
-			_apply_model_material(model_body, load(String(spec.get("model_texture", ""))))
-	($Chassis as MeshInstance3D).visible = not use_model
-	($Cabin as MeshInstance3D).visible = not use_model
+		if model_body != null:
+			model_body.visible = false
 
 
 # Hide (or restore) every body mesh — chassis/cabin boxes AND the glb model bodies —
@@ -1135,12 +1146,7 @@ func _apply_model_visibility(spec: Dictionary) -> void:
 # per-spec visibility logic so the right body (procedural vs model) reappears.
 func set_body_hidden(hidden: bool) -> void:
 	if hidden:
-		($Chassis as MeshInstance3D).visible = false
-		($Cabin as MeshInstance3D).visible = false
-		for node_name in _model_node_names():
-			var model_body := get_node_or_null(NodePath(node_name)) as Node3D
-			if model_body != null:
-				model_body.visible = false
+		_hide_all_bodies()
 	else:
 		_apply_model_visibility(CarLibrary.all()[_car_index])
 

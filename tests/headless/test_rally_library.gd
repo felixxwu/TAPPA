@@ -557,6 +557,48 @@ func test_higher_tier_fields_faster_rivals() -> void:
 		"tier-4 winner is faster than the tier-1 winner on the same track")
 
 
+func test_opponent_times_apply_stock_turbo_boost() -> void:
+	# A rival's pace floor must reflect the car's STOCK forced induction: the same
+	# car/engine posts faster rival times WITH a turbo than without. Build the roster
+	# inline (one car, one engine) so the only difference between the two fields is the
+	# engine's turbo_boost_gain — everything else (rally seed -> skill/noise draws) is
+	# identical, so any per-event time delta is the boost alone.
+	var track := _track_with_pieces()
+	var rally := {"id": "turbo_probe", "difficulty": 2, "restriction": {},
+		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
+	var results := [track, track, track]
+	var make_engine := func(boost: float) -> Array[Dictionary]:
+		var eng: Array[Dictionary] = [{
+			"id": "probe_eng", "name": "Probe", "layout": "i4", "mass": 120.0,
+			"redline_rpm": 6000.0, "peak_torque": 200.0, "peak_torque_rpm": 4000.0,
+			"engine_inertia": 0.15, "gear_ratios": [3.5, 2.0, 1.4, 1.0, 0.8],
+			"final_drive": 4.0, "shift_time": 0.30,
+			"turbo_enabled": boost > 0.0, "turbo_boost_gain": boost,
+		}]
+		return eng
+	var car: Array[Dictionary] = [{
+		"name": "Probe", "id": "probe_car", "car_type": "coupe", "mass": 1200.0,
+		"engine": "probe_eng", "tire_compound": 1.1, "drive_mode": CarFixtures.RWD,
+		"weight_front": 0.5, "max_hp": 900.0, "reward_tier": 2,
+	}]
+	var run := func(boost: float) -> Array:
+		EngineLibrary.override_for_test(make_engine.call(boost))
+		CarLibrary.override_for_test(car)
+		return RallyLibrary.generate_opponent_field(rally, results, rally["events"])
+	var boosted: Array = run.call(0.5)
+	var natural: Array = run.call(0.0)
+	assert_eq(boosted.size(), natural.size(), "same seed -> same field size")
+	var compared := 0
+	for i in boosted.size():
+		if boosted[i]["dnf"]:
+			continue
+		for k in results.size():
+			assert_lt(int(boosted[i]["event_times_ms"][k]), int(natural[i]["event_times_ms"][k]),
+				"turbo car posts a faster rival time than the same car with no boost")
+			compared += 1
+	assert_gt(compared, 0, "at least one non-DNF rival/event compared")
+
+
 func test_placement_and_top3() -> void:
 	var field := [
 		{"dnf": false, "combined_ms": 100},

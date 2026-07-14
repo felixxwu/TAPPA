@@ -127,22 +127,48 @@ the dict in `end_replay()` restores the live-computed path.
 ## `ReplayCamera` — cinematic director
 
 A small `Camera3D` subclass (`class_name ReplayCamera`) created fresh by `world.gd` for
-each standings overlay (`ReplayCamera.new()`, `setup(target, recorder)`, `current = true`
-to take over the viewport). It cycles through four shots
-(`enum Shot { ORBIT, FLYBY, LOW_CHASE, HIGH_WIDE }`), dwelling on each for
-`SHOT_DWELL := 4.0` seconds before advancing (`_shot = (_shot + 1) % Shot.size()`), all
-driven by a deterministic, testable `_tick(delta)` (no RNG, no engine-clock reads):
+each standings overlay (`ReplayCamera.new()`,
+`setup(target, recorder, terrain, water_level)`, `current = true` to take over the
+viewport). It cycles through five shots
+(`enum Shot { ORBIT, FLYBY, WHEEL, HIGH_WIDE, ROADSIDE }`), all driven by a
+deterministic, testable `_tick(delta)` (no RNG, no engine-clock reads):
 
 - **ORBIT** — circles the target at radius 9 m, height +0.35 m, angle advancing at
   `0.4 rad/s` (`_orbit_angle`).
 - **FLYBY** — a fixed offset `(6, 2, 6)` from the target.
-- **LOW_CHASE** — parked 7 m directly behind the target's facing (`basis.z`), 1.2 m up.
+- **WHEEL** — an onboard rig down at the front wheel (car-local from `global_transform.basis`:
+  forward + right, low and near hub/ground height, in line with the wheel laterally),
+  **looking forward down the road** rather than at the car, so the churning front wheel
+  fills the near foreground. The only shot whose look target isn't the car itself
+  (`look_target = c + fwd*14 + right*0.5`).
 - **HIGH_WIDE** — a high, pulled-back `(0, 14, 16)` establishing shot.
+- **ROADSIDE** — a "someone filming from the verge" shot. Unlike the others (which track
+  the car every frame), the camera **plants a fixed spot** beside the road well up ahead
+  (`ROADSIDE_AHEAD` along the travel line, `ROADSIDE_SIDE` off to one side), locks onto the
+  car, and **holds perfectly still** while the car approaches, passes, and drives off —
+  covering a long section of track per shot. Only once the car has driven
+  `ROADSIDE_REPLANT_AHEAD` metres *past* the plant does it cut to the next spot (further
+  up, opposite verge); after `ROADSIDE_PLANTS` positions it hands back to the rotation. The
+  plant is placed off the car's **smoothed travel direction** (`_travel_dir`, tracked from
+  frame-to-frame movement — robust to a car sliding sideways), not its facing. Seat height
+  (`_plant`) samples the terrain at the spot's XZ and clamps it: on a **cliff** (terrain
+  above the track) it keeps the higher terrain top so the camera stands on the verge; in a
+  **pit** (terrain below the track) it's lifted to the track height (`maxf(height_at, c.y)`)
+  so the camera isn't buried in a hole with no view; and it's **never below the water
+  surface** (`maxf(..., water_level)`, `water_level` = `track_water_level_m`) so a spot over
+  a lake sits above the water. Foliage the plant lands in is NOT dodged by moving the camera
+  — instead the trees and bushes **dither out near the camera** (their near-fade shaders —
+  see [trees.md](trees.md)), so the plant can stay close to the road and any close bush/tree
+  just turns see-through.
 
-Every shot `look_at`s the target each frame (skipped only if the camera is already
-sitting on top of it). The recorder reference is accepted by `setup` but not currently
-read by `_tick` — the camera frames the car's live (replayed) position rather than
-scrubbing the recording independently.
+**Shot advance.** The four tracking shots rotate on a fixed `SHOT_DWELL := 4.0`-second
+dwell; ROADSIDE ignores the timer and instead cuts on the car-passed event above
+(`_advance_shot()` handles both paths and resets the roadside state). Each frame the
+camera `look_at`s a per-shot target — the car for every shot except WHEEL, which looks
+forward down the road (skipped only if the camera is already sitting on that target). The
+recorder reference is accepted by `setup` but not currently read by `_tick` — the
+camera frames the car's live (replayed) position rather than scrubbing the recording
+independently.
 
 ## Standings overlay presentation
 
@@ -153,9 +179,16 @@ overlay** so the replay is visible behind the leaderboard:
 - `RallySession.standings_ready` (emitted from `report_event_result`) is connected to
   `world._present_standings_overlay`, which — skipped entirely under headless runs
   (`_headless`, no display) — stops the recorder if still running, hides the HUD,
-  spins up the `ReplayCamera`, puts the car into `begin_replay`, and instantiates
-  `standings.tscn` with `overlay_mode = true` onto its own `CanvasLayer`
-  (`_standings_overlay`).
+  spins up the `ReplayCamera`, resets the knocked-over props (`_reset_props_for_replay`),
+  puts the car into `begin_replay`, and instantiates `standings.tscn` with
+  `overlay_mode = true` onto its own `CanvasLayer` (`_standings_overlay`).
+- **Props reset before the replay.** Right before `begin_replay`, `_reset_props_for_replay()`
+  sweeps the world's direct children and calls `reset_fallen()` on every foliage field
+  (`TreeMeshField` / `BillboardField` — felled trees stood back up) and `reset_knocked()`
+  on the `SignField` (toppled signs re-frozen at their resting pose). Each reset only
+  touches the props it actually knocked over, so it's a light early-out on an undamaged
+  stage. The result: the replay plays back against a pristine, intact stage rather than
+  the wreckage the driven run left — see [trees.md](trees.md) / [signs.md](signs.md).
 - `RallySession.standings_overlay_host` is set by `world.gd` on setup
   (`not _headless`) and read by `RallySession._load_standings_scene()`, which becomes a
   **no-op** when the flag is set — the host (`world.gd`) owns showing the panel instead

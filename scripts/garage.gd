@@ -94,12 +94,7 @@ func _mat(color: Color, emissive := false, rough := 0.9) -> StandardMaterial3D:
 
 # A box mesh of `size` centred at `pos`, added under self.
 func _block(pos: Vector3, size: Vector3, color: Color, emissive := false) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = _mat(color, emissive)
-	mi.position = pos
+	var mi := MeshUtil.box(size, _mat(color, emissive), pos)
 	add_child(mi)
 	return mi
 
@@ -107,25 +102,12 @@ func _block(pos: Vector3, size: Vector3, color: Color, emissive := false) -> Mes
 # A textured material. `uv` tiles the texture; `tint` modulates it (and is the
 # fallback colour if the texture import is missing).
 func _tex_mat(path: String, uv := Vector3.ONE, tint := Color.WHITE, rough := 0.9) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	var tex := load(path) as Texture2D
-	if tex != null:
-		m.albedo_texture = tex
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	m.albedo_color = tint
-	m.uv1_scale = uv
-	m.roughness = rough
-	return m
+	return PS1Material.lit_textured(load(path) as Texture2D, uv, tint, rough)
 
 
 # A box mesh of `size` at `pos` carrying material `mat` (used for textured props).
 func _tex_block(pos: Vector3, size: Vector3, mat: Material, parent: Node3D = null) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = mat
-	mi.position = pos
+	var mi := MeshUtil.box(size, mat, pos)
 	(parent if parent != null else self).add_child(mi)
 	return mi
 

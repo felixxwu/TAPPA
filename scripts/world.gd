@@ -16,7 +16,7 @@ var _headless := false
 
 
 func _ready() -> void:
-	_headless = DisplayServer.get_name() == "headless"
+	_headless = Platform.is_headless()
 	# Cover the screen before any heavy generation so the player sees staged
 	# progress instead of a frozen frame between Godot's boot bar finishing and
 	# the first playable frame. Freed by _generate_track() once the world is up.
@@ -28,7 +28,7 @@ func _ready() -> void:
 	# 0 = uncapped for desktop dev. Physics stays at the project physics tick.
 	# Skipped under --headless (no rendering to pace) so it can't throttle the
 	# frame-awaiting test runner.
-	if cfg.target_fps > 0 and DisplayServer.get_name() != "headless":
+	if cfg.target_fps > 0 and not Platform.is_headless():
 		Engine.max_fps = cfg.target_fps
 	var env: Environment = $WorldEnvironment.environment
 	env.fog_density = cfg.fog_density
@@ -1215,8 +1215,12 @@ func _present_standings_overlay(_event_index: int) -> void:
 	# Camera for the cinematic replay.
 	_replay_camera = ReplayCamera.new()
 	add_child(_replay_camera)
-	_replay_camera.setup($Car, _replay_recorder)
+	_replay_camera.setup($Car, _replay_recorder, $Floor as TerrainManager,
+		Config.data.track_water_level_m)
 	_replay_camera.current = true
+	# Stand every knocked-over prop (felled trees, toppled signs) back up so the replay
+	# shows the stage intact — the driver plays back against a pristine forest.
+	_reset_props_for_replay()
 	# Car into replay playback.
 	($Car as Node).begin_replay(_replay_recorder)
 	# Standings overlay Control on its own CanvasLayer.
@@ -1228,6 +1232,19 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_standings_overlay.add_child(panel)
 	add_child(_standings_overlay)
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
+
+
+# Restore every knocked-over prop before the replay so it plays back against an intact
+# stage. The foliage fields (trees + bushes: TreeMeshField / BillboardField) and the
+# SignField are direct children of the world; each carries its own reset that touches
+# only the props it actually knocked over (a pristine field is a cheap early-out), so
+# this is a light sweep even on a stage with hundreds of trees.
+func _reset_props_for_replay() -> void:
+	for child in get_children():
+		if child.has_method("reset_fallen"):
+			child.reset_fallen()
+		elif child.has_method("reset_knocked"):
+			child.reset_knocked()
 
 
 func _on_leaderboard_hidden_changed(hidden: bool) -> void:

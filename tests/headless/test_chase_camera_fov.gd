@@ -54,6 +54,16 @@ func test_standstill_settles_to_base_fov() -> void:
 	assert_almost_eq(_cam.fov, _cam._base_fov, 0.5, "stationary FOV settles to the base FOV")
 
 
+func test_camera_stays_above_the_water_surface() -> void:
+	# No terrain sibling here, so the ground reads 0. A water level well above that must
+	# lift the camera so it never seats below the lake surface (over a submerged basin).
+	_cam._height = 2.0
+	_cam._water_level = 50.0
+	_settle(10.0)
+	assert_gt(_cam.global_position.y, 50.0,
+		"chase camera is lifted above the water surface, not seated under the lake")
+
+
 # On-screen size of a fixed object is proportional to 1/(distance · tan(fov/2)).
 func _apparent_size_metric() -> float:
 	var dist := _cam.global_position.distance_to(_target.global_position)

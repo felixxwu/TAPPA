@@ -116,7 +116,8 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
   up-front (before generation) over the track bounds, so the road animates over it —
   eye-candy + authoring/debug aid.
 - The **dev seed-lab** (Settings → Seed lab, `settings_menu.gd`) trials
-  `(seed, water_level, turns, straightness)` via typeable SpinBox fields + Randomize
+  `(seed, water_level, turns, straightness)` via typeable SpinBox fields + a
+  Randomize / Back action row (`go_back` returns to the category list)
   against a large live `TrackPreview` that **animates the generation** (on_progress,
   like the loading screen), with a generation token dropping stale runs.
 

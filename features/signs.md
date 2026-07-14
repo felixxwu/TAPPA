@@ -102,6 +102,16 @@ the hitbox. Per sign:
   sign nudges it gently along the ground instead of flinging it into the air. This is
   the same recipe `SpectatorGroup` uses for ragdolls: the impulse fakes the collision,
   then physics rolls the sign over the terrain without the car ever touching it.
+- **Reset for the replay** — `reset_knocked()` stands every knocked sign back up at its
+  build-time resting pose. Build records each body's resting transform + MultiMesh
+  panel slots in a persistent `_home` map (never erased on knock, unlike `_rendered`).
+  Reset re-freezes the body, restores `_home[body].rest`, `queue_free`s the per-node
+  panel `MeshInstance3D`s `_materialize_sign` attached, un-hides the shared MultiMesh
+  panels (rebuilding each instance transform as `rest × panel-local`), and returns the
+  body to `_rendered` so a fresh run can wake it again. Only signs that actually left the
+  batch (in `_home` but not `_rendered`) are touched. `world.gd._present_standings_overlay`
+  calls this via `_reset_props_for_replay()` when the run ends, so the replay shows the
+  signs intact (same pass resets felled trees — see [trees.md](trees.md)).
 
 ## Config (`GameConfig` › *Roadside Signs*)
 

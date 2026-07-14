@@ -55,6 +55,7 @@ var _scheme_page: VBoxContainer
 var _benchmark_page: VBoxContainer
 var _dev_page: VBoxContainer
 var _dev_status: Label  # feedback line on the dev page ("Granted …", "Wiped …")
+var _pages: Array[Control] = []  # all swappable pages, list first; see _build()
 
 # Seed-lab page: trial (seed, water level, …) combinations against a live
 # TrackPreview that animates the generation just like the loading screen
@@ -136,7 +137,7 @@ func _build() -> void:
 	for entry in Benchmark.TOGGLES:
 		var key := String(entry["key"])
 		var button := _make_action_button("", _toggle_benchmark.bind(key))
-		benchmark_rows.append({"key": key, "button": button})
+		benchmark_rows.append({"key": key, "name": String(entry["name"]), "button": button})
 		_benchmark_page.add_child(button)
 	_benchmark_page.add_child(_make_action_button("Start benchmark  >", _start_benchmark))
 
@@ -215,8 +216,23 @@ func _build() -> void:
 	sl_grid.add_child(_spin_row("Water level", _level_spin))
 	sl_grid.add_child(_spin_row("Turns", _turns_spin))
 	sl_grid.add_child(_spin_row("Straightness", _straight_spin))
-	sl_panel.add_child(_make_action_button("Randomize seed", _randomize_seed))
+	var sl_actions := HBoxContainer.new()
+	sl_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_actions.add_theme_constant_override("separation", 24)
+	sl_panel.add_child(sl_actions)
+	var sl_random := _make_action_button("Randomize seed", _randomize_seed)
+	sl_random.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_actions.add_child(sl_random)
+	var sl_back := _make_action_button("Back", go_back)
+	sl_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_actions.add_child(sl_back)
 	_seedlab_page.visible = false  # shown only via show_seedlab()
+
+	# Single source of truth for the swappable pages (list first — it's the
+	# default page). _show_page / focus_current_page fan out over this so adding
+	# a page only means appending it here.
+	_pages = [_list_page, _camera_page, _controls_page, _scheme_page,
+			_benchmark_page, _dev_page, _seedlab_page]
 
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
@@ -247,12 +263,10 @@ func go_back() -> bool:
 # and on every page switch, so a controller always has a live cursor.
 func focus_current_page() -> void:
 	var page: Control = _list_page
-	if _camera_page.visible: page = _camera_page
-	elif _controls_page.visible: page = _controls_page
-	elif _scheme_page.visible: page = _scheme_page
-	elif _benchmark_page.visible: page = _benchmark_page
-	elif _dev_page.visible: page = _dev_page
-	elif _seedlab_page.visible: page = _seedlab_page
+	for p in _pages:
+		if p.visible:
+			page = p
+			break
 	_focus_first_in(page)
 
 
@@ -300,13 +314,8 @@ func _show_page(page: Control) -> void:
 	# Cancel any in-flight seed-lab generation whenever the page changes (including
 	# leaving the seed lab) so its animated search stops doing per-frame work.
 	_sl_gen += 1
-	_list_page.visible = page == _list_page
-	_camera_page.visible = page == _camera_page
-	_controls_page.visible = page == _controls_page
-	_scheme_page.visible = page == _scheme_page
-	_benchmark_page.visible = page == _benchmark_page
-	_dev_page.visible = page == _dev_page
-	_seedlab_page.visible = page == _seedlab_page
+	for p in _pages:
+		p.visible = page == p
 	page_changed.emit(at_root())
 	# Move the focus cursor onto the newly-shown page (deferred so it runs after the
 	# visibility change settles; no-op while the whole menu is still hidden on _ready).
@@ -435,11 +444,7 @@ func _capture_for_slot(event: InputEvent, slot: String) -> InputEvent:
 func _refresh_benchmark_rows() -> void:
 	for row in benchmark_rows:
 		var on: bool = Benchmark.get_option(String(row["key"]))
-		var name_text := ""
-		for entry in Benchmark.TOGGLES:
-			if String(entry["key"]) == String(row["key"]):
-				name_text = String(entry["name"])
-		row["button"].text = UITheme.caps("%s: %s" % [name_text, "On" if on else "Off"])
+		row["button"].text = UITheme.caps("%s: %s" % [String(row["name"]), "On" if on else "Off"])
 		_highlight(row["button"], on)
 
 
