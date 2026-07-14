@@ -44,15 +44,6 @@ shader = ExtResource("1_models")
 shader_parameter/albedo_color = Color(0.12, 0.12, 0.12, 1)
 shader_parameter/texture_tile = Vector2(1, 1)
 
-[sub_resource type="ShaderMaterial" id="mat_spoke"]
-render_priority = 0
-shader = ExtResource("1_models")
-shader_parameter/albedo_color = Color(0.85, 0.85, 0.78, 1)
-shader_parameter/texture_tile = Vector2(1, 1)
-
-[sub_resource type="BoxMesh" id="mesh_spoke"]
-size = Vector3(0.27, 0.62, 0.06)
-
 [node name="Car" type="VehicleBody3D"]
 mass = 120.0
 script = ExtResource("2_car")
@@ -111,15 +102,6 @@ transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
 surface_material_override/0 = ExtResource("5_wheel_mat")
 
-[node name="Spoke1" type="MeshInstance3D" parent="WheelFL/Visual"]
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")
-
-[node name="Spoke2" type="MeshInstance3D" parent="WheelFL/Visual"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")
-
 [node name="WheelFR" type="VehicleWheel3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.85, -0.1, -1.05)
 use_as_steering = true
@@ -130,15 +112,6 @@ use_as_steering = true
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
 surface_material_override/0 = ExtResource("5_wheel_mat")
-
-[node name="Spoke1" type="MeshInstance3D" parent="WheelFR/Visual"]
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")
-
-[node name="Spoke2" type="MeshInstance3D" parent="WheelFR/Visual"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")
 
 [node name="WheelRL" type="VehicleWheel3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -0.85, -0.1, 1.05)
@@ -151,15 +124,6 @@ transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
 surface_material_override/0 = ExtResource("5_wheel_mat")
 
-[node name="Spoke1" type="MeshInstance3D" parent="WheelRL/Visual"]
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")
-
-[node name="Spoke2" type="MeshInstance3D" parent="WheelRL/Visual"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")
-
 [node name="WheelRR" type="VehicleWheel3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.85, -0.1, 1.05)
 use_as_traction = true
@@ -170,12 +134,3 @@ use_as_traction = true
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
 mesh = SubResource("mesh_wheel")
 surface_material_override/0 = ExtResource("5_wheel_mat")
-
-[node name="Spoke1" type="MeshInstance3D" parent="WheelRR/Visual"]
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")
-
-[node name="Spoke2" type="MeshInstance3D" parent="WheelRR/Visual"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
-mesh = SubResource("mesh_spoke")
-surface_material_override/0 = SubResource("mat_spoke")

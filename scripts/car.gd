@@ -237,29 +237,17 @@ func _ready() -> void:
 		# (the body overwrites origin with connection-point + suspension travel),
 		# so car swaps relocate from a clean rest pose, not a drifted one.
 		_wheel_mounts[wheel] = wheel.position
-		# car.tscn shares ONE Spoke mesh across Spoke1 + Spoke2 of a wheel (so
-		# resizing one resizes both); duplicate it ONCE per wheel and reassign to
-		# both, so the pair stays in sync but no longer shares the resource with
-		# any other car.tscn instance (see the Chassis/Cabin note below).
-		var spoke_mesh: Mesh = null
-		for spoke_name in ["Visual/Spoke1", "Visual/Spoke2"]:
-			var spoke := wheel.get_node_or_null(spoke_name) as MeshInstance3D
-			if spoke == null or spoke.mesh == null:
-				continue
-			if spoke_mesh == null:
-				spoke_mesh = spoke.mesh.duplicate()
-			spoke.mesh = spoke_mesh
 		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
 		if tire != null and tire.mesh != null:
 			tire.mesh = tire.mesh.duplicate()
-	# Chassis/Cabin boxes and each wheel's Tire/Spoke are authored as shared
+	# Chassis/Cabin boxes and each wheel's Tire are authored as shared
 	# sub-resources in car.tscn (so apply_car's resize covers, e.g., all four
-	# wheels or both spokes on a wheel at once) — but that sharing also spans
+	# wheels at once) — but that sharing also spans
 	# every INSTANCE of car.tscn by default. In an event, start_line.gd spawns
 	# extra car instances (queue props) that call apply_car() too; without the
 	# per-instance copies above/below, whichever car resizes last corrupts every
-	# other instance's chassis/cabin/wheel visuals (size, radius, width — and the
-	# spoke length, which scales off radius) until that instance happens to get
+	# other instance's chassis/cabin/wheel visuals (size, radius, width) until that
+	# instance happens to get
 	# its own copy too. Duplicate Chassis/Cabin meshes here as well, once per
 	# instance, before anyone can mutate the shared originals.
 	var chassis_mesh := $Chassis as MeshInstance3D
@@ -1200,10 +1188,10 @@ func silence_engine_audio() -> void:
 
 # Reposition + resize each wheel to the spec's track / wheelbase / radius / width
 # (relocating from the AUTHORED mount, origin only), push per-axle suspension onto
-# it, and re-skin its tyre + spoke, then detach and re-attach all wheels so the
+# it, and re-skin its tyre, then detach and re-attach all wheels so the
 # body re-latches the moved suspension connection points.
 func _relocate_wheels(spec: Dictionary) -> void:
-	# Tyre + spoke meshes are duplicated per-instance in _ready() (so multiple
+	# Tyre meshes are duplicated per-instance in _ready() (so multiple
 	# car.tscn instances, e.g. the start-line queue props, can't stomp each
 	# other's wheel visuals); resize each wheel's own copy here. Reposition each
 	# wheel to the new track/wheelbase (origin only, preserving the scene's
@@ -1234,9 +1222,6 @@ func _relocate_wheels(spec: Dictionary) -> void:
 			cyl.height = width
 			# Per-car wheel cap: the car's own wheel.png, or a blank dark disc.
 			tire.set_surface_override_material(0, _wheel_material(String(spec.get("wheel_texture", ""))))
-		var spoke := wheel.get_node_or_null("Visual/Spoke1") as MeshInstance3D
-		if spoke != null:
-			(spoke.mesh as BoxMesh).size = Vector3(width * 0.85, radius * 1.76, 0.06)
 
 	# VehicleWheel3D latches its suspension connection point when it enters the
 	# tree and repaints the node transform every physics step, so the position

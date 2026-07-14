@@ -122,8 +122,6 @@ func test_world_values_applied() -> void:
 	assert_eq(post_mat.get_shader_parameter("virtual_resolution"), cfg.virtual_resolution, "dither grid from config")
 	var tire_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Tire").get_surface_override_material(0)
 	assert_eq(tire_mat.get_shader_parameter("albedo_color"), cfg.wheel_color, "tire color from config")
-	var spoke_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Spoke1").get_surface_override_material(0)
-	assert_eq(spoke_mat.get_shader_parameter("albedo_color"), cfg.wheel_spoke_color, "spoke color from config")
 
 
 func test_speed_lines_config_defaults_present() -> void:

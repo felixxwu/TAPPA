@@ -172,7 +172,7 @@ func test_car_spawns_just_above_terrain() -> void:
 	# exist yet), leaving the floor with the default material.
 	var center: Vector2i = floor_node.chunk_coord_for(car.global_position)
 	var chunk = floor_node._chunks[center]
-	var mi: MeshInstance3D = chunk.get_node("MeshInstance3D")
+	var mi: MeshInstance3D = chunk.get_node("LOD0")
 	assert_not_null(mi.material_override, "chunk material survives runtime mesh assignment")
 
 
@@ -184,9 +184,13 @@ func test_chunk_builds_mesh_and_collision() -> void:
 	assert_eq(m.loaded_coords().size(), ring * ring, "full ring of chunks loaded around origin")
 
 	var chunk = m._chunks[Vector2i(0, 0)]
-	var mesh := chunk.get_node("MeshInstance3D").mesh as ArrayMesh
-	assert_not_null(mesh, "chunk mesh is an ArrayMesh")
-	assert_eq(mesh.surface_get_array_len(0), samples * samples, "one shared vertex per grid sample (indexed mesh)")
+	# LOD0 is the full-resolution display level (grid = samples²) PLUS a downward
+	# skirt ring; decimation exactness of the coarse levels is covered by
+	# test_terrain_lod.gd.
+	var mesh := chunk.get_node("LOD0").mesh as ArrayMesh
+	assert_not_null(mesh, "chunk LOD0 mesh is an ArrayMesh")
+	assert_true(mesh.surface_get_array_len(0) >= samples * samples,
+		"LOD0 has at least one shared vertex per grid sample (indexed mesh)")
 
 	var col: CollisionShape3D = chunk.get_node("CollisionShape3D")
 	var shape := col.shape as HeightMapShape3D
@@ -499,7 +503,7 @@ func test_set_track_bakes_fields_and_rebuilds_loaded_chunks() -> void:
 	assert_gt(m.road_blend.size(), 0, "set_track baked road blend weights")
 	assert_gt(m.track_weights.size(), 0, "set_track baked road weights")
 	var chunk = m._chunks[Vector2i(0, 0)]
-	var colors: PackedColorArray = (chunk.get_node("MeshInstance3D").mesh as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	var colors: PackedColorArray = (chunk.get_node("LOD0").mesh as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_COLOR]
 	var has_road := false
 	for c in colors:
 		if c.a > 0.99:  # full road weight baked into the vertex-colour alpha

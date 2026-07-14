@@ -73,7 +73,7 @@ func test_every_car_places_its_wheels_at_track_and_wheelbase() -> void:
 
 
 # Regression for a bug where wheel radius/track looked wrong only in events:
-# car.tscn's wheel Tire/Spoke meshes are shared sub-resources across ALL
+# car.tscn's wheel Tire meshes are shared sub-resources across ALL
 # car.tscn instances (not just the four wheels within one car), and apply_car
 # used to resize them in place. start_line.gd's queue spawns extra car
 # instances (leader/trailer) and calls apply_car on THEM too, after the

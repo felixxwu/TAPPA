@@ -754,7 +754,6 @@ var peak_torque_rpm := 4500.0
 @export var chassis_color := Color(0.85, 0.2, 0.15)
 @export var cabin_color := Color(0.25, 0.3, 0.4)
 @export var wheel_color := Color(0.12, 0.12, 0.12)
-@export var wheel_spoke_color := Color(0.85, 0.85, 0.78)
 
 @export_group("Speed Lines")
 # Anime "edge speed lines" overlay (features/rendering.md): black streaks
@@ -1339,6 +1338,19 @@ var peak_torque_rpm := 4500.0
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
 @export_range(0.0, 4.0) var texture_lod_bias := 0.75
+## Terrain LOD far-cutoff distances (metres), one per level boundary — the
+## coarsest level draws to the ring edge with no cutoff, so this has (levels - 1)
+## entries (TerrainLod.LOD_STRIDES has `levels`). The display mesh decimates by
+## distance so far ground costs a fraction of the near-flat 1 m tessellation; the
+## engine crossfades between levels via visibility_range. See features/terrain.md.
+@export var terrain_lod_bands_m: PackedFloat32Array = PackedFloat32Array([30.0, 70.0, 100.0, 130.0])
+## Downward skirt depth (metres) on each terrain chunk's LOD meshes, hiding the
+## crack where neighbouring chunks show different levels. Invisible under fog.
+@export_range(0.0, 20.0) var terrain_lod_skirt_m := 3.0
+## Chunk ring (Chebyshev distance, in chunks) around the car that carries live
+## collision. Farther loaded chunks are render-only, so their heightfield is not a
+## broadphase entry. 1 = the inner 3×3.
+@export_range(0, 4) var terrain_collision_ring := 1
 
 
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
@@ -1439,6 +1451,15 @@ func apply_terrain_light(tm: TerrainManager) -> void:
 	tm.sun_color = sun_color
 	tm.sky_color = sky_color
 	tm.ground_color = ground_color
+
+
+# Push the terrain LOD tunables onto the manager BEFORE the corridor precompute
+# (the LOD meshes + skirt are prebaked in cache_chunk from lod_skirt_m) and the
+# initial build. Mirrors apply_terrain_light.
+func apply_terrain_lod(tm: TerrainManager) -> void:
+	tm.lod_band_ends_m = terrain_lod_bands_m
+	tm.lod_skirt_m = terrain_lod_skirt_m
+	tm.collision_ring = terrain_collision_ring
 
 
 # Push the Cliffs group onto the terrain manager before bake_track (mirrors

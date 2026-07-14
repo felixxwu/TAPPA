@@ -8,7 +8,7 @@
 Procedurally generated rolling terrain from stacked Perlin noise. The terrain is
 **infinite in theory**: `height_at(x, z)` is a pure function of absolute world
 coordinates, so any point in the world has a defined height. Only the car's
-immediate surroundings are ever built — a moving 5×5 grid of chunks that loads
+immediate surroundings are ever built — a moving 7×7 grid of chunks that loads
 and unloads as the car drives. `@tool` means chunks also regenerate live in the
 editor (centred on the origin, since there is no car there), and config drives
 the manager at runtime via `world.gd`.
@@ -19,9 +19,11 @@ the manager at runtime via `world.gd`.
 - `CELL_M = 1.0` — 1 m grid cells (low-poly PS1 terrain; quarter the triangles
   and collision samples of the old 0.5 m cells).
 - `SAMPLES = 51` — 51×51 height vertices per chunk (`CHUNK_M / CELL_M + 1`).
-- `RADIUS = 2` — a (2·RADIUS+1)² = **5×5** ring of chunks is kept loaded around
-  the car (~250 m span). Chunks are precomputed at level load and pulled from
-  cache as the car approaches each boundary.
+- `RADIUS = 3` — a (2·RADIUS+1)² = **7×7** ring of chunks is kept loaded around
+  the car (~350 m span, ~175 m reach). The far chunks are cheap because of LOD
+  (see below), so the ring reaches a horizon at low triangle cost. Chunks are
+  precomputed at level load and pulled from cache as the car approaches each
+  boundary.
 
 ## TerrainManager
 
@@ -68,7 +70,7 @@ Key methods:
   shared mutable state), the main thread reuses the cached pair.
 - `chunk_coord_for(pos)` / `target_coords(center)` — integer chunk-grid math.
 - `update_focus(pos)` — recompute the car's chunk coord and, when it changes,
-  `_reconcile` the loaded set: free chunks outside the 5×5 ring, instantiate and
+  `_reconcile` the loaded set: free chunks outside the 7×7 ring, instantiate and
   `setup()` the missing ones. Called every frame from `_process`; cheap because
   it early-returns until the car crosses a chunk boundary.
 - `corridor_coords(centerline, leash_m)` — the full set of chunk coords the
@@ -93,18 +95,52 @@ One tile, created at runtime by the manager. Positioned at its chunk **centre**
 `((cx+0.5)·CHUNK_M, 0, (cz+0.5)·CHUNK_M)` so the centred mesh and collision span
 exactly the tile.
 
-- Mesh — built from precomputed arrays in `apply_data`. The mesh is **indexed**:
-  one shared vertex per grid sample (`SAMPLES²`), with `cells·6` indices. This is
-  a quarter the vertices of the old de-indexed mesh (4 verts/cell) — the main PS1
-  vertex-throughput win. `ARRAY_COLOR` is therefore **per-vertex** (Gouraud), so
-  the road texture weight (alpha) blends smoothly across cells instead of
-  stepping per square (see `vertex_colors` below). UVs use **world** coordinates
-  × `texture_tile_per_meter` so the textures stay continuous across seams. Front faces wind
-  clockwise. **No normals** are stored — the floor shader is `unshaded`.
-- `_build_collision` — a `HeightMapShape3D` (map_width/depth = `SAMPLES`), with
-  the `CollisionShape3D` scaled to 0.5 m cells (the standard workaround, since
-  `HeightMapShape3D` has no cell-size property). Collision still uses the full
-  `SAMPLES²` height array, independent of the de-indexed render mesh.
+- Meshes — **one MeshInstance3D per LOD level** (`LOD0`…`LODn`), built in
+  `apply_data`. Each level is a decimated copy of the same `SAMPLES²` grid (see
+  **Terrain LOD** below); `LOD0` is full resolution. `ARRAY_COLOR` is per-vertex
+  (Gouraud), so the road texture weight (alpha) blends smoothly across cells (see
+  `vertex_colors`). UVs use **world** coordinates × `texture_tile_per_meter` so
+  textures stay continuous across seams. Front faces wind clockwise. **No normals**
+  — the floor shader is `unshaded`.
+- Collision — a `HeightMapShape3D` (map_width/depth = `SAMPLES`), `CollisionShape3D`
+  scaled to `CELL_M` cells (the standard workaround, since `HeightMapShape3D` has
+  no cell-size property). Collision always uses the full-res `SAMPLES²` heights
+  (never a decimated level), and is **enabled only on the near band** —
+  `set_collision_enabled` is toggled by the manager so only chunks within
+  `collision_ring` (Chebyshev, in chunks) of the car are live broadphase entries.
+
+### Terrain LOD (`scripts/terrain_lod.gd`)
+
+Terrain is the dominant per-frame primitive cost (a uniform 1 m grid over the
+loaded ring is far finer than the heightfield's 15–300 m feature wavelengths need
+at distance). Each chunk carries one MeshInstance3D per level in
+`TerrainLod.LOD_STRIDES` (`[1, 2, 5, 10, 25]` → 1/2/5/10/25 m display cells; the
+strides divide `SAMPLES-1 = 50` so each coarse grid lands **exactly** on L0 vertices — a
+pure subsample, so it can never disagree with collision or `height_at`). Each
+level MeshInstance sets a `visibility_range` band (`terrain_lod_bands_m` far
+cutoffs), so the **engine** selects the level by real camera distance every frame
+at zero script cost. The cutoff is **hard** (`VISIBILITY_RANGE_FADE_DISABLED`): the
+dithered visibility-range fade is a Forward+/Mobile feature the **Compatibility
+renderer this game uses ignores** (it hard-cuts regardless), and the fade's
+alpha-hash `discard` would defeat early-Z on tile GPUs — bad for our opaque
+terrain. The level pop is small and hidden by construction: coarse levels are
+exact subsamples (shared vertices don't move), the terrain is gentle, fog softens
+distance, and seams between neighbouring chunks at different levels are covered by
+a downward **skirt** (`terrain_lod_skirt_m`) appended to each level mesh. The LOD meshes are **prebaked
+at load** in `cache_chunk` (`TerrainLod.build_all`), so runtime chunk spawns stay
+a cheap node build + mesh assign. All tunables live in `GameConfig`
+(`apply_terrain_lod`); `TerrainLod` is pure/static and headless-tested
+(`tests/headless/test_terrain_lod.gd`).
+
+**Debug overlay:** press **H** (`toggle_debug_arrows`, the shared debug key, debug
+builds only) to toggle a Minecraft-style chunk-border grid
+(`scripts/chunk_border_debug.gd`, `ChunkBorderDebug`). It outlines every loaded
+chunk as a terrain-hugging line loop + corner posts, drawn through hills (no depth
+test), colour-coded by role: **yellow** = the car's current chunk, **lime** = near
+band with live collision (`collision_ring`), **sky blue** = render-only far
+chunks. `TerrainManager` lazily creates it on first toggle and rebuilds it on
+chunk crossings. (Note: H also toggles the wheel-force arrows — the same debug
+key drives both.)
 
 Because adjacent chunks sample `height_at` at the same world position on their
 shared edge, seams match exactly with no stitching.
@@ -269,7 +305,8 @@ the old `Border` safety wall and far visual plane were removed.
 
 ## Fog & distant backdrop
 
-The detailed 5×5 ring's edge sits ~125–175 m from the car. Rather than hide
+The detailed 7×7 ring's edge sits ~175 m from the car (its far chunks are cheap
+coarse LOD levels). Rather than hide
 that edge with dense fog (which also hid the sky), a coarse **`DistantTerrain`**
 (`scripts/distant_terrain.gd`, a plain `Node3D`) extends the visible terrain far
 past the ring — collision-free scenery sampling the same `height_at`/`light_at`

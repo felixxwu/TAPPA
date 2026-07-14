@@ -72,15 +72,17 @@ func _ready() -> void:
 	# Baked terrain shading — push the sun/ambient + terrain amount BEFORE the
 	# initial build (below) so it's folded into the first chunks' vertex colours.
 	cfg.apply_terrain_light($Floor as TerrainManager)
+	# Terrain LOD tunables — also before the precompute (LOD meshes + skirt are
+	# prebaked in cache_chunk) and the initial build.
+	cfg.apply_terrain_lod($Floor as TerrainManager)
 	_mat($Car/Chassis).set_shader_parameter("albedo_color", cfg.chassis_color)
 	_mat($Car/Cabin).set_shader_parameter("albedo_color", cfg.cabin_color)
 	# Wheel materials are shared resources; setting each once covers all four.
 	_mat($Car/WheelFL/Visual/Tire).set_shader_parameter("albedo_color", cfg.wheel_color)
-	_mat($Car/WheelFL/Visual/Spoke1).set_shader_parameter("albedo_color", cfg.wheel_spoke_color)
 	# Fake per-vertex lighting (PS1-style) on the car meshes, computed live in the
 	# car shader because the car rotates (the terrain bakes the same look above).
 	# The MX-5 body model is lit in car.gd's _apply_model_material when built.
-	for car_mesh in [$Car/Chassis, $Car/Cabin, $Car/WheelFL/Visual/Tire, $Car/WheelFL/Visual/Spoke1]:
+	for car_mesh in [$Car/Chassis, $Car/Cabin, $Car/WheelFL/Visual/Tire]:
 		cfg.apply_car_light(_mat(car_mesh))
 	($PostProcess.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
 
