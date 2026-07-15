@@ -429,13 +429,7 @@ func _build_overlay() -> void:
 	# Slot-machine reveal card.
 	_slot_panel = PanelContainer.new()
 	_slot_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	# A solid black, sharp-cornered reward card with a green accent border (a reward
-	# is a positive event — green is the design system's "positive" colour).
-	var style := UITheme.panel_box(0.92, 22)
-	style.border_color = UITheme.GREEN
-	for side in ["left", "top", "right", "bottom"]:
-		style.set("border_width_" + side, 2)
-	_slot_panel.add_theme_stylebox_override("panel", style)
+	_slot_panel.add_theme_stylebox_override("panel", UITheme.reward_card_box())
 	middle.add_child(_slot_panel)
 	var slot_col := VBoxContainer.new()
 	slot_col.add_theme_constant_override("separation", 8)
@@ -534,7 +528,7 @@ func _show_car_reveal() -> void:
 	var target := String(entry.get("name", car_id))
 	# Bring the won car onto the turntable (hidden until the spin locks on).
 	_reveal_showroom_car(car_id)
-	_start_slot(_car_names(), target, func() -> void:
+	_start_slot(Registry.names(CarLibrary.all()), target, func() -> void:
 		# Collapse to the one-line card: the caption alone carries the car name
 		# once the reel lands, so the name isn't shown twice.
 		_slot_label.visible = false
@@ -574,13 +568,6 @@ func _start_slot(reel_names: Array, target: String, on_done: Callable) -> void:
 			_reveal_done = true
 			on_done.call()
 			_refresh_next_button())
-
-
-func _car_names() -> Array:
-	var names: Array = []
-	for entry in CarLibrary.all():
-		names.append(String(entry.get("name", entry.get("id", "?"))))
-	return names
 
 
 # --- Next button -------------------------------------------------------------

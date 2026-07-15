@@ -691,6 +691,12 @@ var peak_torque_rpm := 4500.0
 ## over the grass-textured ground so the lot reads as paved and the rest as field.
 @export var hq_concrete_center := Vector3(0.0, 0.0, 13.0)
 @export var hq_concrete_size := Vector2(48.0, 44.0)
+## Scenery scatter framing the HQ clearing (HQEnvironment._build_trees / _build_bushes):
+## how many billboard trees / bushes to seed in the annulus around the lot. Pure look —
+## bigger = a denser clearing (and more instances per HQ build). Tests trim these to keep
+## the many HQ scene builds cheap.
+@export_range(0, 1000) var hq_tree_count := 320
+@export_range(0, 1000) var hq_bush_count := 320
 ## Map table: centre position, block size, and the 3D map plane laid on its top.
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 4.6)

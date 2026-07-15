@@ -150,14 +150,16 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
   kit" note) plus **Reset to neutral**. Each row uses horizontal space: a left column
   with the axis name above its current value, beside a right column with the slider above
   its two extremity labels. Each change saves immediately via `Save.set_tuning`.
-- **Upgrades** (`LiftPage.UPGRADES`) — per slot: Enable/Disable toggles for each
-  applied part (`Save.set_upgrade_enabled`; free and reversible, one enabled per
-  slot) and an **Apply** button per matching unlocked item (`Save.install_upgrade`;
-  applying consumes the item from the unlocked pool and fits it to this car for
-  good, confirmed via a dialog first). Plus the **Repair
-  Kit** action — shows Health as a percentage and, when a kit is owned and the car isn't
-  full, a **restore-to-full** button (`Save.use_repair_kit`). Re-spawns the raised car
-  so its body reflects the change.
+- **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesMenu` component
+  (`scripts/upgrades_menu.gd`): one earn-gated **option selector per slot** — "Stock"
+  plus one button per catalogue part in that slot, with each part greyed until its kit
+  is fitted to this car and the active pick bracketed (drivetrain is instead an
+  RWD/AWD/FWD picker). Upgrades are **car-bound**: nothing is consumed from an unlocked
+  pool — picking an option toggles the part on/off via `Save.set_upgrade_enabled`
+  (one enabled per slot). A live power-to-weight + lateral-G stats line sits above the
+  rows, and an engine-swap row below them (lift only). See
+  [upgrade-catalogue.md](upgrade-catalogue.md) and [engine-swap.md](engine-swap.md).
+  (Repair moved to the garage station row — see [menus.md](menus.md).)
 
 ## Tests
 

@@ -4,8 +4,9 @@
 the `swap_engines` / `set_engine_detune` mutators in `scripts/save_manager.gd`,
 the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
 `effective_meta` feed-through in `scripts/upgrade_library.gd`, the
-`engine_detune` axis in `scripts/tuning_library.gd`, and the swap-row / car-park
-swap-mode UI in `scripts/hq.gd`.
+`engine_detune` axis in `scripts/tuning_library.gd`, the swap-row UI in
+`scripts/upgrades_menu.gd` (`UpgradesMenu._make_engine_swap_row`), and the
+car-park swap-mode UI in `scripts/hq.gd`.
 
 **Engine swap** lets the player move any owned car's engine into any other
 owned car. Each swap costs one **engine swap token** — a consumable earned like
@@ -193,16 +194,17 @@ produced. See [tuning.md](tuning.md) for the full axis table.
 
 ## UI
 
-- **Upgrades page, engine-swap row** (`hq._make_engine_swap_row`) — shown on
-  the tuning-lift's Upgrades page above the slot rows: a label with the
-  car's current engine name (`EngineLibrary.by_id(current).name`) and a **Swap
-  Engine** button. The button's label and behaviour track the token count
-  (`Save.engine_swap_tokens_owned()`): **"Swap Engine (N tokens)"** and enabled
-  when a token is held and another owned car exists; **"Swap Engine (0 tokens)"**
-  and still enabled at 0 tokens — pressing it pops `_show_no_tokens_info`, an
-  `AcceptDialog` explaining that swaps cost a token and tokens are won as rally
-  rewards (it does NOT enter swap mode); plain **"Swap Engine"** and disabled
-  only when there's no other owned car to swap with. Health never affects it.
+- **Upgrades page, engine-swap row** (`UpgradesMenu._make_engine_swap_row`,
+  `scripts/upgrades_menu.gd:215`) — shown on the tuning-lift's Upgrades page below
+  the slot rows: a label with the car's current engine name
+  (`EngineLibrary.by_id(current).name`) and a **Swap Engine** button. The button's
+  label and behaviour track the token count (`Save.engine_swap_tokens_owned()`):
+  **"Swap Engine (N tokens)"** and enabled when a token is held and another owned car
+  exists; at 0 tokens the button is **DISABLED** with the label **"Swap Engine — no
+  tokens"** and a tooltip explaining that tokens are won from a rally reward (it does
+  NOT pop an info dialog — the old `_no_tokens_dialog` / `_show_no_tokens_info` path
+  was removed); plain **"Swap Engine"** and disabled only when there's no other owned
+  car to swap with. Health never affects it.
 - **Car-park swap mode** (`hq._enter_engine_swap` / `_carpark_swap_mode`) —
   pressing Swap Engine opens the car park listing **every** OTHER owned car (the
   current car itself is excluded — no self-swap); no car is filtered out on

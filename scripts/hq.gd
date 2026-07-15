@@ -161,9 +161,6 @@ var _upgrades_popup_dirty := false
 # engine swap token. Carries the token cost, or the "no tokens" block. Built lazily.
 # _pending_swap holds the two instance ids awaiting the OK press.
 var _swap_confirm_dialog: ConfirmationDialog
-# Info popup shown when Swap Engine is pressed with no tokens held: explains how to
-# earn one (rally rewards) instead of performing a swap. Built lazily.
-var _no_tokens_dialog: AcceptDialog
 var _pending_swap: Dictionary = {}
 var _cars: Array = []
 var _markers: Array = []
@@ -1883,7 +1880,13 @@ func _lift_back() -> void:
 func _open_lift_page(page: int) -> void:
 	_lift_page = page
 	_refresh_lift_ui()
-	var box: Control = _tune_panel if page == LiftPage.TUNE else _lift_upgrades_box
+	# _tune_panel and _lift_upgrades_box are unrelated Control subtypes, so assign in a
+	# branch rather than a ternary (whose operands would be type-incompatible).
+	var box: Control
+	if page == LiftPage.TUNE:
+		box = _tune_panel
+	else:
+		box = _lift_upgrades_box
 	# Seat the cursor on the page body's first control, else on the shared Back button
 	# (a fresh car's Upgrades body has no focusable control, so it'd otherwise be dead).
 	_grab_lift_page_focus.bind(box).call_deferred()
@@ -2719,7 +2722,7 @@ func _make_carpark_modal(build_body: Callable) -> Control:
 # pops this on-brand modal instead. It offers three left/right-navigable choices —
 # Cancel, Change Upgrades (strip parts to shed power), and Detune to N% (apply the
 # qualifying tune + launch, _on_detune_confirmed).
-func _show_detune_confirm(owned: Dictionary, frac: float) -> void:
+func _show_detune_confirm(_owned: Dictionary, frac: float) -> void:
 	var pct := roundi(frac * 100.0)
 	if _detune_panel == null:
 		_detune_panel = _make_carpark_modal(func(vbox: VBoxContainer) -> void:

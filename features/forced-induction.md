@@ -53,10 +53,18 @@ func _step_turbo(cfg: GameConfig, h: float, throttle_in: float) -> void:
     var drive := turbo_exhaust_drive(rpm(), throttle_in, cfg.turbo_drive_gain, cfg.turbo_antilag, cfg.turbo_antilag_drive)
     omega_turbo = maxf(omega_turbo + turbo_shaft_accel(drive, omega_turbo, cfg.turbo_drag_coef, cfg.turbo_inertia) * h, 0.0)
     boost = boost_fraction(omega_turbo, cfg.turbo_omega_ref)
-    if _prev_throttle > 0.1 and throttle_in <= 0.05 and boost > BOV_BOOST_THRESHOLD:
-        bov_event = true
+    # Blow-off fires on either of two triggers while boosted: a throttle snap-shut,
+    # OR the start of a gear shift (the driver lifts to change gear) even with the
+    # throttle still held.
+    var shifting := shift_timer > 0.0
+    if boost > BOV_BOOST_THRESHOLD:
+        if _prev_throttle > 0.1 and throttle_in <= 0.05:
+            bov_event = true
+        elif shifting and not _prev_shifting:
+            bov_event = true
     antilag_active = cfg.turbo_antilag and throttle_in <= 0.05 and boost > 0.05
     _prev_throttle = throttle_in
+    _prev_shifting = shifting
 ```
 
 Three pure, unit-testable helper functions (static, so the maths is testable
@@ -119,24 +127,26 @@ the dump valve. It's a pure edge-trigger flag read once by the audio bridge
 
 ## Upgrade tiers (`UpgradeLibrary`, `scripts/upgrade_library.gd`)
 
-Two non-consumable `"engine"`-slot items replace the old flat `engine_stage1`
-/ `engine_stage2` power upgrades:
+Two non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
+/ `engine_stage2` power upgrades. Each also carries a short `menu_label` (the
+`UpgradesMenu` selector shows "Small" / "Big" rather than the full name) and a
+`turbo_parasitic_friction` term (the always-on backpressure N·m):
 
 ```gdscript
 {
-    "id": "turbo_small", "name": "Small Turbo", "slot": "engine", "tier": 1, "consumable": false,
+    "id": "turbo_small", "name": "Small Turbo", "menu_label": "Small", "slot": "turbo", "tier": 1, "consumable": false,
     "effect": {"install_turbo": {
         "turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3, "turbo_omega_ref": 10000.0,
-        "turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6,
-        "engine_turbo_whistle_gain": 0.3, "engine_turbo_bov_gain": 0.4,
+        "turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6, "turbo_parasitic_friction": 5.0,
+        "engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
     }},
 },
 {
-    "id": "turbo_large", "name": "Big Turbo", "slot": "engine", "tier": 3, "consumable": false,
+    "id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 2, "consumable": false,
     "effect": {"install_turbo": {
         "turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
-        "turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7,
-        "engine_turbo_whistle_gain": 0.5, "engine_turbo_bov_gain": 0.6,
+        "turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7, "turbo_parasitic_friction": 18.0,
+        "engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
     }},
 },
 ```
@@ -158,7 +168,7 @@ the same mechanism whether it's the small or big tier (or a future one):
         cfg.set(tkey, (val as Dictionary)[tkey])
 ```
 
-Only one `"engine"`-slot part can be fitted+enabled at a time
+Only one `"turbo"`-slot part can be fitted+enabled at a time
 (`UpgradeLibrary.SLOTS`), so a car can't stack `turbo_small` and
 `turbo_large` — installing one replaces the other in that slot.
 

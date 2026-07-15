@@ -7,19 +7,49 @@ const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 var _scene: Node3D
 
 
-func before_each() -> void:
-	# The HUD tests don't care about the track or its foliage — minimal_world()
-	# boots main.tscn with a 1-turn track and no trees, ~15s -> <1s per instance.
+func before_all() -> void:
+	# The HUD tests don't care about the track or its foliage — minimal_world() boots
+	# main.tscn with a 1-turn track and no trees (~15s -> <1s), and we build it ONCE for
+	# the whole script. The HUD is driven by the car's state + config flags each frame;
+	# before_each restores those to a clean baseline so the shared instance is order-safe.
 	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
+	add_child(_scene)
 
 
-func after_each() -> void:
-	# minimal_world() left Config on a 1-turn / no-foliage track; restore the
-	# authored baseline so later files that don't reset Config (e.g.
-	# test_loading_screen) still generate the full world they expect.
+func after_all() -> void:
+	_scene.free()
+	# minimal_world() left Config on a 1-turn / no-foliage track; restore the authored
+	# baseline so later files that don't reset Config (e.g. test_loading_screen) still
+	# generate the full world they expect.
 	Config.reset()
+
+
+func before_each() -> void:
+	# Reset the shared scene to a clean baseline: the HUD reads the car (speed / gear /
+	# rpm / HP) and several config flags every frame, and individual tests inject
+	# velocity / engine state / damage, toggle the debug readout, and flip HUD config
+	# flags — undo all of that so no test leaks state into the next.
+	var cfg: GameConfig = Config.data
+	cfg.hud_enabled = true
+	cfg.hud_elapsed_enabled = true
+	cfg.hud_stage_delta_enabled = true
+	cfg.hud_hp_enabled = true
+	var car: VehicleBody3D = _scene.get_node("Car")
+	car.linear_velocity = Vector3.ZERO
+	car.angular_velocity = Vector3.ZERO
+	var engine: EngineSim = car.drivetrain.engine
+	engine.auto = true
+	engine.gear = 1
+	car.damage.field(1000.0, 1000.0)  # a healthy, mortal car
+	# Force the diagnostic readout + stage widgets back to hidden (tests show them).
+	var hud = _scene.get_node("HUD")
+	hud.hide_countdown()
+	for w in ["StageCompletePanel", "StageDeltaLabel", "CutFlashLabel"]:
+		var node := hud.get_node_or_null(w)
+		if node != null:
+			node.visible = false
+	await get_tree().process_frame
 
 
 func test_hud_visible_when_enabled() -> void:

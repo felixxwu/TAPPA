@@ -13,6 +13,9 @@ func before_each() -> void:
 	# These tests inspect the car roster + apply_car/cycle_car, not the track or
 	# its foliage, so boot a minimal world (~15s -> <1s per instance). minimal_world
 	# resets Config to baseline first, exactly as the old Config.reset() did.
+	# NB: a shared before_all instance is NOT safe here — several tests flip the roster
+	# to CarFixtures mid-test and rely on world.gd re-applying the freshly-built car,
+	# and test_cycle_car re-instantiates the Car node; a per-test build is the clean way.
 	CarLibrary.reset()
 	EngineLibrary.reset()  # guard against a leaked override from another test file
 	SceneHelpers.minimal_world()

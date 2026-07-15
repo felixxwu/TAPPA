@@ -12,30 +12,44 @@ var _scene: Node3D
 var _controls  # MobileControls
 
 
+func before_all() -> void:
+	# Build the wired scene ONCE for the whole script — these tests exercise only the
+	# touch overlay, not the track/foliage, so minimal_world() trims generation to a
+	# 1-turn, tree-free build (~15s -> <1s), and a single shared instance avoids paying
+	# that per test. Per-test state (scheme, forced-on flag, injected input) is reset in
+	# before_each/after_each so the shared instance stays order-safe.
+	SceneHelpers.minimal_world()
+	Config.data.mobile_controls_force = true
+	_scene = load("res://main.tscn").instantiate()
+	add_child(_scene)
+	_controls = _scene.get_node("MobileControls")
+
+
+func after_all() -> void:
+	_scene.free()
+	# Config.reset() restores the authored baseline — both mobile_controls_force AND the
+	# minimal track/foliage minimal_world() set — so later files still generate the full
+	# world they expect.
+	Config.reset()
+
+
 func before_each() -> void:
 	# Hermetic input state: the touch controls only RELEASE actions they pressed
 	# themselves, so a press leaked by an earlier test would survive into the
 	# idle/region assertions here. Clear all actions up front.
 	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate"]:
 		Input.action_release(a)
-	# These tests only exercise the touch overlay, not the track/foliage, so boot
-	# a minimal world (~15s -> <1s per instance), then force the controls on.
-	SceneHelpers.minimal_world()
+	# Reset the shared overlay to its default scheme + forced-on state (tests below
+	# switch schemes / toggle the force flag), and re-fix the slider rect so the steer
+	# maths are deterministic regardless of the headless viewport size: centre x = 100,
+	# usable half-travel = 100 - 20 = 80.
 	Config.data.mobile_controls_force = true
-	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
-	_controls = _scene.get_node("MobileControls")
-	# A fixed slider rect so the steer maths are deterministic regardless of the
-	# headless viewport size: centre x = 100, usable half-travel = 100 - 20 = 80.
+	_controls.set_scheme(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
 	_controls._slider_rect = Rect2(0, 0, 200, 40)
 	_controls._thumb_w = 40.0
 
 
 func after_each() -> void:
-	# Config.reset() restores the authored baseline — both mobile_controls_force
-	# AND the minimal track/foliage minimal_world() set — so later files that don't
-	# reset Config still generate the full world they expect.
-	Config.reset()
 	for a in ["steer_left", "steer_right", "brake_reverse", "accelerate"]:
 		Input.action_release(a)
 

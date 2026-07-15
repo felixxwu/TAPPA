@@ -33,6 +33,15 @@ static func by_id(entries: Array, id: String) -> Dictionary:
 	return entries[i] if i >= 0 else {}
 
 
+# The display names of a library's entries (each entry's "name", falling back to its
+# "id"), in array order — e.g. the reel labels a slot-machine reveal spins through.
+static func names(entries: Array) -> Array:
+	var out: Array = []
+	for entry in entries:
+		out.append(String(entry.get("name", entry.get("id", "?"))))
+	return out
+
+
 # Per-library test-override holder. An empty override means "use the shipped
 # catalogue". Tests call override_for_test() to run against a synthetic roster and
 # reset() in teardown; inert in production (the override is always empty there).

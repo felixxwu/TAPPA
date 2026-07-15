@@ -16,6 +16,12 @@ func before_each() -> void:
 	# for gamepad nav), so per-test focus assertions aren't contaminated by order.
 	get_viewport().gui_release_focus()
 	Config.reset()
+	# These tests build hq.tscn many times but never assert on the HQ scenery COUNT
+	# (only that a tree field of the right type exists), so trim the framing scatter to
+	# keep each of the ~88 HQ builds cheap — the full 320+320 default is a pure-look
+	# value exercised in the real game, not here.
+	Config.data.hq_tree_count = 8
+	Config.data.hq_bush_count = 8
 	CarFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
@@ -704,7 +710,12 @@ func test_hq_title_parks_all_owned_cars() -> void:
 
 func test_hq_title_parks_starter_previews_when_garage_is_empty() -> void:
 	# A fresh player (no car owned, starter not picked) would have an empty lot behind
-	# the title — instead the three starter cars are shown as previews so it's populated.
+	# the title — instead the starter cars are shown as previews so it's populated.
+	# This backdrop is driven by hq.gd's STARTER_MODEL_IDS constant, which hardcodes real
+	# catalogue ids (mx5/focus/twingo) — it can't be pointed at the synthetic fixtures
+	# without touching production code, so restore the real catalogue for this one test
+	# (same as test_first_run_start_opens_starter_pick_then_grants_first_car).
+	CarFixtures.restore()
 	_reset_to_first_run()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -2438,10 +2449,10 @@ func test_swap_button_disabled_without_an_eligible_partner() -> void:
 	assert_false(_find_swap_button(hq).disabled, "a second car + a token enables the swap")
 
 
-func test_swap_button_without_a_token_pops_info_instead_of_swapping() -> void:
-	# With an eligible partner but no token, the swap button stays ENABLED (labelled
-	# "0 tokens") and pressing it pops the "how to earn a token" info dialog rather
-	# than entering swap mode. A token then owned lets it enter swap normally.
+func test_swap_button_without_a_token_is_disabled_until_one_is_owned() -> void:
+	# With an eligible partner but no token, the swap button is DISABLED and its label
+	# spells out the no-token state (a tooltip explains how to earn one) — it does NOT
+	# enter swap mode. A token then owned enables the button and lets it swap normally.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -2450,19 +2461,15 @@ func test_swap_button_without_a_token_pops_info_instead_of_swapping() -> void:
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	var btn := _find_swap_button(hq)
 	assert_not_null(btn, "the upgrades page has a Swap Engine button")
-	assert_false(btn.disabled, "partner but no token -> button stays enabled")
-	assert_true(String(btn.text).to_lower().contains("0 token"), "label spells out the 0-token state")
-	btn.pressed.emit()
-	await get_tree().process_frame
-	assert_not_null(hq._no_tokens_dialog, "pressing with no token pops the info dialog")
-	assert_true(hq._no_tokens_dialog.visible, "the info dialog is shown")
-	assert_ne(hq._view, hq.View.CARPARK, "no token -> did NOT enter swap mode")
-	# A token owned: the button now enters the real swap flow.
+	assert_true(btn.disabled, "partner but no token -> button disabled")
+	assert_true(String(btn.text).to_lower().contains("no token"), "label spells out the no-token state")
+	assert_ne(hq._view, hq.View.CARPARK, "no token -> not in swap mode")
+	# A token owned: the button is enabled and enters the real swap flow.
 	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	assert_false(_find_swap_button(hq).disabled, "a token keeps the swap enabled")
+	assert_false(_find_swap_button(hq).disabled, "a token enables the swap")
 
 
 func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> void:
@@ -2476,6 +2483,10 @@ func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> 
 	hq._selected_instance_id = id
 	hq._eligible = [_save.get_car(id)]
 	hq._focus = 0
+	# The popup is only ever opened from the detune prompt over the (visible) car-park
+	# layer; mirror that precondition so its controls are visible-in-tree (the layer is
+	# hidden outside View.CARPARK, which would make first_control() see nothing).
+	hq._car_layer.visible = true
 	hq._show_upgrades_popup(_save.get_car(id))
 	await get_tree().process_frame
 	assert_true(hq._upgrades_popup.visible, "the popup is shown")

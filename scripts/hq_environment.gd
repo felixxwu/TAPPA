@@ -124,7 +124,7 @@ func _build_buildings(host: Node3D) -> void:
 # never block the title camera's view of the car park, and the garage footprint
 # kept clear so none spawn inside it. Returns the scatter for the spectator layout.
 func _build_trees(host: Node3D) -> PackedVector2Array:
-	var positions := _scatter_ring(320, 20240)
+	var positions := _scatter_ring(Config.data.hq_tree_count, 20240)
 	var flat := TerrainManager.flat()
 	var field := Foliage.spawn_trees(host, positions, flat, false, 1000.0, 0.0)
 	field.name = "HQTrees"
@@ -139,7 +139,7 @@ func _build_trees(host: Node3D) -> PackedVector2Array:
 # size and look as a stage bush; scenery only — no collision, no BushField.
 func _build_bushes(host: Node3D) -> void:
 	# 1013 mirrors world.gd's BUSH_SEED_OFFSET so the two scatters interleave.
-	var positions := _scatter_ring(320, 20240 + 1013)
+	var positions := _scatter_ring(Config.data.hq_bush_count, 20240 + 1013)
 	var flat := TerrainManager.flat()
 	var field := Foliage.spawn_bushes(host, positions, flat, 1000.0, 0.0)
 	field.name = "HQBushes"

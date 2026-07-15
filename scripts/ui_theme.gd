@@ -178,6 +178,17 @@ static func panel(alpha: float = 1.0, pad: int = 14) -> PanelContainer:
 	return p
 
 
+# A solid black, sharp-cornered reward-card stylebox with a green accent border (a
+# reward is a positive event — GREEN is the design system's "positive" colour).
+# Shared by the upgrade reveal and the podium car-reveal cards.
+static func reward_card_box() -> StyleBoxFlat:
+	var style := panel_box(0.92, 22)
+	style.border_color = GREEN
+	for side in ["left", "top", "right", "bottom"]:
+		style.set("border_width_" + side, 2)
+	return style
+
+
 # --- Buttons & selection -----------------------------------------------------
 
 # A standard menu button: uppercase, fixed compact height (rule 3), no keyboard

@@ -222,9 +222,9 @@ func _make_engine_swap_row(instance_id: int) -> HBoxContainer:
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
 	var button := Button.new()
-	button.text = "Swap Engine"
 	button.focus_mode = Control.FOCUS_ALL
 	button.set_meta("upgrade_focus_key", "swap")  # keep the cursor here across a rebuild
+	# Each branch sets the button's text/disabled/tooltip for its state.
 	var tokens := Save.engine_swap_tokens_owned()
 	var has_target := not _swap_targets(instance_id).is_empty()
 	if not has_target:

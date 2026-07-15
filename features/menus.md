@@ -101,20 +101,23 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   owns `menu_back`. There they lean on `MenuNav` purely for the WASD gap + `FOCUS_ALL`.
   The HQ lift attaches `MenuNav` to the **Tune/Upgrades sub-boxes only** — never the lift
   root — so the diegetic HUB buttons (`FOCUS_NONE`, manual left/right cursor) stay
-  untouched. The **Upgrades** box rebuilds its rows on every refresh (per car / after a
-  toggle); `_rebuild_upgrades_box` clears only the row children (**not** the `MenuNav`
+  untouched. The **Upgrades** page is the reusable `UpgradesMenu` component
+  (`scripts/upgrades_menu.gd`, `hq.gd:1007`), which owns its OWN focus-preserving
+  `rebuild()` + `MenuNav.attach` (`upgrades_menu.gd:45-72`) — the lift root itself is
+  never attached. `UpgradesMenu.rebuild()` runs on every refresh (per car / after an
+  option press); it frees only the row children (**not** the `MenuNav`
   child — freeing it would kill WASD/gamepad nav) and re-runs `MenuNav.attach` so the new
   buttons become focusable and its cursor-revive `first` re-seats on a live control. Note
   `UITheme.first_focusable` skips any control in a **dying subtree** (an ancestor
   `queue_free`d this frame) — the rebuild frees whole row containers, whose descendant
   buttons aren't themselves `is_queued_for_deletion()`, so a deferred grab that ignored
   ancestors would land on a doomed button and lose focus next frame. To keep the cursor
-  put when a **toggle/repair press** triggers the rebuild (rather than flinging it to the
+  put when an **option press** triggers the rebuild (rather than flinging it to the
   top of the list), each interactive row control carries a stable `upgrade_focus_key` meta
-  (`toggle:<item>`, `swap`, …); `_rebuild_upgrades_box` captures the focused control's key
-  before clearing and `_restore_upgrade_focus` re-grabs the FRESH control with that key
-  afterward (using the same dying-subtree guard, `_control_dying`, so it doesn't grab the
-  about-to-be-freed old one).
+  (`opt:<slot>:<id>`, `drivetrain:<mode>`, `swap`); `rebuild()` captures the focused
+  control's key before clearing and `_restore_focus` re-grabs the FRESH control with that
+  key afterward (using the same dying-subtree guard so it doesn't grab the about-to-be-
+  freed old one).
 
   The **`start line`** pre-event overlay has two buttons — **Start** and, under it,
   **Tune Car** (opens the shared `TuningPanel` for the car about to race, see
@@ -390,21 +393,24 @@ itself** and doesn't need to scroll. The two pages:
   is selected, and left/right nudges it in place (see the `MenuNav` slider note above).
   No page title/subtitle — the sliders take the full height. See
   [engine-swap.md](engine-swap.md) for the detune axis.
-- **Upgrades** (`LiftPage.UPGRADES`) — per slot: every part **applied** to the car
-  gets an **Enable/Disable toggle** (`Save.set_upgrade_enabled`; free, instant, at
-  most one enabled per slot — enabling one switches off a same-slot sibling), and
-  each matching **unlocked** item gets an **Apply** button (`Save.install_upgrade`;
-  applying consumes the item from the unlocked pool and fits it to this car for
-  good, confirmed via a dialog first since it can't be moved or recovered).
-  (Repair is **not** here anymore — it moved to the **garage station row** as a
-  `Repair` button, `_repair_selected_car`; see GARAGE above.) Above the slot rows sits an
-  **engine-swap row** (`_make_engine_swap_row`): the car's current engine name and
-  a **Swap Engine** button, disabled (with a tooltip) unless this car is at 100%
-  HP. Pressing it opens the car park in **swap mode** (`_enter_engine_swap` /
-  `_carpark_swap_mode`) — parking only the OTHER owned cars that also sit at 100%
-  HP (self excluded) — where the normal car-park cycle/confirm/back flow exchanges
-  the two cars' engines (`Save.swap_engines`) and returns to this page. See
-  [engine-swap.md](engine-swap.md).
+- **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesMenu` component
+  (`scripts/upgrades_menu.gd`): one earn-gated **option selector per slot** — "Stock"
+  plus one button per catalogue part in that slot, each part greyed until its kit is
+  fitted to this car and the active pick bracketed (`Save.set_upgrade_enabled`; free,
+  instant, at most one enabled per slot — picking one switches off a same-slot sibling).
+  The drivetrain slot is an RWD/AWD/FWD picker instead. Nothing is consumed from an
+  unlocked pool — upgrades are car-bound. Focus keys are `opt:<slot>:<id>`,
+  `drivetrain:<mode>`, and `swap`.
+  (Repair is **not** here — it moved to the **garage station row** as a
+  `Repair` button, `_repair_selected_car`; see GARAGE above.) Below the slot rows sits an
+  **engine-swap row** (`UpgradesMenu._make_engine_swap_row`, `upgrades_menu.gd:215`): the
+  car's current engine name and a **Swap Engine** button gated on engine-swap **tokens**
+  (NOT on HP). The swap lineup (`_swap_targets`) is **every other owned car regardless of
+  health**; the button is disabled with a tooltip when there's no other car OR no token
+  held, and enabled ("Swap Engine (N tokens)") otherwise. Pressing it opens the car park
+  in **swap mode** (`_enter_engine_swap` / `_carpark_swap_mode`), where the normal car-park
+  cycle/confirm/back flow exchanges the two cars' engines (`Save.swap_engines`) and returns
+  to this page. See [engine-swap.md](engine-swap.md).
   The wreck-recovery safety net (`Save.ensure_repair_safety_net`, a free kit when all
   owned cars are wrecked + none held) runs on save load, on garage entry, and on
   `_refresh_lift_ui`; the garage Repair button's label surfaces the resulting kit count.

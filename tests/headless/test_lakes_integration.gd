@@ -47,20 +47,18 @@ func test_events_generate_dry_roads_with_lakes() -> void:
 		var poly := (res["centerline"] as Curve2D).tessellate()
 		var bounds := LoadingScreen.bounds_of(poly).grow(60.0)
 		var water_cells := LakeField.submerged_cells(params.water_sampler, params.water_level, bounds, 2.0)
-		# Frame consistency: rebuild params (as target derivation does) -> same shape.
-		var res2 := await TrackGenerator.generate(TrackGenParams.for_event(event, cfg))
+		# NB: the run-scene / target-derivation frame-consistency check (identical shape
+		# from a rebuilt for_event params) lives in test_track_gen_frame_consistency.gd,
+		# so it isn't duplicated here — that saves a second full generate() per event.
 
-		gut.p("[lakes] seed=%d level=%.2f | complete=%s corners=%d | submerged_road=%.1f%% | water_cells=%d | dry_start=%s | shape_match=%s" % [
+		gut.p("[lakes] seed=%d level=%.2f | complete=%s corners=%d | submerged_road=%.1f%% | water_cells=%d | dry_start=%s" % [
 			params.seed, params.water_level, str(res["complete"]),
 			res["pieces"].size(), 100.0 * wet_frac, water_cells.size(),
-			str(params.origin),
-			str(res["cells"].size() == res2["cells"].size())])
+			str(params.origin)])
 
 		assert_true(res["complete"], "seed %d: the track still generates with water on" % params.seed)
 		assert_gt(water_cells.size(), 0, "seed %d: water forms near the stage" % params.seed)
 		assert_lt(wet_frac, 0.12, "seed %d: road stays largely dry (only shoreline skims)" % params.seed)
-		assert_eq(res["cells"].size(), res2["cells"].size(),
-			"seed %d: run-scene and target-derivation shapes match" % params.seed)
 
 
 # Field the actual car into main.tscn with water on, and confirm a LakeField was

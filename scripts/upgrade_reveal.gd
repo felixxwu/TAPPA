@@ -47,13 +47,7 @@ func _build_ui() -> void:
 
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	# A solid black, sharp-cornered reward card with a green accent border (a reward
-	# is a positive event — green is the design system's "positive" colour).
-	var style := UITheme.panel_box(0.92, 22)
-	style.border_color = UITheme.GREEN
-	for side in ["left", "top", "right", "bottom"]:
-		style.set("border_width_" + side, 2)
-	panel.add_theme_stylebox_override("panel", style)
+	panel.add_theme_stylebox_override("panel", UITheme.reward_card_box())
 	margin.add_child(panel)
 
 	var col := VBoxContainer.new()
@@ -110,14 +104,7 @@ func _card_width() -> float:
 func reveal(item_id: String, car_instance_id: int) -> void:
 	_car_instance_id = car_instance_id
 	var target := String(UpgradeLibrary.by_id(item_id).get("name", item_id))
-	_start_slot(_upgrade_names(), target, func() -> void: _offer_choice(item_id, target))
-
-
-func _upgrade_names() -> Array:
-	var names: Array = []
-	for entry in UpgradeLibrary.UPGRADES:
-		names.append(String(entry.get("name", entry.get("id", "?"))))
-	return names
+	_start_slot(Registry.names(UpgradeLibrary.UPGRADES), target, func() -> void: _offer_choice(item_id, target))
 
 
 # Drive `label` (owned by `host`) through a slot-machine spin over `reel_names`,
