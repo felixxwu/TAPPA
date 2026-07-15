@@ -222,13 +222,13 @@ func _size_factor(pos: Vector3) -> float:
 # XZ (distinct hash salts 13/17) so build and felling-restore agree. The cross's Z
 # (second plane) tracks width just like X.
 func _instance_scale(pos: Vector3) -> Vector3:
-	var scale := instance_scale * _size_factor(pos)
+	var scl := instance_scale * _size_factor(pos)
 	if _aspect_jitter <= 0.0:
-		return scale
+		return scl
 	# Each axis: 1 + (rand in [-1, 1]) * amplitude -> [1 - k, 1 + k], independent x/y.
 	var ax := 1.0 + (ScatterMath.hash01(int(round(pos.x)), int(round(pos.z)), 0, 13) * 2.0 - 1.0) * _aspect_jitter
 	var ay := 1.0 + (ScatterMath.hash01(int(round(pos.x)), int(round(pos.z)), 0, 17) * 2.0 - 1.0) * _aspect_jitter
-	return Vector3(scale.x * ax, scale.y * ay, scale.z * ax)
+	return Vector3(scl.x * ax, scl.y * ay, scl.z * ax)
 
 
 # Public: the per-instance size multiplier for collision shape / instance `idx`

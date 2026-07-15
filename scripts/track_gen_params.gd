@@ -102,17 +102,17 @@ static func for_config(cfg: GameConfig) -> TrackGenParams:
 # object without a GameConfig (no cfg defaults, no dry-start relocation).
 # Production code should use for_event/for_config/for_trial instead.
 static func of(start_pos: Vector2, start_heading: Vector2, seed_value: int,
-		turn_count: int, width: float, clearance := 0.0, reserve := 0.0,
-		straightness := 0.0, runoff := 0.0) -> TrackGenParams:
+		turns: int, track_width: float, clearance_m := 0.0, reserve := 0.0,
+		straight := 0.0, runoff := 0.0) -> TrackGenParams:
 	var p := TrackGenParams.new()
 	p.origin = start_pos
 	p.heading = start_heading
 	p.seed = seed_value
-	p.turn_count = turn_count
-	p.width = width
-	p.clearance = clearance
+	p.turn_count = turns
+	p.width = track_width
+	p.clearance = clearance_m
 	p.reserve_behind = reserve
-	p.straightness = straightness
+	p.straightness = straight
 	p.runoff_m = runoff
 	return p
 

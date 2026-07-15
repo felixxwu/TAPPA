@@ -102,7 +102,6 @@ func _persist() -> void:
 # fresh) car. Called by world.gd:cycle_car() after a car swap.
 func retarget(car: Node3D) -> void:
 	chase_camera.target = car
-	var cfg: GameConfig = Config.data
 	if bonnet_camera.get_parent() != car:
 		bonnet_camera.get_parent().remove_child(bonnet_camera)
 		car.add_child(bonnet_camera)
