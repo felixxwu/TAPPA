@@ -19,6 +19,23 @@ var _fov_speed: float
 var _fov_smoothing: float
 var _dolly_mix: float
 
+# G-force lean: the view rolls into lateral acceleration and pitches with
+# forward acceleration (brake dips the nose, throttle lifts it). Gains are
+# degrees per m/s², clamped to _tilt_max, eased toward the target at
+# _tilt_smoothing. See features/camera.md.
+var _tilt_roll_gain: float
+var _tilt_pitch_gain: float
+var _tilt_max: float
+var _tilt_smoothing: float
+var _roll := 0.0     # current eased roll (radians)
+var _pitch := 0.0    # current eased pitch (radians)
+var _prev_vel := Vector3.ZERO
+var _have_prev_vel := false
+# The target the cached _prev_vel belongs to; when it changes (a car swap via
+# CameraManager.retarget) the history is dropped so the first frame on the new
+# car doesn't read a bogus acceleration spike off the old car's velocity.
+var _tilt_vel_target: Node = null
+
 # Last known horizontal direction of travel (pointing the way the car moves).
 var _travel_dir := Vector3.FORWARD
 
@@ -43,6 +60,10 @@ func _ready() -> void:
 	_fov_speed = cfg.chase_fov_speed
 	_fov_smoothing = cfg.chase_fov_smoothing
 	_dolly_mix = cfg.chase_dolly_mix
+	_tilt_roll_gain = cfg.chase_tilt_roll_gain
+	_tilt_pitch_gain = cfg.chase_tilt_pitch_gain
+	_tilt_max = deg_to_rad(cfg.chase_tilt_max_deg)
+	_tilt_smoothing = cfg.chase_tilt_smoothing
 	fov = _base_fov
 
 
@@ -134,6 +155,40 @@ func _timed_physics_process(delta: float) -> void:
 	var to_target := target.global_position - global_position
 	if to_target.length() > 0.001 and absf(to_target.normalized().dot(Vector3.UP)) < 0.999:
 		look_at(target.global_position, Vector3.UP)
+
+	_apply_gforce_tilt(delta)
+
+
+# Lean the (already aimed) camera into the car's acceleration: roll toward
+# lateral g, pitch with forward g. Acceleration is the frame-to-frame change in
+# the car's velocity projected onto its local axes; the resulting target angles
+# are clamped and eased so the tilt settles back to level when the g-forces drop.
+func _apply_gforce_tilt(delta: float) -> void:
+	var target_roll := 0.0
+	var target_pitch := 0.0
+	if delta > 0.0 and target is RigidBody3D:
+		if target != _tilt_vel_target:
+			_have_prev_vel = false
+			_tilt_vel_target = target
+		var cur_vel := (target as RigidBody3D).linear_velocity
+		if _have_prev_vel:
+			var accel := (cur_vel - _prev_vel) / delta
+			var car_basis := target.global_transform.basis
+			var lateral := accel.dot(car_basis.x)       # + = accelerating rightward
+			var longitudinal := accel.dot(-car_basis.z) # + = speeding up forward
+			# Roll with lateral g (the default gain is negative, so the view leans
+			# outward — away from the turn), pitch nose-up under throttle /
+			# nose-down under braking. Gains are deg per m/s².
+			target_roll = clampf(deg_to_rad(lateral * _tilt_roll_gain), -_tilt_max, _tilt_max)
+			target_pitch = clampf(deg_to_rad(longitudinal * _tilt_pitch_gain), -_tilt_max, _tilt_max)
+		_prev_vel = cur_vel
+		_have_prev_vel = true
+
+	var weight := 1.0 - exp(-_tilt_smoothing * delta)
+	_roll = lerpf(_roll, target_roll, weight)
+	_pitch = lerpf(_pitch, target_pitch, weight)
+	rotate_object_local(Vector3.RIGHT, _pitch)
+	rotate_object_local(Vector3.FORWARD, _roll)
 
 
 # Terrain surface height at a world (x, z), used to seat the camera a fixed

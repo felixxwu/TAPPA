@@ -600,6 +600,17 @@ var peak_torque_rpm := 4500.0
 ## (distance ∝ 1/tan(fov/2), the car stays the same size). Values in between
 ## soften an over-eager pull-in.
 @export_range(0.0, 1.0) var chase_dolly_mix := 0.5
+## G-force camera lean (chase only). The chase camera derives the car's
+## acceleration each frame and leans into it: lateral g rolls the view, forward
+## g pitches it (brake dips the nose, throttle lifts it). Gains are degrees of
+## tilt per m/s² of acceleration on that axis; a negative gain inverts that axis.
+## The result is clamped to ±chase_tilt_max_deg and eased at chase_tilt_smoothing
+## (higher = snappier; the same 1-exp(-rate·dt) idiom as the orbit/FOV smoothing),
+## so the tilt decays back to level once the g-forces drop.
+@export_range(-2.0, 2.0) var chase_tilt_roll_gain := -0.3
+@export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.25
+@export_range(0.0, 30.0) var chase_tilt_max_deg := 4.0
+@export_range(0.1, 20.0) var chase_tilt_smoothing := 6.0
 
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car
@@ -1201,7 +1212,7 @@ var peak_torque_rpm := 4500.0
 ## scaled by a random factor in [this, 1.0] (hashed off its position), so a Greece
 ## stand varies in height instead of every tree being identical. 1.0 disables the
 ## jitter. Only affects the region-forced billboard path (e.g. tree-greece.webp).
-@export_range(0.1, 1.0) var region_tree_billboard_min_scale := 0.3
+@export_range(0.1, 1.0) var region_tree_billboard_min_scale := 0.5
 ## Vertical offset (m) applied to REGION billboard trees (e.g. Greece) to sink them
 ## into the ground: negative pushes the card's bottom edge below the terrain (hiding
 ## the seam where the trunk meets the slope), positive lifts it. The home billboard

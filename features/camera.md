@@ -102,6 +102,21 @@ so a longer car would otherwise poke its nose/tail out of frame; pushing the
 camera back by half the body length keeps the whole car visible. Falls back to no
 adjustment when the target doesn't expose `half_length()` (flat test fixtures).
 
+**G-force lean.** After the look-at aims the camera, it leans into the car's
+acceleration for a sense of weight transfer. The acceleration is the
+frame-to-frame change in the car's `linear_velocity` (`(v - prev_v)/dt`, world
+space, skipped on the first frame and whenever `dt == 0` so an unpause doesn't
+spike it), projected onto the car's local axes: the **lateral** component
+(`accel · basis.x`) rolls the view, the **longitudinal** component
+(`accel · -basis.z`) pitches it (throttle lifts the nose, braking dips it). The
+target angles are `component · gain` (degrees per m/s²), clamped to
+`±chase_tilt_max_deg`, and the live roll/pitch ease toward them with the same
+`1 - exp(-chase_tilt_smoothing · dt)` weight as the orbit/FOV smoothing — so the
+lean decays back to level once the g-forces drop. A negative gain inverts that
+axis. Applied via `rotate_object_local` (pitch about local `RIGHT`, roll about
+local `FORWARD`), so it composes on top of the un-smoothed look-at. The bonnet
+camera is unaffected (it already inherits the car body's suspension roll/pitch).
+
 ### Exported / config
 
 - `target: Node3D` — the node to follow (set in the scene to `Car`).
@@ -117,6 +132,10 @@ adjustment when the target doesn't expose `half_length()` (flat test fixtures).
 - `chase_dolly_mix` (0–1) — how strongly the follow distance is pulled in to
   counteract the speed FOV (0 = distance fixed, 1 = full dolly zoom holding the
   car's on-screen size).
+- `chase_tilt_roll_gain` / `chase_tilt_pitch_gain` (deg per m/s²) — how far the
+  view leans per unit of lateral / longitudinal acceleration; negative inverts.
+- `chase_tilt_max_deg` — clamp on the g-force lean magnitude (either axis).
+- `chase_tilt_smoothing` — easing rate for the lean; higher settles faster.
 
 ## Bonnet camera
 
