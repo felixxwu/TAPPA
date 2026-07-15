@@ -242,7 +242,7 @@ default 20 m — see the *Finish runoff* generation bullet above),
 `road_marking_tarmac_threshold`, `road_marking_sample_step_m`
 (via `GameConfig.road_marking_params()`). Track-side cliffs live in the `Cliffs`
 group: `cliff_enabled`, `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`,
-`cliff_run_m`, `cliff_fade_m`, `cliff_pinch_angle_deg`, `cliff_amount` (pushed onto
+`cliff_run_m`, `cliff_fade_m`, `cliff_open_radius_m`, `cliff_amount` (pushed onto
 the terrain by `GameConfig.apply_cliffs`; per-event scale via
 `RallyLibrary.event_cliffiness`).
 

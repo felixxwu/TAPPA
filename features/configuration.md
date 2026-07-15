@@ -155,7 +155,7 @@ Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
 | `cliff_max_height_m` | 8.0 | Global height ceiling at `\|camber\|=1` (= drop depth); scaled per event |
 | `cliff_run_m` | 6.0 | Horizontal run road-edge band → full height (small ⇒ steep) |
 | `cliff_fade_m` | 6.0 | Horizontal run full height → back to grade (bounds the influence radius R) |
-| `cliff_pinch_angle_deg` | 45.0 | Bearing-span band past 180° over which a hairpin crook tapers to flat |
+| `cliff_open_radius_m` | 4.0 | Radius of the post-bake morphological open that knocks down thin tall walls (narrower than ~2× this); 0 disables |
 | `cliff_amount` | 1.0 | Runtime per-event scale on `cliff_max_height_m` (`[0,1]`); written by `RallySession` from the event's `cliffiness`, else the shipped fallback |
 
 Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mirrors

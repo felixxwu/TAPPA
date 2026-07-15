@@ -241,8 +241,11 @@ repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health +N% → 
 wheels recentered, Continue) that `world.gd._show_repair_popup()` shows once the
 loading overlay is gone (staged runs keep it up until the start-line queue is laid
 out, so the popup is shown AFTER `_build_start_line()` / `loading.finish()`, sitting
-over the ready start-line reveal rather than a frozen loading screen). Headless runs
-drain the summary without building the popup.
+over the ready start-line reveal rather than a frozen loading screen). The popup only
+appears when the repair moved health by **at least 1 percentage point**
+(`RepairReveal.worth_showing`) — a sub-1% touch-up (e.g. wheels-only on a near-full
+car) still applies to the save but doesn't interrupt the player. Headless runs drain
+the summary without building the popup.
 
 ## In-run HUD (see [hud.md](hud.md))
 

@@ -74,21 +74,32 @@ func _build_ui() -> void:
 	UITheme.enforce(self)
 
 
+# The rounded health gain (percentage points of max_hp) a repair summary represents.
+# Pure — the popup gate and the card label both read it so they never disagree.
+static func health_gain_pct(summary: Dictionary) -> int:
+	var max_hp := float(summary.get("max_hp", 0.0))
+	if max_hp <= 0.0:
+		return 0
+	var before := float(summary.get("hp_before", 0.0))
+	var after := float(summary.get("hp_after", 0.0))
+	return int(round(100.0 * after / max_hp)) - int(round(100.0 * before / max_hp))
+
+
+# Whether a repair is worth popping up for: only when the health gain is at least a
+# full percentage point. A sub-1% patch (e.g. a wheels-only touch-up on a near-full
+# car) still applies to the save; it just doesn't interrupt the player with a card.
+static func worth_showing(summary: Dictionary) -> bool:
+	return bool(summary.get("repaired", false)) and health_gain_pct(summary) >= 1
+
+
 # Populate the card from a Save.field_repair summary
 # ({repaired, hp_before, hp_after, max_hp, hp_gained}) and seat focus on Continue.
 func reveal(summary: Dictionary) -> void:
 	_summary = summary
 	var max_hp := float(summary.get("max_hp", 0.0))
-	var before := float(summary.get("hp_before", 0.0))
 	var after := float(summary.get("hp_after", 0.0))
-	var pct := func(v: float) -> int:
-		return int(round(100.0 * v / max_hp)) if max_hp > 0.0 else 0
-	var pct_after: int = pct.call(after)
-	var gained: int = pct_after - int(pct.call(before))
-	# A sub-1-point patch (e.g. a wheels-only fix on a near-full car) rounds to +0%,
-	# which reads as "nothing happened" — show "+<1%" instead when HP did climb.
-	var gain_txt := "+<1%" if gained <= 0 and after > before else "+%d%%" % gained
-	_health_label.text = UITheme.caps("Health  %s  →  %d%%" % [gain_txt, pct_after])
+	var pct_after := int(round(100.0 * after / max_hp)) if max_hp > 0.0 else 0
+	_health_label.text = UITheme.caps("Health  +%d%%  →  %d%%" % [health_gain_pct(summary), pct_after])
 	_wheels_label.text = UITheme.caps("Wheel alignment  recentered")
 	UITheme.enforce(self)
 	# Framework: focus + WASD/arrow/gamepad nav (single button; no on_back — the host

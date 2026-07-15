@@ -5,27 +5,54 @@
 > console for `load stage:` / `load total:`. A desktop free-roam boot of
 > `main.tscn` (315-chunk corridor, 71 MB cached) measured ~20.8 s total, split:
 >
-> | stage | ms (before) | ms (after carve pass) |
+> | stage | ms (before) | ms (now) |
 > |---|---|---|
-> | Carving road into terrain (`bake_track` + `_bake_cliffs`) | 11029 | **6034** |
-> | Precomputing chunks (`cache_chunk` × corridor, incl. LOD prebake) | 4289 | 4246 |
+> | Carving road into terrain (`bake_track` + `_bake_cliffs`) | 11029 | **~4450** |
+> | Precomputing chunks (`cache_chunk` × corridor, incl. LOD prebake) | 4289 | ~4230 |
 > | Generating track (DFS search) | 2539 | 2528 |
 > | Scattering bushes | 1219 | 1214 |
 > | Placing signs | 813 | 801 |
 > | Scattering trees | 806 | 820 |
 > | Building terrain / lakes / rest | <160 | <160 |
-> | **total** | **20845** | **15746** |
+> | **total** | **20845** | **~14000** |
 >
 > **Carve pass DONE (2026-07, single-threaded).** The carve was 53% of load and
 > split flatten 1807 ms / cliffs 8388 ms. Optimised in `terrain_manager.gd`:
-> flatten now samples at `ROAD_SAMPLE_STEP_M` = 1 m (was 0.25 m) storing only the
-> nearest sample and computing the ramp once per touched cell (1807→~730 ms); the
-> cliff pass swapped its three `Vector2i`-keyed Dictionaries for flat packed arrays
-> over the track bbox and clamps the stamp to the disc per row (8388→~4700 ms).
-> Carve 11029→6034 ms, total load ~20.8→~15.7 s. All web-safe (no threads). Cliffs
-> are bit-identical; the flatten's 1 m step shifts nearest-sample picks by sub-cell
-> amounts. **Next-heaviest is now the chunk precompute (4.2 s)** — `cache_chunk`
-> over the whole corridor incl. LOD mesh prebake; consider deferring distant LODs.
+> - **Flatten** now samples at `ROAD_SAMPLE_STEP_M` = 1 m (was 0.25 m), stores only
+>   the nearest sample, and computes the ramp once per touched cell (1807→~730 ms).
+> - **Cliffs** rewritten as a **distance field**: each band vertex finds its nearest
+>   track point via a segment spatial-hash ring search (`CLIFF_GRID_M` = 24 m tuned
+>   fastest) and sets its own offset — no more per-sample disc stamp. The road-wrap
+>   hairpin test (`CLIFF_BEARING_BUCKETS`, `_bucket_span_deg`, `cliff_pinch_angle_deg`)
+>   is gone, replaced by a morphological **open** (`_open_thin_offsets`, radius
+>   `cliff_open_radius_m`) that knocks down thin tall walls — a game-feel change
+>   (removes narrow scenery cliffs too). Search sped up with three exact heuristics:
+>   camber arc-length LUT, neighbour-seeded search + per-cell distance cull, and
+>   allocation-free `while`-loop shell iteration (nearest-search 2431→~1990 ms; the
+>   `range()`-alloc removal was the biggest single win). Cliffs 8388→~2800 ms.
+>
+> Carve 11029→~4450 ms, total load ~20.8→~14.0 s. All web-safe (no threads). NOT
+> bit-identical: the 1 m flatten step and the cliff-mechanism change both shift
+> results (invisible, tests updated).
+>
+> **Chunk precompute (~3.1 s) — profiled and partially trimmed.** `compute_chunk_data`
+> per-phase (315 chunks): **halo/noise ~966 ms** (per-vertex multi-layer `get_noise_2d`
+> for the lit normal), **vert ~774 ms** (`_light_from_neighbours` + road-blend lerp),
+> **col ~603 ms** and **uv2 ~630→455 ms** (4× `Vector2i`-keyed dict lookups per vertex);
+> plus `TerrainLod.build_all` **~666 ms** and loop overhead. Note `_build_noises` per
+> chunk is only **4 ms** — cheap, not worth caching.
+>
+> **Done:** `_surface_uv2_row` no longer allocates a 4-element Array + 4 `Vector2i`
+> per vertex (`for cell in [...]` → explicit `.get()`s, matching `_vertex_color_row`);
+> uv2 ~630→455 ms (~175 ms, ~820k allocations removed). Precompute ~4.2→~3.1 s.
+>
+> **Still open (need design calls):** the stage is now balanced across four ~500 ms-1 s
+> phases with no silver bullet. Biggest remaining levers: (a) **flat-array the track
+> fields** (`track_weights`/`track_surface`/`road_*`/`cliff_offsets`) so the ~4×/vertex
+> `Vector2i` dict hashing in vert+col+uv2 becomes array indexing — sizable win, but a
+> refactor touching the carve output + every consumer + seam keying; (b) **defer
+> distant-chunk LOD prebake** (~666 ms) off the load path (build lazily on first
+> render); (c) fewer noise layers (quality tunable, not free).
 >
 > **2026-07 update: terrain generation is now precomputed at load, not
 > streamed.** The bounded-corridor precompute (see `features/terrain.md` →

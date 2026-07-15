@@ -13,7 +13,11 @@ host the shared `SettingsMenu`). It generates a fixed **long stage** (seed
 event), auto-drives the car down the whole track at a steady moderate pace
 (`BenchmarkRunner.TARGET_SPEED_KMH` = 50 km/h), records per-frame stats the
 entire way with the frame-profiler overlay forced on, and shows a results
-breakdown at the finish. Not to be confused with the *standalone* CPU/chunk
+breakdown at the finish. The run is fully deterministic: the stage geometry
+(track, terrain, foliage, signs) is seeded off `Benchmark.TRACK_SEED`, and while
+`Benchmark.active` the per-car engine RNG is seeded from `Benchmark.RNG_SEED`
+(instead of `randomize()`) so damage misfires and their smoke FX also repeat
+identically run-to-run. Not to be confused with the *standalone* CPU/chunk
 benchmark (`benchmark/perf_benchmark.gd`, [debug-tools.md](debug-tools.md)) —
 this one measures the real, shipped game loop on the player's machine.
 

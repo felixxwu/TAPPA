@@ -4,6 +4,17 @@
 `GameConfig` (`scripts/game_config.gd`, `cliff_enabled`, `cliff_wavelength_m`,
 etc.) through the terrain-height pipeline and documented in `features/terrain.md`.
 
+> **2026-07 update — mechanism changed.** The bake is now a **distance field**
+> (each band vertex finds its nearest track point via a segment spatial hash and
+> sets its own offset), and the hairpin-crook flatten is no longer the geometric
+> road-wrap test described below. The `CLIFF_BEARING_BUCKETS` bearing-union,
+> `_bucket_span_deg`, `_contested_from_span`, and `cliff_pinch_angle_deg` are
+> **gone**; a post-bake morphological **open** (`_open_thin_offsets`, radius
+> `cliff_open_radius_m`) now knocks down thin tall walls — crook walls included,
+> but so is any narrow scenery cliff of the same width (the open judges by width,
+> not road topology). The rest of this spec (profile, camber, seam, apply) still
+> holds. See `features/terrain.md` → Cliffs.
+
 Sculpt artificial **cliffs** and **drops** into the terrain along the sides of
 the generated track, so a rally stage can run along a ledge — a wall rising on
 one side, the ground falling away on the other — instead of over uniformly

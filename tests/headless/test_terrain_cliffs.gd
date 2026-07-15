@@ -29,7 +29,9 @@ func _make_manager(seed_value: int = 7) -> Node3D:
 	m.cliff_max_height_m = 10.0
 	m.cliff_run_m = 10.0
 	m.cliff_fade_m = 10.0
-	m.cliff_pinch_angle_deg = 45.0
+	# Core distance-field tests below assert the raw per-vertex cliff; the thin-wall
+	# opening is a separate concern with its own unit test, so disable it here.
+	m.cliff_open_radius_m = 0.0
 	m.cliff_amount = 1.0
 	m.cliff_seed = seed_value
 	autofree(m)
@@ -138,49 +140,64 @@ func test_determinism_same_seed_same_offsets() -> void:
 			"identical offset at %s" % v)
 
 
-func _hairpin() -> Curve2D:
-	# Two arms 8 m apart (x=0 and x=8) joined by a U at y≈48. The inside crook is the
-	# pocket around (4, 40) that the road wraps around.
-	var c := Curve2D.new()
-	for p in [Vector2(0, 0), Vector2(0, 20), Vector2(0, 40), Vector2(2, 46),
-			Vector2(4, 48), Vector2(6, 46), Vector2(8, 40), Vector2(8, 20), Vector2(8, 0)]:
-		c.add_point(p)
-	return c
-
-
-func test_hairpin_crook_flattens_outside_edge_keeps_cliff() -> void:
-	# Narrow band so a vertex between the arms is beyond `inner` of each arm yet still
-	# inside R of both — the wrap test then flattens the crook.
+# The thin-wall opening (features/terrain.md): a morphological grayscale OPEN on the
+# signed offset field, so tall walls narrower than ~2× the radius are knocked down
+# while wider cliffs/drops (and drops of any width) survive. Exercised directly on the
+# field so the geometry is exact — a thin ridge, a wide plateau, and a bare zero band.
+func test_open_removes_thin_wall_keeps_wide() -> void:
 	var m := _make_manager()
-	m.cliff_run_m = 4.0
-	m.cliff_fade_m = 4.0
-	await m.bake_track(_hairpin(), 2.0, 1.0)   # inner = 2
-	# Inside-crook vertices: road wraps around them (arms on both sides + U ahead).
-	for z in [36.0, 38.0, 40.0]:
-		assert_almost_eq(_offset(m, 4.0, z), 0.0, 0.05,
-			"inside-crook vertex (4, %.0f) flattened" % z)
-	# The outer flank of the left arm (x<0) sees road on one side only → keeps a cliff.
-	var outside_nonzero := false
-	for z in range(6, 36, 2):
-		if absf(_offset(m, -5.0, float(z))) > 0.05:
-			outside_nonzero = true
-			break
-	assert_true(outside_nonzero, "an outside-edge vertex keeps its cliff/drop")
+	var w := 40
+	var h := 12
+	var off := PackedFloat32Array()
+	off.resize(w * h)
+	# Column band [2,4) (2 wide) = thin wall at +8; band [20,32) (12 wide) = wide cliff.
+	for y in h:
+		for x in range(2, 4):
+			off[y * w + x] = 8.0
+		for x in range(20, 32):
+			off[y * w + x] = 8.0
+	m._open_thin_offsets(off, w, h, 3.0)   # radius 3 → removes features < ~6 wide
+	# Thin wall gone; wide cliff core survives; the untouched gap stays exactly zero.
+	assert_almost_eq(off[6 * w + 3], 0.0, 1e-4, "2-wide wall knocked down by radius-3 open")
+	assert_almost_eq(off[6 * w + 26], 8.0, 1e-4, "12-wide cliff core preserved")
+	assert_almost_eq(off[6 * w + 12], 0.0, 1e-4, "bare region stays zero (anti-extensive)")
 
 
-func test_hairpin_flatten_is_continuous() -> void:
-	# Walking from the outer flank toward the crook, the offset must not step: adjacent
-	# vertices differ by less than the full ceiling (feathered contested, no hard cut).
+func test_open_preserves_sign_and_never_raises() -> void:
 	var m := _make_manager()
-	m.cliff_run_m = 4.0
-	m.cliff_fade_m = 4.0
-	await m.bake_track(_hairpin(), 2.0, 1.0)
-	var prev := _offset(m, -6.0, 30.0)
-	for xi in range(-5, 6):
-		var cur := _offset(m, float(xi), 30.0)
-		assert_true(absf(cur - prev) <= m.cliff_max_height_m,
-			"no step across x=%d (Δ=%.2f)" % [xi, absf(cur - prev)])
-		prev = cur
+	var w := 30
+	var h := 10
+	var off := PackedFloat32Array()
+	off.resize(w * h)
+	# A wide POSITIVE wall and a wide NEGATIVE drop, both 10 cells across.
+	for y in h:
+		for x in range(4, 14):
+			off[y * w + x] = 6.0
+		for x in range(16, 26):
+			off[y * w + x] = -6.0
+	var before := off.duplicate()
+	m._open_thin_offsets(off, w, h, 3.0)
+	for i in off.size():
+		# Opening is anti-extensive on the magnitude and keeps the original sign.
+		assert_true(absf(off[i]) <= absf(before[i]) + 1e-4, "open never raises |offset|")
+		if off[i] != 0.0:
+			assert_eq(signf(off[i]), signf(before[i]), "sign preserved at %d" % i)
+	# The wide cores of both features survive (a drop is not a "thin wall", but width is
+	# what the isotropic open judges, so a wide drop core is kept too).
+	assert_almost_eq(off[5 * w + 9], 6.0, 1e-4, "wide wall core kept")
+	assert_almost_eq(off[5 * w + 21], -6.0, 1e-4, "wide drop core kept")
+
+
+func test_open_radius_zero_is_noop() -> void:
+	var m := _make_manager()
+	var w := 12
+	var h := 6
+	var off := PackedFloat32Array()
+	off.resize(w * h)
+	off[3 * w + 5] = 4.0   # a single lone spike
+	var before := off.duplicate()
+	m._open_thin_offsets(off, w, h, 0.0)
+	assert_eq(off, before, "radius 0 leaves the field untouched")
 
 
 func test_chunk_heights_include_cliff_offset() -> void:

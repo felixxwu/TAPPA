@@ -16,14 +16,12 @@ const RADIUS := 3                            # ring radius -> (2*RADIUS+1)^2 = 7
 # wide and each cell takes its nearest sample's height, so sampling finer than the
 # grid just re-picks the same cell many times; 1 m matches the grid.
 const ROAD_SAMPLE_STEP_M := 1.0
-# Cliffs & drops (features/terrain.md). The cliff pass walks the centerline coarser
-# than the road (camber varies over cliff_wavelength_m ≫ a cell, and the stamp band
-# is ~10-20× wider), so the sample density is the main cost lever.
-const CLIFF_SAMPLE_STEP_M := 1.0
-# Bearing buckets for the hairpin wrap test. Circular set-union of the vertex→sample
-# bearings; the wrap span = 360° − largest empty arc. More buckets → finer span, so a
-# straight (true span < 180°) never rounds up past 180° and false-fires contested.
-const CLIFF_BEARING_BUCKETS := 48
+# Cliffs & drops (features/terrain.md). The cliff bake is a distance field: each band
+# vertex finds its nearest centerline point via a segment spatial hash whose cells are
+# CLIFF_GRID_M wide (a whole number of terrain cells). Bigger cells → fewer ring
+# expansions per vertex but fatter segment lists to scan; smaller → the reverse.
+# ~24 m measured fastest for typical fade radii (a couple of rings, modest lists).
+const CLIFF_GRID_M := 24.0
 # Salt mixed into track_seed for the camber noise, so the whole stage (track shape,
 # surface split, cliffs) is one deterministic function of track_seed.
 const CLIFF_SEED_SALT := 0x5C1FF
@@ -86,7 +84,10 @@ var cliff_gain: float = 1.6
 var cliff_max_height_m: float = 8.0
 var cliff_run_m: float = 6.0
 var cliff_fade_m: float = 6.0
-var cliff_pinch_angle_deg: float = 45.0
+# Radius (m) of the post-bake morphological "open" that knocks down thin tall cliff
+# walls — e.g. the wall a hairpin's inner crook would otherwise leave. Walls narrower
+# than ~2× this in either axis are removed; wider cliffs/drops survive. 0 disables.
+var cliff_open_radius_m: float = 4.0
 var cliff_amount: float = 1.0
 var cliff_seed: int = 1
 
@@ -401,15 +402,20 @@ func _surface_uv2_row(coord: Vector2i, zi: int, out: PackedVector2Array) -> void
 	for xi in SAMPLES:
 		var gx := coord.x * per_edge + xi
 		var gz := coord.y * per_edge + zi
+		# The four cells meeting at this vertex, averaged over only those that are
+		# road/band cells (present in track_surface). Explicit lookups — NOT a
+		# `for cell in [...]` literal, which would allocate an Array + 4 Vector2i per
+		# vertex (~800k allocations across the corridor).
 		var sum := 0.0
 		var n := 0
-		for cell in [
-			Vector2i(gx - 1, gz - 1), Vector2i(gx, gz - 1),
-			Vector2i(gx - 1, gz), Vector2i(gx, gz),
-		]:
-			if track_surface.has(cell):
-				sum += track_surface[cell]
-				n += 1
+		if track_surface.has(Vector2i(gx - 1, gz - 1)):
+			sum += track_surface[Vector2i(gx - 1, gz - 1)]; n += 1
+		if track_surface.has(Vector2i(gx, gz - 1)):
+			sum += track_surface[Vector2i(gx, gz - 1)]; n += 1
+		if track_surface.has(Vector2i(gx - 1, gz)):
+			sum += track_surface[Vector2i(gx - 1, gz)]; n += 1
+		if track_surface.has(Vector2i(gx, gz)):
+			sum += track_surface[Vector2i(gx, gz)]; n += 1
 		var tarmac := sum / float(n) if n > 0 else 0.0
 		out[zi * SAMPLES + xi] = Vector2(tarmac, 0.0)
 
@@ -718,48 +724,21 @@ static func _cliff_profile(d: float, inner: float, rise: float, outer: float) ->
 	return 1.0 - smoothstep(rise, outer, d)
 
 
-# The hairpin-crook flatten weight in [0, 1] from the vertex's bearing wrap span: 0
-# while the road stays within a half-plane (span ≤ 180° — straights and the OUTSIDE
-# of bends keep their cliff), ramping to 1 over cliff_pinch_angle_deg as the road wraps
-# further around the vertex (inside crook / loop-back → flatten). Feathered so the
-# taper to flat is continuous (a boolean would trade the wedge seam for a step seam).
-func _contested_from_span(span_deg: float) -> float:
-	if cliff_pinch_angle_deg <= 0.0:
-		return 1.0 if span_deg > 180.0 else 0.0
-	return clampf((span_deg - 180.0) / cliff_pinch_angle_deg, 0.0, 1.0)
-
-
-# Circular bearing span in degrees from a bitmask of occupied buckets: 360° − the
-# largest run of consecutive EMPTY buckets (the biggest gap the road leaves around the
-# vertex). Order-independent (set union) and wrap-safe (unlike min/max of the angle).
-static func _bucket_span_deg(mask: int) -> float:
-	if mask == 0:
-		return 0.0
-	var max_empty := 0
-	var cur := 0
-	# Walk twice around the circle so a gap straddling bucket 0 is measured whole.
-	for i in CLIFF_BEARING_BUCKETS * 2:
-		if mask & (1 << (i % CLIFF_BEARING_BUCKETS)) == 0:
-			cur += 1
-			max_empty = maxi(max_empty, cur)
-		else:
-			cur = 0
-	# mask is non-empty, so at least one bucket is occupied and the empty run can never
-	# reach CLIFF_BEARING_BUCKETS (a full mask gives max_empty 0 → 360°) — no clamp needed.
-	return float(CLIFF_BEARING_BUCKETS - max_empty) * (360.0 / CLIFF_BEARING_BUCKETS)
-
-
-# Bake the signed cliff offset per vertex over a band ~R wide either side of the road.
-# One coarse centerline walk (CLIFF_SAMPLE_STEP_M): at each sample compute the camber,
-# and per stamped vertex keep the NEAREST sample's side·camber·profile plus a set of
-# occupied bearing buckets. After the walk, fold the wrap span into the contested
-# flatten and scale by the effective max height. Cleared + skipped when disabled or 0.
 # Whether the cliff pass will actually stamp offsets (used by bake_track to decide
 # whether the flatten pass owns the whole carve bar or just its first half).
 func _cliffs_active() -> bool:
 	return cliff_enabled and cliff_max_height_m * clampf(cliff_amount, 0.0, 1.0) > 0.0
 
 
+# Bake the signed cliff offset per vertex over the band within `outer` of the road.
+# DISTANCE-FIELD build: rather than stamp a disc per centerline sample (which wrote
+# every band vertex dozens of times over), we visit each band vertex ONCE, find its
+# nearest point on the centerline via a segment spatial hash, and set its offset from
+# that single nearest point — side·camber(s)·profile(d)·eff_max. Vertices whose nearest
+# track point is beyond `outer` are never processed (the band is bounded). A hairpin's
+# inner crook therefore gets a cliff from its nearest arm like anywhere else; the thin
+# wall that leaves is removed afterwards by a morphological "open" pass
+# (`_open_thin_offsets`) instead of the old per-vertex road-wrap test.
 func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should_yield: bool = false, on_progress: Callable = Callable()) -> void:
 	cliff_offsets = {}
 	if not cliff_enabled:
@@ -767,118 +746,311 @@ func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should
 	var eff_max := cliff_max_height_m * clampf(cliff_amount, 0.0, 1.0)
 	if eff_max <= 0.0:
 		return
+	var poly := centerline.tessellate()
+	if poly.size() < 2:
+		return
 	var inner := width / 2.0 + transition_m   # cliff starts at the outer band edge
 	var rise := inner + cliff_run_m           # full ±1 here
 	var outer := rise + cliff_fade_m          # back to 0 here = influence radius R
-	var outer_sq := outer * outer             # reject the box corners without a sqrt
-	var reach := int(ceil(outer / CELL_M)) + 1
+	var outer_sq := outer * outer
 	var camber_noise := _make_camber_noise()
 
-	var poly := centerline.tessellate()
-	# The stamp touches a huge disc per sample (reach ≈ cliff_run + cliff_fade + band,
-	# tens of cells), and every touched vertex is hit by dozens of overlapping samples.
-	# Vector2i-keyed Dictionaries made each of those millions of touches a hash lookup;
-	# back the three fields with FLAT packed arrays indexed over the track's bounding
-	# box instead, turning every touch into an O(1) array index. Bit-identical to the
-	# dictionary version — same nearest-sample base, same bucket union — just faster.
+	# --- Segments: endpoints, delta, 1/len², arc-length at the start, unit tangent. ---
+	var n_seg := poly.size() - 1
+	var s_ax := PackedFloat32Array(); s_ax.resize(n_seg)
+	var s_ay := PackedFloat32Array(); s_ay.resize(n_seg)
+	var s_dx := PackedFloat32Array(); s_dx.resize(n_seg)
+	var s_dy := PackedFloat32Array(); s_dy.resize(n_seg)
+	var s_inv := PackedFloat32Array(); s_inv.resize(n_seg)   # 1/len² (0 for degenerate)
+	var s_len := PackedFloat32Array(); s_len.resize(n_seg)
+	var s_tx := PackedFloat32Array(); s_tx.resize(n_seg)
+	var s_ty := PackedFloat32Array(); s_ty.resize(n_seg)
+	var s_arc := PackedFloat32Array(); s_arc.resize(n_seg)  # arc length at segment start
+	var arc := 0.0
+	for i in n_seg:
+		var a := poly[i]
+		var b := poly[i + 1]
+		var dx := b.x - a.x
+		var dy := b.y - a.y
+		var l2 := dx * dx + dy * dy
+		var l := sqrt(l2)
+		s_ax[i] = a.x; s_ay[i] = a.y; s_dx[i] = dx; s_dy[i] = dy
+		s_inv[i] = (1.0 / l2) if l2 > 0.0 else 0.0
+		s_len[i] = l
+		s_tx[i] = (dx / l) if l > 0.0 else 0.0
+		s_ty[i] = (dy / l) if l > 0.0 else 0.0
+		s_arc[i] = arc
+		arc += l
+
+	# --- Camber LUT (heuristic 1). Camber is a smooth 1-D function of arc length
+	# (wavelength `cliff_wavelength_m` ≫ a metre), so `_camber` was massively
+	# oversampled at ~1 noise eval per band vertex. Sample it once every camber_step
+	# metres and lerp per vertex — the noise is far smoother than the sample spacing,
+	# so this is exact to well within a millimetre of height. ---
+	var camber_step := 0.5
+	var lut_n := int(ceil(arc / camber_step)) + 2
+	var camber_lut := PackedFloat32Array()
+	camber_lut.resize(lut_n)
+	for k in lut_n:
+		camber_lut[k] = _camber(camber_noise, float(k) * camber_step)
+
+	# --- Segment spatial hash: grid of CLIFF_GRID_M cells → the segments crossing them.
+	# A vertex only checks segments in the (2R+1)² block of cells around it, so nearest
+	# is found without scanning the whole polyline. G is a whole number of terrain cells
+	# so each grid cell holds an exact Gc×Gc block of vertices. ---
+	var G := CLIFF_GRID_M
+	var Gc := int(G / CELL_M)
+	var R := int(ceil(outer / G))
 	var min_gx := 0x7fffffff
 	var min_gz := 0x7fffffff
 	var max_gx := -0x7fffffff
 	var max_gz := -0x7fffffff
 	for pt in poly:
-		var gx := roundi(pt.x / CELL_M)
-		var gz := roundi(pt.y / CELL_M)
-		min_gx = mini(min_gx, gx)
-		max_gx = maxi(max_gx, gx)
-		min_gz = mini(min_gz, gz)
-		max_gz = maxi(max_gz, gz)
-	# The stamp reaches `reach` cells past the nearest centerline vertex, so pad the box
-	# by reach (+1 for the roundi slack). Every (vbx±dx, vbz±dz) then lands in range.
-	var pad := reach + 1
-	var box_x0 := min_gx - pad
-	var box_z0 := min_gz - pad
-	var box_w := (max_gx - min_gx) + 2 * pad + 1
-	var box_h := (max_gz - min_gz) + 2 * pad + 1
-	var n := box_w * box_h
-	var v_best := PackedFloat32Array()   # nearest sample SQUARED distance (INF = untouched)
-	v_best.resize(n)
-	v_best.fill(INF)
-	var base := PackedFloat32Array()     # side·camber·profile at the nearest sample
-	base.resize(n)
-	# Bitmask of occupied bearing buckets (union over all samples). 48 buckets need bit
-	# 47, so this must be 64-bit — a 32-bit array would overflow on 1 << 47.
-	var buckets := PackedInt64Array()
-	buckets.resize(n)
+		var cgx := floori(pt.x / G)
+		var cgz := floori(pt.y / G)
+		min_gx = mini(min_gx, cgx); max_gx = maxi(max_gx, cgx)
+		min_gz = mini(min_gz, cgz); max_gz = maxi(max_gz, cgz)
+	var gx0 := min_gx - R - 1
+	var gz0 := min_gz - R - 1
+	var gw := (max_gx - min_gx) + 2 * (R + 1) + 1
+	var gh := (max_gz - min_gz) + 2 * (R + 1) + 1
+	var grid: Array = []          # grid cell (flat) → PackedInt32Array of segment indices
+	grid.resize(gw * gh)
+	var occupied := PackedInt32Array()   # flat indices of cells that hold ≥1 segment
+	# Rasterise each segment into every grid cell it crosses (walk at G/2, dedup runs).
+	for i in n_seg:
+		var l := s_len[i]
+		var walk_steps := maxi(1, int(ceil(l / (G * 0.5))))
+		var last_cell := -1
+		for w in walk_steps + 1:
+			var tt := float(w) / float(walk_steps)
+			var px := s_ax[i] + s_dx[i] * tt
+			var pz := s_ay[i] + s_dy[i] * tt
+			var cell := (floori(pz / G) - gz0) * gw + (floori(px / G) - gx0)
+			if cell == last_cell:
+				continue
+			last_cell = cell
+			var segs = grid[cell]
+			if segs == null:
+				segs = PackedInt32Array()
+				occupied.append(cell)
+			segs.append(i)
+			grid[cell] = segs
 
-	var bucket_span := TAU / float(CLIFF_BEARING_BUCKETS)
-	var dist_m := 0.0
-	var yield_stride := maxi(1, (poly.size() - 1) / 40)
-	var denom := maxf(float(poly.size() - 1), 1.0)
-	for i in range(1, poly.size()):
-		if i % yield_stride == 0:
-			# Second half of the carve bar (0.5 -> 1): the cliff pass continues the
-			# progress the flatten pass left at 0.5.
-			if on_progress.is_valid():
-				on_progress.call(0.5 + float(i) / denom * 0.5)
-			if should_yield:
-				await get_tree().process_frame
-		var a := poly[i - 1]
-		var b := poly[i]
-		var seg_len := a.distance_to(b)
-		if seg_len <= 0.0:
-			continue
-		var tangent := (b - a) / seg_len
-		var steps := maxi(int(ceil(seg_len / CLIFF_SAMPLE_STEP_M)), 1)
-		for sidx in steps + 1:
-			var t := float(sidx) / float(steps)
-			var p := a.lerp(b, t)
-			var camber := _camber(camber_noise, dist_m + t * seg_len)
-			var vbx := roundi(p.x / CELL_M)
-			var vbz := roundi(p.y / CELL_M)
-			var cx := p.x / CELL_M - vbx   # fractional column of p within the box
-			var row := (vbz - box_z0) * box_w + (vbx - box_x0)
-			for dz in range(-reach, reach + 1):
-				var offy := (vbz + dz) * CELL_M - p.y   # constant across the row
-				var rem := outer_sq - offy * offy
-				if rem < 0.0:
-					continue   # whole row is outside the influence disc
-				# Only the dx span whose vertices fall inside the disc — skip the box
-				# corners entirely instead of visiting and rejecting them. Widened to a
-				# superset (floor/ceil) with the osq guard kept authoritative, so the
-				# result is identical to walking the full square.
-				var half := sqrt(rem) / CELL_M
-				var dx_lo := maxi(-reach, int(floor(cx - half)))
-				var dx_hi := mini(reach, int(ceil(cx + half)))
-				var li := row + dz * box_w + dx_lo
-				for dx in range(dx_lo, dx_hi + 1):
-					var offx := (vbx + dx) * CELL_M - p.x
-					var osq := offx * offx + offy * offy
-					if osq <= outer_sq:   # inside the influence disc
-						# Bearing bucket for the wrap test (vertex → sample direction).
-						if osq > 1e-8:
-							var ang := atan2(-offy, -offx) + PI   # 0..TAU
-							var bit := int(ang / bucket_span) % CLIFF_BEARING_BUCKETS
-							buckets[li] = buckets[li] | (1 << bit)
-						# Nearest sample decides base — compare on squared distance and
-						# pay the sqrt only on the (rare) update, for the profile lookup.
-						if osq < v_best[li]:
-							v_best[li] = osq
-							# side = sign of the tangent × offset cross product.
-							var cross := tangent.x * offy - tangent.y * offx
-							base[li] = signf(cross) * camber * _cliff_profile(sqrt(osq), inner, rise, outer)
-					li += 1
-		dist_m += seg_len
+	# --- Candidate vertices: only the cells within R of an occupied cell carry band
+	# vertices; everything else is >outer from the track and is skipped outright. ---
+	var vx0 := gx0 * Gc
+	var vz0 := gz0 * Gc
+	var vw := gw * Gc
+	var vh := gh * Gc
+	var off := PackedFloat32Array()   # per-vertex signed offset (0 = outside the band)
+	off.resize(vw * vh)
+	var cand := PackedByteArray()     # grid cells to actually visit (occupied ± R)
+	cand.resize(gw * gh)
+	for oc in occupied:
+		var ocx := oc % gw
+		var ocz := oc / gw
+		for rz in range(-R, R + 1):
+			var cz := ocz + rz
+			if cz < 0 or cz >= gh:
+				continue
+			for rx in range(-R, R + 1):
+				var cxg := ocx + rx
+				if cxg >= 0 and cxg < gw:
+					cand[cz * gw + cxg] = 1
+	var cand_total := 0
+	for c in cand:
+		cand_total += c
 
-	# Fold the wrap span into the contested flatten over every touched vertex.
-	for li in n:
-		if is_inf(v_best[li]):
-			continue
-		var span := _bucket_span_deg(buckets[li])
-		var val := base[li] * (1.0 - _contested_from_span(span)) * eff_max
-		if absf(val) > 0.0001:
-			var gz := box_z0 + li / box_w
-			var gx := box_x0 + li % box_w
-			cliff_offsets[Vector2i(gx, gz)] = val
+	# --- Per candidate vertex: nearest segment (ring search, early-terminated), then
+	# the cliff offset from that one nearest point. ---
+	var progress_stride := maxi(1, cand_total / 40)
+	var cand_seen := 0
+	# Tight bounds of the vertices that actually receive an offset — the open and the
+	# emit only need this ribbon, not the whole padded grid.
+	var tvx0 := 0x7fffffff
+	var tvx1 := -0x7fffffff
+	var tvz0 := 0x7fffffff
+	var tvz1 := -0x7fffffff
+	for cgz in gh:
+		for cgx in gw:
+			if cand[cgz * gw + cgx] == 0:
+				continue
+			cand_seen += 1
+			if cand_seen % progress_stride == 0:
+				if on_progress.is_valid():
+					on_progress.call(0.5 + 0.5 * float(cand_seen) / maxf(float(cand_total), 1.0))
+				if should_yield:
+					await get_tree().process_frame
+			# Nearest segment of the previous vertex, reused to SEED the next one
+			# (heuristic 2): adjacent vertices almost always share a nearest segment, so
+			# projecting onto it first gives a tight `best_dsq` that lets the cell cull
+			# below prune most of the ring. -1 = no seed yet (cell's first vertex).
+			var seed_seg := -1
+			for lz in Gc:
+				var vz := cgz * Gc + lz
+				var qz := float(vz0 + vz) * CELL_M
+				for lx in Gc:
+					var vx := cgx * Gc + lx
+					var qx := float(vx0 + vx) * CELL_M
+					var best_dsq := INF
+					var best_seg := -1
+					var best_t := 0.0
+					# Seed from the previous vertex's segment (tightens the bound).
+					if seed_seg >= 0:
+						var swx := qx - s_ax[seed_seg]
+						var swz := qz - s_ay[seed_seg]
+						var st := clampf((swx * s_dx[seed_seg] + swz * s_dy[seed_seg]) * s_inv[seed_seg], 0.0, 1.0)
+						var sex := swx - s_dx[seed_seg] * st
+						var sez := swz - s_dy[seed_seg] * st
+						best_dsq = sex * sex + sez * sez
+						best_seg = seed_seg
+						best_t = st
+					# Nearest segment: expand rings of grid cells, processing only each
+					# ring's shell (heuristic 3) and culling any cell whose nearest point
+					# is already beyond `best_dsq` (heuristic 2). Stop once the best beats
+					# the nearest possible cell in the next ring.
+					# while-loops, not range(), to avoid a per-ring Array allocation in
+					# this hot path (155k vertices × several rings).
+					var ring := 0
+					while ring <= R:
+						var lo_z := cgz - ring
+						var hi_z := cgz + ring
+						var lo_x := cgx - ring
+						var hi_x := cgx + ring
+						var zhi := mini(gh - 1, hi_z)
+						var xhi := mini(gw - 1, hi_x)
+						var ccz := maxi(0, lo_z)
+						while ccz <= zhi:
+							var edge_row := ccz == lo_z or ccz == hi_z
+							var ccx := maxi(0, lo_x)
+							while ccx <= xhi:
+								# Shell only: middle rows carry just the two side columns.
+								if edge_row or ccx == lo_x or ccx == hi_x:
+									var segs = grid[ccz * gw + ccx]
+									# Null (empty) check first — cheaper than the cull math.
+									if segs != null:
+										# Cell cull: nearest point of the cell to the vertex.
+										var cwx0 := float(gx0 + ccx) * G
+										var cwz0 := float(gz0 + ccz) * G
+										var ddx := maxf(0.0, maxf(cwx0 - qx, qx - cwx0 - G))
+										var ddz := maxf(0.0, maxf(cwz0 - qz, qz - cwz0 - G))
+										if ddx * ddx + ddz * ddz < best_dsq:
+											for si in segs:
+												# Project (qx,qz) onto segment si, clamped [0,1].
+												var wx := qx - s_ax[si]
+												var wz := qz - s_ay[si]
+												var tproj := clampf((wx * s_dx[si] + wz * s_dy[si]) * s_inv[si], 0.0, 1.0)
+												var ex := wx - s_dx[si] * tproj
+												var ez := wz - s_dy[si] * tproj
+												var dsq := ex * ex + ez * ez
+												if dsq < best_dsq:
+													best_dsq = dsq
+													best_seg = si
+													best_t = tproj
+								ccx += 1
+							ccz += 1
+						# Ring `ring+1` cells are ≥ ring*G away; stop if we beat that.
+						if best_seg >= 0 and best_dsq <= float(ring * G) * float(ring * G):
+							break
+						ring += 1
+					if best_seg < 0 or best_dsq > outer_sq:
+						continue
+					seed_seg = best_seg
+					var d := sqrt(best_dsq)
+					var s := s_arc[best_seg] + best_t * s_len[best_seg]
+					# Camber via the LUT (heuristic 1): lerp the pre-sampled 1-D table.
+					var sc := s / camber_step
+					var k0 := clampi(int(sc), 0, lut_n - 2)
+					var camber := lerpf(camber_lut[k0], camber_lut[k0 + 1], sc - float(k0))
+					# side = sign of tangent × (vertex − nearest point).
+					var px := s_ax[best_seg] + s_dx[best_seg] * best_t
+					var pz := s_ay[best_seg] + s_dy[best_seg] * best_t
+					var cross := s_tx[best_seg] * (qz - pz) - s_ty[best_seg] * (qx - px)
+					off[vz * vw + vx] = signf(cross) * camber * _cliff_profile(d, inner, rise, outer) * eff_max
+					tvx0 = mini(tvx0, vx); tvx1 = maxi(tvx1, vx)
+					tvz0 = mini(tvz0, vz); tvz1 = maxi(tvz1, vz)
+
+	if tvx1 < tvx0:
+		return   # nothing within the band
+
+	# --- Knock down thin tall structures (e.g. the wall the old wrap test flattened).
+	# Only the band ribbon (its bbox grown by the open radius) can hold a nonzero
+	# offset, so copy that sub-window out, open it, and write it back — the padded grid
+	# around it is all zeros and would just be wasted sweeps. ---
+	var r := int(round(cliff_open_radius_m / CELL_M))
+	var ex0 := maxi(0, tvx0 - r)
+	var ex1 := mini(vw - 1, tvx1 + r)
+	var ez0 := maxi(0, tvz0 - r)
+	var ez1 := mini(vh - 1, tvz1 + r)
+	var sw := ex1 - ex0 + 1
+	var sh := ez1 - ez0 + 1
+	if r > 0:
+		var sub := PackedFloat32Array()
+		sub.resize(sw * sh)
+		for z in sh:
+			for x in sw:
+				sub[z * sw + x] = off[(ez0 + z) * vw + (ex0 + x)]
+		_open_thin_offsets(sub, sw, sh, cliff_open_radius_m)
+		for z in sh:
+			for x in sw:
+				off[(ez0 + z) * vw + (ex0 + x)] = sub[z * sw + x]
+
+	# --- Emit the sparse offset dict in the shared GLOBAL vertex-index space (only the
+	# band ribbon can be nonzero). ---
+	for z in range(ez0, ez1 + 1):
+		var world_z := vz0 + z
+		for x in range(ex0, ex1 + 1):
+			var val := off[z * vw + x]
+			if absf(val) > 0.0001:
+				cliff_offsets[Vector2i(vx0 + x, world_z)] = val
+
+
+# Morphological grayscale OPENING (erosion then dilation) on the signed offset field,
+# applied to |offset| with the sign restored, using a square structuring element of
+# radius `radius_m`. Opening is anti-extensive (never raises |offset|, never creates an
+# offset where there was none), so it only knocks DOWN features narrower than 2·radius
+# in either axis — the thin walls a hairpin crook would otherwise leave — while wide
+# cliffs and drops are preserved. Acting on the magnitude keeps walls and drops
+# symmetric. A separable square element makes each pass a pair of 1-D min/max sweeps.
+func _open_thin_offsets(off: PackedFloat32Array, w: int, h: int, radius_m: float) -> void:
+	var r := int(round(radius_m / CELL_M))
+	if r <= 0 or off.is_empty():
+		return
+	var mag := PackedFloat32Array()
+	mag.resize(off.size())
+	for i in off.size():
+		mag[i] = absf(off[i])
+	var eroded := _sep_window(mag, w, h, r, true)    # erosion = window minimum
+	var opened := _sep_window(eroded, w, h, r, false) # dilation = window maximum
+	for i in off.size():
+		off[i] = signf(off[i]) * opened[i]
+
+
+# Separable 1-D min (is_min) / max sliding-window over a w×h grid, horizontal then
+# vertical, window half-width r. Edges clamp to the valid range (the band never reaches
+# the padded border, so clamping only ever touches zeros).
+func _sep_window(src: PackedFloat32Array, w: int, h: int, r: int, is_min: bool) -> PackedFloat32Array:
+	var tmp := PackedFloat32Array()
+	tmp.resize(src.size())
+	for y in h:
+		var base := y * w
+		for x in w:
+			var acc := src[base + x]
+			for k in range(maxi(0, x - r), mini(w - 1, x + r) + 1):
+				var v := src[base + k]
+				acc = minf(acc, v) if is_min else maxf(acc, v)
+			tmp[base + x] = acc
+	var out := PackedFloat32Array()
+	out.resize(src.size())
+	for x in w:
+		for y in h:
+			var acc := tmp[y * w + x]
+			for k in range(maxi(0, y - r), mini(h - 1, y + r) + 1):
+				var v := tmp[k * w + x]
+				acc = minf(acc, v) if is_min else maxf(acc, v)
+			out[y * w + x] = acc
+	return out
 
 
 # Apply a track: bake the weighted height + road-blend fields from the centerline,

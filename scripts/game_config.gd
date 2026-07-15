@@ -967,9 +967,10 @@ var peak_torque_rpm := 4500.0
 ## Horizontal run, in metres, from full height back to natural grade, so the feature
 ## is a localized berm/ditch that returns to grade (no backdrop seam), not a shelf.
 @export_range(0.5, 40.0) var cliff_fade_m := 30.0
-## Bearing-span band, in degrees past 180°, over which a vertex the road wraps around
-## (a hairpin crook) tapers to flat. Larger = gentler taper into the crook.
-@export_range(0.0, 180.0) var cliff_pinch_angle_deg := 45.0
+## Radius, in metres, of the post-bake morphological "open" that knocks down thin tall
+## cliff walls (e.g. the wall a hairpin's inner crook would leave). Walls narrower than
+## ~2× this in either axis are removed; wider cliffs/drops survive. 0 disables.
+@export_range(0.0, 20.0) var cliff_open_radius_m := 4.0
 ## Runtime per-event scale on cliff_max_height_m, in [0, 1]. Written by RallySession
 ## from the event's cliffiness; the value shipped here is only the fallback for
 ## standalone/editor main.tscn runs.
@@ -1504,7 +1505,7 @@ func apply_cliffs(tm: TerrainManager) -> void:
 	tm.cliff_max_height_m = cliff_max_height_m
 	tm.cliff_run_m = cliff_run_m
 	tm.cliff_fade_m = cliff_fade_m
-	tm.cliff_pinch_angle_deg = cliff_pinch_angle_deg
+	tm.cliff_open_radius_m = cliff_open_radius_m
 	tm.cliff_amount = cliff_amount
 	tm.cliff_seed = track_seed
 

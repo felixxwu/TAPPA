@@ -58,7 +58,13 @@ func _init(p_config: GameConfig) -> void:
 	config = p_config
 	omega = idle_omega()
 	auto = config.auto_gearbox
-	_rng.randomize()
+	# In benchmark mode use a fixed seed so misfires (and their smoke FX) repeat
+	# identically run-to-run; otherwise randomise so each car instance stumbles
+	# independently in normal play. See features/benchmark.md.
+	if Benchmark.active:
+		_rng.seed = Benchmark.RNG_SEED
+	else:
+		_rng.randomize()
 	_compute_shift_speeds()
 
 

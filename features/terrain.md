@@ -200,15 +200,15 @@ the true terrain across a transition band just outside the road edge, using
     (1) the flatten walk samples at `ROAD_SAMPLE_STEP_M` = 1 m (matching the 1 m
     cell grid — finer just re-picks the same cell) and stores only each point's
     *nearest* sample payload, computing the blend ramp once per touched point in a
-    finalize pass rather than per overlapping stamp; (2) `_bake_cliffs` backs its
-    three per-vertex fields (`v_best` / `base` / `buckets`) with **flat packed
-    arrays** indexed over the track's bounding box instead of `Vector2i`-keyed
-    Dictionaries — the same vertex is touched by dozens of overlapping samples, and
-    array indexing beats hashing on every touch; (3) the inner stamp clamps its `dx`
-    span to the influence disc per row (with the `osq` guard kept authoritative), so
-    box corners are never visited. All three are single-threaded (the web build has
-    no thread support) and leave the baked result unchanged, except the 1 m flatten
-    step, which shifts nearest-sample picks by sub-cell amounts vs the old 0.25 m.
+    finalize pass rather than per overlapping stamp; (2) `_bake_cliffs` is a
+    **distance field** over a segment spatial hash — each band vertex is visited once
+    and finds its nearest track point via an early-terminated ring search, instead of
+    a disc stamp writing every vertex dozens of times; and (3) a morphological open
+    (`_open_thin_offsets`) replaces the old per-vertex road-wrap union that made the
+    cliff pass the dominant cost. All single-threaded (the web build has no thread
+    support). The flatten's 1 m step shifts nearest-sample picks by sub-cell amounts
+    vs the old 0.25 m, and the cliff rewrite changes hairpin handling (see the Cliffs
+    section) — neither is bit-identical to the pre-optimisation bake.
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.
@@ -274,20 +274,29 @@ and needs no hand-authoring.
   matches pure noise again and the `DistantTerrain` backdrop needs no `cliff_offset`
   fallback (no seam). Keep `R` inside the corridor dilation (~150 m at the default
   leash) — any sane `R` (tens of m) is safe.
-- Contested-vertex flatten — the inside crook of a hairpin (or any pocket the road
-  wraps around) goes **flat**, detected **geometrically**: per stamped vertex, the
-  vertex→sample bearings are unioned into `CLIFF_BEARING_BUCKETS` circular buckets
-  (order-independent, wrap-safe — never min/max of the angle). The wrap span =
-  `360° − largest empty arc`; a straight / the *outside* of a bend stays within a
-  half-plane (≤ 180° → keep the cliff), an inside crook wraps > 180° → flatten.
-  Feathered over `cliff_pinch_angle_deg` past 180° (`_contested_from_span`), so the
-  taper to flat is continuous (no wedge seam, no step seam).
-- **Bake** (`_bake_cliffs`, called at the end of `bake_track`): one coarse
-  centerline walk at `CLIFF_SAMPLE_STEP_M` (≫ the road's `ROAD_SAMPLE_STEP_M` — the
-  main cost lever, since the stamp band is ~10-20× wider). Per sample: compute
-  `camber(s)`; per stamped vertex within `R`, keep the nearest sample's
-  `side·camber·profile` and OR its bearing bucket. After the walk, fold the wrap
-  span into `contested` and scale by `cliff_max_height_m · cliff_amount`.
+- Thin-wall removal — the inside crook of a hairpin (or any pocket) can leave a thin
+  tall wall. Rather than detect it geometrically, the bake gives every vertex a cliff
+  from its single nearest track point and then runs a morphological grayscale **open**
+  (erosion then dilation, square element radius `cliff_open_radius_m`) on the signed
+  offset field, applied to `|offset|` with the sign restored (`_open_thin_offsets`).
+  Opening is anti-extensive — it only knocks *down* features narrower than ~2× the
+  radius in either axis, never raising an offset or creating one where there was none
+  — so thin walls (and thin gashes) vanish while wide cliffs and drops survive. This
+  removes ALL narrow tall walls, scenery included (a deliberate change from the old
+  road-wrap test, which spared single-sided cliffs of the same width).
+- **Bake** (`_bake_cliffs`, called at the end of `bake_track`): a **distance field**,
+  not a stamp. The centerline is turned into segments indexed in a `CLIFF_GRID_M`
+  spatial hash; each band vertex finds its nearest segment via an early-terminated
+  ring search over that grid (vertices whose nearest track point is beyond `R` are
+  never processed), then sets `side·camber(s)·profile(d)·cliff_max_height_m·cliff_amount`
+  from that one nearest point. Finally `_open_thin_offsets` runs. Visiting each vertex
+  once (vs the old disc-stamp, which wrote every vertex dozens of times) is what keeps
+  the wide `R` affordable single-threaded. The nearest search uses three exact
+  speed-ups: a **camber arc-length LUT** (sample the smooth 1-D camber once, lerp per
+  vertex — no per-vertex noise eval); **neighbour-seeded search + per-cell distance
+  cull** (project onto the previous vertex's segment first for a tight bound, then skip
+  any grid cell whose nearest corner is already beyond it); and **shell-only,
+  allocation-free ring iteration** (`while` loops, not `range()`).
 - **Apply** (`terrain_chunk_builder._vertex_row`): `h += cliff_offsets[vidx]` on the
   noise height, before the road-flatten `lerp`. Feeds `_heights` → mesh **and**
   collision.
@@ -299,11 +308,12 @@ and needs no hand-authoring.
 - **Params** are pushed from `GameConfig` (`apply_cliffs`) onto the manager by
   `world.gd` before `set_track` (mirrors `apply_terrain_light`): `cliff_enabled`,
   `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`, `cliff_run_m`,
-  `cliff_fade_m`, `cliff_pinch_angle_deg`, `cliff_amount` (runtime per-event scale,
-  written by `RallySession` from the event's `cliffiness`), `cliff_seed`
-  (`= track_seed`). See the `Cliffs` group in [configuration.md](configuration.md).
+  `cliff_fade_m`, `cliff_open_radius_m` (thin-wall open radius), `cliff_amount`
+  (runtime per-event scale, written by `RallySession` from the event's `cliffiness`),
+  `cliff_seed` (`= track_seed`). See the `Cliffs` group in
+  [configuration.md](configuration.md).
 - Tests: `tests/headless/test_terrain_cliffs.gd` (zero-when-off/level, flat road +
-  band handoff, antisymmetry, bounded, fade-out, determinism, hairpin flatten,
+  band handoff, antisymmetry, bounded, fade-out, determinism, thin-wall open,
   chunk height, cliff seam).
 
 ### Deferred initial build
