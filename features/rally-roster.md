@@ -114,7 +114,9 @@ generator also uses it per-rival.
   is an absolute detune-slider setting; it's floored to the slider's whole-percent
   steps and verified back through `is_eligible`. This powers the car park's
   **detune-to-enter prompt** — an over-powered car may enter a `pw_max`-capped
-  rally by agreeing to this tune (see [menus.md](menus.md) → CARPARK).
+  rally by agreeing to this tune, OR by picking the prompt's **Change Upgrades**
+  option to strip power-adding parts and qualify at full tune instead (see
+  [menus.md](menus.md) → CARPARK).
 - `derive_target_ms(track_result, car_meta, event)` — per-event PAR time: physics
   floor of the **best eligible car** (see `LapTimeModel` below) × `GameConfig.driver_factor`
   (default 1.08, the driver-imperfection multiplier that turns the physics floor into a

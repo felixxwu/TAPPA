@@ -68,6 +68,73 @@ func test_analytic_height_matches_the_real_settle_across_configs() -> void:
 				c[0], c[1], c[2], predicted, actual])
 
 
+# A frozen prop's solver never runs, so its wheel VISUALS stay at the authored mount —
+# ~travel too high, so the car reads as sitting on over-compressed suspension. Car.
+# settle_wheel_visuals() droops each Visual to where Godot's live solver renders it, so
+# a parked prop matches the driven car. This pins WHEEL_DROOP_COEFF against a real settle:
+# for each config, settle a live car (records the actual rendered wheel height), then a
+# frozen prop placed at settled_ride_height() + settle_wheel_visuals() must land its wheel
+# Visuals at the same world height. Fails loudly if a Godot upgrade shifts the wheel render.
+func test_frozen_prop_wheel_visuals_match_the_live_settle() -> void:
+	var cases := [
+		[10.0, 0.42, 0.30],
+		[20.0, 0.42, 0.30],
+		[10.0, 0.55, 0.30],
+	]
+	for c in cases:
+		var floor_body := _floor_at(0.0)
+		add_child_autofree(floor_body)
+		# Live-settled reference: median rendered wheel-Visual world Y.
+		var live: Variant = load(CAR_SCENE).instantiate()
+		add_child_autofree(live)
+		live.use_isolated_config()
+		live.apply_car(0)
+		_tune(live, c[0], c[1], c[2])
+		live.controls_locked = true
+		live.global_position = Vector3(0, c[2] + c[1] + 0.4, 0)
+		live.freeze = false
+		for _i in 160:
+			await get_tree().physics_frame
+		var live_wheel_y: float = _first_visual_y(live)
+		live.queue_free()
+		# Frozen prop: placed analytically, then wheel visuals drooped.
+		var prop: Variant = load(CAR_SCENE).instantiate()
+		add_child_autofree(prop)
+		prop.use_isolated_config()
+		prop.apply_car(0)
+		_tune(prop, c[0], c[1], c[2])
+		prop.controls_locked = true
+		prop.freeze = true
+		prop.global_position = Vector3(0, prop.settled_ride_height(), 0)
+		prop.settle_wheel_visuals()
+		await get_tree().physics_frame
+		var prop_wheel_y: float = _first_visual_y(prop)
+		prop.queue_free()
+		floor_body.queue_free()
+		await get_tree().process_frame
+		assert_almost_eq(prop_wheel_y, live_wheel_y, TOL,
+			"frozen prop wheel visual matches live settle for k=%.0f travel=%.2f r=%.2f (prop %.3f, live %.3f)" % [
+				c[0], c[1], c[2], prop_wheel_y, live_wheel_y])
+
+
+func _tune(car: Variant, stiffness: float, travel: float, radius: float) -> void:
+	var cfg: GameConfig = car.config
+	cfg.suspension_stiffness = stiffness
+	cfg.suspension_travel = travel
+	cfg.wheel_radius = radius
+	for w in car.find_children("*", "VehicleWheel3D", false):
+		w.wheel_radius = radius
+	car._sync_suspension_to_wheels()
+
+
+func _first_visual_y(car: Variant) -> float:
+	for w in car.find_children("*", "VehicleWheel3D", false):
+		var visual: Node3D = w.get_node_or_null("Visual")
+		if visual != null:
+			return visual.global_position.y
+	return NAN
+
+
 func test_rest_height_is_independent_of_mass() -> void:
 	# Godot normalises the suspension spring by chassis mass, so the settled height must
 	# not change with mass — the analytic helper (which ignores mass) relies on this.

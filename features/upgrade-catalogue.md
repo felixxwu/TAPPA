@@ -4,7 +4,7 @@
 the catalogue of upgrade **items** — authored content (like `CarLibrary` /
 `RallyLibrary`), not player state. The save profile holds the player side (each
 `OwnedCar.installed_upgrades` / `disabled_upgrades`, keyed by the stable `id`
-here, plus the consumable `inventory` — repair kits only); this library defines
+here, plus the consumable `inventory` — repair kits + engine swap tokens); this library defines
 what those ids mean and what each does to a fielded car.
 
 **Upgrades are car-bound.** An upgrade belongs to the car it was won for and
@@ -36,14 +36,31 @@ fitted part, `drivetrain_swap_unlocked` checks **installed** (not enabled): owni
 kit IS the unlock, and the selector's stock choice plays the "off" role (disabling would
 just re-select the original drive mode). So its podium reveal **always installs it
 enabled** with no Apply/Keep choice (`podium.gd._offer_upgrade_choice`), and its upgrades-menu
-row shows only the selector — no toggle (`hq.gd._make_slot_row`).
+row shows only the selector — no toggle (`UpgradesMenu._make_slot_row`). The FWD/RWD/AWD selector
+is **always shown**, even before the kit is won: until it's owned only the car's stock drive
+mode is selected + enabled and the other two modes are greyed (earn-gated as a whole, like a
+part option greys until its kit is fitted) — so the row reads like every other slot rather
+than a bare "— empty —" line.
 Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
 tier 2), an aero kit, a **weight-reduction** kit (chassis slot, `mass_mult` 0.90),
-a big brake kit, and the **repair kit** (the one consumable). The concrete part
+a big brake kit, and the two consumables — the **repair kit** and the **engine
+swap token** (both `slot: ""`, held in the shared `inventory`; the token is spent
+by `Save.swap_engines`, see [engine-swap.md](engine-swap.md)). The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults.
 
-**Every part slot is an earn-gated option selector** (`hq.gd._make_option_selector`), built
+The upgrades menu is a **reusable `UpgradesMenu` component** (`scripts/upgrades_menu.gd`,
+mirroring `TuningPanel`): the HQ lift mounts it as its Upgrades page, and the car-park
+**detune-to-enter prompt** mounts a second instance in its Change-Upgrades popup so a
+too-powerful car can shed power by stripping parts instead of detuning (see
+[menus.md](menus.md) → CARPARK). It owns its `Save` persistence and reports edits via an
+`on_change` callback so the host re-fields the car. At the top it shows a **live stats
+line — power-to-weight (hp/tonne) + max lateral G** — recomputed from `effective_meta` on
+every rebuild, so toggling a part shows immediately whether the car has ducked under a
+rally's cap. The engine-swap row is **lift-only** (the host passes `on_swap`); the popup
+leaves it unset and drops the row, since the swap flow would change the HQ view.
+
+**Every part slot is an earn-gated option selector** (`UpgradesMenu._make_option_selector`), built
 to read like the drivetrain picker: `SLOT:` on the left, then `Stock` + one button per
 catalogue part in that slot on the right. `Stock` is always selectable (the "off" state —
 the car's un-upgraded factory config, hence the label rather than `None`); each part option
@@ -52,7 +69,7 @@ bracketed. The turbo slot has two parts — `Stock` / `Small` / `Big` (`turbo_sm
 `turbo_large`, shown by their short `menu_label`); the single-part slots read `Stock` /
 `<Kit>` (e.g. `Aero: Stock / Aero Kit`, using the part's full `name`). Under the hood it's
 the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled` via
-`hq.gd._set_slot_option`): picking a part enables it (same-slot exclusivity switches any
+`UpgradesMenu._set_slot_option`): picking a part enables it (same-slot exclusivity switches any
 sibling off), picking `Stock` disables every part in the slot (the underlying id is still
 `""`). So the reward flow is
 unchanged — kits are still won, fitted disabled, and the podium's Apply enables the pick;
@@ -158,7 +175,7 @@ not the podium) offers the Apply/Keep choice — see `features/reward-system.md`
 ## Tests
 
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
-slots, one consumable), lookups, effect application (multiplies/adds on a
+slots, consumables have no slot), lookups, effect application (multiplies/adds on a
 baseline incl. `mass_mult`; empty list is a no-op), `effective_meta`
 (lightens/empowers a meta copy without mutating the source), and the aero /
 brake-bias tuning gates. `test_rally_library.gd` covers an installed upgrade

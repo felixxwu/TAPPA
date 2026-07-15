@@ -14,8 +14,12 @@ extends RefCounted
 # ENABLED parts contribute effects; a car keeps at most one enabled per slot
 # (Save.install_upgrade / set_upgrade_enabled).
 
-# The one consumable's id, referenced by Save when a repair kit is used.
+# The repair-kit consumable's id, referenced by Save when a repair kit is used.
 const REPAIR_KIT_ID := "repair_kit"
+
+# The engine-swap consumable's id, spent by Save.swap_engines. Earned like the
+# repair kit (a low-weight reward-pool drop) and held in the shared inventory.
+const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
@@ -32,7 +36,7 @@ const UPGRADES: Array[Dictionary] = [
 		"id": "turbo_small", "name": "Small Turbo", "menu_label": "Small", "slot": "turbo", "tier": 1, "consumable": false,
 		"effect": {"install_turbo": {
 			"turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3, "turbo_omega_ref": 10000.0,
-			"turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6,
+			"turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6, "turbo_parasitic_friction": 5.0,
 			"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
 		}},
 	},
@@ -40,7 +44,7 @@ const UPGRADES: Array[Dictionary] = [
 		"id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 2, "consumable": false,
 		"effect": {"install_turbo": {
 			"turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
-			"turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7,
+			"turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7, "turbo_parasitic_friction": 18.0,
 			"engine_turbo_whistle_gain": 0.025, "engine_turbo_bov_gain": 0.008,
 		}},
 	},
@@ -64,6 +68,10 @@ const UPGRADES: Array[Dictionary] = [
 	},
 	{
 		"id": REPAIR_KIT_ID, "name": "Repair Kit", "slot": "",
+		"tier": 1, "consumable": true, "effect": {},
+	},
+	{
+		"id": ENGINE_SWAP_TOKEN_ID, "name": "Engine Swap Token", "slot": "",
 		"tier": 1, "consumable": true, "effect": {},
 	},
 ]

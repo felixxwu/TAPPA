@@ -61,20 +61,8 @@ static func pw_after_swap(owned: Dictionary, entry: Dictionary, donor_engine_id:
 	return CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(preview, entry))
 
 
-# Two owned cars may exchange engines only when both exist, neither is wrecked,
-# and both sit at their CarLibrary max HP (100% health).
+# Two owned cars may exchange engines whenever both actually exist. Health is no
+# longer a factor — swapping costs one engine swap token (Save.swap_engines spends
+# it); a damaged car keeps its current HP through the swap. See features/engine-swap.md.
 static func can_swap(car_a: Dictionary, car_b: Dictionary) -> bool:
-	return at_full_health(car_a) and at_full_health(car_b)
-
-
-# Public health probe: true when the car exists and sits at its CarLibrary max HP.
-# A car below full health can still take part in a swap, but only after a Repair
-# Kit restores it (the HQ swap flow spends one kit per damaged car — see hq.gd).
-static func at_full_health(car: Dictionary) -> bool:
-	if car.is_empty():
-		return false
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-	if entry.is_empty():
-		return false
-	var max_hp := float(entry.get("max_hp", 0.0))
-	return max_hp > 0.0 and float(car.get("hp", 0.0)) >= max_hp
+	return not car_a.is_empty() and not car_b.is_empty()

@@ -22,6 +22,11 @@ const MAX_TIER := 4
 # a GameConfig tunable (repair_kit_drop_weight) in the balance pass.
 const REPAIR_KIT_DROP_WEIGHT := 0.5
 
+# The engine swap token's weight in the per-event upgrade pool, relative to a
+# part's weight of 1.0. Kept low like the repair kit — swaps are an occasional
+# treat, not a staple. Placeholder; becomes a GameConfig tunable in the balance pass.
+const ENGINE_SWAP_TOKEN_DROP_WEIGHT := 0.5
+
 
 # --- Tier model & clamp ------------------------------------------------------
 
@@ -47,7 +52,8 @@ static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
 
 # Draw one per-event upgrade item id. Pool = parts at the clamped target tier
 # (stepping down to the nearest lower tier that has an eligible part, since not
-# every tier has one) plus the repair kit as a low-weight entry. Parts already
+# every tier has one) plus the repair kit and engine swap token as low-weight
+# entries. Parts already
 # fitted to `owned_car` — the car the player just drove, which the podium offers
 # to fit the reward onto — are excluded, so the draw never awards a part the car
 # already has; with every part at/below the tier fitted, only the repair kit
@@ -61,6 +67,7 @@ static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: Random
 	for item_id in parts:
 		pool.append({"id": item_id, "weight": 1.0})
 	pool.append({"id": UpgradeLibrary.REPAIR_KIT_ID, "weight": REPAIR_KIT_DROP_WEIGHT})
+	pool.append({"id": UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, "weight": ENGINE_SWAP_TOKEN_DROP_WEIGHT})
 	return _weighted_pick(pool, rng)
 
 

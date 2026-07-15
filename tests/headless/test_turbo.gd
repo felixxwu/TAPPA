@@ -25,6 +25,29 @@ func test_exhaust_drive_scales_with_flow_and_antilag_floor() -> void:
 	assert_almost_eq(al, 5.0, 0.0001, "anti-lag holds a drive floor off-throttle")
 
 
+func test_boost_torque_factor_shape() -> void:
+	var gain := 0.8
+	# Endpoints are fixed for ANY response: no boost -> 1 (NA), full boost -> 1 + gain.
+	for r in [0.5, 1.0, 2.0, 3.0]:
+		assert_almost_eq(EngineSim.boost_torque_factor(0.0, gain, r), 1.0, 0.0001,
+			"no boost -> NA torque regardless of response")
+		assert_almost_eq(EngineSim.boost_torque_factor(1.0, gain, r), 1.0 + gain, 0.0001,
+			"full boost -> full gain regardless of response")
+	# response 1.0 reproduces the old linear gain (1 + boost*gain).
+	assert_almost_eq(EngineSim.boost_torque_factor(0.5, gain, 1.0), 1.0 + 0.5 * gain, 0.0001,
+		"response 1.0 is the linear baseline")
+	# response > 1 delivers LESS than linear at part spool (lag felt more), and stays
+	# monotonic in boost.
+	var linear_mid := 1.0 + 0.5 * gain
+	var lagged_mid := EngineSim.boost_torque_factor(0.5, gain, 2.0)
+	assert_lt(lagged_mid, linear_mid, "response > 1 gives less power at half spool")
+	assert_gt(EngineSim.boost_torque_factor(0.75, gain, 2.0), lagged_mid,
+		"factor increases with boost")
+	# boost is clamped, so out-of-range input can't exceed the full-boost factor.
+	assert_almost_eq(EngineSim.boost_torque_factor(2.0, gain, 2.0), 1.0 + gain, 0.0001,
+		"boost clamps at 1.0")
+
+
 func test_shaft_accel_inverse_with_inertia() -> void:
 	# Same net torque, more inertia -> less angular acceleration (laggier spool).
 	var light := EngineSim.turbo_shaft_accel(10.0, 0.0, 1.0e-6, 5.0e-6)
@@ -80,6 +103,31 @@ func test_lag_scales_with_inertia() -> void:
 	var small: int = steps_to_half.call(3.0e-6)
 	var large: int = steps_to_half.call(3.0e-5)
 	assert_gt(large, small, "a higher-inertia turbo lags more (more steps to a given boost)")
+
+
+func test_parasitic_friction_bogs_low_rpm_climb() -> void:
+	# A fitted turbo's constant parasitic friction is always-on drag: off boost it
+	# eats crank torque, so more of it means the engine climbs the low range slower.
+	# Compare an identical engine with/without the penalty from low revs at full
+	# throttle (boost near zero here, so the penalty dominates). Comparative logic,
+	# no pinned values.
+	var rpm_after := func(parasitic: float) -> float:
+		var cfg := _turbo_config()
+		cfg.turbo_parasitic_friction = parasitic
+		var eng := EngineSim.new(cfg)
+		eng.gear = 0  # free flywheel: isolate crank torque from the driveline
+		eng.omega = eng.idle_omega()  # start low, where boost hasn't built yet
+		for i in range(300):
+			eng.step(0.001, 1.0, 0.0)
+		return eng.omega
+	var clean: float = rpm_after.call(0.0)
+	var burdened: float = rpm_after.call(30.0)
+	assert_gt(clean, eng_idle(), "with no penalty the engine climbs off idle")
+	assert_lt(burdened, clean, "parasitic friction bogs the low-rpm climb")
+
+
+func eng_idle() -> float:
+	return _turbo_config().idle_rpm * TAU / 60.0
 
 
 func test_boost_stays_zero_when_disabled() -> void:

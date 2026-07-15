@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+turbo_boost_response = 3.0
 distant_terrain_enabled = false
 water_enabled = true
 track_water_level_m = -5.0

@@ -41,9 +41,15 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `selected_instance_id` — the owned car the player has **selected** (the one raised
   on the garage tuning lift; see `features/tuning.md`). Resolved lazily by
   `Save.selected_car()`, which self-heals to the first owned car when the stored id
-  is unset (`-1`) or no longer owned (e.g. after a wreck).
+  is unset (`-1`) or no longer owned (e.g. after a wreck). Selecting a car also
+  **promotes it to the front of `cars`** (`set_selected_car` moves the matching
+  entry to index 0, shifting the rest down) — so the car park shows the
+  most-recently-selected car first, and that order persists across relaunches
+  (car park lineups iterate `cars`).
 - `inventory` — `{ item_id -> count }`: the **unlocked pool** of not-yet-applied
-  upgrades (won but kept for later) + repair kits.
+  upgrades (won but kept for later) + the consumables (repair kits + engine swap
+  tokens). Adding a new consumable is just a new key — no `SCHEMA_VERSION` bump,
+  and an absent key reads as count 0.
 - `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed } }`, only
   completed rallies present. Completion count is the single progression metric;
   `best_placed` is the best (lowest) finishing position ever achieved there (drives

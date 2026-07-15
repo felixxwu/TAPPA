@@ -265,12 +265,19 @@ its own marked bay.
 outdoor car park, with a block skyline **behind the garage** and trees framing the
 lot. The player's **whole owned collection** is parked in the car park here
 (`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
-car. The **build version** (`v0.<n> (<sha>)`) is shown in the bottom-right corner
+car. The title camera is a **low, near-ground front-3/4 hero shot** posed ~45° off
+the front of the **first (leftmost) parked car**, looking diagonally down the line
+to reveal the rest of the lineup. Its `hq_exterior_cam_eye`/`_look` (GameConfig) are
+**offsets from that lead car** (`_station_xform` → `_first_car_anchor`), so the framing
+**tracks the first car** as the centred lineup grows and its leftmost car slides toward
+−X with more cars owned — it's not a fixed world pose. The **build version** (`v0.<n> (<sha>)`) is shown in the bottom-right corner
 here only — not on the in-run HUD (see [hud.md](hud.md) → Build version). This is a
 flat three-button menu driven by **native focus** — `menu_select`/`ui_accept` fires
 whichever button is focused (Start grabs focus on entry; `menu_up`/`menu_down` move
-between them). Start flies the camera into the garage; **Free Roam** opens the car
-park to pick which owned car to drive, then drops into a freshly-seeded, opponent-less
+between them). Start flies the camera into the garage; **Free Roam** flies the camera
+into the car park to pick which owned car to drive (the fly is deliberate —
+`_enter_free_roam` ends with `_focus_changed(false)`, unlike the adjacent-station
+car-park entries which snap), then drops into a freshly-seeded, opponent-less
 stage (`_enter_free_roam` → `_start_free_roam`; Back returns to the title); Settings
 opens the SETTINGS overlay. (The EXTERIOR branch in `_unhandled_input` deliberately
 does *not* route `menu_select` to Start, or accepting on Settings/Free Roam would
@@ -361,12 +368,13 @@ The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
 (`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
 full page width, and UNDER it a **Change Car** button plus **Tuning** and
 **Upgrades** buttons. **Change Car** (`_enter_change_car`) drops into the **car park**
-in **change-car mode** (`_carpark_change_mode`): the WHOLE owned collection is parked,
-framed on the car currently on the lift, and **Select Car** (`_on_start_pressed` →
-`_select_changed_car`) sets the **selected car** (`Save.set_selected_car`) and returns
-to the bay, re-spawning it on the lift; **Back** (`_car_back`) returns to the bay with
-the selection unchanged. Any owned car is pickable here — a wrecked one can sit on the
-lift to be repaired. Each menu button opens that menu as its **own full-height
+in **change-car mode** (`_carpark_change_mode`): every OTHER owned car is parked
+(`_change_car_targets` excludes the car already on the lift — reselecting it would do
+nothing), and **Select Car** (`_on_start_pressed` → `_select_changed_car`) sets the
+**selected car** (`Save.set_selected_car`) and returns to the bay, re-spawning it on
+the lift; **Back** (`_car_back`) returns to the bay with the selection unchanged. With
+no other car owned, a "this is your only car" hint shows and Select is disabled. Any
+other owned car is pickable here — a wrecked one can sit on the lift to be repaired. Each menu button opens that menu as its **own full-height
 page** — a solid panel **centred horizontally** and wide
 (`hq_lift_menu_centered_width_frac`, using most of the screen); the car-description
 panel **hides** while a sub-menu is open so the page has room — with a **< Back** that
@@ -472,7 +480,9 @@ courtyard / menu camera (+Z)** so the camera frames its front with the garage be
 each is a silenced `Car` prop (reusing `Car.apply_owned`). The exterior/title camera is
 shifted by `menu_car_park_offset` (the same lot-centre offset) so it stays centred on
 the row. Parking is shared with the title via `_build_lineup(cars)` — the car-select
-screen passes the eligible cars, the title passes all owned. Each `Car` prop is a full
+screen passes the eligible cars, the title passes all owned — or, for a fresh player
+with an empty garage, the three starter-car previews (`_starter_previews`) so the lot
+is never empty behind the title. Each `Car` prop is a full
 physics scene (chassis + wheels + drivetrain + per-instance mesh duplication), so
 `_build_lineup` lays out all the lot **markers up front** (cheap `Marker3D`s — the
 camera framing and focus cursor key off `_markers`/`_eligible`, not the props) and then
@@ -508,17 +518,24 @@ and unlocks Start. An **over-powered** focused car — its p/w sits over the ral
 `pw_max` cap but detuning the engine would duck it under — still parks
 (`_build_eligible_lineup` records its qualifying tune from
 `RallyLibrary.qualifying_detune` in `_detune_needed`) and **looks eligible** — no
-warning label, the plain enabled Start (saves overlay space). Pressing Start pops a
-**`ConfirmationDialog`** (`_show_detune_confirm`) that explains the car doesn't
-qualify as-is and names the engine tune that would fix it; its OK button —
-**Detune to N% & Start** — is the explicit agreement that applies the tune
-(`Save.set_engine_detune`) before fielding the car (`_on_detune_confirmed` →
-`_proceed_with_start`). The tune is **temporary, for that rally only** (unlike a
-garage-lift detune): the confirm registers the prior value with
+warning label, the plain enabled Start (saves overlay space). Pressing Start pops an
+**on-brand modal** (`_show_detune_confirm` → `_make_carpark_modal`: a full-screen
+dimmer + centred house `UITheme.panel`, NOT a native grey dialog) with a short
+"Too powerful" message and **three left/right-navigable buttons**: **Cancel**,
+**Change Upgrades**, and **Detune to N%**. The Detune button is the explicit
+agreement that applies the tune (`Save.set_engine_detune`) before fielding the car
+(`_on_detune_confirmed` → `_proceed_with_start`). **Change Upgrades**
+(`_detune_change_upgrades`) instead opens the **Change-Upgrades popup** — the shared
+`UpgradesMenu` component (see [upgrade-catalogue.md](upgrade-catalogue.md)) in a
+matching centred modal (`_show_upgrades_popup`, engine-swap row dropped) so the
+player can strip / switch parts to shed power rather than detune; closing it
+(`_close_upgrades_popup`) rebuilds the eligible lineup if anything changed, and the
+player re-presses Start. Both modals are wired with `MenuNav.attach` (`on_back` =
+close), and `_carpark_modal_open` makes `_unhandled_input` hand navigation to the
+modal instead of the lineup beneath. The detune tune is **temporary, for that rally
+only** (unlike a garage-lift detune): the confirm registers the prior value with
 `RallySession.register_detune_revert`, and the session restores it when the rally
-ends — only at the actual end (finish/wreck/abandon), never between events. The dialog is a native `ConfirmationDialog` (same pattern as
-the pause menu's quit confirm), so OK/Cancel are keyboard/gamepad reachable via the
-window's built-in focus handling. The map pin's green
+ends — only at the actual end (finish/wreck/abandon), never between events. The map pin's green
 "raceable" pennant counts these detunable cars too (`_has_eligible_car` mirrors the
 lineup filter). A **banner** names the rally + restriction; **Start** records the
 fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
@@ -767,8 +784,10 @@ RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
 wraps; a **wrecked car is gated in the car park** (Start disabled, then a Repair Kit
 restores it to full health and unlocks Start); an **over-powered car parks with the
-detune-to-enter prompt** (looks eligible; Start pops the confirm dialog; agreeing applies the qualifying
-`engine_detune` and launches the rally); **Back** steps car park → table →
+detune-to-enter prompt** (looks eligible; Start pops the on-brand modal offering
+Cancel / Change Upgrades / Detune to N% — agreeing applies the qualifying
+`engine_detune` and launches, or Change Upgrades opens the shared `UpgradesMenu` to
+shed power by stripping parts); **Back** steps car park → table →
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
 both the event-only and cumulative leaderboards across its two pages (and the

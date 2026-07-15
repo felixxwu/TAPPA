@@ -257,9 +257,19 @@ var peak_torque_rpm := 4500.0
 ## Shaft speed (rad/s) at which boost reaches its full value (1.0). Larger turbos
 ## use a higher value (need more speed/flow for full boost), so they come on higher.
 @export var turbo_omega_ref := 12000.0
-## Torque multiplier at full boost: delivered = na_torque * (1 + boost * this).
+## Torque multiplier at full boost: delivered = na_torque * (1 + boost^response * this).
 ## "How much extra power". 0 = no boost (NA). Balance placeholder.
 @export var turbo_boost_gain := 0.0
+## Shaping exponent on boost for the torque delivery ONLY (the HUD gauge + audio still
+## read raw boost). 1.0 = linear (spool 50% -> half the gain); >1 delays the power so a
+## partially-spooled turbo delivers disproportionately little — lag felt more. Endpoints
+## (0 boost, full boost) are unchanged for any response. See features/forced-induction.md.
+@export var turbo_boost_response := 1.0
+## Constant extra crank friction (N·m) a fitted turbo adds — bigger turbos author more.
+## Always-on (NOT boost- or rpm-gated): off boost it just bogs the engine, so a big turbo
+## on a small engine (where this is a large fraction of peak torque) really struggles to
+## climb the low range; once revs are up the boost torque swamps it. 0 = NA / no penalty.
+@export var turbo_parasitic_friction := 0.0
 ## Couples exhaust flow (∝ throttle * rpm) into shaft drive torque — how hard the
 ## exhaust spins the wheel up. Balance placeholder (steady-state: drive_gain*throttle*rpm = drag_coef*omega²).
 @export var turbo_drive_gain := 0.024
@@ -651,10 +661,14 @@ var peak_torque_rpm := 4500.0
 # tweens between them over menu_camera_move_time. The exterior is the boot/title
 # shot (block buildings + the car park); Start flies into the garage (the map table
 # + the tuning lift); tapping the table drops to a near-top-down view of the 3D map.
-## Exterior/title camera: eye, then look target. Sits out past the car park (+Z)
-## looking back over the bays at the garage; the parked cars face this camera.
-@export var hq_exterior_cam_eye := Vector3(0.0, 8.5, 46.0)
-@export var hq_exterior_cam_look := Vector3(0.0, 1.8, 24.0)
+## Exterior/title camera: eye, then look target, both given as OFFSETS from the first
+## (leftmost) parked car's ground position (see hq.gd _station_xform / _first_car_anchor).
+## A low, near-ground front-3/4 hero shot: sits just in front of (+Z) and beside the lead
+## car, ~45° off its front, looking diagonally down the line (+X) past it to reveal the
+## rest of the parked lineup. Anchoring to the first car keeps this framing as the centred
+## lineup grows and its leftmost car slides toward −X (more cars owned). Cars face +Z.
+@export var hq_exterior_cam_eye := Vector3(-4.5, 1, 4.5)
+@export var hq_exterior_cam_look := Vector3(3.0, 0, -1.0)
 ## Garage interior camera (sees the map table + tuning lift).
 @export var hq_garage_cam_eye := Vector3(0.0, 4.6, 13.0)
 @export var hq_garage_cam_look := Vector3(0.0, 1.1, 0.0)

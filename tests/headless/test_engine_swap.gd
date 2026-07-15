@@ -62,21 +62,15 @@ func test_recompute_weight_front_moves_cog_by_engine_position() -> void:
 	assert_almost_eq(wf_neutral, 0.40, 0.0001, "engine_pos == weight_front -> distribution unchanged")
 
 
-func test_can_swap_requires_both_cars_at_full_health() -> void:
-	# Use a real model id so max_hp resolves; hp values are injected, not the authored max.
-	var model: String = CarLibrary.all()[0]["id"]
-	var max_hp: float = CarLibrary.all()[0]["max_hp"]
-	var full_a := {"model_id": model, "hp": max_hp}
-	var full_b := {"model_id": model, "hp": max_hp}
-	var hurt := {"model_id": model, "hp": max_hp - 1.0}
-	assert_true(EngineSwap.can_swap(full_a, full_b), "both full -> allowed")
-	assert_false(EngineSwap.can_swap(full_a, hurt), "one hurt -> blocked")
-	assert_false(EngineSwap.can_swap(full_a, {}), "empty car -> blocked")
-	# at_full_health is the per-car probe can_swap is built from and the swap flow uses
-	# to decide how many Repair Kits a swap costs.
-	assert_true(EngineSwap.at_full_health(full_a), "a car at max HP is at full health")
-	assert_false(EngineSwap.at_full_health(hurt), "a car below max HP is not")
-	assert_false(EngineSwap.at_full_health({}), "an empty car is not at full health")
+func test_can_swap_requires_two_real_cars_regardless_of_health() -> void:
+	# Health is no longer a factor — swapping costs a token (Save spends it), so
+	# can_swap only checks that both cars actually exist. hp values are injected.
+	var full := {"model_id": "fx_light_rwd", "hp": 800.0}
+	var hurt := {"model_id": "fx_light_rwd", "hp": 1.0}
+	assert_true(EngineSwap.can_swap(full, hurt), "a damaged car no longer blocks a swap")
+	assert_true(EngineSwap.can_swap(full, full), "two real cars -> allowed")
+	assert_false(EngineSwap.can_swap(full, {}), "an empty car -> blocked")
+	assert_false(EngineSwap.can_swap({}, full), "an empty car -> blocked (either side)")
 
 
 func test_pw_after_swap_stronger_donor_raises_pw() -> void:

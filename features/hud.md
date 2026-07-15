@@ -24,7 +24,7 @@ key). Their text keeps refreshing while hidden, so it's correct the instant H
 reveals it. See [debug-tools.md](debug-tools.md).
 | `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
 | `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top centre) |
-| `StageDeltaLabel` | `P1 ±n.ns` pace popup | driven by `StageManager` (top-centre, code-built) |
+| `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
 | `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
 | `HPBar` (+ `HPLabel`) | `Health NN%` over a bar | `car.damage` (colour-graded green→amber→red) |
@@ -58,8 +58,11 @@ The **`CutFlashLabel`** is a live corner-cutting flash (see
 pulsed by `StageManager` every time `TrackProgress` bills a cut incident while
 RUNNING. It shows the running event total (`CUT +total_s`), not the incident
 delta, so consecutive incidents read as one growing tag rather than flickering
-resets — built in code, anchored top-right just under the elapsed timer, and
-fades the same way the pace popup does. Gated by `cut_penalty_enabled`.
+resets — built in code, sharing the **top-centre pace-popup spot** with
+`StageDeltaLabel`, and fades the same way the pace popup does. It **takes
+precedence** over the pace popup: showing a cut flash hides any live stage-delta
+readout, and `show_stage_delta` no-ops while a cut flash is still on screen.
+Gated by `cut_penalty_enabled`.
 
 The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
 code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**
@@ -73,9 +76,9 @@ The **`StageDeltaLabel`** is the in-run *"vs P1" pace popup*: a fifth method,
 `show_stage_delta(delta_ms)`, the `StageManager` pulses **every few turns** with the
 player's time delta to the leading rival at that point. It's built in code (not the
 scene) by `_build_stage_delta_label()`, anchored top-centre just below the run
-timer. The sign is explicit and colour-coded
-— **negative = ahead** (green, shown as `P1 -1.3s`), **positive = behind** (red, shown
-as `P1 +2.1s`) — matching the design-system palette (`UITheme.GREEN`/`RED`). Gated by
+timer. The relation is spelled out and colour-coded
+— **negative = ahead** (green, shown as `1.34 ahead of P1`), **positive = behind** (red,
+shown as `2.10 behind P1`) — matching the design-system palette (`UITheme.GREEN`/`RED`). Gated by
 `hud_stage_delta_enabled`; it auto-hides after `stage_delta_show_seconds` (a countdown
 in `_process`). How the delta itself is computed lives in [stage.md](stage.md).
 

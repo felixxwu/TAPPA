@@ -33,16 +33,17 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 
 `draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`:
 pool = parts at the target tier (stepping down to the nearest lower tier that has
-an eligible part, since not every tier has one) **plus the repair kit as a
-low-weight entry** (`REPAIR_KIT_DROP_WEIGHT`, placeholder). Parts **already
+an eligible part, since not every tier has one) **plus the repair kit and the
+engine swap token as low-weight entries** (`REPAIR_KIT_DROP_WEIGHT` /
+`ENGINE_SWAP_TOKEN_DROP_WEIGHT`, both placeholders). Parts **already
 fitted to `owned_car`** — the driven car the flow controller passes in — are
 **excluded**, so the draw never awards a part the car already carries. This
 exclusion is also what dedups the multi-reward draw: the flow controller fits
 each won part onto the car **before** the next draw, so re-reading the live car
 each pass stops the same part being won twice in one rally. With every part
-at/below the tier fitted, only the repair kit remains (the draw still always pays
-out). Weighted pick → returns an `item_id`; most rolls are a part, occasionally
-the repair kit.
+at/below the tier fitted, only the consumables (repair kit + engine swap token)
+remain (the draw still always pays out). Weighted pick → returns an `item_id`;
+most rolls are a part, occasionally a consumable.
 
 **When:** one upgrade is drawn at each **non-final event boundary** — i.e. after
 events 1 and 2 of a 3-event rally, in `RallySession.report_event_result` (not once
@@ -53,10 +54,12 @@ final event awards no upgrade (the podium reveals the **car** instead).
 **Delivery:** upgrades are **car-bound** — the flow controller fits each drawn
 part straight onto the driven car **disabled**
 (`Save.install_upgrade(car_instance_id, item_id, false)`) and saves immediately
-(savescum-proof); a drawn repair kit (consumable) goes to `Save.add_item` instead.
+(savescum-proof); a drawn consumable (repair kit or engine swap token) goes to
+`Save.add_item` instead.
 The reward is then revealed on **that event's standings interstitial** via the
 shared `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — same slot-machine
-spinner as the podium — behind a **Collect reward** button that hides the
+spinner as the podium, anchored to the **bottom** of the screen so it doesn't
+block the car in the replay behind it — behind a **Collect reward** button that hides the
 leaderboard (see `features/menus.md`). The reveal offers an **Apply/Keep choice**
 per part — the part is already on the car, so the choice is only enable-now vs
 enable-later: *Apply* enables it (`Save.set_upgrade_enabled(..., true)`), *Keep*

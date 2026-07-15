@@ -404,32 +404,47 @@ func test_swap_engines_exchanges_current_engines() -> void:
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var stock_a: String = CarLibrary.by_id("fx_light_rwd")["engine"]
 	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
-	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "full-health swap succeeds")
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
+	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "swap with a token succeeds")
 	# Re-fetch (grant_car returns a live ref, but re-read to be explicit).
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
 	assert_eq(String(a.get("swapped_engine", "")), stock_b, "Fixture Roadster now runs the Fixture Coupe engine")
 	assert_eq(String(b.get("swapped_engine", "")), stock_a, "Fixture Coupe now runs the Fixture Roadster engine")
+	assert_eq(_save.engine_swap_tokens_owned(), 0, "the swap spent the token")
 
 
 func test_swapping_back_restores_stock_and_clears_field() -> void:
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 2)  # each swap costs one, incl. the revert
 	_save.swap_engines(a["instance_id"], b["instance_id"])
 	_save.swap_engines(a["instance_id"], b["instance_id"])  # swap back
 	a = _save.get_car(a["instance_id"])
 	b = _save.get_car(b["instance_id"])
 	assert_eq(String(a.get("swapped_engine", "")), "", "Fixture Roadster back to stock -> field cleared")
 	assert_eq(String(b.get("swapped_engine", "")), "", "Fixture Coupe back to stock -> field cleared")
+	assert_eq(_save.engine_swap_tokens_owned(), 0, "reverting also spent a token (two swaps, two tokens)")
 
 
-func test_swap_blocked_when_a_car_is_not_full_health() -> void:
+func test_swap_blocked_without_a_token() -> void:
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.apply_damage(b["instance_id"], 1.0)  # b now below max HP
-	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]), "damaged car blocks the swap")
+	assert_eq(_save.engine_swap_tokens_owned(), 0, "no tokens to start")
+	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]), "no token -> swap blocked")
 	a = _save.get_car(a["instance_id"])
 	assert_eq(String(a.get("swapped_engine", "")), "", "blocked swap leaves engines untouched")
+
+
+func test_swap_succeeds_between_damaged_cars_with_a_token() -> void:
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	_save.apply_damage(b["instance_id"], 1.0)  # b below max HP — no longer a blocker
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
+	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "damaged car swaps fine with a token")
+	b = _save.get_car(b["instance_id"])
+	assert_lt(float(b.get("hp", 0.0)), float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"]),
+		"the swap did not repair the damaged car")
 
 
 func test_set_engine_detune_clamps_and_persists() -> void:
@@ -454,3 +469,52 @@ func test_drivetrain_override_defaults_for_legacy_car() -> void:
 	# A car dict without the key (an older save) reads as stock via .get default.
 	var legacy := {"instance_id": 1, "model_id": "x", "installed_upgrades": [], "disabled_upgrades": []}
 	assert_eq(int(legacy.get("drivetrain_override", -1)), -1, "missing key reads as stock")
+
+
+# --- Selected car promotes to the front of the lineup ------------------------
+
+func test_selecting_a_car_promotes_it_to_front_and_shifts_others_down() -> void:
+	# Grant three cars: they land in append order [a, b, c].
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var c: Dictionary = _save.grant_car("fx_awd")
+	_save.set_selected_car(int(c["instance_id"]))
+	var ids := _instance_ids()
+	# c jumps to front; a and b keep their relative order, shifted down one.
+	assert_eq(ids, [int(c["instance_id"]), int(a["instance_id"]), int(b["instance_id"])],
+		"selected car promoted to front, others keep relative order")
+
+
+func test_selecting_the_front_car_is_a_no_op() -> void:
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	_save.set_selected_car(int(a["instance_id"]))  # a is already at index 0
+	assert_eq(_instance_ids(), [int(a["instance_id"]), int(b["instance_id"])],
+		"selecting the already-front car leaves order unchanged")
+
+
+func test_selecting_an_unowned_id_does_not_corrupt_the_lineup() -> void:
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var before := _instance_ids()
+	_save.set_selected_car(-1)  # no owned car matches
+	assert_eq(_instance_ids(), before, "unowned/-1 selection leaves the array intact")
+
+
+func test_promoted_order_survives_save_and_reload() -> void:
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.grant_car("fx_rwd_coupe")
+	var c: Dictionary = _save.grant_car("fx_awd")
+	_save.set_selected_car(int(c["instance_id"]))
+	_save.save_now()
+	_save.profile = {}
+	_save.load_or_new()
+	assert_eq(int(_save.profile["cars"][0]["instance_id"]), int(c["instance_id"]),
+		"most recently selected car is first after reload")
+
+
+func _instance_ids() -> Array:
+	var ids := []
+	for car in _save.profile.get("cars", []):
+		ids.append(int(car["instance_id"]))
+	return ids

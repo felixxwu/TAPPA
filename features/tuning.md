@@ -108,6 +108,12 @@ the **Reset to neutral** action, and the immediate `Save.set_tuning` /
 `setup(owned_car, on_change)` and calls `refresh()`, and is notified via
 `on_change` after each edit so it can re-field the car.
 
+`TuningPanel` has a sibling for the **upgrades** half: `UpgradesMenu`
+(`scripts/upgrades_menu.gd`, also a reusable `VBoxContainer` with the same
+`setup(owned, on_change, …)` shape), shared by the HQ lift and the car-park
+detune-to-enter prompt's Change-Upgrades popup — see
+[upgrade-catalogue.md](upgrade-catalogue.md).
+
 - **Garage tuning lift** (`hq.gd`, `LiftPage.TUNE`) — embeds the panel with a
   no-op `on_change` (the change lands on the car's next fielding).
 - **Pre-event start line** (`start_line.gd`) — a **Tune Car** button under
@@ -134,7 +140,7 @@ garage and **raised slowly by the lift** when the bay is entered (`hq_lift_raise
 between `hq_lift_car_lowered_height` and `hq_lift_car_height`). Clicking the lift flies
 the camera to the bay, framing the car to one side (`hq_lift_cam_*`). The bay opens on
 a **hub** (`LiftPage.HUB`): the car's name/description bottom-left beside the car, with
-a **minimal change-car selector** (cycles all owned cars, updating the selection) and
+a **minimal change-car selector** (cycles the OTHER owned cars, updating the selection) and
 **Tuning** / **Upgrades** buttons under it. Each button opens that menu as its own
 full-height page (a panel on the other side, `hq_lift_menu_width_frac`, so the car
 stays in view); a **< Back** returns to the hub, and the hub's Back returns to the

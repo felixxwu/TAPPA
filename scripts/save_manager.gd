@@ -350,11 +350,12 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 	save()
 
 
-# Exchange the CURRENT engines of two owned cars (features/engine-swap.md). Free,
-# unlimited, reversible — but only when both cars sit at 100% HP. Each car's
-# swapped_engine is set to the OTHER's current engine, then cleared to "" when the
-# result equals that car's own stock engine (so "stock" is canonical and the name
-# reverts). Returns false (no change) if the swap is not allowed.
+# Exchange the CURRENT engines of two owned cars (features/engine-swap.md). Costs
+# one engine swap token per swap (including reverting to stock); health is irrelevant
+# and a damaged car keeps its HP. Each car's swapped_engine is set to the OTHER's
+# current engine, then cleared to "" when the result equals that car's own stock
+# engine (so "stock" is canonical and the name reverts). Returns false (no change) if
+# the swap is not allowed or no token is held.
 func swap_engines(id_a: int, id_b: int) -> bool:
 	if id_a == id_b:
 		return false
@@ -362,6 +363,8 @@ func swap_engines(id_a: int, id_b: int) -> bool:
 	var b := get_car(id_b)
 	if not EngineSwap.can_swap(a, b):
 		return false
+	if not consume_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1):
+		return false  # no swap token held
 	var stock_a := String(CarLibrary.by_id(String(a["model_id"])).get("engine", ""))
 	var stock_b := String(CarLibrary.by_id(String(b["model_id"])).get("engine", ""))
 	var cur_a := EngineSwap.current_engine_id(a, stock_a)
@@ -370,6 +373,11 @@ func swap_engines(id_a: int, id_b: int) -> bool:
 	_set_engine(b, stock_b, cur_a)
 	save()
 	return true
+
+
+# Engine swap tokens currently held in the shared inventory.
+func engine_swap_tokens_owned() -> int:
+	return int(profile.get("inventory", {}).get(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 0))
 
 
 # Set a car's engine to engine_id, clearing the swap field when it matches stock.
@@ -431,6 +439,18 @@ func selected_instance_id() -> int:
 
 func set_selected_car(instance_id: int) -> void:
 	profile["selected_instance_id"] = instance_id
+	# Promote the selected car to the front of the lineup so the most recently
+	# selected car appears first — persisted via the cars array, so it survives
+	# a relaunch. Car park lineups iterate profile["cars"], so reordering here is
+	# all it takes. No-op for unowned/-1 ids (e.g. starter previews).
+	var cars: Array = profile.get("cars", [])
+	for i in cars.size():
+		if int(cars[i].get("instance_id", -1)) == instance_id:
+			if i > 0:
+				var car: Dictionary = cars[i]
+				cars.remove_at(i)
+				cars.insert(0, car)
+			break
 	save()
 
 

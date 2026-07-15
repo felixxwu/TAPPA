@@ -178,23 +178,34 @@ collider being present under the car (the wreck sank through the streamed-in-onl
 the-player terrain), on the car not rolling on a slope, and on not re-wrecking on the
 landing impact — plus the freeze timing.
 
-`car.settled_ride_height()` returns how far the body origin sits above flat ground at
-rest. The wheel VISUAL never moves with suspension compression (`drivetrain.
-_update_visuals` only spins/steers it), so a single body-height offset fully reproduces
-the settled look:
+Placing a prop takes **two** offsets — the body and the wheels move independently:
 
 ```
 settled_ride_height = wheel_radius + axle_travel − mount_y            # wheel fully drooped
                     − SUSPENSION_COMPRESSION_COEFF · g / suspension_stiffness   # sag under weight
+wheel Visual droop  = wheel_rest_length − WHEEL_DROOP_COEFF · g / suspension_stiffness  # per wheel
 ```
 
-The compression term comes from Godot's built-in `VehicleWheel3D` solver (**not** the
-game's own tire model — they disagree by ~0.1 m) and is **mass-independent** (Godot
-normalises the spring by chassis mass). `SUSPENSION_COMPRESSION_COEFF` is calibrated
-against a real settle and pinned by `test_rest_pose.gd`, which re-derives it from an
-actual `VehicleWheel3D` settle across a range of configs and fails loudly if a Godot
-upgrade shifts the solver — so the constant can't silently drift. A caller seats the car
-on its ground plane and lifts the body by this height, then freezes `FREEZE_MODE_STATIC`.
+`car.settled_ride_height()` returns how far the body origin sits above flat ground at
+rest — the height a **live** car settles to. That height assumes the wheels have drooped
+down below their authored mount (as Godot's solver renders them while driving). But a
+frozen prop's solver never runs, and `drivetrain._update_visuals` only re-orients the
+wheel Visual (never translates it), so left alone the Visual stays at its authored mount
+— ~`axle_travel` too high, so the car reads as sitting on **over-compressed** suspension
+and floats. So after seating the body, a caller also calls **`car.settle_wheel_visuals()`**,
+which drops each wheel Visual by the droop above to where Godot's live solver would render
+it. This must run on frozen props **only** — a live car lets Godot move the wheel node and
+keeps its Visual at the local origin.
+
+Both compression terms come from Godot's built-in `VehicleWheel3D` solver (**not** the
+game's own tire model — they disagree by ~0.1 m) and are **mass-independent** (Godot
+normalises the spring by chassis mass). `SUSPENSION_COMPRESSION_COEFF` and
+`WHEEL_DROOP_COEFF` are both calibrated against a real settle and pinned by
+`test_rest_pose.gd`, which re-derives them from an actual `VehicleWheel3D` settle across a
+range of configs (and checks the drooped prop Visual lands at the live wheel height),
+failing loudly if a Godot upgrade shifts the solver — so the constants can't silently
+drift. A caller seats the car on its ground plane, lifts the body by
+`settled_ride_height()`, droops the wheels, then freezes `FREEZE_MODE_STATIC`.
 
 ## Weight distribution (centre of mass)
 

@@ -190,7 +190,7 @@ func test_stage_complete_panel_shows_final_time() -> void:
 
 # --- "vs P1" pace popup (todo/stage-start-and-end.md) ------------------------
 
-func test_stage_delta_popup_ahead_is_green_and_signed() -> void:
+func test_stage_delta_popup_ahead_is_green_and_labelled() -> void:
 	var hud := _scene.get_node("HUD")
 	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
 	assert_not_null(label, "HUD builds the pace-popup label")
@@ -198,17 +198,19 @@ func test_stage_delta_popup_ahead_is_green_and_signed() -> void:
 	Config.data.hud_stage_delta_enabled = true
 	hud.show_stage_delta(-1340)  # 1.34 s ahead
 	assert_true(label.visible, "popup shown when pulsed")
-	assert_string_contains(label.text, "-1.3", "ahead reads with a minus sign")
+	assert_string_contains(label.text, "1.34", "ahead reads the gap magnitude")
+	assert_string_contains(label.text, "ahead of P1", "ahead spells out the relation")
 	assert_eq(label.get_theme_color("font_color"), UITheme.GREEN, "ahead is green")
 
 
-func test_stage_delta_popup_behind_is_red_and_signed() -> void:
+func test_stage_delta_popup_behind_is_red_and_labelled() -> void:
 	var hud := _scene.get_node("HUD")
 	var label := _scene.get_node("HUD/StageDeltaLabel") as Label
 	Config.data.hud_stage_delta_enabled = true
 	hud.show_stage_delta(2100)  # 2.1 s behind
 	assert_true(label.visible, "popup shown when pulsed")
-	assert_string_contains(label.text, "+2.1", "behind reads with a plus sign")
+	assert_string_contains(label.text, "2.10", "behind reads the gap magnitude")
+	assert_string_contains(label.text, "behind P1", "behind spells out the relation")
 	assert_eq(label.get_theme_color("font_color"), UITheme.RED, "behind is red")
 
 
@@ -220,6 +222,23 @@ func test_stage_delta_popup_respects_config() -> void:
 	hud.show_stage_delta(-500)
 	assert_false(label.visible, "popup suppressed when hud_stage_delta_enabled is off")
 	Config.data.hud_stage_delta_enabled = true
+
+
+func test_cut_flash_takes_precedence_over_stage_delta() -> void:
+	var hud := _scene.get_node("HUD")
+	var delta_label := _scene.get_node("HUD/StageDeltaLabel") as Label
+	var cut_label := _scene.get_node("HUD/CutFlashLabel") as Label
+	Config.data.hud_stage_delta_enabled = true
+	Config.data.cut_penalty_enabled = true
+	# A live cut flash hides any showing pace popup...
+	hud.show_stage_delta(-1340)
+	assert_true(delta_label.visible, "pace popup shown before the cut")
+	hud.show_cut_flash(1.0, 2.0)
+	assert_true(cut_label.visible, "cut flash shown")
+	assert_false(delta_label.visible, "cut flash hides the pace popup")
+	# ...and a pace pulse while the cut flash is up is suppressed.
+	hud.show_stage_delta(-1340)
+	assert_false(delta_label.visible, "pace popup suppressed while cut flash is on screen")
 
 
 # --- HP gauge (features/damage.md) --------------------------------------

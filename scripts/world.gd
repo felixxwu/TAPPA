@@ -863,6 +863,7 @@ func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> No
 	# Lift the car off its ground seat by its resting ride height so the wheels sit on
 	# the ground, then place and freeze immediately.
 	car.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * car.settled_ride_height())
+	car.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
 	car.controls_locked = true  # driverless prop: ignore any live input, hold the handbrake
 	# Read as a wreck: 0 HP drives the synthetic smoke below (a wrecked car smokes
 	# hardest), exactly as a damaged HQ car does.

@@ -57,20 +57,31 @@ func test_target_tier_never_exceeds_ceiling() -> void:
 
 # --- Upgrade draw ------------------------------------------------------------
 
-func test_draw_upgrade_returns_parts_at_target_tier_with_rare_repair() -> void:
+func test_draw_upgrade_returns_parts_at_target_tier_with_rare_consumables() -> void:
 	var profile := _profile(["shakedown", "coastal_sprint"], [])  # ceiling 2
-	var repair := 0
+	var consumables := 0
 	var parts := 0
 	for i in 300:
 		var id: String = RewardSystem.draw_upgrade(2, profile, _rng(i))
 		assert_false(UpgradeLibrary.by_id(id).is_empty(), "draw returns a real catalogue item")
-		if id == UpgradeLibrary.REPAIR_KIT_ID:
-			repair += 1
+		if UpgradeLibrary.is_consumable(id):
+			consumables += 1
 		else:
 			parts += 1
 			assert_lte(int(UpgradeLibrary.by_id(id)["tier"]), 2, "drawn part never exceeds the target tier")
-	assert_gt(repair, 0, "the repair kit does appear")
-	assert_gt(parts, repair, "parts dominate the pool over the rare repair kit")
+	assert_gt(consumables, 0, "the rare consumables do appear")
+	assert_gt(parts, consumables, "parts dominate the pool over the rare consumables")
+
+
+func test_draw_upgrade_can_award_an_engine_swap_token() -> void:
+	# The token is a member of the per-event pool (membership, NOT its weight).
+	var profile := _profile(["shakedown", "coastal_sprint"], [])  # ceiling 2
+	var saw_token := false
+	for i in 300:
+		var id: String = RewardSystem.draw_upgrade(2, profile, _rng(i))
+		if id == UpgradeLibrary.ENGINE_SWAP_TOKEN_ID:
+			saw_token = true
+	assert_true(saw_token, "the engine swap token can be drawn from the pool")
 
 
 func test_draw_upgrade_never_awards_a_part_the_driven_car_has() -> void:
@@ -93,9 +104,9 @@ func test_draw_upgrade_never_awards_a_part_the_driven_car_has() -> void:
 		assert_ne(id, fitted, "a part already fitted to the driven car is never drawn")
 
 
-func test_draw_upgrade_falls_back_to_repair_kit_when_car_has_everything() -> void:
-	# With EVERY non-consumable part already on the driven car, the only thing
-	# left to award is the repair kit — the draw still always pays out.
+func test_draw_upgrade_falls_back_to_consumables_when_car_has_everything() -> void:
+	# With EVERY non-consumable part already on the driven car, the only things
+	# left to award are the consumables — the draw still always pays out.
 	var all_parts := []
 	for item in UpgradeLibrary.UPGRADES:
 		if not item["consumable"]:
@@ -104,8 +115,17 @@ func test_draw_upgrade_falls_back_to_repair_kit_when_car_has_everything() -> voi
 		"installed_upgrades": all_parts, "tuning": {}}
 	for i in 20:
 		var id: String = RewardSystem.draw_upgrade(4, _profile([], []), _rng(i), driven)
-		assert_eq(id, UpgradeLibrary.REPAIR_KIT_ID,
-			"with every part fitted, the draw falls back to the repair kit")
+		assert_true(UpgradeLibrary.is_consumable(id),
+			"with every part fitted, the draw falls back to a consumable")
+
+
+func test_engine_swap_token_is_a_real_consumable() -> void:
+	assert_false(UpgradeLibrary.by_id(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID).is_empty(),
+		"the engine swap token is a real catalogue entry")
+	assert_true(UpgradeLibrary.is_consumable(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID),
+		"the engine swap token is a consumable")
+	assert_eq(UpgradeLibrary.slot_of(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID), "",
+		"the token occupies no slot")
 
 
 # --- Car draw ----------------------------------------------------------------

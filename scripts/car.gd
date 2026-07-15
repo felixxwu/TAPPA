@@ -1477,6 +1477,35 @@ func settled_ride_height() -> float:
 	return geometry - compression
 
 
+# A STATIC prop is frozen the instant it's placed, so Godot's VehicleWheel3D solver never
+# runs and never repositions the wheel nodes — the wheel Visuals stay at their authored
+# mount, ~travel above where a driven car's wheels hang. settled_ride_height() puts the
+# BODY where a live car settles (which assumes the wheels have drooped down that far), so
+# without this the prop's wheels are tucked up into the arches (reads as "over-compressed")
+# and the car floats. This droops each Visual to where Godot's live solver renders it, so a
+# parked prop matches the driven car. Call it AFTER apply_car/apply_owned (needs the wheels'
+# resolved rest length + stiffness) on frozen props ONLY — a live car lets Godot move the
+# wheel node and must keep its Visual at the local origin (_update_visuals only re-orients
+# the Visual, never translates it, so this offset persists).
+#
+# droop = wheel_rest_length - WHEEL_DROOP_COEFF · g / suspension_stiffness, per wheel from
+# its OWN resolved params. Like SUSPENSION_COMPRESSION_COEFF this comes from Godot's wheel
+# solver (not the game's tire model); the coefficient is calibrated against a real settle
+# and pinned by test_rest_pose.gd, so a Godot upgrade that shifts the render fails loudly.
+const WHEEL_DROOP_COEFF := 0.25
+
+func settle_wheel_visuals() -> void:
+	var g: float = _default_gravity
+	for wheel in find_children("*", "VehicleWheel3D", false):
+		var visual: Node3D = wheel.get_node_or_null("Visual")
+		if visual == null:
+			continue
+		var droop: float = maxf(
+			wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0
+		)
+		visual.position.y = -droop
+
+
 # Give every MeshInstance3D in the authored body model the lit PS1 material
 # (ps1_models_lit.gdshader) carrying the model's baked texture, so the glb stays in
 # the same unshaded / quantize / dither / fog pipeline as the rest of the scene

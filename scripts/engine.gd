@@ -183,7 +183,11 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	# so this is subtracted on every path — off throttle and fuel-cut it IS the
 	# engine braking (now larger at high revs), which lets the revs bounce off
 	# the limiter; the no-stall idle clamp below still holds the bottom.
-	var friction := cfg.engine_friction_base + cfg.engine_friction_slope * rpm() / 1000.0
+	# A fitted turbo adds a CONSTANT parasitic drag (backpressure/pumping loss), sized by
+	# the turbo — always-on, not gated on boost or rpm. Off boost it just bogs the engine;
+	# once boost is up the delivered torque swamps it. Big turbo + small engine = big
+	# fraction of peak torque, so it struggles to climb the low range. See forced-induction.md.
+	var friction := cfg.engine_friction_base + cfg.engine_friction_slope * rpm() / 1000.0 + cfg.turbo_parasitic_friction
 	var crank := -friction
 	# Turbo: integrate the shaft (real inertia) and derive boost BEFORE building
 	# crank torque, so the boost multiplier reflects this substep. NA engines skip it.
@@ -192,8 +196,10 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 		# global_torque_scale is a hidden global de-rate: it scales the torque the
 		# engine actually delivers without altering cfg.peak_torque, so the stats
 		# panel still shows the full published figure while every car is dialled back.
-		# The turbo multiplies delivered torque by (1 + boost * boost_gain).
-		crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm()) * (1.0 + boost * cfg.turbo_boost_gain)
+		# The turbo multiplies delivered torque by boost_torque_factor(): a shaping
+		# exponent (turbo_boost_response) bends the delivery toward full spool so lag
+		# is felt (see features/forced-induction.md); response 1.0 = the old linear gain.
+		crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm()) * boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response)
 
 	var gr := ratio()
 	var input_omega := driveline_omega * gr
@@ -258,6 +264,15 @@ static func boost_fraction(turbo_omega: float, omega_ref: float) -> float:
 		return 0.0
 	var r := turbo_omega / omega_ref
 	return clampf(r * r, 0.0, 1.0)
+
+
+# Turbo torque multiplier applied to the NA torque: 1 + boost^response * gain. The
+# response exponent shapes HOW the gain arrives across the boost range while leaving the
+# endpoints fixed (0 boost -> 1, full boost -> 1 + gain): response 1.0 is the old linear
+# gain; response > 1 makes a partially-spooled turbo deliver disproportionately little
+# power (lag felt more) without changing peak power. Pure/static so it's unit-testable.
+static func boost_torque_factor(boost_frac: float, gain: float, response: float) -> float:
+	return 1.0 + pow(clampf(boost_frac, 0.0, 1.0), maxf(response, 0.0)) * gain
 
 
 # Exhaust energy available to spin the shaft: proportional to mass flow (throttle *

@@ -8,18 +8,20 @@ the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
 swap-mode UI in `scripts/hq.gd`.
 
 **Engine swap** lets the player move any owned car's engine into any other
-owned car — unlimited and reversible. Both cars must be at **100% HP** for the
-exchange itself, but a car below full health no longer blocks the swap: it's
-restored with a **Repair Kit** as part of the swap (one kit per damaged car,
-spent on confirm). A swap between two already-full cars is still free. **Engine
-detune** is a per-car tuning slider (0–100%) that directly
-scales the fitted engine's torque, letting a car be deliberately hobbled (e.g.
-to fit a rally's power-to-weight band) without touching its parts.
+owned car. Each swap costs one **engine swap token** — a consumable earned like
+the repair kit (a low-weight reward-pool drop, held in the shared inventory).
+**Health is irrelevant**: a damaged car swaps fine and keeps its current HP
+through the exchange (no repair coupling). Every swap spends a token, including
+reverting a car to its own stock engine. **Engine detune** is a per-car tuning
+slider (0–100%) that directly scales the fitted engine's torque, letting a car
+be deliberately hobbled (e.g. to fit a rally's power-to-weight band) without
+touching its parts.
 
-Distinguish from [upgrade-catalogue.md](upgrade-catalogue.md): upgrades are
-consumable items that permanently change a car's baseline. A swap is not
-consumed and not permanent — it just changes which `EngineLibrary` entry the
-car currently runs, and can be undone by swapping back. Detune is ordinary
+Distinguish from [upgrade-catalogue.md](upgrade-catalogue.md): slottable
+upgrades permanently change a car's baseline. The engine swap token is a
+consumable (spent per swap), but the swap itself is not permanent — it just
+changes which `EngineLibrary` entry the car currently runs, and can be undone by
+swapping back (which costs another token). Detune is ordinary
 [tuning.md](tuning.md): free, reversible, stored per-car, never written to the
 authored `.tres`.
 
@@ -79,21 +81,25 @@ result.
   When `EF == WF` this reduces to `WF` unchanged (a pure mass-only swap, no
   distribution shift). Returns the untouched `wf` if the new total mass would
   be non-positive (defensive; never hit with authored data).
-- **`can_swap(car_a, car_b) -> bool`** — true only when both cars exist,
-  neither is empty, and both sit at their `CarLibrary` `max_hp` (100% health).
-  A repair kit clears the gate the same way it clears any other "car isn't
-  full HP" restriction.
+- **`can_swap(car_a, car_b) -> bool`** — structural validity only: true when
+  both cars exist (neither dict is empty). Health is no longer a factor — the
+  token cost is enforced in `Save.swap_engines`, not here.
 
 ## `Save` mutators
 
 - **`Save.swap_engines(id_a, id_b) -> bool`** — exchanges the CURRENT engines
   (via `EngineSwap.current_engine_id`, so swapping a car that's already
   running a third car's engine still works correctly) of two owned cars.
-  Refuses (returns `false`, no change) if the ids match or `EngineSwap.can_swap`
-  fails. Each car's `swapped_engine` is set to the OTHER's current engine, then
-  cleared back to `""` when the result equals that car's OWN stock engine — so
-  "stock" is always canonical and a car's display name reverts the moment it's
-  running its own engine again, even via a chain of swaps.
+  Refuses (returns `false`, no change) if the ids match, `EngineSwap.can_swap`
+  fails, **or no engine swap token is held**. On success it spends one token
+  (`consume_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)`). Each car's
+  `swapped_engine` is set to the OTHER's current engine, then cleared back to
+  `""` when the result equals that car's OWN stock engine — so "stock" is always
+  canonical and a car's display name reverts the moment it's running its own
+  engine again, even via a chain of swaps.
+- **`Save.engine_swap_tokens_owned() -> int`** — the token count held in the
+  shared inventory (0 when the key is absent). The HQ swap button reads it to
+  label/disable itself.
 - **`Save.set_engine_detune(instance_id, frac)`** — clamps `frac` to `[0, 1]`
   and stores it at `tuning.engine_detune`. `1.0` (full power) is the default
   everywhere a car doesn't have this key yet.
@@ -190,24 +196,23 @@ produced. See [tuning.md](tuning.md) for the full axis table.
 - **Upgrades page, engine-swap row** (`hq._make_engine_swap_row`) — shown on
   the tuning-lift's Upgrades page above the slot rows: a label with the
   car's current engine name (`EngineLibrary.by_id(current).name`) and a **Swap
-  Engine** button. The button is **never disabled on health or kit state** — a
-  damaged car is repaired as part of the swap, so it's only disabled when there's
-  literally no other owned car to swap with. When this car is below 100% HP the
-  tooltip notes a Repair Kit will be spent.
+  Engine** button. The button's label and behaviour track the token count
+  (`Save.engine_swap_tokens_owned()`): **"Swap Engine (N tokens)"** and enabled
+  when a token is held and another owned car exists; **"Swap Engine (0 tokens)"**
+  and still enabled at 0 tokens — pressing it pops `_show_no_tokens_info`, an
+  `AcceptDialog` explaining that swaps cost a token and tokens are won as rally
+  rewards (it does NOT enter swap mode); plain **"Swap Engine"** and disabled
+  only when there's no other owned car to swap with. Health never affects it.
 - **Car-park swap mode** (`hq._enter_engine_swap` / `_carpark_swap_mode`) —
   pressing Swap Engine opens the car park listing **every** OTHER owned car (the
   current car itself is excluded — no self-swap); no car is filtered out on
   health. It reuses the car park's normal cycle-and-frame flow; the Start button
-  reads **"Swap Engine"**. While picking a partner,
-  `hq._refresh_swap_repair_warning` shows how many Repair Kits the swap will cost
-  (one per car below 100% HP) — or, if the player is short, says so — without
-  disabling anything. Confirming (`hq._select_swap_target`): with no kit needed it
-  calls `Save.swap_engines` directly; when a car is damaged it pops
-  `_show_swap_repair_confirm` (OK **"Repair & Swap"**, disabled when the player
-  lacks the kits), and OK (`_on_swap_repair_confirmed` → `_commit_engine_swap`)
-  spends one `Save.use_repair_kit` per damaged car before the exchange. Either way
-  it forces the lift prop to respawn with the new engine, and returns to the
-  lift's Upgrades page. **Back**
+  reads **"Swap Engine"**. Swap mode shows no repair/kit warning label (Start
+  stays enabled, warning hidden). Confirming (`hq._select_swap_target`) always
+  pops `_show_swap_confirm` — OK **"Swap"**, disabled when no token is held —
+  and OK (`_on_swap_confirmed` → `_commit_engine_swap`) calls `Save.swap_engines`
+  (which spends the token). It forces the lift prop to respawn with the new
+  engine, and returns to the lift's Upgrades page. **Back**
   (`_car_back`) returns to the lift with no change, same as change-car and
   starter-pick modes.
   While picking a partner, `hq._refresh_swap_preview()` (called from
@@ -265,9 +270,11 @@ over stock; `layout_label` uppercases a known layout; `display_name` prefixes
 the layout only when swapped; `recompute_mass` swaps the engine component;
 `recompute_weight_front` moves the CoG by the injected engine position (with
 injected numbers, not authored values — see the project's testing rules);
-`can_swap` requires both cars at full health. `test_save_manager.gd` covers
-`swap_engines`/`set_engine_detune` persistence and the stock-reversion
-clearing behaviour. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
+`can_swap` accepts two real cars regardless of health and rejects an empty one.
+`test_save_manager.gd` covers `swap_engines` spending a token, blocking without
+one, succeeding between damaged cars (HP untouched), `engine_swap_tokens_owned`,
+`set_engine_detune` persistence, and the stock-reversion clearing behaviour.
+`test_reward_system.gd` covers the token being a drawable pool member. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
 covers the `engine_detune` axis application. `test_menu_flow.gd` covers the

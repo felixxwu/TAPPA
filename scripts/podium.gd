@@ -310,6 +310,7 @@ func _spawn_podium_cars() -> void:
 		var seat := PODIUM_CENTER + Vector3(xs[i], heights[i], 0.0)
 		var car := _spawn_car(idx, seat, false)
 		car.global_position += Vector3.UP * car.settled_ride_height()
+		car.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
 		# Face the camera: the car's forward is -Z and the podium camera sits on the
 		# +Z side, so an unrotated car shows its rear. Yaw it half a turn.
 		car.rotate_y(PI)

@@ -169,11 +169,12 @@ func _build_stage_delta_label() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 
-# Top-right corner-cut flash, anchored just under the elapsed timer.
+# Corner-cut flash, sharing the top-centre pace-popup spot with StageDeltaLabel
+# (it takes precedence while showing — see show_cut_flash / show_stage_delta).
 func _build_cut_flash_label() -> void:
-	_cut_flash_label = _make_popup_label("CutFlashLabel", 1.0,
-		Control.GROW_DIRECTION_BEGIN, Vector4(-220.0, -12.0, 44.0, 68.0),
-		HORIZONTAL_ALIGNMENT_RIGHT)
+	_cut_flash_label = _make_popup_label("CutFlashLabel", 0.5,
+		Control.GROW_DIRECTION_BOTH, Vector4(-80.0, 80.0, 40.0, 64.0),
+		HORIZONTAL_ALIGNMENT_CENTER)
 	_cut_flash_label.add_theme_color_override("font_color", UITheme.RED)
 
 
@@ -320,14 +321,18 @@ func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
 
 # Top-centre pace popup, pulsed by the StageManager every few turns: the player's
 # time delta (ms) to the leading (P1) rival at this point. Negative = ahead (green,
-# shown with "−"), positive = behind (red, shown with "+"). Gated by
+# shown as "X.XX ahead of P1"), positive = behind (red, "X.XX behind P1"). Gated by
 # hud_stage_delta_enabled; auto-hides after stage_delta_show_seconds.
 func show_stage_delta(delta_ms: int) -> void:
 	if not Config.data.hud_stage_delta_enabled:
 		return
+	# The CUT flash shares this spot and takes precedence: suppress the pace
+	# readout while a cut flash is still on screen.
+	if _cut_flash_left > 0.0:
+		return
 	var ahead := delta_ms < 0
 	var secs := absf(delta_ms / 1000.0)
-	_stage_delta_label.text = "P1 %s%.1fs" % ["-" if ahead else "+", secs]
+	_stage_delta_label.text = "%.2f %s P1" % [secs, "ahead of" if ahead else "behind"]
 	_stage_delta_label.add_theme_color_override("font_color", UITheme.GREEN if ahead else UITheme.RED)
 	_stage_delta_label.visible = true
 	_stage_delta_left = Config.data.stage_delta_show_seconds
@@ -342,3 +347,6 @@ func show_cut_flash(_incident_s: float, total_s: float) -> void:
 	_cut_flash_label.text = "CUT +%.1fs" % total_s
 	_cut_flash_label.visible = true
 	_cut_flash_left = Config.data.stage_delta_show_seconds
+	# The CUT flash takes precedence over the pace popup they share a spot with.
+	_stage_delta_label.visible = false
+	_stage_delta_left = 0.0

@@ -21,7 +21,9 @@ stock — it is never an upgrade.
 | `turbo_enabled` | Whether the turbo sim runs at all. `false` (NA) skips `_step_turbo`'s physics entirely — zero cost, byte-identical to the pre-turbo behaviour. |
 | `turbo_inertia` | Rotational inertia (kg·m²) of the turbo shaft — the physical source of lag. Bigger = spools slower. |
 | `turbo_omega_ref` | Shaft speed (rad/s) at which boost saturates at 1.0. Bigger turbos need a higher value (come on later/higher). |
-| `turbo_boost_gain` | Torque multiplier at full boost: `delivered = na_torque * (1 + boost * turbo_boost_gain)`. 0 = no gain (NA). |
+| `turbo_boost_gain` | Torque multiplier at full boost: `delivered = na_torque * (1 + boost^turbo_boost_response * turbo_boost_gain)`. 0 = no gain (NA). |
+| `turbo_parasitic_friction` | Constant extra crank friction (N·m) the fitted turbo adds (backpressure/pumping loss). **Always-on — not gated on boost or rpm.** Bigger turbos author more. Off boost it just bogs the engine; once boost is up the delivered torque swamps it. Because it's a fixed N·m, it's a large fraction of a small engine's peak torque and a small one of a big engine's — so a big turbo on a small motor really struggles to climb the low range, then comes alive up top. Authored per-turbo (engine dict / `install_turbo`); 0 = NA. |
+| `turbo_boost_response` | Shaping exponent on `boost` for the **torque path only** (the HUD gauge + audio still read raw `boost`). `1.0` = linear (spool 50% → half the gain); `> 1` delays the power so a partially-spooled turbo delivers disproportionately little — lag felt more. Endpoints (0 boost, full boost) are unchanged for any value. Global (not per-turbo); tuned in `game_config.tres`. |
 | `turbo_drive_gain` | Couples exhaust flow (∝ throttle × rpm) into shaft drive torque. |
 | `turbo_drag_coef` | Bearing/aero drag on the shaft (∝ ω²) — sets steady-state speed for a given flow and the off-throttle bleed rate. |
 | `turbo_antilag` | Anti-lag switch: keeps the shaft spinning off-throttle + triggers exhaust bangs. |
@@ -72,12 +74,18 @@ without an `EngineSim` instance):
   centrifugal-compressor pressure rises with the square of shaft speed,
   saturating at the turbo's design ceiling.
 
-`step()` then multiplies the throttle torque term by `(1 + boost *
-turbo_boost_gain)`:
+`step()` then multiplies the throttle torque term by `boost_torque_factor()`
+(a fourth pure helper), `1 + boost^response * gain`:
 
 ```gdscript
-crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm()) * (1.0 + boost * cfg.turbo_boost_gain)
+crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(rpm()) * boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response)
 ```
+
+The `turbo_boost_response` exponent shapes *how* the gain arrives across the
+boost range without moving the endpoints (0 boost → factor 1, full boost →
+`1 + gain` for any response): `1.0` is the old linear gain; `> 1` makes
+part-spool deliver disproportionately little power so **lag is felt more** —
+the gauge needle climbs while the shove waits for the top of the range.
 
 **Lag, boost threshold, mid-range surge, and off-throttle bleed-down are all
 emergent** from this one integrator — there is no separate "lag" or "surge"

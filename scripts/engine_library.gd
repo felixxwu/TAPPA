@@ -108,6 +108,7 @@ const ENGINES: Array[Dictionary] = [
 		# Stock forced induction (features/forced-induction.md): the 930's single
 		# large turbo, famous for its lag. Balance placeholders.
 		"turbo_enabled": true, "turbo_boost_gain": 0.5, "turbo_inertia": 1.0e-2, "turbo_omega_ref": 11000.0,
+		"turbo_parasitic_friction": 16.0,
 		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
 	},
 	{
@@ -214,6 +215,7 @@ static func apply(engine: Dictionary, cfg: GameConfig) -> void:
 	cfg.turbo_inertia = engine.get("turbo_inertia", cfg.turbo_inertia)
 	cfg.turbo_omega_ref = engine.get("turbo_omega_ref", cfg.turbo_omega_ref)
 	cfg.turbo_boost_gain = engine.get("turbo_boost_gain", 0.0)
+	cfg.turbo_parasitic_friction = engine.get("turbo_parasitic_friction", 0.0)
 	cfg.turbo_drive_gain = engine.get("turbo_drive_gain", cfg.turbo_drive_gain)
 	cfg.turbo_drag_coef = engine.get("turbo_drag_coef", cfg.turbo_drag_coef)
 	cfg.turbo_antilag = engine.get("turbo_antilag", false)

@@ -33,9 +33,17 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	# Anchor the reward card to the bottom of the screen so it doesn't block the
+	# view of the car in the replay behind it. A full-rect VBox aligned to the end
+	# drops the (shrink-centred) panel to the bottom, with a margin off the edge.
+	var bottom := VBoxContainer.new()
+	bottom.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bottom.alignment = BoxContainer.ALIGNMENT_END
+	bottom.add_theme_constant_override("separation", 0)
+	add_child(bottom)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_bottom", 40)
+	bottom.add_child(margin)
 
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -46,7 +54,7 @@ func _build_ui() -> void:
 	for side in ["left", "top", "right", "bottom"]:
 		style.set("border_width_" + side, 2)
 	panel.add_theme_stylebox_override("panel", style)
-	center.add_child(panel)
+	margin.add_child(panel)
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
@@ -173,8 +181,10 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 	# health, offer to spend the just-won kit on it right now (it's already in your
 	# inventory), instead of only banking it for the garage. Full-health cars fall
 	# through to the plain "added to your inventory" path.
-	if item_id == UpgradeLibrary.REPAIR_KIT_ID and not driven.is_empty() \
-			and not EngineSwap.at_full_health(driven):
+	var driven_entry := CarLibrary.by_id(String(driven.get("model_id", "")))
+	var driven_below_full := not driven_entry.is_empty() \
+			and float(driven.get("hp", 0.0)) < float(driven_entry.get("max_hp", 0.0))
+	if item_id == UpgradeLibrary.REPAIR_KIT_ID and not driven.is_empty() and driven_below_full:
 		var repair_car := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
 		_choice_mode = "repair"
 		_choice_item_id = item_id

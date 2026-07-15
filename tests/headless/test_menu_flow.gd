@@ -547,7 +547,7 @@ func test_hq_upgrades_menunav_survives_rebuild() -> void:
 	await get_tree().process_frame
 	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
 		"the Upgrades box has its focus-nav helper after opening")
-	hq._rebuild_upgrades_box()  # a fresh rebuild (as a car swap / toggle would trigger)
+	hq._lift_upgrades_box.rebuild()  # a fresh rebuild (as a car swap / toggle would trigger)
 	await get_tree().process_frame
 	assert_eq(_count_menunav(hq._lift_upgrades_box), 1,
 		"the rebuild preserves exactly one focus-nav helper (WASD/gamepad nav survives)")
@@ -700,6 +700,21 @@ func test_hq_title_parks_all_owned_cars() -> void:
 	await get_tree().process_frame
 	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 2, "the title parks every owned car (starter + XJS)")
+
+
+func test_hq_title_parks_starter_previews_when_garage_is_empty() -> void:
+	# A fresh player (no car owned, starter not picked) would have an empty lot behind
+	# the title — instead the three starter cars are shown as previews so it's populated.
+	_reset_to_first_run()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	await _await_lineup(hq)
+	assert_eq(hq._eligible.size(), hq.STARTER_MODEL_IDS.size(),
+		"the empty-garage title parks one preview per starter car")
+	for owned in hq._eligible:
+		assert_lt(int(owned.get("instance_id", 0)), 0,
+			"each parked car is a preview (negative id), not an owned car")
 
 
 # The garage Repair button (where Free Roam used to sit) reflects the SELECTED car's
@@ -1508,18 +1523,17 @@ func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
 	# Press Start: instead of launching, the detune-agreement confirm pops, naming the
 	# tune that would qualify the car. Nothing is applied yet.
 	await hq._on_start_pressed()
-	assert_not_null(hq._detune_dialog, "pressing Start on an over-powered car pops the detune confirm")
-	assert_true(hq._detune_dialog.visible, "the confirm dialog is shown")
-	assert_string_contains(hq._detune_dialog.dialog_text, "%d%%" % roundi(frac * 100.0),
-		"the dialog names the tune that would qualify the car")
-	assert_string_contains(hq._detune_dialog.ok_button_text.to_upper(), "DETUNE",
-		"the OK button is the explicit detune agreement")
+	assert_not_null(hq._detune_panel, "pressing Start on an over-powered car pops the detune prompt")
+	assert_true(hq._detune_panel.visible, "the detune prompt is shown")
+	assert_string_contains(hq._detune_body.text, "%d%%" % roundi(frac * 100.0),
+		"the prompt names the tune that would qualify the car")
+	assert_string_contains(hq._detune_confirm_button.text.to_upper(), "DETUNE",
+		"the confirm button is the explicit detune agreement")
 	assert_false(RallySession.is_active(), "the rally does not launch until the player agrees")
 	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
 		"no detune is applied before the player agrees")
-	# Agree: confirm the dialog — the detune is applied, the car now qualifies, and
+	# Agree: press the detune button — the detune is applied, the car now qualifies, and
 	# the rally launches with it.
-	hq._detune_dialog.hide()
 	await hq._on_detune_confirmed()
 	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), frac, 0.0001,
 		"agreeing applies the qualifying engine detune to the car")
@@ -1687,16 +1701,19 @@ func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> v
 	hq._enter_lift()
 	await get_tree().process_frame
 	var before: int = _save.selected_instance_id()
-	# "Change Car" drops into the car park (change-car mode) showing the whole collection.
+	# "Change Car" drops into the car park (change-car mode) showing every OTHER owned
+	# car — the one already on the lift is excluded (reselecting it would be a no-op).
 	hq._enter_change_car()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Change Car opens the car park")
 	assert_true(hq._carpark_change_mode, "the car park is in change-car mode")
-	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
-		"every owned car is parked to pick from")
-	# It frames the car already on the lift; pan to the other car and Select it.
-	assert_eq(hq._selected_instance_id, before, "it opens framed on the current lift car")
-	hq._cycle_focus(1)  # two cars — pan to the other one
+	assert_eq(hq._eligible.size(), _save.profile["cars"].size() - 1,
+		"every owned car EXCEPT the one on the lift is parked to pick from")
+	for owned in hq._eligible:
+		assert_ne(int(owned.get("instance_id", -1)), before,
+			"the current lift car is not among the options")
+	# The framed car is one of the OTHER cars; Select it.
+	assert_ne(hq._selected_instance_id, before, "it opens framed on a different car")
 	hq._on_start_pressed()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "selecting a car returns to the tuning bay")
@@ -1722,6 +1739,22 @@ func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection(
 	assert_eq(hq._view, hq.View.LIFT, "Back from change-car returns to the tuning bay")
 	assert_false(hq._carpark_change_mode, "change-car mode is cleared")
 	assert_eq(_save.selected_instance_id(), before, "backing out leaves the selection unchanged")
+
+
+func test_hq_lift_change_car_with_only_one_car_offers_nothing() -> void:
+	# The before_each starter is the sole owned car — Change Car has nothing else to
+	# offer (the current car is excluded), so the lineup is empty and Select is disabled.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_eq(_save.profile["cars"].size(), 1, "only the starter is owned for this case")
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_change_car()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.CARPARK, "Change Car still opens the car park")
+	assert_true(hq._eligible.is_empty(), "no other car is offered to switch to")
+	assert_true(hq._start_button.disabled, "Select is disabled with no car to pick")
 
 
 func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
@@ -1771,7 +1804,7 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	# Win + fit the kit (disabled), reopen: the kit option ungreys.
 	_save.add_item("brake_kit")
 	_save.install_upgrade(id, "brake_kit", false)
-	hq._rebuild_upgrades_box()
+	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
 	assert_false(_turbo_button(hq._lift_upgrades_box, kit_name).disabled,
 		"the kit option ungreys once fitted")
@@ -2217,18 +2250,21 @@ func test_engine_swap_flow_exchanges_engines() -> void:
 	var a: Dictionary = _save.selected_car()
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	assert_true(hq._eligible.size() >= 1, "swap lineup lists the other owned car(s)")
 	hq._selected_instance_id = int(b["instance_id"])
-	hq._on_start_pressed()
+	hq._on_start_pressed()  # pops the confirm; OK commits
+	hq._on_swap_confirmed()
 	assert_eq(String(_save.get_car(int(a["instance_id"])).get("swapped_engine", "")), stock_b,
 		"selected car received the target's engine")
+	assert_eq(_save.engine_swap_tokens_owned(), 0, "the swap spent the token")
 
 
-# A damaged car no longer blocks a swap: with a Repair Kit owned, confirming a swap
-# spends one kit per damaged car, restores it to full health, and exchanges engines.
-func test_engine_swap_repairs_a_damaged_car_and_spends_a_kit() -> void:
+# A damaged car no longer blocks a swap: with a token owned, confirming a swap
+# exchanges engines and leaves the damaged car's HP untouched (no repair coupling).
+func test_engine_swap_works_on_a_damaged_car_and_leaves_hp() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -2236,45 +2272,45 @@ func test_engine_swap_repairs_a_damaged_car_and_spends_a_kit() -> void:
 	var a_id := int(a["instance_id"])
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
-	_save.apply_damage(a_id, 1.0)  # lift car below 100% -> a swap needs one kit
-	_save.add_item("repair_kit", 1)
+	_save.apply_damage(a_id, 1.0)  # lift car below 100% — no longer a blocker
+	var hp_before := float(_save.get_car(a_id)["hp"])
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	# The damaged lift car still has a target (no car excluded on health).
 	hq._selected_instance_id = int(b["instance_id"])
 	hq._focus_changed()
-	assert_true(hq._car_warning_label.visible, "a kit-cost warning shows for the damaged swap")
 	assert_false(hq._start_button.disabled, "the partner is never excluded on health")
-	# Confirm the swap: the popup carries the cost, OK spends the kit and exchanges engines.
+	assert_false(hq._car_warning_label.visible, "no repair-cost warning in swap mode anymore")
+	# Confirm the swap: OK exchanges engines and spends the token.
 	hq._select_swap_target()
-	assert_false(hq._swap_repair_dialog.get_ok_button().disabled, "enough kits -> OK enabled")
-	hq._on_swap_repair_confirmed()
+	assert_false(hq._swap_confirm_dialog.get_ok_button().disabled, "a token -> OK enabled")
+	hq._on_swap_confirmed()
 	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), stock_b,
-		"the repaired car received the partner's engine")
-	assert_almost_eq(float(_save.get_car(a_id)["hp"]), float(CarLibrary.by_id(String(a["model_id"]))["max_hp"]),
-		0.001, "the swap restored the damaged car to full health")
-	assert_eq(_save.profile.get("inventory", {}).get("repair_kit", 0), 0, "the swap spent the kit")
+		"the damaged car received the partner's engine")
+	assert_almost_eq(float(_save.get_car(a_id)["hp"]), hp_before, 0.001,
+		"the swap left the damaged car's HP unchanged")
+	assert_eq(_save.engine_swap_tokens_owned(), 0, "the swap spent the token")
 
 
-# Without enough Repair Kits, a swap involving a damaged car is blocked: the button is
-# still reachable and the popup's OK is disabled — the player is told, not excluded.
-func test_engine_swap_blocked_when_short_on_kits() -> void:
+# Without a token, a swap is blocked: the button is reachable but the popup's OK is
+# disabled — the player is told, not excluded — and no swap happens.
+func test_engine_swap_blocked_without_a_token() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var a: Dictionary = _save.selected_car()
 	var a_id := int(a["instance_id"])
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.apply_damage(a_id, 1.0)  # needs a kit, but none owned
+	assert_eq(_save.engine_swap_tokens_owned(), 0, "no tokens owned")
 	hq._enter_engine_swap()
 	await _await_lineup(hq)
 	hq._selected_instance_id = int(b["instance_id"])
 	hq._focus_changed()
-	assert_true(hq._car_warning_label.visible, "the short-on-kits warning shows")
 	hq._select_swap_target()
-	assert_true(hq._swap_repair_dialog.get_ok_button().disabled, "no kits -> OK disabled")
+	assert_true(hq._swap_confirm_dialog.get_ok_button().disabled, "no token -> OK disabled")
 	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), "",
-		"no swap happened without a kit")
+		"no swap happened without a token")
 
 
 func test_swap_preview_visible_only_in_swap_mode() -> void:
@@ -2378,17 +2414,18 @@ func _find_swap_button(hq: Node3D) -> Button:
 		if row.is_queued_for_deletion():
 			continue  # a rebuild queue_free'd the old rows; ignore them
 		for child in row.get_children():
-			if child is Button and String(child.text).to_lower() == "swap engine":
+			if child is Button and String(child.text).to_lower().begins_with("swap engine"):
 				return child
 	return null
 
 
 func test_swap_button_disabled_without_an_eligible_partner() -> void:
 	# before_each grants a single Fixture Roadster starter — no other car to swap with, so the
-	# Swap Engine button is disabled. Granting a second full-health car enables it.
+	# Swap Engine button is disabled. A token owned + a second car both present enables it.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)  # isolate partner-presence as the variable
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	var btn := _find_swap_button(hq)
@@ -2398,7 +2435,59 @@ func test_swap_button_disabled_without_an_eligible_partner() -> void:
 	hq._enter_lift()
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame  # let the rebuild's queue_free'd old rows clear
-	assert_false(_find_swap_button(hq).disabled, "a second 100%-HP car enables the swap")
+	assert_false(_find_swap_button(hq).disabled, "a second car + a token enables the swap")
+
+
+func test_swap_button_without_a_token_pops_info_instead_of_swapping() -> void:
+	# With an eligible partner but no token, the swap button stays ENABLED (labelled
+	# "0 tokens") and pressing it pops the "how to earn a token" info dialog rather
+	# than entering swap mode. A token then owned lets it enter swap normally.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	_save.grant_car("fx_rwd_coupe")  # a partner exists, but no token owned
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	var btn := _find_swap_button(hq)
+	assert_not_null(btn, "the upgrades page has a Swap Engine button")
+	assert_false(btn.disabled, "partner but no token -> button stays enabled")
+	assert_true(String(btn.text).to_lower().contains("0 token"), "label spells out the 0-token state")
+	btn.pressed.emit()
+	await get_tree().process_frame
+	assert_not_null(hq._no_tokens_dialog, "pressing with no token pops the info dialog")
+	assert_true(hq._no_tokens_dialog.visible, "the info dialog is shown")
+	assert_ne(hq._view, hq.View.CARPARK, "no token -> did NOT enter swap mode")
+	# A token owned: the button now enters the real swap flow.
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
+	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	await get_tree().process_frame
+	assert_false(_find_swap_button(hq).disabled, "a token keeps the swap enabled")
+
+
+func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> void:
+	# The detune-to-enter prompt offers "Change Upgrades…" as an alternative to detuning:
+	# it opens a popup hosting the UpgradesMenu for the focused car, keyboard/gamepad
+	# navigable, with NO engine-swap row (the swap flow would change the HQ view).
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var id := int(_save.selected_car().get("instance_id", -1))
+	hq._selected_instance_id = id
+	hq._eligible = [_save.get_car(id)]
+	hq._focus = 0
+	hq._show_upgrades_popup(_save.get_car(id))
+	await get_tree().process_frame
+	assert_true(hq._upgrades_popup.visible, "the popup is shown")
+	assert_not_null(hq._upgrades_popup_menu, "the popup hosts an UpgradesMenu")
+	assert_not_null(hq._upgrades_popup_menu.first_control(), "has a focusable option (navigable)")
+	var has_swap := false
+	for node in hq._upgrades_popup_menu.find_children("*", "Button", true, false):
+		if String((node as Button).text).to_lower().begins_with("swap engine"):
+			has_swap = true
+	assert_false(has_swap, "the engine-swap row is dropped in the popup")
+	hq._close_upgrades_popup()
+	assert_false(hq._upgrades_popup.visible, "Done / back closes the popup")
 
 
 func test_engine_swap_button_is_focusable() -> void:
@@ -2484,8 +2573,9 @@ func test_final_event_shows_combined_page_before_proceeding() -> void:
 
 
 # Drivetrain selector on the upgrades page's drivetrain slot row (todo/drivetrain-swap):
-# absent until the drivetrain_swap kit is fitted+enabled, then three FOCUS_ALL mode
-# buttons (RWD/AWD/FWD) appear, and pressing one stores the override on the car.
+# ALWAYS shows three FOCUS_ALL mode buttons (RWD/AWD/FWD). Without the kit only the car's
+# stock mode is enabled + selected (the rest greyed, earn-gated); once the kit is owned all
+# three are selectable and pressing one stores the override on the car.
 func _count_buttons_with_text(box: Node, needles: Array) -> int:
 	var count := 0
 	for b in box.find_children("*", "Button", true, false):
@@ -2535,33 +2625,48 @@ func _press_slot_button_with_text(box: Node, slot: String, needle: String) -> vo
 	fail_test("no button in slot '%s' containing '%s'" % [slot, needle])
 
 
-func test_drivetrain_selector_present_only_when_unlocked() -> void:
+func _drivetrain_mode_buttons(box: Node) -> Array:
+	var out: Array = []
+	for b in box.find_children("*", "Button", true, false):
+		if String(b.get_meta("upgrade_focus_key", "")).begins_with("drivetrain:"):
+			out.append(b)
+	return out
+
+
+func test_drivetrain_selector_always_shown_gated_until_unlocked() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var owned: Dictionary = _save.grant_car("fx_awd")
+	var owned: Dictionary = _save.grant_car("fx_awd")  # stock drive mode is AWD
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
-	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["RWD", "AWD", "FWD"]), 0,
-		"no selector without the kit")
-	# The kit has no enable/disable — owning it is the unlock. Install it DISABLED (the
-	# won-but-not-podium-applied state) and the selector still appears.
+	# All three modes are shown even without the kit — but only the stock mode (AWD) is
+	# enabled + selected; the other two are greyed (earn-gated, like a part option).
+	var buttons := _drivetrain_mode_buttons(hq._lift_upgrades_box)
+	assert_eq(buttons.size(), 3, "all three modes shown before the kit is owned")
+	for b in buttons:
+		var is_stock := String(b.text).contains("AWD")
+		assert_eq(b.disabled, not is_stock,
+			"only the stock mode is selectable without the kit (%s)" % b.text)
+		if is_stock:
+			assert_true(String(b.text).begins_with("["), "stock mode is selected")
+		assert_eq(b.focus_mode, Control.FOCUS_ALL, "each mode button is keyboard / gamepad focusable")
+	# Owning the kit (even DISABLED — the won-but-not-podium-applied state) enables all modes.
 	_save.add_item("drivetrain_swap")
 	_save.install_upgrade(id, "drivetrain_swap", false)
-	hq._rebuild_upgrades_box()
+	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
-	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["RWD", "AWD", "FWD"]), 3,
-		"selector appears once the kit is owned, even if disabled")
+	buttons = _drivetrain_mode_buttons(hq._lift_upgrades_box)
+	assert_eq(buttons.size(), 3, "all three modes shown once the kit is owned")
+	for b in buttons:
+		assert_false(b.disabled, "every mode is selectable once the kit is owned (%s)" % b.text)
 	# No Enable/Disable toggle for the drivetrain slot — the selector's stock choice is off.
 	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["Enable", "Disable"]), 0,
 		"drivetrain slot has no enable/disable toggle")
-	for b in hq._lift_upgrades_box.find_children("*", "Button", true, false):
-		if String(b.text).contains("RWD") or String(b.text).contains("AWD") or String(b.text).contains("FWD"):
-			assert_eq(b.focus_mode, Control.FOCUS_ALL, "each mode button is keyboard / gamepad focusable")
 
 
 func test_drivetrain_selector_sets_override() -> void:
@@ -2640,7 +2745,7 @@ func test_turbo_selector_is_earn_gated() -> void:
 	# Winning the Small kit unlocks Small only; Big stays greyed.
 	_save.add_item("turbo_small")
 	_save.install_upgrade(id, "turbo_small", false)
-	hq._rebuild_upgrades_box()
+	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
 	assert_false(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small unlocks once its kit is fitted")
 	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big still locked")
