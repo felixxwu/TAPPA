@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://blender/charger/charger.glb" id="9_chargermodel"]
 [ext_resource type="PackedScene" uid="uid://hyqe7s0wpuhw" path="res://blender/thebeast/mrbeast.glb" id="10_beastmodel"]
 [ext_resource type="PackedScene" path="res://blender/911/911.glb" id="11_911model"]
+[ext_resource type="PackedScene" path="res://blender/xjs/xjs.glb" id="12_xjsmodel"]
 
 [sub_resource type="BoxMesh" id="mesh_chassis"]
 size = Vector3(1.6, 0.5, 3)
@@ -86,6 +87,10 @@ visible = false
 
 [node name="Porsche911Body" parent="." instance=ExtResource("11_911model")]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0, -0.5, 0)
+visible = false
+
+[node name="XjsBody" parent="." instance=ExtResource("12_xjsmodel")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 visible = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

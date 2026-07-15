@@ -1514,7 +1514,7 @@ func settle_wheel_visuals() -> void:
 # Idempotent: the material is built once per mesh.
 # Names of the authored glb body nodes in car.tscn (hidden unless a spec selects one).
 func _model_node_names() -> PackedStringArray:
-	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody", "ActyBody", "ChargerBody", "TheBeastBody", "Porsche911Body"])
+	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody", "ActyBody", "ChargerBody", "TheBeastBody", "Porsche911Body", "XjsBody"])
 
 
 func _apply_model_material(model: Node3D, texture: Texture2D) -> void:

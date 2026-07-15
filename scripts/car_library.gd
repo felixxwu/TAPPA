@@ -242,10 +242,16 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy RWD GT)
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(1.79, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
-		"cabin_z": 0.30, "track": 1.50, "wheelbase": 2.59,
+		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
+		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
 		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235,  # 215/235 mild stagger
-		"suspension_travel": 0.42, "suspension_stiffness": 12.0,  # soft long-legged GT
+		"suspension_travel": 0.3, "suspension_stiffness": 12.0,  # soft long-legged GT
+		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
+		# car.gd apply_car(). Wheels use its own wheel.png.
+		"use_model": true,
+		"model_node": "XjsBody",
+		"model_texture": "res://blender/xjs/texture.png",
+		"wheel_texture": "res://blender/xjs/wheel.png",
 	},
 	{
 		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
