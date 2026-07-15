@@ -132,23 +132,25 @@ note tests may call the public callback directly — keep its signature).
 **Source:** `benchmark/perf_benchmark.gd` + `benchmark/perf_benchmark.tscn`, run
 via `./run_benchmark.sh`. **NOT part of the test suite** — an on-demand tool for
 investigating choppiness, with no pass/fail gate (numbers are machine-dependent).
-For the player-facing, in-game benchmark (Settings → Benchmark: feature toggles,
-auto-driven run, results breakdown) see [benchmark.md](benchmark.md).
+It drives the SAME run as the player-facing, in-game benchmark (Settings →
+Benchmark: feature toggles, auto-driven run, results breakdown — see
+[benchmark.md](benchmark.md)), just headless/CLI instead of an on-screen results
+panel.
 
 ```bash
-./run_benchmark.sh             # windowed: CPU chunk timings + GPU/render time
+./run_benchmark.sh             # windowed: real frame timing + GPU/render time
 ./run_benchmark.sh --headless  # CPU-only (no GPU timing), quick
 ```
 
-Two halves, printed to stdout:
-- **CPU** — `compute_chunk_data` (load-time precompute cost: noise + mesh arrays),
-  `_spawn_chunk` (main-thread cache spawn at runtime), and a load-time boundary
-  crossing diagnostic.
-- **RENDER** — per-frame render cpu/gpu time for the real `main.tscn`, so a
-  GPU-bound frame is distinguishable from a CPU one. Needs a real display;
-  skipped under `--headless` (dummy renderer reports 0). GPU timestamp queries
-  aren't supported on every backend (e.g. OpenGL/macOS may report 0) — then
-  infer GPU cost from frame-total minus render-cpu.
+It loads the real `main.tscn` with the `Benchmark` autoload active, so `world.gd`
+spawns a `BenchmarkRunner` that auto-pilots the fielded car down the fixed seeded
+stage (`Benchmark.TRACK_SEED` / `TRACK_TURN_COUNT`) while recording per-frame
+samples. At the finish it prints the `BenchmarkStats.summarise` breakdown to
+stdout — fps (avg + 1% low), frame ms (avg/p95/p99/max), process/physics ms,
+render cpu/gpu ms, draws/objects/prims, and spike count — then quits. GPU timers
+need a real display (skipped/zero under `--headless`) and aren't supported on
+every backend (e.g. OpenGL/macOS may report 0) — then infer GPU cost from the
+frame interval minus render-cpu.
 
 ## Tests
 

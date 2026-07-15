@@ -2,10 +2,12 @@
 # Standalone performance benchmark — NOT part of the test suite (run_tests.sh).
 # Run on demand to investigate choppiness / performance regressions.
 #
-#   ./run_benchmark.sh             # windowed: CPU chunk timings + GPU/render time
+#   ./run_benchmark.sh             # windowed: real frame timing + GPU/render time
 #   ./run_benchmark.sh --headless  # CPU-only (no GPU), quick
 #
-# Loads benchmark/perf_benchmark.tscn, which prints a report and quits.
+# Loads benchmark/perf_benchmark.tscn, which drives the in-game benchmark run
+# (the auto-piloted fixed seeded stage, features/benchmark.md), prints its stats
+# breakdown, and quits.
 set -u
 
 GODOT="${GODOT:-/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot}"

@@ -18,8 +18,13 @@
 >
 > **Carve pass DONE (2026-07, single-threaded).** The carve was 53% of load and
 > split flatten 1807 ms / cliffs 8388 ms. Optimised in `terrain_manager.gd`:
-> - **Flatten** now samples at `ROAD_SAMPLE_STEP_M` = 1 m (was 0.25 m), stores only
->   the nearest sample, and computes the ramp once per touched cell (1807→~730 ms).
+> - **Flatten** stores only the nearest sample and computes the ramp once per touched
+>   cell (1807→~730 ms — this deferred-ramp refactor is the real win). NOTE: an earlier
+>   version also coarsened `ROAD_SAMPLE_STEP_M` 0.25 m → 1 m, but that made the road
+>   cross-section laterally uneven (the nearest sample stops approximating a vertex's
+>   perpendicular foot), so the car visibly ROLLED as it drove (±7° vs ±5.7° at 0.25 m,
+>   worst on gradients). Reverted to **0.25 m**; it only costs ~150 ms across the whole
+>   corridor, so the step was never where the speed-up came from.
 > - **Cliffs** rewritten as a **distance field**: each band vertex finds its nearest
 >   track point via a segment spatial-hash ring search (`CLIFF_GRID_M` = 24 m tuned
 >   fastest) and sets its own offset — no more per-sample disc stamp. The road-wrap
@@ -31,9 +36,9 @@
 >   allocation-free `while`-loop shell iteration (nearest-search 2431→~1990 ms; the
 >   `range()`-alloc removal was the biggest single win). Cliffs 8388→~2800 ms.
 >
-> Carve 11029→~4450 ms, total load ~20.8→~14.0 s. All web-safe (no threads). NOT
-> bit-identical: the 1 m flatten step and the cliff-mechanism change both shift
-> results (invisible, tests updated).
+> Carve 11029→~4600 ms, total load ~20.8→~14.1 s. All web-safe (no threads). NOT
+> bit-identical: the cliff-mechanism change shifts results (invisible, tests updated).
+> (The flatten step was left at 0.25 m — see the flatten note above.)
 >
 > **Chunk precompute (~3.1 s) — profiled and partially trimmed.** `compute_chunk_data`
 > per-phase (315 chunks): **halo/noise ~966 ms** (per-vertex multi-layer `get_noise_2d`

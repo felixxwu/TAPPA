@@ -313,6 +313,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		start_pos = start_line
 		var car := $Car as Node3D
 		car.global_position = Vector3(start_line.x, car.global_position.y, start_line.y)
+		car.reset_physics_interpolation()  # snap to the start line, don't lerp from spawn
 	# Paint the waterline into the preview BEFORE generation — it's a pure function
 	# of (seed, water_level), so it can show first and the road animates over it. This
 	# early pass covers a rough box around the origin (the track extent isn't known
@@ -903,6 +904,7 @@ func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> No
 	# Lift the car off its ground seat by its resting ride height so the wheels sit on
 	# the ground, then place and freeze immediately.
 	car.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * car.settled_ride_height())
+	car.reset_physics_interpolation()  # static prop: appear at its seat, don't lerp in
 	car.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
 	car.controls_locked = true  # driverless prop: ignore any live input, hold the handbrake
 	# Read as a wreck: 0 HP drives the synthetic smoke below (a wrecked car smokes

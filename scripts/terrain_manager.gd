@@ -12,10 +12,17 @@ const CHUNK_M := 50.0                        # chunk edge length in metres
 const CELL_M := 1.0                          # grid cell size (PS1 low-poly terrain)
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
 const RADIUS := 3                            # ring radius -> (2*RADIUS+1)^2 = 7x7
-# Centerline sampling density for the road flatten pass. Cells are CELL_M (1 m)
-# wide and each cell takes its nearest sample's height, so sampling finer than the
-# grid just re-picks the same cell many times; 1 m matches the grid.
-const ROAD_SAMPLE_STEP_M := 1.0
+# Centerline sampling density for the road flatten pass. This must stay well BELOW the
+# grid (CELL_M): each road vertex is flattened to the height of its NEAREST centerline
+# SAMPLE, and that sample sits at a fractional XZ along the arc, not at the vertex's true
+# perpendicular foot. Coarse sampling (e.g. 1 m) makes the nearest sample a poor stand-in
+# for the foot, so vertices ACROSS the road width pick samples at slightly different
+# heights — the cross-section stops being laterally flat and the car ROLLS as it drives
+# (worst on gradients, where along-track height varies fastest; measured ±7° roll at 1 m
+# vs ±5.7° at 0.25 m in the benchmark). 0.25 m keeps the road flat; the carve is only
+# ~150 ms slower across the whole corridor (the real speed-up is the deferred ramp, not a
+# coarse step — see todo/performance-optimisations.md).
+const ROAD_SAMPLE_STEP_M := 0.25
 # Cliffs & drops (features/terrain.md). The cliff bake is a distance field: each band
 # vertex finds its nearest centerline point via a segment spatial hash whose cells are
 # CLIFF_GRID_M wide (a whole number of terrain cells). Bigger cells → fewer ring

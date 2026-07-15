@@ -197,18 +197,20 @@ the true terrain across a transition band just outside the road edge, using
   - **Carve performance.** Both walks are O(track length × stamp-box area) in
     interpreted GDScript, so the carve is usually the single heaviest load stage
     (grep the console for `load stage:`). Three structural choices keep it down:
-    (1) the flatten walk samples at `ROAD_SAMPLE_STEP_M` = 1 m (matching the 1 m
-    cell grid — finer just re-picks the same cell) and stores only each point's
-    *nearest* sample payload, computing the blend ramp once per touched point in a
-    finalize pass rather than per overlapping stamp; (2) `_bake_cliffs` is a
+    (1) the flatten walk stores only each point's *nearest* sample payload, computing
+    the blend ramp once per touched point in a finalize pass rather than per overlapping
+    stamp (this is the actual speed-up; `ROAD_SAMPLE_STEP_M` stays at **0.25 m** — a
+    coarser step makes the road cross-section laterally uneven and the car rolls, and it
+    saves only ~150 ms anyway, see the note below); (2) `_bake_cliffs` is a
     **distance field** over a segment spatial hash — each band vertex is visited once
     and finds its nearest track point via an early-terminated ring search, instead of
     a disc stamp writing every vertex dozens of times; and (3) a morphological open
     (`_open_thin_offsets`) replaces the old per-vertex road-wrap union that made the
     cliff pass the dominant cost. All single-threaded (the web build has no thread
-    support). The flatten's 1 m step shifts nearest-sample picks by sub-cell amounts
-    vs the old 0.25 m, and the cliff rewrite changes hairpin handling (see the Cliffs
-    section) — neither is bit-identical to the pre-optimisation bake.
+    support). The cliff rewrite changes hairpin handling (see the Cliffs section) so the
+    bake is not bit-identical to the pre-optimisation version. (`ROAD_SAMPLE_STEP_M` was
+    briefly coarsened to 1 m for speed but reverted — it rolled the car; the sub-cell
+    nearest-sample picks it shifts are exactly the road's lateral flatness.)
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.

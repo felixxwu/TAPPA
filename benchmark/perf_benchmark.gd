@@ -5,24 +5,21 @@ extends Node
 #     ./run_benchmark.sh              # windowed: captures CPU *and* GPU/render
 #     ./run_benchmark.sh --headless   # CPU-only (no GPU timing), quick
 #
-# Two halves:
-#   CPU     — chunk-loading cost on the main thread (compute_chunk_data,
-#             _spawn_chunk, a simulated boundary crossing against the cache).
-#   RENDER  — per-frame render cpu/gpu time for the real main.tscn, so a
-#             GPU-bound frame (fill rate, the full-screen PS1 post-process,
-#             per-cell terrain) is distinguishable from a CPU one. Needs a real
-#             display; under --headless the renderer is a dummy (timers read 0)
-#             so this half is skipped.
-#
-# Prints a report to stdout and quits. Loose, machine-dependent numbers — read
-# them, don't gate on them.
+# This drives the SAME run as the in-game benchmark (Settings → Benchmark,
+# features/benchmark.md): it loads the real main.tscn with the Benchmark autoload
+# active, so world.gd spawns a BenchmarkRunner that auto-pilots the fielded car
+# down the fixed seeded stage (Benchmark.TRACK_SEED / TRACK_TURN_COUNT) while
+# recording per-frame timing/render samples. When the car crosses the finish the
+# runner hands its summary to Benchmark.finish(); we print that BenchmarkStats
+# breakdown to stdout and quit. Running the real, shipped game loop (vehicle
+# physics, tire model, FX, the full-screen PS1 post-process, per-cell terrain) is
+# what makes the numbers reflect actual play. Loose, machine-dependent numbers —
+# read them, don't gate on them.
 
-const ManagerScript := preload("res://scripts/terrain_manager.gd")
-const RENDER_FRAMES := 150
-const WARMUP := 30
-const DRIVE_FRAMES := 600        # frames to measure while moving
-const DRIVE_SPEED := 35.0        # m/s (~126 km/h) — fast enough to cross boundaries
-const SPIKE_MS := 28.0           # frame interval over this counts as a dropped-frame spike
+# Safety cap: frames to await before giving up on the run finishing (the car is
+# steered by pure-pursuit with an off-track reset, so it should always finish; a
+# ~10-turn stage at 50 km/h is well under this budget even uncapped).
+const MAX_FRAMES := 60000
 
 
 func _ready() -> void:
@@ -30,221 +27,172 @@ func _ready() -> void:
 	print("display: %s   (%s)\n" % [
 		DisplayServer.get_name(),
 		"windowed — GPU timing available" if not _headless() else "headless — CPU only"])
-	_bench_cpu()
-	await _bench_render()
-	await _bench_drive()
+	print("-- in-game benchmark run (seed %d, %d turns) --" % [
+		Benchmark.TRACK_SEED, Benchmark.TRACK_TURN_COUNT])
+	if _headless():
+		print("  note: headless — render cpu/gpu and vsync pacing are unavailable;")
+		print("        frame interval reflects CPU work only. Run windowed for GPU timing.")
+
+	# Frame pacing: uncap fps + vsync off so the run exposes real headroom instead
+	# of pinning to the refresh rate (the same thing Benchmark's uncap_fps toggle
+	# does). Restored before we quit.
+	var prev_max_fps := Engine.max_fps
+	var prev_vsync := DisplayServer.VSYNC_ENABLED
+	if not _headless():
+		prev_vsync = DisplayServer.window_get_vsync_mode(0)
+	Engine.max_fps = 0
+	if not _headless():
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+
+	# Configure the Benchmark autoload exactly as start() would, minus its
+	# change_scene (we host main.tscn as a child so this harness stays alive to
+	# read the result). All toggles keep their defaults (the full game as shipped).
+	Benchmark.apply_overrides(Config.data)
+	Benchmark.results = {}
+	Benchmark.active = true
+
+	var scene: Node = load("res://main.tscn").instantiate()
+	add_child(scene)
+
+	# --- Camera-shake probe (temporary diagnostic). Legitimate terrain following is a
+	# slow signal (the car climbing a hill over ~seconds); shake is a faster wobble ON
+	# TOP of it. To separate them, high-pass each signal: keep a moving average over a
+	# ~WIN-frame window and measure the RMS of the residual (value − moving average).
+	# The slow ramp lands in the average and cancels; only the wobble survives. Tracked
+	# for camera pitch, camera Y, and the car's own Y (its target) — the car bouncing on
+	# a bumpy collision surface is the driver of the whole effect.
+	const WIN := 24                       # ~0.16 s at ~145 fps
+	var buf_pitch := PackedFloat32Array()
+	var buf_camy := PackedFloat32Array()
+	var buf_cary := PackedFloat32Array()
+	var hp_pitch_sq := 0.0
+	var hp_camy_sq := 0.0
+	var hp_cary_sq := 0.0
+	var hp_n := 0
+	var series_pitch := PackedFloat32Array()
+	var series_camy := PackedFloat32Array()
+	var series_cary := PackedFloat32Array()
+	var series_fov := PackedFloat32Array()
+	var series_speed := PackedFloat32Array()
+	# Car body attitude, to characterise the "bumpy road" wobble the car itself shows
+	# (distinct from the camera). Pitch = nose up/down, roll = lean L/R, both derived
+	# from the body basis so they're yaw-independent; angvel = |angular_velocity|.
+	var series_carpitch := PackedFloat32Array()
+	var series_carroll := PackedFloat32Array()
+	var series_angvel := PackedFloat32Array()
+
+	# Wait for the runner to cross the finish and publish its summary.
+	var frames := 0
+	while Benchmark.results.is_empty() and frames < MAX_FRAMES:
+		await get_tree().process_frame
+		frames += 1
+		var cam := get_viewport().get_camera_3d()
+		if cam != null:
+			var fwd := -cam.global_transform.basis.z
+			var pitch: float = asin(clampf(fwd.y, -1.0, 1.0))
+			var camy := cam.global_position.y
+			var cary := camy
+			var speed := 0.0
+			var tgt: Node = cam.get("target")
+			if tgt is Node3D:
+				cary = (tgt as Node3D).global_position.y
+			var carpitch := 0.0
+			var carroll := 0.0
+			var angvel := 0.0
+			if tgt is Node3D:
+				var b := (tgt as Node3D).global_transform.basis.orthonormalized()
+				carpitch = asin(clampf(-b.z.y, -1.0, 1.0))  # nose up (+) / down (-)
+				carroll = asin(clampf(b.x.y, -1.0, 1.0))     # lean
+			if tgt is RigidBody3D:
+				var rb := tgt as RigidBody3D
+				var hv := rb.linear_velocity
+				hv.y = 0.0
+				speed = hv.length()
+				angvel = rb.angular_velocity.length()
+			series_carpitch.append(carpitch); series_carroll.append(carroll); series_angvel.append(angvel)
+			series_fov.append(cam.fov); series_speed.append(speed)
+			series_pitch.append(pitch); series_camy.append(camy); series_cary.append(cary)
+			buf_pitch.append(pitch); buf_camy.append(camy); buf_cary.append(cary)
+			if buf_pitch.size() > WIN:
+				buf_pitch.remove_at(0); buf_camy.remove_at(0); buf_cary.remove_at(0)
+			if buf_pitch.size() == WIN:
+				var rp := pitch - _mean(buf_pitch)
+				var rc := camy - _mean(buf_camy)
+				var rr := cary - _mean(buf_cary)
+				hp_pitch_sq += rp * rp
+				hp_camy_sq += rc * rc
+				hp_cary_sq += rr * rr
+				hp_n += 1
+	if hp_n > 0:
+		print("-- camera shake probe (high-pass residual, %d samples) --" % hp_n)
+		print("  cam pitch wobble RMS %.5f rad" % sqrt(hp_pitch_sq / hp_n))
+		print("  cam Y     wobble RMS %.5f m" % sqrt(hp_camy_sq / hp_n))
+		print("  car Y     wobble RMS %.5f m" % sqrt(hp_cary_sq / hp_n))
+	# Dump the raw per-frame time series so the frequency content can be analysed
+	# offline (pitch, camera Y, car Y). One row per rendered frame.
+	var f := FileAccess.open("user://shake_series.csv", FileAccess.WRITE)
+	if f != null:
+		f.store_line("i,pitch,camy,cary,fov,speed,carpitch,carroll,angvel")
+		for i in series_pitch.size():
+			f.store_line("%d,%.6f,%.6f,%.6f,%.4f,%.4f,%.6f,%.6f,%.6f" % [
+				i, series_pitch[i], series_camy[i], series_cary[i], series_fov[i], series_speed[i],
+				series_carpitch[i], series_carroll[i], series_angvel[i]])
+		f.close()
+		print("  wrote time series: %s" % ProjectSettings.globalize_path("user://shake_series.csv"))
+
+	if Benchmark.results.is_empty():
+		print("  TIMED OUT after %d frames — the run never reached the finish." % frames)
+	else:
+		_report(Benchmark.results)
+
+	# Restore everything the run touched, then leave.
+	Benchmark.active = false
+	Benchmark.restore(Config.data)
+	Engine.max_fps = prev_max_fps
+	if not _headless():
+		DisplayServer.window_set_vsync_mode(prev_vsync)
+	scene.queue_free()
+
 	print("\n=== benchmark complete ===")
 	get_tree().quit()
+
+
+func _mean(a: PackedFloat32Array) -> float:
+	var s := 0.0
+	for v in a:
+		s += v
+	return s / a.size()
 
 
 func _headless() -> bool:
 	return DisplayServer.get_name() == "headless"
 
 
-func _make_manager() -> Node3D:
-	var m := Node3D.new()
-	m.set_script(ManagerScript)
-	m.focus_path = NodePath("")
-	m.noise_seed = 1337
-	var layers: Array[TerrainLayer] = []
-	for params in [[60.0, 1.5], [15.0, 0.4], [3.0, 0.1]]:
-		var layer := TerrainLayer.new()
-		layer.wavelength_m = params[0]
-		layer.amplitude_m = params[1]
-		layers.append(layer)
-	m.layers = layers
-	# The shipped config bakes terrain lighting (terrain_light_amount = 1.0), which
-	# more than doubles compute_chunk_data's cost (the per-vertex light bake). Match
-	# it here so the benchmark reflects the real chunk-build cost, not an unlit one.
-	m.light_amount = 1.0
-	return m
-
-
-func _report(label: String, samples: Array, note: String = "") -> void:
-	var total := 0.0
-	var worst := 0.0
-	for ms in samples:
-		total += ms
-		worst = maxf(worst, ms)
-	var avg: float = total / maxf(samples.size(), 1)
-	print("  %-26s avg %7.2f ms   max %7.2f ms   (n=%d) %s"
-		% [label, avg, worst, samples.size(), note])
-
-
-func _bench_cpu() -> void:
-	print("-- CPU: chunk loading --")
-	var m := _make_manager()
-	add_child(m)
-
-	# Load-time precompute cost: noise + de-indexed mesh arrays. Distinct coords so
-	# noise can't be cached.
-	var compute: Array = []
-	for cz in range(6):
-		for cx in range(6):
-			var t0 := Time.get_ticks_usec()
-			m.compute_chunk_data(Vector2i(cx + 100, cz + 100))
-			compute.append((Time.get_ticks_usec() - t0) / 1000.0)
-	_report("compute_chunk_data", compute, "(load-time precompute cost)")
-
-	# Main-thread cost: build the ArrayMesh + HeightMapShape3D and add the node —
-	# the per-frame hitch suspect (runtime caps this to 1/frame).
-	var spawn: Array = []
-	for cz in range(5):
-		for cx in range(5):
-			var coord := Vector2i(cx + 200, cz + 200)
-			var data: Dictionary = m.compute_chunk_data(coord)  # untimed
-			var t0 := Time.get_ticks_usec()
-			m._spawn_chunk(coord, data)
-			spawn.append((Time.get_ticks_usec() - t0) / 1000.0)
-	_report("spawn_chunk (integrate)", spawn, "(main thread, cache spawn at runtime)")
-
-	# One straight-line boundary crossing reconciles the ring and integrates a new
-	# row. Synchronous here; at runtime spread over (2*RADIUS+1) frames.
-	var crossing: Array = []
-	var step: float = ManagerScript.CHUNK_M
-	m.update_focus(Vector3.ZERO)
-	for i in range(1, 11):
-		var t0 := Time.get_ticks_usec()
-		m.update_focus(Vector3(i * step, 0.0, 0.0))
-		crossing.append((Time.get_ticks_usec() - t0) / 1000.0)
-	_report("boundary crossing (row)", crossing,
-		"(load-time only; runtime crossings pull from cache)")
-
-	m.queue_free()
-
-
-func _bench_render() -> void:
-	print("\n-- RENDER: real scene --")
-	if _headless():
-		print("  skipped (headless: no GPU timing). Run windowed: ./run_benchmark.sh")
-		return
-
-	# GPU timestamp queries are unsupported on several backends (OpenGL/macOS),
-	# so the real signal is the wall-clock frame interval. To expose render cost
-	# we must uncap fps and disable vsync — otherwise the interval is pinned to
-	# the refresh rate and hides all headroom. (Restored after the run.)
-	var prev_max_fps := Engine.max_fps
-	var prev_vsync := DisplayServer.window_get_vsync_mode(0)
-	Engine.max_fps = 0
-	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
-
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child(scene)
-	# The 3D world renders through the PostProcess SubViewport (the root
-	# viewport's 3D pass is disabled while main.tscn is in the tree) — measure
-	# the viewport that actually does the 3D work.
-	var view := scene.get_node_or_null("PostProcess/View") as SubViewport
-	var rid := view.get_viewport_rid() if view != null else get_viewport().get_viewport_rid()
-	RenderingServer.viewport_set_measure_render_time(rid, true)
-
-	for _i in WARMUP:
-		await get_tree().process_frame
-
-	var cpu: Array = []
-	var gpu: Array = []
-	var frame: Array = []   # real wall-clock interval between presented frames (ms)
-	var last := Time.get_ticks_usec()
-	for _i in RENDER_FRAMES:
-		await get_tree().process_frame
-		var now := Time.get_ticks_usec()
-		frame.append((now - last) / 1000.0)
-		last = now
-		cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(rid))
-		gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(rid))
-
-	_report("render cpu", cpu)
-	_report("render gpu", gpu)
-	_report("frame interval (vsync off)", frame, "(p95 %.2f ms)" % _percentile(frame, 0.95))
-	print("  draws %d   objects %d   prims %d" % [
-		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
-		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
-		int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))])
-
-	var gpu_avg := 0.0
-	for v in gpu:
-		gpu_avg += v
-	if gpu_avg <= 0.0:
+# Print the BenchmarkStats.summarise breakdown Benchmark.finish() stored.
+func _report(s: Dictionary) -> void:
+	print("  frames %d   duration %.1f s   distance %.0f m" % [
+		int(s.get("frames", 0)), float(s.get("duration_s", 0.0)),
+		float(s.get("distance_m", 0.0))])
+	print("  fps          avg %7.1f    1%% low %7.1f" % [
+		float(s.get("fps_avg", 0.0)), float(s.get("fps_1pct_low", 0.0))])
+	print("  frame ms     avg %7.2f    p95 %7.2f   p99 %7.2f   max %7.2f" % [
+		float(s.get("frame_avg_ms", 0.0)), float(s.get("frame_p95_ms", 0.0)),
+		float(s.get("frame_p99_ms", 0.0)), float(s.get("frame_max_ms", 0.0))])
+	print("  process ms   avg %7.2f    max %7.2f" % [
+		float(s.get("process_ms_avg", 0.0)), float(s.get("process_ms_max", 0.0))])
+	print("  physics ms   avg %7.2f    max %7.2f" % [
+		float(s.get("physics_ms_avg", 0.0)), float(s.get("physics_ms_max", 0.0))])
+	print("  render cpu   avg %7.2f    max %7.2f" % [
+		float(s.get("render_cpu_ms_avg", 0.0)), float(s.get("render_cpu_ms_max", 0.0))])
+	print("  render gpu   avg %7.2f    max %7.2f" % [
+		float(s.get("render_gpu_ms_avg", 0.0)), float(s.get("render_gpu_ms_max", 0.0))])
+	print("  draws %d   objects %d   prims %d   spikes>%dms %d" % [
+		int(s.get("draws_avg", 0.0)), int(s.get("objects_avg", 0.0)),
+		int(s.get("prims_avg", 0.0)), int(BenchmarkStats.SPIKE_MS),
+		int(s.get("spikes", 0))])
+	var disabled: Array = s.get("disabled", [])
+	if not disabled.is_empty():
+		print("  disabled: %s" % ", ".join(disabled))
+	if float(s.get("render_gpu_ms_avg", 0.0)) <= 0.0 and not _headless():
 		print("  note: GPU timer unsupported on this backend (e.g. OpenGL/macOS).")
-		print("        With vsync off, frame interval ≈ GPU+present cost since")
-		print("        render-cpu and CPU work are tiny — that's the GPU signal.")
-
-	Engine.max_fps = prev_max_fps
-	DisplayServer.window_set_vsync_mode(prev_vsync)
-	scene.queue_free()
-
-
-func _percentile(samples: Array, q: float) -> float:
-	if samples.is_empty():
-		return 0.0
-	var sorted := samples.duplicate()
-	sorted.sort()
-	var idx := int(clampf(q * (sorted.size() - 1), 0, sorted.size() - 1))
-	return sorted[idx]
-
-
-# Drive the viewpoint across chunk boundaries and measure the REAL per-frame
-# interval — the scenario where choppiness actually shows up. Chunks are now
-# precomputed and served from the cache, so this measures cache-spawn cost, not
-# generation. vsync ON (the felt experience): spikes that line up with chunk
-# integration ⇒ cache-spawn cost; frequent jitter with no integrations and low
-# render cost ⇒ frame pacing.
-func _bench_drive() -> void:
-	print("\n-- DRIVE: scene in motion (cache-spawn cost) --")
-	if _headless():
-		print("  note: headless — interval reflects CPU only (no GPU/vsync pacing).")
-
-	var prev_vsync := DisplayServer.window_get_vsync_mode(0)
-	if not _headless():
-		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
-
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child(scene)
-	await get_tree().process_frame  # let _ready build the initial ring + track
-
-	var car := scene.get_node_or_null("Car") as Node3D
-	var floor_node := scene.get_node_or_null("Floor")
-	if car == null or floor_node == null:
-		print("  skipped: scene missing Car/Floor")
-		scene.queue_free()
-		DisplayServer.window_set_vsync_mode(prev_vsync)
-		return
-
-	# Freeze physics so scripted motion is exact (the focus still drives terrain
-	# streaming; collision shapes are still added/removed as chunks load).
-	if car is RigidBody3D:
-		(car as RigidBody3D).freeze = true
-
-	for _i in WARMUP:
-		await get_tree().process_frame
-
-	var start: Vector3 = car.global_position
-	var pos: Vector3 = start
-	var integ0: int = floor_node.integrations_total
-	var frame: Array = []
-	var spikes := 0
-	var spikes_with_integ := 0
-	var last := Time.get_ticks_usec()
-	var prev_integ: int = floor_node.integrations_total
-	for _i in DRIVE_FRAMES:
-		await get_tree().process_frame
-		var now := Time.get_ticks_usec()
-		var dt_ms := (now - last) / 1000.0
-		last = now
-		frame.append(dt_ms)
-		var integrated: int = floor_node.integrations_total - prev_integ
-		prev_integ = floor_node.integrations_total
-		if dt_ms >= SPIKE_MS:
-			spikes += 1
-			if integrated > 0:
-				spikes_with_integ += 1
-		pos.x += DRIVE_SPEED / 60.0   # fixed virtual step => deterministic distance
-		car.global_position = pos
-
-	var integrated_total: int = floor_node.integrations_total - integ0
-	_report("frame interval (driving)", frame, "(p95 %.2f ms)" % _percentile(frame, 0.95))
-	print("  drove %.0f m   chunks integrated %d   spikes>%.0fms %d (%d on an integration frame) / %d frames" % [
-		car.global_position.distance_to(start), integrated_total,
-		SPIKE_MS, spikes, spikes_with_integ, DRIVE_FRAMES])
-
-	scene.queue_free()
-	DisplayServer.window_set_vsync_mode(prev_vsync)
+		print("        With vsync off, frame interval ≈ GPU+present cost.")

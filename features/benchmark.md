@@ -9,8 +9,8 @@ Settings page in `scripts/settings_menu.gd` and the run-scene wiring in
 A one-button performance benchmark launched from **Settings → Benchmark**
 (reachable from both the HQ title screen and the in-run pause menu, since both
 host the shared `SettingsMenu`). It generates a fixed **long stage** (seed
-`Benchmark.TRACK_SEED`, `TRACK_TURN_COUNT` = 30 turns — roughly double a normal
-event), auto-drives the car down the whole track at a steady moderate pace
+`Benchmark.TRACK_SEED`, `TRACK_TURN_COUNT` = 10 turns — a short stage, quick to
+run), auto-drives the car down the whole track at a steady moderate pace
 (`BenchmarkRunner.TARGET_SPEED_KMH` = 50 km/h), records per-frame stats the
 entire way with the frame-profiler overlay forced on, and shows a results
 breakdown at the finish. The run is fully deterministic: the stage geometry
