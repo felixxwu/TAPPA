@@ -313,3 +313,14 @@ the shipped `engine_harmonics` override). Because the fill is frame-coupled, a s
 main-thread frame (e.g. a terrain chunk-crossing build on web) can underrun the
 generator buffer — hence the `BUFFER_SECONDS` headroom above and the terrain work
 to keep crossing frames short (see [terrain.md](terrain.md)).
+
+On web this stacks with a second, engine-level buffer: because the export is
+single-threaded (`thread_support=false`), Godot mixes **all** audio (this synth
+plus every sample bus) on the main thread and pushes it to the browser's WebAudio
+ring buffer. With the 30 fps thermal cap on mobile/web (`target_fps_mobile`, see
+`world.gd`), the main thread sleeps ~33 ms between frames, so the default 15 ms
+output buffer drains before the next refill and the *whole mix* crackles — not
+just the engine note. `project.godot` therefore sets
+`audio/driver/output_latency.web=120` (desktop keeps the tight 15 ms default) so
+the WebAudio buffer has enough slack to survive the inter-frame gap. This is read
+at driver init (engine boot), so it lives in project settings, not runtime code.

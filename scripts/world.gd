@@ -14,6 +14,13 @@ const WRECK_CAR_SCENE := "res://car.tscn"
 # world the instant main.tscn is instantiated, exactly as before this overlay.
 var _headless := false
 
+# Per-stage load timing. Each _stage() boundary closes the previous stage and
+# logs its wall-clock cost, so the real load-time split (track search vs carve vs
+# chunk precompute vs foliage) is visible in the console. Silent under headless.
+var _stage_t0 := 0
+var _stage_label := ""
+var _load_t0 := 0
+
 
 func _ready() -> void:
 	_headless = Platform.is_headless()
@@ -119,6 +126,7 @@ func _ready() -> void:
 	($CameraManager as CameraManager).refresh_bonnet_offset()
 
 	await _generate_track(cfg, loading)
+	_end_load_timing()
 
 	# The stage finish is handled in EVERY mode: a session run reports the event to
 	# the orchestrator; free roam / a dev boot has no session, so the finish panel's
@@ -203,9 +211,27 @@ func _yield_frame() -> void:
 # paints before the next blocking generation call. Collapses to a synchronous
 # no-op under headless (via _yield_frame), so tests still see a fully-built world.
 func _stage(loading: LoadingScreen, label: String) -> void:
+	if not _headless:
+		var now := Time.get_ticks_msec()
+		if _stage_label != "":
+			print("load stage: %-26s %5d ms" % [_stage_label, now - _stage_t0])
+		else:
+			_load_t0 = now
+		_stage_label = label
+		_stage_t0 = now
 	if loading != null:
 		loading.set_step(label)
 	await _yield_frame()
+
+
+# Close the final stage and print the total. Called once generation is done.
+func _end_load_timing() -> void:
+	if _headless or _stage_label == "":
+		return
+	var now := Time.get_ticks_msec()
+	print("load stage: %-26s %5d ms" % [_stage_label, now - _stage_t0])
+	print("load total: %d ms" % (now - _load_t0))
+	_stage_label = ""
 
 
 # Get-or-create a named child: return the existing node with `node_name` if one is

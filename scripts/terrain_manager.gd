@@ -12,7 +12,10 @@ const CHUNK_M := 50.0                        # chunk edge length in metres
 const CELL_M := 1.0                          # grid cell size (PS1 low-poly terrain)
 const SAMPLES := int(CHUNK_M / CELL_M) + 1   # 51 height vertices per edge
 const RADIUS := 3                            # ring radius -> (2*RADIUS+1)^2 = 7x7
-const ROAD_SAMPLE_STEP_M := 0.25        # centerline sampling density for bake_road
+# Centerline sampling density for the road flatten pass. Cells are CELL_M (1 m)
+# wide and each cell takes its nearest sample's height, so sampling finer than the
+# grid just re-picks the same cell many times; 1 m matches the grid.
+const ROAD_SAMPLE_STEP_M := 1.0
 # Cliffs & drops (features/terrain.md). The cliff pass walks the centerline coarser
 # than the road (camber varies over cliff_wavelength_m ≫ a cell, and the stamp band
 # is ~10-20× wider), so the sample density is the main cost lever.
@@ -621,6 +624,13 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	# fills 0.5 -> 1. So the preview line keeps advancing through the cliff pass instead
 	# of sitting full-white while it runs.
 	var flatten_ceiling := 0.5 if _cliffs_active() else 1.0
+	# Each grid point near the road is touched by ~(2·reach/ROAD_SAMPLE_STEP_M)
+	# overlapping stamp boxes, but only its NEAREST centerline sample decides its
+	# fields. So the walk stores just the nearest sample's payload (height / tarmac)
+	# keyed by squared distance — no per-stamp ramp, no sqrt — and the blend ramp is
+	# computed ONCE per touched point in the finalize pass below. `outer_sq` rejects
+	# out-of-band cells (smooth_ramp is 0 at/beyond outer) without a sqrt.
+	var outer_sq := outer * outer
 	for i in range(1, poly.size()):
 		if i % yield_stride == 0:
 			# Report carve progress (fraction of the centerline flattened so far) and,
@@ -646,23 +656,28 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 			var cbz := floori(p.y / CELL_M)
 			for dz in range(-reach, reach + 1):
 				for dx in range(-reach, reach + 1):
-					# Vertex (grid point) -> height field.
+					# Vertex (grid point) -> nearest sample's height (ramp deferred).
 					var v := Vector2i(vbx + dx, vbz + dz)
-					var dv := Vector2(v.x * CELL_M, v.y * CELL_M).distance_to(p)
-					var wv := smooth_ramp(dv, inner, outer)
-					if wv > 0.0 and (not v_best.has(v) or dv < v_best[v]):
-						v_best[v] = dv
+					var dvx := v.x * CELL_M - p.x
+					var dvz := v.y * CELL_M - p.y
+					var dvsq := dvx * dvx + dvz * dvz
+					if dvsq < outer_sq and (not v_best.has(v) or dvsq < v_best[v]):
+						v_best[v] = dvsq
 						rh[v] = y
-						rb[v] = wv
-					# Cell (centre) -> colour + surface fields (same nearest sample).
+					# Cell (centre) -> nearest sample's tarmac (colour ramp deferred).
 					var c := Vector2i(cbx + dx, cbz + dz)
-					var dc := Vector2((c.x + 0.5) * CELL_M, (c.y + 0.5) * CELL_M).distance_to(p)
-					var wc := smooth_ramp(dc, inner, outer)
-					if wc > 0.0 and (not c_best.has(c) or dc < c_best[c]):
-						c_best[c] = dc
-						tw[c] = wc
+					var dcx := (c.x + 0.5) * CELL_M - p.x
+					var dcz := (c.y + 0.5) * CELL_M - p.y
+					var dcsq := dcx * dcx + dcz * dcz
+					if dcsq < outer_sq and (not c_best.has(c) or dcsq < c_best[c]):
+						c_best[c] = dcsq
 						ts[c] = tarmac
 		dist_m += seg_len
+	# Finalize: one ramp evaluation per touched vertex / cell (was per stamp).
+	for v in v_best:
+		rb[v] = smooth_ramp(sqrt(v_best[v]), inner, outer)
+	for c in c_best:
+		tw[c] = smooth_ramp(sqrt(c_best[c]), inner, outer)
 	road_heights = rh
 	road_blend = rb
 	track_weights = tw
@@ -759,12 +774,43 @@ func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should
 	var reach := int(ceil(outer / CELL_M)) + 1
 	var camber_noise := _make_camber_noise()
 
-	var v_best: Dictionary = {}   # vertex -> nearest sample distance so far
-	var base: Dictionary = {}     # vertex -> side·camber·profile at the nearest sample
-	var buckets: Dictionary = {}  # vertex -> bitmask of occupied bearing buckets
-	var bucket_span := TAU / float(CLIFF_BEARING_BUCKETS)
-
 	var poly := centerline.tessellate()
+	# The stamp touches a huge disc per sample (reach ≈ cliff_run + cliff_fade + band,
+	# tens of cells), and every touched vertex is hit by dozens of overlapping samples.
+	# Vector2i-keyed Dictionaries made each of those millions of touches a hash lookup;
+	# back the three fields with FLAT packed arrays indexed over the track's bounding
+	# box instead, turning every touch into an O(1) array index. Bit-identical to the
+	# dictionary version — same nearest-sample base, same bucket union — just faster.
+	var min_gx := 0x7fffffff
+	var min_gz := 0x7fffffff
+	var max_gx := -0x7fffffff
+	var max_gz := -0x7fffffff
+	for pt in poly:
+		var gx := roundi(pt.x / CELL_M)
+		var gz := roundi(pt.y / CELL_M)
+		min_gx = mini(min_gx, gx)
+		max_gx = maxi(max_gx, gx)
+		min_gz = mini(min_gz, gz)
+		max_gz = maxi(max_gz, gz)
+	# The stamp reaches `reach` cells past the nearest centerline vertex, so pad the box
+	# by reach (+1 for the roundi slack). Every (vbx±dx, vbz±dz) then lands in range.
+	var pad := reach + 1
+	var box_x0 := min_gx - pad
+	var box_z0 := min_gz - pad
+	var box_w := (max_gx - min_gx) + 2 * pad + 1
+	var box_h := (max_gz - min_gz) + 2 * pad + 1
+	var n := box_w * box_h
+	var v_best := PackedFloat32Array()   # nearest sample SQUARED distance (INF = untouched)
+	v_best.resize(n)
+	v_best.fill(INF)
+	var base := PackedFloat32Array()     # side·camber·profile at the nearest sample
+	base.resize(n)
+	# Bitmask of occupied bearing buckets (union over all samples). 48 buckets need bit
+	# 47, so this must be 64-bit — a 32-bit array would overflow on 1 << 47.
+	var buckets := PackedInt64Array()
+	buckets.resize(n)
+
+	var bucket_span := TAU / float(CLIFF_BEARING_BUCKETS)
 	var dist_m := 0.0
 	var yield_stride := maxi(1, (poly.size() - 1) / 40)
 	var denom := maxf(float(poly.size() - 1), 1.0)
@@ -789,30 +835,50 @@ func _bake_cliffs(centerline: Curve2D, width: float, transition_m: float, should
 			var camber := _camber(camber_noise, dist_m + t * seg_len)
 			var vbx := roundi(p.x / CELL_M)
 			var vbz := roundi(p.y / CELL_M)
+			var cx := p.x / CELL_M - vbx   # fractional column of p within the box
+			var row := (vbz - box_z0) * box_w + (vbx - box_x0)
 			for dz in range(-reach, reach + 1):
-				for dx in range(-reach, reach + 1):
-					var v := Vector2i(vbx + dx, vbz + dz)
-					var off := Vector2(v.x * CELL_M, v.y * CELL_M) - p
-					if off.length_squared() > outer_sq:   # corner reject before the sqrt
-						continue
-					var dv := off.length()
-					# Bearing bucket for the wrap test (vertex → sample direction).
-					if dv > 0.0001:
-						var ang := atan2(-off.y, -off.x) + PI   # 0..TAU
-						var bit := int(ang / bucket_span) % CLIFF_BEARING_BUCKETS
-						buckets[v] = int(buckets.get(v, 0)) | (1 << bit)
-					if not v_best.has(v) or dv < v_best[v]:
-						v_best[v] = dv
-						# side = sign of the tangent × offset cross product.
-						var cross := tangent.x * off.y - tangent.y * off.x
-						base[v] = signf(cross) * camber * _cliff_profile(dv, inner, rise, outer)
+				var offy := (vbz + dz) * CELL_M - p.y   # constant across the row
+				var rem := outer_sq - offy * offy
+				if rem < 0.0:
+					continue   # whole row is outside the influence disc
+				# Only the dx span whose vertices fall inside the disc — skip the box
+				# corners entirely instead of visiting and rejecting them. Widened to a
+				# superset (floor/ceil) with the osq guard kept authoritative, so the
+				# result is identical to walking the full square.
+				var half := sqrt(rem) / CELL_M
+				var dx_lo := maxi(-reach, int(floor(cx - half)))
+				var dx_hi := mini(reach, int(ceil(cx + half)))
+				var li := row + dz * box_w + dx_lo
+				for dx in range(dx_lo, dx_hi + 1):
+					var offx := (vbx + dx) * CELL_M - p.x
+					var osq := offx * offx + offy * offy
+					if osq <= outer_sq:   # inside the influence disc
+						# Bearing bucket for the wrap test (vertex → sample direction).
+						if osq > 1e-8:
+							var ang := atan2(-offy, -offx) + PI   # 0..TAU
+							var bit := int(ang / bucket_span) % CLIFF_BEARING_BUCKETS
+							buckets[li] = buckets[li] | (1 << bit)
+						# Nearest sample decides base — compare on squared distance and
+						# pay the sqrt only on the (rare) update, for the profile lookup.
+						if osq < v_best[li]:
+							v_best[li] = osq
+							# side = sign of the tangent × offset cross product.
+							var cross := tangent.x * offy - tangent.y * offx
+							base[li] = signf(cross) * camber * _cliff_profile(sqrt(osq), inner, rise, outer)
+					li += 1
 		dist_m += seg_len
 
-	for v in base.keys():
-		var span := _bucket_span_deg(int(buckets.get(v, 0)))
-		var val: float = base[v] * (1.0 - _contested_from_span(span)) * eff_max
+	# Fold the wrap span into the contested flatten over every touched vertex.
+	for li in n:
+		if is_inf(v_best[li]):
+			continue
+		var span := _bucket_span_deg(buckets[li])
+		var val := base[li] * (1.0 - _contested_from_span(span)) * eff_max
 		if absf(val) > 0.0001:
-			cliff_offsets[v] = val
+			var gz := box_z0 + li / box_w
+			var gx := box_x0 + li % box_w
+			cliff_offsets[Vector2i(gx, gz)] = val
 
 
 # Apply a track: bake the weighted height + road-blend fields from the centerline,

@@ -194,6 +194,21 @@ the true terrain across a transition band just outside the road edge, using
   else the whole bar 0→1; `_bake_cliffs` fills 0.5→1 — so the line keeps advancing through
   the cliff pass rather than sitting full-white while it runs. Independent of `should_yield`
   (reports even without yielding) and never changes the baked result.
+  - **Carve performance.** Both walks are O(track length × stamp-box area) in
+    interpreted GDScript, so the carve is usually the single heaviest load stage
+    (grep the console for `load stage:`). Three structural choices keep it down:
+    (1) the flatten walk samples at `ROAD_SAMPLE_STEP_M` = 1 m (matching the 1 m
+    cell grid — finer just re-picks the same cell) and stores only each point's
+    *nearest* sample payload, computing the blend ramp once per touched point in a
+    finalize pass rather than per overlapping stamp; (2) `_bake_cliffs` backs its
+    three per-vertex fields (`v_best` / `base` / `buckets`) with **flat packed
+    arrays** indexed over the track's bounding box instead of `Vector2i`-keyed
+    Dictionaries — the same vertex is touched by dozens of overlapping samples, and
+    array indexing beats hashing on every touch; (3) the inner stamp clamps its `dx`
+    span to the influence disc per row (with the `osq` guard kept authoritative), so
+    box corners are never visited. All three are single-threaded (the web build has
+    no thread support) and leave the baked result unchanged, except the 1 m flatten
+    step, which shifts nearest-sample picks by sub-cell amounts vs the old 0.25 m.
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.

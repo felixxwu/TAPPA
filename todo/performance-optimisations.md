@@ -1,5 +1,32 @@
 # Performance Optimisation Spec — mobile / low-end devices
 
+> **2026-07 load-time breakdown (measured).** `world.gd` now logs per-stage load
+> timing (`_stage` / `_end_load_timing`, gated off under headless) — grep the
+> console for `load stage:` / `load total:`. A desktop free-roam boot of
+> `main.tscn` (315-chunk corridor, 71 MB cached) measured ~20.8 s total, split:
+>
+> | stage | ms (before) | ms (after carve pass) |
+> |---|---|---|
+> | Carving road into terrain (`bake_track` + `_bake_cliffs`) | 11029 | **6034** |
+> | Precomputing chunks (`cache_chunk` × corridor, incl. LOD prebake) | 4289 | 4246 |
+> | Generating track (DFS search) | 2539 | 2528 |
+> | Scattering bushes | 1219 | 1214 |
+> | Placing signs | 813 | 801 |
+> | Scattering trees | 806 | 820 |
+> | Building terrain / lakes / rest | <160 | <160 |
+> | **total** | **20845** | **15746** |
+>
+> **Carve pass DONE (2026-07, single-threaded).** The carve was 53% of load and
+> split flatten 1807 ms / cliffs 8388 ms. Optimised in `terrain_manager.gd`:
+> flatten now samples at `ROAD_SAMPLE_STEP_M` = 1 m (was 0.25 m) storing only the
+> nearest sample and computing the ramp once per touched cell (1807→~730 ms); the
+> cliff pass swapped its three `Vector2i`-keyed Dictionaries for flat packed arrays
+> over the track bbox and clamps the stamp to the disc per row (8388→~4700 ms).
+> Carve 11029→6034 ms, total load ~20.8→~15.7 s. All web-safe (no threads). Cliffs
+> are bit-identical; the flatten's 1 m step shifts nearest-sample picks by sub-cell
+> amounts. **Next-heaviest is now the chunk precompute (4.2 s)** — `cache_chunk`
+> over the whole corridor incl. LOD mesh prebake; consider deferring distant LODs.
+>
 > **2026-07 update: terrain generation is now precomputed at load, not
 > streamed.** The bounded-corridor precompute (see `features/terrain.md` →
 > Performance) superseded the chunk-crossing streaming/budgeting work
