@@ -666,6 +666,9 @@ var peak_torque_rpm := 4500.0
 @export var hq_table_cam_look := Vector3(-3.0, 0.95, -0.3)
 ## Map-table pan speed: world metres per screen pixel of drag.
 @export var hq_table_pan_speed := 0.012
+## Map-table keyboard/gamepad glide speed: world metres/second the camera slides while
+## a direction is held. Selection tracks whichever rally/arrow sits nearest the centre.
+@export var hq_table_pan_glide := 2.5
 ## Where the car-park lineup sits (outside, in front of the garage). Cars row along X.
 @export var hq_carpark_origin := Vector3(0.0, 0.0, 26.0)
 ## Garage interior footprint (m): floor X/Z extent; walls + roof are built from it.

@@ -1,6 +1,6 @@
 ---
 name: housekeeping
-description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, or tests that violate project conventions.
+description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, tests that violate project conventions, mobile-phone performance regressions, or codebase-wide simplification opportunities.
 ---
 
 # Housekeeping
@@ -10,7 +10,9 @@ description: Use when the user invokes /housekeeping or asks for a repo health c
 A periodic health sweep for the `rally` repo: catch the things that quietly rot
 over time — tests breaking, `features/` docs drifting from the code, `todo/`
 specs left stale after work lands, config fields diverging, scripts growing past
-the point they should be split, and assets/tests going stale.
+the point they should be split, assets/tests going stale, mobile-phone
+performance headroom eroding (the game is meant to run on old phones), and
+simplification/reuse debt accreting across the whole codebase.
 
 This is a **report-first** skill. Run the checks, then present findings grouped
 by category with concrete file/line references and a recommended action for
@@ -125,6 +127,110 @@ nav test. Grep new/changed menu scripts for `MenuNav.attach`.
   especially ones referencing work that's since been done.
 - Uncommitted work: summarize `git status` so the user knows what's in flight
   (don't commit anything without being asked).
+
+### 11. Mobile-phone performance headroom
+
+The game's design principle is that it's **inherently low-end** — one lean
+pipeline that must run on old phones, no quality-tier switch
+(`todo/performance-optimisations.md`, `features/rendering.md`). This pass is a
+**static regression check** that recent work hasn't quietly eroded that. It's a
+report — don't re-tune values, flag drift. (Actually *measuring* frame cost is a
+separate, heavier step: the in-game **Settings → Benchmark**
+([benchmark.md](../../../features/benchmark.md)), the standalone
+`./run_benchmark.sh`, and the in-run **P** perf overlay
+(`scripts/perf_overlay.gd`). Only suggest running one if a check below turns up a
+real suspect — the housekeeping pass itself is grep/read-level.)
+
+- **Frame cap still applied.** `world.gd._ready()` must still cap the render loop
+  via `Engine.max_fps = cfg.target_fps_for(Platform.is_mobile_or_web())`
+  (`target_fps_mobile` = 30 for phones/web; `game_config.gd`). Regression smell:
+  a new `Engine.max_fps = 0`, a removed cap, or the mobile branch lost. Grep:
+  `grep -rn "max_fps\|target_fps" scripts/`.
+- **Foliage / draw budget hasn't ballooned.** The scene builds roughly
+  `track_turn_count × trees_per_turn` instances (`world.gd`). Check
+  `config/game_config.tres` for upward drift in `trees_per_turn`,
+  `track_turn_count`, `tree_render_distance_m`, `tree_spawn_radius_m` since the
+  last sweep — bigger numbers = more vertices/fill/collision every frame on the
+  weakest device. These are designer values, so *flag drift*, don't "fix"; but a
+  large jump is worth surfacing.
+- **New MultiMesh / instanced fields stay bounded.** Any new instanced field must
+  set `visible_instance_count` or a `visibility_range_*` / LOD cull (the pattern
+  in `scripts/tree_mesh_field.gd`) — an unbounded `MultiMesh` that vertex-
+  processes every instance every frame is the single biggest GPU regression
+  (`todo/performance-optimisations.md` §2). Grep new/changed fields:
+  `grep -rn "MultiMesh\|instance_count\|visible_instance_count\|visibility_range" scripts/`.
+- **No new per-frame allocations in hot paths.** `_process` / `_physics_process`
+  / the audio `fill()` should not allocate dicts/arrays per tick — GC pressure
+  hits low-end hardest (`todo/performance-optimisations.md` §6, §8, §10, §11,
+  all marked DONE; a regression re-introduces them). Spot-check
+  `car.gd`, `drivetrain.gd`, `engine_audio*.gd`, `hud.gd` for dict/array
+  literals or `slice()`/`+`-concat inside per-tick bodies where a reused scratch
+  belongs.
+- **New textures carry mipmaps.** A big instanced texture without mipmaps
+  thrashes the mobile texture cache and aliases (`todo/…` §1). Check that new
+  entries under `textures/` have `mipmaps/generate=true` in their `.import`,
+  especially anything instanced at distance (foliage, ground).
+- **New shaders stay mobile-cheap.** GL Compatibility, `unshaded`, no per-
+  fragment `hint_screen_texture` back-buffer beyond the single
+  `ps1_post_process` pass, and no `vertex()` stage on terrain-heavy materials
+  (`ps1_models.gdshader` deliberately has none — `features/rendering.md`). Flag a
+  new shader that adds a screen-texture read, lighting math, or a heavy vertex
+  stage.
+- **Single-threaded web export intact.** `export_presets.cfg` ships
+  `variant/thread_support=false` for maximum device reach
+  (`todo/…` §7). Flag if it flipped back to `true`, or if new code makes a
+  web-critical path depend on `WorkerThreadPool` (terrain gen already routes web
+  through the frame-budgeted main-thread queue — new code shouldn't reintroduce a
+  thread dependency there).
+- **No quality-tier switch crept in.** There is exactly one shipped value per
+  knob — no "high/low graphics" branch. Flag any new code that forks the render
+  path by device class instead of shipping the single lean value.
+- **Cross-reference the perf spec.** Skim `todo/performance-optimisations.md` for
+  still-open items (foliage view-cone cull + visible cap, a bush mesh, tree
+  collision-box culling) — note if recent work landed any of them (update the
+  spec per the `todo/` rules in `CLAUDE.md`) or made an open one more pressing.
+
+### 12. Codebase-wide simplification pass
+
+Run the `/simplify` lens — **reuse, simplification, efficiency, altitude**
+(quality only, *not* bug-hunting; that's `/code-review`) — but over the **entire
+codebase**, not the working diff that `/simplify` normally targets. This is the
+"the whole tree has drifted" version: duplication that's accreted across files,
+helpers that grew a second responsibility, hand-rolled loops that a built-in or
+an existing utility already covers, dead abstractions, needless indirection.
+
+- **Fan out — don't read the tree serially.** `scripts/` alone has multi-
+  thousand-line files (`hq.gd` ~3400, `game_config.gd`, `car.gd`, `world.gd`).
+  Spawn several `Explore` / `general-purpose` subagents, each owning a slice
+  (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
+  the menu scripts, the terrain files), each returning candidate simplifications
+  as `file:line · what · suggested change`. Keep only the findings here; don't
+  echo whole files back.
+- **What to surface** (the `/simplify` categories):
+  - **Reuse** — the same block/idiom repeated across scripts that should be one
+    helper; a computation re-done where a cached value or existing utility
+    (`Platform`, `MenuNav`, the `*Library` lookups, `GameConfig` accessors)
+    already exists.
+  - **Simplification** — over-nested conditionals, redundant state, a long
+    function that reads as 3 smaller ones, dead branches.
+  - **Efficiency** — work done per-frame that could be hoisted/cached (respect
+    the mobile-perf lens in §11), `find_children` in hot paths, needless
+    allocations — *quality-level*, leave deep perf work to the perf spec.
+  - **Altitude** — logic sitting at the wrong layer (gameplay constants hardcoded
+    in a script instead of `GameConfig`; a script reaching across a boundary it
+    shouldn't).
+- **Report-first, like the rest of this skill.** Group the candidates, rank by
+  value (broad duplication and dead abstractions first; micro-nits last — don't
+  dump every trivial tidy), and give a recommended change for each. **Do not
+  refactor silently.** This overlaps §7 (oversized scripts) — fold size-driven
+  split suggestions in there and keep §12 for the quality/reuse findings.
+- **Applying, once the user picks.** For the subset they choose, either apply a
+  small safe batch directly or run `/simplify --fix` scoped to those files. Then
+  honour `CLAUDE.md`: it's a **behaviour-preserving** change, so the relevant
+  tests must stay green **unchanged** — pick the tests covering what you touched
+  (be generous about blast radius) and run them (`./run_tests.sh --fast <name>`).
+  Never weaken a test to accommodate a "simplification"; if a green test breaks,
+  the refactor changed behaviour — back it out.
 
 ## Report format
 
