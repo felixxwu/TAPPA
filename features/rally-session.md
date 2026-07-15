@@ -82,6 +82,17 @@ In real play (`auto_load_scenes = true`) each event writes its
 `main.tscn`. After EVERY event — including the last — `report_event_result` emits
 `standings_ready` and waits at `Phase.STANDINGS`.
 
+**Between-event pit repairs.** `_enter_event()` runs at the start of every event
+(via `start_rally` for the first, `continue_to_next_event` for the rest). For every
+event AFTER the first (`_event_index >= 1`) with a fielded car, it calls
+`Save.field_repair(instance_id, field_repair_hp_fraction, field_repair_toe_fraction)`
+BEFORE the scene reload — restoring a slice of the lost HP and bending the bent wheels
+part-way back toward straight (see [damage.md](damage.md) → *Between-event pit
+repairs*). Because the OwnedCar is mutated before the reload, `world.gd` fields the
+already-repaired car. The repair summary is stashed on the session and read once via
+`take_pending_repair()` (cleared on read + on `start_rally`, so a pause→reset can't
+replay it); `world.gd` renders it as a `RepairReveal` popup before the start line.
+
 The config write is `apply_event_config(cfg, event)` — a static, scene-free seam
 (extracted from `_load_event_scene` so its fallback semantics are directly
 testable). **Every field an event may omit resolves to the AUTHORED baseline**
@@ -146,4 +157,7 @@ deferred full menus build — RallySession already emits the signals it hooks.
 per-event upgrade grants (one per non-final event, fitted disabled, no slottable
 duplicate; `current_event_upgrade`; the final event awards none), wreck DNF (the
 earned upgrade is kept, instance wrecked), no-retry re-entry (state reset, field
-fixed), showdown win beat, farming re-win, idle-at-rest.
+fixed), showdown win beat, farming re-win, the between-event pit repair (fires
+entering every event after the first, never the first, summary consumed once),
+idle-at-rest. The `RepairReveal` popup wiring is covered by
+`tests/headless/test_repair_reveal.gd`.

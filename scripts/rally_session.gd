@@ -49,6 +49,7 @@ var _opponent_field: Array = []        # fixed per rally seed (never saved)
 var _dnf := false
 var _upgrades_won: Array[String] = []  # every per-event upgrade id drawn this rally (record)
 var _event_upgrade := ""               # the upgrade id won for the just-completed event ("" if none)
+var _pending_repair: Dictionary = {}   # between-event pit-repair summary, shown once by the run scene (take_pending_repair)
 var _last_result: Dictionary = {}      # the most recent finish, read by the podium
 # Car-park detune-to-enter agreements are TEMPORARY, for this rally only:
 # instance_id -> the engine_detune to restore once the rally ENDS (finish, wreck
@@ -125,6 +126,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 	_event_times_ms = []
 	_dnf = false
 	_upgrades_won = []
+	_pending_repair = {}
 	if skip_track_gen:
 		# TEST-ONLY path: no real track results are available; generate_opponent_field
 		# gets empty lists so rivals have empty event_times_ms and combined_ms=0
@@ -387,11 +389,30 @@ func current_event_upgrade() -> String:
 # the run scene) and, in real play, load that event's run scene with its seed.
 func _enter_event() -> void:
 	_event_upgrade = ""
+	# Between-event pit repairs: at the start of EVERY event after the first, the
+	# engineers patch the fielded car up — restore a slice of the lost HP and bend the
+	# bent wheels part-way back toward straight. This mutates the OwnedCar BEFORE the
+	# scene reloads, so world.gd fields the already-repaired car (and shows the popup
+	# from take_pending_repair). See features/damage.md.
+	if _event_index >= 1 and _car_instance_id >= 0:
+		var cfg := Config.data
+		_pending_repair = Save.field_repair(_car_instance_id,
+			cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
 	_set_phase(Phase.RUNNING)
 	var event := current_event()
 	event_started.emit(_event_index, event)
 	if auto_load_scenes:
 		_load_event_scene(event)
+
+
+# The between-event repair summary for the event about to run (see _enter_event /
+# Save.field_repair), consumed ONCE by the run scene to show the repair popup. Cleared
+# on read so a scene regeneration (pause → reset) doesn't replay the popup. Returns
+# {"repaired": false} when nothing was repaired (first event, or a pristine car).
+func take_pending_repair() -> Dictionary:
+	var r := _pending_repair
+	_pending_repair = {}
+	return r
 
 
 # Total the events, place against the field, record completion + grant rewards on

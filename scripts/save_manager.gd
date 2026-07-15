@@ -576,6 +576,47 @@ func use_repair_kit(instance_id: int) -> bool:
 	return true
 
 
+# A partial, between-event pit repair (RallySession._enter_event): restore
+# `hp_fraction` of the HP LOST so far and bend each wheel `toe_fraction` back toward
+# straight. Unlike use_repair_kit (a full restore that costs a kit), this is free and
+# incremental — the engineers patch the car up a bit before each event after the
+# first. Returns a summary the repair popup renders:
+#   {repaired:bool, hp_before, hp_after, max_hp, hp_gained}
+# `repaired` is false (and nothing is written) when the car is already pristine
+# (full HP and straight wheels) so a spotless car shows no popup. A wrecked (0 HP)
+# car is left wrecked — it can't be fielded, so a mid-rally repair never sees one.
+func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> Dictionary:
+	var none := {"repaired": false}
+	var car := get_car(instance_id)
+	if car.is_empty() or car_is_wrecked(car):
+		return none
+	var entry := CarLibrary.by_id(car["model_id"])
+	var hp_before := float(car["hp"])
+	var max_hp: float = entry.get("max_hp", hp_before) if not entry.is_empty() else hp_before
+	var lost := maxf(0.0, max_hp - hp_before)
+	var hp_after := minf(max_hp, hp_before + lost * hp_fraction)
+	var toe: Array = car.get("wheel_toe", [0.0, 0.0, 0.0, 0.0])
+	var new_toe: Array = []
+	var toe_changed := false
+	for v in toe:
+		var straightened := float(v) * (1.0 - toe_fraction)
+		if not is_equal_approx(straightened, float(v)):
+			toe_changed = true
+		new_toe.append(straightened)
+	if hp_after <= hp_before and not toe_changed:
+		return none
+	car["hp"] = hp_after
+	car["wheel_toe"] = new_toe
+	save()
+	return {
+		"repaired": true,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"max_hp": max_hp,
+		"hp_gained": hp_after - hp_before,
+	}
+
+
 # --- Rally completion --------------------------------------------------------
 
 # Record a top-3 rally finish. Idempotent for the `completed` flag; updates the

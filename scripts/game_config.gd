@@ -487,6 +487,15 @@ var peak_torque_rpm := 4500.0
 ## Per-wheel clamp on accumulated toe (radians) — a wheel can't bend past this no
 ## matter how many hits it takes, so a heavily-crashed car stays (barely) drivable.
 @export_range(0.0, 0.5) var damage_wheel_toe_max := 0.14
+## Between-event pit repairs (Save.field_repair): at the START of every rally event
+## after the first, the engineers patch the fielded car up a bit. This is the
+## fraction of the HP LOST so far that gets restored — 0.2 means a car at 50%
+## comes back to 60% (20% of the missing 50%). See features/damage.md.
+@export_range(0.0, 1.0) var field_repair_hp_fraction := 0.2
+## Between-event pit repairs: the fraction each wheel's misalignment is bent back
+## toward straight — 0.5 halves every wheel's toe (a wheel bent 4° comes back to 2°).
+## More generous than the HP patch so alignment recovers faster across a rally.
+@export_range(0.0, 1.0) var field_repair_toe_fraction := 0.5
 ## Soft contacts (bushes, spectators) are NOT solid-obstacle impacts: they stay
 ## pass-through (a per-tick proximity check, not a solid collider), but instead of a
 ## flat HP loss they now apply a small speed-scaled DRAG IMPULSE to the car — the

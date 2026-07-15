@@ -7,7 +7,9 @@ Each fielded car has a depleting **HP pool**. Impacts drain it during a run, the
 car's handling and power degrade as HP falls, and at 0 HP the car is **wrecked**
 (run DNF; a fielded car is destroyed along with its installed upgrades — parts are
 fully consumed when fitted, so they are NOT returned). HP only ever goes down
-in-run — a repair kit (Save) is the only way it climbs back.
+in-run; between runs it climbs back two ways — a **Repair Kit** (full restore,
+Save) and the free **between-event pit repair** applied automatically at the start
+of every rally event after the first (see *Between-event pit repairs* below).
 
 ## State (`DamageModel`)
 
@@ -213,6 +215,35 @@ the start-line `start_orbit_*` knobs) under a flat **"CAR WRECKED"** menu with a
 routes to `RallySession.report_wreck()` (the DNF → podium → HQ). Headless runs skip
 the cinematic and report immediately. See [menus.md](menus.md) for the loop.
 
+## Between-event pit repairs (`Save.field_repair`)
+
+A rally is a campaign of `EVENTS_PER_RALLY` events run back-to-back on one fielded
+car (see [rally-session.md](rally-session.md)). At the **start of every event after
+the first**, the engineers patch the car up a bit — a free, automatic partial
+repair (distinct from the full-restore Repair Kit, which costs an item):
+
+- **Health:** restore `field_repair_hp_fraction` (default `0.2`) of the HP **lost so
+  far** — a car at 50% comes back to 60% (20% of the missing 50%), one at 90% to 92%.
+  Never exceeds `max_hp`.
+- **Wheel alignment:** bend every wheel `field_repair_toe_fraction` (default `0.5`)
+  back toward straight — a wheel bent 4° comes back to 2°. Deliberately more generous
+  than the HP patch so alignment recovers faster across a rally. Each wheel keeps its
+  sign; a fully-bent car straightens out over the events.
+
+`RallySession._enter_event()` calls `Save.field_repair(instance_id, hp_fraction,
+toe_fraction)` for `_event_index >= 1` **before the per-event scene reload**, so the
+freshly-loaded run scene fields the already-repaired car. `field_repair` returns a
+summary (`{repaired, hp_before, hp_after, max_hp, hp_gained}`) stashed on the session
+and read once via `take_pending_repair()`. It reports `repaired: false` — and writes
+nothing — for a pristine car (full HP, straight wheels) or a wrecked one (0 HP can't
+be fielded mid-rally). The summary drives a **`RepairReveal`** popup (`scripts/
+repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health +N% → N%,
+wheels recentered, Continue) that `world.gd._show_repair_popup()` shows once the
+loading overlay is gone (staged runs keep it up until the start-line queue is laid
+out, so the popup is shown AFTER `_build_start_line()` / `loading.finish()`, sitting
+over the ready start-line reveal rather than a frozen loading screen). Headless runs
+drain the summary without building the popup.
+
 ## In-run HUD (see [hud.md](hud.md))
 
 `hud.gd` reads `car.damage` each frame: a colour-graded **health bar** (`HPBar`,
@@ -230,13 +261,15 @@ like a broken wreck trigger).
 knob), `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
 `impact_max_loss_frac`, `damage_misfire_health_threshold`, `damage_misfire_rate_max`,
 `damage_misfire_load_bias`, `damage_misfire_duration_min`, `damage_misfire_duration_max`,
-`damage_wheel_toe_gain`, `damage_wheel_toe_max`, soft contacts (`bush_drag_strength`,
-`bush_drag_torque`, `bush_min_speed_kmh`, `bush_hit_radius_frac`,
+`damage_wheel_toe_gain`, `damage_wheel_toe_max`, the between-event pit repair
+(`field_repair_hp_fraction`, `field_repair_toe_fraction`), soft contacts
+(`bush_drag_strength`, `bush_drag_torque`, `bush_min_speed_kmh`, `bush_hit_radius_frac`,
 `spectator_drag_strength`), `hud_hp_enabled`, `hud_low_hp_warn_frac`,
 `wreck_settle_max_seconds` (cap on the wreck-menu settle wait; the orbit reuses the
 `start_orbit_*` knobs). Per-car `max_hp` is CarLibrary metadata, **not** a
-`GameConfig` field. A Repair Kit fully restores health, so there is no partial-heal
-knob. Tuning numbers are placeholders pending playtest (the mechanism is fixed, the
+`GameConfig` field. A Repair Kit fully restores health (no knob); the between-event
+pit repair is the only partial heal, tuned by the two `field_repair_*` fractions.
+Tuning numbers are placeholders pending playtest (the mechanism is fixed, the
 values are not).
 
 ## Tests
@@ -255,7 +288,11 @@ the pure `misfire_rate` is 0 when healthy / positive & load-rising under damage,
 healthy engine never cuts over many steps, a wrecked one cuts intermittently, and a
 forced cut kills crank torque), `test_save_manager.gd` (`wheel_toe`
 round-trips through save/reload, a Repair Kit straightens the wheels, old saves
-backfill straight), `test_car.gd` (bent front wheels **veer the car through the
+backfill straight, **`field_repair`** restores the given fraction of lost HP, bends
+each wheel the given fraction back toward straight, skips a pristine car, and leaves
+a wrecked car wrecked), `test_rally_session.gd` (the **between-event pit repair**
+fires entering every event after the first, never the first, and its summary is
+consumed once), `test_car.gd` (bent front wheels **veer the car through the
 physics alone**, `engine.misfire_level` tracks the damage fraction), `test_bush_field.gd` (side-based `drag_torque` sign +
 scaling, enter/leave one-shot **soft drag**, min-speed gate), `test_spectator_damage.gd` (a
 knockdown applies **soft drag** to the car), `test_car.gd` (contact monitor

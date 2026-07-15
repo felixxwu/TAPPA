@@ -124,6 +124,25 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 		assert_ne(String(e["name"]), "C", "a rival who DNF'd this event is omitted")
 
 
+# Between-event pit repairs: the fielded car is patched up entering every event
+# AFTER the first (never the first), and the summary is exposed once for the popup.
+func test_pit_repair_fires_at_each_event_after_the_first() -> void:
+	var owned := _start("coastal_sprint")
+	RallySession._opponent_field = _field([200000, 210000, 220000])
+	var id: int = owned["instance_id"]
+	# The first event gets no pit repair — the car starts the rally fresh.
+	assert_false(RallySession.take_pending_repair().get("repaired", false), "no repair before the first event")
+	# Finish event 0 having taken damage, then advance into event 1.
+	RallySession.report_event_result(60000, 300.0)
+	var hp_after_damage := float(_save.get_car(id)["hp"])
+	RallySession.continue_to_next_event()  # -> _enter_event(event 1): repair runs
+	assert_eq(RallySession.event_index(), 1, "advanced to event 1")
+	var repair := RallySession.take_pending_repair()
+	assert_true(repair.get("repaired", false), "the engineers repaired the car entering event 1")
+	assert_gt(float(_save.get_car(id)["hp"]), hp_after_damage, "hp climbed back after the pit repair")
+	assert_false(RallySession.take_pending_repair().get("repaired", false), "the repair summary is consumed once")
+
+
 # current_event_wreck surfaces the rival who crashed out of the CURRENT event (with the
 # actual car they drove), tracking the event index, and is empty for an event nobody
 # wrecked in. Built from a synthetic field so it leans on the delegation, not on a roll.

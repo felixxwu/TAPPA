@@ -20,7 +20,7 @@ const MAX_TIER := 4
 # The repair kit's weight in the per-event upgrade pool, relative to a part's
 # weight of 1.0. Kept low — repairs are rare (gameplay.md). Placeholder; becomes
 # a GameConfig tunable (repair_kit_drop_weight) in the balance pass.
-const REPAIR_KIT_DROP_WEIGHT := 0.2
+const REPAIR_KIT_DROP_WEIGHT := 0
 
 # The engine swap token's weight in the per-event upgrade pool, relative to a
 # part's weight of 1.0. Kept low like the repair kit — swaps are an occasional

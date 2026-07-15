@@ -239,6 +239,47 @@ func test_repair_kit_straightens_wheels() -> void:
 	assert_eq(_save.get_car(id)["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "a repair straightens the wheels")
 
 
+func test_field_repair_restores_the_given_fraction_of_lost_hp() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id: int = car["instance_id"]
+	var max_hp := float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"])
+	_save.apply_damage(id, 400.0)  # lost 400
+	var before := float(_save.get_car(id)["hp"])
+	var summary: Dictionary = _save.field_repair(id, 0.5, 0.5)
+	assert_true(summary.get("repaired", false), "a damaged car is repaired")
+	# Restores hp_fraction (0.5) of the 400 lost -> +200, for ANY reasonable fraction.
+	assert_almost_eq(float(_save.get_car(id)["hp"]), before + 200.0, 0.001, "half the lost hp came back")
+	assert_almost_eq(float(summary["hp_gained"]), 200.0, 0.001, "summary reports the hp gained")
+	assert_lt(float(_save.get_car(id)["hp"]), max_hp, "a partial repair does not reach full health")
+
+
+func test_field_repair_bends_each_wheel_back_toward_straight() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id: int = car["instance_id"]
+	_save.apply_damage(id, 100.0)  # some hp lost so the repair runs
+	_save.set_wheel_toe(id, [0.08, -0.06, 0.04, -0.02])
+	_save.field_repair(id, 0.2, 0.5)  # bend each wheel 50% back toward zero
+	var toe: Array = _save.get_car(id)["wheel_toe"]
+	# Each wheel moves toward straight by toe_fraction, keeping its sign — for ANY fraction.
+	for i in 4:
+		assert_almost_eq(float(toe[i]), [0.08, -0.06, 0.04, -0.02][i] * 0.5, 0.0001, "wheel %d bent halfway back" % i)
+
+
+func test_field_repair_skips_a_pristine_car() -> void:
+	var car: Dictionary = _save.grant_car("fx_light_rwd")  # full hp, straight wheels
+	var summary: Dictionary = _save.field_repair(car["instance_id"], 0.2, 0.5)
+	assert_false(summary.get("repaired", false), "nothing to repair on a spotless car")
+
+
+func test_field_repair_leaves_a_wrecked_car_wrecked() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id: int = car["instance_id"]
+	_save.wreck_car(id)
+	var summary: Dictionary = _save.field_repair(id, 0.2, 0.5)
+	assert_false(summary.get("repaired", false), "a wrecked car is not field-repaired")
+	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "still wrecked")
+
+
 func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 	# A pre-feature owned car has no wheel_toe key; load must backfill it straight.
 	_save.profile["cars"] = [{

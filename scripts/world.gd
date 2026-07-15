@@ -143,6 +143,17 @@ func _ready() -> void:
 				await get_tree().process_frame
 			_build_start_line()
 			loading.finish()
+		# Between-event pit-repair popup: at the start of every event after the first,
+		# the engineers have patched the fielded car up (RallySession._enter_event /
+		# Save.field_repair, already applied before this reload). Shown AFTER the
+		# loading overlay is gone — staged runs keep it up until _build_start_line +
+		# loading.finish() just above, non-staged runs drop it inside _generate_track —
+		# so the popup sits over the ready world / start-line reveal, not a frozen
+		# loading screen. Headless just drains the summary so it can't replay on a
+		# later scene rebuild.
+		var repair: Dictionary = RallySession.take_pending_repair()
+		if repair.get("repaired", false) and not _headless:
+			await _show_repair_popup(repair)
 
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
 	# wheel-force debug overlay; harmless and idle until toggled on. Render times
@@ -1102,6 +1113,23 @@ func _on_reset_to_track_requested() -> void:
 func _should_stage() -> bool:
 	return RallySession.is_active() and Config.data.start_line_enabled \
 		and not RallyLibrary.by_id(RallySession.rally_id()).is_empty()
+
+
+# Show the between-event pit-repair popup and block until the player dismisses it.
+# Shown BEFORE the start-line is built, so it sits above even the loading overlay
+# (LoadingScreen._LAYER = 100, still up on staged runs until the start-line queue is
+# laid out) — the black loading backdrop reads as the modal's background. Torn down
+# once dismissed, so the start-line briefing owns the screen (and its focus) next.
+func _show_repair_popup(summary: Dictionary) -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "RepairPopup"
+	layer.layer = 101  # above the loading overlay (100) and start-line overlay (5)
+	add_child(layer)
+	var card := RepairReveal.new()
+	layer.add_child(card)
+	card.reveal(summary)
+	await card.finished
+	layer.queue_free()
 
 
 # Build the pre-event start-line sequence around the fielded car (the times-to-beat
