@@ -279,12 +279,6 @@ var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu c
 
 
 func _ready() -> void:
-	# The HQ is a diegetic scene with NO physics-simulated motion — every car is a
-	# frozen prop and the camera + tuning lift are driven by Tweens (idle-frame property
-	# writes). Global physics interpolation (project.godot) would lag those tween writes
-	# by a tick and smear one-shot placements, so opt the whole HQ subtree out of it. Only
-	# the gameplay world (main.tscn), where the car is physics-driven, uses interpolation.
-	set_physics_interpolation_mode(Node.PHYSICS_INTERPOLATION_MODE_OFF)
 	_ensure_starter()
 	_ensure_selection()
 	# Headless (the test runner): build synchronously so tests see a ready HQ after one

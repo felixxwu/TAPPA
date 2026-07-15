@@ -7,7 +7,7 @@
 >
 > | stage | ms (before) | ms (now) |
 > |---|---|---|
-> | Carving road into terrain (`bake_track` + `_bake_cliffs`) | 11029 | **~4450** |
+> | Carving road into terrain (`bake_track`, unified pass) | 11029 | **~4450** |
 > | Precomputing chunks (`cache_chunk` × corridor, incl. LOD prebake) | 4289 | ~4230 |
 > | Generating track (DFS search) | 2539 | 2528 |
 > | Scattering bushes | 1219 | 1214 |
@@ -18,13 +18,14 @@
 >
 > **Carve pass DONE (2026-07, single-threaded).** The carve was 53% of load and
 > split flatten 1807 ms / cliffs 8388 ms. Optimised in `terrain_manager.gd`:
-> - **Flatten** stores only the nearest sample and computes the ramp once per touched
->   cell (1807→~730 ms — this deferred-ramp refactor is the real win). NOTE: an earlier
->   version also coarsened `ROAD_SAMPLE_STEP_M` 0.25 m → 1 m, but that made the road
->   cross-section laterally uneven (the nearest sample stops approximating a vertex's
->   perpendicular foot), so the car visibly ROLLED as it drove (±7° vs ±5.7° at 0.25 m,
->   worst on gradients). Reverted to **0.25 m**; it only costs ~150 ms across the whole
->   corridor, so the step was never where the speed-up came from.
+> - **Flatten** was later **unified into the cliff distance field** (one nearest-point
+>   pass per band vertex feeds road height/blend, colour, tarmac AND cliff offset). The
+>   height is taken at the vertex's exact perpendicular foot, so the road is laterally
+>   flat with no sampling-step knob. This replaced an interim stamp-based flatten whose
+>   `ROAD_SAMPLE_STEP_M`, when coarsened 0.25 m → 1 m for speed, rolled the car (±7° vs
+>   ±5.7°); the unified pass is both correct and ~as fast (carve ~870 ms). The cell
+>   sweep (colour + tarmac) is driven off the `road_blend` keys so only band-adjacent
+>   cells are searched.
 > - **Cliffs** rewritten as a **distance field**: each band vertex finds its nearest
 >   track point via a segment spatial-hash ring search (`CLIFF_GRID_M` = 24 m tuned
 >   fastest) and sets its own offset — no more per-sample disc stamp. The road-wrap

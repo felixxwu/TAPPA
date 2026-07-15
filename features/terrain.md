@@ -157,7 +157,8 @@ the true terrain across a transition band just outside the road edge, using
 (white by default):
 
 - `road_heights: Dictionary` — grid-vertex index (`Vector2i`,
-  `coord.x*(SAMPLES-1)+xi`, shared across seams) → nearest centerline terrain Y.
+  `coord.x*(SAMPLES-1)+xi`, shared across seams) → terrain Y at the vertex's exact
+  perpendicular foot on the centerline (so the cross-section is laterally flat).
 - `road_blend: Dictionary` — vertex index → height blend weight (1 on the road,
   ramping to 0 at the outer band edge; omitted where 0).
 - `track_weights: Dictionary` — cell index → road blend weight (same ramp).
@@ -173,44 +174,43 @@ the true terrain across a transition band just outside the road edge, using
 - `smooth_ramp(d, inner, outer)` — the weight curve: 1 for `d ≤ inner`
   (`= width/2`), 0 for `d ≥ outer` (`= inner + transition`), smoothstep between.
 - `bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
-  surface_feather_m)` — samples `height_at` densely along the 2D centerline and
-  fills all four fields (nearest height + ramp weight per grid vertex, ramp weight
-  + tarmac weight per cell). The road follows terrain elevation lengthwise, is flat
-  across its width, and feathers out over the band. Tarmac weight comes from each
-  sample's cumulative distance along the polyline via `TrackSurface.tarmac_weight`.
-  The surface args default to all-gravel, so callers that don't split surfaces are
-  unaffected. A trailing `should_yield: bool = false` (forwarded to `_bake_cliffs`)
-  makes the two heavy centerline walks `await get_tree().process_frame` ~40 times each,
-  so the interactive loading overlay keeps painting during this multi-second bake
-  instead of freezing; it never changes the baked result. Because the body then
-  contains `await`, `bake_track` (and `set_track`) are **always coroutines** — call
-  them with `await`. With `should_yield` false (the default, and always under headless)
-  they never suspend, completing in the same frame, so headless world-build stays
-  synchronous. A further trailing `on_progress: Callable(fraction: float)` (forwarded
-  from `set_track` and on to `_bake_cliffs`), when valid, is called at the same stride
-  with a carve fraction (0→1) — `world.gd` wires it to `LoadingScreen.set_carve_progress`
-  so the grey preview line fills white as the bake progresses. The fraction spans BOTH
-  passes: the flatten walk fills 0→0.5 when a cliff pass will follow (`_cliffs_active()`),
-  else the whole bar 0→1; `_bake_cliffs` fills 0.5→1 — so the line keeps advancing through
-  the cliff pass rather than sitting full-white while it runs. Independent of `should_yield`
-  (reports even without yielding) and never changes the baked result.
-  - **Carve performance.** Both walks are O(track length × stamp-box area) in
-    interpreted GDScript, so the carve is usually the single heaviest load stage
-    (grep the console for `load stage:`). Three structural choices keep it down:
-    (1) the flatten walk stores only each point's *nearest* sample payload, computing
-    the blend ramp once per touched point in a finalize pass rather than per overlapping
-    stamp (this is the actual speed-up; `ROAD_SAMPLE_STEP_M` stays at **0.25 m** — a
-    coarser step makes the road cross-section laterally uneven and the car rolls, and it
-    saves only ~150 ms anyway, see the note below); (2) `_bake_cliffs` is a
-    **distance field** over a segment spatial hash — each band vertex is visited once
-    and finds its nearest track point via an early-terminated ring search, instead of
-    a disc stamp writing every vertex dozens of times; and (3) a morphological open
-    (`_open_thin_offsets`) replaces the old per-vertex road-wrap union that made the
-    cliff pass the dominant cost. All single-threaded (the web build has no thread
-    support). The cliff rewrite changes hairpin handling (see the Cliffs section) so the
-    bake is not bit-identical to the pre-optimisation version. (`ROAD_SAMPLE_STEP_M` was
-    briefly coarsened to 1 m for speed but reverted — it rolled the car; the sub-cell
-    nearest-sample picks it shifts are exactly the road's lateral flatness.)
+  surface_feather_m)` — a **single distance-field pass** fills all four fields (and the
+  cliff offsets). It finds, for each band grid vertex, its true nearest point on the
+  centerline (a segment spatial hash + early-terminated ring search, `_nearest_seg`), then
+  derives everything from that one nearest point: `road_heights` = noise height at the
+  exact foot, `road_blend`/`track_weights` = `smooth_ramp(distance)`, `track_surface` =
+  `TrackSurface.tarmac_weight(arc_length)`, and the signed cliff offset. Because the height
+  is taken at the true foot rather than a discrete along-arc sample, the road is laterally
+  flat regardless of tessellation density — there is **no sampling-step knob**. The road
+  follows terrain elevation lengthwise, is flat across its width, and feathers out over the
+  band. The surface args default to all-gravel, so callers that don't split surfaces are
+  unaffected. A trailing `should_yield: bool = false` makes the heavy vertex sweep
+  `await get_tree().process_frame` ~40 times, so the interactive loading overlay keeps
+  painting during this multi-second bake instead of freezing; it never changes the baked
+  result. Because the body then contains `await`, `bake_track` (and `set_track`) are
+  **always coroutines** — call them with `await`. With `should_yield` false (the default,
+  and always under headless) they never suspend, completing in the same frame, so headless
+  world-build stays synchronous. A further trailing `on_progress: Callable(fraction: float)`
+  (forwarded from `set_track`), when valid, is called at the same stride with a carve
+  fraction (0→1) — `world.gd` wires it to `LoadingScreen.set_carve_progress` so the grey
+  preview line fills white as the bake progresses. Independent of `should_yield` (reports
+  even without yielding) and never changes the baked result.
+  - **Carve performance.** The sweep is O(band vertices × ring-search) in interpreted
+    GDScript, so the carve is usually the single heaviest load stage (grep the console for
+    `load stage:`). What keeps it down: (1) the **segment spatial hash** — each vertex only
+    checks segments in the grid cells around it, found via an early-terminated ring search
+    that culls cells beyond the current best and seeds from the previous vertex's winner;
+    (2) the flatten/cliff/cell fields are all computed from that **single** nearest-point
+    result rather than in separate passes (unifying what used to be a stamp-based flatten
+    walk plus a distance-field cliff walk); (3) the cell sweep (colour + tarmac) is driven
+    off the `road_blend` keys — only cells touching a flattened vertex can be in the band —
+    instead of re-searching the whole grid; and (4) a morphological open (`_open_thin_offsets`)
+    knocks down thin cliff walls. All single-threaded (the web build has no thread support).
+    Not bit-identical to the pre-optimisation bake (the cliff mechanism changed hairpin
+    handling — see the Cliffs section). NOTE: an earlier version stamped the flatten from
+    discrete centerline samples at `ROAD_SAMPLE_STEP_M`; coarsening that step to 1 m made
+    the cross-section laterally uneven and visibly **rolled the car**, which is what
+    motivated folding the flatten into the exact nearest-point distance field.
 - `compute_chunk_data` — `h = lerp(noise_height, road_heights[v], road_blend[v])`
   for vertices in `road_blend` (**mesh + collision**): weight 1 fully flat,
   weight 0 true terrain, between ramps. Off-band vertices keep their noise height.
@@ -286,12 +286,13 @@ and needs no hand-authoring.
   — so thin walls (and thin gashes) vanish while wide cliffs and drops survive. This
   removes ALL narrow tall walls, scenery included (a deliberate change from the old
   road-wrap test, which spared single-sided cliffs of the same width).
-- **Bake** (`_bake_cliffs`, called at the end of `bake_track`): a **distance field**,
-  not a stamp. The centerline is turned into segments indexed in a `CLIFF_GRID_M`
-  spatial hash; each band vertex finds its nearest segment via an early-terminated
-  ring search over that grid (vertices whose nearest track point is beyond `R` are
-  never processed), then sets `side·camber(s)·profile(d)·cliff_max_height_m·cliff_amount`
-  from that one nearest point. Finally `_open_thin_offsets` runs. Visiting each vertex
+- **Bake** (folded into `bake_track`'s single distance-field pass): not a stamp. The
+  centerline is turned into segments indexed in a `CLIFF_GRID_M` spatial hash; each band
+  vertex finds its nearest segment via an early-terminated ring search over that grid
+  (`_nearest_seg`; vertices whose nearest track point is beyond `R` are never processed),
+  then — in the SAME pass that computes the road flatten — sets
+  `side·camber(s)·profile(d)·cliff_max_height_m·cliff_amount` from that one nearest point.
+  Finally `_open_thin_offsets` runs. Visiting each vertex
   once (vs the old disc-stamp, which wrote every vertex dozens of times) is what keeps
   the wide `R` affordable single-threaded. The nearest search uses three exact
   speed-ups: a **camber arc-length LUT** (sample the smooth 1-D camber once, lerp per

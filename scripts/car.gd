@@ -185,18 +185,12 @@ func begin_replay(recorder: ReplayRecorder) -> void:
 	custom_integrator = true
 	_saved_process_priority = process_priority
 	process_priority = REPLAY_PROCESS_PRIORITY
-	# Replay drives the transform from _process (see above), but physics interpolation
-	# expects transforms to be set in _physics_process and would smear/clobber a
-	# _process write. Turn interpolation OFF on the car (and its inheriting children)
-	# for the duration of playback; end_replay restores the inherited (on) mode.
-	set_physics_interpolation_mode(Node.PHYSICS_INTERPOLATION_MODE_OFF)
 
 func end_replay() -> void:
 	replay_playback = false
 	_replay = null
 	custom_integrator = false
 	process_priority = _saved_process_priority
-	set_physics_interpolation_mode(Node.PHYSICS_INTERPOLATION_MODE_INHERIT)
 	if drivetrain != null:
 		drivetrain.replay_omega = {}
 
@@ -906,10 +900,6 @@ func apply_soft_drag(strength: float) -> void:
 
 func reset_to(xform: Transform3D) -> void:
 	global_transform = xform
-	# With physics interpolation on, a teleport would otherwise render as a one-tick
-	# slide from the old pose to the new one; clear the interpolation history so the car
-	# snaps cleanly to the reset pose.
-	reset_physics_interpolation()
 	# A reset zeroes the velocity discontinuously; suppress deceleration damage for the
 	# next couple of physics ticks so that jump doesn't read as a crash.
 	_suppress_impact_frames = 2
@@ -945,7 +935,6 @@ static func respawn(old_car: Node, index: int, spawn_xform: Transform3D) -> Node
 	fresh.name = "Car"
 	fresh.transform = spawn_xform
 	parent.add_child(fresh)
-	fresh.reset_physics_interpolation()  # spawn AT the pose, don't lerp in from origin
 	fresh.apply_car(index)
 	return fresh
 
