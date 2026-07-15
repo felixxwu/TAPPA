@@ -1,6 +1,6 @@
 ---
 name: housekeeping
-description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, tests that violate project conventions, or mobile-phone performance regressions.
+description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, tests that violate project conventions, mobile-phone performance regressions, or codebase-wide simplification opportunities.
 ---
 
 # Housekeeping
@@ -10,8 +10,9 @@ description: Use when the user invokes /housekeeping or asks for a repo health c
 A periodic health sweep for the `rally` repo: catch the things that quietly rot
 over time — tests breaking, `features/` docs drifting from the code, `todo/`
 specs left stale after work lands, config fields diverging, scripts growing past
-the point they should be split, assets/tests going stale, and mobile-phone
-performance headroom eroding (the game is meant to run on old phones).
+the point they should be split, assets/tests going stale, mobile-phone
+performance headroom eroding (the game is meant to run on old phones), and
+simplification/reuse debt accreting across the whole codebase.
 
 This is a **report-first** skill. Run the checks, then present findings grouped
 by category with concrete file/line references and a recommended action for
@@ -188,6 +189,48 @@ real suspect — the housekeeping pass itself is grep/read-level.)
   still-open items (foliage view-cone cull + visible cap, a bush mesh, tree
   collision-box culling) — note if recent work landed any of them (update the
   spec per the `todo/` rules in `CLAUDE.md`) or made an open one more pressing.
+
+### 12. Codebase-wide simplification pass
+
+Run the `/simplify` lens — **reuse, simplification, efficiency, altitude**
+(quality only, *not* bug-hunting; that's `/code-review`) — but over the **entire
+codebase**, not the working diff that `/simplify` normally targets. This is the
+"the whole tree has drifted" version: duplication that's accreted across files,
+helpers that grew a second responsibility, hand-rolled loops that a built-in or
+an existing utility already covers, dead abstractions, needless indirection.
+
+- **Fan out — don't read the tree serially.** `scripts/` alone has multi-
+  thousand-line files (`hq.gd` ~3400, `game_config.gd`, `car.gd`, `world.gd`).
+  Spawn several `Explore` / `general-purpose` subagents, each owning a slice
+  (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
+  the menu scripts, the terrain files), each returning candidate simplifications
+  as `file:line · what · suggested change`. Keep only the findings here; don't
+  echo whole files back.
+- **What to surface** (the `/simplify` categories):
+  - **Reuse** — the same block/idiom repeated across scripts that should be one
+    helper; a computation re-done where a cached value or existing utility
+    (`Platform`, `MenuNav`, the `*Library` lookups, `GameConfig` accessors)
+    already exists.
+  - **Simplification** — over-nested conditionals, redundant state, a long
+    function that reads as 3 smaller ones, dead branches.
+  - **Efficiency** — work done per-frame that could be hoisted/cached (respect
+    the mobile-perf lens in §11), `find_children` in hot paths, needless
+    allocations — *quality-level*, leave deep perf work to the perf spec.
+  - **Altitude** — logic sitting at the wrong layer (gameplay constants hardcoded
+    in a script instead of `GameConfig`; a script reaching across a boundary it
+    shouldn't).
+- **Report-first, like the rest of this skill.** Group the candidates, rank by
+  value (broad duplication and dead abstractions first; micro-nits last — don't
+  dump every trivial tidy), and give a recommended change for each. **Do not
+  refactor silently.** This overlaps §7 (oversized scripts) — fold size-driven
+  split suggestions in there and keep §12 for the quality/reuse findings.
+- **Applying, once the user picks.** For the subset they choose, either apply a
+  small safe batch directly or run `/simplify --fix` scoped to those files. Then
+  honour `CLAUDE.md`: it's a **behaviour-preserving** change, so the relevant
+  tests must stay green **unchanged** — pick the tests covering what you touched
+  (be generous about blast radius) and run them (`./run_tests.sh --fast <name>`).
+  Never weaken a test to accommodate a "simplification"; if a green test breaks,
+  the refactor changed behaviour — back it out.
 
 ## Report format
 
