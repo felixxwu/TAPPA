@@ -67,15 +67,15 @@
 		},
 		{
 			"mesh":1,
-			"name":"aero_splitter"
+			"name":"splitter_aero"
 		},
 		{
 			"mesh":2,
-			"name":"aero_angery"
+			"name":"angery_aero"
 		},
 		{
 			"mesh":3,
-			"name":"aero_wing",
+			"name":"wing_aero",
 			"scale":[
 				0.17413175106048584,
 				0.17413175106048584,
