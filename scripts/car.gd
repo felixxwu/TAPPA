@@ -1317,23 +1317,20 @@ func apply_owned(owned: Dictionary) -> String:
 	# at the end of this function (so the spring split re-derives from the new
 	# weight_front). See features/engine-swap.md.
 	_apply_engine_swap(owned)
+	# Snapshot the full pre-upgrade, pre-tune baseline (a deep copy of the whole config
+	# after apply_car + engine swap) FIRST, so retune() / refit_upgrades() can re-derive
+	# a CHANGED upgrade/tuning set on the LIVE config at the start line — restore this
+	# baseline, then re-apply upgrades + tuning top-to-bottom — without re-running this
+	# whole pipeline (which would relocate the wheels and reset the pose on a live body,
+	# corrupting it — see _rederive_live_config()/respawn()).
+	_snapshot_live_baseline()
 	# Step 2: installed upgrades multiply/extend the live config. apply_car already
 	# copied the baseline mass onto the RigidBody, so re-sync after a weight-reduction
 	# upgrade mutates cfg.mass (other upgraded fields are read live each physics step).
-	# Snapshot the pre-upgrade baseline of the fields UpgradeLibrary shifts FIRST, so
-	# refit_upgrades() can re-apply a changed upgrade set to the LIVE config (at the
-	# start line) without re-running this whole pipeline (which would relocate wheels
-	# and reset the pose on a live body — see retune()/respawn()).
-	_snapshot_pre_upgrade()
 	UpgradeLibrary.apply(owned, config)
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of the upgraded baseline (features/tuning.md). Gating (brake/aero) reads the same
 	# installed upgrades, so it must run after step 2.
-	# Snapshot the pre-tuning baseline of the fields TuningLibrary shifts FIRST, so
-	# retune() can re-apply a changed tuning to the LIVE config (at the start line)
-	# without re-running this whole pipeline — re-fielding would relocate the wheels
-	# (detach/re-attach) and reset the pose on a live body, which corrupts it (respawn()).
-	_snapshot_pre_tune()
 	TuningLibrary.apply(owned, config)
 	_sync_suspension_to_wheels()
 	mass = config.mass
@@ -1353,53 +1350,76 @@ func apply_owned(owned: Dictionary) -> String:
 	return car_name
 
 
-# The config fields TuningLibrary.apply shifts, captured at fielding BEFORE tuning is
-# applied, so retune() can restore-then-reapply without compounding (apply multiplies).
-# TuningLibrary owns the field set (TOUCHED_FIELDS) so this can't drift from apply().
-var _pre_tune := {}
+# The FULL pre-upgrade, pre-tune config snapshot taken at fielding (after apply_car +
+# engine swap, before upgrades/tuning), as a { property_name: value } map of EVERY
+# GameConfig script variable. retune() and refit_upgrades() re-derive the live config
+# from this ONE baseline — restore it, then re-apply upgrades + tuning — so there is a
+# single re-derive ordering shared by both and no per-library field list to drift out of
+# sync with apply(). Empty until fielded from an owned car (free-roam apply_car never
+# snapshots), which disables both re-derives.
+#
+# A dict (not config.duplicate()) because the LIVE engine fields (peak_torque, redline,
+# …) are plain non-@export vars: Resource.duplicate() would reset them to their declared
+# defaults, not the fielded values. get()/set() over the property list captures the
+# actual runtime values.
+var _live_baseline := {}
 
 
-# The config fields UpgradeLibrary.apply shifts, captured at fielding BEFORE upgrades
-# are applied, so refit_upgrades() can restore-then-reapply without compounding
-# (apply multiplies). UpgradeLibrary owns the field set (TOUCHED_FIELDS) so this
-# can't drift from apply(). Mirrors _pre_tune for tuning.
-var _pre_upgrade := {}
+func _snapshot_live_baseline() -> void:
+	_live_baseline = {}
+	for prop in config.get_property_list():
+		if not (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE):
+			continue
+		var value: Variant = config.get(prop["name"])
+		if value is Array or value is Dictionary:
+			value = value.duplicate(true)
+		_live_baseline[prop["name"]] = value
 
 
-func _snapshot_pre_tune() -> void:
-	_pre_tune = TuningLibrary.snapshot(config)
+# Copy every captured field back into the LIVE config object in place (never reassign
+# `config` — the drivetrain / engine / HUD hold that reference; see the note at the top
+# of this file). Arrays/dicts are duplicated so the live config never shares mutable
+# state with the baseline.
+func _restore_live_baseline() -> void:
+	for name in _live_baseline:
+		var value: Variant = _live_baseline[name]
+		if value is Array or value is Dictionary:
+			value = value.duplicate(true)
+		config.set(name, value)
 
 
-func _snapshot_pre_upgrade() -> void:
-	_pre_upgrade = UpgradeLibrary.snapshot(config)
+# The single live re-derive: restore the full pre-upgrade/pre-tune baseline, then re-apply
+# the upgrade and tuning layers top-to-bottom. Because it always starts from the complete
+# baseline, no field can carry stale state from a prior upgrade/tuning into the next
+# re-derive (the bug this replaced: refit leaving old tuning baked into peak_torque). All
+# re-derived fields are read live each physics step, so this takes effect immediately —
+# no wheel relocate, no pose reset (unlike apply_owned, which must not run on a live staged
+# body; see respawn()). No-op until fielded from an owned car.
+func _rederive_live_config(owned: Dictionary) -> void:
+	if _live_baseline.is_empty():
+		return
+	_restore_live_baseline()
+	UpgradeLibrary.apply(owned, config)
+	TuningLibrary.apply(owned, config)
 
 
 # Re-apply a CHANGED tuning to the already-fielded live config, without reshaping the
-# body. Every field TuningLibrary touches is read live each physics step, so restoring
-# the pre-tuning baseline and re-applying takes effect immediately — no wheel relocate,
-# no pose reset, no engine rebuild (unlike apply_owned, which must not run on a live
-# car mid-stage; see respawn()). Used by the start-line Tune Car menu.
+# body. Used by the start-line Tune Car menu. Tuning touches only config fields read live
+# each physics step, so no engine/drivetrain rebuild is needed.
 func retune(owned: Dictionary) -> void:
-	if _pre_tune.is_empty():
-		return  # not fielded from an owned car (no baseline to restore) — nothing to do
-	TuningLibrary.restore(config, _pre_tune)
-	TuningLibrary.apply(owned, config)
+	_rederive_live_config(owned)
 
 
-# Re-apply a CHANGED upgrade set to the already-fielded live config WITHOUT reshaping
-# the body (no apply_car / wheel relocate / pose reset, which would corrupt a live
-# staged body — see respawn()). Mirrors apply_owned's upgrade+tuning steps from the
-# pre-upgrade baseline so nothing compounds, then re-syncs mass / suspension /
-# drivetrain / engine audio (a turbo or drivetrain upgrade changes those). Used by
-# the start-line Upgrades menu.
+# Re-apply a CHANGED upgrade set to the already-fielded live config WITHOUT reshaping the
+# body (no apply_car / wheel relocate / pose reset, which would corrupt a live staged
+# body — see respawn()). Re-derives from the full baseline, then re-syncs mass / suspension
+# / drivetrain / engine audio (a turbo or drivetrain upgrade changes those). Used by the
+# start-line Upgrades menu.
 func refit_upgrades(owned: Dictionary) -> void:
-	if _pre_upgrade.is_empty():
+	if _live_baseline.is_empty():
 		return  # not fielded from an owned car — no baseline to restore, nothing to do
 	_owned_drive_override = UpgradeLibrary.resolve_drive_override(owned)
-	UpgradeLibrary.restore(config, _pre_upgrade)
-	UpgradeLibrary.apply(owned, config)
-	_snapshot_pre_tune()
-	TuningLibrary.apply(owned, config)
+	_rederive_live_config(owned)
 	_sync_suspension_to_wheels()
 	mass = config.mass
 	var spec: Dictionary = CarLibrary.all()[_car_index]

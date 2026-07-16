@@ -148,35 +148,6 @@ const EFFECTS := {
 }
 
 
-# --- Snapshot / restore (live re-fit baseline) -------------------------------
-# The exact cfg fields apply() shifts (the mult/add ops in EFFECTS above plus the
-# install_turbo splat). Kept here next to apply() as the single authority so a live
-# re-fit can snapshot/restore the pre-upgrade baseline without re-listing them —
-# see snapshot()/restore() and car.gd.refit_upgrades(). Mirrors TuningLibrary.
-const TOUCHED_FIELDS := [
-	"brake_torque", "mass", "downforce_front", "downforce_rear",
-	"turbo_enabled",
-	"turbo_boost_gain", "turbo_inertia", "turbo_omega_ref", "turbo_drive_gain",
-	"turbo_drag_coef", "turbo_parasitic_friction",
-	"engine_turbo_whistle_gain", "engine_turbo_bov_gain",
-]
-
-
-# Capture the pre-upgrade baseline of every field apply() touches, so a changed
-# upgrade set can be re-applied to a live cfg without compounding (apply multiplies).
-static func snapshot(cfg: GameConfig) -> Dictionary:
-	var snap := {}
-	for f in TOUCHED_FIELDS:
-		snap[f] = cfg.get(f)
-	return snap
-
-
-# Restore a snapshot() taken before apply(). Inverse of the mutation apply performs.
-static func restore(cfg: GameConfig, snap: Dictionary) -> void:
-	for f in TOUCHED_FIELDS:
-		cfg.set(f, snap[f])
-
-
 # --- Effect application (pipeline step 2) ------------------------------------
 
 # Apply every ENABLED upgrade's effect on top of the CarLibrary baseline that

@@ -83,6 +83,24 @@ or invert a value:
 
 Tuning is resolved **once at fielding**, like `apply_car` — not re-applied mid-run.
 
+**Live re-derive baseline (start line).** `Car.retune` (tune change) and
+`Car.refit_upgrades` (upgrade change) re-derive the live config without re-fielding.
+Both go through one shared `Car._rederive_live_config`: restore a **single full baseline**
+(`_live_baseline`, a `{property: value}` snapshot of every `GameConfig` script variable,
+captured once at fielding after `apply_car` + engine swap, before upgrades/tuning), then
+re-apply the upgrade and tuning layers top-to-bottom. `refit_upgrades` additionally
+re-syncs mass / suspension / drivetrain / engine audio (a turbo or drivetrain change
+touches those). Because every re-derive starts from the *complete* baseline, no field can
+carry stale state from a prior upgrade/tuning into the next re-derive — the class of bug
+where `refit` left an old detune baked into `peak_torque` (a "really slow" car that could
+never climb back to full power) is impossible by construction. There is deliberately no
+per-library "touched fields" list to drift out of sync with `apply()`. The baseline is a
+plain dict rather than `config.duplicate()` because the live engine fields (`peak_torque`,
+`redline`, …) are non-`@export` vars that `Resource.duplicate()` would reset to defaults.
+Regressions: `test_retune.gd` — `test_refit_then_retune_matches_a_fresh_field_no_compounding`
+(+ grip / aero-overlap / opposite-order / repeated-refit siblings), all asserting the
+invariant *live re-derive == a fresh `apply_owned` of the same final state*.
+
 ## The brake-bias split (`drivetrain.gd`)
 
 `brake_bias` is the fraction of foot-brake torque sent to the **front** axle. In

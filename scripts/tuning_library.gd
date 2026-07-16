@@ -21,29 +21,6 @@ extends RefCounted
 # are gated by the brakes / aero upgrades (UpgradeLibrary), matching the lift UI.
 const AXES := ["grip_balance", "brake_bias", "aero_balance", "engine_detune"]
 
-# The exact cfg fields apply() shifts. Kept here (next to apply) as the single
-# authority so a live retune can snapshot/restore the pre-tuning baseline without
-# re-listing them — see snapshot()/restore() and car.gd.retune().
-const TOUCHED_FIELDS := [
-	"wheel_friction_slip_front", "wheel_friction_slip_rear", "brake_bias",
-	"downforce_front", "downforce_rear", "peak_torque",
-]
-
-
-# Capture the pre-tuning baseline of every field apply() touches, so a changed
-# tuning can be re-applied to a live cfg without compounding (apply multiplies).
-static func snapshot(cfg: GameConfig) -> Dictionary:
-	var snap := {}
-	for f in TOUCHED_FIELDS:
-		snap[f] = cfg.get(f)
-	return snap
-
-
-# Restore a snapshot() taken before apply(). Inverse of the mutation apply performs.
-static func restore(cfg: GameConfig, snap: Dictionary) -> void:
-	for f in TOUCHED_FIELDS:
-		cfg.set(f, snap[f])
-
 
 # Re-balance `cfg` from `owned_car.tuning`. Runs AFTER UpgradeLibrary.apply, so it
 # balances whatever baseline the upgrades produced; the values currently in cfg are

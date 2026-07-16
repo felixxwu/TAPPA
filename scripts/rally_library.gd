@@ -86,9 +86,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {"pw_min": 91.0, "pw_max": 180.0},  # gated below: a low p/w ceiling — the starter's home (ceiling clears the MX-5 ~159 / XJS ~175 hp/t)
 		"events": [
-			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.0},
-			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0, "straightness": 0.8, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.3},
-			{"seed": 1009, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 12.8},
+			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.0, "terrain_layer2_amplitude": 3.0},
+			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0, "straightness": 0.8, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.3, "terrain_layer2_amplitude": 3.0},
+			{"seed": 1009, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 12.8, "terrain_layer2_amplitude": 3.0},
 		],
 	},
 	{
@@ -119,7 +119,7 @@ const RALLIES: Array[Dictionary] = [
 		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 180.0, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
 		"events": [
 			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 20.7},
-			{"seed": 3002, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 21.6},
+			{"seed": 3012, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 21.6},
 			{"seed": 3004, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 22.0},
 		],
 	},
@@ -166,9 +166,9 @@ const RALLIES: Array[Dictionary] = [
 		# ceiling that only the true shitboxes (Twingo, Acty) squeeze under.
 		"restriction": {"pw_max": 91.0},
 		"events": [
-			{"seed": 7031, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 10.6},
-			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 11.4},
-			{"seed": 7033, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 10.9},
+			{"seed": 7031, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 10.6, "terrain_layer2_amplitude": 5.0},
+			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 11.4, "terrain_layer2_amplitude": 5.0},
+			{"seed": 7033, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 10.9, "terrain_layer2_amplitude": 5.0},
 		],
 	},
 	{
