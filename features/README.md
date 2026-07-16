@@ -39,6 +39,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
 | [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift; `EngineLibrary` (`scripts/engine_library.gd`) — the catalog of real engines cars reference by id |
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
+| [music.md](music.md) | Interactive looping background music — `MusicSchedule` timing math, `MusicLibrary` catalogue, `MusicDirector` autoload (single-player polyphonic double-buffer), Music bus |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (audio-only) — engine property, stock or via `turbo_small`/`turbo_large` upgrades |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |

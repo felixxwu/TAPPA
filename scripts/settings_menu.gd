@@ -49,6 +49,10 @@ var benchmark_rows: Array = []
 
 # The swappable pages (only one visible at a time).
 var _list_page: VBoxContainer
+var _audio_page: VBoxContainer
+# The music-volume slider + its live "%"" label on the Audio page (exposed for tests).
+var music_slider: HSlider
+var music_value_label: Label
 var _camera_page: VBoxContainer
 var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
@@ -98,12 +102,20 @@ func _build() -> void:
 	list_grid.add_theme_constant_override("h_separation", 10)
 	list_grid.add_theme_constant_override("v_separation", 10)
 	_list_page.add_child(list_grid)
+	list_grid.add_child(_make_nav_button("Audio", show_audio))
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
 	list_grid.add_child(_make_nav_button("Benchmark", show_benchmark))
 	list_grid.add_child(_make_nav_button("Dev", show_dev))
 	list_grid.add_child(_make_nav_button("Seed lab", show_seedlab))
+
+	# Audio sub-page — the music volume slider (room for SFX/engine later).
+	_audio_page = _make_page()
+	add_child(_audio_page)
+	_audio_page.add_child(_make_heading("Audio"))
+	_audio_page.add_child(_make_sub("Set the music volume:"))
+	_audio_page.add_child(_make_volume_row())
 
 	# Camera sub-page.
 	_camera_page = _make_page()
@@ -240,7 +252,7 @@ func _build() -> void:
 	# Single source of truth for the swappable pages (list first — it's the
 	# default page). _show_page / focus_current_page fan out over this so adding
 	# a page only means appending it here.
-	_pages = [_list_page, _camera_page, _controls_page, _scheme_page,
+	_pages = [_list_page, _audio_page, _camera_page, _controls_page, _scheme_page,
 			_benchmark_page, _dev_page, _seedlab_page]
 
 	_refresh_camera_selection()
@@ -280,16 +292,23 @@ func focus_current_page() -> void:
 
 
 func _focus_first_in(page: Control) -> void:
-	# Button-only scan (settings pages contain focusable non-Button widgets like
-	# sliders; we deliberately seat on the first button). Recurses so a button nested
-	# in an HBox (the key-binding rows do this) isn't skipped for the bottom action.
-	var button := UITheme.first_focusable(page, "Button")
-	if button != null:
-		UITheme.focus_grab(button)
+	# Prefer the first Button (most pages are button rows; recurses so a button nested
+	# in an HBox — the key-binding rows do this — isn't skipped). Fall back to any
+	# focusable control so a page whose only control is a slider (Audio) still seats
+	# the cursor for keyboard/gamepad.
+	var target := UITheme.first_focusable(page, "Button")
+	if target == null:
+		target = UITheme.first_focusable(page)
+	if target != null:
+		UITheme.focus_grab(target)
 
 
 func show_list() -> void:
 	_show_page(_list_page)
+
+
+func show_audio() -> void:
+	_show_page(_audio_page)
 
 
 func show_camera() -> void:
@@ -630,6 +649,57 @@ func _make_scheme_row(id: int, entry: Dictionary) -> Button:
 
 	scheme_rows.append({"key": id, "button": button})
 	return button
+
+
+# --- Audio -------------------------------------------------------------------
+
+# The music-volume row: [Music   <===slider===>   60%]. The slider is focusable so
+# it's keyboard/gamepad navigable (native ui_left/ui_right adjust it); dragging it
+# live-applies + persists via MusicDirector (Music autoload). Initial value comes
+# from the saved setting, and value_changed is wired AFTER seeding it so building
+# the page never re-persists.
+func _make_volume_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 12)
+
+	var name_label := Label.new()
+	name_label.text = "Music"
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	name_label.add_theme_font_size_override("font_size", 18)
+	row.add_child(name_label)
+
+	music_slider = HSlider.new()
+	music_slider.focus_mode = Control.FOCUS_ALL
+	music_slider.min_value = 0.0
+	music_slider.max_value = 1.0
+	music_slider.step = 0.01
+	music_slider.custom_minimum_size = Vector2(220, 24)
+	music_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	music_slider.value = clampf(
+		float(Save.get_setting(MusicDirector.SETTING_KEY, MusicDirector.DEFAULT_VOLUME)), 0.0, 1.0)
+	row.add_child(music_slider)
+
+	music_value_label = Label.new()
+	music_value_label.custom_minimum_size = Vector2(56, 0)
+	music_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	music_value_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(music_value_label)
+
+	_update_music_value_label()
+	music_slider.value_changed.connect(_on_music_volume_changed)
+	return row
+
+
+func _on_music_volume_changed(v: float) -> void:
+	Music.set_volume(v)  # live-apply to the Music bus + persist to the profile
+	_update_music_value_label()
+
+
+func _update_music_value_label() -> void:
+	if music_value_label != null and music_slider != null:
+		music_value_label.text = "%d%%" % roundi(music_slider.value * 100.0)
 
 
 # --- Shared widgets ----------------------------------------------------------

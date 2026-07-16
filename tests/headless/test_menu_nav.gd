@@ -154,6 +154,31 @@ func test_settings_menu_is_keyboard_navigable() -> void:
 	assert_false(sm.go_back(), "go_back at the root is left to the host")
 
 
+# The Audio page carries a focusable music-volume slider that reflects the saved
+# setting, so it is reachable and adjustable by keyboard/gamepad (not just mouse).
+func test_audio_page_slider_is_focusable_and_reflects_saved_volume() -> void:
+	var prev_disabled: bool = Save.save_disabled
+	Save.save_disabled = true
+	Save.set_setting(MusicDirector.SETTING_KEY, 0.5)
+
+	var sm := SettingsMenu.new()
+	add_child_autofree(sm)
+	await get_tree().process_frame  # _ready builds the pages
+
+	sm.show_audio()
+	await get_tree().process_frame  # deferred focus grab settles
+
+	assert_not_null(sm.music_slider, "audio page has a music slider")
+	assert_eq(sm.music_slider.focus_mode, Control.FOCUS_ALL,
+		"the slider is keyboard/gamepad focusable")
+	assert_almost_eq(sm.music_slider.value, 0.5, 0.0001,
+		"the slider reflects the saved volume")
+	assert_eq(sm.get_viewport().gui_get_focus_owner(), sm.music_slider,
+		"opening the Audio page focuses the slider")
+
+	Save.save_disabled = prev_disabled
+
+
 # The standings interstitial shows the event-only leaderboard first (for events
 # after the first), its button is keyboard/gamepad-focusable, and pressing it
 # switches to the combined-standings page (mid-rally). See features/menus.md.

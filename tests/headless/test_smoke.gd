@@ -35,6 +35,14 @@ func test_save_autoload_registered() -> void:
 	assert_true(save.has_method("grant_car"), "Save exposes grant_car()")
 
 
+func test_music_director_autoload_is_registered() -> void:
+	# The autoload SINGLETON is named "Music" (it can't be "MusicDirector" — that
+	# would collide with the class_name). Its type is MusicDirector.
+	var md := get_node_or_null("/root/Music")
+	assert_not_null(md, "Music autoload exists")
+	assert_true(md is MusicDirector, "autoload is a MusicDirector")
+
+
 func test_entering_a_rally_event_generates_its_track() -> void:
 	# Entering a rally event = writing its (seed, turn_count, width) into
 	# Config.data, then generating — the same Config mutation pattern apply_car
