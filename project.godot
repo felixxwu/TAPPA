@@ -18,15 +18,6 @@ config/icon="res://icon.svg"
 
 [audio]
 
-; Web exports are single-threaded (thread_support=false): audio is mixed on the
-; MAIN thread, interleaved with the game loop, instead of on a dedicated audio
-; thread like desktop. With the aggressive 30 fps thermal cap on mobile/web
-; (target_fps_mobile, see world.gd / game_config.gd) the main thread sleeps
-; ~33 ms between frames, so the default 15 ms output buffer drains and underruns
-; -> audible crackle/breakup. A larger latency gives the buffer enough slack to
-; survive the gap between frame-driven refills. Only the .web override changes;
-; desktop keeps Godot's tight default.
-driver/output_latency=15
 driver/output_latency.web=120
 
 [autoload]

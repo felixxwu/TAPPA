@@ -88,13 +88,36 @@ FAIL=0
 # and anyone reading it agree on what counts as a hidden failure.
 TEST_ERROR_PATTERN='SCRIPT ERROR|Parse Error|Failed to load script'
 
+# Retry budget for engine SIGSEGV crashes (not test failures — see below).
+TEST_CRASH_RETRIES="${TEST_CRASH_RETRIES:-2}"
+
 run_pass() {
   # tee so the output STREAMS live (long runs aren't silent until the end) while
   # still being captured for the error scan. PIPESTATUS[0] is the command's own
   # exit status (tee always exits 0).
   local tmp; tmp="$(mktemp -t rally_test_out.XXXXXX)"
-  "$@" 2>&1 | tee "$tmp"
-  local status=${PIPESTATUS[0]}
+  local status attempt=0
+  while true; do
+    "$@" 2>&1 | tee "$tmp"
+    status=${PIPESTATUS[0]}
+    # Retry ONLY an engine-level crash. The full headless suite intermittently
+    # SIGSEGVs in Godot's audio mix thread during scene teardown (backtrace:
+    # AudioStreamPlaybackResampled::mix -> AudioServer::_mix_step ->
+    # AudioDriverDummy::thread_func) — a pre-existing engine race, not our code
+    # (it reproduces on clean main at a similar rate). A crash dies by SIGNAL and
+    # prints "Program crashed with signal"; a genuine test failure exits CLEANLY
+    # via GUT (status 1) and a timeout is 124/137 — none of those are retried, so
+    # this can never mask a real failure. A crash that persists past the retries
+    # still fails the run.
+    if grep -q "Program crashed with signal" "$tmp" \
+        && [[ $status -ne 124 && $status -ne 137 && $status -ne 1 ]] \
+        && [[ $attempt -lt $TEST_CRASH_RETRIES ]]; then
+      attempt=$((attempt + 1))
+      echo "warning: headless engine crash (audio-thread SIGSEGV flake) — retrying (${attempt}/${TEST_CRASH_RETRIES})" >&2
+      continue
+    fi
+    break
+  done
   if grep -qE "$TEST_ERROR_PATTERN" "$tmp"; then
     rm -f "$tmp"
     echo "error: script errors detected in test output" >&2

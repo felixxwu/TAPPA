@@ -21,8 +21,21 @@ var _playback: AudioStreamGeneratorPlayback
 var _scratch := PackedVector2Array()
 
 
+# The car injects an isolated GameConfig copy into its own `config` (so a prop/
+# display car can't clobber the active car's tuning via the global Config.data).
+# Read that copy like the rest of the physics stack. Falls back to Config.data
+# when the parent's config isn't set yet — notably at _ready(), which fires
+# bottom-up BEFORE the parent car's _ready() populates `config`; reconfigure()
+# (called from car.apply_car once `config` is final) then rebuilds off the copy.
+func _car_config() -> GameConfig:
+	var parent := get_parent()
+	if parent != null and parent.get("config") != null:
+		return parent.config
+	return Config.data
+
+
 func _ready() -> void:
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = _car_config()
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
 	gen.buffer_length = BUFFER_SECONDS
@@ -35,7 +48,7 @@ func _ready() -> void:
 # Rebuild the synth from the current config — call after a car swap changes the
 # engine (cylinder count + firing order), which the synth caches at init.
 func reconfigure() -> void:
-	_synth = EngineAudioSynth.new(Config.data, MIX_RATE)
+	_synth = EngineAudioSynth.new(_car_config(), MIX_RATE)
 
 
 func _process(delta: float) -> void:
@@ -59,7 +72,7 @@ func _timed_process(_delta: float) -> void:
 	# limiter-only (engine.limiting) — a damaged engine sputters without the pop.
 	# turbo_spin normalizes the shaft speed so the whistle pitch tracks it; boost/
 	# bov_event/antilag_active drive the whistle amplitude and the transient bursts.
-	var cfg: GameConfig = Config.data
+	var cfg: GameConfig = _car_config()
 	var turbo_spin := engine.omega_turbo / cfg.turbo_omega_ref if cfg.turbo_omega_ref > 0.0 else 0.0
 	# bov_event is latched by the sim across the physics substeps; consume it here so
 	# each blow-off fires exactly once and re-arms (the synth edge-detects it).

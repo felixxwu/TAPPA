@@ -280,13 +280,12 @@ func focus_current_page() -> void:
 
 
 func _focus_first_in(page: Control) -> void:
-	# Recurse: a row may nest its button(s) in an HBox (the key-binding rows do), so a
-	# shallow scan would skip them and land on the page's bottom action button.
-	for node in page.find_children("*", "Button", true, false):
-		var button := node as Button
-		if not button.disabled and button.focus_mode != Control.FOCUS_NONE:
-			UITheme.focus_grab(button)
-			return
+	# Button-only scan (settings pages contain focusable non-Button widgets like
+	# sliders; we deliberately seat on the first button). Recurses so a button nested
+	# in an HBox (the key-binding rows do this) isn't skipped for the bottom action.
+	var button := UITheme.first_focusable(page, "Button")
+	if button != null:
+		UITheme.focus_grab(button)
 
 
 func show_list() -> void:

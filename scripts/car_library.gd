@@ -245,7 +245,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
 		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235,  # 215/235 mild stagger
-		"suspension_travel": 0.3, "suspension_stiffness": 12.0,  # soft long-legged GT
+		"suspension_travel": 0.35, "suspension_stiffness": 10.0,  # soft long-legged GT
 		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
@@ -352,13 +352,13 @@ static func power_to_weight(entry: Dictionary) -> float:
 # Using the SHARED GameConfig helper keeps the panel honest about what the car does.
 # The grip_balance tuning slider is deliberately ignored — this is a nominal spec-sheet
 # figure for car selection, not the currently-tuned car.
-const _G := 9.8
 static func max_lateral_g(entry: Dictionary, cfg: GameConfig) -> float:
+	var g := Platform.gravity()
 	var mass: float = float(entry.get("mass", 1.0))
 	var wf: float = clampf(float(entry.get("weight_front", 0.5)), 0.0, 1.0)
 	var compound := float(entry.get("tire_compound", 1.0))
-	var front_load := mass * _G * wf * 0.5
-	var rear_load := mass * _G * (1.0 - wf) * 0.5
+	var front_load := mass * g * wf * 0.5
+	var rear_load := mass * g * (1.0 - wf) * 0.5
 	var mu_front := compound * cfg.tire_load_factor(front_load, float(entry.get("wheel_width_front", 0.225)))
 	var mu_rear := compound * cfg.tire_load_factor(rear_load, float(entry.get("wheel_width_rear", 0.225)))
 	return (mu_front + mu_rear) * 0.5

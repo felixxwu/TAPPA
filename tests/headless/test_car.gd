@@ -24,6 +24,7 @@ func after_each() -> void:
 	for action in ACTIONS:
 		Input.action_release(action)
 	CarFixtures.restore()
+	UpgradeLibrary.reset()
 
 
 func test_car_settles_on_ground() -> void:
@@ -581,8 +582,15 @@ func test_aero_kit_upgrade_adds_downforce() -> void:
 	_car.apply_car(0)  # Fixture Roadster — establishes the spec baseline (step 1)
 	var baseline_front := cfg.downforce_front
 	var baseline_rear := cfg.downforce_rear
-	var aero: Dictionary = UpgradeLibrary.by_id("aero_kit")["effect"]
-	UpgradeLibrary.apply({"installed_upgrades": ["aero_kit"]}, cfg)
+	# Synthetic aero upgrade (not the shipped catalogue entry): apply() reads only
+	# the additive downforce_front / downforce_rear effect keys, so this exercises
+	# the same delta logic without pinning any authored magnitude.
+	var aero := {"downforce_front": 2.5, "downforce_rear": 3.5}
+	UpgradeLibrary.override_for_test([{
+		"id": "fx_aero", "name": "Fx Aero", "slot": "aero", "tier": 1, "consumable": false,
+		"effect": aero,
+	}] as Array[Dictionary])
+	UpgradeLibrary.apply({"installed_upgrades": ["fx_aero"]}, cfg)
 	assert_almost_eq(cfg.downforce_front, baseline_front + float(aero["downforce_front"]), 1e-6,
 		"aero_kit adds its front downforce on top of the spec baseline")
 	assert_almost_eq(cfg.downforce_rear, baseline_rear + float(aero["downforce_rear"]), 1e-6,

@@ -335,42 +335,23 @@ func _top_finishers(n: int) -> Array:
 # running physics (so it settles onto its suspension); otherwise it spawns frozen.
 # Gets its own mesh copies (car.tscn shares mesh sub-resources across instances).
 func _spawn_car(library_index: int, origin: Vector3, live: bool, parent: Node = null) -> Node3D:
-	# Variant, not :=, so the dynamic car-script calls below (apply_car, freeze)
-	# don't depend on the analyzer resolving car.tscn's root script type at parse
-	# time — that inference is environment-fragile (Godot 4.6 can fail it and break
-	# the whole script). Runtime behaviour is unchanged (dynamic dispatch).
-	var car: Variant = load(CAR_SCENE_PATH).instantiate()
-	(parent if parent != null else self).add_child(car)
-	# Isolated config so this display car's reshape can't clobber the player car's
-	# engine/gearbox in the shared global Config.data (see car.gd `config`).
-	car.use_isolated_config()
-	car.apply_car(library_index)
-	_dup_meshes(car)
+	# Shared display-prop recipe (CarProp.spawn): instantiate + isolated config +
+	# apply_car + dup meshes + silence engine audio, then frozen (unless `live`, which
+	# leaves it running physics so it settles onto its suspension). Positioning runs in
+	# `configure` — parent-local on the turntable pivot, else world-space.
 	var xform := Transform3D.IDENTITY
 	xform.origin = origin
-	if parent != null:
-		car.transform = xform   # parent-local (the turntable pivot)
-	else:
-		car.global_transform = xform
-	if live:
-		car.freeze = false
-	else:
-		car.freeze = true
-		car.process_mode = Node.PROCESS_MODE_DISABLED
-	var audio: Variant = car.get_node_or_null("EngineAudio")
-	if audio != null:
-		audio.process_mode = Node.PROCESS_MODE_DISABLED
-		if audio is AudioStreamPlayer:
-			audio.playing = false
-			audio.volume_db = -80.0
-	return car
-
-
-func _dup_meshes(car: Node) -> void:
-	for mi in car.find_children("*", "MeshInstance3D", true, false):
-		var m := mi as MeshInstance3D
-		if m.mesh != null:
-			m.mesh = m.mesh.duplicate()
+	var configure := func(c) -> void:
+		if parent != null:
+			c.transform = xform   # parent-local (the turntable pivot)
+		else:
+			c.global_transform = xform
+	return CarProp.spawn(parent if parent != null else self, load(CAR_SCENE_PATH), {
+		"index": library_index,
+		"configure": configure,
+		"freeze": not live,
+		"disable_process": not live,
+	})
 
 
 func _process(delta: float) -> void:

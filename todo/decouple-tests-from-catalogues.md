@@ -4,6 +4,16 @@
 > `CarLibrary.override_for_test` (`scripts/car_library.gd`) and
 > `EngineLibrary.override_for_test` (`scripts/engine_library.gd`), used via
 > `tests/headless/car_fixtures.gd` (`CarFixtures.install()`).
+>
+> **Addendum (update):** the `override_for_test` / `all()` / `reset()` seam
+> ultimately shipped for **all five** libraries — `CarLibrary`, `EngineLibrary`,
+> `RallyLibrary` (`scripts/rally_library.gd`), `UpgradeLibrary`
+> (`scripts/upgrade_library.gd`), and `RegionLibrary`
+> (`scripts/region_library.gd`) — not just Car/Engine (the "Out of scope" note
+> below is superseded). The only optional follow-up left is a `CarFixtures`-style
+> convenience wrapper (`RallyFixtures` / `UpgradeFixtures` with a canned synthetic
+> roster + `install()`); tests can already drive the Rally/Upgrade/Region seams
+> directly via `override_for_test`.
 
 ## Problem
 

@@ -620,7 +620,7 @@ Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)
 finishing position ever recorded there, stored by `Save.complete_rally(id, ms,
 placed)` on each top-3 finish (`RallySession` passes the placement).
 
-Each parked car gets its **own duplicated meshes** (`_dup_meshes`) so a mixed
+Each parked car gets its **own duplicated meshes** (`CarProp.dup_meshes`) so a mixed
 lineup renders each at its true size despite `car.tscn`'s shared mesh
 sub-resources. The shared-`Config.data` write from `apply_owned` is harmless here —
 the props don't simulate and `world.gd` re-applies the fielded car's config per run.

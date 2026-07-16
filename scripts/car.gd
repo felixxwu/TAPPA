@@ -23,11 +23,11 @@ const LEVEL_ASSIST_DAMPING := 0.35
 # to the travel direction instead of oscillating.
 const SPIN_ASSIST_DAMPING := 0.35
 
-# Speed (m/s) by which the steer limit is fully governed by the tire's optimum
-# slip angle. Below it the cap blends linearly from the full mechanical steer_limit
-# at standstill (tight parking-speed turning) toward the slip-based cap, reaching
-# it here. 50 km/h ≈ 13.889 m/s.
-const STEER_LOCK_BLEND_END_SPEED := 40.0 / 3.6
+# The steer-lock blend-end speed now lives on GameConfig (cfg.steer_lock_blend_end_speed);
+# the live physics reads it from cfg. This mirror of the config DEFAULT is kept only so
+# tests can reference the neutral value without instancing a GameConfig.
+static var STEER_LOCK_BLEND_END_SPEED := GameConfig.new().steer_lock_blend_end_speed
+
 
 # Contacts the chassis reports per physics tick for the damage model. The car only
 # ever touches a few obstacles at once; a small cap keeps contact monitoring cheap.
@@ -104,9 +104,6 @@ var controls_locked := false
 # auto-clutch opens at standstill), instead of free-revving on the handbrake's open
 # clutch. Cleared on re-arm (setup / a car swap). See features/stage.md.
 var finish_stop := false
-# Below this speed the finish stop counts the car as stopped and releases the foot
-# brake (the handbrake / parking hold still holds it put).
-const FINISH_STOP_SPEED := 0.8  # m/s
 
 # When true, the handbrake is forced on but driver input is otherwise LIVE — the
 # player can rev the engine (the held handbrake opens the clutch, so revs climb
@@ -142,7 +139,7 @@ var _replay_xform := Transform3D()
 var _saved_process_priority := 0
 # Project gravity, cached once (never changes at runtime) so the parking-hold path
 # doesn't do a string-keyed ProjectSettings lookup every physics frame.
-var _default_gravity := 9.8
+var _default_gravity := Platform.gravity()
 
 func replay_cursor() -> float:
 	return _replay_t
@@ -154,6 +151,15 @@ func replay_cursor() -> float:
 # site. (Handbrake has its own held-while-locked semantics and is gated separately.)
 func _driver_input_live() -> bool:
 	return not controls_locked and not ai_controlled and not replay_playback
+
+
+# Read a continuous control axis: live player input when the driver is in control,
+# otherwise the scripted-AI value (and 0 for an idle non-AI car). Covers the two
+# axes gated on _driver_input_live() — throttle and steer. NOTE: is_throttling()
+# deliberately does NOT use this; it gates on plain `ai_controlled` (a separate
+# predicate, see is_held() above), so keep it out.
+func _axis_input(neg: String, pos: String, ai_value: float) -> float:
+	return Input.get_axis(neg, pos) if _driver_input_live() else (ai_value if ai_controlled else 0.0)
 
 
 # True when the car is being deliberately held stationary at the start line — by the
@@ -194,9 +200,6 @@ func end_replay() -> void:
 	if drivetrain != null:
 		drivetrain.replay_omega = {}
 
-# Parking-hold speed gate: below this speed a fully-braked, grounded car gets a
-# static-friction hold so it doesn't creep down a slope. See _apply_parking_hold.
-const HANDBRAKE_LOCK_SPEED := 0.5  # m/s
 # Smoothed steering input. Raw steer_input snaps 0->1 on a keyboard; easing it
 # gives one smooth -1..1 source that BOTH the wheel-angle target and the yaw
 # assist torque read, so the two stay 1:1 instead of the torque slamming to full
@@ -312,7 +315,7 @@ static func optimum_steer_limit(cfg: GameConfig, speed: float, slip_peak: float)
 	var v_ref := maxf(speed, cfg.tire_norm_floor)
 	var sin_opt := clampf(slip_peak * v_ref / maxf(speed, 0.001), 0.0, 1.0)
 	var slip_based := minf(cfg.steer_limit, asin(sin_opt))
-	var blend := clampf(speed / STEER_LOCK_BLEND_END_SPEED, 0.0, 1.0)
+	var blend := clampf(speed / cfg.steer_lock_blend_end_speed, 0.0, 1.0)
 	return lerpf(cfg.steer_limit, slip_based, blend)
 
 
@@ -454,15 +457,20 @@ func _timed_physics_process(delta: float) -> void:
 	# Quadratic aero drag + speed-squared per-axle downforce (and the debug readout).
 	_apply_aero()
 
+	# Shared speed fade-in (0 at standstill up to full at steer_assist_min_speed),
+	# used by the steering alignment and both yaw assists. Computed once here rather
+	# than three times a tick; matches the previous per-helper expression exactly
+	# (no div-by-zero guard, as before).
+	var steer_fade := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
 	# Point the front wheels (caster toward travel + input steer, damage toe),
 	# then the yaw aids that key off the travel geometry it returns.
-	var angles := _update_steering(delta, speed)
+	var angles := _update_steering(delta, speed, steer_fade)
 	# Direct yaw torque while steering, to fight understeer when the front tires
 	# alone can't rotate the car (faded in with speed, tapered as the car rotates in).
-	_apply_steer_assist(speed, angles["travel_angle"], angles["slip_peak"])
+	_apply_steer_assist(speed, steer_fade, angles["travel_angle"], angles["slip_peak"])
 	# Slide-recovery counterpart: pulls the nose back once the car has rotated
 	# past spin_assist_angle from its travel direction. Accumulates onto the readout.
-	_apply_spin_protection(speed, angles["slip_angle"], handbrake)
+	_apply_spin_protection(steer_fade, angles["slip_angle"], handbrake)
 	# Self-righting assist while any wheel is airborne.
 	_apply_level_assist()
 
@@ -509,7 +517,10 @@ func _step_replay(delta: float) -> void:
 		eng.antilag_active = false
 		eng.shift_timer = 0.0
 	# Recorded per-wheel steer (incl. damage toe) + omega for visuals + effects.
-	var wheels := (drivetrain.front_wheels + drivetrain.rear_wheels) if drivetrain != null else []
+	# all_wheels is the drivetrain's cached front+rear list (same order the
+	# ReplayRecorder samples in), iterated here to avoid allocating a fresh
+	# `front_wheels + rear_wheels` Array each replay frame.
+	var wheels := drivetrain.all_wheels if drivetrain != null else []
 	var omap := {}
 	for i in wheels.size():
 		var w: VehicleWheel3D = wheels[i]
@@ -534,7 +545,7 @@ var _inputs_scratch := {"drive": 0.0, "brake_input": 0.0, "handbrake": false, "d
 func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 	# Neutralise driver input while locked; the forced handbrake below holds the
 	# car on a slope without freezing the whole simulation.
-	var throttle := Input.get_axis("brake_reverse", "accelerate") if _driver_input_live() else (ai_throttle if ai_controlled else 0.0)
+	var throttle := _axis_input("brake_reverse", "accelerate", ai_throttle)
 	var fwd_pedal := maxf(throttle, 0.0)  # W
 	var rev_pedal := maxf(-throttle, 0.0)  # S
 	var moving_forward := linear_velocity.dot(-global_transform.basis.z) > 1.0
@@ -579,7 +590,7 @@ func _resolve_drive_inputs(engine, speed: float) -> Dictionary:
 		# opens at standstill and the engine settles to idle) rather than free-revving on
 		# the open handbrake clutch. Release the foot brake once stopped.
 		declutch = false
-		brake_input = 1.0 if speed > FINISH_STOP_SPEED else 0.0
+		brake_input = 1.0 if speed > config.finish_stop_speed else 0.0
 	_inputs_scratch["drive"] = drive
 	_inputs_scratch["brake_input"] = brake_input
 	_inputs_scratch["handbrake"] = handbrake
@@ -633,7 +644,7 @@ func _apply_aero() -> void:
 # speed-scaled input steer. Smooths the raw input into `_steer`, sets `steering`,
 # and lays the persisted damage toe on top. Returns the travel geometry
 # {slip_angle, travel_angle} the yaw assists key off.
-func _update_steering(delta: float, speed: float) -> Dictionary:
+func _update_steering(delta: float, speed: float, align_scale: float) -> Dictionary:
 	var cfg: GameConfig = config
 	var local_vel := global_transform.basis.inverse() * linear_velocity
 	var slip_angle := 0.0  # unclamped travel-direction yaw; also feeds spin protection
@@ -645,12 +656,12 @@ func _update_steering(delta: float, speed: float) -> Dictionary:
 		# moving forwards; when slow or reversing, plain input steering.
 		slip_angle = atan2(-local_vel.x, -local_vel.z)
 		travel_angle = clampf(slip_angle, -PI / 3.0, PI / 3.0)
-	var steer_input := Input.get_axis("steer_right", "steer_left") if _driver_input_live() else (ai_steer if ai_controlled else 0.0)
+	var steer_input := _axis_input("steer_right", "steer_left", ai_steer)
 	# Ramp the travel alignment in linearly from 0 at standstill to its full
 	# configured value at steer_assist_min_speed (≈30 km/h), so it doesn't fight
 	# low-speed input steering yet returns smoothly with no sudden jump as speed
 	# builds. Shares the threshold with the steer-assist torque ramp below.
-	var align_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
+	# align_scale is the shared speed fade computed once in _timed_physics_process.
 	# Smooth the raw input once, at the same angular rate the wheels turn
 	# (steer_speed rad/s over steer_limit rad of travel), so a keyboard's instant
 	# 0->1 eases in. Both the wheel-angle target below and the assist torque read
@@ -682,9 +693,9 @@ func _update_steering(delta: float, speed: float) -> Dictionary:
 # standstill to full at steer_assist_min_speed (rather than switched on abruptly),
 # and tapered off as the car rotates into the turn so it stops adding torque once
 # turned enough (no over-rotation/spin). Sets the combined assist readout.
-func _apply_steer_assist(speed: float, travel_angle: float, slip_peak: float) -> void:
+func _apply_steer_assist(speed: float, assist_scale: float, travel_angle: float, slip_peak: float) -> void:
 	var cfg: GameConfig = config
-	var assist_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
+	# assist_scale is the shared speed fade computed once in _timed_physics_process.
 	# travel_angle is the slip angle (travel direction relative to the car's nose);
 	# steering into a slide rotates the car so its nose leads the travel direction,
 	# the same sign as steer_input. -travel_angle * sign(_steer) is therefore how far
@@ -718,12 +729,12 @@ func _apply_steer_assist(speed: float, travel_angle: float, slip_peak: float) ->
 # so deliberate handbrake drifts stay possible. Only active while travelling
 # nose-forward (slip_angle is 0 past 90° / when reversing — the aid prevents
 # reaching a spin, it doesn't unwind a completed one).
-func _apply_spin_protection(speed: float, slip_angle: float, handbrake: bool) -> void:
+func _apply_spin_protection(assist_scale: float, slip_angle: float, handbrake: bool) -> void:
 	var cfg: GameConfig = config
 	if cfg.spin_assist_torque > 0.0 and cfg.spin_assist_angle > 0.0 and not handbrake:
 		var excess := absf(slip_angle) - cfg.spin_assist_angle
 		if excess > 0.0:
-			var assist_scale := clampf(speed / cfg.steer_assist_min_speed, 0.0, 1.0)
+			# assist_scale is the shared speed fade computed once in _timed_physics_process.
 			var spin_scale := clampf(excess / cfg.spin_assist_angle, 0.0, 1.0) * assist_scale
 			var up := global_transform.basis.y
 			var yaw_rate := angular_velocity.dot(up)
@@ -837,7 +848,9 @@ func _on_wrecked() -> void:
 # True when at least one wheel is not touching the ground — the trigger for the
 # self-righting assist (drivetrain owns the classified wheel lists).
 func _any_wheel_airborne() -> bool:
-	for wheel in drivetrain.front_wheels + drivetrain.rear_wheels:
+	# all_wheels is the cached front+rear list; iterating it (rather than
+	# `front_wheels + rear_wheels`) avoids a per-tick Array allocation.
+	for wheel in drivetrain.all_wheels:
 		if not wheel.is_in_contact():
 			return true
 	return false
@@ -862,7 +875,7 @@ func _reset() -> void:
 func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 	# Only hold once the car is actually resting on the ground — a boot-locked car
 	# (StageManager forces the handbrake) must be free to drop onto its wheels first.
-	if not (braked and speed < HANDBRAKE_LOCK_SPEED and _is_grounded()) or delta <= 0.0:
+	if not (braked and speed < config.handbrake_lock_speed and _is_grounded()) or delta <= 0.0:
 		return
 	# Null the horizontal velocity component (leave vertical to gravity/suspension):
 	# F = -m·v_h/dt zeroes it in one step, so per-frame creep never accumulates.

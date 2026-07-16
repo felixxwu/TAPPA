@@ -282,10 +282,14 @@ static func mark_panel_focused(container: PanelContainer, focused: bool, pad: in
 # The first focusable, enabled, visible Control under `root` (tree order), or null.
 # Shared by the menu framework (MenuNav) and HQ's native-focus pages to seat the
 # cursor when a menu opens. Skips FOCUS_NONE widgets and disabled buttons.
-static func first_focusable(root: Node) -> Control:
+# `cls` optionally restricts the scan to a single class (e.g. "Button" to seat the
+# cursor on the first real button, skipping focusable non-button widgets like
+# sliders); the default "" scans all Controls.
+static func first_focusable(root: Node, cls := "") -> Control:
 	if root == null:
 		return null
-	for node in root.find_children("*", "Control", true, false):
+	var type := cls if cls != "" else "Control"
+	for node in root.find_children("*", type, true, false):
 		var c := node as Control
 		# Skip nodes in a dying subtree: a rebuilt menu (e.g. the HQ upgrades page)
 		# queue_frees its old ROW containers and adds fresh ones in the SAME frame. A

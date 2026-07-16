@@ -78,8 +78,21 @@ levers, in order of payoff:
   the car + ground (no world nodes at all) go one cheaper still and instantiate
   the flat `res://tests/fixtures/test_track.tscn` directly (`test_debug_arrows.gd`).
   Only the files that genuinely assert on the track/terrain/foliage
-  (`test_car_terrain.gd`, `test_loading_screen.gd`, `test_terrain.gd`) pay the
-  full generation.
+  (`test_loading_screen.gd`, `test_terrain.gd`) pay the full generation.
+- **Skip foliage but keep the real track/terrain.** For tests that DO need the
+  authored track/terrain shape but never look at trees/bushes,
+  `SceneTestHelpers.no_foliage_world()` resets Config and sets `trees_per_turn = 0`
+  while leaving `track_turn_count` at its authored value — dropping the ~7 s
+  scatter without shrinking the world (unlike `minimal_world()`). Used by
+  `test_car_terrain.gd` and `test_lakes_integration.gd`'s fielded-car test; reset
+  Config afterwards so the zeroed foliage doesn't leak into later files.
+- **Generate once per file, not per test.** When several tests in a file share
+  one generated world, build it in `before_all` (plain `add_child`, freed in
+  `after_all`) and restore per-test state in `before_each` rather than
+  re-instantiating `main.tscn` each time. `test_car_terrain.gd` does this: it
+  generates + cold-settles once, caches the resting `Transform3D`, and each test
+  restores that pose and re-stabilises in ~20 frames (the same warm-restore idea
+  as `sim_test.gd`, applied to a real-terrain instance).
 - **Settle once, not per test.** `tests/headless/sim_test.gd` is the base for
   physics-scene tests. It settles the baseline car **once**, caches the resting
   `Transform3D`, and on later setups restores that pose and stabilises in
@@ -180,6 +193,26 @@ without pixels.
 Performance benchmarking is **separate** from the test suite — it's an on-demand
 investigation tool, not a pass/fail gate. See `run_benchmark.sh` /
 `benchmark/perf_benchmark.gd` (documented in [debug-tools.md](debug-tools.md)).
+
+### Known engine flake: audio-thread SIGSEGV on teardown
+
+The full headless suite intermittently crashes with **signal 11 (SIGSEGV)** —
+backtrace `AudioStreamPlaybackResampled::mix` → `AudioServer::_mix_step` →
+`AudioDriverDummy::thread_func`, error "The caller thread can't call
+`propagate_notification()` … Use `call_deferred()`". It's a **Godot engine race**
+between the dummy audio driver's mix thread and scene teardown while a
+sample-based (resampled) `AudioStreamPlayer` is still playing — **not our code**:
+it reproduces on clean `main` at ~1-in-3 full runs (measured 3/8), the same rate
+as with local changes, and never in a single-file `--fast` run (audio state only
+accumulates across the whole suite). There are **zero assertion failures** when
+it hits.
+
+`run_tests.sh` (`run_pass`) **auto-retries this specific case**: a crash exits by
+*signal* and prints "Program crashed with signal", whereas a genuine test failure
+exits cleanly through GUT (status 1) and a timeout is 124/137 — none of those are
+retried, so the retry can never mask a real failure. Budget is
+`TEST_CRASH_RETRIES` (default 2; a crash that persists past it still fails the
+run). If you see a `retrying (n/2)` warning, that's this flake being absorbed.
 
 ## Rules of thumb (from CLAUDE.md)
 

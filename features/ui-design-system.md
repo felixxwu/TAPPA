@@ -86,14 +86,19 @@ Specific design-system touches:
 - **Wreck screen** (`wreck_screen.gd`) — red heading on a dim black backdrop.
 - **HUD** (`hud.gd`) — the run timer is white (neutral ink), the stage-complete banner green.
 
-## Visual proof sheet
+## Theme generator
 
-`tools/ui_preview.tscn` builds a representative screen (title, stat panel, money,
-a selected menu option, a locked bar) and captures `tools/ui_preview.png`:
+`tools/build_ui_theme.gd` builds the project-wide theme (`theme/ui_theme.tres`)
+entirely from the constants in `scripts/ui_theme.gd` (`UITheme`), so the design
+system has ONE source of truth: tune the palette / type scale there, re-run this,
+and the whole game restyles. It writes styleboxes and colours for Label, Button,
+PanelContainer / Panel / PopupPanel, HSlider, and ProgressBar. The `.tres` is
+wired as the project default theme via `project.godot` `gui/theme/custom`, so
+every Control inherits the font, styleboxes, text colour and drop shadow. Run it
+headless:
 
 ```
-xvfb-run -a -s "-screen 0 1280x720x24" godot --path rally \
-    --rendering-driver opengl3 res://tools/ui_preview.tscn
+godot --headless --script tools/build_ui_theme.gd
 ```
 
 ## Fonts & licensing

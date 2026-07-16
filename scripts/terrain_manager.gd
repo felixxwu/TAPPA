@@ -269,25 +269,49 @@ func height_at(x: float, z: float) -> float:
 	return _noise_height_at(x, z)
 
 
-# Bilinear height from the cached chunk grid; NAN when the point isn't covered.
-func _cached_height_at(x: float, z: float) -> float:
+# Scratch outputs for _resolve_bilinear — reused across calls instead of returning
+# a Dictionary, so the cache-first accessors below (called per physics frame via
+# height_at) stay allocation-free. Value types (Vector2i / int / float) live inline
+# in the fields, no heap churn. Safe as bare instance state: these accessors run one
+# at a time on the main thread (the threaded chunk build uses build_heights, not these).
+var _bl_coord: Vector2i
+var _bl_xi: int
+var _bl_zi: int
+var _bl_fx: float
+var _bl_fz: float
+
+
+# Resolves the cached-grid chunk + bilinear cell indices/fractions for world XZ into
+# the _bl_* scratch fields. Returns false when the point isn't covered (empty cache
+# or the owning chunk isn't loaded) so callers fall back. No allocation.
+func _resolve_bilinear(x: float, z: float) -> bool:
 	if _chunk_cache.is_empty():
-		return NAN
+		return false
 	var coord := chunk_coord_for(Vector3(x, 0.0, z))
 	if not _chunk_cache.has(coord):
-		return NAN
-	var heights: PackedFloat32Array = _chunk_cache[coord]["heights"]
+		return false
 	var lx := (x - coord.x * CHUNK_M) / CELL_M
 	var lz := (z - coord.y * CHUNK_M) / CELL_M
-	var xi := clampi(floori(lx), 0, SAMPLES - 2)
-	var zi := clampi(floori(lz), 0, SAMPLES - 2)
-	var fx := clampf(lx - xi, 0.0, 1.0)
-	var fz := clampf(lz - zi, 0.0, 1.0)
+	_bl_coord = coord
+	_bl_xi = clampi(floori(lx), 0, SAMPLES - 2)
+	_bl_zi = clampi(floori(lz), 0, SAMPLES - 2)
+	_bl_fx = clampf(lx - _bl_xi, 0.0, 1.0)
+	_bl_fz = clampf(lz - _bl_zi, 0.0, 1.0)
+	return true
+
+
+# Bilinear height from the cached chunk grid; NAN when the point isn't covered.
+func _cached_height_at(x: float, z: float) -> float:
+	if not _resolve_bilinear(x, z):
+		return NAN
+	var heights: PackedFloat32Array = _chunk_cache[_bl_coord]["heights"]
+	var xi := _bl_xi
+	var zi := _bl_zi
 	var a := heights[zi * SAMPLES + xi]
 	var b := heights[zi * SAMPLES + xi + 1]
 	var c := heights[(zi + 1) * SAMPLES + xi]
 	var d := heights[(zi + 1) * SAMPLES + xi + 1]
-	return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fz)
+	return lerpf(lerpf(a, b, _bl_fx), lerpf(c, d, _bl_fx), _bl_fz)
 
 
 # Baked light tint at a world XZ (main thread), mirroring the per-vertex bake in
@@ -307,25 +331,18 @@ func light_at(x: float, z: float) -> Color:
 # Bilinear baked light from the cache; alpha -1 signals "not covered" (Color has
 # no NAN sentinel). Falls through when the chunk is unlit (empty lights array).
 func _cached_light_at(x: float, z: float) -> Color:
-	if _chunk_cache.is_empty():
+	if not _resolve_bilinear(x, z):
 		return Color(0, 0, 0, -1.0)
-	var coord := chunk_coord_for(Vector3(x, 0.0, z))
-	if not _chunk_cache.has(coord):
-		return Color(0, 0, 0, -1.0)
-	var lights: PackedColorArray = _chunk_cache[coord].get("lights", PackedColorArray())
+	var lights: PackedColorArray = _chunk_cache[_bl_coord].get("lights", PackedColorArray())
 	if lights.is_empty():
 		return Color(0, 0, 0, -1.0)
-	var lx := (x - coord.x * CHUNK_M) / CELL_M
-	var lz := (z - coord.y * CHUNK_M) / CELL_M
-	var xi := clampi(floori(lx), 0, SAMPLES - 2)
-	var zi := clampi(floori(lz), 0, SAMPLES - 2)
-	var fx := clampf(lx - xi, 0.0, 1.0)
-	var fz := clampf(lz - zi, 0.0, 1.0)
+	var xi := _bl_xi
+	var zi := _bl_zi
 	var a := lights[zi * SAMPLES + xi]
 	var b := lights[zi * SAMPLES + xi + 1]
 	var c := lights[(zi + 1) * SAMPLES + xi]
 	var d := lights[(zi + 1) * SAMPLES + xi + 1]
-	var out := a.lerp(b, fx).lerp(c.lerp(d, fx), fz)
+	var out := a.lerp(b, _bl_fx).lerp(c.lerp(d, _bl_fx), _bl_fz)
 	out.a = 1.0
 	return out
 
@@ -374,20 +391,37 @@ func vertex_colors(coord: Vector2i, lights: PackedColorArray = PackedColorArray(
 	return colors
 
 
+# Scratch keys for _vertex_cells — the four global cells meeting at one grid vertex,
+# reused by _vertex_color_row / _surface_uv2_row instead of a per-vertex Array (which
+# would be ~800k allocs across the corridor). Value-type Vector2i fields, no heap churn;
+# both callers run on the main thread and consume the keys inline before the next vertex.
+var _vc0: Vector2i
+var _vc1: Vector2i
+var _vc2: Vector2i
+var _vc3: Vector2i
+
+
+# Fills _vc0.._vc3 with the four global cells meeting at grid vertex (gx, gz).
+func _vertex_cells(gx: int, gz: int) -> void:
+	_vc0 = Vector2i(gx - 1, gz - 1)
+	_vc1 = Vector2i(gx, gz - 1)
+	_vc2 = Vector2i(gx - 1, gz)
+	_vc3 = Vector2i(gx, gz)
+
+
 # One row of vertex_colors, written into `out` (shared so the incremental
 # TerrainChunkBuilder can fill the colour array a row per frame).
 func _vertex_color_row(coord: Vector2i, zi: int, lights: PackedColorArray, out: PackedColorArray) -> void:
 	var per_edge := SAMPLES - 1
 	var has_light := not lights.is_empty()
 	for xi in SAMPLES:
-		var gx := coord.x * per_edge + xi
-		var gz := coord.y * per_edge + zi
-		# The four cells meeting at this vertex (global cell coords).
+		_vertex_cells(coord.x * per_edge + xi, coord.y * per_edge + zi)
+		# Average of the four cells meeting at this vertex.
 		var w: float = (
-			track_weights.get(Vector2i(gx - 1, gz - 1), 0.0)
-			+ track_weights.get(Vector2i(gx, gz - 1), 0.0)
-			+ track_weights.get(Vector2i(gx - 1, gz), 0.0)
-			+ track_weights.get(Vector2i(gx, gz), 0.0)
+			track_weights.get(_vc0, 0.0)
+			+ track_weights.get(_vc1, 0.0)
+			+ track_weights.get(_vc2, 0.0)
+			+ track_weights.get(_vc3, 0.0)
 		) / 4.0
 		# RGB = ground tint × baked light; ALPHA = road blend weight.
 		var idx := zi * SAMPLES + xi
@@ -419,22 +453,21 @@ func surface_uv2(coord: Vector2i) -> PackedVector2Array:
 func _surface_uv2_row(coord: Vector2i, zi: int, out: PackedVector2Array) -> void:
 	var per_edge := SAMPLES - 1
 	for xi in SAMPLES:
-		var gx := coord.x * per_edge + xi
-		var gz := coord.y * per_edge + zi
+		_vertex_cells(coord.x * per_edge + xi, coord.y * per_edge + zi)
 		# The four cells meeting at this vertex, averaged over only those that are
-		# road/band cells (present in track_surface). Explicit lookups — NOT a
-		# `for cell in [...]` literal, which would allocate an Array + 4 Vector2i per
-		# vertex (~800k allocations across the corridor).
+		# road/band cells (present in track_surface). Explicit lookups against the
+		# _vc* scratch keys — NOT a `for cell in [...]` literal, which would allocate
+		# an Array + 4 Vector2i per vertex (~800k allocations across the corridor).
 		var sum := 0.0
 		var n := 0
-		if track_surface.has(Vector2i(gx - 1, gz - 1)):
-			sum += track_surface[Vector2i(gx - 1, gz - 1)]; n += 1
-		if track_surface.has(Vector2i(gx, gz - 1)):
-			sum += track_surface[Vector2i(gx, gz - 1)]; n += 1
-		if track_surface.has(Vector2i(gx - 1, gz)):
-			sum += track_surface[Vector2i(gx - 1, gz)]; n += 1
-		if track_surface.has(Vector2i(gx, gz)):
-			sum += track_surface[Vector2i(gx, gz)]; n += 1
+		if track_surface.has(_vc0):
+			sum += track_surface[_vc0]; n += 1
+		if track_surface.has(_vc1):
+			sum += track_surface[_vc1]; n += 1
+		if track_surface.has(_vc2):
+			sum += track_surface[_vc2]; n += 1
+		if track_surface.has(_vc3):
+			sum += track_surface[_vc3]; n += 1
 		var tarmac := sum / float(n) if n > 0 else 0.0
 		out[zi * SAMPLES + xi] = Vector2(tarmac, 0.0)
 

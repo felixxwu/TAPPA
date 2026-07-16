@@ -31,7 +31,7 @@ extends Node3D
 #
 # Shared-resource note: car.tscn's body/wheel meshes are SubResources shared across
 # instances, so apply_car sizing one parked car would resize every other. After
-# apply_owned each parked car gets its OWN mesh copies (_dup_meshes) so a mixed lot
+# apply_owned each parked car gets its OWN mesh copies (CarProp.dup_meshes) so a mixed lot
 # shows each at its true size. apply_owned also writes the shared Config.data (last
 # car wins) — harmless here: the props don't simulate, and world.gd re-applies the
 # fielded car's config before a run.
@@ -210,6 +210,11 @@ var _pins_root: Node3D          # parent of the rally pins
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
 # Focus cursor into _table_targets() (pins + eligible map-swap arrows); -1 = none.
 var _table_focus_index := -1
+# Cached _table_targets() result. The target set only changes on pin rebuild
+# (_refresh_map_pins) or region-arrow change (_update_region_arrows), which set this back
+# to null; every access rebuilds lazily. Per-frame table panning (_process ->
+# _pan_table_step) reuses it instead of rebuilding a Dictionary-per-target array each frame.
+var _table_targets_cache = null
 var _viewed_region_index := 0   # which region's map/pins the table shows
 
 # Overlays (one CanvasLayer per station; only the active one is visible).
@@ -378,6 +383,7 @@ func _bay_center_x(i: int, bays: int) -> float:
 # 3 gold, 2nd → 2, 3rd → 1, else dim). The flag colour encodes the medal tier; the
 # showdown pin is locked (grey/disabled, non-pickable) until every other rally is done.
 func _refresh_map_pins() -> void:
+	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
 	for c in _pins_root.get_children():
 		c.queue_free()
 	_pins = []
@@ -423,6 +429,7 @@ func _viewed_region_id() -> String:
 # region is still locked — then it reads "Complete showdown to unlock" (dimmed) and its
 # swap is inert (see _swap_region's clamp). Absent only when there is no region that way.
 func _update_region_arrows() -> void:
+	_table_targets_cache = null  # arrow visibility/existence may change the target set
 	var has_prev := _viewed_region_index > 0
 	var has_next := _viewed_region_index < RegionLibrary.count() - 1
 	var next_unlocked := has_next and RegionLibrary.unlocked(
@@ -616,19 +623,39 @@ func _stars_for(rally_id: String) -> int:
 	return 0
 
 
+# The eligibility decision for one owned `car` against `rally`, derived in ONE place so
+# the pin-flag check (_has_eligible_car) and the car-park lineup (_build_eligible_lineup)
+# can't drift. Returns {eligible, detune, drivetrain}: `eligible` = whether the car can
+# enter at all; `detune` = the qualifying engine-detune fraction to apply (0.0 = none);
+# `drivetrain` = the drive mode it must switch to (-1 = none). A car may need a switch,
+# a detune, both, or neither.
+func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var meta := UpgradeLibrary.effective_meta(car, entry)
+	if RallyLibrary.is_eligible(rally, meta):
+		return {"eligible": true, "detune": 0.0, "drivetrain": -1}
+	var target := _switch_target_for(rally, car, meta)
+	var meta_sw := meta
+	if target >= 0:
+		meta_sw = meta.duplicate()
+		meta_sw["drive_mode"] = target
+	# Switch alone qualifies?
+	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw):
+		return {"eligible": true, "detune": 0.0, "drivetrain": target}
+	# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
+	var frac := _qualifying_detune_for(rally, car, entry, meta_sw, target)
+	if frac > 0.0:
+		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1}
+	return {"eligible": false, "detune": 0.0, "drivetrain": -1}
+
+
 # Whether the player owns at least one car eligible to enter `rally` — drives the
 # pin flag's green (raceable) vs grey (no qualifying car) pennant. Mirrors the
 # eligibility filter used to build the car-park lineup (_build_eligible_lineup),
 # including an over-powered car that would qualify if it agreed to a detune.
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get("cars", []):
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		if RallyLibrary.is_eligible(rally, meta):
-			return true
-		if _qualifying_detune_for(rally, car, entry, meta) > 0.0:
-			return true
-		if _qualifying_drivetrain_for(rally, car, entry, meta) >= 0:
+		if bool(_entry_plan(rally, car)["eligible"]):
 			return true
 	return false
 
@@ -713,6 +740,17 @@ func _station_button(text: String, cb: Callable) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	return b
+
+
+# A plain Label with `text` and a `font_size` override — the Label.new() + font-size +
+# add-child idiom repeated across the station overlays. Deliberately NOT UITheme.label,
+# which forces a role colour + uppercase (a different look). Any further overrides
+# (alignment, colour, autowrap, size flags) are applied by the caller after this returns.
+func _label(text: String, size: int) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", size)
+	return lbl
 
 
 func _build_title_overlay() -> void:
@@ -844,9 +882,7 @@ func _build_garage_overlay() -> void:
 	_garage_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	var hint := Label.new()
-	hint.text = "GARAGE — tap the map table to choose a rally, or the lift to tune your car"
-	hint.add_theme_font_size_override("font_size", 22)
+	var hint := _label("GARAGE — tap the map table to choose a rally, or the lift to tune your car", 22)
 	root.add_child(hint)
 
 	var spacer := Control.new()
@@ -885,8 +921,7 @@ func _build_table_overlay() -> void:
 	_table_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	_map_meter = Label.new()
-	_map_meter.add_theme_font_size_override("font_size", 14)
+	_map_meter = _label("", 14)
 	root.add_child(_map_meter)
 
 	var spacer := Control.new()
@@ -914,12 +949,10 @@ func _build_detail_overlay() -> void:
 	_detail_layer.add_child(bg)
 	_detail_layer.move_child(bg, 0)
 
-	_detail_title = Label.new()
-	_detail_title.add_theme_font_size_override("font_size", 30)
+	_detail_title = _label("", 30)
 	root.add_child(_detail_title)
 
-	_detail_body = Label.new()
-	_detail_body.add_theme_font_size_override("font_size", 16)
+	_detail_body = _label("", 16)
 	_detail_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(_detail_body)
 
@@ -977,8 +1010,7 @@ func _build_lift_overlay() -> void:
 	root.add_theme_constant_override("separation", 10)
 	margin.add_child(root)
 
-	_lift_menu_title = Label.new()
-	_lift_menu_title.add_theme_font_size_override("font_size", 22)
+	_lift_menu_title = _label("", 22)
 	root.add_child(_lift_menu_title)
 
 	# A scroll container is kept as a safety net for very short screens, but with each
@@ -1044,8 +1076,7 @@ func _build_lift_overlay() -> void:
 	info.add_theme_constant_override("separation", 4)
 	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_panel.add_child(info)
-	_lift_car_label = Label.new()
-	_lift_car_label.add_theme_font_size_override("font_size", 14)
+	_lift_car_label = _label("", 14)
 	_lift_car_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_lift_car_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_child(_lift_car_label)
@@ -1090,18 +1121,40 @@ func _build_lift_overlay() -> void:
 
 
 
+# Build the ◄/► car-selector nav row shared by the rally car-park (_build_car_overlay)
+# and the overflow overlay (_build_overflow_overlay): a "<" prev button, a centred
+# car-name label, and a ">" next button in an HBox, with prev/next wired to
+# _cycle_focus(∓1). Returns [nav_row, center_label] so the caller stashes the label in
+# its own member field (_car_name_label / _overflow_car_label).
+func _build_carpark_nav_row() -> Array:
+	var nav := HBoxContainer.new()
+	nav.add_theme_constant_override("separation", 8)
+	var prev := Button.new()
+	prev.text = "<"
+	prev.focus_mode = Control.FOCUS_NONE
+	prev.pressed.connect(_cycle_focus.bind(-1))
+	nav.add_child(prev)
+	var center := _label("", 18)
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nav.add_child(center)
+	var next := Button.new()
+	next.text = ">"
+	next.focus_mode = Control.FOCUS_NONE
+	next.pressed.connect(_cycle_focus.bind(1))
+	nav.add_child(next)
+	return [nav, center]
+
+
 func _build_car_overlay() -> void:
 	var made := _make_overlay(16.0)
 	_car_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	_rally_banner = Label.new()
-	_rally_banner.add_theme_font_size_override("font_size", 22)
+	_rally_banner = _label("", 22)
 	root.add_child(_rally_banner)
 
-	var hint := Label.new()
-	hint.text = "Choose your car"
-	hint.add_theme_font_size_override("font_size", 14)
+	var hint := _label("Choose your car", 14)
 	root.add_child(hint)
 
 	# Push the car nav + actions to the bottom so the 3D car park is visible above.
@@ -1109,33 +1162,16 @@ func _build_car_overlay() -> void:
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(spacer)
 
-	_no_eligible_label = Label.new()
-	_no_eligible_label.add_theme_font_size_override("font_size", 16)
+	_no_eligible_label = _label("", 16)
 	_no_eligible_label.visible = false
 	root.add_child(_no_eligible_label)
 
 	# Car selector: ◄ / ► pan the camera to the prev/next eligible car.
-	var nav := HBoxContainer.new()
-	nav.add_theme_constant_override("separation", 8)
-	root.add_child(nav)
-	var prev := Button.new()
-	prev.text = "<"
-	prev.focus_mode = Control.FOCUS_NONE
-	prev.pressed.connect(_cycle_focus.bind(-1))
-	nav.add_child(prev)
-	_car_name_label = Label.new()
-	_car_name_label.add_theme_font_size_override("font_size", 18)
-	_car_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_car_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nav.add_child(_car_name_label)
-	var next := Button.new()
-	next.text = ">"
-	next.focus_mode = Control.FOCUS_NONE
-	next.pressed.connect(_cycle_focus.bind(1))
-	nav.add_child(next)
+	var nav_made := _build_carpark_nav_row()
+	root.add_child(nav_made[0])
+	_car_name_label = nav_made[1]
 
-	_car_stats_label = Label.new()
-	_car_stats_label.add_theme_font_size_override("font_size", 12)
+	_car_stats_label = _label("", 12)
 	_car_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_car_stats_label)
 
@@ -1154,8 +1190,7 @@ func _build_car_overlay() -> void:
 	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it).
 	# An over-powered car does NOT warn here — its detune agreement pops as a confirm
 	# dialog on Start instead (_show_detune_confirm), keeping the overlay compact.
-	_car_warning_label = Label.new()
-	_car_warning_label.add_theme_font_size_override("font_size", 14)
+	_car_warning_label = _label("", 14)
 	_car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_car_warning_label.add_theme_color_override("font_color", UITheme.RED)
 	_car_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1197,13 +1232,10 @@ func _build_overflow_overlay() -> void:
 	_overflow_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	_overflow_banner = Label.new()
-	_overflow_banner.add_theme_font_size_override("font_size", 22)
+	_overflow_banner = _label("", 22)
 	root.add_child(_overflow_banner)
 
-	var hint := Label.new()
-	hint.text = "Your garage is full. Pick a car to scrap — the just-won car counts too."
-	hint.add_theme_font_size_override("font_size", 14)
+	var hint := _label("Your garage is full. Pick a car to scrap — the just-won car counts too.", 14)
 	root.add_child(hint)
 
 	# Push the nav + actions to the bottom so the 3D car park is visible above.
@@ -1212,32 +1244,15 @@ func _build_overflow_overlay() -> void:
 	root.add_child(spacer)
 
 	# Car selector: ◄ / ► pan the camera to the prev/next owned car.
-	var nav := HBoxContainer.new()
-	nav.add_theme_constant_override("separation", 8)
-	root.add_child(nav)
-	var prev := Button.new()
-	prev.text = "<"
-	prev.focus_mode = Control.FOCUS_NONE
-	prev.pressed.connect(_cycle_focus.bind(-1))
-	nav.add_child(prev)
-	_overflow_car_label = Label.new()
-	_overflow_car_label.add_theme_font_size_override("font_size", 18)
-	_overflow_car_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_overflow_car_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nav.add_child(_overflow_car_label)
-	var next := Button.new()
-	next.text = ">"
-	next.focus_mode = Control.FOCUS_NONE
-	next.pressed.connect(_cycle_focus.bind(1))
-	nav.add_child(next)
+	var nav_made := _build_carpark_nav_row()
+	root.add_child(nav_made[0])
+	_overflow_car_label = nav_made[1]
 
-	_overflow_stats_label = Label.new()
-	_overflow_stats_label.add_theme_font_size_override("font_size", 12)
+	_overflow_stats_label = _label("", 12)
 	_overflow_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_overflow_stats_label)
 
-	_overflow_note = Label.new()
-	_overflow_note.add_theme_font_size_override("font_size", 12)
+	_overflow_note = _label("", 12)
 	_overflow_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_overflow_note.modulate = Color(1, 0.8, 0.4)
 	root.add_child(_overflow_note)
@@ -1313,14 +1328,10 @@ func _build_settings_overlay() -> void:
 	_settings_layer = made[0]
 	var root: VBoxContainer = made[1]
 
-	var title := Label.new()
-	title.text = "SETTINGS"
-	title.add_theme_font_size_override("font_size", 32)
+	var title := _label("SETTINGS", 32)
 	root.add_child(title)
 
-	_settings_sub = Label.new()
-	_settings_sub.text = "Camera & controls:"
-	_settings_sub.add_theme_font_size_override("font_size", 16)
+	_settings_sub = _label("Camera & controls:", 16)
 	root.add_child(_settings_sub)
 
 	var scroll := TouchScrollContainer.new()
@@ -1594,7 +1605,15 @@ func _unlocked_pins() -> Array:
 # arrow for which a region exists that way (left past region 0; right whenever a next
 # region exists — locked ones included, so their "complete showdown" prompt is landable).
 # Each entry: {node, kind, pos}; kind ∈ pin/arrow_left/arrow_right.
+# Cached (see _table_targets_cache): rebuilt only when the cache is invalidated by a pin
+# rebuild / region-arrow change, so the per-frame pan glide doesn't re-allocate it.
 func _table_targets() -> Array:
+	if _table_targets_cache == null:
+		_table_targets_cache = _build_table_targets()
+	return _table_targets_cache
+
+
+func _build_table_targets() -> Array:
 	var out: Array = []
 	for pin in _unlocked_pins():
 		out.append({"node": pin, "kind": "pin", "pos": (pin as Node3D).position})
@@ -2034,24 +2053,18 @@ func _clear_lift_car() -> void:
 
 # Build the selected car as a silent, frozen prop on the lift platform at the current
 # pose height (lowered in the garage, raised in the bay — so a re-spawn while raised
-# appears already raised). Its own mesh copies, like the car-park props (_dup_meshes).
+# appears already raised). Its own mesh copies, like the car-park props (CarProp.dup_meshes).
 func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	var cfg: GameConfig = Config.data
-	var car := _car_scene_res().instantiate()
-	add_child(car)
-	# Isolated config so this parked/display car's apply_owned can't clobber the
-	# player car's tuning in the shared global Config.data (see car.gd `config`).
-	car.use_isolated_config()
-	car.apply_owned(owned)
-	_dup_meshes(car)
 	var xform := Transform3D.IDENTITY
 	xform.origin = Vector3(cfg.hq_lift_pos.x, _lift_car_y(_lift_raised), cfg.hq_lift_pos.z)
-	car.global_transform = xform
-	car.freeze = true
-	car.process_mode = Node.PROCESS_MODE_DISABLED
-	car.silence_engine_audio()
-	_add_synthetic_smoke(car)
-	return car
+	var configure := func(c) -> void: c.global_transform = xform
+	return CarProp.spawn(self, _car_scene_res(), {
+		"owned": owned,
+		"configure": configure,
+		"disable_process": true,
+		"smoke": _add_synthetic_smoke,
+	})
 
 
 # Refresh the whole menu for the current selected car: name + stats, which menu is
@@ -2097,13 +2110,10 @@ func _on_lift_upgrade_changed() -> void:
 		EngineSwap.display_name(entry, _lift_owned), _car_stats_text(_lift_owned, entry)]
 
 
-# The owned cars this car can swap engines with: every OTHER owned car (health is
-# irrelevant — a damaged partner is repaired as part of the swap). Used by
-# _enter_engine_swap to build the car-park swap lineup.
-func _swap_targets(current_id: int) -> Array:
+# Every owned car other than `current_id`. Shared by engine-swap (_swap_targets) and
+# Change Car (_change_car_targets) — both offer the OTHER owned cars.
+func _other_owned_cars(current_id: int) -> Array:
 	var targets: Array = []
-	if Save.get_car(current_id).is_empty():
-		return targets
 	for car in Save.profile.get("cars", []):
 		if int(car.get("instance_id", -1)) == current_id:
 			continue
@@ -2111,9 +2121,36 @@ func _swap_targets(current_id: int) -> Array:
 	return targets
 
 
+# The owned cars this car can swap engines with: every OTHER owned car (health is
+# irrelevant — a damaged partner is repaired as part of the swap). Used by
+# _enter_engine_swap to build the car-park swap lineup.
+func _swap_targets(current_id: int) -> Array:
+	# No partners if the current car itself doesn't exist (nothing to swap into).
+	if Save.get_car(current_id).is_empty():
+		return []
+	return _other_owned_cars(current_id)
+
+
 # Repair Kits currently held in the shared inventory.
 func _repair_kits_owned() -> int:
 	return int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
+
+
+# Reset the car-park overlay to its empty state: show `message`, blank the car labels,
+# hide the swap-preview / warning / repair widgets, disable Start, and frame the empty
+# lot. Shared by the rally car-select and Change Car screens when nothing qualifies.
+func _show_empty_carpark(message: String) -> void:
+	_no_eligible_label.visible = true
+	_no_eligible_label.text = message
+	_car_name_label.text = ""
+	_car_stats_label.text = ""
+	if _swap_preview_label != null:
+		_swap_preview_label.visible = false
+		_swap_preview_label.text = ""
+	_car_warning_label.visible = false
+	_car_repair_button.visible = false
+	_start_button.disabled = true
+	_move_camera_to(_station_xform(View.CARPARK), true)
 
 
 # Enter the car park for the chosen rally: park the ELIGIBLE owned cars (plus any
@@ -2133,17 +2170,7 @@ func _enter_car_screen() -> void:
 	_detail_open = false
 	_update_overlays()
 	if _eligible.is_empty():
-		_no_eligible_label.visible = true
-		_no_eligible_label.text = "No eligible car for this rally — win or pick a qualifying car."
-		_car_name_label.text = ""
-		_car_stats_label.text = ""
-		if _swap_preview_label != null:
-			_swap_preview_label.visible = false
-			_swap_preview_label.text = ""
-		_car_warning_label.visible = false
-		_car_repair_button.visible = false
-		_start_button.disabled = true
-		_move_camera_to(_station_xform(View.CARPARK), true)
+		_show_empty_carpark("No eligible car for this rally — win or pick a qualifying car.")
 		return
 	_no_eligible_label.visible = false
 	_focus = 0
@@ -2166,17 +2193,7 @@ func _enter_change_car() -> void:
 	_detail_open = false
 	_update_overlays()
 	if _eligible.is_empty():
-		_no_eligible_label.visible = true
-		_no_eligible_label.text = "No other car to switch to — this is your only car."
-		_car_name_label.text = ""
-		_car_stats_label.text = ""
-		if _swap_preview_label != null:
-			_swap_preview_label.visible = false
-			_swap_preview_label.text = ""
-		_car_warning_label.visible = false
-		_car_repair_button.visible = false
-		_start_button.disabled = true
-		_move_camera_to(_station_xform(View.CARPARK), true)
+		_show_empty_carpark("No other car to switch to — this is your only car.")
 		return
 	_no_eligible_label.visible = false
 	_focus = 0
@@ -2186,12 +2203,7 @@ func _enter_change_car() -> void:
 # Owned cars other than the one currently on the lift — the candidates offered by
 # Change Car (reselecting the current car does nothing, so it's left out).
 func _change_car_targets(current_id: int) -> Array:
-	var targets: Array = []
-	for car in Save.profile.get("cars", []):
-		if int(car.get("instance_id", -1)) == current_id:
-			continue
-		targets.append(car)
-	return targets
+	return _other_owned_cars(current_id)
 
 
 func _car_back() -> void:
@@ -2344,29 +2356,15 @@ func _build_eligible_lineup() -> void:
 	var needs_detune := {}
 	var needs_drivetrain := {}
 	for car in Save.profile.get("cars", []):
-		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-		var meta := UpgradeLibrary.effective_meta(car, entry)
-		if RallyLibrary.is_eligible(rally, meta):
-			eligible.append(car)
+		var plan := _entry_plan(rally, car)
+		if not bool(plan["eligible"]):
 			continue
+		eligible.append(car)
 		var id := int(car.get("instance_id", -1))
-		var target := _switch_target_for(rally, car, meta)
-		var meta_sw := meta
-		if target >= 0:
-			meta_sw = meta.duplicate()
-			meta_sw["drive_mode"] = target
-		# Switch alone qualifies?
-		if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw):
-			needs_drivetrain[id] = target
-			eligible.append(car)
-			continue
-		# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
-		var frac := _qualifying_detune_for(rally, car, entry, meta_sw, target)
-		if frac > 0.0:
-			if target >= 0:
-				needs_drivetrain[id] = target
-			needs_detune[id] = frac
-			eligible.append(car)
+		if int(plan["drivetrain"]) >= 0:
+			needs_drivetrain[id] = int(plan["drivetrain"])
+		if float(plan["detune"]) > 0.0:
+			needs_detune[id] = float(plan["detune"])
 	_build_lineup(eligible)  # clears _detune_needed / _drivetrain_needed (via _clear_lineup)
 	_detune_needed = needs_detune
 	_drivetrain_needed = needs_drivetrain
@@ -2529,27 +2527,21 @@ func _obtain_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 
 
 # Spawn one owned car as a silent car prop resting at a marker, with its OWN mesh
-# copies (see _dup_meshes) so a mixed lineup shows each at its true size. Placed with
+# copies (see CarProp.dup_meshes) so a mixed lineup shows each at its true size. Placed with
 # its wheels on the bay via the analytic rest ride height (car.gd:settled_ride_height)
 # and frozen at once — no live physics to settle, so nothing to mistime or drift.
 func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
-	var car := _car_scene_res().instantiate()
-	add_child(car)
-	# Isolated config so this parked/display car's apply_owned can't clobber the
-	# player car's tuning in the shared global Config.data (see car.gd `config`).
-	car.use_isolated_config()
-	car.apply_owned(owned)
-	_dup_meshes(car)
-	_seat_car_at_marker(car, marker)
 	# Frozen prop resting at its pose: no body integration and no per-frame car script
-	# (drivetrain/steering/aero) cost. We stop physics processing rather than fully
-	# PROCESS_MODE_DISABLE the node so the body stays a normal member of the physics
-	# space — it must remain ray-pickable for tap-to-focus (see _car_index_at).
-	car.freeze = true
-	car.set_physics_process(false)
-	car.silence_engine_audio()  # no audio from the parked cars
-	_add_synthetic_smoke(car)
-	return car
+	# (drivetrain/steering/aero) cost. We stop physics processing (stop_physics) rather
+	# than fully PROCESS_MODE_DISABLE the node so the body stays a normal member of the
+	# physics space — it must remain ray-pickable for tap-to-focus (see _car_index_at).
+	var configure := func(c) -> void: _seat_car_at_marker(c, marker)
+	return CarProp.spawn(self, _car_scene_res(), {
+		"owned": owned,
+		"configure": configure,
+		"stop_physics": true,
+		"smoke": _add_synthetic_smoke,
+	})
 
 
 # Seat a car on its bay marker with its wheels on the ground: the marker's pose (bay
@@ -2579,17 +2571,6 @@ func _add_synthetic_smoke(car: Node) -> void:
 	# even though the display car is frozen / process-disabled once settled.
 	smoke.process_mode = Node.PROCESS_MODE_ALWAYS
 	smoke.setup_synthetic(car)
-
-
-# Give a car instance its own copies of every mesh resource (car.tscn's body/wheel
-# meshes are SubResources shared across instances; apply_car resized the shared one
-# to THIS car, so duplicating now freezes those dimensions before the next car's
-# apply_car mutates the shared original again).
-func _dup_meshes(car: Node) -> void:
-	for mi in car.find_children("*", "MeshInstance3D", true, false):
-		var m := mi as MeshInstance3D
-		if m.mesh != null:
-			m.mesh = m.mesh.duplicate()
 
 
 # Pan the focus to the prev/next eligible car (wrapping). Keyed off _eligible (set

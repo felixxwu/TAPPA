@@ -24,10 +24,6 @@ extends Node3D
 
 const CAR_SCENE := preload("res://car.tscn")
 
-# Speed (m/s) below which the player counts as stopped at the line — the fade to the
-# chase cam waits for this so the transition never happens while the car is rolling.
-const STOP_SPEED_EPS := 0.4
-
 # Sequence phases. ORBIT waits for the launch; the rest are time-driven in _process.
 enum Seq { ORBIT, DRIVE_OFF, FADE_OUT, FADE_IN, DONE }
 
@@ -135,7 +131,7 @@ func _stage_player(terrain: Node) -> void:
 
 func _build_orbit_camera() -> void:
 	_orbit_cam = Camera3D.new()
-	_orbit_cam.fov = 70.0
+	_orbit_cam.fov = _cfg().start_orbit_fov
 	_orbit_cam.current = true  # take over from the chase camera for the reveal
 	add_child(_orbit_cam)
 
@@ -245,6 +241,62 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	MenuNav.attach(root, {"first": _start_button})
 
 
+# The rally's power-to-weight ceiling for the pre-race tune / upgrades menus (-1 = no
+# cap): the restriction's pw_max, or -1 when there's no active rally restriction.
+func _pw_limit() -> float:
+	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
+	return float(restriction.get("pw_max", -1.0))
+
+
+# Build a pre-race menu overlay: a CanvasLayer (layer 6, above the start overlay) with a
+# centred house panel wrapping a titled `component` and a Back button wired to `on_back`.
+# Shared skeleton for the Tune Car and Upgrades pages (they differ only in title +
+# component). Returns the layer; the caller keeps the handle and the component reference.
+func _build_menu_overlay(title: String, component: Control, on_back: Callable) -> CanvasLayer:
+	var layer := CanvasLayer.new()
+	layer.layer = 6   # above the start overlay (layer 5)
+	add_child(layer)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(center)
+	var panel := UITheme.panel(UITheme.PANEL.a)
+	center.add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", UITheme.GAP)
+	col.custom_minimum_size = Vector2(520, 0)
+	panel.add_child(col)
+	col.add_child(UITheme.title(title))
+	col.add_child(component)
+	var back := UITheme.button("Back")
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	back.pressed.connect(on_back)
+	col.add_child(back)
+	UITheme.enforce(layer)
+	return layer
+
+
+# Show a pre-race menu overlay `layer`: hide the start overlay, reveal the page, release
+# focus, and wire its MenuNav (first control + on_back) so it's keyboard/gamepad
+# navigable. Shared by _open_tune / _open_upgrades (each passes its own first + on_back).
+func _open_menu(layer: CanvasLayer, first: Control, on_back: Callable) -> void:
+	if _overlay != null:
+		_overlay.visible = false
+	layer.visible = true
+	get_viewport().gui_release_focus()
+	MenuNav.attach(layer.get_child(0), {"first": first, "on_back": on_back})
+
+
+# Close a pre-race menu overlay: hide the page, restore the start overlay, and re-focus
+# the button that opened it. Shared by _close_tune / _close_upgrades.
+func _close_menu(layer: CanvasLayer, return_button: Button) -> void:
+	if layer != null:
+		layer.visible = false
+	if _overlay != null:
+		_overlay.visible = true
+	if return_button != null:
+		return_button.grab_focus.call_deferred()
+
+
 # Open the pre-race tuning menu (the same sliders as the HQ lift). Hides the start
 # overlay; edits re-field the live car so they affect the race about to start.
 func _open_tune() -> void:
@@ -253,47 +305,18 @@ func _open_tune() -> void:
 	if _tune_layer == null:
 		_build_tune_overlay()
 	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
-	var pw_limit := float(restriction.get("pw_max", -1.0))
-	_tune_panel.setup(owned, _on_tune_changed.bind(owned), pw_limit)
+	_tune_panel.setup(owned, _on_tune_changed.bind(owned), _pw_limit())
 	_tune_panel.refresh()
-	if _overlay != null:
-		_overlay.visible = false
-	_tune_layer.visible = true
-	get_viewport().gui_release_focus()
-	MenuNav.attach(_tune_layer.get_child(0), {"first": _tune_panel.first_slider(), "on_back": _close_tune})
+	_open_menu(_tune_layer, _tune_panel.first_slider(), _close_tune)
 
 
 func _close_tune() -> void:
-	if _tune_layer != null:
-		_tune_layer.visible = false
-	if _overlay != null:
-		_overlay.visible = true
-	if _tune_button != null:
-		_tune_button.grab_focus.call_deferred()
+	_close_menu(_tune_layer, _tune_button)
 
 
 func _build_tune_overlay() -> void:
-	_tune_layer = CanvasLayer.new()
-	_tune_layer.layer = 6   # above the start overlay (layer 5)
-	add_child(_tune_layer)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_tune_layer.add_child(center)
-	var panel := UITheme.panel(UITheme.PANEL.a)
-	center.add_child(panel)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", UITheme.GAP)
-	col.custom_minimum_size = Vector2(520, 0)
-	panel.add_child(col)
-	col.add_child(UITheme.title("Tune Car"))
 	_tune_panel = TuningPanel.new()
-	col.add_child(_tune_panel)
-	var back := UITheme.button("Back")
-	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	back.pressed.connect(_close_tune)
-	col.add_child(back)
-	UITheme.enforce(_tune_layer)
+	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune)
 
 
 # An edit was made in the tune panel (it already wrote owned["tuning"] + saved). Re-apply
@@ -314,47 +337,17 @@ func _open_upgrades() -> void:
 	if _upgrades_layer == null:
 		_build_upgrades_overlay()
 	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
-	var pw_limit := float(restriction.get("pw_max", -1.0))
-	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), pw_limit)
-	if _overlay != null:
-		_overlay.visible = false
-	_upgrades_layer.visible = true
-	get_viewport().gui_release_focus()
-	MenuNav.attach(_upgrades_layer.get_child(0),
-		{"first": _upgrades_menu.first_control(), "on_back": _close_upgrades})
+	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _pw_limit())
+	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _close_upgrades)
 
 
 func _close_upgrades() -> void:
-	if _upgrades_layer != null:
-		_upgrades_layer.visible = false
-	if _overlay != null:
-		_overlay.visible = true
-	if _upgrades_button != null:
-		_upgrades_button.grab_focus.call_deferred()
+	_close_menu(_upgrades_layer, _upgrades_button)
 
 
 func _build_upgrades_overlay() -> void:
-	_upgrades_layer = CanvasLayer.new()
-	_upgrades_layer.layer = 6   # above the start overlay (layer 5)
-	add_child(_upgrades_layer)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_upgrades_layer.add_child(center)
-	var panel := UITheme.panel(UITheme.PANEL.a)
-	center.add_child(panel)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", UITheme.GAP)
-	col.custom_minimum_size = Vector2(520, 0)
-	panel.add_child(col)
-	col.add_child(UITheme.title("Upgrades"))
 	_upgrades_menu = UpgradesMenu.new()
-	col.add_child(_upgrades_menu)
-	var back := UITheme.button("Back")
-	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	back.pressed.connect(_close_upgrades)
-	col.add_child(back)
-	UITheme.enforce(_upgrades_layer)
+	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades)
 
 
 # An upgrade edit (UpgradesMenu already wrote Save; it calls on_change with no args).
@@ -590,21 +583,22 @@ func _advance_orbit(delta: float) -> void:
 # the player, `_release_player` still snaps the sub-decimetre residual to the exact line
 # under the fade.
 func _roll_car_to(car, target: Vector3) -> void:
+	var cfg := _cfg()
 	var fwd := (-_start_xform.basis.z).normalized()
 	var dist: float = (target - car.global_position).dot(fwd)
 	var v: float = car.linear_velocity.length()
 	# Distance the car needs to brake from its current speed (decel ~14 m/s²) plus a
 	# small reaction margin — start braking once the target is within it.
-	var brake_dist: float = v * v / 28.0 + 0.25
+	var brake_dist: float = v * v / cfg.start_roll_decel_divisor + cfg.start_roll_brake_margin_m
 	if dist <= brake_dist:
 		# On/at the target: brake to a stop. Keep the brake pedal on ONLY while still
 		# genuinely rolling forward; once nearly stopped drop to zero throttle so the
 		# auto box doesn't grab reverse and rev the engine against the held handbrake
 		# (which reads as flooring the gas while slowing to a halt). The handbrake
 		# alone holds it the rest of the way in.
-		car.ai_throttle = -1.0 if v > 1.5 else 0.0
+		car.ai_throttle = -1.0 if v > cfg.start_roll_creep_speed else 0.0
 		car.ai_handbrake = true
-	elif dist > brake_dist + 1.0:
+	elif dist > brake_dist + cfg.start_roll_coast_band_m:
 		car.ai_throttle = 1.0    # well behind: roll up
 		car.ai_handbrake = false
 	else:
@@ -617,7 +611,7 @@ func _roll_car_to(car, target: Vector3) -> void:
 func _player_stopped() -> bool:
 	if not (_player is VehicleBody3D):
 		return true
-	return (_player as VehicleBody3D).linear_velocity.length() < STOP_SPEED_EPS
+	return (_player as VehicleBody3D).linear_velocity.length() < _cfg().start_stop_speed_eps
 
 
 func _unhandled_input(event: InputEvent) -> void:

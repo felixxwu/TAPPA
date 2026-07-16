@@ -266,7 +266,7 @@ enables contact monitoring and reads obstacle-contact impulses in
 A lighter **handbrake-only hold** (`handbrake_locked`, also set by `StageManager`)
 forces the handbrake while leaving driver input fully live — used during the
 **countdown** so the player can rev the engine (a held handbrake opens the clutch in
-[`Engine.step`](drivetrain.md), so the revs climb freely) and steer, then launch the
+[`Engine.step`](engine-and-transmission.md), so the revs climb freely) and steer, then launch the
 instant the brake releases on GO.
 
 The **finish stop** (`finish_stop`, set by `StageManager` on crossing the line

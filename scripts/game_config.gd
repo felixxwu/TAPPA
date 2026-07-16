@@ -65,6 +65,11 @@ var peak_torque_rpm := 4500.0
 ## How much the front wheels caster toward the direction of travel: 1.0 = fully
 ## track it (automatic countersteer), 0.0 = steering input only.
 @export_range(0.0, 1.0) var steer_travel_alignment := 1.0
+## Speed (m/s) at/above which the low-speed steer-lock blend is fully into the
+## slip-based cap. Below it, optimum_steer_limit() blends linearly from the full
+## mechanical steer_limit at standstill up to the slip-based cap at this speed, so
+## parking-speed turning keeps real bite. 40 km/h ≈ 11.111 m/s.
+@export var steer_lock_blend_end_speed := 40.0 / 3.6
 ## Yaw torque (N·m) applied while steering to fight understeer — a steering aid,
 ## not a physical force. This is only the neutral baseline / fallback: the value
 ## is authored PER CAR (CarLibrary "steer_assist_torque") and overlaid onto cfg by
@@ -173,6 +178,14 @@ var peak_torque_rpm := 4500.0
 ## cancels the residual in-plane velocity, clamped to this·m·g — like real stiction,
 ## it holds any sane grade but a wall-steep slope still slides. ~1.0 ≈ gravel μ.
 @export_range(0.0, 2.0) var parking_hold_grip := 1.0
+## Speed (m/s) below which a braked, grounded car engages the static parking hold
+## (_apply_parking_hold) that cancels residual creep. Above it the car is rolling
+## and the hold stays off.
+@export var handbrake_lock_speed := 0.5
+## Speed (m/s) below which the auto finish-stop releases the foot brake once the car
+## has effectively halted at the finish (car.gd _resolve_drive_inputs). Above it the
+## brake stays pinned to bring the car to rest.
+@export var finish_stop_speed := 0.8
 @export var suspension_travel := 0.5  # also used as the wheel rest length (ray length)
 ## Per-axle spring travel / rest length (m) OVERRIDES. 0 = inherit suspension_travel
 ## (the common case); a positive value lets a body run a longer front or rear stroke
@@ -424,6 +437,26 @@ var peak_torque_rpm := 4500.0
 ## instead of spawning clipped into the ground. Smaller than the general drop-in
 ## spawn_clearance: at the line the road height is known, so a gentle seat is enough.
 @export var start_spawn_clearance := 0.5
+## Field of view (degrees) of the start-line orbit camera during the reveal.
+@export_range(30.0, 120.0) var start_orbit_fov := 70.0
+## Speed (m/s) below which the player counts as stopped at the line — the fade to the
+## chase cam waits for this so the transition never happens while the car is rolling.
+@export var start_stop_speed_eps := 0.4
+## Roll-up decel model divisor: a scripted queue car's braking distance is
+## v*v / this (+ the reaction margin below), i.e. it assumes a deceleration of
+## (this / 2) m/s² when deciding where to start braking. 28 ≈ 14 m/s² decel.
+@export var start_roll_decel_divisor := 28.0
+## Reaction margin (m) added to the computed braking distance so a roll-up car starts
+## braking slightly before the pure decel model would — absorbs reaction lag.
+@export var start_roll_brake_margin_m := 0.25
+## Coast band (m): while the target is farther than brake_dist + this, the car rolls up
+## at full throttle; inside it (but still beyond brake_dist) the car coasts into the
+## brake point instead of powering to it.
+@export var start_roll_coast_band_m := 1.0
+## Creep threshold (m/s): while braking onto the target the foot brake stays pressed
+## only while the car is still rolling faster than this; below it, throttle drops to
+## zero so the auto box doesn't grab reverse against the held handbrake.
+@export var start_roll_creep_speed := 1.5
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
@@ -607,8 +640,8 @@ var peak_torque_rpm := 4500.0
 ## The result is clamped to ±chase_tilt_max_deg and eased at chase_tilt_smoothing
 ## (higher = snappier; the same 1-exp(-rate·dt) idiom as the orbit/FOV smoothing),
 ## so the tilt decays back to level once the g-forces drop.
-@export_range(-2.0, 2.0) var chase_tilt_roll_gain := -0.3
-@export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.25
+@export_range(-2.0, 2.0) var chase_tilt_roll_gain := -0.2
+@export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.0
 @export_range(0.0, 30.0) var chase_tilt_max_deg := 4.0
 @export_range(0.1, 20.0) var chase_tilt_smoothing := 6.0
 
@@ -1367,6 +1400,14 @@ var peak_torque_rpm := 4500.0
 @export_range(0, 40) var opponent_wreck_crowd_size := 7
 ## Radius (m) of the ring the onlookers stand in around the wreck.
 @export_range(0.5, 12.0) var opponent_wreck_crowd_radius_m := 3.2
+## Conservative wreck-car footprint (m) used to sample verge flatness and keep the
+## car clear of the carriageway: half-width and half-length of the sampled box.
+@export_range(0.1, 5.0) var opponent_wreck_footprint_half_w := 1.1
+@export_range(0.1, 10.0) var opponent_wreck_footprint_half_len := 2.0
+## Half-angle (rad) of the crescent the onlookers are spread across, about the outward
+## (verge) direction — ±this. ~2.0 rad ≈ ±115°, covering the verge side + flanks but
+## never the road-ward hemisphere between the wreck and the carriageway.
+@export_range(0.0, 3.14159) var opponent_wreck_crowd_arc_half := 2.0
 
 
 @export_group("Performance")

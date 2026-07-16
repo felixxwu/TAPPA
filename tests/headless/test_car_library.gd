@@ -105,7 +105,7 @@ func test_max_lateral_g_returns_compound_at_reference_load() -> void:
 	# Pick a mass so each of 4 wheels carries exactly ref_pressure × width.
 	var width := 0.225
 	var per_wheel := cfg.tire_ref_pressure * width          # load that gives factor 1.0
-	var mass := per_wheel * 4.0 / (CarLibrary._G)           # 50/50 -> equal on all wheels
+	var mass := per_wheel * 4.0 / (Platform.gravity())      # 50/50 -> equal on all wheels
 	var entry := {"tire_compound": 1.0, "mass": mass, "weight_front": 0.5,
 		"wheel_width_front": width, "wheel_width_rear": width}
 	assert_almost_eq(CarLibrary.max_lateral_g(entry, cfg), 1.0, 0.0001,

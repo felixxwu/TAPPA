@@ -803,8 +803,8 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	# are a conservative car footprint (m) used both to sample flatness and to keep the
 	# car clear of the carriageway; the near side sits opponent_wreck_road_offset_m off
 	# the road edge, and the search extends outward from there.
-	var half_w := 1.1
-	var half_len := 2.0
+	var half_w := cfg.opponent_wreck_footprint_half_w
+	var half_len := cfg.opponent_wreck_footprint_half_len
 	var edge := cfg.track_width * 0.5
 	var base_lat := edge + half_w + cfg.opponent_wreck_road_offset_m
 	var spot := _flattest_wreck_spot(centerline, baked, progress * span, side,
@@ -890,30 +890,27 @@ func _footprint_terrain(terrain: TerrainManager, c2: Vector2, t: Vector2,
 # settle approach). FREEZE_MODE_STATIC (the default) keeps the collider, so the frozen
 # wreck is a solid, immovable obstacle. Its HP is zeroed so the smoke reads it as a wreck.
 func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> Node3D:
-	# Variant (not :=) so the dynamic car-script calls don't depend on the analyzer
-	# resolving car.tscn's root script type at parse time (see podium.gd._spawn_car).
-	var car: Variant = load(WRECK_CAR_SCENE).instantiate()
-	parent.add_child(car)
-	car.use_isolated_config()
-	car.apply_car(library_index)
-	for mi in car.find_children("*", "MeshInstance3D", true, false):
-		var m := mi as MeshInstance3D
-		if m.mesh != null:
-			m.mesh = m.mesh.duplicate()
-	# Lift the car off its ground seat by its resting ride height so the wheels sit on
-	# the ground, then place and freeze immediately.
-	car.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * car.settled_ride_height())
-	car.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
-	car.controls_locked = true  # driverless prop: ignore any live input, hold the handbrake
-	# Read as a wreck: 0 HP drives the synthetic smoke below (a wrecked car smokes
-	# hardest), exactly as a damaged HQ car does.
-	if car.get("damage") != null:
-		car.damage.hp = 0.0
-	car.silence_engine_audio()  # a wreck makes no engine noise
-	car.freeze = true  # FREEZE_MODE_STATIC (default): collider stays a solid obstacle
-	car.process_mode = Node.PROCESS_MODE_DISABLED
-	_add_wreck_smoke(car)
-	return car
+	# Shared display-prop recipe (CarProp.spawn): instantiate + isolated config +
+	# apply_car + dup meshes + silence + freeze (+ synthetic wreck smoke). The wreck's
+	# own steps — seat/settle, lock controls, zero HP — run in `configure` after the
+	# meshes are duplicated. freeze is FREEZE_MODE_STATIC (default): collider stays a
+	# solid obstacle.
+	var configure := func(c) -> void:
+		# Lift the car off its ground seat by its resting ride height so the wheels sit
+		# on the ground, then settle the wheel visuals.
+		c.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * c.settled_ride_height())
+		c.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
+		c.controls_locked = true  # driverless prop: ignore live input, hold the handbrake
+		# Read as a wreck: 0 HP drives the synthetic smoke (a wrecked car smokes hardest),
+		# exactly as a damaged HQ car does.
+		if c.get("damage") != null:
+			c.damage.hp = 0.0
+	return CarProp.spawn(parent, load(WRECK_CAR_SCENE), {
+		"index": library_index,
+		"configure": configure,
+		"disable_process": true,
+		"smoke": _add_wreck_smoke,
+	})
 
 
 # Give the wreck lazy engine smoke like a damaged HQ display car: the frozen prop's
@@ -946,7 +943,7 @@ func _spawn_wreck_crowd(parent: Node, center: Vector3, outward: Vector2,
 		# A crescent spanning ±~115° about 'outward' — the verge side + flanks, never the
 		# road-ward hemisphere between the wreck and the carriageway.
 		var frac := 0.0 if count <= 1 else float(i) / float(count - 1)
-		var ang := base_ang + lerpf(-2.0, 2.0, frac)
+		var ang := base_ang + lerpf(-cfg.opponent_wreck_crowd_arc_half, cfg.opponent_wreck_crowd_arc_half, frac)
 		var r: float = cfg.opponent_wreck_crowd_radius_m
 		var px := center.x + cos(ang) * r
 		var pz := center.z + sin(ang) * r

@@ -51,7 +51,9 @@ func test_stable_id_lookups() -> void:
 
 func test_apply_writes_the_whole_profile_onto_config() -> void:
 	var cfg := GameConfig.new()
-	var eng := EngineLibrary.by_id("mopar_440_v8")
+	# Any catalogue engine as opaque input — apply() must write the whole profile
+	# regardless of which entry it is, so don't pin a specific id.
+	var eng: Dictionary = EngineLibrary.ENGINES[0]
 	EngineLibrary.apply(eng, cfg)
 	var firing: Array = EngineLibrary.FIRING[eng["layout"]]
 	assert_eq(cfg.engine_cylinders, firing.size(), "cylinders derived from firing table length")

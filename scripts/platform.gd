@@ -18,3 +18,11 @@ static func is_headless() -> bool:
 # so the export-feature strings live in one place (mirrors is_headless()).
 static func is_mobile_or_web() -> bool:
 	return OS.has_feature("mobile") or OS.has_feature("web")
+
+
+# The world's downward gravity magnitude (m/s^2), read from the project's physics
+# settings. Centralised so the hardcoded 9.8 default isn't re-typed at each site;
+# the fallback matches Godot's own default for physics/3d/default_gravity, so the
+# returned value is identical to the literals it replaces when no override is set.
+static func gravity() -> float:
+	return ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
