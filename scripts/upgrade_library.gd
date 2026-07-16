@@ -51,7 +51,7 @@ const UPGRADES: Array[Dictionary] = [
 	{
 		"id": "aero_kit", "name": "Aero Kit", "slot": "aero",
 		"tier": 1, "consumable": false,
-		"effect": {"unlocks_aero_tuning": true, "downforce_front": 2, "downforce_rear": 2},
+		"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
 	},
 	{
 		"id": "weight_reduction", "name": "Weight Reduction", "slot": "chassis",

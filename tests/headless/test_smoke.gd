@@ -736,3 +736,19 @@ func test_start_arch_straddles_the_road_at_the_start_line() -> void:
 		var start2: Vector2 = tp._centerline.sample_baked(0.0)
 		var here2 := Vector2(arch.global_transform.origin.x, arch.global_transform.origin.z)
 		assert_lt(here2.distance_to(start2), 1.0, "start arch sits at the start line (centerline offset 0)")
+
+
+func test_authored_wing_meshes_are_hidden_mesh_instances() -> void:
+	var car: Node = _scene.get_node("Car")
+	var wings := car.find_children("*_aero*", "Node", true, false)
+	# No-op until a wing is authored into a car glb; once one exists this guards
+	# against a botched re-export (wrong type, or effectively visible on the
+	# un-upgraded fielded car). Check is_visible_in_tree(), not the own `visible`
+	# flag: a wing on a NON-active body is hidden wholesale via its parent body's
+	# flag (its own flag is left untouched, so `.visible` reads stale-true), while
+	# the active car's wing is hidden by _set_aero_visible. Effective visibility is
+	# the invariant that matters — the wing is not rendered until the aero kit is on.
+	for w in wings:
+		assert_true(w is MeshInstance3D, "wing node '%s' is a MeshInstance3D" % w.name)
+		assert_false((w as Node3D).is_visible_in_tree(),
+			"wing '%s' not visible on an un-upgraded car (revealed only by the aero kit)" % w.name)

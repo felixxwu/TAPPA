@@ -73,7 +73,7 @@ or invert a value:
 
 - **grip:** `front *= (1 − t·grip_authority)`, `rear *= (1 + t·grip_authority)`.
 - **aero:** same shape on `downforce_front`/`_rear`, **only** with the aero kit; a
-  no-op otherwise.
+  no-op otherwise. The aero kit's visual wing (spoiler/splitter) is covered in [aero-parts.md](aero-parts.md).
 - **brake bias:** each car authors its own default `brake_bias` in `CarLibrary`,
   seeded onto `cfg` by `apply_car`. With the brakes kit the slider shifts it about
   that per-car baseline: `brake_bias += t·brake_authority`; without the kit the car

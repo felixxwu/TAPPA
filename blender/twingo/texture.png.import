@@ -2,21 +2,18 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bfi4t7cd8ksis"
-path.s3tc="res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.s3tc.ctex"
-path.etc2="res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.etc2.ctex"
+uid="uid://diwnrp166ujqc"
+path.s3tc="res://.godot/imported/texture.png-9ecbcfa6e0b348d0b56b71a13795432a.s3tc.ctex"
+path.etc2="res://.godot/imported/texture.png-9ecbcfa6e0b348d0b56b71a13795432a.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
-generator_parameters={
-"md5": "3b0b762685746b4ea7da71c2dc51f272"
-}
 
 [deps]
 
-source_file="res://blender/twingo/twingo_texture.png"
-dest_files=["res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.s3tc.ctex", "res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.etc2.ctex"]
+source_file="res://blender/twingo/texture.png"
+dest_files=["res://.godot/imported/texture.png-9ecbcfa6e0b348d0b56b71a13795432a.s3tc.ctex", "res://.godot/imported/texture.png-9ecbcfa6e0b348d0b56b71a13795432a.etc2.ctex"]
 
 [params]
 

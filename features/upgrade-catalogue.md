@@ -47,7 +47,7 @@ a big brake kit, and the two consumables — the **repair kit** and the **engine
 swap token** (both `slot: ""`, held in the shared `inventory`; the token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md)). The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
-defaults.
+defaults. The aero kit also **reveals the car's spoiler/splitter mesh** while enabled — see [aero-parts.md](aero-parts.md).
 
 The upgrades menu is a **reusable `UpgradesMenu` component** (`scripts/upgrades_menu.gd`,
 mirroring `TuningPanel`): the HQ lift mounts it as its Upgrades page, and the car-park
