@@ -159,6 +159,27 @@ func test_hq_boots_to_the_exterior_title() -> void:
 		"one map pin per rally in the viewed region")
 
 
+func test_title_has_focusable_exit_game_button_on_desktop() -> void:
+	# The exterior title carries an Exit Game button at the bottom of the list on
+	# non-web builds (the headless test host is one). It's a real, focusable widget
+	# wired to quit — reachable by keyboard/gamepad, not just the pointer.
+	if OS.has_feature("web"):
+		pass_test("web build omits Exit Game (the tab owns the process lifecycle)")
+		return
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	assert_not_null(hq._title_exit_button, "the title screen has an Exit Game button")
+	assert_eq(hq._title_exit_button.focus_mode, Control.FOCUS_ALL,
+		"the Exit Game button is keyboard/gamepad focusable")
+	# It sits below Settings — the bottom of the title button list.
+	var parent: Node = hq._title_settings_button.get_parent()
+	assert_gt(hq._title_exit_button.get_index(), hq._title_settings_button.get_index(),
+		"Exit Game sits after Settings in the title list")
+	assert_eq(hq._title_exit_button.get_parent(), parent,
+		"Exit Game lives in the same title button list")
+
+
 func test_hq_frames_the_lot_with_config_matched_trees() -> void:
 	# HQ trees are spawned through the shared Foliage helper, so they match the
 	# game's tree representation (opaque billboard cutout) instead of a hardcoded
@@ -233,9 +254,9 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 
 # --- Keyboard / gamepad navigation -------------------------------------------
 
-# The title is a flat three-button menu (Start / Free Roam / Settings) driven by native
+# The title is a flat menu (Start / Settings, plus Exit Game on desktop) driven by native
 # focus: Start is focused on entry so ui_up/ui_down + ui_accept work the menu with no
-# pointer. Free Roam sits between Start and Settings.
+# pointer. (Free Roam moved to the garage action row; see test_hq_free_roam_*.)
 func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -245,15 +266,12 @@ func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 	assert_eq(hq._title_start_button.focus_mode, Control.FOCUS_ALL, "Start is focusable")
 	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
 		"the title focuses Start for keyboard / gamepad")
-	assert_eq(hq._title_free_roam_button.focus_mode, Control.FOCUS_ALL, "Free Roam is focusable")
-	# Free Roam sits between Start and Settings in the flat overlay's child order.
+	assert_eq(hq._title_settings_button.focus_mode, Control.FOCUS_ALL, "Settings is focusable")
+	# Settings sits directly after Start in the flat overlay's child order.
 	var parent: Node = hq._title_start_button.get_parent()
-	assert_eq(parent.get_children().find(hq._title_free_roam_button),
-		parent.get_children().find(hq._title_start_button) + 1,
-		"Free Roam sits directly after Start")
 	assert_eq(parent.get_children().find(hq._title_settings_button),
-		parent.get_children().find(hq._title_free_roam_button) + 1,
-		"Settings sits directly after Free Roam")
+		parent.get_children().find(hq._title_start_button) + 1,
+		"Settings sits directly after Start")
 
 
 # Regression: menu_select on the title must fire the FOCUSED button (native focus),
@@ -728,11 +746,13 @@ func test_hq_title_parks_starter_previews_when_garage_is_empty() -> void:
 			"each parked car is a preview (negative id), not an owned car")
 
 
-# The garage Repair button (where Free Roam used to sit) reflects the SELECTED car's
-# state: it's DISABLED when there's nothing to do — full health, or damaged with no kit —
-# and only enabled when a kit can restore a damaged car; its label spells out the case.
-# Enabled, pressing it spends one Repair Kit to fully restore the car.
-func test_hq_garage_repair_button_reflects_state_and_repairs() -> void:
+# The lift-HUB Repair button reflects the SELECTED car's state: it's DISABLED when
+# there's nothing to do — full health, or damaged with no kit — and only enabled when a
+# kit can restore a damaged car; its label spells out the case. Enabled, pressing it
+# spends one Repair Kit to fully restore the car. (The button is currently HIDDEN while
+# Repair Kits are disabled, but the label/repair logic still holds — see
+# todo/remove-repair-kits.md.)
+func test_hq_lift_repair_button_reflects_state_and_repairs() -> void:
 	# A second, healthy car so the wreck-recovery safety net (a free kit when EVERY car is
 	# wrecked) doesn't fire and mask the "no kits" state under test.
 	_save.grant_car("fx_fwd_hatch")
@@ -745,29 +765,29 @@ func test_hq_garage_repair_button_reflects_state_and_repairs() -> void:
 	await get_tree().process_frame
 
 	# Healthy selected car: nothing to repair, so the button is disabled.
-	hq._go_to(hq.View.GARAGE)
-	assert_string_contains(hq._garage_repair_button.text.to_lower(), "full health",
+	hq._refresh_lift_repair_button()
+	assert_string_contains(hq._lift_repair_button.text.to_lower(), "full health",
 		"a full-health selected car reads 'Repair — full health'")
-	assert_true(hq._garage_repair_button.disabled, "a full-health car disables Repair")
+	assert_true(hq._lift_repair_button.disabled, "a full-health car disables Repair")
 
 	# Wreck it with no kits: still disabled (nothing can be done), label flags the kit.
 	_save.wreck_car(id)
 	_save.profile["inventory"] = {}
-	hq._refresh_garage_repair_button()
-	assert_string_contains(hq._garage_repair_button.text.to_lower(), "no kits",
+	hq._refresh_lift_repair_button()
+	assert_string_contains(hq._lift_repair_button.text.to_lower(), "no kits",
 		"a damaged car with no kit reads 'Repair — no kits'")
-	assert_true(hq._garage_repair_button.disabled, "no kit disables Repair")
+	assert_true(hq._lift_repair_button.disabled, "no kit disables Repair")
 
 	# Grant a kit: the button ENABLES, and pressing it fully restores the car.
 	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
-	hq._refresh_garage_repair_button()
-	assert_string_contains(hq._garage_repair_button.text.to_lower(), "kit",
+	hq._refresh_lift_repair_button()
+	assert_string_contains(hq._lift_repair_button.text.to_lower(), "kit",
 		"a damaged car with a kit reads 'Repair (n kit)'")
-	assert_false(hq._garage_repair_button.disabled, "a damaged car with a kit enables Repair")
+	assert_false(hq._lift_repair_button.disabled, "a damaged car with a kit enables Repair")
 	hq._repair_selected_car()
 	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
-		"repairing from the garage restores the selected car to full health")
-	assert_true(hq._garage_repair_button.disabled, "once restored, Repair disables again")
+		"repairing from the lift restores the selected car to full health")
+	assert_true(hq._lift_repair_button.disabled, "once restored, Repair disables again")
 
 	# Full health again: pressing Repair is a no-op — no further kit is spent.
 	var kits_before := int(_save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
@@ -787,8 +807,8 @@ func test_hq_start_flies_into_the_garage() -> void:
 
 
 # The garage overlay is a left/right cursor over Back (0) / Map (1) / Tune Car (2) /
-# Repair (3), wrapping at both ends, with select firing the item under the cursor.
-# (Free Roam lives on the EXTERIOR title screen, not the garage.)
+# Free Roam (3), wrapping at both ends, with select firing the item under the cursor.
+# (Repair lives on the tuning-lift HUB row now, not the garage.)
 func test_hq_garage_is_a_left_right_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -799,11 +819,11 @@ func test_hq_garage_is_a_left_right_cursor() -> void:
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 2, "right moves the cursor to Tune Car")
 	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 3, "right moves the cursor to Repair")
+	assert_eq(hq._garage_focus, 3, "right moves the cursor to Free Roam")
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
 	hq._move_garage_focus(-1)
-	assert_eq(hq._garage_focus, 3, "left from Back wraps to Repair")
+	assert_eq(hq._garage_focus, 3, "left from Back wraps to Free Roam")
 
 	# Select on the map-table item opens the map.
 	hq._garage_focus = 1
@@ -854,14 +874,13 @@ func test_hq_free_roam_randomises_water_relief_and_location() -> void:
 			"free-roam location is home or Greece")
 
 
-# Free Roam (from the EXTERIOR title screen) opens the car park to pick which owned car
-# to drive: the whole owned collection is parked, and Back returns to the title.
+# Free Roam (from the GARAGE action row) opens the car park to pick which owned car
+# to drive: the whole owned collection is parked, and Back returns to the garage.
 func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
 	_save.grant_car("fx_fwd_hatch")  # a second car so the collection isn't just the starter
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.EXTERIOR, "the title screen is the entry point")
 
 	hq._enter_free_roam()
 	await _await_lineup(hq)
@@ -870,10 +889,10 @@ func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
 	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
 		"the whole owned collection is parked to pick from")
 
-	# Back leaves free roam for the title screen.
+	# Back leaves free roam for the garage.
 	hq._car_back()
 	assert_false(hq._carpark_freeroam_mode, "backing out clears free-roam mode")
-	assert_eq(hq._view, hq.View.EXTERIOR, "Back from free-roam car pick returns to the title")
+	assert_eq(hq._view, hq.View.GARAGE, "Back from free-roam car pick returns to the garage")
 
 
 # The run scene fields the owned car the player picked for free roam, with no active
@@ -1534,11 +1553,12 @@ func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
 	# Press Start: instead of launching, the detune-agreement confirm pops, naming the
 	# tune that would qualify the car. Nothing is applied yet.
 	await hq._on_start_pressed()
-	assert_not_null(hq._detune_panel, "pressing Start on an over-powered car pops the detune prompt")
-	assert_true(hq._detune_panel.visible, "the detune prompt is shown")
-	assert_string_contains(hq._detune_body.text, "%d%%" % roundi(frac * 100.0),
+	assert_true(is_instance_valid(hq._active_carpark_popup),
+		"pressing Start on an over-powered car pops the detune prompt")
+	var popup: ConfirmPopup = hq._active_carpark_popup
+	assert_string_contains(popup._buttons[0].text, "%d%%" % roundi(frac * 100.0),
 		"the prompt names the tune that would qualify the car")
-	assert_string_contains(hq._detune_confirm_button.text.to_upper(), "DETUNE",
+	assert_string_contains(popup._buttons[0].text.to_upper(), "DETUNE",
 		"the confirm button is the explicit detune agreement")
 	assert_false(RallySession.is_active(), "the rally does not launch until the player agrees")
 	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
@@ -1967,8 +1987,8 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 
 func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	# After a non-final event the combined page offers "Collect reward"; pressing it
-	# hides the leaderboard and reveals the won upgrade with an Apply/Keep choice,
-	# then the button continues to the next event.
+	# hides the leaderboard and reveals the won upgrade with a single "Next" (granted to
+	# the garage, installed later), then the button continues to the next event.
 	var driven: Dictionary = _save.grant_car("fx_awd")
 	RallySession.start_rally(RallyLibrary.by_id("shakedown"), driven, true)
 	RallySession._opponent_field = [
@@ -1989,11 +2009,12 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	sc._action_button.pressed.emit()
 	await get_tree().process_frame
 	assert_true(is_instance_valid(sc._reveal), "collecting shows the reward reveal")
-	# Slottable parts open the Apply/Keep choice (repair kit / drivetrain auto-finish).
+	# A normal slottable part is now granted fitted-disabled with a single "Next" — no
+	# Apply/Keep choice (the player enables it later in the upgrades menu). Repair kit /
+	# drivetrain also auto-finish.
 	if not UpgradeLibrary.is_consumable(won) and UpgradeLibrary.slot_of(won) != "" \
 			and UpgradeLibrary.slot_of(won) != "drivetrain":
-		assert_true(sc._reveal._choice_pending, "a slottable reward opens Apply/Keep")
-		sc._reveal._apply_button.pressed.emit()
+		assert_false(sc._reveal._choice_pending, "a slottable reward no longer opens Apply/Keep")
 	await get_tree().process_frame
 	assert_eq(sc._action_button.text, UITheme.caps("Continue to next event >"),
 		"after collecting, the button continues to the next event")
@@ -2295,7 +2316,6 @@ func test_engine_swap_works_on_a_damaged_car_and_leaves_hp() -> void:
 	assert_false(hq._car_warning_label.visible, "no repair-cost warning in swap mode anymore")
 	# Confirm the swap: OK exchanges engines and spends the token.
 	hq._select_swap_target()
-	assert_false(hq._swap_confirm_dialog.get_ok_button().disabled, "a token -> OK enabled")
 	hq._on_swap_confirmed()
 	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), stock_b,
 		"the damaged car received the partner's engine")
@@ -2319,7 +2339,7 @@ func test_engine_swap_blocked_without_a_token() -> void:
 	hq._selected_instance_id = int(b["instance_id"])
 	hq._focus_changed()
 	hq._select_swap_target()
-	assert_true(hq._swap_confirm_dialog.get_ok_button().disabled, "no token -> OK disabled")
+	hq._on_swap_confirmed()
 	assert_eq(String(_save.get_car(a_id).get("swapped_engine", "")), "",
 		"no swap happened without a token")
 

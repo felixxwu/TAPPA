@@ -159,9 +159,9 @@ func _ready() -> void:
 		# so the popup sits over the ready world / start-line reveal, not a frozen
 		# loading screen. Headless just drains the summary so it can't replay on a
 		# later scene rebuild.
-		# Only pop up for a repair that moved health by at least 1% — a sub-1% touch-up
-		# (e.g. wheels-only on a near-full car) still applied to the save, it just
-		# doesn't interrupt the player (RepairReveal.worth_showing).
+		# Only pop up for a repair that moved health by at least the min threshold — a
+		# smaller touch-up (e.g. wheels-only on a near-full car) still applied to the
+		# save, it just doesn't interrupt the player (RepairReveal.worth_showing).
 		var repair: Dictionary = RallySession.take_pending_repair()
 		if RepairReveal.worth_showing(repair) and not _headless:
 			await _show_repair_popup(repair)

@@ -126,7 +126,7 @@ const ENGINES: Array[Dictionary] = [
 		"id": "jaguar_53_v12", "name": "5.3 V12", "layout": "v12", "mass": 235.0,
 		"redline_rpm": 6500.0, "peak_torque": 432.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.30,
 		"engine_friction_base": 58.0,  # V12 5.3L
-		"low_octave_mix": 0.5, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
+		"low_octave_mix": 0.8, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 6, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{

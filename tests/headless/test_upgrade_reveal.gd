@@ -1,6 +1,10 @@
 extends GutTest
-# UpgradeReveal: the shared slot-spin + Apply/Keep reward card (features/menus.md).
-# Headless -> the slot resolves instantly, so the choice/finish is reachable at once.
+# UpgradeReveal: the shared slot-spin reward card (features/menus.md). Normal
+# parts are a single "Next" step (granted fitted-disabled, no Apply/Keep — the
+# player enables them later in the upgrades menu); a repair kit still offers an
+# Apply/Keep choice (Repair now / Save it) when the driven car is below full
+# health. Headless -> the slot resolves instantly, so finish/choice is reachable
+# at once.
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 
@@ -24,7 +28,7 @@ func _make() -> UpgradeReveal:
 	add_child_autofree(w)
 	return w
 
-func test_slottable_part_offers_apply_which_enables_it() -> void:
+func test_slottable_part_reveal_leaves_it_fitted_disabled_and_finishes() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
 	_save.install_upgrade(id, "brake_kit", false)  # reward loop fitted it disabled
@@ -33,22 +37,12 @@ func test_slottable_part_offers_apply_which_enables_it() -> void:
 	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
 	w.reveal("brake_kit", id)
 	await get_tree().process_frame
-	assert_true(w._choice_pending, "a slottable part opens the Apply/Keep choice")
-	assert_true(w._choice_box.visible, "the choice buttons are shown")
-	w._apply_button.pressed.emit()
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"), "Apply enables the part")
-	assert_false(w._choice_pending, "the choice resolves once picked")
-	assert_true(done[0], "finished fires after the choice")
-
-func test_keep_leaves_the_part_disabled() -> void:
-	var car: Dictionary = _save.grant_car("fx_awd")
-	var id := int(car["instance_id"])
-	_save.install_upgrade(id, "brake_kit", false)
-	var w := _make()
-	w.reveal("brake_kit", id)
-	await get_tree().process_frame
-	w._keep_button.pressed.emit()
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"), "Keep leaves the part disabled")
+	assert_false(w._choice_pending, "a normal part is one 'Next' step, no Apply/Keep choice")
+	assert_false(w._choice_box.visible, "no choice buttons are shown")
+	assert_true(_save.get_car(id)["installed_upgrades"].has("brake_kit"), "the part stays fitted")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"),
+		"the part stays disabled — enabled later in the upgrades menu")
+	assert_true(done[0], "finished fires immediately")
 
 func test_repair_kit_on_full_health_car_skips_the_choice_and_finishes() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")  # granted at full HP

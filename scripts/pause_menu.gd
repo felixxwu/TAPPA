@@ -29,7 +29,6 @@ var _resume_button: Button     # default keyboard/gamepad focus when the menu op
 var _reset_button: Button      # "Reset to track" — snaps the car back onto the road
 var _settings_button: Button   # focus returns here when backing out of Settings
 var _quit_button: Button       # "Quit to HQ" — abandons the rally
-var _quit_dialog: ConfirmationDialog  # "Abandon rally?" confirm before quitting
 
 var settings_menu: SettingsMenu
 
@@ -84,7 +83,10 @@ func _on_reset_to_track_pressed() -> void:
 
 # Pop the "Abandon rally?" confirm; quit_to_hq() runs only if the player accepts.
 func _on_quit_pressed() -> void:
-	_quit_dialog.popup_centered()
+	ConfirmPopup.open(self, "Quit to HQ?",
+		"Abandon this rally and return to HQ?\nYour progress in this run is lost.",
+		[ {"label": "Quit to HQ", "callback": quit_to_hq},
+		  {"label": "Cancel", "callback": Callable()} ])
 
 
 # Leave the run for HQ: unfreeze, then abandon the active rally. RallySession.abandon
@@ -161,15 +163,6 @@ func _build() -> void:
 	# own _unhandled_input owns ui_cancel because it also OPENS the menu when
 	# closed and steps sub-page → list → menu, which a plain back callback can't.
 	MenuNav.attach(_overlay, {first = _resume_button})
-
-	# Confirm before abandoning a rally — quitting forfeits this run (no retry).
-	_quit_dialog = ConfirmationDialog.new()
-	_quit_dialog.title = "Quit to HQ?"
-	_quit_dialog.dialog_text = "Abandon this rally and return to HQ?\nYour progress in this run is lost."
-	_quit_dialog.ok_button_text = "Quit to HQ"
-	_quit_dialog.get_cancel_button().text = "Cancel"
-	_quit_dialog.confirmed.connect(quit_to_hq)
-	add_child(_quit_dialog)
 
 
 # PAUSED + Resume + Settings, centred.

@@ -22,7 +22,16 @@ car is held locked. Three phases, driven in `_process`:
    times card is headed by the `Rally — Event N of 3` line. Behind it an **orbit camera**
    circles the car, which is queued
    between a **leader** car ahead and a **trailing** car behind. The driving HUD +
-   mobile controls are hidden. Launch with the button, `menu_select` (Enter / gamepad
+   mobile controls are hidden. Under **Start** sit two action buttons: **Tune Car**
+   (opens the shared `TuningPanel` to adjust grip/brake-bias/aero/detune for this race,
+   mirroring the HQ lift; edits re-field the live car via `car.retune()`; Back returns
+   to the start overlay — and, unlike the HQ garage lift, the start-line tune panel is
+   passed the rally's `pw_max` so the engine-detune label shows the p/w limit and flags
+   **OVER LIMIT**; the detune slider spans the full **0–100 %** here, since eligibility is
+   enforced at Start rather than by capping the slider) and **Upgrades** (opens the shared `UpgradesMenu` to swap
+   parts/engine for this race; edits re-field the live car via `car.refit_upgrades()`;
+   Back returns to the start overlay). Both overlay pages are keyboard/gamepad
+   navigable via `MenuNav`. Launch with the button, `menu_select` (Enter / gamepad
    A), or a tap.
 2. **DRIVE-OFF (launch)** — a **staggered rolling start**: the leader (sitting **on the
    line**) pulls away first, then one `start_queue_stagger_seconds` later the **player
@@ -36,6 +45,17 @@ car is held locked. Three phases, driven in `_process`:
    The overlay hides. The fade does **not** start until the player has rolled up and
    come to a **complete stop** (`STOP_SPEED_EPS`), so the chase-cam cut never happens
    mid-roll; `start_drive_off_seconds` is a safety cap.
+   **Eligibility gate** — Pressing **Start** runs an eligibility check: it computes the
+   car's effective stats and calls `RallyLibrary.ineligibility_reason(_rally, meta)`; if
+   non-empty, launch is blocked with a **`ConfirmPopup`**, mirroring the HQ car park.
+   When the car is merely over the rally's **power-to-weight ceiling** and a detune can
+   admit it (`RallyLibrary.qualifying_detune` returns a fraction in `(0,1)`), the popup
+   is titled **"Too powerful"** and offers **"Detune to X %"** / **"Change Upgrades"** /
+   **"Cancel"** — "Detune to X %" applies the qualifying detune for this rally
+   (`Save.set_engine_detune` + `RallySession.register_detune_revert`, re-fielded via
+   `car.retune`) and then launches. When a detune can't fix it (wrong drivetrain, too
+   little power, etc.) the popup instead shows the reason with **"Change Upgrades"** /
+   **"Cancel"** (opening the upgrades overlay so the player can adjust the car).
 3. **FADE** — the screen **fades to black** (`start_fade_seconds`); at full black the
    player is released to normal driving, the queue cars are despawned, the camera
    hands back to the **chase camera**, the **driving UI returns**, and

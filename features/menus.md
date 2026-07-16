@@ -119,14 +119,28 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   key afterward (using the same dying-subtree guard so it doesn't grab the about-to-be-
   freed old one).
 
-  The **`start line`** pre-event overlay has two buttons — **Start** and, under it,
-  **Tune Car** (opens the shared `TuningPanel` for the car about to race, see
-  [tuning.md](tuning.md)) — so it uses `MenuNav.attach(root, {first = _start_button})`
+  The **`start line`** pre-event overlay has three buttons — **Start**, **Tune Car**,
+  and **Upgrades** — so it uses `MenuNav.attach(root, {first = _start_button})`
   for keyboard/gamepad focus; a pointer tap on the clear band still launches. Opening
-  Tune Car hides the start overlay and attaches `MenuNav` to the tune overlay (Back
-  routed via `on_back`). The **`wreck screen`** is still a *press-anything-to-continue*
-  screen (a tap anywhere, or `menu_select` = Enter / gamepad A, proceeds), not a
-  multi-item navigable menu, so it doesn't use `MenuNav`.
+  **Tune Car** hides the start overlay and attaches `MenuNav` to the tune overlay (Back
+  routed via `on_back`); it opens the shared `TuningPanel` for the car about to race
+  (see [tuning.md](tuning.md)), edits re-field the live car via `car.retune()`. Here the
+  panel is passed the rally's `pw_max` (`TuningPanel.setup(owned, on_change, pw_limit)`),
+  so the engine-detune label shows the p/w limit and flags **OVER LIMIT**; the HQ garage
+  lift omits `pw_limit` (default `-1`) and shows no limit. The detune slider spans the
+  full **0–100 %** in both places — eligibility is enforced at Start, not by capping the
+  slider. Opening
+  **Upgrades** hides the start overlay and attaches `MenuNav` to the upgrades overlay
+  (Back routed via `on_back`); it opens the shared `UpgradesMenu` (see below), edits
+  re-field the live car via `car.refit_upgrades()` — the upgrade-only re-field path
+  parallel to `retune()` for tuning, which does NOT reshape the staged body. Pressing
+  **Start** runs the eligibility gate: an over-powered car gets a **"Too powerful"**
+  `ConfirmPopup` with **Detune to X %** / **Change Upgrades** / **Cancel** (mirroring the
+  HQ car park); any other ineligibility gets the reason with **Change Upgrades** /
+  **Cancel**. The
+  **`wreck screen`** is still a *press-anything-to-continue* screen (a tap anywhere,
+  or `menu_select` = Enter / gamepad A, proceeds), not a multi-item navigable menu, so
+  it doesn't use `MenuNav`.
 - **Diegetic 3D HQ stations** can't be a focus graph — "left/right" means *cycle the
   3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
@@ -170,9 +184,13 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `UITheme.mark_focused`) over **Back / Change Car / Tuning / Upgrades** (its buttons
   sit side by side in one row), fired with select (`_activate_hub_focus`) — Change Car
   drops into the car park in change-car mode; the cursor seats on Change Car on entry
-  (`menu_back` is also a shortcut back to the garage). The **garage** is likewise a
+  (`menu_back` is also a shortcut back to the garage). (A **Repair** button also lives on
+  this hub row — spend a Repair Kit to fully restore the selected car
+  (`_repair_selected_car` / `_refresh_lift_repair_button`) — but it is currently
+  **hidden** and left out of the hub cursor while earning Repair Kits is disabled; see
+  `todo/remove-repair-kits.md`.) The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
-  `_activate_garage_focus`) over its side-by-side **Back / Career / Tune Car / Repair**
+  `_activate_garage_focus`) over its side-by-side **Back / Career / Tune Car / Free Roam**
   row, seated on Career on entry (`menu_back` shortcuts to the exterior). Both of these
   manual rows share a small **`ButtonCursor`** helper (`scripts/button_cursor.gd`):
   `hq.gd` keeps the index (`_garage_focus` / `_hub_focus`), the cursor owns the shared
@@ -180,7 +198,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   cursor's action for that index, so a mouse click and a keyboard/gamepad select can
   never fall out of step. (The map-table pin cursor stays bespoke — it paints a
   billboarded pin panel and pans the camera, not a flat button row.) **Free Roam**
-  (`_enter_free_roam`, launched from the **EXTERIOR title screen**, not the garage)
+  (`_enter_free_roam`, launched from the **GARAGE action row**, Back returns to the garage)
   opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
   parking the whole owned collection); Start (`_start_free_roam`) hands the picked
   instance to `RallySession.free_roam_instance_id`, writes a fresh random seed + neutral
@@ -209,6 +227,34 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 > branch in `hq.gd._unhandled_input` and release focus on entry. Add a nav test (see
 > `tests/headless/test_menu_nav.gd` / the nav cases in `test_menu_flow.gd` /
 > `test_pause_menu.gd`).
+
+## ConfirmPopup (`confirm_popup.gd`)
+
+A reusable on-brand confirm modal for blocking decisions — a full-screen **dim
+mouse-consuming backdrop** (`MOUSE_FILTER_STOP`, swallows clicks) + **centred house
+`UITheme.panel`** with a title, an autowrap body, and one button per action. Each action is
+a dict `{ "label": String, "callback": Callable, "disabled": bool (optional) }`. When an
+action's button is pressed, the popup dismisses and runs its callback; Back routes to the
+configured action (default: the last one — the dismiss convention).
+
+**Contract:** `ConfirmPopup.open(host, title, body, actions, default_index := 0, back_index := -1) -> ConfirmPopup`
+
+- `host` — parent Node to attach under (its process mode is inherited — a paused host's
+  popup still processes).
+- `title` / `body` — confirm header + message text.
+- `actions` — Array of action dicts; disabled actions are greyed and unselectable.
+- `default_index` — 0-based index to focus on open (defaults to 0, falls back to first
+  enabled if the default is disabled).
+- `back_index` — 0-based index of the action to fire on Back / cancel (defaults to the
+  last action — the dismiss convention). A negative `back_index` (-1) dismisses without
+  firing any callback.
+
+The popup **builds its own CanvasLayer** under `host` (layer 101, above overlays), so it's
+independent of the hosting scene. It's **MenuNav-wired** (keyboard + gamepad navigable),
+emits `finished`, and **`queue_free`s on dismiss** — the host doesn't track it. **New
+confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
+`ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause
+menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms**, and HQ **detune-to-enter confirm** (over-powered car).
 
 ## HQ (`hq.gd`)
 
@@ -263,8 +309,10 @@ white bay dividers (one bay per `max_owned_cars`, `menu_car_spacing` wide) gener
 procedurally as an `ImageTexture` (`_carpark_bay_texture`), so each parked car sits in
 its own marked bay.
 
-**EXTERIOR (boot/title).** A **Start** button, a **Free Roam** button, and a
-**Settings** button (in that top-to-bottom order) over an establishing shot of the
+**EXTERIOR (boot/title).** A **Start** button, a **Settings** button, and — on non-web
+builds only — an **Exit Game** button
+(`_on_exterior_exit` → `get_tree().quit()`; skipped on web, where the tab owns the
+process lifecycle) at the bottom (in that top-to-bottom order) over an establishing shot of the
 outdoor car park, with a block skyline **behind the garage** and trees framing the
 lot. The player's **whole owned collection** is parked in the car park here
 (`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
@@ -275,16 +323,14 @@ to reveal the rest of the lineup. Its `hq_exterior_cam_eye`/`_look` (GameConfig)
 **tracks the first car** as the centred lineup grows and its leftmost car slides toward
 −X with more cars owned — it's not a fixed world pose. The **build version** (`v0.<n> (<sha>)`) is shown in the bottom-right corner
 here only — not on the in-run HUD (see [hud.md](hud.md) → Build version). This is a
-flat three-button menu driven by **native focus** — `menu_select`/`ui_accept` fires
+flat button menu driven by **native focus** — `menu_select`/`ui_accept` fires
 whichever button is focused (Start grabs focus on entry; `menu_up`/`menu_down` move
-between them). Start flies the camera into the garage; **Free Roam** flies the camera
-into the car park to pick which owned car to drive (the fly is deliberate —
-`_enter_free_roam` ends with `_focus_changed(false)`, unlike the adjacent-station
-car-park entries which snap), then drops into a freshly-seeded, opponent-less
-stage (`_enter_free_roam` → `_start_free_roam`; Back returns to the title); Settings
-opens the SETTINGS overlay. (The EXTERIOR branch in `_unhandled_input` deliberately
-does *not* route `menu_select` to Start, or accepting on Settings/Free Roam would
-start the run instead.)
+between them). Start flies the camera into the garage; Settings opens the SETTINGS
+overlay; **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`) quits the app — it's
+built only on non-web builds, since a browser tab owns its own lifecycle. (Free Roam now
+lives on the GARAGE action row, not here.) (The EXTERIOR branch in `_unhandled_input`
+deliberately does *not* route `menu_select` to Start, or accepting on Settings/Exit Game
+would start the run instead.)
 
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
@@ -401,6 +447,12 @@ itself** and doesn't need to scroll. The two pages:
   The drivetrain slot is an RWD/AWD/FWD picker instead. Nothing is consumed from an
   unlocked pool — upgrades are car-bound. Focus keys are `opt:<slot>:<id>`,
   `drivetrain:<mode>`, and `swap`.
+  **`UpgradesMenu.setup(owned, on_change, on_swap, pw_limit)`** takes an optional
+  `pw_limit` (power-to-weight cap in hp/tonne); when set ≥ 0, the stats line shows the
+  limit and flags **"OVER LIMIT"** in red if the live build exceeds it. Used by the
+  start-line upgrades overlay (with the rally's `pw_max` limit) and the HQ car-park
+  detune modal (with the rally's limit); the HQ garage lift omits it so the player
+  upgrades freely.
   (Repair is **not** here — it moved to the **garage station row** as a
   `Repair` button, `_repair_selected_car`; see GARAGE above.) Below the slot rows sits an
   **engine-swap row** (`UpgradesMenu._make_engine_swap_row`, `upgrades_menu.gd:215`): the

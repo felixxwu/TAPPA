@@ -60,13 +60,13 @@ The reward is then revealed on **that event's standings interstitial** via the
 shared `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — same slot-machine
 spinner as the podium, anchored to the **bottom** of the screen so it doesn't
 block the car in the replay behind it — behind a **Collect reward** button that hides the
-leaderboard (see `features/menus.md`). The reveal offers an **Apply/Keep choice**
-per part — the part is already on the car, so the choice is only enable-now vs
-enable-later: *Apply* enables it (`Save.set_upgrade_enabled(..., true)`), *Keep*
-leaves it disabled to enable later from the garage upgrades menu (see
-`features/upgrade-catalogue.md`). A won part never moves to another car and a car
-never holds two of the same (per-car dedup). A won **repair kit** lands in
-inventory, but if the car you just drove is below full health
+leaderboard (see `features/menus.md`). For a normal slottable part, the reveal
+displays a single **Next** step: the part (already fitted disabled by the flow
+controller) is confirmed with the caption "added to your garage — install it at
+the next event", and the player enables it later from the upgrades menu at the next
+event (see `features/upgrade-catalogue.md`). A won part never moves to another car
+and a car never holds two of the same (per-car dedup). A won **repair kit** lands
+in inventory, but if the car you just drove is below full health
 (`EngineSwap.at_full_health`) the reveal first offers a **Repair now / Save it**
 choice: *Repair now* spends the just-won kit on the driven car immediately
 (`Save.use_repair_kit`), *Save it* banks it for the garage. A full-health car

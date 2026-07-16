@@ -10,10 +10,10 @@ const TuningPanelScript = preload("res://scripts/tuning_panel.gd")
 func _owned() -> Dictionary:
 	return {"instance_id": 1, "model_id": "synthetic", "tuning": {}, "upgrades": {}}
 
-func _panel(owned: Dictionary, cb := Callable(), detune_max := 1.0) -> Control:
+func _panel(owned: Dictionary, cb := Callable(), pw_limit := -1.0) -> Control:
 	var p = TuningPanelScript.new()
 	add_child_autofree(p)
-	p.setup(owned, cb, detune_max)
+	p.setup(owned, cb, pw_limit)
 	p.refresh()
 	return p
 
@@ -42,14 +42,22 @@ func test_reset_clears_tuning() -> void:
 	p._reset()
 	assert_eq(owned["tuning"], {}, "reset clears the tuning dict")
 
-func test_detune_cap_limits_the_engine_detune_slider() -> void:
-	# The start line passes a detune ceiling (the rally's qualifying detune) so the car
-	# can't be tuned back above its power-to-weight cap. Default 1.0 leaves it at 100%.
-	var uncapped = _panel(_owned())
-	assert_eq(uncapped._sliders["engine_detune"].max_value, 100.0, "no cap → full 100% available")
-	var capped = _panel(_owned(), Callable(), 0.8)
-	assert_almost_eq(capped._sliders["engine_detune"].max_value, 80.0, 0.001,
-		"the detune slider can't be pushed above the qualifying power")
+func test_engine_detune_slider_is_full_range() -> void:
+	# Eligibility is enforced at Start, not by capping the slider, so detune always spans
+	# the full 0-100% range — with or without a rally pw_limit passed.
+	assert_eq(_panel(_owned())._sliders["engine_detune"].max_value, 100.0, "detune reaches 100% (no limit)")
+	assert_eq(_panel(_owned(), Callable(), 160.0)._sliders["engine_detune"].max_value, 100.0,
+		"detune still reaches 100% when a pw_limit is shown")
+
+func test_pw_limit_shown_in_detune_label() -> void:
+	# When the host passes a rally pw ceiling, the engine-detune value label spells out the
+	# limit ("max N"); with no limit (<0) it doesn't.
+	var with_limit = _panel(_owned(), Callable(), 160.0)
+	assert_true(with_limit._slider_values["engine_detune"].text.to_lower().contains("max"),
+		"the detune label shows the rally's max p/w when a limit is set")
+	var no_limit = _panel(_owned())
+	assert_false(no_limit._slider_values["engine_detune"].text.to_lower().contains("max"),
+		"no limit → no max shown")
 
 
 # --- Task 3: a start-line-style tune bakes into the live config via TuningLibrary. ---

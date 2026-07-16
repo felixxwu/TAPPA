@@ -11,17 +11,22 @@ var _owned: Dictionary = {}
 var _on_change: Callable = Callable()
 var _on_swap: Callable = Callable()   # valid → show swap row; invalid → omit it
 var _stats_label: Label
+var _pw_limit: float = -1.0   # advisory power-to-weight cap (hp/tonne); -1 = no limit
 
 const _KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 
 
 # Bind the owned car + host callbacks, then build the rows. on_change() runs after
 # each spec edit so the host re-fields the car. on_swap() (optional) is the engine-
-# swap action; when unset the swap row is omitted (the popup drops it).
-func setup(owned_car: Dictionary, on_change := Callable(), on_swap := Callable()) -> void:
+# swap action; when unset the swap row is omitted (the popup drops it). pw_limit
+# (optional) is an advisory power-to-weight cap (hp/tonne); when >= 0 the stats
+# line shows it and flags a warning colour if the live build exceeds it.
+func setup(owned_car: Dictionary, on_change := Callable(), on_swap := Callable(),
+		pw_limit := -1.0) -> void:
 	_owned = owned_car
 	_on_change = on_change
 	_on_swap = on_swap
+	_pw_limit = pw_limit
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_theme_constant_override("separation", 8)
 	rebuild()
@@ -78,10 +83,26 @@ func rebuild() -> void:
 func _refresh_stats() -> void:
 	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
 	var meta := UpgradeLibrary.effective_meta(_owned, entry)
-	_stats_label.text = "%.0f hp/tonne   |   %.2f G" % [
-		CarLibrary.power_to_weight(meta) * _KW_KG_TO_HP_TONNE,
-		CarLibrary.max_lateral_g(meta, Config.data),
-	]
+	var pw := CarLibrary.power_to_weight(meta) * _KW_KG_TO_HP_TONNE
+	var g := CarLibrary.max_lateral_g(meta, Config.data)
+	if _pw_limit >= 0.0:
+		var over := pw > _pw_limit
+		_stats_label.text = "%.0f hp/tonne (max %.0f)%s   |   %.2f G" % [
+			pw, _pw_limit, ("  — OVER LIMIT" if over else ""), g]
+		_stats_label.add_theme_color_override("font_color",
+			UITheme._role_color("red") if over else UITheme._role_color("ink"))
+	else:
+		_stats_label.text = "%.0f hp/tonne   |   %.2f G" % [pw, g]
+		_stats_label.remove_theme_color_override("font_color")
+
+
+# Whether the current build exceeds the advisory pw_limit (false when no limit set).
+func over_pw_limit() -> bool:
+	if _pw_limit < 0.0:
+		return false
+	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
+	var meta := UpgradeLibrary.effective_meta(_owned, entry)
+	return CarLibrary.power_to_weight(meta) * _KW_KG_TO_HP_TONNE > _pw_limit
 
 
 func _make_slot_row(slot: String, instance_id: int, installed: Array) -> Control:

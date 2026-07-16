@@ -71,9 +71,9 @@ bracketed. The turbo slot has two parts — `Stock` / `Small` / `Big` (`turbo_sm
 the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled` via
 `UpgradesMenu._set_slot_option`): picking a part enables it (same-slot exclusivity switches any
 sibling off), picking `Stock` disables every part in the slot (the underlying id is still
-`""`). So the reward flow is
-unchanged — kits are still won, fitted disabled, and the podium's Apply enables the pick;
-the selector is purely the menu presentation, replacing the old Enable/Disable toggle rows.
+`""`). Kits are won and fitted disabled, then enabled via the selector in the upgrades menu
+(either at the HQ lift or after an event's standings reveal confirms the won part); the selector
+is the menu presentation replacing the old Enable/Disable toggle rows.
 Drivetrain remains the odd one out (its selector is a `drive_mode` override, not a part
 enable, and it uses a single unlock rather than per-option earn-gating — see above).
 
@@ -139,17 +139,17 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
   no shared pool for slottable parts) — it just records the fit on the OwnedCar.
   `enabled` controls the freshly-fitted state: `true` enables it (switching off
   any same-slot incumbent, which stays fitted, just disabled); `false` parks it
-  disabled. The reward loop fits every won part with `enabled = false`, then the
-  podium's Apply enables the player's pick. Applied parts **accumulate** on the
+  disabled. The reward loop fits every won part with `enabled = false`; the
+  standings reveal confirms the part with a single "Next" step, and the player
+  enables it later in the upgrades menu. Applied parts **accumulate** on the
   car; at most one is **enabled** per slot. Fitting a part the car already carries
   is rejected (**per-car dedup**). Consumables and unknown ids can't be slotted
   (rejected). There is **no uninstall** and no move — a fitted part can only be
   toggled off, never moved to another car, and a **wrecked car keeps its parts
   fitted** (the car isn't destroyed — see
   [save-persistence.md](save-persistence.md)). The HQ upgrades menu only toggles
-  parts already on the car (no apply-from-pool); the podium's reward reveal picks
-  enable-now vs enable-later via its Apply/Keep choice
-  (`features/reward-system.md`).
+  parts already on the car (no apply-from-pool); see `features/reward-system.md`
+  for the standings reveal flow.
 - **`Save.set_upgrade_enabled(instance_id, item_id, enabled)`** — the upgrades-menu
   toggle for an applied part. Free, instant and reversible; enabling a part
   disables its same-slot siblings (`OwnedCar.disabled_upgrades` holds the
@@ -170,7 +170,7 @@ already on the driven car — that policy is reward-system logic
 controller fits each won part straight onto the driven car via
 `Save.install_upgrade(..., enabled=false)` (repair kits, being consumable, go to
 `Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,
-not the podium) offers the Apply/Keep choice — see `features/reward-system.md`.
+not the podium) confirms the part with a single "Next" step — see `features/reward-system.md`.
 
 ## Tests
 
@@ -191,8 +191,8 @@ old unbound pool are in `test_save_manager.gd` (they need the Save profile). The
 garage upgrades menu having no apply-from-pool rows, the earn-gated option selectors
 (turbo `Stock`/`Small`/`Big` and the single-part `Stock`/`<Kit>` slots — greyed until won,
 picking enables, `Stock` parks), and the option-selector focus-retention regression are in
-`test_menu_flow.gd`. The reward reveal's Apply(enable)/Keep(disable) choice — and the
-consumable / drivetrain-kit skip — is in `test_upgrade_reveal.gd`; the standings
+`test_menu_flow.gd`. The reward reveal's confirmation (a single "Next" step) and the
+consumable / drivetrain-kit skip are in `test_upgrade_reveal.gd`; the standings
 Collect-reward flow that hosts it is in `test_menu_flow.gd`.
 `test_rally_session.gd` covers per-event won parts binding to the driven car with no
 slottable part won twice per rally (the dedup'd draw).

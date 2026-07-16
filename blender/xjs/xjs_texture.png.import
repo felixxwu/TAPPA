@@ -3,22 +3,24 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bu5blucasapqq"
-path="res://.godot/imported/xjs_texture.png-90b0018d1b30d2b77a8dbaa2776f387d.ctex"
+path.s3tc="res://.godot/imported/xjs_texture.png-90b0018d1b30d2b77a8dbaa2776f387d.s3tc.ctex"
+path.etc2="res://.godot/imported/xjs_texture.png-90b0018d1b30d2b77a8dbaa2776f387d.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
-"md5": "ef955cdc188b47fb4cae2cbc209c1eb4"
+"md5": "a52b89609fc01945c340b539ee3f7065"
 }
 
 [deps]
 
 source_file="res://blender/xjs/xjs_texture.png"
-dest_files=["res://.godot/imported/xjs_texture.png-90b0018d1b30d2b77a8dbaa2776f387d.ctex"]
+dest_files=["res://.godot/imported/xjs_texture.png-90b0018d1b30d2b77a8dbaa2776f387d.s3tc.ctex", "res://.godot/imported/xjs_texture.png-90b0018d1b30d2b77a8dbaa2776f387d.etc2.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +42,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

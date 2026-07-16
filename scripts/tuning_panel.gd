@@ -7,7 +7,7 @@ extends VBoxContainer
 
 var _owned: Dictionary = {}
 var _on_change: Callable = Callable()
-var _detune_max_frac := 1.0  # ceiling on the engine-detune slider (1.0 = full power)
+var _pw_limit := -1.0  # rally power-to-weight ceiling (hp/tonne) to show; <0 = none
 var _sliders: Dictionary = {}        # axis -> HSlider
 var _slider_rows: Dictionary = {}    # axis -> row PanelContainer (greyed when locked)
 var _slider_values: Dictionary = {}  # axis -> value Label
@@ -15,13 +15,14 @@ var _built := false
 
 
 # Build the rows once, then bind the owned car. on_change() is called (no args) after
-# each edit / reset so the host can re-apply tuning to the live car. detune_max_frac
-# caps the engine-detune slider (1.0 = full power); the start line passes the rally's
-# qualifying detune so the car can't be tuned back above its p/w ceiling.
-func setup(owned_car: Dictionary, on_change := Callable(), detune_max_frac := 1.0) -> void:
+# each edit / reset so the host can re-apply tuning to the live car. pw_limit (hp/tonne,
+# <0 = none) is the rally's power-to-weight ceiling; when set, the engine-detune label
+# shows the limit and flags OVER LIMIT. The start line passes the rally's pw_max; the HQ
+# garage lift omits it (the player tunes freely — eligibility is checked at Start).
+func setup(owned_car: Dictionary, on_change := Callable(), pw_limit := -1.0) -> void:
 	_owned = owned_car
 	_on_change = on_change
-	_detune_max_frac = clampf(detune_max_frac, 0.0, 1.0)
+	_pw_limit = pw_limit
 	if not _built:
 		_build()
 		_built = true
@@ -152,6 +153,9 @@ func _make_slider_row(spec: Dictionary) -> Control:
 func _detune_label_text(pct: int) -> String:
 	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
+	if _pw_limit >= 0.0:
+		var over := " OVER LIMIT" if pw > _pw_limit else ""
+		return "%d%% - %.0f hp/tonne (max %.0f)%s" % [pct, pw, _pw_limit, over]
 	return "%d%% - %.0f hp/tonne" % [pct, pw]
 
 
@@ -167,10 +171,10 @@ func refresh() -> void:
 		row.modulate = Color(1, 1, 1, 1.0 if unlocked else 0.4)
 		# set_value_no_signal so syncing the UI doesn't re-save the value.
 		if axis == "engine_detune":
-			# Cap the slider so the car can't be tuned back above the host's power ceiling
-			# (the start line passes the rally's qualifying detune; HQ leaves it at 100%).
-			slider.max_value = _detune_max_frac * 100.0
-			slider.set_value_no_signal(clampf(float(tuning.get("engine_detune", 1.0)), 0.0, _detune_max_frac) * 100.0)
+			# Full 0-100% range: the car can be detuned or run at full power freely.
+			# Rally eligibility is enforced at Start (start_line.gd), not by capping here.
+			slider.max_value = 100.0
+			slider.set_value_no_signal(clampf(float(tuning.get("engine_detune", 1.0)), 0.0, 1.0) * 100.0)
 			value.text = _detune_label_text(int(round(slider.value)))
 		else:
 			slider.set_value_no_signal(clampf(float(tuning.get(axis, 0.0)), -1.0, 1.0))

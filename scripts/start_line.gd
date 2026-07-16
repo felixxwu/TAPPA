@@ -50,6 +50,9 @@ var _start_button: Button
 var _tune_button: Button
 var _tune_layer: CanvasLayer         # the pre-race tuning overlay (built lazily)
 var _tune_panel: TuningPanel         # the shared four-axis tuning sliders
+var _upgrades_button: Button
+var _upgrades_layer: CanvasLayer     # the pre-race upgrades overlay (built lazily)
+var _upgrades_menu: UpgradesMenu     # the shared upgrades menu (same as the HQ garage)
 var _rally: Dictionary = {}          # this event's rally (for the Tune Car detune cap)
 var _leaders_box: VBoxContainer
 var _leader_rows: Array[Label] = []   # one row per shown rival (or a single dash)
@@ -229,9 +232,15 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	_tune_button.pressed.connect(_open_tune)
 	root.add_child(_tune_button)
 
+	# Under Tune: change upgrades before the race (same menu as the HQ garage).
+	_upgrades_button = UITheme.button("Upgrades")
+	_upgrades_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_upgrades_button.pressed.connect(_open_upgrades)
+	root.add_child(_upgrades_button)
+
 	UITheme.enforce(_overlay)  # house rules: uppercase + one font size + fixed button height
 
-	# Two buttons now: wire keyboard + gamepad focus nav (Start seated first). This
+	# Three buttons now: wire keyboard + gamepad focus nav (Start seated first). This
 	# replaces the old "select-anywhere launches" path in _unhandled_input.
 	MenuNav.attach(root, {"first": _start_button})
 
@@ -244,7 +253,9 @@ func _open_tune() -> void:
 	if _tune_layer == null:
 		_build_tune_overlay()
 	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-	_tune_panel.setup(owned, _on_tune_changed.bind(owned), _detune_cap(owned))
+	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
+	var pw_limit := float(restriction.get("pw_max", -1.0))
+	_tune_panel.setup(owned, _on_tune_changed.bind(owned), pw_limit)
 	_tune_panel.refresh()
 	if _overlay != null:
 		_overlay.visible = false
@@ -295,11 +306,71 @@ func _on_tune_changed(owned: Dictionary) -> void:
 		_player.retune(owned)
 
 
-# The highest engine-detune fraction the car may tune UP to here without breaking the
-# rally's power-to-weight ceiling: the rally's qualifying detune at full power. 1.0 when
-# the car is eligible at full power (no cap). If detuning can't qualify it (shouldn't
-# happen for a car that's racing), fall back to its current setting so it can't tune up.
-func _detune_cap(owned: Dictionary) -> float:
+# Open the pre-race upgrades menu (the same catalogue as the HQ garage). Hides the
+# start overlay; edits re-field the live car so they affect the race about to start.
+func _open_upgrades() -> void:
+	if _seq != Seq.ORBIT:
+		return
+	if _upgrades_layer == null:
+		_build_upgrades_overlay()
+	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
+	var pw_limit := float(restriction.get("pw_max", -1.0))
+	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), pw_limit)
+	if _overlay != null:
+		_overlay.visible = false
+	_upgrades_layer.visible = true
+	get_viewport().gui_release_focus()
+	MenuNav.attach(_upgrades_layer.get_child(0),
+		{"first": _upgrades_menu.first_control(), "on_back": _close_upgrades})
+
+
+func _close_upgrades() -> void:
+	if _upgrades_layer != null:
+		_upgrades_layer.visible = false
+	if _overlay != null:
+		_overlay.visible = true
+	if _upgrades_button != null:
+		_upgrades_button.grab_focus.call_deferred()
+
+
+func _build_upgrades_overlay() -> void:
+	_upgrades_layer = CanvasLayer.new()
+	_upgrades_layer.layer = 6   # above the start overlay (layer 5)
+	add_child(_upgrades_layer)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_upgrades_layer.add_child(center)
+	var panel := UITheme.panel(UITheme.PANEL.a)
+	center.add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", UITheme.GAP)
+	col.custom_minimum_size = Vector2(520, 0)
+	panel.add_child(col)
+	col.add_child(UITheme.title("Upgrades"))
+	_upgrades_menu = UpgradesMenu.new()
+	col.add_child(_upgrades_menu)
+	var back := UITheme.button("Back")
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	back.pressed.connect(_close_upgrades)
+	col.add_child(back)
+	UITheme.enforce(_upgrades_layer)
+
+
+# An upgrade edit (UpgradesMenu already wrote Save; it calls on_change with no args).
+# Re-fetch the freshly-saved owned car — the dict handed to setup() is a pre-edit
+# snapshot — and re-field the live car's upgrade state WITHOUT reshaping the staged
+# body (refit_upgrades, NOT apply_owned).
+func _on_upgrade_changed() -> void:
+	if _player != null and _player.has_method("refit_upgrades"):
+		_player.refit_upgrades(Save.get_car(RallySession.car_instance_id()))
+
+
+# The engine-detune fraction at which the car passes the rally's power-to-weight
+# ceiling (evaluated at full power so it's an absolute slider setting): 1.0 when the
+# car is already eligible at full power, a value in (0,1) when a detune admits an
+# over-powered car, or -1.0 when no detune can qualify it (a non-power restriction).
+func _rally_qualifying_detune(owned: Dictionary) -> float:
 	if _rally.is_empty():
 		return 1.0
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
@@ -307,11 +378,21 @@ func _detune_cap(owned: Dictionary) -> float:
 	var tuning: Dictionary = full.get("tuning", {})
 	tuning["engine_detune"] = 1.0
 	full["tuning"] = tuning
-	var full_meta := UpgradeLibrary.effective_meta(full, entry)
-	var cap := RallyLibrary.qualifying_detune(_rally, full_meta)
-	if cap <= 0.0:
-		return clampf(float((owned.get("tuning", {}) as Dictionary).get("engine_detune", 1.0)), 0.0, 1.0)
-	return cap
+	return RallyLibrary.qualifying_detune(_rally, UpgradeLibrary.effective_meta(full, entry))
+
+
+# The gate's "Detune to X%" choice: apply the qualifying detune to the car for this
+# rally (registered for revert so it's restored when the rally ends, like the HQ car
+# park), re-field the live car, then launch. The car is now eligible, so the re-entered
+# launch() clears the gate and proceeds.
+func _apply_detune_and_launch(frac: float) -> void:
+	var iid := RallySession.car_instance_id()
+	var prior := float((Save.get_car(iid).get("tuning", {}) as Dictionary).get("engine_detune", 1.0))
+	RallySession.register_detune_revert(iid, prior)
+	Save.set_engine_detune(iid, frac)
+	if _player != null and _player.has_method("retune"):
+		_player.retune(Save.get_car(iid))
+	launch()
 
 
 # A centred leaderboard row in a house role colour ("gold" for the leader, "dim"
@@ -554,6 +635,32 @@ func _unhandled_input(event: InputEvent) -> void:
 func launch() -> void:
 	if _launched or _seq != Seq.ORBIT:
 		return
+	if not _rally.is_empty():
+		var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+		# Only gate when there's an actual fielded car to check — a test/dev harness
+		# with no active RallySession (no owned car) has nothing to be ineligible with.
+		if not owned.is_empty():
+			var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+			var meta := UpgradeLibrary.effective_meta(owned, entry)
+			var reason := RallyLibrary.ineligibility_reason(_rally, meta)
+			if reason != "":
+				# An over-powered car (over the rally's pw ceiling) can be admitted by
+				# detuning — offer the same "Detune to X% / Change Upgrades" choice as the
+				# HQ car park. A detune that can't fix it (wrong drivetrain, too little
+				# power, etc.) just gets the reason + Change Upgrades.
+				var frac := _rally_qualifying_detune(owned)
+				if frac > 0.0 and frac < 1.0:
+					var pct := roundi(frac * 100.0)
+					ConfirmPopup.open(self, "Too powerful",
+						"Detune to %d%% to enter, or change your upgrades." % pct,
+						[ {"label": "Detune to %d%%" % pct, "callback": _apply_detune_and_launch.bind(frac)},
+						  {"label": "Change Upgrades", "callback": _open_upgrades},
+						  {"label": "Cancel", "callback": Callable()} ], 0)
+				else:
+					ConfirmPopup.open(self, "Can't start", reason,
+						[ {"label": "Change Upgrades", "callback": _open_upgrades},
+						  {"label": "Cancel", "callback": Callable()} ])
+				return
 	_launched = true
 	if _overlay != null:
 		_overlay.visible = false

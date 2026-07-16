@@ -3,20 +3,22 @@ extends Node3D
 # camera flies through (todo/diegetic-hq.md) instead of flat overlay screens. One
 # world; the camera moves between "stations":
 #   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park, with
-#     Start / Free Roam / Settings buttons. Start flies the camera into the garage;
-#     Free Roam opens the car park to pick a car and drive session-lessly.
+#     Start / Settings buttons (plus Exit Game on non-web builds). Start flies the
+#     camera into the garage.
 #   * GARAGE   — a block garage interior holding the MAP TABLE and the TUNING LIFT.
 #     The player's SELECTED car is raised on the lift here. Tap the table to see the
-#     rallies; tap the lift to tune.
+#     rallies; tap the lift to tune. Its action row also carries FREE ROAM, which opens
+#     the car park to pick a car and drive session-lessly.
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
 #   * LIFT     — the tuning bay: the selected car raised on the lift on one side. The
 #     bay opens on a HUB page (the car's name/description, a Change Car button, and
 #     Tuning / Upgrades buttons) bottom-left beside the car. Change Car drops into the
 #     car park to pick a new car for the lift; each menu button opens that menu as its
-#     OWN full-height page (TUNE = grip/brake/aero sliders; UPGRADES = install parts +
-#     repair) so neither needs to scroll; Back returns the page to the hub, and the
-#     hub's Back returns to the garage.
+#     OWN full-height page (TUNE = grip/brake/aero sliders; UPGRADES = install parts)
+#     so neither needs to scroll; Back returns the page to the hub, and the hub's Back
+#     returns to the garage. (A REPAIR button also lives on the hub row but is hidden
+#     for now — earning Repair Kits is disabled.)
 #   * CARPARK  — the outdoor lineup of cars: in RALLY mode the cars ELIGIBLE for the
 #     chosen rally (pan + Start); in CHANGE-CAR mode the whole collection (pan +
 #     Select a new car for the lift).
@@ -144,12 +146,7 @@ var _detune_needed: Dictionary = {}
 var _drivetrain_needed: Dictionary = {}
 # Confirm popup shown when Start is pressed on an over-powered car: the car looks
 # eligible in the park; this dialog carries the doesn't-qualify warning and the
-# detune agreement (_show_detune_confirm). A house-themed overlay panel (NOT a native
-# grey dialog) on the car CanvasLayer, so it's on-brand and left/right navigable via
-# MenuNav. Built lazily; _detune_body / _detune_confirm_button are refreshed per car.
-var _detune_panel: Control
-var _detune_body: Label
-var _detune_confirm_button: Button
+# detune agreement (_show_detune_confirm). Implemented via ConfirmPopup.
 # The car-park "Change Upgrades" popup, opened from the detune prompt as an alternative
 # to detuning: a house-themed overlay on the car CanvasLayer hosting an UpgradesMenu for
 # the focused car (no engine-swap row). Built lazily. _dirty tracks whether any upgrade
@@ -157,10 +154,12 @@ var _detune_confirm_button: Button
 var _upgrades_popup: Control
 var _upgrades_popup_menu: UpgradesMenu
 var _upgrades_popup_dirty := false
+# Tracks the currently open car-park ConfirmPopup (detune confirm), so
+# _carpark_modal_open can detect it without a dedicated visible flag.
+var _active_carpark_popup: ConfirmPopup = null
 # Confirm popup shown when a chosen engine-swap partner is picked: swapping costs one
-# engine swap token. Carries the token cost, or the "no tokens" block. Built lazily.
-# _pending_swap holds the two instance ids awaiting the OK press.
-var _swap_confirm_dialog: ConfirmationDialog
+# engine swap token. Carries the token cost, or the "no tokens" block. Implemented via
+# ConfirmPopup. _pending_swap holds the two instance ids awaiting the OK press.
 var _pending_swap: Dictionary = {}
 var _cars: Array = []
 var _markers: Array = []
@@ -181,11 +180,12 @@ var _settle_generation := 0
 # the car-park lineup), which OwnedCar it is, and which menu (TUNE / UPGRADES) is up.
 var _lift_car: Node3D
 var _lift_owned: Dictionary = {}
-# Garage station "Repair" button (the row's 4th action, where Free Roam used to be):
-# repairs the SELECTED car with one Repair Kit. Its label reflects state — "Repair
-# (x kit)" when the car is damaged and a kit is owned, "Repair — full health" / "Repair
-# — no kits" otherwise — recomputed on garage entry (_refresh_garage_repair_button).
-var _garage_repair_button: Button
+# Car-lift HUB "Repair" button: repairs the SELECTED car with one Repair Kit. HIDDEN for
+# now (earning Repair Kits is disabled) — built but kept invisible and out of the hub
+# cursor (see _build_lift_overlay). Its label reflects state — "Repair (x kit)" when the
+# car is damaged and a kit is owned, "Repair — full health" / "Repair — no kits"
+# otherwise — recomputed whenever the lift is refreshed (_refresh_lift_repair_button).
+var _lift_repair_button: Button
 var _lift_car_instance_id := -2  # what _lift_car was built for (-2 = nothing yet)
 # Deep hash of the owned dict _lift_car was built from. _ensure_lift_car reuses the
 # prop only when BOTH the instance id and this hash match, so any in-place data change
@@ -240,8 +240,8 @@ var _car_stats_label: Label
 var _swap_preview_label: RichTextLabel
 var _start_button: Button
 var _title_start_button: Button  # EXTERIOR title Start — default keyboard/gamepad focus
-var _title_free_roam_button: Button  # EXTERIOR title Free Roam (between Start and Settings)
 var _title_settings_button: Button  # EXTERIOR title Settings (below Start)
+var _title_exit_button: Button  # EXTERIOR title Exit Game (bottom of the list)
 var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
 var _no_eligible_label: Label
 # Car-park damage UI: a "too damaged" note + a Repair action for a wrecked focused car.
@@ -723,11 +723,11 @@ func _build_title_overlay() -> void:
 	# collection) stays visible above them rather than being covered by a centred menu.
 	root.alignment = BoxContainer.ALIGNMENT_END
 
-	# Title screen is just the Start button (and a Settings button below it) over the
-	# parked-collection backdrop — no title/subtitle text.
-	# The title overlay is a flat two-button menu (no spatial 3D nav here), so it uses
-	# native focus: Start is focused on entry, ui_up/ui_down move between the two,
-	# ui_accept fires the focused one. (The 3D stations behind it keep menu_* nav.)
+	# Title screen is a flat list of buttons (Start / Settings, plus Exit Game on non-web
+	# builds) over the parked-collection backdrop — no title/subtitle text. It uses native
+	# focus: Start is focused on entry, ui_up/ui_down move between the buttons, ui_accept
+	# fires the focused one. (The 3D stations behind it keep menu_* nav.) Free Roam lives
+	# on the GARAGE action row now, not here (see _build_garage_overlay).
 	var start := Button.new()
 	start.text = "Start"
 	start.focus_mode = Control.FOCUS_ALL
@@ -737,18 +737,6 @@ func _build_title_overlay() -> void:
 	root.add_child(start)
 	_title_start_button = start
 
-	# Free Roam: drop straight into a freshly-seeded stage with neutral (0.5) terrain
-	# settings — no rally, no opponents, just driving. Opens the car park to pick which
-	# owned car to drive (see _enter_free_roam).
-	var free := Button.new()
-	free.text = "Free Roam"
-	free.focus_mode = Control.FOCUS_ALL
-	free.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	free.custom_minimum_size = Vector2(220, 44)
-	free.pressed.connect(_enter_free_roam)
-	root.add_child(free)
-	_title_free_roam_button = free
-
 	var settings := Button.new()
 	settings.text = "Settings"
 	settings.focus_mode = Control.FOCUS_ALL
@@ -757,6 +745,18 @@ func _build_title_overlay() -> void:
 	settings.pressed.connect(func() -> void: _open_settings(false))
 	root.add_child(settings)
 	_title_settings_button = settings
+
+	# Exit Game: quit the application. Sits at the bottom of the title list. Skipped on
+	# the web build, where there's no OS process to quit (the tab owns the lifecycle).
+	if not OS.has_feature("web"):
+		var exit := Button.new()
+		exit.text = "Exit Game"
+		exit.focus_mode = Control.FOCUS_ALL
+		exit.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		exit.custom_minimum_size = Vector2(220, 44)
+		exit.pressed.connect(_on_exterior_exit)
+		root.add_child(exit)
+		_title_exit_button = exit
 
 	# Build version, shown only on the title screen (bottom-right corner). It is
 	# stamped into application/config/version by build_web.sh (0.<git commit count>
@@ -856,11 +856,11 @@ func _build_garage_overlay() -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
-	# Back / Map / Tune Car / Repair form a single left/right ButtonCursor
+	# Back / Map / Tune Car / Free Roam form a single left/right ButtonCursor
 	# (_garage_focus). FOCUS_NONE + hand-painted like the tuning hub, since the garage is
 	# a spatially-navigated 3D station, not a native focus graph. Each button's pressed
 	# callable is ALSO the cursor's action for that index, so click and select agree.
-	# (Free Roam lives on the EXTERIOR title screen, not here — see _build_title_overlay.)
+	# (Repair lives on the tuning-lift HUB row now — see _build_lift_overlay.)
 	var on_back := func() -> void: _go_to(View.EXTERIOR)
 	var back := _station_button("< Back", on_back)
 	actions.add_child(back)
@@ -869,15 +869,13 @@ func _build_garage_overlay() -> void:
 	actions.add_child(to_table)
 	var to_lift := _station_button("Tune / Upgrade", _enter_lift)
 	actions.add_child(to_lift)
-	# Repair: spend one Repair Kit on the selected car (full restore). Its label is set
-	# on garage entry to reflect whether there's anything to repair (see
-	# _refresh_garage_repair_button); pressing it when there isn't is a no-op.
-	var repair := _station_button("Repair", _repair_selected_car)
-	actions.add_child(repair)
-	_garage_repair_button = repair
+	# Free Roam: open the car park to pick which owned car to drive and drop into a
+	# freshly-seeded, opponent-less stage (see _enter_free_roam).
+	var free := _station_button("Free Roam", _enter_free_roam)
+	actions.add_child(free)
 	_garage_cursor.setup(
-		[back, to_table, to_lift, repair],
-		[on_back, _enter_table, _enter_lift, _repair_selected_car])
+		[back, to_table, to_lift, free],
+		[on_back, _enter_table, _enter_lift, _enter_free_roam])
 
 	_passthrough_overlay(root)  # let taps reach the 3D table / lift behind the HUD
 
@@ -1061,7 +1059,7 @@ func _build_lift_overlay() -> void:
 	_lift_hub_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left_col.add_child(_lift_hub_controls)
 
-	# Back / Change Car / Tuning / Upgrades form a single left/right ButtonCursor
+	# Back / Change Car / Tuning / Upgrades / Repair form a single left/right ButtonCursor
 	# (_hub_focus). As with the garage row, each button's pressed callable is also the
 	# cursor's action for that index, so a click and a keyboard/gamepad select agree.
 	var on_back := func() -> void: _go_to(View.GARAGE)
@@ -1073,10 +1071,19 @@ func _build_lift_overlay() -> void:
 	var change_car := _station_button("Change Car", _enter_change_car)
 	_lift_hub_controls.add_child(change_car)
 	# The two menu buttons.
-	var to_tune := _station_button("Tuning >", to_tune_cb)
+	var to_tune := _station_button("Tuning", to_tune_cb)
 	_lift_hub_controls.add_child(to_tune)
-	var to_upgrades := _station_button("Upgrades >", to_upgrades_cb)
+	var to_upgrades := _station_button("Upgrades", to_upgrades_cb)
 	_lift_hub_controls.add_child(to_upgrades)
+	# Repair: spend one Repair Kit on the selected car (full restore). HIDDEN for now —
+	# earning Repair Kits is disabled, so there's nothing to spend. The button is still
+	# built (and _refresh_lift_repair_button still labels it) but kept invisible and OUT
+	# of the hub cursor so it's neither shown nor navigable; re-add it to both when kits
+	# come back.
+	var repair := _station_button("Repair", _repair_selected_car)
+	repair.visible = false
+	_lift_hub_controls.add_child(repair)
+	_lift_repair_button = repair
 	_hub_cursor.setup(
 		[back, change_car, to_tune, to_upgrades],
 		[on_back, _enter_change_car, to_tune_cb, to_upgrades_cb])
@@ -1434,7 +1441,6 @@ func _go_to(view: int, snap := false) -> void:
 	if view == View.GARAGE:
 		_ensure_lift_car()
 		_lower_lift_car()
-		_refresh_garage_repair_button()  # reflect the selected car's health / kit count
 		_garage_focus = 1  # seat the cursor on Open map table each time we enter the garage
 		_refresh_garage_focus()
 	elif view == View.LIFT:
@@ -1449,6 +1455,10 @@ func _go_to(view: int, snap := false) -> void:
 	if view == View.CARPARK:
 		return  # camera handled by _focus_changed once the lineup exists
 	_move_camera_to(_station_xform(view), snap)
+
+
+func _on_exterior_exit() -> void:
+	get_tree().quit()
 
 
 func _on_exterior_start() -> void:
@@ -1486,8 +1496,8 @@ func _maybe_enter_web_fullscreen() -> void:
 
 # Free Roam: open the car park to pick which owned car to drive. Parks the WHOLE owned
 # collection (like Change Car) and frames the currently-selected car; Start launches
-# free roam with the focused car (see _start_free_roam), Back returns to the title.
-# Entered from the EXTERIOR title screen's Free Roam button (see _build_title_overlay).
+# free roam with the focused car (see _start_free_roam), Back returns to the garage.
+# Entered from the GARAGE action row's Free Roam button (see _build_garage_overlay).
 func _enter_free_roam() -> void:
 	_carpark_freeroam_mode = true
 	_carpark_change_mode = false
@@ -1508,10 +1518,9 @@ func _enter_free_roam() -> void:
 		if int(_eligible[i].get("instance_id", -1)) == sel:
 			_focus = i
 			break
-	# Fly (don't snap) — Free Roam is entered from the EXTERIOR title, whose camera is a
-	# distinct hero pose, so a tween carries the player smoothly into the car-select shot
-	# (mirroring how Start flies the camera into the garage). The other car-park entries
-	# (_enter_car_screen, _enter_change_car) snap because they come from adjacent stations.
+	# Fly (don't snap) — a tween carries the player smoothly from the garage into the
+	# car-select shot. The other car-park entries (_enter_car_screen, _enter_change_car)
+	# snap because they come from adjacent stations.
 	_focus_changed(false)
 
 
@@ -1902,32 +1911,32 @@ func _lift_hub() -> void:
 
 
 # Move the garage's left/right cursor between Back (0), Map (1), Tune Car (2) and
-# Repair (3), wrapping at the ends, and repaint it.
+# Free Roam (3), wrapping at the ends, and repaint it.
 func _move_garage_focus(step: int) -> void:
 	_garage_focus = _garage_cursor.wrapped(_garage_focus, step)
 	_refresh_garage_focus()
 
 
 # Fire the garage action the cursor sits on: 0 backs out to the exterior, 1 opens the
-# map table, 2 opens the tuning lift, 3 repairs the selected car.
+# map table, 2 opens the tuning lift, 3 opens free roam (car park → session-less drive).
 func _activate_garage_focus() -> void:
 	_garage_cursor.activate(_garage_focus)
 
 
 # Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Map /
-# Tune Car / Repair buttons are highlighted by hand rather than via native focus).
+# Tune Car / Free Roam buttons are highlighted by hand rather than via native focus).
 func _refresh_garage_focus() -> void:
 	_garage_cursor.refresh(_garage_focus)
 
 
-# Set the garage Repair button's label + enabled state to reflect the SELECTED car's
+# Set the lift HUB Repair button's label + enabled state to reflect the SELECTED car's
 # state: it's DISABLED (greyed, unclickable) when there's nothing to do — the car is
 # already at full health, or it's damaged but no Repair Kit is owned — and only enabled
 # when a kit can actually restore a damaged car. The label spells out which case it is.
 # First tops up a stranded player via the safety net (a free kit when every owned car is
 # wrecked), so a repairable-but-kitless player is never left permanently stuck.
-func _refresh_garage_repair_button() -> void:
-	if _garage_repair_button == null:
+func _refresh_lift_repair_button() -> void:
+	if _lift_repair_button == null:
 		return
 	Save.ensure_repair_safety_net()
 	var owned := Save.selected_car()
@@ -1936,17 +1945,17 @@ func _refresh_garage_repair_button() -> void:
 	var hp := float(owned.get("hp", 0.0))
 	var kits := int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
 	if max_hp > 0.0 and hp >= max_hp:
-		_garage_repair_button.text = "Repair — full health"
-		_garage_repair_button.disabled = true
+		_lift_repair_button.text = "Repair — full health"
+		_lift_repair_button.disabled = true
 	elif kits > 0:
-		_garage_repair_button.text = "Repair (%d kit%s)" % [kits, "" if kits == 1 else "s"]
-		_garage_repair_button.disabled = false
+		_lift_repair_button.text = "Repair (%d kit%s)" % [kits, "" if kits == 1 else "s"]
+		_lift_repair_button.disabled = false
 	else:
-		_garage_repair_button.text = "Repair — no kits"
-		_garage_repair_button.disabled = true
+		_lift_repair_button.text = "Repair — no kits"
+		_lift_repair_button.disabled = true
 
 
-# Spend one Repair Kit on the selected car (full restore) from the garage. A no-op when
+# Spend one Repair Kit on the selected car (full restore) from the lift HUB. A no-op when
 # the car is already at full health or no kit is owned — the button label already says
 # so. On a repair, respawns the lift/garage prop (fresh DamageModel, so the wreck smoke
 # stops) and re-labels the button.
@@ -1963,11 +1972,12 @@ func _repair_selected_car() -> void:
 	if not Save.use_repair_kit(id):
 		return  # no kit owned
 	_ensure_lift_car()  # the car is healed — the hash flips, so the prop respawns healthy
-	_refresh_garage_repair_button()
+	_refresh_lift_repair_button()
 
 
 # Move the HUB's left/right cursor between Back (0), Change Car (1), Tuning (2) and
-# Upgrades (3), wrapping at the ends, and repaint it.
+# Upgrades (3), wrapping at the ends, and repaint it. (Repair is built but hidden while
+# Repair Kits are disabled, so it's not in the cursor — see _build_lift_overlay.)
 func _move_hub_focus(step: int) -> void:
 	_hub_focus = _hub_cursor.wrapped(_hub_focus, step)
 	_refresh_hub_focus()
@@ -2048,8 +2058,7 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 # shown, the sliders' gating/values, and the upgrades list.
 func _refresh_lift_ui() -> void:
 	# Recover a wrecked-out player before drawing the lift: a free Repair Kit when
-	# every owned car is wrecked and none is held (also checked on save load and on
-	# garage entry). Repair itself now lives on the garage station row, not here.
+	# every owned car is wrecked and none is held (also checked on save load).
 	Save.ensure_repair_safety_net()
 	_lift_owned = Save.selected_car()
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
@@ -2072,6 +2081,7 @@ func _refresh_lift_ui() -> void:
 	_tune_panel.setup(_lift_owned, Callable())
 	_tune_panel.refresh()
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap)
+	_refresh_lift_repair_button()  # reflect the selected car's health / kit count
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
@@ -2192,7 +2202,7 @@ func _car_back() -> void:
 		_go_to(View.EXTERIOR)
 	elif _carpark_freeroam_mode:
 		_carpark_freeroam_mode = false
-		_go_to(View.EXTERIOR)
+		_go_to(View.GARAGE)
 	elif _carpark_swap_mode:
 		_carpark_swap_mode = false
 		_enter_lift()
@@ -2724,55 +2734,27 @@ func _make_carpark_modal(build_body: Callable) -> Control:
 # qualifying tune + launch, _on_detune_confirmed).
 func _show_detune_confirm(_owned: Dictionary, frac: float) -> void:
 	var pct := roundi(frac * 100.0)
-	if _detune_panel == null:
-		_detune_panel = _make_carpark_modal(func(vbox: VBoxContainer) -> void:
-			vbox.custom_minimum_size = Vector2(420, 0)
-			vbox.add_child(UITheme.title("Too powerful"))
-			_detune_body = Label.new()
-			_detune_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			vbox.add_child(_detune_body)
-			var row := HBoxContainer.new()
-			row.add_theme_constant_override("separation", UITheme.GAP)
-			vbox.add_child(row)
-			var cancel := Button.new()
-			cancel.text = "Cancel"
-			cancel.focus_mode = Control.FOCUS_ALL
-			cancel.pressed.connect(_close_detune_panel)
-			row.add_child(cancel)
-			var change := Button.new()
-			change.text = "Change Upgrades"
-			change.focus_mode = Control.FOCUS_ALL
-			change.pressed.connect(_detune_change_upgrades)
-			row.add_child(change)
-			_detune_confirm_button = Button.new()
-			_detune_confirm_button.focus_mode = Control.FOCUS_ALL
-			_detune_confirm_button.pressed.connect(_on_detune_confirmed)
-			row.add_child(_detune_confirm_button))
-	_detune_body.text = "Detune to %d%% to enter, or change your upgrades." % pct
-	_detune_confirm_button.text = "Detune to %d%%" % pct
-	_detune_panel.visible = true
-	UITheme.enforce(_detune_panel)
-	MenuNav.attach(_detune_panel, {"first": _detune_confirm_button, "on_back": _close_detune_panel})
+	_active_carpark_popup = ConfirmPopup.open(self, "Too powerful",
+		"Detune to %d%% to enter, or change your upgrades." % pct,
+		[ {"label": "Detune to %d%%" % pct, "callback": _on_detune_confirmed},
+		  {"label": "Change Upgrades", "callback": _detune_change_upgrades},
+		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
 
 
 # Whether a car-park modal overlay (detune prompt / Change-Upgrades popup) is showing,
 # so _unhandled_input hands navigation to its MenuNav instead of the lineup beneath.
 func _carpark_modal_open() -> bool:
-	return (_detune_panel != null and _detune_panel.visible) \
+	return is_instance_valid(_active_carpark_popup) \
 		or (_upgrades_popup != null and _upgrades_popup.visible)
 
 
 func _close_detune_panel() -> void:
-	if _detune_panel != null:
-		_detune_panel.visible = false
 	_focus_changed()
 
 
 # The detune prompt's Change Upgrades choice: close the prompt and open the upgrades
 # menu for the focused car so the player can strip / switch parts to duck under the cap.
 func _detune_change_upgrades() -> void:
-	if _detune_panel != null:
-		_detune_panel.visible = false
 	_show_upgrades_popup(Save.get_car(_selected_instance_id))
 
 
@@ -2782,8 +2764,6 @@ func _detune_change_upgrades() -> void:
 # value, or the untouched 1.0) with the session so it's restored when the rally
 # ends (RallySession.register_detune_revert; garage-lift detunes stay permanent).
 func _on_detune_confirmed() -> void:
-	if _detune_panel != null:
-		_detune_panel.visible = false
 	var frac: float = _detune_needed.get(_selected_instance_id, -1.0)
 	if frac <= 0.0:
 		return
@@ -2812,7 +2792,10 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 			vbox.add_child(done))
 	_upgrades_popup_dirty = false
 	_upgrades_popup.visible = true
-	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable())
+	var rally := RallyLibrary.by_id(_selected_rally_id)
+	var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
+	var pw_limit := float(restriction.get("pw_max", -1.0))
+	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
 	UITheme.enforce(_upgrades_popup)
 	MenuNav.attach(_upgrades_popup, {
 		"first": _upgrades_popup_menu.first_control(),
@@ -3087,29 +3070,18 @@ func _commit_engine_swap(current_id: int, partner_id: int) -> void:
 # player holds one, OK ("Swap") commits; if not, OK is disabled and the message says
 # so (the swap-row button already blocks this case, but the popup stays defensive).
 func _show_swap_confirm(current_id: int, partner_id: int) -> void:
-	if _swap_confirm_dialog == null:
-		_swap_confirm_dialog = ConfirmationDialog.new()
-		_swap_confirm_dialog.title = "Swap engines?"
-		_swap_confirm_dialog.get_cancel_button().text = "Cancel"
-		_swap_confirm_dialog.confirmed.connect(_on_swap_confirmed)
-		var label := _swap_confirm_dialog.get_label()
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.custom_minimum_size = Vector2(400, 0)
-		add_child(_swap_confirm_dialog)
 	var tokens := Save.engine_swap_tokens_owned()
+	var body: String
 	if tokens > 0:
 		_pending_swap = {"current": current_id, "partner": partner_id}
-		_swap_confirm_dialog.dialog_text = ("Exchange engines between these two cars? " +
-			"This spends 1 engine swap token (you have %d).") % tokens
-		_swap_confirm_dialog.ok_button_text = "Swap"
-		_swap_confirm_dialog.get_ok_button().disabled = false
+		body = ("Exchange engines between these two cars? " +
+			"This spends 1 engine swap token (you have %d)." % tokens)
 	else:
 		_pending_swap = {}
-		_swap_confirm_dialog.dialog_text = "You have no engine swap tokens. Win one from a rally reward, then swap."
-		_swap_confirm_dialog.ok_button_text = "Swap"
-		_swap_confirm_dialog.get_ok_button().disabled = true
-	_swap_confirm_dialog.reset_size()
-	_swap_confirm_dialog.popup_centered()
+		body = "You have no engine swap tokens. Win one from a rally reward, then swap."
+	ConfirmPopup.open(self, "Swap engines?", body,
+		[ {"label": "Swap", "callback": _on_swap_confirmed, "disabled": tokens <= 0},
+		  {"label": "Cancel", "callback": Callable()} ], 0)
 
 
 # OK on the swap-confirm popup: perform the swap (spends the token).
@@ -3162,8 +3134,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_maybe_enter_web_fullscreen()
 	match _view:
 		View.EXTERIOR:
-			# The title is a flat two-button menu (Start / Settings) driven by native
-			# focus — ui_accept fires whichever button is focused (see _build_title_overlay).
+			# The title is a flat button menu (Start / Settings / Exit Game) driven by
+			# native focus — ui_accept fires whichever button is focused (see
+			# _build_title_overlay).
 			# Don't hard-route menu_select to Start here, or pressing accept on Settings
 			# would fire Start instead.
 			pass

@@ -33,10 +33,10 @@ func test_continue_is_keyboard_gamepad_focusable() -> void:
 	assert_true(w._continue_button.has_focus(), "the cursor is seated on Continue")
 
 
-func test_worth_showing_needs_at_least_one_percent_health_gain() -> void:
-	# A 10-point gain (300 -> 400 of 1000) is worth a popup.
-	assert_true(RepairReveal.worth_showing(_make_summary()), "a ≥1% health gain shows")
-	# A sub-1% touch-up (985 -> 989 of 1000 rounds 98% -> 99%? no: 4/1000 = 0.4pt) does not.
-	var tiny := {"repaired": true, "hp_before": 985.0, "hp_after": 989.0, "max_hp": 1000.0}
-	assert_false(RepairReveal.worth_showing(tiny), "a sub-1% health gain does not show")
+func test_worth_showing_needs_at_least_the_min_health_gain() -> void:
+	# A 10-point gain (300 -> 400 of 1000) clears the 2% bar.
+	assert_true(RepairReveal.worth_showing(_make_summary()), "a gain at/above the min shows")
+	# A sub-2% touch-up (985 -> 995 of 1000 = 1pt) stays below the bar.
+	var tiny := {"repaired": true, "hp_before": 985.0, "hp_after": 995.0, "max_hp": 1000.0}
+	assert_false(RepairReveal.worth_showing(tiny), "a gain below the min does not show")
 	assert_false(RepairReveal.worth_showing({"repaired": false}), "no repair, no popup")

@@ -190,6 +190,14 @@ func test_picking_a_camera_in_settings_applies_live() -> void:
 	_pause.settings_menu.select_camera(CameraManager.Mode.CHASE)
 
 
+func test_quit_pressed_opens_confirm_popup() -> void:
+	_pause.open()
+	_pause._on_quit_pressed()
+	await get_tree().process_frame
+	var popups := _pause.find_children("*", "ConfirmPopup", true, false)
+	assert_eq(popups.size(), 1, "quit shows a ConfirmPopup")
+
+
 func test_picking_a_scheme_in_settings_applies_live() -> void:
 	# The pause menu is wired to the live MobileControls, so picking a touch scheme in
 	# Settings switches the on-screen controls immediately (not only on the next run).

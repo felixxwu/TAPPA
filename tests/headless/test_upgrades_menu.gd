@@ -52,3 +52,41 @@ func _has_swap_button(m: Control) -> bool:
 		if String((node as Button).text).to_lower().begins_with("swap engine"):
 			return true
 	return false
+
+
+# pw_limit advisory — uses the CarFixtures synthetic roster so the assertions never
+# pin a real catalogue car's stats, only the logic (over/under a given limit).
+
+func before_each() -> void:
+	CarFixtures.install()
+
+func after_each() -> void:
+	CarFixtures.restore()
+
+func _owned_fixture_car() -> Dictionary:
+	return {
+		"instance_id": 99, "model_id": "fx_light_rwd",
+		"installed_upgrades": [], "upgrades": {}, "tuning": {},
+	}
+
+func _menu_with_limit(owned: Dictionary, pw_limit: float) -> Control:
+	var m = UpgradesMenuScript.new()
+	add_child_autofree(m)
+	m.setup(owned, Callable(), Callable(), pw_limit)
+	return m
+
+func test_no_limit_by_default_not_over() -> void:
+	var m = _menu_with_limit(_owned_fixture_car(), -1.0)
+	assert_false(m.over_pw_limit(), "no limit => never over")
+
+func test_limit_below_ratio_flags_over() -> void:
+	# A limit of 1 hp/tonne is below any real car's ratio, so it must read as over.
+	var m = _menu_with_limit(_owned_fixture_car(), 1.0)
+	assert_true(m.over_pw_limit(), "ratio above the limit reads as over")
+	assert_string_contains(m._stats_label.text.to_lower(), "over limit")
+
+func test_limit_above_ratio_not_over() -> void:
+	# A limit of 100000 hp/tonne is above any real car's ratio, so it's within.
+	var m = _menu_with_limit(_owned_fixture_car(), 100000.0)
+	assert_false(m.over_pw_limit(), "ratio below the limit reads as within")
+	assert_false(m._stats_label.text.to_lower().contains("over limit"))

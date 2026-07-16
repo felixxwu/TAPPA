@@ -85,11 +85,14 @@ static func health_gain_pct(summary: Dictionary) -> int:
 	return int(round(100.0 * after / max_hp)) - int(round(100.0 * before / max_hp))
 
 
-# Whether a repair is worth popping up for: only when the health gain is at least a
-# full percentage point. A sub-1% patch (e.g. a wheels-only touch-up on a near-full
-# car) still applies to the save; it just doesn't interrupt the player with a card.
+# Minimum health gain (percentage points) a repair must reach to warrant a popup.
+const MIN_SHOW_GAIN_PCT := 2
+
+# Whether a repair is worth popping up for: only when the health gain is at least
+# MIN_SHOW_GAIN_PCT points. A smaller patch (e.g. a wheels-only touch-up on a
+# near-full car) still applies to the save; it just doesn't interrupt the player.
 static func worth_showing(summary: Dictionary) -> bool:
-	return bool(summary.get("repaired", false)) and health_gain_pct(summary) >= 1
+	return bool(summary.get("repaired", false)) and health_gain_pct(summary) >= MIN_SHOW_GAIN_PCT
 
 
 # Populate the card from a Save.field_repair summary

@@ -41,10 +41,16 @@ not just the live-fielded car. The car park offers this as a one-press prompt:
 an over-powered car (over a rally's `pw_max` cap) still parks in the rally
 lineup with Start relabelled **Detune to N% & Start**, which applies the
 qualifying tune (`RallyLibrary.qualifying_detune`) on agreement — see
-[menus.md](menus.md) → CARPARK. The slider's value label pairs the percent with
+[menus.md](menus.md) → CARPARK. The **pre-event start-line tune menu** offers the same
+"Detune to N% / Change Upgrades" prompt on Start (see [start-line.md](start-line.md)).
+The slider's value label pairs the percent with
 the car's live power-to-weight at that setting (e.g. `80% - 200 hp/tonne`, via
 `TuningPanel._detune_label_text` → `effective_meta`), so you can dial to a target band
-by eye. (All tuning-lift sliders share one fixed-width label column so they line
+by eye; when the host passes a `pw_limit` (the start line passes the rally's `pw_max`;
+the HQ lift omits it) the label also spells out the ceiling and flags **OVER LIMIT**
+(e.g. `120% - 260 hp/tonne (max 200) OVER LIMIT`). The detune slider always spans the
+full 0–100 % — eligibility is enforced at Start, not by capping the slider. (All
+tuning-lift sliders share one fixed-width label column so they line
 up to the same length regardless of value text.)
 
 ## Application (`TuningLibrary.apply`)

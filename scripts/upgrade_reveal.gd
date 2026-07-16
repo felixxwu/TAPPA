@@ -1,11 +1,13 @@
 extends Control
 class_name UpgradeReveal
 # A self-contained reward card: a slot-machine spin that lands on a won upgrade,
-# then an Apply/Keep choice (enable now vs leave fitted-disabled for the garage).
+# then a single "Next" step — normal parts are granted fitted-disabled to the
+# driven car and enabled later in the upgrades menu, no Apply/Keep here.
 # A won repair kit offers a Repair-now/Save-it choice when the driven car is below
 # full health; otherwise consumables and the drivetrain kit skip the choice. Emits `finished`
-# once the reveal + choice resolves. Used by the standings interstitial; visually
-# matches the podium reward card (features/menus.md, features/reward-system.md).
+# once the reveal (+ repair choice, where offered) resolves. Used by the standings
+# interstitial; visually matches the podium reward card (features/menus.md,
+# features/reward-system.md).
 
 signal finished()
 
@@ -68,9 +70,10 @@ func _build_ui() -> void:
 	_slot_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_slot_caption)
 
-	# The apply/keep choice: the won part is already fitted (disabled) to the driven
-	# car — Apply enables it now, Keep leaves it disabled to enable later in the
-	# garage. Both buttons focusable so the choice works on keyboard/gamepad.
+	# The repair-kit apply/keep choice: Repair now spends the just-won kit on the
+	# driven car, Save it banks it for later. Both buttons focusable so the choice
+	# works on keyboard/gamepad. (Normal parts no longer use this box — see
+	# `_offer_choice`.)
 	_choice_box = HBoxContainer.new()
 	_choice_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_choice_box.add_theme_constant_override("separation", 12)
@@ -158,10 +161,12 @@ func _start_slot(reel_names: Array, target: String, on_done: Callable) -> void:
 			on_done.call())
 
 
-# The won part is already fitted (disabled) to the driven car; Apply enables it,
-# Keep leaves it disabled. Consumables (the repair kit) + the drivetrain kit skip
-# the choice — a consumable just lands in inventory, the drivetrain kit installs
-# enabled (its FWD/RWD/AWD selection is made later in the garage).
+# The won part is already fitted (disabled) to the driven car; the reveal just
+# reports that and emits `finished` — no Apply/Keep, the player enables it later
+# in the garage. Consumables (the repair kit) just land in inventory, and the
+# drivetrain kit installs enabled (its FWD/RWD/AWD selection is made later in the
+# garage). A repair kit still offers a Repair-now/Save-it choice when the driven
+# car is below full health.
 func _offer_choice(item_id: String, item_name: String) -> void:
 	var driven := Save.get_car(_car_instance_id)
 	# The repair kit is a consumable — but if the car you just drove is below full
@@ -195,17 +200,11 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 		_slot_caption.text = UITheme.caps("%s installed on your %s — pick a drive mode in the garage" % [item_name, car_name])
 		finished.emit()
 		return
-	_choice_mode = "upgrade"
-	_choice_item_id = item_id
-	_choice_pending = true
-	_slot_caption.text = UITheme.caps("Fit %s to the %s you just drove?" % [item_name, car_name])
-	_apply_button.text = UITheme.caps("Apply to %s" % car_name)
-	_keep_button.text = UITheme.caps("Keep for later")
-	_choice_box.visible = true
-	UITheme.enforce(self)
-	# Framework: focus + WASD/arrow/gamepad nav across Apply/Keep (no on_back — the
-	# host owns back). Seats the cursor on Apply.
-	MenuNav.attach(self, {first = _apply_button})
+	# Normal slottable part: grant it to the garage (already fitted-disabled by
+	# rally_session) and let the player install it later in the upgrades menu at
+	# the next event. No Apply/Keep here — one "Next".
+	_slot_caption.text = UITheme.caps("%s added to your garage — install it at the next event" % item_name)
+	finished.emit()
 
 
 func _on_apply() -> void:
@@ -214,22 +213,12 @@ func _on_apply() -> void:
 		Save.use_repair_kit(_car_instance_id)
 		_slot_caption.text = UITheme.caps("%s repaired to full health" % car_name)
 		_resolve_choice()
-		return
-	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
-	Save.set_upgrade_enabled(_car_instance_id, _choice_item_id, true)
-	_slot_caption.text = UITheme.caps("%s fitted & enabled — toggle it any time in the garage" % item_name)
-	_resolve_choice()
 
 
 func _on_keep() -> void:
 	if _choice_mode == "repair":
 		_slot_caption.text = UITheme.caps("Repair kit saved to your inventory")
 		_resolve_choice()
-		return
-	var item_name := String(UpgradeLibrary.by_id(_choice_item_id).get("name", _choice_item_id))
-	Save.set_upgrade_enabled(_car_instance_id, _choice_item_id, false)
-	_slot_caption.text = UITheme.caps("%s fitted (disabled) — enable it any time in the garage" % item_name)
-	_resolve_choice()
 
 
 func _resolve_choice() -> void:

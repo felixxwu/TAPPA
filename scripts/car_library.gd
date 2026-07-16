@@ -239,8 +239,8 @@ const CARS: Array[Dictionary] = [
 		"id": "xjs", "country": "GB", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75,  # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95,  # period touring / GT tyres
-		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy RWD GT)
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
+		"brake_bias": 0.2,  # front share of foot-brake torque (nose-heavy RWD GT)
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 4000,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
@@ -263,7 +263,7 @@ const CARS: Array[Dictionary] = [
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
-		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.5,
+		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.45,
 		"wheel_radius": 0.37, "wheel_width_front": 0.235, "wheel_width_rear": 0.275,  # mild stagger
 		"suspension_travel": 0.45, "suspension_stiffness": 11.0,  # heavy long GT, softer ride
 		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().

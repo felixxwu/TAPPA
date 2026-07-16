@@ -39,6 +39,9 @@ class StubPlayer:
 	func apply_owned(_owned: Dictionary) -> String:
 		applied_owned = true
 		return ""
+	var refit_calls := 0
+	func refit_upgrades(_owned: Dictionary) -> void:
+		refit_calls += 1
 
 
 # A flat terrain stub at a raised elevation, so the spawn-clearance seating is testable
@@ -357,6 +360,83 @@ func test_start_line_tune_uses_retune_and_preserves_the_staged_pose() -> void:
 	assert_false(_player.applied_owned,
 		"it must NOT re-field via apply_owned (that relocates wheels + resets the pose)")
 	assert_eq(_player.global_transform, pose_before, "the staged grid pose is preserved across a tune")
+
+
+func test_start_overlay_has_a_focusable_upgrades_button() -> void:
+	var sl := _make()
+	assert_not_null(sl._upgrades_button, "the pre-event overlay offers an Upgrades button")
+	assert_eq(sl._upgrades_button.focus_mode, Control.FOCUS_ALL,
+		"the Upgrades button is keyboard/gamepad focusable (MenuNav attached)")
+
+
+func test_upgrades_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
+	# A live session so the upgrades menu binds the racing car (skip_track_gen: no scene).
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make()
+	sl._open_upgrades()
+	assert_true(sl._upgrades_layer.visible, "opening Upgrades shows the upgrades overlay")
+	assert_false(sl._overlay.visible, "the start overlay hides while upgrading")
+	sl._close_upgrades()
+	assert_true(sl._overlay.visible, "Back restores the start overlay")
+	assert_false(sl._upgrades_layer.visible, "Back hides the upgrades overlay")
+
+
+func test_upgrade_changed_refits_the_live_car() -> void:
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make()
+	sl._on_upgrade_changed()
+	assert_true(_player.refit_calls > 0, "an upgrade edit refits the live car's upgrade state")
+
+
+func test_launch_is_gated_by_rally_eligibility() -> void:
+	# Field a real (fixture) owned car, then rig _rally with a restriction no car can
+	# satisfy (an impossibly high minimum engine size) so ineligibility_reason() is
+	# guaranteed non-empty regardless of which car is fielded. launch() must then be
+	# blocked: it must not flip _launched or advance the sequence.
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.set_selected_car(int(owned["instance_id"]))
+	RallySession.start_rally(_rally(), owned, true)
+	var sl := _make()
+	sl._rally = {"restriction": {"engine_min_l": 999.0}}
+	sl.launch()
+	assert_false(sl.has_launched(), "launch() is blocked when the fielded car is ineligible")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "the sequence does not advance when blocked")
+
+
+func test_over_powered_car_gets_detune_prompt_on_start() -> void:
+	# An over-powered car (over the rally's pw ceiling, but fixable by detuning) gets the
+	# "Too powerful" popup with a Detune option — like the HQ car park. The ceiling is
+	# derived from the fielded car's actual p/w (no pinned value) so a detune, not a part
+	# swap, is what admits it.
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.set_selected_car(int(owned["instance_id"]))
+	RallySession.start_rally(_rally(), owned, true)
+	var sl := _make()
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
+	sl._rally = {"restriction": {"pw_max": pw * 0.8}}
+	sl.launch()
+	assert_false(sl.has_launched(), "an over-powered car is blocked at Start")
+	var popups := sl.find_children("*", "ConfirmPopup", true, false)
+	assert_eq(popups.size(), 1, "the gate shows a ConfirmPopup")
+	var offers_detune := false
+	for b in popups[0].find_children("*", "Button", true, false):
+		if "detune" in (b as Button).text.to_lower():
+			offers_detune = true
+	assert_true(offers_detune, "the popup offers a Detune option for an over-powered car")
+	# Applying the qualifying detune admits the car and launches.
+	sl._apply_detune_and_launch(sl._rally_qualifying_detune(owned))
+	assert_true(sl.has_launched(), "Detune-to-X applies the tune and launches")
+
+
+func test_launch_proceeds_when_the_car_is_eligible() -> void:
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.set_selected_car(int(owned["instance_id"]))
+	RallySession.start_rally(_rally(), owned, true)
+	var sl := _make()
+	sl._rally = {}  # open class: no restriction to fail
+	sl.launch()
+	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
 
 
 func test_launch_is_idempotent() -> void:

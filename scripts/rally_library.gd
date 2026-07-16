@@ -295,27 +295,32 @@ static func event_cliffiness(event: Dictionary) -> float:
 # effective stats (UpgradeLibrary.effective_meta) so an installed engine kit or
 # weight reduction can qualify / disqualify it via the pw_min / pw_max band; the
 # raw CARS entry is only the right input for an unmodified roster car (rivals).
-static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
+static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary) -> String:
 	var r: Dictionary = rally.get("restriction", {})
 	if r.is_empty():
-		return true
+		return ""
 	if r.has("drive_mode") and int(car_meta.get("drive_mode", -1)) != int(r["drive_mode"]):
-		return false
+		return "Wrong drivetrain for this class"
 	if r.has("country") and String(car_meta.get("country", "")) != String(r["country"]):
-		return false
+		return "Wrong country of origin for this class"
 	if r.has("car_type") and String(car_meta.get("car_type", "")) != String(r["car_type"]):
-		return false
-	if r.has("engine_min_l") and float(car_meta.get("engine_displacement_l", 0.0)) < float(r["engine_min_l"]):
-		return false
-	if r.has("engine_max_l") and float(car_meta.get("engine_displacement_l", 0.0)) > float(r["engine_max_l"]):
-		return false
+		return "Wrong car type for this class"
+	var disp := float(car_meta.get("engine_displacement_l", 0.0))
+	if r.has("engine_min_l") and disp < float(r["engine_min_l"]):
+		return "Engine too small for this class"
+	if r.has("engine_max_l") and disp > float(r["engine_max_l"]):
+		return "Engine too large for this class"
 	# power_to_weight is kW/kg; the authored band is hp/tonne — convert before comparing.
 	var pw := CarLibrary.power_to_weight(car_meta) * KW_KG_TO_HP_TONNE
 	if r.has("pw_min") and pw < float(r["pw_min"]):
-		return false
+		return "Power-to-weight too low (%d hp/t, min %d)" % [roundi(pw), roundi(float(r["pw_min"]))]
 	if r.has("pw_max") and pw > float(r["pw_max"]):
-		return false
-	return true
+		return "Power-to-weight too high (%d hp/t, max %d)" % [roundi(pw), roundi(float(r["pw_max"]))]
+	return ""
+
+
+static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
+	return ineligibility_reason(rally, car_meta) == ""
 
 
 # The largest engine-detune fraction at which a car passes `rally`'s restriction,
