@@ -39,3 +39,14 @@ func test_size_factor_bad_index_is_one() -> void:
 	var field := _build_field(0.3)
 	assert_almost_eq(field.size_factor(-1), 1.0, 1e-6, "negative index -> 1.0")
 	assert_almost_eq(field.size_factor(9999), 1.0, 1e-6, "out-of-range index -> 1.0")
+
+
+# The opaque billboard material must carry the shared sun/ambient uniforms so trees
+# take the same light model as the terrain. Contract only — we assert the params are
+# present/populated (wiring didn't drop them), never their tunable values.
+func test_opaque_material_has_sun_uniforms() -> void:
+	var field := _build_field(1.0)
+	var mat := field.render_mesh.surface_get_material(0) as ShaderMaterial
+	assert_not_null(mat, "opaque field builds a ShaderMaterial")
+	for p in ["sun_dir", "sun_color", "sky_color", "ground_color", "light_amount"]:
+		assert_ne(mat.get_shader_parameter(p), null, "material sets uniform '%s'" % p)

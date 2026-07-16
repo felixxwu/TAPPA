@@ -106,6 +106,26 @@ standing, 1 knocked over), and `billboard_opaque.gdshader` branches on it:
   snaps into the fixed "+" cross and topples, so a fallen tree reads as a solid 3D
   shape instead of a flat sheet lying on the ground. `reset_fallen` clears the flag.
 
+**Sun shading (matches the terrain).** Standing billboards are no longer flat:
+`billboard_opaque.gdshader` runs the same hemisphere-ambient + one-directional-sun
+model the terrain bakes (`terrain_manager._bake_light` / `ps1_models_lit.gdshader`).
+The card normal is the horizontal to-camera direction `to_cam`, so `hemi` is fixed at
+`0.5` (a vertical surface sees half sky, half ground) and only the sun's **horizontal**
+component drives the directional term `ndl = max(dot(to_cam, sun_dir), 0)` — sun on the
+camera's side brightens the visible face, sun beyond the tree falls to pure ambient. The
+factor is computed once per card in `vertex()` (where `to_cam` already lives), passed as
+`varying v_tint`, and multiplied into `ALBEDO`. **Felled** trees skip the directional term
+and take **ambient-only** (they lie flat and are a rare, transient minority). The five
+uniforms (`sun_dir`, `sun_color`, `sky_color`, `ground_color`, `light_amount`) are pushed
+from `Config.data` in `BillboardField.build` (opaque path only); the shader deliberately
+**omits** the `source_color` hint on the colour uniforms so it consumes the same raw
+`Color` floats the terrain bakes (adding it would sRGB-decode and make trees diverge from
+the ground). Strength is the new `foliage_light_amount` config knob — default `1.0`,
+independent of but conventionally kept equal to `terrain_light_amount`; `light_amount = 0`
+is an exact no-op so an unset material renders as before. Because the normal is horizontal,
+the effect is coupled to a low sun: if `sun_direction`'s elevation were raised a lot, trees
+would react progressively less while terrain/cars keep reacting.
+
 Distance
 fade is a vertex **shrink-out** over `tree_render_fade_m` before
 `tree_render_distance_m` (opaque, replacing the old screen-door dither, which

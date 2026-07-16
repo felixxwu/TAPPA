@@ -79,7 +79,7 @@ var peak_torque_rpm := 4500.0
 ## Minimum speed (m/s) before the steer-assist yaw torque kicks in. Below this
 ## the car is too slow for understeer to matter and the aid only makes low-speed
 ## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.
-@export_range(0.0, 50.0) var steer_assist_min_speed := 20
+@export_range(0.0, 50.0) var steer_assist_min_speed := 17
 ## Spin protection: corrective yaw torque (N·m) that pulls the nose back toward
 ## the direction of travel once the car has rotated further than
 ## spin_assist_angle into a slide — the counterpart to steer_assist_torque
@@ -874,6 +874,9 @@ var peak_torque_rpm := 4500.0
 @export_range(0.0, 1.0) var car_light_amount := 1.0
 ## 0 = flat (unlit), 1 = full shading. Strength baked into the terrain.
 @export_range(0.0, 1.0) var terrain_light_amount := 1.0
+## 0 = flat (unlit), 1 = full shading. Strength on billboard trees. Independent
+## of terrain_light_amount but conventionally kept equal so trees match the ground.
+@export_range(0.0, 1.0) var foliage_light_amount := 1.0
 ## World-space direction TO the sun (need not be normalised; normalised on use).
 ## ALIGNED TO THE SKYBOX: panoramas are pre-rolled (tools/align_sky_sun.py) so the
 ## sun sits at the image centre, which is +Z in Godot's panorama mapping (verified

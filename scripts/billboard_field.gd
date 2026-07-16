@@ -123,6 +123,14 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 	if use_opaque:
 		mat.set_shader_parameter("near_fade_start", Config.data.tree_near_fade_start_m)
 		mat.set_shader_parameter("near_fade_end", Config.data.tree_near_fade_end_m)
+		# Trees take the terrain's hemisphere-ambient + directional-sun model so
+		# they match the lit ground (billboard_opaque.gdshader). sun_dir is
+		# normalised to match apply_terrain_light; no source_color decode either side.
+		mat.set_shader_parameter("sun_dir", Config.data.sun_direction.normalized())
+		mat.set_shader_parameter("sun_color", Config.data.sun_color)
+		mat.set_shader_parameter("sky_color", Config.data.sky_color)
+		mat.set_shader_parameter("ground_color", Config.data.ground_color)
+		mat.set_shader_parameter("light_amount", Config.data.foliage_light_amount)
 	# A supplied silhouette mesh can be empty (0 surfaces) if its source texture
 	# had no opaque area; skip material assignment then (the field renders nothing)
 	# rather than indexing a missing surface.
