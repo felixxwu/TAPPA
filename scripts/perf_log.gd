@@ -8,10 +8,46 @@ var _accum := 0.0
 var _frames := 0
 var _script_us: Dictionary = {}  # StringName -> accumulated usec since last print
 
+# --- Benchmark capture window --------------------------------------------------
+# A second, independent accumulator the benchmark opens for a whole run so it can
+# report per-script CPU cost with the results (features/benchmark.md → feedback
+# loop). Unlike the per-second log above this runs in RELEASE builds too (the
+# shipped web build is a release export, where the per-second logger is off) —
+# `track()` always accumulates into it while `_capturing`, so profiling numbers
+# come from the representative release build, not the fatter debug one.
+var _capturing := false
+var _cap_us: Dictionary = {}  # StringName -> accumulated usec since begin_capture
+
 ## Called by the timing wrappers around per-frame callbacks (see e.g.
 ## car.gd._physics_process). Accumulates cost per script between prints.
 func track(key: StringName, usec: int) -> void:
 	_script_us[key] = int(_script_us.get(key, 0)) + usec
+	if _capturing:
+		_cap_us[key] = int(_cap_us.get(key, 0)) + usec
+
+
+## Start a benchmark capture window: clears the accumulator and records every
+## track() call until end_capture(). Independent of OS.is_debug_build().
+func begin_capture() -> void:
+	_cap_us = {}
+	_capturing = true
+
+
+## Close the capture window and return per-script average cost in ms/frame over
+## `frame_count` rendered frames, sorted descending. `frame_count` comes from the
+## caller (the benchmark runner counts its own sampled frames) since the
+## per-second `_process` frame counter is off in release builds. Returns {} when
+## no frames were sampled.
+func end_capture(frame_count: int) -> Dictionary:
+	_capturing = false
+	var out: Dictionary = {}
+	if frame_count <= 0:
+		return out
+	var keys := _cap_us.keys()
+	keys.sort_custom(func(a, b): return _cap_us[a] > _cap_us[b])
+	for key in keys:
+		out[String(key)] = float(_cap_us[key]) / 1000.0 / float(frame_count)
+	return out
 
 func _ready() -> void:
 	if not OS.is_debug_build():

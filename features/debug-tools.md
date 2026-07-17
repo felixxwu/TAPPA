@@ -127,6 +127,12 @@ it via `PerfLog.track(&"<script name>", usec)`. When adding a NEW script with a
 per-frame callback, follow the same pattern so it shows up in the table (and
 note tests may call the public callback directly — keep its signature).
 
+`PerfLog` also exposes a **benchmark capture window** (`begin_capture()` /
+`end_capture(frame_count)`) that `track()` feeds regardless of
+`OS.is_debug_build()`, so the benchmark's report can carry a per-script CPU
+breakdown from the representative *release* web build (the per-second logger
+above is off there). See [benchmark.md](benchmark.md) → "Feedback loop".
+
 ## Standalone performance benchmark
 
 **Source:** `benchmark/perf_benchmark.gd` + `benchmark/perf_benchmark.tscn`, run

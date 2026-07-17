@@ -13,8 +13,12 @@ const _LAYER := 110
 var again_button: Button
 var exit_button: Button
 var stat_labels: Array[Label] = []
+# A single line the runner patches to show whether the report POST landed
+# (features/benchmark.md → feedback loop). Created lazily on first update.
+var report_status_label: Label
 
 var _on_exit: Callable
+var _col: VBoxContainer
 
 
 func _init() -> void:
@@ -40,6 +44,7 @@ func setup(stats: Dictionary, on_again: Callable, on_exit: Callable) -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
 	panel.add_child(col)
+	_col = col
 
 	col.add_child(UITheme.title("Benchmark complete"))
 	for line in format_lines(stats):
@@ -67,6 +72,17 @@ func setup(stats: Dictionary, on_again: Callable, on_exit: Callable) -> void:
 func _back() -> void:
 	if _on_exit.is_valid():
 		_on_exit.call()
+
+
+# Show / update the report-delivery status line (the runner calls this after the
+# results POST resolves). Created lazily; sits as a footer under the buttons.
+func set_report_status(text: String) -> void:
+	if report_status_label == null:
+		report_status_label = Label.new()
+		report_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		if _col != null:
+			_col.add_child(report_status_label)
+	report_status_label.text = text.to_upper()
 
 
 # The read-out lines, split out (static, pure) so tests can check them without a

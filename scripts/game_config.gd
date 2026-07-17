@@ -604,6 +604,11 @@ var peak_torque_rpm := 4500.0
 ## Length of the combined steer-assist debug arrow (yellow, above the car,
 ## points left/right), in metres drawn per newton-metre of yaw-assist torque.
 @export_range(0.0000001, 0.001) var debug_assist_arrow_scale := 0.0001
+## Where a benchmark run POSTs its results JSON (features/benchmark.md → feedback
+## loop). Empty = auto: on a web build, POST to "/bench" on the page's own origin
+## (the serve_web.sh collector), so the LAN loop needs no config. On an installed
+## APK set this to your dev machine, e.g. "http://192.168.1.50:8080/bench".
+@export var bench_report_url := ""
 
 @export_group("Camera")
 @export var follow_distance := 2.5

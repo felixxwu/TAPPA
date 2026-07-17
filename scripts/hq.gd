@@ -116,10 +116,6 @@ var _carpark_starter_mode := false
 # from the garage's "Free Roam" button). It shows ALL owned cars and Start launches
 # free roam with the chosen car (see _enter_free_roam / _start_free_roam).
 var _carpark_freeroam_mode := false
-# On the web build, go fullscreen on the player's first tap (browsers only allow
-# fullscreen from a user gesture). Latched so we request it once. Orientation is
-# locked to landscape via project.godot (display/window/handheld/orientation).
-var _web_fullscreen_done := false
 
 # Map-table pan state: drag the table view around (the map can be larger than the
 # screen once zoomed in). _table_pan is the camera's X/Z offset from its base pose;
@@ -350,6 +346,8 @@ func _build_hq() -> void:
 	# Only over the title shot (a normal boot); never over the overflow gate.
 	if _should_show_android_app_notice() and _view == View.EXTERIOR:
 		_show_android_app_notice()
+	# Web fullscreen/landscape (the "tap to play" prompt) is handled globally by the
+	# WebFullscreen autoload so it works in every scene, including while driving.
 
 
 # First run no longer auto-grants a car: the player picks their starter (MX-5 vs
@@ -1473,36 +1471,12 @@ func _on_exterior_exit() -> void:
 
 
 func _on_exterior_start() -> void:
-	_maybe_enter_web_fullscreen()
 	# First-time players (no starter chosen yet) pick a starter car in the car park;
 	# returning players go straight to the garage.
 	if not bool(Save.profile.get("starter_picked", false)):
 		_enter_starter_pick()
 	else:
 		_go_to(View.GARAGE)
-
-
-# Take the web/mobile build fullscreen on the first user gesture, but ONLY when we're
-# stuck in portrait. Browsers reject fullscreen outside a user-activation context, so
-# this is called from input handlers (the Start button / first tap — see
-# _unhandled_input). Gated to the touch web build so a desktop browser isn't forced
-# fullscreen during dev.
-#
-# Crucial: some embedders (itch.io) already auto-present the game fullscreen in
-# landscape. Re-requesting fullscreen on the canvas there FLIPS it to portrait, so if
-# we're already landscape we leave it alone — there's nothing to fix. We only force
-# fullscreen when the viewport is portrait; the landscape orientation lock then comes
-# from the export's fullscreenchange handler (export_presets head_include).
-func _maybe_enter_web_fullscreen() -> void:
-	if _web_fullscreen_done or not OS.has_feature("web"):
-		return
-	if not (DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force):
-		return
-	_web_fullscreen_done = true
-	var size := DisplayServer.window_get_size()
-	if size.x >= size.y:
-		return  # already landscape (e.g. itch.io's auto-fullscreen) — don't disturb it
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
 # Free Roam: open the car park to pick which owned car to drive. Parks the WHOLE owned
@@ -3110,9 +3084,6 @@ func _begin_rally_start() -> void:
 # --- Menu input (keyboard / gamepad; clicking 3D objects is the primary path) -
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Any first tap/click on the web build is a valid gesture to go fullscreen.
-	if (event is InputEventScreenTouch and event.pressed) or _is_click(event):
-		_maybe_enter_web_fullscreen()
 	match _view:
 		View.EXTERIOR:
 			# The title is a flat button menu (Start / Settings / Exit Game) driven by

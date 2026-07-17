@@ -96,6 +96,9 @@ func _process(delta: float) -> void:
 		_warmup_left -= 1
 		if _warmup_left == 0:
 			_start_offset = _progress.progress_offset()
+			# Open the per-script CPU capture window over the SAME frames we sample
+			# below, so the scripts breakdown lines up with the render stats.
+			PerfLog.begin_capture()
 		return
 	_samples["frame_ms"].append(delta * 1000.0)
 	_samples["draws"].append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
@@ -120,11 +123,67 @@ func _finish() -> void:
 	var stats := BenchmarkStats.summarise(_samples)
 	stats["distance_m"] = maxf(0.0, _progress.progress_offset() - _start_offset)
 	stats["disabled"] = _disabled_toggle_names()
+	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
 	Benchmark.finish(stats)
 
 	_results_screen = BenchmarkResults.new()
 	add_child(_results_screen)
 	_results_screen.setup(stats, _run_again, Benchmark.exit_to_hq)
+
+	_report(stats, scripts)
+
+
+# --- Result reporting (feedback loop) ------------------------------------------
+
+# POST the run's report to the dev machine so it lands in build/bench-results/
+# for analysis (features/benchmark.md → "Feedback loop"). Fire-and-forget: the
+# results panel shows whether it was delivered. Skipped headless / when no URL
+# resolves (desktop dev without bench_report_url set).
+func _report(stats: Dictionary, scripts: Dictionary) -> void:
+	var url := _resolve_report_url()
+	if url == "" or Platform.is_headless():
+		return
+	var device := BenchmarkReport.probe_device()
+	var label := BenchmarkReport.make_label(
+		String(device.get("build_version", "")), stats.get("disabled", []))
+	var stamp := Time.get_datetime_string_from_system(true)
+	var report := BenchmarkReport.build(stats, scripts, device, stamp, label)
+	var body := BenchmarkReport.to_json(report)
+
+	if _results_screen != null:
+		_results_screen.set_report_status("reporting…")
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.request_completed.connect(_on_report_done)
+	var err := http.request(url, ["Content-Type: application/json"],
+		HTTPClient.METHOD_POST, body)
+	if err != OK and _results_screen != null:
+		_results_screen.set_report_status("report failed (request error %d)" % err)
+
+
+func _on_report_done(_result: int, code: int, _headers: PackedStringArray,
+		_body: PackedByteArray) -> void:
+	if _results_screen == null:
+		return
+	if code == 200:
+		_results_screen.set_report_status("reported ✓")
+	else:
+		_results_screen.set_report_status("report failed (HTTP %d)" % code)
+
+
+# The endpoint to POST results to. An explicit GameConfig.bench_report_url wins
+# (set it on an installed APK to reach your dev machine). Otherwise, on a web
+# build, POST to "/bench" on the page's own origin — the serve_web.sh collector —
+# so the LAN loop is zero-config. Empty everywhere else (desktop dev).
+func _resolve_report_url() -> String:
+	var configured := String(Config.data.bench_report_url)
+	if configured != "":
+		return configured
+	if OS.has_feature("web"):
+		var origin = JavaScriptBridge.eval("window.location.origin", true)
+		if origin != null:
+			return String(origin) + "/bench"
+	return ""
 
 
 # The display names of every toggle the player turned OFF for this run, so the

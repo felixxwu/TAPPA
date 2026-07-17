@@ -97,8 +97,60 @@ distance, and which toggles were disabled), hands the summary to
 `Benchmark.finish`, and shows `BenchmarkResults`: a keyboard/gamepad-navigable
 panel (MenuNav-attached; Esc/B = Exit) with **Run again** and **Exit benchmark**.
 
+## Feedback loop (report POST-back)
+
+**Source:** `scripts/benchmark_report.gd` (`BenchmarkReport`), the capture window
+in `scripts/perf_log.gd`, the POST in `scripts/benchmark_runner.gd`
+(`_report`/`_resolve_report_url`), the status line in `scripts/benchmark_results.gd`
+(`set_report_status`), and the collector `tools/bench_collector.py` (wired into
+`serve_web.sh`).
+
+The point of this loop is to profile per-system cost **on the actual phone** and
+get the numbers back to a dev machine (or Claude) to iterate — no push to prod:
+
+```
+edit code → ./serve_web.sh → open https://<mac-LAN-IP>:8080 on the phone (accept
+the one-time self-signed-cert warning) → run Settings → Benchmark → results POST
+back → build/bench-results/*.json → analyse → edit → repeat
+```
+
+- **What a run reports.** At the finish, the runner builds a JSON report
+  (`BenchmarkReport.build`, pure/testable) carrying: the `BenchmarkStats.summarise`
+  block (fps + 1% low, frame p95/p99/max, draws/objects/prims, render cpu/gpu,
+  process/physics ms, spikes), a **per-script CPU breakdown** (`scripts`:
+  ms/frame per instrumented script — `engine_audio`, `car`, `terrain_manager`, …),
+  the `device` context (`RenderingServer.get_video_adapter_name()`, OS/model,
+  browser UA on web, cpu count, build version), the `disabled_toggles`, and a run
+  `label` (build version + which toggles were off).
+- **Per-script capture in RELEASE.** `PerfLog`'s per-second logger is debug-build
+  only, but the benchmark needs the per-script numbers from the *representative
+  release* web build. `PerfLog.begin_capture()` / `end_capture(frame_count)` open
+  a second accumulator that `track()` always feeds (independent of
+  `OS.is_debug_build()`); the runner opens it right after warm-up so the window
+  lines up with the sampled frames, and closes it at the finish, averaging over
+  the frame count it sampled.
+- **Where it POSTs.** `_resolve_report_url()`: an explicit
+  `GameConfig.bench_report_url` wins (set it on an installed **APK** to reach your
+  dev machine, e.g. `http://192.168.1.50:8080/bench`); otherwise on a **web**
+  build it POSTs to `/bench` on the page's own origin (`window.location.origin`
+  via `JavaScriptBridge`) — so the `serve_web.sh` LAN loop is zero-config.
+  Skipped headless / when nothing resolves (desktop dev). The results panel shows
+  `reporting…` → `reported ✓` / `report failed …`.
+- **The collector.** `tools/bench_collector.py` serves `build/web` **and** accepts
+  `POST /bench`, writing each report to `build/bench-results/<utc>-<label>.json`
+  (git-ignored) and printing a one-line headline to the terminal. `serve_web.sh`
+  runs it, so the game is served and reports are collected on the same origin/port.
+- **Isolating a system.** Two attribution paths feed the same collector: a single
+  run already separates CPU (per-script + physics ms) from GPU (draws/prims/render
+  gpu); a **toggle sweep** (baseline, then one Settings→Benchmark toggle off at a
+  time — trees, distant terrain, signs, FX, render distance) posts one labelled
+  report each, and the frame-cost deltas pin terrain vs objects vs FX.
+
 ## Tests
 
+`tests/headless/test_benchmark_report.gd` — the report payload assembly, the
+run-label (baseline vs disabled-toggle naming, filename-safety), and the PerfLog
+capture window (averaging over frame count, ignoring out-of-window tracks).
 `tests/headless/test_benchmark_mode.gd` — toggle registry, the
 override/snapshot/restore lifecycle, the stats summariser, the runner's pure
 driving math, and a scene-integration boot (1-turn track) checking the world
