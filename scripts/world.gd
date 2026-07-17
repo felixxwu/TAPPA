@@ -172,6 +172,7 @@ func _ready() -> void:
 	# does the 3D work while main.tscn is up (the root's 3D pass is disabled).
 	var perf := PerfOverlay.new($Floor as TerrainManager)
 	perf.measure_viewport = get_node_or_null("PostProcess/View") as Viewport
+	perf.engine_audio = $Car.get_node_or_null("EngineAudio")  # live audio-overrun readout
 	add_child(perf)
 
 	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref).

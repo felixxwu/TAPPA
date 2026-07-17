@@ -51,6 +51,7 @@ def _headline(report: dict) -> str:
         f"frame p99 {stats.get('frame_p99_ms', 0):.1f}ms  "
         f"render cpu {stats.get('render_cpu_ms_avg', 0):.1f} gpu {stats.get('render_gpu_ms_avg', 0):.1f}  "
         f"phys {stats.get('physics_ms_avg', 0):.1f}ms  "
+        f"audio-skips {stats.get('audio_skips', 0)}  "
         f"[{dev.get('os', '?')}/{dev.get('model', '?')}]" + top
     )
 

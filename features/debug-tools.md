@@ -97,14 +97,23 @@ Diagnoses choppiness by separating the suspects per frame:
 | render **cpu** vs **gpu** | CPU-bound vs GPU-bound (fill rate, post-process shader) |
 | draws / objects / prims | scene complexity / draw-call pressure |
 | vram (tex) / nodes / phys objs | video-memory + scene-tree + active-physics pressure |
-| chunks loaded / spikes | terrain ring size; running spike count |
+| chunks loaded / spikes / **audio overruns** | terrain ring size; running spike count; engine-audio buffer underruns |
 
-While active it enables `RenderingServer.viewport_set_measure_render_time` and,
-on every frame over `SPIKE_MS` (28 ms), prints a `[PERF SPIKE]` line to stdout
-with the full breakdown **plus whether a terrain chunk was integrated that
-frame** (`TerrainManager.integrations_total` delta) — so terrain-correlated
-hitches are obvious in a play-session log. The GPU timer reads 0 on backends
-that don't support it (and always headless); the overlay labels that case.
+The **audio overruns** count is the fielded car's engine `AudioStreamGenerator`
+buffer underruns (`EngineAudio.skip_count()`), wired in by `world.gd`. It's the live
+signal for main-thread audio starvation — most visible on the single-threaded web
+build at the 30 fps cap, where a long frame drains the buffer before the next
+`_process` fill (see `engine_audio.gd` `BUFFER_SECONDS`). Drive normally with the
+overlay up to catch which frames cause overruns.
+
+While active it enables `RenderingServer.viewport_set_measure_render_time` and, on
+every frame over the **spike threshold** — now relative to the fps cap
+(`BenchmarkStats.spike_threshold_ms(Engine.max_fps)`: ~28 ms uncapped, ~50 ms at a
+30 fps cap, so a steady 33 ms frame isn't miscounted) **or on any audio overrun** —
+prints a `[PERF SPIKE]` line to stdout with the full breakdown **plus** whether a
+terrain chunk was integrated that frame (`TerrainManager.integrations_total` delta)
+and the frame's `audio_skips`. The GPU timer reads 0 on backends that don't support
+it (and always headless); the overlay labels that case.
 
 ## PerfLog autoload (per-second log lines + per-script timing)
 

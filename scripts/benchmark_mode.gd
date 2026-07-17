@@ -26,7 +26,8 @@ const TRACK_SEED := 90210
 # reproducible end-to-end, not just in its track geometry. Engine._init reads this
 # instead of randomising while `active`, so successive runs stumble identically.
 const RNG_SEED := 90210
-const TRACK_TURN_COUNT := 10   # a short stage — quick to run, still crosses varied terrain
+const TRACK_TURN_COUNT := 30   # a long stage — more varied content to stress; the run is
+                               # time-boxed by BenchmarkRunner.MAX_RUN_SECONDS, not by finishing it
 const NEUTRAL_FRACTION := 0.5  # straightness / forestiness / tarmac mid-point
 
 # The pre-run feature toggles, in the order the Settings page lists them. Each is

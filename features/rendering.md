@@ -289,13 +289,15 @@ the loading cover instead of mid-drive:
 
 The game ships one lean pipeline for every device (no quality tiers). Relevant
 shipped knobs in `GameConfig`:
-- **`target_fps`** (desktop, default 60) / **`target_fps_mobile`** (mobile + web,
-  default 30) — a render frame cap applied in `world._ready()` (skipped under
-  `--headless`, so it never throttles the test runner) to avoid thermal throttling
-  on phones. `world._ready()` picks between them via
-  `GameConfig.target_fps_for(Platform.is_mobile_or_web())` — mobile/web get the
-  aggressive 30 cap, desktop keeps 60. `0` = uncapped (either field). Physics stays
-  at the project physics tick.
+- **`target_fps`** (desktop) / **`target_fps_mobile`** (mobile + web) — a render
+  frame cap applied in `world._ready()` (skipped under `--headless`, so it never
+  throttles the test runner), selected via
+  `GameConfig.target_fps_for(Platform.is_mobile_or_web())`. **Both default to 60.**
+  An earlier 30 cap on mobile/web was dropped: on the **single-threaded web build**
+  audio is serviced by the main loop (no audio thread), so a 30 fps cap starved it
+  and produced audible gaps — 60 is smooth. The native Android APK performs fine at
+  60, so we cap everywhere at 60 rather than special-casing web. `0` = uncapped.
+  Physics stays at the project physics tick.
 - **`texture_lod_bias`** (default 0.75) — biases distant foliage sampling toward
   cheaper mip levels (a `lod_bias` uniform in `shaders/billboard.gdshader`, set
   from `BillboardField.build()`). The tree/bush textures now have **mipmaps

@@ -152,7 +152,13 @@ func _launch(id: String, segment: int, from_offset: float) -> void:
 	var segs: Array = song["segments"]
 	if segment < 0 or segment >= segs.size():
 		return
-	_playback.play_stream(segs[segment], from_offset)
+	# Force STREAM playback and route to the Music bus explicitly. On the web export
+	# the default playback type resolves to SAMPLE (WebAudio one-shot samples), which
+	# doesn't emit for AudioStreamPlaybackPolyphonic — so music was silent on web
+	# while working on desktop. play_stream()'s `bus` also defaults to "Master" (NOT
+	# the player's bus), so without this the music-volume bus never applied either.
+	_playback.play_stream(segs[segment], from_offset, 0.0, 1.0,
+		AudioServer.PLAYBACK_TYPE_STREAM, &"Music")
 
 
 func _ensure_music_bus() -> void:

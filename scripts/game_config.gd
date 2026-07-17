@@ -1427,10 +1427,12 @@ var peak_torque_rpm := 4500.0
 ## independently at the project physics tick. Mobile/web use target_fps_mobile
 ## instead (see target_fps_for()).
 @export_range(0, 240) var target_fps := 60
-## Render frame cap (FPS) on mobile + web targets, where a steady low ceiling
-## avoids thermal throttling on phones. 0 = uncapped. Selected over target_fps by
-## target_fps_for() when running on a mobile or web export.
-@export_range(0, 240) var target_fps_mobile := 30
+## Render frame cap (FPS) on mobile + web targets. Held at 60 (same as desktop):
+## the earlier 30 cap starved audio on the SINGLE-THREADED web build, where audio
+## is serviced by the main loop (no audio thread) so a lower frame rate causes
+## gaps — see features/rendering.md. The native APK performs fine at 60, so we cap
+## everywhere at 60 rather than special-casing web. 0 = uncapped.
+@export_range(0, 240) var target_fps_mobile := 60
 ## Texture LOD bias for the foliage/ground shaders: positive values pull distant
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.

@@ -19,6 +19,8 @@ const LOOKAHEAD_M := 12.0             # pure-pursuit aim point ahead on the road
 const STEER_GAIN := 2.5               # rad of heading error -> full steering lock
 const THROTTLE_GAIN := 0.5            # m/s of speed error -> full throttle/brake
 const WARMUP_FRAMES := 60             # settle/shader-compile frames left unsampled
+const MAX_RUN_SECONDS := 20.0         # hard cap on sampled driving — the stage is long
+                                      # (30 turns), so the run is time-boxed, not driven to the finish
 
 var _car: Node                        # the fielded Car (VehicleBody3D)
 var _progress: TrackProgress          # progress + finish edge + off-track reset
@@ -32,6 +34,11 @@ var _spike_frames: Array = []         # per-spike component breakdown (diagnosti
 var _frame_no := 0                    # sampled-frame index (spike timeline)
 var _terrain: Node                    # TerrainManager, for spike↔chunk-integration correlation
 var _last_integrations := 0           # integrations_total at the previous sampled frame
+var _engine_audio: Node               # the fielded car's EngineAudio, for overrun (skip) tracking
+var _last_skips := 0                  # skip_count() at the previous sampled frame
+var _audio_skips_total := 0           # generator underruns over the sampled window
+var _spike_ms := BenchmarkStats.SPIKE_MS  # spike threshold, relative to the fps cap (see setup)
+var _run_time := 0.0                  # sampled driving time; the run finishes at MAX_RUN_SECONDS
 var _results_screen: BenchmarkResults
 
 
@@ -44,6 +51,11 @@ func setup(car: Node, progress: TrackProgress, centerline: Curve2D, view: Viewpo
 	_progress = progress
 	_centerline = centerline
 	_terrain = terrain
+	_engine_audio = car.get_node_or_null("EngineAudio")
+	# Spike threshold relative to the frame cap (Engine.max_fps was set by
+	# world._ready): 0 = uncapped → 28 ms; a 30 fps cap → ~50 ms, so a 33 ms normal
+	# frame isn't miscounted as a spike (the fixed 28 ms flagged every 30 fps frame).
+	_spike_ms = BenchmarkStats.spike_threshold_ms(Engine.max_fps)
 	for stream in ["frame_ms", "draws", "objects", "prims", "render_cpu_ms",
 			"render_gpu_ms", "process_ms", "physics_ms"]:
 		_samples[stream] = []
@@ -105,6 +117,10 @@ func _process(delta: float) -> void:
 			# Open the per-script CPU capture window over the SAME frames we sample
 			# below, so the scripts breakdown lines up with the render stats.
 			PerfLog.begin_capture()
+			# Baseline the audio-skip counter so warm-up underruns (shader compiles)
+			# don't count against the measured window.
+			if _engine_audio != null and _engine_audio.has_method("skip_count"):
+				_last_skips = _engine_audio.skip_count()
 		return
 	var frame_ms := delta * 1000.0
 	var rcpu := RenderingServer.viewport_get_measured_render_time_cpu(_view_rid)
@@ -129,18 +145,34 @@ func _process(delta: float) -> void:
 		var total: int = _terrain.integrations_total
 		integ = total - _last_integrations
 		_last_integrations = total
-	if frame_ms >= BenchmarkStats.SPIKE_MS:
+	# Audio overruns (generator buffer underruns) since the last sampled frame — a
+	# skip on a slow frame implicates main-thread audio starvation (the fill runs in
+	# _process; a long frame drains the buffer). Correlated with the spike breakdown.
+	var skips := 0
+	if _engine_audio != null and _engine_audio.has_method("skip_count"):
+		var total_skips: int = _engine_audio.skip_count()
+		skips = total_skips - _last_skips
+		_last_skips = total_skips
+		_audio_skips_total += skips
+	if frame_ms >= _spike_ms:
 		_spike_frames.append({
 			"frame": _frame_no, "frame_ms": frame_ms,
 			"render_cpu_ms": rcpu, "process_ms": proc, "physics_ms": phys,
-			"chunk_integrations": integ,
+			"chunk_integrations": integ, "audio_skips": skips,
 		})
 	_frame_no += 1
+	# Hard time cap: the stage is long (30 turns), so end the run after
+	# MAX_RUN_SECONDS of sampled driving rather than driving it to the finish.
+	_run_time += delta
+	if _run_time >= MAX_RUN_SECONDS:
+		_finish()
 
 
 # --- Finish --------------------------------------------------------------------
 
 func _finish() -> void:
+	if not _running:
+		return  # already finished (time cap + progress could both fire the same frame)
 	_running = false
 	# Park the car: throttle off, handbrake on — it skids to a stop in the runoff
 	# behind the results panel.
@@ -148,13 +180,14 @@ func _finish() -> void:
 	_car.ai_steer = 0.0
 	_car.ai_handbrake = true
 
-	var stats := BenchmarkStats.summarise(_samples)
+	var stats := BenchmarkStats.summarise(_samples, _spike_ms)
 	stats["distance_m"] = maxf(0.0, _progress.progress_offset() - _start_offset)
 	stats["disabled"] = _disabled_toggle_names()
 	# The worst spikes (by frame time), with their component breakdown, so the report
 	# can attribute the hitches. Sorted descending, capped so the payload stays small.
 	_spike_frames.sort_custom(func(a, b): return a["frame_ms"] > b["frame_ms"])
 	stats["spike_frames"] = _spike_frames.slice(0, 20)
+	stats["audio_skips"] = _audio_skips_total
 	stats["pass"] = Benchmark.pass_index
 	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
 	Benchmark.finish(stats)

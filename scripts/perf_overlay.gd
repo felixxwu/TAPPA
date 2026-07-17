@@ -23,6 +23,7 @@ const REFRESH_S := 0.2          # on-screen text refresh cadence
 const FONT_SIZE := 15           # readable at a glance (the old 8px was too small)
 
 var terrain: TerrainManager     # for the chunk-integration correlation (optional)
+var engine_audio: Node          # fielded car's EngineAudio, for live audio-overrun readout (optional)
 # The viewport whose render cpu/gpu time is measured. Defaults to this node's own
 # viewport; world.gd points it at the PostProcess SubViewport, which is where the
 # 3D pass actually runs in main.tscn (the root viewport's 3D is disabled there).
@@ -31,7 +32,10 @@ var measure_viewport: Viewport
 var _label: Label
 var _frames: PackedFloat32Array = PackedFloat32Array()
 var _spikes := 0
+var _spike_ms := SPIKE_MS        # spike threshold, relative to the fps cap (set on activate)
 var _last_integrations := 0     # terrain.integrations_total at the previous frame
+var _audio_skips := 0           # cumulative engine-audio buffer underruns since activate
+var _last_skips := 0            # engine_audio.skip_count() at the previous frame
 var _refresh_accum := 0.0
 var _measure_on := false
 
@@ -75,12 +79,21 @@ func _process(delta: float) -> void:
 		integ_this_frame = terrain.integrations_total - _last_integrations
 		_last_integrations = terrain.integrations_total
 
+	# Audio overruns since last frame (engine generator buffer underruns) — an
+	# audible crackle, and the live signal for main-thread audio starvation.
+	var skips_this_frame := 0
+	if engine_audio != null and engine_audio.has_method("skip_count"):
+		var total_skips: int = engine_audio.skip_count()
+		skips_this_frame = total_skips - _last_skips
+		_last_skips = total_skips
+		_audio_skips += skips_this_frame
+
 	var stats := _sample(frame_ms)
-	if frame_ms >= SPIKE_MS:
-		_spikes += 1
-		print("[PERF SPIKE] frame=%.1fms process=%.1f physics=%.1f render_cpu=%.1f render_gpu=%.1f draws=%d objs=%d chunks_loaded=%d integrated_this_frame=%d" % [
+	if frame_ms >= _spike_ms or skips_this_frame > 0:
+		_spikes += 1 if frame_ms >= _spike_ms else 0
+		print("[PERF SPIKE] frame=%.1fms process=%.1f physics=%.1f render_cpu=%.1f render_gpu=%.1f draws=%d objs=%d chunks_loaded=%d integrated_this_frame=%d audio_skips=%d" % [
 			frame_ms, stats.process_ms, stats.physics_ms, stats.render_cpu_ms,
-			stats.render_gpu_ms, stats.draws, stats.objects, stats.chunks, integ_this_frame])
+			stats.render_gpu_ms, stats.draws, stats.objects, stats.chunks, integ_this_frame, skips_this_frame])
 
 	_refresh_accum += delta
 	if _refresh_accum >= REFRESH_S:
@@ -125,7 +138,7 @@ func _format(s: Dictionary) -> String:
 		" render cpu %.1fms   gpu %.1fms%s" % [s.render_cpu_ms, s.render_gpu_ms, gpu_note],
 		" draws %d   objects %d   prims %d" % [s.draws, s.objects, s.prims],
 		" vram %.0fMB (tex %.0fMB)   nodes %d   phys objs %d" % [s.vram_mb, s.texram_mb, s.nodes, s.phys_objects],
-		" chunks loaded %d   spikes>%.0fms %d" % [s.chunks, SPIKE_MS, _spikes],
+		" chunks loaded %d   spikes>%.0fms %d   audio overruns %d" % [s.chunks, _spike_ms, _spikes, _audio_skips],
 	])
 
 
@@ -139,6 +152,12 @@ func _set_active(on: bool) -> void:
 	if on:
 		_frames = PackedFloat32Array()
 		_spikes = 0
+		# Threshold relative to the fps cap so a 30 fps run's 33 ms frames aren't all
+		# flagged (the fixed 28 ms did exactly that). Matches BenchmarkRunner.
+		_spike_ms = BenchmarkStats.spike_threshold_ms(Engine.max_fps)
+		_audio_skips = 0
+		if engine_audio != null and engine_audio.has_method("skip_count"):
+			_last_skips = engine_audio.skip_count()
 		if terrain != null:
 			_last_integrations = terrain.integrations_total
 

@@ -86,7 +86,14 @@ left unsampled.
 
 Each rendered frame it records: frame interval, draw calls, objects, primitives,
 render CPU/GPU time (from the `PostProcess/View` viewport), and the process +
-physics-process times.
+physics-process times. It also tracks **audio overruns** — the fielded car's engine
+`AudioStreamGenerator` buffer underruns (`EngineAudio.skip_count()` →
+`AudioStreamGeneratorPlayback.get_skips()`), a per-frame delta so a skip is
+attributed to the (usually slow) frame it happened on; the run total is reported as
+`audio_skips` and per-spike as `audio_skips`. (NB: web autoplay policy suspends the
+audio context until a user gesture — an auto-started `?bench=1` run measures 0 skips
+because audio never starts; launch the benchmark from Settings, which involves a tap,
+to measure real audio behaviour.)
 
 ## Results
 
