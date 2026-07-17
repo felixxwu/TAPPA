@@ -6,13 +6,33 @@ extends GutTest
 
 var _scene: Node3D
 var _car: VehicleBody3D
+var _settled: Transform3D
+
+
+func before_all() -> void:
+	# Generate the real track/terrain ONCE (no foliage — these tests never look
+	# at trees/bushes), cold-settle the car, and cache its resting pose. Each test
+	# restores that pose in before_each rather than re-instantiating main.tscn and
+	# re-settling from the spawn clearance (the warm-restore idea from sim_test.gd).
+	SceneTestHelpers.no_foliage_world()
+	_scene = load("res://main.tscn").instantiate()
+	add_child(_scene)
+	_car = _scene.get_node("Car")
+	await _wait_physics(150)  # let the car drop onto its suspension and settle
+	_settled = _car.global_transform
+
+
+func after_all() -> void:
+	_scene.free()
+	Config.reset()  # don't leak the zeroed foliage into later files
 
 
 func before_each() -> void:
-	_scene = load("res://main.tscn").instantiate()
-	add_child_autofree(_scene)
-	_car = _scene.get_node("Car")
-	await _wait_physics(150)  # let the car drop onto its suspension and settle
+	# Restore the cached resting pose and re-stabilise briefly.
+	_car.global_transform = _settled
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	await _wait_physics(20)
 
 
 func _wait_physics(frames: int):

@@ -1582,20 +1582,18 @@ func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
 
 func test_swap_car_qualifies_for_restricted_rally() -> void:
 	# A car whose STOCK mode fails a RWD-only rally becomes eligible once it carries the
-	# swap kit (it can switch to RWD); without the kit it stays ineligible.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
+	# swap kit (it can switch to RWD); without the kit it stays ineligible. Pure
+	# entry-planning logic — exercised on RallyLibrary directly, no scene needed.
 	var rally := {"id": "t_rwd", "name": "T", "restriction": {"drive_mode": CarLibrary.RWD}}
 	var entry := {"id": "t_fwd", "name": "FWD car", "drive_mode": CarLibrary.FWD, "engine": "", "mass": 1200.0, "max_hp": 1000.0}
 	var with_kit := {"instance_id": 1, "model_id": "t_fwd", "hp": 1000.0,
 		"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": -1}
 	var no_kit := {"instance_id": 2, "model_id": "t_fwd", "hp": 1000.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
-	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
+	assert_eq(RallyLibrary.qualifying_drivetrain_for(rally, with_kit, entry,
 			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
 		"kitted car can switch to the required RWD")
-	assert_eq(hq._qualifying_drivetrain_for(rally, no_kit, entry,
+	assert_eq(RallyLibrary.qualifying_drivetrain_for(rally, no_kit, entry,
 			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
 		"un-kitted car cannot switch, so no qualifying mode")
 
@@ -1603,10 +1601,7 @@ func test_swap_car_qualifies_for_restricted_rally() -> void:
 func test_swap_and_detune_stack_for_a_rally_restricting_both() -> void:
 	# A rally that restricts BOTH drive_mode AND pw_max should be reachable by a car
 	# that needs to STACK a drivetrain switch with an engine detune — neither move
-	# alone qualifies it, but the two together do.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
+	# alone qualifies it, but the two together do. Pure logic — no scene needed.
 	var entry := {"id": "t_fwd_stack", "name": "FWD stack car", "drive_mode": CarLibrary.FWD,
 		"engine": "", "peak_torque": 300.0, "redline": 6000.0, "mass": 1200.0}
 	var full_pw := CarLibrary.power_to_weight(entry) * CarLibrary.KW_KG_TO_HP_TONNE
@@ -1619,10 +1614,10 @@ func test_swap_and_detune_stack_for_a_rally_restricting_both() -> void:
 		"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": -1}
 	var no_kit := {"instance_id": 4, "model_id": "t_fwd_stack",
 		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
-	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
+	assert_eq(RallyLibrary.qualifying_drivetrain_for(rally, with_kit, entry,
 			UpgradeLibrary.effective_meta(with_kit, entry)), CarLibrary.RWD,
 		"switch+detune stack qualifies the kitted car for the dual-restricted rally")
-	assert_eq(hq._qualifying_drivetrain_for(rally, no_kit, entry,
+	assert_eq(RallyLibrary.qualifying_drivetrain_for(rally, no_kit, entry,
 			UpgradeLibrary.effective_meta(no_kit, entry)), -1,
 		"un-kitted car cannot switch, so no qualifying mode even with a detune available")
 

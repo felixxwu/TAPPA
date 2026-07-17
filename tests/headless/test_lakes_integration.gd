@@ -64,7 +64,9 @@ func test_events_generate_dry_roads_with_lakes() -> void:
 # Field the actual car into main.tscn with water on, and confirm a LakeField was
 # built and the car's soft-hazard query is wired. Logs the car spawn + lake count.
 func test_car_fielded_into_water_stage() -> void:
-	Config.reset()
+	# Real track/terrain/lakes but no foliage — this test never inspects trees/bushes,
+	# so skip the ~7 s scatter (no_foliage_world resets Config, so set water after it).
+	SceneTestHelpers.no_foliage_world()
 	Config.data.water_enabled = true
 	Config.data.track_water_level_m = -0.8
 	Config.data.track_seed = 1007

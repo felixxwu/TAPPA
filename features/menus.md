@@ -12,7 +12,7 @@ park, run it, see the podium — and wires [rally-session.md](rally-session.md) 
 the run scene. The podium + between-event standings are still flat scenes (the 3D
 reward rig / podium are later refinements); remaining diegetic polish (tuning UI,
 per-car paint, camera fly-throughs *between* far stations) lives in
-[../todo/diegetic-hq.md](../todo/diegetic-hq.md) / [../todo/menus.md](../todo/menus.md).
+[../todo/menus.md](../todo/menus.md).
 
 ## The loop
 
@@ -827,8 +827,7 @@ podium transition, no hide/show button).
 
 The diegetic HQ space (exterior / garage / 3D map table / car park / tuning lift,
 with the camera flying between stations) is in. Still deferred
-([../todo/diegetic-hq.md](../todo/diegetic-hq.md), umbrella in
-[../todo/menus.md](../todo/menus.md)): per-car paint + duplicate-model name suffixes,
+(see [../todo/menus.md](../todo/menus.md)): per-car paint + duplicate-model name suffixes,
 designed environment art (blocks are placeholder), the 3D
 reward-reveal rig + 3D podium, and camera fly-through transitions for the longer
 hops. The podium + between-event **standings interstitial** still ship as flat

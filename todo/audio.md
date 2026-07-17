@@ -32,10 +32,17 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
 - **Engine audio is fully procedural** — `engine_audio.gd` (`extends
   AudioStreamPlayer`) pushes synthesized PCM into an `AudioStreamGenerator`
   (`engine_audio.gd:14-22`); the DSP is `EngineAudioSynth` (pure, no nodes).
-  **No audio *samples* are used anywhere** and there is no SFX/music playback.
-- **No bus layout.** `project.godot` defines **no `[audio]` / bus config**, so
-  everything (just the engine today) plays on the default **Master** bus. There
-  is no `default_bus_layout.tres`.
+  **No SFX *samples* are used anywhere** — the one-shot SFX layer this spec
+  covers is still unbuilt.
+- **A Music system shipped independently** since this spec was written — the
+  `Music` autoload (`scripts/music_director.gd`, plus `music_library.gd` /
+  `music_schedule.gd`) plays looping per-scene beds. It **creates a `Music` bus in
+  code** (`music_director.gd`) and drives its volume via `set_bus_volume_db`. So
+  "everything plays on Master" is no longer strictly true.
+- **Still no SFX / Engine bus and no `default_bus_layout.tres`.** Only the
+  runtime-created `Music` bus exists; the engine synth uses an
+  `engine_master_volume_db` gain rather than a dedicated `Engine` bus. The
+  Master / SFX / Engine layout this spec defines is still the open work.
 - **In-code node creation is the house pattern** (`billboard_field.gd`,
   `wheel_force_debug.gd:40-52`), so creating `AudioStreamPlayer`/`-3D` nodes in
   code fits the codebase.
@@ -145,8 +152,10 @@ Headless GUT tests (`tests/headless/`):
 
 ## Out of scope / open questions
 
-- **Music** — beds are scaffolded (bus + `play_music`) but the actual tracks and
-  when they cross-fade are deferred content.
+- **Music** — ~~beds are scaffolded; tracks/cross-fade deferred~~ **DONE and
+  shipped separately**: the `Music` autoload (`music_director.gd` /
+  `music_library.gd` / `music_schedule.gd`) plays looping per-scene beds with
+  segmented tracks and web stall-recovery. Not part of this spec's remaining work.
 - **3D vs 2D for impacts** — `play_sfx_3d` proposed for positional crashes;
   could be flat 2D if positioning adds little. Decide at build.
 - **Surface/terrain audio** (gravel vs tarmac roll, skids) — a richer driving-

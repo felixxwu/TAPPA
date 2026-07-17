@@ -668,39 +668,14 @@ func _stars_for(rally_id: String) -> int:
 	return 0
 
 
-# The eligibility decision for one owned `car` against `rally`, derived in ONE place so
-# the pin-flag check (_has_eligible_car) and the car-park lineup (_build_eligible_lineup)
-# can't drift. Returns {eligible, detune, drivetrain}: `eligible` = whether the car can
-# enter at all; `detune` = the qualifying engine-detune fraction to apply (0.0 = none);
-# `drivetrain` = the drive mode it must switch to (-1 = none). A car may need a switch,
-# a detune, both, or neither.
-func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-	var meta := UpgradeLibrary.effective_meta(car, entry)
-	if RallyLibrary.is_eligible(rally, meta):
-		return {"eligible": true, "detune": 0.0, "drivetrain": -1}
-	var target := _switch_target_for(rally, car, meta)
-	var meta_sw := meta
-	if target >= 0:
-		meta_sw = meta.duplicate()
-		meta_sw["drive_mode"] = target
-	# Switch alone qualifies?
-	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw):
-		return {"eligible": true, "detune": 0.0, "drivetrain": target}
-	# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
-	var frac := _qualifying_detune_for(rally, car, entry, meta_sw, target)
-	if frac > 0.0:
-		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1}
-	return {"eligible": false, "detune": 0.0, "drivetrain": -1}
-
-
 # Whether the player owns at least one car eligible to enter `rally` — drives the
 # pin flag's green (raceable) vs grey (no qualifying car) pennant. Mirrors the
 # eligibility filter used to build the car-park lineup (_build_eligible_lineup),
 # including an over-powered car that would qualify if it agreed to a detune.
+# Entry-planning logic lives in RallyLibrary (testable without a scene).
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get("cars", []):
-		if bool(_entry_plan(rally, car)["eligible"]):
+		if bool(RallyLibrary.entry_plan(rally, car)["eligible"]):
 			return true
 	return false
 
@@ -2377,7 +2352,7 @@ func _build_eligible_lineup() -> void:
 	var needs_detune := {}
 	var needs_drivetrain := {}
 	for car in Save.profile.get("cars", []):
-		var plan := _entry_plan(rally, car)
+		var plan := RallyLibrary.entry_plan(rally, car)
 		if not bool(plan["eligible"]):
 			continue
 		eligible.append(car)
@@ -2389,66 +2364,6 @@ func _build_eligible_lineup() -> void:
 	_build_lineup(eligible)  # clears _detune_needed / _drivetrain_needed (via _clear_lineup)
 	_detune_needed = needs_detune
 	_drivetrain_needed = needs_drivetrain
-
-
-# The engine-detune fraction that would let `owned` enter `rally`, for the one case
-# the car-park prompt covers: the car is TOO POWERFUL (its current p/w sits over the
-# rally's pw_max cap) but tuning the engine down would duck it under. -1.0 when the
-# car is under the cap (already eligible, or ineligible for a reason detuning can't
-# fix — those cars keep today's behaviour) or when no detune qualifies it.
-func _qualifying_detune_for(rally: Dictionary, owned: Dictionary, entry: Dictionary, meta: Dictionary, drive_override := -1) -> float:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("pw_max"):
-		return -1.0
-	if CarLibrary.power_to_weight(meta) * KW_KG_TO_HP_TONNE <= float(r["pw_max"]):
-		return -1.0
-	var frac := RallyLibrary.qualifying_detune(rally, _full_power_meta(owned, entry, drive_override))
-	return frac if frac > 0.0 and frac < 1.0 else -1.0
-
-
-# The drive mode this car would switch to for `rally` (the rally's required mode), or -1
-# when the rally has no drive_mode rule, the car lacks the swap kit, or it's already in
-# that mode. Judges ONLY the drive_mode dimension — callers layer detune on top.
-func _switch_target_for(rally: Dictionary, owned: Dictionary, meta: Dictionary) -> int:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("drive_mode"):
-		return -1
-	if not UpgradeLibrary.drivetrain_swap_unlocked(owned):
-		return -1
-	var required := int(r["drive_mode"])
-	if int(meta.get("drive_mode", -1)) == required:
-		return -1
-	return required
-
-
-# The drive mode `owned` must switch to in order to enter `rally`, or -1 when it's
-# already compliant OR can't be switched (no swap kit / rally has no drive_mode rule /
-# fails for another reason). Accepts a switch that qualifies ALONE, or a switch that
-# qualifies when STACKED with an engine detune (see _qualifying_detune_for).
-func _qualifying_drivetrain_for(rally: Dictionary, owned: Dictionary, entry: Dictionary, meta: Dictionary) -> int:
-	var target := _switch_target_for(rally, owned, meta)
-	if target < 0:
-		return -1
-	var switched := meta.duplicate()
-	switched["drive_mode"] = target
-	if RallyLibrary.is_eligible(rally, switched):
-		return target
-	return target if _qualifying_detune_for(rally, owned, entry, switched, target) > 0.0 else -1
-
-
-# The car's effective stats at FULL engine tune (detune 1.0), whatever the stored
-# slider value — the base the qualifying-detune math scales down from, so the prompt
-# always proposes an absolute slider setting. `drive_override` stamps a switched
-# drive_mode on top, so a switch+detune stack is evaluated on the POST-switch mode.
-func _full_power_meta(owned: Dictionary, entry: Dictionary, drive_override := -1) -> Dictionary:
-	var full := owned.duplicate(true)
-	var tuning: Dictionary = full.get("tuning", {})
-	tuning["engine_detune"] = 1.0
-	full["tuning"] = tuning
-	var out := UpgradeLibrary.effective_meta(full, entry)
-	if drive_override >= 0:
-		out["drive_mode"] = drive_override
-	return out
 
 
 # Park ALL owned cars for the title screen, so the player's whole collection is on

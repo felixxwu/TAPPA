@@ -134,8 +134,9 @@ gates it. The chosen mode is stored per car as `OwnedCar.drivetrain_override`
 honoured by `_rebuild_drivetrain`) and `UpgradeLibrary.effective_meta` reports for the
 stats panel + rally eligibility. A car with the kit counts as eligible for a
 `drive_mode`-restricted rally if it can switch to comply (and it can stack with an
-engine detune — see the lineup logic in `hq.gd`: `_switch_target_for` /
-`_qualifying_drivetrain_for` / `_build_eligible_lineup`); entering auto-applies the
+engine detune — the entry-planning logic lives in `RallyLibrary`:
+`switch_target_for` / `qualifying_drivetrain_for` / `entry_plan`, consumed by
+`hq.gd._build_eligible_lineup`); entering auto-applies the
 switch and `RallySession` reverts it afterward (`register_drivetrain_revert`), mirroring
 the engine-detune round-trip. The roster ships two stock **FWD** cars — the **Focus ST**
 (`id: "focus"`) and the **Renault Twingo** (`id: "twingo"`), both home entrants of the

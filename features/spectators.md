@@ -5,8 +5,6 @@ with simple steering preferences while upright, and are knocked flying when the
 car hits them. Three groups per stage — one at the **start**, one at the **end**,
 and one at a **seeded mid-stage point** (between 30% and 70% progress).
 
-Spec/brainstorm history: [`todo/roadside-spectators.md`](../todo/roadside-spectators.md).
-
 Placement/steering share the low-level scatter helpers: `ScatterMath`
 (`scripts/scatter_math.gd`, seeded `hash01` + road-cell tests) and `SpatialGrid`
 (`scripts/spatial_grid.gd`, point/index binning + 3x3 proximity). `build_point_grid`

@@ -1,17 +1,32 @@
 # Settings — implementation spec
 
-> Status: **planned, not yet implemented.** Implementation brief for the
-> player-facing **Settings / options** surface and its persistence — the gap
-> `gameplay.md`'s shippable (itch.io) build implies but no spec owned.
-> `todo/save-persistence.md` deliberately **excludes** settings ("audio/graphics/
-> control settings are *not* covered here … likely [their] own `settings.cfg` —
-> different lifecycle") and flags it as an open question; this spec resolves it.
+> Status: **partially implemented — via a DIFFERENT mechanism than specced below.**
+> A shared `SettingsMenu` (`scripts/settings_menu.gd`, `class_name SettingsMenu`)
+> now ships with Audio / Camera / Key-bindings / Mobile-controls / Benchmark
+> pages, reachable from **both** Title (`hq.gd`) and Pause (`pause_menu.gd`).
+> Persistence did **NOT** use the proposed separate `user://settings.cfg` +
+> `SettingsManager` autoload — settings persist through `Save.set_setting` into
+> `profile["settings"]` (`save_manager.gd`), and control rebinding shipped as its
+> own `InputRemap` autoload (was *Out of scope* here). So the `settings.cfg` /
+> autoload / schema-version design below is **superseded**; the still-open work is
+> the remaining volume sliders and the quality toggle (see *What remains*).
 > Follow the config-first convention (`CLAUDE.md`). Update the relevant
 > `features/*.md` doc and add tests in the same piece of work.
 >
 > **Scope decided (with the user): minimal now** — volume sliders + a quality
 > toggle, reachable from Pause and Title. Richer graphics/control options are
 > noted in *Out of scope*.
+
+## What actually shipped vs what remains
+
+- **Shipped:** the shared `SettingsMenu` (Audio / Camera / Key bindings / Mobile
+  controls / Benchmark), reachable from Title and Pause; a **music** volume slider
+  (`settings_menu.gd`); persistence via `Save.set_setting` → `profile["settings"]`
+  (not `settings.cfg`); control rebinding via the `InputRemap` autoload.
+- **Still remains (this spec's open work):** Master / SFX / Engine volume sliders
+  (blocked on a real SFX bus — `todo/audio.md`), and the **quality toggle** (see
+  below). The persistence design in the rest of this file is historical — settings
+  already persist through the save profile.
 
 ## Goal
 
@@ -30,17 +45,22 @@ from the `Save` autoload that owns `profile.json`.
 
 ## Current state (measured from the code)
 
-- **No settings of any kind.** The only autoload is `Config`
-  (`project.godot:18-20`), holding the working `GameConfig`; there is no options
-  UI and nothing reads/writes preferences.
-- **No audio bus layout** exists (`project.godot` has no `[audio]` section), so
-  volume control has nothing to attach to until `todo/audio.md` adds the bus
-  layout. **This spec depends on that.**
-- **`hud_enabled` is the existing pattern** for a runtime toggle
-  (`game_config.gd`, read in `hud.gd._ready()`) — but that's an *authored
-  default*, not a *player preference*. Settings are the player-mutable layer.
-- **No `get_tree().paused` usage / Pause overlay yet** — the Pause overlay is
-  `todo/menus.md` overlay 8; Settings opens from it.
+- **A shared `SettingsMenu` exists** (`scripts/settings_menu.gd`), hosted from
+  both Title (`hq.gd`) and Pause (`pause_menu.gd`), with Audio / Camera / Key
+  bindings / Mobile controls / Benchmark pages.
+- **Settings persist through the save profile**, not a separate file:
+  `Save.set_setting` / `Save.get_setting` write `profile["settings"]`
+  (`save_manager.gd`); e.g. `music_director.gd` reads its volume via a setting key.
+  The proposed separate `user://settings.cfg` + `SettingsManager` autoload was
+  **not** built.
+- **A `Music` bus is created in code** (`music_director.gd`) and driven via
+  `set_bus_volume_db`, so the music slider has something to attach to. There is
+  still **no SFX / Engine bus** and no `default_bus_layout.tres`, so Master / SFX /
+  Engine sliders remain blocked on `todo/audio.md`.
+- **Control rebinding shipped** as the `InputRemap` autoload (listed as *Out of
+  scope* below) — that item is done.
+- **Pause overlay is in** (`pause_menu.gd`, uses `get_tree().paused`); Settings
+  opens from it without unpausing.
 
 ## What persists (`settings.cfg`)
 
@@ -131,9 +151,10 @@ Headless GUT tests (`tests/headless/`, `user://` redirected to a temp dir):
 
 ## Out of scope / open questions
 
-- **Control rebinding** — remapping the driving inputs (and the menu-nav inputs
-  from `todo/menus.md`); a bigger input-map pass, deferred. Mobile has its own
-  on-screen controls (`mobile-controls.md`).
+- **Control rebinding** — ~~remapping the driving inputs; a bigger input-map pass,
+  deferred~~ **DONE**: shipped as the `InputRemap` autoload, surfaced in the
+  Key-bindings page of `SettingsMenu`. Mobile has its own on-screen controls
+  (`mobile-controls.md`).
 - **Richer video options** — resolution list, vsync, FOV, fullscreen; the lean
   design argues against a big menu. Add individually only if needed.
 - **Accessibility** — colourblind-safe HUD/standings palette, text scale; worth a

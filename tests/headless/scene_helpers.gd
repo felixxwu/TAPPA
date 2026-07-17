@@ -63,3 +63,14 @@ static func minimal_world() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.track_turn_count = 1  # shortest track the search reliably places
 	cfg.trees_per_turn = 0    # no trees AND no bushes (shared scatter params)
+
+
+# Reset Config to the authored baseline, then drop ONLY the foliage scatter while
+# keeping the real authored track/terrain shape (unlike minimal_world(), which
+# also shrinks the track to 1 turn). For tests that DO need the genuine
+# track/terrain but never inspect trees/bushes — cutting the ~7 s scatter without
+# changing the world's shape. Mutates the live Config singleton, so reset Config
+# afterwards so the zeroed foliage doesn't leak into later files.
+static func no_foliage_world() -> void:
+	Config.reset()
+	Config.data.trees_per_turn = 0  # no trees AND no bushes; track_turn_count stays authored

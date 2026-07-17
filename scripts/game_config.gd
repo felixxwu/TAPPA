@@ -798,8 +798,6 @@ var peak_torque_rpm := 4500.0
 ## frame, leaving the right side clear for the menu panel.
 @export var hq_lift_cam_eye := Vector3(2.6, 2.2, 6.0)
 @export var hq_lift_cam_look := Vector3(5.2, 1.3, -1.0)
-## Fraction of the screen width the tuning menu panel occupies (anchored right).
-@export_range(0.25, 0.6) var hq_lift_menu_width_frac := 0.42
 ## Fraction of the screen width an OPEN tuning/upgrades page occupies, centred
 ## horizontally so the menu uses more space (the car description hides while it's up).
 @export_range(0.5, 1.0) var hq_lift_menu_centered_width_frac := 0.82
@@ -1296,10 +1294,6 @@ var peak_torque_rpm := 4500.0
 ## Master switch for the roadside signs. The benchmark's signs toggle drives this
 ## (features/benchmark.md); normal play leaves it on.
 @export var signs_enabled := true
-## Number of equal arc-length sectors the stage is split into. No longer drives any
-## signs (sector boards were dropped); kept only as the stage timer's per-sector
-## split hook (SignLayout.sector_offsets, todo/stage-start-and-end.md §5).
-@export_range(1, 12) var sign_sector_count := 4
 ## One A-frame panel's width (x) by height (y), in metres — thin near-square boards.
 @export var sign_panel_size_m := Vector2(1.2, 1.2)
 ## Panel thickness, in metres.
@@ -1368,9 +1362,6 @@ var peak_torque_rpm := 4500.0
 ## Total width (m) of the crowd band across the track. It straddles the road centre,
 ## so the carriageway stays clear and spectators line BOTH verges.
 @export_range(2.0, 60.0) var spectator_area_width_m := 24.0
-## Extra gap (m) kept off the carriageway when placing — road footprint is inflated
-## by this before rejecting standing positions on it.
-@export_range(0.0, 10.0) var spectator_road_margin_m := 1.0
 ## Minimum comfortable spacing (m) between neighbours — initial placement and the
 ## separation steering both use it. ("Don't like being too close.")
 @export_range(0.1, 5.0) var spectator_separation_m := 0.5

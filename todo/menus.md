@@ -40,10 +40,11 @@
 > the UPGRADES install/repair list; see [`features/tuning.md`](../features/tuning.md) /
 > [`features/menus.md`](../features/menus.md))**, per-car paint + duplicate-model name suffixes, world-anchored
 > SubViewport stats panels (richer than the current `Label3D`), the 3D podium +
-> reward-reveal rig (the podium/standings are still flat scenes), the Pause /
-> Inventory / Confirm overlays, designed environment art (blocks are placeholder),
-> and camera fly-through transitions for the longer hops. The sections below specify
-> that remaining work.
+> reward-reveal rig (the podium/standings are still flat scenes),
+> ~~the Pause / Inventory / Confirm overlays~~ **(DONE — `pause_menu.gd`,
+> `upgrades_menu.gd`, `confirm_popup.gd`)**, designed environment art (blocks are
+> placeholder), and camera fly-through transitions for the longer hops. The
+> sections below specify that remaining work.
 >
 > Follow the config-first convention
 > (`CLAUDE.md`): tunables (camera move times, panel offsets, station positions
@@ -196,16 +197,21 @@ camera you already drive, so the menu count stays tiny.
 8. **Pause overlay** — Resume / **Settings** (opens overlay 11 without unpausing) /
    **Abandon to HQ** (no retry — a non-top-3 rally is re-entered later from the
    map, `gameplay.md`). First user of `get_tree().paused`.
-9. **Inventory / upgrade picker** — the flat list of owned items (upgrade parts +
-   repair kits, with counts) the **tuning lift** opens to install a part onto the
-   raised car or spend a repair kit. Flat by design (pragmatic hybrid: dense list,
-   readability wins); replaces the old physical parts bench.
+   **(DONE — `scripts/pause_menu.gd`.)**
+9. **Inventory / upgrade picker** — the flat list of owned items the **tuning lift**
+   opens to install a part onto the raised car. Flat by design (pragmatic hybrid:
+   dense list, readability wins); replaces the old physical parts bench.
+   **(DONE — `scripts/upgrades_menu.gd`. Repair kits are being retired, see
+   `todo/remove-repair-kits.md`.)**
 10. **ConfirmModal** — small message + confirm/cancel: "field this low-HP car?",
-    "abandon rally?", "install upgrade?", "use repair kit?".
-11. **Settings overlay** — volume sliders (Master / SFX / Music / Engine) + a
-    quality toggle, reachable from **Pause** and **Title**. Flat by design (dense
-    controls). Owned by `todo/settings.md` (persists to `settings.cfg`, separate
-    from the progression save); this list just notes where it surfaces.
+    "abandon rally?", "install upgrade?". **(DONE — `scripts/confirm_popup.gd`.)**
+11. **Settings overlay** — volume sliders + a quality toggle, reachable from
+    **Pause** and **Title**. Flat by design (dense controls). Owned by
+    `todo/settings.md`; this list just notes where it surfaces.
+    **(DONE — the shared `scripts/settings_menu.gd`, hosted from Title and Pause;
+    persists via `Save.set_setting`, NOT the originally-planned `settings.cfg`.
+    Only a music volume slider so far — Master/SFX/Engine await an SFX bus, and the
+    quality toggle is still open; see `todo/settings.md`.)**
 
 ### Tuning-lift knobs (real config fields)
 
@@ -214,8 +220,9 @@ Per `gameplay.md` › Tuning, mapped to existing `GameConfig` (`game_config.gd`)
   `wheel_friction_slip_rear` (`:107`).
 - **Aero balance** *(only if the aero upgrade is installed)* —
   `downforce_front` / `downforce_rear` (`:76,80`).
-- **Brake bias** — **new knob** (today `brake_torque` `:66` is one per-axle
-  value); add a front/rear split.
+- **Brake bias** — ~~**new knob**; add a front/rear split~~ **DONE**: shipped as
+  the normalized `brake_bias` (`-1..+1`) field in `game_config.gd`, split in
+  `drivetrain.gd`.
 
 ## Reuse matrix (location × rig/overlay)
 
@@ -253,10 +260,11 @@ The diegetic menus need a small, **dedicated input action set**, separate from
 the driving inputs (`accelerate`/`steer_*`/etc. in `project.godot [input]`), so
 panning between stations/cars/pins is unambiguous:
 
-- **Actions** (new entries in `project.godot [input]`): `menu_left` / `menu_right`
-  (previous/next car or station), `menu_up` / `menu_down` (move between focusable
-  panels, slider rows), `menu_select` (confirm / pick), `menu_back` (up a level /
-  close overlay). Defaults: arrows + Enter/Esc; gamepad d-pad + A/B.
+- **Actions** (~~new entries in~~ **DONE — defined in** `project.godot [input]`):
+  `menu_left` / `menu_right` (previous/next car or station), `menu_up` / `menu_down`
+  (move between focusable panels, slider rows), `menu_select` (confirm / pick),
+  `menu_back` (up a level / close overlay). Defaults: arrows + Enter/Esc; gamepad
+  d-pad + A/B. Flat overlays wire these through `MenuNav.attach` (`scripts/menu_nav.gd`).
 - **Camera response:** `menu_left/right` retarget the menu camera to the
   adjacent station marker / parked car (reusing `CameraManager.retarget` /
   the `MENU` mode below); `menu_select` triggers the focused action (field a car,
@@ -268,8 +276,8 @@ panning between stations/cars/pins is unambiguous:
 - **UI audio:** `menu_*` actions fire `ui_move` / `ui_select` / `ui_back` SFX
   (`todo/audio.md`).
 
-An input-map pass adds these actions; the rigs read them uniformly so every
-location navigates the same way.
+~~An input-map pass adds these actions~~ (the actions are now in `project.godot`);
+the rigs read them uniformly so every location navigates the same way.
 
 ## Technical approach (proposed)
 
@@ -296,8 +304,9 @@ location navigates the same way.
   station layout, the indoor/outdoor transition) — design during build; only
   station-marker positions are config.
 - **Input model for camera navigation** — specced in *Menu navigation & input*
-  above (new `menu_*` actions + mobile gestures); the concrete keybind defaults
-  and an input-map pass are the remaining work.
+  above; the `menu_*` actions + keybind defaults have since **landed**
+  (`project.godot [input]`, wired via `MenuNav`). Remaining: the diegetic 3D
+  camera-navigation flourishes (fly-throughs between stations).
 - **Panel tech final call** — SubViewport-quad vs Label3D per panel; prototype
   both for legibility before committing.
 - **Drivable overworld** was considered and **deferred** in favour of the

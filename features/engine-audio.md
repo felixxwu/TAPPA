@@ -351,10 +351,11 @@ to idle, a new rev cancels the old) without pinning the hold seconds or any RPM 
 On web this stacks with a second, engine-level buffer: because the export is
 single-threaded (`thread_support=false`), Godot mixes **all** audio (this synth
 plus every sample bus) on the main thread and pushes it to the browser's WebAudio
-ring buffer. With the 30 fps thermal cap on mobile/web (`target_fps_mobile`, see
-`world.gd`), the main thread sleeps ~33 ms between frames, so the default 15 ms
+ring buffer. Even at the 60 fps cap on mobile/web (`target_fps_mobile`, see
+`world.gd`), the main thread can sleep ~16 ms between frames, so the default 15 ms
 output buffer drains before the next refill and the *whole mix* crackles — not
-just the engine note. `project.godot` therefore sets
+just the engine note (and any longer frame makes it worse). `project.godot`
+therefore sets
 `audio/driver/output_latency.web=120` (desktop keeps the tight 15 ms default) so
 the WebAudio buffer has enough slack to survive the inter-frame gap. This is read
 at driver init (engine boot), so it lives in project settings, not runtime code.
