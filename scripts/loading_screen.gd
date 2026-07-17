@@ -20,6 +20,7 @@ var _preview: TrackPreview
 
 func _init() -> void:
 	layer = _LAYER
+	add_to_group("loading_screen")
 
 	var bg := ColorRect.new()
 	bg.color = UITheme.BLACK

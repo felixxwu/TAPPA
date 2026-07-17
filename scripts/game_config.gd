@@ -376,6 +376,15 @@ var peak_torque_rpm := 4500.0
 @export_group("HUD")
 @export var hud_enabled := true  # on-screen speed readout
 
+@export_group("Music")
+## Wall-clock gap (s) between processed frames above which we assume the main
+## thread stalled long enough that web audio underran and went silent — triggers
+## music stall recovery. Well above a normal ~16 ms frame, below any real freeze.
+@export var music_stall_threshold_sec := 0.5
+## After a stall, how long (s) frames must flow normally again before music
+## resumes from a clean start.
+@export var music_resume_stable_sec := 0.4
+
 @export_group("Stage")
 ## Countdown length, in seconds, before the car's controls unlock at the start
 ## of a stage. The car holds position (handbrake forced) until it elapses.
