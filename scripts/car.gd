@@ -79,6 +79,14 @@ var _approach_velocity := Vector3.ZERO
 # the velocity discontinuously, which would read as a huge false dv; reset_to sets this
 # so the next couple of ticks don't chip HP. Decremented in _integrate_forces.
 var _suppress_impact_frames := 0
+# Pending teleport (reset_to). Writing global_transform directly on a RigidBody only
+# sticks when done inside the physics step; a reset fired from a signal/idle callback
+# (the pause-menu "Reset to track") lands outside it and the physics server overwrites
+# the pose next frame. So reset_to just QUEUES the pose and _integrate_forces — the
+# authoritative physics-write point — applies it via state.transform. The R-key reset
+# already ran inside _physics_process, which is why it always worked.
+var _pending_reset := false
+var _pending_reset_xform := Transform3D.IDENTITY
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
 # Car-local point the engine smoke puffs from (read by EngineSmoke). Its longitudinal
@@ -799,6 +807,18 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# as a huge deceleration and "wreck" it (wreck screen / spurious DNF).
 	if replay_playback:
 		return
+	# Apply a queued reset_to teleport here — the physics-authoritative write point. Setting
+	# state.transform makes the pose stick regardless of which frame phase reset_to was
+	# called from (a menu/signal callback runs outside the physics step, where a plain
+	# global_transform write gets overwritten by the server's ongoing integration). Only
+	# the POSE is re-asserted here; reset_to already zeroed the velocities immediately, and
+	# re-zeroing them a frame late would clobber any velocity legitimately set after the
+	# reset. Impact damage is suppressed for the teleport's discontinuity.
+	if _pending_reset:
+		_pending_reset = false
+		state.transform = _pending_reset_xform
+		_suppress_impact_frames = 2
+		return
 	var cfg: GameConfig = config
 	var contacts := state.get_contact_count()
 	# Object reactions run FIRST: fell trees on a per-contact, size-scaled speed
@@ -924,6 +944,15 @@ func apply_soft_drag(strength: float) -> void:
 
 
 func reset_to(xform: Transform3D) -> void:
+	# Queue the teleport for _integrate_forces (see _pending_reset) rather than trusting a
+	# bare global_transform write, which the physics server discards unless it happens
+	# inside the physics step. Also wake the body: a stuck car sleeps, and _integrate_forces
+	# does not run on a sleeping body, so the queued pose would never be applied.
+	sleeping = false
+	_pending_reset = true
+	_pending_reset_xform = xform
+	# Still set the node transform now so same-frame non-physics readers (camera, HUD) see
+	# the new pose immediately; _integrate_forces re-applies it authoritatively next step.
 	global_transform = xform
 	# A reset zeroes the velocity discontinuously; suppress deceleration damage for the
 	# next couple of physics ticks so that jump doesn't read as a crash.

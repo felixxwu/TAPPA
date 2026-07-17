@@ -674,7 +674,13 @@ start line (that's the `R` / `reset_car` key). The menu owns no car reference, s
 emits `reset_to_track_requested`; `world.gd` connects that in `_ready` and performs
 the reset (`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion
 and suppresses the teleport's impact damage — free), then the menu `resume()`s so the
-player drops straight back in.
+player drops straight back in. `reset_to()` does **not** trust a bare `global_transform`
+write — that only sticks when done inside the physics step, so a reset fired from a menu
+signal (outside the physics frame) or on a stuck, **sleeping** body was silently reverted
+by the physics server next frame (the car looked like it never moved, while the `R` reset,
+which runs inside `_physics_process`, always worked). Instead it wakes the body and
+**queues** the pose; `car.gd::_integrate_forces` applies it via `state.transform` — the
+authoritative physics-write point — so it lands regardless of when the reset was fired.
 Settings shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the title-screen page), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops an *"Abandon rally?"* confirm and, on
