@@ -24,6 +24,7 @@ clutch_max_torque = 100000.0
 auto_gearbox = true
 upshift_redline_fraction = 0.7
 engine_idle_gain = 1.0
+engine_master_volume_db = 20.0
 engine_harmonics = 6
 engine_noise_level = 0.001
 engine_smoothing_rate = 1000.0

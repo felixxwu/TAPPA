@@ -164,9 +164,9 @@ var peak_torque_rpm := 4500.0
 ## loose gravel/grass shears a wedge of material and peaks at a MUCH larger angle
 ## with a broad, forgiving plateau past it — which is why rally is driven
 ## sideways. sin(8°)≈0.14, sin(18°)≈0.31, sin(20°)≈0.34.
-@export var tarmac_slip_peak := 0.20
-@export var gravel_slip_peak := 0.31
-@export var grass_slip_peak := 0.34
+@export var tarmac_slip_peak := 0.25
+@export var gravel_slip_peak := 0.35
+@export var grass_slip_peak := 0.40
 ## Post-peak grip retention per surface (see sliding_grip_ratio). Tarmac falls
 ## off; loose surfaces stay near their peak well past it (the plateau).
 @export_range(0.1, 1.0) var tarmac_slide_ratio := 0.6
@@ -300,6 +300,13 @@ var peak_torque_rpm := 4500.0
 ## Master level of the engine voice, in decibels. Per-car, set from CarLibrary's
 ## volume_db; this value is the fallback default for cars that omit the key.
 @export var engine_volume_db := -6.0
+## Global master volume for ALL engine audio, in decibels. Unlike engine_volume_db
+## (which is per-car and scales only the cylinder firing voice), this is a single
+## project-wide lever applied to the FINAL mixed engine signal — the firing voice,
+## broadband noise, exhaust crackle, turbo whistle/air-rush, supercharger whine,
+## blow-off vent, and anti-lag bangs all pass through it. Set to 0 dB for no change,
+## negative to attenuate everything, -80 to effectively mute. Not per-car.
+@export var engine_master_volume_db := 0.0
 ## Audible floor of the engine voice at zero throttle (0 = silent at idle).
 @export_range(0.0, 1.0) var engine_idle_gain := 0.25
 ## Richness of each firing pulse — more harmonics = brighter, harsher engine note.

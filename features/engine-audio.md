@@ -80,8 +80,17 @@ corner.
 The signal chain is: **per-engine volume** (`engine_volume_db` → `_master_gain`,
 scaling the firing voice) and the constant noise floor form the **pre-shaper**
 signal → **sine shaper** (`engine_soft_clip_drive`, the pre-amp) → **global
-post-amp** (`engine_soft_clip_post_gain`) → clamp. Per-engine volume therefore
-acts before the clipper; the post gain is a single global trim.
+post-amp** (`engine_soft_clip_post_gain`) → clamp → **global engine master
+volume** (`engine_master_volume_db` → `_engine_master_gain`) → clamp. Per-engine
+volume therefore acts before the clipper; the post gain is a single global trim.
+
+`engine_master_volume_db` is the single project-wide lever for **all** engine
+sound. Unlike `engine_volume_db` (per-car, firing voice only), it is applied to
+the FINAL mixed signal after the soft clipper, so it scales every element at
+once — firing voice, broadband noise, exhaust crackle, turbo whistle/air-rush,
+supercharger whine, blow-off vent, and anti-lag bangs. Default `0.0` dB (no
+change); negative attenuates the whole engine mix, `-80` effectively mutes it.
+It is a `GameConfig` value in `game_config.tres`, not a per-car property.
 
 The pre-amp `engine_soft_clip_drive` is a single **global** `GameConfig` value
 (default `0.6`; the live `game_config.tres` is tuned higher) — higher drive

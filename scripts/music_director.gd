@@ -16,7 +16,7 @@ extends Node
 # Player-facing music level, persisted in the save profile (the single source of
 # truth — see features/music.md). Linear [0,1]; the settings menu drives it.
 const SETTING_KEY := "music_volume"
-const DEFAULT_VOLUME := 0.2
+const DEFAULT_VOLUME := 0.7
 
 # Stall-recovery fallback defaults (GameConfig overrides these at runtime).
 const DEFAULT_STALL_THRESHOLD_SEC := 0.5
