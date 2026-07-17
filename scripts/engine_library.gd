@@ -60,21 +60,21 @@ const ENGINES: Array[Dictionary] = [
 	{
 		"id": "mazda_20_i4", "name": "2.0 Skyactiv-G i4", "layout": "i4", "mass": 110.0,
 		"redline_rpm": 7500.0, "peak_torque": 205.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
-		"engine_friction_base": 20.0,  # i4 2.0L
+		"engine_friction_base": 25.0,  # i4 2.0L
 		"low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 5, "shift_time": 0.30,  # ND 6-speed manual
 	},
 	{
 		"id": "renault_12_i4", "name": "1.2 16V i4", "layout": "i4", "mass": 95.0,
 		"redline_rpm": 6800.0, "peak_torque": 105.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.13,
-		"engine_friction_base": 0.0,  # i4 1.2L (small displacement, low friction)
+		"engine_friction_base": 5.0,  # i4 1.2L (small displacement, low friction)
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 8, "shift_time": 0.35,  # JB1 5-speed manual
 	},
 	{
 		"id": "ford_25t_i5", "name": "2.5T Duratec i5", "layout": "i5", "mass": 150.0,
 		"redline_rpm": 6800.0, "peak_torque": 320.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.22,
-		"engine_friction_base": 25.0,  # i5 2.5L
+		"engine_friction_base": 45.0,  # i5 2.5L
 		"low_octave_mix": 0.1, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 9, "shift_time": 0.30,  # Getrag M66 6-speed
 	},
@@ -102,7 +102,7 @@ const ENGINES: Array[Dictionary] = [
 	{
 		"id": "porsche_30_flat6", "name": "3.0 turbo flat-6", "layout": "i6", "mass": 180.0,
 		"redline_rpm": 6800.0, "peak_torque": 225.0, "peak_torque_rpm": 4000.0, "engine_inertia": 0.18,  # 930 Turbo 3.0: 260 PS @ 5500, 343 Nm @ 4000
-		"engine_friction_base": 30.0,  # flat-6 3.0L
+		"engine_friction_base": 20.0,  # flat-6 3.0L
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
 		"gear_ratios": [3.18, 1.83, 1.26, 0.93], "final_drive": 4.22, "shift_time": 0.25,  # 4-speed manual (930/30)
 		# Stock forced induction (features/forced-induction.md): the 930's single
@@ -125,7 +125,7 @@ const ENGINES: Array[Dictionary] = [
 		# Smooth SOHC luxury V12 — refined, deep, quieter than the exotics.
 		"id": "jaguar_53_v12", "name": "5.3 V12", "layout": "v12", "mass": 235.0,
 		"redline_rpm": 6500.0, "peak_torque": 432.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.30,
-		"engine_friction_base": 58.0,  # V12 5.3L
+		"engine_friction_base": 48.0,  # V12 5.3L
 		"low_octave_mix": 0.8, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 6, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
@@ -136,14 +136,14 @@ const ENGINES: Array[Dictionary] = [
 		# Huge crank/flywheel → very lazy revs (big engine_inertia). Loudest, deepest voice in the roster.
 		"id": "merlin_v27_v12", "name": "27L Merlin V12", "layout": "v12", "mass": 745.0,
 		"redline_rpm": 3200.0, "peak_torque": 1900.0, "peak_torque_rpm": 2000.0, "engine_inertia": 1.5,
-		"engine_friction_base": 100.0,  # V12 27L aero monster — far more than the 5.3 despite equal cylinders
+		"engine_friction_base": 150.0,  # V12 27L aero monster — far more than the 5.3 despite equal cylinders
 		"low_octave_mix": 0.8, "volume_db": 11.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 3, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{
 		"id": "honda_066_i3", "name": "0.66 E07A i3", "layout": "i3", "mass": 70.0,
 		"redline_rpm": 7000.0, "peak_torque": 60.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.09,
-		"engine_friction_base": 0.0,  # i3 0.66L kei (tiny — with only 60 Nm on tap, 40 stalled it)
+		"engine_friction_base": 5.0,  # i3 0.66L kei (tiny — with only 60 Nm on tap, 40 stalled it)
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9, "shift_time": 0.35,  # Acty HA4 5-speed manual
 	},

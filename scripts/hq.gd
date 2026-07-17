@@ -168,6 +168,9 @@ var _markers: Array = []
 # freed with the HQ node on exit-to-race.
 var _car_cache: Dictionary = {}
 var _focus := 0
+# Plays a short engine rev for the focused car each time the lineup selection
+# changes (see _preview_rev). Created lazily on first focus.
+var _preview_audio: CarPreviewAudio = null
 # Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
 # lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
 var _settle_generation := 0
@@ -2608,6 +2611,10 @@ func _focus_changed(snap := false) -> void:
 	var owned: Dictionary = _eligible[_focus]
 	_selected_instance_id = int(owned.get("instance_id", -1))
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	# Let the player hear the focused car: rev its (possibly swapped) engine. Fires
+	# on every flick and on the initial lineup show; a new rev cancels the previous.
+	if not entry.is_empty():
+		_preview_rev(EngineSwap.current_engine_id(owned, String(entry.get("engine", ""))))
 	var stats := _car_stats_text(owned, entry)
 	# The same lineup + focus machinery drives both the rally car-select (CARPARK)
 	# and the scrap prompt (OVERFLOW); update whichever overlay is up.
@@ -2632,6 +2639,16 @@ func _focus_changed(snap := false) -> void:
 			_refresh_focus_damage(owned)
 	_normalize_menus()  # keep house rules on the just-updated car name / stats
 	_move_camera_to(_camera_target_xform(), snap)
+
+
+# Rev the focused car's engine as a short preview (lazily builds the player).
+func _preview_rev(engine_id: String) -> void:
+	if engine_id.is_empty():
+		return
+	if _preview_audio == null:
+		_preview_audio = CarPreviewAudio.new()
+		add_child(_preview_audio)
+	_preview_audio.rev(engine_id)
 
 
 # The two-way power-to-weight preview shown only while picking an engine-swap partner.

@@ -296,6 +296,11 @@ var peak_torque_rpm := 4500.0
 ## Whether this engine has a belt-driven supercharger. Audio-only: its power gain
 ## is already baked into the engine's authored peak_torque, so the sim is unchanged.
 @export var supercharger_enabled := false
+## Seconds the HQ car-lineup preview holds the throttle when a car is highlighted:
+## a free-revving (neutral, no-load) EngineSim climbs for this long, then releases
+## and falls back to idle so the player hears each car's engine as they flick the
+## lineup. See scripts/car_preview_audio.gd + features/engine-audio.md.
+@export_range(0.0, 2.0) var preview_rev_hold_seconds := 0.5
 # --- Engine audio ---
 ## Master level of the engine voice, in decibels. Per-car, set from CarLibrary's
 ## volume_db; this value is the fallback default for cars that omit the key.
