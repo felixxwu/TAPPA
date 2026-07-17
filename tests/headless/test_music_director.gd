@@ -7,49 +7,63 @@ extends GutTest
 func _make() -> MusicDirector:
 	var md: MusicDirector = autofree(MusicDirector.new())
 	md._bpm_override = {"a": 170.0, "b": 160.0}  # b is slower -> longer lead-in
+	md._segment_count_override = {"a": 4, "b": 4}  # 4 segments per song
 	return md
+
+
+# Fire once at exactly the next handoff's boundary and return the fire dict.
+func _fire_once(md: MusicDirector) -> Dictionary:
+	var t := MusicSchedule.fire_start(md.next_handoff, md._bpm_for(md.requested_song))
+	return md.advance(t)
 
 
 func test_idle_director_never_fires() -> void:
 	var md := _make()
-	assert_eq(md.current_id, "", "starts idle")
+	assert_eq(md.current_song, "", "starts idle")
 	assert_eq(md.advance(123.0), {}, "idle -> no fire")
 
 
-func test_seed_sets_current_and_first_handoff() -> void:
+func test_seed_starts_segment_zero_and_sets_first_handoff() -> void:
 	var md := _make()
 	md.seed_grid(5.0, "a")
-	assert_eq(md.current_id, "a")
+	assert_eq(md.current_song, "a")
+	assert_eq(md.current_segment, 0, "seeds at segment 0")
 	assert_almost_eq(md.next_handoff, MusicSchedule.seed_handoff(5.0, 170.0), 0.0001)
 
 
-func test_self_loop_refires_one_loop_body_apart() -> void:
+func test_segments_play_in_order_and_wrap_after_the_last() -> void:
 	var md := _make()
-	md.seed_grid(0.0, "a")
+	md.seed_grid(0.0, "a")  # segment 0 sounding
 	var body := MusicSchedule.loop_body_sec(170.0)
-	var lead := MusicSchedule.lead_in_sec(170.0)
-	# First re-trigger fires at fire_start = next_handoff - lead_in.
-	var first_fire_time := md.next_handoff - lead
-	assert_eq(md.advance(first_fire_time - 0.01), {}, "not yet")
-	var fire := md.advance(first_fire_time)
-	assert_false(fire.is_empty(), "fires at the boundary")
-	assert_eq(fire["song_id"], "a", "self-loops the same song")
-	# Next fire is exactly one loop body later.
-	var second_fire_time := md.next_handoff - lead
-	assert_almost_eq(second_fire_time - first_fire_time, body, 0.0001,
-		"re-trigger interval == one loop body")
+	# Four handoffs advance 0 -> 1 -> 2 -> 3 -> back to 0 (same song, no request change),
+	# each one 8-bar loop body apart.
+	var expected := [1, 2, 3, 0]
+	for i in expected.size():
+		var handoff_before := md.next_handoff
+		var fire := _fire_once(md)
+		assert_eq(fire["song"], "a", "stays on song a")
+		assert_eq(fire["segment"], expected[i], "segment step %d in the sequence" % i)
+		assert_almost_eq(md.next_handoff - handoff_before, body, 0.0001,
+			"each segment is one 8-bar loop body apart")
 
 
-func test_swap_is_latched_until_the_next_handoff() -> void:
+func test_song_change_interrupts_the_sequence_at_segment_zero() -> void:
 	var md := _make()
 	md.seed_grid(0.0, "a")
-	md.requested_id = "b"  # request a swap mid-loop
-	var fire_time := md.next_handoff - MusicSchedule.lead_in_sec(160.0)  # incoming bpm sets offset
+	# Advance a couple of segments so we're mid-sequence (on segment 2).
+	_fire_once(md)
+	_fire_once(md)
+	assert_eq(md.current_segment, 2, "mid-sequence on segment 2")
+	# Request a different song mid-loop.
+	md.requested_song = "b"
+	var fire_time := MusicSchedule.fire_start(md.next_handoff, 160.0)  # incoming bpm sets offset
 	assert_eq(md.advance(fire_time - 0.01), {}, "swap does not apply mid-loop")
-	assert_eq(md.current_id, "a", "still playing the old song until the handoff")
+	assert_eq(md.current_song, "a", "still on the old song until the handoff")
 	var fire := md.advance(fire_time)
-	assert_eq(fire["song_id"], "b", "swap applies at the handoff")
-	assert_eq(md.current_id, "b", "current updated at the handoff")
+	assert_eq(fire["song"], "b", "swap applies at the handoff")
+	assert_eq(fire["segment"], 0, "new song starts at segment 0, interrupting 1-2-3-4")
+	assert_eq(md.current_song, "b", "current song updated at the handoff")
+	assert_eq(md.current_segment, 0, "current segment reset to 0")
 
 
 func test_fire_offset_is_within_the_lead_in() -> void:
@@ -98,15 +112,15 @@ func test_scene_state_seeds_hq_song_then_latches_run_song() -> void:
 	var md: MusicDirector = autofree(MusicDirector.new())  # not in tree: no audio, no _ready
 	# Entering the HQ scene from idle seeds + starts the HQ song immediately.
 	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_eq(md.current_id, MusicLibrary.HQ_SONG, "HQ scene -> HQ song, seeded now")
-	assert_eq(md.requested_id, MusicLibrary.HQ_SONG, "requested is the HQ song")
+	assert_eq(md.current_song, MusicLibrary.HQ_SONG, "HQ scene -> HQ song, seeded now")
+	assert_eq(md.requested_song, MusicLibrary.HQ_SONG, "requested is the HQ song")
 	# Moving to any non-HQ scene queues the run song WITHOUT swapping mid-loop.
 	md.update_for_scene("res://main.tscn")
-	assert_eq(md.requested_id, MusicLibrary.RUN_SONG, "non-HQ scene queues the run song")
-	assert_eq(md.current_id, MusicLibrary.HQ_SONG, "swap is latched, not applied until the handoff")
+	assert_eq(md.requested_song, MusicLibrary.RUN_SONG, "non-HQ scene queues the run song")
+	assert_eq(md.current_song, MusicLibrary.HQ_SONG, "swap is latched, not applied until the handoff")
 	# Returning to the HQ scene queues the HQ song again.
 	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_eq(md.requested_id, MusicLibrary.HQ_SONG, "back in HQ -> HQ song queued again")
+	assert_eq(md.requested_song, MusicLibrary.HQ_SONG, "back in HQ -> HQ song queued again")
 
 
 func test_catch_up_after_a_stall_still_fires_aligned() -> void:

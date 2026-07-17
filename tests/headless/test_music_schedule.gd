@@ -3,15 +3,15 @@ extends GutTest
 # RELATIONSHIPS that hold for any bpm — never a specific second-count or bpm.
 
 
-func test_lead_in_and_loop_body_are_in_the_authored_bar_ratio() -> void:
-	# lead-in is 8 bars, main loop is 32 bars -> loop body is exactly 4x lead-in,
-	# for ANY bpm.
+func test_lead_in_and_loop_body_follow_the_authored_bar_counts() -> void:
+	# The durations track the structure constants for ANY bpm (relationship, not a
+	# pinned second-count): lead-in = LEAD_IN_BARS bars, loop body = MAIN_LOOP_BARS.
 	for bpm in [120.0, 160.0, 174.0]:
-		assert_almost_eq(
-			MusicSchedule.loop_body_sec(bpm),
-			MusicSchedule.lead_in_sec(bpm) * 4.0,
-			0.0001,
-			"loop body == 4x lead-in at %s bpm" % bpm)
+		var bar := MusicSchedule.sec_per_bar(bpm)
+		assert_almost_eq(MusicSchedule.lead_in_sec(bpm),
+			bar * MusicSchedule.LEAD_IN_BARS, 0.0001, "lead-in == LEAD_IN_BARS at %s bpm" % bpm)
+		assert_almost_eq(MusicSchedule.loop_body_sec(bpm),
+			bar * MusicSchedule.MAIN_LOOP_BARS, 0.0001, "loop body == MAIN_LOOP_BARS at %s bpm" % bpm)
 
 
 func test_faster_incoming_song_fires_later() -> void:

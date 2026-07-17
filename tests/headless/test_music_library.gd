@@ -13,7 +13,18 @@ func test_catalogue_entries_are_well_formed() -> void:
 		ids[song["id"]] = true
 		assert_ne(String(song["id"]), "", who + " has a non-empty id")
 		assert_gt(song["bpm"], 0.0, who + " has positive bpm")  # sanity guard, not a pinned value
-		assert_true(song["stream"] is AudioStream, who + " has an AudioStream")
+		# Each song is a sequence of segment streams (4 bars in / 8 main / 4 out).
+		var segs: Array = song["segments"]
+		assert_gt(segs.size(), 0, who + " has at least one segment")
+		for seg in segs:
+			assert_true(seg is AudioStream, who + " segment is an AudioStream")
+
+
+func test_segment_count_matches_the_segments_array() -> void:
+	for song in MusicLibrary.SONGS:
+		assert_eq(MusicLibrary.segment_count(String(song["id"])), (song["segments"] as Array).size(),
+			"segment_count matches the segments array")
+	assert_eq(MusicLibrary.segment_count("no_such_song"), 0, "unknown song -> 0 segments")
 
 
 func test_by_id_returns_a_real_catalogue_entry() -> void:
