@@ -50,6 +50,14 @@ var active := false
 # Toggle states, keyed by TOGGLES key. Session-scoped (reset each boot).
 var options: Dictionary = {}
 
+# Dev spike-diagnosis mode: when set (via the ?bench sweep config), the runner
+# drives the stage twice in ONE page load — pass 0 (cold WebGL shader cache), then
+# reset + drive again as pass 1 (warm) WITHOUT a page reload, so the GL context and
+# compiled shaders persist. Comparing the two passes' spikes confirms whether the
+# hitches are first-use shader/texture compilation. `pass_index` is the live pass.
+var two_pass := false
+var pass_index := 0
+
 # The last completed run's summary (BenchmarkStats.summarise output), kept so
 # the results survive the scene while the player reads them / runs again.
 var results: Dictionary = {}
@@ -95,6 +103,7 @@ func start() -> void:
 	apply_overrides(Config.data)
 	results = {}
 	active = true
+	pass_index = 0  # two_pass is set by the caller (hq sweep config) before start()
 	# Uncap the frame rate so the run exposes real headroom instead of pinning to
 	# the refresh rate / cfg.target_fps; with the toggle off, (re)apply the saved
 	# pacing so flipping it between runs takes effect. Headless has no window.

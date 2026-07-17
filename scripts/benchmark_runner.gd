@@ -28,16 +28,22 @@ var _running := false
 var _warmup_left := WARMUP_FRAMES
 var _start_offset := 0.0              # progress offset when sampling began
 var _samples := {}                    # stream name -> Array of per-frame values
+var _spike_frames: Array = []         # per-spike component breakdown (diagnostics)
+var _frame_no := 0                    # sampled-frame index (spike timeline)
+var _terrain: Node                    # TerrainManager, for spike↔chunk-integration correlation
+var _last_integrations := 0           # integrations_total at the previous sampled frame
 var _results_screen: BenchmarkResults
 
 
 # Wire the runner to the live scene and start driving. `view` is the viewport
 # doing the 3D work (the PostProcess SubViewport in main.tscn); render times are
 # measured there, falling back to this node's own viewport.
-func setup(car: Node, progress: TrackProgress, centerline: Curve2D, view: Viewport = null) -> void:
+func setup(car: Node, progress: TrackProgress, centerline: Curve2D, view: Viewport = null,
+		terrain: Node = null) -> void:
 	_car = car
 	_progress = progress
 	_centerline = centerline
+	_terrain = terrain
 	for stream in ["frame_ms", "draws", "objects", "prims", "render_cpu_ms",
 			"render_gpu_ms", "process_ms", "physics_ms"]:
 		_samples[stream] = []
@@ -100,14 +106,36 @@ func _process(delta: float) -> void:
 			# below, so the scripts breakdown lines up with the render stats.
 			PerfLog.begin_capture()
 		return
-	_samples["frame_ms"].append(delta * 1000.0)
+	var frame_ms := delta * 1000.0
+	var rcpu := RenderingServer.viewport_get_measured_render_time_cpu(_view_rid)
+	var proc := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var phys := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	_samples["frame_ms"].append(frame_ms)
 	_samples["draws"].append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	_samples["objects"].append(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 	_samples["prims"].append(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
-	_samples["render_cpu_ms"].append(RenderingServer.viewport_get_measured_render_time_cpu(_view_rid))
+	_samples["render_cpu_ms"].append(rcpu)
 	_samples["render_gpu_ms"].append(RenderingServer.viewport_get_measured_render_time_gpu(_view_rid))
-	_samples["process_ms"].append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
-	_samples["physics_ms"].append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+	_samples["process_ms"].append(proc)
+	_samples["physics_ms"].append(phys)
+	# Spike diagnostics: on a dropped frame, record which component was hot so the
+	# report can attribute the hitch (render_cpu ⇒ shader compile / render stall,
+	# physics ⇒ collision/ragdoll, process ⇒ script/GC/terrain build). `_frame_no`
+	# is the sampled-frame index so spikes can be located in time along the run.
+	# Terrain chunk integrations since the last sampled frame — a chunk spawned on a
+	# spike frame implicates chunk streaming (mesh/collision build) as the cause.
+	var integ := 0
+	if _terrain != null and "integrations_total" in _terrain:
+		var total: int = _terrain.integrations_total
+		integ = total - _last_integrations
+		_last_integrations = total
+	if frame_ms >= BenchmarkStats.SPIKE_MS:
+		_spike_frames.append({
+			"frame": _frame_no, "frame_ms": frame_ms,
+			"render_cpu_ms": rcpu, "process_ms": proc, "physics_ms": phys,
+			"chunk_integrations": integ,
+		})
+	_frame_no += 1
 
 
 # --- Finish --------------------------------------------------------------------
@@ -123,14 +151,29 @@ func _finish() -> void:
 	var stats := BenchmarkStats.summarise(_samples)
 	stats["distance_m"] = maxf(0.0, _progress.progress_offset() - _start_offset)
 	stats["disabled"] = _disabled_toggle_names()
+	# The worst spikes (by frame time), with their component breakdown, so the report
+	# can attribute the hitches. Sorted descending, capped so the payload stays small.
+	_spike_frames.sort_custom(func(a, b): return a["frame_ms"] > b["frame_ms"])
+	stats["spike_frames"] = _spike_frames.slice(0, 20)
+	stats["pass"] = Benchmark.pass_index
 	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
 	Benchmark.finish(stats)
+	_report(stats, scripts)
+
+	# Two-pass spike diagnosis: after the cold pass, reset and drive the SAME stage
+	# again in the same page (warm WebGL shader/texture cache) instead of showing
+	# results, so comparing pass 0 vs pass 1 spikes isolates first-use GPU stalls.
+	if Benchmark.two_pass and Benchmark.pass_index == 0:
+		Benchmark.pass_index = 1
+		# Let the POST flush, then scene-reload (NOT a page reload — the GL context
+		# and its compiled shaders must persist for the warm pass).
+		await get_tree().create_timer(1.0).timeout
+		get_tree().reload_current_scene()
+		return
 
 	_results_screen = BenchmarkResults.new()
 	add_child(_results_screen)
 	_results_screen.setup(stats, _run_again, Benchmark.exit_to_hq)
-
-	_report(stats, scripts)
 
 
 # --- Result reporting (feedback loop) ------------------------------------------
@@ -146,6 +189,8 @@ func _report(stats: Dictionary, scripts: Dictionary) -> void:
 	var device := BenchmarkReport.probe_device()
 	var label := BenchmarkReport.make_label(
 		String(device.get("build_version", "")), stats.get("disabled", []))
+	if Benchmark.two_pass:
+		label += "-warm" if int(stats.get("pass", 0)) == 1 else "-cold"
 	var stamp := Time.get_datetime_string_from_system(true)
 	var report := BenchmarkReport.build(stats, scripts, device, stamp, label)
 	var body := BenchmarkReport.to_json(report)

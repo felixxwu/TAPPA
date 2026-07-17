@@ -46,8 +46,13 @@ static func is_portrait(size: Vector2i) -> bool:
 	return size.y > size.x
 
 
-# Show the prompt while portrait, hide it once landscape.
+# Show the prompt while portrait, hide it once landscape. Suppressed during a
+# benchmark run (the dev auto-profiling loop drives the game with no user present;
+# the overlay would only block the view / steal focus).
 func _update() -> void:
+	if Benchmark.active:
+		_hide()
+		return
 	if is_portrait(DisplayServer.window_get_size()):
 		_show()
 	else:

@@ -251,6 +251,40 @@ model. Each per-car material also carries the tread `albedo_color`
 
 ## Tests
 
+## Shader pre-warm (gl_compatibility first-use compiles)
+
+The GL Compatibility backend compiles a shader program (and uploads its textures)
+the **first time each material renders**, which on web stalls that frame — confirmed
+via the benchmark's cold-vs-warm two-pass (a fresh WebGL context spikes to ~80 ms on
+first-use draws; a warm second pass of the same stage drops to ~30 ms — see
+[benchmark.md](benchmark.md)). Two load-time warm passes pay those compiles behind
+the loading cover instead of mid-drive:
+
+- **Contract walk** (`world.gd` warm block, ~line 517): after the world is built,
+  `find_children()` discovers **every** node implementing the
+  `warm_up(pos)`/`clear_warm_up()` contract and primes each — instead of a hardcoded
+  list. Each `warm_up()` draws one throwaway instance **through its real draw path**
+  (single mesh / MultiMesh / particle / 2D), so the correct gl_compatibility program
+  *variant* compiles (not a synthetic quad that would compile the wrong one). Cleared
+  after the rendered frame. Implementers today: `tire_marks.gd`, `wheel_particles.gd`,
+  `engine_smoke.gd` (via `cpu_particle_pool.gd`), and `spectator_group.gd` (the
+  ragdoll's single-instance crowd-mesh variant, distinct from the crowd MultiMesh).
+  **Any new effect is included automatically just by implementing the contract** — no
+  edit to `world.gd` — which is the guardrail against future first-use spikes silently
+  shipping. (A runtime-only variant that isn't in the tree at load must still be
+  primed by a node that IS in the tree — e.g. `SpectatorGroup` warms its own ragdoll.)
+- **Corridor pre-warm** (`world._prewarm_corridor`, every platform): flies a
+  throwaway camera along the whole built road centreline while loading, so the
+  static-world materials (terrain, trees, signs, the crowd MultiMesh) all render —
+  and compile — once up front. Runs behind the loading cover (its call site inside
+  `_generate_track` is gated on `loading != null and not _headless`, before the
+  overlay drops, so the fly is never visible). Measured to cut cold-run benchmark
+  spikes ~3× (9 → 3).
+  Residual spikes are gameplay-only draw variants (e.g. a knocked spectant's
+  single-instance ragdoll mesh) that a static camera can't reproduce; these are
+  web-only (the native APK keeps a persistent shader cache) and need on-device GL
+  tooling (chrome://inspect) to pin further.
+
 ## Performance defaults (inherently low-end)
 
 The game ships one lean pipeline for every device (no quality tiers). Relevant

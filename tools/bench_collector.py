@@ -25,6 +25,13 @@ from pathlib import Path
 WEB_DIR, PORT, RESULTS_DIR = sys.argv[1], int(sys.argv[2]), Path(sys.argv[3])
 CERT = sys.argv[4] if len(sys.argv) > 4 else ""
 
+# Reload token for the dev iterate-on-phone loop: the page (export head_include)
+# polls GET /reload-token and reloads when it changes. The token embeds this
+# server process's start time, so a rebuild (which restarts the server) flips it
+# automatically; POST /reload bumps the counter to force a reload without a rebuild.
+_START = datetime.now(timezone.utc).strftime("%H%M%S")
+_reload_counter = 0
+
 
 def _safe(name: str) -> str:
     return "".join(c if (c.isalnum() or c in "-_.") else "-" for c in name)[:120]
@@ -52,7 +59,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=WEB_DIR, **kw)
 
+    def do_GET(self):
+        path = self.path.split("?", 1)[0].rstrip("/")
+        if path == "/bench-config":
+            # The dev sweep controller: the game reads this on a ?bench=1 boot and
+            # applies its {"disabled": [...toggle keys...]} before starting the run,
+            # so a dev can drive a toggle sweep from here (write the file + POST
+            # /reload) with no shippable config change. Empty object = full baseline.
+            cfg = RESULTS_DIR.parent / "bench-config.json"
+            body = cfg.read_bytes() if cfg.exists() else b"{}"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.rstrip("/") == "/reload-token":
+            body = f"{_START}-{_reload_counter}".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
     def do_POST(self):
+        global _reload_counter
+        if self.path.rstrip("/") == "/reload":
+            _reload_counter += 1
+            print(f"[reload] token bumped -> {_START}-{_reload_counter}", flush=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+            return
         if self.path.rstrip("/") != "/bench":
             self.send_error(404)
             return

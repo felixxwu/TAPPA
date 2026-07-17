@@ -197,7 +197,7 @@ func _ready() -> void:
 		runner.name = "BenchmarkRunner"
 		add_child(runner)
 		runner.setup($Car, _track_progress, _road_centerline,
-			get_node_or_null("PostProcess/View") as Viewport)
+			get_node_or_null("PostProcess/View") as Viewport, $Floor as TerrainManager)
 
 
 # Yield a frame so a freshly-set LoadingScreen step actually paints before the
@@ -235,6 +235,49 @@ func _end_load_timing() -> void:
 	print("load stage: %-26s %5d ms" % [_stage_label, now - _stage_t0])
 	print("load total: %d ms" % (now - _load_t0))
 	_stage_label = ""
+
+
+# Shader/texture pre-warm (see the call site in _ready). Flies a throwaway camera
+# along the whole built corridor while the loading cover is up, so every material's
+# first-use GL program compile + texture upload happens now, not mid-drive. The
+# SubViewport (PostProcessView) mirrors whatever camera is current, so making this
+# one current renders each corridor view; the compiles are the slow frames we
+# deliberately absorb here. Restores the gameplay camera when done. Runs on every
+# platform (the stalls are worst on web but real on any GL-Compat first render); the
+# call site already gates it behind the loading cover + non-headless, so it never
+# runs in tests or where it could be seen.
+func _prewarm_corridor() -> void:
+	if _headless or _road_centerline == null:
+		return
+	var length := _road_centerline.get_baked_length()
+	if length <= 0.0:
+		return
+	var floor_tm := $Floor as TerrainManager
+	var cam := Camera3D.new()
+	cam.far = 400.0
+	add_child(cam)
+	var prev := get_viewport().get_camera_3d()
+	cam.make_current()
+	const STEPS := 14
+	for s in STEPS + 1:
+		var off := length * float(s) / float(STEPS)
+		var p := _road_centerline.sample_baked(off)
+		var ahead := _road_centerline.sample_baked(minf(off + 10.0, length))
+		var y := (floor_tm.height_at(p.x, p.y) if floor_tm != null else 0.0) + 2.0
+		var eye := Vector3(p.x, y, p.y)
+		var look := Vector3(ahead.x, y, ahead.y)
+		if eye.distance_to(look) > 0.05:
+			cam.look_at_from_position(eye, look, Vector3.UP)
+		# Two frames per waypoint so the SubViewport actually renders this view (the
+		# first-use compiles land on these frames, behind the loading cover).
+		await get_tree().process_frame
+		await get_tree().process_frame
+	cam.queue_free()
+	# Restore the gameplay camera (CameraManager re-asserts the correct one).
+	if has_node("CameraManager"):
+		($CameraManager as CameraManager).activate_current()
+	elif is_instance_valid(prev):
+		prev.make_current()
 
 
 # Get-or-create a named child: return the existing node with `node_name` if one is
@@ -464,13 +507,26 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# the flash.
 	if loading != null and not _headless:
 		var wp := _warm_up_point()
-		_tire_marks.warm_up(wp)
-		_wheel_particles.warm_up(wp)
-		_engine_smoke.warm_up(wp)
+		# Auto-discover every node implementing the warm_up()/clear_warm_up() contract
+		# (surface-FX pools, tyre marks, the spectator ragdoll variant, and anything
+		# added later) instead of a hardcoded list — so a new effect is primed for free
+		# just by implementing the contract, never silently omitted. Each warm_up(pos)
+		# draws one throwaway instance THROUGH ITS REAL DRAW PATH (so the correct
+		# gl_compatibility program variant compiles), cleared after the rendered frame.
+		# See features/rendering.md → "Shader pre-warm".
+		var warmers := find_children("*", "Node", true, false).filter(
+			func(n: Node) -> bool: return n.has_method("warm_up") and n.has_method("clear_warm_up"))
+		for n in warmers:
+			n.warm_up(wp)
 		await get_tree().process_frame
-		_tire_marks.clear_warm_up()
-		_wheel_particles.clear_warm_up()
-		_engine_smoke.clear_warm_up()
+		for n in warmers:
+			n.clear_warm_up()
+		# Corridor pre-warm: fly a throwaway camera along the whole built road so every
+		# static material along it compiles its gl_compatibility program now. MUST run
+		# here — behind the loading cover — not after _generate_track returns: non-staged
+		# runs (benchmark / free-roam) drop the overlay below, so a later fly would be
+		# visible as the camera jumping around. See features/rendering.md.
+		await _prewarm_corridor()
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
 	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment

@@ -1356,16 +1356,20 @@ var peak_torque_rpm := 4500.0
 ## How close (m) a tree must be for a spectator to avoid spawning by / steer from it.
 @export_range(0.1, 10.0) var spectator_tree_avoid_m := 1.5
 ## Detection radius (m) within which spectators flee the car.
-@export_range(0.5, 30.0) var spectator_flee_radius_m := 5.0
+@export_range(0.5, 30.0) var spectator_flee_radius_m := 10.0
 ## Distance (m) car→spectator at which the spectator is knocked over (ragdoll).
 @export_range(0.2, 5.0) var spectator_knock_radius_m := 1.2
 ## Top speed (m/s) a spectator can move while fleeing/shuffling.
-@export_range(0.5, 12.0) var spectator_max_speed_mps := 3.5
+@export_range(0.5, 12.0) var spectator_max_speed_mps := 6.5
 ## Acceleration (m/s^2) toward the steering target.
 @export_range(1.0, 60.0) var spectator_accel_mps2 := 18.0
 ## Only the group within this distance (m) of the car runs steering (LOD); the
 ## others stand still until the car approaches.
 @export_range(10.0, 400.0) var spectator_active_radius_m := 90.0
+## Crowd-sim decimation: run the per-member steering only every Nth physics tick
+## (delta accumulates so motion is unchanged over time), staggered across groups.
+## Ambient crowd doesn't need a 60 Hz update; 2 halves the sim cost. Pure perf knob.
+@export_range(1, 6) var spectator_sim_interval := 2
 ## Steering weights (relative pull of each preference).
 @export_range(0.0, 10.0) var spectator_w_separation := 1.5
 @export_range(0.0, 10.0) var spectator_w_flee := 4.0
@@ -1639,6 +1643,7 @@ func spectator_params() -> Dictionary:
 		"max_speed_mps": spectator_max_speed_mps,
 		"accel_mps2": spectator_accel_mps2,
 		"active_radius_m": spectator_active_radius_m,
+		"sim_interval": spectator_sim_interval,
 		"road_probe_m": track_width * 0.5,
 		"anchor_dead_zone_m": spectator_separation_m,
 		"w_separation": spectator_w_separation,

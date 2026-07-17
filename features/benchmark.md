@@ -97,6 +97,39 @@ distance, and which toggles were disabled), hands the summary to
 `Benchmark.finish`, and shows `BenchmarkResults`: a keyboard/gamepad-navigable
 panel (MenuNav-attached; Esc/B = Exit) with **Run again** and **Exit benchmark**.
 
+## Representative render resolution
+
+The web build's render resolution follows the browser canvas: a phone held in
+**portrait** renders at ~1/4 the pixels of landscape (the logical width collapses —
+see [mobile-controls.md](mobile-controls.md) → "Web fullscreen"), which would make
+the benchmark **under-measure GPU/fill cost**. To keep runs representative even when
+the auto-profiling loop boots with no gesture to go fullscreen, `DisplayStretch`
+(`scripts/display_stretch.gd`, `benchmark_window_size`) lays the frame out against a
+**landscape** window size while `Benchmark.active` — a portrait window still renders
+the landscape pixel count (visually squished, but the auto-driven run has no
+viewer). Normal play is untouched.
+
+## Dev auto-profiling loop (iterate on the phone)
+
+For hands-off iteration on a real phone, load the web build with **`?bench=1`** in
+the URL. On boot `hq.gd` (`_should_autostart_benchmark`) then launches straight into
+a benchmark run — skipping the HQ it would discard — and the run POSTs its result
+back (below). Two pieces make it a loop with no taps:
+
+- **Reload listener.** The export's `head_include` (`export_presets.cfg`) polls
+  `GET /reload-token` each second and reloads the page when the token changes. The
+  collector's token embeds its start time, so a **rebuild** (which restarts
+  `serve_web.sh`) flips it automatically; `POST /reload` bumps it to force a reload
+  without a rebuild. So a dev's edit→rebuild cycle re-runs the benchmark on the
+  phone unattended.
+- **Remote toggle sweep.** On a `?bench=1` boot the game fetches `GET /bench-config`
+  (a synchronous XHR) and disables the benchmark toggles it names
+  (`{"disabled": ["spectators", ...]}`) before starting — so a dev drives a full
+  toggle sweep from the workstation (write `build/bench-config.json` + `POST
+  /reload`) with **no shippable config change**. Empty / missing = full baseline.
+
+`?bench=1` gates the whole thing, so it can never ship on by default.
+
 ## Feedback loop (report POST-back)
 
 **Source:** `scripts/benchmark_report.gd` (`BenchmarkReport`), the capture window

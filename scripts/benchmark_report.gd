@@ -73,6 +73,16 @@ static func probe_device() -> Dictionary:
 		"adapter": RenderingServer.get_video_adapter_name(),
 		"renderer": String(ProjectSettings.get_setting("rendering/renderer/rendering_method", "")),
 	}
+	# The actual render resolution (content_scale_size) vs the browser window, so a
+	# reader can confirm the run measured a representative landscape frame (see
+	# features/benchmark.md → "Representative render resolution") and read the exact
+	# horizontal target rather than deriving it.
+	var win := DisplayServer.window_get_size()
+	d["window_size"] = [win.x, win.y]
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null and tree.root != null:
+		var cs := tree.root.content_scale_size
+		d["render_size"] = [int(cs.x), int(cs.y)]
 	if OS.has_feature("web"):
 		# The browser UA pins down the actual phone/browser behind a web run.
 		var ua = JavaScriptBridge.eval("navigator.userAgent", true)

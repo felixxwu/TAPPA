@@ -282,6 +282,15 @@ var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu c
 func _ready() -> void:
 	_ensure_starter()
 	_ensure_selection()
+	# Dev profiling loop: with ?bench=1 in the web URL, boot straight into the
+	# benchmark (skip building HQ we'd immediately discard). Paired with the page's
+	# reload-listener (export_presets head_include) + the LAN collector, this lets a
+	# dev iterate on the phone with no taps: rebuild → page reloads → benchmark runs
+	# → results POST back. Gated on the URL param so it can never ship on by default.
+	if _should_autostart_benchmark():
+		_apply_bench_sweep_config()
+		Benchmark.start()
+		return
 	# Headless (the test runner): build synchronously so tests see a ready HQ after one
 	# frame, with no loading cover. A real display gets the covered build below.
 	if Platform.is_headless():
@@ -305,6 +314,41 @@ func _ready() -> void:
 	# on the title shot rather than a half-built frame.
 	await get_tree().process_frame
 	loading.finish()
+
+
+# True on the web build when the page URL carries ?bench=1 — the dev auto-profiling
+# switch (see _ready). Reads window.location.search via JavaScriptBridge; the page's
+# reload-listener preserves the query string across reloads, so the flag persists
+# through the whole iterate-on-phone loop. Never true off the web build.
+func _should_autostart_benchmark() -> bool:
+	if not OS.has_feature("web") or Platform.is_headless():
+		return false
+	if Benchmark.active:
+		return false  # already in a benchmark session (e.g. Run again) — don't recurse
+	var search := str(JavaScriptBridge.eval("window.location.search", true))
+	return search.find("bench=1") != -1
+
+
+# Dev sweep control: fetch /bench-config from the LAN collector (a synchronous XHR,
+# fine at boot) and disable the benchmark toggles it names before the run starts.
+# Lets a dev drive a toggle sweep remotely — write the file + reload the phone — with
+# no shippable config change. Empty / missing config = full baseline (all on).
+func _apply_bench_sweep_config() -> void:
+	var raw := str(JavaScriptBridge.eval(
+		"(function(){try{var x=new XMLHttpRequest();x.open('GET','/bench-config?t='+Date.now(),false);x.send();return x.responseText;}catch(e){return '';}})()",
+		true))
+	if raw.strip_edges() == "":
+		return
+	var data: Variant = JSON.parse_string(raw)
+	if typeof(data) != TYPE_DICTIONARY:
+		return
+	var disabled: Array = data.get("disabled", [])
+	for t in Benchmark.TOGGLES:
+		var key := String(t["key"])
+		Benchmark.set_option(key, not (key in disabled))
+	# Two-pass spike-diagnosis mode (cold vs warm shader cache), driven from the
+	# sweep config so it's controllable remotely (features/benchmark.md).
+	Benchmark.two_pass = bool(data.get("two_pass", false))
 
 
 # Build the whole HQ (environment, station overlays, map pins, initial title view).
