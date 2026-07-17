@@ -109,6 +109,40 @@ jitter; wall-vs-audio drift is ~ppm, negligible over a session. The `catch_up`
 guard re-aligns the grid after a stall (dropping a re-trigger rather than
 desyncing) — relevant to the single-threaded web build.
 
+## Stall recovery (web)
+
+The scheduler runs on a wall clock (`_audio_now()` = `Time.get_ticks_usec()`),
+because an `AudioStreamPolyphonic` has no single playback position to read. On the
+**web build** the loading screen (`world.gd._ready()` → `_generate_track`) blocks
+the single main thread for seconds; the web audio pipeline underruns and goes
+**silent**, while the wall clock keeps advancing. On resume the scheduler would
+otherwise fire the next segment against time the audio never played — "goes silent,
+resumes wrong".
+
+`music_director` handles this in `_tick(now)` (called by `_process` with the real
+clock; `_tick` is the testable seam):
+
+- **Detect:** if the wall-clock gap between processed frames exceeds
+  `GameConfig.music_stall_threshold_sec` (~0.5 s — far above a normal ~16 ms frame),
+  a stall is inferred.
+- **Suspend (edge-triggered):** stop the polyphonic playback (killing the now-dead
+  voices), clear `current_song`/`requested_song`, and early-return each frame so the
+  scene auto-restart path stays disabled. `world.gd` yields a frame between every
+  generation stage, so the stop/clear runs only on the transition into suspend;
+  later stall frames just reset the stable window.
+- **Resume (clean):** once frames have flowed normally for
+  `GameConfig.music_resume_stable_sec` (~0.4 s) AND no `LoadingScreen` is present
+  (it joins the `loading_screen` group), re-seed from the current clock and launch
+  segment 0 of the scene's wanted song. The loading-group check is load-bearing —
+  chunk-precompute frames can satisfy the stable window mid-generation, so the group
+  check is what prevents a mid-load resume.
+
+The whole mechanism is gated on `OS.has_feature("web")` (overridable in tests):
+desktop has an independent audio thread that does not underrun on a main-thread
+stall, so a GC/window-drag hitch there must not restart otherwise-fine music. The
+same detector also recovers from tab-backgrounding (main loop throttles, audio
+dies, wall clock races), not just the loading screen.
+
 ## Tests
 
 `tests/headless/test_music_schedule.gd` (timing relationships),

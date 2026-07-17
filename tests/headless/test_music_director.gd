@@ -137,3 +137,119 @@ func test_catch_up_after_a_stall_still_fires_aligned() -> void:
 			"offset stays inside the lead-in after catch-up")
 	assert_gt(md.next_handoff, stalled_now - MusicSchedule.loop_body_sec(170.0),
 		"handoff re-aligned near/after now")
+
+
+func test_threshold_accessors_honour_overrides() -> void:
+	var md := _make()
+	md._stall_threshold_override = 1.25
+	md._resume_stable_override = 0.75
+	assert_almost_eq(md._stall_threshold(), 1.25, 0.0001, "override wins for threshold")
+	assert_almost_eq(md._resume_stable_sec(), 0.75, 0.0001, "override wins for stable window")
+
+
+func test_stall_recovery_enabled_honours_override() -> void:
+	var md := _make()
+	md._stall_recovery_override = true
+	assert_true(md._stall_recovery_enabled(), "override forces recovery on")
+	md._stall_recovery_override = false
+	assert_false(md._stall_recovery_enabled(), "override forces recovery off")
+
+
+func test_recovery_disabled_ignores_large_gaps() -> void:
+	var md := _make()
+	md._stall_recovery_override = false   # desktop: audio thread independent, no underrun
+	md._stall_threshold_override = 0.5
+	md.seed_grid(0.0, "a")
+	md._tick(1.0)
+	md._tick(10.0)                        # 9 s gap, but recovery is off
+	assert_false(md._suspended, "recovery off -> large gaps never suspend")
+	assert_eq(md.current_song, "a", "song is left intact on desktop")
+
+
+func test_tick_fires_at_the_next_handoff_like_advance() -> void:
+	var md := _make()
+	md.seed_grid(0.0, "a")
+	var handoff := md.next_handoff
+	var body := MusicSchedule.loop_body_sec(170.0)
+	# A tick at the fire boundary must advance the grid exactly like advance() does.
+	md._tick(MusicSchedule.fire_start(handoff, 170.0))
+	assert_eq(md.current_segment, 1, "tick advanced to segment 1 at the handoff")
+	assert_almost_eq(md.next_handoff - handoff, body, 0.0001, "handoff advanced one loop body")
+
+
+func test_large_gap_suspends_and_stops_firing() -> void:
+	var md := _make()
+	md._stall_recovery_override = true
+	md._stall_threshold_override = 0.5
+	md.seed_grid(0.0, "a")
+	md._tick(1.0)              # establishes _last_now (gap from 0 ignored: had_prev false)
+	md._tick(10.0)            # 9 s gap >> 0.5 s threshold -> stall
+	assert_true(md._suspended, "large gap suspends")
+	assert_eq(md.current_song, "", "suspend clears current_song")
+	# While suspended, a normal tick must not fire (scene auto-restart is disabled).
+	md._tick(10.02)
+	assert_eq(md.current_song, "", "stays idle while suspended")
+
+
+func test_suspend_is_edge_triggered() -> void:
+	var md := _make()
+	md._stall_recovery_override = true
+	md._stall_threshold_override = 0.5
+	md.seed_grid(0.0, "a")
+	md._tick(1.0)
+	md._tick(10.0)            # first stall -> enter suspend
+	md._tick(10.4)            # +0.4 s, below threshold: accumulate stable time while suspended
+	assert_true(md._stable_sec > 0.0, "stable time accumulates while suspended")
+	# A second stall-sized gap while already suspended just resets the window,
+	# it does NOT re-run entry (no churn); assert the window reset.
+	md._tick(20.0)           # gap 9.6 s > threshold
+	assert_true(md._suspended, "still suspended")
+	assert_almost_eq(md._stable_sec, 0.0, 0.0001, "a fresh stall resets the stable window")
+
+
+func test_resume_blocked_until_stable_window_met() -> void:
+	var md := _make()
+	md._stall_recovery_override = true
+	md._stall_threshold_override = 100.0   # so the small gap below is never a stall
+	md._resume_stable_override = 1.0
+	md._suspended = true
+	md._stable_sec = 0.0
+	md._last_now = 100.0
+	md._tick(100.1)   # +0.1 s stable, below 1.0 s window
+	assert_true(md._suspended, "not enough stable time -> stays suspended")
+
+
+func test_resume_blocked_while_loading_screen_present() -> void:
+	var md: MusicDirector = autofree(MusicDirector.new())
+	md._bpm_override = {"a": 170.0}
+	md._segment_count_override = {"a": 4}
+	md._stall_recovery_override = true
+	md._stall_threshold_override = 100.0   # so the 0.5 s tick gap is never a stall
+	md._resume_stable_override = 0.1
+	get_tree().root.add_child(md)          # needs a tree for the group query
+	var ls: LoadingScreen = LoadingScreen.new()
+	get_tree().root.add_child(ls)          # a live loading screen is present
+	md._suspended = true
+	md._stable_sec = 0.0
+	md._last_now = 100.0
+	md._tick(100.5)                        # window met, but loading screen present
+	assert_true(md._suspended, "loading screen present -> resume blocked")
+	get_tree().root.remove_child(ls)
+	ls.free()   # free immediately (not queue_free) so it's gone before the next test runs
+	md.queue_free()
+
+
+func test_resume_clears_suspended_when_gates_pass() -> void:
+	var md: MusicDirector = autofree(MusicDirector.new())
+	md._bpm_override = {"a": 170.0}
+	md._segment_count_override = {"a": 4}
+	md._stall_recovery_override = true
+	md._stall_threshold_override = 100.0   # so the 0.5 s tick gap is never a stall
+	md._resume_stable_override = 0.1
+	get_tree().root.add_child(md)          # tree present, NO loading screen
+	md._suspended = true
+	md._stable_sec = 0.0
+	md._last_now = 100.0
+	md._tick(100.5)                        # window met, group empty -> resume
+	assert_false(md._suspended, "gates pass -> resume clears suspended")
+	md.queue_free()

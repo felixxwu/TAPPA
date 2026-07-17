@@ -18,6 +18,10 @@ extends Node
 const SETTING_KEY := "music_volume"
 const DEFAULT_VOLUME := 0.2
 
+# Stall-recovery fallback defaults (GameConfig overrides these at runtime).
+const DEFAULT_STALL_THRESHOLD_SEC := 0.5
+const DEFAULT_RESUME_STABLE_SEC := 0.4
+
 var current_song := ""      # song sounding now ("" = idle)
 var requested_song := ""    # what the scene wants; a change interrupts the sequence
 var current_segment := 0    # which segment of current_song is playing (0-based)
@@ -25,6 +29,12 @@ var next_handoff := 0.0     # grid time (s) of the next segment's main-loop star
 
 var _bpm_override := {}              # test hook: {id: bpm}; bypasses MusicLibrary
 var _segment_count_override := {}    # test hook: {id: count}; bypasses MusicLibrary
+var _last_now := 0.0            # previous frame's _audio_now(); 0 until first frame
+var _suspended := false         # true between a detected stall and a clean resume
+var _stable_sec := 0.0          # accumulated normal-delta time since the last stall
+var _stall_threshold_override = null    # test hook: float
+var _resume_stable_override = null      # test hook: float
+var _stall_recovery_override = null     # test hook: bool
 var _player: AudioStreamPlayer = null
 var _playback: AudioStreamPlaybackPolyphonic = null
 
@@ -85,6 +95,30 @@ func play_song(id: String) -> void:
 		_launch(id, 0, 0.0)
 
 
+func _stall_threshold() -> float:
+	if _stall_threshold_override != null:
+		return float(_stall_threshold_override)
+	var cfg := _cfg()
+	return cfg.music_stall_threshold_sec if cfg != null else DEFAULT_STALL_THRESHOLD_SEC
+
+
+func _resume_stable_sec() -> float:
+	if _resume_stable_override != null:
+		return float(_resume_stable_override)
+	var cfg := _cfg()
+	return cfg.music_resume_stable_sec if cfg != null else DEFAULT_RESUME_STABLE_SEC
+
+
+func _stall_recovery_enabled() -> bool:
+	if _stall_recovery_override != null:
+		return bool(_stall_recovery_override)
+	return OS.has_feature("web")
+
+
+func _cfg() -> GameConfig:
+	return Config.data if Config != null else null
+
+
 # --- Audio glue -------------------------------------------------------------
 
 func _ready() -> void:
@@ -104,20 +138,78 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	# Context music is driven by SCENE STATE, not transition hooks: each frame we
-	# ask which song the current scene wants and (re)queue it. play_song latches a
-	# swap for the next handoff, so this is idempotent and beat-aligned.
-	update_for_scene(_current_scene_path())
-	if current_song == "" or _playback == null:
+	_tick(_audio_now())
+
+
+# The whole per-frame body, driveable with a synthetic `now` in tests.
+func _tick(now: float) -> void:
+	# Stall/stable bookkeeping FIRST — before advance() or update_for_scene(), so a
+	# stall frame can never fire a stale voice or trip the scene auto-restart path.
+	var gap := now - _last_now
+	var had_prev := _last_now > 0.0
+	_last_now = now
+
+	if _stall_recovery_enabled() and had_prev and gap > _stall_threshold():
+		_enter_suspend()
 		return
-	var fire := advance(_audio_now())
-	if not fire.is_empty():
+
+	if _suspended:
+		_stable_sec += gap
+		_try_resume(now)
+		return
+
+	# Normal path (matches the Task 4 extraction: gate _launch on _playback, not an
+	# early return, so off-tree tests can advance the grid; _launch self-guards too).
+	var scene_path := _current_scene_path()
+	if scene_path != "":
+		update_for_scene(scene_path)
+	if current_song == "":
+		return
+	var fire := advance(now)
+	if not fire.is_empty() and _playback != null:
 		_launch(fire["song"], fire["segment"], fire["from_offset"])
+
+
+# Enter the suspended state ON THE TRANSITION only. world.gd yields a frame between
+# every generation stage, so many processed frames during a load have stall-sized
+# gaps; the stop/clear must happen once, not every stall frame. While already
+# suspended, a fresh stall just resets the stable window.
+func _enter_suspend() -> void:
+	if _suspended:
+		_stable_sec = 0.0
+		return
+	_suspended = true
+	_stable_sec = 0.0
+	current_song = ""
+	requested_song = ""
+	if _player != null:
+		_player.stop()   # frees the polyphonic playback + all voices
+		_player.play()   # fresh, empty mix timeline
+		_playback = _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
+
+
+# Resume only once frames have flowed normally for the stable window AND no loading
+# screen is up. The group check is load-bearing: individual chunk-precompute frames
+# (world.gd) can be under threshold, so _stable_sec could satisfy the window
+# mid-generation — only the group check prevents a mid-load resume. On resume we
+# re-seed from the current clock and start segment 0 of the scene's wanted song.
+func _try_resume(now: float) -> void:
+	if _stable_sec < _resume_stable_sec():
+		return
+	if not is_inside_tree() or not get_tree().get_nodes_in_group("loading_screen").is_empty():
+		return
+	_suspended = false
+	var want := MusicLibrary.song_for_scene(_current_scene_path())
+	if want != "":
+		seed_grid(now, want)
+		_launch(want, 0, 0.0)
 
 
 # The scene_file_path of the running scene ("" if none yet). Reading the live
 # scene is the state the music context keys off.
 func _current_scene_path() -> String:
+	if not is_inside_tree():
+		return ""
 	var t := get_tree()
 	if t == null or t.current_scene == null:
 		return ""
