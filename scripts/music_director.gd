@@ -27,6 +27,9 @@ var requested_song := ""    # what the scene wants; a change interrupts the sequ
 var current_segment := 0    # which segment of current_song is playing (0-based)
 var next_handoff := 0.0     # grid time (s) of the next segment's main-loop start
 
+var _current_rally_song := ""  # rally song locked in for the current event ("" = unpicked)
+var _loading_active := false   # true while a loading screen is up (edge-detects re-picks)
+
 var _bpm_override := {}              # test hook: {id: bpm}; bypasses MusicLibrary
 var _segment_count_override := {}    # test hook: {id: count}; bypasses MusicLibrary
 var _last_now := 0.0            # previous frame's _audio_now(); 0 until first frame
@@ -133,6 +136,7 @@ func _ready() -> void:
 	_player.play()  # start the continuous polyphonic timeline (our clock)
 	_playback = _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
 	_apply_volume()
+	_current_rally_song = MusicLibrary.random_rally_song()  # a song ready before the first loading screen
 	# No hardcoded autostart — _process picks the song from the live scene state
 	# (see update_for_scene), so the first frame starts the right context track.
 
@@ -148,6 +152,12 @@ func _tick(now: float) -> void:
 	var gap := now - _last_now
 	var had_prev := _last_now > 0.0
 	_last_now = now
+
+	# Re-pick the rally song at every loading screen. Done BEFORE the stall/suspend
+	# early-returns so it still fires on web, where a load suspends the director: the
+	# pick must land while the loading screen is up, so the following rally (applied
+	# on resume / next normal frame) uses the new song.
+	_update_loading_edge()
 
 	if _stall_recovery_enabled() and had_prev and gap > _stall_threshold():
 		_enter_suspend()
@@ -199,7 +209,7 @@ func _try_resume(now: float) -> void:
 	if not is_inside_tree() or not get_tree().get_nodes_in_group("loading_screen").is_empty():
 		return
 	_suspended = false
-	var want := MusicLibrary.song_for_scene(_current_scene_path())
+	var want := _song_for_scene(_current_scene_path())
 	if want != "":
 		seed_grid(now, want)
 		_launch(want, 0, 0.0)
@@ -216,13 +226,35 @@ func _current_scene_path() -> String:
 	return t.current_scene.scene_file_path
 
 
-# Queue the song the given scene wants (HQ song in the HQ scene, run song
-# elsewhere). No-op when it already matches what's requested; seeds immediately if
-# idle, otherwise latches a swap for the next 8-bar handoff.
+# Queue the song the given scene wants (HQ song in the HQ scene, the current rally
+# song elsewhere). No-op when it already matches what's requested; seeds immediately
+# if idle, otherwise latches a swap for the next 8-bar handoff.
 func update_for_scene(scene_path: String) -> void:
-	var want := MusicLibrary.song_for_scene(scene_path)
+	var want := _song_for_scene(scene_path)
 	if want != "" and want != requested_song:
 		play_song(want)
+
+
+# The song a scene wants: the fixed HQ song in the HQ scene, else the rally song
+# chosen for the current event. Lazily seeds a rally song if none has been picked
+# yet (e.g. a rally entered before any loading screen, or in an off-tree test).
+func _song_for_scene(scene_path: String) -> String:
+	if MusicLibrary.is_hq_scene(scene_path):
+		return MusicLibrary.HQ_SONG
+	if _current_rally_song == "":
+		_current_rally_song = MusicLibrary.random_rally_song()
+	return _current_rally_song
+
+
+# Re-pick the rally song on the rising edge of the loading_screen group (a new
+# event / return-to-HQ / next-event is loading), avoiding an immediate repeat.
+func _update_loading_edge() -> void:
+	if not is_inside_tree():
+		return
+	var loading := not get_tree().get_nodes_in_group("loading_screen").is_empty()
+	if loading and not _loading_active:
+		_current_rally_song = MusicLibrary.random_rally_song(_current_rally_song)
+	_loading_active = loading
 
 
 func _audio_now() -> float:

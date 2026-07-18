@@ -72,11 +72,11 @@ const ENGINES: Array[Dictionary] = [
 		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 8, "shift_time": 0.35,  # JB1 5-speed manual
 	},
 	{
-		"id": "ford_25t_i5", "name": "2.5T Duratec i5", "layout": "i5", "mass": 150.0,
-		"redline_rpm": 6800.0, "peak_torque": 320.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.22,
-		"engine_friction_base": 45.0,  # i5 2.5L
+		"id": "ford_20_i4", "name": "2.0 Duratec i4", "layout": "i4", "mass": 130.0,
+		"redline_rpm": 6750.0, "peak_torque": 184.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.16,  # 2009 Focus 2.0 Duratec: 140 hp @ 6000, 136 lb-ft (184 Nm) @ 4500
+		"engine_friction_base": 25.0,  # NA i4 2.0L
 		"low_octave_mix": 0.1, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
-		"gear_ratios": [3.385, 2.050, 1.433, 1.088, 0.868, 0.700], "final_drive": 9, "shift_time": 0.30,  # Getrag M66 6-speed
+		"gear_ratios": [3.58, 2.02, 1.35, 0.98, 0.76], "final_drive": 8, "shift_time": 0.35,  # MTX-75 5-speed manual
 	},
 	{
 		"id": "audi_25t_i5", "name": "2.5T TFSI i5", "layout": "i5", "mass": 165.0,

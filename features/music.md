@@ -26,20 +26,40 @@ be authored so N→N+1, the 4→1 wrap, and a cross-song 4→(new)1 all sum clea
 
 Which track plays is decided by the **live scene state**, not by transition hooks
 (which are fragile). Every frame `MusicDirector._process` reads
-`get_tree().current_scene.scene_file_path` and asks `MusicLibrary.song_for_scene`:
-the **HQ scene** (`res://hq.tscn`) wants `HQ_SONG` (echo_chamber); **every other
+`get_tree().current_scene.scene_file_path` and resolves it via
+`MusicDirector._song_for_scene`: the **HQ scene** (`res://hq.tscn`, tested by
+`MusicLibrary.is_hq_scene`) always wants `HQ_SONG` (echo_chamber); **every other
 scene** (loading/start line/driving `main.tscn`, `standings.tscn`, `podium.tscn`,
-…) wants `RUN_SONG` (skillz). The result is re-queued via `play_song`, which is
-idempotent and **latches the swap for the next 8-bar handoff** — so leaving the
-HQ doesn't cut to Skillz immediately; the current Echo Chamber loop finishes and
-Skillz comes in beat-aligned (and vice-versa on return). The `MusicDirector`
-autoload persists across scene changes, so playback is continuous throughout.
+…) wants the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS`
+(`skillz`, `deadlock`, `nightandday`, `threaded`, `whoyouare`). The result is
+re-queued via `play_song`, which is idempotent and **latches the swap for the next
+8-bar handoff** — so leaving the HQ doesn't cut to the rally song immediately; the
+current Echo Chamber loop finishes and the rally song comes in beat-aligned (and
+vice-versa on return). The `MusicDirector` autoload persists across scene changes,
+so playback is continuous throughout.
 
-> Cross-tempo caveat: the 168↔170 swap sums Echo Chamber's lead-out with Skillz's
-> lead-in (and vice-versa). Because both are MP3s (per-file encoder head-delay),
-> the summed tails can be a few tens of ms out of alignment at the swap seam.
-> Swaps are infrequent (HQ↔run only) and the tails are transition material, so
-> it's acceptable; convert both to Ogg Vorbis if the seam ever sounds off.
+### Random rally song (per event)
+
+The rally context does not play a fixed song. `MusicDirector` holds
+`_current_rally_song`, and **re-picks it at every loading screen**: `_tick` calls
+`_update_loading_edge`, which watches the `loading_screen` group and, on its rising
+edge (empty → present), calls `MusicLibrary.random_rally_song(_current_rally_song)`
+— a uniformly random pool entry, **never the one just played** (no back-to-back
+repeat). So a fresh song is chosen each time an event loads / you return to HQ /
+the next event begins, and it's held for that whole event (every non-HQ scene
+resolves to the same locked-in song until the next loading edge). The edge check
+runs **before** the stall/suspend early-returns, so it still fires on the web build
+(where a load suspends the director) — the pick lands while the loading screen is
+up, so the following rally uses it. `_current_rally_song` is seeded once in
+`_ready` (and lazily by `_song_for_scene`) so a rally entered before any loading
+screen still has a valid song. HQ music is unaffected — it's always echo_chamber.
+
+> Cross-tempo caveat: an HQ↔rally swap sums Echo Chamber's lead-out with the rally
+> song's lead-in (and vice-versa). Because these are MP3s (per-file encoder
+> head-delay), the summed tails can be a few tens of ms out of alignment at the
+> swap seam. Swaps are infrequent (HQ↔rally, and rally songs only change across a
+> loading screen — never mid-event) and the tails are transition material, so it's
+> acceptable; convert to Ogg Vorbis if the seam ever sounds off.
 
 ## Timing model (handoff-anchored)
 
@@ -65,7 +85,8 @@ straight to that song's segment 1 at the next beat-aligned handoff.
   `catch_up`). No nodes/audio; fully unit-tested (`tests/headless/test_music_schedule.gd`).
 - **`scripts/music_library.gd`** (`MusicLibrary`) — the `SONGS` catalogue
   (`id → {bpm, segments}`) + `by_id` / `segment_count`, plus the scene→song
-  mapping (`HQ_SCENE`/`HQ_SONG`/`RUN_SONG`/`song_for_scene`). Same pattern as
+  mapping (`HQ_SCENE`/`HQ_SONG`/`is_hq_scene`) and the rally pool
+  (`RALLY_SONGS`/`random_rally_song`). Same pattern as
   `EngineLibrary`.
 - **`scripts/music_director.gd`** (`class_name MusicDirector`, autoload singleton
   **`Music`** — the singleton can't be named `MusicDirector` without colliding
@@ -154,6 +175,6 @@ song identity) — they assert relationships and logic.
 ## Not yet built (see the design spec)
 
 - `stop()` and event→HQ transition semantics.
-- A second song + HQ/event-driven `play_song` calls (replacing the boot
-  autostart), with Ogg conversion for cross-song alignment.
+- Ogg conversion for tighter cross-song seam alignment (the rally pool + random
+  per-event selection is now built — see "Random rally song" above).
 - Ducking music under SFX/engine audio.

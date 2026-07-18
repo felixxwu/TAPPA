@@ -94,8 +94,9 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "front_runners", "name": "Front Runners", "region": "home", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.26, 0.6),
-		# FWD intro rally + a p/w ceiling: the Focus's home (parallels Shakedown for the MX-5).
-		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 112.0, "pw_max": 168.0},
+		# FWD intro rally: a wide p/w band that welcomes both FWD starters (Twingo ~82,
+		# Focus ~114 hp/t) — the FWD home (parallels Shakedown for the MX-5).
+		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 78.0, "pw_max": 132.0},
 		"events": [
 			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 14.6},
 			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 15.4},

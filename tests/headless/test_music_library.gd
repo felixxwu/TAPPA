@@ -38,18 +38,30 @@ func test_by_id_unknown_returns_empty() -> void:
 
 
 func test_context_songs_resolve_to_real_catalogue_entries() -> void:
-	# The HQ and run context ids must point at real songs (contract, not pinning
-	# which song or its bpm).
+	# The HQ song and every rally-pool id must point at real songs (contract, not
+	# pinning which song or its bpm).
 	assert_false(MusicLibrary.by_id(MusicLibrary.HQ_SONG).is_empty(),
 		"HQ_SONG is a real catalogue entry")
-	assert_false(MusicLibrary.by_id(MusicLibrary.RUN_SONG).is_empty(),
-		"RUN_SONG is a real catalogue entry")
+	for id in MusicLibrary.RALLY_SONGS:
+		assert_false(MusicLibrary.by_id(id).is_empty(),
+			"rally song '%s' is a real catalogue entry" % id)
 
 
-func test_song_for_scene_picks_hq_song_only_in_the_hq_scene() -> void:
-	assert_eq(MusicLibrary.song_for_scene(MusicLibrary.HQ_SCENE), MusicLibrary.HQ_SONG,
-		"the HQ scene plays the HQ song")
-	# Anything that is not the HQ scene is a "run" context -> the run song.
+func test_is_hq_scene_only_true_for_the_hq_scene() -> void:
+	assert_true(MusicLibrary.is_hq_scene(MusicLibrary.HQ_SCENE), "the HQ scene is the HQ")
 	for other in ["res://main.tscn", "res://standings.tscn", "res://podium.tscn", ""]:
-		assert_eq(MusicLibrary.song_for_scene(other), MusicLibrary.RUN_SONG,
-			"non-HQ scene '%s' plays the run song" % other)
+		assert_false(MusicLibrary.is_hq_scene(other), "non-HQ scene '%s' is not the HQ" % other)
+
+
+func test_random_rally_song_is_always_a_pool_member() -> void:
+	for i in 50:
+		assert_true(MusicLibrary.RALLY_SONGS.has(MusicLibrary.random_rally_song()),
+			"a random rally song is a member of the pool")
+
+
+func test_random_rally_song_avoids_the_excluded_id() -> void:
+	# With a >1 pool, the excluded id (the song just played) never comes back.
+	var exclude: String = MusicLibrary.RALLY_SONGS[0]
+	for i in 50:
+		assert_ne(MusicLibrary.random_rally_song(exclude), exclude,
+			"random_rally_song must not return the excluded id")

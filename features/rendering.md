@@ -164,7 +164,7 @@ live in `GameConfig` under the **Speed Lines** group.
 Cars with `use_model` on their CarLibrary spec render an authored glb body
 instead of the procedural chassis+cabin boxes; every other car still uses the
 boxes. Eight cars carry a model today: the **MX-5**
-(`blender/mx5/mx5.glb`, node `Car/Mx5Body`), the **Focus ST**
+(`blender/mx5/mx5.glb`, node `Car/Mx5Body`), the **Focus**
 (`blender/focus/focus.glb`, node `Car/FocusBody`), the **Renault Twingo**
 (`blender/twingo/twingo.glb`, node `Car/TwingoBody`), the **Honda Acty**
 (`blender/acty/acty.glb`, node `Car/ActyBody`), the **Charger R/T**

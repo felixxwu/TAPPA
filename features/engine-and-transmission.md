@@ -141,10 +141,10 @@ every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its rea
 - **`gear_ratios` + `final_drive` are also per-car** (`CarLibrary`, applied by
   `Car.apply_car()` after the engine is resolved), and **each car now carries its
   own real published transmission** — e.g. the Charger runs a 3-speed TorqueFlite
-  A727 (`2.45 / 1.45 / 1.00`), the 911 Turbo its classic 4-speed, the Focus ST a Getrag M66
-  6-speed, the Acty its real HA4 5-speed. Only `final_drive` remains a
+  A727 (`2.45 / 1.45 / 1.00`), the 911 Turbo its classic 4-speed, the Focus an MTX-75
+  5-speed, the Acty its real HA4 5-speed. Only `final_drive` remains a
   game-tuned value, kept deliberately HIGH (mostly ~6–7, but tuned per car
-  across a wider band — e.g. 4 on the torquey Charger up to 12 on the Focus ST)
+  across a wider band — e.g. 4 on the torquey Charger up to 12 on the Audi TFSI i5)
   so the
   cars pull against Jolt's built-in rolling resistance rather than stalling
   against a tall real final drive; the internal gear ratios themselves are real.

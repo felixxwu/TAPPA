@@ -108,19 +108,33 @@ func test_set_volume_can_skip_persistence() -> void:
 	Save.save_disabled = prev_disabled
 
 
-func test_scene_state_seeds_hq_song_then_latches_run_song() -> void:
+func test_scene_state_seeds_hq_song_then_latches_rally_song() -> void:
 	var md: MusicDirector = autofree(MusicDirector.new())  # not in tree: no audio, no _ready
 	# Entering the HQ scene from idle seeds + starts the HQ song immediately.
 	md.update_for_scene(MusicLibrary.HQ_SCENE)
 	assert_eq(md.current_song, MusicLibrary.HQ_SONG, "HQ scene -> HQ song, seeded now")
 	assert_eq(md.requested_song, MusicLibrary.HQ_SONG, "requested is the HQ song")
-	# Moving to any non-HQ scene queues the run song WITHOUT swapping mid-loop.
+	# Moving to any non-HQ scene queues the current rally song WITHOUT swapping mid-loop.
 	md.update_for_scene("res://main.tscn")
-	assert_eq(md.requested_song, MusicLibrary.RUN_SONG, "non-HQ scene queues the run song")
+	assert_true(MusicLibrary.RALLY_SONGS.has(md.requested_song),
+		"non-HQ scene queues a rally-pool song")
 	assert_eq(md.current_song, MusicLibrary.HQ_SONG, "swap is latched, not applied until the handoff")
+	# The rally scene plays exactly the song the director has locked in.
+	assert_eq(md.requested_song, md._current_rally_song, "rally scene queues the locked-in rally song")
 	# Returning to the HQ scene queues the HQ song again.
 	md.update_for_scene(MusicLibrary.HQ_SCENE)
 	assert_eq(md.requested_song, MusicLibrary.HQ_SONG, "back in HQ -> HQ song queued again")
+
+
+func test_scene_uses_the_locked_rally_song_across_frames() -> void:
+	# Once a rally song is picked, every non-HQ scene resolves to that same song
+	# until a new pick (loading edge) changes it — no re-roll per frame.
+	var md: MusicDirector = autofree(MusicDirector.new())
+	md._current_rally_song = MusicLibrary.RALLY_SONGS[0]
+	md.update_for_scene("res://main.tscn")
+	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "uses the locked rally song")
+	md.update_for_scene("res://standings.tscn")
+	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "still the same rally song, no re-roll")
 
 
 func test_catch_up_after_a_stall_still_fires_aligned() -> void:

@@ -2,21 +2,18 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dmb1dyidlcxvy"
-path.s3tc="res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.s3tc.ctex"
-path.etc2="res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.etc2.ctex"
+uid="uid://c2fne2lahtd1x"
+path.s3tc="res://.godot/imported/texture.png-9b2f71dbfdf757d4a4e361fe4b753b65.s3tc.ctex"
+path.etc2="res://.godot/imported/texture.png-9b2f71dbfdf757d4a4e361fe4b753b65.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
-generator_parameters={
-"md5": "47e7b1e18913debe9bc5c9c7be138b7a"
-}
 
 [deps]
 
-source_file="res://blender/focus/focus_texture.png"
-dest_files=["res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.s3tc.ctex", "res://.godot/imported/focus_texture.png-a8bb58c835cf4843bfa7fb1353357a2e.etc2.ctex"]
+source_file="res://blender/focus/texture.png"
+dest_files=["res://.godot/imported/texture.png-9b2f71dbfdf757d4a4e361fe4b753b65.s3tc.ctex", "res://.godot/imported/texture.png-9b2f71dbfdf757d4a4e361fe4b753b65.etc2.ctex"]
 
 [params]
 
