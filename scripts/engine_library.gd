@@ -74,7 +74,7 @@ const ENGINES: Array[Dictionary] = [
 	{
 		"id": "ford_20_i4", "name": "2.0 Duratec i4", "layout": "i4", "mass": 130.0,
 		"redline_rpm": 6750.0, "peak_torque": 184.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.16,  # 2009 Focus 2.0 Duratec: 140 hp @ 6000, 136 lb-ft (184 Nm) @ 4500
-		"engine_friction_base": 25.0,  # NA i4 2.0L
+		"engine_friction_base": 15.0,  # NA i4 2.0L
 		"low_octave_mix": 0.1, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [3.58, 2.02, 1.35, 0.98, 0.76], "final_drive": 8, "shift_time": 0.35,  # MTX-75 5-speed manual
 	},

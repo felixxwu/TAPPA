@@ -125,7 +125,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse NA I4, nose-heavy FWD
 		"tire_compound": 0.88,  # economy / touring all-season tyres
 		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy FWD)
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 8000,
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 10000,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
