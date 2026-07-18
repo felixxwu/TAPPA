@@ -164,9 +164,9 @@ var peak_torque_rpm := 4500.0
 ## loose gravel/grass shears a wedge of material and peaks at a MUCH larger angle
 ## with a broad, forgiving plateau past it — which is why rally is driven
 ## sideways. sin(8°)≈0.14, sin(18°)≈0.31, sin(20°)≈0.34.
-@export var tarmac_slip_peak := 0.20
-@export var gravel_slip_peak := 0.31
-@export var grass_slip_peak := 0.34
+@export var tarmac_slip_peak := 0.25
+@export var gravel_slip_peak := 0.35
+@export var grass_slip_peak := 0.40
 ## Post-peak grip retention per surface (see sliding_grip_ratio). Tarmac falls
 ## off; loose surfaces stay near their peak well past it (the plateau).
 @export_range(0.1, 1.0) var tarmac_slide_ratio := 0.6
@@ -296,10 +296,22 @@ var peak_torque_rpm := 4500.0
 ## Whether this engine has a belt-driven supercharger. Audio-only: its power gain
 ## is already baked into the engine's authored peak_torque, so the sim is unchanged.
 @export var supercharger_enabled := false
+## Seconds the HQ car-lineup preview holds the throttle when a car is highlighted:
+## a free-revving (neutral, no-load) EngineSim climbs for this long, then releases
+## and falls back to idle so the player hears each car's engine as they flick the
+## lineup. See scripts/car_preview_audio.gd + features/engine-audio.md.
+@export_range(0.0, 2.0) var preview_rev_hold_seconds := 0.5
 # --- Engine audio ---
 ## Master level of the engine voice, in decibels. Per-car, set from CarLibrary's
 ## volume_db; this value is the fallback default for cars that omit the key.
 @export var engine_volume_db := -6.0
+## Global master volume for ALL engine audio, in decibels. Unlike engine_volume_db
+## (which is per-car and scales only the cylinder firing voice), this is a single
+## project-wide lever applied to the FINAL mixed engine signal — the firing voice,
+## broadband noise, exhaust crackle, turbo whistle/air-rush, supercharger whine,
+## blow-off vent, and anti-lag bangs all pass through it. Set to 0 dB for no change,
+## negative to attenuate everything, -80 to effectively mute. Not per-car.
+@export var engine_master_volume_db := 0.0
 ## Audible floor of the engine voice at zero throttle (0 = silent at idle).
 @export_range(0.0, 1.0) var engine_idle_gain := 0.25
 ## Richness of each firing pulse — more harmonics = brighter, harsher engine note.
@@ -375,6 +387,15 @@ var peak_torque_rpm := 4500.0
 
 @export_group("HUD")
 @export var hud_enabled := true  # on-screen speed readout
+
+@export_group("Music")
+## Wall-clock gap (s) between processed frames above which we assume the main
+## thread stalled long enough that web audio underran and went silent — triggers
+## music stall recovery. Well above a normal ~16 ms frame, below any real freeze.
+@export var music_stall_threshold_sec := 0.5
+## After a stall, how long (s) frames must flow normally again before music
+## resumes from a clean start.
+@export var music_resume_stable_sec := 0.4
 
 @export_group("Stage")
 ## Countdown length, in seconds, before the car's controls unlock at the start
@@ -604,6 +625,11 @@ var peak_torque_rpm := 4500.0
 ## Length of the combined steer-assist debug arrow (yellow, above the car,
 ## points left/right), in metres drawn per newton-metre of yaw-assist torque.
 @export_range(0.0000001, 0.001) var debug_assist_arrow_scale := 0.0001
+## Where a benchmark run POSTs its results JSON (features/benchmark.md → feedback
+## loop). Empty = auto: on a web build, POST to "/bench" on the page's own origin
+## (the serve_web.sh collector), so the LAN loop needs no config. On an installed
+## APK set this to your dev machine, e.g. "http://192.168.1.50:8080/bench".
+@export var bench_report_url := ""
 
 @export_group("Camera")
 @export var follow_distance := 2.5
@@ -1351,16 +1377,20 @@ var peak_torque_rpm := 4500.0
 ## How close (m) a tree must be for a spectator to avoid spawning by / steer from it.
 @export_range(0.1, 10.0) var spectator_tree_avoid_m := 1.5
 ## Detection radius (m) within which spectators flee the car.
-@export_range(0.5, 30.0) var spectator_flee_radius_m := 5.0
+@export_range(0.5, 30.0) var spectator_flee_radius_m := 10.0
 ## Distance (m) car→spectator at which the spectator is knocked over (ragdoll).
 @export_range(0.2, 5.0) var spectator_knock_radius_m := 1.2
 ## Top speed (m/s) a spectator can move while fleeing/shuffling.
-@export_range(0.5, 12.0) var spectator_max_speed_mps := 3.5
+@export_range(0.5, 12.0) var spectator_max_speed_mps := 6.5
 ## Acceleration (m/s^2) toward the steering target.
 @export_range(1.0, 60.0) var spectator_accel_mps2 := 18.0
 ## Only the group within this distance (m) of the car runs steering (LOD); the
 ## others stand still until the car approaches.
 @export_range(10.0, 400.0) var spectator_active_radius_m := 90.0
+## Crowd-sim decimation: run the per-member steering only every Nth physics tick
+## (delta accumulates so motion is unchanged over time), staggered across groups.
+## Ambient crowd doesn't need a 60 Hz update; 2 halves the sim cost. Pure perf knob.
+@export_range(1, 6) var spectator_sim_interval := 2
 ## Steering weights (relative pull of each preference).
 @export_range(0.0, 10.0) var spectator_w_separation := 1.5
 @export_range(0.0, 10.0) var spectator_w_flee := 4.0
@@ -1418,10 +1448,12 @@ var peak_torque_rpm := 4500.0
 ## independently at the project physics tick. Mobile/web use target_fps_mobile
 ## instead (see target_fps_for()).
 @export_range(0, 240) var target_fps := 60
-## Render frame cap (FPS) on mobile + web targets, where a steady low ceiling
-## avoids thermal throttling on phones. 0 = uncapped. Selected over target_fps by
-## target_fps_for() when running on a mobile or web export.
-@export_range(0, 240) var target_fps_mobile := 30
+## Render frame cap (FPS) on mobile + web targets. Held at 60 (same as desktop):
+## the earlier 30 cap starved audio on the SINGLE-THREADED web build, where audio
+## is serviced by the main loop (no audio thread) so a lower frame rate causes
+## gaps — see features/rendering.md. The native APK performs fine at 60, so we cap
+## everywhere at 60 rather than special-casing web. 0 = uncapped.
+@export_range(0, 240) var target_fps_mobile := 60
 ## Texture LOD bias for the foliage/ground shaders: positive values pull distant
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
@@ -1634,6 +1666,7 @@ func spectator_params() -> Dictionary:
 		"max_speed_mps": spectator_max_speed_mps,
 		"accel_mps2": spectator_accel_mps2,
 		"active_radius_m": spectator_active_radius_m,
+		"sim_interval": spectator_sim_interval,
 		"road_probe_m": track_width * 0.5,
 		"anchor_dead_zone_m": spectator_separation_m,
 		"w_separation": spectator_w_separation,

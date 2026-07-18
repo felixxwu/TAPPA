@@ -52,7 +52,8 @@ var _harmonics: int
 var _harmonic_weights: PackedFloat32Array  # scratch, recomputed per _voice() call
 var _idle_gain: float
 var _noise_level: float
-var _master_gain: float  # linear, from engine_volume_db
+var _master_gain: float  # linear, from engine_volume_db (per-car; firing voice only)
+var _engine_master_gain: float  # linear, from engine_master_volume_db (global; whole mix)
 var _smooth_rate: float  # one-pole rate for rpm/throttle; higher = snappier
 var _low_octave_mix: float  # 0 = pure normal voice, 0.5 = 50/50, 1 = pure low
 var _cut_level: float  # firing-voice gain while fuel is cut (1 = no duck)
@@ -109,6 +110,7 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_idle_gain = cfg.engine_idle_gain
 	_noise_level = cfg.engine_noise_level
 	_master_gain = db_to_linear(cfg.engine_volume_db)
+	_engine_master_gain = db_to_linear(cfg.engine_master_volume_db)
 	_smooth_rate = cfg.engine_smoothing_rate
 	_low_octave_mix = clampf(cfg.engine_low_octave_mix, 0.0, 1.0)
 	_cut_level = clampf(cfg.engine_limiter_cut_level, 0.0, 1.0)
@@ -252,7 +254,11 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 		var blocked := combined - _dc_x_prev + DC_BLOCK_R * _dc_y_prev
 		_dc_x_prev = combined
 		_dc_y_prev = blocked
-		sample = soft_clip(blocked)
+		# Global engine master volume: a single project-wide lever applied to the
+		# FINAL mixed signal (voice + noise + crackle + turbo + supercharger + BOV +
+		# anti-lag), after the soft clipper. Clamp again so a >0 dB setting can't
+		# push the summed peaks past the rails.
+		sample = clampf(soft_clip(blocked) * _engine_master_gain, -1.0, 1.0)
 		buffer[i] = Vector2(sample, sample)
 
 

@@ -4,15 +4,16 @@ extends RefCounted
 # AudioServer, no state — every function takes bpm/time as arguments so it is
 # fully unit-testable headless. See features/music.md for the model.
 #
-# File structure contract (4/4): every song is 8 bars lead-in + 32 bars main
-# loop + 8 bars lead-out. The main loop is what repeats; lead-in/lead-out are
-# summed (full volume) across the seam. bpm is per-song, so bar duration is
-# derived per call, never a global constant.
+# File structure contract (4/4): a song is split into 4 SEGMENTS, each authored as
+# 4 bars lead-in + 8 bars main + 4 bars lead-out. The 8-bar main is what re-triggers
+# (so a swap can land every 8 bars, not every 32); lead-in/lead-out are summed
+# (full volume) across the seam between consecutive segments. bpm is per-song, so
+# bar duration is derived per call, never a global constant.
 
 const BEATS_PER_BAR := 4.0
-const LEAD_IN_BARS := 8.0
-const MAIN_LOOP_BARS := 32.0
-const LEAD_OUT_BARS := 8.0
+const LEAD_IN_BARS := 4.0
+const MAIN_LOOP_BARS := 8.0
+const LEAD_OUT_BARS := 4.0
 const EPS := 0.001  # keeps clamped late-comp strictly inside the lead-in
 
 

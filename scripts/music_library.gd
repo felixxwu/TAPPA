@@ -1,29 +1,39 @@
 class_name MusicLibrary
 extends RefCounted
-# The music catalogue: id -> { bpm, stream }. Same pattern as EngineLibrary.
-# Each song file follows the 8/32/8-bar structure (see MusicSchedule /
-# features/music.md). bpm is authored per song and is what the scheduler uses to
-# derive bar durations — it must match the file's true tempo or the loop drifts.
+# The music catalogue: id -> { bpm, segments }. Same pattern as EngineLibrary.
+# Each song is split into 4 SEGMENTS, each authored as 4 bars lead-in + 8 bars
+# main + 4 bars lead-out (see MusicSchedule / features/music.md). The segments
+# play in order (1->2->3->4->1); the 8-bar main re-triggers, so a swap to another
+# song can land every 8 bars. bpm is authored per song (all its segments share it)
+# and is what the scheduler uses to derive bar durations — it must match the true
+# tempo or the loop drifts.
 #
-# NOTE: Skillz is a 320 kbps MP3. That is fine for looping a song INTO ITSELF
-# (every voice shares the same encoder head-delay, so the summed tails stay
-# relatively aligned). Before adding a SECOND song that transitions against this
-# one, convert both to Ogg Vorbis — MP3 encoder delay breaks cross-song
-# "lead-in ends exactly at the handoff" alignment.
+# NOTE: these are 320 kbps MP3s. Fine for a song looping through its own segments
+# (they share the same encoder head-delay, so the summed tails stay relatively
+# aligned). The cross-SONG swap (echo_chamber <-> skillz, at different tempos) can
+# be a few tens of ms out of alignment at the seam because of per-file MP3 delay;
+# convert to Ogg Vorbis if that ever sounds off.
 
 const SONGS: Array[Dictionary] = [
 	{
 		"id": "echo_chamber",
-		"bpm": 168.0,  # authored; 8/32/8 bars like every track
-		"stream": preload("res://music/Echo Chamber.mp3"),
+		"bpm": 168.0,  # authored (the HQ theme); every segment shares this tempo
+		"segments": [
+			preload("res://music/echochamber1.mp3"),
+			preload("res://music/echochamber2.mp3"),
+			preload("res://music/echochamber3.mp3"),
+			preload("res://music/echochamber4.mp3"),
+		],
 	},
 	{
 		"id": "skillz",
-		# 170 bpm, authored (confirmed): 48 bars = 67.76 s of music (the file's
-		# 67.81 s includes ~0.05 s MP3 padding). Exact tempo — the self-loop
-		# relies on it not drifting over minutes.
-		"bpm": 170.0,
-		"stream": preload("res://music/Skillz.mp3"),
+		"bpm": 170.0,  # authored (the run theme)
+		"segments": [
+			preload("res://music/skillz1.mp3"),
+			preload("res://music/skillz2.mp3"),
+			preload("res://music/skillz3.mp3"),
+			preload("res://music/skillz4.mp3"),
+		],
 	},
 ]
 
@@ -41,6 +51,12 @@ static func by_id(id: String) -> Dictionary:
 		if song["id"] == id:
 			return song
 	return {}
+
+
+# How many segments a song has (0 if unknown).
+static func segment_count(id: String) -> int:
+	var song := by_id(id)
+	return (song["segments"] as Array).size() if not song.is_empty() else 0
 
 
 # The song for whatever scene is current — the single decision point for context

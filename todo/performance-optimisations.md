@@ -74,10 +74,12 @@
 > replaced.
 >
 > Status: **PARTIALLY DONE.** The unblocked, decision-free, low-risk items are
-> implemented: **item 4** (frame cap — split into `GameConfig.target_fps`=60 for
-> desktop and `target_fps_mobile`=30 for mobile+web, selected via
-> `target_fps_for(Platform.is_mobile_or_web())`, applied in
-> `world._ready`, skipped under `--headless`), **item 1** (mipmaps on
+> implemented: **item 4** (frame cap — `GameConfig.target_fps` / `target_fps_mobile`,
+> selected via `target_fps_for(Platform.is_mobile_or_web())`, applied in `world._ready`,
+> skipped under `--headless`. NOTE: originally `target_fps_mobile`=30, but that starved
+> audio on the single-threaded web build — audio is serviced by the main loop with no
+> audio thread, so a 30 fps cap causes audible gaps — so BOTH are now 60. The native
+> APK runs fine at 60. See features/rendering.md), **item 1** (mipmaps on
 > tree/bush `.import` + `lod_bias` uniform in `billboard.gdshader` driven by
 > `GameConfig.texture_lod_bias`), **item 6** (engine-audio: per-harmonic `pow`
 > hoisted out of the firing-phase loop in `_voice`; scratch `slice()` allocation

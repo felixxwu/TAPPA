@@ -80,8 +80,17 @@ corner.
 The signal chain is: **per-engine volume** (`engine_volume_db` → `_master_gain`,
 scaling the firing voice) and the constant noise floor form the **pre-shaper**
 signal → **sine shaper** (`engine_soft_clip_drive`, the pre-amp) → **global
-post-amp** (`engine_soft_clip_post_gain`) → clamp. Per-engine volume therefore
-acts before the clipper; the post gain is a single global trim.
+post-amp** (`engine_soft_clip_post_gain`) → clamp → **global engine master
+volume** (`engine_master_volume_db` → `_engine_master_gain`) → clamp. Per-engine
+volume therefore acts before the clipper; the post gain is a single global trim.
+
+`engine_master_volume_db` is the single project-wide lever for **all** engine
+sound. Unlike `engine_volume_db` (per-car, firing voice only), it is applied to
+the FINAL mixed signal after the soft clipper, so it scales every element at
+once — firing voice, broadband noise, exhaust crackle, turbo whistle/air-rush,
+supercharger whine, blow-off vent, and anti-lag bangs. Default `0.0` dB (no
+change); negative attenuates the whole engine mix, `-80` effectively mutes it.
+It is a `GameConfig` value in `game_config.tres`, not a per-car property.
 
 The pre-amp `engine_soft_clip_drive` is a single **global** `GameConfig` value
 (default `0.6`; the live `game_config.tres` is tuned higher) — higher drive
@@ -313,6 +322,31 @@ the shipped `engine_harmonics` override). Because the fill is frame-coupled, a s
 main-thread frame (e.g. a terrain chunk-crossing build on web) can underrun the
 generator buffer — hence the `BUFFER_SECONDS` headroom above and the terrain work
 to keep crossing frames short (see [terrain.md](terrain.md)).
+
+## HQ car-lineup rev preview
+
+`scripts/car_preview_audio.gd` (`class_name CarPreviewAudio`, an `AudioStreamPlayer`)
+plays a short engine rev for whichever car is highlighted in the HQ lineup, so the
+player hears each car as they flick through the car-park. `hq.gd` lazily creates one
+and calls `_preview_rev(engine_id)` from `_focus_changed()` — the single choke-point
+every selection change (arrows, swipe-flick, tap, and the initial lineup show) passes
+through, so the rev fires on every flick *and* on the first car shown. It reads the
+car's *current* engine via `EngineSwap.current_engine_id(...)`, so a swapped-in engine
+previews correctly.
+
+Unlike the in-car `engine_audio.gd`, the preview owns everything itself — its own
+`AudioStreamGenerator`, an isolated `GameConfig` copy (`Config.data.duplicate(true)` +
+`EngineLibrary.apply`), an `EngineSim`, and an `EngineAudioSynth` — so it needs no live
+physics car. `rev(engine_id)` rebuilds all of these from idle and flushes the generator
+(`stop()`/`play()`), so starting a new rev instantly cancels the one in flight. The
+`EngineSim` is stepped in **neutral** (`gear = 0`), i.e. free-revving against crank
+torque + engine friction with no wheels/load: the throttle is held full for
+`GameConfig.preview_rev_hold_seconds` (default 0.5) so the flywheel climbs, then released
+so engine braking pulls it back to idle naturally, at which point the preview ends. Sim
+stepping (`_advance`) is separated from buffer filling (`_fill_audio`) so it runs and is
+testable headless with no audio device — see `tests/headless/test_car_preview_audio.gd`,
+which asserts the *envelope behaviour* (throttle held then released, revs climb then fall
+to idle, a new rev cancels the old) without pinning the hold seconds or any RPM number.
 
 On web this stacks with a second, engine-level buffer: because the export is
 single-threaded (`thread_support=false`), Godot mixes **all** audio (this synth

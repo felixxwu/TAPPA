@@ -116,10 +116,6 @@ var _carpark_starter_mode := false
 # from the garage's "Free Roam" button). It shows ALL owned cars and Start launches
 # free roam with the chosen car (see _enter_free_roam / _start_free_roam).
 var _carpark_freeroam_mode := false
-# On the web build, go fullscreen on the player's first tap (browsers only allow
-# fullscreen from a user gesture). Latched so we request it once. Orientation is
-# locked to landscape via project.godot (display/window/handheld/orientation).
-var _web_fullscreen_done := false
 
 # Map-table pan state: drag the table view around (the map can be larger than the
 # screen once zoomed in). _table_pan is the camera's X/Z offset from its base pose;
@@ -172,6 +168,9 @@ var _markers: Array = []
 # freed with the HQ node on exit-to-race.
 var _car_cache: Dictionary = {}
 var _focus := 0
+# Plays a short engine rev for the focused car each time the lineup selection
+# changes (see _preview_rev). Created lazily on first focus.
+var _preview_audio: CarPreviewAudio = null
 # Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
 # lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
 var _settle_generation := 0
@@ -286,6 +285,15 @@ var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu c
 func _ready() -> void:
 	_ensure_starter()
 	_ensure_selection()
+	# Dev profiling loop: with ?bench=1 in the web URL, boot straight into the
+	# benchmark (skip building HQ we'd immediately discard). Paired with the page's
+	# reload-listener (export_presets head_include) + the LAN collector, this lets a
+	# dev iterate on the phone with no taps: rebuild → page reloads → benchmark runs
+	# → results POST back. Gated on the URL param so it can never ship on by default.
+	if _should_autostart_benchmark():
+		_apply_bench_sweep_config()
+		Benchmark.start()
+		return
 	# Headless (the test runner): build synchronously so tests see a ready HQ after one
 	# frame, with no loading cover. A real display gets the covered build below.
 	if Platform.is_headless():
@@ -309,6 +317,41 @@ func _ready() -> void:
 	# on the title shot rather than a half-built frame.
 	await get_tree().process_frame
 	loading.finish()
+
+
+# True on the web build when the page URL carries ?bench=1 — the dev auto-profiling
+# switch (see _ready). Reads window.location.search via JavaScriptBridge; the page's
+# reload-listener preserves the query string across reloads, so the flag persists
+# through the whole iterate-on-phone loop. Never true off the web build.
+func _should_autostart_benchmark() -> bool:
+	if not OS.has_feature("web") or Platform.is_headless():
+		return false
+	if Benchmark.active:
+		return false  # already in a benchmark session (e.g. Run again) — don't recurse
+	var search := str(JavaScriptBridge.eval("window.location.search", true))
+	return search.find("bench=1") != -1
+
+
+# Dev sweep control: fetch /bench-config from the LAN collector (a synchronous XHR,
+# fine at boot) and disable the benchmark toggles it names before the run starts.
+# Lets a dev drive a toggle sweep remotely — write the file + reload the phone — with
+# no shippable config change. Empty / missing config = full baseline (all on).
+func _apply_bench_sweep_config() -> void:
+	var raw := str(JavaScriptBridge.eval(
+		"(function(){try{var x=new XMLHttpRequest();x.open('GET','/bench-config?t='+Date.now(),false);x.send();return x.responseText;}catch(e){return '';}})()",
+		true))
+	if raw.strip_edges() == "":
+		return
+	var data: Variant = JSON.parse_string(raw)
+	if typeof(data) != TYPE_DICTIONARY:
+		return
+	var disabled: Array = data.get("disabled", [])
+	for t in Benchmark.TOGGLES:
+		var key := String(t["key"])
+		Benchmark.set_option(key, not (key in disabled))
+	# Two-pass spike-diagnosis mode (cold vs warm shader cache), driven from the
+	# sweep config so it's controllable remotely (features/benchmark.md).
+	Benchmark.two_pass = bool(data.get("two_pass", false))
 
 
 # Build the whole HQ (environment, station overlays, map pins, initial title view).
@@ -350,6 +393,8 @@ func _build_hq() -> void:
 	# Only over the title shot (a normal boot); never over the overflow gate.
 	if _should_show_android_app_notice() and _view == View.EXTERIOR:
 		_show_android_app_notice()
+	# Web fullscreen/landscape (the "tap to play" prompt) is handled globally by the
+	# WebFullscreen autoload so it works in every scene, including while driving.
 
 
 # First run no longer auto-grants a car: the player picks their starter (MX-5 vs
@@ -1473,36 +1518,12 @@ func _on_exterior_exit() -> void:
 
 
 func _on_exterior_start() -> void:
-	_maybe_enter_web_fullscreen()
 	# First-time players (no starter chosen yet) pick a starter car in the car park;
 	# returning players go straight to the garage.
 	if not bool(Save.profile.get("starter_picked", false)):
 		_enter_starter_pick()
 	else:
 		_go_to(View.GARAGE)
-
-
-# Take the web/mobile build fullscreen on the first user gesture, but ONLY when we're
-# stuck in portrait. Browsers reject fullscreen outside a user-activation context, so
-# this is called from input handlers (the Start button / first tap — see
-# _unhandled_input). Gated to the touch web build so a desktop browser isn't forced
-# fullscreen during dev.
-#
-# Crucial: some embedders (itch.io) already auto-present the game fullscreen in
-# landscape. Re-requesting fullscreen on the canvas there FLIPS it to portrait, so if
-# we're already landscape we leave it alone — there's nothing to fix. We only force
-# fullscreen when the viewport is portrait; the landscape orientation lock then comes
-# from the export's fullscreenchange handler (export_presets head_include).
-func _maybe_enter_web_fullscreen() -> void:
-	if _web_fullscreen_done or not OS.has_feature("web"):
-		return
-	if not (DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force):
-		return
-	_web_fullscreen_done = true
-	var size := DisplayServer.window_get_size()
-	if size.x >= size.y:
-		return  # already landscape (e.g. itch.io's auto-fullscreen) — don't disturb it
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
 # Free Roam: open the car park to pick which owned car to drive. Parks the WHOLE owned
@@ -2590,6 +2611,10 @@ func _focus_changed(snap := false) -> void:
 	var owned: Dictionary = _eligible[_focus]
 	_selected_instance_id = int(owned.get("instance_id", -1))
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	# Let the player hear the focused car: rev its (possibly swapped) engine. Fires
+	# on every flick and on the initial lineup show; a new rev cancels the previous.
+	if not entry.is_empty():
+		_preview_rev(EngineSwap.current_engine_id(owned, String(entry.get("engine", ""))))
 	var stats := _car_stats_text(owned, entry)
 	# The same lineup + focus machinery drives both the rally car-select (CARPARK)
 	# and the scrap prompt (OVERFLOW); update whichever overlay is up.
@@ -2614,6 +2639,16 @@ func _focus_changed(snap := false) -> void:
 			_refresh_focus_damage(owned)
 	_normalize_menus()  # keep house rules on the just-updated car name / stats
 	_move_camera_to(_camera_target_xform(), snap)
+
+
+# Rev the focused car's engine as a short preview (lazily builds the player).
+func _preview_rev(engine_id: String) -> void:
+	if engine_id.is_empty():
+		return
+	if _preview_audio == null:
+		_preview_audio = CarPreviewAudio.new()
+		add_child(_preview_audio)
+	_preview_audio.rev(engine_id)
 
 
 # The two-way power-to-weight preview shown only while picking an engine-swap partner.
@@ -3110,9 +3145,6 @@ func _begin_rally_start() -> void:
 # --- Menu input (keyboard / gamepad; clicking 3D objects is the primary path) -
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Any first tap/click on the web build is a valid gesture to go fullscreen.
-	if (event is InputEventScreenTouch and event.pressed) or _is_click(event):
-		_maybe_enter_web_fullscreen()
 	match _view:
 		View.EXTERIOR:
 			# The title is a flat button menu (Start / Settings / Exit Game) driven by

@@ -239,6 +239,37 @@ func test_noise_is_independent_of_volume() -> void:
 		"noise is not scaled by volume: it cancels in the volume difference up to the soft clipper's weak coupling")
 
 
+# Global engine master volume: applied to the FINAL mixed signal after the soft
+# clipper, so it scales every element — including the broadband noise, which the
+# per-car engine_volume_db deliberately does NOT scale. Here the voice is muted
+# (very low volume_db) so the output is essentially the noise floor: lowering the
+# global master must still quieten it.
+func _synth_with_master(master_db: float) -> EngineAudioSynth:
+	var cfg := GameConfig.new()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	cfg.engine_volume_db = -60.0   # firing voice negligible → output is the noise floor
+	cfg.engine_noise_level = 0.2
+	cfg.engine_master_volume_db = master_db
+	return EngineAudioSynth.new(cfg, MIX_RATE)
+
+
+func test_master_volume_scales_the_noise_floor() -> void:
+	var n := 4096
+	var loud := PackedVector2Array(); loud.resize(n)
+	var quiet := PackedVector2Array(); quiet.resize(n)
+	_synth_with_master(0.0).fill(loud, 4000.0, 0.5, false, n)
+	_synth_with_master(-12.0).fill(quiet, 4000.0, 0.5, false, n)
+	assert_gt(_rms(loud, n), _rms(quiet, n) * 1.5,
+		"the global master scales the whole mix, noise floor included")
+
+
+func test_master_volume_mute_silences_everything() -> void:
+	var n := 4096
+	var muted := PackedVector2Array(); muted.resize(n)
+	_synth_with_master(-80.0).fill(muted, 4000.0, 0.8, false, n)
+	assert_lt(_rms(muted, n), 1e-3, "-80 dB master effectively mutes all engine audio")
+
+
 # A clean (noiseless) synth with explicit limiter knobs, for isolating the
 # fuel-cut duck and the crackle burst from each other and from the noise floor.
 func _limiter_synth(cut_level: float, crackle: float, smoothing := 200.0) -> EngineAudioSynth:

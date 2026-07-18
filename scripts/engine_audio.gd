@@ -51,6 +51,14 @@ func reconfigure() -> void:
 	_synth = EngineAudioSynth.new(_car_config(), MIX_RATE)
 
 
+# Cumulative generator buffer underruns ("skips"): each one is a frame that drained
+# the buffer before the next _process fill — i.e. an audible audio overrun. Sampled
+# by the benchmark to log overruns and correlate them with slow frames
+# (features/benchmark.md). 0 headless / before the device is up.
+func skip_count() -> int:
+	return _playback.get_skips() if _playback != null else 0
+
+
 func _process(delta: float) -> void:
 	var __t := Time.get_ticks_usec()
 	_timed_process(delta)
