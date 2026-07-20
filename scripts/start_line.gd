@@ -12,8 +12,10 @@ extends Node3D
 #      of the start line, facing the car on the line, and holds there.
 #   3. REVEAL   — the three cars ahead of the player are the REAL top-three rivals for
 #      this event (their actual cars). A card shows the front car's driver, the car and
-#      the time to beat, with a Next button. Next sends that car off the line and scoots
-#      the rest up one gap; repeat P1 → P2 → P3 until the player is on the line.
+#      the time to beat, with a Next button. Next sends that car off the line and REVEALS
+#      the next opponent immediately — the field rolls up one gap underneath as ambience,
+#      so the player can tap straight through P1 → P2 → P3 without waiting for each car to
+#      physically line up. When only the player is left, the fade begins.
 #   4. FADE     — the screen fades to black; at full black the camera hands back to the
 #      player's SELECTED camera (via the CameraManager), the driving UI returns and
 #      StageManager.begin_countdown() starts the countdown; then it fades back in.
@@ -33,7 +35,9 @@ const ENGINE_FADE_FLOOR_DB := -60.0
 # the lead-in, before the first corner), so it never fights its axis-lock into a bend.
 
 # Sequence phases. MENU/REVEAL wait for a press; the rest are time-driven in _process.
-enum Seq { MENU, FLY_IN, REVEAL, DRIVE_OFF, FADE_OUT, FADE_IN, DONE }
+# REVEAL also rolls the remaining field up to its slots each frame (ambient motion — the
+# reveal cadence is tap-driven, it does not wait for the cars to settle).
+enum Seq { MENU, FLY_IN, REVEAL, FADE_OUT, FADE_IN, DONE }
 
 var _seq: int = Seq.MENU
 var _seq_t := 0.0          # seconds into the current timed phase
@@ -66,14 +70,24 @@ var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
 
-# The reveal card (shown per opponent during REVEAL).
+# The reveal card (shown per opponent during REVEAL): a compact top-centre card with a
+# labelled stat column (time to beat / gap to P1 / overall championship rank), and a
+# simple Next button hugging the bottom — so the card never covers the car on the line.
 var _reveal_overlay: CanvasLayer
-var _reveal_name_label: Label
-var _reveal_time_label: Label
+var _reveal_name_label: Label       # "P{n}   Driver"
+var _reveal_car_label: Label        # the rival's car
+var _reveal_time_label: Label       # this event's time-to-beat value
+var _reveal_gap_label: Label        # gap to the fastest rival value
+var _reveal_overall_label: Label    # overall championship position value
+var _reveal_overall_row: Control    # the OVERALL row, hidden when the rank is unknown
 var _next_button: Button
 
 # The leaders (top-three rivals for this event), each { name, car_id, car_name, time_ms }.
 var _leaders: Array = []
+# This event's index (0-based) and each rival's overall championship position so far
+# (driver name → placed), for the reveal card's OVERALL stat. Empty on event 1.
+var _event_index := 0
+var _overall_rank: Dictionary = {}
 # The grid, front-first: the opponent cars ahead of the player followed by the player
 # itself as the tail. On each Next the front car drives off and is removed; the rest
 # (incl. the player) roll up one slot. When only the player remains, the fade begins.
@@ -114,6 +128,8 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_hud = hud
 	_mobile = mobile
 	_leaders = leaders
+	_event_index = event_index
+	_build_overall_ranks()
 	_start_xform = player.global_transform
 	# Seat the start-line cars a small clearance ABOVE the road at spawn so they settle
 	# onto their wheels instead of spawning clipped into the ground. Anchoring it on
@@ -277,8 +293,9 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 
 # --- Reveal card (shown per opponent during REVEAL) --------------------------
 
-# A house-style card at the bottom of the screen naming the front opponent, their car and
-# the time to beat, with a Next button to send them off the line. Built once, hidden
+# A compact house-style card at the TOP of the screen naming the front opponent and their
+# car, with a labelled stat column (time to beat / gap to P1 / overall rank), and a Next
+# button hugging the BOTTOM so nothing covers the car on the line. Built once, hidden
 # until the first reveal, its text refreshed per opponent.
 func _build_reveal_overlay() -> void:
 	_reveal_overlay = CanvasLayer.new()
@@ -286,9 +303,8 @@ func _build_reveal_overlay() -> void:
 	_reveal_overlay.visible = false
 	add_child(_reveal_overlay)
 
-	# Full-rect column: an expanding spacer (the clear band the car shows through) then the
-	# card hugging the bottom edge, so the panel is laid out on-screen rather than
-	# overflowing past the bottom.
+	# Full-rect column: the rival card hugging the TOP, an expanding clear band the car
+	# shows through, then the Next button hugging the bottom edge.
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.offset_left = UITheme.MARGIN
@@ -299,50 +315,135 @@ func _build_reveal_overlay() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_reveal_overlay.add_child(root)
 
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(spacer)
-
+	# --- TOP: the rival card -------------------------------------------------
 	var panel := UITheme.panel(UITheme.PANEL.a)
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	root.add_child(panel)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
+	box.custom_minimum_size = Vector2(360, 0)  # width for the stat rows to lay label|value
 	panel.add_child(box)
 
 	_reveal_name_label = UITheme.label("", "ink")
 	_reveal_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_reveal_name_label)
 
-	_reveal_time_label = UITheme.label("", "gold")
-	_reveal_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(_reveal_time_label)
+	_reveal_car_label = UITheme.label("", "dim")
+	_reveal_car_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_reveal_car_label)
 
+	# A thin gap between the header and the stat block.
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, UITheme.GAP_TIGHT)
+	box.add_child(gap)
+
+	var time_row := _stat_row("Time to beat", "gold")
+	_reveal_time_label = time_row["value"]
+	box.add_child(time_row["row"])
+
+	var gap_row := _stat_row("Gap to P1", "ink")
+	_reveal_gap_label = gap_row["value"]
+	box.add_child(gap_row["row"])
+
+	var overall_row := _stat_row("Overall", "ink")
+	_reveal_overall_label = overall_row["value"]
+	_reveal_overall_row = overall_row["row"]
+	box.add_child(_reveal_overall_row)
+
+	# --- clear band ----------------------------------------------------------
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(spacer)
+
+	# --- BOTTOM: the Next button --------------------------------------------
 	_next_button = UITheme.button("Next")
 	_next_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_next_button.pressed.connect(next_car)
-	box.add_child(_next_button)
+	root.add_child(_next_button)
 
 	UITheme.enforce(_reveal_overlay)
 
 
-# Show the reveal card for the opponent currently on the line (`_reveal_index`). The
-# name row is "P{n}  Driver — Car"; the time row is the gold "TIME TO BEAT  m:ss.cc".
+# A labelled stat row for the reveal card: a left-aligned caption (dim) and a
+# right-aligned value tinted by `role`. Returns { row, value } so the card can refresh
+# the value per opponent.
+func _stat_row(caption: String, role: String) -> Dictionary:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", UITheme.GAP_WIDE)
+	var cap := UITheme.label(caption, "dim")
+	cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var value := UITheme.label("", role)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(cap)
+	row.add_child(value)
+	return {"row": row, "value": value}
+
+
+# Show the reveal card for the opponent currently on the line (`_reveal_index`): the
+# header names them (P{n} + driver + car), the gold time-to-beat, the gap to the fastest
+# rival (P1 reads FASTEST), and — from event 2 on — their overall championship position.
 func _show_reveal_card() -> void:
 	if _reveal_index >= _leaders.size():
 		return
 	var e: Dictionary = _leaders[_reveal_index]
 	var car := String(e.get("car_name", ""))
-	var car_part := " — %s" % car if car != "" else ""
-	_reveal_name_label.text = "P%d   %s%s" % [_reveal_index + 1, String(e.get("name", "Rival")), car_part]
-	_reveal_time_label.text = "TIME TO BEAT   %s" % UITheme.format_time(int(e.get("time_ms", -1)), "—")
+	_reveal_name_label.text = "P%d   %s" % [_reveal_index + 1, String(e.get("name", "Rival"))]
+	_reveal_car_label.text = car
+	_reveal_car_label.visible = car != ""
+	var mine := int(e.get("time_ms", -1))
+	_reveal_time_label.text = UITheme.format_time(mine, "—")
+	# Gap to the fastest rival — _leaders is fastest-first, so _leaders[0] is the benchmark.
+	var fastest := int((_leaders[0] as Dictionary).get("time_ms", -1)) if not _leaders.is_empty() else -1
+	_reveal_gap_label.text = _format_gap(mine, fastest)
+	# Overall championship position so far (event 2+); hide the row when it's not known.
+	var placed := int(_overall_rank.get(String(e.get("name", "")), -1))
+	_reveal_overall_row.visible = placed >= 1
+	if placed >= 1:
+		_reveal_overall_label.text = _ordinal(placed)
 	UITheme.enforce(_reveal_overlay)  # re-uppercase the freshly-set text
 	_reveal_overlay.visible = true
 	get_viewport().gui_release_focus()
 	MenuNav.attach(_reveal_overlay.get_child(0), {"first": _next_button})
 	_next_button.grab_focus.call_deferred()
+
+
+# The gap between a rival's time and the fastest rival's, as "+m:ss.cc" (or "+s.cc"
+# under a minute). The fastest rival (and any non-time) reads FASTEST.
+func _format_gap(time_ms: int, fastest_ms: int) -> String:
+	if time_ms < 0 or fastest_ms < 0 or time_ms <= fastest_ms:
+		return "FASTEST"
+	var s := (time_ms - fastest_ms) / 1000.0
+	if s < 60.0:
+		return "+%.2f" % s
+	var m := int(s / 60.0)
+	return "+%d:%05.2f" % [m, s - m * 60.0]
+
+
+# An ordinal championship position: 1 -> "1ST", 2 -> "2ND", 3 -> "3RD", 11..13 -> "TH".
+func _ordinal(n: int) -> String:
+	var suffix := "TH"
+	if n % 100 < 11 or n % 100 > 13:
+		match n % 10:
+			1: suffix = "ST"
+			2: suffix = "ND"
+			3: suffix = "RD"
+	return "%d%s" % [n, suffix]
+
+
+# Map driver name → overall championship position from the standings so far, for the
+# reveal card's OVERALL stat. Empty on event 1 (nothing raced yet → everyone tied, so the
+# ranking is meaningless) or when no session is active (dev/test) — the card hides the row
+# rather than showing a bogus "1ST" for everyone.
+func _build_overall_ranks() -> void:
+	_overall_rank = {}
+	if _event_index <= 0 or not RallySession.is_active():
+		return
+	for row in RallySession.current_standings():
+		var nm := String(row.get("name", ""))
+		if nm != "":
+			_overall_rank[nm] = int(row.get("placed", -1))
 
 
 # --- Fade-to-black overlay ---------------------------------------------------
@@ -480,23 +581,11 @@ func _timed_process(delta: float) -> void:
 				_orbit_cam.fov = _cfg().start_reveal_cam_fov
 				_enter_reveal()
 		Seq.REVEAL:
-			pass  # waits for Next (or a tap)
-		Seq.DRIVE_OFF:
-			_seq_t += delta
-			# Roll every remaining grid car up to its slot (front-first: grid[i] → slot i).
-			for i in _grid.size():
-				_roll_car_to(_grid[i], _ground(_start_xform * Vector3(0, 0, _cfg().start_queue_gap * float(i)), _terrain))
+			# Waits for Next (or a tap) to advance the card, but keeps rolling the
+			# remaining field (opponents + player) up toward their slots underneath, so the
+			# grid catches up as ambient motion without gating the reveal.
+			_roll_grid_to_slots()
 			_prune_departed()
-			# Settle once the front car (or the player, on the final scoot) has stopped on
-			# its slot; start_drive_off_seconds is a safety cap.
-			var rolled := _seq_t >= _cfg().start_trailer_scoot_seconds
-			var front: Node3D = _grid[0] if not _grid.is_empty() else null
-			if (rolled and _car_stopped(front)) or _seq_t >= _cfg().start_drive_off_seconds:
-				if front == _player or front == null:
-					_seq = Seq.FADE_OUT
-				else:
-					_enter_reveal()
-				_seq_t = 0.0
 		Seq.FADE_OUT:
 			_seq_t += delta
 			var fade := maxf(_cfg().start_fade_seconds, 0.0001)
@@ -523,6 +612,13 @@ func _enter_reveal() -> void:
 	_show_reveal_card()
 
 
+# Roll every remaining grid car up toward its slot (front-first: grid[i] → slot i). Run
+# each REVEAL frame so the field catches up as ambient motion behind the card.
+func _roll_grid_to_slots() -> void:
+	for i in _grid.size():
+		_roll_car_to(_grid[i], _ground(_start_xform * Vector3(0, 0, _cfg().start_queue_gap * float(i)), _terrain))
+
+
 # Roll a scripted car UP TO `target` and brake to a stop ON it, instead of flooring it
 # and coasting past. Drives forward while well behind, coasts into a speed-aware brake
 # point, then brakes+holds — easing to a halt at it.
@@ -545,14 +641,6 @@ func _roll_car_to(car, target: Vector3) -> void:
 	else:
 		car.ai_throttle = 0.0    # coast into the brake point
 		car.ai_handbrake = false
-
-
-# Whether a car has effectively stopped (settled on its slot). Non-VehicleBody3D cars
-# (test stubs without physics) read as stopped so headless flows don't hang.
-func _car_stopped(car: Node3D) -> bool:
-	if not (car is VehicleBody3D):
-		return true
-	return (car as VehicleBody3D).linear_velocity.length() < _cfg().start_stop_speed_eps
 
 
 # Fade each departed car's engine down as it drives away down the lead-in: full volume on
@@ -648,13 +736,13 @@ func launch() -> void:
 	_seq_t = 0.0
 
 
-# Next: send the front car off the line and scoot the rest up one slot. Only from the
-# waiting REVEAL phase.
+# Next: send the front car off the line and REVEAL the next opponent immediately. The
+# departed car and the rest of the field roll on underneath (see the REVEAL phase) — the
+# reveal does NOT wait for them to line up, so the player can tap straight through. Once
+# only the player remains, the fade begins. Only from the waiting REVEAL phase.
 func next_car() -> void:
 	if _seq != Seq.REVEAL or _grid.size() <= 1:
 		return
-	if _reveal_overlay != null:
-		_reveal_overlay.visible = false
 	var front := _grid.pop_front() as Node3D
 	if front != null and "ai_controlled" in front:
 		front.ai_throttle = 1.0
@@ -670,8 +758,17 @@ func next_car() -> void:
 			audio.volume_db = 0.0
 		_departed.append(front)
 	_reveal_index += 1
-	_seq = Seq.DRIVE_OFF
-	_seq_t = 0.0
+	if _grid.size() <= 1:
+		# Only the player is left — it's on (or rolling onto) the line. Begin the fade;
+		# the hand-off snaps the player exactly onto the line, so any remaining roll-up is
+		# just cosmetic under the black.
+		if _reveal_overlay != null:
+			_reveal_overlay.visible = false
+		_seq = Seq.FADE_OUT
+		_seq_t = 0.0
+	else:
+		# Reveal the next opponent right away; its car rolls up into the shot underneath.
+		_show_reveal_card()
 
 
 # "Start Anyway" from the underpowered warning: remember the ack so it doesn't re-pop,
