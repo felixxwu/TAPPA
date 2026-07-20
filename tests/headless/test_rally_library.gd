@@ -407,6 +407,24 @@ func test_opponent_field_is_deterministic() -> void:
 	assert_eq(a, b, "same rally seed -> identical opponent field")
 
 
+func test_opponent_names_are_drawn_from_the_pool_uniquely() -> void:
+	# Every rival is named from the fixed pool, no two rivals in a field share a name,
+	# and (since the field is generated once and reused across events) each rival's
+	# name is inherently held across all 3 events. Determinism of the field is covered
+	# by test_opponent_field_is_deterministic; here we assert the naming contract.
+	var rally := RallyLibrary.by_id("coastal_sprint")
+	var track := _track_with_pieces()
+	var events: Array = (rally["events"] as Array).slice(0, 3)
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)
+	assert_gt(field.size(), 0, "a field is fielded")
+	var seen := {}
+	for opp in field:
+		var nm := String(opp.get("name", ""))
+		assert_true(RallyLibrary.RIVAL_NAMES.has(nm), "%s is drawn from the name pool" % nm)
+		assert_false(seen.has(nm), "no two rivals share the name %s" % nm)
+		seen[nm] = true
+
+
 func test_opponents_drive_eligible_cars() -> void:
 	# Every rival is assigned an identified car; in a restricted rally the car must
 	# satisfy the restriction. Drive it with a synthetic RWD-only rally so the test

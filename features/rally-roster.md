@@ -169,7 +169,14 @@ generator also uses it per-rival.
   eligible roster (`_eligible_cars` filters by the restriction, so a p/w-banded
   rally fields cars inside that band and an RWD-only rally fields RWD rivals) using
   the same seeded RNG — so the line-up is stable across re-attempts and shows up on
-  the start-line reveal + leaderboards.
+  the start-line reveal + leaderboards. Each rival also draws a **name** from the
+  fixed 20-name pool `RIVAL_NAMES` (`_draw_rival_names` — a Fisher-Yates shuffle on
+  the same rally-seeded RNG, taken **without replacement** so no two rivals in a
+  field share a name; the pool of 20 always covers a field of ≤15). Because the
+  field is generated **once per rally** (in `RallySession`) and reused for all 3
+  events, a rival carries the **same name across every event** and across
+  re-attempts — it's the entrant's stable identity on the start-line reveal and the
+  leaderboards. Overflow past the pool size falls back to a numbered `Rival N`.
 - `eligible_car_indices(rally)` — the `CarLibrary.CARS` **indices** the restriction
   admits (vs `_eligible_cars`, which returns entries). The start-line queue props
   (`start_line.gd`) draw the leader/trailer cars from this so the cars lining up
@@ -219,8 +226,7 @@ so beaten rallies stay farmable).
 ## Not yet wired
 
 `Save._recompute_showdown()` is still a no-op — once a menu/flow layer exists it
-should call `RallyLibrary.showdown_unlocked(Save.profile)`. The opponent name pool
-is deferred (cosmetic).
+should call `RallyLibrary.showdown_unlocked(Save.profile)`.
 
 ## Tests
 
@@ -232,7 +238,8 @@ duck-under-the-cap / already-eligible / unfixable cases), the **reveal-order** g
 (`reveal_after` on region-local completion; the enterable query excludes unrevealed),
 track-gen
 determinism, target-time positivity + override, opponent-field
-shape/bounds/determinism + DNF semantics, placement/top-3, progress count, and
+shape/bounds/determinism + DNF semantics + names drawn uniquely from the pool,
+placement/top-3, progress count, and
 showdown unlock + the enterable query. The start-line queue cars being eligible for
 the rally is asserted in `test_start_line.gd`. An integration smoke (write a rally
 seed into `Config.data` → `_generate_track`) lives in `test_smoke.gd`.

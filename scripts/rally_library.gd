@@ -51,6 +51,20 @@ const PACE_SLOW_STEP := 0.1667   # each tier above 1 pulls the slow end down (2.
 const PACE_EVENT_NOISE := 0.05   # ±5% per-event jitter around a rival's persistent base pace
 const PACE_MIN_FLOOR := 1.00     # hard clamp: rivals never beat their car's physics optimum
 
+# Opponent name pool (cosmetic). A rival is named by drawing from this fixed pool of
+# 20 driver names, WITHOUT replacement within a rally, using the same rally-seeded RNG
+# as the rest of the field — so the line-up carries a stable set of names across
+# re-attempts, and each rival holds the SAME name across all 3 events (the field is
+# generated once per rally and reused for every event). The pool is 20 names and the
+# field is at most FIELD_MAX (15) rivals, so every rival in a field gets a distinct name.
+const RIVAL_NAMES: Array[String] = [
+	"Kaj Lindqvist", "Marco Bianchi", "Tomas Novak", "Elena Vasquez",
+	"Rauno Mäkinen", "Yuki Tanaka", "Dieter Faust", "Sofia Romano",
+	"Colin Brennan", "Petra Havel", "Andre Dubois", "Nikos Papadakis",
+	"Ivar Solberg", "Lucia Ferrer", "Ott Rebane", "Hans Gruber",
+	"Mireia Costa", "Sami Korhonen", "Bruno Alves", "Katya Orlova",
+]
+
 # The rally p/w ceiling (pw_max below) is AUTHORED in hp/tonne — the same
 # unit the HUD / detail panel / detune slider show (hq.gd) — so a designer tunes
 # the ceilings in the numbers they see on screen. CarLibrary.power_to_weight() returns
@@ -471,6 +485,9 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 	var car_pool := _eligible_cars(rally)  # in-band (the band floor is the power floor now)
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
 	var band := _pace_band(int(rally.get("difficulty", 1)))
+	# Draw distinct names from the pool for this rally (stable across re-attempts via
+	# the rally-seeded rng); names[i] is rival i's name, held across all 3 events.
+	var names := _draw_rival_names(rng, count)
 	var field: Array = []
 	for i in count:
 		var car: Dictionary = car_pool[rng.randi_range(0, car_pool.size() - 1)]
@@ -492,7 +509,7 @@ static func generate_opponent_field(rally: Dictionary, event_results: Array, eve
 			var factor := maxf(base_pace * noise, PACE_MIN_FLOOR)
 			times.append(int(round(floor_ms * factor)))
 		field.append({
-			"name": "Rival %d" % (i + 1),
+			"name": names[i],
 			"car_id": String(car.get("id", "")),
 			"car_name": String(car.get("name", "")),
 			"event_times_ms": times,
@@ -556,6 +573,24 @@ static func event_wreck(field: Array, event_index: int) -> Dictionary:
 				"side": float(opp.get("wreck_side", 1.0)),
 			}
 	return {}
+
+
+# Draw `count` distinct names from RIVAL_NAMES using the (rally-seeded) rng, so the
+# line-up's names are stable across re-attempts. A Fisher-Yates shuffle of a copy of
+# the pool, then take the first `count`. The pool (20) always covers a field (≤15), but
+# if a caller ever asks for more than the pool holds, overflow rivals fall back to a
+# numbered "Rival N" so every rival still has a name.
+static func _draw_rival_names(rng: RandomNumberGenerator, count: int) -> Array:
+	var pool: Array = RIVAL_NAMES.duplicate()
+	for i in range(pool.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = pool[i]
+		pool[i] = pool[j]
+		pool[j] = tmp
+	var names: Array = []
+	for i in count:
+		names.append(String(pool[i]) if i < pool.size() else "Rival %d" % (i + 1))
+	return names
 
 
 # The CarLibrary entries a rally's restriction admits — the pool its rivals are
