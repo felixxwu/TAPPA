@@ -35,11 +35,11 @@ func _ready() -> void:
 
 	var cfg: GameConfig = Config.data
 	# Frame cap: a steady ceiling keeps phones cool (avoids thermal throttling).
-	# Mobile + web get the aggressive cap (target_fps_mobile, 30); desktop keeps
-	# the higher one (target_fps, 60). 0 = uncapped. Physics stays at the project
-	# physics tick. Skipped under --headless (no rendering to pace) so it can't
-	# throttle the frame-awaiting test runner.
-	var fps_cap := cfg.target_fps_for(Platform.is_mobile_or_web())
+	# Web gets its own audio-bounded cap (target_fps_web), native mobile the thermal
+	# cap (target_fps_mobile), desktop the higher one (target_fps). 0 = uncapped.
+	# Physics stays at the project physics tick. Skipped under --headless (no
+	# rendering to pace) so it can't throttle the frame-awaiting test runner.
+	var fps_cap := cfg.target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())
 	if fps_cap > 0 and not Platform.is_headless():
 		Engine.max_fps = fps_cap
 	var env: Environment = $WorldEnvironment.environment

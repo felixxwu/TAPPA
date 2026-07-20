@@ -7,14 +7,14 @@ const MIX_RATE := 22050.0
 # Generator buffer depth. The fill runs in _process on the main thread, so the
 # buffer is the only thing keeping audio alive across a slow frame: if the gap
 # between _process calls exceeds it, the buffer drains and the engine note
-# crackles/drops. On the single-threaded web build a chunk-crossing frame can be
-# tens of ms, so 0.1 s left almost no headroom. 0.15 s covers the worst post-
-# optimisation frame (terrain is now precomputed at load — see
-# features/terrain.md — so chunk crossings are cheap cache pulls, not a
-# rebuild; this margin instead covers web-export/GC hitches) with margin, while
-# keeping throttle→rev audio latency low enough to still feel responsive. Raise
-# toward ~0.2 if underruns persist on the weakest devices (at a little more lag).
-const BUFFER_SECONDS := 0.15
+# crackles/drops. On the single-threaded web build a frame is ~33 ms at the 30 fps
+# web cap (target_fps_web) before jitter/GC hitches on top, so the buffer has to
+# bridge that whole gap: 0.2 s ≈ six 30 fps frames of headroom. The cost is
+# throttle→rev latency (roughly BUFFER_SECONDS + the WebAudio output_latency.web
+# from project.godot), so don't raise it further than the underruns actually need.
+# Terrain is precomputed at load (see features/terrain.md) so chunk crossings are
+# cheap; this margin covers the sustained low frame rate plus web-export/GC hitches.
+const BUFFER_SECONDS := 0.2
 
 var _synth: EngineAudioSynth
 var _playback: AudioStreamGeneratorPlayback

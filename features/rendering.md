@@ -289,15 +289,21 @@ the loading cover instead of mid-drive:
 
 The game ships one lean pipeline for every device (no quality tiers). Relevant
 shipped knobs in `GameConfig`:
-- **`target_fps`** (desktop) / **`target_fps_mobile`** (mobile + web) — a render
-  frame cap applied in `world._ready()` (skipped under `--headless`, so it never
-  throttles the test runner), selected via
-  `GameConfig.target_fps_for(Platform.is_mobile_or_web())`. **Both default to 60.**
-  An earlier 30 cap on mobile/web was dropped: on the **single-threaded web build**
-  audio is serviced by the main loop (no audio thread), so a 30 fps cap starved it
-  and produced audible gaps — 60 is smooth. The native Android APK performs fine at
-  60, so we cap everywhere at 60 rather than special-casing web. `0` = uncapped.
-  Physics stays at the project physics tick.
+- **`target_fps`** (desktop, default 60) / **`target_fps_mobile`** (native mobile,
+  default 60) / **`target_fps_web`** (web, default 30) — a render frame cap applied
+  in `world._ready()` (skipped under `--headless`, so it never throttles the test
+  runner), selected via `GameConfig.target_fps_for(Platform.is_mobile_or_web(),
+  Platform.is_web())` (web wins over the mobile branch since both are true on web).
+  Web is capped lower than native for thermal/battery headroom, but the floor is set
+  by **audio**: on the **single-threaded web build** audio is serviced by the main
+  loop (no audio thread), so a lower frame rate drains the generator + WebAudio
+  output buffers between frames and produces gaps/crackle. 30 fps on web is viable
+  only because the audio buffers are sized to bridge a ~33 ms inter-frame gap plus
+  jitter — the engine generator `BUFFER_SECONDS` (0.2 s) in `engine_audio.gd` and
+  `audio/driver/output_latency.web` (200 ms) in `project.godot`. Raise those before
+  lowering the web cap further; the tradeoff is added throttle→sound latency. The
+  native Android APK has a real audio thread and runs fine at 60. `0` = uncapped.
+  Physics stays at the project physics tick. See [engine-audio.md](engine-audio.md).
 - **`texture_lod_bias`** (default 0.75) — biases distant foliage sampling toward
   cheaper mip levels (a `lod_bias` uniform in `shaders/billboard.gdshader`, set
   from `BillboardField.build()`). The tree/bush textures now have **mipmaps

@@ -35,7 +35,7 @@ feature's frame cost can be isolated by running with it on and off:
 | Road markings | `cfg.road_markings_enabled` |
 | Tire marks & dust FX | `cfg.tire_marks_enabled` + `cfg.wheel_particles_enabled` + `cfg.engine_smoke_enabled` |
 | Full render distance | off = `cfg.tree_render_distance_m` halved (foliage draw distance) |
-| Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 (both, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
+| Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 **and** `cfg.target_fps_web` = 0 (all three, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
 
 All default ON (the full game as shipped). Toggle states are session-scoped
 (not saved). The two feature master switches added for this

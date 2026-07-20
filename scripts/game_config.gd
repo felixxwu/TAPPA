@@ -1466,15 +1466,21 @@ var peak_torque_rpm := 4500.0
 
 @export_group("Performance")
 ## Render frame cap (FPS) on desktop targets. 0 = uncapped. Physics runs
-## independently at the project physics tick. Mobile/web use target_fps_mobile
-## instead (see target_fps_for()).
+## independently at the project physics tick. Mobile uses target_fps_mobile and
+## web uses target_fps_web instead (see target_fps_for()).
 @export_range(0, 240) var target_fps := 60
-## Render frame cap (FPS) on mobile + web targets. Held at 60 (same as desktop):
-## the earlier 30 cap starved audio on the SINGLE-THREADED web build, where audio
-## is serviced by the main loop (no audio thread) so a lower frame rate causes
-## gaps — see features/rendering.md. The native APK performs fine at 60, so we cap
-## everywhere at 60 rather than special-casing web. 0 = uncapped.
+## Render frame cap (FPS) on NATIVE mobile targets (not web — see target_fps_web).
+## The native APK has a real audio thread and performs fine at 60. 0 = uncapped.
 @export_range(0, 240) var target_fps_mobile := 60
+## Render frame cap (FPS) on the WEB target specifically. Lower than desktop/native
+## for thermal/battery headroom, but bounded by audio: the web export is
+## SINGLE-THREADED, so audio is serviced by the main loop (no audio thread) and a
+## lower frame rate drains the generator + WebAudio buffers between frames, causing
+## gaps/crackle. 30 is viable only because the audio buffers (engine_audio.gd
+## BUFFER_SECONDS and audio/driver/output_latency.web in project.godot) are sized to
+## bridge a ~33 ms inter-frame gap plus jitter — raise those before lowering this
+## further. 0 = uncapped. See features/rendering.md and features/engine-audio.md.
+@export_range(0, 240) var target_fps_web := 30
 ## Texture LOD bias for the foliage/ground shaders: positive values pull distant
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
@@ -1497,10 +1503,14 @@ var peak_torque_rpm := 4500.0
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
 # static weight fraction, so each axle's rate is proportional to the load it carries
 # and the car sits LEVEL at rest (compression = load / rate is then equal front and
-# Frame cap to apply for the current target: the aggressive mobile/web ceiling
-# (thermal throttling) or the higher desktop one. Pure so world.gd can pass
-# Platform.is_mobile_or_web() and tests can pin either branch. 0 = uncapped.
-func target_fps_for(mobile_or_web: bool) -> int:
+# Frame cap to apply for the current target: web gets its own ceiling
+# (target_fps_web, kept lower but audio-bounded — see the field), native mobile
+# the thermal ceiling (target_fps_mobile), desktop the higher one (target_fps).
+# Web takes precedence since is_mobile_or_web() is also true on web. Pure so
+# world.gd can pass Platform queries and tests can pin any branch. 0 = uncapped.
+func target_fps_for(mobile_or_web: bool, web: bool = false) -> int:
+	if web:
+		return target_fps_web
 	return target_fps_mobile if mobile_or_web else target_fps
 
 

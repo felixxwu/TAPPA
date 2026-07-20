@@ -6,13 +6,14 @@ RPM/throttle/shift state.
 ## Components
 
 - **`scripts/engine_audio.gd`** (extends `AudioStreamPlayer`) — the bridge node.
-  - `MIX_RATE = 22050` Hz, `BUFFER_SECONDS = 0.15`. The fill runs in `_process` on
+  - `MIX_RATE = 22050` Hz, `BUFFER_SECONDS = 0.2`. The fill runs in `_process` on
     the main thread, so the buffer is all that keeps audio alive across a slow
     frame — if the gap between `_process` calls exceeds it, the buffer drains and
-    the engine note crackles. On the single-threaded web build a chunk-crossing
-    frame can be tens of ms, so `0.1` left almost no headroom; `0.15` covers the
-    worst post-optimisation frame with margin while keeping throttle→rev latency
-    low. (Raise toward `0.2` if underruns persist on the weakest devices.)
+    the engine note crackles. On the single-threaded web build, at the 30 fps web
+    cap (`target_fps_web`) a frame is ~33 ms before jitter/GC hitches on top, so the
+    buffer has to bridge that whole gap: `0.2` ≈ six 30 fps frames of headroom. The
+    cost is throttle→rev latency (≈ `BUFFER_SECONDS` + the WebAudio
+    `output_latency.web`), so don't raise it past what the underruns need.
   - `_ready()` creates an `AudioStreamGenerator`, builds the synth, starts play.
   - `_process(delta)` reads engine state, asks the generator playback how many
     frames it needs, fills them via the synth, and pushes the buffer.
@@ -351,10 +352,16 @@ to idle, a new rev cancels the old) without pinning the hold seconds or any RPM 
 On web this stacks with a second, engine-level buffer: because the export is
 single-threaded (`thread_support=false`), Godot mixes **all** audio (this synth
 plus every sample bus) on the main thread and pushes it to the browser's WebAudio
-ring buffer. With the 30 fps thermal cap on mobile/web (`target_fps_mobile`, see
-`world.gd`), the main thread sleeps ~33 ms between frames, so the default 15 ms
-output buffer drains before the next refill and the *whole mix* crackles — not
-just the engine note. `project.godot` therefore sets
-`audio/driver/output_latency.web=120` (desktop keeps the tight 15 ms default) so
-the WebAudio buffer has enough slack to survive the inter-frame gap. This is read
-at driver init (engine boot), so it lives in project settings, not runtime code.
+ring buffer. With the 30 fps web cap (`target_fps_web`, see `world.gd`), the main
+thread sleeps ~33 ms between frames, so the default 15 ms output buffer would drain
+before the next refill and the *whole mix* crackles — not just the engine note.
+`project.godot` therefore sets `audio/driver/output_latency.web=200` (desktop keeps
+the tight 15 ms default) so the WebAudio buffer has enough slack to survive the
+inter-frame gap plus jitter (≈ six 30 fps frames). This is read at driver init
+(engine boot), so it lives in project settings, not runtime code.
+
+Together the two web buffers (`BUFFER_SECONDS=0.2` generator + `output_latency.web=200`)
+are what make the low web frame cap audible without gaps; they are the levers to
+raise (at the cost of throttle→sound latency) before dropping `target_fps_web`
+lower. The native Android APK has a real audio thread, so it is unaffected and
+keeps its 60 fps cap (`target_fps_mobile`).

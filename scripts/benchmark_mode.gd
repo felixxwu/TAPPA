@@ -141,7 +141,7 @@ func exit_to_hq() -> void:
 # the restore can never drift apart.
 const _OVERRIDDEN_FIELDS: Array[String] = [
 	"track_seed", "track_turn_count", "track_straightness", "track_forestiness",
-	"track_tarmac_fraction", "target_fps", "target_fps_mobile", "hud_enabled",
+	"track_tarmac_fraction", "target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
 	"vegetation_enabled", "spectators_enabled", "signs_enabled",
 	"distant_terrain_enabled", "road_markings_enabled",
 	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled",
@@ -178,10 +178,11 @@ func apply_overrides(cfg: GameConfig) -> void:
 	if not get_option("full_render_distance"):
 		cfg.tree_render_distance_m *= 0.5
 	if get_option("uncap_fps"):
-		# Zero both caps so world.gd's target_fps_for() picks 0 on every target
-		# (mobile/web read target_fps_mobile, desktop reads target_fps).
+		# Zero all caps so world.gd's target_fps_for() picks 0 on every target
+		# (web reads target_fps_web, native mobile target_fps_mobile, desktop target_fps).
 		cfg.target_fps = 0  # world.gd otherwise re-applies the cap at _ready
 		cfg.target_fps_mobile = 0
+		cfg.target_fps_web = 0
 
 
 # Write the snapshot back, undoing apply_overrides. Safe to call when no
