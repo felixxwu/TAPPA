@@ -387,6 +387,10 @@ var peak_torque_rpm := 4500.0
 
 @export_group("HUD")
 @export var hud_enabled := true  # on-screen speed readout
+## Show the in-run rally pacenote strip along the top of the screen: the current
+## turn (arrow + grade) with the upcoming turns queued, dimmer, to its right. Reads
+## left-to-right and slides left as each corner is passed. Mirrors hud_enabled.
+@export var hud_pacenotes_enabled := true
 
 @export_group("Music")
 ## Wall-clock gap (s) between processed frames above which we assume the main

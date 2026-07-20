@@ -44,6 +44,9 @@ class StubHud:
 	var flash_args := []
 	func show_cut_flash(incident_s: float, total_s: float) -> void:
 		flash_args = [incident_s, total_s]
+	var pacenote_indices: Array = []
+	func show_pacenotes(current: int) -> void:
+		pacenote_indices.append(current)
 
 
 # Stand-in for TrackProgress: progress_percent() returns a settable 0..1 fraction.
@@ -335,6 +338,44 @@ func test_popup_interval_is_configurable() -> void:
 		_progress.pct = float(boundary) / 12.0
 		sm._process(1.0)
 	assert_eq(_hud.stage_deltas.size(), 4, "interval 3 fires at turns 3/6/9/12")
+
+
+# --- Pacenote strip (features/hud.md) ----------------------------------------
+
+func test_pacenote_strip_seeds_then_advances_with_progress() -> void:
+	var sm := _make()
+	# Three corner entries at 30% / 60% / 90% progress along the stage.
+	sm.setup_pacenotes([0.3, 0.6, 0.9])
+	assert_eq(_hud.pacenote_indices, [0], "strip seeded on the first turn when wired")
+	_to_running(sm)
+	# Past the first corner, short of the second: current turn advances to index 1.
+	_progress.pct = 0.35
+	sm._process(1.0)
+	assert_eq(int(_hud.pacenote_indices[-1]), 1, "passing the first corner advances to the second")
+	# Past every corner: the current index runs off the end (3 = nothing left to call).
+	_progress.pct = 0.95
+	sm._process(1.0)
+	assert_eq(int(_hud.pacenote_indices[-1]), 3, "passing every corner empties the strip")
+
+
+func test_pacenotes_only_pulse_when_the_current_turn_changes() -> void:
+	var sm := _make()
+	sm.setup_pacenotes([0.5])
+	_to_running(sm)
+	_progress.pct = 0.2  # short of the only corner
+	var before := _hud.pacenote_indices.size()
+	sm._process(1.0)
+	sm._process(1.0)
+	assert_eq(_hud.pacenote_indices.size(), before,
+		"no HUD pulse while the current turn is unchanged")
+
+
+func test_no_pacenotes_without_wiring() -> void:
+	var sm := _make()
+	_to_running(sm)
+	_progress.pct = 1.0
+	sm._process(5.0)
+	assert_eq(_hud.pacenote_indices.size(), 0, "a run with no pacenotes wired never pulses the strip")
 
 
 # --- Staged mode (the pre-event start-line scene holds before the countdown) --
