@@ -1645,6 +1645,24 @@ func test_hq_lift_raises_the_selected_car() -> void:
 	assert_false(hq._lift_raised, "the car lowers back to the ground in the garage")
 
 
+func test_hq_lift_lowest_pose_matches_the_cars_calculated_rest_height() -> void:
+	# The lift's LOWERED pose respects how low the car actually sits: it rests on the lot
+	# FLOOR (hq_lift_pos.y) at the car's calculated settled ride height (car.gd
+	# settled_ride_height) — exactly how it sits parked — not floated up by the beam
+	# thickness. Behaviour that must hold for ANY car geometry, not a pinned value.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()  # -> GARAGE: spawns the lift car, lowered
+	await get_tree().process_frame
+	assert_true(is_instance_valid(hq._lift_car), "the selected car sits on the lift in the garage")
+	assert_false(hq._lift_raised, "the car is lowered in the garage view")
+	var cfg: GameConfig = Config.data
+	assert_almost_eq(hq._lift_car.global_position.y,
+		cfg.hq_lift_pos.y + hq._lift_car.settled_ride_height(), 0.001,
+		"the lowered car rests on the floor at its calculated settled ride height")
+
+
 func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
 	# The bay opens on the HUB (Change Car + Tuning/Upgrades buttons beside the
 	# car); each menu button opens that menu as its own page, and Back returns to the hub.

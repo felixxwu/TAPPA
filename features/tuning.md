@@ -183,7 +183,12 @@ The garage **tuning lift** ([menus.md](menus.md)) is where this is driven. The
 player always has one owned car **selected** (`Save.selected_car` /
 `set_selected_car`); it is the car on the lift — resting lowered on the ground in the
 garage and **raised slowly by the lift** when the bay is entered (`hq_lift_raise_time`,
-between `hq_lift_car_lowered_height` and `hq_lift_car_height`). The **platform beam**
+between the lowered pose and `hq_lift_car_height`). The lowered pose is not a fixed
+constant — when lowered the car rests on the lot **floor** (`hq_lift_pos.y`) at its
+**calculated body rest** height (`hq.gd` → `_lift_car_lowered_height`, from `car.gd` →
+`settled_ride_height`), exactly as it sits parked, so each car settles on its own
+suspension (a low sports car lower than a tall 4x4) rather than being floated up by the
+beam thickness. The **platform beam**
 the car rests on (`hq_environment.gd` → `_build_lift`, sized by `hq_lift_platform_size`
 — a short strip that spans post-to-post but tucks into the gap between the wheels)
 rides up and down **with** the car; both are tweened in parallel by

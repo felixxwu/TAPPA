@@ -26,6 +26,9 @@ const CAR_SCENE := preload("res://car.tscn")
 # How many cars line up ahead of the player (the real top-N rivals). Fewer if the
 # field can't field this many (dev/test harnesses pass an empty leaders list).
 const GRID_AHEAD := 3
+# Engine volume (dB) a departed car fades DOWN to as it reaches the despawn distance —
+# it's genuinely being driven away, so its note recedes to silence rather than cutting.
+const ENGINE_FADE_FLOOR_DB := -60.0
 # A departed car is despawned once it has driven this far past the start line (down
 # the lead-in, before the first corner), so it never fights its axis-lock into a bend.
 
@@ -130,6 +133,10 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_build_fade()
 	_stage_player(terrain)
 	_spawn_grid(terrain)
+	# Mute the player too: through the whole reveal ONLY the car currently taking off
+	# should be audible (the player rolls up on each scoot, but stays silent). Restored
+	# at the hand-off so the run — and the countdown revs — have engine sound.
+	_set_engine_audio(_player, false)
 	_update_orbit()
 
 
@@ -428,14 +435,23 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 	car.axis_lock_angular_y = true
 	if car.drivetrain != null and car.drivetrain.engine != null:
 		car.drivetrain.engine.auto = true  # auto box so throttle pulls away
-	# Silence its engine — no audio clutter from the atmosphere cars.
+	# Silence its engine while it waits in the queue — no chorus of idles. Its OWN voice
+	# (apply_car rebuilt the synth off this prop's isolated config) is switched back on
+	# when it drives off (see next_car), so ONLY the car taking off is audible.
+	_set_engine_audio(car, false)
+	return car
+
+
+# Toggle a car's engine voice (grid prop OR the player). Silence = stop its per-frame
+# buffer fill (the note drains to silence) WITHOUT stopping the stream, so re-enabling
+# just resumes filling the same playback — no stop()/play() that would strand the cached
+# AudioStreamGeneratorPlayback. No-op for a test stub with no EngineAudio child.
+func _set_engine_audio(car: Node, on: bool) -> void:
+	if car == null or not is_instance_valid(car):
+		return
 	var audio := car.get_node_or_null("EngineAudio")
 	if audio != null:
-		audio.process_mode = Node.PROCESS_MODE_DISABLED
-		if audio is AudioStreamPlayer:
-			audio.playing = false
-			audio.volume_db = -80.0
-	return car
+		audio.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
 
 
 # --- Sequence ----------------------------------------------------------------
@@ -447,6 +463,7 @@ func _process(delta: float) -> void:
 
 
 func _timed_process(delta: float) -> void:
+	_update_departed_audio()  # departed cars fade their engine down as they drive away
 	match _seq:
 		Seq.MENU:
 			_advance_orbit(delta)
@@ -538,6 +555,22 @@ func _car_stopped(car: Node3D) -> bool:
 	return (car as VehicleBody3D).linear_velocity.length() < _cfg().start_stop_speed_eps
 
 
+# Fade each departed car's engine down as it drives away down the lead-in: full volume on
+# the line, fading to ENGINE_FADE_FLOOR_DB by the despawn distance, so the note recedes to
+# silence with distance instead of being cut off.
+func _update_departed_audio() -> void:
+	var dist := maxf(_cfg().start_lead_in_ahead_m, 0.001)
+	for car in _departed:
+		if car == null or not is_instance_valid(car):
+			continue
+		var audio := car.get_node_or_null("EngineAudio")
+		if audio == null:
+			continue
+		var ahead: float = -(_start_xform.affine_inverse() * car.global_position).z  # metres past the line
+		var t := clampf(ahead / dist, 0.0, 1.0)
+		audio.volume_db = lerpf(0.0, ENGINE_FADE_FLOOR_DB, t)
+
+
 # Despawn departed cars once they've driven past the start line down the lead-in (before
 # the first corner), so they never fight their axis-lock into a bend and cost nothing.
 func _prune_departed() -> void:
@@ -627,6 +660,14 @@ func next_car() -> void:
 		front.ai_throttle = 1.0
 		front.ai_handbrake = false
 	if front != null:
+		# Switch on this car's OWN engine voice at full volume so you hear the real car
+		# pull away. Earlier departed cars keep sounding too, but their note has already
+		# faded down with distance (see _update_departed_audio), so it recedes naturally
+		# rather than being cut when the next car leaves.
+		_set_engine_audio(front, true)
+		var audio := front.get_node_or_null("EngineAudio")
+		if audio != null:
+			audio.volume_db = 0.0
 		_departed.append(front)
 	_reveal_index += 1
 	_seq = Seq.DRIVE_OFF
@@ -652,6 +693,7 @@ func _handoff() -> void:
 	if _mobile != null:
 		_mobile.visible = true
 	_release_player()  # hand the player back to normal driving for the run
+	_set_engine_audio(_player, true)  # restore the player's engine for the countdown + run
 	_despawn_grid()    # gone under cover of the black, so they cost nothing during the run
 	if _stage_manager != null and _stage_manager.has_method("begin_countdown"):
 		_stage_manager.begin_countdown()

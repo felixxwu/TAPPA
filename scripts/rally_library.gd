@@ -87,9 +87,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
 		"restriction": {"pw_max": 180.0},  # a low p/w ceiling — the starter's home (ceiling clears the MX-5 ~159 / XJS ~175 hp/t)
 		"events": [
-			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.0, "terrain_layer2_amplitude": 3.0},
-			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0, "straightness": 0.8, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.3, "terrain_layer2_amplitude": 3.0},
-			{"seed": 1009, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 12.8, "terrain_layer2_amplitude": 3.0},
+			{"seed": 1007, "turn_count": 15, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.0, "terrain_layer2_amplitude": 3.0},
+			{"seed": 1008, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0, "straightness": 0.8, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.3, "terrain_layer2_amplitude": 3.0},
+			{"seed": 1009, "turn_count": 15, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 12.8, "terrain_layer2_amplitude": 3.0},
 		],
 	},
 	{
@@ -99,9 +99,9 @@ const RALLIES: Array[Dictionary] = [
 		# Focus ~114 hp/t) — the FWD home (parallels Shakedown for the MX-5).
 		"restriction": {"drive_mode": CarLibrary.FWD, "pw_max": 132.0},
 		"events": [
-			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 14.6},
-			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 15.4},
-			{"seed": 1103, "turn_count": 11, "forestiness": 0.75, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 14.1},
+			{"seed": 1101, "turn_count": 15, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 14.6},
+			{"seed": 1102, "turn_count": 15, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 15.4},
+			{"seed": 1103, "turn_count": 15, "forestiness": 0.75, "surface_mix": 0.3, "straightness": 0.8, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 14.1},
 		],
 	},
 	{
@@ -109,9 +109,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {"pw_max": 210.0},  # a slightly higher p/w ceiling
 		"events": [
-			{"seed": 2004, "turn_count": 14, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.2},
-			{"seed": 2005, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65, "water_level": -5.0, "terrain_layer1_amplitude": 17.5},
-			{"seed": 2007, "turn_count": 15, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3, "cliffiness": 0.5, "water_level": -5.0, "terrain_layer1_amplitude": 18.9},
+			{"seed": 2004, "turn_count": 18, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.2},
+			{"seed": 2005, "turn_count": 18, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65, "water_level": -5.0, "terrain_layer1_amplitude": 17.5},
+			{"seed": 2007, "turn_count": 18, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3, "cliffiness": 0.5, "water_level": -5.0, "terrain_layer1_amplitude": 18.9},
 		],
 	},
 	{
@@ -120,9 +120,9 @@ const RALLIES: Array[Dictionary] = [
 		# p/w ceiling (primary gate) + an RWD theme: a mid-power rear-driven field.
 		"restriction": {"drive_mode": CarLibrary.RWD, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
 		"events": [
-			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 20.7},
-			{"seed": 3012, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 21.6},
-			{"seed": 3004, "turn_count": 13, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 22.0},
+			{"seed": 3001, "turn_count": 22, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 20.7},
+			{"seed": 3012, "turn_count": 22, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 21.6},
+			{"seed": 3004, "turn_count": 22, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 22.0},
 		],
 	},
 	{
@@ -135,9 +135,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.82, 0.34),
 		"restriction": {"pw_max": 301.0},
 		"events": [
-			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 16.4},
-			{"seed": 4004, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 15.8},
-			{"seed": 3734559043, "turn_count": 17, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 17.1},
+			{"seed": 4001, "turn_count": 25, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 16.4},
+			{"seed": 4004, "turn_count": 25, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7, "water_level": -5.0, "terrain_layer1_amplitude": 15.8},
+			{"seed": 3734559043, "turn_count": 25, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6, "water_level": -5.0, "terrain_layer1_amplitude": 17.1},
 		],
 	},
 	{
@@ -145,9 +145,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.66, 0.28),
 		"restriction": {"pw_max": 378.0},  # the top non-showdown p/w ceiling (The Beast derives to ~350 hp/t)
 		"events": [
-			{"seed": 1003214539, "turn_count": 18, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 23.1},
-			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 22.4},
-			{"seed": 5003, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
+			{"seed": 1003214539, "turn_count": 30, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 23.1},
+			{"seed": 5004, "turn_count": 30, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 22.4},
+			{"seed": 5003, "turn_count": 30, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.1, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
 		],
 	},
 	{
@@ -156,9 +156,9 @@ const RALLIES: Array[Dictionary] = [
 		# US-built muscle only, under a mid p/w ceiling — the Charger's home turf.
 		"restriction": {"country": "US", "car_type": "muscle", "pw_max": 266.0},
 		"events": [
-			{"seed": 6001, "turn_count": 12, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 13.5},
-			{"seed": 6002, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.9},
-			{"seed": 6003, "turn_count": 12, "forestiness": 0.4, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 14.2},
+			{"seed": 6001, "turn_count": 30, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 13.5},
+			{"seed": 6002, "turn_count": 30, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.9},
+			{"seed": 6003, "turn_count": 30, "forestiness": 0.4, "surface_mix": 1.0, "straightness": 0.65, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 14.2},
 		],
 	},
 	{
@@ -178,9 +178,9 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.5, 0.12),
 		"restriction": {},  # open so the low-power starter can always finish the game
 		"events": [
-			{"seed": 9001, "turn_count": 22, "forestiness": 0.8, "surface_mix": 0.5, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 24.3},
-			{"seed": 9002, "turn_count": 24, "forestiness": 0.5, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 23.6},
-			{"seed": 9003, "turn_count": 22, "forestiness": 0.65, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 24.8},
+			{"seed": 9001, "turn_count": 35, "forestiness": 0.8, "surface_mix": 0.5, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 24.3},
+			{"seed": 9002, "turn_count": 35, "forestiness": 0.5, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 23.6},
+			{"seed": 9003, "turn_count": 35, "forestiness": 0.65, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 24.8},
 		],
 	},
 	# --- Greece (region "greece") --------------------------------------------

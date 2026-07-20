@@ -412,7 +412,8 @@ spawned whenever the camera is inside — garage/lift — and dropped otherwise)
 car park, the lift prop is **reused only while both its instance id and a deep
 `owned.hash()` match** — so any in-place data change to the selected car (repair, upgrade
 toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a rebuild. In the
-garage the car rests **lowered on the ground** (`hq_lift_car_lowered_height`).
+garage the car rests **lowered on the ground** at its calculated settled ride height
+(`car.gd` → `settled_ride_height`; see [tuning.md](tuning.md)).
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view). A HUD hint + Back (to the exterior) + convenience buttons sit on top: the
 garage station row is **Back / Career / Tune Car / Repair**. **Repair**
@@ -558,10 +559,8 @@ default `STOP`) would swallow every touch and the 3D pins would never get a pick
 Tapping a pin opens the **rally detail** sub-panel — a **two-column card** built
 in `_build_detail_overlay` / populated in `_show_detail`. Header: rally name,
 region tag, and a gold **SHOWDOWN** chip on showdown rallies. **Left column
-(STAGES):** one row per event — stage number, a gravel↔tarmac **colour bar**
-(two `ColorRect`s split by `RallyLibrary.event_tarmac_fraction`, since the menu
-font has no block glyphs), and the surface-mix text — then the "combined time
-sets your result" note. **Right column:** the eligible-cars **restriction** (the
+(STAGES):** one row per event — stage number and the surface-mix text — then the
+"combined time sets your result" note. **Right column:** the eligible-cars **restriction** (the
 power-to-weight gate, not the hidden difficulty tier); an **eligibility read-out**
 — `_eligibility_summary(rally, owned)` tallies **"N of M cars qualify"** (GREEN,
 or RED "no cars qualify") with GOLD cautions for how many **need a tune / swap to

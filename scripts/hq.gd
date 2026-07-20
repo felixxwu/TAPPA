@@ -1062,8 +1062,8 @@ func _build_detail_overlay() -> void:
 
 	# Everything below is uppercased + locked to one font size by UITheme.enforce
 	# (via _normalize_menus on each view change), so hierarchy comes from layout,
-	# colour and separators — not font size. Stars are a polygon StarRow and the
-	# surface bars are ColorRects, since Syne Mono has no ★/▓ glyphs.
+	# colour and separators — not font size. Stars are a polygon StarRow, since
+	# Syne Mono has no ★ glyph.
 
 	# --- Header: title + region on the left, a gold SHOWDOWN chip on the right.
 	var header := HBoxContainer.new()
@@ -2045,41 +2045,11 @@ func _stage_row(index: int, event: Dictionary) -> HBoxContainer:
 	var num := _label(str(index), 16)
 	num.custom_minimum_size = Vector2(18, 0)
 	row.add_child(num)
-	row.add_child(_surface_bar(event))
 	var mix := _label(_surface_mix_text(event), 16)
 	mix.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	mix.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(mix)
 	return row
-
-
-# A small gravel↔tarmac bar for one event: two ColorRects sized by the surface split
-# (gravel share vs tarmac share). Uses ColorRects, not glyphs, because the menu font
-# has no block glyphs; the split comes from the same RallyLibrary.event_tarmac_fraction
-# the mix text uses, so the bar and the text can never disagree.
-func _surface_bar(event: Dictionary) -> Control:
-	const GRAVEL := Color(0.55, 0.45, 0.32, 1.0)
-	const TARMAC := Color(0.32, 0.34, 0.36, 1.0)
-	var tarmac := RallyLibrary.event_tarmac_fraction(event)
-	var box := HBoxContainer.new()
-	box.add_theme_constant_override("separation", 0)
-	box.custom_minimum_size = Vector2(48, 7)
-	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	# Guard the degenerate all-one-surface case so a zero-ratio rect doesn't vanish oddly.
-	var gravel_frac := clampf(1.0 - tarmac, 0.0, 1.0)
-	if gravel_frac > 0.0:
-		box.add_child(_bar_cell(GRAVEL, gravel_frac))
-	if gravel_frac < 1.0:
-		box.add_child(_bar_cell(TARMAC, 1.0 - gravel_frac))
-	return box
-
-
-func _bar_cell(col: Color, stretch: float) -> ColorRect:
-	var cell := ColorRect.new()
-	cell.color = col
-	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cell.size_flags_stretch_ratio = stretch
-	return cell
 
 
 # How many of the player's owned `cars` can enter `rally`, tallied on top of
@@ -2141,19 +2111,34 @@ func _lower_lift_car() -> void:
 	_apply_lift_height(true)
 
 
-# World-space Y of the car origin for the lowered / raised pose (above the platform top).
+# The car's CALCULATED body rest location (car.gd settled_ride_height) — how high its
+# body sits above the plane its wheels rest on, settled on its own suspension. This is
+# the LOWERED pose's ride height (a low sports car sits lower than a tall 4x4). Callers
+# only reach the lowered pose with a car raised; the 0.0 guards a null deref and is never
+# used in practice.
+func _lift_car_lowered_height() -> float:
+	return _lift_car.settled_ride_height() if is_instance_valid(_lift_car) else 0.0
+
+
+# World-space Y of the car origin for the lowered / raised pose.
+#   LOWERED — the car rests on the FLOOR (hq_lift_pos.y, the lot's y=0 collision floor)
+#     at its own settled ride height: exactly how it sits parked, wheels on the ground.
+#     NOT measured from the platform top — the beam tucks between the wheels, it does not
+#     hold the car up when down.
+#   RAISED  — the car sits on top of the beam, hq_lift_car_height above the platform top.
 func _lift_car_y(raised: bool) -> float:
 	var cfg: GameConfig = Config.data
-	var top := cfg.hq_lift_pos.y + cfg.hq_lift_platform_size.y
-	return top + (cfg.hq_lift_car_height if raised else cfg.hq_lift_car_lowered_height)
+	if raised:
+		return cfg.hq_lift_pos.y + cfg.hq_lift_platform_size.y + cfg.hq_lift_car_height
+	return cfg.hq_lift_pos.y + _lift_car_lowered_height()
 
 
-# World-space Y of the platform beam's CENTRE. Lowered it sits at ground; raised it
-# lifts by the same delta the car climbs, so the car stays resting on the beam.
+# World-space Y of the platform beam's CENTRE. Lowered it rests on the floor; raised it
+# climbs by the SAME delta the car climbs, so the beam stays tucked under the chassis.
 func _lift_platform_y(raised: bool) -> float:
 	var cfg: GameConfig = Config.data
 	var base := cfg.hq_lift_pos.y + cfg.hq_lift_platform_size.y * 0.5
-	var rise := cfg.hq_lift_car_height - cfg.hq_lift_car_lowered_height
+	var rise := _lift_car_y(true) - _lift_car_y(false)
 	return base + (rise if raised else 0.0)
 
 
@@ -2339,10 +2324,13 @@ func _ensure_lift_car() -> void:
 	_lift_car_instance_id = id
 	_lift_car_hash = owned_hash
 	_lift_car = _spawn_lift_car(owned)
-	# Conform the freshly-spawned car's wheels to the lot floor at its current pose (a
-	# respawn while raised should appear already dangling; while lowered, resting).
+	# Snap the freshly-spawned car (and its beam) to the current target pose. The provisional
+	# spawn height was computed before _lift_car existed; now that it does, _apply_lift_height
+	# re-derives the LOWERED pose from the car's own settled ride height and conforms its
+	# wheels to the platform — a respawn while raised appears already dangling, while lowered,
+	# resting at the car's true rest.
 	if is_instance_valid(_lift_car):
-		_lift_car.settle_wheels_to_ground(_lift_car.ground_raycast())
+		_apply_lift_height(false)
 
 
 func _clear_lift_car() -> void:

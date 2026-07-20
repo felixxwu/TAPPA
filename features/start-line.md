@@ -113,8 +113,17 @@ countdown.
 
 All cars are **seated `start_spawn_clearance` (0.5 m) above the road** at spawn (via
 `_start_xform`, which cascades to every grid slot through `_ground`) so they settle onto
-their wheels. Grid cars have engines **silenced** and are **despawned** (departed past the
-line, or the remainder at the fade), so they cost nothing during the run.
+their wheels. Grid cars are **despawned** (departed past the line, or the remainder at the
+fade), so they cost nothing during the run.
+
+**Engine audio — only the car taking off is audible.** Every car's engine voice is muted
+through the reveal (`_set_engine_audio`): queued grid cars, cars that have already driven
+off (still rolling away in the distance), AND the player (which rolls up on each scoot). The
+moment a car is sent off the line its OWN voice switches back on — `apply_car` already
+rebuilt each prop's synth off that car's isolated `config`, so you hear its actual engine,
+not the player's. Muting stops the per-frame buffer fill (the note drains to silence)
+without stopping the stream, so it resumes cleanly. The player's engine is restored at the
+hand-off for the countdown revs and the run.
 
 ## Straight start lead-in (staged runs)
 
