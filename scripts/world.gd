@@ -759,6 +759,10 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		# In-stage "vs P1" pace popup: every few turns the HUD shows how the player's
 		# elapsed time compares to the leading rival's estimated time at that point.
 		_setup_stage_splits(result, staged, cfg)
+		# Rally pacenote strip along the top of the HUD (features/hud.md): the current
+		# turn + the upcoming turns queued to its right. Wired on every run (no rival
+		# needed), so the strip reads the track whether or not a session is active.
+		_setup_pacenotes(result, staged, cfg)
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and
@@ -1182,6 +1186,27 @@ func _setup_stage_splits(track_result: Dictionary, staged: bool, cfg: GameConfig
 		turn_progress.append(clampf((ahead + float(s["end_offset_m"])) / span, 0.0, 1.0))
 		turn_time_frac.append(clampf(float(s["cum_ms"]) / float(total_ms), 0.0, 1.0))
 	_stage_manager.setup_splits(turn_progress, turn_time_frac, p1_ms)
+
+
+# Build the HUD pacenote strip for this stage (features/hud.md) and wire the strip's
+# per-corner progress thresholds into the StageManager. Runs on every non-benchmark
+# run — pacenotes are track reading, not a rival comparison — so it needs no session.
+# The progress fractions use the same start-line span as _setup_stage_splits so they
+# line up with TrackProgress.progress_percent(): a staged run's lead-in ahead of the
+# generated track is added to both the corner offset and the span.
+func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -> void:
+	var centerline := track_result.get("centerline") as Curve2D
+	if centerline == null:
+		return
+	var notes := Pacenotes.build(centerline, track_result.get("pieces", []))
+	var hud_node := $HUD
+	if hud_node != null and hud_node.has_method("set_pacenotes"):
+		hud_node.set_pacenotes(notes)
+	if _stage_manager == null:
+		return
+	var ahead := cfg.start_lead_in_ahead_m if staged else 0.0
+	var span := ahead + centerline.get_baked_length()
+	_stage_manager.setup_pacenotes(Pacenotes.notes_to_fracs(notes, ahead, span))
 
 
 # --- RallySession run-scene integration (features/rally-session.md) ------------

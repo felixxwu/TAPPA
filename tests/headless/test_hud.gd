@@ -34,6 +34,7 @@ func before_each() -> void:
 	cfg.hud_enabled = true
 	cfg.hud_elapsed_enabled = true
 	cfg.hud_stage_delta_enabled = true
+	cfg.hud_pacenotes_enabled = true
 	cfg.hud_hp_enabled = true
 	var car: VehicleBody3D = _scene.get_node("Car")
 	car.linear_velocity = Vector3.ZERO
@@ -161,15 +162,16 @@ func test_hud_has_no_version_label() -> void:
 		"driving HUD no longer shows the build version")
 
 
-func test_elapsed_timer_anchored_top_centre() -> void:
-	# The run timer sits at the top middle of the screen (centre anchors), not the
-	# old top-right corner.
+func test_elapsed_timer_anchored_top_left() -> void:
+	# The run timer sits in the top-left corner now — the top centre is given over to
+	# the pacenote strip (features/hud.md), which frees the vertical space the centred
+	# timer used to take.
 	var label := _scene.get_node("HUD/ElapsedLabel") as Label
 	assert_not_null(label, "HUD has the run timer")
-	assert_almost_eq(label.anchor_left, 0.5, 0.001, "timer anchored to horizontal centre")
-	assert_almost_eq(label.anchor_right, 0.5, 0.001, "timer anchored to horizontal centre")
-	assert_eq(label.horizontal_alignment, HORIZONTAL_ALIGNMENT_CENTER,
-		"timer text is centre-aligned")
+	assert_almost_eq(label.anchor_left, 0.0, 0.001, "timer anchored to the left edge")
+	assert_almost_eq(label.anchor_right, 0.0, 0.001, "timer anchored to the left edge")
+	assert_eq(label.horizontal_alignment, HORIZONTAL_ALIGNMENT_LEFT,
+		"timer text is left-aligned")
 
 
 # --- Stage flow widgets (todo/stage-start-and-end.md) ------------------------
@@ -269,6 +271,57 @@ func test_cut_flash_takes_precedence_over_stage_delta() -> void:
 	# ...and a pace pulse while the cut flash is up is suppressed.
 	hud.show_stage_delta(-1340)
 	assert_false(delta_label.visible, "pace popup suppressed while cut flash is on screen")
+
+
+# --- Pacenote strip (features/hud.md) ----------------------------------------
+
+func _pace_notes() -> Array:
+	# Two synthetic notes — the HUD only reads corner + flip to pick the arrow art.
+	return [{"corner": "3", "flip": false}, {"corner": "Hairpin", "flip": true}]
+
+
+func test_set_pacenotes_builds_a_board_per_note() -> void:
+	var hud := _scene.get_node("HUD")
+	hud.set_pacenotes(_pace_notes())
+	await get_tree().process_frame
+	var rects := 0
+	for child in hud.get_children():
+		if child is TextureRect and String(child.name).begins_with("Pacenote"):
+			rects += 1
+	assert_eq(rects, 2, "one TextureRect built per pacenote")
+	# The current turn (index 0) is shown at full opacity once the strip settles.
+	var first := hud.get_node_or_null("Pacenote0") as TextureRect
+	assert_not_null(first, "the current-turn board exists")
+	assert_true(first.visible, "the current turn is on screen")
+
+
+func test_set_pacenotes_builds_nothing_when_disabled() -> void:
+	var hud := _scene.get_node("HUD")
+	Config.data.hud_pacenotes_enabled = false
+	hud.set_pacenotes(_pace_notes())
+	await get_tree().process_frame
+	for child in hud.get_children():
+		assert_false(child is TextureRect and String(child.name).begins_with("Pacenote"),
+			"no pacenote boards built when the strip is disabled")
+	Config.data.hud_pacenotes_enabled = true
+
+
+func test_show_pacenotes_advances_the_current_turn() -> void:
+	# Advancing the current index eventually slides the passed board off the left
+	# (it fades out) while a later board takes the opaque current slot.
+	var hud := _scene.get_node("HUD")
+	hud.set_pacenotes([{"corner": "1", "flip": false}, {"corner": "2", "flip": false},
+		{"corner": "3", "flip": false}])
+	await get_tree().process_frame
+	var first := hud.get_node("Pacenote0") as TextureRect
+	assert_true(first.visible, "first board visible as the current turn")
+	hud.show_pacenotes(2)  # jump the current turn to the third note
+	# Let the eased slide settle over several frames.
+	for _i in range(40):
+		await get_tree().process_frame
+	assert_false(first.visible, "a passed board slides off the strip")
+	var third := hud.get_node("Pacenote2") as TextureRect
+	assert_true(third.visible, "the new current turn is on screen")
 
 
 # --- HP gauge (features/damage.md) --------------------------------------
