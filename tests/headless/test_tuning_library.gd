@@ -29,28 +29,28 @@ func test_neutral_tuning_is_a_no_op() -> void:
 	assert_almost_eq(cfg.brake_bias, 0.55, 0.0001, "neutral leaves brake bias at the car's baseline")
 
 
-func test_grip_balance_shifts_grip_rearward_and_is_monotonic() -> void:
-	# +1 shifts grip toward oversteer (rear up, front down) by tuning_grip_authority.
+func test_grip_balance_shifts_grip_forward_and_is_monotonic() -> void:
+	# +1 shifts grip toward oversteer (front up, rear down) by tuning_grip_authority.
 	var cfg := _cfg()
 	TuningLibrary.apply({"tuning": {"grip_balance": 1.0}}, cfg)
-	assert_almost_eq(cfg.wheel_friction_slip_front, 0.8 * 0.85, 0.0001, "+1 drops front grip 15%")
-	assert_almost_eq(cfg.wheel_friction_slip_rear, 0.6 * 1.15, 0.0001, "+1 raises rear grip 15%")
-	# −1 is the mirror image (understeer: front up, rear down).
+	assert_almost_eq(cfg.wheel_friction_slip_front, 0.8 * 1.15, 0.0001, "+1 raises front grip 15%")
+	assert_almost_eq(cfg.wheel_friction_slip_rear, 0.6 * 0.85, 0.0001, "+1 drops rear grip 15%")
+	# −1 is the mirror image (understeer: front down, rear up).
 	var cfg2 := _cfg()
 	TuningLibrary.apply({"tuning": {"grip_balance": -1.0}}, cfg2)
-	assert_almost_eq(cfg2.wheel_friction_slip_front, 0.8 * 1.15, 0.0001, "−1 raises front grip")
-	assert_almost_eq(cfg2.wheel_friction_slip_rear, 0.6 * 0.85, 0.0001, "−1 drops rear grip")
+	assert_almost_eq(cfg2.wheel_friction_slip_front, 0.8 * 0.85, 0.0001, "−1 drops front grip")
+	assert_almost_eq(cfg2.wheel_friction_slip_rear, 0.6 * 1.15, 0.0001, "−1 raises rear grip")
 	# Monotonic: a half-step sits between neutral and full.
 	var cfg3 := _cfg()
 	TuningLibrary.apply({"tuning": {"grip_balance": 0.5}}, cfg3)
-	assert_lt(cfg3.wheel_friction_slip_front, 0.8, "half-step front grip below baseline")
-	assert_gt(cfg3.wheel_friction_slip_front, cfg.wheel_friction_slip_front, "and above the full-step")
+	assert_gt(cfg3.wheel_friction_slip_front, 0.8, "half-step front grip above baseline")
+	assert_lt(cfg3.wheel_friction_slip_front, cfg.wheel_friction_slip_front, "and below the full-step")
 
 
 func test_grip_balance_needs_no_upgrade() -> void:
 	var cfg := _cfg()
 	TuningLibrary.apply({"installed_upgrades": [], "tuning": {"grip_balance": 1.0}}, cfg)
-	assert_lt(cfg.wheel_friction_slip_front, 0.8, "grip balance applies with no upgrades")
+	assert_gt(cfg.wheel_friction_slip_front, 0.8, "grip balance applies with no upgrades")
 
 
 func test_aero_balance_is_gated_by_the_aero_upgrade() -> void:
@@ -101,7 +101,7 @@ func test_out_of_range_sliders_clamp() -> void:
 		"installed_upgrades": ["aero_kit", "brake_kit"],
 		"tuning": {"grip_balance": 5.0, "aero_balance": -9.0, "brake_bias": 3.0},
 	}, cfg)
-	assert_almost_eq(cfg.wheel_friction_slip_front, 0.8 * 0.85, 0.0001, "grip clamps at +1")
+	assert_almost_eq(cfg.wheel_friction_slip_front, 0.8 * 1.15, 0.0001, "grip clamps at +1")
 	assert_almost_eq(cfg.downforce_front, 0.5 * 1.5, 0.0001, "aero clamps at −1 (front up)")
 	assert_almost_eq(cfg.brake_bias, 0.85, 0.0001, "brake bias clamps at +1 (baseline + authority)")
 	assert_gt(cfg.wheel_friction_slip_front, 0.0, "grip never zeroes")
@@ -137,6 +137,9 @@ func test_engine_detune_scales_torque() -> void:
 	assert_almost_eq(cfg3.peak_torque, 300.0, 0.0001, "detune clamps at 1.0")
 
 
-func test_engine_detune_is_a_known_axis() -> void:
-	assert_true(TuningLibrary.AXES.has("engine_detune"), "detune is an axis (drives reset + slider refresh)")
-	assert_true(TuningLibrary.axis_unlocked({}, "engine_detune"), "detune is always available")
+func test_engine_detune_is_not_a_handling_axis() -> void:
+	# Detune is a power (p/w) knob, not one of the lift's handling axes: its slider
+	# lives in the upgrades menu, so it must stay out of AXES (which drives the lift's
+	# reset + slider refresh). apply() still honours the stored value regardless — see
+	# test_engine_detune_scales_torque.
+	assert_false(TuningLibrary.AXES.has("engine_detune"), "detune is a p/w knob, not a handling axis")

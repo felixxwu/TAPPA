@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # Serve the web build over the local network so other devices (e.g. your phone)
 # can play it. The Web export is single-threaded (thread_support=false), so it
-# needs no SharedArrayBuffer — which means a plain static HTTP server is enough:
-# no cross-origin-isolation headers, no HTTPS / secure context, no self-signed
-# cert warning on your phone.
+# needs no SharedArrayBuffer and no cross-origin-isolation (COOP/COEP) headers.
 #
-#   ./serve_web.sh            # build if needed, then serve on http://0.0.0.0:8080
+# BUT: Godot 4.6 web exports refuse to boot outside a "secure context". Plain
+# http:// is a secure context only for localhost / 127.0.0.1 — NOT for a LAN IP,
+# which is what the phone sees. So to reach a phone we serve over HTTPS with a
+# self-signed cert (auto-generated into build/dev-cert.pem); accept the one-time
+# "not private" warning on the phone. This is separate from the SharedArrayBuffer
+# question — single-threaded removed COOP/COEP, but secure context is still
+# required. (No openssl? falls back to plain HTTP, which then only boots via
+# localhost or `adb reverse tcp:8080 tcp:8080` + http://localhost:8080.)
+#
+#   ./serve_web.sh            # build if needed, then serve on https://0.0.0.0:8080
 #   ./serve_web.sh 9000       # use a custom port
 #   ./serve_web.sh --no-build # skip the export, serve existing build/web
-#
-# Plain http://<LAN-IP>:<port> works directly on a phone on the same Wi-Fi.
-# (If a future change re-enables thread_support, SharedArrayBuffer comes back and
-# this server must again send COOP/COEP over HTTPS — see git history for that
-# variant.)
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -45,24 +47,40 @@ for iface in en0 en1 en2; do
 done
 [[ -z "$LAN_IP" ]] && LAN_IP="<your-LAN-IP>"
 
-echo "Serving $OUT_DIR over plain HTTP (single-threaded build, no SAB needed)."
-echo "  This machine : http://localhost:$PORT"
-echo "  On your phone: http://$LAN_IP:$PORT   (same Wi-Fi network)"
+RESULTS_DIR="build/bench-results"
+
+# Godot 4.6 web exports refuse to boot outside a "secure context". `localhost` /
+# `127.0.0.1` count as secure over plain HTTP, but a LAN IP (the phone's view)
+# does NOT — so serving to a phone needs HTTPS. (This is separate from the
+# SharedArrayBuffer requirement, which the single-threaded build already avoids.)
+# We generate a long-lived self-signed cert once; the phone shows a one-time
+# "not private" warning you accept ("Advanced -> proceed"), then the build boots.
+CERT="build/dev-cert.pem"
+SCHEME="https"
+if command -v openssl >/dev/null 2>&1; then
+  if [[ ! -f "$CERT" ]]; then
+    echo "Generating self-signed dev cert ($CERT) ..."
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+      -keyout build/dev-key.pem -out build/dev-crt.pem \
+      -subj "/CN=rally-dev" \
+      -addext "subjectAltName=IP:$LAN_IP,DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
+    cat build/dev-crt.pem build/dev-key.pem > "$CERT"
+    rm -f build/dev-crt.pem build/dev-key.pem
+  fi
+else
+  echo "warning: openssl not found — serving plain HTTP. Only localhost / adb-reverse"
+  echo "         will boot on Godot 4.6 (a LAN IP over http:// is not a secure context)."
+  CERT=""
+  SCHEME="http"
+fi
+
+echo "Serving $OUT_DIR over $(echo "$SCHEME" | tr '[:lower:]' '[:upper:]') (single-threaded build, no SAB needed)."
+echo "  This machine : $SCHEME://localhost:$PORT"
+echo "  On your phone: $SCHEME://$LAN_IP:$PORT   (same Wi-Fi; accept the cert warning once)"
+echo "Benchmark reports (Settings -> Benchmark on the phone) POST to /bench and"
+echo "land in $RESULTS_DIR/ for analysis (features/benchmark.md -> feedback loop)."
 echo "Press Ctrl+C to stop."
 
-exec python3 - "$OUT_DIR" "$PORT" <<'PY'
-import http.server, sys, socketserver
-
-directory, port = sys.argv[1], int(sys.argv[2])
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *a, **kw):
-        super().__init__(*a, directory=directory, **kw)
-
-class Server(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True
-    daemon_threads = True
-
-with Server(("0.0.0.0", port), Handler) as httpd:
-    httpd.serve_forever()
-PY
+# The collector serves the build AND accepts POST /bench (the profiling feedback
+# loop). Same origin as the page, so the web build's report POST is zero-config.
+exec python3 "$(dirname "$0")/tools/bench_collector.py" "$OUT_DIR" "$PORT" "$RESULTS_DIR" "$CERT"

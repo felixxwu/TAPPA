@@ -79,6 +79,14 @@ var _approach_velocity := Vector3.ZERO
 # the velocity discontinuously, which would read as a huge false dv; reset_to sets this
 # so the next couple of ticks don't chip HP. Decremented in _integrate_forces.
 var _suppress_impact_frames := 0
+# Pending teleport (reset_to). Writing global_transform directly on a RigidBody only
+# sticks when done inside the physics step; a reset fired from a signal/idle callback
+# (the pause-menu "Reset to track") lands outside it and the physics server overwrites
+# the pose next frame. So reset_to just QUEUES the pose and _integrate_forces — the
+# authoritative physics-write point — applies it via state.transform. The R-key reset
+# already ran inside _physics_process, which is why it always worked.
+var _pending_reset := false
+var _pending_reset_xform := Transform3D.IDENTITY
 var _front_axle := Vector3.ZERO  # local midpoints, computed from wheel rest positions
 var _rear_axle := Vector3.ZERO
 # Car-local point the engine smoke puffs from (read by EngineSmoke). Its longitudinal
@@ -799,6 +807,18 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# as a huge deceleration and "wreck" it (wreck screen / spurious DNF).
 	if replay_playback:
 		return
+	# Apply a queued reset_to teleport here — the physics-authoritative write point. Setting
+	# state.transform makes the pose stick regardless of which frame phase reset_to was
+	# called from (a menu/signal callback runs outside the physics step, where a plain
+	# global_transform write gets overwritten by the server's ongoing integration). Only
+	# the POSE is re-asserted here; reset_to already zeroed the velocities immediately, and
+	# re-zeroing them a frame late would clobber any velocity legitimately set after the
+	# reset. Impact damage is suppressed for the teleport's discontinuity.
+	if _pending_reset:
+		_pending_reset = false
+		state.transform = _pending_reset_xform
+		_suppress_impact_frames = 2
+		return
 	var cfg: GameConfig = config
 	var contacts := state.get_contact_count()
 	# Object reactions run FIRST: fell trees on a per-contact, size-scaled speed
@@ -924,6 +944,15 @@ func apply_soft_drag(strength: float) -> void:
 
 
 func reset_to(xform: Transform3D) -> void:
+	# Queue the teleport for _integrate_forces (see _pending_reset) rather than trusting a
+	# bare global_transform write, which the physics server discards unless it happens
+	# inside the physics step. Also wake the body: a stuck car sleeps, and _integrate_forces
+	# does not run on a sleeping body, so the queued pose would never be applied.
+	sleeping = false
+	_pending_reset = true
+	_pending_reset_xform = xform
+	# Still set the node transform now so same-frame non-physics readers (camera, HUD) see
+	# the new pose immediately; _integrate_forces re-applies it authoritatively next step.
 	global_transform = xform
 	# A reset zeroes the velocity discontinuously; suppress deceleration damage for the
 	# next couple of physics ticks so that jump doesn't read as a crash.
@@ -1402,11 +1431,11 @@ func _snapshot_live_baseline() -> void:
 # of this file). Arrays/dicts are duplicated so the live config never shares mutable
 # state with the baseline.
 func _restore_live_baseline() -> void:
-	for name in _live_baseline:
-		var value: Variant = _live_baseline[name]
+	for prop_name in _live_baseline:
+		var value: Variant = _live_baseline[prop_name]
 		if value is Array or value is Dictionary:
 			value = value.duplicate(true)
-		config.set(name, value)
+		config.set(prop_name, value)
 
 
 # The single live re-derive: restore the full pre-upgrade/pre-tune baseline, then re-apply
@@ -1570,6 +1599,17 @@ func settled_ride_height() -> float:
 	return geometry - compression
 
 
+# The vertical distance a settled prop's wheels can still droop BELOW the analytic rest
+# plane before a wheel floats — i.e. the compression baked into settled_ride_height().
+# Used by the roadside-wreck site gate to reject verges steeper than the car can follow.
+# Front-axle reach, reduced by any rear-axle travel shortfall so the shorter axle governs.
+# Static (no instance): uses Platform.gravity() (the same physics/3d/default_gravity the
+# car reads at _ready) so callers without a Car instance (world.gd) can compute it.
+static func compression_budget(cfg: GameConfig) -> float:
+	var front_budget: float = SUSPENSION_COMPRESSION_COEFF * Platform.gravity() / cfg.suspension_stiffness
+	return front_budget - maxf(0.0, cfg.axle_travel(true) - cfg.axle_travel(false))
+
+
 # A STATIC prop is frozen the instant it's placed, so Godot's VehicleWheel3D solver never
 # runs and never repositions the wheel nodes — the wheel Visuals stay at their authored
 # mount, ~travel above where a driven car's wheels hang. settled_ride_height() puts the
@@ -1599,6 +1639,51 @@ func settle_wheel_visuals() -> void:
 		visual.position.y = -droop
 
 
+# How far above the wheel mount to start the down-ray, and slack added to its length.
+const GROUND_RAY_MARGIN := 0.5
+
+# Build a `ground_at` callable for settle_wheels_to_ground that raycasts straight DOWN
+# from each wheel against this car's physics space, excluding the car's own body. Returns
+# the hit Y, or NAN on a miss (settle_wheels_to_ground then keeps the analytic droop).
+# Ray length covers wheel radius + the longer axle's full travel + margin. Reads on
+# direct_space_state from idle are valid (space is only locked during the physics step);
+# HQ already raycasts this way in _car_index_at.
+func ground_raycast() -> Callable:
+	var space := get_world_3d().direct_space_state
+	var self_rid := get_rid()
+	var reach: float = config.wheel_radius + maxf(config.axle_travel(true), config.axle_travel(false)) + GROUND_RAY_MARGIN
+	return func(p: Vector3) -> float:
+		var q := PhysicsRayQueryParameters3D.create(
+			p + Vector3.UP * GROUND_RAY_MARGIN, p + Vector3.DOWN * (reach + GROUND_RAY_MARGIN))
+		q.exclude = [self_rid]
+		var hit := space.intersect_ray(q)
+		return float(hit["position"].y) if not hit.is_empty() else NAN
+
+
+# Droop each frozen prop's wheel Visual so the tyre bottom rests on the ground under it,
+# supplied by `ground_at(world_pos) -> float`. Geometric contact, clamped to the
+# suspension's droop range [0, wheel_rest_length]. A NON-FINITE ground value (e.g. a
+# raycast miss) leaves that wheel at its analytic rest droop (as settle_wheel_visuals)
+# rather than dangling. Frozen props ONLY (a live solver would fight it). The Visual is a
+# CHILD of the wheel node, so writing visual.position.y never feeds back into
+# wheel.global_position — safe to call every frame (the lift raise/lower).
+func settle_wheels_to_ground(ground_at: Callable) -> void:
+	var g: float = _default_gravity
+	for wheel in find_children("*", "VehicleWheel3D", false):
+		var visual: Node3D = wheel.get_node_or_null("Visual")
+		if visual == null:
+			continue
+		var ground: float = ground_at.call(wheel.global_position)
+		var droop: float
+		if is_finite(ground):
+			droop = clampf(wheel.global_position.y - wheel.wheel_radius - ground,
+				0.0, wheel.wheel_rest_length)
+		else:
+			# No ground (miss): analytic rest droop, matching settle_wheel_visuals().
+			droop = maxf(wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0)
+		visual.position.y = -droop
+
+
 # Give every MeshInstance3D in the authored body model the lit PS1 material
 # (ps1_models_lit.gdshader) carrying the model's baked texture, so the glb stays in
 # the same unshaded / quantize / dither / fog pipeline as the rest of the scene
@@ -1606,8 +1691,17 @@ func settle_wheel_visuals() -> void:
 # the texture's own colours show through (ALBEDO = texture × albedo_color).
 # Idempotent: the material is built once per mesh.
 # Names of the authored glb body nodes in car.tscn (hidden unless a spec selects one).
+# Derived from the shipped roster so adding a car (its model_node) doesn't also
+# require editing a parallel list here; car.tscn's nodes mirror CarLibrary.CARS.
 func _model_node_names() -> PackedStringArray:
-	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody", "ActyBody", "ChargerBody", "TheBeastBody", "Porsche911Body", "XjsBody"])
+	var names := PackedStringArray()
+	for spec in CarLibrary.CARS:
+		if not spec.get("use_model", false):
+			continue
+		var n := String(spec.get("model_node", ""))
+		if not n.is_empty() and not names.has(n):
+			names.append(n)
+	return names
 
 
 func _apply_model_material(model: Node3D, texture: Texture2D) -> void:

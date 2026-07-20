@@ -40,6 +40,16 @@ var _stage_delta_left := 0.0
 # running event total so consecutive incidents read as one growing tag.
 var _cut_flash_label: Label
 var _cut_flash_left := 0.0
+# Rally pacenote strip (features/hud.md): a row of turn boards along the top — the
+# current turn (arrow + grade, full opacity) with the upcoming turns queued, dimmer,
+# to its right. Reads left-to-right and slides left as corners are passed. Built in
+# code from the note list world.gd hands us (set_pacenotes); the StageManager pulses
+# the current index (show_pacenotes) as TrackProgress advances. Each note reuses the
+# roadside-sign arrow art (Pacenotes.arrow_key → GameConfig.sign_textures).
+var _pace_rects: Array[TextureRect] = []
+var _pace_tex_cache: Dictionary = {}
+var _pace_current := 0      # target index (# corners passed), set by show_pacenotes
+var _pace_scroll := 0.0     # animated scroll position, eased toward _pace_current
 # In-run damage readout (features/damage.md): a colour-graded HP bar that
 # flashes a warning when low, plus a red screen flash on each HP-losing impact.
 @onready var _hp_label: Label = $HPLabel
@@ -53,6 +63,19 @@ const _HP_PULSE_SPEED := 9.0
 const _IMPACT_FLASH_GAIN := 6.0
 const _IMPACT_FLASH_MAX := 0.6
 const _IMPACT_FLASH_DECAY := 2.0
+
+# Pacenote strip geometry / feel. The current turn sits centred at the top (x = 0,
+# directly above the pace/cut popup); each upcoming turn is one _PACE_SLOT_W to the
+# right and _PACE_DIM_STEP dimmer (down to _PACE_DIM_FLOOR). Passed turns slide left
+# and fade out. _PACE_UPCOMING caps how many upcoming boards show; _PACE_SCROLL_SPEED
+# is the ease rate of the left-slide when a corner is passed.
+const _PACE_ICON := 46.8
+const _PACE_SLOT_W := 57.2
+const _PACE_TOP := 4.0
+const _PACE_UPCOMING := 3
+const _PACE_SCROLL_SPEED := 8.0
+const _PACE_DIM_STEP := 0.42
+const _PACE_DIM_FLOOR := 0.28
 
 # Last displayed values, so _process only re-formats + re-assigns a label when
 # its value actually changes (avoids per-frame string allocation / GC churn).
@@ -230,6 +253,7 @@ func _timed_process(_delta: float) -> void:
 	# Hide each transient popup once its on-screen time elapses.
 	_stage_delta_left = _tick_fade(_stage_delta_left, _delta, _stage_delta_label)
 	_cut_flash_left = _tick_fade(_cut_flash_left, _delta, _cut_flash_label)
+	_tick_pacenotes(_delta)
 
 
 # Drive the HP gauge + impact flash off the car's damage model. Hidden when
@@ -350,3 +374,91 @@ func show_cut_flash(_incident_s: float, total_s: float) -> void:
 	# The CUT flash takes precedence over the pace popup they share a spot with.
 	_stage_delta_label.visible = false
 	_stage_delta_left = 0.0
+
+
+# --- Pacenote strip (features/hud.md) ----------------------------------------
+
+# Rebuild the pacenote strip from a fresh note list (world.gd on track generation /
+# car swap). Each note is a TextureRect showing the corner's arrow board; layout +
+# opacity are driven per frame by _tick_pacenotes off _pace_scroll. A no-op body when
+# pacenotes are disabled (rects stay cleared, so the strip never appears).
+func set_pacenotes(notes: Array) -> void:
+	# Detach immediately (not just queue_free) so a rebuild in the same frame can't
+	# collide on the "Pacenote<i>" names with boards still awaiting deferred free.
+	for board in _pace_rects:
+		remove_child(board)
+		board.queue_free()
+	_pace_rects.clear()
+	_pace_current = 0
+	_pace_scroll = 0.0
+	if not Config.data.hud_pacenotes_enabled:
+		return
+	for n in notes:
+		var board := TextureRect.new()
+		board.name = "Pacenote%d" % _pace_rects.size()
+		board.texture = _pace_texture(Pacenotes.arrow_key(String(n["corner"]), bool(n["flip"])))
+		board.anchor_left = 0.5
+		board.anchor_right = 0.5
+		board.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		board.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		board.visible = false
+		add_child(board)
+		_pace_rects.append(board)
+	_layout_pacenotes()
+
+
+# Set the current-turn index (how many corners the car has passed). The strip eases
+# toward it in _tick_pacenotes, so a jump of 1 reads as a smooth left-slide.
+func show_pacenotes(current: int) -> void:
+	if not Config.data.hud_pacenotes_enabled:
+		return
+	_pace_current = current
+
+
+# Ease the scroll toward the current index (fps-independent exponential smoothing)
+# and re-lay the strip. Cheap no-op when there are no notes.
+func _tick_pacenotes(delta: float) -> void:
+	if _pace_rects.is_empty():
+		return
+	var t := 1.0 - exp(-delta * _PACE_SCROLL_SPEED)
+	_pace_scroll = lerpf(_pace_scroll, float(_pace_current), t)
+	_layout_pacenotes()
+
+
+# Position + fade every note board from its distance to the current slot. d = 0 is
+# the current turn (centred, full opacity); d > 0 are upcoming turns queued to the
+# right, one _PACE_SLOT_W apart and dimming by _PACE_DIM_STEP; d < 0 are passed turns
+# sliding off to the left as they fade. Off-strip boards are hidden.
+func _layout_pacenotes() -> void:
+	for i in _pace_rects.size():
+		var board := _pace_rects[i]
+		var d := float(i) - _pace_scroll
+		if d < -1.0 or d > float(_PACE_UPCOMING) + 0.5:
+			board.visible = false
+			continue
+		var a := clampf(1.0 + d, 0.0, 1.0) if d < 0.0 \
+			else maxf(_PACE_DIM_FLOOR, 1.0 - _PACE_DIM_STEP * d)
+		if a <= 0.01:
+			board.visible = false
+			continue
+		var xc := d * _PACE_SLOT_W
+		board.offset_left = xc - _PACE_ICON * 0.5
+		board.offset_right = xc + _PACE_ICON * 0.5
+		board.offset_top = _PACE_TOP
+		board.offset_bottom = _PACE_TOP + _PACE_ICON
+		board.modulate.a = a
+		board.visible = true
+
+
+# Load + cache the arrow texture for an atlas key (GameConfig.sign_textures). Returns
+# null for an unknown/missing key (the board then renders empty rather than erroring).
+func _pace_texture(key: String) -> Texture2D:
+	if _pace_tex_cache.has(key):
+		return _pace_tex_cache[key]
+	var tex: Texture2D = null
+	var path := String(Config.data.sign_textures.get(key, ""))
+	if path != "" and ResourceLoader.exists(path):
+		tex = load(path) as Texture2D
+	_pace_tex_cache[key] = tex
+	return tex

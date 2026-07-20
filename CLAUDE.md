@@ -9,6 +9,16 @@
 - Every time a feature is added or modified, update the relevant `features/`
   file(s) in the SAME piece of work — keep the docs in sync with the code, the
   same way tests are kept in sync.
+- **`features/` is a self-correcting index — grow it and fix it as you use it.**
+  Treat it as your first stop for "where does X live". If you go looking for how
+  something works and `features/` doesn't cover it — or points you somewhere
+  stale/wrong — then, in the SAME piece of work, add the missing entry or correct
+  the wrong one after you've found the real answer (add a new `features/*.md` and
+  index it in `features/README.md` if no existing file fits). The point is an
+  ever-growing map that gets more accurate every time it's used, so don't just
+  silently work around a gap — close it. When citing code, prefer durable
+  references — a file plus a symbol/function name (`repair_reveal.gd` →
+  `_animate`) rather than a bare line number, which rots on the next refactor.
 - **Menus must be keyboard + gamepad navigable.** Every menu in the game supports
   up / down / left / right / enter / back on keyboard AND controller (not just
   mouse / touch) — see `features/menus.md` → "Menu navigation". When you ADD a new

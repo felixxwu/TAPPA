@@ -76,6 +76,8 @@ func resume() -> void:
 
 # Reset to track: hand the reset to the host (which owns the car + TrackProgress),
 # then unfreeze and close the menu so the player drops straight back into the run.
+# (Car.reset_to queues the teleport for the physics step, so it survives being fired
+# from here — outside the physics frame, and even while the tree is still paused.)
 func _on_reset_to_track_pressed() -> void:
 	reset_to_track_requested.emit()
 	resume()

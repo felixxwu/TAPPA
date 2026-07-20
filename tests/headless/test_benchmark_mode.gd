@@ -88,17 +88,20 @@ func test_render_distance_toggle_halves_foliage_distance() -> void:
 func test_uncap_fps_toggle_clears_the_frame_cap() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.target_fps = 60
-	cfg.target_fps_mobile = 30
+	cfg.target_fps_mobile = 45
+	cfg.target_fps_web = 30
 	Benchmark.apply_overrides(cfg)
-	# Both caps cleared so target_fps_for() returns 0 on every target.
+	# All caps cleared so target_fps_for() returns 0 on every target.
 	assert_eq(cfg.target_fps, 0, "uncap on: the desktop frame cap is cleared")
-	assert_eq(cfg.target_fps_mobile, 0, "uncap on: the mobile/web frame cap is cleared")
+	assert_eq(cfg.target_fps_mobile, 0, "uncap on: the mobile frame cap is cleared")
+	assert_eq(cfg.target_fps_web, 0, "uncap on: the web frame cap is cleared")
 
 	Benchmark.restore(cfg)
 	Benchmark.set_option("uncap_fps", false)
 	Benchmark.apply_overrides(cfg)
 	assert_eq(cfg.target_fps, 60, "uncap off: the desktop cap is left alone")
-	assert_eq(cfg.target_fps_mobile, 30, "uncap off: the mobile/web cap is left alone")
+	assert_eq(cfg.target_fps_mobile, 45, "uncap off: the mobile cap is left alone")
+	assert_eq(cfg.target_fps_web, 30, "uncap off: the web cap is left alone")
 
 
 func test_restore_returns_every_overridden_field() -> void:

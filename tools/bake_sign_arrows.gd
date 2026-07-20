@@ -23,15 +23,20 @@ const CREAM := Color("f3e9d2")
 const INK := Color("23211f")
 const ORANGE := Color("d84a26")
 
-# Turn types that get a board (SignLayout.TURN_CORNERS), with the grade shown below
-# the arrow. The arrow shape is pulled from CornerLibrary by name, so the bend
-# matches the real corner. Gentle 5s/6s are unsigned (too straight to need a board);
+# Turn types that get a board, with the grade shown below the arrow. The arrow
+# shape is pulled from CornerLibrary by name, so the bend matches the real corner.
 # Square / Hairpin have no 1-6 grade, so they carry a short glyph instead.
+#
+# Grades 5 and 6 are gentle: the ROADSIDE signs skip them (SignLayout.TURN_CORNERS
+# is "4 or sharper"), but the in-run HUD pacenote strip (features/hud.md) calls
+# EVERY corner, so their boards are baked here for the HUD to reuse.
 const SIGNS: Array[Dictionary] = [
 	{"corner": "1", "key": "arrow_1", "label": "1"},
 	{"corner": "2", "key": "arrow_2", "label": "2"},
 	{"corner": "3", "key": "arrow_3", "label": "3"},
 	{"corner": "4", "key": "arrow_4", "label": "4"},
+	{"corner": "5", "key": "arrow_5", "label": "5"},
+	{"corner": "6", "key": "arrow_6", "label": "6"},
 	{"corner": "Square", "key": "arrow_square", "label": "SQ"},
 	{"corner": "Hairpin", "key": "arrow_uturn", "label": "U"},
 ]

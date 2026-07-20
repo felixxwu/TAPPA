@@ -207,6 +207,21 @@ failing loudly if a Godot upgrade shifts the solver — so the constants can't s
 drift. A caller seats the car on its ground plane, lifts the body by
 `settled_ride_height()`, droops the wheels, then freezes `FREEZE_MODE_STATIC`.
 
+**Ground-conforming wheels (uneven ground / the lift).** Props that sit on real,
+possibly-uneven ground (HQ car-park lineup, HQ tuning lift, roadside wrecks) use
+**`car.settle_wheels_to_ground(ground_at)`** instead of the flat `settle_wheel_visuals()`.
+It droops each wheel Visual so the **tyre bottom sits on `ground_at(wheel_world_pos)`**
+(geometric contact), clamped to `[0, wheel_rest_length]` — so a wheel over lower ground
+extends further and one over higher ground tucks up, and a wheel with no ground in reach
+dangles at full droop. If `ground_at` returns a **non-finite** value (e.g. a raycast miss),
+that wheel keeps the analytic `settle_wheel_visuals` droop rather than dangling. HQ contexts
+pass **`car.ground_raycast()`** (a downward ray against the lot floor, self excluded); this
+is what makes the tuning-lift wheels rest on the floor when down and **extend as the lift
+raises** (re-settled each frame from the raise tween). Roadside wrecks pass
+`terrain.height_at`. The **podium keeps the flat `settle_wheel_visuals()`** (staged platform,
+no ground collider). **`Car.compression_budget(cfg)`** (static) returns how far a wheel can
+droop below the rest plane — used by the wreck site gate.
+
 ## Weight distribution (centre of mass)
 
 Each `CarLibrary` entry carries a real `weight_front` — the car's published static

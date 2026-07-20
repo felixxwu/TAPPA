@@ -134,12 +134,14 @@ the stage timer's `sector_offsets` hook — see above.)
 **Turn-arrow boards** are authored and wired. `tools/bake_sign_arrows.gd` renders one
 PS1-look pacenote face per signed turn type: a bold arrow whose bend traces the REAL
 corner shape from `CornerLibrary` (so it encodes the turn intensity), an orange rule,
-and the grade below (`1`..`4`, `SQ`, `U`). Each is baked in a left and a right
+and the grade below (`1`..`6`, `SQ`, `U`). Each is baked in a left and a right
 (mirrored) variant to `textures/signs/arrow_*_<dir>.png` (cream/ink/orange palette,
 shared with the finish banners) and mapped in `sign_textures`
-(`config/game_config.tres`). The set matches `SignLayout.TURN_CORNERS` exactly
-(`{1, 2, 3, 4, Square, Hairpin}`); gentle 5s/6s are unsigned, so no board is baked for
-them. Re-bake with:
+(`config/game_config.tres`). The **roadside** signs only plant the `SignLayout.TURN_CORNERS`
+subset (`{1, 2, 3, 4, Square, Hairpin}` — gentle 5s/6s are too straight to warrant a
+board), but the gentle `arrow_5`/`arrow_6` boards **are** baked here because the in-run
+HUD pacenote strip ([hud.md](hud.md)) calls every corner and reuses this same art.
+Re-bake with:
 
 ```
 xvfb-run -a godot --path rally --rendering-driver opengl3 --script tools/bake_sign_arrows.gd

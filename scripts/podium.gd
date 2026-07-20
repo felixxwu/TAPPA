@@ -44,6 +44,9 @@ var _stage: int = Stage.PODIUM
 var _headless := false
 # Gates the Next button during a slot-machine spin (false while spinning).
 var _reveal_done := true
+var _reveal_gen := 0  # bumped per reveal so a stale coroutine can't touch freed rows
+
+const REVEAL_STEP := 0.5  # seconds between each leaderboard name appearing
 
 # 3D staging.
 var _camera: Camera3D
@@ -257,13 +260,23 @@ func _append_facing(pos: PackedVector2Array, yaw: PackedFloat32Array,
 	yaw.append(atan2(center.x - x, center.z - z))
 
 
+# The per-step height + x-offset layout (P1 centre/tallest, P2 left, P3 right),
+# shared by the step blocks and the cars placed on them so the two can't drift apart.
+func _step_layout() -> Dictionary:
+	var cfg: GameConfig = Config.data
+	var h1: float = cfg.podium_step_height
+	return {
+		"heights": [h1, h1 * 0.66, h1 * 0.45],   # P1, P2, P3
+		"xs": [0.0, -cfg.podium_step_spacing, cfg.podium_step_spacing],
+	}
+
+
 # The three podium steps (1st centred + tallest, 2nd left, 3rd right). Each is a
 # coloured block with a matching collision box so a car lands on its top face.
 func _build_podium_steps() -> void:
-	var cfg: GameConfig = Config.data
-	var h1: float = cfg.podium_step_height
-	var heights := [h1, h1 * 0.66, h1 * 0.45]   # P1, P2, P3
-	var xs := [0.0, -cfg.podium_step_spacing, cfg.podium_step_spacing]
+	var layout := _step_layout()
+	var heights: Array = layout["heights"]
+	var xs: Array = layout["xs"]
 	var colors := [Color(0.85, 0.70, 0.30), Color(0.70, 0.72, 0.76), Color(0.66, 0.46, 0.30)]
 	for i in 3:
 		var h: float = heights[i]
@@ -293,10 +306,9 @@ func _build_podium_steps() -> void:
 # later — no live settle to mistime, bounce off the narrow step, or damage the model.
 # Reads the ranked standings.
 func _spawn_podium_cars() -> void:
-	var cfg: GameConfig = Config.data
-	var h1: float = cfg.podium_step_height
-	var heights := [h1, h1 * 0.66, h1 * 0.45]
-	var xs := [0.0, -cfg.podium_step_spacing, cfg.podium_step_spacing]
+	var layout := _step_layout()
+	var heights: Array = layout["heights"]
+	var xs: Array = layout["xs"]
 	var top3 := _top_finishers(3)
 	for i in top3.size():
 		var car_id := String(top3[i].get("car_id", ""))
@@ -482,17 +494,52 @@ func _show_leaderboard() -> void:
 	for c in _leaderboard_box.get_children():
 		c.queue_free()
 	var standings: Array = _result.get("standings", [])
+	_leaderboard_scroll.visible = true
+	_move_camera(_podium_cam())
 	if standings.is_empty():
 		var none := Label.new()
 		none.text = "No standings recorded."
 		_leaderboard_box.add_child(none)
+		UITheme.enforce(_layer)
+		_reveal_done = true
+		_refresh_next_button()
+		return
+	# Build every row up front but hidden, then reveal them P1-down one at a
+	# time so the leaderboard fills in dramatically (see _reveal_standings).
+	var rows: Array[Control] = []
 	for entry in standings:
-		_leaderboard_box.add_child(UITheme.standings_row(entry))
-	_leaderboard_scroll.visible = true
-	UITheme.enforce(_layer)  # uppercase the freshly-built standings rows
-	_move_camera(_podium_cam())
-	_reveal_done = true
+		var row := UITheme.standings_row(entry)
+		row.visible = false
+		_leaderboard_box.add_child(row)
+		rows.append(row)
+	UITheme.enforce(_layer)  # uppercase the freshly-built standings rows (while hidden)
+	if _headless:
+		# No animation under headless tests: show everything immediately.
+		for row in rows:
+			row.visible = true
+		_reveal_done = true
+		_refresh_next_button()
+		return
+	_reveal_done = false  # gate the Next button until the reveal finishes
 	_refresh_next_button()
+	_reveal_standings(rows)
+
+
+# Reveal leaderboard rows from P1 downward, one every REVEAL_STEP seconds,
+# starting from an empty list. Guarded by _reveal_gen so leaving the stage
+# mid-reveal abandons the coroutine without touching freed nodes.
+func _reveal_standings(rows: Array) -> void:
+	_reveal_gen += 1
+	var gen := _reveal_gen
+	for row in rows:
+		await get_tree().create_timer(REVEAL_STEP).timeout
+		if gen != _reveal_gen or _stage != Stage.LEADERBOARD:
+			return
+		if is_instance_valid(row):
+			row.visible = true
+	if gen == _reveal_gen:
+		_reveal_done = true
+		_refresh_next_button()
 
 
 func _show_car_reveal() -> void:

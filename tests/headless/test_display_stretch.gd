@@ -51,3 +51,23 @@ func test_degenerate_inputs_are_safe() -> void:
 func test_config_carries_the_authored_stretch() -> void:
 	var cfg := load("res://config/game_config.tres") as GameConfig
 	assert_gt(cfg.horizontal_stretch, 0.0, "horizontal_stretch is a positive factor")
+
+
+# --- Benchmark landscape override (features/benchmark.md) -----------------------
+
+func test_benchmark_swaps_portrait_to_landscape() -> void:
+	# A portrait window during a benchmark renders at the landscape resolution, so
+	# the GPU/fill cost is representative instead of ~1/4 size.
+	assert_eq(DisplayStretch.benchmark_window_size(Vector2i(400, 900), true), Vector2i(900, 400),
+		"portrait window is swapped to landscape while benchmarking")
+
+
+func test_benchmark_leaves_landscape_untouched() -> void:
+	assert_eq(DisplayStretch.benchmark_window_size(Vector2i(900, 400), true), Vector2i(900, 400),
+		"an already-landscape window is unchanged")
+
+
+func test_non_benchmark_never_swaps() -> void:
+	# Normal play always uses the real window orientation (portrait stays portrait).
+	assert_eq(DisplayStretch.benchmark_window_size(Vector2i(400, 900), false), Vector2i(400, 900),
+		"outside a benchmark the real window size is used")

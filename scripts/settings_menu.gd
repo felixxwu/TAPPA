@@ -674,7 +674,7 @@ func _make_volume_row() -> HBoxContainer:
 	music_slider.focus_mode = Control.FOCUS_ALL
 	music_slider.min_value = 0.0
 	music_slider.max_value = 1.0
-	music_slider.step = 0.01
+	music_slider.step = 0.05
 	music_slider.custom_minimum_size = Vector2(220, 24)
 	music_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	music_slider.value = clampf(

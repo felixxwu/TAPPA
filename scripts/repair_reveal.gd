@@ -16,7 +16,6 @@ signal finished()
 var _summary: Dictionary = {}
 var _continue_button: Button
 var _health_label: Label
-var _wheels_label: Label
 
 
 func _ready() -> void:
@@ -62,10 +61,6 @@ func _build_ui() -> void:
 	_health_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(_health_label)
 
-	_wheels_label = Label.new()
-	_wheels_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(_wheels_label)
-
 	_continue_button = UITheme.button("Continue")
 	_continue_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_continue_button.pressed.connect(_on_continue)
@@ -99,11 +94,7 @@ static func worth_showing(summary: Dictionary) -> bool:
 # ({repaired, hp_before, hp_after, max_hp, hp_gained}) and seat focus on Continue.
 func reveal(summary: Dictionary) -> void:
 	_summary = summary
-	var max_hp := float(summary.get("max_hp", 0.0))
-	var after := float(summary.get("hp_after", 0.0))
-	var pct_after := int(round(100.0 * after / max_hp)) if max_hp > 0.0 else 0
-	_health_label.text = UITheme.caps("Health  +%d%%  →  %d%%" % [health_gain_pct(summary), pct_after])
-	_wheels_label.text = UITheme.caps("Wheel alignment  recentered")
+	_health_label.text = UITheme.caps("Health  +%d%%" % health_gain_pct(summary))
 	UITheme.enforce(self)
 	# Framework: focus + WASD/arrow/gamepad nav (single button; no on_back — the host
 	# owns back). Seats the cursor on Continue so it's driveable without a pointer.

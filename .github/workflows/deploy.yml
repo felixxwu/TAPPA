@@ -170,3 +170,57 @@ jobs:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
           ./butler push build/android/tappa.apk "${ITCH_USER}/${ITCH_GAME}:android"
+
+  export-windows:
+    name: Export & deploy Windows .exe
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so build_windows.sh can derive the version from the
+          # real commit count (0.<count>).
+          fetch-depth: 0
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless) + export templates
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fsSL -o templates.tpz "${BASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+          godot --version
+
+      - name: Import project (build resource cache)
+        run: godot --headless --import --quit || true
+
+      - name: Export Windows .exe (via build_windows.sh)
+        env:
+          GODOT: /usr/local/bin/godot
+        run: |
+          set -euo pipefail
+          ./build_windows.sh
+          ls -la build/windows
+
+      - name: Install butler
+        run: |
+          set -euo pipefail
+          fetch() {
+            curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
+              -o butler.zip "$1/butler/linux-amd64/LATEST/archive/default"
+          }
+          fetch https://broth.itch.ovh || fetch https://broth.itch.zone
+          unzip -q butler.zip
+          chmod +x butler
+          ./butler -V
+
+      - name: Push to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          ./butler push build/windows/tappa.exe "${ITCH_USER}/${ITCH_GAME}:windows"

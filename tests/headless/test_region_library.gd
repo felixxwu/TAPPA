@@ -10,7 +10,11 @@ const R_C := "rc"
 func _regions() -> Array[Dictionary]:
 	return [
 		{"id": R_A, "name": "A"},
-		{"id": R_B, "name": "B", "grass_texture": "res://x.png"},
+		{
+			"id": R_B, "name": "B", "grass_texture": "res://x.png",
+			"tarmac_color": Color(0.5, 0.4, 0.3),
+			"road_marking_color": Color(0.9, 0.8, 0.1),
+		},
 		{
 			"id": R_C, "name": "C",
 			"tree_mix": [
@@ -80,6 +84,20 @@ func test_look_of_returns_only_present_overrides() -> void:
 	var look := RegionLibrary.look_of(R_B)
 	assert_eq(look.get("grass_texture", ""), "res://x.png")
 	assert_false(look.has("sky_panorama"))
+
+func test_look_of_surfaces_color_overrides() -> void:
+	# tarmac_color / road_marking_color are whitelisted look keys: a region that
+	# authors them has them surfaced by look_of (synthetic values, not the shipped
+	# catalogue), and a region that doesn't leaves them absent so callers fall back.
+	var look := RegionLibrary.look_of(R_B)
+	assert_true(look.has("tarmac_color"), "authored tarmac_color is surfaced")
+	assert_true(look.has("road_marking_color"), "authored road_marking_color is surfaced")
+	assert_eq(look["tarmac_color"], Color(0.5, 0.4, 0.3))
+	assert_eq(look["road_marking_color"], Color(0.9, 0.8, 0.1))
+	# A region that authors neither leaves both out — callers use their fallback.
+	var bare := RegionLibrary.look_of(R_A)
+	assert_false(bare.has("tarmac_color"))
+	assert_false(bare.has("road_marking_color"))
 
 func test_tree_mix_defaults_when_unauthored() -> void:
 	# A region with no tree_mix falls back to the single default home tree at 100%.

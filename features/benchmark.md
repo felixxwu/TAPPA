@@ -35,7 +35,7 @@ feature's frame cost can be isolated by running with it on and off:
 | Road markings | `cfg.road_markings_enabled` |
 | Tire marks & dust FX | `cfg.tire_marks_enabled` + `cfg.wheel_particles_enabled` + `cfg.engine_smoke_enabled` |
 | Full render distance | off = `cfg.tree_render_distance_m` halved (foliage draw distance) |
-| Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 (both, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
+| Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 **and** `cfg.target_fps_web` = 0 (all three, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
 
 All default ON (the full game as shipped). Toggle states are session-scoped
 (not saved). The two feature master switches added for this
@@ -86,7 +86,14 @@ left unsampled.
 
 Each rendered frame it records: frame interval, draw calls, objects, primitives,
 render CPU/GPU time (from the `PostProcess/View` viewport), and the process +
-physics-process times.
+physics-process times. It also tracks **audio overruns** — the fielded car's engine
+`AudioStreamGenerator` buffer underruns (`EngineAudio.skip_count()` →
+`AudioStreamGeneratorPlayback.get_skips()`), a per-frame delta so a skip is
+attributed to the (usually slow) frame it happened on; the run total is reported as
+`audio_skips` and per-spike as `audio_skips`. (NB: web autoplay policy suspends the
+audio context until a user gesture — an auto-started `?bench=1` run measures 0 skips
+because audio never starts; launch the benchmark from Settings, which involves a tap,
+to measure real audio behaviour.)
 
 ## Results
 
@@ -97,8 +104,93 @@ distance, and which toggles were disabled), hands the summary to
 `Benchmark.finish`, and shows `BenchmarkResults`: a keyboard/gamepad-navigable
 panel (MenuNav-attached; Esc/B = Exit) with **Run again** and **Exit benchmark**.
 
+## Representative render resolution
+
+The web build's render resolution follows the browser canvas: a phone held in
+**portrait** renders at ~1/4 the pixels of landscape (the logical width collapses —
+see [mobile-controls.md](mobile-controls.md) → "Web fullscreen"), which would make
+the benchmark **under-measure GPU/fill cost**. To keep runs representative even when
+the auto-profiling loop boots with no gesture to go fullscreen, `DisplayStretch`
+(`scripts/display_stretch.gd`, `benchmark_window_size`) lays the frame out against a
+**landscape** window size while `Benchmark.active` — a portrait window still renders
+the landscape pixel count (visually squished, but the auto-driven run has no
+viewer). Normal play is untouched.
+
+## Dev auto-profiling loop (iterate on the phone)
+
+For hands-off iteration on a real phone, load the web build with **`?bench=1`** in
+the URL. On boot `hq.gd` (`_should_autostart_benchmark`) then launches straight into
+a benchmark run — skipping the HQ it would discard — and the run POSTs its result
+back (below). Two pieces make it a loop with no taps:
+
+- **Reload listener.** The export's `head_include` (`export_presets.cfg`) polls
+  `GET /reload-token` each second and reloads the page when the token changes. The
+  collector's token embeds its start time, so a **rebuild** (which restarts
+  `serve_web.sh`) flips it automatically; `POST /reload` bumps it to force a reload
+  without a rebuild. So a dev's edit→rebuild cycle re-runs the benchmark on the
+  phone unattended.
+- **Remote toggle sweep.** On a `?bench=1` boot the game fetches `GET /bench-config`
+  (a synchronous XHR) and disables the benchmark toggles it names
+  (`{"disabled": ["spectators", ...]}`) before starting — so a dev drives a full
+  toggle sweep from the workstation (write `build/bench-config.json` + `POST
+  /reload`) with **no shippable config change**. Empty / missing = full baseline.
+
+`?bench=1` gates the whole thing, so it can never ship on by default.
+
+## Feedback loop (report POST-back)
+
+**Source:** `scripts/benchmark_report.gd` (`BenchmarkReport`), the capture window
+in `scripts/perf_log.gd`, the POST in `scripts/benchmark_runner.gd`
+(`_report`/`_resolve_report_url`), the status line in `scripts/benchmark_results.gd`
+(`set_report_status`), and the collector `tools/bench_collector.py` (wired into
+`serve_web.sh`).
+
+The point of this loop is to profile per-system cost **on the actual phone** and
+get the numbers back to a dev machine (or Claude) to iterate — no push to prod:
+
+```
+edit code → ./serve_web.sh → open https://<mac-LAN-IP>:8080 on the phone (accept
+the one-time self-signed-cert warning) → run Settings → Benchmark → results POST
+back → build/bench-results/*.json → analyse → edit → repeat
+```
+
+- **What a run reports.** At the finish, the runner builds a JSON report
+  (`BenchmarkReport.build`, pure/testable) carrying: the `BenchmarkStats.summarise`
+  block (fps + 1% low, frame p95/p99/max, draws/objects/prims, render cpu/gpu,
+  process/physics ms, spikes), a **per-script CPU breakdown** (`scripts`:
+  ms/frame per instrumented script — `engine_audio`, `car`, `terrain_manager`, …),
+  the `device` context (`RenderingServer.get_video_adapter_name()`, OS/model,
+  browser UA on web, cpu count, build version), the `disabled_toggles`, and a run
+  `label` (build version + which toggles were off).
+- **Per-script capture in RELEASE.** `PerfLog`'s per-second logger is debug-build
+  only, but the benchmark needs the per-script numbers from the *representative
+  release* web build. `PerfLog.begin_capture()` / `end_capture(frame_count)` open
+  a second accumulator that `track()` always feeds (independent of
+  `OS.is_debug_build()`); the runner opens it right after warm-up so the window
+  lines up with the sampled frames, and closes it at the finish, averaging over
+  the frame count it sampled.
+- **Where it POSTs.** `_resolve_report_url()`: an explicit
+  `GameConfig.bench_report_url` wins (set it on an installed **APK** to reach your
+  dev machine, e.g. `http://192.168.1.50:8080/bench`); otherwise on a **web**
+  build it POSTs to `/bench` on the page's own origin (`window.location.origin`
+  via `JavaScriptBridge`) — so the `serve_web.sh` LAN loop is zero-config.
+  Skipped headless / when nothing resolves (desktop dev). The results panel shows
+  `reporting…` → `reported ✓` / `report failed …`.
+- **The collector.** `tools/bench_collector.py` serves `build/web` **and** accepts
+  `POST /bench`, writing each report to `build/bench-results/<utc>-<label>.json`
+  (git-ignored) and printing a one-line headline to the terminal. `serve_web.sh`
+  runs it, so the game is served and reports are collected on the same origin/port.
+- **Isolating a system.** Two attribution paths feed the same collector: a single
+  run already separates CPU (per-script + physics ms) from GPU (draws/prims/render
+  gpu); a **toggle sweep** (baseline, then one Settings→Benchmark toggle off at a
+  time — trees, distant terrain, signs, FX, render distance) posts one labelled
+  report each, and the frame-cost deltas pin terrain vs objects vs FX.
+
 ## Tests
 
+`tests/headless/test_benchmark_report.gd` — the report payload assembly, the
+run-label (baseline vs disabled-toggle naming, filename-safety), and the PerfLog
+capture window (averaging over frame count, ignoring out-of-window tracks).
 `tests/headless/test_benchmark_mode.gd` — toggle registry, the
 override/snapshot/restore lifecycle, the stats summariser, the runner's pure
 driving math, and a scene-integration boot (1-turn track) checking the world
