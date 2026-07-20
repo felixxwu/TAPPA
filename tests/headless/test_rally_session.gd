@@ -257,6 +257,33 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	assert_eq(player["placed"], 2, "the player's standings position matches the placement")
 
 
+# DEV shortcut: dev_complete_rally credits every event a 0 ms time and resolves
+# straight to the podium as a top-3 win, from anywhere mid-rally (here, before a
+# single event has run) — so the settings dev button can hand the player the car.
+func test_dev_complete_rally_wins_immediately_from_mid_rally() -> void:
+	var finish := _capture_finish()
+	_start("shakedown")
+	RallySession._opponent_field = _field([50000, 60000, 70000])
+	# No event has been reported yet; complete the whole rally in one shot.
+	RallySession.dev_complete_rally()
+	var r: Dictionary = finish[0]
+	assert_not_null(r, "rally_finished emitted straight to the podium")
+	assert_eq(r["combined_ms"], 0, "every event is credited a perfect 0 ms time")
+	assert_eq(r["placed"], 1, "a 0 ms combined out-runs the whole field -> P1")
+	assert_true(r["completed"], "a P1 finish completes the rally (top-3)")
+	assert_false(r["dnf"], "not a DNF")
+	assert_true(_save.rally_completed("shakedown"), "completion recorded in the save")
+	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE after finishing")
+
+
+# dev_complete_rally does nothing when no rally is active (the button is hidden in
+# HQ, but the brain must be safe if driven directly).
+func test_dev_complete_rally_is_a_noop_when_idle() -> void:
+	assert_false(RallySession.is_active(), "no rally active to begin with")
+	RallySession.dev_complete_rally()
+	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "stays idle — nothing to complete")
+
+
 func test_between_event_standings_pause_and_leaderboard() -> void:
 	_start("shakedown")
 	# Two rivals: one quick (40k/event), one slow (80k/event). Player runs 50k/event.

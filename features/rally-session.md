@@ -41,6 +41,7 @@ re-implementing them.
 | `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_id, car_name, time_ms}`); DNF-this-event omitted. Drives the [start-line](start-line.md) reveal: the top three line up on the grid in their **actual cars** (spawned from `car_id`), each shown by name with its time to beat. |
 | `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. Any per-event upgrades already earned this rally are **kept**; a DNF earns **no car** (the car reward only fires on a top-3 finish). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
+| `dev_complete_rally()` | **DEV shortcut** (settings dev page, surfaced only while active): credit every event a perfect **0 ms** time, force `_event_index = EVENTS_PER_RALLY`, and `_resolve_results()` straight to the podium. A 0 ms combined out-runs the field → **P1** (top-3), so the podium grants the car reward. No-op when `IDLE`. The settings host unfreezes the tree before calling it (the page is reached from the paused in-run overlay). |
 
 Signals: `rally_finished(result)`, `phase_changed(phase)`, `event_started(i,
 event)`, `standings_ready(i)`, `upgrade_revealed(item_id)`,

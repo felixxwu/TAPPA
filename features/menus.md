@@ -375,8 +375,14 @@ and each button drills into **its own sub-page**:
   row that hands off to the `Benchmark` autoload (config overrides + run-scene
   load). Toggle states are session-scoped, not saved.
 - **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
-  fresh new game), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
+  fresh new game), **3-star all rallies** (`Save.dev_three_star_all_rallies`, unlocks
+  every region), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
   and per upgrade (from `UpgradeLibrary.UPGRADES`) to unlock anything in the game.
+  **Complete rally (win now)** appears ONLY while a rally is active (i.e. from the
+  in-run pause menu, gated on `RallySession.is_active()`): it unfreezes the tree and
+  calls `RallySession.dev_complete_rally`, which credits every event a perfect 0 ms
+  time, resolves to a P1 (top-3) finish, and routes straight to the podium — so the
+  player collects the car reward without driving the stages.
   Upgrades are car-bound, so a slottable part **fits straight onto the selected car**
   (`Save.install_upgrade` — no-op with a "own a car first" note when nothing's owned);
   only the repair kit, the one true consumable, still goes to the inventory

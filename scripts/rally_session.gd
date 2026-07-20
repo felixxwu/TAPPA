@@ -286,6 +286,23 @@ func report_wreck() -> void:
 	_resolve_results()
 
 
+# DEV: instantly finish the whole rally. Every event (already-run or not) is
+# credited a perfect 0 ms time and the rally resolves STRAIGHT to the podium —
+# skipping the remaining events and the standings interstitials. A combined time
+# of 0 out-runs any rival, so it always places P1 (top-3) and the podium grants
+# the car reward. Surfaced only while a rally is active (settings dev page); the
+# emitted rally_finished routes to the podium exactly like a real finish.
+func dev_complete_rally() -> void:
+	if _phase == Phase.IDLE:
+		return
+	_dnf = false
+	_event_times_ms = []
+	for _i in EVENTS_PER_RALLY:
+		_event_times_ms.append(0)
+	_event_index = EVENTS_PER_RALLY
+	_resolve_results()
+
+
 # Abandon mid-rally (from the Pause overlay): end the session back at HQ with the
 # rally left incomplete and damage persisted — no penalty, no reward (no retry).
 func abandon() -> void:
