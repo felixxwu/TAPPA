@@ -306,6 +306,15 @@ static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
 
 
+# Short label for a drive_mode (matches Drivetrain.DriveMode), for stat readouts.
+static func drive_text(drive_mode: int) -> String:
+	match drive_mode:
+		RWD: return "RWD"
+		AWD: return "AWD"
+		FWD: return "FWD"
+		_: return "?"
+
+
 # A real engine's torque has already fallen off by redline, so its true peak power
 # sits well below torque × redline speed. This single global factor calibrates
 # that falloff: with it, every stock car's derived figure lands within ~±8% of its

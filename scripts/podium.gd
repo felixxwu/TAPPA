@@ -260,13 +260,23 @@ func _append_facing(pos: PackedVector2Array, yaw: PackedFloat32Array,
 	yaw.append(atan2(center.x - x, center.z - z))
 
 
+# The per-step height + x-offset layout (P1 centre/tallest, P2 left, P3 right),
+# shared by the step blocks and the cars placed on them so the two can't drift apart.
+func _step_layout() -> Dictionary:
+	var cfg: GameConfig = Config.data
+	var h1: float = cfg.podium_step_height
+	return {
+		"heights": [h1, h1 * 0.66, h1 * 0.45],   # P1, P2, P3
+		"xs": [0.0, -cfg.podium_step_spacing, cfg.podium_step_spacing],
+	}
+
+
 # The three podium steps (1st centred + tallest, 2nd left, 3rd right). Each is a
 # coloured block with a matching collision box so a car lands on its top face.
 func _build_podium_steps() -> void:
-	var cfg: GameConfig = Config.data
-	var h1: float = cfg.podium_step_height
-	var heights := [h1, h1 * 0.66, h1 * 0.45]   # P1, P2, P3
-	var xs := [0.0, -cfg.podium_step_spacing, cfg.podium_step_spacing]
+	var layout := _step_layout()
+	var heights: Array = layout["heights"]
+	var xs: Array = layout["xs"]
 	var colors := [Color(0.85, 0.70, 0.30), Color(0.70, 0.72, 0.76), Color(0.66, 0.46, 0.30)]
 	for i in 3:
 		var h: float = heights[i]
@@ -296,10 +306,9 @@ func _build_podium_steps() -> void:
 # later — no live settle to mistime, bounce off the narrow step, or damage the model.
 # Reads the ranked standings.
 func _spawn_podium_cars() -> void:
-	var cfg: GameConfig = Config.data
-	var h1: float = cfg.podium_step_height
-	var heights := [h1, h1 * 0.66, h1 * 0.45]
-	var xs := [0.0, -cfg.podium_step_spacing, cfg.podium_step_spacing]
+	var layout := _step_layout()
+	var heights: Array = layout["heights"]
+	var xs: Array = layout["xs"]
 	var top3 := _top_finishers(3)
 	for i in top3.size():
 		var car_id := String(top3[i].get("car_id", ""))

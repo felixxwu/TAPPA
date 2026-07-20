@@ -298,6 +298,17 @@ func _ensure_child(node_name: String, factory: Callable) -> Node:
 	return node
 
 
+# Remove-and-free an existing child by name so an in-place regeneration REPLACES
+# rather than stacks it. Unlike _ensure_child (which reuses the node), the caller
+# then builds a fresh one — for nodes whose contents fully rebuild each event
+# (spectator groups, the opponent wreck, the start/finish arches).
+func _replace_named_child(node_name: String) -> void:
+	var existing := get_node_or_null(node_name)
+	if existing != null:
+		remove_child(existing)
+		existing.free()
+
+
 # A point roughly 2 m in front of the active camera — where a warm-up instance is
 # guaranteed to sit inside the frustum (so it actually draws and compiles its
 # shader). Falls back to the car's position if no camera is up yet.
@@ -806,10 +817,7 @@ func _spawn_spectators(centerline: Curve2D, road_cells: Dictionary, trees: Packe
 func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2,
 		road_cells: Dictionary, tree_grid: Dictionary, cfg: GameConfig,
 		terrain: TerrainManager, seed_value: int) -> void:
-	var existing := get_node_or_null(node_name)
-	if existing != null:
-		remove_child(existing)
-		existing.free()
+	_replace_named_child(node_name)
 	var dir := heading
 	if dir.length() < 1e-5:
 		dir = Vector2(0.0, 1.0)
@@ -841,10 +849,7 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 # event, or a car id that no longer resolves.
 func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 		terrain: TerrainManager, cfg: GameConfig) -> void:
-	var existing := get_node_or_null("OpponentWreck")
-	if existing != null:
-		remove_child(existing)
-		existing.free()
+	_replace_named_child("OpponentWreck")
 	if not cfg.opponent_wrecks_enabled or not RallySession.is_active():
 		return
 	var wreck := RallySession.current_event_wreck()
@@ -1011,12 +1016,7 @@ func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node, terra
 # severity. Parented to the car so it's freed with it, PROCESS_MODE_ALWAYS so it keeps
 # puffing though the car itself is frozen / process-disabled.
 func _add_wreck_smoke(car: Node) -> void:
-	if not Config.data.engine_smoke_enabled:
-		return
-	var smoke := EngineSmoke.new()
-	car.add_child(smoke)
-	smoke.process_mode = Node.PROCESS_MODE_ALWAYS
-	smoke.setup_synthetic(car)
+	EngineSmoke.attach_synthetic(car)
 
 
 # A small standing crowd of onlookers gathered around the wreck — pure scenery in one
@@ -1080,10 +1080,7 @@ func _place_arch(node_name: String, pos: Vector2, heading: Vector2,
 	heading = heading.normalized()
 	# Replace any arch from a previous in-place regeneration (entering a new event)
 	# so gates don't stack up — freed immediately so the new one keeps the name.
-	var existing := get_node_or_null(node_name)
-	if existing != null:
-		remove_child(existing)
-		existing.free()
+	_replace_named_child(node_name)
 	var arch := FinishArch.new()
 	arch.name = node_name
 	# Clear opening spans the full road width plus a margin on each side, so the
@@ -1329,8 +1326,8 @@ func _field_session_car() -> void:
 # finish to the podium. Connections on the per-event scene's nodes are dropped
 # automatically when the scene reloads for the next event.
 func _wire_session_signals() -> void:
-	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
-		_stage_manager.stage_completed.connect(_on_session_event_completed)
+	# stage_completed is already connected in _ready() (every mode wires it before
+	# this session-only pass runs), so it's intentionally not re-connected here.
 	if not ($Car as Node).wrecked.is_connected(_on_session_car_wrecked):
 		($Car as Node).wrecked.connect(_on_session_car_wrecked)
 	if not RallySession.rally_finished.is_connected(_on_session_rally_finished):
