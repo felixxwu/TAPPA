@@ -1599,6 +1599,17 @@ func settled_ride_height() -> float:
 	return geometry - compression
 
 
+# The vertical distance a settled prop's wheels can still droop BELOW the analytic rest
+# plane before a wheel floats — i.e. the compression baked into settled_ride_height().
+# Used by the roadside-wreck site gate to reject verges steeper than the car can follow.
+# Front-axle reach, reduced by any rear-axle travel shortfall so the shorter axle governs.
+# Static (no instance): uses Platform.gravity() (the same physics/3d/default_gravity the
+# car reads at _ready) so callers without a Car instance (world.gd) can compute it.
+static func compression_budget(cfg: GameConfig) -> float:
+	var front_budget: float = SUSPENSION_COMPRESSION_COEFF * Platform.gravity() / cfg.suspension_stiffness
+	return front_budget - maxf(0.0, cfg.axle_travel(true) - cfg.axle_travel(false))
+
+
 # A STATIC prop is frozen the instant it's placed, so Godot's VehicleWheel3D solver never
 # runs and never repositions the wheel nodes — the wheel Visuals stay at their authored
 # mount, ~travel above where a driven car's wheels hang. settled_ride_height() puts the
@@ -1625,6 +1636,51 @@ func settle_wheel_visuals() -> void:
 		var droop: float = maxf(
 			wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0
 		)
+		visual.position.y = -droop
+
+
+# How far above the wheel mount to start the down-ray, and slack added to its length.
+const GROUND_RAY_MARGIN := 0.5
+
+# Build a `ground_at` callable for settle_wheels_to_ground that raycasts straight DOWN
+# from each wheel against this car's physics space, excluding the car's own body. Returns
+# the hit Y, or NAN on a miss (settle_wheels_to_ground then keeps the analytic droop).
+# Ray length covers wheel radius + the longer axle's full travel + margin. Reads on
+# direct_space_state from idle are valid (space is only locked during the physics step);
+# HQ already raycasts this way in _car_index_at.
+func ground_raycast() -> Callable:
+	var space := get_world_3d().direct_space_state
+	var self_rid := get_rid()
+	var reach: float = config.wheel_radius + maxf(config.axle_travel(true), config.axle_travel(false)) + GROUND_RAY_MARGIN
+	return func(p: Vector3) -> float:
+		var q := PhysicsRayQueryParameters3D.create(
+			p + Vector3.UP * GROUND_RAY_MARGIN, p + Vector3.DOWN * (reach + GROUND_RAY_MARGIN))
+		q.exclude = [self_rid]
+		var hit := space.intersect_ray(q)
+		return float(hit["position"].y) if not hit.is_empty() else NAN
+
+
+# Droop each frozen prop's wheel Visual so the tyre bottom rests on the ground under it,
+# supplied by `ground_at(world_pos) -> float`. Geometric contact, clamped to the
+# suspension's droop range [0, wheel_rest_length]. A NON-FINITE ground value (e.g. a
+# raycast miss) leaves that wheel at its analytic rest droop (as settle_wheel_visuals)
+# rather than dangling. Frozen props ONLY (a live solver would fight it). The Visual is a
+# CHILD of the wheel node, so writing visual.position.y never feeds back into
+# wheel.global_position — safe to call every frame (the lift raise/lower).
+func settle_wheels_to_ground(ground_at: Callable) -> void:
+	var g: float = _default_gravity
+	for wheel in find_children("*", "VehicleWheel3D", false):
+		var visual: Node3D = wheel.get_node_or_null("Visual")
+		if visual == null:
+			continue
+		var ground: float = ground_at.call(wheel.global_position)
+		var droop: float
+		if is_finite(ground):
+			droop = clampf(wheel.global_position.y - wheel.wheel_radius - ground,
+				0.0, wheel.wheel_rest_length)
+		else:
+			# No ground (miss): analytic rest droop, matching settle_wheel_visuals().
+			droop = maxf(wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0)
 		visual.position.y = -droop
 
 

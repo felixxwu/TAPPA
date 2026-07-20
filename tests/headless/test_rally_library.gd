@@ -418,6 +418,26 @@ func test_opponents_drive_eligible_cars() -> void:
 		assert_eq(String(opp.get("car_name", "")), String(meta.get("name", "")), "car name matches the id")
 
 
+func test_opponents_are_not_fielded_underpowered() -> void:
+	# Rivals must respect the class power floor: no fielded rival may be underpowered
+	# (p/w below the ceiling fraction). Cap the class at the strongest car's p/w so
+	# every car is eligible (at or under the cap) and the strongest is adequate, then
+	# assert the field never includes an underpowered car. Synthetic roster (fixtures).
+	var pws: Array = []
+	for entry in CarLibrary.all():
+		pws.append(CarLibrary.power_to_weight(UpgradeLibrary.effective_meta({}, entry)) * CarLibrary.KW_KG_TO_HP_TONNE)
+	var cap: float = pws.max()
+	var rally := {"id": "synthetic_cap", "difficulty": 2, "restriction": {"pw_max": cap},
+		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
+	var track := _track_with_pieces()
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+	assert_gt(field.size(), 0, "a field is fielded")
+	for opp in field:
+		var meta := UpgradeLibrary.effective_meta({}, CarLibrary.by_id(String(opp.get("car_id", ""))))
+		assert_eq(RallyLibrary.underpower_warning(rally, meta), "",
+			"%s is not fielded underpowered" % opp["name"])
+
+
 func test_wrecks_occur_somewhere_in_the_roster() -> void:
 	# The wreck mechanism actually crashes rivals out across a spread of seeds (it's not
 	# so rare it never fires). Uses the whole authored roster as a bag of seeds rather

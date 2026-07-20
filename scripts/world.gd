@@ -4,6 +4,9 @@ extends Node3D
 
 const BUSH_SEED_OFFSET := 1013
 
+# car.gd has no class_name; preload it to reach its static helpers (compression_budget).
+const CarScript := preload("res://scripts/car.gd")
+
 # Assets for a staged roadside opponent wreck (features/opponent-wrecks.md). The car
 # is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
 # display cars); the onlookers reuse the shared low-poly spectator figure.
@@ -864,8 +867,17 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	var half_len := cfg.opponent_wreck_footprint_half_len
 	var edge := cfg.track_width * 0.5
 	var base_lat := edge + half_w + cfg.opponent_wreck_road_offset_m
+	# Gate the site on the droop budget of the ACTUAL wreck car (apply_car overwrites
+	# stiffness + per-axle travel from the library entry), not the base cfg.
+	var wreck_spec: Dictionary = CarLibrary.CARS[idx]
+	var gate_cfg: GameConfig = cfg.duplicate() as GameConfig
+	gate_cfg.suspension_stiffness = wreck_spec.get("suspension_stiffness", cfg.suspension_stiffness)
+	gate_cfg.suspension_travel = wreck_spec.get("suspension_travel", cfg.suspension_travel)
+	gate_cfg.suspension_travel_front = wreck_spec.get("suspension_travel_front", 0.0)
+	gate_cfg.suspension_travel_rear = wreck_spec.get("suspension_travel_rear", 0.0)
+	var budget: float = CarScript.compression_budget(gate_cfg)
 	var spot := _flattest_wreck_spot(centerline, baked, progress * span, side,
-		base_lat, half_w, half_len, terrain)
+		base_lat, half_w, half_len, terrain, budget)
 	var pos2: Vector2 = spot["pos2"]
 	var tan2: Vector2 = spot["tan2"]
 	var top_y: float = spot["top"]  # highest ground under the footprint — seat on top, never buried
@@ -882,7 +894,7 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	var fwd := Vector3(tan2.x, 0.0, tan2.y)
 	var skew := (fmod(progress * 41.0, 1.0) - 0.5) * 2.0 * cfg.opponent_wreck_yaw_skew
 	var car_basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, skew)
-	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container)
+	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container, terrain)
 
 	# The small gathering of onlookers, on the verge side of the wreck (off the road).
 	_spawn_wreck_crowd(container, Vector3(pos2.x, top_y, pos2.y), outward, terrain, cfg)
@@ -893,31 +905,49 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 # centre `pos2`, the road tangent `tan2` there, and `top` = the highest terrain height
 # under the car footprint at that centre (so the car seats on top and can't spawn
 # buried). No RNG, so the wreck stays stable across re-attempts.
+# Choose the wreck site from ordered candidates (best-placed first, e.g. nearest shoulder).
+# Prefer the first whose terrain spread fits the suspension droop budget (no wheel floats);
+# if none fit, fall back to the flattest and warn. Empty in -> empty out.
+static func _pick_wreck_candidate(candidates: Array, budget: float) -> Dictionary:
+	var flattest := {}
+	var flattest_spread := INF
+	for cand in candidates:
+		var spread: float = cand["spread"]
+		if spread <= budget:
+			return cand
+		if spread < flattest_spread:
+			flattest_spread = spread
+			flattest = cand
+	if not flattest.is_empty():
+		push_warning("wreck site: no verge within suspension budget (%.2f m); using flattest spread %.2f m" % [
+			budget, flattest_spread])
+	return flattest
+
+
 func _flattest_wreck_spot(centerline: Curve2D, baked: float, seed_offset: float,
 		side: float, base_lat: float, half_w: float, half_len: float,
-		terrain: TerrainManager) -> Dictionary:
-	var best := {}
-	var best_spread := INF
-	for d_along: float in [-12.0, -6.0, 0.0, 6.0, 12.0]:
-		var off := clampf(seed_offset + d_along, 0.05 * baked, 0.95 * baked)
-		var c := centerline.sample_baked(off)
-		var t := centerline.sample_baked(minf(off + 1.0, baked)) - c
-		if t.length() < 1e-4:
-			t = Vector2(0.0, 1.0)
-		t = t.normalized()
-		var road_out := Vector2(-t.y, t.x) * side
-		# Prefer the shoulder (closest, usually flattest); step outward for flatter ground.
-		for extra: float in [0.0, 1.0, 2.0, 3.0]:
+		terrain: TerrainManager, budget: float) -> Dictionary:
+	# Candidates in PREFERENCE order: nearest-shoulder first, then step outward, then
+	# widen along-track. The gate picks the first that fits the droop budget (else flattest).
+	var cands: Array = []
+	for extra: float in [0.0, 1.0, 2.0, 3.0, 4.0, 6.0]:            # lateral: closest first
+		for d_along: float in [0.0, -6.0, 6.0, -12.0, 12.0]:       # along-track: seed first
+			var off := clampf(seed_offset + d_along, 0.05 * baked, 0.95 * baked)
+			var c := centerline.sample_baked(off)
+			var t := centerline.sample_baked(minf(off + 1.0, baked)) - c
+			if t.length() < 1e-4:
+				t = Vector2(0.0, 1.0)
+			t = t.normalized()
+			var road_out := Vector2(-t.y, t.x) * side
 			var c2 := c + road_out * (base_lat + extra)
 			var fp := _footprint_terrain(terrain, c2, t, half_len, half_w)
-			if fp["spread"] < best_spread:
-				best_spread = fp["spread"]
-				best = {"pos2": c2, "tan2": t, "top": fp["top"]}
-	if best.is_empty():
+			cands.append({"pos2": c2, "tan2": t, "top": fp["top"], "spread": fp["spread"]})
+	var chosen := _pick_wreck_candidate(cands, budget)
+	if chosen.is_empty():
 		# Degenerate curve: fall back to the seeded point.
 		var c := centerline.sample_baked(clampf(seed_offset, 0.0, baked))
-		best = {"pos2": c, "tan2": Vector2(0.0, 1.0), "top": terrain.height_at(c.x, c.y)}
-	return best
+		chosen = {"pos2": c, "tan2": Vector2(0.0, 1.0), "top": terrain.height_at(c.x, c.y), "spread": 0.0}
+	return chosen
 
 
 # The terrain under a car footprint centred at `c2` (world XZ), aligned to tangent `t`:
@@ -946,7 +976,7 @@ func _footprint_terrain(terrain: TerrainManager, c2: Vector2, t: Vector2,
 # verge, roll down a slope, or re-wreck on landing (all past bugs of the old drop-and-
 # settle approach). FREEZE_MODE_STATIC (the default) keeps the collider, so the frozen
 # wreck is a solid, immovable obstacle. Its HP is zeroed so the smoke reads it as a wreck.
-func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> Node3D:
+func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node, terrain: TerrainManager) -> Node3D:
 	# Shared display-prop recipe (CarProp.spawn): instantiate + isolated config +
 	# apply_car + dup meshes + silence + freeze (+ synthetic wreck smoke). The wreck's
 	# own steps — seat/settle, lock controls, zero HP — run in `configure` after the
@@ -956,7 +986,9 @@ func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> No
 		# Lift the car off its ground seat by its resting ride height so the wheels sit
 		# on the ground, then settle the wheel visuals.
 		c.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * c.settled_ride_height())
-		c.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
+		# Frozen prop: droop each wheel onto the terrain under it (analytic height — the
+		# same surface the collider is built from, valid over the un-streamed verge).
+		c.settle_wheels_to_ground(func(p: Vector3) -> float: return terrain.height_at(p.x, p.z))
 		c.controls_locked = true  # driverless prop: ignore live input, hold the handbrake
 		# Read as a wreck: 0 HP drives the synthetic smoke (a wrecked car smokes hardest),
 		# exactly as a damaged HQ car does.

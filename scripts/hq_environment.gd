@@ -19,6 +19,7 @@ var camera: Camera3D
 var map_table: MapTable          # the wooden table model the map plane sits on
 var map_plane: MeshInstance3D    # the flat map laid on the table top
 var pins_root: Node3D            # parent of the rally pins (hq fills it in _refresh_map_pins)
+var lift_platform: MeshInstance3D # the beam the car rests on; hq raises/lowers it with the car
 var arrow_left: Area3D           # diegetic left arrow — swap to the previous region
 var arrow_right: Area3D          # diegetic right arrow — swap to the next region
 
@@ -421,8 +422,11 @@ func _build_lift(host: Node3D, on_lift_input: Callable) -> void:
 	var cfg: GameConfig = Config.data
 	var p: Vector3 = cfg.hq_lift_pos
 	var s: Vector3 = cfg.hq_lift_size
+	var plat: Vector3 = cfg.hq_lift_platform_size
 	var metal := Color(0.40, 0.42, 0.46)
-	_block(host, p + Vector3(0.0, s.y * 0.5, 0.0), s, metal)  # platform
+	# The car rests on a beam that spans post to post (full s.x width) but is
+	# short along the car's length, tucking into the gap between the wheels.
+	lift_platform = _block(host, p + Vector3(0.0, plat.y * 0.5, 0.0), plat, metal)  # platform beam
 	_block(host, p + Vector3(-s.x * 0.5 + 0.2, 1.1, 0.0), Vector3(0.2, 2.2, 0.2), metal)
 	_block(host, p + Vector3(s.x * 0.5 - 0.2, 1.1, 0.0), Vector3(0.2, 2.2, 0.2), metal)
 

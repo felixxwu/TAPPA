@@ -5,36 +5,42 @@ extends Node3D
 # live run scene (main.tscn) once the world is built and a RallySession is active,
 # while the car is held locked by the StageManager's STAGING phase:
 #
-#   1. REVEAL  — black house-style panels show the times to beat (the top three
-#      rivals' stage times for this event, with each driver's name and the car they
-#      drove) under a rally/event header, while an orbit camera circles the car, which
-#      is queued between a LEADER car ahead and a TRAILING car behind. The panels hug
-#      the TOP and BOTTOM edges, leaving the centre band clear so the (opaque) panels
-#      never hide the orbiting car. The driving HUD is hidden. The player launches with
-#      the Start button, menu_select or a tap.
-#   2. LAUNCH  — the leader "drives off" ahead and the trailing car scoots up toward
-#      the line over start_drive_off_seconds.
-#   3. FADE    — the screen fades to black; at full black the camera hands back to
-#      the player's SELECTED camera (via the CameraManager — chase or bonnet, not
-#      forced to chase), the driving UI returns and StageManager.begin_countdown()
-#      starts the countdown; then it fades back in.
+#   1. MENU     — black house-style panels offer Start / Tune Car / Upgrades under a
+#      rally/event header, while an orbit camera idles on the player's car. The player
+#      launches with the Start button, menu_select or a tap (eligibility gates first).
+#   2. FLY_IN   — the camera flies from the orbit pose to a fixed low 3/4 shot in front
+#      of the start line, facing the car on the line, and holds there.
+#   3. REVEAL   — the three cars ahead of the player are the REAL top-three rivals for
+#      this event (their actual cars). A card shows the front car's driver, the car and
+#      the time to beat, with a Next button. Next sends that car off the line and scoots
+#      the rest up one gap; repeat P1 → P2 → P3 until the player is on the line.
+#   4. FADE     — the screen fades to black; at full black the camera hands back to the
+#      player's SELECTED camera (via the CameraManager), the driving UI returns and
+#      StageManager.begin_countdown() starts the countdown; then it fades back in.
 #
 # Created and wired by world.gd (session runs only). A plain dev boot of main.tscn
 # never builds a StartLine and the StageManager goes straight to the countdown.
 
 const CAR_SCENE := preload("res://car.tscn")
 
-# Sequence phases. ORBIT waits for the launch; the rest are time-driven in _process.
-enum Seq { ORBIT, DRIVE_OFF, FADE_OUT, FADE_IN, DONE }
+# How many cars line up ahead of the player (the real top-N rivals). Fewer if the
+# field can't field this many (dev/test harnesses pass an empty leaders list).
+const GRID_AHEAD := 3
+# A departed car is despawned once it has driven this far past the start line (down
+# the lead-in, before the first corner), so it never fights its axis-lock into a bend.
 
-var _seq: int = Seq.ORBIT
+# Sequence phases. MENU/REVEAL wait for a press; the rest are time-driven in _process.
+enum Seq { MENU, FLY_IN, REVEAL, DRIVE_OFF, FADE_OUT, FADE_IN, DONE }
+
+var _seq: int = Seq.MENU
 var _seq_t := 0.0          # seconds into the current timed phase
-var _orbit_angle := 0.0    # accumulated orbit camera angle (rad)
-var _launched := false
+var _orbit_angle := 0.0    # accumulated orbit camera angle (rad), the MENU idle
+var _launched := false     # Start pressed (past the eligibility gates)
 var _underpower_acked := false   # player confirmed the "underpowered" start warning
 
 # Refs handed in by world.gd (camera/HUD optional so tests can omit them).
 var _player: Node3D
+var _terrain: Node
 var _stage_manager: Node
 var _camera_manager: CameraManager
 var _hud: CanvasLayer
@@ -53,17 +59,33 @@ var _upgrades_menu: UpgradesMenu     # the shared upgrades menu (same as the HQ 
 var _upgrades_back: Button           # the upgrades overlay's Back/Done button (p/w-gated)
 var _menu_last_back: Button          # back button _build_menu_overlay just created
 var _rally: Dictionary = {}          # this event's rally (for the Tune Car detune cap)
-var _leaders_box: VBoxContainer
-var _leader_rows: Array[Label] = []   # one row per shown rival (or a single dash)
 var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
-var _leader: Node3D     # the car ahead (on the line) — drives off on launch
-var _trailer: Node3D    # the car behind — rolls up to _trailer_target on launch
-var _trailer_target: Vector3  # world point the trailer rolls up to and brakes on
 
-# The player's start pose, captured at setup (the queue lays out around it). The
-# player is staged half a gap behind this line and rolls UP to it on launch.
+# The reveal card (shown per opponent during REVEAL).
+var _reveal_overlay: CanvasLayer
+var _reveal_name_label: Label
+var _reveal_time_label: Label
+var _next_button: Button
+
+# The leaders (top-three rivals for this event), each { name, car_id, car_name, time_ms }.
+var _leaders: Array = []
+# The grid, front-first: the opponent cars ahead of the player followed by the player
+# itself as the tail. On each Next the front car drives off and is removed; the rest
+# (incl. the player) roll up one slot. When only the player remains, the fade begins.
+var _grid: Array[Node3D] = []
+var _grid_car_ids: Array[String] = []   # ids of the opponent grid cars (test readout)
+var _departed: Array[Node3D] = []        # cars driving off, despawned past the line
+var _reveal_index := 0                   # which leader is currently on the line
+
+# Camera fly: the orbit pose captured when Start is pressed, and the anchored target.
+var _fly_from := Transform3D.IDENTITY
+var _fly_from_fov := 70.0
+var _anchor_xform := Transform3D.IDENTITY
+
+# The player's start pose, captured at setup (the grid lays out around it). The player
+# is staged GRID_AHEAD gaps behind this line and rolls up to it as the field departs.
 var _start_xform: Transform3D
 var _player_staged := false   # true once the player is scripted for the roll-up
 var _player_auto_was := false # the player's gearbox auto flag, restored at hand-off
@@ -75,22 +97,24 @@ func _cfg() -> GameConfig:
 
 # Build the start-line sequence around the fielded car. `leaders` is the top-three
 # rivals to beat for this event (RallySession.current_event_leaders()), each
-# { name, car_name, time_ms }; `terrain` (optional) sits the queue cars on the
+# { name, car_id, car_name, time_ms }; `terrain` (optional) sits the grid cars on the
 # ground; `camera_manager` / `hud` / `mobile` are handed back at the fade (the
 # camera via the manager, so the player's chosen mode — not always chase — resumes).
 func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
 		event_index: int, leaders: Array, camera_manager: CameraManager = null,
 		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
 	_player = player
+	_terrain = terrain
 	_rally = rally  # kept so Tune Car can cap detune at the rally's qualifying power
 	_stage_manager = stage_manager
 	_camera_manager = camera_manager
 	_hud = hud
 	_mobile = mobile
+	_leaders = leaders
 	_start_xform = player.global_transform
 	# Seat the start-line cars a small clearance ABOVE the road at spawn so they settle
 	# onto their wheels instead of spawning clipped into the ground. Anchoring it on
-	# _start_xform here cascades everywhere: the staged player and both queue props read
+	# _start_xform here cascades everywhere: the staged player and the grid props read
 	# their ride height off it (via _ground), and the countdown pose is reset_to it at
 	# the hand-off — so the player is clear before AND during the countdown.
 	if terrain != null and terrain.has_method("height_at"):
@@ -101,23 +125,36 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	if _mobile != null:
 		_mobile.visible = false
 	_build_orbit_camera()
-	_build_overlay(rally, event_index, leaders)
+	_build_overlay(rally, event_index)
+	_build_reveal_overlay()
 	_build_fade()
 	_stage_player(terrain)
-	_spawn_queue(rally, terrain)
+	_spawn_grid(rally, terrain)
 	_update_orbit()
 
 
-# Roll-up start: stage the player a full gap BEHIND the line (directly behind the
-# leader, which sits ON the line) so it has the whole gap to roll up with the field
-# instead of sitting still and getting rear-ended. Scripted + axis-locked like the
-# queue cars while staging; cleared at the hand-off so the run drives normally. No-op
-# for a non-Car player (test stubs without the hook).
+# How many opponent cars actually line up ahead of the player: the top three, or fewer
+# if the field is short (dev/test harnesses pass an empty leaders list).
+func _grid_ahead_count() -> int:
+	return mini(GRID_AHEAD, _leaders.size())
+
+
+# Roll-up start: stage the player a full grid of gaps BEHIND the line (directly behind
+# the last opponent) so it rolls the whole way up as the field departs instead of
+# sitting still. Scripted + axis-locked like the grid cars while staging; cleared at the
+# hand-off so the run drives normally. No-op for a non-Car player (test stubs).
 func _stage_player(terrain: Node) -> void:
 	if not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
 		return
-	var setback := _cfg().start_queue_gap
-	_player.global_transform = Transform3D(_start_xform.basis, _ground(_start_xform * Vector3(0, 0, setback), terrain))
+	var setback := _cfg().start_queue_gap * float(_grid_ahead_count())
+	# reset_to (pending teleport) so the staged pose survives the physics server; a bare
+	# global_transform write on a VehicleBody3D is discarded (see car.gd reset_to). The
+	# test stub has no reset_to, so fall back to the bare write there.
+	var staged := Transform3D(_start_xform.basis, _ground(_start_xform * Vector3(0, 0, setback), terrain))
+	if _player.has_method("reset_to"):
+		_player.reset_to(staged)
+	else:
+		_player.global_transform = staged
 	_player.ai_controlled = true
 	_player.ai_throttle = 0.0
 	_player.ai_steer = 0.0
@@ -130,7 +167,7 @@ func _stage_player(terrain: Node) -> void:
 	_player_staged = true
 
 
-# --- Orbit camera ------------------------------------------------------------
+# --- Camera (orbit idle → fly-in → anchored reveal shot) ---------------------
 
 func _build_orbit_camera() -> void:
 	_orbit_cam = Camera3D.new()
@@ -139,7 +176,7 @@ func _build_orbit_camera() -> void:
 	add_child(_orbit_cam)
 
 
-# Place the orbit camera on its circle around the car at the current angle.
+# Place the orbit camera on its idle circle around the car (the MENU phase only).
 func _update_orbit() -> void:
 	if _orbit_cam == null:
 		return
@@ -153,21 +190,33 @@ func _update_orbit() -> void:
 	_orbit_cam.look_at_from_position(eye, center, Vector3.UP)
 
 
-# --- Overlay (house-style "times to beat" panels over the orbiting scene) ----
+func _advance_orbit(delta: float) -> void:
+	_orbit_angle += delta * _cfg().start_orbit_speed
+	_update_orbit()
 
-# The reveal UI follows the design system (UITheme): pure-black, sharp-cornered
-# panels, the one house font size, uppercase text and the accent palette (gold for
-# the time to beat). It deliberately hugs the TOP and BOTTOM of the screen with an
-# expanding gap between, so the opaque panels never sit over the orbiting car in the
-# centre band.
-func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void:
+
+# The fixed low 3/4 shot in front of the start line, looking back at the car on the
+# line. Local −Z is down the lead-in (ahead of the line), so a negative Z places the
+# camera AHEAD of the line; a lateral offset gives the 3/4 angle; a low height keeps it
+# close to the ground.
+func _compute_anchor() -> Transform3D:
+	var cfg := _cfg()
+	var eye := _start_xform * Vector3(cfg.start_reveal_cam_side_m, cfg.start_reveal_cam_height_m, -cfg.start_reveal_cam_front_m)
+	var look := _start_xform.origin + Vector3.UP * cfg.start_reveal_cam_look_height_m
+	return Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
+
+
+# --- Overlay (MENU: Start / Tune Car / Upgrades) -----------------------------
+
+# The MENU UI follows the design system (UITheme): pure-black, sharp-cornered panels,
+# the one house font size, uppercase text. It hugs the TOP (a rally/event header) and
+# BOTTOM (the action buttons) of the screen, leaving the centre band clear so the
+# orbiting car shows through.
+func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	_overlay = CanvasLayer.new()
 	_overlay.layer = 5  # above the HUD (2) / mobile (3), below the fade
 	add_child(_overlay)
 
-	# Full-rect column: top card, an expanding spacer (the clear band the car shows
-	# through), then the bottom card. mouse_filter IGNORE so taps on the empty middle
-	# fall through to _unhandled_input and launch.
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.offset_left = UITheme.MARGIN
@@ -178,7 +227,7 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.add_child(root)
 
-	# --- TOP card: the times to beat -----------------------------------------
+	# --- TOP card: the rally + event header ----------------------------------
 	var top_panel := UITheme.panel(UITheme.PANEL.a)
 	top_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	root.add_child(top_panel)
@@ -187,28 +236,11 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	top_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 	top_panel.add_child(top_box)
 
-	# The rally + event header titles the card (in place of a generic "times to beat").
 	var total: int = rally.get("events", []).size()
 	if total <= 0:
 		total = RallySession.EVENTS_PER_RALLY
 	_subtitle_label = UITheme.title("%s — Event %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
 	top_box.add_child(_subtitle_label)
-
-	# Top-three rivals for this event: rank, driver, car and time. The leader (the
-	# actual time to beat) is gold; if no rival set a time yet, a single dash stands in.
-	_leaders_box = VBoxContainer.new()
-	_leaders_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
-	top_box.add_child(_leaders_box)
-	_leader_rows = []
-	if leaders.is_empty():
-		var dash := _leader_row_label("—", "gold")
-		_leaders_box.add_child(dash)
-		_leader_rows.append(dash)
-	else:
-		for i in leaders.size():
-			var row := _leader_row_label(_format_leader(i + 1, leaders[i]), "gold" if i == 0 else "dim")
-			_leaders_box.add_child(row)
-			_leader_rows.append(row)
 
 	# --- Clear band: lets the orbiting car show between the cards -------------
 	var spacer := Control.new()
@@ -216,200 +248,94 @@ func _build_overlay(rally: Dictionary, event_index: int, leaders: Array) -> void
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(spacer)
 
-	# --- BOTTOM: the launch button -------------------------------------------
-	# A bare house button (no wrapping panel — the button is already a pure-black house
-	# bar) so it reads as a standard menu button at the one fixed row height, not an
-	# oversized block.
+	# --- BOTTOM: the launch button + pre-race menus --------------------------
 	_start_button = UITheme.button("Start")
 	_start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_start_button.pressed.connect(launch)
 	root.add_child(_start_button)
 
-	# Under Start: tune the car before the race (same sliders as the HQ lift).
 	_tune_button = UITheme.button("Tune Car")
 	_tune_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_tune_button.pressed.connect(_open_tune)
 	root.add_child(_tune_button)
 
-	# Under Tune: change upgrades before the race (same menu as the HQ garage).
 	_upgrades_button = UITheme.button("Upgrades")
 	_upgrades_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_upgrades_button.pressed.connect(_open_upgrades)
 	root.add_child(_upgrades_button)
 
 	UITheme.enforce(_overlay)  # house rules: uppercase + one font size + fixed button height
-
-	# Three buttons now: wire keyboard + gamepad focus nav (Start seated first). This
-	# replaces the old "select-anywhere launches" path in _unhandled_input.
 	MenuNav.attach(root, {"first": _start_button})
 
 
-# The rally's power-to-weight ceiling for the pre-race tune / upgrades menus (-1 = no
-# cap): the restriction's pw_max, or -1 when there's no active rally restriction.
-func _pw_limit() -> float:
-	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
-	return float(restriction.get("pw_max", -1.0))
+# --- Reveal card (shown per opponent during REVEAL) --------------------------
 
+# A house-style card at the bottom of the screen naming the front opponent, their car and
+# the time to beat, with a Next button to send them off the line. Built once, hidden
+# until the first reveal, its text refreshed per opponent.
+func _build_reveal_overlay() -> void:
+	_reveal_overlay = CanvasLayer.new()
+	_reveal_overlay.layer = 5
+	_reveal_overlay.visible = false
+	add_child(_reveal_overlay)
 
-# Build a pre-race menu overlay: a CanvasLayer (layer 6, above the start overlay) with a
-# centred house panel wrapping a titled `component` and a Back button wired to `on_back`.
-# Shared skeleton for the Tune Car and Upgrades pages (they differ only in title +
-# component). Returns the layer; the caller keeps the handle and the component reference.
-func _build_menu_overlay(title: String, component: Control, on_back: Callable, connect_back := true) -> CanvasLayer:
-	var layer := CanvasLayer.new()
-	layer.layer = 6   # above the start overlay (layer 5)
-	add_child(layer)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(center)
+	# Full-rect column: an expanding spacer (the clear band the car shows through) then the
+	# card hugging the bottom edge, so the panel is laid out on-screen rather than
+	# overflowing past the bottom.
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = UITheme.MARGIN
+	root.offset_top = UITheme.MARGIN
+	root.offset_right = -UITheme.MARGIN
+	root.offset_bottom = -UITheme.MARGIN
+	root.add_theme_constant_override("separation", UITheme.GAP)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_reveal_overlay.add_child(root)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(spacer)
+
 	var panel := UITheme.panel(UITheme.PANEL.a)
-	center.add_child(panel)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", UITheme.GAP)
-	col.custom_minimum_size = Vector2(520, 0)
-	panel.add_child(col)
-	col.add_child(UITheme.title(title))
-	col.add_child(component)
-	var back := UITheme.button("Back")
-	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	# connect_back=false leaves the press unwired so a caller can gate it (the upgrades
-	# overlay routes it through UpgradesMenu.bind_close_button instead).
-	if connect_back:
-		back.pressed.connect(on_back)
-	col.add_child(back)
-	_menu_last_back = back
-	UITheme.enforce(layer)
-	return layer
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	root.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
+	panel.add_child(box)
+
+	_reveal_name_label = UITheme.label("", "ink")
+	_reveal_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_reveal_name_label)
+
+	_reveal_time_label = UITheme.label("", "gold")
+	_reveal_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_reveal_time_label)
+
+	_next_button = UITheme.button("Next")
+	_next_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_next_button.pressed.connect(next_car)
+	box.add_child(_next_button)
+
+	UITheme.enforce(_reveal_overlay)
 
 
-# Show a pre-race menu overlay `layer`: hide the start overlay, reveal the page, release
-# focus, and wire its MenuNav (first control + on_back) so it's keyboard/gamepad
-# navigable. Shared by _open_tune / _open_upgrades (each passes its own first + on_back).
-func _open_menu(layer: CanvasLayer, first: Control, on_back: Callable) -> void:
-	if _overlay != null:
-		_overlay.visible = false
-	layer.visible = true
-	get_viewport().gui_release_focus()
-	MenuNav.attach(layer.get_child(0), {"first": first, "on_back": on_back})
-
-
-# Close a pre-race menu overlay: hide the page, restore the start overlay, and re-focus
-# the button that opened it. Shared by _close_tune / _close_upgrades.
-func _close_menu(layer: CanvasLayer, return_button: Button) -> void:
-	if layer != null:
-		layer.visible = false
-	if _overlay != null:
-		_overlay.visible = true
-	if return_button != null:
-		return_button.grab_focus.call_deferred()
-
-
-# Open the pre-race tuning menu (the same sliders as the HQ lift). Hides the start
-# overlay; edits re-field the live car so they affect the race about to start.
-func _open_tune() -> void:
-	if _seq != Seq.ORBIT:
+# Show the reveal card for the opponent currently on the line (`_reveal_index`). The
+# name row is "P{n}  Driver — Car"; the time row is the gold "TIME TO BEAT  m:ss.cc".
+func _show_reveal_card() -> void:
+	if _reveal_index >= _leaders.size():
 		return
-	if _tune_layer == null:
-		_build_tune_overlay()
-	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-	_tune_panel.setup(owned, _on_tune_changed.bind(owned))
-	_tune_panel.refresh()
-	_open_menu(_tune_layer, _tune_panel.first_slider(), _close_tune)
-
-
-func _close_tune() -> void:
-	_close_menu(_tune_layer, _tune_button)
-
-
-func _build_tune_overlay() -> void:
-	_tune_panel = TuningPanel.new()
-	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune)
-
-
-# An edit was made in the tune panel (it already wrote owned["tuning"] + saved). Re-apply
-# ONLY the tuning to the live config (retune) — the tuned fields are read live each
-# physics step. Deliberately NOT apply_owned: that relocates the wheels + resets the
-# pose on the staged body, which corrupts a live VehicleBody3D (drops it through the
-# floor). retune leaves the body untouched, so the staged grid pose is preserved.
-func _on_tune_changed(owned: Dictionary) -> void:
-	if _player != null and _player.has_method("retune"):
-		_player.retune(owned)
-
-
-# Open the pre-race upgrades menu (the same catalogue as the HQ garage). Hides the
-# start overlay; edits re-field the live car so they affect the race about to start.
-func _open_upgrades() -> void:
-	if _seq != Seq.ORBIT:
-		return
-	if _upgrades_layer == null:
-		_build_upgrades_overlay()
-	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _pw_limit())
-	# Gate Back/Done + Esc on the rally's p/w cap (re-bind each open so it re-reads the
-	# limit and repaints): over the cap, the button goes red and closing is blocked until
-	# the player detunes under it. request_close is the gated close for both button + Esc.
-	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
-	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _upgrades_menu.request_close)
-
-
-func _close_upgrades() -> void:
-	_close_menu(_upgrades_layer, _upgrades_button)
-
-
-func _build_upgrades_overlay() -> void:
-	_upgrades_menu = UpgradesMenu.new()
-	# connect_back=false: the Back button's press is wired through the menu's gate below.
-	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false)
-	_upgrades_back = _menu_last_back
-
-
-# An upgrade edit (UpgradesMenu already wrote Save; it calls on_change with no args).
-# Re-fetch the freshly-saved owned car — the dict handed to setup() is a pre-edit
-# snapshot — and re-field the live car's upgrade state WITHOUT reshaping the staged
-# body (refit_upgrades, NOT apply_owned).
-func _on_upgrade_changed() -> void:
-	if _player != null and _player.has_method("refit_upgrades"):
-		_player.refit_upgrades(Save.get_car(RallySession.car_instance_id()))
-
-
-# The engine-detune fraction at which the car passes the rally's power-to-weight
-# ceiling (evaluated at full power so it's an absolute slider setting): 1.0 when the
-# car is already eligible at full power, a value in (0,1) when a detune admits an
-# over-powered car, or -1.0 when no detune can qualify it (a non-power restriction).
-func _rally_qualifying_detune(owned: Dictionary) -> float:
-	if _rally.is_empty():
-		return 1.0
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var full := owned.duplicate(true)
-	var tuning: Dictionary = full.get("tuning", {})
-	tuning["engine_detune"] = 1.0
-	full["tuning"] = tuning
-	return RallyLibrary.qualifying_detune(_rally, UpgradeLibrary.effective_meta(full, entry))
-
-
-# "Start Anyway" from the underpowered warning: remember the ack so the warning
-# doesn't re-pop, then re-run launch (which now passes the warning gate).
-func _confirm_underpower_launch() -> void:
-	_underpower_acked = true
-	launch()
-
-
-# A centred leaderboard row in a house role colour ("gold" for the leader, "dim"
-# for the chasers / placeholder dash).
-func _leader_row_label(text: String, role: String = "ink") -> Label:
-	var l := UITheme.label(text, role)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	return l
-
-
-# One rival row: "P1   Rival 3 — Porsche 911 — 1:15.43". The car is dropped when
-# unknown (empty), leaving "P1   Rival 3 — 1:15.43".
-func _format_leader(pos: int, entry: Dictionary) -> String:
-	var car := String(entry.get("car_name", ""))
+	var e: Dictionary = _leaders[_reveal_index]
+	var car := String(e.get("car_name", ""))
 	var car_part := " — %s" % car if car != "" else ""
-	return "P%d   %s%s — %s" % [
-		pos, String(entry.get("name", "Rival")), car_part,
-		UITheme.format_time(int(entry.get("time_ms", -1)), "—")]
+	_reveal_name_label.text = "P%d   %s%s" % [_reveal_index + 1, String(e.get("name", "Rival")), car_part]
+	_reveal_time_label.text = "TIME TO BEAT   %s" % UITheme.format_time(int(e.get("time_ms", -1)), "—")
+	UITheme.enforce(_reveal_overlay)  # re-uppercase the freshly-set text
+	_reveal_overlay.visible = true
+	get_viewport().gui_release_focus()
+	MenuNav.attach(_reveal_overlay.get_child(0), {"first": _next_button})
+	_next_button.grab_focus.call_deferred()
 
 
 # --- Fade-to-black overlay ---------------------------------------------------
@@ -425,44 +351,44 @@ func _build_fade() -> void:
 	_fade.add_child(_fade_rect)
 
 
-# --- Queue cars (leader ahead, trailer behind) -------------------------------
+# --- Grid cars (the real top-three rivals ahead of the player) ---------------
 
-# Spawn the two atmosphere cars that bookend the player in the start queue. They are
-# LIVE, scripted, silenced car props (so they drive off with real suspension load);
-# models are picked deterministically from the rally seed so the queue is stable, and
-# drawn ONLY from the rally's eligible car pool so the cars ahead/behind are ones that
-# could actually enter this rally (an over-powered car never lines up in a low-tier one).
-func _spawn_queue(rally: Dictionary, terrain: Node) -> void:
-	var cfg := _cfg()
-	var gap := cfg.start_queue_gap
-	# Local -Z is the car's nose. The leader sits ON the line (so it starts FROM the
-	# start line and drives off down the lead-in); the player is staged a full gap
-	# behind it (see _stage_player) and the trailer a full gap behind the player. On
-	# launch each rolls up one slot: leader off the line, player TO the line, trailer
-	# to where the player started (a gap behind the line — _trailer_target).
-	var leader_pos := _ground(_start_xform.origin, terrain)
-	var trailer_pos := _ground(_start_xform * Vector3(0, 0, gap * 2.0), terrain)
-	_trailer_target = _start_xform * Vector3(0, 0, gap)
-	var pool := RallyLibrary.eligible_car_indices(rally)
-	var seed_base := _queue_seed(rally)
+# Spawn the opponent cars that line up ahead of the player: the real top-N rivals for
+# this event, each in its ACTUAL car. They are LIVE, scripted, silenced car props (so
+# they load their suspension as they drive off / roll up). Front-first: grid[0] sits on
+# the line and drives off first.
+func _spawn_grid(rally: Dictionary, terrain: Node) -> void:
+	_grid = []
+	_grid_car_ids = []
+	var gap := _cfg().start_queue_gap
+	var n := _grid_ahead_count()
 	# Each prop's apply_car() mutates the SHARED global Config.data (gearbox, mass,
-	# grip, …). The player is already fielded, so its drivetrain holds a shift table
-	# built from ITS gearbox; letting a prop's spec leak into Config.data would
-	# corrupt the player's live ratio() (e.g. a final_drive mismatch makes the auto
-	# box shift at the wrong revs). Snapshot the player's config and restore it after
-	# the props are built — they're scripted flavour, so reading it back is harmless.
+	# grip, …). The player is already fielded, so letting a prop's spec leak into
+	# Config.data would corrupt the player's live drivetrain. Snapshot the player's
+	# config and restore it after the props are built.
 	var player_cfg: GameConfig = Config.data.duplicate(true)
-	_leader = _spawn_prop(pool[seed_base % pool.size()], leader_pos)
-	_trailer = _spawn_prop(pool[(seed_base + 1) % pool.size()], trailer_pos)
+	for i in n:
+		var car_id := String((_leaders[i] as Dictionary).get("car_id", ""))
+		var index := CarLibrary.index_of(car_id)
+		if index < 0:
+			continue  # unknown id (fixture/synthetic leaders) — skip rather than spawn a bogus car
+		var pos := _ground(_start_xform * Vector3(0, 0, gap * float(i)), terrain)
+		var car := _spawn_prop(index, pos)
+		_grid.append(car)
+		_grid_car_ids.append(car_id)
 	Config.data = player_cfg
-	# Drive on the terrain, but never shove (or get shoved by) the player or each
-	# other — they're flavour, not a real field.
+	# The player is the tail of the grid — it rolls up as the opponents depart.
+	if _player != null:
+		_grid.append(_player)
+	# Drive on the terrain, but never shove (or get shoved by) the player or each other.
 	if _player is PhysicsBody3D:
-		for prop in [_leader, _trailer]:
-			if prop != null:
-				(prop as PhysicsBody3D).add_collision_exception_with(_player)
-	if _leader != null and _trailer != null:
-		(_leader as PhysicsBody3D).add_collision_exception_with(_trailer)
+		for car in _grid:
+			if car != _player and car is PhysicsBody3D:
+				(car as PhysicsBody3D).add_collision_exception_with(_player)
+	for a in _grid.size():
+		for b in range(a + 1, _grid.size()):
+			if _grid[a] is PhysicsBody3D and _grid[b] is PhysicsBody3D:
+				(_grid[a] as PhysicsBody3D).add_collision_exception_with(_grid[b])
 
 
 # Drop a world point onto the terrain, keeping the player's ride height above it.
@@ -473,13 +399,9 @@ func _ground(pos: Vector3, terrain: Node) -> Vector3:
 	return pos
 
 
-# A live, scripted, silent car prop facing the start heading. car.gd._ready()
-# already gives each car.tscn instance its own mesh copies (so a mixed queue
-# keeps each body at its true size instead of stomping the player's), so no
-# extra duplication is needed here. It runs full physics (real suspension load /
-# squat) but reads scripted throttle/steer instead of player Input, and is axis-
-# locked to a straight line so it can't veer (the start heading is world -Z, so
-# lock lateral world-X + yaw world-Y; suspension world-Y and pitch world-X stay free).
+# A live, scripted, silent car prop facing the start heading. Runs full physics but
+# reads scripted throttle/steer instead of player Input, axis-locked to a straight line
+# so it can't veer (start heading is world −Z, so lock lateral world-X + yaw world-Y).
 func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 	var car := CAR_SCENE.instantiate()
 	add_child(car)
@@ -488,7 +410,15 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 		# engine/gearbox in the shared global Config.data (see car.gd `config`).
 		car.use_isolated_config()
 		car.apply_car(model_index)
-	car.global_transform = Transform3D(_start_xform.basis, pos)
+	# Place via reset_to (the pending-teleport path), NOT a bare global_transform write:
+	# car._ready() captures its spawn pose at ADD-CHILD time (the origin), and a plain
+	# global_transform write on a VehicleBody3D is discarded by the physics server (see
+	# car.gd reset_to), so every prop would otherwise snap back to the origin and stack.
+	var place := Transform3D(_start_xform.basis, pos)
+	if car.has_method("reset_to"):
+		car.reset_to(place)
+	else:
+		car.global_transform = place
 	car.freeze = false
 	car.ai_controlled = true
 	car.ai_throttle = 0.0
@@ -496,9 +426,8 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 	car.ai_handbrake = false
 	car.axis_lock_linear_x = true
 	car.axis_lock_angular_y = true
-	# Auto gearbox so throttle pulls away without manual shifting.
 	if car.drivetrain != null and car.drivetrain.engine != null:
-		car.drivetrain.engine.auto = true
+		car.drivetrain.engine.auto = true  # auto box so throttle pulls away
 	# Silence its engine — no audio clutter from the atmosphere cars.
 	var audio := car.get_node_or_null("EngineAudio")
 	if audio != null:
@@ -507,14 +436,6 @@ func _spawn_prop(model_index: int, pos: Vector3) -> Node3D:
 			audio.playing = false
 			audio.volume_db = -80.0
 	return car
-
-
-# Deterministic per-rally seed for the queue line-up (stable across re-entries).
-func _queue_seed(rally: Dictionary) -> int:
-	var events: Array = rally.get("events", [])
-	if not events.is_empty():
-		return int(events[0].get("seed", 0))
-	return 0
 
 
 # --- Sequence ----------------------------------------------------------------
@@ -527,35 +448,37 @@ func _process(delta: float) -> void:
 
 func _timed_process(delta: float) -> void:
 	match _seq:
-		Seq.ORBIT:
+		Seq.MENU:
 			_advance_orbit(delta)
-		Seq.DRIVE_OFF:
-			_advance_orbit(delta)
+		Seq.FLY_IN:
 			_seq_t += delta
-			var cfg := _cfg()
-			# Staggered roll-off: the leader pulls away first (full throttle, set at
-			# launch); the player rolls UP TO THE LINE one stagger later (braking to a
-			# stop ON it, not coasting past); the trailer one stagger after that rolls up
-			# to where the player started (a gap behind the line), braking to a stop there
-			# too instead of just coasting and drifting.
-			var stagger := cfg.start_queue_stagger_seconds
-			var scoot := cfg.start_trailer_scoot_seconds
-			if _player_staged and _player is VehicleBody3D and "ai_controlled" in _player:
-				if _seq_t >= stagger:
-					_roll_car_to(_player, _start_xform.origin)
+			var fly := maxf(_cfg().start_reveal_fly_seconds, 0.0001)
+			var s := smoothstep(0.0, 1.0, clampf(_seq_t / fly, 0.0, 1.0))
+			_orbit_cam.global_transform = Transform3D(
+				_fly_from.basis.slerp(_anchor_xform.basis, s),
+				_fly_from.origin.lerp(_anchor_xform.origin, s))
+			_orbit_cam.fov = lerpf(_fly_from_fov, _cfg().start_reveal_cam_fov, s)
+			if _seq_t >= fly:
+				_orbit_cam.global_transform = _anchor_xform
+				_orbit_cam.fov = _cfg().start_reveal_cam_fov
+				_enter_reveal()
+		Seq.REVEAL:
+			pass  # waits for Next (or a tap)
+		Seq.DRIVE_OFF:
+			_seq_t += delta
+			# Roll every remaining grid car up to its slot (front-first: grid[i] → slot i).
+			for i in _grid.size():
+				_roll_car_to(_grid[i], _ground(_start_xform * Vector3(0, 0, _cfg().start_queue_gap * float(i)), _terrain))
+			_prune_departed()
+			# Settle once the front car (or the player, on the final scoot) has stopped on
+			# its slot; start_drive_off_seconds is a safety cap.
+			var rolled := _seq_t >= _cfg().start_trailer_scoot_seconds
+			var front: Node3D = _grid[0] if not _grid.is_empty() else null
+			if (rolled and _car_stopped(front)) or _seq_t >= _cfg().start_drive_off_seconds:
+				if front == _player or front == null:
+					_seq = Seq.FADE_OUT
 				else:
-					_player.ai_throttle = 0.0  # hold behind until its stagger
-			if _trailer != null and is_instance_valid(_trailer):
-				if _seq_t >= 2.0 * stagger:
-					_roll_car_to(_trailer, _trailer_target)
-				else:
-					_trailer.ai_throttle = 0.0  # hold on the parking brake until its stagger
-			# Don't cut to the chase cam until the player has rolled up to the line AND
-			# come to a COMPLETE stop, so the transition never happens mid-roll;
-			# start_drive_off_seconds is a safety cap so it can't wait forever.
-			var rolled := _seq_t >= stagger + scoot
-			if (rolled and _player_stopped()) or _seq_t >= cfg.start_drive_off_seconds:
-				_seq = Seq.FADE_OUT
+					_enter_reveal()
 				_seq_t = 0.0
 		Seq.FADE_OUT:
 			_seq_t += delta
@@ -576,32 +499,27 @@ func _timed_process(delta: float) -> void:
 			pass
 
 
-func _advance_orbit(delta: float) -> void:
-	_orbit_angle += delta * _cfg().start_orbit_speed
-	_update_orbit()
+# Enter the REVEAL phase for the opponent now on the line: show the card and wait.
+func _enter_reveal() -> void:
+	_seq = Seq.REVEAL
+	_seq_t = 0.0
+	_show_reveal_card()
 
 
-# Roll a scripted car UP TO `target` (a world point on the start heading) and brake to
-# a stop ON it, instead of flooring it for a fixed window and coasting past (which read
-# as "scoots past then drifts"). Drives forward while well behind the target, coasts
-# into a speed-aware brake point, then brakes+holds — so it eases to a halt at it. Used
-# for the player (target = the line) and the trailer (target = a gap behind it); for
-# the player, `_release_player` still snaps the sub-decimetre residual to the exact line
-# under the fade.
+# Roll a scripted car UP TO `target` and brake to a stop ON it, instead of flooring it
+# and coasting past. Drives forward while well behind, coasts into a speed-aware brake
+# point, then brakes+holds — easing to a halt at it.
 func _roll_car_to(car, target: Vector3) -> void:
+	if car == null or not is_instance_valid(car) or not ("ai_controlled" in car):
+		return
 	var cfg := _cfg()
 	var fwd := (-_start_xform.basis.z).normalized()
 	var dist: float = (target - car.global_position).dot(fwd)
 	var v: float = car.linear_velocity.length()
-	# Distance the car needs to brake from its current speed (decel ~14 m/s²) plus a
-	# small reaction margin — start braking once the target is within it.
 	var brake_dist: float = v * v / cfg.start_roll_decel_divisor + cfg.start_roll_brake_margin_m
 	if dist <= brake_dist:
-		# On/at the target: brake to a stop. Keep the brake pedal on ONLY while still
-		# genuinely rolling forward; once nearly stopped drop to zero throttle so the
-		# auto box doesn't grab reverse and rev the engine against the held handbrake
-		# (which reads as flooring the gas while slowing to a halt). The handbrake
-		# alone holds it the rest of the way in.
+		# On/at the target: brake to a stop, then hold on the handbrake. Cut the brake
+		# pedal once nearly stopped so the auto box doesn't grab reverse against the hold.
 		car.ai_throttle = -1.0 if v > cfg.start_roll_creep_speed else 0.0
 		car.ai_handbrake = true
 	elif dist > brake_dist + cfg.start_roll_coast_band_m:
@@ -612,44 +530,55 @@ func _roll_car_to(car, target: Vector3) -> void:
 		car.ai_handbrake = false
 
 
-# Whether the player has effectively stopped (settled at the line). Non-Car players
-# (test stubs without physics) read as stopped.
-func _player_stopped() -> bool:
-	if not (_player is VehicleBody3D):
+# Whether a car has effectively stopped (settled on its slot). Non-VehicleBody3D cars
+# (test stubs without physics) read as stopped so headless flows don't hang.
+func _car_stopped(car: Node3D) -> bool:
+	if not (car is VehicleBody3D):
 		return true
-	return (_player as VehicleBody3D).linear_velocity.length() < _cfg().start_stop_speed_eps
+	return (car as VehicleBody3D).linear_velocity.length() < _cfg().start_stop_speed_eps
+
+
+# Despawn departed cars once they've driven past the start line down the lead-in (before
+# the first corner), so they never fight their axis-lock into a bend and cost nothing.
+func _prune_departed() -> void:
+	var margin := _cfg().start_lead_in_ahead_m
+	var kept: Array[Node3D] = []
+	for car in _departed:
+		if car == null or not is_instance_valid(car):
+			continue
+		var local := _start_xform.affine_inverse() * car.global_position
+		if local.z < -margin:  # driven past the lead-in ahead of the line
+			car.queue_free()
+		else:
+			kept.append(car)
+	_departed = kept
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _seq != Seq.ORBIT:
+	# A pointer tap advances the waiting phases (MENU launches, REVEAL sends the front
+	# car off) for touch/mouse players; keyboard/gamepad use the focused buttons.
+	if not ((event is InputEventScreenTouch and event.pressed) \
+			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)):
 		return
-	# The Start button owns keyboard/gamepad select now (MenuNav focus); a pointer
-	# tap on the clear band still launches for touch/mouse players.
-	if (event is InputEventScreenTouch and event.pressed) \
-			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+	if _seq == Seq.MENU:
 		launch()
+	elif _seq == Seq.REVEAL:
+		next_car()
 
 
-# Begin the launch animation (leader drives off, field scoots up). Idempotent — only
-# fires from the waiting ORBIT phase, so a second tap during the sequence is ignored.
+# Begin the launch: run the eligibility gates, then fly the camera to the reveal shot
+# (or, with no opponents to reveal, straight to the fade). Idempotent — only fires from
+# the waiting MENU phase, so a second tap during the sequence is ignored.
 func launch() -> void:
-	if _launched or _seq != Seq.ORBIT:
+	if _launched or _seq != Seq.MENU:
 		return
 	if not _rally.is_empty():
 		var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-		# Only gate when there's an actual fielded car to check — a test/dev harness
-		# with no active RallySession (no owned car) has nothing to be ineligible with.
 		if not owned.is_empty():
 			var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
 			var reason := RallyLibrary.ineligibility_reason(_rally, meta)
 			if reason != "":
-				# Ineligible on Start → route the player to the upgrades menu to fix it
-				# (the gated Done button won't let an over-powered car leave until it's
-				# under the cap — detune / ballast / strip parts). No auto-detune button:
-				# the change is the player's own and persists. An over-powered car gets a
-				# "Too powerful" nudge; any other reason (wrong drivetrain, too little
-				# power) shows the reason. Either way: Change Upgrades / Cancel.
 				var frac := _rally_qualifying_detune(owned)
 				var over_power := frac > 0.0 and frac < 1.0
 				if over_power:
@@ -662,8 +591,6 @@ func launch() -> void:
 						[ {"label": "Change Upgrades", "callback": _open_upgrades},
 						  {"label": "Cancel", "callback": Callable()} ])
 				return
-			# Eligible, but far below the class ceiling: warn (non-blocking) once. The
-			# player can start anyway — there's no hard power floor, only this nudge.
 			if not _underpower_acked:
 				var warn := RallyLibrary.underpower_warning(_rally, meta)
 				if warn != "":
@@ -675,18 +602,46 @@ func launch() -> void:
 	_launched = true
 	if _overlay != null:
 		_overlay.visible = false
-	# The leader goes first and keeps pulling away; the player and trailer roll up on
-	# a stagger (see _process DRIVE_OFF).
-	if _leader != null and is_instance_valid(_leader):
-		_leader.ai_throttle = 1.0
+	if _grid_ahead_count() <= 0:
+		# No opponents to reveal — the player is already on the line. Straight to the fade.
+		_seq = Seq.FADE_OUT
+		_seq_t = 0.0
+		return
+	# Fly the camera from the (now frozen) orbit pose to the anchored reveal shot.
+	_fly_from = _orbit_cam.global_transform
+	_fly_from_fov = _orbit_cam.fov
+	_anchor_xform = _compute_anchor()
+	_seq = Seq.FLY_IN
+	_seq_t = 0.0
+
+
+# Next: send the front car off the line and scoot the rest up one slot. Only from the
+# waiting REVEAL phase.
+func next_car() -> void:
+	if _seq != Seq.REVEAL or _grid.size() <= 1:
+		return
+	if _reveal_overlay != null:
+		_reveal_overlay.visible = false
+	var front := _grid.pop_front() as Node3D
+	if front != null and "ai_controlled" in front:
+		front.ai_throttle = 1.0
+		front.ai_handbrake = false
+	if front != null:
+		_departed.append(front)
+	_reveal_index += 1
 	_seq = Seq.DRIVE_OFF
 	_seq_t = 0.0
 
 
-# At full black: hand the camera back to the player's selected mode, restore the
-# driving UI, and start the countdown. (The StageManager has been waiting in STAGING.)
-# The hand-off goes through the CameraManager so it restores whatever camera the
-# player chose (chase OR bonnet), instead of always snapping to chase.
+# "Start Anyway" from the underpowered warning: remember the ack so it doesn't re-pop,
+# then re-run launch (which now passes the warning gate).
+func _confirm_underpower_launch() -> void:
+	_underpower_acked = true
+	launch()
+
+
+# At full black: hand the camera back to the player's selected mode, restore the driving
+# UI, and start the countdown. (The StageManager has been waiting in STAGING.)
 func _handoff() -> void:
 	if _orbit_cam != null:
 		_orbit_cam.current = false
@@ -697,15 +652,14 @@ func _handoff() -> void:
 	if _mobile != null:
 		_mobile.visible = true
 	_release_player()  # hand the player back to normal driving for the run
-	_despawn_queue()   # gone under cover of the black, so they cost nothing during the run
+	_despawn_grid()    # gone under cover of the black, so they cost nothing during the run
 	if _stage_manager != null and _stage_manager.has_method("begin_countdown"):
 		_stage_manager.begin_countdown()
 
 
-# Undo the roll-up scripting so the run drives normally: clear the AI override and
-# axis locks (else the player couldn't turn) and restore the gearbox auto flag. The
-# StageManager forces the handbrake through the countdown, so the car holds at the
-# line (though the player can already rev up) until GO.
+# Undo the roll-up scripting so the run drives normally, and snap the player exactly onto
+# the start line (hidden by the fade). The StageManager forces the handbrake through the
+# countdown, so the car holds at the line until GO.
 func _release_player() -> void:
 	if not _player_staged or not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
 		return
@@ -716,21 +670,142 @@ func _release_player() -> void:
 	_player.axis_lock_angular_y = false
 	if "drivetrain" in _player and _player.drivetrain != null and _player.drivetrain.engine != null:
 		_player.drivetrain.engine.auto = _player_auto_was
-	# Snap exactly onto the start line (motion zeroed) so the roll-up can't leave the
-	# car short of or past the line — it begins the run on the line, under the start
-	# arch, where track progress reads 0%. Hidden by the fade-to-black.
 	if _player.has_method("reset_to"):
 		_player.reset_to(_start_xform)
 	_player_staged = false
 
 
-# Free the queue cars (they've driven off / rolled up and the screen is black).
-func _despawn_queue() -> void:
-	for prop in [_leader, _trailer]:
-		if prop != null and is_instance_valid(prop):
-			prop.queue_free()
-	_leader = null
-	_trailer = null
+# Free every opponent car (grid remainder + departed). The player is never freed.
+func _despawn_grid() -> void:
+	for car in _grid + _departed:
+		if car != null and car != _player and is_instance_valid(car):
+			car.queue_free()
+	_grid = []
+	_departed = []
+
+
+# --- Pre-race menus (Tune Car / Upgrades) ------------------------------------
+
+# The rally's power-to-weight ceiling for the pre-race tune / upgrades menus (-1 = no
+# cap): the restriction's pw_max, or -1 when there's no active rally restriction.
+func _pw_limit() -> float:
+	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
+	return float(restriction.get("pw_max", -1.0))
+
+
+# Build a pre-race menu overlay: a CanvasLayer (layer 6, above the start overlay) with a
+# centred house panel wrapping a titled `component` and a Back button wired to `on_back`.
+func _build_menu_overlay(title: String, component: Control, on_back: Callable, connect_back := true) -> CanvasLayer:
+	var layer := CanvasLayer.new()
+	layer.layer = 6   # above the start overlay (layer 5)
+	add_child(layer)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(center)
+	var panel := UITheme.panel(UITheme.PANEL.a)
+	center.add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", UITheme.GAP)
+	col.custom_minimum_size = Vector2(520, 0)
+	panel.add_child(col)
+	col.add_child(UITheme.title(title))
+	col.add_child(component)
+	var back := UITheme.button("Back")
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	if connect_back:
+		back.pressed.connect(on_back)
+	col.add_child(back)
+	_menu_last_back = back
+	UITheme.enforce(layer)
+	return layer
+
+
+# Show a pre-race menu overlay: hide the start overlay, reveal the page, release focus,
+# and wire its MenuNav so it's keyboard/gamepad navigable.
+func _open_menu(layer: CanvasLayer, first: Control, on_back: Callable) -> void:
+	if _overlay != null:
+		_overlay.visible = false
+	layer.visible = true
+	get_viewport().gui_release_focus()
+	MenuNav.attach(layer.get_child(0), {"first": first, "on_back": on_back})
+
+
+# Close a pre-race menu overlay: hide the page, restore the start overlay, re-focus the
+# button that opened it.
+func _close_menu(layer: CanvasLayer, return_button: Button) -> void:
+	if layer != null:
+		layer.visible = false
+	if _overlay != null:
+		_overlay.visible = true
+	if return_button != null:
+		return_button.grab_focus.call_deferred()
+
+
+func _open_tune() -> void:
+	if _seq != Seq.MENU:
+		return
+	if _tune_layer == null:
+		_build_tune_overlay()
+	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+	_tune_panel.setup(owned, _on_tune_changed.bind(owned))
+	_tune_panel.refresh()
+	_open_menu(_tune_layer, _tune_panel.first_slider(), _close_tune)
+
+
+func _close_tune() -> void:
+	_close_menu(_tune_layer, _tune_button)
+
+
+func _build_tune_overlay() -> void:
+	_tune_panel = TuningPanel.new()
+	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune)
+
+
+# An edit was made in the tune panel. Re-apply ONLY the tuning to the live config
+# (retune) — NOT apply_owned, which would reshape and corrupt the staged body.
+func _on_tune_changed(owned: Dictionary) -> void:
+	if _player != null and _player.has_method("retune"):
+		_player.retune(owned)
+
+
+func _open_upgrades() -> void:
+	if _seq != Seq.MENU:
+		return
+	if _upgrades_layer == null:
+		_build_upgrades_overlay()
+	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _pw_limit())
+	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
+	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _upgrades_menu.request_close)
+
+
+func _close_upgrades() -> void:
+	_close_menu(_upgrades_layer, _upgrades_button)
+
+
+func _build_upgrades_overlay() -> void:
+	_upgrades_menu = UpgradesMenu.new()
+	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false)
+	_upgrades_back = _menu_last_back
+
+
+# An upgrade edit. Re-field the live car's upgrade state WITHOUT reshaping the staged
+# body (refit_upgrades, NOT apply_owned).
+func _on_upgrade_changed() -> void:
+	if _player != null and _player.has_method("refit_upgrades"):
+		_player.refit_upgrades(Save.get_car(RallySession.car_instance_id()))
+
+
+# The engine-detune fraction at which the car passes the rally's power-to-weight ceiling.
+func _rally_qualifying_detune(owned: Dictionary) -> float:
+	if _rally.is_empty():
+		return 1.0
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var full := owned.duplicate(true)
+	var tuning: Dictionary = full.get("tuning", {})
+	tuning["engine_detune"] = 1.0
+	full["tuning"] = tuning
+	return RallyLibrary.qualifying_detune(_rally, UpgradeLibrary.effective_meta(full, entry))
 
 
 # --- Readouts (for tests) ----------------------------------------------------
@@ -743,10 +818,20 @@ func has_launched() -> bool:
 	return _launched
 
 
+# The number of opponent cars ahead of the player still on the grid (excludes the
+# player tail and any car that has already driven off).
 func queue_count() -> int:
 	var n := 0
-	if _leader != null:
-		n += 1
-	if _trailer != null:
-		n += 1
+	for car in _grid:
+		if car != _player:
+			n += 1
 	return n
+
+
+# The car ids of the opponent grid cars, front-first as spawned (test readout).
+func queue_car_ids() -> Array[String]:
+	return _grid_car_ids
+
+
+func reveal_index() -> int:
+	return _reveal_index

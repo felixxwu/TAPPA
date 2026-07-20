@@ -183,7 +183,11 @@ The garage **tuning lift** ([menus.md](menus.md)) is where this is driven. The
 player always has one owned car **selected** (`Save.selected_car` /
 `set_selected_car`); it is the car on the lift — resting lowered on the ground in the
 garage and **raised slowly by the lift** when the bay is entered (`hq_lift_raise_time`,
-between `hq_lift_car_lowered_height` and `hq_lift_car_height`). Clicking the lift flies
+between `hq_lift_car_lowered_height` and `hq_lift_car_height`). The **platform beam**
+the car rests on (`hq_environment.gd` → `_build_lift`, sized by `hq_lift_platform_size`
+— a short strip that spans post-to-post but tucks into the gap between the wheels)
+rides up and down **with** the car; both are tweened in parallel by
+`hq.gd` → `_apply_lift_height`. Clicking the lift flies
 the camera to the bay, framing the car to one side (`hq_lift_cam_*`). The bay opens on
 a **hub** (`LiftPage.HUB`): the car's name/description bottom-left beside the car, with
 a **minimal change-car selector** (cycles the OTHER owned cars, updating the selection) and

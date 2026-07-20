@@ -1102,7 +1102,7 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
 	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
 	assert_string_contains(hq._detail_title.text, "RWD MASTERS", "the detail names the rally")
-	assert_string_contains(hq._detail_body.text, "RWD CARS", "the detail spells out the eligibility")
+	assert_string_contains(hq._detail_restriction.text, "RWD CARS", "the detail spells out the eligibility")
 
 
 func test_hq_table_drag_pans_and_clamps() -> void:

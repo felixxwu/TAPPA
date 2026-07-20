@@ -555,10 +555,23 @@ opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
 `MOUSE_FILTER_IGNORE`) — otherwise the full-rect HUD container/labels/spacer (all
 default `STOP`) would swallow every touch and the 3D pins would never get a pick.
-Tapping a pin opens the **rally detail** sub-panel (name, eligible-cars
-restriction — the power-to-weight gate, not the hidden difficulty tier — event
-count, best finish + stars); **Enter Rally** flies out to the
-car park, **◄ Map** dismisses the panel, and the table Back returns to the garage.
+Tapping a pin opens the **rally detail** sub-panel — a **two-column card** built
+in `_build_detail_overlay` / populated in `_show_detail`. Header: rally name,
+region tag, and a gold **SHOWDOWN** chip on showdown rallies. **Left column
+(STAGES):** one row per event — stage number, a gravel↔tarmac **colour bar**
+(two `ColorRect`s split by `RallyLibrary.event_tarmac_fraction`, since the menu
+font has no block glyphs), and the surface-mix text — then the "combined time
+sets your result" note. **Right column:** the eligible-cars **restriction** (the
+power-to-weight gate, not the hidden difficulty tier); an **eligibility read-out**
+— `_eligibility_summary(rally, owned)` tallies **"N of M cars qualify"** (GREEN,
+or RED "no cars qualify") with GOLD cautions for how many **need a tune / swap to
+fit** or are **underpowered** — and a **YOUR RECORD** line (best finish + a
+`StarRow`). Everything is uppercase + one font size (`UITheme.enforce`), so
+hierarchy comes from **layout, colour, and separators**, not font size. The
+summary is tallied on top of `_entry_plan` so it always agrees with the map pin.
+**Enter Rally** flies out to the car park, **◄ Map** dismisses the panel, and the
+table Back returns to the garage. Nav stays diegetic (`menu_select` → Enter,
+`menu_back` → Map; both buttons `FOCUS_NONE`).
 
 **CARPARK (the outdoor lineup).** The owned cars **eligible for the chosen
 rally** (`RallyLibrary.is_eligible`) — plus any **over-powered** car a detune
@@ -629,8 +642,17 @@ temporary, per-rally, auto-reverted detune here (the old **Detune to N%** button
 its `RallySession.register_detune_revert` agreement are gone). Rallies have no hard
 power floor, so a permanently detuned car can still enter a higher class — it just
 gets a non-blocking "Underpowered" warning at the start line. The map pin's green
-"raceable" pennant counts these detunable cars too (`_has_eligible_car` mirrors the
-lineup filter). A **banner** names the rally + restriction; **Start** records the
+"raceable" pennant counts these detunable cars too (`_has_eligible_car` builds on
+`_entry_plan`) — **but a car that only qualifies underpowered does NOT make the pin
+green**: if every eligible car is underpowered, the rally reads as unavailable
+(grey), same as owning no eligible car, nudging the player to field enough grunt.
+Underpower here is judged at the car's **max achievable power-to-weight**
+(`_full_potential_meta`: 100% engine tune + every *installed* upgrade enabled +
+freely-removable **ballast dropped** — never inventing un-unlocked parts), so a car
+that's merely detuned, has parts toggled off, or is carrying ballast the player can
+shed is never wrongly branded underpowered. Rivals respect the same floor: the
+opponent field is drawn from `RallyLibrary._fieldable_cars` (eligible **and** not
+underpowered), so no AI rival turns up in a car far below the class ceiling. A **banner** names the rally + restriction; **Start** records the
 fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
 so the tuning lift shows the car last raced), shows the
 `LoadingScreen` overlay immediately and (after a fully presented frame, so it paints)

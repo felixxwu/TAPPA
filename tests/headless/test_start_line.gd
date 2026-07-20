@@ -1,9 +1,10 @@
 extends GutTest
-# StartLine: the pre-event start-line sequence (time-to-beat reveal + orbit camera
-# + start queue, then leader drives off / field scoots up / fade → countdown). The
-# timed phases are driven by calling _process(dt) directly against stub
-# car/stage-manager/camera/HUD, so the sequence is tested without booting the run
-# scene. See todo/menus.md location 2 + scripts/start_line.gd.
+# StartLine: the cinematic pre-event start-line sequence — a MENU (Start / Tune / Upgrades)
+# over an orbit idle, a camera fly-in to a fixed 3/4 reveal shot, a per-opponent REVEAL
+# (the three real top rivals line up ahead in their actual cars; Next sends each off the
+# line and scoots the rest up), then the fade → countdown once the player reaches the line.
+# The timed phases are driven by calling _process(dt) directly against stub car/stage/camera
+# stubs, so the sequence is tested without booting the run scene. See features/start-line.md.
 
 
 # Records the launch hand-off (StartLine -> StageManager.begin_countdown()).
@@ -14,9 +15,9 @@ class StubStage:
 		begin_calls += 1
 
 
-# Stand-in for the fielded player Car — a VehicleBody3D (so the roll-up staging,
-# which is gated on `is VehicleBody3D` + the AI hook, runs) with just the hook
-# properties and a minimal drivetrain for the gearbox-auto restore.
+# Stand-in for the fielded player Car — a VehicleBody3D (so the roll-up staging, gated on
+# `is VehicleBody3D` + the AI hook, runs) with just the hook properties and a minimal
+# drivetrain for the gearbox-auto restore.
 class StubEngine:
 	extends RefCounted
 	var auto := false
@@ -30,8 +31,6 @@ class StubPlayer:
 	var ai_steer := 0.0
 	var ai_handbrake := false
 	var drivetrain := StubDrivetrain.new()
-	# Records which fielding path the start-line tune takes: retune (live-safe) is
-	# correct; apply_owned would relocate wheels + reset the pose and corrupt the body.
 	var retune_calls := 0
 	var applied_owned := false
 	func retune(_owned: Dictionary) -> void:
@@ -44,8 +43,7 @@ class StubPlayer:
 		refit_calls += 1
 
 
-# A flat terrain stub at a raised elevation, so the spawn-clearance seating is testable
-# (the real _make passes null terrain, which skips the height lookup).
+# A flat terrain stub at a raised elevation, so the spawn-clearance seating is testable.
 class StubTerrain:
 	extends Node
 	const GROUND_Y := 3.0
@@ -67,9 +65,6 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	# A throwaway save profile so the camera mode the manager restores is deterministic
-	# (a fresh profile has no camera_mode → defaults to chase) and the real profile is
-	# left untouched.
 	_save = get_node("/root/Save")
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
@@ -78,8 +73,6 @@ func before_each() -> void:
 	add_child_autofree(_player)
 	_stage = StubStage.new()
 	add_child_autofree(_stage)
-	# A real CameraManager (chase + bonnet) so the hand-off restores the player's
-	# SELECTED camera — the start line no longer force-snaps to chase.
 	_chase = Camera3D.new()
 	_bonnet = Camera3D.new()
 	add_child_autofree(_chase)
@@ -94,7 +87,7 @@ func before_each() -> void:
 
 func after_each() -> void:
 	if RallySession.is_active():
-		RallySession.abandon()  # a test that started a rally must not leak the session
+		RallySession.abandon()
 	Config.reset()
 	CarFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
@@ -108,11 +101,13 @@ func _rally() -> Dictionary:
 	return RallyLibrary.by_id("rwd_masters")
 
 
+# Three synthetic leaders in real fixture cars (fastest first) — the grid spawns each
+# leader's actual car by its car_id.
 func _leaders() -> Array:
 	return [
-		{"name": "Rival 3", "car_name": "Porsche 911", "time_ms": 75430},  # 1:15.43, the leader
-		{"name": "Rival 1", "car_name": "Dodge Viper RT/10", "time_ms": 78120},
-		{"name": "Rival 7", "car_name": "Focus ST", "time_ms": 80050},
+		{"name": "Rival 3", "car_id": "fx_light_rwd", "car_name": "Fixture Roadster", "time_ms": 75430},
+		{"name": "Rival 1", "car_id": "fx_rwd_coupe", "car_name": "Fixture Coupe", "time_ms": 78120},
+		{"name": "Rival 7", "car_id": "fx_fwd_hatch", "car_name": "Fixture Hatch", "time_ms": 80050},
 	]
 
 
@@ -124,293 +119,225 @@ func _make(leaders := [], event_index := 0) -> StartLine:
 	return sl
 
 
-func test_reveal_shows_top_three_times_to_beat_and_context() -> void:
-	var sl := _make(_leaders(), 1)  # second event
-	assert_eq(sl._leader_rows.size(), 3, "the reveal lists the top three rivals to beat")
-	# Reveal text follows the design system: house rule 1 uppercases everything.
-	var top := sl._leader_rows[0].text
-	assert_string_contains(top, "1:15.43", "the leader's time to beat is shown (m:ss.cc)")
-	assert_string_contains(top, "RIVAL 3", "the leader's driver name is shown")
-	assert_string_contains(top, "PORSCHE 911", "the car the leader drove is shown")
-	assert_string_contains(sl._leader_rows[2].text, "FOCUS ST", "third place's car is shown too")
-	assert_string_contains(sl._subtitle_label.text, "RWD MASTERS", "the rally is named")
-	assert_string_contains(sl._subtitle_label.text, "EVENT 2 OF 3", "the event index is shown")
-	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "it waits in the orbit/reveal phase")
-	# The launch button is a standard house menu button at the one fixed row height
-	# (not an oversized block).
-	assert_eq(sl._start_button.custom_minimum_size.y, float(UITheme.MENU_ROW_H),
-		"the Start button uses the fixed menu row height")
-
-
-func test_missing_rival_times_show_dash() -> void:
-	var sl := _make([])
-	assert_eq(sl._leader_rows.size(), 1, "with no rival times there's a single placeholder row")
-	assert_eq(sl._leader_rows[0].text, "—", "no classified rival times read as a dash")
-
-
-func test_reveal_hides_hud_and_takes_the_camera() -> void:
-	var sl := _make()
-	assert_false(_hud.visible, "the driving HUD is hidden during the reveal")
-	assert_true(sl._orbit_cam.current, "the orbit camera takes over for the reveal")
-
-
-func test_queue_has_a_leader_and_a_trailer() -> void:
-	var sl := _make()
-	assert_eq(sl.queue_count(), 2, "the car is queued between a leader and a trailing car")
-
-
-func test_queue_cars_are_eligible_for_the_rally() -> void:
-	# The leader/trailer that bookend the player must be cars allowed in this rally
-	# (RWD Masters fields only RWD cars inside its p/w band), not arbitrary ones.
-	var sl := _make()
-	var rally := _rally()
-	for prop in [sl._leader, sl._trailer]:
-		assert_not_null(prop, "the queue car spawned")
-		var spec: Dictionary = CarLibrary.all()[prop._car_index]
-		assert_true(RallyLibrary.is_eligible(rally, spec),
-			"%s lining up is eligible for the rally" % spec["name"])
-
-
-# Each queue prop's apply_car() mutates the SHARED global Config.data. The player
-# is fielded BEFORE the queue spawns, so a prop leaking its gearbox into Config.data
-# would corrupt the player's live gearing (its shift table is already built) — e.g.
-# the auto box would then shift at the wrong revs. Regression: spawning the queue
-# must leave the player's config (here a distinctive final_drive) untouched.
-func test_queue_spawn_does_not_clobber_the_players_config() -> void:
-	Config.data.final_drive = 7.77  # a sentinel no CarLibrary entry uses
-	var sl := _make()
-	assert_eq(sl.queue_count(), 2, "the queue actually spawned props (so the test isn't vacuous)")
-	assert_almost_eq(Config.data.final_drive, 7.77, 0.001,
-		"the player's final_drive survives the queue spawn (props don't leak into the shared config)")
-
-
-func test_queue_cars_are_scripted_and_axis_locked() -> void:
-	var sl := _make()
-	var leader = sl._leader
-	assert_true(leader.ai_controlled, "queue cars drive under scripted control, not player Input")
-	assert_true(leader.axis_lock_linear_x, "lateral axis locked so they can't veer off line")
-	assert_true(leader.axis_lock_angular_y, "yaw locked so they stay pointed straight")
-	assert_false(leader.freeze, "they run live physics (suspension loads), not frozen")
-	assert_eq(leader.ai_throttle, 0.0, "they idle on the parking brake until launch")
-
-
-func test_launch_floors_the_leader() -> void:
-	var sl := _make()
+# Fly the camera in and land in REVEAL for the first opponent.
+func _launch_to_reveal(sl: StartLine) -> void:
 	sl.launch()
-	assert_eq(sl._leader.ai_throttle, 1.0, "the leader floors it on launch so it pulls away")
+	sl._process(Config.data.start_reveal_fly_seconds + 0.01)
 
 
-func test_player_is_staged_behind_the_line_to_roll_up() -> void:
-	var sl := _make()
-	# Staged a full gap behind the line (local +Z, directly behind the leader which sits
-	# on the line), scripted + axis-locked so it rolls straight up with the field instead
-	# of sitting still and getting rear-ended.
+# Send the current front car off and roll the field up until the next settle (a real
+# physics car spawned at rest reads as stopped, so the settle is deterministic here).
+func _advance_one(sl: StartLine) -> void:
+	sl.next_car()
+	sl._process(Config.data.start_trailer_scoot_seconds + 0.01)
+
+
+# --- Grid layout -------------------------------------------------------------
+
+func test_three_opponents_line_up_ahead_none_behind() -> void:
+	var sl := _make(_leaders())
+	assert_eq(sl.queue_count(), 3, "the three top rivals line up ahead of the player")
+	# The player is the tail of the grid; nothing is staged behind it.
+	assert_eq(sl._grid.back(), _player, "the player is the last car in the grid (nothing behind)")
+	# The opponents are spaced one gap apart along the start heading, not stacked.
+	var gap := Config.data.start_queue_gap
+	for i in 3:
+		assert_almost_eq(sl._grid[i].global_position.z, gap * float(i), 0.01,
+			"opponent %d sits %d gap(s) behind the line, not on top of the others" % [i, i])
+
+
+func test_grid_cars_use_the_leaders_actual_cars() -> void:
+	# The grid spawns each leader's own car (by car_id), front-first, not arbitrary
+	# flavour models. Behaviour: the spawned ids mirror the leaders list.
+	var sl := _make(_leaders())
+	var want: Array[String] = []
+	for e in _leaders():
+		want.append(String(e["car_id"]))
+	assert_eq(sl.queue_car_ids(), want, "grid cars are the leaders' actual cars, in order")
+
+
+func test_grid_cars_are_scripted_and_axis_locked() -> void:
+	var sl := _make(_leaders())
+	var front = sl._grid[0]
+	assert_true(front.ai_controlled, "grid cars drive under scripted control, not player Input")
+	assert_true(front.axis_lock_linear_x, "lateral axis locked so they can't veer off line")
+	assert_true(front.axis_lock_angular_y, "yaw locked so they stay pointed straight")
+	assert_false(front.freeze, "they run live physics (suspension loads), not frozen")
+	assert_eq(front.ai_throttle, 0.0, "they idle on the parking brake until they're launched")
+
+
+# Each grid prop's apply_car() mutates the SHARED global Config.data; the player is
+# fielded first, so a prop leaking its gearbox into Config.data would corrupt the
+# player's live gearing. Spawning the grid must leave the player's config untouched.
+func test_grid_spawn_does_not_clobber_the_players_config() -> void:
+	Config.data.final_drive = 7.77  # a sentinel no car uses
+	var sl := _make(_leaders())
+	assert_eq(sl.queue_count(), 3, "the grid actually spawned props (so the test isn't vacuous)")
+	assert_almost_eq(Config.data.final_drive, 7.77, 0.001,
+		"the player's final_drive survives the grid spawn (props don't leak into the shared config)")
+
+
+func test_player_is_staged_behind_the_grid_to_roll_up() -> void:
+	var sl := _make(_leaders())
 	assert_true(_player.ai_controlled, "the player is scripted for the roll-up")
 	assert_true(_player.axis_lock_linear_x, "player lateral locked during the roll-up")
 	assert_true(_player.axis_lock_angular_y, "player yaw locked during the roll-up")
-	assert_almost_eq(_player.global_position.z, Config.data.start_queue_gap, 0.01,
-		"player staged a full gap behind the start line")
+	# Staged the full three-car grid of gaps behind the line (local +Z).
+	assert_almost_eq(_player.global_position.z, Config.data.start_queue_gap * 3.0, 0.01,
+		"player staged three gaps behind the start line, behind the opponents")
 
 
 func test_start_line_cars_spawn_a_clearance_above_the_road() -> void:
-	# The player and both queue cars are seated start_spawn_clearance above the road at
-	# spawn so they settle onto their wheels instead of clipping into the ground. Uses a
-	# raised flat terrain stub so the clearance is observable.
 	var terrain := StubTerrain.new()
 	add_child_autofree(terrain)
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)
-	sl.setup(_player, terrain, _stage, _rally(), 0, [], _cam_mgr, _hud)
+	sl.setup(_player, terrain, _stage, _rally(), 0, _leaders(), _cam_mgr, _hud)
 	var seated := StubTerrain.GROUND_Y + Config.data.start_spawn_clearance
 	assert_almost_eq(sl._start_xform.origin.y, seated, 0.001,
 		"the start pose (countdown / reset target) sits a clearance above the road")
 	assert_almost_eq(_player.global_position.y, seated, 0.001,
 		"the staged player is seated a clearance above the ground")
-	assert_almost_eq(sl._leader.global_position.y, seated, 0.01,
-		"the leader ahead spawns a clearance above the ground")
-	assert_almost_eq(sl._trailer.global_position.y, seated, 0.01,
-		"the trailer behind spawns a clearance above the ground")
+	assert_almost_eq(sl._grid[0].global_position.y, seated, 0.01,
+		"the front opponent spawns a clearance above the ground")
 
 
-func test_player_rolls_up_on_a_stagger_after_the_leader() -> void:
-	var sl := _make()
+# --- MENU / camera -----------------------------------------------------------
+
+func test_menu_hides_hud_and_takes_the_camera() -> void:
+	var sl := _make(_leaders())
+	assert_false(_hud.visible, "the driving HUD is hidden during the sequence")
+	assert_true(sl._orbit_cam.current, "the start-line camera takes over from the chase camera")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "it waits in the MENU phase")
+
+
+func test_start_overlay_uses_the_house_button_row_height() -> void:
+	var sl := _make(_leaders())
+	assert_eq(sl._start_button.custom_minimum_size.y, float(UITheme.MENU_ROW_H),
+		"the Start button uses the fixed menu row height")
+	assert_string_contains(sl._subtitle_label.text, "RWD MASTERS", "the rally is named")
+	assert_string_contains(sl._subtitle_label.text, "EVENT 1 OF 3", "the event index is shown")
+
+
+func test_launch_flies_the_camera_then_reveals_the_first_opponent() -> void:
+	var sl := _make(_leaders())
 	sl.launch()
-	# Just after launch the player hasn't moved yet (it waits one stagger).
-	assert_eq(_player.ai_throttle, 0.0, "player holds until its stagger")
-	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
-	assert_eq(_player.ai_throttle, 1.0, "player rolls up once its stagger elapses")
+	assert_true(sl.has_launched(), "launching flips the launched flag")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FLY_IN, "Start begins the camera fly-in")
+	assert_false(sl._overlay.visible, "the MENU overlay hides on launch")
+	assert_eq(_stage.begin_calls, 0, "the countdown does NOT start yet")
+	sl._process(Config.data.start_reveal_fly_seconds + 0.01)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "the fly-in lands in the per-opponent reveal")
+	assert_true(sl._reveal_overlay.visible, "the reveal card shows once the camera has arrived")
 
 
-func test_trailer_rolls_up_and_brakes_to_a_stop() -> void:
-	var sl := _make()
-	sl.launch()
-	# The trailer holds on its parking brake until its (later) stagger.
-	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
-	assert_eq(sl._trailer.ai_throttle, 0.0, "trailer holds until its stagger")
-	# Once its stagger elapses it rolls up toward its slot a gap behind the line.
-	sl._process(Config.data.start_queue_stagger_seconds + 0.01)
-	assert_eq(sl._trailer.ai_throttle, 1.0, "trailer rolls up once its stagger elapses")
-	# Reaching its slot while still rolling fast makes it brake (throttle -1.0), like
-	# the player at the line, instead of coasting through and drifting.
-	sl._trailer.global_position = sl._trailer_target
-	sl._trailer.linear_velocity = Vector3(0, 0, -5)  # still moving well above the stop threshold
-	sl._process(0.05)
-	assert_eq(sl._trailer.ai_throttle, -1.0, "trailer brakes while still rolling into its slot")
-	assert_true(sl._trailer.ai_handbrake, "trailer holds the brake to settle on its slot")
-	# Once nearly stopped it drops to zero throttle (handbrake still on) rather than
-	# holding the brake/gas axis — the auto box mustn't grab reverse and rev against
-	# the handbrake as it settles.
-	sl._trailer.linear_velocity = Vector3.ZERO
-	sl._process(0.05)
-	assert_eq(sl._trailer.ai_throttle, 0.0, "trailer cuts throttle once stopped (no reverse-gas rev)")
-	assert_true(sl._trailer.ai_handbrake, "trailer holds on the handbrake once settled")
+func test_reveal_card_shows_the_current_front_opponents_name_and_time() -> void:
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	assert_eq(sl.reveal_index(), 0, "the first opponent (P1) is on the line")
+	# Behaviour: the card reflects current_event_leaders()[reveal_index], uppercased by the theme.
+	assert_string_contains(sl._reveal_name_label.text, "RIVAL 3", "P1's driver name is shown")
+	assert_string_contains(sl._reveal_name_label.text, "FIXTURE ROADSTER", "P1's car is shown")
+	assert_string_contains(sl._reveal_time_label.text, "1:15.43", "P1's time to beat is shown (m:ss.cc)")
 
 
-func test_fade_waits_for_the_player_to_come_to_a_stop() -> void:
-	var sl := _make()
-	sl.launch()
-	# Past the roll-up window but the player is still moving: must NOT transition yet
-	# (and we're under the safety cap).
-	_player.linear_velocity = Vector3(0, 0, -5)
-	sl._process(Config.data.start_queue_stagger_seconds + Config.data.start_trailer_scoot_seconds + 0.2)
-	assert_eq(sl.sequence_phase(), StartLine.Seq.DRIVE_OFF, "holds the reveal while the player is still rolling")
-	# Once stopped, it transitions into the fade.
-	_player.linear_velocity = Vector3.ZERO
-	sl._process(0.1)
-	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "fades once the player has come to a stop")
+# --- Per-opponent reveal loop ------------------------------------------------
+
+func test_next_sends_the_front_car_off_and_advances_the_reveal() -> void:
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	var p1 = sl._grid[0]
+	sl.next_car()
+	assert_eq(p1.ai_throttle, 1.0, "Next floors the front car so it pulls off the line")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DRIVE_OFF, "Next begins the scoot-up")
+	assert_false(sl._reveal_overlay.visible, "the reveal card hides during the scoot")
+	assert_eq(sl.reveal_index(), 1, "the reveal advances to the next opponent")
+	assert_eq(sl.queue_count(), 2, "the departed car has left the grid")
+	# The scoot settles back into a reveal for the new front opponent.
+	sl._process(Config.data.start_trailer_scoot_seconds + 0.01)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "the next opponent is revealed once the field settles")
+	assert_string_contains(sl._reveal_name_label.text, "RIVAL 1", "P2 is now on the line")
+
+
+func test_walks_through_all_three_opponents_then_fades_to_the_countdown() -> void:
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	_advance_one(sl)  # P1 off, P2 revealed
+	_advance_one(sl)  # P2 off, P3 revealed
+	# Third Next sends P3 off; the player is now the only car left → the fade begins.
+	sl.next_car()
+	sl._process(Config.data.start_trailer_scoot_seconds + 0.01)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "the player reaching the line begins the fade")
+	assert_eq(sl.queue_count(), 0, "all three opponents have driven off")
+	sl._process(Config.data.start_fade_seconds + 0.01)
+	assert_eq(_stage.begin_calls, 1, "the countdown starts at full black")
+	assert_true(_chase.current, "the chase camera is handed control back")
+	assert_false(sl._orbit_cam.current, "the start-line camera releases control")
+	assert_true(_hud.visible, "the driving UI returns")
 
 
 func test_handoff_releases_the_player_to_normal_driving() -> void:
-	var sl := _make()
-	sl.launch()
-	sl._process(Config.data.start_drive_off_seconds)
-	sl._process(Config.data.start_fade_seconds)
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	for i in 3:
+		sl.next_car()
+		sl._process(Config.data.start_drive_off_seconds)  # safety cap covers the settle
+	sl._process(Config.data.start_fade_seconds + 0.01)
 	assert_false(_player.ai_controlled, "the player is handed back to normal driving")
 	assert_false(_player.axis_lock_linear_x, "lateral lock released so the player can steer")
 	assert_false(_player.axis_lock_angular_y, "yaw lock released for the run")
 
 
-func test_launch_starts_the_drive_off_not_the_countdown() -> void:
-	var sl := _make()
-	sl.launch()
-	assert_true(sl.has_launched(), "launching flips the launched flag")
-	assert_eq(sl.sequence_phase(), StartLine.Seq.DRIVE_OFF, "launch begins the drive-off animation")
-	assert_eq(_stage.begin_calls, 0, "the countdown does NOT start until after the fade")
-	assert_false(sl._overlay.visible, "the reveal overlay hides on launch")
-
-
-func test_fade_hands_back_camera_ui_and_starts_countdown() -> void:
-	var sl := _make()
-	sl.launch()
-	# Drive through the drive-off, then the fade-to-black.
-	sl._process(Config.data.start_drive_off_seconds)
-	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "drive-off completes into the fade")
-	assert_eq(_stage.begin_calls, 0, "still no countdown mid-drive-off")
-	sl._process(Config.data.start_fade_seconds)
-	# At full black the hand-off fires.
-	assert_eq(_stage.begin_calls, 1, "the countdown starts at full black")
-	assert_true(_chase.current, "the chase camera is handed control back")
-	assert_false(sl._orbit_cam.current, "the orbit camera releases control")
-	assert_true(_hud.visible, "the driving UI returns")
-
-
-# The hand-off restores the player's SELECTED camera (via the CameraManager), not a
-# hard-coded chase camera: a player who picked bonnet keeps it through the start line.
-func test_fade_restores_the_selected_camera_not_always_chase() -> void:
+func test_reveal_hand_off_restores_the_selected_camera_not_always_chase() -> void:
 	_cam_mgr.set_mode(CameraManager.Mode.BONNET)
-	var sl := _make()
-	sl.launch()
-	sl._process(Config.data.start_drive_off_seconds)
-	sl._process(Config.data.start_fade_seconds)
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	for i in 3:
+		sl.next_car()
+		sl._process(Config.data.start_drive_off_seconds)
+	sl._process(Config.data.start_fade_seconds + 0.01)
 	assert_true(_bonnet.current, "the selected (bonnet) camera is restored at hand-off")
 	assert_false(_chase.current, "the start line does not force chase over the chosen mode")
-	assert_false(sl._orbit_cam.current, "the orbit camera releases control")
 
 
-func test_start_overlay_has_a_focusable_tune_car_button() -> void:
-	var sl := _make()
-	assert_not_null(sl._tune_button, "the pre-event overlay offers a Tune Car button")
-	assert_eq(sl._tune_button.focus_mode, Control.FOCUS_ALL,
-		"the Tune Car button is keyboard/gamepad focusable (MenuNav attached)")
+func test_empty_leaders_skips_straight_to_the_fade() -> void:
+	# Dev/test harnesses can field no opponents; the player is already on the line, so
+	# launch goes straight to the fade + countdown (no grid, no reveal).
+	var sl := _make([])
+	assert_eq(sl.queue_count(), 0, "no opponents line up")
+	sl.launch()
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "with no opponents, Start goes straight to the fade")
+	sl._process(Config.data.start_fade_seconds + 0.01)
+	assert_eq(_stage.begin_calls, 1, "the countdown still starts")
 
 
-func test_tune_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
-	# A live session so the tune panel binds the racing car (skip_track_gen: no scene).
-	RallySession.start_rally(_rally(), _save.selected_car(), true)
-	var sl := _make()
-	sl._open_tune()
-	assert_true(sl._tune_layer.visible, "opening Tune Car shows the tuning overlay")
-	assert_false(sl._overlay.visible, "the start overlay hides while tuning")
-	sl._close_tune()
-	assert_true(sl._overlay.visible, "Back restores the start overlay")
-	assert_false(sl._tune_layer.visible, "Back hides the tuning overlay")
+func test_launch_is_idempotent() -> void:
+	var sl := _make(_leaders())
+	sl.launch()
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FLY_IN, "launch begins the fly-in")
+	sl.launch()  # a stray second press must not restart anything
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FLY_IN, "a second launch is ignored")
 
 
-func test_start_line_tune_uses_retune_and_preserves_the_staged_pose() -> void:
-	# Regression: the Tune Car edit must re-apply tuning via the live-safe retune path,
-	# NOT re-field via apply_owned (which relocates the wheels + resets the pose and
-	# corrupts the staged body). The staged grid pose must survive a tune untouched.
-	RallySession.start_rally(_rally(), _save.selected_car(), true)
-	var sl := _make()
-	var pose_before: Transform3D = _player.global_transform
-	sl._open_tune()
-	sl._on_tune_changed(_save.selected_car())
-	assert_gt(_player.retune_calls, 0, "the tune routes through the live-safe retune path")
-	assert_false(_player.applied_owned,
-		"it must NOT re-field via apply_owned (that relocates wheels + resets the pose)")
-	assert_eq(_player.global_transform, pose_before, "the staged grid pose is preserved across a tune")
-
-
-func test_start_overlay_has_a_focusable_upgrades_button() -> void:
-	var sl := _make()
-	assert_not_null(sl._upgrades_button, "the pre-event overlay offers an Upgrades button")
-	assert_eq(sl._upgrades_button.focus_mode, Control.FOCUS_ALL,
-		"the Upgrades button is keyboard/gamepad focusable (MenuNav attached)")
-
-
-func test_upgrades_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
-	# A live session so the upgrades menu binds the racing car (skip_track_gen: no scene).
-	RallySession.start_rally(_rally(), _save.selected_car(), true)
-	var sl := _make()
-	sl._open_upgrades()
-	assert_true(sl._upgrades_layer.visible, "opening Upgrades shows the upgrades overlay")
-	assert_false(sl._overlay.visible, "the start overlay hides while upgrading")
-	sl._close_upgrades()
-	assert_true(sl._overlay.visible, "Back restores the start overlay")
-	assert_false(sl._upgrades_layer.visible, "Back hides the upgrades overlay")
-
-
-func test_upgrade_changed_refits_the_live_car() -> void:
-	RallySession.start_rally(_rally(), _save.selected_car(), true)
-	var sl := _make()
-	sl._on_upgrade_changed()
-	assert_true(_player.refit_calls > 0, "an upgrade edit refits the live car's upgrade state")
-
+# --- Eligibility gates (unchanged behaviour) ---------------------------------
 
 func test_launch_is_gated_by_rally_eligibility() -> void:
-	# Field a real (fixture) owned car, then rig _rally with a restriction no car can
-	# satisfy (an impossibly high minimum engine size) so ineligibility_reason() is
-	# guaranteed non-empty regardless of which car is fielded. launch() must then be
-	# blocked: it must not flip _launched or advance the sequence.
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
 	RallySession.start_rally(_rally(), owned, true)
-	var sl := _make()
+	var sl := _make(_leaders())
 	sl._rally = {"restriction": {"engine_min_l": 999.0}}
 	sl.launch()
 	assert_false(sl.has_launched(), "launch() is blocked when the fielded car is ineligible")
-	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "the sequence does not advance when blocked")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the sequence does not advance when blocked")
 
 
 func test_over_powered_car_gets_change_upgrades_prompt_on_start() -> void:
-	# An over-powered car (over the rally's pw ceiling) is blocked at Start and gets the
-	# "Too powerful" popup routing to Change Upgrades — NOT a one-press auto-detune. The
-	# ceiling is derived from the fielded car's actual p/w (no pinned value).
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
 	RallySession.start_rally(_rally(), owned, true)
-	var sl := _make()
+	var sl := _make(_leaders())
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
 	sl._rally = {"restriction": {"pw_max": pw * 0.8}}
@@ -434,24 +361,19 @@ func test_launch_proceeds_when_the_car_is_eligible() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
 	RallySession.start_rally(_rally(), owned, true)
-	var sl := _make()
+	var sl := _make(_leaders())
 	sl._rally = {}  # open class: no restriction to fail
 	sl.launch()
 	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
 
 
 func test_underpowered_car_gets_a_non_blocking_start_warning() -> void:
-	# A car that is eligible (under the ceiling) but sits far below it — under
-	# PW_WARN_FRACTION of pw_max — gets a non-blocking "Underpowered" warning at Start,
-	# offering to start anyway. Confirming lets the launch proceed. The ceiling is
-	# derived from the fielded car's actual p/w so no value is pinned.
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
 	RallySession.start_rally(_rally(), owned, true)
-	var sl := _make()
+	var sl := _make(_leaders())
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
-	# Ceiling well above the car so it's eligible but below the warn fraction.
 	sl._rally = {"restriction": {"pw_max": pw / RallyLibrary.PW_WARN_FRACTION * 1.5}}
 	sl.launch()
 	assert_false(sl.has_launched(), "an underpowered car is not launched until the warning is acknowledged")
@@ -462,18 +384,56 @@ func test_underpowered_car_gets_a_non_blocking_start_warning() -> void:
 		if "start anyway" in (b as Button).text.to_lower():
 			offers_start = true
 	assert_true(offers_start, "the popup offers Start Anyway")
-	# Acknowledging the warning lets the launch through.
 	sl._confirm_underpower_launch()
 	assert_true(sl.has_launched(), "confirming the warning starts the rally")
 
 
-func test_launch_is_idempotent() -> void:
-	var sl := _make()
-	sl.launch()
-	sl._process(Config.data.start_drive_off_seconds)
-	sl._process(Config.data.start_fade_seconds)
-	assert_eq(_stage.begin_calls, 1, "countdown started once")
-	# A stray launch after the sequence has moved on must not restart anything.
-	sl.launch()
-	sl._process(Config.data.start_fade_seconds)
-	assert_eq(_stage.begin_calls, 1, "a late launch is ignored")
+# --- Pre-race menus (unchanged behaviour) ------------------------------------
+
+func test_start_overlay_has_focusable_tune_and_upgrades_buttons() -> void:
+	var sl := _make(_leaders())
+	assert_eq(sl._tune_button.focus_mode, Control.FOCUS_ALL,
+		"the Tune Car button is keyboard/gamepad focusable (MenuNav attached)")
+	assert_eq(sl._upgrades_button.focus_mode, Control.FOCUS_ALL,
+		"the Upgrades button is keyboard/gamepad focusable (MenuNav attached)")
+
+
+func test_tune_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make(_leaders())
+	sl._open_tune()
+	assert_true(sl._tune_layer.visible, "opening Tune Car shows the tuning overlay")
+	assert_false(sl._overlay.visible, "the start overlay hides while tuning")
+	sl._close_tune()
+	assert_true(sl._overlay.visible, "Back restores the start overlay")
+	assert_false(sl._tune_layer.visible, "Back hides the tuning overlay")
+
+
+func test_start_line_tune_uses_retune_and_preserves_the_staged_pose() -> void:
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make(_leaders())
+	var pose_before: Transform3D = _player.global_transform
+	sl._open_tune()
+	sl._on_tune_changed(_save.selected_car())
+	assert_gt(_player.retune_calls, 0, "the tune routes through the live-safe retune path")
+	assert_false(_player.applied_owned,
+		"it must NOT re-field via apply_owned (that relocates wheels + resets the pose)")
+	assert_eq(_player.global_transform, pose_before, "the staged grid pose is preserved across a tune")
+
+
+func test_upgrades_overlay_opens_and_back_returns_to_the_start_overlay() -> void:
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make(_leaders())
+	sl._open_upgrades()
+	assert_true(sl._upgrades_layer.visible, "opening Upgrades shows the upgrades overlay")
+	assert_false(sl._overlay.visible, "the start overlay hides while upgrading")
+	sl._close_upgrades()
+	assert_true(sl._overlay.visible, "Back restores the start overlay")
+	assert_false(sl._upgrades_layer.visible, "Back hides the upgrades overlay")
+
+
+func test_upgrade_changed_refits_the_live_car() -> void:
+	RallySession.start_rally(_rally(), _save.selected_car(), true)
+	var sl := _make(_leaders())
+	sl._on_upgrade_changed()
+	assert_true(_player.refit_calls > 0, "an upgrade edit refits the live car's upgrade state")

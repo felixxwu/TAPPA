@@ -451,8 +451,10 @@ var peak_torque_rpm := 4500.0
 ## has road to drive off down (the queue cars are axis-locked to a straight line).
 @export var start_lead_in_ahead_m := 22.0
 ## Straight road (m) extended BEHIND the start line on a staged run, so the player
-## (staged a full gap back) and the trailing car (two gaps back) sit on road.
-@export var start_lead_in_behind_m := 20.0
+## (staged behind the three-car opponent grid) sits on paved road. Constraint:
+## start_lead_in_behind_m >= 3 * start_queue_gap + ~4 m (a car length) — the player is
+## staged three gaps back, so widening the gap needs a wider stub.
+@export var start_lead_in_behind_m := 30.0
 ## Height (m) the start-line cars are seated ABOVE the road at spawn — the player and
 ## both queue cars (leader ahead, trailer behind) — so they settle onto their wheels
 ## instead of spawning clipped into the ground. Smaller than the general drop-in
@@ -460,6 +462,20 @@ var peak_torque_rpm := 4500.0
 @export var start_spawn_clearance := 0.5
 ## Field of view (degrees) of the start-line orbit camera during the reveal.
 @export_range(30.0, 120.0) var start_orbit_fov := 70.0
+## Seconds the camera takes to fly from the orbit idle pose to the anchored 3/4 reveal
+## shot in front of the start line, once the player presses Start.
+@export var start_reveal_fly_seconds := 1.2
+## Reveal shot: camera distance (m) AHEAD of the start line (down the lead-in), so it
+## looks back at the car on the line.
+@export var start_reveal_cam_front_m := 6.0
+## Reveal shot: lateral offset (m) from the centreline, giving the 3/4 angle.
+@export var start_reveal_cam_side_m := 4.0
+## Reveal shot: camera height (m) above the line — low to the ground.
+@export var start_reveal_cam_height_m := 1.0
+## Reveal shot: height (m) of the look-at point on the car (roughly its roofline).
+@export var start_reveal_cam_look_height_m := 0.8
+## Field of view (degrees) of the anchored reveal shot.
+@export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
 ## Speed (m/s) below which the player counts as stopped at the line — the fade to the
 ## chase cam waits for this so the transition never happens while the car is rolling.
 @export var start_stop_speed_eps := 0.4
@@ -780,9 +796,14 @@ var peak_torque_rpm := 4500.0
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 4.6)
 @export var hq_map_plane_size := Vector2(4.2, 4.2)
-## Tuning lift: centre position + platform size.
+## Tuning lift: centre position + overall footprint (posts span this width; also
+## the pickable click volume).
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
 @export var hq_lift_size := Vector3(3.0, 0.35, 3.0)
+## The raised beam the car actually rests on: spans the full lift width post to
+## post (X = hq_lift_size.x) but is short along the car's length (Z), so it tucks
+## into the gap between the front and rear wheels under the car.
+@export var hq_lift_platform_size := Vector3(3.0, 0.35, 1.2)
 ## Height (m) the selected car is raised to on the lift (wheels hanging, as on a
 ## real ramp). Above the platform top.
 @export var hq_lift_car_height := 1.3

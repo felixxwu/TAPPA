@@ -239,7 +239,16 @@ var _settings_gate := false
 
 var _map_meter: Label           # progress-to-showdown meter on the table HUD
 var _detail_title: Label
-var _detail_body: Label
+var _detail_region: Label        # region tag under the title (muted)
+var _detail_showdown: Label      # gold "SHOWDOWN" chip on the header row
+var _detail_stages: VBoxContainer  # one row per event (index + surface bar + mix text)
+var _detail_combined: Label      # "combined time sets your result" note
+var _detail_restriction: Label   # the eligibility restriction summary
+var _detail_qualify: Label       # "N of M cars qualify" (GREEN / RED / muted)
+var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
+var _detail_underpower: Label    # "N underpowered" caution (GOLD, hidden when 0)
+var _detail_record: Label        # best-finish text beside the StarRow
+var _detail_stars: StarRow       # medal row for the player's best finish
 var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
@@ -673,15 +682,18 @@ func _stars_for(rally_id: String) -> int:
 
 # The eligibility decision for one owned `car` against `rally`, derived in ONE place so
 # the pin-flag check (_has_eligible_car) and the car-park lineup (_build_eligible_lineup)
-# can't drift. Returns {eligible, detune, drivetrain}: `eligible` = whether the car can
-# enter at all; `detune` = the qualifying engine-detune fraction to apply (0.0 = none);
-# `drivetrain` = the drive mode it must switch to (-1 = none). A car may need a switch,
-# a detune, both, or neither.
+# can't drift. Returns {eligible, detune, drivetrain, underpowered}: `eligible` = whether
+# the car can enter at all; `detune` = the qualifying engine-detune fraction to apply
+# (0.0 = none); `drivetrain` = the drive mode it must switch to (-1 = none);
+# `underpowered` = eligible, but the config it would RACE with sits far under the class
+# power recommendation (a non-blocking warning). A car may need a switch, a detune, both,
+# or neither. A detune-qualified car is by construction just under the cap, so it's never
+# flagged underpowered.
 func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 	var meta := UpgradeLibrary.effective_meta(car, entry)
 	if RallyLibrary.is_eligible(rally, meta):
-		return {"eligible": true, "detune": 0.0, "drivetrain": -1}
+		return {"eligible": true, "detune": 0.0, "drivetrain": -1, "underpowered": _is_underpowered(rally, car, entry)}
 	var target := _switch_target_for(rally, car, meta)
 	var meta_sw := meta
 	if target >= 0:
@@ -689,21 +701,58 @@ func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 		meta_sw["drive_mode"] = target
 	# Switch alone qualifies?
 	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw):
-		return {"eligible": true, "detune": 0.0, "drivetrain": target}
+		return {"eligible": true, "detune": 0.0, "drivetrain": target, "underpowered": _is_underpowered(rally, car, entry, target)}
 	# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
 	var frac := _qualifying_detune_for(rally, car, entry, meta_sw, target)
 	if frac > 0.0:
-		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1}
-	return {"eligible": false, "detune": 0.0, "drivetrain": -1}
+		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1, "underpowered": false}
+	return {"eligible": false, "detune": 0.0, "drivetrain": -1, "underpowered": false}
 
 
-# Whether the player owns at least one car eligible to enter `rally` — drives the
-# pin flag's green (raceable) vs grey (no qualifying car) pennant. Mirrors the
-# eligibility filter used to build the car-park lineup (_build_eligible_lineup),
-# including an over-powered car that would qualify if it agreed to a detune.
+# The car's stats at its MAXIMUM ACHIEVABLE power-to-weight — the ceiling the player can
+# reach with what they already own, used for the underpower judgement so a car is only
+# branded underpowered if it's genuinely too weak (not just because of a reversible power
+# cut). It: (1) sets engine tune to 100%, (2) re-enables every installed upgrade (parts
+# toggled off), and (3) DROPS freely-removable weight that only lowers p/w — the ballast
+# options (any installed part that MULTIPLIES mass up). Ballast is `free`/baseline is
+# always available, so the player can always shed it; keeping it would wrongly make a
+# ballasted car read underpowered. It does NOT add upgrades the player hasn't installed.
+func _full_potential_meta(owned: Dictionary, entry: Dictionary, drive_override := -1) -> Dictionary:
+	var full := owned.duplicate(true)
+	var tuning: Dictionary = full.get("tuning", {})
+	tuning["engine_detune"] = 1.0
+	full["tuning"] = tuning
+	full["disabled_upgrades"] = []  # apply every installed upgrade the player owns...
+	var kept: Array = []
+	for item_id in full.get("installed_upgrades", []):
+		# ...except a mass-ADDING part (ballast): baseline is always available and lighter,
+		# so the player can always remove it to reach more power. Drop it here.
+		if float(UpgradeLibrary.by_id(item_id).get("effect", {}).get("mass_mult", 1.0)) > 1.0:
+			continue
+		kept.append(item_id)
+	full["installed_upgrades"] = kept
+	var out := UpgradeLibrary.effective_meta(full, entry)
+	if drive_override >= 0:
+		out["drive_mode"] = drive_override
+	return out
+
+
+# Whether a car would race `rally` underpowered (far below the class power ceiling),
+# judged at its FULL POTENTIAL (100% tune + all installed upgrades) — never the current
+# detune/upgrade state — so only a genuinely weak car is flagged.
+func _is_underpowered(rally: Dictionary, owned: Dictionary, entry: Dictionary, drive_override := -1) -> bool:
+	return RallyLibrary.underpower_warning(rally, _full_potential_meta(owned, entry, drive_override)) != ""
+
+
+# Whether the player owns at least one car that can enter `rally` WITH ADEQUATE POWER —
+# drives the pin flag's green (raceable) vs grey (unavailable) pennant. A car that only
+# qualifies underpowered doesn't count: if every eligible car is underpowered, the rally
+# reads as unavailable (grey), same as owning no eligible car, so the player is nudged to
+# field something with enough grunt rather than start a hopeless run.
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get("cars", []):
-		if bool(_entry_plan(rally, car)["eligible"]):
+		var plan := _entry_plan(rally, car)
+		if bool(plan["eligible"]) and not bool(plan["underpowered"]):
 			return true
 	return false
 
@@ -798,6 +847,24 @@ func _label(text: String, size: int) -> Label:
 	var lbl := Label.new()
 	lbl.text = text
 	lbl.add_theme_font_size_override("font_size", size)
+	return lbl
+
+
+# A quiet section heading for the rally-detail card. UITheme.enforce flattens every
+# label to one size + uppercase, so a heading reads as a heading only by its dimmer
+# colour and the grouping/spacing around it — not a larger font.
+func _detail_heading(text: String) -> Label:
+	var lbl := _label(text, 16)
+	lbl.add_theme_color_override("font_color", UITheme.INK_DIM)
+	return lbl
+
+
+# A sidebar Label that wraps to its column width instead of drawing off the panel edge.
+func _detail_wrap_label() -> Label:
+	var lbl := _label("", 16)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.custom_minimum_size = Vector2(1, 0)  # don't let the longest word dictate column width
 	return lbl
 
 
@@ -997,12 +1064,101 @@ func _build_detail_overlay() -> void:
 	_detail_layer.add_child(bg)
 	_detail_layer.move_child(bg, 0)
 
-	_detail_title = _label("", 30)
-	root.add_child(_detail_title)
+	# Everything below is uppercased + locked to one font size by UITheme.enforce
+	# (via _normalize_menus on each view change), so hierarchy comes from layout,
+	# colour and separators — not font size. Stars are a polygon StarRow and the
+	# surface bars are ColorRects, since Syne Mono has no ★/▓ glyphs.
 
-	_detail_body = _label("", 16)
-	_detail_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(_detail_body)
+	# --- Header: title + region on the left, a gold SHOWDOWN chip on the right.
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	root.add_child(header)
+	var titles := VBoxContainer.new()
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(titles)
+	_detail_title = _label("", 30)
+	titles.add_child(_detail_title)
+	_detail_region = _label("", 16)
+	_detail_region.add_theme_color_override("font_color", UITheme.MUTED)
+	titles.add_child(_detail_region)
+	_detail_showdown = _label("SHOWDOWN", 16)
+	_detail_showdown.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_detail_showdown.add_theme_color_override("font_color", UITheme.GOLD)
+	header.add_child(_detail_showdown)
+
+	root.add_child(HSeparator.new())
+
+	# --- Two columns: STAGES (left) | status sidebar (right). Laid out as two halves
+	# ANCHORED to 50% each (not an HBox), so the split is always exactly equal — an HBox
+	# only shares LEFTOVER space by ratio and keeps each column's content-driven minimum
+	# first, which left the wider STAGES side bigger. `cols` is a plain Control that fills
+	# the remaining height; the two halves anchor to its left/right with a centre gutter.
+	const HALF_GUTTER := 16.0
+	var cols := Control.new()
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(cols)
+
+	var left := VBoxContainer.new()
+	left.anchor_left = 0.0
+	left.anchor_right = 0.5
+	left.anchor_top = 0.0
+	left.anchor_bottom = 1.0
+	left.offset_right = -HALF_GUTTER
+	cols.add_child(left)
+	left.add_child(_detail_heading("Stages"))
+	_detail_stages = VBoxContainer.new()
+	_detail_stages.add_theme_constant_override("separation", 8)
+	left.add_child(_detail_stages)
+	_detail_combined = _label("", 16)
+	_detail_combined.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_combined.add_theme_color_override("font_color", UITheme.INK_DIM)
+	left.add_child(_detail_combined)
+
+	# A thin centre divider between the two halves.
+	var divider := ColorRect.new()
+	divider.color = UITheme.INK_DIM
+	divider.anchor_left = 0.5
+	divider.anchor_right = 0.5
+	divider.anchor_top = 0.0
+	divider.anchor_bottom = 1.0
+	divider.offset_left = -1.0
+	divider.offset_right = 1.0
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cols.add_child(divider)
+
+	var right := VBoxContainer.new()
+	right.anchor_left = 0.5
+	right.anchor_right = 1.0
+	right.anchor_top = 0.0
+	right.anchor_bottom = 1.0
+	right.offset_left = HALF_GUTTER
+	right.add_theme_constant_override("separation", 4)
+	cols.add_child(right)
+	right.add_child(_detail_heading("Eligibility"))
+	# All sidebar text wraps within the column so a long restriction / caution can't
+	# draw past the panel edge (Labels don't clip by default).
+	_detail_restriction = _detail_wrap_label()
+	right.add_child(_detail_restriction)
+	_detail_qualify = _detail_wrap_label()
+	right.add_child(_detail_qualify)
+	_detail_adjust = _detail_wrap_label()
+	_detail_adjust.add_theme_color_override("font_color", UITheme.GOLD)
+	right.add_child(_detail_adjust)
+	_detail_underpower = _detail_wrap_label()
+	_detail_underpower.add_theme_color_override("font_color", UITheme.GOLD)
+	right.add_child(_detail_underpower)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 12)
+	right.add_child(gap)
+	right.add_child(_detail_heading("Your record"))
+	var record_row := HBoxContainer.new()
+	record_row.add_theme_constant_override("separation", 10)
+	right.add_child(record_row)
+	_detail_record = _label("", 16)
+	record_row.add_child(_detail_record)
+	_detail_stars = StarRow.new()
+	_detail_stars.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	record_row.add_child(_detail_stars)
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
@@ -1841,26 +1997,125 @@ func _on_rally_pin(rally_id: String) -> void:
 func _show_detail() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	_detail_title.text = String(rally.get("name", "?"))
-	var best := Save.best_placement(_selected_rally_id)
-	var best_line := "Best finish: P%d   (%d / %d stars)" % [best, _stars_for(_selected_rally_id), MAX_STARS] if best > 0 \
-		else "Not yet completed (finish top 3 to earn stars)"
-	var events: Array = rally.get("events", [])
+	var region := String(rally.get("region", ""))
+	_detail_region.text = region  # UITheme.enforce uppercases it
+	_detail_region.visible = region != ""
 	# Difficulty is a hidden tier (it drives reward value, not anything the player
-	# sees) — the eligible-car requirement is the visible gate.
-	var lines: Array[String] = [
-		"Eligible cars: %s" % _restriction_text(rally.get("restriction", {})),
-		"%d events — combined time sets your result." % events.size(),
-	]
-	# Per-event surface mix (gravel vs tarmac), one line each.
+	# sees) — the eligible-car requirement is the visible gate. The showdown chip
+	# replaces the old trailing "THE SHOWDOWN" body line.
+	_detail_showdown.visible = bool(rally.get("showdown", false))
+
+	# --- Stages: one row each — index, a gravel/tarmac bar, and the mix text.
+	for child in _detail_stages.get_children():
+		child.queue_free()
+	var events: Array = rally.get("events", [])
 	for i in events.size():
-		lines.append("  Event %d: %s" % [i + 1, _surface_mix_text(events[i])])
-	lines.append(best_line)
-	if bool(rally.get("showdown", false)):
-		lines.append("THE SHOWDOWN — the final challenge.")
-	_detail_body.text = "\n".join(lines)
+		_detail_stages.add_child(_stage_row(i + 1, events[i]))
+	_detail_combined.text = "Combined time across all stages sets your result."
+
+	# --- Eligibility: restriction + how many of the player's cars can enter.
+	_detail_restriction.text = _restriction_text(rally.get("restriction", {}))
+	var elig := _eligibility_summary(rally, Save.profile.get("cars", []))
+	var total := int(elig["total"])
+	var qualify := int(elig["qualify"])
+	if total == 0:
+		_detail_qualify.text = "No cars owned yet"
+		_detail_qualify.add_theme_color_override("font_color", UITheme.INK_DIM)
+	elif qualify == 0:
+		_detail_qualify.text = "No cars qualify"
+		_detail_qualify.add_theme_color_override("font_color", UITheme.RED)
+	else:
+		_detail_qualify.text = "%d of %d cars qualify" % [qualify, total]
+		_detail_qualify.add_theme_color_override("font_color", UITheme.GREEN)
+	var adjust := int(elig["adjust"])
+	_detail_adjust.visible = adjust > 0
+	_detail_adjust.text = "%d need a tune / swap to fit" % adjust
+	var underpowered := int(elig["underpowered"])
+	_detail_underpower.visible = underpowered > 0
+	_detail_underpower.text = "%d underpowered for the class" % underpowered
+
+	# --- Record: best finish + medal stars.
+	var best := Save.best_placement(_selected_rally_id)
+	_detail_record.text = "Best: P%d" % best if best > 0 else "Not yet completed"
+	_detail_stars.setup(_stars_for(_selected_rally_id), MAX_STARS)
+
 	_detail_open = true
 	_view = View.TABLE
 	_update_overlays()
+
+
+# One stage row for the detail card: the stage number, a gravel/tarmac colour bar,
+# and the human-readable surface mix. All three share one line via an HBox.
+func _stage_row(index: int, event: Dictionary) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var num := _label(str(index), 16)
+	num.custom_minimum_size = Vector2(18, 0)
+	row.add_child(num)
+	row.add_child(_surface_bar(event))
+	var mix := _label(_surface_mix_text(event), 16)
+	mix.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mix.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(mix)
+	return row
+
+
+# A small gravel↔tarmac bar for one event: two ColorRects sized by the surface split
+# (gravel share vs tarmac share). Uses ColorRects, not glyphs, because the menu font
+# has no block glyphs; the split comes from the same RallyLibrary.event_tarmac_fraction
+# the mix text uses, so the bar and the text can never disagree.
+func _surface_bar(event: Dictionary) -> Control:
+	const GRAVEL := Color(0.55, 0.45, 0.32, 1.0)
+	const TARMAC := Color(0.32, 0.34, 0.36, 1.0)
+	var tarmac := RallyLibrary.event_tarmac_fraction(event)
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 0)
+	box.custom_minimum_size = Vector2(48, 7)
+	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# Guard the degenerate all-one-surface case so a zero-ratio rect doesn't vanish oddly.
+	var gravel_frac := clampf(1.0 - tarmac, 0.0, 1.0)
+	if gravel_frac > 0.0:
+		box.add_child(_bar_cell(GRAVEL, gravel_frac))
+	if gravel_frac < 1.0:
+		box.add_child(_bar_cell(TARMAC, 1.0 - gravel_frac))
+	return box
+
+
+func _bar_cell(col: Color, stretch: float) -> ColorRect:
+	var cell := ColorRect.new()
+	cell.color = col
+	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cell.size_flags_stretch_ratio = stretch
+	return cell
+
+
+# How many of the player's owned `cars` can enter `rally`, tallied on top of
+# _entry_plan so this agrees exactly with the green/grey map pin (_has_eligible_car)
+# and the car-park lineup — the ONE eligibility decision, never re-derived here.
+# Returns {total, qualify, adjust, underpowered}: `total` counts owned cars whose
+# model still resolves (a removed model is skipped, not counted); `qualify` = can
+# enter at all (matches the pin); `adjust` = qualify but only after a detune and/or
+# drivetrain switch; `underpowered` = qualify stock but sit under the class power
+# recommendation. `adjust` and `underpowered` are subsets of `qualify`.
+func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
+	var total := 0
+	var qualify := 0
+	var adjust := 0
+	var underpowered := 0
+	for car in cars:
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		if entry.is_empty():
+			continue  # a stale / removed model — not a countable car
+		total += 1
+		var plan := _entry_plan(rally, car)
+		if not bool(plan["eligible"]):
+			continue
+		qualify += 1
+		if float(plan["detune"]) > 0.0 or int(plan["drivetrain"]) >= 0:
+			adjust += 1
+		elif bool(plan["underpowered"]):
+			underpowered += 1
+	return {"total": total, "qualify": qualify, "adjust": adjust, "underpowered": underpowered}
 
 
 func _hide_detail() -> void:
@@ -1896,8 +2151,17 @@ func _lower_lift_car() -> void:
 # World-space Y of the car origin for the lowered / raised pose (above the platform top).
 func _lift_car_y(raised: bool) -> float:
 	var cfg: GameConfig = Config.data
-	var top := cfg.hq_lift_pos.y + cfg.hq_lift_size.y
+	var top := cfg.hq_lift_pos.y + cfg.hq_lift_platform_size.y
 	return top + (cfg.hq_lift_car_height if raised else cfg.hq_lift_car_lowered_height)
+
+
+# World-space Y of the platform beam's CENTRE. Lowered it sits at ground; raised it
+# lifts by the same delta the car climbs, so the car stays resting on the beam.
+func _lift_platform_y(raised: bool) -> float:
+	var cfg: GameConfig = Config.data
+	var base := cfg.hq_lift_pos.y + cfg.hq_lift_platform_size.y * 0.5
+	var rise := cfg.hq_lift_car_height - cfg.hq_lift_car_lowered_height
+	return base + (rise if raised else 0.0)
 
 
 # Move the lift car to its current target height (_lift_raised), tweening unless
@@ -1907,16 +2171,34 @@ func _apply_lift_height(animate: bool) -> void:
 	if not is_instance_valid(_lift_car):
 		return
 	var target := _lift_car_y(_lift_raised)
+	var plat_target := _lift_platform_y(_lift_raised)
+	var plat := _env.lift_platform if _env != null else null
 	if _lift_tween != null and _lift_tween.is_valid():
 		_lift_tween.kill()
 	if not animate or Config.data.hq_lift_raise_time <= 0.0:
 		var p := _lift_car.global_position
 		p.y = target
 		_lift_car.global_position = p
+		_lift_car.settle_wheels_to_ground(_lift_car.ground_raycast())
+		if is_instance_valid(plat):
+			var pp := plat.global_position
+			pp.y = plat_target
+			plat.global_position = pp
 		return
 	_lift_tween = create_tween()
 	_lift_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_lift_tween.tween_property(_lift_car, "global_position:y", target, Config.data.hq_lift_raise_time)
+	# The beam rides up/down with the car (a real 2-post lift), tweened in parallel.
+	if is_instance_valid(plat):
+		_lift_tween.parallel().tween_property(plat, "global_position:y", plat_target, Config.data.hq_lift_raise_time)
+	# Re-droop the wheels each frame as the car's Y animates: they rest on the lot floor
+	# when down and extend to full droop (dangle) as the lift raises. Parallel so it runs
+	# alongside the height tween; guarded in case the car frees mid-tween.
+	_lift_tween.parallel().tween_method(
+		func(_v: float) -> void:
+			if is_instance_valid(_lift_car):
+				_lift_car.settle_wheels_to_ground(_lift_car.ground_raycast()),
+		0.0, 1.0, Config.data.hq_lift_raise_time)
 
 
 # Back out of the bay one level: a sub-menu page returns to the hub; the hub returns
@@ -2064,6 +2346,10 @@ func _ensure_lift_car() -> void:
 	_lift_car_instance_id = id
 	_lift_car_hash = owned_hash
 	_lift_car = _spawn_lift_car(owned)
+	# Conform the freshly-spawned car's wheels to the lot floor at its current pose (a
+	# respawn while raised should appear already dangling; while lowered, resting).
+	if is_instance_valid(_lift_car):
+		_lift_car.settle_wheels_to_ground(_lift_car.ground_raycast())
 
 
 func _clear_lift_car() -> void:
@@ -2524,6 +2810,15 @@ func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
 			await get_tree().process_frame
 	if generation != _settle_generation:
 		return
+	# Refine the analytic seating: droop each parked car's wheels onto the actual lot
+	# floor via a downward raycast. Runs after a physics frame so newly-added bodies are
+	# visible to the space query; guarded so a rebuild/back-out abandons it cleanly.
+	await get_tree().physics_frame
+	if generation != _settle_generation:
+		return
+	for car in _cars:
+		if is_instance_valid(car):
+			car.settle_wheels_to_ground(car.ground_raycast())
 	emit_signal("lineup_built")
 
 

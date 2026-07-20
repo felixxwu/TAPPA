@@ -466,7 +466,7 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
-	var car_pool := _eligible_cars(rally)
+	var car_pool := _fieldable_cars(rally)  # eligible AND not underpowered for the class
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
 	var band := _pace_band(int(rally.get("difficulty", 1)))
 	var field: Array = []
@@ -565,6 +565,21 @@ static func _eligible_cars(rally: Dictionary) -> Array:
 		if is_eligible(rally, entry):
 			pool.append(entry)
 	return pool if not pool.is_empty() else CarLibrary.all()
+
+
+# The cars a rally actually FIELDS its rivals in: eligible AND not underpowered. A rival
+# shouldn't turn up in a car far below the class power ceiling, mirroring the player-side
+# rule that a rally whose only cars are underpowered isn't raceable. underpower_warning
+# reads the stock-boosted effective meta — the SAME meta the rival drives with in
+# generate_opponent_field — so the filter matches actual pace. Open-class rallies have no
+# ceiling, so nothing is filtered there. Falls back to the plain eligible pool in the
+# degenerate case where every eligible car is underpowered, so a field is always fielded.
+static func _fieldable_cars(rally: Dictionary) -> Array:
+	var pool: Array = []
+	for entry in _eligible_cars(rally):
+		if underpower_warning(rally, UpgradeLibrary.effective_meta({}, entry)) == "":
+			pool.append(entry)
+	return pool if not pool.is_empty() else _eligible_cars(rally)
 
 
 # CarLibrary.all() indices a rally's restriction admits — the pool an index-based
