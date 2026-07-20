@@ -101,7 +101,7 @@ const FWD := 2
 const CARS: Array[Dictionary] = [
 	{
 		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
-		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 1,
+		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 2,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
 		"tire_compound": 0.93,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"brake_bias": 0.25,  # front share of foot-brake torque (50/50 RWD roadster)
@@ -183,7 +183,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
-		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 1,
+		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 3,
 		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95,  # touring tyres
 		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy RWD muscle)
@@ -204,7 +204,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "911 Turbo",  # 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
-		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 2,
+		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 3,
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
 		"brake_bias": 0.2,  # front share of foot-brake torque (rear-engine, tail-heavy)
@@ -223,7 +223,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "Dodge Viper RT/10",  # 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
-		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 1000.0, "reward_tier": 2,
+		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 1000.0, "reward_tier": 4,
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
 		"tire_compound": 1.15,  # sticky performance tyres (period bias-belted rubber)
 		"brake_bias": 0.25,  # front share of foot-brake torque (~49/51 front-mid RWD)
@@ -255,7 +255,7 @@ const CARS: Array[Dictionary] = [
 	},
 	{
 		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
-		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 2,
+		"id": "beast", "country": "GB", "car_type": "muscle", "max_hp": 1200.0, "reward_tier": 4,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.2,  # period touring tyres
 		"brake_bias": 0.1,  # front share of foot-brake torque (nose-heavy RWD)

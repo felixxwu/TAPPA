@@ -108,6 +108,25 @@ func test_effective_meta_applies_detune_to_torque() -> void:
 		"a detuned car has lower power-to-weight")
 
 
+func test_max_potential_meta_undoes_detune_and_drops_ballast() -> void:
+	# max_potential_meta reports the car's BEST achievable power-to-weight: it undoes any
+	# engine detune AND removes mass-adding ballast (a free, always-removable part), so a car
+	# gimped to fit a lower rally still reads at its true potential for a pw_min floor check.
+	var meta := CarLibrary.by_id("fx_light_rwd")
+	var gimped := {"model_id": "fx_light_rwd", "tuning": {"engine_detune": 0.5},
+		"installed_upgrades": ["ballast_large"], "disabled_upgrades": []}
+	var cur := UpgradeLibrary.effective_meta(gimped, meta.duplicate())
+	var maxed := UpgradeLibrary.max_potential_meta(gimped, meta.duplicate())
+	assert_gt(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(cur),
+		"max potential (full tune, no ballast) beats the current gimped power-to-weight")
+	# It matches an un-gimped car (full tune, no ballast) — the true ceiling of ability.
+	var clean := UpgradeLibrary.effective_meta(
+		{"model_id": "fx_light_rwd", "tuning": {}, "installed_upgrades": [], "disabled_upgrades": []},
+		meta.duplicate())
+	assert_almost_eq(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(clean), 0.0001,
+		"max potential equals the un-gimped car's power-to-weight")
+
+
 func test_no_upgrades_leaves_config_untouched() -> void:
 	var cfg := GameConfig.new()
 	cfg.peak_torque = 250.0

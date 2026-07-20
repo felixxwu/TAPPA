@@ -238,7 +238,6 @@ var _detail_combined: Label      # "combined time sets your result" note
 var _detail_restriction: Label   # the eligibility restriction summary
 var _detail_qualify: Label       # "N of M cars qualify" (GREEN / RED / muted)
 var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
-var _detail_underpower: Label    # "N underpowered" caution (GOLD, hidden when 0)
 var _detail_record: Label        # best-finish text beside the StarRow
 var _detail_stars: StarRow       # medal row for the player's best finish
 var _rally_banner: Label
@@ -430,7 +429,9 @@ func _bay_center_x(i: int, bays: int) -> float:
 # (RallyFlag) at each rally's normalised map_pos, with a billboarded house-style black
 # box above it holding the rally name and a row of five-pointed stars (1st-place best →
 # 3 gold, 2nd → 2, 3rd → 1, else dim). The flag colour encodes the medal tier; the
-# showdown pin is locked (grey/disabled, non-pickable) until every other rally is done.
+# showdown pin is locked (grey/disabled, non-pickable) until every other rally is done,
+# and any rally whose reveal_after (intra-region reveal order) isn't met yet is locked
+# the same way — a "coming up" hint (see RallyLibrary.rally_revealed).
 func _refresh_map_pins() -> void:
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
 	for c in _pins_root.get_children():
@@ -438,7 +439,6 @@ func _refresh_map_pins() -> void:
 	_pins = []
 	var cfg: GameConfig = Config.data
 	var region_id := _viewed_region_id()
-	var sd_unlocked := RegionLibrary.showdown_unlocked(region_id, Save.profile)
 	# Retexture the map plane to the viewed region's image (default = home map).
 	var img_path := String(RegionLibrary.look_of(region_id).get("map_image", RegionLibrary.DEFAULT_MAP_IMAGE))
 	_map_plane.material_override = PS1Material.unshaded(load(img_path))
@@ -446,7 +446,7 @@ func _refresh_map_pins() -> void:
 	var size: Vector2 = cfg.hq_map_plane_size
 	var top_y := p.y + cfg.hq_table_size.y + 0.02
 	for rally in RegionLibrary.rallies_in(region_id):
-		var pin := _make_pin(rally, sd_unlocked, p, size, top_y)
+		var pin := _make_pin(rally, p, size, top_y)
 		_pins_root.add_child(pin)
 		_pins.append(pin)
 	_update_region_arrows()
@@ -518,9 +518,12 @@ func _set_viewed_region_for_test(i: int) -> void:
 	_refresh_map_pins()
 
 
-func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
+func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
 	var rally_id := String(rally["id"])
-	var locked: bool = bool(rally["showdown"]) and not sd_unlocked
+	# Locked = not revealed yet: a showdown before its region's gate opens, OR a
+	# non-showdown rally whose reveal_after (intra-region reveal order) isn't met. A
+	# locked pin renders grey + non-pickable — a "coming up" hint, not enterable.
+	var locked: bool = not RallyLibrary.rally_revealed(rally, Save.profile)
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
 	# map_pos is normalised 0..1; centre the map plane, x→world X, y→world Z.
 	var local := Vector3((mp.x - 0.5) * plane_size.x, 0.0, (mp.y - 0.5) * plane_size.y)
@@ -674,43 +677,42 @@ func _stars_for(rally_id: String) -> int:
 
 # The eligibility decision for one owned `car` against `rally`, derived in ONE place so
 # the pin-flag check (_has_eligible_car) and the car-park lineup (_build_eligible_lineup)
-# can't drift. Returns {eligible, detune, drivetrain, underpowered}: `eligible` = whether
-# the car can enter at all; `detune` = the qualifying engine-detune fraction to apply
-# (0.0 = none); `drivetrain` = the drive mode it must switch to (-1 = none);
-# `underpowered` = eligible, but the config it would RACE with sits far under the class
-# power recommendation (a non-blocking warning). A car may need a switch, a detune, both,
-# or neither. A detune-qualified car is by construction just under the cap, so it's never
-# flagged underpowered.
+# can't drift. Returns {eligible, detune, drivetrain}: `eligible` = whether the car can
+# enter at all (in-band); `detune` = the qualifying engine-detune fraction to apply
+# (0.0 = none); `drivetrain` = the drive mode it must switch to (-1 = none). A car may
+# need a switch, a detune, both, or neither. (There is no "underpowered but eligible"
+# state — the p/w band floor makes an under-powered car ineligible outright.)
 func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 	var meta := UpgradeLibrary.effective_meta(car, entry)
-	if RallyLibrary.is_eligible(rally, meta):
-		return {"eligible": true, "detune": 0.0, "drivetrain": -1, "underpowered": _is_underpowered(rally, car, entry)}
+	# The pw_min floor is judged at the car's MAX potential (full tune + kits enabled +
+	# ballast off), so a car detuned/ballasted to fit a lower rally still qualifies for a
+	# higher one it could reach by tuning up. The ceiling stays on the current meta (an
+	# over-cap car detunes DOWN via _qualifying_detune_for).
+	var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
+	if RallyLibrary.is_eligible(rally, meta, floor_meta):
+		return {"eligible": true, "detune": 0.0, "drivetrain": -1}
 	var target := _switch_target_for(rally, car, meta)
 	var meta_sw := meta
 	if target >= 0:
 		meta_sw = meta.duplicate()
 		meta_sw["drive_mode"] = target
 	# Switch alone qualifies?
-	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw):
-		return {"eligible": true, "detune": 0.0, "drivetrain": target, "underpowered": _is_underpowered(rally, car, entry, target)}
+	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw, floor_meta):
+		return {"eligible": true, "detune": 0.0, "drivetrain": target}
 	# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
 	var frac := _qualifying_detune_for(rally, car, entry, meta_sw, target)
 	if frac > 0.0:
-		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1, "underpowered": false}
-	return {"eligible": false, "detune": 0.0, "drivetrain": -1, "underpowered": false}
+		return {"eligible": true, "detune": frac, "drivetrain": target if target >= 0 else -1}
+	return {"eligible": false, "detune": 0.0, "drivetrain": -1}
 
 
-# The car's stats at its MAXIMUM ACHIEVABLE power-to-weight — the ceiling the player can
-# reach with what they already own, used for the underpower judgement so a car is only
-# branded underpowered if it's genuinely too weak (not just because of a reversible power
-# cut). It: (1) sets engine tune to 100%, (2) re-enables every installed upgrade (parts
-# toggled off), and (3) DROPS freely-removable weight that only lowers p/w — the ballast
-# options (any installed part that MULTIPLIES mass up). Ballast is `free`/baseline is
-# always available, so the player can always shed it; keeping it would wrongly make a
-# ballasted car read underpowered. It does NOT add upgrades the player hasn't installed.
-# Duplicate `owned` with engine tune forced to 100% — the "full power" base both the
-# underpower check and the qualifying-detune prompt start from. Upgrades untouched.
+# Duplicate `owned` with engine tune forced to 100% (detune undone) — the "full power"
+# base the qualifying-detune prompt scales down from, so it always proposes an absolute
+# slider setting regardless of the car's stored tune. Upgrades / ballast are left as-is
+# (this only touches the tune); for the car's true MAX potential — full tune AND kits
+# enabled AND ballast dropped, used for the pw_min floor check — see
+# UpgradeLibrary.max_potential_meta.
 func _detuned_to_full(owned: Dictionary) -> Dictionary:
 	var full := owned.duplicate(true)
 	var tuning: Dictionary = full.get("tuning", {})
@@ -728,36 +730,13 @@ func _meta_with_drive(full: Dictionary, entry: Dictionary, drive_override: int) 
 	return out
 
 
-func _full_potential_meta(owned: Dictionary, entry: Dictionary, drive_override := -1) -> Dictionary:
-	var full := _detuned_to_full(owned)
-	full["disabled_upgrades"] = []  # apply every installed upgrade the player owns...
-	var kept: Array = []
-	for item_id in full.get("installed_upgrades", []):
-		# ...except a mass-ADDING part (ballast): baseline is always available and lighter,
-		# so the player can always remove it to reach more power. Drop it here.
-		if float(UpgradeLibrary.by_id(item_id).get("effect", {}).get("mass_mult", 1.0)) > 1.0:
-			continue
-		kept.append(item_id)
-	full["installed_upgrades"] = kept
-	return _meta_with_drive(full, entry, drive_override)
-
-
-# Whether a car would race `rally` underpowered (far below the class power ceiling),
-# judged at its FULL POTENTIAL (100% tune + all installed upgrades) — never the current
-# detune/upgrade state — so only a genuinely weak car is flagged.
-func _is_underpowered(rally: Dictionary, owned: Dictionary, entry: Dictionary, drive_override := -1) -> bool:
-	return RallyLibrary.underpower_warning(rally, _full_potential_meta(owned, entry, drive_override)) != ""
-
-
-# Whether the player owns at least one car that can enter `rally` WITH ADEQUATE POWER —
-# drives the pin flag's green (raceable) vs grey (unavailable) pennant. A car that only
-# qualifies underpowered doesn't count: if every eligible car is underpowered, the rally
-# reads as unavailable (grey), same as owning no eligible car, so the player is nudged to
-# field something with enough grunt rather than start a hopeless run.
+# Whether the player owns at least one car that can enter `rally` — drives the pin
+# flag's green (raceable) vs grey (unavailable) pennant. Eligibility is in-band (the
+# band floor is the power floor), so an owned eligible car is by construction
+# adequately powered — there's no separate "underpowered but eligible" case to exclude.
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get("cars", []):
-		var plan := _entry_plan(rally, car)
-		if bool(plan["eligible"]) and not bool(plan["underpowered"]):
+		if bool(_entry_plan(rally, car)["eligible"]):
 			return true
 	return false
 
@@ -1140,9 +1119,6 @@ func _build_detail_overlay() -> void:
 	_detail_adjust = _detail_wrap_label()
 	_detail_adjust.add_theme_color_override("font_color", UITheme.GOLD)
 	right.add_child(_detail_adjust)
-	_detail_underpower = _detail_wrap_label()
-	_detail_underpower.add_theme_color_override("font_color", UITheme.GOLD)
-	right.add_child(_detail_underpower)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 12)
 	right.add_child(gap)
@@ -2023,9 +1999,6 @@ func _show_detail() -> void:
 	var adjust := int(elig["adjust"])
 	_detail_adjust.visible = adjust > 0
 	_detail_adjust.text = "%d need a tune / swap to fit" % adjust
-	var underpowered := int(elig["underpowered"])
-	_detail_underpower.visible = underpowered > 0
-	_detail_underpower.text = "%d underpowered for the class" % underpowered
 
 	# --- Record: best finish + medal stars.
 	var best := Save.best_placement(_selected_rally_id)
@@ -2055,16 +2028,14 @@ func _stage_row(index: int, event: Dictionary) -> HBoxContainer:
 # How many of the player's owned `cars` can enter `rally`, tallied on top of
 # _entry_plan so this agrees exactly with the green/grey map pin (_has_eligible_car)
 # and the car-park lineup — the ONE eligibility decision, never re-derived here.
-# Returns {total, qualify, adjust, underpowered}: `total` counts owned cars whose
-# model still resolves (a removed model is skipped, not counted); `qualify` = can
-# enter at all (matches the pin); `adjust` = qualify but only after a detune and/or
-# drivetrain switch; `underpowered` = qualify stock but sit under the class power
-# recommendation. `adjust` and `underpowered` are subsets of `qualify`.
+# Returns {total, qualify, adjust}: `total` counts owned cars whose model still
+# resolves (a removed model is skipped, not counted); `qualify` = can enter at all
+# (matches the pin); `adjust` = qualify but only after a detune and/or drivetrain
+# switch. `adjust` is a subset of `qualify`.
 func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 	var total := 0
 	var qualify := 0
 	var adjust := 0
-	var underpowered := 0
 	for car in cars:
 		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 		if entry.is_empty():
@@ -2076,9 +2047,7 @@ func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 		qualify += 1
 		if float(plan["detune"]) > 0.0 or int(plan["drivetrain"]) >= 0:
 			adjust += 1
-		elif bool(plan["underpowered"]):
-			underpowered += 1
-	return {"total": total, "qualify": qualify, "adjust": adjust, "underpowered": underpowered}
+	return {"total": total, "qualify": qualify, "adjust": adjust}
 
 
 func _hide_detail() -> void:
@@ -3016,25 +2985,6 @@ func _show_over_limit_prompt(_owned: Dictionary) -> void:
 		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
 
 
-# An underpowered focused car (eligible, but sitting far below the class power ceiling
-# even at its full achievable p/w) looks eligible in the park; pressing Start pops this
-# NON-blocking warning instead of launching straight away. Unlike "Too powerful",
-# underpower is not a hard block: "Start Anyway" runs the rally as-is; "Change Upgrades"
-# opens the gated upgrades menu (where the player can fit more power); "Cancel" backs out.
-func _show_underpower_prompt(warn: String) -> void:
-	_active_carpark_popup = ConfirmPopup.open(self, "Underpowered", "%s\n\nStart anyway?" % warn,
-		[ {"label": "Start Anyway", "callback": _confirm_underpower_start},
-		  {"label": "Change Upgrades", "callback": _detune_change_upgrades},
-		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
-
-
-# "Start Anyway" from the underpower warning: skip the gate and launch the rally. Any
-# qualifying drivetrain switch was already applied in _on_start_pressed before the
-# warning showed, so proceeding straight to the start flow is correct.
-func _confirm_underpower_start() -> void:
-	await _proceed_with_start()
-
-
 # Whether a car-park modal overlay (detune prompt / Change-Upgrades popup) is showing,
 # so _unhandled_input hands navigation to its MenuNav instead of the lineup beneath.
 func _carpark_modal_open() -> bool:
@@ -3151,13 +3101,19 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	# The p/w gate is a ceiling only (no hard floor — an underpowered car can still
-	# enter, it just gets a start-line warning). The authored ceiling is already in
-	# hp/tonne (RallyLibrary converts a car's kW/kg to hp/tonne before comparing), the
-	# same unit as every player-facing p/w readout (the car stats + the detune slider),
-	# so display it straight — no conversion here.
-	if restriction.has("pw_max"):
+	# The p/w gate is a band: pw_min..pw_max (either edge may be absent). A car must sit
+	# inside it — over pw_max is capped out (detune to duck under), under pw_min is
+	# ineligible. Both edges are authored in hp/tonne (RallyLibrary converts a car's kW/kg
+	# to hp/tonne before comparing), the same unit as every player-facing p/w readout (the
+	# car stats + the detune slider), so display them straight — no conversion here.
+	var has_min: bool = restriction.has("pw_min")
+	var has_max: bool = restriction.has("pw_max")
+	if has_min and has_max:
+		parts.append("power-to-weight %.0f–%.0f hp/tonne" % [float(restriction["pw_min"]), float(restriction["pw_max"])])
+	elif has_max:
 		parts.append("power-to-weight <= %.0f hp/tonne" % float(restriction["pw_max"]))
+	elif has_min:
+		parts.append("power-to-weight >= %.0f hp/tonne" % float(restriction["pw_min"]))
 	return ", ".join(parts)
 
 
@@ -3284,17 +3240,9 @@ func _on_start_pressed() -> void:
 	if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
 		_show_over_limit_prompt(owned)
 		return
-	# A car that would race far under the class power ceiling (below PW_WARN_FRACTION of
-	# the rally's pw_max, even at its full achievable p/w) gets a NON-blocking warning
-	# here at car selection — it can still start. Judged at full potential (the same
-	# _full_potential_meta the pin flag / "N underpowered" caption use), so only a
-	# genuinely weak car warns, not one the player has reversibly detuned. Any qualifying
-	# drivetrain switch was already applied above, so `owned` reflects it.
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var warn := RallyLibrary.underpower_warning(rally, _full_potential_meta(owned, entry))
-	if warn != "":
-		_show_underpower_prompt(warn)
-		return
+	# A car below the class p/w floor is now INELIGIBLE (the floor is judged at the car's
+	# max potential), so it never reaches the car-park lineup — there's no under-powered
+	# start to warn about here anymore (the old soft "Underpowered" prompt is retired).
 	await _proceed_with_start()
 
 

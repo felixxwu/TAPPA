@@ -435,21 +435,23 @@ func test_launch_proceeds_when_the_car_is_eligible() -> void:
 	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
 
 
-# The underpower warning now lives at car selection in HQ (see test_menu_flow.gd →
-# test_hq_carpark_warns_on_underpowered_car), NOT here at the start line — an
-# underpowered but otherwise-eligible car launches straight through the start line.
-func test_underpowered_car_launches_without_a_start_line_warning() -> void:
+func test_under_band_car_cannot_start() -> void:
+	# The p/w band floor is a HARD gate now: a car below the floor is INELIGIBLE, so launch
+	# is blocked with a "Can't start" popup (the old non-blocking "start anyway" underpower
+	# warning — which briefly moved to HQ car selection — is retired: there is no
+	# eligible-but-underpowered state anymore).
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
 	RallySession.start_rally(_rally(), owned, true)
 	var sl := _make(_leaders())
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
-	sl._rally = {"restriction": {"pw_max": pw / RallyLibrary.PW_WARN_FRACTION * 1.5}}
+	# A band whose floor sits well above the car's p/w -> under-powered -> ineligible.
+	sl._rally = {"restriction": {"pw_min": pw * 1.5}}
 	sl.launch()
-	assert_true(sl.has_launched(), "an underpowered (but eligible) car launches — the warning moved to car selection")
-	assert_eq(sl.find_children("*", "ConfirmPopup", true, false).size(), 0,
-		"no start-line popup for an underpowered car anymore")
+	assert_false(sl.has_launched(), "an under-floor (underpowered) car is ineligible and does not launch")
+	var popups := sl.find_children("*", "ConfirmPopup", true, false)
+	assert_eq(popups.size(), 1, "an ineligible car shows a Can't start popup")
 
 
 # --- Pre-race menus (unchanged behaviour) ------------------------------------

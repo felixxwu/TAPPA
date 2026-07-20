@@ -547,8 +547,11 @@ stars in the box remain the exact readout. Each
 unlocked pin carries **two** pickable `Area3D` hit spheres bound to the same handler
 (`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the floating
 **readout box itself**, so a click on the menu enters the rally just like a click on
-the flag — plus its `rally_id`/`locked` in metadata; the **showdown** pin is grey +
-**non-pickable** until every other rally is completed. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
+the flag — plus its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
+whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`): the **showdown** until
+every other rally in its region is completed, and any rally whose **`reveal_after`**
+(intra-region reveal order) hasn't been met — a "coming up" hint so a region reveals
+~1–2 fresh rallies at a time rather than all at once. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on
 **release** and only if the press wasn't a drag (`_table_dragged`), so panning never
@@ -563,8 +566,8 @@ region tag, and a gold **SHOWDOWN** chip on showdown rallies. **Left column
 "combined time sets your result" note. **Right column:** the eligible-cars **restriction** (the
 power-to-weight gate, not the hidden difficulty tier); an **eligibility read-out**
 — `_eligibility_summary(rally, owned)` tallies **"N of M cars qualify"** (GREEN,
-or RED "no cars qualify") with GOLD cautions for how many **need a tune / swap to
-fit** or are **underpowered** — and a **YOUR RECORD** line (best finish + a
+or RED "no cars qualify") with a GOLD caution for how many **need a tune / swap to
+fit** — and a **YOUR RECORD** line (best finish + a
 `StarRow`). Everything is uppercase + one font size (`UITheme.enforce`), so
 hierarchy comes from **layout, colour, and separators**, not font size. The
 summary is tallied on top of `_entry_plan` so it always agrees with the map pin.
@@ -638,28 +641,20 @@ hands its gated `request_close` as `on_back` so Esc is gated too), and `_carpark
 modal instead of the lineup beneath. The fix the player makes in the upgrades menu is
 an ordinary garage edit and **persists after the rally** — there is no longer a
 temporary, per-rally, auto-reverted detune here (the old **Detune to N%** button and
-its `RallySession.register_detune_revert` agreement are gone). Rallies have no hard
-power floor, so an underpowered car can still enter a higher class — it just gets a
-**non-blocking "Underpowered" warning here at car selection** (moved earlier from the
-start line, so the player is told before committing to the run). An eligible-but-weak
-focused car also **looks eligible** (no warning label, plain enabled Start); pressing
-Start pops an on-brand modal (`_show_underpower_prompt`, `RallyLibrary.underpower_warning`
-supplies the "N hp/t, M+ recommended" body) with three left/right-navigable buttons:
-**Start Anyway** (`_confirm_underpower_start` → launches the run as-is), **Change Upgrades**
-(reuses `_detune_change_upgrades` → the gated upgrades popup, where the player can fit more
-power), and **Cancel**. Unlike the "Too powerful" modal this is **not** a hard block —
-Start Anyway always launches. The map pin's green
-"raceable" pennant counts these detunable cars too (`_has_eligible_car` builds on
-`_entry_plan`) — **but a car that only qualifies underpowered does NOT make the pin
-green**: if every eligible car is underpowered, the rally reads as unavailable
-(grey), same as owning no eligible car, nudging the player to field enough grunt.
-Underpower here is judged at the car's **max achievable power-to-weight**
-(`_full_potential_meta`: 100% engine tune + every *installed* upgrade enabled +
-freely-removable **ballast dropped** — never inventing un-unlocked parts), so a car
-that's merely detuned, has parts toggled off, or is carrying ballast the player can
-shed is never wrongly branded underpowered. Rivals respect the same floor: the
-opponent field is drawn from `RallyLibrary._fieldable_cars` (eligible **and** not
-underpowered), so no AI rival turns up in a car far below the class ceiling. A **banner** names the rally + restriction; **Start** records the
+its `RallySession.register_detune_revert` agreement are gone). Rallies gate p/w as a
+**band** (`pw_min`..`pw_max`), and the **floor is judged at the car's MAX potential**
+(`UpgradeLibrary.max_potential_meta`: 100% engine tune + every *installed* upgrade
+enabled + freely-removable **ballast dropped** — never inventing un-installed parts),
+passed to `RallyLibrary.is_eligible` as its `floor_meta`. So a car that's merely detuned,
+has parts toggled off, or is carrying ballast the player can shed is **eligible** as long
+as maxing it out clears the floor — the player will tune up to enter, the mirror of an
+over-cap car detuning down. A car whose max potential is still under the floor is
+**ineligible outright** (the old soft "underpowered" warning and the "N underpowered for
+the class" detail caution are retired — there is no eligible-but-underpowered state now).
+The map pin's green "raceable" pennant counts every owned in-band (or tunable-into-band)
+car (`_has_eligible_car` builds on `_entry_plan`). Rivals field only in-band cars: the
+opponent field is drawn from `RallyLibrary._eligible_cars` (the restriction's in-band
+pool). A **banner** names the rally + restriction; **Start** records the
 fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
 so the tuning lift shows the car last raced), shows the
 `LoadingScreen` overlay immediately and (after a fully presented frame, so it paints)

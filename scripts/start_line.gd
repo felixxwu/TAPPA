@@ -697,7 +697,11 @@ func launch() -> void:
 		if not owned.is_empty():
 			var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
-			var reason := RallyLibrary.ineligibility_reason(_rally, meta)
+			# The pw_min floor is judged at the car's MAX potential (the player will tune
+			# up to enter), matching the car-park check; the ceiling stays on the current
+			# meta (an over-cap car routes to the detune prompt below).
+			var floor_meta := UpgradeLibrary.max_potential_meta(owned, entry)
+			var reason := RallyLibrary.ineligibility_reason(_rally, meta, floor_meta)
 			if reason != "":
 				var frac := _rally_qualifying_detune(owned)
 				var over_power := frac > 0.0 and frac < 1.0

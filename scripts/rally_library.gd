@@ -71,21 +71,24 @@ static func _pace_band(tier: int) -> Vector2:
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
 # (every car eligible); otherwise every present field must match the car's
 # CarLibrary metadata. Progression is PRIMARILY gated on power-to-weight: every
-# non-showdown rally carries a `pw_max` ceiling so an over-powered car can't walk
-# it. There is no hard floor — a car well under the ceiling can still enter, but
-# the start line warns the player it's underpowered (see `underpower_warning`,
-# fired below PW_WARN_FRACTION of `pw_max`). A rally may layer a
-# secondary theme on top of its p/w ceiling (e.g. RWD Masters also wants `drive_mode`
-# RWD). `difficulty` is a HIDDEN tier (never shown to the player) that drives the
-# reward tier (clamped by progress) and sort order — the p/w gate is the visible
-# requirement. `events` is exactly 3 EventDefs (the showdown's are longer). Each
-# region (see RegionLibrary, `region` tag) has exactly one entry with
+# non-showdown rally is a `pw_min`..`pw_max` BAND (both in hp/tonne), so a car must
+# sit inside the band to enter — an over-powered car is capped out (it can duck under
+# `pw_max` via detune, see `qualifying_detune`) and an under-powered one is simply
+# ineligible (the band floor IS the power floor — there is no separate soft warning).
+# A rally may layer a secondary theme on top of its band (e.g. RWD Masters also wants
+# `drive_mode` RWD). `difficulty` is a HIDDEN tier (never shown to the player) that
+# drives the reward tier (clamped by progress) and sort order — the p/w band is the
+# visible requirement. `reveal_after` (int, default 0) is the intra-region reveal gate:
+# the rally's pin stays hidden until the player has completed that many rallies in the
+# SAME region, so a region reveals ~1-2 fresh rallies at a time instead of dumping them
+# all at once (see `rally_revealed`). `events` is exactly 3 EventDefs (the showdown's are
+# longer). Each region (see RegionLibrary, `region` tag) has exactly one entry with
 # `showdown = true`, kept open-class so the low-power starter can always finish it.
 const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Shakedown", "region": "home", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
-		"restriction": {"pw_max": 180.0},  # a low p/w ceiling — the starter's home (ceiling clears the MX-5 ~159 / XJS ~175 hp/t)
+		"restriction": {"pw_min": 100.0, "pw_max": 180.0},  # band: the starter's home (Focus ~114 / MX-5 ~159 / XJS ~175 hp/t)
 		"events": [
 			{"seed": 1007, "turn_count": 15, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.0, "terrain_layer2_amplitude": 3.0},
 			{"seed": 1008, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0, "straightness": 0.8, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.3, "terrain_layer2_amplitude": 3.0},
@@ -95,9 +98,9 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "front_runners", "name": "Front Runners", "region": "home", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.26, 0.6),
-		# FWD intro rally: a low p/w ceiling that welcomes both FWD starters (Twingo ~82,
-		# Focus ~114 hp/t) — the FWD home (parallels Shakedown for the MX-5).
-		"restriction": {"drive_mode": CarLibrary.FWD, "pw_max": 132.0},
+		# FWD intro rally: a band for the FWD starters (Twingo ~82, Focus ~114 hp/t) — the
+		# FWD home (parallels Shakedown for the MX-5).
+		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 80.0, "pw_max": 140.0},
 		"events": [
 			{"seed": 1101, "turn_count": 15, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 14.6},
 			{"seed": 1102, "turn_count": 15, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 15.4},
@@ -106,8 +109,9 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "region": "home", "difficulty": 2, "showdown": false,
+		"reveal_after": 2,
 		"map_pos": Vector2(0.34, 0.5),
-		"restriction": {"pw_max": 210.0},  # a slightly higher p/w ceiling
+		"restriction": {"pw_min": 150.0, "pw_max": 230.0},  # band above Shakedown: MX-5/XJS + Charger/911
 		"events": [
 			{"seed": 2004, "turn_count": 18, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.2},
 			{"seed": 2005, "turn_count": 18, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65, "water_level": -5.0, "terrain_layer1_amplitude": 17.5},
@@ -116,9 +120,10 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "rwd_masters", "name": "RWD Masters", "region": "home", "difficulty": 3, "showdown": false,
+		"reveal_after": 3,
 		"map_pos": Vector2(0.52, 0.64),
-		# p/w ceiling (primary gate) + an RWD theme: a mid-power rear-driven field.
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
+		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 170.0, "pw_max": 270.0},  # XJS/Charger/911/Viper
 		"events": [
 			{"seed": 3001, "turn_count": 22, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 20.7},
 			{"seed": 3012, "turn_count": 22, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 21.6},
@@ -132,8 +137,9 @@ const RALLIES: Array[Dictionary] = [
 		# country gate went and the band alone now hosts the stock heavy hitters
 		# (Charger ~216, 911 ~220, Viper ~264 hp/tonne — the Viper's only stock rally).
 		"id": "rising_sun", "name": "Heavy Hitters", "region": "home", "difficulty": 3, "showdown": false,
+		"reveal_after": 4,
 		"map_pos": Vector2(0.82, 0.34),
-		"restriction": {"pw_max": 301.0},
+		"restriction": {"pw_min": 210.0, "pw_max": 320.0},  # Charger/911/Viper
 		"events": [
 			{"seed": 4001, "turn_count": 25, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 16.4},
 			{"seed": 4004, "turn_count": 25, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7, "water_level": -5.0, "terrain_layer1_amplitude": 15.8},
@@ -141,9 +147,10 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "grand_tour", "name": "Grand Tour", "region": "home", "difficulty": 3, "showdown": false,
+		"id": "grand_tour", "name": "Grand Tour", "region": "home", "difficulty": 4, "showdown": false,
+		"reveal_after": 5,
 		"map_pos": Vector2(0.66, 0.28),
-		"restriction": {"pw_max": 378.0},  # the top non-showdown p/w ceiling (The Beast derives to ~350 hp/t)
+		"restriction": {"pw_min": 260.0, "pw_max": 400.0},  # the top non-showdown band: Viper ~264 / The Beast ~350
 		"events": [
 			{"seed": 1003214539, "turn_count": 30, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 23.1},
 			{"seed": 5004, "turn_count": 30, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 22.4},
@@ -152,9 +159,12 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "american_muscle", "name": "American Muscle", "region": "home", "difficulty": 2, "showdown": false,
+		"reveal_after": 2,
 		"map_pos": Vector2(0.42, 0.38),
-		# US-built muscle only, under a mid p/w ceiling — the Charger's home turf.
-		"restriction": {"country": "US", "car_type": "muscle", "pw_max": 266.0},
+		# US-built performance, in a mid/high-power band — the home of the American V8/V10s
+		# (Charger ~216, Viper ~264). Country-gated, not car_type-gated, so it fields more
+		# than a single car.
+		"restriction": {"country": "US", "pw_min": 150.0, "pw_max": 300.0},
 		"events": [
 			{"seed": 6001, "turn_count": 30, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 13.5},
 			{"seed": 6002, "turn_count": 30, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.9},
@@ -164,9 +174,9 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shitbox_cup", "name": "Sh*tbox Cup", "region": "home", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.12, 0.48),
-		# Gated ONLY from above, below even Shakedown's floor: a sub-91 hp/tonne p/w
-		# ceiling that only the true shitboxes (Twingo, Acty) squeeze under.
-		"restriction": {"pw_max": 91.0},
+		# The bottom band, below even Shakedown: a sub-100 hp/tonne class the true
+		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
+		"restriction": {"pw_min": 40.0, "pw_max": 100.0},
 		"events": [
 			{"seed": 7031, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 10.6, "terrain_layer2_amplitude": 5.0},
 			{"seed": 7002, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 11.4, "terrain_layer2_amplitude": 5.0},
@@ -187,7 +197,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "gr_olive_coast", "name": "Olive Coast", "region": "greece", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.30, 0.62),
-		"restriction": {"pw_max": 230.0},
+		"restriction": {"pw_min": 150.0, "pw_max": 230.0},
 		"events": [
 			{"seed": 21001, "turn_count": 13, "forestiness": 0.75, "surface_mix": 0.25, "straightness": 0.4, "cliffiness": 0.5},
 			{"seed": 21002, "turn_count": 14, "forestiness": 0.65, "surface_mix": 0.15, "straightness": 0.3, "cliffiness": 0.6},
@@ -196,8 +206,9 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "gr_mountain_pass", "name": "Mountain Pass", "region": "greece", "difficulty": 3, "showdown": false,
+		"reveal_after": 1,
 		"map_pos": Vector2(0.52, 0.44),
-		"restriction": {"pw_max": 301.0},
+		"restriction": {"pw_min": 210.0, "pw_max": 320.0},
 		"events": [
 			{"seed": 22001, "turn_count": 15, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.8},
 			{"seed": 22002, "turn_count": 16, "forestiness": 0.75, "surface_mix": 0.05, "straightness": 0.15, "cliffiness": 0.9},
@@ -206,8 +217,9 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "gr_ancient_ruins", "name": "Ancient Ruins", "region": "greece", "difficulty": 3, "showdown": false,
+		"reveal_after": 2,
 		"map_pos": Vector2(0.70, 0.58),
-		"restriction": {"pw_max": 378.0},
+		"restriction": {"pw_min": 260.0, "pw_max": 400.0},
 		"events": [
 			{"seed": 23001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.2, "straightness": 0.3, "cliffiness": 0.7},
 			{"seed": 23002, "turn_count": 17, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.85},
@@ -297,7 +309,14 @@ static func event_cliffiness(event: Dictionary) -> float:
 # effective stats (UpgradeLibrary.effective_meta) so an installed engine kit or
 # weight reduction can qualify / disqualify it via the pw_max ceiling; the
 # raw CARS entry is only the right input for an unmodified roster car (rivals).
-static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary) -> String:
+# `floor_meta` (optional) lets the caller judge the pw_MIN floor against a DIFFERENT meta
+# than the ceiling / secondary fields — pass a car's MAX-potential meta
+# (UpgradeLibrary.max_potential_meta) so a currently-detuned or ballasted owned car isn't
+# ruled "too weak" when maxing it out would clear the floor (the player will always tune up
+# to enter, just as an over-cap car detunes down to duck the ceiling). Defaults to car_meta
+# — a plain point check for stock catalogue cars / rivals / synthetic tests, where current
+# stats already ARE the car's potential.
+static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary, floor_meta: Dictionary = {}) -> String:
 	var r: Dictionary = rally.get("restriction", {})
 	if r.is_empty():
 		return ""
@@ -312,37 +331,20 @@ static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary) -> Str
 		return "Engine too small for this class"
 	if r.has("engine_max_l") and disp > float(r["engine_max_l"]):
 		return "Engine too large for this class"
-	# power_to_weight is kW/kg; the authored ceiling is hp/tonne — convert before comparing.
+	# power_to_weight is kW/kg; the authored band edges are hp/tonne — convert before comparing.
 	var pw := CarLibrary.power_to_weight(car_meta) * KW_KG_TO_HP_TONNE
 	if r.has("pw_max") and pw > float(r["pw_max"]):
 		return "Power-to-weight too high (%d hp/t, max %d)" % [roundi(pw), roundi(float(r["pw_max"]))]
+	if r.has("pw_min"):
+		# The floor is judged at the car's MAX potential when the caller supplies floor_meta.
+		var floor_pw := pw if floor_meta.is_empty() else CarLibrary.power_to_weight(floor_meta) * KW_KG_TO_HP_TONNE
+		if floor_pw < float(r["pw_min"]):
+			return "Power-to-weight too low (%d hp/t, min %d)" % [roundi(floor_pw), roundi(float(r["pw_min"]))]
 	return ""
 
 
-static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
-	return ineligibility_reason(rally, car_meta) == ""
-
-
-# Fraction of a rally's `pw_max` ceiling below which a fielded car counts as
-# underpowered. The car is still eligible (there is no hard floor); this only
-# drives a non-blocking start-line warning.
-const PW_WARN_FRACTION := 0.75
-
-
-# A warning shown when `car_meta` may field a rally but its power-to-weight sits far
-# below the class ceiling (< PW_WARN_FRACTION of `pw_max`) — the player can still
-# start, they're just underpowered. Returns "" when there's no ceiling or the car is
-# strong enough. `car_meta` is the effective (UpgradeLibrary.effective_meta) stats, as
-# with ineligibility_reason.
-static func underpower_warning(rally: Dictionary, car_meta: Dictionary) -> String:
-	var r: Dictionary = rally.get("restriction", {})
-	if not r.has("pw_max"):
-		return ""
-	var pw := CarLibrary.power_to_weight(car_meta) * KW_KG_TO_HP_TONNE
-	var recommended := float(r["pw_max"]) * PW_WARN_FRACTION
-	if pw >= recommended:
-		return ""
-	return "Underpowered for this class (%d hp/t, %d+ recommended)" % [roundi(pw), roundi(recommended)]
+static func is_eligible(rally: Dictionary, car_meta: Dictionary, floor_meta: Dictionary = {}) -> bool:
+	return ineligibility_reason(rally, car_meta, floor_meta) == ""
 
 
 # The largest engine-detune fraction at which a car passes `rally`'s restriction,
@@ -466,7 +468,7 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 static func generate_opponent_field(rally: Dictionary, event_results: Array, events: Array) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rally_seed(rally)
-	var car_pool := _fieldable_cars(rally)  # eligible AND not underpowered for the class
+	var car_pool := _eligible_cars(rally)  # in-band (the band floor is the power floor now)
 	var count := rng.randi_range(FIELD_MIN, FIELD_MAX)
 	var band := _pace_band(int(rally.get("difficulty", 1)))
 	var field: Array = []
@@ -567,21 +569,6 @@ static func _eligible_cars(rally: Dictionary) -> Array:
 	return pool if not pool.is_empty() else CarLibrary.all()
 
 
-# The cars a rally actually FIELDS its rivals in: eligible AND not underpowered. A rival
-# shouldn't turn up in a car far below the class power ceiling, mirroring the player-side
-# rule that a rally whose only cars are underpowered isn't raceable. underpower_warning
-# reads the stock-boosted effective meta — the SAME meta the rival drives with in
-# generate_opponent_field — so the filter matches actual pace. Open-class rallies have no
-# ceiling, so nothing is filtered there. Falls back to the plain eligible pool in the
-# degenerate case where every eligible car is underpowered, so a field is always fielded.
-static func _fieldable_cars(rally: Dictionary) -> Array:
-	var pool: Array = []
-	for entry in _eligible_cars(rally):
-		if underpower_warning(rally, UpgradeLibrary.effective_meta({}, entry)) == "":
-			pool.append(entry)
-	return pool if not pool.is_empty() else _eligible_cars(rally)
-
-
 # CarLibrary.all() indices a rally's restriction admits — the pool an index-based
 # spawner (the start-line queue props, start_line.gd) draws its cars from, so the
 # cars bookending the player are always eligible for the rally. Derived from the same
@@ -676,6 +663,36 @@ static func completed_count(profile: Dictionary) -> int:
 	return n
 
 
+# Count of completed NON-SHOWDOWN rallies in a region — the wave metric that drives
+# reveal_after (intra-region reveal order). A completed showdown doesn't count (it's the
+# finale, gated separately).
+static func _completed_in_region(region_id: String, profile: Dictionary) -> int:
+	var rallies: Dictionary = profile.get("rallies", {})
+	var n := 0
+	for rally in all():
+		if String(rally.get("region", "")) != region_id or bool(rally.get("showdown", false)):
+			continue
+		if rallies.get(rally["id"], {}).get("completed", false):
+			n += 1
+	return n
+
+
+# Whether a rally's pin is REVEALED (enterable) yet. A non-showdown rally reveals once
+# the player has completed `reveal_after` rallies in its own region (intra-region reveal
+# order — keeps ~1-2 fresh rallies enterable at a time even when the garage is broad, so a
+# newly-unlocked region doesn't dump all its rallies at once); a showdown reveals on its
+# region's showdown gate. The single reveal predicate shared by the map pins (hq.gd), the
+# anti-soft-lock eligibility query, and the reward-draw walk. (Completion is a separate
+# check the callers do — a revealed rally may still be incomplete or already done.)
+static func rally_revealed(rally: Dictionary, profile: Dictionary) -> bool:
+	if bool(rally.get("showdown", false)):
+		return RegionLibrary.rally_showdown_gate_open(rally, profile)
+	var need := int(rally.get("reveal_after", 0))
+	if need <= 0:
+		return true
+	return _completed_in_region(String(rally.get("region", "")), profile) >= need
+
+
 # The showdown is enterable only when every non-showdown rally is completed.
 static func showdown_unlocked(profile: Dictionary) -> bool:
 	var rallies: Dictionary = profile.get("rallies", {})
@@ -688,16 +705,16 @@ static func showdown_unlocked(profile: Dictionary) -> bool:
 
 
 # Anti-soft-lock query for the reward system: the still-incomplete rallies a
-# given car can currently enter (eligible, and each rally's own region's
-# showdown only if THAT region's showdown is unlocked).
-static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dictionary) -> Array:
+# given car can currently enter (revealed — reveal_after met and, for a showdown,
+# its region's showdown unlocked — and eligible in-band).
+static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dictionary, floor_meta: Dictionary = {}) -> Array:
 	var rallies: Dictionary = profile.get("rallies", {})
 	var out: Array = []
 	for rally in all():
 		if rallies.get(rally["id"], {}).get("completed", false):
 			continue
-		if not RegionLibrary.rally_showdown_gate_open(rally, profile):
+		if not rally_revealed(rally, profile):
 			continue
-		if is_eligible(rally, car_meta):
+		if is_eligible(rally, car_meta, floor_meta):
 			out.append(rally)
 	return out

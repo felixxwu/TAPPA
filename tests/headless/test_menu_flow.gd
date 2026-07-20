@@ -1571,62 +1571,41 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 		"Change Upgrades opens the upgrades popup")
 
 
-func test_hq_carpark_warns_on_underpowered_car() -> void:
-	# A car that is ELIGIBLE for a rally but sits far below the class power ceiling
-	# (below PW_WARN_FRACTION of pw_max, even at its full achievable p/w) parks and looks
-	# eligible; pressing Start pops a NON-blocking "Underpowered" warning offering Start
-	# Anyway / Change Upgrades / Cancel. The warning now lives HERE at car selection —
-	# not at the start line — so the player is told before committing to the run.
+func test_hq_carpark_excludes_a_car_below_the_band_floor() -> void:
+	# A car below a rally's p/w BAND floor — even at its MAX potential (full tune + kits
+	# enabled + ballast dropped) — is INELIGIBLE, so it never parks in the rally's eligible
+	# lineup. This is the observable consequence of the retired soft "Underpowered but Start
+	# Anyway" prompt: there is no eligible-but-underpowered state to warn about anymore.
+	# Derived from the car's own max-potential figure so it's not pinned to authored stats.
 	var owned: Dictionary = _save.profile["cars"][0]
 	var id := int(owned["instance_id"])
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	# A cap set well above the car's best achievable p/w: it's eligible (under the cap)
-	# yet underpowered (below 0.75x it). Derived from the car's own figure, not pinned.
-	var pw := CarLibrary.power_to_weight(hq._full_potential_meta(owned, entry)) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.max_potential_meta(owned, entry)) * RallyLibrary.KW_KG_TO_HP_TONNE
 	var rallies: Array[Dictionary] = [
 		{
-			"id": "fx_underpowered", "name": "Fixture Underpowered", "difficulty": 1, "showdown": false,
+			"id": "fx_high_band", "name": "Fixture High Band", "difficulty": 2, "showdown": false,
 			"map_pos": Vector2(0.4, 0.4),
-			"restriction": {"pw_max": pw / RallyLibrary.PW_WARN_FRACTION * 1.5},
+			# A band whose FLOOR sits above the car's max potential -> ineligible.
+			"restriction": {"pw_min": pw * 1.5},
 			"events": [
 				{"seed": 31, "turn_count": 4}, {"seed": 32, "turn_count": 4}, {"seed": 33, "turn_count": 4},
 			],
 		},
 	]
 	RallyLibrary.override_for_test(rallies)
-	hq._on_rally_pin("fx_underpowered")
+	hq._on_rally_pin("fx_high_band")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	await _await_lineup(hq)
-	# The car parks and is under the cap (no detune agreement) — it just lacks grunt.
 	var idx := -1
 	for i in hq._eligible.size():
 		if int(hq._eligible[i]["instance_id"]) == id:
 			idx = i
-	assert_gt(idx, -1, "the underpowered car parks in the eligible lineup")
-	hq._focus = idx
-	hq._focus_changed()
-	assert_false(hq._detune_needed.has(id), "an underpowered car is under the cap — no detune agreement")
-	# Press Start: a NON-blocking Underpowered warning pops instead of launching.
-	await hq._on_start_pressed()
-	assert_true(is_instance_valid(hq._active_carpark_popup),
-		"pressing Start on an underpowered car pops the warning")
-	assert_false(RallySession.is_active(), "the rally waits on the warning — it doesn't launch straight away")
-	var popup: ConfirmPopup = hq._active_carpark_popup
-	assert_string_contains(popup._buttons[0].text.to_upper(), "START ANYWAY",
-		"the first choice is the non-blocking Start Anyway")
-	var offers_change := false
-	for b in popup._buttons:
-		if "change upgrades" in (b as Button).text.to_lower():
-			offers_change = true
-	assert_true(offers_change, "the warning also routes to Change Upgrades")
-	# Start Anyway launches the rally as-is (the car is eligible, just weak).
-	await hq._confirm_underpower_start()
-	assert_true(RallySession.is_active(), "Start Anyway launches the underpowered car's rally")
-	assert_eq(RallySession.rally_id(), "fx_underpowered", "the chosen rally runs")
+	assert_eq(idx, -1, "a car below the band floor (even at max potential) is not in the eligible lineup")
+	RallyLibrary.reset()
 
 
 func test_swap_car_qualifies_for_restricted_rally() -> void:

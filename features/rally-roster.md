@@ -20,29 +20,39 @@ Each `RALLIES` entry:
 - `restriction` — a `Dictionary`; **empty = open-class** (every car eligible).
   Otherwise every present field must match the car's CarLibrary metadata:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
-  `engine_displacement_l`), `pw_max` (vs `CarLibrary.power_to_weight`,
-  derived from the referenced `EngineLibrary` engine's torque + redline (× the
-  global `TORQUE_POWER_FALLOFF` calibration, boosted torque for turbos via
-  `effective_meta`), so the gate compares against the same hp/tonne shown on
-  the stats panels — within ~±8% of the cars' real published figures —
-  see [engine-and-transmission.md](engine-and-transmission.md)). The `pw_max`
-  ceiling is **authored in hp/tonne** — the same unit shown on every player-facing p/w
-  readout — so a designer tunes it in the numbers on screen; `is_eligible` converts a
-  car's `power_to_weight` (kW/kg) to hp/tonne via `RallyLibrary.KW_KG_TO_HP_TONNE` before comparing.
-  **Progression is primarily gated on power-to-weight, from above only:** every
-  non-showdown rally carries a `pw_max` ceiling (so an over-powered car can't walk
-  it) but **no hard floor** — a car far under the ceiling is still eligible; it just
-  triggers a non-blocking "Underpowered" warning at **car selection in the HQ car
-  park** when its p/w is below `RallyLibrary.PW_WARN_FRACTION` (0.75) of `pw_max` (see
-  `RallyLibrary.underpower_warning`, surfaced by `hq.gd._show_underpower_prompt`). A rally may
-  layer a secondary theme on top of its ceiling (e.g. RWD Masters also wants
+  `engine_displacement_l`), and a **power-to-weight band** `pw_min`..`pw_max` (vs
+  `CarLibrary.power_to_weight`, derived from the referenced `EngineLibrary` engine's
+  torque + redline (× the global `TORQUE_POWER_FALLOFF` calibration, boosted torque
+  for turbos via `effective_meta`), so the gate compares against the same hp/tonne
+  shown on the stats panels — within ~±8% of the cars' real published figures —
+  see [engine-and-transmission.md](engine-and-transmission.md)). Both band edges are
+  **authored in hp/tonne** — the same unit shown on every player-facing p/w readout —
+  so a designer tunes them in the numbers on screen; `is_eligible` converts a car's
+  `power_to_weight` (kW/kg) to hp/tonne via `RallyLibrary.KW_KG_TO_HP_TONNE` before comparing.
+  **Progression is primarily gated on power-to-weight as a BAND:** every non-showdown
+  rally carries a `pw_min`..`pw_max` band, so a car must sit inside it — an over-powered
+  car is **capped out** (it can duck under `pw_max` by detuning, see `qualifying_detune`)
+  and an **under-powered** car is **ineligible outright** (the band floor IS the power
+  floor — there is no separate soft "underpowered" warning; that was retired with the
+  hard floor). **The floor is judged at a car's MAX potential:** callers pass a
+  `floor_meta` (the car's `UpgradeLibrary.max_potential_meta` — full engine tune, every
+  installed kit enabled, ballast removed) so a car detuned or ballasted to fit a *lower*
+  rally isn't ruled too weak for a *higher* one it could reach by tuning up (the player
+  always can, for free — the mirror of ducking the ceiling). `floor_meta` defaults to the
+  passed meta (a plain point check) for stock catalogue cars / rivals / synthetic tests.
+  A rally may layer a secondary theme on top of its band (e.g. RWD Masters also wants
   `drive_mode` RWD, and **Front Runners** — the home of the FWD starters (Focus,
-  Twingo) — wants `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally
-  parallel to the Shakedown for the MX-5), and **American Muscle** wants `country`
-  US + `car_type` muscle on top of its ceiling — the Charger's home turf.
-  **Sh*tbox Cup** sits below even Shakedown: a `pw_max` 91 hp/tonne ceiling,
-  catering to the sub-91 hp/tonne shitboxes (Twingo, Acty). The single open-class
-  rally is the showdown.
+  Twingo) — wants `drive_mode` FWD, an intro-tier FWD rally parallel to the Shakedown
+  for the MX-5), and **American Muscle** wants `country` US on top of its band — the home
+  of the American V8/V10s (Charger, Viper). **Sh*tbox Cup** sits below even Shakedown: a
+  low band the true shitboxes (Acty, Twingo) fit. The single open-class rally is the showdown.
+- `reveal_after` — an `int` (default 0): the **intra-region reveal gate**. A non-showdown
+  rally's map pin stays locked (grey, non-pickable — a "coming up" hint) until the player
+  has completed that many rallies **in the same region**, so a region reveals ~1–2 fresh
+  rallies at a time instead of dumping them all at once when it unlocks (see
+  `RallyLibrary.rally_revealed` / `_completed_in_region`). Wave-0 rallies (`reveal_after`
+  omitted / 0) are visible from the start. Completed rallies stay farmable — this gates
+  first *reveal* only, never re-entry.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   forestiness?, surface_mix?, straightness?, cliffiness?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; the
@@ -105,9 +115,12 @@ generator also uses it per-rival.
 - `index_of(id)` / `by_id(id)` / `event_width(event)` / `event_forestiness(event)` /
   `event_tarmac_fraction(event)` / `event_straightness(event)` /
   `event_cliffiness(event)` — lookups.
-- `is_eligible(rally, car_meta)` — restriction match (open-class → always true).
-  `car_meta` is a CarLibrary entry, resolved by the owned car's stable
-  `model_id`. The menus' field-a-car rig and map pins filter on this.
+- `is_eligible(rally, car_meta, floor_meta := {})` — restriction match (open-class →
+  always true). `car_meta` is a CarLibrary entry, resolved by the owned car's stable
+  `model_id`. The optional `floor_meta` judges the `pw_min` floor at a different meta
+  (the car's `UpgradeLibrary.max_potential_meta`) so an owned car's floor is checked at
+  its max potential, not its current detuned/ballasted tune (defaults to `car_meta`). The
+  menus' field-a-car rig and map pins filter on this.
 - `qualifying_detune(rally, full_meta)` — the largest whole-percent
   `engine_detune` fraction at which a car passes the restriction: `1.0` when it's
   already eligible at full tune, `-1.0` when no detune can qualify it (a non-power
@@ -174,18 +187,23 @@ generator also uses it per-rival.
   completed. Superseded for region-scoped gating by
   `RegionLibrary.showdown_unlocked(region_id, profile)` (per-region form used
   by `hq.gd` and `reward_system.gd`); see [regions.md](regions.md).
-- `incomplete_rallies_enterable_by(car_meta, profile)` — the anti-soft-lock
-  query the reward system uses (incomplete ∧ eligible ∧ showdown-only-if-unlocked).
+- `rally_revealed(rally, profile)` / `_completed_in_region(region_id, profile)` — the
+  intra-region reveal gate (`reveal_after` met, and for a showdown its region unlocked).
+  Shared by the map pins, the enterable query, and the reward-draw walk.
+- `incomplete_rallies_enterable_by(car_meta, profile, floor_meta := {})` — the
+  anti-soft-lock query the reward system uses (incomplete ∧ revealed ∧ eligible in-band).
+  `floor_meta` (the owned car's max potential) judges the floor at max, as in `is_eligible`.
 
 ## Anti-soft-lock guarantees
 
 The roster underwrites two guards (asserted by tests): a **starter floor** — the
-starter (`mx5`, the lowest-power car) always has at least one non-showdown
-rally inside its power band to race, and the showdown stays open-class so it can
-finish the game even if it never earns another car — and the **reward-eligibility
-query** above, so the reward system never grants a car stranded with no enterable
-rally. (Before the p/w gating this floor was an open-class rally at every reachable
-tier; with the power ladder it's the starter-enterable guarantee instead.)
+weakest car by power-to-weight always has at least one non-showdown rally whose band
+it fits (the bottom band, Sh*tbox Cup, has a low floor for exactly this), and the
+showdown stays open-class so it can finish the game even if it never earns another
+car — and the **reward-eligibility query** above, so the reward system never grants a
+car stranded with no enterable rally. (Before the p/w gating this floor was an
+open-class rally at every reachable tier; with the power ladder it's the
+weakest-car-enterable guarantee instead.)
 
 ## Entering a rally (integration)
 
@@ -207,10 +225,11 @@ is deferred (cosmetic).
 ## Tests
 
 `tests/headless/test_rally_library.gd` — roster validity (unique ids, 3 events
-each, single showdown, the **starter floor**, and the **p/w gating** shape: every
-non-showdown rally caps p/w, tier-1 has no floor, tier-3+ uses a band), eligibility
-(open-class + drive_mode + country + power-to-weight filters, and
-`qualifying_detune`'s duck-under-the-cap / already-eligible / unfixable cases),
+each, single showdown, the **starter floor**), eligibility (open-class + drive_mode +
+country + power-to-weight **band** filters — floor + ceiling + ceiling-only + floor-only,
+the floor judged at a supplied `floor_meta` (max potential), and `qualifying_detune`'s
+duck-under-the-cap / already-eligible / unfixable cases), the **reveal-order** gate
+(`reveal_after` on region-local completion; the enterable query excludes unrevealed),
 track-gen
 determinism, target-time positivity + override, opponent-field
 shape/bounds/determinism + DNF semantics, placement/top-3, progress count, and

@@ -128,6 +128,13 @@ by the reward system) is region-aware: a rally's showdown is only offered as
 enterable once `RegionLibrary.showdown_unlocked(rally.region, profile)` is
 true for **that rally's own region** (`scripts/rally_library.gd` ~line 653-663).
 
+Within a region, non-showdown rallies also reveal in **waves**: `RallyLibrary.rally_revealed`
+gates a rally's map pin (and its enterability) behind its `reveal_after` count of
+**completed rallies in the same region** (`_completed_in_region`). So a freshly unlocked
+region surfaces ~1–2 rallies at a time instead of all at once — see
+[rally-roster.md](rally-roster.md) (`reveal_after`) and [menus.md](menus.md) (the grey
+"coming up" pin).
+
 ## Theming the driven world (`world.gd._apply_region_look`)
 
 Called from `_ready` immediately after `env.fog_sky_affect = cfg.fog_sky_affect`

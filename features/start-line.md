@@ -61,17 +61,15 @@ Phases (`StartLine.Seq`), driven in `_process`:
    and `StageManager.begin_countdown()` starts the countdown; then it **fades back in**.
 
 **Eligibility gate** — Pressing **Start** computes the car's effective stats and calls
-`RallyLibrary.ineligibility_reason(_rally, meta)`; if non-empty, launch is blocked with a
-`ConfirmPopup` (mirroring the HQ car park). Over the rally's **power-to-weight ceiling**
-with a detune that can admit it (`RallyLibrary.qualifying_detune` in `(0,1)`) → **"Too
-powerful"** popup offering **"Change Upgrades"** / **"Cancel"** (the gated Upgrades overlay
-won't close until the build is under the cap; a permanent garage edit — close → re-press
-Start). Any other reason → the reason with the same buttons. **No underpower warning
-here** — a car far below the class ceiling (`RallyLibrary.PW_WARN_FRACTION` = 0.75 of
-`pw_max`) is still no hard floor, but the non-blocking **"Underpowered"** popup now fires
-earlier, at **car selection in HQ** (`hq.gd` → `_show_underpower_prompt`, see
-`features/menus.md`), not here — by the time the start line runs the player has already
-committed to fielding the car.
+`RallyLibrary.ineligibility_reason(_rally, meta, floor_meta)` — where `floor_meta` is the
+car's `UpgradeLibrary.max_potential_meta`, so the `pw_min` floor is judged at the car's max
+potential (matching the car park); if non-empty, launch is blocked with a `ConfirmPopup`
+(mirroring the HQ car park). Over the rally's **power-to-weight ceiling** with a detune that
+can admit it (`RallyLibrary.qualifying_detune` in `(0,1)`) → **"Too powerful"** popup
+offering **"Change Upgrades"** / **"Cancel"** (the gated Upgrades overlay won't close until
+the build is under the cap; a permanent garage edit — close → re-press Start). Any other
+reason (including a car **under the band floor** even at max potential — the hard floor
+replaced the old soft "underpowered" warning) → the reason with the same buttons.
 
 **No opponents to reveal** — dev/test harnesses (and any event that somehow fields no rivals)
 pass an empty `leaders` list: no cars line up, the player is already on the line, and **Start

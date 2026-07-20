@@ -261,6 +261,34 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 	return out
 
 
+# The effective meta at the car's MAXIMUM ACHIEVABLE power-to-weight — the ceiling the
+# player can reach for FREE with what's already fitted: (1) engine tune forced to 100%
+# (undo any detune), (2) every installed upgrade enabled (a part toggled off is turned
+# back on), and (3) mass-ADDING ballast dropped (a `free` part the player can always
+# remove, so it never counts against the car's potential). It does NOT fit parts the
+# player hasn't installed. This is the meta a rally's pw_MIN floor is judged against
+# (RallyLibrary.is_eligible's `floor_meta`): a car detuned or ballasted to fit a LOWER
+# rally isn't "too weak" for a higher one if maxing it out clears the floor — the player
+# will always tune up to enter (mirrors how an over-cap car detunes DOWN to duck the
+# ceiling). Pure: builds a fresh owned-car dict, never mutates the input.
+static func max_potential_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
+	if meta.is_empty():
+		return meta
+	var maxed := owned_car.duplicate(true)
+	var tuning: Dictionary = (maxed.get("tuning", {}) as Dictionary).duplicate()
+	tuning["engine_detune"] = 1.0  # full power
+	maxed["tuning"] = tuning
+	maxed["disabled_upgrades"] = []  # enable every installed part...
+	var kept: Array = []
+	for item_id in maxed.get("installed_upgrades", []):
+		# ...except mass-adding ballast (baseline is lighter and always available).
+		if float(by_id(item_id).get("effect", {}).get("mass_mult", 1.0)) > 1.0:
+			continue
+		kept.append(item_id)
+	maxed["installed_upgrades"] = kept
+	return effective_meta(maxed, meta)
+
+
 # --- Tuning gates ------------------------------------------------------------
 # Aero / brake-bias tuning is only live when the matching upgrade is installed
 # (todo/menus.md › tuning-lift knobs). These read the car's installed items.
