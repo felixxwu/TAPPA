@@ -51,8 +51,8 @@ per-rally detune — and once the build is under the cap the player closes the m
 and re-presses Start to launch. See [menus.md](menus.md) →
 CARPARK. The **pre-event start-line** menu offers the same
 Change-Upgrades prompt on Start (see [start-line.md](start-line.md)). (Rallies
-have no hard power floor, so a permanently detuned car can still enter a higher
-class — it just gets a non-blocking "Underpowered" warning at the start line.) In the
+have no hard power floor, so an underpowered car can still enter a higher class — it
+just gets a non-blocking "Underpowered" warning at car selection in the HQ car park.) In the
 upgrades menu the detune slider's value label pairs the percent with the car's
 live power-to-weight at that setting (e.g. `80% - 200 hp/tonne`, via
 `UpgradesMenu`'s detune-label helper → `effective_meta`), so you can dial to a

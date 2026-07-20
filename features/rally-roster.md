@@ -32,9 +32,9 @@ Each `RALLIES` entry:
   **Progression is primarily gated on power-to-weight, from above only:** every
   non-showdown rally carries a `pw_max` ceiling (so an over-powered car can't walk
   it) but **no hard floor** — a car far under the ceiling is still eligible; it just
-  triggers a non-blocking "Underpowered" warning at the start line when its p/w is
-  below `RallyLibrary.PW_WARN_FRACTION` (0.75) of `pw_max` (see
-  `RallyLibrary.underpower_warning`, surfaced by `start_line.launch`). A rally may
+  triggers a non-blocking "Underpowered" warning at **car selection in the HQ car
+  park** when its p/w is below `RallyLibrary.PW_WARN_FRACTION` (0.75) of `pw_max` (see
+  `RallyLibrary.underpower_warning`, surfaced by `hq.gd._show_underpower_prompt`). A rally may
   layer a secondary theme on top of its ceiling (e.g. RWD Masters also wants
   `drive_mode` RWD, and **Front Runners** — the home of the FWD starters (Focus,
   Twingo) — wants `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally

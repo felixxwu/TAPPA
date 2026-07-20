@@ -39,7 +39,6 @@ var _seq: int = Seq.MENU
 var _seq_t := 0.0          # seconds into the current timed phase
 var _orbit_angle := 0.0    # accumulated orbit camera angle (rad), the MENU idle
 var _launched := false     # Start pressed (past the eligibility gates)
-var _underpower_acked := false   # player confirmed the "underpowered" start warning
 
 # Refs handed in by world.gd (camera/HUD optional so tests can omit them).
 var _player: Node3D
@@ -624,14 +623,6 @@ func launch() -> void:
 						[ {"label": "Change Upgrades", "callback": _open_upgrades},
 						  {"label": "Cancel", "callback": Callable()} ])
 				return
-			if not _underpower_acked:
-				var warn := RallyLibrary.underpower_warning(_rally, meta)
-				if warn != "":
-					ConfirmPopup.open(self, "Underpowered", "%s\n\nStart anyway?" % warn,
-						[ {"label": "Start Anyway", "callback": _confirm_underpower_launch},
-						  {"label": "Change Upgrades", "callback": _open_upgrades},
-						  {"label": "Cancel", "callback": Callable()} ], 0)
-					return
 	_launched = true
 	if _overlay != null:
 		_overlay.visible = false
@@ -672,13 +663,6 @@ func next_car() -> void:
 	_reveal_index += 1
 	_seq = Seq.DRIVE_OFF
 	_seq_t = 0.0
-
-
-# "Start Anyway" from the underpowered warning: remember the ack so it doesn't re-pop,
-# then re-run launch (which now passes the warning gate).
-func _confirm_underpower_launch() -> void:
-	_underpower_acked = true
-	launch()
 
 
 # At full black: hand the camera back to the player's selected mode, restore the driving

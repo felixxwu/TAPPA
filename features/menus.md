@@ -639,8 +639,16 @@ modal instead of the lineup beneath. The fix the player makes in the upgrades me
 an ordinary garage edit and **persists after the rally** — there is no longer a
 temporary, per-rally, auto-reverted detune here (the old **Detune to N%** button and
 its `RallySession.register_detune_revert` agreement are gone). Rallies have no hard
-power floor, so a permanently detuned car can still enter a higher class — it just
-gets a non-blocking "Underpowered" warning at the start line. The map pin's green
+power floor, so an underpowered car can still enter a higher class — it just gets a
+**non-blocking "Underpowered" warning here at car selection** (moved earlier from the
+start line, so the player is told before committing to the run). An eligible-but-weak
+focused car also **looks eligible** (no warning label, plain enabled Start); pressing
+Start pops an on-brand modal (`_show_underpower_prompt`, `RallyLibrary.underpower_warning`
+supplies the "N hp/t, M+ recommended" body) with three left/right-navigable buttons:
+**Start Anyway** (`_confirm_underpower_start` → launches the run as-is), **Change Upgrades**
+(reuses `_detune_change_upgrades` → the gated upgrades popup, where the player can fit more
+power), and **Cancel**. Unlike the "Too powerful" modal this is **not** a hard block —
+Start Anyway always launches. The map pin's green
 "raceable" pennant counts these detunable cars too (`_has_eligible_car` builds on
 `_entry_plan`) — **but a car that only qualifies underpowered does NOT make the pin
 green**: if every eligible car is underpowered, the rally reads as unavailable

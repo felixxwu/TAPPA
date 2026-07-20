@@ -3016,6 +3016,25 @@ func _show_over_limit_prompt(_owned: Dictionary) -> void:
 		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
 
 
+# An underpowered focused car (eligible, but sitting far below the class power ceiling
+# even at its full achievable p/w) looks eligible in the park; pressing Start pops this
+# NON-blocking warning instead of launching straight away. Unlike "Too powerful",
+# underpower is not a hard block: "Start Anyway" runs the rally as-is; "Change Upgrades"
+# opens the gated upgrades menu (where the player can fit more power); "Cancel" backs out.
+func _show_underpower_prompt(warn: String) -> void:
+	_active_carpark_popup = ConfirmPopup.open(self, "Underpowered", "%s\n\nStart anyway?" % warn,
+		[ {"label": "Start Anyway", "callback": _confirm_underpower_start},
+		  {"label": "Change Upgrades", "callback": _detune_change_upgrades},
+		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
+
+
+# "Start Anyway" from the underpower warning: skip the gate and launch the rally. Any
+# qualifying drivetrain switch was already applied in _on_start_pressed before the
+# warning showed, so proceeding straight to the start flow is correct.
+func _confirm_underpower_start() -> void:
+	await _proceed_with_start()
+
+
 # Whether a car-park modal overlay (detune prompt / Change-Upgrades popup) is showing,
 # so _unhandled_input hands navigation to its MenuNav instead of the lineup beneath.
 func _carpark_modal_open() -> bool:
@@ -3264,6 +3283,17 @@ func _on_start_pressed() -> void:
 	# parts), rather than launching. _detune_needed marks the over-cap-but-fixable cars.
 	if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
 		_show_over_limit_prompt(owned)
+		return
+	# A car that would race far under the class power ceiling (below PW_WARN_FRACTION of
+	# the rally's pw_max, even at its full achievable p/w) gets a NON-blocking warning
+	# here at car selection — it can still start. Judged at full potential (the same
+	# _full_potential_meta the pin flag / "N underpowered" caption use), so only a
+	# genuinely weak car warns, not one the player has reversibly detuned. Any qualifying
+	# drivetrain switch was already applied above, so `owned` reflects it.
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var warn := RallyLibrary.underpower_warning(rally, _full_potential_meta(owned, entry))
+	if warn != "":
+		_show_underpower_prompt(warn)
 		return
 	await _proceed_with_start()
 

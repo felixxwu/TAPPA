@@ -261,8 +261,9 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   player closes the popup and re-presses Start to launch (close → re-press, no
   auto-launch). The old one-press **Detune to N% & Start** agreement and its
   `RallySession.register_detune_revert` revert flow have been removed. Rallies
-  have no hard power floor, so a permanently detuned car can still enter a higher
-  class — it just gets a non-blocking "Underpowered" warning at the start line.
+  have no hard power floor, so an underpowered car can still enter a higher
+  class — it just gets a non-blocking "Underpowered" warning at car selection in
+  the HQ car park.
   (The `RallySession.register_detune_revert` API itself still exists and is
   unit-tested; it is just no longer driven by this flow.) See
   [menus.md](menus.md) → CARPARK.

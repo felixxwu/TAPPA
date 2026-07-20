@@ -412,7 +412,10 @@ func test_launch_proceeds_when_the_car_is_eligible() -> void:
 	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
 
 
-func test_underpowered_car_gets_a_non_blocking_start_warning() -> void:
+# The underpower warning now lives at car selection in HQ (see test_menu_flow.gd →
+# test_hq_carpark_warns_on_underpowered_car), NOT here at the start line — an
+# underpowered but otherwise-eligible car launches straight through the start line.
+func test_underpowered_car_launches_without_a_start_line_warning() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
 	RallySession.start_rally(_rally(), owned, true)
@@ -421,16 +424,9 @@ func test_underpowered_car_gets_a_non_blocking_start_warning() -> void:
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
 	sl._rally = {"restriction": {"pw_max": pw / RallyLibrary.PW_WARN_FRACTION * 1.5}}
 	sl.launch()
-	assert_false(sl.has_launched(), "an underpowered car is not launched until the warning is acknowledged")
-	var popups := sl.find_children("*", "ConfirmPopup", true, false)
-	assert_eq(popups.size(), 1, "the warning shows a ConfirmPopup")
-	var offers_start := false
-	for b in popups[0].find_children("*", "Button", true, false):
-		if "start anyway" in (b as Button).text.to_lower():
-			offers_start = true
-	assert_true(offers_start, "the popup offers Start Anyway")
-	sl._confirm_underpower_launch()
-	assert_true(sl.has_launched(), "confirming the warning starts the rally")
+	assert_true(sl.has_launched(), "an underpowered (but eligible) car launches — the warning moved to car selection")
+	assert_eq(sl.find_children("*", "ConfirmPopup", true, false).size(), 0,
+		"no start-line popup for an underpowered car anymore")
 
 
 # --- Pre-race menus (unchanged behaviour) ------------------------------------

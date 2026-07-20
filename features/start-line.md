@@ -60,9 +60,12 @@ Phases (`StartLine.Seq`), driven in `_process`:
 with a detune that can admit it (`RallyLibrary.qualifying_detune` in `(0,1)`) → **"Too
 powerful"** popup offering **"Change Upgrades"** / **"Cancel"** (the gated Upgrades overlay
 won't close until the build is under the cap; a permanent garage edit — close → re-press
-Start). Any other reason → the reason with the same buttons. **Underpower warning** — no
-hard floor: under `RallyLibrary.PW_WARN_FRACTION` (0.75) of `pw_max` pops a non-blocking
-**"Underpowered"** popup offering **"Start Anyway"** / **"Change Upgrades"** / **"Cancel"**.
+Start). Any other reason → the reason with the same buttons. **No underpower warning
+here** — a car far below the class ceiling (`RallyLibrary.PW_WARN_FRACTION` = 0.75 of
+`pw_max`) is still no hard floor, but the non-blocking **"Underpowered"** popup now fires
+earlier, at **car selection in HQ** (`hq.gd` → `_show_underpower_prompt`, see
+`features/menus.md`), not here — by the time the start line runs the player has already
+committed to fielding the car.
 
 **No opponents to reveal** — dev/test harnesses (and any event that somehow fields no rivals)
 pass an empty `leaders` list: no cars line up, the player is already on the line, and **Start
@@ -192,8 +195,9 @@ See [configuration.md](configuration.md).
   config; Start flies the camera then reveals P1; the reveal card shows the current front
   opponent's name/car/time; **Next** floors the front car and advances the reveal; three Nexts
   walk P1→P2→P3, then the player reaches the line, the fade runs and `begin_countdown()` fires
-  exactly once; empty leaders skip straight to the fade; the eligibility / over-power /
-  underpower gates and the Tune Car / Upgrades overlays behave as before.
+  exactly once; empty leaders skip straight to the fade; the eligibility / over-power gates
+  and the Tune Car / Upgrades overlays behave as before; an underpowered-but-eligible car
+  launches straight through (its warning now lives at car selection, not the start line).
 - `tests/headless/test_rally_session.gd` — `current_event_leaders()` returns the top three
   rivals (fastest first, DNF-this-event omitted) each with `car_id` (so the grid can spawn
   their actual car), `car_name` and `time_ms`.
