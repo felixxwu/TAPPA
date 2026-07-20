@@ -584,16 +584,13 @@ static func _fieldable_cars(rally: Dictionary) -> Array:
 
 # CarLibrary.all() indices a rally's restriction admits — the pool an index-based
 # spawner (the start-line queue props, start_line.gd) draws its cars from, so the
-# cars bookending the player are always eligible for the rally. Falls back to every
-# index if a restriction somehow admits none (it never should; open-class admits all).
+# cars bookending the player are always eligible for the rally. Derived from the same
+# eligible pool as _eligible_cars (which handles the admits-none fallback to the whole
+# roster), just mapped from entries back to their roster indices.
 static func eligible_car_indices(rally: Dictionary) -> Array:
 	var pool: Array = []
-	for i in CarLibrary.all().size():
-		if is_eligible(rally, CarLibrary.all()[i]):
-			pool.append(i)
-	if pool.is_empty():
-		for i in CarLibrary.all().size():
-			pool.append(i)
+	for entry in _eligible_cars(rally):
+		pool.append(CarLibrary.index_of(String(entry.get("id", ""))))
 	return pool
 
 

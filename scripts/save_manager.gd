@@ -523,10 +523,7 @@ func install_upgrade(instance_id: int, item_id: String, enabled := true) -> bool
 	if enabled:
 		_enable_exclusive(car, item_id, slot)
 	else:
-		var disabled: Array = car.get("disabled_upgrades", [])
-		if not disabled.has(item_id):
-			disabled.append(item_id)
-		car["disabled_upgrades"] = disabled
+		_disable(car, item_id)
 	save()
 	return true
 
@@ -542,10 +539,7 @@ func set_upgrade_enabled(instance_id: int, item_id: String, enabled: bool) -> bo
 	if enabled:
 		_enable_exclusive(car, item_id, UpgradeLibrary.slot_of(item_id))
 	else:
-		var disabled: Array = car.get("disabled_upgrades", [])
-		if not disabled.has(item_id):
-			disabled.append(item_id)
-		car["disabled_upgrades"] = disabled
+		_disable(car, item_id)
 	save()
 	return true
 
@@ -557,6 +551,14 @@ func _enable_exclusive(car: Dictionary, item_id: String, slot: String) -> void:
 		if existing != item_id and UpgradeLibrary.slot_of(existing) == slot and not disabled.has(existing):
 			disabled.append(existing)
 	disabled.erase(item_id)
+	car["disabled_upgrades"] = disabled
+
+
+# Park `item_id` in the car's disabled list (the part stays fitted, just off).
+func _disable(car: Dictionary, item_id: String) -> void:
+	var disabled: Array = car.get("disabled_upgrades", [])
+	if not disabled.has(item_id):
+		disabled.append(item_id)
 	car["disabled_upgrades"] = disabled
 
 
@@ -666,13 +668,10 @@ func best_placement(rally_id: String) -> int:
 
 
 # Number of rallies top-3'd — the single progression metric driving the
-# reward-tier ceiling and the showdown unlock.
+# reward-tier ceiling and the showdown unlock. Delegates to RallyLibrary so the
+# metric has one definition.
 func completed_rally_count() -> int:
-	var n := 0
-	for rally_id in profile["rallies"]:
-		if profile["rallies"][rally_id].get("completed", false):
-			n += 1
-	return n
+	return RallyLibrary.completed_count(profile)
 
 
 # Showdown unlock is gated on rally completion. The exact threshold belongs to

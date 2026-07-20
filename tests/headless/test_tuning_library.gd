@@ -137,6 +137,9 @@ func test_engine_detune_scales_torque() -> void:
 	assert_almost_eq(cfg3.peak_torque, 300.0, 0.0001, "detune clamps at 1.0")
 
 
-func test_engine_detune_is_a_known_axis() -> void:
-	assert_true(TuningLibrary.AXES.has("engine_detune"), "detune is an axis (drives reset + slider refresh)")
-	assert_true(TuningLibrary.axis_unlocked({}, "engine_detune"), "detune is always available")
+func test_engine_detune_is_not_a_handling_axis() -> void:
+	# Detune is a power (p/w) knob, not one of the lift's handling axes: its slider
+	# lives in the upgrades menu, so it must stay out of AXES (which drives the lift's
+	# reset + slider refresh). apply() still honours the stored value regardless — see
+	# test_engine_detune_scales_torque.
+	assert_false(TuningLibrary.AXES.has("engine_detune"), "detune is a p/w knob, not a handling axis")

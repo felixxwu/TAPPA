@@ -238,7 +238,7 @@ func _make_drivetrain_selector(instance_id: int) -> Control:
 	# Available = every mode once unlocked, else only the stock mode. Reuses the shared
 	# _option_button builder so bracket-active / FOCUS_ALL / focus-key live in one place.
 	for mode in [CarLibrary.RWD, CarLibrary.AWD, CarLibrary.FWD]:
-		row.add_child(_option_button(_drive_text(mode), mode == current, unlocked or mode == stock,
+		row.add_child(_option_button(CarLibrary.drive_text(mode), mode == current, unlocked or mode == stock,
 			"drivetrain:" + str(mode), _set_drivetrain.bind(instance_id, mode)))
 	return row
 
@@ -266,15 +266,9 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 	row.add_child(label)
 	# The catalogue parts for this slot, in catalogue order, and which one (if any) is
 	# currently the enabled pick.
-	var parts: Array = []
-	var current_id := ""
-	for def in UpgradeLibrary.all():
-		if String(def.get("slot", "")) != slot or bool(def.get("consumable", false)):
-			continue
-		parts.append(def)
-		var pid := String(def.get("id", ""))
-		if installed.has(pid) and UpgradeLibrary.is_enabled(_owned, pid):
-			current_id = pid
+	var scan := _slot_parts(slot, installed)
+	var parts: Array = scan["parts"]
+	var current_id: String = scan["current_id"]
 	# None is always available and plays the "off" role.
 	row.add_child(_option_button("Stock", current_id == "", true,
 		"opt:%s:none" % slot, _set_slot_option.bind(instance_id, slot, "")))
@@ -313,15 +307,35 @@ func _set_slot_option(instance_id: int, slot: String, item_id: String) -> void:
 	# enable/disable path so the one-enabled-per-slot rule and the reward flow are
 	# preserved. The host's on_change respawns the display prop + refreshes stats.
 	if item_id == "":
-		for def in UpgradeLibrary.all():
-			if String(def.get("slot", "")) == slot:
-				Save.set_upgrade_enabled(instance_id, String(def.get("id", "")), false)
+		_clear_slot(instance_id, slot)
 	else:
 		Save.set_upgrade_enabled(instance_id, item_id, true)
 	_owned = Save.get_car(instance_id)
 	rebuild()  # updates stats + rebuilds rows + re-seats MenuNav focus
 	if _on_change.is_valid():
 		_on_change.call()
+
+
+# The catalogue parts in `slot` (non-consumable), in catalogue order, plus which one (if
+# any) is the currently enabled pick on `_owned`. Shared by the option + weight rows.
+func _slot_parts(slot: String, installed: Array) -> Dictionary:
+	var parts: Array = []
+	var current_id := ""
+	for def in UpgradeLibrary.all():
+		if String(def.get("slot", "")) != slot or bool(def.get("consumable", false)):
+			continue
+		parts.append(def)
+		var pid := String(def.get("id", ""))
+		if installed.has(pid) and UpgradeLibrary.is_enabled(_owned, pid):
+			current_id = pid
+	return {"parts": parts, "current_id": current_id}
+
+
+# Disable every applied part in `slot` on the car — the "Stock"/None state.
+func _clear_slot(instance_id: int, slot: String) -> void:
+	for def in UpgradeLibrary.all():
+		if String(def.get("slot", "")) == slot:
+			Save.set_upgrade_enabled(instance_id, String(def.get("id", "")), false)
 
 
 # The WEIGHT slot selector: "Weight:" then the weight parts ordered heavy→light with a
@@ -339,15 +353,9 @@ func _make_weight_selector(instance_id: int, installed: Array) -> Control:
 	row.add_child(label)
 
 	# Weight-slot parts, heaviest first; which one (if any) is the enabled pick.
-	var parts: Array = []
-	var current_id := ""
-	for def in UpgradeLibrary.all():
-		if String(def.get("slot", "")) != "weight" or bool(def.get("consumable", false)):
-			continue
-		parts.append(def)
-		var pid := String(def.get("id", ""))
-		if installed.has(pid) and UpgradeLibrary.is_enabled(_owned, pid):
-			current_id = pid
+	var scan := _slot_parts("weight", installed)
+	var parts: Array = scan["parts"]
+	var current_id: String = scan["current_id"]
 	parts.sort_custom(func(a, b): return _mass_mult(a) > _mass_mult(b))
 
 	var base := _base_mass_no_weight()
@@ -401,9 +409,7 @@ func _weight_delta_label(mult: float, base_mass: float) -> String:
 # part (or the earned lightweight) is just enabled. One weight part enabled at a time.
 func _set_weight_option(instance_id: int, item_id: String) -> void:
 	if item_id == "":
-		for def in UpgradeLibrary.all():
-			if String(def.get("slot", "")) == "weight":
-				Save.set_upgrade_enabled(instance_id, String(def.get("id", "")), false)
+		_clear_slot(instance_id, "weight")
 	elif not (Save.get_car(instance_id).get("installed_upgrades", []) as Array).has(item_id):
 		Save.install_upgrade(instance_id, item_id, true)  # free ballast: fit + enable
 	else:
@@ -461,14 +467,6 @@ func _swap_targets(current_id: int) -> Array:
 			continue
 		targets.append(car)
 	return targets
-
-
-func _drive_text(drive_mode: int) -> String:
-	match drive_mode:
-		CarLibrary.RWD: return "RWD"
-		CarLibrary.AWD: return "AWD"
-		CarLibrary.FWD: return "FWD"
-		_: return "?"
 
 
 # Re-grab the control tagged with `focus_key` after a rebuild, so the keyboard/gamepad

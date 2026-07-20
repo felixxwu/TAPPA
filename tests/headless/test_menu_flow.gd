@@ -528,7 +528,7 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	hq._activate_hub_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "select on Change Car opens the car park")
-	assert_true(hq._carpark_change_mode, "in change-car mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.CHANGE, "in change-car mode")
 	hq._car_back()
 	await get_tree().process_frame
 
@@ -886,13 +886,13 @@ func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
 	hq._enter_free_roam()
 	await _await_lineup(hq)
 	assert_eq(hq._view, hq.View.CARPARK, "Free Roam drops into the car park")
-	assert_true(hq._carpark_freeroam_mode, "the car park is in free-roam mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.FREEROAM, "the car park is in free-roam mode")
 	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
 		"the whole owned collection is parked to pick from")
 
 	# Back leaves free roam for the garage.
 	hq._car_back()
-	assert_false(hq._carpark_freeroam_mode, "backing out clears free-roam mode")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.FREEROAM, "backing out clears free-roam mode")
 	assert_eq(hq._view, hq.View.GARAGE, "Back from free-roam car pick returns to the garage")
 
 
@@ -1728,7 +1728,7 @@ func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> v
 	hq._enter_change_car()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Change Car opens the car park")
-	assert_true(hq._carpark_change_mode, "the car park is in change-car mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.CHANGE, "the car park is in change-car mode")
 	assert_eq(hq._eligible.size(), _save.profile["cars"].size() - 1,
 		"every owned car EXCEPT the one on the lift is parked to pick from")
 	for owned in hq._eligible:
@@ -1739,7 +1739,7 @@ func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> v
 	hq._on_start_pressed()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "selecting a car returns to the tuning bay")
-	assert_false(hq._carpark_change_mode, "change-car mode is cleared on the way back")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.CHANGE, "change-car mode is cleared on the way back")
 	assert_ne(_save.selected_instance_id(), before, "picking a car changes the selected car")
 	assert_eq(_save.selected_instance_id(), int(other["instance_id"]), "the picked car is now selected")
 	assert_eq(hq._lift_car_instance_id, _save.selected_instance_id(),
@@ -1759,7 +1759,7 @@ func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection(
 	hq._car_back()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "Back from change-car returns to the tuning bay")
-	assert_false(hq._carpark_change_mode, "change-car mode is cleared")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.CHANGE, "change-car mode is cleared")
 	assert_eq(_save.selected_instance_id(), before, "backing out leaves the selection unchanged")
 
 
@@ -2240,7 +2240,7 @@ func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
 	hq._on_exterior_start()
 	await _await_lineup(hq)
 	assert_eq(hq._view, hq.View.CARPARK, "first run lands in the car park")
-	assert_true(hq._carpark_starter_mode, "in starter-pick mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.STARTER, "in starter-pick mode")
 	assert_eq(hq._eligible.size(), 3, "three starter cars parked (mx5 + focus + twingo)")
 	# Pick the focus.
 	for i in hq._eligible.size():
@@ -2265,7 +2265,7 @@ func test_returning_player_start_goes_straight_to_garage() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	assert_false(hq._carpark_starter_mode, "not in starter-pick mode")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.STARTER, "not in starter-pick mode")
 	assert_eq(hq._view, hq.View.GARAGE, "existing player skips the picker")
 
 
@@ -2277,7 +2277,7 @@ func test_starter_pick_back_returns_to_title() -> void:
 	hq._on_exterior_start()
 	await _await_lineup(hq)
 	hq._car_back()
-	assert_false(hq._carpark_starter_mode, "starter mode cleared on back")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.STARTER, "starter mode cleared on back")
 	assert_eq(hq._view, hq.View.EXTERIOR, "back from the picker returns to the title")
 	assert_eq(_save.profile["cars"].size(), 0, "backing out grants nothing")
 
@@ -2365,7 +2365,7 @@ func test_swap_preview_visible_only_in_swap_mode() -> void:
 	assert_true(hq._swap_preview_label.visible, "preview shows in swap mode")
 	assert_string_contains(hq._swap_preview_label.text, "hp/tonne", "preview names the unit")
 	# Leaving swap mode for the normal car-select hides it.
-	hq._carpark_swap_mode = false
+	hq._carpark_mode = hq.CarparkMode.RALLY
 	hq._focus_changed(true)
 	assert_false(hq._swap_preview_label.visible, "preview hidden outside swap mode")
 

@@ -313,7 +313,7 @@ func _timed_physics_process(delta: float) -> void:
 		if _upright[i] == 1 and car_xz.distance_to(_pos[i]) < knock_r:
 			to_knock.append(i)
 	for i in to_knock:
-		_knock_over(i, car_xf)
+		_knock_over(i)
 
 	# Sim decimation: steer only every Nth physics tick (staggered per group so the
 	# cost spreads across ticks), integrating the accumulated delta so crowd motion
@@ -407,7 +407,7 @@ func clear_warm_up() -> void:
 		_warm_mi = null
 
 
-func _knock_over(i: int, car_xf: Transform3D) -> void:
+func _knock_over(i: int) -> void:
 	if _upright[i] == 0:
 		return
 	_upright[i] = 0
@@ -452,18 +452,7 @@ func _knock_over(i: int, car_xf: Transform3D) -> void:
 	# speed: launch speed is `speed x factor` (clamped), the upward kick is a fraction of
 	# that launch (a fixed angle, not a constant m/s), and the spin tapers to zero as the
 	# car slows. So a slow nudge topples a spectator gently instead of flinging them up.
-	var car_vel := Vector3.ZERO
-	if _car != null and "linear_velocity" in _car:
-		car_vel = _car.linear_velocity
-	var speed := car_vel.length()
-	var dir := car_vel.normalized() if speed > 0.1 else -car_xf.basis.z
-	var factor := float(_p["knock_speed_factor"])
-	var speed_max := float(_p["knock_speed_max"])
-	body.linear_velocity = knock_launch_velocity(dir, speed, factor,
-		float(_p["knock_speed_min"]), speed_max, float(_p["knock_lift_ratio"]))
-	body.angular_velocity = Vector3(
-		_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)
-	).normalized() * float(_p["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
+	apply_knock_launch(body, _car, _p, _rng)
 	_ragdolls.append(body)
 
 	# Mowing the crowd isn't free: knocking a member sheds a little of the car's speed
@@ -491,6 +480,28 @@ static func knock_launch_velocity(dir: Vector3, speed: float, factor: float,
 # barely spins the body while a fast hit spins it fully.
 static func knock_spin_scale(speed: float, factor: float, speed_max: float) -> float:
 	return clampf(speed * factor / maxf(speed_max, 0.001), 0.0, 1.0)
+
+
+# Apply the shared knock impulse (linear launch + tapering spin) to `body` from `car`'s
+# motion, using the knock_* keys in `params`. Direction follows the car's travel, falling
+# back to its forward axis (−Z) when it's nearly stopped. Used by BOTH the spectator
+# ragdoll and the sign scatter so the recipe lives in one place.
+static func apply_knock_launch(body: RigidBody3D, car: Node, params: Dictionary,
+		rng: RandomNumberGenerator) -> void:
+	var car_vel := Vector3.ZERO
+	if car != null and "linear_velocity" in car:
+		car_vel = car.linear_velocity
+	var speed := car_vel.length()
+	var dir := car_vel.normalized() if speed > 0.1 else Vector3.FORWARD
+	if speed <= 0.1 and car is Node3D:
+		dir = -(car as Node3D).global_transform.basis.z
+	var factor := float(params["knock_speed_factor"])
+	var speed_max := float(params["knock_speed_max"])
+	body.linear_velocity = knock_launch_velocity(dir, speed, factor,
+		float(params["knock_speed_min"]), speed_max, float(params["knock_lift_ratio"]))
+	body.angular_velocity = Vector3(
+		rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)
+	).normalized() * float(params["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
 
 
 # Free ragdolls the car has left well behind, so bodies don't accumulate.

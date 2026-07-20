@@ -1691,8 +1691,17 @@ func settle_wheels_to_ground(ground_at: Callable) -> void:
 # the texture's own colours show through (ALBEDO = texture × albedo_color).
 # Idempotent: the material is built once per mesh.
 # Names of the authored glb body nodes in car.tscn (hidden unless a spec selects one).
+# Derived from the shipped roster so adding a car (its model_node) doesn't also
+# require editing a parallel list here; car.tscn's nodes mirror CarLibrary.CARS.
 func _model_node_names() -> PackedStringArray:
-	return PackedStringArray(["Mx5Body", "FocusBody", "TwingoBody", "ActyBody", "ChargerBody", "TheBeastBody", "Porsche911Body", "XjsBody"])
+	var names := PackedStringArray()
+	for spec in CarLibrary.CARS:
+		if not spec.get("use_model", false):
+			continue
+		var n := String(spec.get("model_node", ""))
+		if not n.is_empty() and not names.has(n):
+			names.append(n)
+	return names
 
 
 func _apply_model_material(model: Node3D, texture: Texture2D) -> void:

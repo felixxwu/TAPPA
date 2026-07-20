@@ -129,7 +129,7 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_build_reveal_overlay()
 	_build_fade()
 	_stage_player(terrain)
-	_spawn_grid(rally, terrain)
+	_spawn_grid(terrain)
 	_update_orbit()
 
 
@@ -357,7 +357,7 @@ func _build_fade() -> void:
 # this event, each in its ACTUAL car. They are LIVE, scripted, silenced car props (so
 # they load their suspension as they drive off / roll up). Front-first: grid[0] sits on
 # the line and drives off first.
-func _spawn_grid(rally: Dictionary, terrain: Node) -> void:
+func _spawn_grid(terrain: Node) -> void:
 	_grid = []
 	_grid_car_ids = []
 	var gap := _cfg().start_queue_gap

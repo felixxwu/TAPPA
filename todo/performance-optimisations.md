@@ -440,35 +440,22 @@ there's no per-frame churn.
 
 ---
 
-## 4. Frame cap to 30 FPS
+## 4. Frame cap — DONE (shipped at 60, not 30)
 
-### Why
-Nothing sets `Engine.max_fps` or vsync anywhere (`project.godot` has no
-`[application] run/max_fps`; no `Engine.max_fps` in `scripts/`). An uncapped loop
-on a phone burns battery and generates heat → **thermal throttling**, which on
-old phones turns a "fine" 60 fps into stuttering 20s within minutes. A steady 30
-cap keeps the GPU/CPU cool and the frame pacing even.
+### What shipped
+`GameConfig.target_fps` (desktop) and `target_fps_mobile` (mobile/web) both exist
+(`scripts/game_config.gd`), selected by `target_fps_for(Platform.is_mobile_or_web())`
+and applied once in `scripts/world.gd._ready()` — `Engine.max_fps = fps_cap` when
+`> 0`, skipped under `--headless` so it can't throttle the frame-awaiting test runner.
+Physics stays decoupled at the project physics tick.
 
-### Plan
-1. Add `GameConfig.target_fps` (default `30`; `0` = uncapped for desktop dev).
-2. Apply once at startup in `scripts/world.gd._ready()`:
-   `Engine.max_fps = cfg.target_fps` (only set when `> 0`).
-3. Consider `DisplayServer.window_set_vsync_mode(VSYNC_ENABLED)` so the 30 cap is
-   aligned to the display (avoids tearing + further smooths pacing). On web/mobile
-   exports vsync behaviour differs; disable it if it causes issues there.
-4. Decouple physics: physics already runs in `_physics_process` at the project
-   physics tick (default 60). With a 30 fps render cap, leave physics at 60 for
-   stable handling (`car.gd`/`drivetrain.gd` integrate there). If CPU-bound on the
-   weakest devices, lower `physics/common/physics_ticks_per_second` to 30 as the
-   shipped value — but test handling carefully (the tire model is tick-sensitive).
-
-### Files
-`scripts/world.gd`, `scripts/game_config.gd` + `config/game_config.tres`,
-`features/rendering.md` or `features/configuration.md`.
-
-### Tests
-`tests/headless` can assert `world.gd` sets `Engine.max_fps` from config (or
-factor the "apply settings" into a testable helper). Low-risk.
+### Why it's 60, not the originally-planned 30
+The original plan capped mobile/web at 30 for thermal headroom. In practice a 30
+cap **starved audio on the single-threaded web build**: audio is serviced by the
+main loop (no audio thread), so a low frame rate opens audible gaps. The native
+APK runs fine at 60, so both caps are held at 60 rather than special-casing web.
+See `features/rendering.md`. (If a future thermal problem appears on real phones,
+the knob is already there — lower `target_fps_mobile` in `game_config.tres`.)
 
 ---
 

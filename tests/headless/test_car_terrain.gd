@@ -4,15 +4,26 @@ extends GutTest
 # underground, launched, or falling forever). They are terrain-relative by
 # design — pure car behavior is tested on the flat fixture in test_car.gd.
 
+const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
+
 var _scene: Node3D
 var _car: VehicleBody3D
 
 
 func before_each() -> void:
+	# Real terrain is the whole point here (this is the terrain-regression canary),
+	# but the track shape and foliage are irrelevant — trim them so each build is
+	# <1 s instead of ~15 s. minimal_world() only zeroes trees + shortens the track;
+	# the $Floor heightfield the car settles on is generated identically.
+	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 	_car = _scene.get_node("Car")
 	await _wait_physics(150)  # let the car drop onto its suspension and settle
+
+
+func after_each() -> void:
+	Config.reset()  # undo minimal_world()'s trim so later files see the full baseline
 
 
 func _wait_physics(frames: int):
