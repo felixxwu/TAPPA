@@ -4,9 +4,11 @@
 the `swap_engines` / `set_engine_detune` mutators in `scripts/save_manager.gd`,
 the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
 `effective_meta` feed-through in `scripts/upgrade_library.gd`, the
-`engine_detune` axis in `scripts/tuning_library.gd`, the swap-row UI in
-`scripts/upgrades_menu.gd` (`UpgradesMenu._make_engine_swap_row`), and the
-car-park swap-mode UI in `scripts/hq.gd`.
+`engine_detune` scaling read by `TuningLibrary.apply` in
+`scripts/tuning_library.gd` (detune is stored in the per-car `tuning` bag but is
+**not** a `TuningLibrary.AXES` entry), the swap-row and engine-detune slider UI
+in `scripts/upgrades_menu.gd` (`UpgradesMenu`), and the car-park swap-mode UI in
+`scripts/hq.gd`.
 
 **Engine swap** lets the player move any owned car's engine into any other
 owned car. Each swap costs one **engine swap token** — a consumable earned like
@@ -16,7 +18,11 @@ through the exchange (no repair coupling). Every swap spends a token, including
 reverting a car to its own stock engine. **Engine detune** is a per-car tuning
 slider (0–100%) that directly scales the fitted engine's torque, letting a car
 be deliberately hobbled (e.g. to fit a rally's power-to-weight band) without
-touching its parts.
+touching its parts. Detune is not the only power-to-weight lever: the weight
+slot's **free ballast** parts (`ballast_large` / `ballast_small` — see
+[upgrade-catalogue.md](upgrade-catalogue.md)) add mass to drop p/w the other way,
+so a car can qualify for a lower class by adding weight as well as by cutting
+power.
 
 Distinguish from [upgrade-catalogue.md](upgrade-catalogue.md): slottable
 upgrades permanently change a car's baseline. The engine swap token is a
@@ -92,7 +98,9 @@ result.
   (via `EngineSwap.current_engine_id`, so swapping a car that's already
   running a third car's engine still works correctly) of two owned cars.
   Refuses (returns `false`, no change) if the ids match, `EngineSwap.can_swap`
-  fails, **or no engine swap token is held**. On success it spends one token
+  fails, **the two cars already run the same current engine** (a no-op swap —
+  the token check runs AFTER this guard, so a no-op never spends a token), **or
+  no engine swap token is held**. On success it spends one token
   (`consume_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)`). Each car's
   `swapped_engine` is set to the OTHER's current engine, then cleared back to
   `""` when the result equals that car's OWN stock engine — so "stock" is always
@@ -184,7 +192,7 @@ It resolves the CURRENT engine the same way `car.gd` does:
 4. **Applies `engine_detune` last**, scaling the resulting `peak_torque` by
    the clamped `[0, 1]` fraction from `owned_car.tuning.engine_detune` (default
    `1.0`) — so a detuned car's reduced torque feeds `power_to_weight` and can
-   push it out of (or into) a rally's `pw_min`/`pw_max` band, same as an
+   push it over (or back under) a rally's `pw_max` ceiling, same as an
    engine swap or upgrade would.
 
 `TuningLibrary.apply` applies the matching effect to the LIVE `cfg` at
@@ -226,25 +234,38 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   `EngineSwap.pw_after_swap(owned, entry, donor_engine_id)` (returns kW/kg;
   scaled by `CarLibrary.KW_KG_TO_HP_TONNE` for display). Hidden outside swap
   mode.
-- **Tuning page, detune slider** — a normal `TuningLibrary.AXES` row
-  ("Engine detune", `0%`–`100%`), always **unlocked** (no upgrade gate,
-  unlike brake-bias/aero). The slider stores `frac = value / 100.0` via
-  `Save.set_engine_detune`; **Reset to neutral** returns it to `1.0` (100%,
-  full power) like every other axis returns to its own neutral.
+- **Upgrades menu, detune slider** — an "Engine detune" row (`0%`–`100%`, step
+  5) at the **bottom** of `UpgradesMenu` (below the part-slot selectors and the
+  lift-only engine-swap row), the final power adjustment. It is NOT a
+  `TuningLibrary.AXES` row and no longer lives on the tuning page — detune is a
+  power / power-to-weight knob, so it belongs with upgrades. Always **available**
+  (no upgrade gate). The slider stores `frac = value / 100.0` via
+  `Save.set_engine_detune`, at `tuning.engine_detune`, and its value label pairs
+  the percent with the live power-to-weight only (`N% - M hp/tonne`); the label
+  no longer flags the limit. The `pw_limit` cap is instead enforced by the
+  overlay's **gated Done button** (red, blocks closing and Esc while over the
+  cap — the start-line Upgrades overlay and the car-park Change-Upgrades popup
+  pass a `pw_limit`; the HQ lift omits it, keeping a plain Back for free tuning).
+  The tuning panel's **Reset to neutral** no longer touches detune — it clears
+  only the handling axes and **preserves** `tuning.engine_detune`.
 - **Car-park detune-to-enter prompt** — an owned car OVER a rally's `pw_max`
   cap still parks in the rally car-select lineup and LOOKS eligible there (no
   warning label, plain Start — saves overlay space); pressing Start pops a
-  **confirm dialog** that explains it doesn't qualify as-is and the tune that
-  would fix it, with OK as the explicit agreement (**Detune to N% & Start**)
-  that applies the tune via `Save.set_engine_detune` before fielding
-  (`hq._show_detune_confirm` / `_on_detune_confirmed`; the math is
-  `RallyLibrary.qualifying_detune`). The agreement is **temporary, for that
-  rally only** — unlike a garage-lift detune, which is permanent: the confirm
-  registers the car's prior tune with the session
-  (`RallySession.register_detune_revert`), and when the rally ENDS (finish,
-  wreck or abandon — all via `_reset_to_idle`, never mid-rally, so the tune
-  can't creep back up between events) the prior tune is restored (the
-  garage-set value, or the 1.0 default if never tuned). See
+  **"Too powerful" confirm** whose only route through is **Change Upgrades**
+  (the other button is Cancel). It opens the gated `UpgradesMenu` popup where the
+  player sheds power for themselves — the engine-detune slider, the weight
+  slot's ballast, or stripping parts — and the popup's gated **Done** button
+  refuses to close until the build is under the cap. That fix is an **ordinary
+  garage edit and permanent** (it persists after the rally); there is **no**
+  temporary, auto-reverted per-rally detune here any more. Once under the cap the
+  player closes the popup and re-presses Start to launch (close → re-press, no
+  auto-launch). The old one-press **Detune to N% & Start** agreement and its
+  `RallySession.register_detune_revert` revert flow have been removed. Rallies
+  have no hard power floor, so an underpowered car can still enter a higher
+  class — it just gets a non-blocking "Underpowered" warning at car selection in
+  the HQ car park.
+  (The `RallySession.register_detune_revert` API itself still exists and is
+  unit-tested; it is just no longer driven by this flow.) See
   [menus.md](menus.md) → CARPARK.
 
 ### Navigation
@@ -261,9 +282,10 @@ which returns to the lift when `_carpark_swap_mode` is set) handlers in
 `hq.gd._unhandled_input`, so swap mode is fully keyboard/gamepad navigable by
 construction — it adds no new input surface, only a new car-park **mode flag**
 that changes what `_on_start_pressed`/`_car_back` do at the existing
-confirm/back actions. The detune slider is a row on the Tune page, using the
-same left/right-nudges-the-focused-slider handling as `grip_balance` (see
-[menus.md](menus.md) → "Menu navigation" → the tuning-lift Tune page).
+confirm/back actions. The detune slider is a row in the `UpgradesMenu`
+(upgrades page / start-line Upgrades overlay / car-park Change-Upgrades popup),
+using the same left/right-nudges-the-focused-slider handling as every other
+upgrades-menu slider (see [menus.md](menus.md) → "Menu navigation").
 
 ## Tests
 
@@ -279,8 +301,9 @@ one, succeeding between damaged cars (HP untouched), `engine_swap_tokens_owned`,
 `test_reward_system.gd` covers the token being a drawable pool member. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
-covers the `engine_detune` axis application. `test_menu_flow.gd` covers the
+covers `TuningLibrary.apply`'s `engine_detune` torque scaling. `test_menu_flow.gd` covers the
 swap row, car-park swap mode, the detune slider's navigation/persistence, and
 the car-park detune-to-enter prompt (over-cap car parks looking eligible; Start
-pops the confirm; agreeing applies the tune and launches). `test_rally_library.gd`
+pops the "Too powerful" confirm; Change Upgrades opens the gated upgrades popup).
+`test_rally_library.gd`
 covers `RallyLibrary.qualifying_detune` itself.

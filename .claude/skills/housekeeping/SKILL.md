@@ -142,10 +142,10 @@ separate, heavier step: the in-game **Settings → Benchmark**
 real suspect — the housekeeping pass itself is grep/read-level.)
 
 - **Frame cap still applied.** `world.gd._ready()` must still cap the render loop
-  via `Engine.max_fps = cfg.target_fps_for(Platform.is_mobile_or_web())`
-  (`target_fps_mobile` = 30 for phones/web; `game_config.gd`). Regression smell:
-  a new `Engine.max_fps = 0`, a removed cap, or the mobile branch lost. Grep:
-  `grep -rn "max_fps\|target_fps" scripts/`.
+  via `Engine.max_fps = cfg.target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())`
+  (`target_fps` = 60 desktop, `target_fps_mobile` = 60 native mobile, `target_fps_web`
+  = 30 web; `game_config.gd`). Regression smell: a new `Engine.max_fps = 0`, a removed
+  cap, or the web/mobile branch lost. Grep: `grep -rn "max_fps\|target_fps" scripts/`.
 - **Foliage / draw budget hasn't ballooned.** The scene builds roughly
   `track_turn_count × trees_per_turn` instances (`world.gd`). Check
   `config/game_config.tres` for upward drift in `trees_per_turn`,

@@ -23,7 +23,8 @@ force arrows, and like them honoured only in a debug build (release/web ignore t
 key). Their text keeps refreshing while hidden, so it's correct the instant H
 reveals it. See [debug-tools.md](debug-tools.md).
 | `CountdownLabel` | `3` / `2` / `1` / `GO` | driven by `StageManager` (centered, large) |
-| `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (top centre) |
+| `ElapsedLabel` | `m:ss.cc` run timer | driven by `StageManager` (**top-left corner**) |
+| Pacenote strip | current turn + upcoming queue (arrow boards) | driven by `StageManager` (top centre, code-built) |
 | `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
 | `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
@@ -63,6 +64,41 @@ resets — built in code, sharing the **top-centre pace-popup spot** with
 precedence** over the pace popup: showing a cut flash hides any live stage-delta
 readout, and `show_stage_delta` no-ops while a cut flash is still on screen.
 Gated by `cut_penalty_enabled`.
+
+## Pacenote strip
+
+The **rally pacenote strip** runs along the top-centre of the HUD: the **current
+turn** (arrow board + grade number, full opacity) with the **upcoming turns queued
+to its right**, progressively dimmer. It reads **left-to-right** and **slides left**
+as each corner is passed. It's built in code (no scene node) by `set_pacenotes(notes)`
+and advanced by `show_pacenotes(current)`.
+
+- **Data source.** `world.gd._setup_pacenotes` builds the note list once per stage
+  from the generated track's `pieces` via `Pacenotes.build` (`scripts/pacenotes.gd`) —
+  one note per non-`Straight` corner, at the corner-entry arc offset (the same offset
+  `SignLayout.plan` plants a board at). Each note is `{corner, flip, offset_m}`. The
+  strip covers **every** corner including gentle 5s/6s (unlike the roadside signs,
+  which skip them).
+- **Art (reused).** Each board is a `TextureRect` of the roadside-sign arrow art
+  (`textures/signs/arrow_*.png`, keyed through `GameConfig.sign_textures`). The key
+  comes from `Pacenotes.arrow_key(corner, flip)`, which uses the **same** direction
+  mapping as `SignLayout._arrow_key` (a left-hand corner, `flip=true`, takes the
+  `"right"`-keyed art). The chase camera looks along the track's forward axis, which
+  flips the 2D track's left/right on screen — the same inversion the roadside boards
+  bake in — so the HUD reads correctly with the signs' convention, not the opposite of
+  it. The compound `"Right 4 tightens 2"` reuses its entry-grade (`arrow_4`) art. The `arrow_5`/`arrow_6` boards are baked by
+  `tools/bake_sign_arrows.gd` (see [signs.md](signs.md)).
+- **Advance.** `world.gd` also hands the per-corner progress **fractions**
+  (`Pacenotes.notes_to_fracs`, same start-line span as the pace splits) to
+  `StageManager.setup_pacenotes`. Each RUNNING tick `_maybe_advance_pacenotes` counts
+  how many corner entries the car's `progress_percent()` has passed and, when that
+  count changes, pulses `hud.show_pacenotes(current)`. It needs **no P1 rival** — the
+  strip shows on every run, session or dev boot.
+- **Motion / look.** `hud.gd._tick_pacenotes` eases an animated `_pace_scroll` toward
+  the current index (fps-independent exponential smoothing) so a one-step advance
+  reads as a smooth left-slide; `_layout_pacenotes` positions/fades each board from
+  its distance to the current slot (`_PACE_*` consts: slot width, upcoming count,
+  dim step/floor). Gated by `hud_pacenotes_enabled` — off builds no boards.
 
 The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
 code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**

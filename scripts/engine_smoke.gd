@@ -55,6 +55,20 @@ func setup_synthetic(car: Node) -> void:
 	_build_pool()
 
 
+# Attach a self-timed synthetic smoke emitter to a frozen display/prop car: build the
+# node, parent it to the car (freed with it), keep it running while the car is
+# process-disabled, and wire it up. No-op (returns null) when engine smoke is globally
+# disabled. Shared by the HQ display cars and the roadside opponent wreck.
+static func attach_synthetic(car: Node) -> EngineSmoke:
+	if not Config.data.engine_smoke_enabled:
+		return null
+	var smoke := EngineSmoke.new()
+	car.add_child(smoke)
+	smoke.process_mode = Node.PROCESS_MODE_ALWAYS
+	smoke.setup_synthetic(car)
+	return smoke
+
+
 # Re-point at a freshly spawned car (a car swap rebuilds the engine, so its
 # misfire_count restarts) and clear all live smoke.
 func retarget(car: Node) -> void:

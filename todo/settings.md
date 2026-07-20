@@ -1,17 +1,19 @@
 # Settings — implementation spec
 
-> Status: **planned, not yet implemented.** Implementation brief for the
-> player-facing **Settings / options** surface and its persistence — the gap
-> `gameplay.md`'s shippable (itch.io) build implies but no spec owned.
-> `todo/save-persistence.md` deliberately **excludes** settings ("audio/graphics/
-> control settings are *not* covered here … likely [their] own `settings.cfg` —
-> different lifecycle") and flags it as an open question; this spec resolves it.
-> Follow the config-first convention (`CLAUDE.md`). Update the relevant
-> `features/*.md` doc and add tests in the same piece of work.
+> Status: **DELIVERED — differently than this spec proposed.** A player-facing
+> `SettingsMenu` (`scripts/settings_menu.gd`) now ships, shared by the Title and
+> the in-run Pause overlay: camera angle, key rebinding (via `InputRemap`), mobile
+> control scheme, benchmark launch, and a music-volume slider that live-applies to
+> the Music bus and persists. The **architecture diverged from the plan below**:
+> persistence went through the save profile + per-system `SETTING_KEY`s, NOT a
+> separate `user://settings.cfg` + `SettingsManager` autoload. This file is kept
+> as historical design record; the proposed `settings.cfg`/`SettingsManager`
+> sections were not built. See `features/menus.md` and `features/music.md`.
 >
-> **Scope decided (with the user): minimal now** — volume sliders + a quality
-> toggle, reachable from Pause and Title. Richer graphics/control options are
-> noted in *Out of scope*.
+> Still open vs. the original scope: a graphics/quality toggle was intentionally
+> dropped (the game ships one lean pipeline — no quality tiers, see
+> `todo/performance-optimisations.md` / `features/rendering.md`), and SFX volume
+> waits on the SFX system (`todo/audio.md`).
 
 ## Goal
 
@@ -28,19 +30,25 @@ with `profile.json`. So: a **separate `user://settings.cfg`** via Godot's
 `ConfigFile` (flat key/value is a perfect fit), loaded once at boot — distinct
 from the `Save` autoload that owns `profile.json`.
 
-## Current state (measured from the code)
+## Current state (SUPERSEDED — retained for historical context)
 
-- **No settings of any kind.** The only autoload is `Config`
-  (`project.godot:18-20`), holding the working `GameConfig`; there is no options
-  UI and nothing reads/writes preferences.
-- **No audio bus layout** exists (`project.godot` has no `[audio]` section), so
-  volume control has nothing to attach to until `todo/audio.md` adds the bus
-  layout. **This spec depends on that.**
-- **`hud_enabled` is the existing pattern** for a runtime toggle
-  (`game_config.gd`, read in `hud.gd._ready()`) — but that's an *authored
-  default*, not a *player preference*. Settings are the player-mutable layer.
-- **No `get_tree().paused` usage / Pause overlay yet** — the Pause overlay is
-  `todo/menus.md` overlay 8; Settings opens from it.
+> The bullets below described the pre-implementation state and are **no longer
+> accurate**; see the Status block above for what actually shipped. Kept so the
+> plan reads in its original context.
+
+- ~~**No settings of any kind.**~~ A shared `SettingsMenu` ships
+  (`scripts/settings_menu.gd`), opened from Title and the in-run Pause overlay
+  (`pause_menu.gd`); it reads/writes player preferences (camera angle, rebinds,
+  mobile scheme, music volume). Autoloads now number nine (`project.godot`
+  `[autoload]`), including `Save`, `InputRemap`, and `Music`.
+- ~~**No audio bus layout.**~~ `project.godot` has an `[audio]` section and a
+  **Music bus** is created at runtime (`music_director.gd`); the music-volume
+  slider attaches to it (`settings_menu.gd`). SFX volume still awaits the SFX
+  system (`todo/audio.md`).
+- **`hud_enabled`** remains the authored-default toggle pattern, distinct from
+  the player-mutable settings layer, which persists through the save profile.
+- ~~**No `get_tree().paused` / Pause overlay yet.**~~ `pause_menu.gd` ships and
+  `get_tree().paused` is used (`world.gd`/`hq.gd`); Settings opens from it.
 
 ## What persists (`settings.cfg`)
 

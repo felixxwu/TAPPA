@@ -13,8 +13,12 @@ const _LAYER := 110
 var again_button: Button
 var exit_button: Button
 var stat_labels: Array[Label] = []
+# A single line the runner patches to show whether the report POST landed
+# (features/benchmark.md → feedback loop). Created lazily on first update.
+var report_status_label: Label
 
 var _on_exit: Callable
+var _col: VBoxContainer
 
 
 func _init() -> void:
@@ -40,6 +44,7 @@ func setup(stats: Dictionary, on_again: Callable, on_exit: Callable) -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
 	panel.add_child(col)
+	_col = col
 
 	col.add_child(UITheme.title("Benchmark complete"))
 	for line in format_lines(stats):
@@ -69,6 +74,17 @@ func _back() -> void:
 		_on_exit.call()
 
 
+# Show / update the report-delivery status line (the runner calls this after the
+# results POST resolves). Created lazily; sits as a footer under the buttons.
+func set_report_status(text: String) -> void:
+	if report_status_label == null:
+		report_status_label = Label.new()
+		report_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		if _col != null:
+			_col.add_child(report_status_label)
+	report_status_label.text = text.to_upper()
+
+
 # The read-out lines, split out (static, pure) so tests can check them without a
 # scene. Every number comes from the stats dictionary; missing keys read as 0.
 static func format_lines(stats: Dictionary) -> Array[String]:
@@ -81,7 +97,8 @@ static func format_lines(stats: Dictionary) -> Array[String]:
 	lines.append("frame  avg %.1f   p95 %.1f   p99 %.1f   max %.1f ms" % [
 		float(stats.get("frame_avg_ms", 0.0)), float(stats.get("frame_p95_ms", 0.0)),
 		float(stats.get("frame_p99_ms", 0.0)), float(stats.get("frame_max_ms", 0.0))])
-	lines.append("spikes >%dms  %d" % [int(BenchmarkStats.SPIKE_MS), int(stats.get("spikes", 0))])
+	lines.append("spikes >%dms  %d   audio overruns %d" % [
+		int(BenchmarkStats.SPIKE_MS), int(stats.get("spikes", 0)), int(stats.get("audio_skips", 0))])
 	lines.append("draws  avg %d   max %d" % [
 		int(stats.get("draws_avg", 0.0)), int(stats.get("draws_max", 0.0))])
 	lines.append("objects avg %d   prims avg %dk" % [

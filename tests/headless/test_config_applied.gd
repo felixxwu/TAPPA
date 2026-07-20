@@ -37,9 +37,14 @@ func test_bonnet_camera_config_present() -> void:
 func test_target_fps_for_selects_by_platform() -> void:
 	var cfg := GameConfig.new()
 	cfg.target_fps = 60
-	cfg.target_fps_mobile = 30
-	assert_eq(cfg.target_fps_for(true), 30, "mobile/web get the aggressive cap")
+	cfg.target_fps_mobile = 45
+	cfg.target_fps_web = 30
+	# Desktop: neither mobile/web nor web.
 	assert_eq(cfg.target_fps_for(false), 60, "desktop gets the higher cap")
+	# Native mobile: mobile/web true, web false.
+	assert_eq(cfg.target_fps_for(true, false), 45, "native mobile gets the mobile cap")
+	# Web: both true — web must win over the mobile branch.
+	assert_eq(cfg.target_fps_for(true, true), 30, "web gets its own cap, not the mobile one")
 
 
 func test_target_fps_for_passes_through_uncapped() -> void:
@@ -47,8 +52,10 @@ func test_target_fps_for_passes_through_uncapped() -> void:
 	var cfg := GameConfig.new()
 	cfg.target_fps = 0
 	cfg.target_fps_mobile = 0
-	assert_eq(cfg.target_fps_for(true), 0, "uncapped mobile stays 0")
+	cfg.target_fps_web = 0
 	assert_eq(cfg.target_fps_for(false), 0, "uncapped desktop stays 0")
+	assert_eq(cfg.target_fps_for(true, false), 0, "uncapped mobile stays 0")
+	assert_eq(cfg.target_fps_for(true, true), 0, "uncapped web stays 0")
 
 
 func test_config_resource_loads() -> void:

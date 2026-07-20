@@ -51,6 +51,9 @@ var _mm_origin := Vector3.ZERO     # MultiMeshInstance3D node origin (= centroid
 var _ragdolls: Array[RigidBody3D] = []
 var _rng := RandomNumberGenerator.new()
 var _drag_strength := 0.0         # fraction of horizontal speed a knock sheds (soft drag)
+var _sim_accum := 0.0             # delta banked since the last steered tick (decimation)
+var _sim_stagger := 0             # per-group tick phase, so groups don't all steer together
+var _warm_mi: MeshInstance3D      # throwaway single-instance crowd mesh (ragdoll variant warm-up)
 
 
 # Wire a freshly placed group. `member_positions` come from SpectatorScatter.members.
@@ -76,6 +79,9 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 		_center += _pos[i]
 	if n > 0:
 		_center /= float(n)
+	# Spread the decimated steer tick across groups by a stable phase from the
+	# centroid, so not every active group recomputes on the same physics frame.
+	_sim_stagger = absi(int(_center.x) + int(_center.y) * 7)
 
 	# Shared figure mesh + foot offset (Crowd owns them, so the live crowd can't drift
 	# from the decorative ones); the capsule dims are this sim's own concern.
@@ -297,10 +303,32 @@ func _timed_physics_process(delta: float) -> void:
 		_age_ragdolls(car_xf)
 		return
 
-	var max_speed: float = _p["max_speed_mps"]
-	var accel: float = _p["accel_mps2"]
+	# Knock-over detection runs EVERY tick (a discrete event that must stay
+	# responsive even at high car speed) — a cheap per-member distance check,
+	# independent of the decimated steering below. The car moves every tick, so
+	# testing it against the (possibly stale) positions still catches contact.
 	var knock_r: float = _p["knock_radius_m"]
 	var to_knock: Array[int] = []
+	for i in _pos.size():
+		if _upright[i] == 1 and car_xz.distance_to(_pos[i]) < knock_r:
+			to_knock.append(i)
+	for i in to_knock:
+		_knock_over(i)
+
+	# Sim decimation: steer only every Nth physics tick (staggered per group so the
+	# cost spreads across ticks), integrating the accumulated delta so crowd motion
+	# is unchanged over time. Ragdolls still age every tick. Pure perf, no behaviour
+	# change beyond a coarser (still smooth-at-speed) crowd update rate.
+	var interval: int = maxi(1, int(_p.get("sim_interval", 1)))
+	_sim_accum += delta
+	if interval > 1 and (Engine.get_physics_frames() + _sim_stagger) % interval != 0:
+		_age_ragdolls(car_xf)
+		return
+	var step := _sim_accum
+	_sim_accum = 0.0
+
+	var max_speed: float = _p["max_speed_mps"]
+	var accel: float = _p["accel_mps2"]
 	# Bin members once per tick so separation is a bounded 3x3 neighbour scan (O(N))
 	# instead of the every-pair O(N^2) it was. Cell = separation radius.
 	var sep_radius: float = _p["separation_m"]
@@ -318,17 +346,14 @@ func _timed_physics_process(delta: float) -> void:
 		var sep: Vector2 = separation_force(i, _pos, _upright, sep_radius, sep_grid, sep_radius) * _p["w_separation"]
 		var anchor: Vector2 = anchor_force(_pos[i], _home[i], _p["anchor_dead_zone_m"]) * _p["w_anchor"]
 		var desired := combine(flee, avoid, sep, anchor, max_speed)
-		# Steer current velocity toward the target, then advance.
-		_vel[i] = clamp_speed(_vel[i].move_toward(desired, accel * delta), max_speed)
-		_pos[i] += _vel[i] * delta
+		# Steer current velocity toward the target, then advance (step = accumulated
+		# delta since the last steered tick — see the decimation gate above).
+		_vel[i] = clamp_speed(_vel[i].move_toward(desired, accel * step), max_speed)
+		_pos[i] += _vel[i] * step
 		if _vel[i].length_squared() > 0.0004:
 			_yaw[i] = atan2(_vel[i].x, _vel[i].y)
 		_write_instance(i)
-		if car_xz.distance_to(_pos[i]) < knock_r:
-			to_knock.append(i)
 
-	for i in to_knock:
-		_knock_over(i, car_xf)
 	_age_ragdolls(car_xf)
 
 
@@ -358,7 +383,31 @@ func _ground(x: float, z: float) -> float:
 
 
 # Flip member i from an upright agent to a launched ragdoll body.
-func _knock_over(i: int, car_xf: Transform3D) -> void:
+# Shader warm-up (auto-invoked by world.gd's warm_up() contract walk while the
+# loading cover is up). A knocked spectator draws the crowd mesh as a SINGLE
+# MeshInstance3D (_knock_over below), which under gl_compatibility is a different
+# shader program than the upright crowd's MultiMesh — so without priming it here the
+# first car-into-crowd hit compiles it mid-drive. Draw one throwaway single-instance
+# crowd mesh (the ragdoll's exact draw path); clear_warm_up() drops it after the
+# rendered frame. See features/rendering.md → "Shader pre-warm".
+func warm_up(pos: Vector3) -> void:
+	var mesh := Crowd.mesh()
+	if mesh == null:
+		return
+	if _warm_mi == null:
+		_warm_mi = MeshInstance3D.new()
+		add_child(_warm_mi)
+	_warm_mi.mesh = mesh
+	_warm_mi.global_position = pos
+
+
+func clear_warm_up() -> void:
+	if _warm_mi != null:
+		_warm_mi.queue_free()
+		_warm_mi = null
+
+
+func _knock_over(i: int) -> void:
 	if _upright[i] == 0:
 		return
 	_upright[i] = 0
@@ -403,18 +452,7 @@ func _knock_over(i: int, car_xf: Transform3D) -> void:
 	# speed: launch speed is `speed x factor` (clamped), the upward kick is a fraction of
 	# that launch (a fixed angle, not a constant m/s), and the spin tapers to zero as the
 	# car slows. So a slow nudge topples a spectator gently instead of flinging them up.
-	var car_vel := Vector3.ZERO
-	if _car != null and "linear_velocity" in _car:
-		car_vel = _car.linear_velocity
-	var speed := car_vel.length()
-	var dir := car_vel.normalized() if speed > 0.1 else -car_xf.basis.z
-	var factor := float(_p["knock_speed_factor"])
-	var speed_max := float(_p["knock_speed_max"])
-	body.linear_velocity = knock_launch_velocity(dir, speed, factor,
-		float(_p["knock_speed_min"]), speed_max, float(_p["knock_lift_ratio"]))
-	body.angular_velocity = Vector3(
-		_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)
-	).normalized() * float(_p["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
+	apply_knock_launch(body, _car, _p, _rng)
 	_ragdolls.append(body)
 
 	# Mowing the crowd isn't free: knocking a member sheds a little of the car's speed
@@ -442,6 +480,28 @@ static func knock_launch_velocity(dir: Vector3, speed: float, factor: float,
 # barely spins the body while a fast hit spins it fully.
 static func knock_spin_scale(speed: float, factor: float, speed_max: float) -> float:
 	return clampf(speed * factor / maxf(speed_max, 0.001), 0.0, 1.0)
+
+
+# Apply the shared knock impulse (linear launch + tapering spin) to `body` from `car`'s
+# motion, using the knock_* keys in `params`. Direction follows the car's travel, falling
+# back to its forward axis (−Z) when it's nearly stopped. Used by BOTH the spectator
+# ragdoll and the sign scatter so the recipe lives in one place.
+static func apply_knock_launch(body: RigidBody3D, car: Node, params: Dictionary,
+		rng: RandomNumberGenerator) -> void:
+	var car_vel := Vector3.ZERO
+	if car != null and "linear_velocity" in car:
+		car_vel = car.linear_velocity
+	var speed := car_vel.length()
+	var dir := car_vel.normalized() if speed > 0.1 else Vector3.FORWARD
+	if speed <= 0.1 and car is Node3D:
+		dir = -(car as Node3D).global_transform.basis.z
+	var factor := float(params["knock_speed_factor"])
+	var speed_max := float(params["knock_speed_max"])
+	body.linear_velocity = knock_launch_velocity(dir, speed, factor,
+		float(params["knock_speed_min"]), speed_max, float(params["knock_lift_ratio"]))
+	body.angular_velocity = Vector3(
+		rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)
+	).normalized() * float(params["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
 
 
 # Free ragdolls the car has left well behind, so bodies don't accumulate.

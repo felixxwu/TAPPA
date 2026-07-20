@@ -506,6 +506,7 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	_save.grant_car("fx_fwd_hatch")  # a second car so Change Car is enabled + navigable
 	hq._enter_lift()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
@@ -527,7 +528,7 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	hq._activate_hub_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "select on Change Car opens the car park")
-	assert_true(hq._carpark_change_mode, "in change-car mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.CHANGE, "in change-car mode")
 	hq._car_back()
 	await get_tree().process_frame
 
@@ -885,13 +886,13 @@ func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
 	hq._enter_free_roam()
 	await _await_lineup(hq)
 	assert_eq(hq._view, hq.View.CARPARK, "Free Roam drops into the car park")
-	assert_true(hq._carpark_freeroam_mode, "the car park is in free-roam mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.FREEROAM, "the car park is in free-roam mode")
 	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
 		"the whole owned collection is parked to pick from")
 
 	# Back leaves free roam for the garage.
 	hq._car_back()
-	assert_false(hq._carpark_freeroam_mode, "backing out clears free-roam mode")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.FREEROAM, "backing out clears free-roam mode")
 	assert_eq(hq._view, hq.View.GARAGE, "Back from free-roam car pick returns to the garage")
 
 
@@ -1101,7 +1102,7 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
 	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
 	assert_string_contains(hq._detail_title.text, "RWD MASTERS", "the detail names the rally")
-	assert_string_contains(hq._detail_body.text, "RWD CARS", "the detail spells out the eligibility")
+	assert_string_contains(hq._detail_restriction.text, "RWD CARS", "the detail spells out the eligibility")
 
 
 func test_hq_table_drag_pans_and_clamps() -> void:
@@ -1491,11 +1492,11 @@ func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 		"the repaired car is restored to full health")
 
 
-func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
+func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 	# A car OVER a rally's pw_max cap still parks in the car-select lineup and LOOKS
 	# eligible there (no warning label, plain Start — the overlay stays compact).
-	# Pressing Start pops a confirm dialog spelling out the qualifying detune; only
-	# agreeing ("Detune to N% & Start") applies that detune and launches the rally.
+	# Pressing Start pops a "Too powerful" confirm that routes to Change Upgrades (the
+	# gated upgrades menu) — NOT a one-press auto-detune. The player sheds power there.
 	var owned: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(owned["instance_id"])
 	# A synthetic rally whose pw_max sits between the starter's p/w and the coupe's,
@@ -1550,34 +1551,82 @@ func test_hq_carpark_offers_detune_to_enter_an_over_powered_car() -> void:
 	# The overlays upper-case their labels (house style), so compare case-insensitively.
 	assert_eq(hq._start_button.text.to_upper(), "START RALLY",
 		"the over-powered car keeps the plain Start label")
-	# Press Start: instead of launching, the detune-agreement confirm pops, naming the
-	# tune that would qualify the car. Nothing is applied yet.
+	# Press Start: instead of launching, the "Too powerful" confirm pops offering Change
+	# Upgrades (not a one-press detune). Nothing is applied and the rally doesn't launch.
 	await hq._on_start_pressed()
 	assert_true(is_instance_valid(hq._active_carpark_popup),
-		"pressing Start on an over-powered car pops the detune prompt")
+		"pressing Start on an over-powered car pops the over-limit prompt")
 	var popup: ConfirmPopup = hq._active_carpark_popup
-	assert_string_contains(popup._buttons[0].text, "%d%%" % roundi(frac * 100.0),
-		"the prompt names the tune that would qualify the car")
-	assert_string_contains(popup._buttons[0].text.to_upper(), "DETUNE",
-		"the confirm button is the explicit detune agreement")
-	assert_false(RallySession.is_active(), "the rally does not launch until the player agrees")
+	assert_string_contains(popup._buttons[0].text.to_upper(), "CHANGE UPGRADES",
+		"the first choice routes to the upgrades menu")
+	for b in popup._buttons:
+		assert_false("detune" in (b as Button).text.to_lower(),
+			"there is no one-press auto-detune button anymore")
+	assert_false(RallySession.is_active(), "the rally does not launch from the prompt")
 	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
-		"no detune is applied before the player agrees")
-	# Agree: press the detune button — the detune is applied, the car now qualifies, and
-	# the rally launches with it.
-	await hq._on_detune_confirmed()
-	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), frac, 0.0001,
-		"agreeing applies the qualifying engine detune to the car")
-	assert_true(RallyLibrary.is_eligible(RallyLibrary.by_id("fx_capped"),
-		UpgradeLibrary.effective_meta(_save.get_car(id), CarLibrary.by_id("fx_rwd_coupe"))),
-		"the detuned car now qualifies for the rally")
-	assert_true(RallySession.is_active(), "the rally launches after the agreement")
-	# The popup's agreement is TEMPORARY, for this rally only: once the rally ends
-	# the tune reverts to what it was before — this car was never garage-tuned, so
-	# back to the 1.0 (100%) default.
-	RallySession.abandon()
-	assert_almost_eq(float(_save.get_car(id).get("tuning", {}).get("engine_detune", 1.0)), 1.0, 0.0001,
-		"the popup detune reverts to the pre-rally tune once the rally ends")
+		"nothing is applied to the car by the prompt")
+	# Choosing Change Upgrades opens the gated upgrades popup where the player sheds power.
+	hq._detune_change_upgrades()
+	assert_true(hq._upgrades_popup != null and hq._upgrades_popup.visible,
+		"Change Upgrades opens the upgrades popup")
+
+
+func test_hq_carpark_warns_on_underpowered_car() -> void:
+	# A car that is ELIGIBLE for a rally but sits far below the class power ceiling
+	# (below PW_WARN_FRACTION of pw_max, even at its full achievable p/w) parks and looks
+	# eligible; pressing Start pops a NON-blocking "Underpowered" warning offering Start
+	# Anyway / Change Upgrades / Cancel. The warning now lives HERE at car selection —
+	# not at the start line — so the player is told before committing to the run.
+	var owned: Dictionary = _save.profile["cars"][0]
+	var id := int(owned["instance_id"])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	# A cap set well above the car's best achievable p/w: it's eligible (under the cap)
+	# yet underpowered (below 0.75x it). Derived from the car's own figure, not pinned.
+	var pw := CarLibrary.power_to_weight(hq._full_potential_meta(owned, entry)) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var rallies: Array[Dictionary] = [
+		{
+			"id": "fx_underpowered", "name": "Fixture Underpowered", "difficulty": 1, "showdown": false,
+			"map_pos": Vector2(0.4, 0.4),
+			"restriction": {"pw_max": pw / RallyLibrary.PW_WARN_FRACTION * 1.5},
+			"events": [
+				{"seed": 31, "turn_count": 4}, {"seed": 32, "turn_count": 4}, {"seed": 33, "turn_count": 4},
+			],
+		},
+	]
+	RallyLibrary.override_for_test(rallies)
+	hq._on_rally_pin("fx_underpowered")
+	hq._enter_car_screen()
+	await get_tree().process_frame
+	await _await_lineup(hq)
+	# The car parks and is under the cap (no detune agreement) — it just lacks grunt.
+	var idx := -1
+	for i in hq._eligible.size():
+		if int(hq._eligible[i]["instance_id"]) == id:
+			idx = i
+	assert_gt(idx, -1, "the underpowered car parks in the eligible lineup")
+	hq._focus = idx
+	hq._focus_changed()
+	assert_false(hq._detune_needed.has(id), "an underpowered car is under the cap — no detune agreement")
+	# Press Start: a NON-blocking Underpowered warning pops instead of launching.
+	await hq._on_start_pressed()
+	assert_true(is_instance_valid(hq._active_carpark_popup),
+		"pressing Start on an underpowered car pops the warning")
+	assert_false(RallySession.is_active(), "the rally waits on the warning — it doesn't launch straight away")
+	var popup: ConfirmPopup = hq._active_carpark_popup
+	assert_string_contains(popup._buttons[0].text.to_upper(), "START ANYWAY",
+		"the first choice is the non-blocking Start Anyway")
+	var offers_change := false
+	for b in popup._buttons:
+		if "change upgrades" in (b as Button).text.to_lower():
+			offers_change = true
+	assert_true(offers_change, "the warning also routes to Change Upgrades")
+	# Start Anyway launches the rally as-is (the car is eligible, just weak).
+	await hq._confirm_underpower_start()
+	assert_true(RallySession.is_active(), "Start Anyway launches the underpowered car's rally")
+	assert_eq(RallySession.rally_id(), "fx_underpowered", "the chosen rally runs")
 
 
 func test_swap_car_qualifies_for_restricted_rally() -> void:
@@ -1652,6 +1701,24 @@ func test_hq_lift_raises_the_selected_car() -> void:
 	hq._lift_back()
 	assert_eq(hq._view, hq.View.GARAGE, "Back returns to the garage")
 	assert_false(hq._lift_raised, "the car lowers back to the ground in the garage")
+
+
+func test_hq_lift_lowest_pose_matches_the_cars_calculated_rest_height() -> void:
+	# The lift's LOWERED pose respects how low the car actually sits: it rests on the lot
+	# FLOOR (hq_lift_pos.y) at the car's calculated settled ride height (car.gd
+	# settled_ride_height) — exactly how it sits parked — not floated up by the beam
+	# thickness. Behaviour that must hold for ANY car geometry, not a pinned value.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()  # -> GARAGE: spawns the lift car, lowered
+	await get_tree().process_frame
+	assert_true(is_instance_valid(hq._lift_car), "the selected car sits on the lift in the garage")
+	assert_false(hq._lift_raised, "the car is lowered in the garage view")
+	var cfg: GameConfig = Config.data
+	assert_almost_eq(hq._lift_car.global_position.y,
+		cfg.hq_lift_pos.y + hq._lift_car.settled_ride_height(), 0.001,
+		"the lowered car rests on the floor at its calculated settled ride height")
 
 
 func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
@@ -1737,7 +1804,7 @@ func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> v
 	hq._enter_change_car()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Change Car opens the car park")
-	assert_true(hq._carpark_change_mode, "the car park is in change-car mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.CHANGE, "the car park is in change-car mode")
 	assert_eq(hq._eligible.size(), _save.profile["cars"].size() - 1,
 		"every owned car EXCEPT the one on the lift is parked to pick from")
 	for owned in hq._eligible:
@@ -1748,7 +1815,7 @@ func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> v
 	hq._on_start_pressed()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "selecting a car returns to the tuning bay")
-	assert_false(hq._carpark_change_mode, "change-car mode is cleared on the way back")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.CHANGE, "change-car mode is cleared on the way back")
 	assert_ne(_save.selected_instance_id(), before, "picking a car changes the selected car")
 	assert_eq(_save.selected_instance_id(), int(other["instance_id"]), "the picked car is now selected")
 	assert_eq(hq._lift_car_instance_id, _save.selected_instance_id(),
@@ -1768,24 +1835,40 @@ func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection(
 	hq._car_back()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "Back from change-car returns to the tuning bay")
-	assert_false(hq._carpark_change_mode, "change-car mode is cleared")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.CHANGE, "change-car mode is cleared")
 	assert_eq(_save.selected_instance_id(), before, "backing out leaves the selection unchanged")
 
 
-func test_hq_lift_change_car_with_only_one_car_offers_nothing() -> void:
+func test_hq_lift_change_car_disabled_with_only_one_car() -> void:
 	# The before_each starter is the sole owned car — Change Car has nothing else to
-	# offer (the current car is excluded), so the lineup is empty and Select is disabled.
+	# offer (the current car is excluded), so its hub button is disabled and the hub
+	# cursor skips it (seating on Tuning instead of Change Car).
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(_save.profile["cars"].size(), 1, "only the starter is owned for this case")
 	hq._enter_lift()
 	await get_tree().process_frame
-	hq._enter_change_car()
+	assert_true(hq._lift_change_car_button.disabled, "Change Car is disabled with one car")
+	assert_ne(hq._hub_focus, 1, "the hub cursor doesn't seat on the disabled Change Car")
+	# Firing the hub while sitting on the (disabled) Change Car slot does nothing.
+	hq._hub_focus = 1
+	hq._activate_hub_focus()
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.CARPARK, "Change Car still opens the car park")
-	assert_true(hq._eligible.is_empty(), "no other car is offered to switch to")
-	assert_true(hq._start_button.disabled, "Select is disabled with no car to pick")
+	assert_eq(hq._view, hq.View.LIFT, "activating disabled Change Car stays in the bay")
+
+
+func test_hq_lift_change_car_enabled_with_a_second_car() -> void:
+	# Grant a second car and the Change Car button is live again — there's another car
+	# to switch to, so the button enables and the cursor seats on it on entry.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	_save.grant_car("fx_fwd_hatch")
+	hq._enter_lift()
+	await get_tree().process_frame
+	assert_false(hq._lift_change_car_button.disabled, "Change Car is enabled with a second car")
+	assert_eq(hq._hub_focus, 1, "the hub cursor seats on the enabled Change Car")
 
 
 func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
@@ -2233,7 +2316,7 @@ func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
 	hq._on_exterior_start()
 	await _await_lineup(hq)
 	assert_eq(hq._view, hq.View.CARPARK, "first run lands in the car park")
-	assert_true(hq._carpark_starter_mode, "in starter-pick mode")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.STARTER, "in starter-pick mode")
 	assert_eq(hq._eligible.size(), 3, "three starter cars parked (mx5 + focus + twingo)")
 	# Pick the focus.
 	for i in hq._eligible.size():
@@ -2258,7 +2341,7 @@ func test_returning_player_start_goes_straight_to_garage() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
-	assert_false(hq._carpark_starter_mode, "not in starter-pick mode")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.STARTER, "not in starter-pick mode")
 	assert_eq(hq._view, hq.View.GARAGE, "existing player skips the picker")
 
 
@@ -2270,7 +2353,7 @@ func test_starter_pick_back_returns_to_title() -> void:
 	hq._on_exterior_start()
 	await _await_lineup(hq)
 	hq._car_back()
-	assert_false(hq._carpark_starter_mode, "starter mode cleared on back")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.STARTER, "starter mode cleared on back")
 	assert_eq(hq._view, hq.View.EXTERIOR, "back from the picker returns to the title")
 	assert_eq(_save.profile["cars"].size(), 0, "backing out grants nothing")
 
@@ -2358,7 +2441,7 @@ func test_swap_preview_visible_only_in_swap_mode() -> void:
 	assert_true(hq._swap_preview_label.visible, "preview shows in swap mode")
 	assert_string_contains(hq._swap_preview_label.text, "hp/tonne", "preview names the unit")
 	# Leaving swap mode for the normal car-select hides it.
-	hq._carpark_swap_mode = false
+	hq._carpark_mode = hq.CarparkMode.RALLY
 	hq._focus_changed(true)
 	assert_false(hq._swap_preview_label.visible, "preview hidden outside swap mode")
 
@@ -2372,8 +2455,8 @@ func test_display_name_reflects_swap() -> void:
 
 
 func test_tuning_sliders_are_all_the_same_length() -> void:
-	# Every axis row's slider must line up to the same width, even though the detune
-	# row's value label ("80% - 200 hp/tonne") is longer than the others.
+	# Every handling-axis row's slider must line up to the same width, regardless of how
+	# long each row's value label is (the fixed 180px label column guarantees it).
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -2389,28 +2472,28 @@ func test_tuning_sliders_are_all_the_same_length() -> void:
 
 
 func test_restriction_text_shows_power_to_weight_in_hp_per_tonne() -> void:
-	# The rally requirement string must show its p/w band in hp/tonne, matching every other
-	# player-facing p/w readout. The band is authored in hp/tonne, so it is shown straight.
-	# Injected band values, so no authored rally number is pinned.
+	# The rally requirement string must show its p/w ceiling in hp/tonne, matching every
+	# other player-facing p/w readout. The ceiling is authored in hp/tonne, shown straight.
+	# Injected value, so no authored rally number is pinned.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var txt: String = hq._restriction_text({"pw_min": 220.0, "pw_max": 300.0})
+	var txt: String = hq._restriction_text({"pw_max": 300.0})
 	assert_true(txt.contains("hp/tonne"), "requirement carries the hp/tonne unit")
-	assert_true(txt.contains("220"), "authored hp/tonne floor is shown straight")
 	assert_true(txt.contains("300"), "authored hp/tonne ceiling is shown straight")
 
 
 func test_detune_label_shows_power_to_weight() -> void:
 	# The detune value label carries the percent AND the live power-to-weight readout
-	# (format, not a pinned value).
+	# (format, not a pinned value). Detune lives on the UPGRADES page (p/w knob).
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.TUNE)
-	hq._tune_panel._on_slider_changed(80.0, "engine_detune")
-	var txt := String(hq._tune_panel._slider_values["engine_detune"].text)
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	var id: int = _save.selected_instance_id()
+	hq._lift_upgrades_box._on_detune_changed(80.0, id)
+	var txt := String(hq._lift_upgrades_box._detune_value.text)
 	assert_true(txt.begins_with("80%"), "detune label leads with the percent")
 	assert_true(txt.to_lower().contains("hp/tonne"), "detune label shows the power-to-weight readout")
 
@@ -2420,9 +2503,9 @@ func test_detune_slider_is_present_and_focusable() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.TUNE)
-	assert_true(hq._tune_panel._sliders.has("engine_detune"), "tuning page has a detune slider")
-	var slider: HSlider = hq._tune_panel._sliders["engine_detune"]
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
+	var slider: HSlider = hq._lift_upgrades_box._detune_slider
+	assert_not_null(slider, "upgrades page has a detune slider")
 	assert_eq(slider.focus_mode, Control.FOCUS_ALL, "detune slider is keyboard/gamepad focusable")
 	assert_eq(slider.min_value, 0.0, "detune slider starts at 0%")
 	assert_eq(slider.max_value, 100.0, "detune slider tops at 100%")
@@ -2433,9 +2516,9 @@ func test_detune_slider_persists_as_fraction() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._enter_lift()
-	hq._open_lift_page(hq.LiftPage.TUNE)
-	hq._tune_panel._on_slider_changed(50.0, "engine_detune")
+	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	var id: int = _save.selected_instance_id()
+	hq._lift_upgrades_box._on_detune_changed(50.0, id)
 	assert_almost_eq(float(_save.get_car(id)["tuning"]["engine_detune"]), 0.5, 0.001,
 		"a 50% slider stores a 0.5 torque fraction")
 

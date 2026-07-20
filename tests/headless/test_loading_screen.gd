@@ -181,3 +181,9 @@ func test_set_carve_progress_clamps_and_stores() -> void:
 	assert_almost_eq(screen._preview._carve_progress, 1.0, 1e-4, "clamped to 1")
 	screen.set_carve_progress(-0.2)
 	assert_almost_eq(screen._preview._carve_progress, 0.0, 1e-4, "clamped to 0")
+
+
+func test_loading_screen_joins_loading_screen_group() -> void:
+	var ls: LoadingScreen = autofree(LoadingScreen.new())
+	assert_true(ls.is_in_group("loading_screen"),
+		"LoadingScreen must be in the 'loading_screen' group so music resume can gate on it")

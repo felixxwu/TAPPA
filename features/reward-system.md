@@ -33,7 +33,9 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 
 `draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`:
 pool = parts at the target tier (stepping down to the nearest lower tier that has
-an eligible part, since not every tier has one) **plus the repair kit and the
+an eligible part, since not every tier has one; `_parts_at_or_below` also skips
+**`free` parts** — the ballast is always available, so it's never a reward) **plus
+the repair kit and the
 engine swap token as low-weight entries** (`REPAIR_KIT_DROP_WEIGHT` /
 `ENGINE_SWAP_TOKEN_DROP_WEIGHT`, both placeholders). Parts **already
 fitted to `owned_car`** — the driven car the flow controller passes in — are

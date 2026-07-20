@@ -38,7 +38,7 @@ re-implementing them.
 | `continue_to_next_event()` | resume from the between-event standings interstitial: enters the next event, or — once `_event_index >= EVENTS_PER_RALLY` (the final event) — calls `_resolve_results()` (→ podium) instead. |
 | `current_standings()` | the leaderboard AS OF the events completed so far (each rival's + the player's cumulative time **and the car each drove**, ranked via `build_standings`); read by the standings scene's combined page. `events_completed()` gives the count for its header. |
 | `current_event_standings()` | the leaderboard for the **JUST-COMPLETED event alone**: each racer's time for that one event, fastest first (a rival who DNF'd that event sinks to the bottom). The row's `combined_ms` field carries the single-event time, not a cumulative sum. Empty before any event completes. Read by the standings scene's event-only page. |
-| `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_name, time_ms}`); DNF-this-event omitted. Drives the start-line "times to beat" reveal. |
+| `current_event_leaders(n := 3)` | the top `n` rivals for the CURRENT event — each rival's time for this event, fastest first, with the car they drove (`{name, car_id, car_name, time_ms}`); DNF-this-event omitted. Drives the [start-line](start-line.md) reveal: the top three line up on the grid in their **actual cars** (spawned from `car_id`), each shown by name with its time to beat. |
 | `report_wreck()` | DNF: wreck the instance (`Save.wreck_car` — leaves it owned at 0 HP, repairable, **not** destroyed), skip remaining events, resolve. Any per-event upgrades already earned this rally are **kept**; a DNF earns **no car** (the car reward only fires on a top-3 finish). Only valid while `RUNNING` (you can't wreck on the standings screen). In real play the run scene shows a **wreck menu** first (`scripts/wreck_screen.gd`) and calls this on *Return to HQ*. |
 | `abandon()` | end back at HQ, rally incomplete, no reward (Pause overlay; no retry). |
 
@@ -138,6 +138,19 @@ mode the standings scene itself connects `rally_finished` and changes to `podium
 on that signal, since the run scene is already gone by then. Headless
 tests set `auto_load_scenes = false`, drive `report_*` directly, and call
 `continue_to_next_event()` to step past the standings pause (no scenes load).
+
+### Leaderboard reveal
+
+Both leaderboard displays — the between-event standings pages (`standings.gd`
+`_build_ui`) and the post-rally podium RESULTS stage (`podium.gd`
+`_show_leaderboard`) — fill in **one name at a time from P1 downward**. Rows are
+built up front but hidden, then a `_reveal_standings()` coroutine unhides them P1,
+P2, P3… one every `REVEAL_STEP` seconds (0.5s), so the list starts empty and reveals
+dramatically. A `_reveal_gen` counter guards each run: leaving the podium stage or
+rebuilding the standings UI (page toggle) mid-reveal abandons the stale coroutine
+without touching freed rows. The podium gates its **Next** button (`_reveal_done`)
+until the reveal completes. Under headless (`Platform.is_headless()`) the animation
+is skipped — every row shows immediately — so tests see the fully-populated list.
 
 ## Run-scene wiring
 

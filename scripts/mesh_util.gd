@@ -21,10 +21,6 @@ static func first_mesh(scene: PackedScene) -> Mesh:
 	return mesh
 
 
-# A MeshInstance3D holding a BoxMesh of `size`, carrying `material`, positioned
-# at `pos`. NOT parented — the caller adds it to whatever node it wants. Shared
-# by the placeholder HQ art (garage / map table / hq environment), which all
-# built this same BoxMesh + material_override + position instance by hand.
 # Apply a distance cull to every GeometryInstance3D in `root`'s subtree (root
 # included): each stops drawing (with a `fade_m` dither-fade band) past `end_m`.
 # This is how the SHARED world-prop render distance (cfg.tree_render_distance_m /
@@ -49,6 +45,10 @@ static func apply_visibility_range(root: Node, end_m: float, fade_m: float) -> i
 	return touched
 
 
+# A MeshInstance3D holding a BoxMesh of `size`, carrying `material`, positioned
+# at `pos`. NOT parented — the caller adds it to whatever node it wants. Shared
+# by the placeholder HQ art (garage / map table / hq environment), which all
+# built this same BoxMesh + material_override + position instance by hand.
 static func box(size: Vector3, material: Material, pos := Vector3.ZERO) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()

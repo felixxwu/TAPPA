@@ -6,14 +6,14 @@ extends GutTest
 
 const TuningPanelScript = preload("res://scripts/tuning_panel.gd")
 
-# A synthetic owned car — brake/aero locked (no upgrades), grip/detune always tunable.
+# A synthetic owned car — brake/aero locked (no upgrades), grip always tunable.
 func _owned() -> Dictionary:
 	return {"instance_id": 1, "model_id": "synthetic", "tuning": {}, "upgrades": {}}
 
-func _panel(owned: Dictionary, cb := Callable(), pw_limit := -1.0) -> Control:
+func _panel(owned: Dictionary, cb := Callable()) -> Control:
 	var p = TuningPanelScript.new()
 	add_child_autofree(p)
-	p.setup(owned, cb, pw_limit)
+	p.setup(owned, cb)
 	p.refresh()
 	return p
 
@@ -35,29 +35,28 @@ func test_locked_axis_slider_not_editable() -> void:
 	assert_false(p._sliders["brake_bias"].editable, "brake_bias locked without kit")
 	assert_true(p._sliders["grip_balance"].editable, "grip always editable")
 
-func test_reset_clears_tuning() -> void:
+func test_reset_clears_handling_axes() -> void:
 	var owned := _owned()
 	owned["tuning"] = {"grip_balance": 0.7}
 	var p = _panel(owned)
 	p._reset()
-	assert_eq(owned["tuning"], {}, "reset clears the tuning dict")
+	assert_false(owned["tuning"].has("grip_balance"), "reset clears the handling axes")
 
-func test_engine_detune_slider_is_full_range() -> void:
-	# Eligibility is enforced at Start, not by capping the slider, so detune always spans
-	# the full 0-100% range — with or without a rally pw_limit passed.
-	assert_eq(_panel(_owned())._sliders["engine_detune"].max_value, 100.0, "detune reaches 100% (no limit)")
-	assert_eq(_panel(_owned(), Callable(), 160.0)._sliders["engine_detune"].max_value, 100.0,
-		"detune still reaches 100% when a pw_limit is shown")
+func test_reset_preserves_engine_detune() -> void:
+	# engine_detune is a power knob owned by the upgrades menu, not a handling axis, so
+	# the tuning panel's Reset must leave it alone (not silently restore full power).
+	var owned := _owned()
+	owned["tuning"] = {"grip_balance": 0.7, "engine_detune": 0.6}
+	var p = _panel(owned)
+	p._reset()
+	assert_false(owned["tuning"].has("grip_balance"), "handling axis cleared")
+	assert_almost_eq(float(owned["tuning"].get("engine_detune", 1.0)), 0.6, 0.0001,
+		"detune preserved across a handling reset")
 
-func test_pw_limit_shown_in_detune_label() -> void:
-	# When the host passes a rally pw ceiling, the engine-detune value label spells out the
-	# limit ("max N"); with no limit (<0) it doesn't.
-	var with_limit = _panel(_owned(), Callable(), 160.0)
-	assert_true(with_limit._slider_values["engine_detune"].text.to_lower().contains("max"),
-		"the detune label shows the rally's max p/w when a limit is set")
-	var no_limit = _panel(_owned())
-	assert_false(no_limit._slider_values["engine_detune"].text.to_lower().contains("max"),
-		"no limit → no max shown")
+func test_no_detune_slider_on_the_tuning_panel() -> void:
+	# Engine detune moved to the upgrades menu — the tuning panel only has handling axes.
+	var p = _panel(_owned())
+	assert_false(p._sliders.has("engine_detune"), "detune is no longer a tuning-panel axis")
 
 
 # --- Task 3: a start-line-style tune bakes into the live config via TuningLibrary. ---
@@ -68,5 +67,5 @@ func test_grip_tuning_shifts_front_rear_grip_off_baseline() -> void:
 	cfg.tuning_grip_authority = 0.2   # any reasonable non-zero authority
 	var owned := {"instance_id": 1, "tuning": {"grip_balance": 1.0}, "upgrades": {}}
 	TuningLibrary.apply(owned, cfg)
-	assert_lt(cfg.wheel_friction_slip_front, 2.0, "oversteer moves grip off the front")
-	assert_gt(cfg.wheel_friction_slip_rear, 2.0, "oversteer moves grip onto the rear")
+	assert_gt(cfg.wheel_friction_slip_front, 2.0, "oversteer moves grip onto the front")
+	assert_lt(cfg.wheel_friction_slip_rear, 2.0, "oversteer moves grip off the rear")

@@ -20,27 +20,29 @@ Each `RALLIES` entry:
 - `restriction` — a `Dictionary`; **empty = open-class** (every car eligible).
   Otherwise every present field must match the car's CarLibrary metadata:
   `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
-  `engine_displacement_l`), `pw_min`/`pw_max` (vs `CarLibrary.power_to_weight`,
+  `engine_displacement_l`), `pw_max` (vs `CarLibrary.power_to_weight`,
   derived from the referenced `EngineLibrary` engine's torque + redline (× the
   global `TORQUE_POWER_FALLOFF` calibration, boosted torque for turbos via
   `effective_meta`), so the gate compares against the same hp/tonne shown on
   the stats panels — within ~±8% of the cars' real published figures —
-  see [engine-and-transmission.md](engine-and-transmission.md)). The `pw_min`/`pw_max`
-  bands are **authored in hp/tonne** — the same unit shown on every player-facing p/w
-  readout — so a designer tunes them in the numbers on screen; `is_eligible` converts a
+  see [engine-and-transmission.md](engine-and-transmission.md)). The `pw_max`
+  ceiling is **authored in hp/tonne** — the same unit shown on every player-facing p/w
+  readout — so a designer tunes it in the numbers on screen; `is_eligible` converts a
   car's `power_to_weight` (kW/kg) to hp/tonne via `RallyLibrary.KW_KG_TO_HP_TONNE` before comparing.
-  **Progression is primarily gated on power-to-weight:** the earliest rallies are
-  gated only from above (a `pw_max` ceiling and no floor, so the low-power
-  starter qualifies), and the harder rallies tighten to a **band** (`pw_min` +
-  `pw_max`) so an over-powered car can't walk them either. A rally may layer a
-  secondary theme on top of its band (e.g. RWD Masters also wants `drive_mode` RWD,
-  and **Front Runners** — the home of the FWD starters (Focus, Twingo) — wants
-  `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally parallel to the
-  Shakedown for the MX-5), and **American Muscle** wants `country` US +
-  `car_type` muscle on top of its band — the Charger's home turf.
-  **Sh*tbox Cup** sits below even Shakedown: a `pw_max` 91 hp/tonne ceiling with no
-  floor, catering to the sub-91 hp/tonne shitboxes (Twingo, Acty) that no other
-  rally's band admits. The single open-class rally is the showdown.
+  **Progression is primarily gated on power-to-weight, from above only:** every
+  non-showdown rally carries a `pw_max` ceiling (so an over-powered car can't walk
+  it) but **no hard floor** — a car far under the ceiling is still eligible; it just
+  triggers a non-blocking "Underpowered" warning at **car selection in the HQ car
+  park** when its p/w is below `RallyLibrary.PW_WARN_FRACTION` (0.75) of `pw_max` (see
+  `RallyLibrary.underpower_warning`, surfaced by `hq.gd._show_underpower_prompt`). A rally may
+  layer a secondary theme on top of its ceiling (e.g. RWD Masters also wants
+  `drive_mode` RWD, and **Front Runners** — the home of the FWD starters (Focus,
+  Twingo) — wants `drive_mode` FWD under a `pw_max` ceiling, an intro-tier FWD rally
+  parallel to the Shakedown for the MX-5), and **American Muscle** wants `country`
+  US + `car_type` muscle on top of its ceiling — the Charger's home turf.
+  **Sh*tbox Cup** sits below even Shakedown: a `pw_max` 91 hp/tonne ceiling,
+  catering to the sub-91 hp/tonne shitboxes (Twingo, Acty). The single open-class
+  rally is the showdown.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
   forestiness?, surface_mix?, straightness?, cliffiness?, target_ms_override? }`. The
   `seed`/`turn_count`/`width` feed `TrackGenerator.generate` unchanged; the
@@ -112,11 +114,15 @@ generator also uses it per-rival.
   field fails, or the band floor is unreachable). `full_meta` is the car's
   effective stats at FULL tune (`effective_meta` with detune 1.0), so the result
   is an absolute detune-slider setting; it's floored to the slider's whole-percent
-  steps and verified back through `is_eligible`. This powers the car park's
-  **detune-to-enter prompt** — an over-powered car may enter a `pw_max`-capped
-  rally by agreeing to this tune, OR by picking the prompt's **Change Upgrades**
-  option to strip power-adding parts and qualify at full tune instead (see
-  [menus.md](menus.md) → CARPARK).
+  steps and verified back through `is_eligible`. It's now used only to CLASSIFY a
+  car for the car park's **over-limit prompt** — a result in `(0, 1)` marks the car
+  as over-cap-but-fixable, so it parks looking eligible and pressing Start pops the
+  prompt (the frac value itself is no longer shown to the player). The prompt's
+  **Change Upgrades** option opens the gated upgrades menu where the player sheds
+  power for themselves (detune slider, ballast, or stripping parts) as a
+  **permanent** garage edit, then re-presses Start (see
+  [menus.md](menus.md) → CARPARK). There is no longer a one-press "agree to the
+  tune" button that applies it temporarily.
 - `derive_target_ms(track_result, car_meta, event)` — per-event PAR time: physics
   floor of the **best eligible car** (see `LapTimeModel` below) × `GameConfig.driver_factor`
   (default 1.08, the driver-imperfection multiplier that turns the physics floor into a

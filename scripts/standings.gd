@@ -22,6 +22,9 @@ var leaderboard_hidden := false
 
 var _showing_event_page := false
 var _action_button: Button = null
+var _reveal_gen := 0  # bumped per reveal so a stale coroutine can't touch freed rows
+
+const REVEAL_STEP := 0.5  # seconds between each leaderboard name appearing
 
 
 func _ready() -> void:
@@ -130,8 +133,15 @@ func _build_ui() -> void:
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(content)
+	# Build every row up front but hidden, then reveal them P1-down one at a
+	# time so the leaderboard fills in dramatically (see _reveal_standings).
+	var row_nodes: Array[Control] = []
 	for entry in rows:
-		content.add_child(UITheme.standings_row(entry))
+		var row := UITheme.standings_row(entry)
+		if not Platform.is_headless():
+			row.visible = false
+		content.add_child(row)
+		row_nodes.append(row)
 
 	var cont := Button.new()
 	cont.text = button_text
@@ -152,6 +162,23 @@ func _build_ui() -> void:
 	# features/menus.md → MenuNav). Re-run each _build_ui so the fresh button is
 	# picked up; attach() reuses the existing node rather than stacking handlers.
 	MenuNav.attach(self, {first = cont, on_back = _on_back_pressed})
+
+	if not Platform.is_headless():
+		_reveal_standings(row_nodes)
+
+
+# Reveal leaderboard rows from P1 downward, one every REVEAL_STEP seconds,
+# starting from an empty list. Guarded by _reveal_gen so a rebuild (page
+# toggle / rebuild) mid-reveal abandons the coroutine without touching freed nodes.
+func _reveal_standings(rows: Array) -> void:
+	_reveal_gen += 1
+	var gen := _reveal_gen
+	for row in rows:
+		await get_tree().create_timer(REVEAL_STEP).timeout
+		if gen != _reveal_gen:
+			return
+		if is_instance_valid(row):
+			row.visible = true
 
 
 # The button advances: event page -> combined page (mid-rally), or event/combined
