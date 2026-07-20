@@ -33,8 +33,8 @@ func test_retune_applies_the_changed_tuning_to_the_live_config() -> void:
 	var front_before: float = _car.config.wheel_friction_slip_front
 	var rear_before: float = _car.config.wheel_friction_slip_rear
 	_car.retune({"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {"grip_balance": 1.0}, "upgrades": {}})
-	assert_lt(_car.config.wheel_friction_slip_front, front_before, "oversteer shifts grip off the front, live")
-	assert_gt(_car.config.wheel_friction_slip_rear, rear_before, "oversteer shifts grip onto the rear, live")
+	assert_gt(_car.config.wheel_friction_slip_front, front_before, "oversteer shifts grip onto the front, live")
+	assert_lt(_car.config.wheel_friction_slip_rear, rear_before, "oversteer shifts grip off the rear, live")
 
 
 func test_retune_is_idempotent_and_does_not_compound() -> void:

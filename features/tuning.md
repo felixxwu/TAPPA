@@ -17,41 +17,52 @@ the authored `.tres`.
 ## The three axes
 
 Each owned car stores `tuning = { grip_balance, brake_bias, aero_balance,
-engine_detune }`. The first three are a single normalized slider in `[-1, +1]`,
-default `0` (= the baseline, neutral); `engine_detune` is a direct `[0, 1]`
-torque scale, default `1.0` (full power).
+engine_detune }`. The first three are the **handling axes** — a single
+normalized slider in `[-1, +1]`, default `0` (= the baseline, neutral) — and are
+the only entries in `TuningLibrary.AXES`; `engine_detune` is a direct `[0, 1]`
+torque scale, default `1.0` (full power), stored in the same `tuning` bag but
+**no longer a tuning-panel slider** (see below).
 
 | Axis | Slider | Maps to | Gated by |
 |------|--------|---------|----------|
 | `grip_balance` | −1 understeer ↔ +1 oversteer | shifts `wheel_friction_slip_front`/`_rear` | always available |
 | `brake_bias` | −1 rearward ↔ +1 forward | the front/rear `brake_bias` split (drivetrain) | the **brakes** upgrade (`unlocks_brake_bias`) |
 | `aero_balance` | −1 front ↔ +1 rear | shifts `downforce_front`/`_rear` | the **aero** upgrade (`unlocks_aero_tuning`) |
-| `engine_detune` | 0% ↔ 100% torque | `cfg.peak_torque *= detune` | always available |
 
-**`engine_detune`** ([engine-swap.md](engine-swap.md)) is the odd one out: it's
-not a symmetric ±1 balance shift but a direct `0–100%` scale on the fitted
-engine's torque, applied by `TuningLibrary.apply` **last** (after grip/brake/
-aero) so it scales whatever torque the swapped-in engine + upgrade kits
-produced. It needs no upgrade to unlock — every car can be detuned, e.g. to
-duck under a rally's power-to-weight ceiling. **Reset to neutral** returns it
-to `1.0` (100%, full power), same as the other axes reset to their own
-neutral (`0`). It also feeds `UpgradeLibrary.effective_meta`, so a detuned
-car's reduced torque affects displayed power-to-weight and rally eligibility,
-not just the live-fielded car. The car park offers this as a one-press prompt:
-an over-powered car (over a rally's `pw_max` cap) still parks in the rally
-lineup with Start relabelled **Detune to N% & Start**, which applies the
-qualifying tune (`RallyLibrary.qualifying_detune`) on agreement — see
-[menus.md](menus.md) → CARPARK. The **pre-event start-line tune menu** offers the same
-"Detune to N% / Change Upgrades" prompt on Start (see [start-line.md](start-line.md)).
-The slider's value label pairs the percent with
-the car's live power-to-weight at that setting (e.g. `80% - 200 hp/tonne`, via
-`TuningPanel._detune_label_text` → `effective_meta`), so you can dial to a target band
-by eye; when the host passes a `pw_limit` (the start line passes the rally's `pw_max`;
-the HQ lift omits it) the label also spells out the ceiling and flags **OVER LIMIT**
-(e.g. `120% - 260 hp/tonne (max 200) OVER LIMIT`). The detune slider always spans the
-full 0–100 % — eligibility is enforced at Start, not by capping the slider. (All
-tuning-lift sliders share one fixed-width label column so they line
-up to the same length regardless of value text.)
+**`engine_detune`** ([engine-swap.md](engine-swap.md)) is stored in the per-car
+`tuning` bag alongside the three handling axes, and `TuningLibrary.apply` still
+reads it and applies it **last** (after grip/brake/aero) — a direct `0–100%`
+scale on the fitted engine's torque, so it scales whatever torque the swapped-in
+engine + upgrade kits produced. But it is **not** a `TuningLibrary.AXES` entry
+and its **slider no longer lives in the tuning panel** — it moved to the
+**upgrades menu** (`UpgradesMenu`), because detune is a power / power-to-weight
+knob rather than a handling axis. It needs no upgrade to unlock — every car can
+be detuned, e.g. to duck under a rally's power-to-weight ceiling. (Detune isn't
+the only p/w lever — the weight slot's **free ballast** adds mass to drop p/w the
+other way; see [upgrade-catalogue.md](upgrade-catalogue.md).) It also feeds
+`UpgradeLibrary.effective_meta`, so a detuned car's reduced torque affects
+displayed power-to-weight and rally eligibility, not just the live-fielded car.
+An over-powered car (over a rally's `pw_max` cap) still parks in the rally lineup
+with a plain Start; pressing Start pops a **"Too powerful"** prompt whose only
+route through is **Change Upgrades**, which opens the gated upgrades menu so the
+player sheds power themselves (detune slider / ballast / stripping parts). That
+fix is a **permanent** garage edit — it persists after the rally, not a temporary
+per-rally detune — and once the build is under the cap the player closes the menu
+and re-presses Start to launch. See [menus.md](menus.md) →
+CARPARK. The **pre-event start-line** menu offers the same
+Change-Upgrades prompt on Start (see [start-line.md](start-line.md)). (Rallies
+have no hard power floor, so a permanently detuned car can still enter a higher
+class — it just gets a non-blocking "Underpowered" warning at the start line.) In the
+upgrades menu the detune slider's value label pairs the percent with the car's
+live power-to-weight at that setting (e.g. `80% - 200 hp/tonne`, via
+`UpgradesMenu`'s detune-label helper → `effective_meta`), so you can dial to a
+target band by eye. The label shows **only** the `N% - M hp/tonne` readout — no
+cap or limit text. When the host passes a `pw_limit` (the start line and
+car-park Change-Upgrades popup pass the rally's `pw_max`; the HQ lift omits it,
+for free tuning) the ceiling instead lives on the **gated close button** (which
+turns red and blocks closing while over the cap — see [menus.md](menus.md)). The
+detune slider always spans the full 0–100 % — eligibility is enforced by that
+gated button, not by capping the slider.
 
 ## Application (`TuningLibrary.apply`)
 
@@ -71,7 +82,8 @@ toggled off in the upgrades menu neither changes the baseline nor unlocks slider
 its config pair scaled by a `GameConfig` authority knob, so a slider can never zero
 or invert a value:
 
-- **grip:** `front *= (1 − t·grip_authority)`, `rear *= (1 + t·grip_authority)`.
+- **grip:** `front *= (1 + t·grip_authority)`, `rear *= (1 − t·grip_authority)` — so
+  `+1` (oversteer) adds front grip / removes rear grip, and `−1` (understeer) is the mirror.
 - **aero:** same shape on `downforce_front`/`_rear`, **only** with the aero kit; a
   no-op otherwise. The aero kit's visual wing (spoiler/splitter) is covered in [aero-parts.md](aero-parts.md).
 - **brake bias:** each car authors its own default `brake_bias` in `CarLibrary`,
@@ -124,19 +136,28 @@ which reads as horsepower) and flags a wrecked (0%) car.
 
 ## The tuning UI (`TuningPanel`)
 
-The four sliders live in one reusable control, `TuningPanel`
+The three handling-axis sliders live in one reusable control, `TuningPanel`
 (`scripts/tuning_panel.gd`, a `VBoxContainer`), shared by both places tuning is
-offered. It owns the slider rows, the locked-axis greying/"needs X kit" notes,
-the **Reset to neutral** action, and the immediate `Save.set_tuning` /
-`Save.set_engine_detune` persistence; a host binds it with
-`setup(owned_car, on_change)` and calls `refresh()`, and is notified via
-`on_change` after each edit so it can re-field the car.
+offered. Each labeled slider row (name + value column, slider, extremity labels,
+and the focus highlight) is built by the shared `SliderRow.build` helper
+(`scripts/slider_row.gd`), which the upgrades menu's detune row uses too — so the
+two panels' rows can't drift apart. It owns the slider rows, the locked-axis greying/"needs X kit" notes,
+the **Reset to neutral** action, and the immediate `Save.set_tuning`
+persistence; a host binds it with `setup(owned_car, on_change)` and calls
+`refresh()`, and is notified via `on_change` after each edit so it can re-field
+the car. **Reset to neutral** clears only the three handling axes back to `0`
+and **preserves** `tuning.engine_detune` (detune is now owned by the upgrades
+menu, so tuning no longer resets it to full power).
 
 `TuningPanel` has a sibling for the **upgrades** half: `UpgradesMenu`
 (`scripts/upgrades_menu.gd`, also a reusable `VBoxContainer` with the same
 `setup(owned, on_change, …)` shape), shared by the HQ lift and the car-park
 detune-to-enter prompt's Change-Upgrades popup — see
-[upgrade-catalogue.md](upgrade-catalogue.md).
+[upgrade-catalogue.md](upgrade-catalogue.md). `UpgradesMenu` also hosts the
+**engine-detune slider** (0–100%, step 5) at the bottom of the menu, with the
+`N% - M hp/tonne` value label described above (the `pw_limit` ceiling lives on the
+gated close button, not the label) and its immediate `Save.set_engine_detune`
+persistence.
 
 - **Garage tuning lift** (`hq.gd`, `LiftPage.TUNE`) — embeds the panel with a
   no-op `on_change` (the change lands on the car's next fielding).
@@ -149,11 +170,12 @@ detune-to-enter prompt's Change-Upgrades popup — see
   new tuning — no wheel relocation, pose reset, or engine rebuild. Re-fielding a
   live, staged `VehicleBody3D` via `apply_owned` would relocate its wheels
   (detach/re-attach) and reset its pose, corrupting the body (wheels drop through
-  the floor — see the `Car.respawn` note). The panel is also given a **detune
-  cap** = `RallyLibrary.qualifying_detune(rally, full_power_meta)`, so the
-  engine-detune slider can't be pushed back above the rally's power-to-weight
-  ceiling (a car that entered via a detune agreement can't undo it here). Tuning
-  only — upgrades / car swaps are not offered.
+  the floor — see the `Car.respawn` note). Handling tuning only — the
+  engine-detune slider now lives in the start line's **Upgrades** overlay
+  (`UpgradesMenu`), which is where the rally's `pw_limit` (=
+  `RallyLibrary.qualifying_detune`-relevant `pw_max`) is passed so the overlay's
+  gated **Done** button enforces the ceiling (red, blocks closing while over the
+  cap); car swaps are not offered.
 
 ## The tuning lift (UI)
 
@@ -177,18 +199,19 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
 - **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesMenu` component
   (`scripts/upgrades_menu.gd`): one earn-gated **option selector per slot** — "Stock"
   plus one button per catalogue part in that slot, with each part greyed until its kit
-  is fitted to this car and the active pick bracketed (drivetrain is instead an
-  RWD/AWD/FWD picker). Upgrades are **car-bound**: nothing is consumed from an unlocked
-  pool — picking an option toggles the part on/off via `Save.set_upgrade_enabled`
-  (one enabled per slot). A live power-to-weight + lateral-G stats line sits above the
-  rows, and an engine-swap row below them (lift only). See
+  is fitted to this car and the active pick bracketed **and accent-green** (drivetrain is
+  instead an RWD/AWD/FWD picker). Upgrades are **car-bound**: nothing is consumed from an
+  unlocked pool — picking an option toggles the part on/off via `Save.set_upgrade_enabled`
+  (one enabled per slot). There is no stats line; the live power-to-weight readout rides on
+  the **engine-detune slider's value label** at the bottom of the menu, below the part rows
+  and the lift-only engine-swap row. See
   [upgrade-catalogue.md](upgrade-catalogue.md) and [engine-swap.md](engine-swap.md).
   (Repair moved to the garage station row — see [menus.md](menus.md).)
 
 ## Tests
 
 - `tests/headless/test_tuning_library.gd` — neutral is a no-op; grip shifts rearward
-  monotonically and needs no upgrade; aero/brake-bias gating; slider clamp.
+  forward (oversteer) monotonically and needs no upgrade; aero/brake-bias gating; slider clamp.
 - `tests/headless/test_drivetrain.gd` — the brake-bias split sends the foot brake to
   the chosen axle (`brake_bias` 1.0 locks the front, 0.0 the rear); `0.5` regression.
 - `tests/headless/test_menu_flow.gd` — the lift raises the selected car; sliders save

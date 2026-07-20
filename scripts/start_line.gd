@@ -31,6 +31,7 @@ var _seq: int = Seq.ORBIT
 var _seq_t := 0.0          # seconds into the current timed phase
 var _orbit_angle := 0.0    # accumulated orbit camera angle (rad)
 var _launched := false
+var _underpower_acked := false   # player confirmed the "underpowered" start warning
 
 # Refs handed in by world.gd (camera/HUD optional so tests can omit them).
 var _player: Node3D
@@ -45,10 +46,12 @@ var _overlay: CanvasLayer
 var _start_button: Button
 var _tune_button: Button
 var _tune_layer: CanvasLayer         # the pre-race tuning overlay (built lazily)
-var _tune_panel: TuningPanel         # the shared four-axis tuning sliders
+var _tune_panel: TuningPanel         # the shared handling-axis tuning sliders (detune is in Upgrades)
 var _upgrades_button: Button
 var _upgrades_layer: CanvasLayer     # the pre-race upgrades overlay (built lazily)
 var _upgrades_menu: UpgradesMenu     # the shared upgrades menu (same as the HQ garage)
+var _upgrades_back: Button           # the upgrades overlay's Back/Done button (p/w-gated)
+var _menu_last_back: Button          # back button _build_menu_overlay just created
 var _rally: Dictionary = {}          # this event's rally (for the Tune Car detune cap)
 var _leaders_box: VBoxContainer
 var _leader_rows: Array[Label] = []   # one row per shown rival (or a single dash)
@@ -252,7 +255,7 @@ func _pw_limit() -> float:
 # centred house panel wrapping a titled `component` and a Back button wired to `on_back`.
 # Shared skeleton for the Tune Car and Upgrades pages (they differ only in title +
 # component). Returns the layer; the caller keeps the handle and the component reference.
-func _build_menu_overlay(title: String, component: Control, on_back: Callable) -> CanvasLayer:
+func _build_menu_overlay(title: String, component: Control, on_back: Callable, connect_back := true) -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	layer.layer = 6   # above the start overlay (layer 5)
 	add_child(layer)
@@ -269,8 +272,12 @@ func _build_menu_overlay(title: String, component: Control, on_back: Callable) -
 	col.add_child(component)
 	var back := UITheme.button("Back")
 	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	back.pressed.connect(on_back)
+	# connect_back=false leaves the press unwired so a caller can gate it (the upgrades
+	# overlay routes it through UpgradesMenu.bind_close_button instead).
+	if connect_back:
+		back.pressed.connect(on_back)
 	col.add_child(back)
+	_menu_last_back = back
 	UITheme.enforce(layer)
 	return layer
 
@@ -305,7 +312,7 @@ func _open_tune() -> void:
 	if _tune_layer == null:
 		_build_tune_overlay()
 	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
-	_tune_panel.setup(owned, _on_tune_changed.bind(owned), _pw_limit())
+	_tune_panel.setup(owned, _on_tune_changed.bind(owned))
 	_tune_panel.refresh()
 	_open_menu(_tune_layer, _tune_panel.first_slider(), _close_tune)
 
@@ -338,7 +345,11 @@ func _open_upgrades() -> void:
 		_build_upgrades_overlay()
 	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
 	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _pw_limit())
-	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _close_upgrades)
+	# Gate Back/Done + Esc on the rally's p/w cap (re-bind each open so it re-reads the
+	# limit and repaints): over the cap, the button goes red and closing is blocked until
+	# the player detunes under it. request_close is the gated close for both button + Esc.
+	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
+	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _upgrades_menu.request_close)
 
 
 func _close_upgrades() -> void:
@@ -347,7 +358,9 @@ func _close_upgrades() -> void:
 
 func _build_upgrades_overlay() -> void:
 	_upgrades_menu = UpgradesMenu.new()
-	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades)
+	# connect_back=false: the Back button's press is wired through the menu's gate below.
+	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false)
+	_upgrades_back = _menu_last_back
 
 
 # An upgrade edit (UpgradesMenu already wrote Save; it calls on_change with no args).
@@ -374,17 +387,10 @@ func _rally_qualifying_detune(owned: Dictionary) -> float:
 	return RallyLibrary.qualifying_detune(_rally, UpgradeLibrary.effective_meta(full, entry))
 
 
-# The gate's "Detune to X%" choice: apply the qualifying detune to the car for this
-# rally (registered for revert so it's restored when the rally ends, like the HQ car
-# park), re-field the live car, then launch. The car is now eligible, so the re-entered
-# launch() clears the gate and proceeds.
-func _apply_detune_and_launch(frac: float) -> void:
-	var iid := RallySession.car_instance_id()
-	var prior := float((Save.get_car(iid).get("tuning", {}) as Dictionary).get("engine_detune", 1.0))
-	RallySession.register_detune_revert(iid, prior)
-	Save.set_engine_detune(iid, frac)
-	if _player != null and _player.has_method("retune"):
-		_player.retune(Save.get_car(iid))
+# "Start Anyway" from the underpowered warning: remember the ack so the warning
+# doesn't re-pop, then re-run launch (which now passes the warning gate).
+func _confirm_underpower_launch() -> void:
+	_underpower_acked = true
 	launch()
 
 
@@ -638,23 +644,34 @@ func launch() -> void:
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
 			var reason := RallyLibrary.ineligibility_reason(_rally, meta)
 			if reason != "":
-				# An over-powered car (over the rally's pw ceiling) can be admitted by
-				# detuning — offer the same "Detune to X% / Change Upgrades" choice as the
-				# HQ car park. A detune that can't fix it (wrong drivetrain, too little
-				# power, etc.) just gets the reason + Change Upgrades.
+				# Ineligible on Start → route the player to the upgrades menu to fix it
+				# (the gated Done button won't let an over-powered car leave until it's
+				# under the cap — detune / ballast / strip parts). No auto-detune button:
+				# the change is the player's own and persists. An over-powered car gets a
+				# "Too powerful" nudge; any other reason (wrong drivetrain, too little
+				# power) shows the reason. Either way: Change Upgrades / Cancel.
 				var frac := _rally_qualifying_detune(owned)
-				if frac > 0.0 and frac < 1.0:
-					var pct := roundi(frac * 100.0)
+				var over_power := frac > 0.0 and frac < 1.0
+				if over_power:
 					ConfirmPopup.open(self, "Too powerful",
-						"Detune to %d%% to enter, or change your upgrades." % pct,
-						[ {"label": "Detune to %d%%" % pct, "callback": _apply_detune_and_launch.bind(frac)},
-						  {"label": "Change Upgrades", "callback": _open_upgrades},
+						"Change your upgrades to get under the power-to-weight limit.",
+						[ {"label": "Change Upgrades", "callback": _open_upgrades},
 						  {"label": "Cancel", "callback": Callable()} ], 0)
 				else:
 					ConfirmPopup.open(self, "Can't start", reason,
 						[ {"label": "Change Upgrades", "callback": _open_upgrades},
 						  {"label": "Cancel", "callback": Callable()} ])
 				return
+			# Eligible, but far below the class ceiling: warn (non-blocking) once. The
+			# player can start anyway — there's no hard power floor, only this nudge.
+			if not _underpower_acked:
+				var warn := RallyLibrary.underpower_warning(_rally, meta)
+				if warn != "":
+					ConfirmPopup.open(self, "Underpowered", "%s\n\nStart anyway?" % warn,
+						[ {"label": "Start Anyway", "callback": _confirm_underpower_launch},
+						  {"label": "Change Upgrades", "callback": _open_upgrades},
+						  {"label": "Cancel", "callback": Callable()} ], 0)
+					return
 	_launched = true
 	if _overlay != null:
 		_overlay.visible = false

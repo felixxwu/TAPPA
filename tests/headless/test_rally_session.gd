@@ -477,8 +477,9 @@ func _detune_of(id: int) -> float:
 func test_registered_detune_reverts_to_the_prior_tune_when_the_rally_finishes() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	var id := int(owned["instance_id"])
-	# The garage previously detuned this car to 0.9; the car-park popup then
-	# detunes it further to 0.6 for this rally only (mirrors hq._on_detune_confirmed).
+	# The garage previously detuned this car to 0.9; a caller then registers a further
+	# per-rally detune to 0.6 to be reverted when the rally ends (RallySession's revert
+	# API, exercised directly here regardless of which UI flow registers it).
 	_save.set_engine_detune(id, 0.9)
 	RallySession.register_detune_revert(id, _detune_of(id))
 	_save.set_engine_detune(id, 0.6)

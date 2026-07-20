@@ -222,7 +222,7 @@ var peak_torque_rpm := 4500.0
 ## shifts it about that baseline. Used directly only for a car that omits the field.
 @export_range(0.0, 1.0) var brake_bias := 0.5
 ## Max fraction of grip shifted front<->rear at slider |1| (grip_balance).
-@export_range(0.0, 1.0) var tuning_grip_authority := 0.15
+@export_range(0.0, 1.0) var tuning_grip_authority := 0.3
 ## Half-span the brake_bias slider can move from the car's default (gated by the
 ## brakes upgrade) — e.g. 0.3 lets a car with a 0.55 default reach [0.25, 0.85].
 @export_range(0.0, 0.5) var tuning_brake_authority := 0.3

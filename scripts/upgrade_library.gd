@@ -23,7 +23,7 @@ const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
-const SLOTS := ["turbo", "aero", "chassis", "brakes", "drivetrain"]
+const SLOTS := ["turbo", "aero", "weight", "brakes", "drivetrain"]
 
 
 # Each entry is an UpgradeDef. `effect` maps to GameConfig fields applied in
@@ -53,9 +53,22 @@ const UPGRADES: Array[Dictionary] = [
 		"tier": 1, "consumable": false,
 		"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
 	},
+	# The "weight" slot is a p/w lever, not an earn-gated part row. The two BALLAST
+	# options add weight and are `free` (always selectable on every car, never drawn as
+	# a reward — see reward_system) so the player can shed p/w to enter a lower class;
+	# the LIGHTWEIGHT option removes weight and is the one earned reward-pool drop. The
+	# menu shows each as a rounded kg delta off the car's base mass (upgrades_menu).
 	{
-		"id": "weight_reduction", "name": "Weight Reduction", "slot": "chassis",
-		"tier": 1, "consumable": false, "effect": {"mass_mult": 0.90},
+		"id": "ballast_large", "name": "Heavy Ballast", "slot": "weight",
+		"tier": 1, "consumable": false, "free": true, "effect": {"mass_mult": 1.5},
+	},
+	{
+		"id": "ballast_small", "name": "Light Ballast", "slot": "weight",
+		"tier": 1, "consumable": false, "free": true, "effect": {"mass_mult": 1.2},
+	},
+	{
+		"id": "weight_reduction", "name": "Weight Reduction", "slot": "weight",
+		"tier": 1, "consumable": false, "effect": {"mass_mult": 0.80},
 	},
 	{
 		"id": "brake_kit", "name": "Big Brake Kit", "slot": "brakes",
@@ -108,6 +121,12 @@ static func slot_of(id: String) -> String:
 
 static func is_consumable(id: String) -> bool:
 	return bool(by_id(id).get("consumable", false))
+
+
+# A `free` part is always selectable on every car (no earning) and is never drawn as
+# a reward — the ballast weight options. Everything else must be won and fitted first.
+static func is_free(id: String) -> bool:
+	return bool(by_id(id).get("free", false))
 
 
 # The applied upgrades that currently take effect on a car: installed minus the

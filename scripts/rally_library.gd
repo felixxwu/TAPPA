@@ -51,11 +51,11 @@ const PACE_SLOW_STEP := 0.1667   # each tier above 1 pulls the slow end down (2.
 const PACE_EVENT_NOISE := 0.05   # ±5% per-event jitter around a rival's persistent base pace
 const PACE_MIN_FLOOR := 1.00     # hard clamp: rivals never beat their car's physics optimum
 
-# The rally p/w band (pw_min / pw_max below) is AUTHORED in hp/tonne — the same
+# The rally p/w ceiling (pw_max below) is AUTHORED in hp/tonne — the same
 # unit the HUD / detail panel / detune slider show (hq.gd) — so a designer tunes
-# the bands in the numbers they see on screen. CarLibrary.power_to_weight() returns
+# the ceilings in the numbers they see on screen. CarLibrary.power_to_weight() returns
 # kW/kg, so is_eligible converts a car's figure to hp/tonne with this factor before
-# comparing it against the authored band. Uses CarLibrary.KW_KG_TO_HP_TONNE — the
+# comparing it against the authored ceiling. Uses CarLibrary.KW_KG_TO_HP_TONNE — the
 # single source of truth for the conversion, shared with hq.gd.
 const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 
@@ -70,11 +70,12 @@ static func _pace_band(tier: int) -> Vector2:
 
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
 # (every car eligible); otherwise every present field must match the car's
-# CarLibrary metadata. Progression is PRIMARILY gated on power-to-weight: the
-# earliest rallies are gated only from above (a `pw_max` ceiling, so the low-power
-# starter qualifies), and the harder rallies tighten to a band (`pw_min` +
-# `pw_max`) so an over-powered car can't walk them either. A rally may layer a
-# secondary theme on top of its p/w band (e.g. RWD Masters also wants `drive_mode`
+# CarLibrary metadata. Progression is PRIMARILY gated on power-to-weight: every
+# non-showdown rally carries a `pw_max` ceiling so an over-powered car can't walk
+# it. There is no hard floor — a car well under the ceiling can still enter, but
+# the start line warns the player it's underpowered (see `underpower_warning`,
+# fired below PW_WARN_FRACTION of `pw_max`). A rally may layer a
+# secondary theme on top of its p/w ceiling (e.g. RWD Masters also wants `drive_mode`
 # RWD). `difficulty` is a HIDDEN tier (never shown to the player) that drives the
 # reward tier (clamped by progress) and sort order — the p/w gate is the visible
 # requirement. `events` is exactly 3 EventDefs (the showdown's are longer). Each
@@ -84,7 +85,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "shakedown", "name": "Shakedown", "region": "home", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
-		"restriction": {"pw_min": 91.0, "pw_max": 180.0},  # gated below: a low p/w ceiling — the starter's home (ceiling clears the MX-5 ~159 / XJS ~175 hp/t)
+		"restriction": {"pw_max": 180.0},  # a low p/w ceiling — the starter's home (ceiling clears the MX-5 ~159 / XJS ~175 hp/t)
 		"events": [
 			{"seed": 1007, "turn_count": 10, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.0, "terrain_layer2_amplitude": 3.0},
 			{"seed": 1008, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0, "straightness": 0.8, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.3, "terrain_layer2_amplitude": 3.0},
@@ -94,9 +95,9 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "front_runners", "name": "Front Runners", "region": "home", "difficulty": 1, "showdown": false,
 		"map_pos": Vector2(0.26, 0.6),
-		# FWD intro rally: a wide p/w band that welcomes both FWD starters (Twingo ~82,
+		# FWD intro rally: a low p/w ceiling that welcomes both FWD starters (Twingo ~82,
 		# Focus ~114 hp/t) — the FWD home (parallels Shakedown for the MX-5).
-		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 78.0, "pw_max": 132.0},
+		"restriction": {"drive_mode": CarLibrary.FWD, "pw_max": 132.0},
 		"events": [
 			{"seed": 1101, "turn_count": 10, "forestiness": 0.6, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 14.6},
 			{"seed": 1102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.6, "straightness": 0.8, "cliffiness": 0.25, "water_level": -12.0, "terrain_layer1_amplitude": 15.4},
@@ -106,7 +107,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "coastal_sprint", "name": "Coastal Sprint", "region": "home", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.34, 0.5),
-		"restriction": {"pw_min": 170.0, "pw_max": 210.0},  # gated below: a slightly higher p/w ceiling
+		"restriction": {"pw_max": 210.0},  # a slightly higher p/w ceiling
 		"events": [
 			{"seed": 2004, "turn_count": 14, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.2},
 			{"seed": 2005, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65, "water_level": -5.0, "terrain_layer1_amplitude": 17.5},
@@ -116,8 +117,8 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "rwd_masters", "name": "RWD Masters", "region": "home", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.52, 0.64),
-		# p/w band (primary gate) + an RWD theme: a mid-power rear-driven field.
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 180.0, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
+		# p/w ceiling (primary gate) + an RWD theme: a mid-power rear-driven field.
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_max": 230.0},  # ceiling nudged above the Charger/911's ~216-220 hp/t
 		"events": [
 			{"seed": 3001, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 20.7},
 			{"seed": 3012, "turn_count": 14, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 21.6},
@@ -132,7 +133,7 @@ const RALLIES: Array[Dictionary] = [
 		# (Charger ~216, 911 ~220, Viper ~264 hp/tonne — the Viper's only stock rally).
 		"id": "rising_sun", "name": "Heavy Hitters", "region": "home", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.82, 0.34),
-		"restriction": {"pw_min": 210.0, "pw_max": 301.0},
+		"restriction": {"pw_max": 301.0},
 		"events": [
 			{"seed": 4001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55, "water_level": -12.0, "terrain_layer1_amplitude": 16.4},
 			{"seed": 4004, "turn_count": 15, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 15.8},
@@ -142,7 +143,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "grand_tour", "name": "Grand Tour", "region": "home", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.66, 0.28),
-		"restriction": {"pw_min": 266.0, "pw_max": 378.0},  # the top non-showdown p/w band (The Beast derives to ~350 hp/t)
+		"restriction": {"pw_max": 378.0},  # the top non-showdown p/w ceiling (The Beast derives to ~350 hp/t)
 		"events": [
 			{"seed": 1003214539, "turn_count": 18, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 23.1},
 			{"seed": 5004, "turn_count": 17, "forestiness": 0.3, "surface_mix": 0.4, "straightness": 0.15, "cliffiness": 0.85, "water_level": -12.0, "terrain_layer1_amplitude": 22.4},
@@ -152,8 +153,8 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "american_muscle", "name": "American Muscle", "region": "home", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.42, 0.38),
-		# US-built muscle only, in a mid p/w band — the Charger's home turf.
-		"restriction": {"country": "US", "car_type": "muscle", "pw_min": 168.0, "pw_max": 266.0},
+		# US-built muscle only, under a mid p/w ceiling — the Charger's home turf.
+		"restriction": {"country": "US", "car_type": "muscle", "pw_max": 266.0},
 		"events": [
 			{"seed": 6001, "turn_count": 12, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.7, "cliffiness": 0.3, "water_level": -12.0, "terrain_layer1_amplitude": 13.5},
 			{"seed": 6002, "turn_count": 13, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.9},
@@ -186,7 +187,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "gr_olive_coast", "name": "Olive Coast", "region": "greece", "difficulty": 2, "showdown": false,
 		"map_pos": Vector2(0.30, 0.62),
-		"restriction": {"pw_min": 112.0, "pw_max": 230.0},
+		"restriction": {"pw_max": 230.0},
 		"events": [
 			{"seed": 21001, "turn_count": 13, "forestiness": 0.75, "surface_mix": 0.25, "straightness": 0.4, "cliffiness": 0.5},
 			{"seed": 21002, "turn_count": 14, "forestiness": 0.65, "surface_mix": 0.15, "straightness": 0.3, "cliffiness": 0.6},
@@ -196,7 +197,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "gr_mountain_pass", "name": "Mountain Pass", "region": "greece", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.52, 0.44),
-		"restriction": {"pw_min": 160.0, "pw_max": 301.0},
+		"restriction": {"pw_max": 301.0},
 		"events": [
 			{"seed": 22001, "turn_count": 15, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.8},
 			{"seed": 22002, "turn_count": 16, "forestiness": 0.75, "surface_mix": 0.05, "straightness": 0.15, "cliffiness": 0.9},
@@ -206,7 +207,7 @@ const RALLIES: Array[Dictionary] = [
 	{
 		"id": "gr_ancient_ruins", "name": "Ancient Ruins", "region": "greece", "difficulty": 3, "showdown": false,
 		"map_pos": Vector2(0.70, 0.58),
-		"restriction": {"pw_min": 210.0, "pw_max": 378.0},
+		"restriction": {"pw_max": 378.0},
 		"events": [
 			{"seed": 23001, "turn_count": 16, "forestiness": 0.6, "surface_mix": 0.2, "straightness": 0.3, "cliffiness": 0.7},
 			{"seed": 23002, "turn_count": 17, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.85},
@@ -294,7 +295,7 @@ static func event_cliffiness(event: Dictionary) -> float:
 # model_id — never array index) satisfies a rally's restriction. Open-class
 # (empty restriction) always matches. For an OWNED car, callers pass the car's
 # effective stats (UpgradeLibrary.effective_meta) so an installed engine kit or
-# weight reduction can qualify / disqualify it via the pw_min / pw_max band; the
+# weight reduction can qualify / disqualify it via the pw_max ceiling; the
 # raw CARS entry is only the right input for an unmodified roster car (rivals).
 static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary) -> String:
 	var r: Dictionary = rally.get("restriction", {})
@@ -311,10 +312,8 @@ static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary) -> Str
 		return "Engine too small for this class"
 	if r.has("engine_max_l") and disp > float(r["engine_max_l"]):
 		return "Engine too large for this class"
-	# power_to_weight is kW/kg; the authored band is hp/tonne — convert before comparing.
+	# power_to_weight is kW/kg; the authored ceiling is hp/tonne — convert before comparing.
 	var pw := CarLibrary.power_to_weight(car_meta) * KW_KG_TO_HP_TONNE
-	if r.has("pw_min") and pw < float(r["pw_min"]):
-		return "Power-to-weight too low (%d hp/t, min %d)" % [roundi(pw), roundi(float(r["pw_min"]))]
 	if r.has("pw_max") and pw > float(r["pw_max"]):
 		return "Power-to-weight too high (%d hp/t, max %d)" % [roundi(pw), roundi(float(r["pw_max"]))]
 	return ""
@@ -324,16 +323,37 @@ static func is_eligible(rally: Dictionary, car_meta: Dictionary) -> bool:
 	return ineligibility_reason(rally, car_meta) == ""
 
 
+# Fraction of a rally's `pw_max` ceiling below which a fielded car counts as
+# underpowered. The car is still eligible (there is no hard floor); this only
+# drives a non-blocking start-line warning.
+const PW_WARN_FRACTION := 0.75
+
+
+# A warning shown when `car_meta` may field a rally but its power-to-weight sits far
+# below the class ceiling (< PW_WARN_FRACTION of `pw_max`) — the player can still
+# start, they're just underpowered. Returns "" when there's no ceiling or the car is
+# strong enough. `car_meta` is the effective (UpgradeLibrary.effective_meta) stats, as
+# with ineligibility_reason.
+static func underpower_warning(rally: Dictionary, car_meta: Dictionary) -> String:
+	var r: Dictionary = rally.get("restriction", {})
+	if not r.has("pw_max"):
+		return ""
+	var pw := CarLibrary.power_to_weight(car_meta) * KW_KG_TO_HP_TONNE
+	var recommended := float(r["pw_max"]) * PW_WARN_FRACTION
+	if pw >= recommended:
+		return ""
+	return "Underpowered for this class (%d hp/t, %d+ recommended)" % [roundi(pw), roundi(recommended)]
+
+
 # The largest engine-detune fraction at which a car passes `rally`'s restriction,
-# or -1.0 when no detune can qualify it (a non-power restriction field fails, or
-# the band floor is unreachable). `full_meta` is the car's effective stats at FULL
+# or -1.0 when no detune can qualify it (a non-power restriction field fails).
+# `full_meta` is the car's effective stats at FULL
 # tune (UpgradeLibrary.effective_meta with engine_detune 1.0), so the result is an
 # absolute detune-slider setting, not a value relative to the current tune; a car
 # already eligible at full tune returns 1.0. Torque — hence peak power and
 # power-to-weight — scales linearly with the detune fraction, so the target is the
 # cap/full ratio, floored to the tune slider's whole-percent steps so the value
-# round-trips through the UI. The result is verified back through is_eligible, so
-# a band floor (pw_min) the detuned figure would fall under still returns -1.0.
+# round-trips through the UI. The result is verified back through is_eligible.
 static func qualifying_detune(rally: Dictionary, full_meta: Dictionary) -> float:
 	if is_eligible(rally, full_meta):
 		return 1.0

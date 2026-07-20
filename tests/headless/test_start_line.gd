@@ -403,11 +403,10 @@ func test_launch_is_gated_by_rally_eligibility() -> void:
 	assert_eq(sl.sequence_phase(), StartLine.Seq.ORBIT, "the sequence does not advance when blocked")
 
 
-func test_over_powered_car_gets_detune_prompt_on_start() -> void:
-	# An over-powered car (over the rally's pw ceiling, but fixable by detuning) gets the
-	# "Too powerful" popup with a Detune option — like the HQ car park. The ceiling is
-	# derived from the fielded car's actual p/w (no pinned value) so a detune, not a part
-	# swap, is what admits it.
+func test_over_powered_car_gets_change_upgrades_prompt_on_start() -> void:
+	# An over-powered car (over the rally's pw ceiling) is blocked at Start and gets the
+	# "Too powerful" popup routing to Change Upgrades — NOT a one-press auto-detune. The
+	# ceiling is derived from the fielded car's actual p/w (no pinned value).
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_selected_car(int(owned["instance_id"]))
 	RallySession.start_rally(_rally(), owned, true)
@@ -419,14 +418,16 @@ func test_over_powered_car_gets_detune_prompt_on_start() -> void:
 	assert_false(sl.has_launched(), "an over-powered car is blocked at Start")
 	var popups := sl.find_children("*", "ConfirmPopup", true, false)
 	assert_eq(popups.size(), 1, "the gate shows a ConfirmPopup")
+	var offers_change := false
 	var offers_detune := false
 	for b in popups[0].find_children("*", "Button", true, false):
-		if "detune" in (b as Button).text.to_lower():
+		var txt := (b as Button).text.to_lower()
+		if "change upgrades" in txt:
+			offers_change = true
+		if "detune" in txt:
 			offers_detune = true
-	assert_true(offers_detune, "the popup offers a Detune option for an over-powered car")
-	# Applying the qualifying detune admits the car and launches.
-	sl._apply_detune_and_launch(sl._rally_qualifying_detune(owned))
-	assert_true(sl.has_launched(), "Detune-to-X applies the tune and launches")
+	assert_true(offers_change, "the popup offers Change Upgrades")
+	assert_false(offers_detune, "there is no one-press auto-detune button anymore")
 
 
 func test_launch_proceeds_when_the_car_is_eligible() -> void:
@@ -437,6 +438,33 @@ func test_launch_proceeds_when_the_car_is_eligible() -> void:
 	sl._rally = {}  # open class: no restriction to fail
 	sl.launch()
 	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
+
+
+func test_underpowered_car_gets_a_non_blocking_start_warning() -> void:
+	# A car that is eligible (under the ceiling) but sits far below it — under
+	# PW_WARN_FRACTION of pw_max — gets a non-blocking "Underpowered" warning at Start,
+	# offering to start anyway. Confirming lets the launch proceed. The ceiling is
+	# derived from the fielded car's actual p/w so no value is pinned.
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.set_selected_car(int(owned["instance_id"]))
+	RallySession.start_rally(_rally(), owned, true)
+	var sl := _make()
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
+	# Ceiling well above the car so it's eligible but below the warn fraction.
+	sl._rally = {"restriction": {"pw_max": pw / RallyLibrary.PW_WARN_FRACTION * 1.5}}
+	sl.launch()
+	assert_false(sl.has_launched(), "an underpowered car is not launched until the warning is acknowledged")
+	var popups := sl.find_children("*", "ConfirmPopup", true, false)
+	assert_eq(popups.size(), 1, "the warning shows a ConfirmPopup")
+	var offers_start := false
+	for b in popups[0].find_children("*", "Button", true, false):
+		if "start anyway" in (b as Button).text.to_lower():
+			offers_start = true
+	assert_true(offers_start, "the popup offers Start Anyway")
+	# Acknowledging the warning lets the launch through.
+	sl._confirm_underpower_launch()
+	assert_true(sl.has_launched(), "confirming the warning starts the rally")
 
 
 func test_launch_is_idempotent() -> void:

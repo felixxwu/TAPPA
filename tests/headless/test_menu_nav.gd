@@ -286,3 +286,41 @@ func test_button_cursor_refresh_paints_only_the_focused_button() -> void:
 	cursor.refresh(0)
 	assert_true(a.has_theme_stylebox_override("normal"), "the new index is painted")
 	assert_false(b.has_theme_stylebox_override("normal"), "the old highlight is cleared")
+
+
+# wrapped() skips DISABLED buttons in the travel direction (a disabled item is not a valid
+# cursor stop, same as native focus) — so a disabled Change Car is stepped over.
+func test_button_cursor_wrapped_skips_disabled() -> void:
+	var cursor := ButtonCursor.new()
+	var buttons: Array = []
+	for i in 4:
+		buttons.append(Button.new())
+	buttons[1].disabled = true  # e.g. Change Car with only one owned car
+	cursor.setup(buttons, [func() -> void: pass, func() -> void: pass,
+		func() -> void: pass, func() -> void: pass])
+	assert_eq(cursor.wrapped(0, 1), 2, "forward from 0 skips the disabled 1 to land on 2")
+	assert_eq(cursor.wrapped(2, -1), 0, "backward from 2 skips the disabled 1 to land on 0")
+	for b in buttons:
+		b.free()
+
+
+# settled(index) re-seats the cursor off a button that just became disabled, onto the next
+# enabled one; activate() no-ops on a disabled index.
+func test_button_cursor_settled_and_disabled_activate() -> void:
+	var cursor := ButtonCursor.new()
+	var fired := [-1]
+	var buttons: Array = []
+	for i in 3:
+		buttons.append(Button.new())
+	buttons[1].disabled = true
+	cursor.setup(buttons, [
+		func() -> void: fired[0] = 0,
+		func() -> void: fired[0] = 1,
+		func() -> void: fired[0] = 2,
+	])
+	assert_eq(cursor.settled(1), 2, "settled() nudges off the disabled index to the next enabled")
+	assert_eq(cursor.settled(0), 0, "settled() leaves an already-enabled index alone")
+	cursor.activate(1)  # disabled -> no-op
+	assert_eq(fired[0], -1, "activate on a disabled index fires nothing")
+	for b in buttons:
+		b.free()

@@ -50,12 +50,24 @@ car is held locked. Three phases, driven in `_process`:
    non-empty, launch is blocked with a **`ConfirmPopup`**, mirroring the HQ car park.
    When the car is merely over the rally's **power-to-weight ceiling** and a detune can
    admit it (`RallyLibrary.qualifying_detune` returns a fraction in `(0,1)`), the popup
-   is titled **"Too powerful"** and offers **"Detune to X %"** / **"Change Upgrades"** /
-   **"Cancel"** — "Detune to X %" applies the qualifying detune for this rally
-   (`Save.set_engine_detune` + `RallySession.register_detune_revert`, re-fielded via
-   `car.retune`) and then launches. When a detune can't fix it (wrong drivetrain, too
-   little power, etc.) the popup instead shows the reason with **"Change Upgrades"** /
-   **"Cancel"** (opening the upgrades overlay so the player can adjust the car).
+   is titled **"Too powerful"** and offers **"Change Upgrades"** / **"Cancel"** —
+   **"Change Upgrades"** opens the gated upgrades overlay so the player sheds power for
+   themselves (detune slider / ballast / stripping parts), a **permanent** garage edit
+   that persists after the rally (no auto-revert); once the build is under the cap and
+   the overlay closes, the player re-presses Start to launch (close → re-press, no
+   auto-launch). The old one-press **"Detune to X %"** button — which applied the
+   qualifying detune temporarily via `Save.set_engine_detune` +
+   `RallySession.register_detune_revert` and launched — has been removed.
+   When a detune can't fix it (wrong drivetrain, etc.) the popup instead shows the
+   reason with **"Change Upgrades"** / **"Cancel"** (opening the upgrades overlay so
+   the player can adjust the car).
+   **Underpower warning** — There is **no hard power floor**: a car far below the
+   rally's ceiling is still eligible, but when its p/w is under
+   `RallyLibrary.PW_WARN_FRACTION` (0.75) of `pw_max`
+   (`RallyLibrary.underpower_warning`), Start pops a non-blocking **"Underpowered"**
+   `ConfirmPopup` offering **"Start Anyway"** / **"Change Upgrades"** / **"Cancel"**.
+   **"Start Anyway"** (`_confirm_underpower_launch`) records the acknowledgement so
+   the warning doesn't re-pop, then launches.
 3. **FADE** — the screen **fades to black** (`start_fade_seconds`); at full black the
    player is released to normal driving, the queue cars are despawned, the camera
    hands back to the **chase camera**, the **driving UI returns**, and

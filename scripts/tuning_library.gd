@@ -17,9 +17,12 @@ extends RefCounted
 # (Config.data) in place, scaled by the GameConfig authority knobs so a slider
 # can never zero or invert a value. Pure static; mutates only the passed-in cfg.
 
-# The three axes the lift exposes. grip is always available; brake_bias / aero
-# are gated by the brakes / aero upgrades (UpgradeLibrary), matching the lift UI.
-const AXES := ["grip_balance", "brake_bias", "aero_balance", "engine_detune"]
+# The three handling axes the tuning lift exposes. grip is always available;
+# brake_bias / aero are gated by the brakes / aero upgrades (UpgradeLibrary),
+# matching the lift UI. engine_detune is NOT here — it's a power (p/w) knob, so
+# its slider lives in the upgrades menu (UpgradesMenu); apply() still reads the
+# stored tuning.engine_detune below, wherever it was set from.
+const AXES := ["grip_balance", "brake_bias", "aero_balance"]
 
 
 # Re-balance `cfg` from `owned_car.tuning`. Runs AFTER UpgradeLibrary.apply, so it
@@ -28,12 +31,14 @@ const AXES := ["grip_balance", "brake_bias", "aero_balance", "engine_detune"]
 static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	var tuning: Dictionary = owned_car.get("tuning", {})
 
-	# grip_balance: −1 understeer (grip forward) ↔ +1 oversteer (grip rearward).
-	# Shifts the front/rear grip pair about its baseline; always available.
+	# grip_balance: −1 understeer ↔ +1 oversteer. Oversteer means the rear breaks
+	# away first, so +1 shifts grip FORWARD (more front, less rear); −1 is the
+	# mirror (more rear, less front → the car pushes wide). Shifts the front/rear
+	# grip pair about its baseline; always available.
 	var g := clampf(float(tuning.get("grip_balance", 0.0)), -1.0, 1.0)
 	var gspan := cfg.tuning_grip_authority
-	cfg.wheel_friction_slip_front *= (1.0 - g * gspan)
-	cfg.wheel_friction_slip_rear *= (1.0 + g * gspan)
+	cfg.wheel_friction_slip_front *= (1.0 + g * gspan)
+	cfg.wheel_friction_slip_rear *= (1.0 - g * gspan)
 
 	# brake_bias: −1 rearward ↔ +1 forward. Maps to the front/rear foot-brake split
 	# (cfg.brake_bias, applied in drivetrain.gd). Like grip/aero above, it shifts the

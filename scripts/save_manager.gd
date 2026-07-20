@@ -363,12 +363,14 @@ func swap_engines(id_a: int, id_b: int) -> bool:
 	var b := get_car(id_b)
 	if not EngineSwap.can_swap(a, b):
 		return false
-	if not consume_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1):
-		return false  # no swap token held
 	var stock_a := String(CarLibrary.by_id(String(a["model_id"])).get("engine", ""))
 	var stock_b := String(CarLibrary.by_id(String(b["model_id"])).get("engine", ""))
 	var cur_a := EngineSwap.current_engine_id(a, stock_a)
 	var cur_b := EngineSwap.current_engine_id(b, stock_b)
+	if cur_a == cur_b:
+		return false  # nothing to exchange — don't spend a token on a no-op swap
+	if not consume_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1):
+		return false  # no swap token held
 	_set_engine(a, stock_a, cur_b)
 	_set_engine(b, stock_b, cur_a)
 	save()

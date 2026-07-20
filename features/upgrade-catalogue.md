@@ -21,8 +21,9 @@ is the upgrades half.
 ## Catalogue
 
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
-(`turbo` / `aero` / `chassis` / `brakes` / `drivetrain`, or `""` for consumables),
-`tier` (reward-tier gating), `consumable`, and `effect` (config-field → delta/multiplier).
+(`turbo` / `aero` / `weight` / `brakes` / `drivetrain`, or `""` for consumables),
+`tier` (reward-tier gating), `consumable`, an optional `free` flag (always-available,
+never-drawn parts — the ballast; see below), and `effect` (config-field → delta/multiplier).
 
 The **`drivetrain` slot** holds the **Drivetrain Swap** kit, whose `effect` is a single
 `unlocks_drivetrain_swap` flag (skipped by `apply`, like the other `unlocks_*` gates).
@@ -41,8 +42,21 @@ is **always shown**, even before the kit is won: until it's owned only the car's
 mode is selected + enabled and the other two modes are greyed (earn-gated as a whole, like a
 part option greys until its kit is fitted) — so the row reads like every other slot rather
 than a bare "— empty —" line.
+The **`weight` slot** is a **power-to-weight lever**, not an ordinary earn-gated part
+row. It holds three parts plus `Stock`: two **BALLAST** options that ADD weight —
+**Heavy Ballast** (`ballast_large`, `mass_mult` 1.5) and **Light Ballast**
+(`ballast_small`, `mass_mult` 1.2) — and one **Weight Reduction** kit
+(`weight_reduction`, `mass_mult` 0.80) that SHEDS weight. Both ballast parts carry a
+**`free: true`** flag: they are **always selectable on every car** (no earning
+required) and are **never drawn as a reward** (`reward_system._parts_at_or_below`
+skips `free` parts alongside consumables — see `UpgradeLibrary.is_free`). The ballast
+lets a player deliberately add mass to drop power-to-weight and qualify for a lower
+rally class (a p/w lever alongside engine detune). Weight Reduction is the slot's one
+**earned** reward-pool option — the "lightweight" performance drop, greyed until won.
+The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the generic
+earn-gated option row — see below.
 Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
-tier 2), an aero kit, a **weight-reduction** kit (chassis slot, `mass_mult` 0.90),
+tier 2), an aero kit, the three **weight** parts above,
 a big brake kit, and the two consumables — the **repair kit** and the **engine
 swap token** (both `slot: ""`, held in the shared `inventory`; the token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md)). The concrete part
@@ -54,18 +68,29 @@ mirroring `TuningPanel`): the HQ lift mounts it as its Upgrades page, and the ca
 **detune-to-enter prompt** mounts a second instance in its Change-Upgrades popup so a
 too-powerful car can shed power by stripping parts instead of detuning (see
 [menus.md](menus.md) → CARPARK). It owns its `Save` persistence and reports edits via an
-`on_change` callback so the host re-fields the car. At the top it shows a **live stats
-line — power-to-weight (hp/tonne) + max lateral G** — recomputed from `effective_meta` on
-every rebuild, so toggling a part shows immediately whether the car has ducked under a
-rally's cap. The engine-swap row is **lift-only** (the host passes `on_swap`); the popup
+`on_change` callback so the host re-fields the car. There is **no stats line** at the top;
+the live power-to-weight readout instead lives on the **engine-detune slider's value label**
+(e.g. `80% - 200 hp/tonne`, recomputed from `effective_meta` on every rebuild), and that
+slider now sits at the **bottom** of the menu — below the part-slot selectors and the
+lift-only engine-swap row — as the final power adjustment. Lateral G is no longer shown here.
+The engine-swap row is **lift-only** (the host passes `on_swap`); the popup
 leaves it unset and drops the row, since the swap flow would change the HQ view.
+
+When a host passes a power-to-weight limit (`pw_limit >= 0` — the start-line pre-race
+overlay and the car-park over-powered Change-Upgrades popup), the overlay's **close button
+is gated** (`UpgradesMenu.bind_close_button` + `request_close()` / `can_close()`): it reads
+**Done**, and while the current build exceeds the cap it turns **red**, its text becomes
+**"Over limit — reduce to N hp/tonne"**, and it **blocks closing** — both the button press
+and Esc / controller-back are refused (hosts hand `request_close` to `MenuNav` as `on_back`)
+until the player drags the detune slider back under the cap. With no limit set (the HQ garage
+lift), the button stays a plain **Back** and closes freely.
 
 **Every part slot is an earn-gated option selector** (`UpgradesMenu._make_option_selector`), built
 to read like the drivetrain picker: `SLOT:` on the left, then `Stock` + one button per
 catalogue part in that slot on the right. `Stock` is always selectable (the "off" state —
 the car's un-upgraded factory config, hence the label rather than `None`); each part option
 is **greyed until that kit is fitted** to this car, and the active one is
-bracketed. The turbo slot has two parts — `Stock` / `Small` / `Big` (`turbo_small` /
+bracketed **and painted the house accent green** so the current pick stands out. The turbo slot has two parts — `Stock` / `Small` / `Big` (`turbo_small` /
 `turbo_large`, shown by their short `menu_label`); the single-part slots read `Stock` /
 `<Kit>` (e.g. `Aero: Stock / Aero Kit`, using the part's full `name`). Under the hood it's
 the ordinary per-slot enable/disable machinery (`Save.set_upgrade_enabled` via
@@ -74,8 +99,21 @@ sibling off), picking `Stock` disables every part in the slot (the underlying id
 `""`). Kits are won and fitted disabled, then enabled via the selector in the upgrades menu
 (either at the HQ lift or after an event's standings reveal confirms the won part); the selector
 is the menu presentation replacing the old Enable/Disable toggle rows.
-Drivetrain remains the odd one out (its selector is a `drive_mode` override, not a part
+Drivetrain remains one odd one out (its selector is a `drive_mode` override, not a part
 enable, and it uses a single unlock rather than per-option earn-gating — see above).
+
+**The `weight` slot is the other exception** — it has a bespoke selector
+(`UpgradesMenu._make_weight_selector`), NOT the generic earn-gated option row. Its
+options are ordered **heaviest → lightest** with `Stock` (no change, the default)
+sitting **between** the ballast (`mass_mult` > 1) and the lightweight (`mass_mult` < 1),
+so for a ~1000 kg car the row reads **+500kg  +200kg  [Stock]  -200kg**. Each button is
+labelled by its mass delta off the car's **base** mass (the current effective mass ÷ the
+currently-active weight multiplier), rounded to the nearest 100 kg and signed with a
+`kg` suffix (`+500kg`, `-200kg`); `Stock` reads `Stock`. The two ballast buttons are
+**always enabled** (they're `free`); the lightweight (earned) button **greys until won**;
+the active pick is bracketed + accent-green like every other slot. Selecting a `free`
+ballast the car doesn't own yet **installs it on the spot** then enables it exclusively
+(one weight part enabled at a time); `Stock` disables all weight parts.
 
 The turbo slot installs a **turbocharger** rather than a flat power bump: each
 turbo kit's `effect` is a single `install_turbo` key whose value is a dict of turbo
@@ -126,7 +164,7 @@ powerful and is gated accordingly. the HQ stats panel calls
 `CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry))`, and the
 two player-car eligibility checks (`hq._has_eligible_car`,
 `hq._build_eligible_lineup`) pass `effective_meta` into `RallyLibrary.is_eligible`,
-so an upgrade can push a car into — or out of — a rally's `pw_min` / `pw_max` band.
+so an upgrade can push a car over — or back under — a rally's `pw_max` ceiling.
 The rival pool and reward-grant queries keep using the raw `CARS` entries (those
 are unmodified roster cars, not the player's upgraded ones).
 
@@ -165,7 +203,8 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 Upgrades are the **per-event** reward: one is drawn at each non-final event
 boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward. The
 reward draw picks an `UpgradeDef` by `tier`, clamped by progress, excluding parts
-already on the driven car — that policy is reward-system logic
+already on the driven car — and never `free` parts (the ballast is always
+available, so it's not a reward) — that policy is reward-system logic
 (`todo/reward-system.md`); this library just provides the tier-keyed pool. The flow
 controller fits each won part straight onto the driven car via
 `Save.install_upgrade(..., enabled=false)` (repair kits, being consumable, go to

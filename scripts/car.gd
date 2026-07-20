@@ -1431,11 +1431,11 @@ func _snapshot_live_baseline() -> void:
 # of this file). Arrays/dicts are duplicated so the live config never shares mutable
 # state with the baseline.
 func _restore_live_baseline() -> void:
-	for name in _live_baseline:
-		var value: Variant = _live_baseline[name]
+	for prop_name in _live_baseline:
+		var value: Variant = _live_baseline[prop_name]
 		if value is Array or value is Dictionary:
 			value = value.duplicate(true)
-		config.set(name, value)
+		config.set(prop_name, value)
 
 
 # The single live re-derive: restore the full pre-upgrade/pre-tune baseline, then re-apply

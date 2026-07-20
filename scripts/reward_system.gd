@@ -73,13 +73,16 @@ static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: Random
 
 # Part ids at exactly `tier`, or — if that tier has no eligible part — at the
 # nearest lower tier that does. Excludes consumables (the repair kit is added
-# separately as a weighted entry) and any id in `exclude` (parts already fitted
-# to the driven car). Empty when everything at/below the tier is excluded.
+# separately as a weighted entry), `free` parts (ballast is always available, never
+# a reward), and any id in `exclude` (parts already fitted to the driven car). Empty
+# when everything at/below the tier is excluded.
 static func _parts_at_or_below(tier: int, exclude: Array = []) -> Array:
 	for t in range(tier, 0, -1):
 		var parts: Array = []
 		for item in UpgradeLibrary.UPGRADES:
-			if not item["consumable"] and int(item["tier"]) == t and not exclude.has(item["id"]):
+			if item["consumable"] or bool(item.get("free", false)):
+				continue
+			if int(item["tier"]) == t and not exclude.has(item["id"]):
 				parts.append(item["id"])
 		if not parts.is_empty():
 			return parts

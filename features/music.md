@@ -115,8 +115,8 @@ Master). Volume is a **player setting** persisted in the save profile
 reads it via `Save.get_setting`; `Music.set_volume(linear, persist := true)`
 clamps, applies `linear_to_db` to the bus live, and persists. The Settings menu's
 **Audio** page (`SettingsMenu`, shared by the HQ title screen and the pause menu)
-has a focusable `HSlider` that calls `set_volume` as you drag — live even while
-paused (`PROCESS_MODE_ALWAYS`).
+has a focusable `HSlider` (stepped in 5% increments, `step = 0.05`) that calls
+`set_volume` as you drag — live even while paused (`PROCESS_MODE_ALWAYS`).
 
 ## Clock & robustness
 

@@ -223,11 +223,13 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 	CarFixtures.install()
 	var spec := CarLibrary.by_id("fx_light_rwd")
 	var base_mass: float = float(spec["mass"])
+	# Derive the multiplier from the catalogue rather than pinning the tuned value.
+	var mult: float = float(UpgradeLibrary.by_id("weight_reduction")["effect"]["mass_mult"])
 	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["weight_reduction"],
 		"hp": float(spec.get("max_hp", 100.0)), "instance_id": -1})
 	await get_tree().physics_frame
-	assert_almost_eq(Config.data.mass, base_mass * 0.90, 0.001, "config mass cut 10% by the kit")
-	assert_almost_eq(_car.mass, base_mass * 0.90, 0.001, "rigidbody mass re-synced to the lighter config")
+	assert_almost_eq(Config.data.mass, base_mass * mult, 0.001, "config mass scaled by the kit")
+	assert_almost_eq(_car.mass, base_mass * mult, 0.001, "rigidbody mass re-synced to the lighter config")
 
 
 func test_apply_owned_applies_drivetrain_override() -> void:

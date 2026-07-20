@@ -455,6 +455,18 @@ func test_swap_engines_exchanges_current_engines() -> void:
 	assert_eq(_save.engine_swap_tokens_owned(), 0, "the swap spent the token")
 
 
+func test_swap_with_identical_engines_is_a_noop_and_keeps_token() -> void:
+	# Two instances of the same model run the same engine, so there is nothing to
+	# exchange — the swap must be refused WITHOUT spending a token (a token is a
+	# scarce reward; burning one on a no-op is a bug).
+	var a: Dictionary = _save.grant_car("fx_light_rwd")
+	var b: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.add_item(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 1)
+	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]),
+		"swapping identical current engines is a no-op")
+	assert_eq(_save.engine_swap_tokens_owned(), 1, "a no-op swap must not spend the token")
+
+
 func test_swapping_back_restores_stock_and_clears_field() -> void:
 	var a: Dictionary = _save.grant_car("fx_light_rwd")
 	var b: Dictionary = _save.grant_car("fx_rwd_coupe")

@@ -136,19 +136,21 @@ var _lineup_drag_accum := Vector2.ZERO
 var _eligible: Array = []
 # instance_id -> the engine-detune fraction that would qualify an over-powered parked
 # car for the chosen rally (RallyLibrary.qualifying_detune). Populated only by the
-# rally car-select lineup (_build_eligible_lineup); for these cars Start becomes an
-# explicit "agree to detune" action (see _show_detune_confirm / _on_start_pressed).
+# rally car-select lineup (_build_eligible_lineup); for these cars Start opens the
+# over-limit prompt that routes to the upgrades menu (_show_over_limit_prompt /
+# _on_start_pressed) rather than launching.
 var _detune_needed: Dictionary = {}
 var _drivetrain_needed: Dictionary = {}
 # Confirm popup shown when Start is pressed on an over-powered car: the car looks
-# eligible in the park; this dialog carries the doesn't-qualify warning and the
-# detune agreement (_show_detune_confirm). Implemented via ConfirmPopup.
-# The car-park "Change Upgrades" popup, opened from the detune prompt as an alternative
+# eligible in the park; this dialog carries the "too powerful" nudge and routes to
+# Change Upgrades (_show_over_limit_prompt). Implemented via ConfirmPopup.
+# The car-park "Change Upgrades" popup, opened from the over-limit prompt as an alternative
 # to detuning: a house-themed overlay on the car CanvasLayer hosting an UpgradesMenu for
 # the focused car (no engine-swap row). Built lazily. _dirty tracks whether any upgrade
 # changed, so closing rebuilds the eligible lineup (see _show/_close_upgrades_popup).
 var _upgrades_popup: Control
 var _upgrades_popup_menu: UpgradesMenu
+var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesMenu.bind_close_button)
 var _upgrades_popup_dirty := false
 # Tracks the currently open car-park ConfirmPopup (detune confirm), so
 # _carpark_modal_open can detect it without a dedicated visible flag.
@@ -275,6 +277,7 @@ var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Change 
 # as the garage: hq keeps the index (_hub_focus, read by tests), the cursor the behaviour.
 var _hub_cursor := ButtonCursor.new()
 var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Change Car, 2 = Tune, 3 = Upgrades)
+var _lift_change_car_button: Button  # disabled by _refresh_lift_ui when no other car is owned
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_back_button: Button   # the shared "< Back" on a sub-menu page (TUNE/UPGRADES)
@@ -1146,6 +1149,7 @@ func _build_lift_overlay() -> void:
 	# Change which car is on the lift: opens the car park to pick a new selected car.
 	var change_car := _station_button("Change Car", _enter_change_car)
 	_lift_hub_controls.add_child(change_car)
+	_lift_change_car_button = change_car
 	# The two menu buttons.
 	var to_tune := _station_button("Tuning", to_tune_cb)
 	_lift_hub_controls.add_child(to_tune)
@@ -1233,8 +1237,8 @@ func _build_car_overlay() -> void:
 	root.add_child(_swap_preview_label)
 
 	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it).
-	# An over-powered car does NOT warn here — its detune agreement pops as a confirm
-	# dialog on Start instead (_show_detune_confirm), keeping the overlay compact.
+	# An over-powered car does NOT warn here — the over-limit prompt pops as a confirm
+	# dialog on Start instead (_show_over_limit_prompt), keeping the overlay compact.
 	_car_warning_label = _label("", 14)
 	_car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_car_warning_label.add_theme_color_override("font_color", UITheme.RED)
@@ -2116,6 +2120,10 @@ func _refresh_lift_ui() -> void:
 	_tune_panel.refresh()
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap)
 	_refresh_lift_repair_button()  # reflect the selected car's health / kit count
+	# Change Car has nothing to offer when the selected car is the only one owned, so
+	# disable it (greyed + non-firing); the hub cursor then skips it (ButtonCursor).
+	_lift_change_car_button.disabled = _other_owned_cars(Save.selected_instance_id()).is_empty()
+	_hub_focus = _hub_cursor.settled(_hub_focus)  # nudge off Change Car if it just greyed out
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
@@ -2368,9 +2376,9 @@ func _evict_unowned_cached_cars() -> void:
 
 
 # Park the owned cars ELIGIBLE for the selected rally (the car-select screen), plus
-# any OVER-POWERED car a detune would fit under the rally's pw_max cap — those park
-# looking eligible, and pressing Start pops an explicit agreement to that detune
-# (_show_detune_confirm / _on_start_pressed).
+# any OVER-POWERED car a detune could fit under the rally's pw_max cap — those park
+# looking eligible, and pressing Start pops the over-limit prompt routing to the
+# upgrades menu (_show_over_limit_prompt / _on_start_pressed).
 func _build_eligible_lineup() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var eligible: Array = []
@@ -2697,8 +2705,8 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 
 # A wrecked focused car can't be entered: disable Start and explain why, offering a
 # Repair (full restore) when a kit is owned. A healthy car clears all of this — an
-# over-powered car looks eligible here; its detune agreement only surfaces as a
-# confirm popup on Start (_show_detune_confirm).
+# over-powered car looks eligible here; the over-limit prompt only surfaces as a
+# confirm popup on Start (_show_over_limit_prompt).
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Change-car mode just swaps the car on the lift, so a wrecked car is still a valid
 	# pick (it can be repaired in the bay). Never gate Select on damage there; nor when
@@ -2746,14 +2754,14 @@ func _make_carpark_modal(build_body: Callable) -> Control:
 # An over-powered focused car (parked because a detune would duck it under the rally's
 # pw_max cap — _build_eligible_lineup) looks eligible in the car park; pressing Start
 # pops this on-brand modal instead. It offers three left/right-navigable choices —
-# Cancel, Change Upgrades (strip parts to shed power), and Detune to N% (apply the
-# qualifying tune + launch, _on_detune_confirmed).
-func _show_detune_confirm(_owned: Dictionary, frac: float) -> void:
-	var pct := roundi(frac * 100.0)
+# Change Upgrades (open the gated upgrades menu, where detune / ballast / stripping parts
+# brings the car under the cap — the menu won't let them leave until it's eligible) or
+# Cancel. No auto-detune button: the player makes the change themselves and re-presses
+# Start (the fix persists like any garage edit — see todo/detune-min-pw-interaction.md).
+func _show_over_limit_prompt(_owned: Dictionary) -> void:
 	_active_carpark_popup = ConfirmPopup.open(self, "Too powerful",
-		"Detune to %d%% to enter, or change your upgrades." % pct,
-		[ {"label": "Detune to %d%%" % pct, "callback": _on_detune_confirmed},
-		  {"label": "Change Upgrades", "callback": _detune_change_upgrades},
+		"Change your upgrades to get under the power-to-weight limit.",
+		[ {"label": "Change Upgrades", "callback": _detune_change_upgrades},
 		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
 
 
@@ -2774,22 +2782,6 @@ func _detune_change_upgrades() -> void:
 	_show_upgrades_popup(Save.get_car(_selected_instance_id))
 
 
-# The player agreed to the qualifying detune (_show_detune_confirm): apply that
-# engine tune to the car, then continue the normal start flow. The agreement is
-# TEMPORARY, for this rally only — register the current tune (the garage-set
-# value, or the untouched 1.0) with the session so it's restored when the rally
-# ends (RallySession.register_detune_revert; garage-lift detunes stay permanent).
-func _on_detune_confirmed() -> void:
-	var frac: float = _detune_needed.get(_selected_instance_id, -1.0)
-	if frac <= 0.0:
-		return
-	var prior := float(Save.get_car(_selected_instance_id).get("tuning", {}).get("engine_detune", 1.0))
-	RallySession.register_detune_revert(_selected_instance_id, prior)
-	Save.set_engine_detune(_selected_instance_id, frac)
-	_detune_needed.erase(_selected_instance_id)
-	await _proceed_with_start()
-
-
 # Show the upgrades menu over the car-park car-select for the focused car, as an on-brand
 # centred modal. Reuses the UpgradesMenu component with NO engine-swap row (on_swap left
 # invalid — the swap flow would change the HQ view). Nav-wired so it's keyboard/gamepad
@@ -2801,27 +2793,30 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 			vbox.add_child(UITheme.title("Upgrades"))
 			_upgrades_popup_menu = UpgradesMenu.new()
 			vbox.add_child(_upgrades_popup_menu)
-			var done := Button.new()
-			done.text = "Done"
-			done.focus_mode = Control.FOCUS_ALL
-			done.pressed.connect(_close_upgrades_popup)
-			vbox.add_child(done))
+			_upgrades_popup_done = Button.new()
+			_upgrades_popup_done.text = "Done"
+			_upgrades_popup_done.focus_mode = Control.FOCUS_ALL
+			# NOTE: press is wired by bind_close_button below (gated), not here.
+			vbox.add_child(_upgrades_popup_done))
 	_upgrades_popup_dirty = false
 	_upgrades_popup.visible = true
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
 	var pw_limit := float(restriction.get("pw_max", -1.0))
 	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
+	# Gate Done + Esc/back on the rally's p/w cap: over the cap, the button goes red and
+	# neither it nor MenuNav's on_back closes the popup until the player detunes under it.
+	_upgrades_popup_menu.bind_close_button(_upgrades_popup_done, _close_upgrades_popup)
 	UITheme.enforce(_upgrades_popup)
 	MenuNav.attach(_upgrades_popup, {
 		"first": _upgrades_popup_menu.first_control(),
-		"on_back": _close_upgrades_popup,
+		"on_back": _upgrades_popup_menu.request_close,
 	})
 
 
-# A popup upgrade edit: just flag dirty. The UpgradesMenu already updated its own p/w + G
-# stats line (the visible feedback); the parked-car prop + lineup are rebuilt on close so
-# a live rebuild can't steal focus from the popup mid-edit.
+# A popup upgrade edit: just flag dirty. The UpgradesMenu already repainted its own detune
+# label + gated Done button (the visible feedback); the parked-car prop + lineup are rebuilt
+# on close so a live rebuild can't steal focus from the popup mid-edit.
 func _on_popup_upgrade_changed() -> void:
 	_upgrades_popup_dirty = true
 
@@ -2894,17 +2889,12 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	# A min+max pair reads as a single range ("power-to-weight 300-400 hp/tonne"); a lone
-	# floor or ceiling keeps its >= / <= form. The authored bands are already in hp/tonne
-	# (RallyLibrary converts a car's kW/kg to hp/tonne before comparing), the same unit as
-	# every player-facing p/w readout (the car stats + the detune slider), so display
-	# them straight — no conversion here.
-	if restriction.has("pw_min") and restriction.has("pw_max"):
-		parts.append("power-to-weight %.0f-%.0f hp/tonne" % [
-			float(restriction["pw_min"]), float(restriction["pw_max"])])
-	elif restriction.has("pw_min"):
-		parts.append("power-to-weight >= %.0f hp/tonne" % float(restriction["pw_min"]))
-	elif restriction.has("pw_max"):
+	# The p/w gate is a ceiling only (no hard floor — an underpowered car can still
+	# enter, it just gets a start-line warning). The authored ceiling is already in
+	# hp/tonne (RallyLibrary converts a car's kW/kg to hp/tonne before comparing), the
+	# same unit as every player-facing p/w readout (the car stats + the detune slider),
+	# so display it straight — no conversion here.
+	if restriction.has("pw_max"):
 		parts.append("power-to-weight <= %.0f hp/tonne" % float(restriction["pw_max"]))
 	return ", ".join(parts)
 
@@ -3028,17 +3018,16 @@ func _on_start_pressed() -> void:
 		RallySession.register_drivetrain_revert(_selected_instance_id, prior_dm)
 		Save.set_drivetrain_override(_selected_instance_id, need_dm)
 		_drivetrain_needed.erase(_selected_instance_id)
-	# An over-powered car looks eligible in the park; pressing Start pops the detune
-	# agreement as a confirm dialog instead of an always-on warning label. Only an
-	# explicit OK there applies the tune and fields the car (_on_detune_confirmed).
-	var detune: float = _detune_needed.get(_selected_instance_id, -1.0)
-	if detune > 0.0:
-		_show_detune_confirm(owned, detune)
+	# An over-powered car looks eligible in the park; pressing Start pops a prompt that
+	# routes the player to the upgrades menu to shed power (detune / ballast / strip
+	# parts), rather than launching. _detune_needed marks the over-cap-but-fixable cars.
+	if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
+		_show_over_limit_prompt(owned)
 		return
 	await _proceed_with_start()
 
 
-# The start flow after any detune agreement is settled: the mobile control-scheme
+# The start flow once the car is eligible (any drivetrain switch applied): the mobile control-scheme
 # gate, then the actual handoff.
 func _proceed_with_start() -> void:
 	# On mobile, the player must choose a touch control scheme before their first

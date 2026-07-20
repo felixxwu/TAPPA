@@ -123,21 +123,29 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   and **Upgrades** — so it uses `MenuNav.attach(root, {first = _start_button})`
   for keyboard/gamepad focus; a pointer tap on the clear band still launches. Opening
   **Tune Car** hides the start overlay and attaches `MenuNav` to the tune overlay (Back
-  routed via `on_back`); it opens the shared `TuningPanel` for the car about to race
-  (see [tuning.md](tuning.md)), edits re-field the live car via `car.retune()`. Here the
-  panel is passed the rally's `pw_max` (`TuningPanel.setup(owned, on_change, pw_limit)`),
-  so the engine-detune label shows the p/w limit and flags **OVER LIMIT**; the HQ garage
-  lift omits `pw_limit` (default `-1`) and shows no limit. The detune slider spans the
-  full **0–100 %** in both places — eligibility is enforced at Start, not by capping the
-  slider. Opening
+  routed via `on_back`); it opens the shared `TuningPanel` (three handling-axis sliders)
+  for the car about to race (see [tuning.md](tuning.md)), edits re-field the live car via
+  `car.retune()`. Opening
   **Upgrades** hides the start overlay and attaches `MenuNav` to the upgrades overlay
-  (Back routed via `on_back`); it opens the shared `UpgradesMenu` (see below), edits
-  re-field the live car via `car.refit_upgrades()` — the upgrade-only re-field path
+  (close routed via `on_back` — here the gated `request_close`); it opens the shared
+  `UpgradesMenu` (see below) — which hosts the **engine-detune slider** (at the bottom) —
+  edits re-field the live car via `car.refit_upgrades()`.
+  Here `UpgradesMenu` is passed the rally's `pw_max` as `pw_limit`, so the overlay's close
+  button reads **Done** and, while the build exceeds the cap, turns red
+  (**"Over limit — reduce to N hp/tonne"**) and blocks closing — both the button and Esc /
+  back are refused until the player detunes under the cap. The HQ garage lift omits `pw_limit`
+  (default `-1`) so the button stays a plain **Back** that closes freely. The detune slider
+  spans the full **0–100 %** in both places — eligibility is enforced by the gated Done
+  button, not by capping the slider. The upgrade
+  re-field is the upgrade-only re-field path
   parallel to `retune()` for tuning, which does NOT reshape the staged body. Pressing
   **Start** runs the eligibility gate: an over-powered car gets a **"Too powerful"**
-  `ConfirmPopup` with **Detune to X %** / **Change Upgrades** / **Cancel** (mirroring the
+  `ConfirmPopup` with **Change Upgrades** / **Cancel** (mirroring the
   HQ car park); any other ineligibility gets the reason with **Change Upgrades** /
-  **Cancel**. The
+  **Cancel**. **Change Upgrades** opens the gated upgrades menu (the player sheds power
+  via the detune slider / ballast / stripping parts — a **permanent** garage edit, no
+  auto-revert) and, once the build is under the cap and the menu closes, the player
+  re-presses Start to launch. The
   **`wreck screen`** is still a *press-anything-to-continue* screen (a tap anywhere,
   or `menu_select` = Enter / gamepad A, proceeds), not a multi-item navigable menu, so
   it doesn't use `MenuNav`.
@@ -184,7 +192,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `UITheme.mark_focused`) over **Back / Change Car / Tuning / Upgrades** (its buttons
   sit side by side in one row), fired with select (`_activate_hub_focus`) — Change Car
   drops into the car park in change-car mode; the cursor seats on Change Car on entry
-  (`menu_back` is also a shortcut back to the garage). (A **Repair** button also lives on
+  (`menu_back` is also a shortcut back to the garage). **Change Car is disabled** when the
+  selected car is the only one owned (nothing else to switch to) — `_refresh_lift_ui`
+  greys `_lift_change_car_button` via `_other_owned_cars(...)`, and the cursor then skips
+  it (see the `ButtonCursor` disabled-skip below), seating on Tuning instead. (A **Repair** button also lives on
   this hub row — spend a Repair Kit to fully restore the selected car
   (`_repair_selected_car` / `_refresh_lift_repair_button`) — but it is currently
   **hidden** and left out of the hub cursor while earning Repair Kits is disabled; see
@@ -196,7 +207,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `hq.gd` keeps the index (`_garage_focus` / `_hub_focus`), the cursor owns the shared
   wrap / repaint / fire behaviour, and each button's `pressed` callable is also the
   cursor's action for that index, so a mouse click and a keyboard/gamepad select can
-  never fall out of step. (The map-table pin cursor stays bespoke — it paints a
+  never fall out of step. The cursor **skips `disabled` buttons** (like native focus):
+  `wrapped` steps past them, `settled(index)` re-seats off a button that just greyed out,
+  and `activate` no-ops on a disabled item — this is how a disabled Change Car is left
+  unreachable without rebuilding the row. (The map-table pin cursor stays bespoke — it paints a
   billboarded pin panel and pans the camera, not a flat button row.) **Free Roam**
   (`_enter_free_roam`, launched from the **GARAGE action row**, Back returns to the garage)
   opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
@@ -431,28 +445,45 @@ returns to the hub; the hub's own Back returns to the garage. Because the hub co
 and page chrome live on the hub, each menu page gets the **full panel height to
 itself** and doesn't need to scroll. The two pages:
 
-- **Tune** (`LiftPage.TUNE`) — a slider per tuning axis (grip / brake-bias / aero /
-  **engine detune**; locked axes greyed with a "needs X kit" note — detune is never
-  locked) plus **Reset to neutral**; each change saves via `Save.set_tuning`. The
-  slider holding the cursor lights up (its row wraps in a panel painted by
+- **Tune** (`LiftPage.TUNE`) — a slider per handling tuning axis (grip / brake-bias /
+  aero; locked axes greyed with a "needs X kit" note) plus **Reset to neutral** (which
+  clears only the handling axes and **preserves** engine detune); each change saves via
+  `Save.set_tuning`. The engine-detune slider is NOT here — it moved to the **Upgrades**
+  page's `UpgradesMenu` (detune is a power / power-to-weight knob, not a handling axis).
+  The slider holding the cursor lights up (its row wraps in a panel painted by
   `UITheme.mark_panel_focused` on `focus_entered`/`focus_exited`) so it's obvious which
   is selected, and left/right nudges it in place (see the `MenuNav` slider note above).
-  No page title/subtitle — the sliders take the full height. See
-  [engine-swap.md](engine-swap.md) for the detune axis.
+  No page title/subtitle — the sliders take the full height.
 - **Upgrades** (`LiftPage.UPGRADES`) — the reusable `UpgradesMenu` component
   (`scripts/upgrades_menu.gd`): one earn-gated **option selector per slot** — "Stock"
   plus one button per catalogue part in that slot, each part greyed until its kit is
-  fitted to this car and the active pick bracketed (`Save.set_upgrade_enabled`; free,
+  fitted to this car and the active pick bracketed **and painted accent-green**
+  (`Save.set_upgrade_enabled`; free,
   instant, at most one enabled per slot — picking one switches off a same-slot sibling).
-  The drivetrain slot is an RWD/AWD/FWD picker instead. Nothing is consumed from an
-  unlocked pool — upgrades are car-bound. Focus keys are `opt:<slot>:<id>`,
-  `drivetrain:<mode>`, and `swap`.
+  The drivetrain slot is an RWD/AWD/FWD picker instead. The **weight slot** has its own
+  bespoke selector (`_make_weight_selector`): options ordered heaviest→lightest with
+  **Stock in the middle** (`+500kg  +200kg  [Stock]  -200kg` for a ~1000 kg car), each
+  button labelled by its mass delta off the car's base mass (rounded to the nearest
+  100 kg, signed, `kg` suffix). The two ballast options are **free** (always enabled)
+  while the lightweight (Weight Reduction) option **greys until earned**; picking a free
+  ballast the car doesn't own installs it on the spot, Stock disables all weight parts.
+  Nothing is consumed from an
+  unlocked pool — upgrades are car-bound. It also hosts the **engine-detune slider**
+  (0–100%, step 5) at the **bottom** of the menu (below the slot rows and the engine-swap
+  row) — detune lives here rather
+  than on the Tune page because it's a power / power-to-weight knob (saved via
+  `Save.set_engine_detune`; see [engine-swap.md](engine-swap.md)). There is no stats line;
+  the live power-to-weight readout rides on the detune slider's value label. Focus keys are
+  `opt:<slot>:<id>`, `drivetrain:<mode>`, and `swap`.
   **`UpgradesMenu.setup(owned, on_change, on_swap, pw_limit)`** takes an optional
-  `pw_limit` (power-to-weight cap in hp/tonne); when set ≥ 0, the stats line shows the
-  limit and flags **"OVER LIMIT"** in red if the live build exceeds it. Used by the
-  start-line upgrades overlay (with the rally's `pw_max` limit) and the HQ car-park
-  detune modal (with the rally's limit); the HQ garage lift omits it so the player
-  upgrades freely.
+  `pw_limit` (power-to-weight cap in hp/tonne); when set ≥ 0, the overlay's **close button
+  is gated** (`bind_close_button` + `request_close` / `can_close`): it reads **Done**, turns
+  red with **"Over limit — reduce to N hp/tonne"** and blocks closing (button + Esc / back)
+  while the live build exceeds the cap. The detune value label always shows just
+  `N% - M hp/tonne` (no cap text). Used by the start-line upgrades overlay (with
+  the rally's `pw_max` limit) and the HQ car-park Change-Upgrades / detune modal (with
+  the rally's limit); the HQ garage lift omits it so the button stays a plain **Back** and
+  the player upgrades freely.
   (Repair is **not** here — it moved to the **garage station row** as a
   `Repair` button, `_repair_selected_car`; see GARAGE above.) Below the slot rows sits an
   **engine-swap row** (`UpgradesMenu._make_engine_swap_row`, `upgrades_menu.gd:215`): the
@@ -579,21 +610,25 @@ and unlocks Start. An **over-powered** focused car — its p/w sits over the ral
 warning label, the plain enabled Start (saves overlay space). Pressing Start pops an
 **on-brand modal** (`_show_detune_confirm` → `_make_carpark_modal`: a full-screen
 dimmer + centred house `UITheme.panel`, NOT a native grey dialog) with a short
-"Too powerful" message and **three left/right-navigable buttons**: **Cancel**,
-**Change Upgrades**, and **Detune to N%**. The Detune button is the explicit
-agreement that applies the tune (`Save.set_engine_detune`) before fielding the car
-(`_on_detune_confirmed` → `_proceed_with_start`). **Change Upgrades**
-(`_detune_change_upgrades`) instead opens the **Change-Upgrades popup** — the shared
+"Too powerful" message and **two left/right-navigable buttons**: **Cancel** and
+**Change Upgrades**. **Change Upgrades**
+(`_detune_change_upgrades`) opens the **Change-Upgrades popup** — the shared
 `UpgradesMenu` component (see [upgrade-catalogue.md](upgrade-catalogue.md)) in a
-matching centred modal (`_show_upgrades_popup`, engine-swap row dropped) so the
-player can strip / switch parts to shed power rather than detune; closing it
+matching centred modal (`_show_upgrades_popup`, engine-swap row dropped, passed the
+rally's `pw_limit`) so the player can strip / switch parts — or use the menu's own
+**engine-detune slider** (at the bottom of the menu) — to shed power. Because the popup
+is passed the rally's `pw_limit`, its close button is the gated **Done** (red,
+**"Over limit — reduce to N hp/tonne"**, blocking both the button and back) until the
+build is under the cap; closing it
 (`_close_upgrades_popup`) rebuilds the eligible lineup if anything changed, and the
-player re-presses Start. Both modals are wired with `MenuNav.attach` (`on_back` =
-close), and `_carpark_modal_open` makes `_unhandled_input` hand navigation to the
-modal instead of the lineup beneath. The detune tune is **temporary, for that rally
-only** (unlike a garage-lift detune): the confirm registers the prior value with
-`RallySession.register_detune_revert`, and the session restores it when the rally
-ends — only at the actual end (finish/wreck/abandon), never between events. The map pin's green
+player re-presses Start (**close → re-press**, no auto-launch). Both modals are wired with `MenuNav.attach` (the upgrades popup
+hands its gated `request_close` as `on_back` so Esc is gated too), and `_carpark_modal_open` makes `_unhandled_input` hand navigation to the
+modal instead of the lineup beneath. The fix the player makes in the upgrades menu is
+an ordinary garage edit and **persists after the rally** — there is no longer a
+temporary, per-rally, auto-reverted detune here (the old **Detune to N%** button and
+its `RallySession.register_detune_revert` agreement are gone). Rallies have no hard
+power floor, so a permanently detuned car can still enter a higher class — it just
+gets a non-blocking "Underpowered" warning at the start line. The map pin's green
 "raceable" pennant counts these detunable cars too (`_has_eligible_car` mirrors the
 lineup filter). A **banner** names the rally + restriction; **Start** records the
 fielded car as the **selected car** (`Save.set_selected_car` in `_begin_rally_start`,
@@ -849,9 +884,9 @@ mixed lineup keeps each body at its true size); cycling focus re-selects the car
 wraps; a **wrecked car is gated in the car park** (Start disabled, then a Repair Kit
 restores it to full health and unlocks Start); an **over-powered car parks with the
 detune-to-enter prompt** (looks eligible; Start pops the on-brand modal offering
-Cancel / Change Upgrades / Detune to N% — agreeing applies the qualifying
-`engine_detune` and launches, or Change Upgrades opens the shared `UpgradesMenu` to
-shed power by stripping parts); **Back** steps car park → table →
+Cancel / Change Upgrades — Change Upgrades opens the gated shared `UpgradesMenu` to
+shed power permanently via the detune slider / ballast / stripping parts, then the
+player re-presses Start); **Back** steps car park → table →
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
 both the event-only and cumulative leaderboards across its two pages (and the
