@@ -152,24 +152,46 @@ func test_country_restriction_filters() -> void:
 
 
 func test_power_to_weight_restriction_filters() -> void:
-	# A p/w band admits only cars whose power-to-weight sits inside [pw_min, pw_max].
-	# Bands are in hp/tonne (is_eligible converts each car's kW/kg to hp/tonne before comparing).
-	# Use synthetic cars spanning low / mid / high p/w and derive the band from the mid
-	# car's own figure, so the test leans on the eligibility LOGIC — never on authored
-	# catalogue values (which are free to change). power_to_weight() reads peak_torque +
-	# redline straight off the entry, so no real engine id is needed.
+	# The p/w gate is a CEILING only (pw_max) — there is no hard floor, so a weak car is
+	# always eligible and only the over-powered car is excluded. Bands are in hp/tonne
+	# (is_eligible converts each car's kW/kg to hp/tonne before comparing). Use synthetic
+	# cars spanning low / mid / high p/w and derive the cap from the mid car's own figure,
+	# so the test leans on the eligibility LOGIC — never on authored catalogue values
+	# (which are free to change). power_to_weight() reads peak_torque + redline straight
+	# off the entry, so no real engine id is needed.
 	var low := {"mass": 1200.0, "peak_torque": 200.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
 	var mid := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
 	var high := {"mass": 1000.0, "peak_torque": 600.0, "redline": 8000.0, "drive_mode": CarLibrary.RWD}
 	var pw_mid := CarLibrary.power_to_weight(mid) * RallyLibrary.KW_KG_TO_HP_TONNE
-	var band := {"restriction": {"pw_min": pw_mid * 0.9, "pw_max": pw_mid * 1.1}}
-	assert_false(RallyLibrary.is_eligible(band, low), "low-p/w car below the floor")
-	assert_true(RallyLibrary.is_eligible(band, mid), "mid-p/w car inside the band")
-	assert_false(RallyLibrary.is_eligible(band, high), "high-p/w car above the cap")
-	# A ceiling-only gate (pw_max, no floor) lets the weakest car in but caps the strong.
+	# A ceiling gate lets the weakest car in (no floor) but caps the strong.
 	var cap := {"restriction": {"pw_max": pw_mid * 0.95}}
 	assert_true(RallyLibrary.is_eligible(cap, low), "the low-power car clears a ceiling gate")
 	assert_false(RallyLibrary.is_eligible(cap, mid), "a stronger car is capped out")
+	# Even far below the ceiling, a car stays eligible — the floor is gone.
+	var high_cap := {"restriction": {"pw_max": pw_mid * 10.0}}
+	assert_true(RallyLibrary.is_eligible(high_cap, low), "no hard floor: a weak car is still eligible")
+	assert_true(RallyLibrary.is_eligible(high_cap, high), "and a strong car under the ceiling too")
+
+
+func test_underpower_warning_fires_below_the_ceiling_fraction() -> void:
+	# There's no hard floor, but a car well under the class ceiling gets a non-blocking
+	# start-line warning: underpower_warning returns non-empty iff the car's p/w is below
+	# PW_WARN_FRACTION of pw_max. Derive the ceiling from a synthetic car's own figure so
+	# the test exercises the fraction LOGIC, not authored values.
+	var car := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
+	var pw := CarLibrary.power_to_weight(car) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var frac: float = RallyLibrary.PW_WARN_FRACTION
+	# Ceiling low enough that the car sits comfortably above the warn line -> no warning.
+	var strong := {"restriction": {"pw_max": pw / frac * 0.9}}
+	assert_eq(RallyLibrary.underpower_warning(strong, car), "",
+		"a car above the warn fraction of the ceiling isn't warned")
+	# Ceiling high enough that the car falls below the warn line -> warning.
+	var weak := {"restriction": {"pw_max": pw / frac * 1.1}}
+	assert_ne(RallyLibrary.underpower_warning(weak, car), "",
+		"a car below the warn fraction of the ceiling is warned")
+	# An open-class rally (no ceiling) never warns.
+	assert_eq(RallyLibrary.underpower_warning({"restriction": {}}, car), "",
+		"open class has no ceiling, so no underpower warning")
 
 
 func test_installed_upgrades_change_rally_eligibility() -> void:
@@ -189,10 +211,6 @@ func test_installed_upgrades_change_rally_eligibility() -> void:
 	var pw_maxed := CarLibrary.power_to_weight(maxed) * RallyLibrary.KW_KG_TO_HP_TONNE
 	assert_gt(pw_powered, pw_bare, "an engine kit raises effective p/w")
 	assert_gt(pw_maxed, pw_powered, "adding weight reduction raises it further")
-	# A floor between bare and powered: the bare car can't clear it, the upgraded one can.
-	var floor_gate := {"restriction": {"pw_min": (pw_bare + pw_powered) * 0.5, "pw_max": pw_maxed + 1.0}}
-	assert_false(RallyLibrary.is_eligible(floor_gate, bare), "bare car sits below the p/w floor")
-	assert_true(RallyLibrary.is_eligible(floor_gate, powered), "a fitted engine kit qualifies it for the band")
 	# A ceiling between bare and maxed: the bare car clears it, the fully-built one is capped out.
 	var cap_gate := {"restriction": {"pw_max": (pw_bare + pw_maxed) * 0.5}}
 	assert_true(RallyLibrary.is_eligible(cap_gate, bare), "bare car clears the ceiling gate")
@@ -231,14 +249,9 @@ func test_qualifying_detune_full_power_and_unfixable_cases() -> void:
 	var wrong_drive := {"restriction": {"drive_mode": CarLibrary.AWD, "pw_max": pw * 0.8}}
 	assert_eq(RallyLibrary.qualifying_detune(wrong_drive, car), -1.0,
 		"detuning can't fix a drive-mode mismatch")
-	# Underpowered (below a band floor): detuning only lowers p/w further.
-	var floor_gate := {"restriction": {"pw_min": pw * 1.2, "pw_max": pw * 1.5}}
-	assert_eq(RallyLibrary.qualifying_detune(floor_gate, car), -1.0,
-		"a car below the band floor can't detune its way in")
 	# The contract everywhere: the result is either -1.0 or a tune that verifies
-	# eligible — even against a band whose floor sits just under its cap, where the
-	# whole-percent rounding can land below the floor.
-	var narrow := {"restriction": {"pw_min": pw * 0.799, "pw_max": pw * 0.8}}
+	# eligible — even against a tight cap where the whole-percent rounding can land off.
+	var narrow := {"restriction": {"pw_max": pw * 0.8}}
 	var frac := RallyLibrary.qualifying_detune(narrow, car)
 	if frac > 0.0:
 		var detuned := car.duplicate()
@@ -403,6 +416,26 @@ func test_opponents_drive_eligible_cars() -> void:
 		assert_false(meta.is_empty(), "the rival car id resolves to a CarLibrary entry")
 		assert_eq(int(meta.get("drive_mode", -1)), CarLibrary.RWD, "RWD-only rally fields only RWD rivals")
 		assert_eq(String(opp.get("car_name", "")), String(meta.get("name", "")), "car name matches the id")
+
+
+func test_opponents_are_not_fielded_underpowered() -> void:
+	# Rivals must respect the class power floor: no fielded rival may be underpowered
+	# (p/w below the ceiling fraction). Cap the class at the strongest car's p/w so
+	# every car is eligible (at or under the cap) and the strongest is adequate, then
+	# assert the field never includes an underpowered car. Synthetic roster (fixtures).
+	var pws: Array = []
+	for entry in CarLibrary.all():
+		pws.append(CarLibrary.power_to_weight(UpgradeLibrary.effective_meta({}, entry)) * CarLibrary.KW_KG_TO_HP_TONNE)
+	var cap: float = pws.max()
+	var rally := {"id": "synthetic_cap", "difficulty": 2, "restriction": {"pw_max": cap},
+		"events": [{"seed": 1}, {"seed": 2}, {"seed": 3}]}
+	var track := _track_with_pieces()
+	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], rally["events"])
+	assert_gt(field.size(), 0, "a field is fielded")
+	for opp in field:
+		var meta := UpgradeLibrary.effective_meta({}, CarLibrary.by_id(String(opp.get("car_id", ""))))
+		assert_eq(RallyLibrary.underpower_warning(rally, meta), "",
+			"%s is not fielded underpowered" % opp["name"])
 
 
 func test_wrecks_occur_somewhere_in_the_roster() -> void:

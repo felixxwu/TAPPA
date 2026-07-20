@@ -137,7 +137,7 @@ stats panel + rally eligibility. A car with the kit counts as eligible for a
 engine detune — see the lineup logic in `hq.gd`: `_switch_target_for` /
 `_qualifying_drivetrain_for` / `_build_eligible_lineup`); entering auto-applies the
 switch and `RallySession` reverts it afterward (`register_drivetrain_revert`), mirroring
-the engine-detune round-trip. The roster ships two stock **FWD** cars — the **Focus ST**
+the engine-detune round-trip. The roster ships two stock **FWD** cars — the **Focus**
 (`id: "focus"`) and the **Renault Twingo** (`id: "twingo"`), both home entrants of the
 Front Runners rally (see `features/rally-roster.md`); the MX-5/Viper/XJS are RWD; the
 Acty is AWD.
@@ -164,8 +164,8 @@ Gearing (`gear_ratios` + `final_drive` + `shift_time`) lives on the **engine**
 carries its gearbox** ([engine-swap.md](engine-swap.md)). Each engine
 carries its car's real published transmission — e.g. the MX-5's real ND 6-speed
 ratios (`5.087 / 2.991 / 2.035 / 1.594 / 1.286 / 1.000`), the Charger's 3-speed
-TorqueFlite (`2.45 / 1.45 / 1.00`), the 911 Turbo's classic 4-speed, the Focus ST's Getrag
-M66 6-speed. Only `final_drive` is a game-tuned value (see below); the internal
+TorqueFlite (`2.45 / 1.45 / 1.00`), the 911 Turbo's classic 4-speed, the Focus's MTX-75
+5-speed. Only `final_drive` is a game-tuned value (see below); the internal
 ratios are real and differ per car, so gearing character now varies across the
 roster instead of every car sharing one box. (An earlier iteration had every
 car share the MX-5's box outright, and before that a single fictional shared
@@ -178,7 +178,7 @@ resistance of roughly **0.2 g, proportional to mass**, that our model does *not*
 control (it persists even coasting in neutral with the wheels rolling freely, and
 is independent of `drag_coefficient`). This — not aero drag — is what actually
 caps the cars' top speeds, and it is why every car's `final_drive` is kept deliberately HIGH (tuned per car,
-mostly ~6–7 but ranging from 4 on the torquey Charger to 12 on the Focus ST, not
+mostly ~6–7 but ranging from 4 on the torquey Charger to 12 on the Audi TFSI i5, not
 the real ~3–4) — a car needs enough wheel torque multiplication to overcome it.
 The **MX-5**, with only ~150 hp, can't pull its *real* tall final drive (2.866)
 against the resistance and stalls/crawls, so its `final_drive` is game-tuned to

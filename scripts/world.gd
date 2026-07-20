@@ -4,6 +4,9 @@ extends Node3D
 
 const BUSH_SEED_OFFSET := 1013
 
+# car.gd has no class_name; preload it to reach its static helpers (compression_budget).
+const CarScript := preload("res://scripts/car.gd")
+
 # Assets for a staged roadside opponent wreck (features/opponent-wrecks.md). The car
 # is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
 # display cars); the onlookers reuse the shared low-poly spectator figure.
@@ -32,11 +35,11 @@ func _ready() -> void:
 
 	var cfg: GameConfig = Config.data
 	# Frame cap: a steady ceiling keeps phones cool (avoids thermal throttling).
-	# Mobile + web get the aggressive cap (target_fps_mobile, 30); desktop keeps
-	# the higher one (target_fps, 60). 0 = uncapped. Physics stays at the project
-	# physics tick. Skipped under --headless (no rendering to pace) so it can't
-	# throttle the frame-awaiting test runner.
-	var fps_cap := cfg.target_fps_for(Platform.is_mobile_or_web())
+	# Web gets its own audio-bounded cap (target_fps_web), native mobile the thermal
+	# cap (target_fps_mobile), desktop the higher one (target_fps). 0 = uncapped.
+	# Physics stays at the project physics tick. Skipped under --headless (no
+	# rendering to pace) so it can't throttle the frame-awaiting test runner.
+	var fps_cap := cfg.target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())
 	if fps_cap > 0 and not Platform.is_headless():
 		Engine.max_fps = fps_cap
 	var env: Environment = $WorldEnvironment.environment
@@ -172,6 +175,7 @@ func _ready() -> void:
 	# does the 3D work while main.tscn is up (the root's 3D pass is disabled).
 	var perf := PerfOverlay.new($Floor as TerrainManager)
 	perf.measure_viewport = get_node_or_null("PostProcess/View") as Viewport
+	perf.engine_audio = $Car.get_node_or_null("EngineAudio")  # live audio-overrun readout
 	add_child(perf)
 
 	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref).
@@ -197,7 +201,7 @@ func _ready() -> void:
 		runner.name = "BenchmarkRunner"
 		add_child(runner)
 		runner.setup($Car, _track_progress, _road_centerline,
-			get_node_or_null("PostProcess/View") as Viewport)
+			get_node_or_null("PostProcess/View") as Viewport, $Floor as TerrainManager)
 
 
 # Yield a frame so a freshly-set LoadingScreen step actually paints before the
@@ -235,6 +239,49 @@ func _end_load_timing() -> void:
 	print("load stage: %-26s %5d ms" % [_stage_label, now - _stage_t0])
 	print("load total: %d ms" % (now - _load_t0))
 	_stage_label = ""
+
+
+# Shader/texture pre-warm (see the call site in _ready). Flies a throwaway camera
+# along the whole built corridor while the loading cover is up, so every material's
+# first-use GL program compile + texture upload happens now, not mid-drive. The
+# SubViewport (PostProcessView) mirrors whatever camera is current, so making this
+# one current renders each corridor view; the compiles are the slow frames we
+# deliberately absorb here. Restores the gameplay camera when done. Runs on every
+# platform (the stalls are worst on web but real on any GL-Compat first render); the
+# call site already gates it behind the loading cover + non-headless, so it never
+# runs in tests or where it could be seen.
+func _prewarm_corridor() -> void:
+	if _headless or _road_centerline == null:
+		return
+	var length := _road_centerline.get_baked_length()
+	if length <= 0.0:
+		return
+	var floor_tm := $Floor as TerrainManager
+	var cam := Camera3D.new()
+	cam.far = 400.0
+	add_child(cam)
+	var prev := get_viewport().get_camera_3d()
+	cam.make_current()
+	const STEPS := 14
+	for s in STEPS + 1:
+		var off := length * float(s) / float(STEPS)
+		var p := _road_centerline.sample_baked(off)
+		var ahead := _road_centerline.sample_baked(minf(off + 10.0, length))
+		var y := (floor_tm.height_at(p.x, p.y) if floor_tm != null else 0.0) + 2.0
+		var eye := Vector3(p.x, y, p.y)
+		var look := Vector3(ahead.x, y, ahead.y)
+		if eye.distance_to(look) > 0.05:
+			cam.look_at_from_position(eye, look, Vector3.UP)
+		# Two frames per waypoint so the SubViewport actually renders this view (the
+		# first-use compiles land on these frames, behind the loading cover).
+		await get_tree().process_frame
+		await get_tree().process_frame
+	cam.queue_free()
+	# Restore the gameplay camera (CameraManager re-asserts the correct one).
+	if has_node("CameraManager"):
+		($CameraManager as CameraManager).activate_current()
+	elif is_instance_valid(prev):
+		prev.make_current()
 
 
 # Get-or-create a named child: return the existing node with `node_name` if one is
@@ -464,13 +511,26 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# the flash.
 	if loading != null and not _headless:
 		var wp := _warm_up_point()
-		_tire_marks.warm_up(wp)
-		_wheel_particles.warm_up(wp)
-		_engine_smoke.warm_up(wp)
+		# Auto-discover every node implementing the warm_up()/clear_warm_up() contract
+		# (surface-FX pools, tyre marks, the spectator ragdoll variant, and anything
+		# added later) instead of a hardcoded list — so a new effect is primed for free
+		# just by implementing the contract, never silently omitted. Each warm_up(pos)
+		# draws one throwaway instance THROUGH ITS REAL DRAW PATH (so the correct
+		# gl_compatibility program variant compiles), cleared after the rendered frame.
+		# See features/rendering.md → "Shader pre-warm".
+		var warmers := find_children("*", "Node", true, false).filter(
+			func(n: Node) -> bool: return n.has_method("warm_up") and n.has_method("clear_warm_up"))
+		for n in warmers:
+			n.warm_up(wp)
 		await get_tree().process_frame
-		_tire_marks.clear_warm_up()
-		_wheel_particles.clear_warm_up()
-		_engine_smoke.clear_warm_up()
+		for n in warmers:
+			n.clear_warm_up()
+		# Corridor pre-warm: fly a throwaway camera along the whole built road so every
+		# static material along it compiles its gl_compatibility program now. MUST run
+		# here — behind the loading cover — not after _generate_track returns: non-staged
+		# runs (benchmark / free-roam) drop the overlay below, so a later fly would be
+		# visible as the camera jumping around. See features/rendering.md.
+		await _prewarm_corridor()
 
 	# World is ready — drop the loading overlay (absent for direct/programmatic
 	# regeneration, e.g. entering a rally event). Staged runs keep it up a moment
@@ -807,8 +867,17 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	var half_len := cfg.opponent_wreck_footprint_half_len
 	var edge := cfg.track_width * 0.5
 	var base_lat := edge + half_w + cfg.opponent_wreck_road_offset_m
+	# Gate the site on the droop budget of the ACTUAL wreck car (apply_car overwrites
+	# stiffness + per-axle travel from the library entry), not the base cfg.
+	var wreck_spec: Dictionary = CarLibrary.CARS[idx]
+	var gate_cfg: GameConfig = cfg.duplicate() as GameConfig
+	gate_cfg.suspension_stiffness = wreck_spec.get("suspension_stiffness", cfg.suspension_stiffness)
+	gate_cfg.suspension_travel = wreck_spec.get("suspension_travel", cfg.suspension_travel)
+	gate_cfg.suspension_travel_front = wreck_spec.get("suspension_travel_front", 0.0)
+	gate_cfg.suspension_travel_rear = wreck_spec.get("suspension_travel_rear", 0.0)
+	var budget: float = CarScript.compression_budget(gate_cfg)
 	var spot := _flattest_wreck_spot(centerline, baked, progress * span, side,
-		base_lat, half_w, half_len, terrain)
+		base_lat, half_w, half_len, terrain, budget)
 	var pos2: Vector2 = spot["pos2"]
 	var tan2: Vector2 = spot["tan2"]
 	var top_y: float = spot["top"]  # highest ground under the footprint — seat on top, never buried
@@ -825,7 +894,7 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 	var fwd := Vector3(tan2.x, 0.0, tan2.y)
 	var skew := (fmod(progress * 41.0, 1.0) - 0.5) * 2.0 * cfg.opponent_wreck_yaw_skew
 	var car_basis := Basis.looking_at(fwd, Vector3.UP).rotated(Vector3.UP, skew)
-	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container)
+	_spawn_wreck_car(idx, Transform3D(car_basis, Vector3(pos2.x, top_y, pos2.y)), container, terrain)
 
 	# The small gathering of onlookers, on the verge side of the wreck (off the road).
 	_spawn_wreck_crowd(container, Vector3(pos2.x, top_y, pos2.y), outward, terrain, cfg)
@@ -836,31 +905,49 @@ func _spawn_opponent_wreck(centerline: Curve2D, finish_len: float,
 # centre `pos2`, the road tangent `tan2` there, and `top` = the highest terrain height
 # under the car footprint at that centre (so the car seats on top and can't spawn
 # buried). No RNG, so the wreck stays stable across re-attempts.
+# Choose the wreck site from ordered candidates (best-placed first, e.g. nearest shoulder).
+# Prefer the first whose terrain spread fits the suspension droop budget (no wheel floats);
+# if none fit, fall back to the flattest and warn. Empty in -> empty out.
+static func _pick_wreck_candidate(candidates: Array, budget: float) -> Dictionary:
+	var flattest := {}
+	var flattest_spread := INF
+	for cand in candidates:
+		var spread: float = cand["spread"]
+		if spread <= budget:
+			return cand
+		if spread < flattest_spread:
+			flattest_spread = spread
+			flattest = cand
+	if not flattest.is_empty():
+		push_warning("wreck site: no verge within suspension budget (%.2f m); using flattest spread %.2f m" % [
+			budget, flattest_spread])
+	return flattest
+
+
 func _flattest_wreck_spot(centerline: Curve2D, baked: float, seed_offset: float,
 		side: float, base_lat: float, half_w: float, half_len: float,
-		terrain: TerrainManager) -> Dictionary:
-	var best := {}
-	var best_spread := INF
-	for d_along: float in [-12.0, -6.0, 0.0, 6.0, 12.0]:
-		var off := clampf(seed_offset + d_along, 0.05 * baked, 0.95 * baked)
-		var c := centerline.sample_baked(off)
-		var t := centerline.sample_baked(minf(off + 1.0, baked)) - c
-		if t.length() < 1e-4:
-			t = Vector2(0.0, 1.0)
-		t = t.normalized()
-		var road_out := Vector2(-t.y, t.x) * side
-		# Prefer the shoulder (closest, usually flattest); step outward for flatter ground.
-		for extra: float in [0.0, 1.0, 2.0, 3.0]:
+		terrain: TerrainManager, budget: float) -> Dictionary:
+	# Candidates in PREFERENCE order: nearest-shoulder first, then step outward, then
+	# widen along-track. The gate picks the first that fits the droop budget (else flattest).
+	var cands: Array = []
+	for extra: float in [0.0, 1.0, 2.0, 3.0, 4.0, 6.0]:            # lateral: closest first
+		for d_along: float in [0.0, -6.0, 6.0, -12.0, 12.0]:       # along-track: seed first
+			var off := clampf(seed_offset + d_along, 0.05 * baked, 0.95 * baked)
+			var c := centerline.sample_baked(off)
+			var t := centerline.sample_baked(minf(off + 1.0, baked)) - c
+			if t.length() < 1e-4:
+				t = Vector2(0.0, 1.0)
+			t = t.normalized()
+			var road_out := Vector2(-t.y, t.x) * side
 			var c2 := c + road_out * (base_lat + extra)
 			var fp := _footprint_terrain(terrain, c2, t, half_len, half_w)
-			if fp["spread"] < best_spread:
-				best_spread = fp["spread"]
-				best = {"pos2": c2, "tan2": t, "top": fp["top"]}
-	if best.is_empty():
+			cands.append({"pos2": c2, "tan2": t, "top": fp["top"], "spread": fp["spread"]})
+	var chosen := _pick_wreck_candidate(cands, budget)
+	if chosen.is_empty():
 		# Degenerate curve: fall back to the seeded point.
 		var c := centerline.sample_baked(clampf(seed_offset, 0.0, baked))
-		best = {"pos2": c, "tan2": Vector2(0.0, 1.0), "top": terrain.height_at(c.x, c.y)}
-	return best
+		chosen = {"pos2": c, "tan2": Vector2(0.0, 1.0), "top": terrain.height_at(c.x, c.y), "spread": 0.0}
+	return chosen
 
 
 # The terrain under a car footprint centred at `c2` (world XZ), aligned to tangent `t`:
@@ -889,7 +976,7 @@ func _footprint_terrain(terrain: TerrainManager, c2: Vector2, t: Vector2,
 # verge, roll down a slope, or re-wreck on landing (all past bugs of the old drop-and-
 # settle approach). FREEZE_MODE_STATIC (the default) keeps the collider, so the frozen
 # wreck is a solid, immovable obstacle. Its HP is zeroed so the smoke reads it as a wreck.
-func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> Node3D:
+func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node, terrain: TerrainManager) -> Node3D:
 	# Shared display-prop recipe (CarProp.spawn): instantiate + isolated config +
 	# apply_car + dup meshes + silence + freeze (+ synthetic wreck smoke). The wreck's
 	# own steps — seat/settle, lock controls, zero HP — run in `configure` after the
@@ -899,7 +986,9 @@ func _spawn_wreck_car(library_index: int, seat: Transform3D, parent: Node) -> No
 		# Lift the car off its ground seat by its resting ride height so the wheels sit
 		# on the ground, then settle the wheel visuals.
 		c.global_transform = Transform3D(seat.basis, seat.origin + Vector3.UP * c.settled_ride_height())
-		c.settle_wheel_visuals()  # frozen prop: droop the wheels to their live rest pose
+		# Frozen prop: droop each wheel onto the terrain under it (analytic height — the
+		# same surface the collider is built from, valid over the un-streamed verge).
+		c.settle_wheels_to_ground(func(p: Vector3) -> float: return terrain.height_at(p.x, p.z))
 		c.controls_locked = true  # driverless prop: ignore live input, hold the handbrake
 		# Read as a wreck: 0 HP drives the synthetic smoke (a wrecked car smokes hardest),
 		# exactly as a damaged HQ car does.

@@ -120,19 +120,19 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/mx5/wheel.png",
 	},
 	{
-		"name": "Focus ST",  # Mk2 2009: ~1467 kg, 225 PS, 2.5 turbo i5, FWD hot hatch
+		"name": "Focus",  # 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
 		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
-		"mass": 1467.0, "engine": "ford_25t_i5", "weight_front": 0.62, "engine_pos": 0.85,  # transverse turbo I5, nose-heavy FWD
-		"tire_compound": 0.95,  # performance summer tyres
+		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse NA I4, nose-heavy FWD
+		"tire_compound": 0.88,  # economy / touring all-season tyres
 		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy FWD)
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 8000,
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 10000,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.7,
-		"wheel_radius": 0.35, "wheel_width_front": 0.235, "wheel_width_rear": 0.235,  # 235/40R18 square, FWD
-		"suspension_travel": 0.45, "suspension_stiffness": 10.0,  # firm hot hatch
+		"wheel_radius": 0.31, "wheel_width_front": 0.205, "wheel_width_rear": 0.205,  # 205/55R16 square, FWD
+		"suspension_travel": 0.45, "suspension_stiffness": 9.0,  # compliant compact hatch
 		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Focus's own wheel.png.
 		"use_model": true,
@@ -259,7 +259,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.2,  # period touring tyres
 		"brake_bias": 0.1,  # front share of foot-brake torque (nose-heavy RWD)
-		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 12000,  # long, brick-like body → real aero drag
+		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 2000,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),

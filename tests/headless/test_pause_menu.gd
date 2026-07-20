@@ -136,6 +136,28 @@ func test_reset_to_track_snaps_car_onto_manual_reset_pose() -> void:
 		"Reset to track puts the car on the centerline beside its current position")
 
 
+# Regression: the teleport must SURVIVE the following physics steps. A bare
+# global_transform write on the RigidBody is discarded by the physics server unless it
+# happens inside the physics step, so a reset fired outside it (a menu signal) or on a
+# stuck/sleeping body used to revert next frame — the car appeared not to move at all.
+# Car.reset_to queues the pose for _integrate_forces, so it holds. Step physics and
+# assert the car is still on the reset pose (only settling gently under gravity).
+func test_reset_to_track_holds_across_physics_steps() -> void:
+	var car: Node3D = _scene.get_node("Car")
+	var track_progress = _scene._track_progress
+	car.global_transform = car.global_transform.translated(Vector3(30, 5, 0))
+	var target: Transform3D = track_progress.manual_reset_pose()
+	_scene._on_reset_to_track_requested()
+	for _i in 5:
+		await get_tree().physics_frame
+	# Horizontal position must not drift back toward where the car strayed; a little
+	# vertical settle under gravity is fine, so compare on the XZ plane only.
+	var d := Vector2(car.global_transform.origin.x, car.global_transform.origin.z) \
+		.distance_to(Vector2(target.origin.x, target.origin.z))
+	assert_almost_eq(d, 0.0, 1.0,
+		"Reset holds after physics steps instead of the server reverting the teleport")
+
+
 func test_settings_exposes_the_shared_menu() -> void:
 	_pause.open()
 	# The same SettingsMenu component as the title screen: camera + control rows.

@@ -21,6 +21,15 @@ func _rng(seed_value: int) -> RandomNumberGenerator:
 	return r
 
 
+func test_free_parts_are_never_drawn_as_a_reward() -> void:
+	# Free parts (ballast) are always available and must never appear in the reward draw
+	# pool at any tier. Iterates the pool as opaque output — no specific id pinned.
+	for tier in range(1, RewardSystem.MAX_TIER + 1):
+		for id in RewardSystem._parts_at_or_below(tier):
+			assert_false(UpgradeLibrary.is_free(id),
+				"a free part must not be drawable as a reward (tier %d: %s)" % [tier, id])
+
+
 # Build a profile with the given completed rally ids and owned model ids.
 func _profile(completed: Array, owned: Array) -> Dictionary:
 	var rallies := {}

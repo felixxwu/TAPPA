@@ -25,11 +25,36 @@ func setup(btns: Array, acts: Array) -> void:
 	actions.assign(acts)
 
 
-# The index `step` places away from `index`, wrapping at both ends of the row.
+# The index `step` places away from `index`, skipping DISABLED buttons (a disabled
+# item — e.g. Change Car with only one owned car — is not a valid cursor stop, same as
+# native focus skips disabled controls), wrapping at both ends. Returns `index` unchanged
+# if the row is empty or every button is disabled.
 func wrapped(index: int, step: int) -> int:
 	if buttons.is_empty():
 		return index
-	return wrapi(index + step, 0, buttons.size())
+	var dir := signi(step) if step != 0 else 1
+	var next := wrapi(index + step, 0, buttons.size())
+	# Walk in the travel direction until we land on an enabled button; the guard stops us
+	# after a full loop when the whole row is disabled.
+	for _i in buttons.size():
+		if not buttons[next].disabled:
+			return next
+		next = wrapi(next + dir, 0, buttons.size())
+	return index
+
+
+# The nearest enabled index at or after `index` (searching forward, wrapping) — used to
+# re-seat the cursor off a button that just became disabled. Returns `index` unchanged if
+# the row is empty or every button is disabled.
+func settled(index: int) -> int:
+	if buttons.is_empty():
+		return index
+	var i := clampi(index, 0, buttons.size() - 1)
+	for _n in buttons.size():
+		if not buttons[i].disabled:
+			return i
+		i = wrapi(i + 1, 0, buttons.size())
+	return index
 
 
 # Paint the cursor at `index`: the button at `index` gets the highlight, the rest are
@@ -39,7 +64,7 @@ func refresh(index: int) -> void:
 		UITheme.mark_focused(buttons[i], i == index)
 
 
-# Fire the action the cursor sits on. No-op for an out-of-range index.
+# Fire the action the cursor sits on. No-op for an out-of-range or disabled index.
 func activate(index: int) -> void:
-	if index >= 0 and index < actions.size():
+	if index >= 0 and index < actions.size() and not buttons[index].disabled:
 		actions[index].call()

@@ -244,8 +244,9 @@ func _player_car_name() -> String:
 # The top `n` rivals for the CURRENT event — each rival's time for THIS event with
 # the car they drove, fastest first — shown on the start-line reveal in place of a
 # single "time to beat". Rivals who DNF'd this event (no time set) are omitted.
-# Returns up to n entries: { name:String, car_name:String, time_ms:int }. Empty
-# before a rally starts / when no rival has a time for this event.
+# Returns up to n entries: { name:String, car_id:String, car_name:String, time_ms:int }.
+# `car_id` lets the start-line grid spawn each leader's actual car. Empty before a
+# rally starts / when no rival has a time for this event.
 func current_event_leaders(n: int = 3) -> Array:
 	if _event_index < 0:
 		return []
@@ -257,6 +258,7 @@ func current_event_leaders(n: int = 3) -> Array:
 			if t >= 0:
 				rows.append({
 					"name": String(opp.get("name", "Rival")),
+					"car_id": String(opp.get("car_id", "")),
 					"car_name": String(opp.get("car_name", "")),
 					"time_ms": t,
 				})

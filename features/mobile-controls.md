@@ -72,6 +72,42 @@ desktops. (The game uses `stretch/mode="viewport"`, so the *internal* viewport i
 always 480×360 — viewport width can't distinguish phone from desktop, which is why
 touch availability is the detection signal.)
 
+## Web fullscreen + landscape
+
+**Source:** the `WebFullscreen` autoload (`scripts/web_fullscreen.gd`).
+
+The game is authored landscape (`display/window/handheld/orientation =
+sensor_landscape`), but a mobile browser first loads the canvas at the page's
+current (often portrait) size, and browsers only allow fullscreen from a user
+gesture. `WebFullscreen` handles this **globally** (it's an autoload, so it works
+in every scene — the title, the garage, AND while driving, not just the HQ):
+
+- It tracks the window orientation (polling `DisplayServer.window_get_size()` each
+  frame, the same robustness trick `DisplayStretch` uses since `size_changed` can
+  be missed on some web configs).
+- While the viewport is **portrait** it shows a full-screen "TAP TO PLAY / rotate
+  your phone to landscape" overlay (`CanvasLayer` at layer 512, above every
+  in-game/menu layer) whose full-rect `Button` provides the gesture — a tap
+  anywhere, or `ui_accept` from keyboard/gamepad (it grabs focus, per the menu
+  navigability rules). Pressing it calls `request_fullscreen()`.
+- `request_fullscreen()` requests canvas fullscreen **only when portrait**
+  (idempotent when already landscape, so it never disturbs desktop or an embedder
+  like itch.io that auto-presents fullscreen — re-requesting there would flip it to
+  portrait). The export's `head_include` (`export_presets.cfg`) then runs
+  `screen.orientation.lock('landscape')` on the `fullscreenchange` event.
+- The overlay is driven purely by orientation — hidden the moment we're landscape,
+  and **re-shown whenever the page falls back to portrait** (browser reopened after
+  being closed, fullscreen exited mid-drive), not only at boot.
+
+It deliberately does **not** gate on `DisplayServer.is_touchscreen_available()`,
+which can report false on Android Chrome and previously left the game stuck in
+portrait — a portrait web viewport is itself the mobile signal (desktop windows are
+landscape). `request_fullscreen()` logs `[rally] requesting fullscreen…` to the
+browser console for on-device debugging (chrome://inspect). The whole autoload is
+inert off the web build. iPhone Safari supports neither the Fullscreen API nor
+orientation lock, so there the effective fallback is "Add to Home Screen" / rotating
+the device.
+
 ## First-run pick (pre-rally gate)
 
 On mobile, a player must choose a scheme before their first event. If no scheme is

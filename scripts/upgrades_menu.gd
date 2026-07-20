@@ -1,17 +1,25 @@
 class_name UpgradesMenu
 extends VBoxContainer
-# Reusable per-car UPGRADES menu — one earn-gated option selector per slot
-# (Stock + the slot's catalogue parts; drivetrain is the RWD/AWD/FWD picker),
-# an engine-swap row (only when the host wires on_swap), and a live p/w + G
-# stats line. Owns its Save persistence; reports edits via on_change so the host
-# can re-field the car / refresh its own UI. Used by the HQ lift (hq.gd) and the
-# car-park detune popup. Mirrors TuningPanel. See features/upgrade-catalogue.md.
+# Reusable per-car UPGRADES menu — an engine-detune slider (its label carries the
+# live p/w readout), one earn-gated option selector per slot (Stock + the slot's
+# catalogue parts; drivetrain is the RWD/AWD/FWD picker), and an engine-swap row
+# (only when the host wires on_swap). Owns its Save persistence; reports edits via
+# on_change so the host can re-field the car / refresh its own UI. Used by the HQ
+# lift (hq.gd) and the car-park detune popup. Mirrors TuningPanel. See
+# features/upgrade-catalogue.md.
 
 var _owned: Dictionary = {}
 var _on_change: Callable = Callable()
 var _on_swap: Callable = Callable()   # valid → show swap row; invalid → omit it
-var _stats_label: Label
-var _pw_limit: float = -1.0   # advisory power-to-weight cap (hp/tonne); -1 = no limit
+var _pw_limit: float = -1.0   # power-to-weight cap (hp/tonne); -1 = no limit (free)
+var _detune_slider: HSlider
+var _detune_value: Label
+# The host's overlay close button, gated by the p/w limit (bind_close_button). When a
+# limit is set and the build exceeds it, this button is painted red and blocks closing
+# (proceed) until the player drags power back under the cap.
+var _close_button: Button
+var _close_button_text := ""
+var _on_close: Callable = Callable()
 
 const _KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 
@@ -19,8 +27,8 @@ const _KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 # Bind the owned car + host callbacks, then build the rows. on_change() runs after
 # each spec edit so the host re-fields the car. on_swap() (optional) is the engine-
 # swap action; when unset the swap row is omitted (the popup drops it). pw_limit
-# (optional) is an advisory power-to-weight cap (hp/tonne); when >= 0 the stats
-# line shows it and flags a warning colour if the live build exceeds it.
+# (optional) is a power-to-weight cap (hp/tonne); when >= 0 the bound close button
+# (bind_close_button) blocks proceeding while the live build exceeds it.
 func setup(owned_car: Dictionary, on_change := Callable(), on_swap := Callable(),
 		pw_limit := -1.0) -> void:
 	_owned = owned_car
@@ -45,8 +53,8 @@ func first_control() -> Control:
 
 # Rebuild the rows for the current _owned (focus-preserving): preserve the focused
 # control's upgrade_focus_key, free the row children (NOT the MenuNav child — freeing
-# it would kill WASD/gamepad nav), rebuild the stats line + slot rows + optional swap
-# row, re-enforce the house theme, and re-run MenuNav.attach on the fresh rows.
+# it would kill WASD/gamepad nav), rebuild the slot rows + optional swap row + the
+# detune row (last), re-enforce the house theme, and re-run MenuNav.attach on them.
 func rebuild() -> void:
 	var focus_key := ""
 	var focused := get_viewport().gui_get_focus_owner() if is_inside_tree() else null
@@ -58,11 +66,6 @@ func rebuild() -> void:
 			continue
 		c.queue_free()
 
-	_stats_label = Label.new()
-	_stats_label.add_theme_font_size_override("font_size", 15)
-	add_child(_stats_label)
-	_refresh_stats()
-
 	var id := int(_owned.get("instance_id", -1))
 	var installed: Array = _owned.get("installed_upgrades", [])
 	for slot in UpgradeLibrary.SLOTS:
@@ -70,30 +73,109 @@ func rebuild() -> void:
 	# Engine swap is lift-only: the popup leaves on_swap invalid and drops the row.
 	if _on_swap.is_valid():
 		add_child(_make_engine_swap_row(id))
+	# Engine detune sits with the upgrades because it trades power for eligibility —
+	# it's a p/w knob, not a handling axis (features/tuning.md, engine-swap.md). It goes
+	# LAST, below the part slots, as the final power adjustment before you commit.
+	add_child(_make_detune_row(id))
 
 	UITheme.enforce(self)
 	MenuNav.attach(self)
+	_refresh_close_button()  # a part/drivetrain toggle can cross the p/w cap
 	if focus_key != "":
 		_restore_focus.bind(focus_key).call_deferred()
 
 
-# Live power-to-weight (hp/tonne) + max lateral G for the current spec — recomputed
-# from effective_meta each rebuild, so toggling a part updates it immediately. Uses
-# the same helpers hq.gd._car_stats_text formats, so it agrees with the car banner.
-func _refresh_stats() -> void:
+# The engine-detune slider row: a direct 0–100% torque scale (default 100% = full
+# power). Lives here rather than in TuningPanel because it moves power-to-weight,
+# which is what this menu is about. The slider spans the full range — rally
+# eligibility is enforced at Start, not by capping — and its label pairs the percent
+# with the car's live p/w at that setting (e.g. "80% - 200 hp/tonne"), flagging the
+# ceiling / OVER LIMIT when a pw_limit is set (start line / car-park popup).
+func _make_detune_row(instance_id: int) -> Control:
+	# Same house slider-row as the tuning panel's handling axes (shared SliderRow
+	# builder), so the detune row matches them exactly — including the focus highlight.
+	# pad:0 so the row lines up flush with the (non-panel-wrapped) slot rows above it —
+	# the slot selectors have no content inset, so the detune panel must not either.
+	var handles := SliderRow.build({
+		"name": "Engine detune", "lo": "0%", "hi": "100%",
+		"min": 0.0, "max": 100.0, "step": 5.0, "pad": 0,
+	})
+	_detune_slider = handles["slider"]
+	_detune_value = handles["value_label"]
+	_detune_slider.set_meta("upgrade_focus_key", "engine_detune")  # keep cursor across rebuild
+	var frac := clampf(float(_owned.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
+	_detune_slider.set_value_no_signal(frac * 100.0)
+	_detune_slider.value_changed.connect(_on_detune_changed.bind(instance_id))
+	_detune_value.text = _detune_label_text(int(round(frac * 100.0)))
+	return handles["panel"]
+
+
+# The detune slider's value label: the percent plus the car's LIVE p/w at that
+# setting — the menu's only p/w readout (the standalone stats subtitle was removed).
+# The max-p/w cap / OVER-LIMIT flag lives on the close button now (bind_close_button),
+# not here.
+func _detune_label_text(pct: int) -> String:
 	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
-	var meta := UpgradeLibrary.effective_meta(_owned, entry)
-	var pw := CarLibrary.power_to_weight(meta) * _KW_KG_TO_HP_TONNE
-	var g := CarLibrary.max_lateral_g(meta, Config.data)
-	if _pw_limit >= 0.0:
-		var over := pw > _pw_limit
-		_stats_label.text = "%.0f hp/tonne (max %.0f)%s   |   %.2f G" % [
-			pw, _pw_limit, ("  — OVER LIMIT" if over else ""), g]
-		_stats_label.add_theme_color_override("font_color",
-			UITheme._role_color("red") if over else UITheme._role_color("ink"))
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_owned, entry)) * _KW_KG_TO_HP_TONNE
+	return "%d%% - %.0f hp/tonne" % [pct, pw]
+
+
+# Bind the host overlay's close button so it reflects the p/w gate. `on_close` is the
+# host's close/back action. With no limit set the button keeps its text and closes
+# freely; with a limit set it reads "Done" and, while the build is OVER the cap, is
+# painted red and refuses to close (proceed) — the player drags detune down until the
+# ratio is satisfied. Call once after setup(); the menu re-paints it on every edit.
+func bind_close_button(button: Button, on_close: Callable) -> void:
+	_close_button = button
+	_close_button_text = "Done" if _pw_limit >= 0.0 else button.text
+	_on_close = on_close
+	if not button.pressed.is_connected(request_close):
+		button.pressed.connect(request_close)
+	_refresh_close_button()
+
+
+# The gated close action: closes via _on_close only when the p/w gate is satisfied.
+# Wired to the close button's press AND handed to the host's MenuNav as `on_back`, so
+# both the button and Esc/controller-back are blocked while over the limit.
+func request_close() -> void:
+	if can_close() and _on_close.is_valid():
+		_on_close.call()
+
+
+# Whether the player may leave the menu: always, unless a p/w limit is set and the
+# current build exceeds it.
+func can_close() -> bool:
+	return not over_pw_limit()
+
+
+# Paint the close button for the current build: red + "reduce" prompt while over a set
+# limit, else the normal close text. No-op until a button is bound.
+func _refresh_close_button() -> void:
+	if _close_button == null:
+		return
+	if _pw_limit >= 0.0 and over_pw_limit():
+		_close_button.text = "Over limit — reduce to %.0f hp/tonne" % _pw_limit
+		_close_button.modulate = UITheme._role_color("red")
 	else:
-		_stats_label.text = "%.0f hp/tonne   |   %.2f G" % [pw, g]
-		_stats_label.remove_theme_color_override("font_color")
+		_close_button.text = _close_button_text
+		_close_button.modulate = Color(1, 1, 1, 1)
+
+
+# An edit to the detune slider: persist the fraction, sync the local snapshot, then
+# refresh the label in place (NO full rebuild — a rebuild would drop the slider's drag
+# grab). Notifies the host so it re-fields the live car's power.
+func _on_detune_changed(value: float, instance_id: int) -> void:
+	if _owned.is_empty():
+		return
+	var frac := clampf(value / 100.0, 0.0, 1.0)
+	Save.set_engine_detune(instance_id, frac)
+	var tuning: Dictionary = _owned.get("tuning", {})
+	tuning["engine_detune"] = frac
+	_owned["tuning"] = tuning
+	_detune_value.text = _detune_label_text(int(round(value)))
+	_refresh_close_button()  # dragging power under/over the cap toggles the gate
+	if _on_change.is_valid():
+		_on_change.call()
 
 
 # Whether the current build exceeds the advisory pw_limit (false when no limit set).
@@ -118,6 +200,12 @@ func _make_slot_row(slot: String, instance_id: int, installed: Array) -> Control
 	# like a part option greys until its kit is fitted.
 	if slot == "drivetrain":
 		box.add_child(_make_drivetrain_selector(instance_id))
+		return box
+
+	# The weight slot is a bespoke p/w lever: Stock + ballast (free) + lightweight
+	# (earned), ordered heavy→light with each option labelled by its rounded kg delta.
+	if slot == "weight":
+		box.add_child(_make_weight_selector(instance_id, installed))
 		return box
 
 	# Every other slot is an EARN-GATED option selector on the right — "SLOT:" on the
@@ -199,15 +287,21 @@ func _make_option_selector(slot: String, instance_id: int, installed: Array) -> 
 	return row
 
 
-# One selector button: bracketed when active, greyed when its option isn't available yet,
-# FOCUS_ALL so keyboard/gamepad can reach it, and tagged with a stable focus key so the
-# cursor lands back on it after the rebuild a press triggers.
+# One selector button: bracketed AND painted the house accent (GREEN) when active so the
+# selected option stands out clearly, greyed when its option isn't available yet, FOCUS_ALL
+# so keyboard/gamepad can reach it, and tagged with a stable focus key so the cursor lands
+# back on it after the rebuild a press triggers.
 func _option_button(text: String, active: bool, available: bool, focus_key: String,
 		on_press: Callable) -> Button:
 	var b := Button.new()
 	b.text = "[%s]" % text if active else text
 	b.focus_mode = Control.FOCUS_ALL
 	b.disabled = not available
+	if active:
+		# Accent the active pick in the house "selected" colour (matches focus underline).
+		b.add_theme_color_override("font_color", UITheme.GREEN)
+		b.add_theme_color_override("font_hover_color", UITheme.GREEN)
+		b.add_theme_color_override("font_focus_color", UITheme.GREEN)
 	b.set_meta("upgrade_focus_key", focus_key)
 	b.pressed.connect(on_press)
 	return b
@@ -226,6 +320,96 @@ func _set_slot_option(instance_id: int, slot: String, item_id: String) -> void:
 		Save.set_upgrade_enabled(instance_id, item_id, true)
 	_owned = Save.get_car(instance_id)
 	rebuild()  # updates stats + rebuilds rows + re-seats MenuNav focus
+	if _on_change.is_valid():
+		_on_change.call()
+
+
+# The WEIGHT slot selector: "Weight:" then the weight parts ordered heavy→light with a
+# "Stock" option sitting between the ballast (mass_mult > 1) and the lightweight
+# (mass_mult < 1). Each option is labelled by its rounded kg delta off the car's base
+# mass (e.g. "+500kg" / "-200kg"); Stock is the no-change default. Ballast options are
+# `free` (always selectable); the lightweight option greys until won as a reward.
+func _make_weight_selector(instance_id: int, installed: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var label := Label.new()
+	label.text = "Weight:"
+	label.add_theme_font_size_override("font_size", 15)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+
+	# Weight-slot parts, heaviest first; which one (if any) is the enabled pick.
+	var parts: Array = []
+	var current_id := ""
+	for def in UpgradeLibrary.all():
+		if String(def.get("slot", "")) != "weight" or bool(def.get("consumable", false)):
+			continue
+		parts.append(def)
+		var pid := String(def.get("id", ""))
+		if installed.has(pid) and UpgradeLibrary.is_enabled(_owned, pid):
+			current_id = pid
+	parts.sort_custom(func(a, b): return _mass_mult(a) > _mass_mult(b))
+
+	var base := _base_mass_no_weight()
+	var stock_added := false
+	for def in parts:
+		# Insert Stock (no change) once we cross from ballast (>1) to lightweight (<1).
+		if not stock_added and _mass_mult(def) < 1.0:
+			row.add_child(_option_button("Stock", current_id == "", true,
+				"opt:weight:none", _set_weight_option.bind(instance_id, "")))
+			stock_added = true
+		var pid := String(def.get("id", ""))
+		var available := UpgradeLibrary.is_free(pid) or installed.has(pid)
+		row.add_child(_option_button(_weight_delta_label(_mass_mult(def), base),
+			current_id == pid, available, "opt:weight:%s" % pid,
+			_set_weight_option.bind(instance_id, pid)))
+	if not stock_added:  # no lightweight option authored → Stock goes at the end
+		row.add_child(_option_button("Stock", current_id == "", true,
+			"opt:weight:none", _set_weight_option.bind(instance_id, "")))
+	return row
+
+
+func _mass_mult(def: Dictionary) -> float:
+	return float((def.get("effect", {}) as Dictionary).get("mass_mult", 1.0))
+
+
+# The car's base mass with NO weight option applied: the current effective mass divided
+# by whichever weight mult is currently active (1.0 if none), so the per-option deltas
+# read off the same neutral base regardless of what's selected.
+func _base_mass_no_weight() -> float:
+	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
+	var mass := float(UpgradeLibrary.effective_meta(_owned, entry).get("mass", 0.0))
+	var active := 1.0
+	for def in UpgradeLibrary.all():
+		if String(def.get("slot", "")) != "weight":
+			continue
+		var pid := String(def.get("id", ""))
+		if (_owned.get("installed_upgrades", []) as Array).has(pid) and UpgradeLibrary.is_enabled(_owned, pid):
+			active = _mass_mult(def)
+	return mass / active if active != 0.0 else mass
+
+
+# A weight option's kg delta off the base mass, rounded to the nearest 100 and signed
+# (e.g. "+500kg", "-200kg").
+func _weight_delta_label(mult: float, base_mass: float) -> String:
+	var delta := roundi((mult - 1.0) * base_mass / 100.0) * 100
+	return "%+dkg" % delta
+
+
+# Select a weight option. "" = Stock (disable every weight part). A free ballast the car
+# doesn't own yet is installed on the spot (then enabled exclusively); an already-owned
+# part (or the earned lightweight) is just enabled. One weight part enabled at a time.
+func _set_weight_option(instance_id: int, item_id: String) -> void:
+	if item_id == "":
+		for def in UpgradeLibrary.all():
+			if String(def.get("slot", "")) == "weight":
+				Save.set_upgrade_enabled(instance_id, String(def.get("id", "")), false)
+	elif not (Save.get_car(instance_id).get("installed_upgrades", []) as Array).has(item_id):
+		Save.install_upgrade(instance_id, item_id, true)  # free ballast: fit + enable
+	else:
+		Save.set_upgrade_enabled(instance_id, item_id, true)
+	_owned = Save.get_car(instance_id)
+	rebuild()
 	if _on_change.is_valid():
 		_on_change.call()
 

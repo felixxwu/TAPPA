@@ -164,9 +164,9 @@ var peak_torque_rpm := 4500.0
 ## loose gravel/grass shears a wedge of material and peaks at a MUCH larger angle
 ## with a broad, forgiving plateau past it — which is why rally is driven
 ## sideways. sin(8°)≈0.14, sin(18°)≈0.31, sin(20°)≈0.34.
-@export var tarmac_slip_peak := 0.20
-@export var gravel_slip_peak := 0.31
-@export var grass_slip_peak := 0.34
+@export var tarmac_slip_peak := 0.25
+@export var gravel_slip_peak := 0.35
+@export var grass_slip_peak := 0.40
 ## Post-peak grip retention per surface (see sliding_grip_ratio). Tarmac falls
 ## off; loose surfaces stay near their peak well past it (the plateau).
 @export_range(0.1, 1.0) var tarmac_slide_ratio := 0.6
@@ -222,7 +222,7 @@ var peak_torque_rpm := 4500.0
 ## shifts it about that baseline. Used directly only for a car that omits the field.
 @export_range(0.0, 1.0) var brake_bias := 0.5
 ## Max fraction of grip shifted front<->rear at slider |1| (grip_balance).
-@export_range(0.0, 1.0) var tuning_grip_authority := 0.15
+@export_range(0.0, 1.0) var tuning_grip_authority := 0.3
 ## Half-span the brake_bias slider can move from the car's default (gated by the
 ## brakes upgrade) — e.g. 0.3 lets a car with a 0.55 default reach [0.25, 0.85].
 @export_range(0.0, 0.5) var tuning_brake_authority := 0.3
@@ -296,10 +296,22 @@ var peak_torque_rpm := 4500.0
 ## Whether this engine has a belt-driven supercharger. Audio-only: its power gain
 ## is already baked into the engine's authored peak_torque, so the sim is unchanged.
 @export var supercharger_enabled := false
+## Seconds the HQ car-lineup preview holds the throttle when a car is highlighted:
+## a free-revving (neutral, no-load) EngineSim climbs for this long, then releases
+## and falls back to idle so the player hears each car's engine as they flick the
+## lineup. See scripts/car_preview_audio.gd + features/engine-audio.md.
+@export_range(0.0, 2.0) var preview_rev_hold_seconds := 0.5
 # --- Engine audio ---
 ## Master level of the engine voice, in decibels. Per-car, set from CarLibrary's
 ## volume_db; this value is the fallback default for cars that omit the key.
 @export var engine_volume_db := -6.0
+## Global master volume for ALL engine audio, in decibels. Unlike engine_volume_db
+## (which is per-car and scales only the cylinder firing voice), this is a single
+## project-wide lever applied to the FINAL mixed engine signal — the firing voice,
+## broadband noise, exhaust crackle, turbo whistle/air-rush, supercharger whine,
+## blow-off vent, and anti-lag bangs all pass through it. Set to 0 dB for no change,
+## negative to attenuate everything, -80 to effectively mute. Not per-car.
+@export var engine_master_volume_db := 0.0
 ## Audible floor of the engine voice at zero throttle (0 = silent at idle).
 @export_range(0.0, 1.0) var engine_idle_gain := 0.25
 ## Richness of each firing pulse — more harmonics = brighter, harsher engine note.
@@ -376,6 +388,15 @@ var peak_torque_rpm := 4500.0
 @export_group("HUD")
 @export var hud_enabled := true  # on-screen speed readout
 
+@export_group("Music")
+## Wall-clock gap (s) between processed frames above which we assume the main
+## thread stalled long enough that web audio underran and went silent — triggers
+## music stall recovery. Well above a normal ~16 ms frame, below any real freeze.
+@export var music_stall_threshold_sec := 0.5
+## After a stall, how long (s) frames must flow normally again before music
+## resumes from a clean start.
+@export var music_resume_stable_sec := 0.4
+
 @export_group("Stage")
 ## Countdown length, in seconds, before the car's controls unlock at the start
 ## of a stage. The car holds position (handbrake forced) until it elapses.
@@ -430,8 +451,10 @@ var peak_torque_rpm := 4500.0
 ## has road to drive off down (the queue cars are axis-locked to a straight line).
 @export var start_lead_in_ahead_m := 22.0
 ## Straight road (m) extended BEHIND the start line on a staged run, so the player
-## (staged a full gap back) and the trailing car (two gaps back) sit on road.
-@export var start_lead_in_behind_m := 20.0
+## (staged behind the three-car opponent grid) sits on paved road. Constraint:
+## start_lead_in_behind_m >= 3 * start_queue_gap + ~4 m (a car length) — the player is
+## staged three gaps back, so widening the gap needs a wider stub.
+@export var start_lead_in_behind_m := 30.0
 ## Height (m) the start-line cars are seated ABOVE the road at spawn — the player and
 ## both queue cars (leader ahead, trailer behind) — so they settle onto their wheels
 ## instead of spawning clipped into the ground. Smaller than the general drop-in
@@ -439,6 +462,20 @@ var peak_torque_rpm := 4500.0
 @export var start_spawn_clearance := 0.5
 ## Field of view (degrees) of the start-line orbit camera during the reveal.
 @export_range(30.0, 120.0) var start_orbit_fov := 70.0
+## Seconds the camera takes to fly from the orbit idle pose to the anchored 3/4 reveal
+## shot in front of the start line, once the player presses Start.
+@export var start_reveal_fly_seconds := 1.2
+## Reveal shot: camera distance (m) AHEAD of the start line (down the lead-in), so it
+## looks back at the car on the line.
+@export var start_reveal_cam_front_m := 6.0
+## Reveal shot: lateral offset (m) from the centreline, giving the 3/4 angle.
+@export var start_reveal_cam_side_m := 4.0
+## Reveal shot: camera height (m) above the line — low to the ground.
+@export var start_reveal_cam_height_m := 1.0
+## Reveal shot: height (m) of the look-at point on the car (roughly its roofline).
+@export var start_reveal_cam_look_height_m := 0.8
+## Field of view (degrees) of the anchored reveal shot.
+@export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
 ## Speed (m/s) below which the player counts as stopped at the line — the fade to the
 ## chase cam waits for this so the transition never happens while the car is rolling.
 @export var start_stop_speed_eps := 0.4
@@ -604,6 +641,11 @@ var peak_torque_rpm := 4500.0
 ## Length of the combined steer-assist debug arrow (yellow, above the car,
 ## points left/right), in metres drawn per newton-metre of yaw-assist torque.
 @export_range(0.0000001, 0.001) var debug_assist_arrow_scale := 0.0001
+## Where a benchmark run POSTs its results JSON (features/benchmark.md → feedback
+## loop). Empty = auto: on a web build, POST to "/bench" on the page's own origin
+## (the serve_web.sh collector), so the LAN loop needs no config. On an installed
+## APK set this to your dev machine, e.g. "http://192.168.1.50:8080/bench".
+@export var bench_report_url := ""
 
 @export_group("Camera")
 @export var follow_distance := 2.5
@@ -754,9 +796,14 @@ var peak_torque_rpm := 4500.0
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 4.6)
 @export var hq_map_plane_size := Vector2(4.2, 4.2)
-## Tuning lift: centre position + platform size.
+## Tuning lift: centre position + overall footprint (posts span this width; also
+## the pickable click volume).
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
 @export var hq_lift_size := Vector3(3.0, 0.35, 3.0)
+## The raised beam the car actually rests on: spans the full lift width post to
+## post (X = hq_lift_size.x) but is short along the car's length (Z), so it tucks
+## into the gap between the front and rear wheels under the car.
+@export var hq_lift_platform_size := Vector3(3.0, 0.35, 1.2)
 ## Height (m) the selected car is raised to on the lift (wheels hanging, as on a
 ## real ramp). Above the platform top.
 @export var hq_lift_car_height := 1.3
@@ -1351,16 +1398,20 @@ var peak_torque_rpm := 4500.0
 ## How close (m) a tree must be for a spectator to avoid spawning by / steer from it.
 @export_range(0.1, 10.0) var spectator_tree_avoid_m := 1.5
 ## Detection radius (m) within which spectators flee the car.
-@export_range(0.5, 30.0) var spectator_flee_radius_m := 5.0
+@export_range(0.5, 30.0) var spectator_flee_radius_m := 10.0
 ## Distance (m) car→spectator at which the spectator is knocked over (ragdoll).
 @export_range(0.2, 5.0) var spectator_knock_radius_m := 1.2
 ## Top speed (m/s) a spectator can move while fleeing/shuffling.
-@export_range(0.5, 12.0) var spectator_max_speed_mps := 3.5
+@export_range(0.5, 12.0) var spectator_max_speed_mps := 6.5
 ## Acceleration (m/s^2) toward the steering target.
 @export_range(1.0, 60.0) var spectator_accel_mps2 := 18.0
 ## Only the group within this distance (m) of the car runs steering (LOD); the
 ## others stand still until the car approaches.
 @export_range(10.0, 400.0) var spectator_active_radius_m := 90.0
+## Crowd-sim decimation: run the per-member steering only every Nth physics tick
+## (delta accumulates so motion is unchanged over time), staggered across groups.
+## Ambient crowd doesn't need a 60 Hz update; 2 halves the sim cost. Pure perf knob.
+@export_range(1, 6) var spectator_sim_interval := 2
 ## Steering weights (relative pull of each preference).
 @export_range(0.0, 10.0) var spectator_w_separation := 1.5
 @export_range(0.0, 10.0) var spectator_w_flee := 4.0
@@ -1415,13 +1466,21 @@ var peak_torque_rpm := 4500.0
 
 @export_group("Performance")
 ## Render frame cap (FPS) on desktop targets. 0 = uncapped. Physics runs
-## independently at the project physics tick. Mobile/web use target_fps_mobile
-## instead (see target_fps_for()).
+## independently at the project physics tick. Mobile uses target_fps_mobile and
+## web uses target_fps_web instead (see target_fps_for()).
 @export_range(0, 240) var target_fps := 60
-## Render frame cap (FPS) on mobile + web targets, where a steady low ceiling
-## avoids thermal throttling on phones. 0 = uncapped. Selected over target_fps by
-## target_fps_for() when running on a mobile or web export.
-@export_range(0, 240) var target_fps_mobile := 30
+## Render frame cap (FPS) on NATIVE mobile targets (not web — see target_fps_web).
+## The native APK has a real audio thread and performs fine at 60. 0 = uncapped.
+@export_range(0, 240) var target_fps_mobile := 60
+## Render frame cap (FPS) on the WEB target specifically. Lower than desktop/native
+## for thermal/battery headroom, but bounded by audio: the web export is
+## SINGLE-THREADED, so audio is serviced by the main loop (no audio thread) and a
+## lower frame rate drains the generator + WebAudio buffers between frames, causing
+## gaps/crackle. 30 is viable only because the audio buffers (engine_audio.gd
+## BUFFER_SECONDS and audio/driver/output_latency.web in project.godot) are sized to
+## bridge a ~33 ms inter-frame gap plus jitter — raise those before lowering this
+## further. 0 = uncapped. See features/rendering.md and features/engine-audio.md.
+@export_range(0, 240) var target_fps_web := 30
 ## Texture LOD bias for the foliage/ground shaders: positive values pull distant
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
@@ -1444,10 +1503,14 @@ var peak_torque_rpm := 4500.0
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
 # static weight fraction, so each axle's rate is proportional to the load it carries
 # and the car sits LEVEL at rest (compression = load / rate is then equal front and
-# Frame cap to apply for the current target: the aggressive mobile/web ceiling
-# (thermal throttling) or the higher desktop one. Pure so world.gd can pass
-# Platform.is_mobile_or_web() and tests can pin either branch. 0 = uncapped.
-func target_fps_for(mobile_or_web: bool) -> int:
+# Frame cap to apply for the current target: web gets its own ceiling
+# (target_fps_web, kept lower but audio-bounded — see the field), native mobile
+# the thermal ceiling (target_fps_mobile), desktop the higher one (target_fps).
+# Web takes precedence since is_mobile_or_web() is also true on web. Pure so
+# world.gd can pass Platform queries and tests can pin any branch. 0 = uncapped.
+func target_fps_for(mobile_or_web: bool, web: bool = false) -> int:
+	if web:
+		return target_fps_web
 	return target_fps_mobile if mobile_or_web else target_fps
 
 
@@ -1634,6 +1697,7 @@ func spectator_params() -> Dictionary:
 		"max_speed_mps": spectator_max_speed_mps,
 		"accel_mps2": spectator_accel_mps2,
 		"active_radius_m": spectator_active_radius_m,
+		"sim_interval": spectator_sim_interval,
 		"road_probe_m": track_width * 0.5,
 		"anchor_dead_zone_m": spectator_separation_m,
 		"w_separation": spectator_w_separation,

@@ -237,8 +237,8 @@ summary (`{repaired, hp_before, hp_after, max_hp, hp_gained}`) stashed on the se
 and read once via `take_pending_repair()`. It reports `repaired: false` — and writes
 nothing — for a pristine car (full HP, straight wheels) or a wrecked one (0 HP can't
 be fielded mid-rally). The summary drives a **`RepairReveal`** popup (`scripts/
-repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health +N% → N%,
-wheels recentered, Continue) that `world.gd._show_repair_popup()` shows once the
+repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health +N%,
+Continue) that `world.gd._show_repair_popup()` shows once the
 loading overlay is gone (staged runs keep it up until the start-line queue is laid
 out, so the popup is shown AFTER `_build_start_line()` / `loading.finish()`, sitting
 over the ready start-line reveal rather than a frozen loading screen). The popup only

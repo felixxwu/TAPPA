@@ -40,13 +40,24 @@ static func percentile(samples: Array, q: float) -> float:
 #   render_cpu_ms, render_gpu_ms, process_ms, physics_ms.
 # Missing / empty streams summarise to zeros, so a backend without GPU timers
 # (render_gpu_ms all 0) or a partial capture still produces a full dictionary.
-static func summarise(samples: Dictionary) -> Dictionary:
+# The spike threshold: a frame this much slower than the target counts as a
+# dropped-frame spike. Relative to the frame cap so it's meaningful at any target —
+# a hardcoded 28 ms flags EVERY frame of a 30 fps (33 ms) run. `spike_ms` lets the
+# caller pass the cap-derived value (see BenchmarkRunner); it defaults to SPIKE_MS
+# (≈1.7× a 60 fps frame) so existing callers / uncapped runs are unchanged.
+static func spike_threshold_ms(target_fps: int) -> float:
+	if target_fps <= 0:
+		return SPIKE_MS  # uncapped → the browser rAF-caps at 60; 28 ms ≈ 1.7× 16.6
+	return maxf(SPIKE_MS, 1000.0 / float(target_fps) * 1.5)
+
+
+static func summarise(samples: Dictionary, spike_ms := SPIKE_MS) -> Dictionary:
 	var frames: Array = samples.get("frame_ms", [])
 	var total_ms := 0.0
 	var spikes := 0
 	for f in frames:
 		total_ms += f
-		if f >= SPIKE_MS:
+		if f >= spike_ms:
 			spikes += 1
 	var out := {
 		"frames": frames.size(),
@@ -59,6 +70,7 @@ static func summarise(samples: Dictionary) -> Dictionary:
 		"frame_p99_ms": percentile(frames, 0.99),
 		"frame_max_ms": peak(frames),
 		"spikes": spikes,
+		"spike_ms": spike_ms,
 	}
 	var p99: float = out["frame_p99_ms"]
 	if p99 > 0.0:

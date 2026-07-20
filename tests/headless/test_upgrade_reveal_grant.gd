@@ -5,7 +5,7 @@ extends GutTest
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 
 const T_PART := {
-	"id": "t_reveal_part", "name": "Synthetic Reveal Part", "slot": "chassis",
+	"id": "t_reveal_part", "name": "Synthetic Reveal Part", "slot": "weight",
 	"tier": 1, "consumable": false, "effect": {},
 }
 

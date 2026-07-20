@@ -19,6 +19,8 @@ const LOOKAHEAD_M := 12.0             # pure-pursuit aim point ahead on the road
 const STEER_GAIN := 2.5               # rad of heading error -> full steering lock
 const THROTTLE_GAIN := 0.5            # m/s of speed error -> full throttle/brake
 const WARMUP_FRAMES := 60             # settle/shader-compile frames left unsampled
+const MAX_RUN_SECONDS := 20.0         # hard cap on sampled driving — the stage is long
+                                      # (30 turns), so the run is time-boxed, not driven to the finish
 
 var _car: Node                        # the fielded Car (VehicleBody3D)
 var _progress: TrackProgress          # progress + finish edge + off-track reset
@@ -28,16 +30,32 @@ var _running := false
 var _warmup_left := WARMUP_FRAMES
 var _start_offset := 0.0              # progress offset when sampling began
 var _samples := {}                    # stream name -> Array of per-frame values
+var _spike_frames: Array = []         # per-spike component breakdown (diagnostics)
+var _frame_no := 0                    # sampled-frame index (spike timeline)
+var _terrain: Node                    # TerrainManager, for spike↔chunk-integration correlation
+var _last_integrations := 0           # integrations_total at the previous sampled frame
+var _engine_audio: Node               # the fielded car's EngineAudio, for overrun (skip) tracking
+var _last_skips := 0                  # skip_count() at the previous sampled frame
+var _audio_skips_total := 0           # generator underruns over the sampled window
+var _spike_ms := BenchmarkStats.SPIKE_MS  # spike threshold, relative to the fps cap (see setup)
+var _run_time := 0.0                  # sampled driving time; the run finishes at MAX_RUN_SECONDS
 var _results_screen: BenchmarkResults
 
 
 # Wire the runner to the live scene and start driving. `view` is the viewport
 # doing the 3D work (the PostProcess SubViewport in main.tscn); render times are
 # measured there, falling back to this node's own viewport.
-func setup(car: Node, progress: TrackProgress, centerline: Curve2D, view: Viewport = null) -> void:
+func setup(car: Node, progress: TrackProgress, centerline: Curve2D, view: Viewport = null,
+		terrain: Node = null) -> void:
 	_car = car
 	_progress = progress
 	_centerline = centerline
+	_terrain = terrain
+	_engine_audio = car.get_node_or_null("EngineAudio")
+	# Spike threshold relative to the frame cap (Engine.max_fps was set by
+	# world._ready): 0 = uncapped → 28 ms; a 30 fps cap → ~50 ms, so a 33 ms normal
+	# frame isn't miscounted as a spike (the fixed 28 ms flagged every 30 fps frame).
+	_spike_ms = BenchmarkStats.spike_threshold_ms(Engine.max_fps)
 	for stream in ["frame_ms", "draws", "objects", "prims", "render_cpu_ms",
 			"render_gpu_ms", "process_ms", "physics_ms"]:
 		_samples[stream] = []
@@ -96,20 +114,65 @@ func _process(delta: float) -> void:
 		_warmup_left -= 1
 		if _warmup_left == 0:
 			_start_offset = _progress.progress_offset()
+			# Open the per-script CPU capture window over the SAME frames we sample
+			# below, so the scripts breakdown lines up with the render stats.
+			PerfLog.begin_capture()
+			# Baseline the audio-skip counter so warm-up underruns (shader compiles)
+			# don't count against the measured window.
+			if _engine_audio != null and _engine_audio.has_method("skip_count"):
+				_last_skips = _engine_audio.skip_count()
 		return
-	_samples["frame_ms"].append(delta * 1000.0)
+	var frame_ms := delta * 1000.0
+	var rcpu := RenderingServer.viewport_get_measured_render_time_cpu(_view_rid)
+	var proc := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var phys := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	_samples["frame_ms"].append(frame_ms)
 	_samples["draws"].append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	_samples["objects"].append(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 	_samples["prims"].append(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
-	_samples["render_cpu_ms"].append(RenderingServer.viewport_get_measured_render_time_cpu(_view_rid))
+	_samples["render_cpu_ms"].append(rcpu)
 	_samples["render_gpu_ms"].append(RenderingServer.viewport_get_measured_render_time_gpu(_view_rid))
-	_samples["process_ms"].append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
-	_samples["physics_ms"].append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+	_samples["process_ms"].append(proc)
+	_samples["physics_ms"].append(phys)
+	# Spike diagnostics: on a dropped frame, record which component was hot so the
+	# report can attribute the hitch (render_cpu ⇒ shader compile / render stall,
+	# physics ⇒ collision/ragdoll, process ⇒ script/GC/terrain build). `_frame_no`
+	# is the sampled-frame index so spikes can be located in time along the run.
+	# Terrain chunk integrations since the last sampled frame — a chunk spawned on a
+	# spike frame implicates chunk streaming (mesh/collision build) as the cause.
+	var integ := 0
+	if _terrain != null and "integrations_total" in _terrain:
+		var total: int = _terrain.integrations_total
+		integ = total - _last_integrations
+		_last_integrations = total
+	# Audio overruns (generator buffer underruns) since the last sampled frame — a
+	# skip on a slow frame implicates main-thread audio starvation (the fill runs in
+	# _process; a long frame drains the buffer). Correlated with the spike breakdown.
+	var skips := 0
+	if _engine_audio != null and _engine_audio.has_method("skip_count"):
+		var total_skips: int = _engine_audio.skip_count()
+		skips = total_skips - _last_skips
+		_last_skips = total_skips
+		_audio_skips_total += skips
+	if frame_ms >= _spike_ms:
+		_spike_frames.append({
+			"frame": _frame_no, "frame_ms": frame_ms,
+			"render_cpu_ms": rcpu, "process_ms": proc, "physics_ms": phys,
+			"chunk_integrations": integ, "audio_skips": skips,
+		})
+	_frame_no += 1
+	# Hard time cap: the stage is long (30 turns), so end the run after
+	# MAX_RUN_SECONDS of sampled driving rather than driving it to the finish.
+	_run_time += delta
+	if _run_time >= MAX_RUN_SECONDS:
+		_finish()
 
 
 # --- Finish --------------------------------------------------------------------
 
 func _finish() -> void:
+	if not _running:
+		return  # already finished (time cap + progress could both fire the same frame)
 	_running = false
 	# Park the car: throttle off, handbrake on — it skids to a stop in the runoff
 	# behind the results panel.
@@ -117,14 +180,88 @@ func _finish() -> void:
 	_car.ai_steer = 0.0
 	_car.ai_handbrake = true
 
-	var stats := BenchmarkStats.summarise(_samples)
+	var stats := BenchmarkStats.summarise(_samples, _spike_ms)
 	stats["distance_m"] = maxf(0.0, _progress.progress_offset() - _start_offset)
 	stats["disabled"] = _disabled_toggle_names()
+	# The worst spikes (by frame time), with their component breakdown, so the report
+	# can attribute the hitches. Sorted descending, capped so the payload stays small.
+	_spike_frames.sort_custom(func(a, b): return a["frame_ms"] > b["frame_ms"])
+	stats["spike_frames"] = _spike_frames.slice(0, 20)
+	stats["audio_skips"] = _audio_skips_total
+	stats["pass"] = Benchmark.pass_index
+	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
 	Benchmark.finish(stats)
+	_report(stats, scripts)
+
+	# Two-pass spike diagnosis: after the cold pass, reset and drive the SAME stage
+	# again in the same page (warm WebGL shader/texture cache) instead of showing
+	# results, so comparing pass 0 vs pass 1 spikes isolates first-use GPU stalls.
+	if Benchmark.two_pass and Benchmark.pass_index == 0:
+		Benchmark.pass_index = 1
+		# Let the POST flush, then scene-reload (NOT a page reload — the GL context
+		# and its compiled shaders must persist for the warm pass).
+		await get_tree().create_timer(1.0).timeout
+		get_tree().reload_current_scene()
+		return
 
 	_results_screen = BenchmarkResults.new()
 	add_child(_results_screen)
 	_results_screen.setup(stats, _run_again, Benchmark.exit_to_hq)
+
+
+# --- Result reporting (feedback loop) ------------------------------------------
+
+# POST the run's report to the dev machine so it lands in build/bench-results/
+# for analysis (features/benchmark.md → "Feedback loop"). Fire-and-forget: the
+# results panel shows whether it was delivered. Skipped headless / when no URL
+# resolves (desktop dev without bench_report_url set).
+func _report(stats: Dictionary, scripts: Dictionary) -> void:
+	var url := _resolve_report_url()
+	if url == "" or Platform.is_headless():
+		return
+	var device := BenchmarkReport.probe_device()
+	var label := BenchmarkReport.make_label(
+		String(device.get("build_version", "")), stats.get("disabled", []))
+	if Benchmark.two_pass:
+		label += "-warm" if int(stats.get("pass", 0)) == 1 else "-cold"
+	var stamp := Time.get_datetime_string_from_system(true)
+	var report := BenchmarkReport.build(stats, scripts, device, stamp, label)
+	var body := BenchmarkReport.to_json(report)
+
+	if _results_screen != null:
+		_results_screen.set_report_status("reporting…")
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.request_completed.connect(_on_report_done)
+	var err := http.request(url, ["Content-Type: application/json"],
+		HTTPClient.METHOD_POST, body)
+	if err != OK and _results_screen != null:
+		_results_screen.set_report_status("report failed (request error %d)" % err)
+
+
+func _on_report_done(_result: int, code: int, _headers: PackedStringArray,
+		_body: PackedByteArray) -> void:
+	if _results_screen == null:
+		return
+	if code == 200:
+		_results_screen.set_report_status("reported ✓")
+	else:
+		_results_screen.set_report_status("report failed (HTTP %d)" % code)
+
+
+# The endpoint to POST results to. An explicit GameConfig.bench_report_url wins
+# (set it on an installed APK to reach your dev machine). Otherwise, on a web
+# build, POST to "/bench" on the page's own origin — the serve_web.sh collector —
+# so the LAN loop is zero-config. Empty everywhere else (desktop dev).
+func _resolve_report_url() -> String:
+	var configured := String(Config.data.bench_report_url)
+	if configured != "":
+		return configured
+	if OS.has_feature("web"):
+		var origin = JavaScriptBridge.eval("window.location.origin", true)
+		if origin != null:
+			return String(origin) + "/bench"
+	return ""
 
 
 # The display names of every toggle the player turned OFF for this run, so the

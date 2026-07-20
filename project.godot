@@ -18,7 +18,7 @@ config/icon="res://icon.svg"
 
 [audio]
 
-driver/output_latency.web=120
+driver/output_latency.web=200
 
 [autoload]
 
@@ -28,6 +28,7 @@ InputRemap="*res://scripts/input_remap.gd"
 RallySession="*res://scripts/rally_session.gd"
 Benchmark="*res://scripts/benchmark_mode.gd"
 DisplayStretch="*res://scripts/display_stretch.gd"
+WebFullscreen="*res://scripts/web_fullscreen.gd"
 PerfLog="*res://scripts/perf_log.gd"
 Music="*res://scripts/music_director.gd"
 
