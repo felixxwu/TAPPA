@@ -59,16 +59,17 @@ static func notes_to_fracs(notes: Array, ahead: float, span: float) -> Array:
 # HUD arrow-atlas key for a note (a key into GameConfig.sign_textures). Shape from the
 # corner name, direction from the flip.
 #
-# NOTE the direction is the TRUE turn direction — a left-hand corner (flip) shows a
-# LEFT arrow. This is the OPPOSITE of SignLayout._arrow_key, which deliberately picks
-# the mirrored art because a roadside A-frame FACES the oncoming driver; the HUD is
-# not a facing panel, so no inversion here.
+# NOTE the direction convention matches SignLayout._arrow_key exactly (a left-hand
+# corner, flip=true, takes the "right"-keyed art). The chase camera looks along the
+# track's forward axis, which flips the 2D track's left/right on screen — the same
+# inversion the roadside boards already bake in — so the HUD must use the SAME mapping
+# as the signs to read correctly, not the opposite.
 #
 # The compound "Right 4 tightens 2" has no single grade, so it reuses its entry-grade
 # (4) art. Square / Hairpin use their named glyph; numbered gradients "1".."6" carry
 # their own grade board.
 static func arrow_key(corner: String, flip: bool) -> String:
-	var dir := "left" if flip else "right"
+	var dir := "right" if flip else "left"
 	match corner:
 		"Square":
 			return "arrow_square_%s" % dir

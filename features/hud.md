@@ -81,11 +81,12 @@ and advanced by `show_pacenotes(current)`.
   which skip them).
 - **Art (reused).** Each board is a `TextureRect` of the roadside-sign arrow art
   (`textures/signs/arrow_*.png`, keyed through `GameConfig.sign_textures`). The key
-  comes from `Pacenotes.arrow_key(corner, flip)` — which points the **true** turn
-  direction (a left-hand corner → left arrow), the **opposite** of
-  `SignLayout._arrow_key` (that inverts because an A-frame faces the oncoming driver;
-  the HUD is not a facing panel). The compound `"Right 4 tightens 2"` reuses its
-  entry-grade (`arrow_4`) art. The `arrow_5`/`arrow_6` boards are baked by
+  comes from `Pacenotes.arrow_key(corner, flip)`, which uses the **same** direction
+  mapping as `SignLayout._arrow_key` (a left-hand corner, `flip=true`, takes the
+  `"right"`-keyed art). The chase camera looks along the track's forward axis, which
+  flips the 2D track's left/right on screen — the same inversion the roadside boards
+  bake in — so the HUD reads correctly with the signs' convention, not the opposite of
+  it. The compound `"Right 4 tightens 2"` reuses its entry-grade (`arrow_4`) art. The `arrow_5`/`arrow_6` boards are baked by
   `tools/bake_sign_arrows.gd` (see [signs.md](signs.md)).
 - **Advance.** `world.gd` also hands the per-corner progress **fractions**
   (`Pacenotes.notes_to_fracs`, same start-line span as the pace splits) to

@@ -73,26 +73,31 @@ func test_build_empty_for_null_or_degenerate_centerline() -> void:
 
 # --- arrow_key(): TRUE direction, no oncoming-facing inversion ---------------
 
-func test_arrow_key_uses_true_turn_direction() -> void:
-	# A left-hand corner (flip) shows a LEFT arrow — the HUD is not a facing panel.
-	assert_eq(Pacenotes.arrow_key("1", true), "arrow_1_left", "left corner -> left arrow")
-	assert_eq(Pacenotes.arrow_key("1", false), "arrow_1_right", "right corner -> right arrow")
-	assert_eq(Pacenotes.arrow_key("5", false), "arrow_5_right", "gentle 5 has its own board")
-	assert_eq(Pacenotes.arrow_key("6", true), "arrow_6_left", "gentle 6 has its own board")
-	assert_eq(Pacenotes.arrow_key("Square", true), "arrow_square_left", "square glyph")
-	assert_eq(Pacenotes.arrow_key("Hairpin", false), "arrow_uturn_right", "hairpin glyph")
+func test_arrow_key_matches_the_sign_direction_convention() -> void:
+	# The chase camera flips the 2D track's left/right on screen — the same inversion
+	# the roadside boards bake in — so the HUD uses the SAME dir mapping as the signs
+	# (a left-hand corner, flip=true, takes the "right"-keyed art), not the opposite.
+	assert_eq(Pacenotes.arrow_key("1", true), "arrow_1_right", "flip=true -> right-keyed art")
+	assert_eq(Pacenotes.arrow_key("1", false), "arrow_1_left", "flip=false -> left-keyed art")
+	assert_eq(Pacenotes.arrow_key("5", false), "arrow_5_left", "gentle 5 has its own board")
+	assert_eq(Pacenotes.arrow_key("6", true), "arrow_6_right", "gentle 6 has its own board")
+	assert_eq(Pacenotes.arrow_key("Square", true), "arrow_square_right", "square glyph")
+	assert_eq(Pacenotes.arrow_key("Hairpin", false), "arrow_uturn_left", "hairpin glyph")
 
 
-func test_arrow_key_is_not_inverted_like_the_signs() -> void:
-	# Lock the intent: the HUD picks the OPPOSITE hand of the facing roadside sign.
-	assert_ne(Pacenotes.arrow_key("1", false), SignLayout._arrow_key("1", false),
-		"HUD arrow is the true direction, not the sign's mirrored art")
+func test_arrow_key_agrees_with_the_signs_for_shared_shapes() -> void:
+	# Lock the intent: HUD and roadside signs read the same way, so their direction
+	# mapping is identical for every shape the signs also plant.
+	for corner in ["1", "2", "3", "4", "Square", "Hairpin"]:
+		for flip in [false, true]:
+			assert_eq(Pacenotes.arrow_key(corner, flip), SignLayout._arrow_key(corner, flip),
+				"HUD arrow for %s (flip=%s) matches the sign" % [corner, flip])
 
 
 func test_arrow_key_compound_reuses_entry_grade_art() -> void:
-	assert_eq(Pacenotes.arrow_key("Right 4 tightens 2", false), "arrow_4_right",
+	assert_eq(Pacenotes.arrow_key("Right 4 tightens 2", false), "arrow_4_left",
 		"compound corner reuses its entry-grade (4) board")
-	assert_eq(Pacenotes.arrow_key("Right 4 tightens 2", true), "arrow_4_left",
+	assert_eq(Pacenotes.arrow_key("Right 4 tightens 2", true), "arrow_4_right",
 		"compound corner, left-hand")
 
 
