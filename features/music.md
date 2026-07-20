@@ -18,9 +18,10 @@ short 8-bar re-trigger means a song swap can land roughly every 8 bars (~11 s at
 4 segments), so bar duration is derived per song, not global. Files must import
 with looping OFF and no leading/trailing silence.
 
-Two tracks ship today, four segments each: `music/echochamber1..4.mp3` (168 bpm,
-the HQ theme) and `music/skillz1..4.mp3` (170 bpm, the run theme). Segments must
-be authored so N→N+1, the 4→1 wrap, and a cross-song 4→(new)1 all sum cleanly.
+Six tracks ship today, four segments each, as ~128 kbps Ogg Vorbis
+(`music/echochamber1..4.ogg` is the HQ theme; `skillz`, `deadlock`, `nightandday`,
+`threaded`, `whoyouare` are the rally pool). Segments must be authored so N→N+1,
+the 4→1 wrap, and a cross-song 4→(new)1 all sum cleanly.
 
 ## Context selection (scene state, not transitions)
 
@@ -55,11 +56,10 @@ up, so the following rally uses it. `_current_rally_song` is seeded once in
 screen still has a valid song. HQ music is unaffected — it's always echo_chamber.
 
 > Cross-tempo caveat: an HQ↔rally swap sums Echo Chamber's lead-out with the rally
-> song's lead-in (and vice-versa). Because these are MP3s (per-file encoder
-> head-delay), the summed tails can be a few tens of ms out of alignment at the
-> swap seam. Swaps are infrequent (HQ↔rally, and rally songs only change across a
-> loading screen — never mid-event) and the tails are transition material, so it's
-> acceptable; convert to Ogg Vorbis if the seam ever sounds off.
+> song's lead-in (and vice-versa). These are now Ogg Vorbis, which carries no fixed
+> per-file encoder head-delay (the MP3 issue this note used to flag), so the summed
+> tails stay tightly aligned at the swap seam. Swaps are also infrequent (HQ↔rally,
+> and rally songs only change across a loading screen — never mid-event).
 
 ## Timing model (handoff-anchored)
 
@@ -175,6 +175,4 @@ song identity) — they assert relationships and logic.
 ## Not yet built (see the design spec)
 
 - `stop()` and event→HQ transition semantics.
-- Ogg conversion for tighter cross-song seam alignment (the rally pool + random
-  per-event selection is now built — see "Random rally song" above).
 - Ducking music under SFX/engine audio.

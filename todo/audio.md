@@ -2,7 +2,7 @@
 
 > Status: **PARTIALLY DONE — the music half shipped; SFX still open.** The
 > **music** system landed (a `Music` autoload / `music_director.gd`,
-> `music_library.gd`, `music_schedule.gd`, `music/*.mp3` beds, and a runtime-created
+> `music_library.gd`, `music_schedule.gd`, `music/*.ogg` beds, and a runtime-created
 > **Music bus**; docs in `features/music.md`), and the Settings music-volume slider
 > drives that bus. Still genuinely **not implemented**: the one-shot **SFX** side —
 > impact/crash, countdown beep, UI clicks, podium/reward stingers, and an
@@ -35,7 +35,7 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
 - **Engine audio is fully procedural** — `engine_audio.gd` (`extends
   AudioStreamPlayer`) pushes synthesized PCM into an `AudioStreamGenerator`
   (`engine_audio.gd:14-22`); the DSP is `EngineAudioSynth` (pure, no nodes).
-- **Music now plays from samples** — `music_director.gd` streams `music/*.mp3`
+- **Music now plays from samples** — `music_director.gd` streams `music/*.ogg`
   beds on a runtime-created **Music bus** (`features/music.md`). So the "no
   samples / no music playback" gap is closed; what remains silent is **SFX**.
 - **Bus layout is partial.** `project.godot` has an `[audio]` section and a

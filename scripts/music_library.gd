@@ -8,71 +8,70 @@ extends RefCounted
 # and is what the scheduler uses to derive bar durations — it must match the true
 # tempo or the loop drifts.
 #
-# NOTE: these are 320 kbps MP3s. Fine for a song looping through its own segments
-# (they share the same encoder head-delay, so the summed tails stay relatively
-# aligned). The cross-SONG swap (echo_chamber <-> skillz, at different tempos) can
-# be a few tens of ms out of alignment at the seam because of per-file MP3 delay;
-# convert to Ogg Vorbis if that ever sounds off.
+# NOTE: these are ~128 kbps Ogg Vorbis. Unlike MP3, Vorbis carries no fixed
+# per-file encoder head-delay, so both the within-song segment loop and the
+# cross-SONG swap (echo_chamber <-> skillz, at different tempos) stay tightly
+# aligned at the seam.
 
 const SONGS: Array[Dictionary] = [
 	{
 		"id": "echo_chamber",
 		"bpm": 168.0,  # authored (the HQ theme); every segment shares this tempo
 		"segments": [
-			preload("res://music/echochamber1.mp3"),
-			preload("res://music/echochamber2.mp3"),
-			preload("res://music/echochamber3.mp3"),
-			preload("res://music/echochamber4.mp3"),
+			preload("res://music/echochamber1.ogg"),
+			preload("res://music/echochamber2.ogg"),
+			preload("res://music/echochamber3.ogg"),
+			preload("res://music/echochamber4.ogg"),
 		],
 	},
 	{
 		"id": "skillz",
 		"bpm": 170.0,  # authored (a rally theme)
 		"segments": [
-			preload("res://music/skillz1.mp3"),
-			preload("res://music/skillz2.mp3"),
-			preload("res://music/skillz3.mp3"),
-			preload("res://music/skillz4.mp3"),
+			preload("res://music/skillz1.ogg"),
+			preload("res://music/skillz2.ogg"),
+			preload("res://music/skillz3.ogg"),
+			preload("res://music/skillz4.ogg"),
 		],
 	},
 	{
 		"id": "deadlock",
 		"bpm": 174.0,  # authored (a rally theme)
 		"segments": [
-			preload("res://music/deadlock1.mp3"),
-			preload("res://music/deadlock2.mp3"),
-			preload("res://music/deadlock3.mp3"),
-			preload("res://music/deadlock4.mp3"),
+			preload("res://music/deadlock1.ogg"),
+			preload("res://music/deadlock2.ogg"),
+			preload("res://music/deadlock3.ogg"),
+			preload("res://music/deadlock4.ogg"),
 		],
 	},
 	{
 		"id": "nightandday",
 		"bpm": 171.0,  # authored (a rally theme)
 		"segments": [
-			preload("res://music/nightandday1.mp3"),
-			preload("res://music/nightandday2.mp3"),
-			preload("res://music/nightandday3.mp3"),
-			preload("res://music/nightandday4.mp3"),
+			preload("res://music/nightandday1.ogg"),
+			preload("res://music/nightandday2.ogg"),
+			preload("res://music/nightandday3.ogg"),
+			preload("res://music/nightandday4.ogg"),
 		],
 	},
 	{
 		"id": "threaded",
 		"bpm": 174.0,  # authored (a rally theme)
 		"segments": [
-			preload("res://music/threaded1.mp3"),
-			preload("res://music/threaded2.mp3"),
-			preload("res://music/threaded3.mp3"),
-			preload("res://music/threaded4.mp3"),
+			preload("res://music/threaded1.ogg"),
+			preload("res://music/threaded2.ogg"),
+			preload("res://music/threaded3.ogg"),
+			preload("res://music/threaded4.ogg"),
 		],
 	},
 	{
 		"id": "whoyouare",
 		"bpm": 174.0,  # authored (a rally theme)
 		"segments": [
-			preload("res://music/whoyouare1.mp3"),
-			preload("res://music/whoyouare2.mp3"),
-			preload("res://music/whoyouare3.mp3"),
-			preload("res://music/whoyouare4.mp3"),
+			preload("res://music/whoyouare1.ogg"),
+			preload("res://music/whoyouare2.ogg"),
+			preload("res://music/whoyouare3.ogg"),
+			preload("res://music/whoyouare4.ogg"),
 		],
 	},
 ]
