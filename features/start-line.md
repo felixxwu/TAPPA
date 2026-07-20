@@ -33,22 +33,28 @@ Phases (`StartLine.Seq`), driven in `_process`:
    at `start_reveal_cam_fov`). The shot is anchored — computed once from the start pose — and
    held for the rest of the sequence (no re-fly per opponent). The orbit idle stops the
    moment Start is pressed so the lerp source is fixed.
-3. **REVEAL** — a house card at the bottom of the screen names the opponent currently on
-   the line: `P{n}  Driver — Car` and the gold **`TIME TO BEAT  m:ss.cc`**, with a **Next**
-   button (Enter / gamepad A / tap). It shows the top-three rivals fastest-first
-   (`RallySession.current_event_leaders(3)`), P1 on the line first.
-4. **DRIVE-OFF** — **Next** floors the front car off down the lead-in and rolls the rest of
-   the field (the other opponents **and** the player) up one gap, each braking to a complete
-   stop on its new slot (`_roll_car_to`: drive → coast into a speed-aware brake point → brake
-   → cut throttle + hold the handbrake, so the auto box can't grab reverse and rev against
-   the hold). The card hides during the scoot. On settle (the car that should now be on the
-   line — or the player, on the final scoot — has stopped, gated by
-   `start_trailer_scoot_seconds` with `start_drive_off_seconds` as a safety cap): if
-   opponents remain, back to **REVEAL** for the next one; once only the player is left (it's
-   reached the line), on to **FADE**. Repeats P1 → P2 → P3. Departed cars keep driving
+3. **REVEAL** — a compact house card at the **top** of the screen names the opponent
+   currently on the line (`P{n}  Driver`, their car beneath) and shows a labelled stat
+   column — the gold **`TIME TO BEAT  m:ss.cc`**, the **`GAP TO P1`** (`_format_gap`; the
+   fastest rival reads `FASTEST`), and, from **event 2 on**, their **`OVERALL`**
+   championship position (`_ordinal` of the standings `placed`, matched by driver name via
+   `_build_overall_ranks` → `RallySession.current_standings()`; the row is hidden on event 1
+   and in dev/test where the ranking is unknown). The card hugs the top so it never covers
+   the car; a simple **Next** button (Enter / gamepad A / tap) hugs the bottom. It shows the
+   top-three rivals fastest-first (`RallySession.current_event_leaders(3)`), P1 on the line
+   first. **Next** (`next_car`)
+   floors the front car off down the lead-in and **immediately reveals the next opponent** —
+   the reveal is **tap-driven and does NOT wait for the field to line up**, so the player can
+   tap straight through P1 → P2 → P3 without pausing for each car to roll up. Underneath,
+   every REVEAL frame keeps rolling the rest of the field (the other opponents **and** the
+   player) up toward their slots as ambient motion (`_roll_grid_to_slots` → `_roll_car_to`:
+   drive → coast into a speed-aware brake point → brake → cut throttle + hold the handbrake,
+   so the auto box can't grab reverse and rev against the hold). Departed cars keep driving
    straight off and are despawned once they pass the line by `start_lead_in_ahead_m` (before
-   the first corner), so they never fight their axis-lock into a bend.
-5. **FADE** — the screen **fades to black** (`start_fade_seconds`); at full black the player
+   the first corner), so they never fight their axis-lock into a bend. Once **Next** on the
+   last opponent leaves only the player in the grid, on to **FADE** — any roll-up still in
+   flight is purely cosmetic, since the hand-off snaps the player exactly onto the line.
+4. **FADE** — the screen **fades to black** (`start_fade_seconds`); at full black the player
    is released to normal driving and snapped exactly onto the line (`reset_to`), the
    remaining grid/departed cars are despawned, the camera hands back to the player's
    **selected** camera (chase OR bonnet, via the `CameraManager`), the **driving UI returns**,
@@ -177,8 +183,6 @@ session) never builds a `StartLine` and the countdown arms immediately.
 | `start_reveal_cam_fov` | `55.0` | FOV (deg) of the anchored reveal shot. |
 | `start_queue_gap` | `7.0` | Gap (m) between grid cars along the start heading. |
 | `start_queue_stagger_seconds` | `0.35` | (Reserved) stagger between successive launches. |
-| `start_trailer_scoot_seconds` | `0.7` | Minimum roll-up window per scoot before the next reveal / fade may begin. |
-| `start_drive_off_seconds` | `5.0` | Safety cap per scoot; it normally waits for a complete stop. |
 | `start_fade_seconds` | `0.6` | Length of each half (out, back) of the fade. |
 | `start_lead_in_ahead_m` | `22.0` | Straight road forced ahead of the start line (also the departed-car despawn distance). |
 | `start_lead_in_behind_m` | `30.0` | Straight road behind the line for the staged player (three gaps back). |
@@ -193,8 +197,10 @@ See [configuration.md](configuration.md).
   the physics-server stacking regression can't recur); grid cars are scripted + axis-locked +
   live; the player is staged three gaps back; the grid spawn doesn't clobber the player's
   config; Start flies the camera then reveals P1; the reveal card shows the current front
-  opponent's name/car/time; **Next** floors the front car and advances the reveal; three Nexts
-  walk P1→P2→P3, then the player reaches the line, the fade runs and `begin_countdown()` fires
+  opponent's name/car/time, the gap to P1 (P1 = FASTEST), and the overall championship rank
+  (hidden on event 1, shown from event 2); **Next** floors the front car and reveals the next
+  opponent **immediately** (eager reveal — no wait for the roll-up); three Nexts walk
+  P1→P2→P3, then the player reaches the line, the fade runs and `begin_countdown()` fires
   exactly once; empty leaders skip straight to the fade; the eligibility / over-power gates
   and the Tune Car / Upgrades overlays behave as before; an underpowered-but-eligible car
   launches straight through (its warning now lives at car selection, not the start line).

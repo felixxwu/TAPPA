@@ -438,14 +438,6 @@ var peak_torque_rpm := 4500.0
 @export var start_orbit_height := 2.4
 ## Gap (m) between queued cars along the start heading (leader ahead, one behind).
 @export var start_queue_gap := 7.0
-## Safety cap (s) on the launch animation: the fade-to-black normally waits for the
-## player to roll up the full gap to the line and come to a COMPLETE stop, but won't
-## wait longer than this.
-@export var start_drive_off_seconds := 5.0
-## Minimum roll-up window (s) after the player's stagger before the fade may begin, so
-## the reveal can't cut while the player is still mid-roll (the fade also waits for a
-## complete stop on top of this).
-@export var start_trailer_scoot_seconds := 0.7
 ## Stagger (s) between successive cars launching, so the queue rolls off one after
 ## another (leader, then player, then trailer) rather than all at once.
 @export var start_queue_stagger_seconds := 0.35
@@ -480,9 +472,6 @@ var peak_torque_rpm := 4500.0
 @export var start_reveal_cam_look_height_m := 0.8
 ## Field of view (degrees) of the anchored reveal shot.
 @export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
-## Speed (m/s) below which the player counts as stopped at the line — the fade to the
-## chase cam waits for this so the transition never happens while the car is rolling.
-@export var start_stop_speed_eps := 0.4
 ## Roll-up decel model divisor: a scripted queue car's braking distance is
 ## v*v / this (+ the reaction margin below), i.e. it assumes a deceleration of
 ## (this / 2) m/s² when deciding where to start braking. 28 ≈ 14 m/s² decel.

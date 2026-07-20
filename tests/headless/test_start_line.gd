@@ -2,7 +2,8 @@ extends GutTest
 # StartLine: the cinematic pre-event start-line sequence — a MENU (Start / Tune / Upgrades)
 # over an orbit idle, a camera fly-in to a fixed 3/4 reveal shot, a per-opponent REVEAL
 # (the three real top rivals line up ahead in their actual cars; Next sends each off the
-# line and scoots the rest up), then the fade → countdown once the player reaches the line.
+# line and reveals the next one immediately — eager reveal, the roll-up plays underneath),
+# then the fade → countdown once the player reaches the line.
 # The timed phases are driven by calling _process(dt) directly against stub car/stage/camera
 # stubs, so the sequence is tested without booting the run scene. See features/start-line.md.
 
@@ -125,11 +126,10 @@ func _launch_to_reveal(sl: StartLine) -> void:
 	sl._process(Config.data.start_reveal_fly_seconds + 0.01)
 
 
-# Send the current front car off and roll the field up until the next settle (a real
-# physics car spawned at rest reads as stopped, so the settle is deterministic here).
+# Send the current front car off; with eager reveal the next opponent's card shows
+# immediately (the roll-up plays out underneath and does not gate the reveal).
 func _advance_one(sl: StartLine) -> void:
 	sl.next_car()
-	sl._process(Config.data.start_trailer_scoot_seconds + 0.01)
 
 
 # --- Grid layout -------------------------------------------------------------
@@ -238,8 +238,36 @@ func test_reveal_card_shows_the_current_front_opponents_name_and_time() -> void:
 	assert_eq(sl.reveal_index(), 0, "the first opponent (P1) is on the line")
 	# Behaviour: the card reflects current_event_leaders()[reveal_index], uppercased by the theme.
 	assert_string_contains(sl._reveal_name_label.text, "RIVAL 3", "P1's driver name is shown")
-	assert_string_contains(sl._reveal_name_label.text, "FIXTURE ROADSTER", "P1's car is shown")
+	assert_string_contains(sl._reveal_car_label.text, "FIXTURE ROADSTER", "P1's car is shown")
 	assert_string_contains(sl._reveal_time_label.text, "1:15.43", "P1's time to beat is shown (m:ss.cc)")
+
+
+func test_reveal_card_shows_the_gap_to_the_fastest_rival() -> void:
+	# The card shows each rival's gap to the fastest (P1); the benchmark reads FASTEST.
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	assert_string_contains(sl._reveal_gap_label.text, "FASTEST", "the fastest rival has no gap to itself")
+	sl.next_car()  # reveal P2 — 2.69 s down on P1 (78120 − 75430 ms, from _leaders())
+	assert_string_contains(sl._reveal_gap_label.text, "+2.69", "a trailing rival shows its gap to P1")
+
+
+func test_overall_rank_row_is_hidden_on_the_first_event() -> void:
+	# Event 1: nothing has been raced, so the standings are all tied and an "overall"
+	# ranking is meaningless — the row is hidden rather than showing a bogus rank.
+	var sl := _make(_leaders())  # event_index 0
+	_launch_to_reveal(sl)
+	assert_false(sl._reveal_overall_row.visible, "no overall ranking on event 1")
+
+
+func test_overall_rank_row_shows_the_championship_position() -> void:
+	# From event 2 on, the card shows each rival's overall championship position (matched
+	# by driver name). Inject a known standing and re-render the current card.
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	sl._overall_rank = {"Rival 3": 2}
+	sl._show_reveal_card()
+	assert_true(sl._reveal_overall_row.visible, "the overall row shows once a rank is known")
+	assert_string_contains(sl._reveal_overall_label.text, "2ND", "it shows the championship position")
 
 
 # --- Per-opponent reveal loop ------------------------------------------------
@@ -250,14 +278,12 @@ func test_next_sends_the_front_car_off_and_advances_the_reveal() -> void:
 	var p1 = sl._grid[0]
 	sl.next_car()
 	assert_eq(p1.ai_throttle, 1.0, "Next floors the front car so it pulls off the line")
-	assert_eq(sl.sequence_phase(), StartLine.Seq.DRIVE_OFF, "Next begins the scoot-up")
-	assert_false(sl._reveal_overlay.visible, "the reveal card hides during the scoot")
+	# Eager reveal: the next opponent's card shows immediately, no wait for the roll-up.
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "the next opponent is revealed right away")
+	assert_true(sl._reveal_overlay.visible, "the reveal card stays up for the next opponent")
 	assert_eq(sl.reveal_index(), 1, "the reveal advances to the next opponent")
 	assert_eq(sl.queue_count(), 2, "the departed car has left the grid")
-	# The scoot settles back into a reveal for the new front opponent.
-	sl._process(Config.data.start_trailer_scoot_seconds + 0.01)
-	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "the next opponent is revealed once the field settles")
-	assert_string_contains(sl._reveal_name_label.text, "RIVAL 1", "P2 is now on the line")
+	assert_string_contains(sl._reveal_name_label.text, "RIVAL 1", "P2 is revealed immediately")
 
 
 func test_departing_car_sounds_its_own_engine_not_the_players() -> void:
@@ -312,8 +338,7 @@ func test_walks_through_all_three_opponents_then_fades_to_the_countdown() -> voi
 	_advance_one(sl)  # P2 off, P3 revealed
 	# Third Next sends P3 off; the player is now the only car left → the fade begins.
 	sl.next_car()
-	sl._process(Config.data.start_trailer_scoot_seconds + 0.01)
-	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "the player reaching the line begins the fade")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "the last opponent leaving begins the fade")
 	assert_eq(sl.queue_count(), 0, "all three opponents have driven off")
 	sl._process(Config.data.start_fade_seconds + 0.01)
 	assert_eq(_stage.begin_calls, 1, "the countdown starts at full black")
@@ -326,8 +351,7 @@ func test_handoff_releases_the_player_to_normal_driving() -> void:
 	var sl := _make(_leaders())
 	_launch_to_reveal(sl)
 	for i in 3:
-		sl.next_car()
-		sl._process(Config.data.start_drive_off_seconds)  # safety cap covers the settle
+		sl.next_car()  # three eager taps: P1, P2, P3 off → fade
 	sl._process(Config.data.start_fade_seconds + 0.01)
 	assert_false(_player.ai_controlled, "the player is handed back to normal driving")
 	assert_false(_player.axis_lock_linear_x, "lateral lock released so the player can steer")
@@ -339,8 +363,7 @@ func test_reveal_hand_off_restores_the_selected_camera_not_always_chase() -> voi
 	var sl := _make(_leaders())
 	_launch_to_reveal(sl)
 	for i in 3:
-		sl.next_car()
-		sl._process(Config.data.start_drive_off_seconds)
+		sl.next_car()  # three eager taps walk P1 → P2 → P3 off the line
 	sl._process(Config.data.start_fade_seconds + 0.01)
 	assert_true(_bonnet.current, "the selected (bonnet) camera is restored at hand-off")
 	assert_false(_chase.current, "the start line does not force chase over the chosen mode")
