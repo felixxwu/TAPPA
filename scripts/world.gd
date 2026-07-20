@@ -62,8 +62,11 @@ func _ready() -> void:
 	if cfg.terrain_tile_per_meter > 0.0:
 		road_uv_scale = cfg.road_tile_per_meter / cfg.terrain_tile_per_meter
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("road_uv_scale", road_uv_scale)
-	# Flat tarmac fill colour (TODO: a real tarmac texture — todo/tarmac-texture.md).
-	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("tarmac_color", cfg.tarmac_color)
+	# Flat tarmac fill colour (TODO: a real tarmac texture — todo/tarmac-texture.md). A
+	# region may override it (Greece runs a brighter, sun-bleached tarmac); home / free
+	# roam fall back to the GameConfig value.
+	var tarmac_col: Color = _current_region_look().get("tarmac_color", cfg.tarmac_color)
+	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("tarmac_color", tarmac_col)
 	# Terrain seed follows the per-event track_seed so each event has its own
 	# landscape (and lake layout). The road DFS doesn't read terrain when water is
 	# off, so this changes only the visible elevation for water-off events, not the
@@ -729,7 +732,13 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 	# centerline + surface split; rebuilt on a regeneration.
 	_road_markings = _ensure_child("RoadMarkings",
 		func() -> Node: return RoadMarkings.new()) as RoadMarkings
-	_road_markings.build(road_centerline, $Floor as TerrainManager, cfg.road_marking_params())
+	# A region may recolour the lane paint (Greece paints yellow lines); home / free
+	# roam keep the GameConfig off-white.
+	var marking_params := cfg.road_marking_params()
+	var region_look := _current_region_look()
+	if region_look.has("road_marking_color"):
+		marking_params["color"] = region_look["road_marking_color"]
+	_road_markings.build(road_centerline, $Floor as TerrainManager, marking_params)
 
 	# Wheel dust: cheap gravel spray flung from the driven wheels under wheelspin
 	# (features/wheel-dust.md); the surface under each wheel (gravel vs grass/tarmac)

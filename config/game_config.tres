@@ -43,6 +43,7 @@ smoothing = 3.0
 hq_table_cam_eye = Vector3(-3, 2.15, 0.2)
 terrain_tile_per_meter = 0.5
 road_tile_per_meter = 1.0
+tarmac_color = Color(0.36, 0.36, 0.38, 1)
 terrain_layer1_wavelength = 300.0
 terrain_layer1_amplitude = 30.0
 terrain_layer2_wavelength = 40.0
