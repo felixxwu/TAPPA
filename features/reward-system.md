@@ -33,7 +33,9 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 
 `draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`:
 pool = parts at the target tier (stepping down to the nearest lower tier that has
-an eligible part, since not every tier has one) **plus the repair kit and the
+an eligible part, since not every tier has one; `_parts_at_or_below` also skips
+**`free` parts** — the ballast is always available, so it's never a reward) **plus
+the repair kit and the
 engine swap token as low-weight entries** (`REPAIR_KIT_DROP_WEIGHT` /
 `ENGINE_SWAP_TOKEN_DROP_WEIGHT`, both placeholders). Parts **already
 fitted to `owned_car`** — the driven car the flow controller passes in — are
@@ -81,28 +83,29 @@ drive mode later in the garage (see `features/upgrade-catalogue.md`).
 re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
 
 1. **Standard draw** — candidates = every `CarLibrary` model whose `reward_tier`
-   is at or below the **draw ceiling**: the higher of the **garage tier**
-   (`garage_tier(profile)`: the highest `reward_tier` among cars the player owns;
-   1 for an empty garage) and the tier the **just-beaten rally's difficulty**
-   maps to (`_difficulty_to_tier`, currently identity). So owning a tier-3 car
-   means any tier ≤ 3 car can drop, AND beating a difficulty-3 rally can drop a
-   tier-3 car even from a tier-1 garage. `rally_difficulty` defaults to 0 (garage
-   tier alone governs) for callers that don't supply it.
+   is at or below the **progress-clamped draw ceiling**:
+   `clamp(_difficulty_to_tier(rally_difficulty), 1, tier_ceiling(completed_count))`
+   — the SAME progress clamp the per-event upgrade draw uses (`gameplay.md`). So a
+   higher-difficulty rally pays a better car, but only up to the tier the player's
+   **progress** (rallies completed) has earned; a lucky early win at a hard rally
+   can't drop a top car. This replaces the old `max(garage_tier, difficulty)` ceiling,
+   which let one difficulty-2 win open the whole roster (all cars were tier ≤ 2).
+   `rally_difficulty` defaults to 0 (→ tier 1 floor) for callers that don't supply it.
 2. **Unlock fallback** (`_unlock_candidates`) — takes over only when the player
    is *stuck*: every rally their garage can currently enter is already completed
    (each owned car is checked on its **effective** stats via
-   `UpgradeLibrary.effective_meta`, so installed upgrades count, against
-   `RallyLibrary.incomplete_rallies_enterable_by`, which is region-aware — a
-   locked rally's own showdown only counts as enterable once
-   `RegionLibrary.showdown_unlocked(rally.region, profile)` is true for that
-   rally's region, see [regions.md](regions.md)). Candidates then become the
-   models eligible for the still-locked rallies (incomplete, showdown only once
-   unlocked) at the **lowest difficulty any catalogue car can actually enter** —
-   e.g. all tier-1/2 rallies beaten with nothing new enterable ⇒ a car for a
-   difficulty-3 rally, never 4. A locked difficulty whose restriction bands no
-   catalogue car fits is stepped past (giving up there would leave the player
-   soft-locked even though a grant one difficulty up re-opens progression). This
-   guarantees a fresh rally opens after every reward whenever one is openable.
+   `UpgradeLibrary.effective_meta`, with a `floor_meta` of `max_potential_meta` so the
+   pw_min floor is judged at the car's max potential, against
+   `RallyLibrary.incomplete_rallies_enterable_by`, which is reveal-aware — a rally
+   counts as enterable only once **revealed** (`rally_revealed`: its `reveal_after`
+   met, and for a showdown its region unlocked), see [regions.md](regions.md)).
+   Candidates then become the models eligible for the still-locked, **revealed**
+   rallies at the **lowest difficulty any catalogue car can actually enter** — e.g.
+   all tier-1/2 rallies beaten with nothing new enterable ⇒ a car for a difficulty-3
+   rally, never 4. A locked difficulty whose restriction bands no catalogue car fits
+   is stepped past (giving up there would leave the player soft-locked even though a
+   grant one difficulty up re-opens progression). This guarantees a fresh rally opens
+   after every reward whenever one is openable.
 3. **Prefer un-owned** — either path draws uniformly from the not-yet-owned
    candidates when any exist, else grants a duplicate of an owned one.
 
@@ -121,8 +124,8 @@ handled by the flow controller.
 monotonic + clamped; `target_tier` never exceeds the ceiling; upgrade draws land
 at the target tier with the repair kit a rare minority; a part already fitted to
 the driven car is never drawn (repair-kit fallback when the car has everything); car draws never exceed
-`max(garage tier, beaten difficulty)` and a higher-difficulty rally lifts the
-ceiling above the garage tier; car draws prefer un-owned before falling back to a duplicate; a stuck
-player's grant opens a locked rally at the lowest difficulty any car can enter;
-and `draw_car` still pays a real car even with everything completed (the
-guaranteed-reward property).
+the **progress ceiling** (`tier_ceiling(completed_count)`) even off a top-difficulty
+rally, and a low-difficulty rally caps the draw at its difficulty tier even when the
+progress ceiling is high; car draws prefer un-owned before falling back to a duplicate; a stuck
+player's grant opens a locked rally with a car eligible for it; and `draw_car` still
+pays a real car even with everything completed (the guaranteed-reward property).

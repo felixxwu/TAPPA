@@ -287,23 +287,10 @@ func reset_knocked() -> void:
 # barely moving. With the car masked off, this impulse is what makes the sign scatter;
 # physics then rolls it on the terrain.
 func _launch_sign(body: RigidBody3D, car: Node) -> void:
-	var car_vel := Vector3.ZERO
-	if "linear_velocity" in car:
-		car_vel = car.linear_velocity
-	var speed := car_vel.length()
-	var dir := car_vel.normalized()
-	if speed <= 0.1 and car is Node3D:
-		dir = -(car as Node3D).global_transform.basis.z
-	var factor := float(_knock["knock_speed_factor"])
-	var speed_max := float(_knock["knock_speed_max"])
 	# Shared launch recipe with the spectator ragdoll: the whole impulse (including the
 	# upward bias, a fraction of the launch rather than a constant kick) scales with car
 	# speed, and the spin tapers to zero as the car slows.
-	body.linear_velocity = SpectatorGroup.knock_launch_velocity(dir, speed, factor,
-		float(_knock["knock_speed_min"]), speed_max, float(_knock["knock_lift_ratio"]))
-	body.angular_velocity = Vector3(
-		_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)
-	).normalized() * float(_knock["knock_spin"]) * SpectatorGroup.knock_spin_scale(speed, factor, speed_max)
+	SpectatorGroup.apply_knock_launch(body, car, _knock, _rng)
 
 
 # The two splayed panels. Each is a thin, double-sided quad tilted about the ridge

@@ -74,10 +74,16 @@
 > replaced.
 >
 > Status: **PARTIALLY DONE.** The unblocked, decision-free, low-risk items are
-> implemented: **item 4** (frame cap — split into `GameConfig.target_fps`=60 for
-> desktop and `target_fps_mobile`=30 for mobile+web, selected via
-> `target_fps_for(Platform.is_mobile_or_web())`, applied in
-> `world._ready`, skipped under `--headless`), **item 1** (mipmaps on
+> implemented: **item 4** (frame cap — `GameConfig.target_fps` (desktop, 60) /
+> `target_fps_mobile` (native mobile, 60) / `target_fps_web` (web, 30), selected via
+> `target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())`, applied in
+> `world._ready`, skipped under `--headless`. NOTE: web is capped at 30 for
+> thermal/battery headroom; the single-threaded web build services audio on the main
+> loop (no audio thread), so a low frame rate drains the audio buffers between frames —
+> viable only because the buffers are sized to bridge it (`engine_audio.gd`
+> `BUFFER_SECONDS`=0.2 + `audio/driver/output_latency.web`=200 in `project.godot`).
+> The native APK has an audio thread and runs fine at 60. See features/rendering.md and
+> features/engine-audio.md), **item 1** (mipmaps on
 > tree/bush `.import` + `lod_bias` uniform in `billboard.gdshader` driven by
 > `GameConfig.texture_lod_bias`), **item 6** (engine-audio: per-harmonic `pow`
 > hoisted out of the firing-phase loop in `_voice`; scratch `slice()` allocation
@@ -438,35 +444,25 @@ there's no per-frame churn.
 
 ---
 
-## 4. Frame cap to 30 FPS
+## 4. Frame cap — DONE (three-way: desktop 60, native mobile 60, web 30)
 
-### Why
-Nothing sets `Engine.max_fps` or vsync anywhere (`project.godot` has no
-`[application] run/max_fps`; no `Engine.max_fps` in `scripts/`). An uncapped loop
-on a phone burns battery and generates heat → **thermal throttling**, which on
-old phones turns a "fine" 60 fps into stuttering 20s within minutes. A steady 30
-cap keeps the GPU/CPU cool and the frame pacing even.
+### What shipped
+`GameConfig.target_fps` (desktop), `target_fps_mobile` (native mobile) and
+`target_fps_web` (web) exist (`scripts/game_config.gd`), selected by
+`target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())` and applied once in
+`scripts/world.gd._ready()` — `Engine.max_fps = fps_cap` when `> 0`, skipped under
+`--headless` so it can't throttle the frame-awaiting test runner. Physics stays
+decoupled at the project physics tick.
 
-### Plan
-1. Add `GameConfig.target_fps` (default `30`; `0` = uncapped for desktop dev).
-2. Apply once at startup in `scripts/world.gd._ready()`:
-   `Engine.max_fps = cfg.target_fps` (only set when `> 0`).
-3. Consider `DisplayServer.window_set_vsync_mode(VSYNC_ENABLED)` so the 30 cap is
-   aligned to the display (avoids tearing + further smooths pacing). On web/mobile
-   exports vsync behaviour differs; disable it if it causes issues there.
-4. Decouple physics: physics already runs in `_physics_process` at the project
-   physics tick (default 60). With a 30 fps render cap, leave physics at 60 for
-   stable handling (`car.gd`/`drivetrain.gd` integrate there). If CPU-bound on the
-   weakest devices, lower `physics/common/physics_ticks_per_second` to 30 as the
-   shipped value — but test handling carefully (the tire model is tick-sensitive).
-
-### Files
-`scripts/world.gd`, `scripts/game_config.gd` + `config/game_config.tres`,
-`features/rendering.md` or `features/configuration.md`.
-
-### Tests
-`tests/headless` can assert `world.gd` sets `Engine.max_fps` from config (or
-factor the "apply settings" into a testable helper). Low-risk.
+### Why the caps ended up where they are
+The original plan capped mobile/web at 30 for thermal headroom. A flat 30 cap
+**starved audio on the single-threaded web build** (audio is serviced by the main
+loop, no audio thread, so a low frame rate opens gaps) — so the caps were split:
+**native mobile runs 60** (it has an audio thread and stays cool enough), while
+**web keeps the 30 cap** for thermal/battery headroom, made viable by sizing the
+audio buffers to bridge it (`engine_audio.gd` `BUFFER_SECONDS` +
+`audio/driver/output_latency.web`). Desktop is 60. See `features/rendering.md` and
+`features/engine-audio.md`. All three are knobs in `game_config.tres`.
 
 ---
 

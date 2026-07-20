@@ -73,13 +73,16 @@ static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: Random
 
 # Part ids at exactly `tier`, or — if that tier has no eligible part — at the
 # nearest lower tier that does. Excludes consumables (the repair kit is added
-# separately as a weighted entry) and any id in `exclude` (parts already fitted
-# to the driven car). Empty when everything at/below the tier is excluded.
+# separately as a weighted entry), `free` parts (ballast is always available, never
+# a reward), and any id in `exclude` (parts already fitted to the driven car). Empty
+# when everything at/below the tier is excluded.
 static func _parts_at_or_below(tier: int, exclude: Array = []) -> Array:
 	for t in range(tier, 0, -1):
 		var parts: Array = []
 		for item in UpgradeLibrary.UPGRADES:
-			if not item["consumable"] and int(item["tier"]) == t and not exclude.has(item["id"]):
+			if item["consumable"] or bool(item.get("free", false)):
+				continue
+			if int(item["tier"]) == t and not exclude.has(item["id"]):
 				parts.append(item["id"])
 		if not parts.is_empty():
 			return parts
@@ -93,14 +96,14 @@ static func _parts_at_or_below(tier: int, exclude: Array = []) -> Array:
 # The draw is GUARANTEED: the standard pool (tier <= the ceiling) always has
 # the tier-1 roster in it, so a car is always granted. Two paths:
 #   * Standard: any car whose reward_tier is at or below the DRAW CEILING —
-#     the higher of the GARAGE TIER (highest reward_tier among cars already
-#     owned) and the tier the JUST-BEATEN RALLY'S DIFFICULTY maps to. So
-#     beating a difficulty-3 rally can drop a tier-3 car even from a
-#     lower-tier garage — preferring un-owned models.
+#     clamp(f(rally difficulty), 1, tier_ceiling(rallies completed)), the same
+#     progress clamp the per-event upgrade draw uses (gameplay.md). So a higher-
+#     difficulty rally pays a better car, but only up to the tier the player's
+#     progress has earned — a lucky early win can't drop a top car. Prefers un-owned.
 #   * Unlock fallback: if the player has completed (>=1 star) every rally their
 #     garage can currently enter — nothing new left to enter — grant a car that
-#     opens a LOCKED rally instead: candidates eligible for the lowest-difficulty
-#     still-locked rallies, preferring un-owned. This keeps a fresh rally
+#     opens a still-locked, REVEALED rally instead: candidates eligible for the
+#     lowest-difficulty such rally, preferring un-owned. This keeps a fresh rally
 #     reachable after every reward.
 # rally_difficulty defaults to 0 (garage tier alone governs). Returns a model_id
 # (Variant only for the defensive empty-roster null); caller delivers via
@@ -109,19 +112,15 @@ static func draw_car(profile: Dictionary, rally_difficulty: int = 0, rng: Random
 	rng = _ensure_rng(rng)
 	var pool := _unlock_candidates(profile)
 	if pool.is_empty():
-		var ceiling := maxi(garage_tier(profile), _difficulty_to_tier(rally_difficulty))
+		# gameplay.md's progress clamp: reward tier = f(difficulty), capped by the
+		# progress ceiling (rallies completed), so a lucky early win at a higher-difficulty
+		# rally still can't drop a car above the player's earned tier. This is the SAME
+		# clamp the per-event upgrade draw uses (target_tier) — cars no longer key off the
+		# garage's highest owned tier, which let one d2 win open the whole roster.
+		var ceiling := clampi(_difficulty_to_tier(rally_difficulty), 1,
+			tier_ceiling(RallyLibrary.completed_count(profile)))
 		pool = _cars_at_or_below_tier(ceiling)
 	return _pick_prefer_unowned(pool, _owned_model_ids(profile), rng)
-
-
-# The highest reward_tier among the cars the player owns — the "difficulty
-# unlocked" level the standard draw pays out at. An empty garage pays tier 1.
-static func garage_tier(profile: Dictionary) -> int:
-	var best := 1
-	for car in profile.get("cars", []):
-		var meta := CarLibrary.by_id(String(car.get("model_id", "")))
-		best = maxi(best, int(meta.get("reward_tier", 1)))
-	return best
 
 
 # CarLibrary model ids with reward_tier at or below `tier`.
@@ -135,18 +134,24 @@ static func _cars_at_or_below_tier(tier: int) -> Array:
 
 # The unlock-fallback pool: non-empty ONLY when the garage is stuck — no owned
 # car (on its EFFECTIVE stats, so installed upgrades count) can enter any
-# still-incomplete rally. Then: walk the still-locked (incomplete, showdown only
-# if unlocked) rallies by difficulty ASCENDING and return every CarLibrary model
-# eligible for one at the lowest difficulty ANY catalogue car can actually
-# enter, so the grant opens progression in difficulty order (all tier-1/2
-# beaten -> a car for a difficulty-3 rally, not 4). Stepping past a difficulty
-# whose restriction bands no catalogue car fits matters: giving up there (and
-# silently falling back to the standard draw) would leave the player soft-locked
-# even though a grant for the next difficulty up re-opens progression.
+# still-incomplete rally. Then: walk the still-locked (incomplete, REVEALED — its
+# reveal_after met and, for a showdown, its region unlocked) rallies by difficulty
+# ASCENDING and return every CarLibrary model eligible for one at the lowest
+# difficulty ANY catalogue car can actually enter, so the grant opens progression in
+# difficulty order (all tier-1/2 beaten -> a car for a difficulty-3 rally, not 4).
+# Only REVEALED rallies count: granting a car for a rally whose pin is still hidden
+# (reveal_after not met) wouldn't open anything. Stepping past a difficulty whose
+# restriction bands no catalogue car fits matters: giving up there (and silently
+# falling back to the standard draw) would leave the player soft-locked even though a
+# grant for the next difficulty up re-opens progression.
 static func _unlock_candidates(profile: Dictionary) -> Array:
 	for car in profile.get("cars", []):
-		var meta := UpgradeLibrary.effective_meta(car, CarLibrary.by_id(String(car.get("model_id", ""))))
-		if not RallyLibrary.incomplete_rallies_enterable_by(meta, profile).is_empty():
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		var meta := UpgradeLibrary.effective_meta(car, entry)
+		# Judge the pw_min floor at the car's MAX potential (the player can always tune up to
+		# enter), so a car detuned/ballasted for a lower rally doesn't read as stuck.
+		var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
+		if not RallyLibrary.incomplete_rallies_enterable_by(meta, profile, floor_meta).is_empty():
 			return []  # a new rally is already enterable — standard draw applies
 	var rallies: Dictionary = profile.get("rallies", {})
 	# Locked rallies grouped by difficulty, so we can walk difficulties ascending.
@@ -154,7 +159,7 @@ static func _unlock_candidates(profile: Dictionary) -> Array:
 	for rally in RallyLibrary.all():
 		if rallies.get(rally["id"], {}).get("completed", false):
 			continue
-		if not RegionLibrary.rally_showdown_gate_open(rally, profile):
+		if not RallyLibrary.rally_revealed(rally, profile):
 			continue
 		var d := int(rally.get("difficulty", 1))
 		if not locked_by_difficulty.has(d):

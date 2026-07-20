@@ -32,15 +32,20 @@ regions existed. Ships today:
   `res://textures/tree.png` (the `home` profile), and `spawn_bush_mesh` =
   `false`. The mix reads as mostly the large low Mediterranean canopy with a few
   ordinary trees mixed in, and the 3D ground-cover bushes are dropped entirely
-  (the arid map has no lush undergrowth). Terrain tints are still **not**
-  overridden — Greece inherits the home tints.
+  (the arid map has no lush undergrowth). It also overrides `tarmac_color` (a
+  quite-a-bit-brighter, sun-bleached asphalt vs. home's darker grey) and
+  `road_marking_color` (yellow lane paint instead of home's off-white). Terrain
+  tints are still **not** overridden — Greece inherits the home tints.
 
 `LOOK_KEYS` is the whitelist of override fields a region may carry:
 `map_image`, `sky_panorama`, `grass_texture`, `gravel_texture`,
 `tree_mix`, `bush_billboard`, `spawn_bush_mesh`, `background_color`,
-`terrain_tint`, `terrain_layers`. `bush_billboard`/`terrain_tint`/
-`terrain_layers` are reserved slots — schema support exists, nothing authors
-them yet. `tree_mix` and `spawn_bush_mesh` are live (home + Greece).
+`terrain_tint`, `terrain_layers`, `tarmac_color`, `road_marking_color`.
+`bush_billboard`/`terrain_tint`/`terrain_layers` are reserved slots — schema
+support exists, nothing authors them yet. `tree_mix` and `spawn_bush_mesh` are
+live (home + Greece); `tarmac_color` and `road_marking_color` are live on Greece
+(a brighter tarmac + yellow lane paint), falling back to the `GameConfig`
+`tarmac_color` / `road_marking_color` when a region authors neither.
 
 ### Tree species split (`tree_mix`)
 
@@ -123,6 +128,13 @@ by the reward system) is region-aware: a rally's showdown is only offered as
 enterable once `RegionLibrary.showdown_unlocked(rally.region, profile)` is
 true for **that rally's own region** (`scripts/rally_library.gd` ~line 653-663).
 
+Within a region, non-showdown rallies also reveal in **waves**: `RallyLibrary.rally_revealed`
+gates a rally's map pin (and its enterability) behind its `reveal_after` count of
+**completed rallies in the same region** (`_completed_in_region`). So a freshly unlocked
+region surfaces ~1–2 rallies at a time instead of all at once — see
+[rally-roster.md](rally-roster.md) (`reveal_after`) and [menus.md](menus.md) (the grey
+"coming up" pin).
+
 ## Theming the driven world (`world.gd._apply_region_look`)
 
 Called from `_ready` immediately after `env.fog_sky_affect = cfg.fog_sky_affect`
@@ -147,6 +159,13 @@ settles):
    - `background_color` → `env.background_color` **and** `env.fog_light_color`.
    - `terrain_tint` / `terrain_layers` — reserved; no region ships them yet, so
      there's no application code for them beyond a comment marking the hook.
+   - `tarmac_color` is applied **not** here but a few lines later in `_ready`,
+     where the floor's flat tarmac fill is set from `GameConfig` — that call now
+     reads `_current_region_look().get("tarmac_color", cfg.tarmac_color)`, so a
+     region override wins and home/free-roam fall back to the config value. (It
+     lives there rather than in `_apply_region_look` because that shader param is
+     already driven from `cfg` at that point; folding it into the region look
+     would just be clobbered by the later `cfg` write.)
 4. Foliage is region-aware in `world.gd`'s stage-generation (NOT
    `_apply_region_look`, which only touches materials/sky/fog): it reads the
    same `_current_region_look()` before scattering.
@@ -160,6 +179,12 @@ settles):
    - `spawn_bush_mesh` → when false, `world.gd` skips the entire bush pass
      (no `Foliage.spawn_bushes`, no `BushField` interaction node); defaults true.
    - `bush_billboard` is still a reserved slot — nothing authors it yet.
+5. Road paint is region-aware in `world.gd._build_persistent_managers` (also NOT
+   `_apply_region_look`, since the paint mesh is built at track generation, not
+   with the materials): before calling `_road_markings.build`, it takes
+   `cfg.road_marking_params()` and, if `_current_region_look()` carries a
+   `road_marking_color`, replaces the params' `"color"` with it — so Greece paints
+   yellow lane lines while home keeps the config off-white.
 
 This is the single place the region look reaches the run scene; the rally
 already carries its `region`, so no extra plumbing was needed into

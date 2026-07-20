@@ -21,6 +21,15 @@ func _rng(seed_value: int) -> RandomNumberGenerator:
 	return r
 
 
+func test_free_parts_are_never_drawn_as_a_reward() -> void:
+	# Free parts (ballast) are always available and must never appear in the reward draw
+	# pool at any tier. Iterates the pool as opaque output — no specific id pinned.
+	for tier in range(1, RewardSystem.MAX_TIER + 1):
+		for id in RewardSystem._parts_at_or_below(tier):
+			assert_false(UpgradeLibrary.is_free(id),
+				"a free part must not be drawable as a reward (tier %d: %s)" % [tier, id])
+
+
 # Build a profile with the given completed rally ids and owned model ids.
 func _profile(completed: Array, owned: Array) -> Dictionary:
 	var rallies := {}
@@ -140,65 +149,80 @@ func _lowest_tier_model() -> Dictionary:
 	return best
 
 
-func test_draw_car_never_exceeds_garage_tier() -> void:
-	# Own only a lowest-tier car (everything incomplete → not stuck, standard
-	# path): the draw pays at or below the garage tier, never off the beaten
-	# rally's difficulty.
+func test_draw_car_clamped_by_progress_ceiling() -> void:
+	# The car draw is clamped by the PROGRESS ceiling (rallies completed) — the same clamp
+	# the upgrade draw uses (gameplay.md) — NOT by the garage's highest owned tier. At 0
+	# completed the ceiling is tier_ceiling(0), so even beating a top-difficulty rally can't
+	# drop a car above it. Synthetic open-class rally (reveal_after 0, incomplete) keeps the
+	# owned car eligible so the player is NOT stuck — the standard-draw path this asserts.
+	RallyLibrary.override_for_test([
+		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+	])
 	var starter := _lowest_tier_model()
 	var profile := _profile([], [String(starter["id"])])
-	var ceiling := RewardSystem.garage_tier(profile)
-	for i in 30:
-		var model: Variant = RewardSystem.draw_car(profile, 0, _rng(i))
-		var meta := CarLibrary.by_id(String(model))
-		assert_false(meta.is_empty(), "draw returns a real catalogue car")
-		assert_lte(int(meta["reward_tier"]), ceiling,
-			"a drawn car never exceeds the highest tier already in the garage")
-
-
-func test_draw_car_difficulty_lifts_ceiling_above_garage_tier() -> void:
-	# Own only a lowest-tier car (garage tier 1) but beat a high-difficulty rally:
-	# the beaten difficulty raises the draw ceiling, so cars above the garage tier
-	# (up to the difficulty tier) become eligible. Everything incomplete -> not
-	# stuck, standard path.
-	var starter := _lowest_tier_model()
-	var profile := _profile([], [String(starter["id"])])
-	var difficulty := 3
-	var ceiling: int = maxi(RewardSystem.garage_tier(profile), difficulty)
-	var saw_above_garage := false
+	var ceiling := RewardSystem.tier_ceiling(0)
 	for i in 40:
-		var model: Variant = RewardSystem.draw_car(profile, difficulty, _rng(i))
+		var model: Variant = RewardSystem.draw_car(profile, RewardSystem.MAX_TIER, _rng(i))
 		var meta := CarLibrary.by_id(String(model))
 		assert_false(meta.is_empty(), "draw returns a real catalogue car")
 		assert_lte(int(meta["reward_tier"]), ceiling,
-			"a drawn car never exceeds max(garage tier, beaten difficulty)")
-		if int(meta["reward_tier"]) > RewardSystem.garage_tier(profile):
-			saw_above_garage = true
-	assert_true(saw_above_garage,
-		"beating a higher-difficulty rally can drop a car above the garage tier")
+			"a drawn car never exceeds the progress ceiling, even off a top-difficulty rally")
+	RallyLibrary.reset()
 
 
-func test_draw_car_prefers_unowned_within_garage_tier() -> void:
-	# Own every model at or below the garage tier EXCEPT one target: the draw
-	# must always return that remaining un-owned car (proves the preference —
-	# owned alternatives exist yet are never picked).
+func test_draw_car_difficulty_caps_below_progress_ceiling() -> void:
+	# reward tier = min(f(difficulty), progress ceiling): with LOTS completed (a high
+	# progress ceiling) but a LOW-difficulty rally, the draw is still capped at the
+	# difficulty tier — a soft rally never pays a top car just because progress is high.
+	RallyLibrary.override_for_test([
+		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 1},
+	])
+	var completed: Array = []
+	for n in 8:  # ids need not be real — completed_count only counts them
+		completed.append("done_%d" % n)
 	var starter := _lowest_tier_model()
-	var seed_profile := _profile([], [String(starter["id"])])
-	var pool: Array = RewardSystem._cars_at_or_below_tier(RewardSystem.garage_tier(seed_profile))
+	var profile := _profile(completed, [String(starter["id"])])
+	assert_gt(RewardSystem.tier_ceiling(8), 1, "setup: the progress ceiling is above tier 1")
+	for i in 40:
+		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))  # difficulty-1 rally
+		var meta := CarLibrary.by_id(String(model))
+		assert_false(meta.is_empty(), "draw returns a real catalogue car")
+		assert_lte(int(meta["reward_tier"]), 1,
+			"a difficulty-1 rally never pays above tier 1, even with a high progress ceiling")
+	RallyLibrary.reset()
+
+
+func test_draw_car_prefers_unowned() -> void:
+	# Within the clamped pool the draw prefers un-owned models. Own every catalogue car
+	# EXCEPT the highest-tier one; with a top-difficulty rally + high progress the pool
+	# spans the whole roster, so the draw must always return that remaining un-owned car
+	# (owned alternatives exist yet are never picked).
+	RallyLibrary.override_for_test([
+		{"id": "r_open", "region": "home", "showdown": false, "restriction": {}, "difficulty": 4},
+	])
+	var completed: Array = []
+	for n in 8:
+		completed.append("done_%d" % n)
+	var pool: Array = RewardSystem._cars_at_or_below_tier(RewardSystem.MAX_TIER)
 	var target := ""
+	var best_tier := -1
 	for id in pool:
-		if String(id) != String(starter["id"]):
+		var t := int(CarLibrary.by_id(String(id))["reward_tier"])
+		if t > best_tier:
+			best_tier = t
 			target = String(id)
-			break
 	if target == "":
-		return  # degenerate 1-car tier; no owned/un-owned distinction to prove
+		RallyLibrary.reset()
+		return  # empty roster — nothing to prove
 	var owned: Array = []
 	for id in pool:
 		if String(id) != target:
 			owned.append(String(id))
-	var profile := _profile([], owned)
+	var profile := _profile(completed, owned)
 	for i in 30:
-		assert_eq(RewardSystem.draw_car(profile, 0, _rng(i)), target,
-			"draws the un-owned car at/below the garage tier, never an owned one")
+		assert_eq(RewardSystem.draw_car(profile, 4, _rng(i)), target,
+			"draws the un-owned car within the clamped pool, never an owned one")
+	RallyLibrary.reset()
 
 
 func test_draw_car_grants_duplicate_when_everything_owned() -> void:
@@ -224,63 +248,44 @@ func test_draw_car_always_grants_even_with_everything_completed() -> void:
 	assert_false(CarLibrary.by_id(String(model)).is_empty(), "and it is a catalogue car")
 
 
-func test_draw_car_unlocks_lowest_difficulty_rally_when_stuck() -> void:
-	# Build a STUCK profile from the live library: own one car, complete every
-	# rally it can enter, leave the rest (which it cannot enter) locked. The
-	# draw must then grant a car eligible for one of the LOWEST-difficulty
-	# locked rallies — guaranteeing a new rally opens up.
-	var stuck_car: Dictionary = {}
+func test_draw_car_unlocks_locked_rally_when_stuck() -> void:
+	# When STUCK — no owned car can enter any incomplete, REVEALED rally — the draw grants a
+	# car that OPENS a locked rally, guaranteeing fresh progression. Synthetic roster
+	# (reveal_after 0, so the reveal-order gate doesn't interfere): a low band r_low the
+	# owned car fits, a high band r_high it doesn't. Own only the low car and complete r_low
+	# -> stuck -> the grant must be a car eligible for r_high.
+	RallyLibrary.override_for_test([
+		{"id": "r_low", "region": "home", "showdown": false, "difficulty": 1,
+			"restriction": {"pw_max": 175.0}},
+		{"id": "r_high", "region": "home", "showdown": false, "difficulty": 2,
+			"restriction": {"pw_min": 200.0}},
+	])
+	var r_low := RallyLibrary.by_id("r_low")
+	var r_high := RallyLibrary.by_id("r_high")
+	# The lowest-p/w fixture car must fit r_low but miss r_high, and SOME other car must fit
+	# r_high — else the setup can't demonstrate the unlock. Guard so a fixture retune skips
+	# rather than fails.
+	var low_car := _lowest_tier_model()
+	var some_fits_high := false
 	for entry in CarLibrary.all():
-		for rally in RallyLibrary.RALLIES:
-			if not rally["showdown"] and not RallyLibrary.is_eligible(rally, entry):
-				stuck_car = entry
-				break
-		if not stuck_car.is_empty():
+		if RallyLibrary.is_eligible(r_high, entry):
+			some_fits_high = true
 			break
-	if stuck_car.is_empty():
-		return  # roster/restrictions currently admit every car everywhere — nothing to test
-	var completed := []
-	for rally in RallyLibrary.RALLIES:
-		if not rally["showdown"] and RallyLibrary.is_eligible(rally, stuck_car):
-			completed.append(rally["id"])
-	var profile := _profile(completed, [String(stuck_car["id"])])
-	# Sanity: the setup really is stuck (no incomplete rally enterable).
-	assert_true(RallyLibrary.incomplete_rallies_enterable_by(stuck_car, profile).is_empty(),
-		"setup: the owned car has no incomplete rally left to enter")
-	# The lowest difficulty among the locked (incomplete, showdown-gated) rallies
-	# that at least one catalogue car can actually enter — a locked rally whose
-	# restriction band no car fits can't be opened by ANY grant, so the draw steps
-	# past it to the next difficulty up rather than giving up (anti-soft-lock).
-	var lowest := 0
-	for rally in RallyLibrary.RALLIES:
-		if completed.has(rally["id"]) or (rally["showdown"] and not RegionLibrary.showdown_unlocked(String(rally.get("region", "")), profile)):
-			continue
-		var any_eligible := false
-		for entry in CarLibrary.all():
-			if RallyLibrary.is_eligible(rally, entry):
-				any_eligible = true
-				break
-		if not any_eligible:
-			continue
-		var d := int(rally["difficulty"])
-		lowest = d if lowest == 0 else mini(lowest, d)
-	if lowest == 0:
-		return  # no locked rally admits any car at all — nothing a grant could open
+	if not (RallyLibrary.is_eligible(r_low, low_car)
+			and not RallyLibrary.is_eligible(r_high, low_car) and some_fits_high):
+		RallyLibrary.reset()
+		return
+	var profile := _profile(["r_low"], [String(low_car["id"])])
+	assert_true(RallyLibrary.incomplete_rallies_enterable_by(low_car, profile).is_empty(),
+		"setup: the owned car has no incomplete rally left to enter (stuck)")
 	for i in 20:
-		var model: Variant = RewardSystem.draw_car(profile, 0, _rng(i))
+		var model: Variant = RewardSystem.draw_car(profile, 1, _rng(i))
 		var meta := CarLibrary.by_id(String(model))
-		var opens_lowest := false
-		for rally in RallyLibrary.RALLIES:
-			if completed.has(rally["id"]) or (rally["showdown"] and not RegionLibrary.showdown_unlocked(String(rally.get("region", "")), profile)):
-				continue
-			if int(rally["difficulty"]) == lowest and RallyLibrary.is_eligible(rally, meta):
-				opens_lowest = true
-				break
-		assert_true(opens_lowest,
-			"the stuck-player grant enters a locked rally at the LOWEST openable locked difficulty")
-		# And the grant really re-opens progression.
+		assert_true(RallyLibrary.is_eligible(r_high, meta),
+			"the stuck-player grant is a car that opens the locked rally")
 		assert_false(RallyLibrary.incomplete_rallies_enterable_by(meta, profile).is_empty(),
 			"the granted car can enter a still-incomplete rally")
+	RallyLibrary.reset()
 
 
 # --- Per-region showdown gating ----------------------------------------------

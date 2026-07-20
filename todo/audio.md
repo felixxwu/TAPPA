@@ -1,12 +1,15 @@
 # Audio (SFX, beeps, UI, music) — implementation spec
 
-> Status: **planned, not yet implemented.** Implementation brief for game audio
-> **beyond the engine** — the impact/crash, countdown, UI and stinger sounds the
-> `gameplay.md` › *Presence & atmosphere* and damage/flow loops imply but no spec
-> currently owns. The existing procedural engine sound (`engine-audio.md`) stays
-> as-is; this spec adds everything else and the **bus layout** the Settings
-> overlay (`todo/settings.md`) controls. Follow the config-first convention
-> (`CLAUDE.md`). Update `features/engine-audio.md` (or a new `features/audio.md`)
+> Status: **PARTIALLY DONE — the music half shipped; SFX still open.** The
+> **music** system landed (a `Music` autoload / `music_director.gd`,
+> `music_library.gd`, `music_schedule.gd`, `music/*.ogg` beds, and a runtime-created
+> **Music bus**; docs in `features/music.md`), and the Settings music-volume slider
+> drives that bus. Still genuinely **not implemented**: the one-shot **SFX** side —
+> impact/crash, countdown beep, UI clicks, podium/reward stingers, and an
+> `Audio`/`AudioManager` with `play_sfx` / `play_sfx_3d`. The remaining spec below
+> is about that SFX layer; treat its "bus layout" bullets as needing only the SFX
+> bus now (Master + Music already exist). The procedural engine sound
+> (`engine-audio.md`) stays as-is. Follow the config-first convention (`CLAUDE.md`)
 > and add tests in the same piece of work.
 
 ## Goal
@@ -32,10 +35,12 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
 - **Engine audio is fully procedural** — `engine_audio.gd` (`extends
   AudioStreamPlayer`) pushes synthesized PCM into an `AudioStreamGenerator`
   (`engine_audio.gd:14-22`); the DSP is `EngineAudioSynth` (pure, no nodes).
-  **No audio *samples* are used anywhere** and there is no SFX/music playback.
-- **No bus layout.** `project.godot` defines **no `[audio]` / bus config**, so
-  everything (just the engine today) plays on the default **Master** bus. There
-  is no `default_bus_layout.tres`.
+- **Music now plays from samples** — `music_director.gd` streams `music/*.ogg`
+  beds on a runtime-created **Music bus** (`features/music.md`). So the "no
+  samples / no music playback" gap is closed; what remains silent is **SFX**.
+- **Bus layout is partial.** `project.godot` has an `[audio]` section and a
+  **Music** bus exists at runtime; there is still no dedicated **SFX** bus (SFX
+  one-shots have nowhere to route yet).
 - **In-code node creation is the house pattern** (`billboard_field.gd`,
   `wheel_force_debug.gd:40-52`), so creating `AudioStreamPlayer`/`-3D` nodes in
   code fits the codebase.

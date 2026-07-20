@@ -20,6 +20,14 @@ static func is_mobile_or_web() -> bool:
 	return OS.has_feature("mobile") or OS.has_feature("web")
 
 
+# True only on the web export. Web needs its OWN frame cap separate from native
+# mobile: the export is single-threaded, so audio is serviced by the main loop
+# (no audio thread) and a lower frame rate starves it — the native APK has an
+# audio thread and runs fine at 60. Callers pick target_fps_web vs target_fps_mobile.
+static func is_web() -> bool:
+	return OS.has_feature("web")
+
+
 # The world's downward gravity magnitude (m/s^2), read from the project's physics
 # settings. Centralised so the hardcoded 9.8 default isn't re-typed at each site;
 # the fallback matches Godot's own default for physics/3d/default_gravity, so the

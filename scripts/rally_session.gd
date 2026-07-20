@@ -244,8 +244,9 @@ func _player_car_name() -> String:
 # The top `n` rivals for the CURRENT event — each rival's time for THIS event with
 # the car they drove, fastest first — shown on the start-line reveal in place of a
 # single "time to beat". Rivals who DNF'd this event (no time set) are omitted.
-# Returns up to n entries: { name:String, car_name:String, time_ms:int }. Empty
-# before a rally starts / when no rival has a time for this event.
+# Returns up to n entries: { name:String, car_id:String, car_name:String, time_ms:int }.
+# `car_id` lets the start-line grid spawn each leader's actual car. Empty before a
+# rally starts / when no rival has a time for this event.
 func current_event_leaders(n: int = 3) -> Array:
 	if _event_index < 0:
 		return []
@@ -257,6 +258,7 @@ func current_event_leaders(n: int = 3) -> Array:
 			if t >= 0:
 				rows.append({
 					"name": String(opp.get("name", "Rival")),
+					"car_id": String(opp.get("car_id", "")),
 					"car_name": String(opp.get("car_name", "")),
 					"time_ms": t,
 				})
@@ -281,6 +283,23 @@ func report_wreck() -> void:
 	if _car_instance_id >= 0:
 		Save.wreck_car(_car_instance_id)
 		Save.save()
+	_resolve_results()
+
+
+# DEV: instantly finish the whole rally. Every event (already-run or not) is
+# credited a perfect 0 ms time and the rally resolves STRAIGHT to the podium —
+# skipping the remaining events and the standings interstitials. A combined time
+# of 0 out-runs any rival, so it always places P1 (top-3) and the podium grants
+# the car reward. Surfaced only while a rally is active (settings dev page); the
+# emitted rally_finished routes to the podium exactly like a real finish.
+func dev_complete_rally() -> void:
+	if _phase == Phase.IDLE:
+		return
+	_dnf = false
+	_event_times_ms = []
+	for _i in EVENTS_PER_RALLY:
+		_event_times_ms.append(0)
+	_event_index = EVENTS_PER_RALLY
 	_resolve_results()
 
 
@@ -329,16 +348,8 @@ func opponent_field() -> Array:
 # unlike the derived par which is faster than the whole field. -1 if no classified
 # rival has a time for this event (empty field / before a rally starts).
 func current_event_target_ms() -> int:
-	if _event_index < 0:
-		return -1
-	var best := -1
-	for opp in _opponent_field:
-		var times: Array = opp.get("event_times_ms", [])
-		if _event_index < times.size():
-			var t := int(times[_event_index])
-			if t >= 0 and (best < 0 or t < best):
-				best = t
-	return best
+	var leaders := current_event_leaders(1)
+	return int(leaders[0]["time_ms"]) if not leaders.is_empty() else -1
 
 
 # The rival (if any) who crashed out of the CURRENT event, so the run scene can stage
@@ -353,18 +364,10 @@ func current_event_wreck() -> Dictionary:
 # The car_meta of the opponent posting the fastest non-DNF time for the CURRENT
 # event (the rival the "vs P1" popup tracks). {} if no classified rival has a time.
 func current_event_p1_car() -> Dictionary:
-	if _event_index < 0:
+	var leaders := current_event_leaders(1)
+	if leaders.is_empty():
 		return {}
-	var best := -1
-	var best_id := ""
-	for opp in _opponent_field:
-		var times: Array = opp.get("event_times_ms", [])
-		if _event_index < times.size():
-			var tm := int(times[_event_index])
-			if tm >= 0 and (best < 0 or tm < best):
-				best = tm
-				best_id = String(opp.get("car_id", ""))
-	return CarLibrary.by_id(best_id) if best_id != "" else {}
+	return CarLibrary.by_id(String(leaders[0]["car_id"]))
 
 
 # The most recent rally's finish summary (for the podium scene). {} before any.

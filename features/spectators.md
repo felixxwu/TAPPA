@@ -86,6 +86,16 @@ out and avoid the road when idle).
 **LOD:** only the group within `spectator_active_radius_m` of the car runs
 steering; the other two stand still until the car approaches.
 
+**Sim decimation (perf):** within an active group the per-member steering runs only
+every `spectator_sim_interval`-th physics tick, staggered per group (a phase from the
+crowd centroid) so active groups don't all recompute on the same frame. The delta
+accumulates across skipped ticks (`_sim_accum`) and is integrated in one step, so
+crowd *motion* is unchanged over time — only the update rate is coarser. On-device
+profiling showed the crowd sim was ~2 ms of the physics tick; decimation cuts that
+proportionally. **Knock-over detection runs every tick regardless** (a discrete,
+speed-sensitive event — a cheap per-member distance check split out from the
+decimated steering), so fast cars still topple the crowd on contact.
+
 **Render cull:** the group's single `MultiMeshInstance3D` is anchored at the crowd
 centroid (`_mm_origin`; instance transforms are written relative to it) and carries
 a `visibility_range_end`/fade set to the **shared world-prop render distance**

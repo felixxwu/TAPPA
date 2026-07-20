@@ -8,6 +8,7 @@ extends GutTest
 
 const CAR_SCENE := "res://car.tscn"
 const TOL := 0.05  # metres; props tolerate a couple cm, and geometry drift is ~±0.02
+const CarScript := preload("res://scripts/car.gd")
 
 
 func _floor_at(y: float) -> StaticBody3D:
@@ -158,3 +159,160 @@ func test_rest_height_is_independent_of_mass() -> void:
 		await get_tree().process_frame
 	assert_almost_eq(heights[0], heights[1], 0.02,
 		"settled height is the same for a light and a heavy car (mass-normalised spring)")
+
+
+# --- Ground-conforming prop wheels (settle_wheels_to_ground) ------------------
+
+# Frozen prop conformed to a flat plane via a plain ground callable: every tyre bottom
+# lands exactly on the plane, for a car placed at its analytic rest height above it.
+func test_settle_wheels_to_ground_places_tyre_on_plane() -> void:
+	var y0 := 3.0
+	var prop: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(prop)
+	prop.use_isolated_config()
+	prop.apply_car(0)
+	prop.controls_locked = true
+	prop.freeze = true
+	prop.global_position = Vector3(0, y0 + prop.settled_ride_height(), 0)
+	prop.settle_wheels_to_ground(func(_p: Vector3) -> float: return y0)
+	await get_tree().physics_frame
+	for w in prop.find_children("*", "VehicleWheel3D", false):
+		var visual: Node3D = w.get_node_or_null("Visual")
+		assert_not_null(visual)
+		assert_almost_eq(visual.global_position.y - w.wheel_radius, y0, 0.02,
+			"tyre bottom sits on the ground plane")
+
+
+# Lowering the ground increases droop monotonically until it saturates at the suspension
+# rest length, and never exceeds it — the "lift raises -> wheels extend, capped" behaviour.
+func test_settle_wheels_to_ground_droop_monotonic_and_capped() -> void:
+	var prop: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(prop)
+	prop.use_isolated_config()
+	prop.apply_car(0)
+	prop.controls_locked = true
+	prop.freeze = true
+	prop.global_position = Vector3(0, 10.0, 0)
+	var w0: VehicleWheel3D = prop.find_children("*", "VehicleWheel3D", false)[0]
+	var prev := -1.0
+	var saturated := false
+	for depth in [9.0, 8.0, 7.0, 5.0, 0.0, -50.0]:
+		prop.settle_wheels_to_ground(func(_p: Vector3) -> float: return depth)
+		var droop: float = -w0.get_node("Visual").position.y
+		assert_true(droop >= prev - 0.001, "droop is monotonic non-decreasing as ground drops")
+		assert_true(droop <= w0.wheel_rest_length + 0.001, "droop never exceeds rest length")
+		if is_equal_approx(droop, w0.wheel_rest_length):
+			saturated = true
+		prev = droop
+	assert_true(saturated, "droop saturates at the rest length for far-below ground")
+
+
+# Each wheel follows its own ground height independently.
+func test_settle_wheels_to_ground_tracks_per_wheel() -> void:
+	var prop: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(prop)
+	prop.use_isolated_config()
+	prop.apply_car(0)
+	prop.controls_locked = true
+	prop.freeze = true
+	prop.global_position = Vector3(0, prop.settled_ride_height(), 0)
+	# Small ground step down on the +Z half — stays within droop range so the difference
+	# is visible (a large drop would saturate both axles at max and hide it).
+	prop.settle_wheels_to_ground(func(p: Vector3) -> float: return -0.15 if p.z > 0.0 else 0.0)
+	var droops_pos: Array[float] = []
+	var droops_neg: Array[float] = []
+	for w in prop.find_children("*", "VehicleWheel3D", false):
+		var d: float = -w.get_node("Visual").position.y
+		if w.global_position.z > 0.0:
+			droops_pos.append(d)
+		else:
+			droops_neg.append(d)
+	assert_true(droops_pos.size() > 0 and droops_neg.size() > 0, "wheels on both halves")
+	assert_true(droops_pos.min() > droops_neg.max(),
+		"wheels over lower ground droop more than wheels over higher ground")
+
+
+# Idempotent: two identical calls give the same droop (guards the per-frame lift use).
+func test_settle_wheels_to_ground_is_stable_across_calls() -> void:
+	var prop: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(prop)
+	prop.use_isolated_config()
+	prop.apply_car(0)
+	prop.controls_locked = true
+	prop.freeze = true
+	prop.global_position = Vector3(0, 2.0, 0)
+	var gnd := func(_p: Vector3) -> float: return 0.5
+	prop.settle_wheels_to_ground(gnd)
+	var first: Array[float] = []
+	for w in prop.find_children("*", "VehicleWheel3D", false):
+		first.append(w.get_node("Visual").position.y)
+	prop.settle_wheels_to_ground(gnd)
+	var i := 0
+	for w in prop.find_children("*", "VehicleWheel3D", false):
+		assert_almost_eq(w.get_node("Visual").position.y, first[i], 0.0001, "droop stable across calls")
+		i += 1
+
+
+# Raycast ground source: with a real floor collider under the car, each tyre bottom lands
+# on the floor top.
+func test_ground_raycast_seats_on_floor_collider() -> void:
+	var y0 := 0.0
+	var floor_body := _floor_at(y0)
+	add_child_autofree(floor_body)
+	var prop: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(prop)
+	prop.use_isolated_config()
+	prop.apply_car(0)
+	prop.controls_locked = true
+	prop.freeze = true
+	prop.global_position = Vector3(0, y0 + prop.settled_ride_height(), 0)
+	await get_tree().physics_frame  # let the floor register in the space
+	prop.settle_wheels_to_ground(prop.ground_raycast())
+	await get_tree().physics_frame
+	for w in prop.find_children("*", "VehicleWheel3D", false):
+		assert_almost_eq(w.get_node("Visual").global_position.y - w.wheel_radius, y0, 0.03,
+			"tyre bottom rests on the floor collider via raycast")
+
+
+# Raycast miss (no collider anywhere below): wheels keep the analytic rest droop, they do
+# NOT dangle at full extension.
+func test_ground_raycast_miss_keeps_analytic_droop() -> void:
+	var prop: Variant = load(CAR_SCENE).instantiate()
+	add_child_autofree(prop)
+	prop.use_isolated_config()
+	prop.apply_car(0)
+	prop.controls_locked = true
+	prop.freeze = true
+	prop.global_position = Vector3(0, 500.0, 0)  # nothing beneath
+	await get_tree().physics_frame
+	prop.settle_wheels_to_ground(prop.ground_raycast())
+	for w in prop.find_children("*", "VehicleWheel3D", false):
+		var droop: float = -w.get_node("Visual").position.y
+		assert_true(droop < w.wheel_rest_length - 0.01,
+			"a miss keeps analytic rest droop, not full dangle")
+
+
+# Stiffer suspension -> smaller droop budget (less compression baked into the rest height).
+func test_compression_budget_shrinks_with_stiffness() -> void:
+	var soft := GameConfig.new()
+	soft.suspension_stiffness = 10.0
+	soft.suspension_travel = 0.4
+	var stiff := GameConfig.new()
+	stiff.suspension_stiffness = 20.0
+	stiff.suspension_travel = 0.4
+	assert_true(CarScript.compression_budget(stiff) < CarScript.compression_budget(soft),
+		"a stiffer car has a smaller droop budget")
+
+
+# A shorter-travel rear axle reduces the budget (so the shorter axle can't float).
+func test_compression_budget_reduced_by_short_rear_travel() -> void:
+	var even := GameConfig.new()
+	even.suspension_stiffness = 10.0
+	even.suspension_travel = 0.4
+	var short_rear := GameConfig.new()
+	short_rear.suspension_stiffness = 10.0
+	short_rear.suspension_travel = 0.4
+	short_rear.suspension_travel_front = 0.4
+	short_rear.suspension_travel_rear = 0.3
+	assert_true(CarScript.compression_budget(short_rear) < CarScript.compression_budget(even),
+		"a shorter rear axle shrinks the usable budget")

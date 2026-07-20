@@ -54,6 +54,15 @@ event, or an unresolved car id it's a no-op. Otherwise it builds a named
   car is **seated on the highest point under its footprint** so it can never spawn
   buried, yawed along the road and **skewed** (`opponent_wreck_yaw_skew`) so it reads
   as crashed, not parked.
+  The site search now also **gates candidates on the car's suspension droop budget**
+  (`Car.compression_budget` for the *resolved* wreck car's stiffness/travel): it walks
+  candidate verges nearest-shoulder-first over a widened along-track + lateral search and
+  picks the first whose terrain height spread fits the budget, so **no wheel is left
+  floating over a dip / cliff edge**. If nothing in the widened search fits, it falls back
+  to the flattest and `push_warning`s. Each wheel is then drooped onto the **actual terrain
+  height under it** (`settle_wheels_to_ground` + `terrain.height_at`, see
+  [car-physics.md](car-physics.md) → "Ground-conforming wheels"), so the wreck conforms to
+  uneven ground instead of assuming a flat plane.
   It is placed **at rest and frozen at once** — the ground seat lifted by the car's
   **analytic rest ride height** (`car.gd:settled_ride_height`, see
   [car-physics.md](car-physics.md) → "Static rest pose") so its wheels sit on the

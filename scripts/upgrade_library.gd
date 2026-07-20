@@ -23,7 +23,7 @@ const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
-const SLOTS := ["turbo", "aero", "chassis", "brakes", "drivetrain"]
+const SLOTS := ["turbo", "aero", "weight", "brakes", "drivetrain"]
 
 
 # Each entry is an UpgradeDef. `effect` maps to GameConfig fields applied in
@@ -53,9 +53,22 @@ const UPGRADES: Array[Dictionary] = [
 		"tier": 1, "consumable": false,
 		"effect": {"unlocks_aero_tuning": true, "downforce_front": 3, "downforce_rear": 3},
 	},
+	# The "weight" slot is a p/w lever, not an earn-gated part row. The two BALLAST
+	# options add weight and are `free` (always selectable on every car, never drawn as
+	# a reward — see reward_system) so the player can shed p/w to enter a lower class;
+	# the LIGHTWEIGHT option removes weight and is the one earned reward-pool drop. The
+	# menu shows each as a rounded kg delta off the car's base mass (upgrades_menu).
 	{
-		"id": "weight_reduction", "name": "Weight Reduction", "slot": "chassis",
-		"tier": 1, "consumable": false, "effect": {"mass_mult": 0.90},
+		"id": "ballast_large", "name": "Heavy Ballast", "slot": "weight",
+		"tier": 1, "consumable": false, "free": true, "effect": {"mass_mult": 1.5},
+	},
+	{
+		"id": "ballast_small", "name": "Light Ballast", "slot": "weight",
+		"tier": 1, "consumable": false, "free": true, "effect": {"mass_mult": 1.2},
+	},
+	{
+		"id": "weight_reduction", "name": "Weight Reduction", "slot": "weight",
+		"tier": 1, "consumable": false, "effect": {"mass_mult": 0.80},
 	},
 	{
 		"id": "brake_kit", "name": "Big Brake Kit", "slot": "brakes",
@@ -108,6 +121,12 @@ static func slot_of(id: String) -> String:
 
 static func is_consumable(id: String) -> bool:
 	return bool(by_id(id).get("consumable", false))
+
+
+# A `free` part is always selectable on every car (no earning) and is never drawn as
+# a reward — the ballast weight options. Everything else must be won and fitted first.
+static func is_free(id: String) -> bool:
+	return bool(by_id(id).get("free", false))
 
 
 # The applied upgrades that currently take effect on a car: installed minus the
@@ -240,6 +259,34 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 	if drive_override >= 0:
 		out["drive_mode"] = drive_override
 	return out
+
+
+# The effective meta at the car's MAXIMUM ACHIEVABLE power-to-weight — the ceiling the
+# player can reach for FREE with what's already fitted: (1) engine tune forced to 100%
+# (undo any detune), (2) every installed upgrade enabled (a part toggled off is turned
+# back on), and (3) mass-ADDING ballast dropped (a `free` part the player can always
+# remove, so it never counts against the car's potential). It does NOT fit parts the
+# player hasn't installed. This is the meta a rally's pw_MIN floor is judged against
+# (RallyLibrary.is_eligible's `floor_meta`): a car detuned or ballasted to fit a LOWER
+# rally isn't "too weak" for a higher one if maxing it out clears the floor — the player
+# will always tune up to enter (mirrors how an over-cap car detunes DOWN to duck the
+# ceiling). Pure: builds a fresh owned-car dict, never mutates the input.
+static func max_potential_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
+	if meta.is_empty():
+		return meta
+	var maxed := owned_car.duplicate(true)
+	var tuning: Dictionary = (maxed.get("tuning", {}) as Dictionary).duplicate()
+	tuning["engine_detune"] = 1.0  # full power
+	maxed["tuning"] = tuning
+	maxed["disabled_upgrades"] = []  # enable every installed part...
+	var kept: Array = []
+	for item_id in maxed.get("installed_upgrades", []):
+		# ...except mass-adding ballast (baseline is lighter and always available).
+		if float(by_id(item_id).get("effect", {}).get("mass_mult", 1.0)) > 1.0:
+			continue
+		kept.append(item_id)
+	maxed["installed_upgrades"] = kept
+	return effective_meta(maxed, meta)
 
 
 # --- Tuning gates ------------------------------------------------------------

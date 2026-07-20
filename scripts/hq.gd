@@ -98,28 +98,16 @@ var _view: int = View.EXTERIOR
 var _detail_open := false       # the rally-detail panel is up (a sub-state of TABLE)
 var _selected_rally_id := ""
 var _selected_instance_id := -1
-# The car park serves several jobs. In RALLY mode (the default) it shows the cars
-# eligible for the chosen rally and Start launches the rally. In CHANGE-CAR mode
-# (entered from the tuning lift's "Change Car" button) it shows ALL owned cars and
-# Select swaps the car raised on the lift, returning to the bay. In FREE-ROAM mode
-# (the garage's "Free Roam" button) it shows ALL owned cars and Start launches a
-# session-less drive with the picked car. _carpark_change_mode / _carpark_freeroam_mode
-# (plus the swap / starter flags) pick which.
-var _carpark_change_mode := false
-# car park is picking an engine-swap partner (see _enter_engine_swap).
-var _carpark_swap_mode := false
-# True while the car park is showing the first-run starter picker (preview cars from
-# CarLibrary, not owned cars — the garage is empty). Select grants the first
-# car; see _enter_starter_pick / _confirm_starter.
-var _carpark_starter_mode := false
-# True while the car park is picking a car for a session-less FREE ROAM drive (entered
-# from the garage's "Free Roam" button). It shows ALL owned cars and Start launches
-# free roam with the chosen car (see _enter_free_roam / _start_free_roam).
-var _carpark_freeroam_mode := false
-# On the web build, go fullscreen on the player's first tap (browsers only allow
-# fullscreen from a user gesture). Latched so we request it once. Orientation is
-# locked to landscape via project.godot (display/window/handheld/orientation).
-var _web_fullscreen_done := false
+# The car park serves several jobs, one at a time (never overlapping):
+#   RALLY    (default) — cars eligible for the chosen rally; Start launches the rally.
+#   CHANGE   (tuning lift's "Change Car") — ALL owned cars; Select swaps the raised car.
+#   SWAP     (_enter_engine_swap) — OTHER owned cars; Select picks an engine-swap partner.
+#   STARTER  (first run) — preview cars (garage empty); Select grants the first car.
+#   FREEROAM (garage's "Free Roam") — ALL owned cars; Start launches a session-less drive.
+# One enum instead of four mutually-exclusive booleans: entering a job sets the mode
+# (which inherently clears the others), and every exit/commit/back returns to RALLY.
+enum CarparkMode { RALLY, CHANGE, SWAP, STARTER, FREEROAM }
+var _carpark_mode := CarparkMode.RALLY
 
 # Map-table pan state: drag the table view around (the map can be larger than the
 # screen once zoomed in). _table_pan is the camera's X/Z offset from its base pose;
@@ -140,19 +128,21 @@ var _lineup_drag_accum := Vector2.ZERO
 var _eligible: Array = []
 # instance_id -> the engine-detune fraction that would qualify an over-powered parked
 # car for the chosen rally (RallyLibrary.qualifying_detune). Populated only by the
-# rally car-select lineup (_build_eligible_lineup); for these cars Start becomes an
-# explicit "agree to detune" action (see _show_detune_confirm / _on_start_pressed).
+# rally car-select lineup (_build_eligible_lineup); for these cars Start opens the
+# over-limit prompt that routes to the upgrades menu (_show_over_limit_prompt /
+# _on_start_pressed) rather than launching.
 var _detune_needed: Dictionary = {}
 var _drivetrain_needed: Dictionary = {}
 # Confirm popup shown when Start is pressed on an over-powered car: the car looks
-# eligible in the park; this dialog carries the doesn't-qualify warning and the
-# detune agreement (_show_detune_confirm). Implemented via ConfirmPopup.
-# The car-park "Change Upgrades" popup, opened from the detune prompt as an alternative
+# eligible in the park; this dialog carries the "too powerful" nudge and routes to
+# Change Upgrades (_show_over_limit_prompt). Implemented via ConfirmPopup.
+# The car-park "Change Upgrades" popup, opened from the over-limit prompt as an alternative
 # to detuning: a house-themed overlay on the car CanvasLayer hosting an UpgradesMenu for
 # the focused car (no engine-swap row). Built lazily. _dirty tracks whether any upgrade
 # changed, so closing rebuilds the eligible lineup (see _show/_close_upgrades_popup).
 var _upgrades_popup: Control
 var _upgrades_popup_menu: UpgradesMenu
+var _upgrades_popup_done: Button   # gated by the rally's p/w cap (UpgradesMenu.bind_close_button)
 var _upgrades_popup_dirty := false
 # Tracks the currently open car-park ConfirmPopup (detune confirm), so
 # _carpark_modal_open can detect it without a dedicated visible flag.
@@ -172,6 +162,9 @@ var _markers: Array = []
 # freed with the HQ node on exit-to-race.
 var _car_cache: Dictionary = {}
 var _focus := 0
+# Plays a short engine rev for the focused car each time the lineup selection
+# changes (see _preview_rev). Created lazily on first focus.
+var _preview_audio: CarPreviewAudio = null
 # Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
 # lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
 var _settle_generation := 0
@@ -238,7 +231,15 @@ var _settings_gate := false
 
 var _map_meter: Label           # progress-to-showdown meter on the table HUD
 var _detail_title: Label
-var _detail_body: Label
+var _detail_region: Label        # region tag under the title (muted)
+var _detail_showdown: Label      # gold "SHOWDOWN" chip on the header row
+var _detail_stages: VBoxContainer  # one row per event (index + surface bar + mix text)
+var _detail_combined: Label      # "combined time sets your result" note
+var _detail_restriction: Label   # the eligibility restriction summary
+var _detail_qualify: Label       # "N of M cars qualify" (GREEN / RED / muted)
+var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
+var _detail_record: Label        # best-finish text beside the StarRow
+var _detail_stars: StarRow       # medal row for the player's best finish
 var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
@@ -276,6 +277,7 @@ var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Change 
 # as the garage: hq keeps the index (_hub_focus, read by tests), the cursor the behaviour.
 var _hub_cursor := ButtonCursor.new()
 var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Change Car, 2 = Tune, 3 = Upgrades)
+var _lift_change_car_button: Button  # disabled by _refresh_lift_ui when no other car is owned
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_back_button: Button   # the shared "< Back" on a sub-menu page (TUNE/UPGRADES)
@@ -286,6 +288,15 @@ var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu c
 func _ready() -> void:
 	_ensure_starter()
 	_ensure_selection()
+	# Dev profiling loop: with ?bench=1 in the web URL, boot straight into the
+	# benchmark (skip building HQ we'd immediately discard). Paired with the page's
+	# reload-listener (export_presets head_include) + the LAN collector, this lets a
+	# dev iterate on the phone with no taps: rebuild → page reloads → benchmark runs
+	# → results POST back. Gated on the URL param so it can never ship on by default.
+	if _should_autostart_benchmark():
+		_apply_bench_sweep_config()
+		Benchmark.start()
+		return
 	# Headless (the test runner): build synchronously so tests see a ready HQ after one
 	# frame, with no loading cover. A real display gets the covered build below.
 	if Platform.is_headless():
@@ -309,6 +320,41 @@ func _ready() -> void:
 	# on the title shot rather than a half-built frame.
 	await get_tree().process_frame
 	loading.finish()
+
+
+# True on the web build when the page URL carries ?bench=1 — the dev auto-profiling
+# switch (see _ready). Reads window.location.search via JavaScriptBridge; the page's
+# reload-listener preserves the query string across reloads, so the flag persists
+# through the whole iterate-on-phone loop. Never true off the web build.
+func _should_autostart_benchmark() -> bool:
+	if not OS.has_feature("web") or Platform.is_headless():
+		return false
+	if Benchmark.active:
+		return false  # already in a benchmark session (e.g. Run again) — don't recurse
+	var search := str(JavaScriptBridge.eval("window.location.search", true))
+	return search.find("bench=1") != -1
+
+
+# Dev sweep control: fetch /bench-config from the LAN collector (a synchronous XHR,
+# fine at boot) and disable the benchmark toggles it names before the run starts.
+# Lets a dev drive a toggle sweep remotely — write the file + reload the phone — with
+# no shippable config change. Empty / missing config = full baseline (all on).
+func _apply_bench_sweep_config() -> void:
+	var raw := str(JavaScriptBridge.eval(
+		"(function(){try{var x=new XMLHttpRequest();x.open('GET','/bench-config?t='+Date.now(),false);x.send();return x.responseText;}catch(e){return '';}})()",
+		true))
+	if raw.strip_edges() == "":
+		return
+	var data: Variant = JSON.parse_string(raw)
+	if typeof(data) != TYPE_DICTIONARY:
+		return
+	var disabled: Array = data.get("disabled", [])
+	for t in Benchmark.TOGGLES:
+		var key := String(t["key"])
+		Benchmark.set_option(key, not (key in disabled))
+	# Two-pass spike-diagnosis mode (cold vs warm shader cache), driven from the
+	# sweep config so it's controllable remotely (features/benchmark.md).
+	Benchmark.two_pass = bool(data.get("two_pass", false))
 
 
 # Build the whole HQ (environment, station overlays, map pins, initial title view).
@@ -350,6 +396,8 @@ func _build_hq() -> void:
 	# Only over the title shot (a normal boot); never over the overflow gate.
 	if _should_show_android_app_notice() and _view == View.EXTERIOR:
 		_show_android_app_notice()
+	# Web fullscreen/landscape (the "tap to play" prompt) is handled globally by the
+	# WebFullscreen autoload so it works in every scene, including while driving.
 
 
 # First run no longer auto-grants a car: the player picks their starter (MX-5 vs
@@ -381,7 +429,9 @@ func _bay_center_x(i: int, bays: int) -> float:
 # (RallyFlag) at each rally's normalised map_pos, with a billboarded house-style black
 # box above it holding the rally name and a row of five-pointed stars (1st-place best →
 # 3 gold, 2nd → 2, 3rd → 1, else dim). The flag colour encodes the medal tier; the
-# showdown pin is locked (grey/disabled, non-pickable) until every other rally is done.
+# showdown pin is locked (grey/disabled, non-pickable) until every other rally is done,
+# and any rally whose reveal_after (intra-region reveal order) isn't met yet is locked
+# the same way — a "coming up" hint (see RallyLibrary.rally_revealed).
 func _refresh_map_pins() -> void:
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
 	for c in _pins_root.get_children():
@@ -389,7 +439,6 @@ func _refresh_map_pins() -> void:
 	_pins = []
 	var cfg: GameConfig = Config.data
 	var region_id := _viewed_region_id()
-	var sd_unlocked := RegionLibrary.showdown_unlocked(region_id, Save.profile)
 	# Retexture the map plane to the viewed region's image (default = home map).
 	var img_path := String(RegionLibrary.look_of(region_id).get("map_image", RegionLibrary.DEFAULT_MAP_IMAGE))
 	_map_plane.material_override = PS1Material.unshaded(load(img_path))
@@ -397,7 +446,7 @@ func _refresh_map_pins() -> void:
 	var size: Vector2 = cfg.hq_map_plane_size
 	var top_y := p.y + cfg.hq_table_size.y + 0.02
 	for rally in RegionLibrary.rallies_in(region_id):
-		var pin := _make_pin(rally, sd_unlocked, p, size, top_y)
+		var pin := _make_pin(rally, p, size, top_y)
 		_pins_root.add_child(pin)
 		_pins.append(pin)
 	_update_region_arrows()
@@ -469,9 +518,12 @@ func _set_viewed_region_for_test(i: int) -> void:
 	_refresh_map_pins()
 
 
-func _make_pin(rally: Dictionary, sd_unlocked: bool, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
+func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
 	var rally_id := String(rally["id"])
-	var locked: bool = bool(rally["showdown"]) and not sd_unlocked
+	# Locked = not revealed yet: a showdown before its region's gate opens, OR a
+	# non-showdown rally whose reveal_after (intra-region reveal order) isn't met. A
+	# locked pin renders grey + non-pickable — a "coming up" hint, not enterable.
+	var locked: bool = not RallyLibrary.rally_revealed(rally, Save.profile)
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
 	# map_pos is normalised 0..1; centre the map plane, x→world X, y→world Z.
 	var local := Vector3((mp.x - 0.5) * plane_size.x, 0.0, (mp.y - 0.5) * plane_size.y)
@@ -626,13 +678,19 @@ func _stars_for(rally_id: String) -> int:
 # The eligibility decision for one owned `car` against `rally`, derived in ONE place so
 # the pin-flag check (_has_eligible_car) and the car-park lineup (_build_eligible_lineup)
 # can't drift. Returns {eligible, detune, drivetrain}: `eligible` = whether the car can
-# enter at all; `detune` = the qualifying engine-detune fraction to apply (0.0 = none);
-# `drivetrain` = the drive mode it must switch to (-1 = none). A car may need a switch,
-# a detune, both, or neither.
+# enter at all (in-band); `detune` = the qualifying engine-detune fraction to apply
+# (0.0 = none); `drivetrain` = the drive mode it must switch to (-1 = none). A car may
+# need a switch, a detune, both, or neither. (There is no "underpowered but eligible"
+# state — the p/w band floor makes an under-powered car ineligible outright.)
 func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 	var meta := UpgradeLibrary.effective_meta(car, entry)
-	if RallyLibrary.is_eligible(rally, meta):
+	# The pw_min floor is judged at the car's MAX potential (full tune + kits enabled +
+	# ballast off), so a car detuned/ballasted to fit a lower rally still qualifies for a
+	# higher one it could reach by tuning up. The ceiling stays on the current meta (an
+	# over-cap car detunes DOWN via _qualifying_detune_for).
+	var floor_meta := UpgradeLibrary.max_potential_meta(car, entry)
+	if RallyLibrary.is_eligible(rally, meta, floor_meta):
 		return {"eligible": true, "detune": 0.0, "drivetrain": -1}
 	var target := _switch_target_for(rally, car, meta)
 	var meta_sw := meta
@@ -640,7 +698,7 @@ func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 		meta_sw = meta.duplicate()
 		meta_sw["drive_mode"] = target
 	# Switch alone qualifies?
-	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw):
+	if target >= 0 and RallyLibrary.is_eligible(rally, meta_sw, floor_meta):
 		return {"eligible": true, "detune": 0.0, "drivetrain": target}
 	# Detune (on the switched-or-stock meta) qualifies, possibly stacked with a switch.
 	var frac := _qualifying_detune_for(rally, car, entry, meta_sw, target)
@@ -649,10 +707,33 @@ func _entry_plan(rally: Dictionary, car: Dictionary) -> Dictionary:
 	return {"eligible": false, "detune": 0.0, "drivetrain": -1}
 
 
-# Whether the player owns at least one car eligible to enter `rally` — drives the
-# pin flag's green (raceable) vs grey (no qualifying car) pennant. Mirrors the
-# eligibility filter used to build the car-park lineup (_build_eligible_lineup),
-# including an over-powered car that would qualify if it agreed to a detune.
+# Duplicate `owned` with engine tune forced to 100% (detune undone) — the "full power"
+# base the qualifying-detune prompt scales down from, so it always proposes an absolute
+# slider setting regardless of the car's stored tune. Upgrades / ballast are left as-is
+# (this only touches the tune); for the car's true MAX potential — full tune AND kits
+# enabled AND ballast dropped, used for the pw_min floor check — see
+# UpgradeLibrary.max_potential_meta.
+func _detuned_to_full(owned: Dictionary) -> Dictionary:
+	var full := owned.duplicate(true)
+	var tuning: Dictionary = full.get("tuning", {})
+	tuning["engine_detune"] = 1.0
+	full["tuning"] = tuning
+	return full
+
+
+# effective_meta for `full`, optionally stamping a switched drive_mode on top (so a
+# switch+detune stack is evaluated on the POST-switch mode). Shared meta tail.
+func _meta_with_drive(full: Dictionary, entry: Dictionary, drive_override: int) -> Dictionary:
+	var out := UpgradeLibrary.effective_meta(full, entry)
+	if drive_override >= 0:
+		out["drive_mode"] = drive_override
+	return out
+
+
+# Whether the player owns at least one car that can enter `rally` — drives the pin
+# flag's green (raceable) vs grey (unavailable) pennant. Eligibility is in-band (the
+# band floor is the power floor), so an owned eligible car is by construction
+# adequately powered — there's no separate "underpowered but eligible" case to exclude.
 func _has_eligible_car(rally: Dictionary) -> bool:
 	for car in Save.profile.get("cars", []):
 		if bool(_entry_plan(rally, car)["eligible"]):
@@ -742,6 +823,19 @@ func _station_button(text: String, cb: Callable) -> Button:
 	return b
 
 
+# One title-screen button: FOCUS_ALL (keyboard/gamepad nav), centred, the shared 220-wide
+# pill at `height`, wired to `cb` and parented to `root`. Returns the button.
+func _title_button(root: Control, text: String, height: float, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_ALL
+	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	b.custom_minimum_size = Vector2(220, height)
+	b.pressed.connect(cb)
+	root.add_child(b)
+	return b
+
+
 # A plain Label with `text` and a `font_size` override — the Label.new() + font-size +
 # add-child idiom repeated across the station overlays. Deliberately NOT UITheme.label,
 # which forces a role colour + uppercase (a different look). Any further overrides
@@ -750,6 +844,24 @@ func _label(text: String, size: int) -> Label:
 	var lbl := Label.new()
 	lbl.text = text
 	lbl.add_theme_font_size_override("font_size", size)
+	return lbl
+
+
+# A quiet section heading for the rally-detail card. UITheme.enforce flattens every
+# label to one size + uppercase, so a heading reads as a heading only by its dimmer
+# colour and the grouping/spacing around it — not a larger font.
+func _detail_heading(text: String) -> Label:
+	var lbl := _label(text, 16)
+	lbl.add_theme_color_override("font_color", UITheme.INK_DIM)
+	return lbl
+
+
+# A sidebar Label that wraps to its column width instead of drawing off the panel edge.
+func _detail_wrap_label() -> Label:
+	var lbl := _label("", 16)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.custom_minimum_size = Vector2(1, 0)  # don't let the longest word dictate column width
 	return lbl
 
 
@@ -766,35 +878,13 @@ func _build_title_overlay() -> void:
 	# focus: Start is focused on entry, ui_up/ui_down move between the buttons, ui_accept
 	# fires the focused one. (The 3D stations behind it keep menu_* nav.) Free Roam lives
 	# on the GARAGE action row now, not here (see _build_garage_overlay).
-	var start := Button.new()
-	start.text = "Start"
-	start.focus_mode = Control.FOCUS_ALL
-	start.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	start.custom_minimum_size = Vector2(220, 52)
-	start.pressed.connect(_on_exterior_start)
-	root.add_child(start)
-	_title_start_button = start
-
-	var settings := Button.new()
-	settings.text = "Settings"
-	settings.focus_mode = Control.FOCUS_ALL
-	settings.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	settings.custom_minimum_size = Vector2(220, 44)
-	settings.pressed.connect(func() -> void: _open_settings(false))
-	root.add_child(settings)
-	_title_settings_button = settings
-
+	_title_start_button = _title_button(root, "Start", 52.0, _on_exterior_start)
+	_title_settings_button = _title_button(root, "Settings", 44.0,
+		func() -> void: _open_settings(false))
 	# Exit Game: quit the application. Sits at the bottom of the title list. Skipped on
 	# the web build, where there's no OS process to quit (the tab owns the lifecycle).
 	if not OS.has_feature("web"):
-		var exit := Button.new()
-		exit.text = "Exit Game"
-		exit.focus_mode = Control.FOCUS_ALL
-		exit.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		exit.custom_minimum_size = Vector2(220, 44)
-		exit.pressed.connect(_on_exterior_exit)
-		root.add_child(exit)
-		_title_exit_button = exit
+		_title_exit_button = _title_button(root, "Exit Game", 44.0, _on_exterior_exit)
 
 	# Build version, shown only on the title screen (bottom-right corner). It is
 	# stamped into application/config/version by build_web.sh (0.<git commit count>
@@ -822,7 +912,7 @@ func _build_title_overlay() -> void:
 	# (no on_back — EXTERIOR has no back; the diegetic stations behind keep menu_*).
 	# MenuNav goes inert while _title_layer is hidden, so it never steals input from
 	# the 3D stations. hq re-grabs focus itself on view entry.
-	MenuNav.attach(root, {first = start})
+	MenuNav.attach(root, {first = _title_start_button})
 
 
 # True when the WEB build is running in an Android browser — the one case where the
@@ -949,12 +1039,98 @@ func _build_detail_overlay() -> void:
 	_detail_layer.add_child(bg)
 	_detail_layer.move_child(bg, 0)
 
-	_detail_title = _label("", 30)
-	root.add_child(_detail_title)
+	# Everything below is uppercased + locked to one font size by UITheme.enforce
+	# (via _normalize_menus on each view change), so hierarchy comes from layout,
+	# colour and separators — not font size. Stars are a polygon StarRow, since
+	# Syne Mono has no ★ glyph.
 
-	_detail_body = _label("", 16)
-	_detail_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(_detail_body)
+	# --- Header: title + region on the left, a gold SHOWDOWN chip on the right.
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	root.add_child(header)
+	var titles := VBoxContainer.new()
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(titles)
+	_detail_title = _label("", 30)
+	titles.add_child(_detail_title)
+	_detail_region = _label("", 16)
+	_detail_region.add_theme_color_override("font_color", UITheme.MUTED)
+	titles.add_child(_detail_region)
+	_detail_showdown = _label("SHOWDOWN", 16)
+	_detail_showdown.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_detail_showdown.add_theme_color_override("font_color", UITheme.GOLD)
+	header.add_child(_detail_showdown)
+
+	root.add_child(HSeparator.new())
+
+	# --- Two columns: STAGES (left) | status sidebar (right). Laid out as two halves
+	# ANCHORED to 50% each (not an HBox), so the split is always exactly equal — an HBox
+	# only shares LEFTOVER space by ratio and keeps each column's content-driven minimum
+	# first, which left the wider STAGES side bigger. `cols` is a plain Control that fills
+	# the remaining height; the two halves anchor to its left/right with a centre gutter.
+	const HALF_GUTTER := 16.0
+	var cols := Control.new()
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(cols)
+
+	var left := VBoxContainer.new()
+	left.anchor_left = 0.0
+	left.anchor_right = 0.5
+	left.anchor_top = 0.0
+	left.anchor_bottom = 1.0
+	left.offset_right = -HALF_GUTTER
+	cols.add_child(left)
+	left.add_child(_detail_heading("Stages"))
+	_detail_stages = VBoxContainer.new()
+	_detail_stages.add_theme_constant_override("separation", 8)
+	left.add_child(_detail_stages)
+	_detail_combined = _label("", 16)
+	_detail_combined.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_combined.add_theme_color_override("font_color", UITheme.INK_DIM)
+	left.add_child(_detail_combined)
+
+	# A thin centre divider between the two halves.
+	var divider := ColorRect.new()
+	divider.color = UITheme.INK_DIM
+	divider.anchor_left = 0.5
+	divider.anchor_right = 0.5
+	divider.anchor_top = 0.0
+	divider.anchor_bottom = 1.0
+	divider.offset_left = -1.0
+	divider.offset_right = 1.0
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cols.add_child(divider)
+
+	var right := VBoxContainer.new()
+	right.anchor_left = 0.5
+	right.anchor_right = 1.0
+	right.anchor_top = 0.0
+	right.anchor_bottom = 1.0
+	right.offset_left = HALF_GUTTER
+	right.add_theme_constant_override("separation", 4)
+	cols.add_child(right)
+	right.add_child(_detail_heading("Eligibility"))
+	# All sidebar text wraps within the column so a long restriction / caution can't
+	# draw past the panel edge (Labels don't clip by default).
+	_detail_restriction = _detail_wrap_label()
+	right.add_child(_detail_restriction)
+	_detail_qualify = _detail_wrap_label()
+	right.add_child(_detail_qualify)
+	_detail_adjust = _detail_wrap_label()
+	_detail_adjust.add_theme_color_override("font_color", UITheme.GOLD)
+	right.add_child(_detail_adjust)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 12)
+	right.add_child(gap)
+	right.add_child(_detail_heading("Your record"))
+	var record_row := HBoxContainer.new()
+	record_row.add_theme_constant_override("separation", 10)
+	right.add_child(record_row)
+	_detail_record = _label("", 16)
+	record_row.add_child(_detail_record)
+	_detail_stars = StarRow.new()
+	_detail_stars.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	record_row.add_child(_detail_stars)
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
@@ -1101,6 +1277,7 @@ func _build_lift_overlay() -> void:
 	# Change which car is on the lift: opens the car park to pick a new selected car.
 	var change_car := _station_button("Change Car", _enter_change_car)
 	_lift_hub_controls.add_child(change_car)
+	_lift_change_car_button = change_car
 	# The two menu buttons.
 	var to_tune := _station_button("Tuning", to_tune_cb)
 	_lift_hub_controls.add_child(to_tune)
@@ -1188,8 +1365,8 @@ func _build_car_overlay() -> void:
 	root.add_child(_swap_preview_label)
 
 	# Shown when the focused car can't be entered as-is: wrecked (why + how to fix it).
-	# An over-powered car does NOT warn here — its detune agreement pops as a confirm
-	# dialog on Start instead (_show_detune_confirm), keeping the overlay compact.
+	# An over-powered car does NOT warn here — the over-limit prompt pops as a confirm
+	# dialog on Start instead (_show_over_limit_prompt), keeping the overlay compact.
 	_car_warning_label = _label("", 14)
 	_car_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_car_warning_label.add_theme_color_override("font_color", UITheme.RED)
@@ -1473,7 +1650,6 @@ func _on_exterior_exit() -> void:
 
 
 func _on_exterior_start() -> void:
-	_maybe_enter_web_fullscreen()
 	# First-time players (no starter chosen yet) pick a starter car in the car park;
 	# returning players go straight to the garage.
 	if not bool(Save.profile.get("starter_picked", false)):
@@ -1482,38 +1658,12 @@ func _on_exterior_start() -> void:
 		_go_to(View.GARAGE)
 
 
-# Take the web/mobile build fullscreen on the first user gesture, but ONLY when we're
-# stuck in portrait. Browsers reject fullscreen outside a user-activation context, so
-# this is called from input handlers (the Start button / first tap — see
-# _unhandled_input). Gated to the touch web build so a desktop browser isn't forced
-# fullscreen during dev.
-#
-# Crucial: some embedders (itch.io) already auto-present the game fullscreen in
-# landscape. Re-requesting fullscreen on the canvas there FLIPS it to portrait, so if
-# we're already landscape we leave it alone — there's nothing to fix. We only force
-# fullscreen when the viewport is portrait; the landscape orientation lock then comes
-# from the export's fullscreenchange handler (export_presets head_include).
-func _maybe_enter_web_fullscreen() -> void:
-	if _web_fullscreen_done or not OS.has_feature("web"):
-		return
-	if not (DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force):
-		return
-	_web_fullscreen_done = true
-	var size := DisplayServer.window_get_size()
-	if size.x >= size.y:
-		return  # already landscape (e.g. itch.io's auto-fullscreen) — don't disturb it
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-
-
 # Free Roam: open the car park to pick which owned car to drive. Parks the WHOLE owned
 # collection (like Change Car) and frames the currently-selected car; Start launches
 # free roam with the focused car (see _start_free_roam), Back returns to the garage.
 # Entered from the GARAGE action row's Free Roam button (see _build_garage_overlay).
 func _enter_free_roam() -> void:
-	_carpark_freeroam_mode = true
-	_carpark_change_mode = false
-	_carpark_swap_mode = false
-	_carpark_starter_mode = false
+	_carpark_mode = CarparkMode.FREEROAM
 	_build_lineup(Save.profile.get("cars", []).duplicate())
 	_rally_banner.text = "Free roam — pick your car"
 	_no_eligible_label.visible = false
@@ -1547,7 +1697,7 @@ func _start_free_roam() -> void:
 	# Field this car for the drive, and select it so the lift shows it on return.
 	Save.set_selected_car(_selected_instance_id)
 	RallySession.free_roam_instance_id = _selected_instance_id
-	_carpark_freeroam_mode = false
+	_carpark_mode = CarparkMode.RALLY
 	_clear_lineup()
 	_selected_instance_id = -1
 	_prepare_free_roam()
@@ -1816,26 +1966,88 @@ func _on_rally_pin(rally_id: String) -> void:
 func _show_detail() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	_detail_title.text = String(rally.get("name", "?"))
-	var best := Save.best_placement(_selected_rally_id)
-	var best_line := "Best finish: P%d   (%d / %d stars)" % [best, _stars_for(_selected_rally_id), MAX_STARS] if best > 0 \
-		else "Not yet completed (finish top 3 to earn stars)"
-	var events: Array = rally.get("events", [])
+	var region := String(rally.get("region", ""))
+	_detail_region.text = region  # UITheme.enforce uppercases it
+	_detail_region.visible = region != ""
 	# Difficulty is a hidden tier (it drives reward value, not anything the player
-	# sees) — the eligible-car requirement is the visible gate.
-	var lines: Array[String] = [
-		"Eligible cars: %s" % _restriction_text(rally.get("restriction", {})),
-		"%d events — combined time sets your result." % events.size(),
-	]
-	# Per-event surface mix (gravel vs tarmac), one line each.
+	# sees) — the eligible-car requirement is the visible gate. The showdown chip
+	# replaces the old trailing "THE SHOWDOWN" body line.
+	_detail_showdown.visible = bool(rally.get("showdown", false))
+
+	# --- Stages: one row each — index, a gravel/tarmac bar, and the mix text.
+	for child in _detail_stages.get_children():
+		child.queue_free()
+	var events: Array = rally.get("events", [])
 	for i in events.size():
-		lines.append("  Event %d: %s" % [i + 1, _surface_mix_text(events[i])])
-	lines.append(best_line)
-	if bool(rally.get("showdown", false)):
-		lines.append("THE SHOWDOWN — the final challenge.")
-	_detail_body.text = "\n".join(lines)
+		_detail_stages.add_child(_stage_row(i + 1, events[i]))
+	_detail_combined.text = "Combined time across all stages sets your result."
+
+	# --- Eligibility: restriction + how many of the player's cars can enter.
+	_detail_restriction.text = _restriction_text(rally.get("restriction", {}))
+	var elig := _eligibility_summary(rally, Save.profile.get("cars", []))
+	var total := int(elig["total"])
+	var qualify := int(elig["qualify"])
+	if total == 0:
+		_detail_qualify.text = "No cars owned yet"
+		_detail_qualify.add_theme_color_override("font_color", UITheme.INK_DIM)
+	elif qualify == 0:
+		_detail_qualify.text = "No cars qualify"
+		_detail_qualify.add_theme_color_override("font_color", UITheme.RED)
+	else:
+		_detail_qualify.text = "%d of %d cars qualify" % [qualify, total]
+		_detail_qualify.add_theme_color_override("font_color", UITheme.GREEN)
+	var adjust := int(elig["adjust"])
+	_detail_adjust.visible = adjust > 0
+	_detail_adjust.text = "%d need a tune / swap to fit" % adjust
+
+	# --- Record: best finish + medal stars.
+	var best := Save.best_placement(_selected_rally_id)
+	_detail_record.text = "Best: P%d" % best if best > 0 else "Not yet completed"
+	_detail_stars.setup(_stars_for(_selected_rally_id), MAX_STARS)
+
 	_detail_open = true
 	_view = View.TABLE
 	_update_overlays()
+
+
+# One stage row for the detail card: the stage number, a gravel/tarmac colour bar,
+# and the human-readable surface mix. All three share one line via an HBox.
+func _stage_row(index: int, event: Dictionary) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var num := _label(str(index), 16)
+	num.custom_minimum_size = Vector2(18, 0)
+	row.add_child(num)
+	var mix := _label(_surface_mix_text(event), 16)
+	mix.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mix.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(mix)
+	return row
+
+
+# How many of the player's owned `cars` can enter `rally`, tallied on top of
+# _entry_plan so this agrees exactly with the green/grey map pin (_has_eligible_car)
+# and the car-park lineup — the ONE eligibility decision, never re-derived here.
+# Returns {total, qualify, adjust}: `total` counts owned cars whose model still
+# resolves (a removed model is skipped, not counted); `qualify` = can enter at all
+# (matches the pin); `adjust` = qualify but only after a detune and/or drivetrain
+# switch. `adjust` is a subset of `qualify`.
+func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
+	var total := 0
+	var qualify := 0
+	var adjust := 0
+	for car in cars:
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		if entry.is_empty():
+			continue  # a stale / removed model — not a countable car
+		total += 1
+		var plan := _entry_plan(rally, car)
+		if not bool(plan["eligible"]):
+			continue
+		qualify += 1
+		if float(plan["detune"]) > 0.0 or int(plan["drivetrain"]) >= 0:
+			adjust += 1
+	return {"total": total, "qualify": qualify, "adjust": adjust}
 
 
 func _hide_detail() -> void:
@@ -1868,11 +2080,35 @@ func _lower_lift_car() -> void:
 	_apply_lift_height(true)
 
 
-# World-space Y of the car origin for the lowered / raised pose (above the platform top).
+# The car's CALCULATED body rest location (car.gd settled_ride_height) — how high its
+# body sits above the plane its wheels rest on, settled on its own suspension. This is
+# the LOWERED pose's ride height (a low sports car sits lower than a tall 4x4). Callers
+# only reach the lowered pose with a car raised; the 0.0 guards a null deref and is never
+# used in practice.
+func _lift_car_lowered_height() -> float:
+	return _lift_car.settled_ride_height() if is_instance_valid(_lift_car) else 0.0
+
+
+# World-space Y of the car origin for the lowered / raised pose.
+#   LOWERED — the car rests on the FLOOR (hq_lift_pos.y, the lot's y=0 collision floor)
+#     at its own settled ride height: exactly how it sits parked, wheels on the ground.
+#     NOT measured from the platform top — the beam tucks between the wheels, it does not
+#     hold the car up when down.
+#   RAISED  — the car sits on top of the beam, hq_lift_car_height above the platform top.
 func _lift_car_y(raised: bool) -> float:
 	var cfg: GameConfig = Config.data
-	var top := cfg.hq_lift_pos.y + cfg.hq_lift_size.y
-	return top + (cfg.hq_lift_car_height if raised else cfg.hq_lift_car_lowered_height)
+	if raised:
+		return cfg.hq_lift_pos.y + cfg.hq_lift_platform_size.y + cfg.hq_lift_car_height
+	return cfg.hq_lift_pos.y + _lift_car_lowered_height()
+
+
+# World-space Y of the platform beam's CENTRE. Lowered it rests on the floor; raised it
+# climbs by the SAME delta the car climbs, so the beam stays tucked under the chassis.
+func _lift_platform_y(raised: bool) -> float:
+	var cfg: GameConfig = Config.data
+	var base := cfg.hq_lift_pos.y + cfg.hq_lift_platform_size.y * 0.5
+	var rise := _lift_car_y(true) - _lift_car_y(false)
+	return base + (rise if raised else 0.0)
 
 
 # Move the lift car to its current target height (_lift_raised), tweening unless
@@ -1882,16 +2118,34 @@ func _apply_lift_height(animate: bool) -> void:
 	if not is_instance_valid(_lift_car):
 		return
 	var target := _lift_car_y(_lift_raised)
+	var plat_target := _lift_platform_y(_lift_raised)
+	var plat := _env.lift_platform if _env != null else null
 	if _lift_tween != null and _lift_tween.is_valid():
 		_lift_tween.kill()
 	if not animate or Config.data.hq_lift_raise_time <= 0.0:
 		var p := _lift_car.global_position
 		p.y = target
 		_lift_car.global_position = p
+		_lift_car.settle_wheels_to_ground(_lift_car.ground_raycast())
+		if is_instance_valid(plat):
+			var pp := plat.global_position
+			pp.y = plat_target
+			plat.global_position = pp
 		return
 	_lift_tween = create_tween()
 	_lift_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_lift_tween.tween_property(_lift_car, "global_position:y", target, Config.data.hq_lift_raise_time)
+	# The beam rides up/down with the car (a real 2-post lift), tweened in parallel.
+	if is_instance_valid(plat):
+		_lift_tween.parallel().tween_property(plat, "global_position:y", plat_target, Config.data.hq_lift_raise_time)
+	# Re-droop the wheels each frame as the car's Y animates: they rest on the lot floor
+	# when down and extend to full droop (dangle) as the lift raises. Parallel so it runs
+	# alongside the height tween; guarded in case the car frees mid-tween.
+	_lift_tween.parallel().tween_method(
+		func(_v: float) -> void:
+			if is_instance_valid(_lift_car):
+				_lift_car.settle_wheels_to_ground(_lift_car.ground_raycast()),
+		0.0, 1.0, Config.data.hq_lift_raise_time)
 
 
 # Back out of the bay one level: a sub-menu page returns to the hub; the hub returns
@@ -1962,7 +2216,7 @@ func _refresh_lift_repair_button() -> void:
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(owned.get("hp", 0.0))
-	var kits := int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
+	var kits := _repair_kits_owned()
 	if max_hp > 0.0 and hp >= max_hp:
 		_lift_repair_button.text = "Repair — full health"
 		_lift_repair_button.disabled = true
@@ -2039,6 +2293,13 @@ func _ensure_lift_car() -> void:
 	_lift_car_instance_id = id
 	_lift_car_hash = owned_hash
 	_lift_car = _spawn_lift_car(owned)
+	# Snap the freshly-spawned car (and its beam) to the current target pose. The provisional
+	# spawn height was computed before _lift_car existed; now that it does, _apply_lift_height
+	# re-derives the LOWERED pose from the car's own settled ride height and conforms its
+	# wheels to the platform — a respawn while raised appears already dangling, while lowered,
+	# resting at the car's true rest.
+	if is_instance_valid(_lift_car):
+		_apply_lift_height(false)
 
 
 func _clear_lift_car() -> void:
@@ -2074,9 +2335,7 @@ func _refresh_lift_ui() -> void:
 	# every owned car is wrecked and none is held (also checked on save load).
 	Save.ensure_repair_safety_net()
 	_lift_owned = Save.selected_car()
-	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
-	_lift_car_label.text = "%s\n%s" % [
-		EngineSwap.display_name(entry, _lift_owned), _car_stats_text(_lift_owned, entry)]
+	_refresh_lift_car_label()
 	# Show the hub (car selector + menu buttons) or a sub-menu page from _lift_page.
 	# The car description hides while a sub-menu is open so the centred page has room.
 	_lift_hub_controls.visible = _lift_page == LiftPage.HUB
@@ -2095,6 +2354,10 @@ func _refresh_lift_ui() -> void:
 	_tune_panel.refresh()
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap)
 	_refresh_lift_repair_button()  # reflect the selected car's health / kit count
+	# Change Car has nothing to offer when the selected car is the only one owned, so
+	# disable it (greyed + non-firing); the hub cursor then skips it (ButtonCursor).
+	_lift_change_car_button.disabled = _other_owned_cars(Save.selected_instance_id()).is_empty()
+	_hub_focus = _hub_cursor.settled(_hub_focus)  # nudge off Change Car if it just greyed out
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
@@ -2105,6 +2368,11 @@ func _refresh_lift_ui() -> void:
 func _on_lift_upgrade_changed() -> void:
 	_ensure_lift_car()
 	_lift_owned = Save.selected_car()
+	_refresh_lift_car_label()
+
+
+# Set the lift's car-label to the current owned car's display name + stats line.
+func _refresh_lift_car_label() -> void:
 	var entry := CarLibrary.by_id(String(_lift_owned.get("model_id", "")))
 	_lift_car_label.text = "%s\n%s" % [
 		EngineSwap.display_name(entry, _lift_owned), _car_stats_text(_lift_owned, entry)]
@@ -2157,8 +2425,7 @@ func _show_empty_carpark(message: String) -> void:
 # over-powered car a detune would qualify — see _build_eligible_lineup) and frame
 # the first. With none, show a hint + disable Start.
 func _enter_car_screen() -> void:
-	_carpark_change_mode = false
-	_carpark_freeroam_mode = false
+	_carpark_mode = CarparkMode.RALLY
 	_start_button.text = "Start Rally"
 	_build_eligible_lineup()
 	var rally := RallyLibrary.by_id(_selected_rally_id)
@@ -2182,11 +2449,11 @@ func _enter_car_screen() -> void:
 # Select swaps the raised car; Back returns to the bay (see _on_start_pressed /
 # _car_back). With no other car owned, show a hint + disable Start.
 func _enter_change_car() -> void:
-	_carpark_change_mode = true
-	_carpark_freeroam_mode = false
+	_carpark_mode = CarparkMode.CHANGE
 	# Exclude the car already on the lift (the selected car) — reselecting it would be a
 	# no-op, so only OTHER owned cars are offered (same rule as engine swap).
-	_build_lineup(_change_car_targets(Save.selected_instance_id()))
+	# Change Car offers the OTHER owned cars (reselecting the current one is a no-op).
+	_build_lineup(_other_owned_cars(Save.selected_instance_id()))
 	_rally_banner.text = "Change car"
 	_start_button.text = "Select Car"
 	_view = View.CARPARK
@@ -2200,39 +2467,27 @@ func _enter_change_car() -> void:
 	_focus_changed(true)
 
 
-# Owned cars other than the one currently on the lift — the candidates offered by
-# Change Car (reselecting the current car does nothing, so it's left out).
-func _change_car_targets(current_id: int) -> Array:
-	return _other_owned_cars(current_id)
-
-
 func _car_back() -> void:
 	_clear_lineup()
 	_selected_instance_id = -1
-	if _carpark_starter_mode:
-		_carpark_starter_mode = false
-		_go_to(View.EXTERIOR)
-	elif _carpark_freeroam_mode:
-		_carpark_freeroam_mode = false
-		_go_to(View.GARAGE)
-	elif _carpark_swap_mode:
-		_carpark_swap_mode = false
-		_enter_lift()
-	elif _carpark_change_mode:
-		_carpark_change_mode = false
-		_enter_lift()
-	else:
-		_go_to(View.TABLE)
+	var mode := _carpark_mode
+	_carpark_mode = CarparkMode.RALLY  # leaving the park in every case
+	match mode:
+		CarparkMode.STARTER:
+			_go_to(View.EXTERIOR)
+		CarparkMode.FREEROAM:
+			_go_to(View.GARAGE)
+		CarparkMode.SWAP, CarparkMode.CHANGE:
+			_enter_lift()
+		_:
+			_go_to(View.TABLE)
 
 
 # Open the car park to pick an engine-swap partner: all OTHER owned cars at full
 # health (the current car is excluded — you can't swap with yourself). Confirming a
 # target exchanges engines via Save.swap_engines. See features/engine-swap.md.
 func _enter_engine_swap() -> void:
-	_carpark_swap_mode = true
-	_carpark_change_mode = false
-	_carpark_starter_mode = false
-	_carpark_freeroam_mode = false
+	_carpark_mode = CarparkMode.SWAP
 	_selected_instance_id = -1  # no partner chosen yet; guards _select_swap_target
 	var current_id := Save.selected_instance_id()
 	var targets := _swap_targets(current_id)
@@ -2272,9 +2527,7 @@ func _starter_previews() -> Array:
 # cars — the garage is empty) and let the player choose. Select grants that model as
 # the player's first car (see _confirm_starter); Back returns to the title.
 func _enter_starter_pick() -> void:
-	_carpark_starter_mode = true
-	_carpark_change_mode = false
-	_carpark_freeroam_mode = false
+	_carpark_mode = CarparkMode.STARTER
 	_build_lineup(_starter_previews())
 	_rally_banner.text = "Choose your starter car"
 	_no_eligible_label.visible = false
@@ -2302,7 +2555,7 @@ func _confirm_starter() -> void:
 	Save.save()
 	_clear_lineup()
 	_selected_instance_id = -1
-	_carpark_starter_mode = false
+	_carpark_mode = CarparkMode.RALLY
 	_go_to(View.GARAGE)
 
 
@@ -2347,9 +2600,9 @@ func _evict_unowned_cached_cars() -> void:
 
 
 # Park the owned cars ELIGIBLE for the selected rally (the car-select screen), plus
-# any OVER-POWERED car a detune would fit under the rally's pw_max cap — those park
-# looking eligible, and pressing Start pops an explicit agreement to that detune
-# (_show_detune_confirm / _on_start_pressed).
+# any OVER-POWERED car a detune could fit under the rally's pw_max cap — those park
+# looking eligible, and pressing Start pops the over-limit prompt routing to the
+# upgrades menu (_show_over_limit_prompt / _on_start_pressed).
 func _build_eligible_lineup() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var eligible: Array = []
@@ -2420,14 +2673,7 @@ func _qualifying_drivetrain_for(rally: Dictionary, owned: Dictionary, entry: Dic
 # always proposes an absolute slider setting. `drive_override` stamps a switched
 # drive_mode on top, so a switch+detune stack is evaluated on the POST-switch mode.
 func _full_power_meta(owned: Dictionary, entry: Dictionary, drive_override := -1) -> Dictionary:
-	var full := owned.duplicate(true)
-	var tuning: Dictionary = full.get("tuning", {})
-	tuning["engine_detune"] = 1.0
-	full["tuning"] = tuning
-	var out := UpgradeLibrary.effective_meta(full, entry)
-	if drive_override >= 0:
-		out["drive_mode"] = drive_override
-	return out
+	return _meta_with_drive(_detuned_to_full(owned), entry, drive_override)
 
 
 # Park ALL owned cars for the title screen, so the player's whole collection is on
@@ -2495,6 +2741,15 @@ func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
 			await get_tree().process_frame
 	if generation != _settle_generation:
 		return
+	# Refine the analytic seating: droop each parked car's wheels onto the actual lot
+	# floor via a downward raycast. Runs after a physics frame so newly-added bodies are
+	# visible to the space query; guarded so a rebuild/back-out abandons it cleanly.
+	await get_tree().physics_frame
+	if generation != _settle_generation:
+		return
+	for car in _cars:
+		if is_instance_valid(car):
+			car.settle_wheels_to_ground(car.ground_raycast())
 	emit_signal("lineup_built")
 
 
@@ -2560,17 +2815,11 @@ func _seat_car_at_marker(car: Node, marker: Marker3D) -> void:
 # pool at the scene root) and PROCESS_MODE_ALWAYS (keeps puffing though the car is
 # frozen / process-disabled). Skipped for a healthy car (severity 0 = no smoke).
 func _add_synthetic_smoke(car: Node) -> void:
-	if not Config.data.engine_smoke_enabled:
-		return
+	# Healthy display cars (no misfire severity) don't smoke; the wreck path has no
+	# such gate. The shared attach handles the engine_smoke_enabled check + wiring.
 	if car.get("damage") == null or car.damage.misfire_level(Config.data) <= 0.0:
 		return
-	var smoke := EngineSmoke.new()
-	car.add_child(smoke)
-	# Emits in the car's LOCAL space (see EngineSmoke._puff), so it renders at the
-	# bonnet relative to the car — no top_level. PROCESS_MODE_ALWAYS keeps it puffing
-	# even though the display car is frozen / process-disabled once settled.
-	smoke.process_mode = Node.PROCESS_MODE_ALWAYS
-	smoke.setup_synthetic(car)
+	EngineSmoke.attach_synthetic(car)
 
 
 # Pan the focus to the prev/next eligible car (wrapping). Keyed off _eligible (set
@@ -2590,6 +2839,10 @@ func _focus_changed(snap := false) -> void:
 	var owned: Dictionary = _eligible[_focus]
 	_selected_instance_id = int(owned.get("instance_id", -1))
 	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	# Let the player hear the focused car: rev its (possibly swapped) engine. Fires
+	# on every flick and on the initial lineup show; a new rev cancels the previous.
+	if not entry.is_empty():
+		_preview_rev(EngineSwap.current_engine_id(owned, String(entry.get("engine", ""))))
 	var stats := _car_stats_text(owned, entry)
 	# The same lineup + focus machinery drives both the rally car-select (CARPARK)
 	# and the scrap prompt (OVERFLOW); update whichever overlay is up.
@@ -2603,7 +2856,7 @@ func _focus_changed(snap := false) -> void:
 			display_name, _focus + 1, _eligible.size()]
 		_car_stats_label.text = stats
 		_refresh_swap_preview()
-		if _carpark_swap_mode:
+		if _carpark_mode == CarparkMode.SWAP:
 			# Picking a swap partner: no car is excluded on health; the token cost is
 			# surfaced in the confirm popup, so keep Start enabled and the warning clear.
 			_start_button.disabled = false
@@ -2616,6 +2869,16 @@ func _focus_changed(snap := false) -> void:
 	_move_camera_to(_camera_target_xform(), snap)
 
 
+# Rev the focused car's engine as a short preview (lazily builds the player).
+func _preview_rev(engine_id: String) -> void:
+	if engine_id.is_empty():
+		return
+	if _preview_audio == null:
+		_preview_audio = CarPreviewAudio.new()
+		add_child(_preview_audio)
+	_preview_audio.rev(engine_id)
+
+
 # The two-way power-to-weight preview shown only while picking an engine-swap partner.
 # A swap EXCHANGES engines, so it shows the resulting hp/tonne for the car on the lift
 # (receiving the focused partner's engine) AND the focused partner (receiving the lift
@@ -2623,7 +2886,7 @@ func _focus_changed(snap := false) -> void:
 func _refresh_swap_preview() -> void:
 	if _swap_preview_label == null:
 		return
-	if not _carpark_swap_mode:
+	if _carpark_mode != CarparkMode.SWAP:
 		_swap_preview_label.visible = false
 		_swap_preview_label.text = ""
 		return
@@ -2662,20 +2925,20 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 
 # A wrecked focused car can't be entered: disable Start and explain why, offering a
 # Repair (full restore) when a kit is owned. A healthy car clears all of this — an
-# over-powered car looks eligible here; its detune agreement only surfaces as a
-# confirm popup on Start (_show_detune_confirm).
+# over-powered car looks eligible here; the over-limit prompt only surfaces as a
+# confirm popup on Start (_show_over_limit_prompt).
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Change-car mode just swaps the car on the lift, so a wrecked car is still a valid
 	# pick (it can be repaired in the bay). Never gate Select on damage there; nor when
 	# the focused car isn't wrecked.
-	if _carpark_change_mode or not Save.car_is_wrecked(owned):
+	if _carpark_mode == CarparkMode.CHANGE or not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
 		_car_warning_label.visible = false
 		_car_repair_button.visible = false
 		return
 	_start_button.disabled = true
 	_car_warning_label.visible = true
-	var kits := int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
+	var kits := _repair_kits_owned()
 	if kits > 0:
 		_car_warning_label.text = "Too damaged to enter. Use a Repair Kit to restore it to full health and race."
 		_car_repair_button.visible = true
@@ -2711,14 +2974,14 @@ func _make_carpark_modal(build_body: Callable) -> Control:
 # An over-powered focused car (parked because a detune would duck it under the rally's
 # pw_max cap — _build_eligible_lineup) looks eligible in the car park; pressing Start
 # pops this on-brand modal instead. It offers three left/right-navigable choices —
-# Cancel, Change Upgrades (strip parts to shed power), and Detune to N% (apply the
-# qualifying tune + launch, _on_detune_confirmed).
-func _show_detune_confirm(_owned: Dictionary, frac: float) -> void:
-	var pct := roundi(frac * 100.0)
+# Change Upgrades (open the gated upgrades menu, where detune / ballast / stripping parts
+# brings the car under the cap — the menu won't let them leave until it's eligible) or
+# Cancel. No auto-detune button: the player makes the change themselves and re-presses
+# Start (the fix persists like any garage edit — see todo/detune-min-pw-interaction.md).
+func _show_over_limit_prompt(_owned: Dictionary) -> void:
 	_active_carpark_popup = ConfirmPopup.open(self, "Too powerful",
-		"Detune to %d%% to enter, or change your upgrades." % pct,
-		[ {"label": "Detune to %d%%" % pct, "callback": _on_detune_confirmed},
-		  {"label": "Change Upgrades", "callback": _detune_change_upgrades},
+		"Change your upgrades to get under the power-to-weight limit.",
+		[ {"label": "Change Upgrades", "callback": _detune_change_upgrades},
 		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
 
 
@@ -2739,22 +3002,6 @@ func _detune_change_upgrades() -> void:
 	_show_upgrades_popup(Save.get_car(_selected_instance_id))
 
 
-# The player agreed to the qualifying detune (_show_detune_confirm): apply that
-# engine tune to the car, then continue the normal start flow. The agreement is
-# TEMPORARY, for this rally only — register the current tune (the garage-set
-# value, or the untouched 1.0) with the session so it's restored when the rally
-# ends (RallySession.register_detune_revert; garage-lift detunes stay permanent).
-func _on_detune_confirmed() -> void:
-	var frac: float = _detune_needed.get(_selected_instance_id, -1.0)
-	if frac <= 0.0:
-		return
-	var prior := float(Save.get_car(_selected_instance_id).get("tuning", {}).get("engine_detune", 1.0))
-	RallySession.register_detune_revert(_selected_instance_id, prior)
-	Save.set_engine_detune(_selected_instance_id, frac)
-	_detune_needed.erase(_selected_instance_id)
-	await _proceed_with_start()
-
-
 # Show the upgrades menu over the car-park car-select for the focused car, as an on-brand
 # centred modal. Reuses the UpgradesMenu component with NO engine-swap row (on_swap left
 # invalid — the swap flow would change the HQ view). Nav-wired so it's keyboard/gamepad
@@ -2766,27 +3013,30 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 			vbox.add_child(UITheme.title("Upgrades"))
 			_upgrades_popup_menu = UpgradesMenu.new()
 			vbox.add_child(_upgrades_popup_menu)
-			var done := Button.new()
-			done.text = "Done"
-			done.focus_mode = Control.FOCUS_ALL
-			done.pressed.connect(_close_upgrades_popup)
-			vbox.add_child(done))
+			_upgrades_popup_done = Button.new()
+			_upgrades_popup_done.text = "Done"
+			_upgrades_popup_done.focus_mode = Control.FOCUS_ALL
+			# NOTE: press is wired by bind_close_button below (gated), not here.
+			vbox.add_child(_upgrades_popup_done))
 	_upgrades_popup_dirty = false
 	_upgrades_popup.visible = true
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
 	var pw_limit := float(restriction.get("pw_max", -1.0))
 	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
+	# Gate Done + Esc/back on the rally's p/w cap: over the cap, the button goes red and
+	# neither it nor MenuNav's on_back closes the popup until the player detunes under it.
+	_upgrades_popup_menu.bind_close_button(_upgrades_popup_done, _close_upgrades_popup)
 	UITheme.enforce(_upgrades_popup)
 	MenuNav.attach(_upgrades_popup, {
 		"first": _upgrades_popup_menu.first_control(),
-		"on_back": _close_upgrades_popup,
+		"on_back": _upgrades_popup_menu.request_close,
 	})
 
 
-# A popup upgrade edit: just flag dirty. The UpgradesMenu already updated its own p/w + G
-# stats line (the visible feedback); the parked-car prop + lineup are rebuilt on close so
-# a live rebuild can't steal focus from the popup mid-edit.
+# A popup upgrade edit: just flag dirty. The UpgradesMenu already repainted its own detune
+# label + gated Done button (the visible feedback); the parked-car prop + lineup are rebuilt
+# on close so a live rebuild can't steal focus from the popup mid-edit.
 func _on_popup_upgrade_changed() -> void:
 	_upgrades_popup_dirty = true
 
@@ -2829,19 +3079,11 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
 	var meta := UpgradeLibrary.effective_meta(owned, entry)
 	return "%s | %.2f G | %.0f hp/tonne | %s" % [
-		_drive_text(int(entry.get("drive_mode", -1))),
+		CarLibrary.drive_text(int(entry.get("drive_mode", -1))),
 		CarLibrary.max_lateral_g(meta, Config.data),
 		CarLibrary.power_to_weight(meta) * KW_KG_TO_HP_TONNE,
 		hp_text,
 	]
-
-
-func _drive_text(drive_mode: int) -> String:
-	match drive_mode:
-		CarLibrary.RWD: return "RWD"
-		CarLibrary.AWD: return "AWD"
-		CarLibrary.FWD: return "FWD"
-		_: return "?"
 
 
 # Human-readable summary of a rally's restriction (the detail panel + the car banner).
@@ -2850,7 +3092,7 @@ func _restriction_text(restriction: Dictionary) -> String:
 		return "any car"
 	var parts: Array[String] = []
 	if restriction.has("drive_mode"):
-		parts.append("%s cars" % _drive_text(int(restriction["drive_mode"])))
+		parts.append("%s cars" % CarLibrary.drive_text(int(restriction["drive_mode"])))
 	if restriction.has("country"):
 		parts.append("%s cars" % String(restriction["country"]))
 	if restriction.has("car_type"):
@@ -2859,18 +3101,19 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
-	# A min+max pair reads as a single range ("power-to-weight 300-400 hp/tonne"); a lone
-	# floor or ceiling keeps its >= / <= form. The authored bands are already in hp/tonne
-	# (RallyLibrary converts a car's kW/kg to hp/tonne before comparing), the same unit as
-	# every player-facing p/w readout (the car stats + the detune slider), so display
-	# them straight — no conversion here.
-	if restriction.has("pw_min") and restriction.has("pw_max"):
-		parts.append("power-to-weight %.0f-%.0f hp/tonne" % [
-			float(restriction["pw_min"]), float(restriction["pw_max"])])
-	elif restriction.has("pw_min"):
-		parts.append("power-to-weight >= %.0f hp/tonne" % float(restriction["pw_min"]))
-	elif restriction.has("pw_max"):
+	# The p/w gate is a band: pw_min..pw_max (either edge may be absent). A car must sit
+	# inside it — over pw_max is capped out (detune to duck under), under pw_min is
+	# ineligible. Both edges are authored in hp/tonne (RallyLibrary converts a car's kW/kg
+	# to hp/tonne before comparing), the same unit as every player-facing p/w readout (the
+	# car stats + the detune slider), so display them straight — no conversion here.
+	var has_min: bool = restriction.has("pw_min")
+	var has_max: bool = restriction.has("pw_max")
+	if has_min and has_max:
+		parts.append("power-to-weight %.0f–%.0f hp/tonne" % [float(restriction["pw_min"]), float(restriction["pw_max"])])
+	elif has_max:
 		parts.append("power-to-weight <= %.0f hp/tonne" % float(restriction["pw_max"]))
+	elif has_min:
+		parts.append("power-to-weight >= %.0f hp/tonne" % float(restriction["pw_min"]))
 	return ", ".join(parts)
 
 
@@ -2964,23 +3207,21 @@ func _move_camera_to(xform: Transform3D, snap: bool) -> void:
 # screen with the loading overlay FIRST and let it paint a frame, then do the
 # handoff behind it (the run scene then shows its own loading screen — continuous).
 func _on_start_pressed() -> void:
-	# On first run the same action COMMITS the focused preview as the player's first car.
-	if _carpark_starter_mode:
-		_confirm_starter()
-		return
-	# In engine-swap mode the same action exchanges engines with the focused car.
-	if _carpark_swap_mode:
-		_select_swap_target()
-		return
-	# In change-car mode the same action SELECTS the focused car for the lift and
-	# returns to the bay, rather than launching a rally.
-	if _carpark_change_mode:
-		_select_changed_car()
-		return
-	# In free-roam mode the same action launches free roam with the focused car.
-	if _carpark_freeroam_mode:
-		await _start_free_roam()
-		return
+	# In every non-RALLY mode the same Start button commits that mode's action instead
+	# of launching a rally.
+	match _carpark_mode:
+		CarparkMode.STARTER:  # first run: commit the focused preview as the first car
+			_confirm_starter()
+			return
+		CarparkMode.SWAP:  # exchange engines with the focused car
+			_select_swap_target()
+			return
+		CarparkMode.CHANGE:  # select the focused car for the lift and return to the bay
+			_select_changed_car()
+			return
+		CarparkMode.FREEROAM:  # launch free roam with the focused car
+			await _start_free_roam()
+			return
 	var owned := Save.get_car(_selected_instance_id)
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
@@ -2993,17 +3234,19 @@ func _on_start_pressed() -> void:
 		RallySession.register_drivetrain_revert(_selected_instance_id, prior_dm)
 		Save.set_drivetrain_override(_selected_instance_id, need_dm)
 		_drivetrain_needed.erase(_selected_instance_id)
-	# An over-powered car looks eligible in the park; pressing Start pops the detune
-	# agreement as a confirm dialog instead of an always-on warning label. Only an
-	# explicit OK there applies the tune and fields the car (_on_detune_confirmed).
-	var detune: float = _detune_needed.get(_selected_instance_id, -1.0)
-	if detune > 0.0:
-		_show_detune_confirm(owned, detune)
+	# An over-powered car looks eligible in the park; pressing Start pops a prompt that
+	# routes the player to the upgrades menu to shed power (detune / ballast / strip
+	# parts), rather than launching. _detune_needed marks the over-cap-but-fixable cars.
+	if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
+		_show_over_limit_prompt(owned)
 		return
+	# A car below the class p/w floor is now INELIGIBLE (the floor is judged at the car's
+	# max potential), so it never reaches the car-park lineup — there's no under-powered
+	# start to warn about here anymore (the old soft "Underpowered" prompt is retired).
 	await _proceed_with_start()
 
 
-# The start flow after any detune agreement is settled: the mobile control-scheme
+# The start flow once the car is eligible (any drivetrain switch applied): the mobile control-scheme
 # gate, then the actual handoff.
 func _proceed_with_start() -> void:
 	# On mobile, the player must choose a touch control scheme before their first
@@ -3023,7 +3266,7 @@ func _select_changed_car() -> void:
 		Save.set_selected_car(_selected_instance_id)
 	_clear_lineup()
 	_selected_instance_id = -1
-	_carpark_change_mode = false
+	_carpark_mode = CarparkMode.RALLY
 	_enter_lift()  # a different car is selected — _ensure_lift_car's id/hash key respawns it
 
 
@@ -3042,7 +3285,7 @@ func _commit_engine_swap(current_id: int, partner_id: int) -> void:
 	Save.swap_engines(current_id, partner_id)
 	_clear_lineup()
 	_selected_instance_id = -1
-	_carpark_swap_mode = false
+	_carpark_mode = CarparkMode.RALLY
 	_ensure_lift_car()  # the engine data changed — the hash flips, so the prop respawns
 	_enter_lift()
 
@@ -3110,9 +3353,6 @@ func _begin_rally_start() -> void:
 # --- Menu input (keyboard / gamepad; clicking 3D objects is the primary path) -
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Any first tap/click on the web build is a valid gesture to go fullscreen.
-	if (event is InputEventScreenTouch and event.pressed) or _is_click(event):
-		_maybe_enter_web_fullscreen()
 	match _view:
 		View.EXTERIOR:
 			# The title is a flat button menu (Start / Settings / Exit Game) driven by

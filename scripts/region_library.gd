@@ -14,7 +14,7 @@ const DEFAULT_MAP_IMAGE := "res://textures/map_table.jpg"
 const LOOK_KEYS := [
 	"map_image", "sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
-	"terrain_tint", "terrain_layers",
+	"terrain_tint", "terrain_layers", "tarmac_color", "road_marking_color",
 ]
 
 # The home region's billboard tree (also the fallback when a region authors no
@@ -43,7 +43,9 @@ const REGIONS: Array[Dictionary] = [
 	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
 	# (the smaller "home" profile), so the arid stands read as mostly-olive with a few
 	# ordinary trees mixed in. spawn_bush_mesh = false drops the green 3D ground-cover
-	# bushes entirely (the arid map has no lush undergrowth). Tints inherit home for now.
+	# bushes entirely (the arid map has no lush undergrowth). Terrain tints inherit home
+	# for now, but the tarmac runs quite a bit brighter than home's (sun-bleached
+	# Mediterranean asphalt) and its lane paint is yellow rather than home's off-white.
 	{
 		"id": "greece", "name": "Greece",
 		"map_image": "res://textures/greece.png",
@@ -55,6 +57,8 @@ const REGIONS: Array[Dictionary] = [
 		],
 		"spawn_bush_mesh": false,
 		"gravel_texture": "res://textures/gravel-greece.jpg",
+		"tarmac_color": Color(0.52, 0.50, 0.46),
+		"road_marking_color": Color(0.85, 0.70, 0.16),
 	},
 ]
 

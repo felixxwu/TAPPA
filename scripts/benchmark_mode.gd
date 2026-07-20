@@ -26,7 +26,8 @@ const TRACK_SEED := 90210
 # reproducible end-to-end, not just in its track geometry. Engine._init reads this
 # instead of randomising while `active`, so successive runs stumble identically.
 const RNG_SEED := 90210
-const TRACK_TURN_COUNT := 10   # a short stage — quick to run, still crosses varied terrain
+const TRACK_TURN_COUNT := 30   # a long stage — more varied content to stress; the run is
+                               # time-boxed by BenchmarkRunner.MAX_RUN_SECONDS, not by finishing it
 const NEUTRAL_FRACTION := 0.5  # straightness / forestiness / tarmac mid-point
 
 # The pre-run feature toggles, in the order the Settings page lists them. Each is
@@ -49,6 +50,14 @@ var active := false
 
 # Toggle states, keyed by TOGGLES key. Session-scoped (reset each boot).
 var options: Dictionary = {}
+
+# Dev spike-diagnosis mode: when set (via the ?bench sweep config), the runner
+# drives the stage twice in ONE page load — pass 0 (cold WebGL shader cache), then
+# reset + drive again as pass 1 (warm) WITHOUT a page reload, so the GL context and
+# compiled shaders persist. Comparing the two passes' spikes confirms whether the
+# hitches are first-use shader/texture compilation. `pass_index` is the live pass.
+var two_pass := false
+var pass_index := 0
 
 # The last completed run's summary (BenchmarkStats.summarise output), kept so
 # the results survive the scene while the player reads them / runs again.
@@ -95,6 +104,7 @@ func start() -> void:
 	apply_overrides(Config.data)
 	results = {}
 	active = true
+	pass_index = 0  # two_pass is set by the caller (hq sweep config) before start()
 	# Uncap the frame rate so the run exposes real headroom instead of pinning to
 	# the refresh rate / cfg.target_fps; with the toggle off, (re)apply the saved
 	# pacing so flipping it between runs takes effect. Headless has no window.
@@ -131,7 +141,7 @@ func exit_to_hq() -> void:
 # the restore can never drift apart.
 const _OVERRIDDEN_FIELDS: Array[String] = [
 	"track_seed", "track_turn_count", "track_straightness", "track_forestiness",
-	"track_tarmac_fraction", "target_fps", "target_fps_mobile", "hud_enabled",
+	"track_tarmac_fraction", "target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
 	"vegetation_enabled", "spectators_enabled", "signs_enabled",
 	"distant_terrain_enabled", "road_markings_enabled",
 	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled",
@@ -168,10 +178,11 @@ func apply_overrides(cfg: GameConfig) -> void:
 	if not get_option("full_render_distance"):
 		cfg.tree_render_distance_m *= 0.5
 	if get_option("uncap_fps"):
-		# Zero both caps so world.gd's target_fps_for() picks 0 on every target
-		# (mobile/web read target_fps_mobile, desktop reads target_fps).
+		# Zero all caps so world.gd's target_fps_for() picks 0 on every target
+		# (web reads target_fps_web, native mobile target_fps_mobile, desktop target_fps).
 		cfg.target_fps = 0  # world.gd otherwise re-applies the cap at _ready
 		cfg.target_fps_mobile = 0
+		cfg.target_fps_web = 0
 
 
 # Write the snapshot back, undoing apply_overrides. Safe to call when no

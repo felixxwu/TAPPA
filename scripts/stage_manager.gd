@@ -56,6 +56,13 @@ var _p1_total_ms := 0
 var _split_cursor := 0
 var _split_interval := 5
 
+# Rally pacenote strip (features/hud.md), wired by setup_pacenotes() from world.gd on
+# every run (no P1 rival needed — pacenotes are just track reading). _pace_fracs[i] is
+# the progress fraction (0..1) of turn i's corner entry, ascending. _pace_cursor is the
+# number of corners passed = the current-turn index the HUD strip reads from.
+var _pace_fracs: Array = []
+var _pace_cursor := 0
+
 signal stage_started                            # countdown finished, timer running
 signal finish_reached                           # car crossed the finish (phase -> COMPLETE, before the NEXT button)
 signal stage_completed(elapsed_seconds: float)  # NEXT pressed on the finish panel; post-stage flow begins
@@ -78,7 +85,8 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_hud = hud
 	_hud_can.clear()
 	for m in ["show_countdown", "hide_countdown", "show_elapsed",
-			"show_stage_complete", "show_stage_delta", "show_cut_flash"]:
+			"show_stage_complete", "show_stage_delta", "show_cut_flash",
+			"show_pacenotes"]:
 		_hud_can[m] = _hud != null and _hud.has_method(m)
 	_progress = progress
 	_elapsed = 0.0
@@ -95,6 +103,9 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_turn_time_frac = []
 	_p1_total_ms = 0
 	_split_cursor = 0
+	# Clear pacenotes from a previous arm; world.gd re-wires them via setup_pacenotes().
+	_pace_fracs = []
+	_pace_cursor = 0
 	if staged:
 		# Wait at the start line, fully held; the countdown only arms once StartLine launches.
 		if _car != null:
@@ -147,6 +158,17 @@ func setup_splits(turn_progress: Array, turn_time_frac: Array, p1_total_ms: int)
 	_p1_total_ms = p1_total_ms
 	_split_cursor = 0
 	_split_interval = maxi(1, _cfg().stage_delta_interval_turns)
+
+
+# Wire the HUD pacenote strip: the per-corner progress fractions (0..1) of each turn
+# entry, ascending (from Pacenotes.build + Pacenotes.notes_to_fracs in world.gd). Unlike
+# the pace popup this needs no P1 rival — it's called on every run so the strip shows
+# from the start line. Seeds the strip at the first turn; RUNNING advances it.
+func setup_pacenotes(fracs: Array) -> void:
+	_pace_fracs = fracs
+	_pace_cursor = 0
+	if _hud_can["show_pacenotes"]:
+		_hud.show_pacenotes(0)
 
 
 # Re-anchor track progress to 0% at the car's current (on-the-line) position, so
@@ -211,6 +233,7 @@ func _tick_running(delta: float) -> void:
 	if _hud_can["show_elapsed"]:
 		_hud.show_elapsed(_elapsed)
 	_maybe_show_split()
+	_maybe_advance_pacenotes()
 	# Hold the "GO" flash a moment, then clear it.
 	if _go_flash_left > 0.0:
 		_go_flash_left -= delta
@@ -295,6 +318,24 @@ func _maybe_show_split() -> void:
 	var player_ms := int(round(_elapsed * 1000.0))
 	var p1_est_ms := int(round(_p1_total_ms * float(_turn_time_frac[fire_idx])))
 	_hud.show_stage_delta(player_ms - p1_est_ms)
+
+
+# Advance the pacenote strip: count how many corner entries the car's progress has now
+# passed (monotonic, so each is crossed once) and, when that count changes, tell the
+# HUD the new current-turn index so the strip slides left. The current turn is the
+# first not-yet-passed corner.
+func _maybe_advance_pacenotes() -> void:
+	if _pace_fracs.is_empty() or not _hud_can["show_pacenotes"]:
+		return
+	var frac := 0.0
+	if _progress != null and _progress.has_method("progress_percent"):
+		frac = _progress.progress_percent()
+	var cursor := _pace_cursor
+	while cursor < _pace_fracs.size() and frac >= float(_pace_fracs[cursor]):
+		cursor += 1
+	if cursor != _pace_cursor:
+		_pace_cursor = cursor
+		_hud.show_pacenotes(_pace_cursor)
 
 
 # --- Readouts (for tests / a future rally layer) -----------------------------

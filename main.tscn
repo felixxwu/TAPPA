@@ -154,17 +154,13 @@ theme_override_font_sizes/font_size = 14
 text = "0 rpm"
 
 [node name="ElapsedLabel" type="Label" parent="HUD" unique_id=1044419646]
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -80.0
+offset_left = 8.0
 offset_top = 8.0
-offset_right = 80.0
+offset_right = 108.0
 offset_bottom = 32.0
-grow_horizontal = 2
 theme_override_font_sizes/font_size = 20
 text = "0:00.00"
-horizontal_alignment = 1
+horizontal_alignment = 0
 
 [node name="CountdownLabel" type="Label" parent="HUD" unique_id=1044419647]
 anchors_preset = 15

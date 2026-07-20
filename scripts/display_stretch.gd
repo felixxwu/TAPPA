@@ -70,7 +70,22 @@ func _apply() -> void:
 	var size := window.size
 	if size.x <= 0 or size.y <= 0:
 		return
-	window.content_scale_size = logical_size(size, Config.data.horizontal_stretch)
+	# During a benchmark, render at a LANDSCAPE logical size even if the window is
+	# portrait (phone held upright / rotation locked). The 3D pass then does the
+	# representative landscape pixel count — otherwise a portrait window renders at
+	# ~1/4 the resolution and the benchmark under-measures GPU/fill cost. Visually
+	# squished into the portrait window, but the auto-driven run has no viewer.
+	var effective := benchmark_window_size(size, Benchmark.active)
+	window.content_scale_size = logical_size(effective, Config.data.horizontal_stretch)
+
+
+# The window size to lay the frame out against. Normally the real window; during
+# a benchmark it's forced landscape (wider than tall) so a portrait phone still
+# renders the representative landscape resolution. Pure + static for testing.
+static func benchmark_window_size(size: Vector2i, benchmark_active: bool) -> Vector2i:
+	if benchmark_active and size.y > size.x:
+		return Vector2i(size.y, size.x)  # swap portrait -> landscape
+	return size
 
 
 # The logical (pre-stretch) frame size for a given window size and stretch factor.

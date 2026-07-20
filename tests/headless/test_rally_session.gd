@@ -108,16 +108,17 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 	assert_true(RallySession.current_event_leaders().is_empty(), "idle: no leaders")
 	_start("coastal_sprint")
 	RallySession._opponent_field = [
-		{"name": "A", "car_name": "Fixture AWD", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "B", "car_name": "Fixture Coupe", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
-		{"name": "C", "car_name": "Fixture Hatch", "event_times_ms": [-1, 0, 0], "dnf": true, "combined_ms": -1},
-		{"name": "D", "car_name": "Fixture Roadster", "event_times_ms": [60000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "A", "car_id": "fx_awd", "car_name": "Fixture AWD", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "B", "car_id": "fx_rwd_coupe", "car_name": "Fixture Coupe", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
+		{"name": "C", "car_id": "fx_fwd_hatch", "car_name": "Fixture Hatch", "event_times_ms": [-1, 0, 0], "dnf": true, "combined_ms": -1},
+		{"name": "D", "car_id": "fx_light_rwd", "car_name": "Fixture Roadster", "event_times_ms": [60000, 0, 0], "dnf": false, "combined_ms": 1},
 	]
 	# Event 0: C set no time (-1, omitted). Fastest-first: B 45k, A 50k, D 60k.
 	var leaders := RallySession.current_event_leaders(3)
 	assert_eq(leaders.size(), 3, "the top three rivals for the event are returned")
 	assert_eq(String(leaders[0]["name"]), "B", "the fastest rival leads")
 	assert_eq(String(leaders[0]["car_name"]), "Fixture Coupe", "the leader's car comes through")
+	assert_eq(String(leaders[0]["car_id"]), "fx_rwd_coupe", "the leader's car_id (for the grid) comes through")
 	assert_eq(int(leaders[0]["time_ms"]), 45000, "the leader's event time comes through")
 	assert_eq(String(leaders[2]["name"]), "D", "third fastest is listed third")
 	for e in leaders:
@@ -254,6 +255,33 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 		if e["is_player"]:
 			player = e
 	assert_eq(player["placed"], 2, "the player's standings position matches the placement")
+
+
+# DEV shortcut: dev_complete_rally credits every event a 0 ms time and resolves
+# straight to the podium as a top-3 win, from anywhere mid-rally (here, before a
+# single event has run) — so the settings dev button can hand the player the car.
+func test_dev_complete_rally_wins_immediately_from_mid_rally() -> void:
+	var finish := _capture_finish()
+	_start("shakedown")
+	RallySession._opponent_field = _field([50000, 60000, 70000])
+	# No event has been reported yet; complete the whole rally in one shot.
+	RallySession.dev_complete_rally()
+	var r: Dictionary = finish[0]
+	assert_not_null(r, "rally_finished emitted straight to the podium")
+	assert_eq(r["combined_ms"], 0, "every event is credited a perfect 0 ms time")
+	assert_eq(r["placed"], 1, "a 0 ms combined out-runs the whole field -> P1")
+	assert_true(r["completed"], "a P1 finish completes the rally (top-3)")
+	assert_false(r["dnf"], "not a DNF")
+	assert_true(_save.rally_completed("shakedown"), "completion recorded in the save")
+	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE after finishing")
+
+
+# dev_complete_rally does nothing when no rally is active (the button is hidden in
+# HQ, but the brain must be safe if driven directly).
+func test_dev_complete_rally_is_a_noop_when_idle() -> void:
+	assert_false(RallySession.is_active(), "no rally active to begin with")
+	RallySession.dev_complete_rally()
+	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "stays idle — nothing to complete")
 
 
 func test_between_event_standings_pause_and_leaderboard() -> void:
@@ -477,8 +505,9 @@ func _detune_of(id: int) -> float:
 func test_registered_detune_reverts_to_the_prior_tune_when_the_rally_finishes() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	var id := int(owned["instance_id"])
-	# The garage previously detuned this car to 0.9; the car-park popup then
-	# detunes it further to 0.6 for this rally only (mirrors hq._on_detune_confirmed).
+	# The garage previously detuned this car to 0.9; a caller then registers a further
+	# per-rally detune to 0.6 to be reverted when the rally ends (RallySession's revert
+	# API, exercised directly here regardless of which UI flow registers it).
 	_save.set_engine_detune(id, 0.9)
 	RallySession.register_detune_revert(id, _detune_of(id))
 	_save.set_engine_detune(id, 0.6)

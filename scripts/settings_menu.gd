@@ -169,6 +169,11 @@ func _build() -> void:
 	_dev_page.add_child(_dev_status)
 	_dev_page.add_child(_make_action_button("Wipe all progress", _wipe_progress))
 	_dev_page.add_child(_make_action_button("3-star all rallies (unlock all regions)", _three_star_all_rallies))
+	# Only meaningful mid-rally: instantly finish the whole rally with a perfect time
+	# and jump to the podium (where the top-3 finish grants the car). Hidden in the HQ
+	# settings, where there is no rally to complete.
+	if RallySession.is_active():
+		_dev_page.add_child(_make_action_button("Complete rally (win now)", _complete_rally))
 	_dev_page.add_child(_make_sub("Unlock a car:"))
 	for car in CarLibrary.all():
 		var car_id := String(car["id"])
@@ -499,6 +504,18 @@ func _wipe_progress() -> void:
 	_dev_status.text = "Wiped all progress."
 
 
+# Dev: instantly win the active rally. Unfreeze first (this page is reached from the
+# in-run pause overlay, which paused the tree — mirrors PauseMenu.quit_to_hq) so the
+# podium the resolve routes to isn't left paused, then complete the rally: RallySession
+# fills every event with a 0 ms time, resolves to a P1 finish, and emits rally_finished,
+# which world.gd routes to the podium (where the car reward is granted).
+func _complete_rally() -> void:
+	if not RallySession.is_active():
+		return
+	get_tree().paused = false
+	RallySession.dev_complete_rally()
+
+
 # Dev: 3-star every rally so all regions unlock (regions gate on each region's
 # showdown being completed — see RegionLibrary.unlocked / features/regions.md).
 func _three_star_all_rallies() -> void:
@@ -674,7 +691,7 @@ func _make_volume_row() -> HBoxContainer:
 	music_slider.focus_mode = Control.FOCUS_ALL
 	music_slider.min_value = 0.0
 	music_slider.max_value = 1.0
-	music_slider.step = 0.01
+	music_slider.step = 0.05
 	music_slider.custom_minimum_size = Vector2(220, 24)
 	music_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	music_slider.value = clampf(
