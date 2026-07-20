@@ -72,70 +72,57 @@ func test_over_cap_car_lands_in_adjust_via_detune() -> void:
 	var summary: Dictionary = _hq._eligibility_summary(rally, [_owned("fx_rwd_coupe")])
 	assert_eq(summary["qualify"], 1, "a detune brings it under the cap, so it qualifies")
 	assert_eq(summary["adjust"], 1, "it counts as needing a tune / swap to fit")
-	assert_eq(summary["underpowered"], 0, "a car at the cap isn't underpowered")
 
 
-func test_stock_eligible_but_weak_car_flags_underpowered() -> void:
-	# A ceiling far above the car's power-to-weight: eligible as-is, but well under the
-	# class power recommendation (< 75% of the cap) — a non-blocking underpower warning.
-	var rally := {"restriction": {"pw_max": _pw("fx_light_rwd") * 3.0}}
-	var summary: Dictionary = _hq._eligibility_summary(rally, [_owned("fx_light_rwd")])
-	assert_eq(summary["qualify"], 1, "it's under the cap, so it qualifies stock")
-	assert_eq(summary["adjust"], 0, "no tune or swap was needed")
-	assert_eq(summary["underpowered"], 1, "but it's far below the class power recommendation")
-
-
-func test_entry_plan_flags_a_weak_stock_eligible_car_as_underpowered() -> void:
-	var rally := {"restriction": {"pw_max": _pw("fx_light_rwd") * 3.0}}
-	var plan: Dictionary = _hq._entry_plan(rally, _owned("fx_light_rwd"))
-	assert_true(plan["eligible"], "under the cap, so it can enter")
-	assert_true(plan["underpowered"], "but far under the ceiling — flagged underpowered")
-
-
-func test_entry_plan_detuned_car_is_not_underpowered() -> void:
-	# A detune that just ducks the cap leaves the car near the ceiling, not underpowered.
+func test_entry_plan_over_cap_car_qualifies_via_detune() -> void:
+	# A ceiling just under the car's p/w: eligible only after a detune ducks it under.
 	var rally := {"restriction": {"pw_max": _pw("fx_rwd_coupe") * 0.9}}
 	var plan: Dictionary = _hq._entry_plan(rally, _owned("fx_rwd_coupe"))
 	assert_true(plan["eligible"], "a detune qualifies it")
-	assert_gt(float(plan["detune"]), 0.0, "it needs a detune to fit")
-	assert_false(plan["underpowered"], "detuned to just under the cap isn't underpowered")
+	assert_gt(float(plan["detune"]), 0.0, "it needs a detune to fit under the cap")
 
 
-func test_underpower_is_judged_at_full_potential_not_current_detune() -> void:
-	# The car is strong at full tune; only its CURRENT detune makes it look weak. Since
-	# the player can always tune back to 100%, it must NOT be branded underpowered.
+func test_below_band_floor_is_ineligible() -> void:
+	# A rally whose p/w BAND floor sits above the car's MAX potential: the car is too weak
+	# even fully maxed, so it can't enter (there is no eligible-but-underpowered state).
+	var rally := {"restriction": {"pw_min": _pw("fx_light_rwd") * 3.0}}
+	var plan: Dictionary = _hq._entry_plan(rally, _owned("fx_light_rwd"))
+	assert_false(plan["eligible"], "below the band floor even at max potential → ineligible")
+	var summary: Dictionary = _hq._eligibility_summary(rally, [_owned("fx_light_rwd")])
+	assert_eq(summary["qualify"], 0, "and it's not counted as qualifying")
+
+
+func test_floor_is_judged_at_full_potential_for_a_detuned_car() -> void:
+	# The pw_min FLOOR is judged at the car's MAX potential, so a car currently DETUNED
+	# below the floor is still eligible — the player can tune back up to enter. Floor just
+	# under full pw; at 50% detune the car sits below it, but at full tune it clears it.
 	var full_pw := _pw("fx_rwd_coupe")
-	# Ceiling = 1.2x full pw → recommendation (75%) = 0.9x full pw. At full tune the car
-	# (pw = full_pw) clears it; detuned to 50% (pw = 0.5x) it would fall under.
-	var rally := {"restriction": {"pw_max": full_pw * 1.2}}
+	var rally := {"restriction": {"pw_min": full_pw * 0.9}}
 	var owned := _owned("fx_rwd_coupe", {"engine_detune": 0.5})
 	var plan: Dictionary = _hq._entry_plan(rally, owned)
-	assert_true(plan["eligible"], "under the cap at its current detune, so eligible")
-	assert_false(plan["underpowered"], "judged at full potential (100% tune), not the current detune")
+	assert_true(plan["eligible"],
+		"eligible: max potential (full tune) clears the floor, though the current detune is under it")
 
 
-func test_ballast_does_not_make_a_car_read_underpowered() -> void:
-	# Adding heavy ballast lowers p/w, but the player can always shed it — so a ballasted
-	# car must not be branded underpowered / made ineligible. Underpower is judged at the
-	# car's max achievable p/w (ballast removed), not its current ballasted state.
+func test_floor_is_judged_with_ballast_dropped() -> void:
+	# The floor is judged at max potential, which drops freely-removable ballast — so a
+	# ballasted car below the floor on current stats is still eligible (shed the ballast).
 	var base_pw := _pw("fx_rwd_coupe")  # full tune, no ballast
-	# Cap at the car's base p/w: with ballast it's comfortably under (eligible) and would
-	# look underpowered on current stats; ballast removed it's right at the ceiling.
-	var rally := {"restriction": {"pw_max": base_pw}}
+	var rally := {"restriction": {"pw_min": base_pw * 0.9}}
 	var owned := _owned("fx_rwd_coupe", {}, ["ballast_large"])
 	var plan: Dictionary = _hq._entry_plan(rally, owned)
-	assert_true(plan["eligible"], "ballasted car sits under the cap → eligible")
-	assert_false(plan["underpowered"], "removing the ballast restores power → not underpowered")
+	assert_true(plan["eligible"], "eligible: dropping the removable ballast clears the floor")
 
 
-func test_pin_unavailable_when_only_eligible_cars_are_underpowered() -> void:
-	# _has_eligible_car drives the green (available) vs grey (unavailable) map pin; an
-	# underpowered-only roster must leave the pin unavailable, same as owning no car.
+func test_pin_unavailable_when_the_only_car_is_below_the_band_floor() -> void:
+	# _has_eligible_car drives the green (available) vs grey (unavailable) map pin; a car
+	# below the band floor even at max potential is ineligible, so the pin is unavailable,
+	# same as owning no car.
 	var saved: Array = Save.profile.get("cars", [])
 	Save.profile["cars"] = [_owned("fx_light_rwd")]
-	var weak_rally := {"restriction": {"pw_max": _pw("fx_light_rwd") * 3.0}}
-	assert_false(_hq._has_eligible_car(weak_rally),
-		"an underpowered-only roster leaves the pin unavailable")
+	var high_rally := {"restriction": {"pw_min": _pw("fx_light_rwd") * 3.0}}
+	assert_false(_hq._has_eligible_car(high_rally),
+		"a below-floor-only roster leaves the pin unavailable")
 	assert_true(_hq._has_eligible_car({"restriction": {}}),
 		"the same car makes an open-class rally available")
 	Save.profile["cars"] = saved
