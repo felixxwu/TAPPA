@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Pre-commit hook — keep the committed cache lockfiles fresh and staged.
+#
+# The two lockfiles (data/track_cache.json, data/opponent_cache.json) are
+# precomputed generator output that CI verifies on every push
+# (.github/workflows/deploy.yml -> verify-caches). Forgetting to regenerate +
+# commit them after a seeds/params/physics/version change turns into a red CI.
+# This hook closes that gap:
+#
+#   1. Run the generation-free hash verifiers (fast — seconds, no track build).
+#   2. If both lockfiles are fresh, do nothing and let the commit through.
+#   3. If either is stale, regenerate it (respecting the track -> opponent
+#      dependency) and `git add` the result so it lands in THIS commit.
+#
+# Install once per clone with ./install_hooks.sh (sets core.hooksPath).
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# Resolve the Godot binary the same way the cache_*.sh scripts do. Without Godot
+# we can neither verify nor regenerate — warn and let the commit through (CI is
+# the backstop) rather than blocking contributors who don't have the engine.
+if [[ -z "${GODOT:-}" ]]; then
+  for candidate in \
+    /Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot \
+    /usr/local/bin/godot \
+    /home/deck/tools/godot/Godot_v4.6-stable_linux.x86_64; do
+    if [[ -x "$candidate" ]]; then GODOT="$candidate"; break; fi
+  done
+fi
+if [[ -z "${GODOT:-}" || ! -x "$GODOT" ]]; then
+  echo "pre-commit: Godot not found (set \$GODOT) — skipping cache freshness check." >&2
+  echo "pre-commit: CI will still verify the lockfiles are fresh." >&2
+  exit 0
+fi
+
+# Returns 0 if the given verifier scene reports fresh, non-zero otherwise.
+# Verifiers are generation-free: they recompute a source_hash and compare.
+verify() { "$GODOT" --headless --path . "$1" >/dev/null 2>&1; }
+
+track_stale=0
+opp_stale=0
+verify res://tools/verify_track_cache.tscn || track_stale=1
+verify res://tools/verify_opponent_cache.tscn || opp_stale=1
+
+if [[ "$track_stale" -eq 0 && "$opp_stale" -eq 0 ]]; then
+  exit 0
+fi
+
+echo "pre-commit: cache lockfile(s) stale — regenerating (Godot headless, may take ~1 min)..." >&2
+if [[ "$track_stale" -eq 1 ]]; then
+  # Track shape changed: the opponent field's times are computed over the cached
+  # tracks, so both must be rebuilt, tracks first. cache_all.sh does that in order.
+  ./cache_all.sh
+else
+  # Track cache fresh, only the opponent field is stale — rebuild just that.
+  ./cache_opponents.sh
+fi
+
+git add data/track_cache.json data/opponent_cache.json
+echo "pre-commit: regenerated and staged data/track_cache.json + data/opponent_cache.json." >&2
