@@ -193,6 +193,16 @@ search cost (and its restart/backtrack variability) from both generation sites
   event-key set). CI (`tools/verify_track_cache.tscn`, gating the export jobs) and
   the local suite (`test_track_cache.gd`) recompute and compare it — a forgotten
   regeneration fails fast, without generating any track.
+- **Local safety net (`.githooks/pre-commit`):** a pre-commit hook runs the same
+  generation-free verifiers on every commit; if either lockfile is stale it
+  regenerates (track first, then opponent — or opponent alone when only that one
+  is stale) and `git add`s the result so it lands in the commit, so you never
+  forget and hit the CI check red. Opt in once per clone with `./install_hooks.sh`
+  (sets `core.hooksPath` to `.githooks`). Requires Godot; without it the hook
+  warns and lets the commit through (CI stays the backstop). Note the verifiers
+  only fingerprint *inputs* (seeds/params/version), so cross-platform float
+  rounding can still yield byte differences in the computed times at the same
+  `source_hash` — regenerate on the platform you commit from.
 
 ## Rendering
 
