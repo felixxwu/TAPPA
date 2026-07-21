@@ -66,7 +66,7 @@ result.
 - **`layout_label(engine_id) -> String`** — the engine's `EngineLibrary`
   `layout` uppercased (`"v8"` → `"V8"`); `""` if unknown.
 - **`display_name(entry, owned) -> String`** — the car's name, prefixed with
-  the swapped-in engine's layout when non-stock (e.g. `"V8 Twingo"`); the plain
+  the swapped-in engine's layout when non-stock (e.g. `"V8 Rondel Twist"`); the plain
   name otherwise. Used everywhere an owned car's name is shown (lift, car
   park, HQ stats).
 - **`recompute_mass(m_total, m_stock_engine, m_new_engine) -> float`** — total

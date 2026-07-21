@@ -100,7 +100,7 @@ const FWD := 2
 # (911, Viper, XJS).
 const CARS: Array[Dictionary] = [
 	{
-		"name": "MX-5",  # ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
+		"name": "Miot Roadster",  # parody of the Mazda MX-5. ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 2,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
 		"tire_compound": 0.93,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
@@ -120,7 +120,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/mx5/wheel.png",
 	},
 	{
-		"name": "Focus",  # 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
+		"name": "Fjord Focal",  # parody of the Ford Focus. 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
 		"id": "focus", "country": "US", "car_type": "hatch", "max_hp": 950.0, "reward_tier": 1,
 		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse NA I4, nose-heavy FWD
 		"tire_compound": 0.88,  # economy / touring all-season tyres
@@ -141,7 +141,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/focus/wheel.png",
 	},
 	{
-		"name": "Twingo",  # Mk1 (C06) 1.2 16V: ~950 kg, 75 PS, light FWD city car
+		"name": "Rondel Twist",  # parody of the Renault Twingo (Renault's emblem is a rondel/diamond). Mk1 (C06) 1.2 16V: ~950 kg, 75 PS, light FWD city car
 		"id": "twingo", "country": "FR", "car_type": "hatch", "max_hp": 700.0, "reward_tier": 1,
 		"mass": 950.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
 		"tire_compound": 0.85,  # hard economy tyres, skinny
@@ -161,7 +161,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/twingo/wheel.png",
 	},
 	{
-		"name": "Honda Acty",  # HA4 kei truck: ~780 kg, 656cc mid-engine triple
+		"name": "Honcho Actus",  # parody of the Honda Acty. HA4 kei truck: ~780 kg, 656cc mid-engine triple
 		"id": "acty", "country": "JP", "car_type": "kei", "max_hp": 650.0, "reward_tier": 1,
 		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
 		"tire_compound": 0.8,  # hard commercial tyres, skinny
@@ -182,7 +182,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/acty/wheel.png",
 	},
 	{
-		"name": "Charger R/T",  # '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
+		"name": "Swerve Surger R/T",  # parody of the '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
 		"id": "charger", "country": "US", "car_type": "muscle", "max_hp": 1100.0, "reward_tier": 3,
 		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95,  # touring tyres
@@ -203,7 +203,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/charger/wheel.png",
 	},
 	{
-		"name": "911 Turbo",  # 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
+		"name": "Porker 930 Turbo",  # parody of the Porsche 911 Turbo. 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "max_hp": 950.0, "reward_tier": 3,
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
@@ -222,7 +222,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/911/wheel.png",
 	},
 	{
-		"name": "Dodge Viper RT/10",  # 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
+		"name": "Swerve Serpent RT/10",  # parody of the Dodge Viper RT/10. 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
 		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 1000.0, "reward_tier": 4,
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
 		"tire_compound": 1.15,  # sticky performance tyres (period bias-belted rubber)
@@ -235,7 +235,7 @@ const CARS: Array[Dictionary] = [
 		"suspension_travel": 0.36, "suspension_stiffness": 18.0,  # firm but a touch softer than the later GTS
 	},
 	{
-		"name": "Jaguar XJS",  # 5.3 V12 HE: ~1755 kg, ~295 hp, front V12, RWD GT
+		"name": "Panthera XJS",  # parody of the Jaguar XJS. 5.3 V12 HE: ~1755 kg, ~295 hp, front V12, RWD GT
 		"id": "xjs", "country": "GB", "car_type": "coupe", "max_hp": 1100.0, "reward_tier": 2,
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75,  # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95,  # period touring / GT tyres
