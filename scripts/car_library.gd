@@ -110,7 +110,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.45,
 		"wheel_radius": 0.30, "wheel_width_front": 0.195, "wheel_width_rear": 0.195,  # 195/50R16 square
-		"suspension_travel": 0.42, "suspension_stiffness": 10.0,  # compliant roadster baseline
+		"suspension_travel": 0.32, "suspension_stiffness": 15.0,  # compliant roadster baseline
 		# Renders the authored blender/mx5/mx5.glb body (Car/Mx5Body) instead of the
 		# procedural chassis+cabin boxes; see car.gd apply_car(). Wheels stay
 		# procedural. Only this car carries the flag.
@@ -132,7 +132,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.7,
 		"wheel_radius": 0.31, "wheel_width_front": 0.205, "wheel_width_rear": 0.205,  # 205/55R16 square, FWD
-		"suspension_travel": 0.45, "suspension_stiffness": 9.0,  # compliant compact hatch
+		"suspension_travel": 0.35, "suspension_stiffness": 14.0,  # compliant compact hatch
 		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Focus's own wheel.png.
 		"use_model": true,
@@ -152,7 +152,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
 		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
 		"wheel_radius": 0.28, "wheel_width_front": 0.165, "wheel_width_rear": 0.165,  # 165/65R14 skinny
-		"suspension_travel": 0.4, "suspension_stiffness": 9.0,  # soft, tall city car
+		"suspension_travel": 0.3, "suspension_stiffness": 14.0,  # soft, tall city car
 		# Renders blender/twingo/twingo.glb (Car/TwingoBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Twingo's own wheel.png.
 		"use_model": true,
@@ -173,7 +173,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),
 		"cabin_z": -0.95, "track": 1.21, "wheelbase": 1.90,
 		"wheel_radius": 0.27, "wheel_width_front": 0.145, "wheel_width_rear": 0.145,  # 145R12 kei, very skinny
-		"suspension_travel": 0.40, "suspension_stiffness": 9.0,  # soft, tall little truck
+		"suspension_travel": 0.30, "suspension_stiffness": 13.0,  # soft, tall little truck
 		# Renders blender/acty/acty.glb (Car/ActyBody) with the texture extracted from
 		# the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
@@ -194,7 +194,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
 		"cabin_z": 0.35, "track": 1.6, "wheelbase": 3,
 		"wheel_radius": 0.36, "wheel_width_front": 0.235, "wheel_width_rear": 0.255,  # mild muscle stagger
-		"suspension_travel": 0.42, "suspension_stiffness": 10.0,  # soft, heavy muscle car
+		"suspension_travel": 0.38, "suspension_stiffness": 12.0,  # soft, heavy muscle car
 		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
 		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
@@ -232,7 +232,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
 		"cabin_z": 0.10, "track": 1.60, "wheelbase": 2.44,
 		"wheel_radius": 0.34, "wheel_width_front": 0.275, "wheel_width_rear": 0.335,  # 275/335 stagger
-		"suspension_travel": 0.40, "suspension_stiffness": 15.0,  # firm but a touch softer than the later GTS
+		"suspension_travel": 0.36, "suspension_stiffness": 18.0,  # firm but a touch softer than the later GTS
 	},
 	{
 		"name": "Jaguar XJS",  # 5.3 V12 HE: ~1755 kg, ~295 hp, front V12, RWD GT
@@ -245,7 +245,7 @@ const CARS: Array[Dictionary] = [
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
 		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235,  # 215/235 mild stagger
-		"suspension_travel": 0.35, "suspension_stiffness": 10.0,  # soft long-legged GT
+		"suspension_travel": 0.35, "suspension_stiffness": 14.0,  # soft long-legged GT
 		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
@@ -264,8 +264,8 @@ const CARS: Array[Dictionary] = [
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
 		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.45,
-		"wheel_radius": 0.37, "wheel_width_front": 0.235, "wheel_width_rear": 0.275,  # mild stagger
-		"suspension_travel": 0.45, "suspension_stiffness": 11.0,  # heavy long GT, softer ride
+		"wheel_radius": 0.36, "wheel_width_front": 0.235, "wheel_width_rear": 0.275,  # mild stagger
+		"suspension_travel": 0.37, "suspension_stiffness": 11.0,  # heavy long GT, softer ride
 		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().
 		"use_model": true,
 		"model_node": "TheBeastBody",

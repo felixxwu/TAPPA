@@ -69,8 +69,8 @@ const _IMPACT_FLASH_DECAY := 2.0
 # right and _PACE_DIM_STEP dimmer (down to _PACE_DIM_FLOOR). Passed turns slide left
 # and fade out. _PACE_UPCOMING caps how many upcoming boards show; _PACE_SCROLL_SPEED
 # is the ease rate of the left-slide when a corner is passed.
-const _PACE_ICON := 46.8
-const _PACE_SLOT_W := 57.2
+const _PACE_ICON := 54
+const _PACE_SLOT_W := 66
 const _PACE_TOP := 4.0
 const _PACE_UPCOMING := 3
 const _PACE_SCROLL_SPEED := 8.0
