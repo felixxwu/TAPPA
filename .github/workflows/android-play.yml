@@ -24,7 +24,10 @@ on:
   workflow_dispatch: {}
 
 env:
-  GODOT_VERSION: "4.6"
+  # Pinned to 4.6.3 to match the local editor and guarantee the Android build
+  # template compiles against and targets API level 36 (Android 16) — Google
+  # Play requires target API >= 36 for updates from Aug 31, 2026.
+  GODOT_VERSION: "4.6.3"
   PACKAGE_NAME: tappa.game
   # Play track to publish to:
   #   internal   - internal testing (<=100 testers, instant)
