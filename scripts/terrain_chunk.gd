@@ -46,7 +46,10 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 	var bands: PackedFloat32Array = manager.lod_band_ends()
 	for i in _mesh_instances.size():
 		var mi := _mesh_instances[i]
-		mi.mesh = meshes[i]
+		mi.mesh = meshes[i]                 # may be null for a pruned coarse level
+		mi.visible = meshes[i] != null
+		if meshes[i] == null:
+			continue
 		mi.material_override = manager.chunk_material
 		# Band: level i is visible from the previous band's end out to bands[i],
 		# HARD cutoff (no fade). The dithered visibility-range fade is a Forward+/
@@ -63,11 +66,19 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 		mi.visibility_range_end = end
 		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 
-	var shape := HeightMapShape3D.new()
-	shape.map_width = TerrainManager.SAMPLES
-	shape.map_depth = TerrainManager.SAMPLES
-	shape.map_data = data["heights"]
-	_collision.shape = shape
+	# Collision only when the full-res heightfield is present (full-res chunks). Coarse
+	# chunks are never inside collision_ring (see collision-band classification), so a
+	# missing shape is safe; assert the invariant to catch any drift loudly.
+	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
+	if heights.size() == TerrainManager.SAMPLES * TerrainManager.SAMPLES:
+		var shape := HeightMapShape3D.new()
+		shape.map_width = TerrainManager.SAMPLES
+		shape.map_depth = TerrainManager.SAMPLES
+		shape.map_data = heights
+		_collision.shape = shape
+	else:
+		_collision.shape = null
+		assert(data.get("coarse", false), "chunk without full-res heights must be coarse")
 
 
 # Grow/shrink the pool of per-level MeshInstance3D children to `count`.

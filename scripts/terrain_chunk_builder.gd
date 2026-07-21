@@ -11,7 +11,9 @@ extends RefCounted
 var coord: Vector2i
 
 var _m: TerrainManager
-var _samples: int
+var _stride: int                      # L0 cells per grid cell (1 = full-res)
+var _per_edge_full: int               # SAMPLES - 1 (global cell span of a chunk)
+var _samples: int                     # vertices per edge at this stride
 var _cell_m: float
 var _center: Vector3
 var _half: float
@@ -32,11 +34,13 @@ var _has_cliffs: bool                 # cheap gate: skip cliff lookups when none
 var _cliff_offsets: Dictionary        # captured once (avoids a per-vertex property deref)
 
 
-func _init(manager: TerrainManager, chunk_coord: Vector2i) -> void:
+func _init(manager: TerrainManager, chunk_coord: Vector2i, stride: int = 1) -> void:
 	_m = manager
 	coord = chunk_coord
-	_samples = TerrainManager.SAMPLES
-	_cell_m = TerrainManager.CELL_M
+	_stride = stride
+	_per_edge_full = TerrainManager.SAMPLES - 1
+	_samples = _per_edge_full / stride + 1        # vertices per edge at this stride
+	_cell_m = TerrainManager.CELL_M * stride
 	var chunk_m: float = TerrainManager.CHUNK_M
 	_center = Vector3((coord.x + 0.5) * chunk_m, 0.0, (coord.y + 0.5) * chunk_m)
 	_half = chunk_m / 2.0
@@ -57,20 +61,28 @@ func _init(manager: TerrainManager, chunk_coord: Vector2i) -> void:
 	_lights = PackedColorArray()
 	if _lit:
 		_lights.resize(_count)
-		_ph = PackedFloat32Array(); _ph.resize(_hs * _hs)
+		# The batched pure-height halo is only used by the stride-1 (full-res) path.
+		if _stride == 1:
+			_ph = PackedFloat32Array(); _ph.resize(_hs * _hs)
 
 
 # Run every phase in order: halo rows (lit only), vertex rows, colour rows, uv2 rows.
+# Stride 1 (full-res) uses the batched halo; coarser strides sample each vertex's ±1 m
+# neighbours directly (byte-parity with decimating the full-res grid, far cheaper here).
 func build() -> void:
-	if _lit:
-		for hzi in _hs:
-			_halo_row(hzi)
+	if _stride == 1:
+		if _lit:
+			for hzi in _hs:
+				_halo_row(hzi)
+		for zi in _samples:
+			_vertex_row(zi)
+	else:
+		for zi in _samples:
+			_vertex_row_coarse(zi)
 	for zi in _samples:
-		_vertex_row(zi)
+		_m._vertex_color_row(coord, zi, _lights, _colors, _samples, _stride)
 	for zi in _samples:
-		_m._vertex_color_row(coord, zi, _lights, _colors)
-	for zi in _samples:
-		_m._surface_uv2_row(coord, zi, _uv2s)
+		_m._surface_uv2_row(coord, zi, _uv2s, _samples, _stride)
 
 
 # The finished chunk arrays, in the shape TerrainChunk.apply_data expects. Indices
@@ -98,7 +110,48 @@ func data() -> Dictionary:
 		"uv2s": _uv2s,
 		"indices": indices,
 		"lights": _lights,   # per-vertex baked light (empty when unlit) — served by light_at
+		"grid_n": _samples,  # vertices per edge (SAMPLES for full-res, fewer for coarse)
+		"stride": _stride,   # L0 cells per grid cell (1 = full-res)
 	}
+
+
+# Noise height (+ cliff offset) at a global L0 vertex (gx, gz), in world coords. This
+# is exactly the value the full-res halo/vertex path produces at that vertex, so a
+# coarse build sampling here is byte-identical to decimating the full-res grid.
+func _sampled_height(gx: int, gz: int) -> float:
+	var wx := gx * TerrainManager.CELL_M
+	var wz := gz * TerrainManager.CELL_M
+	var h := TerrainManager._sample_height(_noises, _amplitudes, wx, wz)
+	if _has_cliffs:
+		h += _cliff_offsets.get(Vector2i(gx, gz), 0.0)
+	return h
+
+
+# One vertex row for a coarse (stride > 1) grid: sample height, per-vertex lighting
+# from ±1 m (L0-spacing) neighbours, UV, and the road blend — no halo. Global cell
+# coords step by _stride so shared vertices land exactly on full-res L0 vertices.
+func _vertex_row_coarse(zi: int) -> void:
+	var lz := -_half + zi * _cell_m
+	var wz := _center.z + lz
+	var gz := coord.y * _per_edge_full + zi * _stride
+	for xi in _samples:
+		var lx := -_half + xi * _cell_m
+		var gx := coord.x * _per_edge_full + xi * _stride
+		var idx := zi * _samples + xi
+		var vidx := Vector2i(gx, gz)
+		var h := _sampled_height(gx, gz)
+		if _lit:
+			# Finite-difference normal at ±1 m (L0 spacing) — matches the full-res bake,
+			# neighbours carry noise + cliff exactly as the halo does.
+			_lights[idx] = _m._light_from_neighbours(
+				_sampled_height(gx - 1, gz), _sampled_height(gx + 1, gz),
+				_sampled_height(gx, gz - 1), _sampled_height(gx, gz + 1))
+		# Blend road vertices toward the baked road height by their weight.
+		if _m.road_blend.has(vidx):
+			h = lerpf(h, _m.road_heights[vidx], _m.road_blend[vidx])
+		_heights[idx] = h
+		_vertices[idx] = Vector3(lx, h, lz)
+		_uvs[idx] = Vector2(_center.x + lx, wz) * _tile
 
 
 func _halo_row(hzi: int) -> void:

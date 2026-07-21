@@ -104,8 +104,8 @@ const CARS: Array[Dictionary] = [
 		"id": "mx5", "country": "JP", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 2,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
 		"tire_compound": 0.93,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
-		"brake_bias": 0.25,  # front share of foot-brake torque (50/50 RWD roadster)
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 1000,
+		"brake_bias": 0.3,  # front share of foot-brake torque (50/50 RWD roadster)
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.45,

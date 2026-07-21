@@ -1487,6 +1487,15 @@ var peak_torque_rpm := 4500.0
 ## collision. Farther loaded chunks are render-only, so their heightfield is not a
 ## broadphase entry. 1 = the inner 3×3.
 @export_range(0, 4) var terrain_collision_ring := 1
+## When true, far corridor chunks skip generating the full-res grid at precompute and
+## prebake only the LOD levels their distance from the racing line can ever display.
+## Off = full precompute (every chunk full-res) — useful to A/B the loading cost.
+@export var terrain_precompute_prune_enabled := true
+## Extra reach (metres) added to a chunk's closest-possible camera distance when
+## deciding which LOD levels it can show. Must exceed the largest replay-camera offset
+## from the car (finish-replay roadside/flyby shots ~40 m) so a replay never exposes a
+## pruned level. Larger = more conservative (keeps finer levels farther out).
+@export_range(0.0, 200.0) var terrain_precompute_safety_slack_m := 40.0
 
 
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
@@ -1600,6 +1609,8 @@ func apply_terrain_lod(tm: TerrainManager) -> void:
 	tm.lod_band_ends_m = terrain_lod_bands_m
 	tm.lod_skirt_m = terrain_lod_skirt_m
 	tm.collision_ring = terrain_collision_ring
+	tm.precompute_prune_enabled = terrain_precompute_prune_enabled
+	tm.precompute_safety_slack_m = terrain_precompute_safety_slack_m
 
 
 # Push the Cliffs group onto the terrain manager before bake_track (mirrors

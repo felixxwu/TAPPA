@@ -284,6 +284,15 @@ the loading cover instead of mid-drive:
   single-instance ragdoll mesh) that a static camera can't reproduce; these are
   web-only (the native APK keeps a persistent shader cache) and need on-device GL
   tooling (chrome://inspect) to pin further.
+- **Per-chunk terrain resolution** (`terrain_manager.gd`, behind the loading cover):
+  the corridor precompute classifies each chunk near/far from the racing line and
+  only builds the LOD levels a far chunk can ever display — far chunks skip the full
+  `SAMPLES²` grid + collision entirely, cutting precompute (and cache size) sharply.
+  The on-the-fly runtime chunk build was removed at the same time: a corridor cache
+  miss leaves a **hole** rather than a mid-drive hitch. Tunables:
+  `terrain_precompute_prune_enabled` (master toggle) and
+  `terrain_precompute_safety_slack_m` (extra reach so replay-camera shots never expose
+  a pruned level). See [terrain.md](terrain.md) → per-chunk classification.
 
 ## Performance defaults (inherently low-end)
 

@@ -114,6 +114,15 @@ var ground_color: Color = Color(0.35, 0.35, 0.35)
 var lod_band_ends_m: PackedFloat32Array = PackedFloat32Array([20.0, 45.0, 80.0, 130.0])
 var lod_skirt_m: float = 3.0
 var collision_ring: int = 1
+# When true, far corridor chunks skip the full-res grid and prebake only the LOD
+# levels they can ever display (loading-screen precompute optimisation). Off = full
+# precompute (every chunk full-res). Set from GameConfig.apply_terrain_lod.
+var precompute_prune_enabled: bool = true
+# Extra reach (m) added to a chunk's closest-possible camera distance when deciding
+# which LOD levels to keep. Must exceed the largest replay-camera offset from the car
+# (replay_camera.gd ROADSIDE/FLYBY shots ~40 m) so a replay shot never exposes a
+# pruned level. Errs toward keeping one extra finer level. Set from GameConfig.
+var precompute_safety_slack_m: float = 40.0
 
 # Debug chunk-border overlay (H toggle, debug builds). Lazily created on first use.
 var _border_debug: ChunkBorderDebug = null
@@ -150,6 +159,17 @@ var _noise_cache_valid := false
 # (~0.2 ms node build), and height_at/light_at serve from it (it is the terrain
 # the player actually sees: road flattening included, unlike the raw noise).
 var _chunk_cache: Dictionary = {}
+
+# coord -> {"l_min": int, "full_res": bool}. Populated by corridor_coords, kept across
+# set_corridor's cache clear so _rebuild_loaded reproduces the same near/far split.
+var _corridor_class: Dictionary = {}
+# coord -> true; a real-play cache miss is logged once (crossings re-visit per frame).
+var _logged_misses: Dictionary = {}
+
+# Resolution class for a corridor coord; safe full-res default for unknown coords
+# (editor/tests/on-demand builds never lose detail or collision).
+func chunk_class(coord: Vector2i) -> Dictionary:
+	return _corridor_class.get(coord, {"l_min": 0, "full_res": true})
 # The coords the cache covers, kept so _rebuild_loaded can refill after a
 # terrain-param change (seed/layers) instead of serving stale arrays.
 var _corridor_coords: Array[Vector2i] = []
@@ -290,6 +310,12 @@ func _resolve_bilinear(x: float, z: float) -> bool:
 	var coord := chunk_coord_for(Vector3(x, 0.0, z))
 	if not _chunk_cache.has(coord):
 		return false
+	# Coarse chunks carry no full-res grid — treat as "not covered" so height_at /
+	# light_at fall through to the live noise path (visually identical out there: no
+	# road/cliff bake happens in coarse regions, so the cached value would equal noise).
+	var grid: PackedFloat32Array = _chunk_cache[coord].get("heights", PackedFloat32Array())
+	if grid.size() != SAMPLES * SAMPLES:
+		return false
 	var lx := (x - coord.x * CHUNK_M) / CELL_M
 	var lz := (z - coord.y * CHUNK_M) / CELL_M
 	_bl_coord = coord
@@ -411,11 +437,12 @@ func _vertex_cells(gx: int, gz: int) -> void:
 
 # One row of vertex_colors, written into `out` (shared so the incremental
 # TerrainChunkBuilder can fill the colour array a row per frame).
-func _vertex_color_row(coord: Vector2i, zi: int, lights: PackedColorArray, out: PackedColorArray) -> void:
-	var per_edge := SAMPLES - 1
+func _vertex_color_row(coord: Vector2i, zi: int, lights: PackedColorArray,
+		out: PackedColorArray, n: int = SAMPLES, stride: int = 1) -> void:
+	var full_edge := SAMPLES - 1
 	var has_light := not lights.is_empty()
-	for xi in SAMPLES:
-		_vertex_cells(coord.x * per_edge + xi, coord.y * per_edge + zi)
+	for xi in n:
+		_vertex_cells(coord.x * full_edge + xi * stride, coord.y * full_edge + zi * stride)
 		# Average of the four cells meeting at this vertex.
 		var w: float = (
 			track_weights.get(_vc0, 0.0)
@@ -424,7 +451,7 @@ func _vertex_color_row(coord: Vector2i, zi: int, lights: PackedColorArray, out: 
 			+ track_weights.get(_vc3, 0.0)
 		) / 4.0
 		# RGB = ground tint × baked light; ALPHA = road blend weight.
-		var idx := zi * SAMPLES + xi
+		var idx := zi * n + xi
 		var lgt := lights[idx] if has_light else Color(1, 1, 1)
 		out[idx] = Color(
 			default_cell_color.r * lgt.r,
@@ -450,26 +477,27 @@ func surface_uv2(coord: Vector2i) -> PackedVector2Array:
 
 # One row of surface_uv2, written into `out` (shared so the incremental
 # TerrainChunkBuilder can fill the tarmac-weight array a row per frame).
-func _surface_uv2_row(coord: Vector2i, zi: int, out: PackedVector2Array) -> void:
-	var per_edge := SAMPLES - 1
-	for xi in SAMPLES:
-		_vertex_cells(coord.x * per_edge + xi, coord.y * per_edge + zi)
+func _surface_uv2_row(coord: Vector2i, zi: int, out: PackedVector2Array,
+		n: int = SAMPLES, stride: int = 1) -> void:
+	var full_edge := SAMPLES - 1
+	for xi in n:
+		_vertex_cells(coord.x * full_edge + xi * stride, coord.y * full_edge + zi * stride)
 		# The four cells meeting at this vertex, averaged over only those that are
 		# road/band cells (present in track_surface). Explicit lookups against the
 		# _vc* scratch keys — NOT a `for cell in [...]` literal, which would allocate
 		# an Array + 4 Vector2i per vertex (~800k allocations across the corridor).
 		var sum := 0.0
-		var n := 0
+		var cell_n := 0
 		if track_surface.has(_vc0):
-			sum += track_surface[_vc0]; n += 1
+			sum += track_surface[_vc0]; cell_n += 1
 		if track_surface.has(_vc1):
-			sum += track_surface[_vc1]; n += 1
+			sum += track_surface[_vc1]; cell_n += 1
 		if track_surface.has(_vc2):
-			sum += track_surface[_vc2]; n += 1
+			sum += track_surface[_vc2]; cell_n += 1
 		if track_surface.has(_vc3):
-			sum += track_surface[_vc3]; n += 1
-		var tarmac := sum / float(n) if n > 0 else 0.0
-		out[zi * SAMPLES + xi] = Vector2(tarmac, 0.0)
+			sum += track_surface[_vc3]; cell_n += 1
+		var tarmac := sum / float(cell_n) if cell_n > 0 else 0.0
+		out[zi * n + xi] = Vector2(tarmac, 0.0)
 
 
 # The surface at a world XZ as (road_weight, tarmac_weight), each in [0,1]:
@@ -542,10 +570,40 @@ func target_coords(center: Vector2i) -> Array:
 # invariant this region guarantees depends on that tunable. Straight spans
 # tessellate to just their endpoints, so each polyline segment is sub-sampled
 # at half a chunk so no interior chunk is skipped.
+# The corridor dilation margin (chunks) — RADIUS render ring + leash overshoot + 1
+# frame-safety buffer. Collision band mirrors it so the two can't drift (see below).
+func _corridor_margin(leash_m: float) -> int:
+	return RADIUS + int(ceil(leash_m / CHUNK_M)) + 1
+
+# Chebyshev chunk radius from the centerline within which a chunk can ever enter
+# collision_ring of the focus (car). Same +1 leash-overshoot slop as the corridor
+# margin — any chunk inside this band MUST be full-res (it may carry collision).
+func _collision_band_chunks(leash_m: float) -> int:
+	return collision_ring + int(ceil(leash_m / CHUNK_M)) + 1
+
+# Classify one chunk by its nearest distance to the centerline. `l_min` is the finest
+# LOD level index the chunk's closest-possible camera distance can ever select
+# (count of band-ends <= that distance). `full_res` is true when the chunk is inside
+# the collision band OR can display the finest level (l_min == 0). `band_chunks` is
+# accepted for caller symmetry; the collision decision is passed in as `in_collision_band`.
+func _classify_chunk(min_dist_m: float, leash_m: float, band_chunks: int,
+		in_collision_band: bool) -> Dictionary:
+	var closest_cam := maxf(0.0, min_dist_m - leash_m - precompute_safety_slack_m)
+	var l_min := 0
+	for e in lod_band_ends_m:
+		if e <= closest_cam:
+			l_min += 1
+	var full_res := in_collision_band or l_min == 0
+	return {"l_min": l_min, "full_res": full_res}
+
+
 func corridor_coords(centerline: Curve2D, leash_m: float) -> Array[Vector2i]:
-	var margin := RADIUS + int(ceil(leash_m / CHUNK_M)) + 1
+	var margin := _corridor_margin(leash_m)
+	var band_chunks := _collision_band_chunks(leash_m)
 	var seen: Dictionary = {}
 	var out: Array[Vector2i] = []
+	var min_dist: Dictionary = {}        # coord -> nearest centerline-sample distance (m)
+	var centre_chunks: Dictionary = {}   # coord -> true for a chunk a sample sits in
 	var poly := centerline.tessellate()
 	for i in range(1, poly.size()):
 		var a := poly[i - 1]
@@ -555,12 +613,31 @@ func corridor_coords(centerline: Curve2D, leash_m: float) -> Array[Vector2i]:
 			var t := float(s) / float(steps) if steps > 0 else 0.0
 			var p := a.lerp(b, t)
 			var c := chunk_coord_for(Vector3(p.x, 0.0, p.y))
+			centre_chunks[c] = true
 			for dz in range(-margin, margin + 1):
 				for dx in range(-margin, margin + 1):
 					var cc := c + Vector2i(dx, dz)
 					if not seen.has(cc):
 						seen[cc] = true
 						out.append(cc)
+					# Nearest distance from this chunk's CENTRE to the sample p.
+					var centre := Vector2((cc.x + 0.5) * CHUNK_M, (cc.y + 0.5) * CHUNK_M)
+					var d := centre.distance_to(p)
+					if not min_dist.has(cc) or d < min_dist[cc]:
+						min_dist[cc] = d
+	# Classify: subtract the chunk half-diagonal to get a conservative nearest-point
+	# distance; a chunk is in the collision band if it's within band_chunks (Chebyshev)
+	# of any chunk a centerline sample sits in.
+	var half_diag := CHUNK_M * sqrt(2.0) / 2.0
+	_corridor_class = {}
+	for cc in out:
+		var near_pt := maxf(0.0, min_dist[cc] - half_diag)
+		var in_coll := false
+		for centre_c in centre_chunks:
+			if maxi(absi(cc.x - centre_c.x), absi(cc.y - centre_c.y)) <= band_chunks:
+				in_coll = true
+				break
+		_corridor_class[cc] = _classify_chunk(near_pt, leash_m, band_chunks, in_coll)
 	return out
 
 
@@ -568,7 +645,10 @@ func corridor_coords(centerline: Curve2D, leash_m: float) -> Array[Vector2i]:
 # batches the fills with frame awaits so the loading bar paints).
 func set_corridor(coords: Array[Vector2i]) -> void:
 	_corridor_coords = coords
+	# _corridor_class is owned by corridor_coords and intentionally NOT cleared here:
+	# it must survive the cache clear so _rebuild_loaded reproduces the near/far split.
 	_chunk_cache.clear()
+	_logged_misses.clear()
 
 
 # The coords the current corridor covers (empty when no precompute has run).
@@ -583,10 +663,22 @@ func lod_band_ends() -> PackedFloat32Array:
 
 
 func cache_chunk(coord: Vector2i) -> void:
+	var cls := chunk_class(coord)
+	if precompute_prune_enabled and not cls["full_res"]:
+		# Coarse: build only the LOD levels this chunk can ever display, each sampled
+		# directly at its own stride. No full-res grid, no collision, no cache-backed
+		# height/light queries (those fall through to noise for this coord).
+		_chunk_cache[coord] = {
+			"center": Vector3((coord.x + 0.5) * CHUNK_M, 0.0, (coord.y + 0.5) * CHUNK_M),
+			"lod_meshes": TerrainLod.build_levels_from(self, coord, cls["l_min"], lod_skirt_m),
+			"coarse": true,
+		}
+		return
 	var data := compute_chunk_data(coord)
 	# Prebake the decimated LOD display meshes at load (behind the loading screen),
 	# so runtime chunk spawns are a cheap node build + mesh assign, not a mesh build.
 	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m)
+	data["coarse"] = false
 	_chunk_cache[coord] = data
 
 
@@ -1156,9 +1248,11 @@ func _reconcile(center: Vector2i) -> void:
 		elif _chunk_cache.is_empty():
 			# Editor / tests / pre-precompute: silent on-demand build.
 			_spawn_chunk(coord, compute_chunk_data(coord))
-		else:
-			push_error("terrain cache miss at %s — corridor region/leash invariant broke" % coord)
-			_spawn_chunk(coord, compute_chunk_data(coord))
+		elif not _logged_misses.has(coord):
+			# Real-play corridor miss: prefer a HOLE over a mid-drive build hitch.
+			# Spawn nothing; log once per coord (crossings re-visit the same coord).
+			_logged_misses[coord] = true
+			push_error("terrain cache miss at %s — corridor region/leash invariant broke (leaving a hole)" % coord)
 	# Collision only on the near band: chunks within `collision_ring` of the focus
 	# carry live collision, farther loaded (render-only) chunks disable theirs.
 	for coord in _chunks:

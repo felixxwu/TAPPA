@@ -86,19 +86,17 @@ func test_ring_spawns_from_cache_without_recompute() -> void:
 	assert_eq(m.loaded_coords().size(), ring * ring, "full ring spawned synchronously from cache")
 
 
-func test_cache_miss_with_populated_cache_still_produces_ground() -> void:
+func test_cache_miss_with_populated_cache_spawns_no_chunk() -> void:
 	var m := _make_manager()
 	m.precompute_corridor(_straight_centerline(), 25.0)
-	# Teleport far outside the corridor: every ring coord misses. The manager
-	# must push_error (loud dev signal) but STILL build ground synchronously —
-	# a mis-tuned leash gives a slow frame, not a hole.
+	# Teleport far outside the corridor: every ring coord misses. Prefer a HOLE over a
+	# mid-drive build hitch — the manager spawns nothing and logs each miss once.
 	m.update_focus(Vector3(5000, 0, 5000))
-	var ring: int = 2 * ManagerScript.RADIUS + 1
-	assert_eq(m.loaded_coords().size(), ring * ring, "ring built via fallback on cache miss")
-	# GUT fails a test on unexpected push_error calls; declare the per-missing-
-	# coord push_error as expected so it doesn't fail the test — the assertion
-	# above (ground still built) is the behaviour actually under test.
-	assert_push_error_count(ring * ring, "one push_error per cache-missed ring coord")
+	assert_eq(m.loaded_coords().size(), 0, "cache miss spawns no chunk (hole, not hitch)")
+	# Re-crossing the same missing region must not re-log (once per coord).
+	m.update_focus(Vector3(5050, 0, 5000))
+	assert_push_error_count(m._logged_misses.size(),
+		"each missing coord logged at most once")
 
 
 func test_empty_cache_builds_on_demand_without_error() -> void:

@@ -89,6 +89,35 @@ Key methods:
   change). `corridor_bounds()` is the world-XZ AABB of the cached coords —
   `world.gd` dilates it for the static `DistantTerrain` backdrop.
 
+- **Per-chunk resolution classification** (`corridor_coords` → `_classify_chunk`,
+  `chunk_class(coord)`). As the corridor is built, each chunk is classed
+  **full-res** or **coarse** by its nearest distance to the centerline (stored in
+  `_corridor_class`, which survives `set_corridor`'s cache clear so `_rebuild_loaded`
+  reproduces the split):
+  - `full-res` — the chunk is inside the **collision band** (`_collision_band_chunks`
+    = `collision_ring + ceil(leash/CHUNK) + 1`, sharing the corridor margin's `+1`
+    leash-overshoot slop via the same derivation) **or** its closest-possible camera
+    distance (`min_dist − leash − precompute_safety_slack_m`) can reach the finest LOD
+    (`l_min == 0`). It gets the full `SAMPLES²` grid + all 5 LOD meshes + collision —
+    exactly as before.
+  - `coarse` — `cache_chunk` builds ONLY LOD levels `l_min..last` via
+    `TerrainLod.build_levels_from`, each sampled directly at its own stride
+    (`TerrainChunkBuilder(manager, coord, stride)`). No full-res grid, no collision,
+    no cache-backed height/light (see below). This is the loading-screen precompute
+    optimisation — the majority of corridor chunks are coarse. Toggle with
+    `precompute_prune_enabled` (GameConfig).
+  - The coarse cache entry carries only `{center, lod_meshes (nulls < l_min), coarse}`.
+    `_resolve_bilinear` treats a coord with no full-res `heights` as "not covered", so
+    `height_at`/`light_at` fall through to the live noise/`_bake_light` path there
+    (visually identical: no road/cliff bake happens in coarse regions). `apply_data`
+    builds the `HeightMapShape3D` only when full-res heights are present and asserts a
+    grid-less chunk is `coarse` (the collision-band rule guarantees no coarse chunk
+    ever enters `collision_ring`).
+  - A **real-play cache miss** in `_reconcile` (cache populated, coord absent) now
+    leaves a **hole** — it spawns nothing and logs once per coord (`_logged_misses`) —
+    rather than building on the fly (holes over hitches). The empty-cache editor/test
+    path still builds on demand.
+
 ## TerrainChunk
 
 One tile, created at runtime by the manager. Positioned at its chunk **centre**
@@ -108,6 +137,9 @@ exactly the tile.
   (never a decimated level), and is **enabled only on the near band** —
   `set_collision_enabled` is toggled by the manager so only chunks within
   `collision_ring` (Chebyshev, in chunks) of the car are live broadphase entries.
+  `coarse` chunks (see per-chunk classification below) carry **no** heightfield at
+  all — they can never enter `collision_ring`, so `apply_data` leaves their shape
+  null; a grid-less chunk that is not `coarse` trips an assert.
 
 ### Terrain LOD (`scripts/terrain_lod.gd`)
 
@@ -131,6 +163,19 @@ at load** in `cache_chunk` (`TerrainLod.build_all`), so runtime chunk spawns sta
 a cheap node build + mesh assign. All tunables live in `GameConfig`
 (`apply_terrain_lod`); `TerrainLod` is pure/static and headless-tested
 (`tests/headless/test_terrain_lod.gd`).
+
+**Far chunks prebake fewer levels.** A chunk more than ~`leash + band` from the
+racing line can never be viewed at the finer LOD levels (the car stays within the
+off-track leash), so `cache_chunk` prunes them for `coarse` chunks: only levels
+`l_min..last` are built, each sampled at its own stride by a strided
+`TerrainChunkBuilder` (`TerrainLod.build_levels_from` → `mesh_from_grid`) instead of
+decimating a full-res grid that was never generated. Because every channel (height,
+UV, colour, tarmac, and lighting via ±1 m neighbour samples that include the cliff
+offset) is a pure function of global coordinates, a strided build is bit-identical to
+decimating the full-res grid — seams with full-res neighbours still match. See
+`docs/superpowers/specs/2026-07-21-per-chunk-terrain-resolution-design.md` and the
+per-chunk classification under **TerrainManager**; tests in
+`tests/headless/test_terrain_resolution.gd`.
 
 **Debug overlay:** press **H** (`toggle_debug_arrows`, the shared debug key, debug
 builds only) to toggle a Minecraft-style chunk-border grid

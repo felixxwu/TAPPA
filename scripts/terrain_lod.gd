@@ -91,6 +91,61 @@ static func build_all(data: Dictionary, skirt_m: float) -> Array:
 	return out
 
 
+# Mesh an n×n grid (data["grid_n"]) as one surface, stride 1, with a downward skirt.
+# Used for COARSE chunks whose grid was already generated at the target stride, so
+# there is nothing to decimate — the grid IS the level.
+static func mesh_from_grid(data: Dictionary, skirt_m: float) -> ArrayMesh:
+	var n: int = data["grid_n"]
+	# Copy so the skirt append doesn't mutate the cached grid arrays.
+	var verts: PackedVector3Array = (data["vertices"] as PackedVector3Array).duplicate()
+	var uvs: PackedVector2Array = (data["uvs"] as PackedVector2Array).duplicate()
+	var colors: PackedColorArray = (data["colors"] as PackedColorArray).duplicate()
+	var has_uv2: bool = data.has("uv2s") and not (data["uv2s"] as PackedVector2Array).is_empty()
+	var uv2s: PackedVector2Array = (data["uv2s"] as PackedVector2Array).duplicate() if has_uv2 else PackedVector2Array()
+
+	var indices := PackedInt32Array()
+	for zi in n - 1:
+		for xi in n - 1:
+			var a := zi * n + xi
+			var b := a + 1
+			var c := a + n
+			var d := c + 1
+			indices.append_array([a, b, c, b, d, c])
+
+	if skirt_m > 0.0:
+		_add_skirt(verts, uvs, colors, uv2s, indices, n, has_uv2, skirt_m)
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
+	if has_uv2:
+		arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+# LOD meshes for a COARSE chunk: null for pruned fine levels (< l_min); for l_min..last,
+# generate that level's grid at its own stride and mesh it. No full-res grid is built,
+# so the expensive per-vertex work is confined to the few coarse vertices the chunk
+# can actually display.
+static func build_levels_from(manager: TerrainManager, coord: Vector2i, l_min: int,
+		skirt_m: float) -> Array:
+	var out: Array = []
+	out.resize(LOD_STRIDES.size())
+	for i in LOD_STRIDES.size():
+		if i < l_min:
+			out[i] = null
+			continue
+		var b := TerrainChunkBuilder.new(manager, coord, LOD_STRIDES[i])
+		b.build()
+		out[i] = mesh_from_grid(b.data(), skirt_m)
+	return out
+
+
 # Append a downward skirt around the n×n grid perimeter: for each edge vertex,
 # add a copy pushed down by skirt_m, then stitch consecutive edge/skirt pairs into
 # quads. The skirt reuses the edge vertex's UV/colour so it shades like the ground.
