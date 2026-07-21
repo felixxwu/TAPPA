@@ -156,6 +156,42 @@ the road around lakes.
   the other shape inputs, the same `runoff_m` is passed when deriving opponent
   target times (it can change which final corner is chosen).
 
+## Turn cache (`TrackCache`)
+
+The DFS search is deterministic per `TrackGenParams`, so every shipped rally
+event's turn layout is **precomputed once** and committed as a lockfile —
+`data/track_cache.json` — instead of being searched at runtime. This removes the
+search cost (and its restart/backtrack variability) from both generation sites
+(`world.gd._generate_track` and the 3×-per-rally opponent-time derivation in
+`rally_session.gd._generate_event_tracks`). Design:
+`docs/superpowers/specs/2026-07-21-track-turn-cache-design.md`.
+
+- **What's stored:** per entry, the ordered `pieces` (`corner`, `flip`, `straight`,
+  `entry_pos`, `entry_heading`) — NOT `cells` (rebuilt on load to keep the file
+  small). Keyed by `TrackGenParams.cache_key`, a string over the authored shape
+  determinants (seed, turn_count, width, straightness, water, …) plus a terrain-layer
+  fingerprint and `TrackCache.CACHE_VERSION`. `origin` (derived, platform-float
+  sensitive) is deliberately excluded from the key.
+- **Rebuild (no search):** `TrackGenerator.rebuild_from_pieces` replays
+  `_build_candidate` + `_collide_and_cells` per piece against an accumulating
+  `occupied` dict — reproducing the identical `centerline`, per-piece `cells`
+  (which `TreeScatter.turn_anchor` consumes), `cells` union, and `runoff`. Faithful
+  because `_build_candidate` is pure geometry; guarded by `test_track_cache.gd`.
+- **Boundary:** `TrackGenerator.generate_cached(params, cfg, …)` → `TrackCache.lookup`.
+  Hit returns the rebuilt track synchronously; miss warns (editor) or errors
+  (exported build) and falls back to live `generate` — never crashes, since the CI
+  check is the real coverage guarantee. Only the rally `for_event` path is cached;
+  free-roam (`for_config`) always generates live.
+- **Regenerate:** `./cache_tracks.sh` runs the generator scene
+  (`tools/generate_track_cache.tscn` → `tools/generate_track_cache.gd`), ~55 s for
+  ~40 events. **Bump `TrackCache.CACHE_VERSION`** (and regenerate) whenever a
+  generator constant or `CornerLibrary.CORNERS` shape changes — otherwise a stale
+  cache would replay pieces the search never re-validated.
+- **Validation:** the lockfile stores a `source_hash` (SHA-256 of the sorted
+  event-key set). CI (`tools/verify_track_cache.tscn`, gating the export jobs) and
+  the local suite (`test_track_cache.gd`) recompute and compare it — a forgotten
+  regeneration fails fast, without generating any track.
+
 ## Rendering
 
 The track is drawn into the terrain, not as extra geometry: the terrain nodes
@@ -266,6 +302,13 @@ per seed, exact corner count, start at the spawn frame, no cell overlap between
 pieces, G1 continuity at joins, both L/R flips appearing across seeds, and the
 finish runoff (zero `runoff_m` reports no segment; a positive runoff's footprint
 never overlaps the placed track beyond the join buffer).
+
+`tests/headless/test_track_cache.gd` — the turn cache: `cache_key` is stable,
+input-sensitive, and origin-independent; `rebuild_from_pieces` reproduces a live
+`generate` byte-for-byte (centerline + per-piece/union cells); `TrackCache.lookup`
+misses to `{}` and hits rebuild; `generate_cached` falls back to live on a miss;
+`canonical_event_config` applies event overrides onto a fresh base; and the
+committed `data/track_cache.json` covers every event with a matching `source_hash`.
 
 `tests/headless/test_road_markings.gd` — `RoadMarkings.build()` against a straight
 curve + stub terrain: paint appears on tarmac and not on gravel, the disabled flag

@@ -165,6 +165,19 @@ The placeholder HQ calls
 it (standings / podium / reward-reveal staging, `standings_ready` etc.) is the
 deferred full menus build — RallySession already emits the signals it hooks.
 
+## Opponent target times (turn cache)
+
+`_generate_event_tracks` derives each event's opponent times from its generated
+track. It now resolves params through `RallySession.canonical_event_config(event)`
+(a fresh authored-base config with the event's overrides applied) and generates via
+`TrackGenerator.generate_cached`, so the times come from the committed turn lockfile
+(`data/track_cache.json`) instead of running the DFS 3× per rally. Using
+`canonical_event_config` also fixes a prior desync: the old code read the shared
+`Config.data` *without* the per-event terrain overrides, so terrain-override events
+could derive times against a different shape than the run scene generated. See
+[track.md](track.md) → *Turn cache* and
+`docs/superpowers/specs/2026-07-21-track-turn-cache-design.md`.
+
 ## Tests
 
 `tests/headless/test_rally_session.gd` — happy path + placement, the per-rally

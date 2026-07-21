@@ -170,6 +170,106 @@ static func generate(params: TrackGenParams, on_progress: Callable = Callable(),
 	return best_partial
 
 
+# Cache-aware entry point used by the run scene and target-time derivation. On a
+# lockfile hit, returns the rebuilt track synchronously (no search, no frame yields).
+# On a miss it live-generates: a warning in the editor/tests, a loud error in an
+# exported build (assert() is stripped from release templates, so we never crash the
+# player — the CI lockfile check is the real coverage guarantee). Only the rally
+# for_event path should call this; free-roam (for_config) calls generate() directly.
+static func generate_cached(params: TrackGenParams, cfg: GameConfig,
+		on_progress: Callable = Callable(), should_abort: Callable = Callable()) -> Dictionary:
+	var hit := TrackCache.lookup(params, cfg)
+	# A hit must rebuild to a COMPLETE track; an incomplete rebuild means the cached
+	# pieces don't match the current generator/library (stale entry) — fall through to
+	# a live search rather than driving a truncated track.
+	if not hit.is_empty() and hit.get("complete", false):
+		return hit
+	var key := TrackCache.key_for(params, cfg)
+	if OS.has_feature("editor"):
+		push_warning("TrackCache miss (%s) — generating live" % key)
+	else:
+		push_error("TrackCache miss in exported build (%s) — generating live; regenerate the lockfile (./cache_tracks.sh)" % key)
+	return await generate(params, on_progress, should_abort)
+
+
+# Rebuild the full generate() result from a committed `pieces` sequence WITHOUT the
+# DFS search. Replays _build_candidate + _collide_and_cells in order against an
+# accumulating `occupied` dict, mirroring _search's commit block exactly — so the
+# centerline, per-piece `cells`, the `cells` union, and `runoff` are all identical to
+# a live run. No RNG, no backtracking: a valid committed sequence cannot collide.
+# Each input piece needs { corner: String, flip: bool, straight: float }.
+static func rebuild_from_pieces(pieces_in: Array, params: TrackGenParams) -> Dictionary:
+	var coll_width := params.width + 2.0 * params.clearance
+	var corners := _turn_corners()
+	var name_to_index: Dictionary = {}
+	for i in corners.size():
+		name_to_index[corners[i]["name"]] = i
+	# Same lead-in reservation generate() builds (empty when not staged).
+	var reserved: Dictionary = {}
+	if params.reserve_behind > 0.0:
+		var back := params.origin - params.heading.normalized() * params.reserve_behind
+		reserved = rasterize_cells(PackedVector2Array([params.origin, back]), coll_width)
+	var world_points: Array = [[params.origin, Vector2.ZERO, Vector2.ZERO]]
+	var occupied: Dictionary = {}
+	var pieces: Array = []
+	var runoff_result: Dictionary = {}
+	var frame_pos := params.origin
+	var frame_heading := params.heading.normalized()
+	for p in pieces_in:
+		# A corner name not in the current library means the cache predates a
+		# CornerLibrary change without a CACHE_VERSION bump. Bail with an incomplete
+		# result so generate_cached falls back to a live search instead of silently
+		# replaying the wrong corner (int(null) would resolve to index 0).
+		if not name_to_index.has(p["corner"]):
+			push_warning("TrackCache: unknown corner '%s' — cache stale, falling back" % p["corner"])
+			break
+		var cand := {
+			"corner_index": int(name_to_index[p["corner"]]),
+			"flip": bool(p["flip"]),
+			"straight": float(p["straight"]),
+		}
+		var built := _build_candidate(cand, corners, frame_pos, frame_heading)
+		var hit := _collide_and_cells(built["poly"], coll_width, occupied, reserved, frame_pos, params)
+		# A valid committed sequence never collides. If it does, the cache is stale
+		# (edited, or a generator change without a CACHE_VERSION bump): bail so the
+		# result is incomplete and generate_cached demotes it to a live-search miss,
+		# rather than driving self-overlapping geometry.
+		if hit["collides"]:
+			push_warning("TrackCache: replayed piece collides — cache stale, falling back")
+			break
+		world_points[world_points.size() - 1][2] = built["merge_out"]
+		var added_cells: Array = []
+		for cell in hit["cells"]:
+			if not occupied.has(cell):
+				occupied[cell] = true
+				added_cells.append(cell)
+		for ap in built["points"]:
+			world_points.append(ap)
+		pieces.append({
+			"corner": p["corner"],
+			"flip": cand["flip"],
+			"straight": cand["straight"],
+			"cells": added_cells,
+			"entry_pos": frame_pos,
+			"entry_heading": frame_heading,
+		})
+		frame_pos = built["exit_pos"]
+		frame_heading = built["exit_heading"]
+	# runoff: matches generate() — {} unless runoff_m > 0 and the track is non-empty.
+	if params.runoff_m > 0.0 and pieces.size() > 0:
+		runoff_result = { "end_pos": frame_pos + frame_heading * params.runoff_m, "heading": frame_heading }
+	var centerline := Curve2D.new()
+	for wp in world_points:
+		centerline.add_point(wp[0], wp[1], wp[2])
+	return {
+		"centerline": centerline,
+		"cells": occupied,
+		"pieces": pieces,
+		"complete": pieces.size() == params.turn_count,
+		"runoff": runoff_result,
+	}
+
+
 # The library corners eligible as "turns" (everything except the plain Straight).
 static func _turn_corners() -> Array:
 	var out: Array = []

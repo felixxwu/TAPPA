@@ -33,6 +33,15 @@ var heading: Vector2 = NOMINAL_HEADING
 # relocated start (see world.gd).
 var base_origin: Vector2 = NOMINAL_ORIGIN
 var water_sampler: Callable = Callable()
+# Authored water inputs, snapshotted by the factories BEFORE recompute_origin's
+# fallback branch can clamp water_level / disable water_enabled from a noise sample.
+# cache_key() reads THESE (not the possibly-clamped live fields) so the key stays a
+# pure function of authored inputs — never a platform-sensitive derived float. They
+# still fully determine the track: the clamp is deterministic per (seed, water_level,
+# sampler), all of which are authored. Default to the un-watered values so a bare
+# `of()` params (tests) keys consistently.
+var key_water_enabled: bool = false
+var key_water_level: float = 0.0
 
 
 static func _base(cfg: GameConfig) -> TrackGenParams:
@@ -77,6 +86,8 @@ static func for_event(event: Dictionary, cfg: GameConfig) -> TrackGenParams:
 	p.water_enabled = bool(event.get("water_enabled", cfg.water_enabled))
 	p.water_level = float(event.get("water_level", cfg.track_water_level_m))
 	p.water_sampler = _sampler_for(p.seed, cfg)
+	p.key_water_enabled = p.water_enabled
+	p.key_water_level = p.water_level
 	_apply_staging(p, cfg, cfg.start_line_enabled)
 	p.recompute_origin()
 	return p
@@ -93,6 +104,8 @@ static func for_config(cfg: GameConfig) -> TrackGenParams:
 	p.water_enabled = cfg.water_enabled
 	p.water_level = cfg.track_water_level_m
 	p.water_sampler = _sampler_for(p.seed, cfg)
+	p.key_water_enabled = p.water_enabled
+	p.key_water_level = p.water_level
 	_apply_staging(p, cfg, false)
 	p.recompute_origin()
 	return p
@@ -126,6 +139,8 @@ static func for_trial(seed_value: int, water_level_m: float, turns: int,
 	p.water_enabled = true
 	p.water_level = water_level_m
 	p.water_sampler = _sampler_for(seed_value, cfg)
+	p.key_water_enabled = p.water_enabled
+	p.key_water_level = p.water_level
 	p.recompute_origin()
 	return p
 
@@ -186,3 +201,16 @@ func recompute_origin() -> void:
 		water_level = clamped
 	if not _origin_dry(base_origin):
 		water_enabled = false
+
+
+# Stable cache key over the AUTHORED shape determinants (never the derived
+# `origin` float — see docs/superpowers/specs/2026-07-21-track-turn-cache-design.md).
+# `terrain_fingerprint` folds in cfg.terrain_layers(); `version` bumps when the
+# generator/corner shapes change. %.6f is safe: every field here is an authored
+# input (identical across platforms), not a computed float.
+func cache_key(terrain_fingerprint: String, version: String) -> String:
+	return "v%s|%d|%d|%.6f|%.6f|%.6f|%.6f|%.6f|%s|%.6f|%.6f|%.6f|%.6f|%s" % [
+		version, seed, turn_count, width, clearance, reserve_behind,
+		straightness, runoff_m, str(key_water_enabled), key_water_level, shore_clearance,
+		heading.x, heading.y, terrain_fingerprint,
+	]

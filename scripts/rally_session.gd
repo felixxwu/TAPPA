@@ -546,15 +546,15 @@ func _set_phase(p: int) -> void:
 # seeded track (deterministic for the seed). Only used in real play; tests pass
 # skip_track_gen=true to start_rally so no track generation happens.
 func _generate_event_tracks(rally: Dictionary) -> Array:
-	var cfg: GameConfig = Config.data
 	var results: Array = []
 	for event in rally.get("events", []):
-		# Same TrackGenParams the run scene builds (world.gd) — including the staged
-		# lead-in reservation and water avoidance — so the derived rival times equal
-		# the shape the player drives. Water makes the shape depend on the world
-		# origin, so both sites must share this factory (see track_gen_params.gd §6).
+		# Resolve each event's own canonical config (previously this used the shared
+		# Config.data WITHOUT per-event overrides, so terrain-override events desynced
+		# from the run scene). Now it matches world.gd + the lockfile exactly, and the
+		# rival times come from the committed cache (falling back to live on a miss).
+		var cfg := canonical_event_config(event)
 		var params := TrackGenParams.for_event(event, cfg)
-		var result := await TrackGenerator.generate(params)
+		var result := await TrackGenerator.generate_cached(params, cfg)
 		results.append(result)
 	return results
 
@@ -594,6 +594,18 @@ static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 	cfg.terrain_layer2_amplitude = float(event.get("terrain_layer2_amplitude", base.terrain_layer2_amplitude))
 	cfg.terrain_layer3_wavelength = float(event.get("terrain_layer3_wavelength", base.terrain_layer3_wavelength))
 	cfg.terrain_layer3_amplitude = float(event.get("terrain_layer3_amplitude", base.terrain_layer3_amplitude))
+
+
+# The canonical, event-resolved config for track generation: a fresh duplicate of
+# the authored base with this event's overrides applied. Every generation site (the
+# lockfile generator, target-time derivation, the run scene) must resolve params
+# from THIS so their cache keys match. Standalone (no shared Config.data mutation).
+# Instance method (called via the RallySession autoload) — apply_event_config stays
+# static so it can be unit-tested scene-free.
+func canonical_event_config(event: Dictionary) -> GameConfig:
+	var cfg := (load(Config.CONFIG_PATH) as GameConfig).duplicate() as GameConfig
+	apply_event_config(cfg, event)
+	return cfg
 
 
 # Show the between-event standings interstitial; its Continue calls

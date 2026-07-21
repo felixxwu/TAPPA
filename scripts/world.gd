@@ -385,7 +385,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		box = LoadingScreen.expand_to_aspect(box, aspect)
 		var wp: Array = LakeField.preview_cells(params, box)
 		loading.update_water(wp[0], wp[1], box)
-	var result := await TrackGenerator.generate(params, on_progress)
+	# Rally events read the committed lockfile (falling back to live generation on a
+	# miss); free-roam / benchmark (for_config) is not cached and always generates.
+	var result: Dictionary
+	if not event.is_empty():
+		result = await TrackGenerator.generate_cached(params, cfg, on_progress)
+	else:
+		result = await TrackGenerator.generate(params, on_progress)
 	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
 	# it stays drawn through the remaining stages until finish().
 	if loading != null and not _headless:

@@ -12,9 +12,37 @@ env:
   EXPORT_DIR: build/web
 
 jobs:
+  verify-track-cache:
+    name: Verify track-turn lockfile is fresh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      - name: Import project (build resource cache)
+        run: godot --headless --import --quit || true
+
+      - name: Verify the committed lockfile is fresh (hash check, no regeneration)
+        run: |
+          set -euo pipefail
+          # Recomputes the rally library's input fingerprint and compares it to the
+          # source_hash stored in data/track_cache.json. Non-zero exit => stale.
+          godot --headless --path . res://tools/verify_track_cache.tscn
+
   export-web:
     name: Export & deploy web build
     runs-on: ubuntu-latest
+    needs: verify-track-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -72,6 +100,7 @@ jobs:
   export-android:
     name: Export & deploy Android APK
     runs-on: ubuntu-latest
+    needs: verify-track-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -174,6 +203,7 @@ jobs:
   export-windows:
     name: Export & deploy Windows .exe
     runs-on: ubuntu-latest
+    needs: verify-track-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
