@@ -1,9 +1,9 @@
 {
   "entries": {
-    "american_muscle|4124a787680ce14f|0c4d42097104a40b": [
+    "american_muscle|4124a787680ce14f|016648c4b8f18005": [
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 263411,
         "dnf": false,
         "event_times_ms": [
@@ -18,7 +18,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -33,7 +33,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -48,7 +48,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 306680,
         "dnf": false,
         "event_times_ms": [
@@ -63,7 +63,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 293875,
         "dnf": false,
         "event_times_ms": [
@@ -78,7 +78,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 379270,
         "dnf": false,
         "event_times_ms": [
@@ -93,7 +93,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 394850,
         "dnf": false,
         "event_times_ms": [
@@ -108,7 +108,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 275341,
         "dnf": false,
         "event_times_ms": [
@@ -123,7 +123,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 298046,
         "dnf": false,
         "event_times_ms": [
@@ -138,7 +138,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 253117,
         "dnf": false,
         "event_times_ms": [
@@ -153,7 +153,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 354428,
         "dnf": false,
         "event_times_ms": [
@@ -167,10 +167,10 @@
         "wreck_side": 1.0
       }
     ],
-    "coastal_sprint|67bdb427b9a865f2|0c4d42097104a40b": [
+    "coastal_sprint|67bdb427b9a865f2|016648c4b8f18005": [
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 237118,
         "dnf": false,
         "event_times_ms": [
@@ -185,7 +185,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 249286,
         "dnf": false,
         "event_times_ms": [
@@ -200,7 +200,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 170137,
         "dnf": false,
         "event_times_ms": [
@@ -215,7 +215,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -230,7 +230,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 181443,
         "dnf": false,
         "event_times_ms": [
@@ -245,7 +245,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 161877,
         "dnf": false,
         "event_times_ms": [
@@ -260,7 +260,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 167097,
         "dnf": false,
         "event_times_ms": [
@@ -275,7 +275,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 222239,
         "dnf": false,
         "event_times_ms": [
@@ -290,7 +290,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 193610,
         "dnf": false,
         "event_times_ms": [
@@ -305,7 +305,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 229803,
         "dnf": false,
         "event_times_ms": [
@@ -320,7 +320,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -335,7 +335,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 158264,
         "dnf": false,
         "event_times_ms": [
@@ -350,7 +350,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 231654,
         "dnf": false,
         "event_times_ms": [
@@ -365,7 +365,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 227247,
         "dnf": false,
         "event_times_ms": [
@@ -379,10 +379,10 @@
         "wreck_side": 1.0
       }
     ],
-    "front_runners|092e21b34bef7ab2|0c4d42097104a40b": [
+    "front_runners|092e21b34bef7ab2|016648c4b8f18005": [
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 166464,
         "dnf": false,
         "event_times_ms": [
@@ -397,7 +397,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 218283,
         "dnf": false,
         "event_times_ms": [
@@ -412,7 +412,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 174010,
         "dnf": false,
         "event_times_ms": [
@@ -427,7 +427,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -442,7 +442,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 172187,
         "dnf": false,
         "event_times_ms": [
@@ -457,7 +457,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 221876,
         "dnf": false,
         "event_times_ms": [
@@ -472,7 +472,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 260160,
         "dnf": false,
         "event_times_ms": [
@@ -487,7 +487,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 212934,
         "dnf": false,
         "event_times_ms": [
@@ -502,7 +502,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 234296,
         "dnf": false,
         "event_times_ms": [
@@ -517,7 +517,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -532,7 +532,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 265993,
         "dnf": false,
         "event_times_ms": [
@@ -547,7 +547,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 244743,
         "dnf": false,
         "event_times_ms": [
@@ -562,7 +562,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 178276,
         "dnf": false,
         "event_times_ms": [
@@ -577,7 +577,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 183488,
         "dnf": false,
         "event_times_ms": [
@@ -592,7 +592,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 245647,
         "dnf": false,
         "event_times_ms": [
@@ -606,7 +606,7 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_ancient_ruins|8422ff634b6f906c|0c4d42097104a40b": [
+    "gr_ancient_ruins|8422ff634b6f906c|016648c4b8f18005": [
       {
         "car_id": "beast",
         "car_name": "The Beast",
@@ -684,7 +684,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 156591,
         "dnf": false,
         "event_times_ms": [
@@ -699,7 +699,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 138459,
         "dnf": false,
         "event_times_ms": [
@@ -714,7 +714,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 160204,
         "dnf": false,
         "event_times_ms": [
@@ -774,7 +774,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 165253,
         "dnf": false,
         "event_times_ms": [
@@ -833,10 +833,10 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_mountain_pass|f03e9ac03d63cd66|0c4d42097104a40b": [
+    "gr_mountain_pass|f03e9ac03d63cd66|016648c4b8f18005": [
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 191109,
         "dnf": false,
         "event_times_ms": [
@@ -851,7 +851,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 171775,
         "dnf": false,
         "event_times_ms": [
@@ -866,7 +866,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -881,7 +881,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 169705,
         "dnf": false,
         "event_times_ms": [
@@ -896,7 +896,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 128305,
         "dnf": false,
         "event_times_ms": [
@@ -911,7 +911,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -926,7 +926,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 140498,
         "dnf": false,
         "event_times_ms": [
@@ -941,7 +941,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 152935,
         "dnf": false,
         "event_times_ms": [
@@ -956,7 +956,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 160756,
         "dnf": false,
         "event_times_ms": [
@@ -971,7 +971,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 161808,
         "dnf": false,
         "event_times_ms": [
@@ -986,7 +986,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 179914,
         "dnf": false,
         "event_times_ms": [
@@ -1000,10 +1000,10 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_olive_coast|9250d8f0278773d5|0c4d42097104a40b": [
+    "gr_olive_coast|9250d8f0278773d5|016648c4b8f18005": [
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 130379,
         "dnf": false,
         "event_times_ms": [
@@ -1018,7 +1018,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -1033,7 +1033,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 135123,
         "dnf": false,
         "event_times_ms": [
@@ -1048,7 +1048,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 178647,
         "dnf": false,
         "event_times_ms": [
@@ -1063,7 +1063,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 193430,
         "dnf": false,
         "event_times_ms": [
@@ -1078,7 +1078,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 177179,
         "dnf": false,
         "event_times_ms": [
@@ -1093,7 +1093,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 162171,
         "dnf": false,
         "event_times_ms": [
@@ -1108,7 +1108,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 136029,
         "dnf": false,
         "event_times_ms": [
@@ -1123,7 +1123,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 174319,
         "dnf": false,
         "event_times_ms": [
@@ -1138,7 +1138,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -1153,7 +1153,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 155412,
         "dnf": false,
         "event_times_ms": [
@@ -1168,7 +1168,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 117478,
         "dnf": false,
         "event_times_ms": [
@@ -1183,7 +1183,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 180889,
         "dnf": false,
         "event_times_ms": [
@@ -1197,10 +1197,10 @@
         "wreck_side": 1.0
       }
     ],
-    "gr_showdown|bdaa14244a182e90|0c4d42097104a40b": [
+    "gr_showdown|bdaa14244a182e90|016648c4b8f18005": [
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 249895,
         "dnf": false,
         "event_times_ms": [
@@ -1215,7 +1215,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 219433,
         "dnf": false,
         "event_times_ms": [
@@ -1230,7 +1230,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 213030,
         "dnf": false,
         "event_times_ms": [
@@ -1245,7 +1245,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 255323,
         "dnf": false,
         "event_times_ms": [
@@ -1260,7 +1260,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 192527,
         "dnf": false,
         "event_times_ms": [
@@ -1275,7 +1275,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -1290,7 +1290,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 217097,
         "dnf": false,
         "event_times_ms": [
@@ -1305,7 +1305,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 265705,
         "dnf": false,
         "event_times_ms": [
@@ -1320,7 +1320,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 270640,
         "dnf": false,
         "event_times_ms": [
@@ -1335,7 +1335,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 240261,
         "dnf": false,
         "event_times_ms": [
@@ -1350,7 +1350,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 226779,
         "dnf": false,
         "event_times_ms": [
@@ -1365,7 +1365,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -1380,7 +1380,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 258522,
         "dnf": false,
         "event_times_ms": [
@@ -1394,10 +1394,10 @@
         "wreck_side": 1.0
       }
     ],
-    "grand_tour|498aeb76a7b3aed2|0c4d42097104a40b": [
+    "grand_tour|498aeb76a7b3aed2|016648c4b8f18005": [
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 253636,
         "dnf": false,
         "event_times_ms": [
@@ -1427,7 +1427,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 278166,
         "dnf": false,
         "event_times_ms": [
@@ -1547,7 +1547,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 267952,
         "dnf": false,
         "event_times_ms": [
@@ -1576,10 +1576,10 @@
         "wreck_side": 1.0
       }
     ],
-    "rising_sun|983c143df6e08ff9|0c4d42097104a40b": [
+    "rising_sun|983c143df6e08ff9|016648c4b8f18005": [
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 222505,
         "dnf": false,
         "event_times_ms": [
@@ -1594,7 +1594,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 280557,
         "dnf": false,
         "event_times_ms": [
@@ -1609,7 +1609,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 274476,
         "dnf": false,
         "event_times_ms": [
@@ -1624,7 +1624,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 258336,
         "dnf": false,
         "event_times_ms": [
@@ -1639,7 +1639,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 286411,
         "dnf": false,
         "event_times_ms": [
@@ -1654,7 +1654,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 244022,
         "dnf": false,
         "event_times_ms": [
@@ -1669,7 +1669,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 209718,
         "dnf": false,
         "event_times_ms": [
@@ -1684,7 +1684,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 309611,
         "dnf": false,
         "event_times_ms": [
@@ -1699,7 +1699,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 265962,
         "dnf": false,
         "event_times_ms": [
@@ -1714,7 +1714,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 248400,
         "dnf": false,
         "event_times_ms": [
@@ -1729,7 +1729,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 285007,
         "dnf": false,
         "event_times_ms": [
@@ -1744,7 +1744,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 318970,
         "dnf": false,
         "event_times_ms": [
@@ -1759,7 +1759,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 255898,
         "dnf": false,
         "event_times_ms": [
@@ -1774,7 +1774,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 253786,
         "dnf": false,
         "event_times_ms": [
@@ -1788,10 +1788,10 @@
         "wreck_side": 1.0
       }
     ],
-    "rwd_masters|360b30e697b68c80|0c4d42097104a40b": [
+    "rwd_masters|360b30e697b68c80|016648c4b8f18005": [
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 221676,
         "dnf": false,
         "event_times_ms": [
@@ -1806,7 +1806,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 252893,
         "dnf": false,
         "event_times_ms": [
@@ -1821,7 +1821,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 177285,
         "dnf": false,
         "event_times_ms": [
@@ -1836,7 +1836,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 258320,
         "dnf": false,
         "event_times_ms": [
@@ -1851,7 +1851,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 235392,
         "dnf": false,
         "event_times_ms": [
@@ -1866,7 +1866,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 226899,
         "dnf": false,
         "event_times_ms": [
@@ -1881,7 +1881,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 183900,
         "dnf": false,
         "event_times_ms": [
@@ -1896,7 +1896,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 244510,
         "dnf": false,
         "event_times_ms": [
@@ -1911,7 +1911,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": 219212,
         "dnf": false,
         "event_times_ms": [
@@ -1926,7 +1926,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 265062,
         "dnf": false,
         "event_times_ms": [
@@ -1941,7 +1941,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -1955,10 +1955,10 @@
         "wreck_side": -1.0
       }
     ],
-    "shakedown|fc943d1881e18dfd|0c4d42097104a40b": [
+    "shakedown|fc943d1881e18dfd|016648c4b8f18005": [
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -1973,7 +1973,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 157114,
         "dnf": false,
         "event_times_ms": [
@@ -1988,7 +1988,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 217517,
         "dnf": false,
         "event_times_ms": [
@@ -2003,7 +2003,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 174576,
         "dnf": false,
         "event_times_ms": [
@@ -2018,7 +2018,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 231705,
         "dnf": false,
         "event_times_ms": [
@@ -2033,7 +2033,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 192725,
         "dnf": false,
         "event_times_ms": [
@@ -2048,7 +2048,7 @@
       },
       {
         "car_id": "mx5",
-        "car_name": "MX-5",
+        "car_name": "Miot Roadster",
         "combined_ms": 225690,
         "dnf": false,
         "event_times_ms": [
@@ -2063,7 +2063,7 @@
       },
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 232434,
         "dnf": false,
         "event_times_ms": [
@@ -2078,7 +2078,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -2093,7 +2093,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 198778,
         "dnf": false,
         "event_times_ms": [
@@ -2107,10 +2107,10 @@
         "wreck_side": 1.0
       }
     ],
-    "shitbox_cup|5bb3a5b94d47efb4|0c4d42097104a40b": [
+    "shitbox_cup|5bb3a5b94d47efb4|016648c4b8f18005": [
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 179845,
         "dnf": false,
         "event_times_ms": [
@@ -2125,7 +2125,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 107056,
         "dnf": false,
         "event_times_ms": [
@@ -2140,7 +2140,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -2155,7 +2155,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 166156,
         "dnf": false,
         "event_times_ms": [
@@ -2170,7 +2170,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 178371,
         "dnf": false,
         "event_times_ms": [
@@ -2185,7 +2185,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 151329,
         "dnf": false,
         "event_times_ms": [
@@ -2200,7 +2200,7 @@
       },
       {
         "car_id": "acty",
-        "car_name": "Honda Acty",
+        "car_name": "Honcho Actus",
         "combined_ms": 130697,
         "dnf": false,
         "event_times_ms": [
@@ -2215,7 +2215,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 171032,
         "dnf": false,
         "event_times_ms": [
@@ -2230,7 +2230,7 @@
       },
       {
         "car_id": "acty",
-        "car_name": "Honda Acty",
+        "car_name": "Honcho Actus",
         "combined_ms": 153906,
         "dnf": false,
         "event_times_ms": [
@@ -2245,7 +2245,7 @@
       },
       {
         "car_id": "acty",
-        "car_name": "Honda Acty",
+        "car_name": "Honcho Actus",
         "combined_ms": 187837,
         "dnf": false,
         "event_times_ms": [
@@ -2260,7 +2260,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 113970,
         "dnf": false,
         "event_times_ms": [
@@ -2274,10 +2274,10 @@
         "wreck_side": 1.0
       }
     ],
-    "the_showdown|e212d934b549d135|0c4d42097104a40b": [
+    "the_showdown|e212d934b549d135|016648c4b8f18005": [
       {
         "car_id": "focus",
-        "car_name": "Focus",
+        "car_name": "Fjord Focal",
         "combined_ms": 330046,
         "dnf": false,
         "event_times_ms": [
@@ -2292,7 +2292,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": 298981,
         "dnf": false,
         "event_times_ms": [
@@ -2307,7 +2307,7 @@
       },
       {
         "car_id": "xjs",
-        "car_name": "Jaguar XJS",
+        "car_name": "Panthera XJS",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -2322,7 +2322,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 421562,
         "dnf": false,
         "event_times_ms": [
@@ -2337,7 +2337,7 @@
       },
       {
         "car_id": "acty",
-        "car_name": "Honda Acty",
+        "car_name": "Honcho Actus",
         "combined_ms": 399318,
         "dnf": false,
         "event_times_ms": [
@@ -2352,7 +2352,7 @@
       },
       {
         "car_id": "porsche911",
-        "car_name": "911 Turbo",
+        "car_name": "Porker 930 Turbo",
         "combined_ms": 342515,
         "dnf": false,
         "event_times_ms": [
@@ -2367,7 +2367,7 @@
       },
       {
         "car_id": "porsche911",
-        "car_name": "911 Turbo",
+        "car_name": "Porker 930 Turbo",
         "combined_ms": 350005,
         "dnf": false,
         "event_times_ms": [
@@ -2382,7 +2382,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 392412,
         "dnf": false,
         "event_times_ms": [
@@ -2397,7 +2397,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 453185,
         "dnf": false,
         "event_times_ms": [
@@ -2412,7 +2412,7 @@
       },
       {
         "car_id": "viper",
-        "car_name": "Dodge Viper RT/10",
+        "car_name": "Swerve Serpent RT/10",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
@@ -2442,7 +2442,7 @@
       },
       {
         "car_id": "charger",
-        "car_name": "Charger R/T",
+        "car_name": "Swerve Surger R/T",
         "combined_ms": 356271,
         "dnf": false,
         "event_times_ms": [
@@ -2457,7 +2457,7 @@
       },
       {
         "car_id": "twingo",
-        "car_name": "Twingo",
+        "car_name": "Rondel Twist",
         "combined_ms": 447360,
         "dnf": false,
         "event_times_ms": [
@@ -2472,6 +2472,6 @@
       }
     ]
   },
-  "source_hash": "9e5938bf503064f3113f6d5b7cecfeb7ec02093ded7b25e983c1ff1438baddd0",
+  "source_hash": "1fa51820b53dee65130f9324cdcba8ab696325c6e2001c007815aa9710765912",
   "version": 1
 }
