@@ -14,8 +14,7 @@ extends RefCounted
 #     "side": int }            # +1 / -1 : which road edge (perpendicular sign)
 
 # Corners that get a turn arrow: "4 or sharper" by exact name, plus Square/Hairpin.
-# Gentle 5s and 6s are nearly straight, so they go unsigned; the compound
-# "Right 4 tightens 2" is also excluded (see todo/roadside-signs.md §2).
+# Gentle 5s and 6s are nearly straight, so they go unsigned (see todo/roadside-signs.md §2).
 const TURN_CORNERS := ["1", "2", "3", "4", "Square", "Hairpin"]
 
 # Small arc-distance step used to estimate the road tangent by finite difference.

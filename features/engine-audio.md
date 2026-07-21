@@ -185,6 +185,42 @@ engine an entry controls its voice (`volume_db`), its noise (`noise_db`), and
 its post-shaper output trim (`soft_clip_post_gain`); only the saturation amount
 is shared.
 
+## Proximity attenuation
+
+Each car's engine gets quieter as the active camera moves away, so camera
+cycling (chase ↔ bonnet), replay ROADSIDE shots, and the start-line intro all
+attenuate loudness by distance — through whatever `Camera3D` is `current`.
+
+`EngineAudio` stays a **non-positional `AudioStreamPlayer`** (no stereo panning,
+no doppler — only loudness changes). The falloff is driven manually:
+`EngineAudioSynth.attenuation_db(dist_sq, ref_dist, floor_db)` (a pure static
+method, headless-testable) returns a `volume_db` from the **squared** camera→car
+distance — squared to avoid a `sqrt`. Inside `ref_dist` it is `0.0` dB (a close
+chase cam never attenuates); beyond it, `10·log10(ref²/d²)`, clamped at
+`floor_db`. Because Godot applies `volume_db` as a linear amplitude gain
+`10^(db/20)`, that expression resolves to amplitude `ref/d` — the physical `1/d`
+sound-pressure law, i.e. **−6 dB per doubling** of distance. (`4.342945 =
+10/ln(10)`, so `4.342945·log(x)` is `10·log10(x)`; GDScript `log()` is natural.)
+
+`engine_audio.gd._timed_process` computes it each frame off
+`get_viewport().get_camera_3d()` and writes `volume_db`. The write sits **after**
+the `_playback == null` guard, so it never runs headless (no audio device) —
+tests that instantiate the intro are unaffected. Tunables:
+`engine_audio_ref_distance_m` (full-volume radius) and
+`engine_audio_max_attenuation_db` (floor), both on `GameConfig` /
+`game_config.tres`.
+
+**Suppressing the voice** is done by disabling the node's processing, never by
+fighting the per-frame `volume_db` writer: `car.gd`'s `silence_engine_audio()`
+(props / HQ lift / world wrecks) sets `process_mode = DISABLED`, and
+`world.gd._on_leaderboard_hidden_changed()` disables/enables processing for the
+replay standings overlay (muted under the leaderboard, audible in watch mode).
+The start-line intro's departing cars are silenced (`silence_engine_audio()`)
+the frame before `queue_free()` in `_prune_departed()`, so a still-audible
+distant idle isn't hard-cut; otherwise every intro car simply idles, attenuated
+by its distance from the reveal camera (the old bespoke fade + queued-car mute
+are gone — see [start-line.md](start-line.md)).
+
 ## Tests
 
 `tests/headless/test_engine_audio.gd` — firing-phase setup, `fill()` output,
@@ -195,7 +231,12 @@ cut onset, and leaves the no-cut voice unchanged), the soft-clip curve (bounded
 when overdriven, rounds peaks, drive/post-gain scaling), and the DC blocker
 keeping an overdriven voice AC-dominated rather than collapsing to DC silence,
 and the forced-induction layers (whistle energy rising with boost, a BOV event
-adding a transient burst, a supercharger whine appearing only when enabled).
+adding a transient burst, a supercharger whine appearing only when enabled), and
+the proximity `attenuation_db` curve (0 dB inside the reference radius, strictly
+decreasing beyond it, ≈−6 dB per doubling with synthetic args, clamped at the
+passed floor). `tests/headless/test_start_line.gd` checks intro cars aren't
+force-muted and are silenced before despawn; `tests/headless/test_world_engine_mute.gd`
+checks the replay-leaderboard mute disables `EngineAudio` processing.
 `tests/headless/test_engine_library.gd` checks `EngineLibrary.apply()` writes
 volume/noise/low-octave/post-gain correctly for each catalog entry.
 `tests/headless/test_car_types.gd` checks each car's referenced engine ends up
@@ -278,7 +319,9 @@ simulation these signals come from.
 `engine_soft_clip_post_gain` (engine property via
 `EngineLibrary.soft_clip_post_gain`), `turbo_enabled`, `turbo_omega_ref`,
 `supercharger_enabled`, `engine_turbo_whistle_gain`, `engine_turbo_bov_gain`,
-`engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`. See
+`engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`,
+`engine_audio_ref_distance_m` (proximity full-volume radius),
+`engine_audio_max_attenuation_db` (proximity floor). See
 [configuration.md](configuration.md) and `scripts/engine_library.gd`.
 
 ## Performance note

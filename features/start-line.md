@@ -123,14 +123,16 @@ All cars are **seated `start_spawn_clearance` (0.5 m) above the road** at spawn 
 their wheels. Grid cars are **despawned** (departed past the line, or the remainder at the
 fade), so they cost nothing during the run.
 
-**Engine audio — only the car taking off is audible.** Every car's engine voice is muted
-through the reveal (`_set_engine_audio`): queued grid cars, cars that have already driven
-off (still rolling away in the distance), AND the player (which rolls up on each scoot). The
-moment a car is sent off the line its OWN voice switches back on — `apply_car` already
-rebuilt each prop's synth off that car's isolated `config`, so you hear its actual engine,
-not the player's. Muting stops the per-frame buffer fill (the note drains to silence)
-without stopping the stream, so it resumes cleanly. The player's engine is restored at the
-hand-off for the countdown revs and the run.
+**Engine audio — proximity attenuation, no bespoke muting.** Every car (grid props and the
+player) simply idles its own engine voice throughout the reveal; loudness comes entirely
+from the shared **proximity attenuation** in `engine_audio.gd`, which scales each car's
+`volume_db` by its distance from the active reveal/orbit camera (see
+[engine-audio.md](engine-audio.md) → *Proximity attenuation*). `apply_car` rebuilt each
+prop's synth off that car's isolated `config`, so you hear its actual engine. A car driving
+off the line recedes naturally as it drives away, and is silenced
+(`car.silence_engine_audio()`) the frame before `_prune_departed()` frees it, so its
+still-audible distant idle isn't hard-cut. (This replaced the earlier custom
+per-car mute + manual distance fade, which proximity attenuation subsumes.)
 
 ## Straight start lead-in (staged runs)
 

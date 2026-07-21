@@ -82,6 +82,23 @@ func test_attach_makes_buttons_focusable_and_grabs_first() -> void:
 
 # A widget can opt out of the framework's focus wiring with the menu_nav_skip meta
 # (used by the diegetic HQ station buttons that keep FOCUS_NONE).
+# A ScrollContainer inside a MenuNav menu is switched to follow_focus, so directional
+# nav onto a scrolled-out row auto-scrolls it into view (general list-nav fix).
+func test_attach_enables_scroll_follow_focus() -> void:
+	var menu := Control.new()
+	var scroll := ScrollContainer.new()
+	menu.add_child(scroll)
+	var list := VBoxContainer.new()
+	scroll.add_child(list)
+	for i in 3:
+		list.add_child(Button.new())
+	add_child_autofree(menu)
+	assert_false(scroll.follow_focus, "follow_focus off before attach")
+	MenuNav.attach(menu)
+	await get_tree().process_frame
+	assert_true(scroll.follow_focus, "attach turns follow_focus on")
+
+
 func test_menu_nav_skip_meta_is_left_focus_none() -> void:
 	var menu := _make_flat_menu(2)
 	(menu.get_child(1) as Button).set_meta("menu_nav_skip", true)

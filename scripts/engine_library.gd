@@ -108,7 +108,7 @@ const ENGINES: Array[Dictionary] = [
 		# Stock forced induction (features/forced-induction.md): the 930's single
 		# large turbo, famous for its lag. Balance placeholders.
 		"turbo_enabled": true, "turbo_boost_gain": 0.5, "turbo_inertia": 1.0e-2, "turbo_omega_ref": 11000.0,
-		"turbo_parasitic_friction": 16.0,
+		"turbo_parasitic_friction": 10.0,
 		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
 	},
 	{

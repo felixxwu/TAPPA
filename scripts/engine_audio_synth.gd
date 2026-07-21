@@ -18,6 +18,21 @@ const CRACKLE_DECAY := 0.99
 # so overdrive distorts symmetrically (a loud, square-ish tone). Cutoff ≈
 # (1 - R)·mix_rate / 2π ≈ 17 Hz at 22050 Hz — well below the engine fundamental.
 const DC_BLOCK_R := 0.995
+
+
+# Distance attenuation for the non-positional engine voice: returns a volume_db
+# (<= 0) for a car `dist_sq` (m², squared to avoid a sqrt) from the active
+# camera. Inside `ref_dist` the result is 0 dB (full volume); beyond it the level
+# follows the physical 1/d sound-pressure law — because volume_db is applied as a
+# linear amplitude gain 10^(db/20), 10·log10(ref²/d²) resolves to amplitude ref/d,
+# i.e. -6 dB per doubling of distance. Clamped at `floor_db` so a far car goes to
+# a finite floor, not -inf. 4.342945 = 10/ln(10), so 4.342945·log(x) == 10·log10(x)
+# (GDScript log() is natural log). Pure/static — headless-testable, no nodes.
+static func attenuation_db(dist_sq: float, ref_dist: float, floor_db: float) -> float:
+	var ref_sq := ref_dist * ref_dist
+	if dist_sq <= ref_sq:
+		return 0.0
+	return maxf(4.342945 * log(ref_sq / dist_sq), floor_db)
 # Voice wavetable bank. The firing-pulse voice is a periodic function of crank
 # phase, parameterised only by load (throttle). Re-evaluating its
 # firing_phases × harmonics sin/exp sum EVERY sample is the synth's dominant

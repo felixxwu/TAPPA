@@ -77,6 +77,13 @@ const _PACE_SCROLL_SPEED := 8.0
 const _PACE_DIM_STEP := 0.42
 const _PACE_DIM_FLOOR := 0.28
 
+# The top-centre pace/cut popups sit directly below the pacenote strip, so their top
+# edge is derived from the strip's bottom (_PACE_TOP + _PACE_ICON) plus a small gap —
+# this way they follow the pacenote size instead of overlapping when the icons grow.
+const _POPUP_GAP := 8.0
+const _POPUP_TOP := _PACE_TOP + _PACE_ICON + _POPUP_GAP
+const _POPUP_HEIGHT := 24.0
+
 # Last displayed values, so _process only re-formats + re-assigns a label when
 # its value actually changes (avoids per-frame string allocation / GC churn).
 var _last_speed := -1
@@ -188,7 +195,8 @@ func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
 
 func _build_stage_delta_label() -> void:
 	_stage_delta_label = _make_popup_label("StageDeltaLabel", 0.5,
-		Control.GROW_DIRECTION_BOTH, Vector4(-80.0, 80.0, 40.0, 64.0),
+		Control.GROW_DIRECTION_BOTH,
+		Vector4(-80.0, 80.0, _POPUP_TOP, _POPUP_TOP + _POPUP_HEIGHT),
 		HORIZONTAL_ALIGNMENT_CENTER)
 
 
@@ -196,7 +204,8 @@ func _build_stage_delta_label() -> void:
 # (it takes precedence while showing — see show_cut_flash / show_stage_delta).
 func _build_cut_flash_label() -> void:
 	_cut_flash_label = _make_popup_label("CutFlashLabel", 0.5,
-		Control.GROW_DIRECTION_BOTH, Vector4(-80.0, 80.0, 40.0, 64.0),
+		Control.GROW_DIRECTION_BOTH,
+		Vector4(-80.0, 80.0, _POPUP_TOP, _POPUP_TOP + _POPUP_HEIGHT),
 		HORIZONTAL_ALIGNMENT_CENTER)
 	_cut_flash_label.add_theme_color_override("font_color", UITheme.RED)
 

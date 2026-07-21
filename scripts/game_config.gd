@@ -312,6 +312,13 @@ var peak_torque_rpm := 4500.0
 ## blow-off vent, and anti-lag bangs all pass through it. Set to 0 dB for no change,
 ## negative to attenuate everything, -80 to effectively mute. Not per-car.
 @export var engine_master_volume_db := 0.0
+## Full-volume radius (m) for engine proximity attenuation. Within this distance
+## from the active camera a car's engine plays at 0 dB; beyond it the level falls
+## off with distance (1/d sound-pressure law, -6 dB per doubling). Tunable.
+@export var engine_audio_ref_distance_m := 8.0
+## Attenuation floor (dB, <= 0) for a distant engine — the quietest a car's voice
+## drops to, so a far car recedes to near-silence without going to -inf. Tunable.
+@export var engine_audio_max_attenuation_db := -60.0
 ## Audible floor of the engine voice at zero throttle (0 = silent at idle).
 @export_range(0.0, 1.0) var engine_idle_gain := 0.25
 ## Richness of each firing pulse — more harmonics = brighter, harsher engine note.
@@ -845,17 +852,17 @@ var peak_torque_rpm := 4500.0
 @export_group("Terrain Layers")
 # Three stacked perlin noise layers: wavelength in metres, amplitude in metres.
 ## Layer 1 wavelength (m): spacing of the largest, rolling hills.
-@export_range(1.0, 1000.0) var terrain_layer1_wavelength := 66.784
+@export_range(1.0, 1000.0) var terrain_layer1_wavelength := 67.0
 ## Layer 1 amplitude (m): height of the largest, rolling hills.
 @export_range(0.0, 100.0) var terrain_layer1_amplitude := 10.0
 ## Layer 2 wavelength (m): spacing of the mid-scale undulations.
 @export_range(1.0, 200.0) var terrain_layer2_wavelength := 15.0
 ## Layer 2 amplitude (m): height of the mid-scale undulations.
-@export_range(0.0, 10.0) var terrain_layer2_amplitude := 1.382
+@export_range(0.0, 10.0) var terrain_layer2_amplitude := 1.0
 ## Layer 3 wavelength (m): spacing of the finest surface bumps.
 @export_range(1.0, 200.0) var terrain_layer3_wavelength := 3.0
 ## Layer 3 amplitude (m): height of the finest surface bumps.
-@export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.18
+@export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.0
 
 @export_group("PS1 Look")
 @export var virtual_resolution := Vector2(533, 400)  # keep matching [display] in project.godot
@@ -1479,7 +1486,7 @@ var peak_torque_rpm := 4500.0
 ## entries (TerrainLod.LOD_STRIDES has `levels`). The display mesh decimates by
 ## distance so far ground costs a fraction of the near-flat 1 m tessellation; the
 ## engine crossfades between levels via visibility_range. See features/terrain.md.
-@export var terrain_lod_bands_m: PackedFloat32Array = PackedFloat32Array([30.0, 70.0, 100.0, 130.0])
+@export var terrain_lod_bands_m: PackedFloat32Array = PackedFloat32Array([40.0, 70.0, 80.0, 90.0])
 ## Downward skirt depth (metres) on each terrain chunk's LOD meshes, hiding the
 ## crack where neighbouring chunks show different levels. Invisible under fog.
 @export_range(0.0, 20.0) var terrain_lod_skirt_m := 3.0

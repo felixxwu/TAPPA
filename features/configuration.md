@@ -69,6 +69,8 @@ the `.tres` requires a scene reload to take effect.
 | `engine_low_octave_mix` | 0.0 | Crossfade toward a voice one octave lower (per-car; Viper 0.7) |
 | `engine_soft_clip_drive` | 0.6 | Pre-amp into the sine soft clipper (global; higher = more grit) |
 | `engine_soft_clip_post_gain` | 1.0 | Post-amp after the soft clipper (global; 1.0 = transparent) |
+| `engine_audio_ref_distance_m` | 8.0 | Proximity attenuation: full-volume radius (m) from the active camera |
+| `engine_audio_max_attenuation_db` | -60.0 | Proximity attenuation: quietest a distant engine drops to (dB floor) |
 | `drive_mode` | 0 (RWD) | Initial layout: RWD, AWD, FWD |
 
 ### HUD / Camera / World

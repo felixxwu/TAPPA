@@ -286,49 +286,6 @@ func test_next_sends_the_front_car_off_and_advances_the_reveal() -> void:
 	assert_string_contains(sl._reveal_name_label.text, "RIVAL 1", "P2 is revealed immediately")
 
 
-func test_departing_car_sounds_its_own_engine_not_the_players() -> void:
-	# Queued grid cars idle silent (no chorus); the front car's OWN engine voice switches
-	# on when it drives off, so each car sounds like its actual engine rather than leaving
-	# only the player's audible.
-	var sl := _make(_leaders())
-	_launch_to_reveal(sl)
-	var front = sl._grid[0]
-	var front_audio := front.get_node_or_null("EngineAudio")
-	assert_not_null(front_audio, "the grid car has an engine voice")
-	assert_eq(front_audio.process_mode, Node.PROCESS_MODE_DISABLED, "a queued grid car idles silent")
-	sl.next_car()
-	assert_eq(front_audio.process_mode, Node.PROCESS_MODE_INHERIT,
-		"the car's own engine switches on as it drives off the line")
-	assert_almost_eq(front_audio.volume_db, 0.0, 0.01, "at full volume the moment it leaves the line")
-	# The next opponent, still waiting its turn, stays silent.
-	var second = sl._grid[0]
-	assert_ne(second, _player, "the next car in the grid is still an opponent")
-	assert_eq(second.get_node_or_null("EngineAudio").process_mode, Node.PROCESS_MODE_DISABLED,
-		"a car still waiting in the queue stays silent")
-
-
-func test_departed_car_engine_fades_to_zero_as_it_drives_away() -> void:
-	# The departed car is genuinely being driven off, so its engine fades down with
-	# distance (full on the line → silent by the despawn point) instead of a hard cut.
-	var sl := _make(_leaders())
-	_launch_to_reveal(sl)
-	var front = sl._grid[0]
-	var audio := front.get_node_or_null("EngineAudio")
-	sl.next_car()
-	# On the line: full volume.
-	front.global_position = sl._start_xform.origin
-	sl._update_departed_audio()
-	assert_almost_eq(audio.volume_db, 0.0, 0.01, "full volume on the line")
-	# Part-way down the lead-in: quieter.
-	front.global_position = sl._start_xform * Vector3(0, 0, -Config.data.start_lead_in_ahead_m * 0.5)
-	sl._update_departed_audio()
-	var mid_db: float = audio.volume_db
-	assert_lt(mid_db, 0.0, "the engine has faded as the car drives away")
-	# At the despawn distance: faded down to the floor.
-	front.global_position = sl._start_xform * Vector3(0, 0, -Config.data.start_lead_in_ahead_m)
-	sl._update_departed_audio()
-	assert_lt(audio.volume_db, mid_db, "it keeps fading toward silence with distance")
-	assert_almost_eq(audio.volume_db, StartLine.ENGINE_FADE_FLOOR_DB, 0.01, "reaches the fade floor at the despawn point")
 
 
 func test_walks_through_all_three_opponents_then_fades_to_the_countdown() -> void:
@@ -503,3 +460,30 @@ func test_upgrade_changed_refits_the_live_car() -> void:
 	var sl := _make(_leaders())
 	sl._on_upgrade_changed()
 	assert_true(_player.refit_calls > 0, "an upgrade edit refits the live car's upgrade state")
+
+
+# --- Proximity attenuation replaces the bespoke fade/mute --------------------
+
+func test_grid_cars_are_not_force_muted() -> void:
+	# With proximity attenuation, queued cars idle (attenuated by distance) rather
+	# than being hard-muted, so their EngineAudio must stay processing.
+	var sl := _make(_leaders())
+	var car = sl._grid[0]
+	var ea := car.get_node_or_null("EngineAudio")
+	assert_not_null(ea, "grid car has an EngineAudio node")
+	assert_ne(ea.process_mode, Node.PROCESS_MODE_DISABLED, "not force-muted")
+
+
+func test_prune_silences_before_free() -> void:
+	# A car about to be despawned has its engine silenced first, so no live note is
+	# hard-cut (the new attenuation curve leaves distant cars audible until pruned).
+	var sl := _make(_leaders())
+	var car := sl._grid[0] as Node3D
+	sl._grid.erase(car)
+	sl._departed = [car] as Array[Node3D]
+	# Place it well past the lead-in so _prune_departed frees it.
+	car.global_position = sl._start_xform * Vector3(0, 0, -(sl._cfg().start_lead_in_ahead_m + 50.0))
+	var ea := car.get_node_or_null("EngineAudio")
+	sl._prune_departed()
+	# queue_free is deferred, so the node still exists this frame but is silenced.
+	assert_eq(ea.process_mode, Node.PROCESS_MODE_DISABLED, "silenced before free")

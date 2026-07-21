@@ -60,7 +60,7 @@ the car is `spectator_despawn_behind_m` behind a ragdoll, it is freed.
 | Force | Preference | Notes |
 |-------|-----------|-------|
 | `flee_force` | move away from the car within `flee_radius_m` | squared near-field falloff = the "light push": the crowd parts/jostles hard as the car arrives |
-| `road_force` | avoid the carriageway | 8-direction probe of the rasterised `road_cells` |
+| `road_force` | avoid the carriageway | 8-direction probe of the rasterised `road_cells`, each direction stepped out to `probe` and **distance-graded** (nearer road → stronger push, fading to zero at `probe`). The grading is what stops verge spectators jiggling on the spot: a bang-bang push (full within `probe`, zero just past it) has a hard switching surface that the anchor pull drags a member across and the road shoves back — a permanent chatter. The smooth gradient meets the anchor pull at a single static resting point instead |
 | `obstacle_force` | avoid trees | probes a grid of tree points (`SpectatorScatter.build_point_grid`) |
 | `separation_force` | keep ~`separation_m` apart | within-group only; a per-tick spatial grid (`build_separation_grid`, cell = radius) bounds it to a 3×3 neighbour scan (~O(n)), not every pair. Passing no grid falls back to the full O(n²) scan for the pure unit tests; both paths compute the identical force |
 | `anchor_force` | drift home when idle | dead-zone'd so settled agents don't jitter |

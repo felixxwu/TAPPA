@@ -73,13 +73,13 @@ hp_loss = impact_ref_hp_loss · v² / impact_ref_speed_kmh²
   can briefly exceed 2 g and chip *minor wear* — accepted; raise `impact_threshold_g`
   if it feels twitchy.)
 - **Continuity.** For a full solid arrest `dv ≈ approach speed`, so a 60 km/h head-on
-  lands exactly where the old speed-keyed model did — `impact_ref_hp_loss` (320 HP in
+  lands exactly where the old speed-keyed model did — `impact_ref_hp_loss` (390 HP in
   `game_config.tres`) and the whole square-law tuning carry over. `hp_loss_for_speed()`
   is still the pure, unit-tested static.
 
 Two things shape survivability:
 - **Per-hit cap** — each tick's loss is clamped to `impact_max_loss_frac` of max HP
-  (~1/3), so no one spike wrecks the car.
+  (`0.4` in `game_config.tres`), so no one spike wrecks the car.
 - **No cooldown.** A pinned/stopped car sheds ~0 velocity/tick, so grinding against a
   wall self-limits with no timer; a genuine multi-bounce **tumble** down a tall drop
   is several real `dv` spikes and racks up several capped hits — so a long fall can

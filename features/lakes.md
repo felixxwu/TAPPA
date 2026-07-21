@@ -123,11 +123,40 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
   that rect to `set_water(cells, size, frame)`; `TrackPreview` fits to the explicit
   `frame` so the sampled water reaches the container edges (`world.gd._preview_aspect`,
   `settings_menu.gd._seedlab_aspect`).
-- The **dev seed-lab** (Settings → Seed lab, `settings_menu.gd`) trials
-  `(seed, water_level, turns, straightness)` via typeable SpinBox fields + a
-  Randomize / Back action row (`go_back` returns to the category list)
-  against a large live `TrackPreview` that **animates the generation** (on_progress,
-  like the loading screen), with a generation token dropping stale runs.
+- The **dev seed-lab** (Settings → Seed lab, `settings_menu.gd`) trials track
+  parameters via typeable SpinBox fields against a large live `TrackPreview` that
+  **animates the generation** (on_progress, like the loading screen), with a
+  generation token dropping stale runs. Bottom action row: **Load event…** /
+  **Terrain…** / Randomize / Back (`go_back` returns to the category list).
+- **Faithful generation.** `_regen_seedlab` builds an EventDef from the inputs
+  (`_seedlab_event`) and generates through the **exact career path** —
+  `RallySession.canonical_event_config(ev)` → `TrackGenParams.for_event(ev, cfg)` —
+  NOT `for_trial`. This matters: `for_trial` skipped start-line staging (no lead-in
+  `reserve_behind`, origin at nominal) and used `cfg.track_width` (7.0) instead of the
+  event width (`DEFAULT_WIDTH` 6.0), so its shapes disagreed with the cached career
+  tracks. `for_event` reserves the lead-in corridor, uses the event width, and samples
+  terrain from the canonical config, so the preview equals the real stage (verified by
+  `test_seedlab.gd` → `test_loaded_event_matches_career_cache_key`, which compares the
+  lab's and career's `TrackCache.key_for`).
+- **Load event…** (`_open_event_picker` → `_build_event_picker`) opens a keyboard/
+  gamepad-navigable popup listing every rally (`RallyLibrary.all()`) and its 3 events.
+  Picking one (`_load_event`) copies the event's fields — the four core inputs + the
+  six terrain-noise fields — into the spinboxes; the inputs stay the single source of
+  truth. The picker remembers the last-focused row (`_event_focus`) and re-seats the
+  cursor there on reopen. `forestiness` / `surface_mix` / `cliffiness` are omitted —
+  they drive trees / surface / elevation, none of which the centerline+water view shows.
+- **Terrain…** (`_open_terrain_editor` → `_build_terrain_editor`) opens a second popup
+  docked below the preview (which stays visible for live feedback) exposing the six
+  terrain-noise fields (3 layers × wavelength+amplitude). These shape the track too —
+  the generator routes the road around below-water cells and relocates the dry start —
+  so exposing them is what lets the lab's lakes match career. All authored terrain
+  values are whole numbers (`game_config.tres` + the `RALLIES` overrides), so the
+  fields use an integer step (SpinBox snaps to step).
+- **Focus nav** (`_wire_seedlab_nav`): left/right is contained — within the 2-column
+  field grid it only swaps columns (stops at the outer edges), and on the bottom button
+  row it chains between the buttons and stops at the ends; it never leaks between the
+  grid and the row. Up/down walks the rows (and off the last field row into the
+  buttons) via Godot's geometric default.
 
 ## Config (`GameConfig` "Water" group)
 

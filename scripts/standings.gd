@@ -152,7 +152,7 @@ func _build_ui() -> void:
 
 	if overlay_mode:
 		var hide_btn := Button.new()
-		hide_btn.text = "Hide leaderboard"
+		hide_btn.text = "Watch Replay"
 		hide_btn.focus_mode = Control.FOCUS_ALL
 		hide_btn.pressed.connect(toggle_leaderboard)
 		root.add_child(hide_btn)

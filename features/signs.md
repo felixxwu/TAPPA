@@ -38,7 +38,7 @@ placement dict per physical sign:
 
 Placement rule — **Turns only:** for each piece whose corner ∈
 `{1, 2, 3, 4, Square, Hairpin}` ("4 or sharper"; gentle 5s/6s are too straight to
-sign, and the compound `Right 4 tightens 2` is excluded), a **pair** (both sides) at
+sign), a **pair** (both sides) at
 the **corner entry** = `entry_pos + entry_heading * straight` snapped to the curve
 via `get_closest_offset`. The arrow `texture_key` encodes the grade + direction:
 numbered corners use `arrow_<grade>_<dir>`, `Square` → `arrow_square_<dir>`, `Hairpin`

@@ -86,7 +86,7 @@ and advanced by `show_pacenotes(current)`.
   `"right"`-keyed art). The chase camera looks along the track's forward axis, which
   flips the 2D track's left/right on screen — the same inversion the roadside boards
   bake in — so the HUD reads correctly with the signs' convention, not the opposite of
-  it. The compound `"Right 4 tightens 2"` reuses its entry-grade (`arrow_4`) art. The `arrow_5`/`arrow_6` boards are baked by
+  it. The `arrow_5`/`arrow_6` boards are baked by
   `tools/bake_sign_arrows.gd` (see [signs.md](signs.md)).
 - **Advance.** `world.gd` also hands the per-corner progress **fractions**
   (`Pacenotes.notes_to_fracs`, same start-line span as the pace splits) to
@@ -99,6 +99,10 @@ and advanced by `show_pacenotes(current)`.
   reads as a smooth left-slide; `_layout_pacenotes` positions/fades each board from
   its distance to the current slot (`_PACE_*` consts: slot width, upcoming count,
   dim step/floor). Gated by `hud_pacenotes_enabled` — off builds no boards.
+  The top-centre pace/cut popups (`StageDeltaLabel` / `CutFlashLabel`) sit directly
+  below the strip: their top edge is `_POPUP_TOP = _PACE_TOP + _PACE_ICON + _POPUP_GAP`,
+  so bumping the pacenote icon size pushes the popups down with it rather than
+  overlapping.
 
 The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
 code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**

@@ -205,11 +205,13 @@ overlay** so the replay is visible behind the leaderboard:
   watch the replay full-screen: hidden state rebuilds the overlay down to just a "Show
   leaderboard >" button; shown state adds a "Hide leaderboard" button next to Continue.
   See [menus.md](menus.md) for the `MenuNav` wiring of both states.
-- `world._on_leaderboard_hidden_changed(hidden)` is the **engine-audio gate**: it mutes
-  the car's `EngineAudio` player (`volume_db = -60.0`) while the leaderboard is shown,
-  and un-mutes it (`0.0`) while hidden — so the replay is silent-but-visible behind the
-  UI by default, and only sounds once the player explicitly clears the leaderboard to
-  watch.
+- `world._on_leaderboard_hidden_changed(hidden)` is the **engine-audio gate**: it
+  **disables** the car's `EngineAudio` processing (`process_mode = DISABLED`, draining the
+  generator to silence) while the leaderboard is shown, and re-enables it while hidden — so
+  the replay is silent-but-visible behind the UI by default, and only sounds once the player
+  clears the leaderboard to watch. It disables processing rather than writing `volume_db`
+  because `engine_audio.gd` now writes `volume_db` every frame for proximity attenuation
+  ([engine-audio.md](engine-audio.md)), which would overwrite a flat `volume_db` mute.
 
 ## Named limitations (this pass)
 
@@ -219,9 +221,11 @@ overlay** so the replay is visible behind the leaderboard:
 - **No podium replay**: this cinematic only covers the between-event standings
   interstitial. The podium sequence ([menus.md](menus.md) → Podium) has its own
   reward-reveal staging and does not play back the replay.
-- **Non-positional engine audio**: the engine note is muted/un-muted as a flat gate
-  (see above), not spatialized to the replay camera's shifting position — it's an
-  on/off cue, not a 3D-panned mix.
+- **Non-positional engine audio**: the leaderboard mute is a flat on/off gate (see above).
+  While the replay plays (leaderboard hidden), the engine follows the shared **proximity
+  attenuation** — quieter as the replay camera sits further from the car — but it is a
+  distance-only loudness curve, not a 3D-panned or doppler-shifted mix
+  ([engine-audio.md](engine-audio.md) → *Proximity attenuation*).
 
 ## Tests
 

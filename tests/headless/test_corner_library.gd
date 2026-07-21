@@ -2,12 +2,12 @@ extends GutTest
 # The corner shape library (CornerLibrary): every pacenote turn type is a set of
 # hand-authored Curve2D control points (meters; entry at origin heading +Y).
 # build_curve() must turn each entry into a usable Curve2D, names must be unique,
-# and the full standard set (1-6, Square, Hairpin, Straight, one compound) present.
+# and the full standard set (1-6, Square, Hairpin, Straight) present.
 
 
 const EXPECTED := [
 	"1", "2", "3", "4", "5", "6",
-	"Square", "Hairpin", "Straight", "Right 4 tightens 2",
+	"Square", "Hairpin", "Straight",
 ]
 
 

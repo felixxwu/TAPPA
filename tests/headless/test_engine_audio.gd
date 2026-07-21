@@ -634,3 +634,33 @@ func test_supercharger_whine_only_when_enabled() -> void:
 	mk.call(false).fill(plain, 4000.0, 0.8, false, 1024)
 	mk.call(true).fill(blown, 4000.0, 0.8, false, 1024)
 	assert_gt(_energy(blown), _energy(plain), "a supercharged engine adds a whine layer")
+
+
+func test_attenuation_full_volume_inside_ref_radius() -> void:
+	# At or inside the reference radius the result is exactly 0 dB (no attenuation).
+	assert_eq(EngineAudioSynth.attenuation_db(0.0, 8.0, -60.0), 0.0, "at the listener")
+	assert_eq(EngineAudioSynth.attenuation_db(8.0 * 8.0, 8.0, -60.0), 0.0, "exactly at ref radius")
+	assert_eq(EngineAudioSynth.attenuation_db(4.0 * 4.0, 8.0, -60.0), 0.0, "inside ref radius")
+
+
+func test_attenuation_decreases_beyond_ref_radius() -> void:
+	# Strictly quieter as the car gets further than the reference radius.
+	var near := EngineAudioSynth.attenuation_db(16.0 * 16.0, 8.0, -60.0)
+	var far := EngineAudioSynth.attenuation_db(32.0 * 32.0, 8.0, -60.0)
+	assert_lt(near, 0.0, "attenuated beyond ref radius")
+	assert_lt(far, near, "further is quieter")
+
+
+func test_attenuation_is_minus_6db_per_doubling() -> void:
+	# 1/d amplitude law -> ~ -6.02 dB every time the distance doubles (until clamped).
+	# Use a generous floor so the clamp does not interfere. Synthetic args only.
+	var ref := 10.0
+	var d1 := EngineAudioSynth.attenuation_db(20.0 * 20.0, ref, -200.0)  # 2x ref
+	var d2 := EngineAudioSynth.attenuation_db(40.0 * 40.0, ref, -200.0)  # 4x ref
+	assert_almost_eq(d1 - d2, 6.0206, 0.01, "one doubling ~ -6 dB")
+
+
+func test_attenuation_clamped_at_floor() -> void:
+	# Very far -> never exceeds the passed floor (never -inf).
+	var v := EngineAudioSynth.attenuation_db(100000.0 * 100000.0, 8.0, -60.0)
+	assert_eq(v, -60.0, "clamped to the floor")

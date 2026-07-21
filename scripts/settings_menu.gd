@@ -71,6 +71,26 @@ var _level_spin: SpinBox
 var _turns_spin: SpinBox
 var _straight_spin: SpinBox
 var _sl_gen := 0  # generation token — stale async runs stop updating the preview
+# Event picker: a popup over the seed lab that lists every rally + its events.
+# Selecting one COPIES the event's values into the four spinboxes and regenerates —
+# so the inputs are always the single source of truth and never drift from what the
+# 2D preview shows. `_syncing_spins` batches the four field sets into one regen
+# (each set would otherwise fire its own value_changed -> _regen_seedlab).
+var _seedlab_popup: Control
+var _event_focus: Control  # last-focused event row, restored when the picker reopens
+var _syncing_spins := false
+# Terrain editor: a second popup exposing the 6 terrain-noise params (3 layers ×
+# wavelength+amplitude). These shape the track too — the generator routes the road
+# around below-water cells and relocates the dry start — so without them the lab's
+# lakes disagree with the real career event. _seedlab_cfg folds them into the config
+# the preview generates against, matching RallySession.apply_event_config.
+var _seedlab_terrain_popup: Control
+var _t1w: SpinBox  # layer 1 wavelength
+var _t1a: SpinBox  # layer 1 amplitude
+var _t2w: SpinBox
+var _t2a: SpinBox
+var _t3w: SpinBox
+var _t3a: SpinBox
 
 # While the player is reassigning a control, the pending capture:
 # {action: String, slot: String, button: Button}; empty when not listening.
@@ -213,12 +233,22 @@ func _build() -> void:
 	_seedlab_page.add_child(_seedlab_preview)
 	# Controls docked along the bottom. A ScrollContainer guards against very short
 	# screens (nothing gets cut off) while a compact 2-column grid means everything
-	# fits without scrolling in the common case.
+	# fits without scrolling in the common case. Focus nav is contained by
+	# _wire_seedlab_nav so left/right never leaks between the grid and the button row.
 	var cfg0: GameConfig = Config.data
-	_seed_spin = _make_spin(0.0, 1_000_000_000.0, 1.0, float(cfg0.track_seed))
+	_seed_spin = _make_spin(0.0, 4_294_967_295.0, 1.0, float(cfg0.track_seed))
 	_level_spin = _make_spin(-40.0, 10.0, 0.5, cfg0.track_water_level_m)
 	_turns_spin = _make_spin(3.0, 40.0, 1.0, float(cfg0.track_turn_count))
 	_straight_spin = _make_spin(0.0, 1.0, 0.05, cfg0.track_straightness)
+	# Terrain-noise fields (edited in a separate popup). All authored terrain values
+	# are whole numbers, so an integer step is safe — SpinBox snaps value to step, and
+	# a coarser step would corrupt a fractional value (none exist here by design).
+	_t1w = _make_spin(1.0, 1000.0, 1.0, cfg0.terrain_layer1_wavelength)
+	_t1a = _make_spin(0.0, 100.0, 1.0, cfg0.terrain_layer1_amplitude)
+	_t2w = _make_spin(1.0, 200.0, 1.0, cfg0.terrain_layer2_wavelength)
+	_t2a = _make_spin(0.0, 10.0, 1.0, cfg0.terrain_layer2_amplitude)
+	_t3w = _make_spin(1.0, 200.0, 1.0, cfg0.terrain_layer3_wavelength)
+	_t3a = _make_spin(0.0, 10.0, 1.0, cfg0.terrain_layer3_amplitude)
 	var sl_scroll := ScrollContainer.new()
 	sl_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	sl_scroll.anchor_top = 0.63
@@ -246,12 +276,22 @@ func _build() -> void:
 	sl_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_theme_constant_override("separation", 24)
 	sl_panel.add_child(sl_actions)
+	var sl_load := _make_action_button("Load event…", _open_event_picker)
+	sl_load.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_actions.add_child(sl_load)
+	var sl_terrain := _make_action_button("Terrain…", _open_terrain_editor)
+	sl_terrain.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_actions.add_child(sl_terrain)
 	var sl_random := _make_action_button("Randomize seed", _randomize_seed)
 	sl_random.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_child(sl_random)
 	var sl_back := _make_action_button("Back", go_back)
 	sl_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_child(sl_back)
+	_wire_seedlab_nav([[_seed_spin, _level_spin], [_turns_spin, _straight_spin]],
+		[sl_load, sl_terrain, sl_random, sl_back])
+	_build_event_picker()
+	_build_terrain_editor()
 	_seedlab_page.visible = false  # shown only via show_seedlab()
 
 	# Single source of truth for the swappable pages (list first — it's the
@@ -758,8 +798,16 @@ func _make_spin(mn: float, mx: float, stp: float, val: float) -> SpinBox:
 	spin.value = val
 	spin.update_on_text_changed = true  # type a value, not just click arrows
 	spin.custom_minimum_size = Vector2(130, 0)
-	spin.value_changed.connect(func(_v: float): _regen_seedlab())
+	spin.value_changed.connect(func(_v: float): _on_spin_changed())
 	return spin
+
+
+# Regenerate on a field change — unless we're mid-sync copying an event's values in
+# (then a single regen fires once the whole set lands).
+func _on_spin_changed() -> void:
+	if _syncing_spins:
+		return
+	_regen_seedlab()
 
 
 # A [title    <spin>] row.
@@ -779,6 +827,191 @@ func _randomize_seed() -> void:
 	_seed_spin.value = float(randi() % 1_000_000)  # fires value_changed -> _regen_seedlab
 
 
+# Contain left/right so it never leaks between the 2-column field grid and the
+# bottom button row. Within the grid, left/right just swaps columns on that row and
+# stops at the outer edges (edge cell's outward neighbour points at itself); up/down
+# still walks the rows (and off the last row down into the buttons) via Godot's
+# geometric default. On the button row, left/right chains between the buttons and
+# stops at the ends. `field_rows` is one [left, right] pair per grid row.
+func _wire_seedlab_nav(field_rows: Array, buttons: Array) -> void:
+	for row in field_rows:
+		var l := row[0] as Control
+		var r := row[1] as Control
+		l.focus_neighbor_left = l.get_path()   # leftmost column: no leftward move
+		l.focus_neighbor_right = r.get_path()
+		r.focus_neighbor_left = l.get_path()
+		r.focus_neighbor_right = r.get_path()  # rightmost column: no rightward move
+	for i in buttons.size():
+		var b := buttons[i] as Control
+		var left: Control = buttons[i - 1] if i > 0 else b
+		var right: Control = buttons[i + 1] if i < buttons.size() - 1 else b
+		b.focus_neighbor_left = left.get_path()
+		b.focus_neighbor_right = right.get_path()
+
+
+# --- Event picker ------------------------------------------------------------
+
+# A full-screen popup over the seed lab listing every rally and its events. Built
+# once (hidden); shown by _open_event_picker. Same top_level / high-z pattern as the
+# seed-lab page itself so it escapes the settings VBox layout.
+func _build_event_picker() -> void:
+	_seedlab_popup = Control.new()
+	_seedlab_popup.top_level = true
+	_seedlab_popup.z_index = 110  # above the seed-lab page (z 100)
+	_seedlab_popup.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_seedlab_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	_seedlab_page.add_child(_seedlab_popup)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.85)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_seedlab_popup.add_child(dim)
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.offset_left = 40.0
+	scroll.offset_right = -40.0
+	scroll.offset_top = 40.0
+	scroll.offset_bottom = -40.0
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_seedlab_popup.add_child(scroll)  # MenuNav enables follow_focus on open
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 6)
+	scroll.add_child(list)
+	list.add_child(_make_heading("Preview event"))
+	for rally in RallyLibrary.all():
+		var name_text := "%s  (%s)" % [String(rally.get("name", "?")),
+			String(rally.get("region", ""))]
+		list.add_child(_make_sub(name_text))
+		var events: Array = rally.get("events", [])
+		for i in events.size():
+			var event: Dictionary = events[i]
+			var label := "Event %d — seed %d, %d turns" % [i + 1,
+				int(event.get("seed", 0)), int(event.get("turn_count", 0))]
+			var btn := _make_action_button(label, _load_event.bind(event))
+			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			btn.focus_entered.connect(_remember_event_focus.bind(btn))
+			list.add_child(btn)
+	list.add_child(_make_action_button("Close", _close_event_picker))
+	_seedlab_popup.visible = false
+
+
+func _remember_event_focus(btn: Control) -> void:
+	_event_focus = btn
+
+
+func _open_event_picker() -> void:
+	_seedlab_popup.visible = true
+	# Keyboard/gamepad: walk the rows, B / Esc closes (per the menu-nav rule). Reopen
+	# lands on the row the cursor last sat on (follow_focus scrolls it into view).
+	var first: Control = _event_focus if is_instance_valid(_event_focus) else null
+	MenuNav.attach(_seedlab_popup, {"first": first, "on_back": _close_event_picker})
+
+
+func _close_event_picker() -> void:
+	_seedlab_popup.visible = false
+	focus_current_page()  # cursor back onto the seed-lab controls
+
+
+# Load a real rally event: copy every field the lab can drive into its spinboxes
+# (the four core inputs + the six terrain-noise fields) so the inputs stay the single
+# source of truth AND the preview matches the real career stage. Terrain matters
+# because the generator routes the road around below-water cells and relocates the
+# dry start — omitting it made the lab's lakes disagree with the event. Omitted keys
+# fall back to the authored base config (exactly as RallySession.apply_event_config).
+func _load_event(event: Dictionary) -> void:
+	var base: GameConfig = load(Config.CONFIG_PATH)
+	_syncing_spins = true
+	_seed_spin.value = float(int(event.get("seed", base.track_seed)))
+	_level_spin.value = float(event.get("water_level", base.track_water_level_m))
+	_turns_spin.value = float(int(event.get("turn_count", base.track_turn_count)))
+	_straight_spin.value = RallyLibrary.event_straightness(event)
+	_t1w.value = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))
+	_t1a.value = float(event.get("terrain_layer1_amplitude", base.terrain_layer1_amplitude))
+	_t2w.value = float(event.get("terrain_layer2_wavelength", base.terrain_layer2_wavelength))
+	_t2a.value = float(event.get("terrain_layer2_amplitude", base.terrain_layer2_amplitude))
+	_t3w.value = float(event.get("terrain_layer3_wavelength", base.terrain_layer3_wavelength))
+	_t3a.value = float(event.get("terrain_layer3_amplitude", base.terrain_layer3_amplitude))
+	_syncing_spins = false
+	_close_event_picker()
+	_regen_seedlab()
+
+
+# The lab's inputs as an EventDef — the same dict shape RallyLibrary events use.
+# The preview generates from THIS through the exact career path (see _regen_seedlab),
+# so what the lab shows matches what the stage actually generates.
+func _seedlab_event() -> Dictionary:
+	return {
+		"seed": int(_seed_spin.value),
+		"turn_count": int(_turns_spin.value),
+		"straightness": _straight_spin.value,
+		"water_level": _level_spin.value,
+		"terrain_layer1_wavelength": _t1w.value,
+		"terrain_layer1_amplitude": _t1a.value,
+		"terrain_layer2_wavelength": _t2w.value,
+		"terrain_layer2_amplitude": _t2a.value,
+		"terrain_layer3_wavelength": _t3w.value,
+		"terrain_layer3_amplitude": _t3a.value,
+	}
+
+
+# --- Terrain editor ----------------------------------------------------------
+
+# A popup exposing the six terrain-noise fields. Docked over the lower controls so
+# the track preview stays visible above it and updates live as values change.
+func _build_terrain_editor() -> void:
+	_seedlab_terrain_popup = Control.new()
+	_seedlab_terrain_popup.top_level = true
+	_seedlab_terrain_popup.z_index = 110
+	_seedlab_terrain_popup.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_seedlab_terrain_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	_seedlab_page.add_child(_seedlab_terrain_popup)
+	var panel := ColorRect.new()
+	panel.color = Color(0, 0, 0, 0.92)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.anchor_top = 0.63  # leave the preview (top ~62%) visible for live feedback
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_seedlab_terrain_popup.add_child(panel)
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.anchor_top = 0.63
+	scroll.offset_left = 40.0
+	scroll.offset_right = -40.0
+	scroll.offset_top = 8.0
+	scroll.offset_bottom = -16.0
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_seedlab_terrain_popup.add_child(scroll)
+	var panel_box := VBoxContainer.new()
+	panel_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel_box.add_theme_constant_override("separation", 8)
+	scroll.add_child(panel_box)
+	panel_box.add_child(_make_heading("Terrain noise"))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 24)
+	grid.add_theme_constant_override("v_separation", 8)
+	panel_box.add_child(grid)
+	grid.add_child(_spin_row("Hills wavelength", _t1w))
+	grid.add_child(_spin_row("Hills amplitude", _t1a))
+	grid.add_child(_spin_row("Mid wavelength", _t2w))
+	grid.add_child(_spin_row("Mid amplitude", _t2a))
+	grid.add_child(_spin_row("Fine wavelength", _t3w))
+	grid.add_child(_spin_row("Fine amplitude", _t3a))
+	panel_box.add_child(_make_action_button("Close", _close_terrain_editor))
+	_seedlab_terrain_popup.visible = false
+
+
+func _open_terrain_editor() -> void:
+	_seedlab_terrain_popup.visible = true
+	MenuNav.attach(_seedlab_terrain_popup, {"on_back": _close_terrain_editor})
+
+
+func _close_terrain_editor() -> void:
+	_seedlab_terrain_popup.visible = false
+	focus_current_page()
+
+
 # Generate the trial track and paint the preview, ANIMATING the DFS like the
 # loading screen (on_progress yields a frame per step). A generation token drops
 # stale runs so rapid edits don't fight over the preview.
@@ -787,9 +1020,13 @@ func _regen_seedlab() -> void:
 		return
 	_sl_gen += 1
 	var gen := _sl_gen
-	var cfg: GameConfig = Config.data
-	var params := TrackGenParams.for_trial(int(_seed_spin.value), _level_spin.value,
-		int(_turns_spin.value), _straight_spin.value, cfg)
+	# Generate through the SAME path the career uses — for_event on the event resolved
+	# to its canonical config — so the preview matches the real stage exactly (start-
+	# line staging, lead-in reserve, width, water, terrain). for_trial skipped staging,
+	# which is why the lab's shapes disagreed with the cached career tracks.
+	var ev := _seedlab_event()
+	var cfg := RallySession.canonical_event_config(ev)
+	var params := TrackGenParams.for_event(ev, cfg)
 	# Paint the waterline first (known up-front) over a rough box, then animate.
 	var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
 	var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)

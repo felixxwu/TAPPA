@@ -76,11 +76,20 @@ func _timed_process(_delta: float) -> void:
 	# avoiding a per-frame slice() allocation. resize only fires when n changes.
 	if _scratch.size() != n:
 		_scratch.resize(n)
+	var cfg: GameConfig = _car_config()
+	# Proximity attenuation: quieter as the active camera moves away. Non-positional
+	# player, so we drive volume_db ourselves from the squared camera distance (no
+	# sqrt) through the physical 1/d curve. Never runs headless (guarded above by the
+	# null _playback), so tests that instantiate the intro are unaffected.
+	var cam := get_viewport().get_camera_3d()
+	if cam != null:
+		var d2 := cam.global_position.distance_squared_to(get_parent().global_position)
+		volume_db = EngineAudioSynth.attenuation_db(
+			d2, cfg.engine_audio_ref_distance_m, cfg.engine_audio_max_attenuation_db)
 	# fuel_cut (limiter OR damage misfire) ducks the note; the crackle burst is
 	# limiter-only (engine.limiting) — a damaged engine sputters without the pop.
 	# turbo_spin normalizes the shaft speed so the whistle pitch tracks it; boost/
 	# bov_event/antilag_active drive the whistle amplitude and the transient bursts.
-	var cfg: GameConfig = _car_config()
 	var turbo_spin := engine.omega_turbo / cfg.turbo_omega_ref if cfg.turbo_omega_ref > 0.0 else 0.0
 	# bov_event is latched by the sim across the physics substeps; consume it here so
 	# each blow-off fires exactly once and re-arms (the synth edge-detects it).

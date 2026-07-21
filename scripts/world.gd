@@ -1460,10 +1460,13 @@ func _reset_props_for_replay() -> void:
 
 
 func _on_leaderboard_hidden_changed(hidden: bool) -> void:
-	# Engine audio: muted while the leaderboard is shown, on while hidden (watch mode).
+	# Engine audio: silenced while the leaderboard is shown, on while hidden (watch
+	# mode). Disable the node's processing (drains the generator to silence) rather
+	# than writing volume_db — the per-frame proximity attenuation in engine_audio.gd
+	# would otherwise overwrite a volume_db mute every frame. See engine-audio.md.
 	var ea := $Car.get_node_or_null("EngineAudio") as AudioStreamPlayer
 	if ea != null:
-		ea.volume_db = 0.0 if hidden else -60.0
+		ea.process_mode = Node.PROCESS_MODE_INHERIT if hidden else Node.PROCESS_MODE_DISABLED
 
 
 func _on_session_car_wrecked() -> void:

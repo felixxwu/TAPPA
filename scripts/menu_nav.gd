@@ -60,6 +60,7 @@ static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 	nav._root = root
 	nav._on_back = opts.get("on_back", Callable())
 	nav._make_focusable(root)
+	nav._enable_scroll_follow(root)
 	nav._first = opts.get("first", null)
 	if nav._first == null:
 		nav._first = UITheme.first_focusable(root)
@@ -90,6 +91,16 @@ func _enable(c: Control) -> void:
 		return
 	if c.focus_mode == Control.FOCUS_NONE:
 		c.focus_mode = Control.FOCUS_ALL
+
+
+# Make every ScrollContainer under the menu follow keyboard/gamepad focus: when the
+# cursor moves (native ui_* OR our WASD grab_focus) onto a row that's scrolled out of
+# view, the list auto-scrolls to reveal it. Without this, directional nav can walk the
+# cursor onto rows the user can't see. follow_focus is a no-op when nothing overflows,
+# so it's safe to switch on everywhere.
+func _enable_scroll_follow(root: Node) -> void:
+	for node in root.find_children("*", "ScrollContainer", true, false):
+		(node as ScrollContainer).follow_focus = true
 
 
 # Is the menu actually on screen? Control.is_visible_in_tree() only walks Control

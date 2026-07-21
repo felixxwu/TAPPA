@@ -22,10 +22,10 @@ terrain surface is a separate, future step.
 
 The shipped set: the **gradient 1–6** (1 ≈ 85°/~18 m radius sharpest … 6 ≈
 12°/~108 m radius gentlest — both angle and radius grow with the number),
-**Square** (sharp ~90°), **Hairpin** (~180°), **Straight** (50 m line), and a
-compound **"Right 4 tightens 2"** demonstrating authored multi-point corners.
-Every turn except the **Hairpin** (and the plain **Straight**) is scaled 1.2×
-larger than its original authored geometry — angles unchanged, radii grown.
+**Square** (sharp ~90°), **Hairpin** (~180°, a 3-point curve) and **Straight**
+(50 m line). Turns **3–5** are tightened (smaller radius, same angle); turns
+**1**, **2**, **Square** and **Hairpin** carry a longer entry lead-in (a
+lengthened entry tangent) with their sharpness unchanged.
 
 ## Catalog scene (`corner_catalog.tscn`)
 

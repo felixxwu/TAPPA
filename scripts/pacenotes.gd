@@ -65,9 +65,8 @@ static func notes_to_fracs(notes: Array, ahead: float, span: float) -> Array:
 # inversion the roadside boards already bake in — so the HUD must use the SAME mapping
 # as the signs to read correctly, not the opposite.
 #
-# The compound "Right 4 tightens 2" has no single grade, so it reuses its entry-grade
-# (4) art. Square / Hairpin use their named glyph; numbered gradients "1".."6" carry
-# their own grade board.
+# Square / Hairpin use their named glyph; numbered gradients "1".."6" carry their
+# own grade board.
 static func arrow_key(corner: String, flip: bool) -> String:
 	var dir := "right" if flip else "left"
 	match corner:
@@ -75,7 +74,5 @@ static func arrow_key(corner: String, flip: bool) -> String:
 			return "arrow_square_%s" % dir
 		"Hairpin":
 			return "arrow_uturn_%s" % dir
-		"Right 4 tightens 2":
-			return "arrow_4_%s" % dir
 		_:  # numbered gradient "1".."6"
 			return "arrow_%s_%s" % [corner, dir]

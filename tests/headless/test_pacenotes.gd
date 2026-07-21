@@ -94,13 +94,6 @@ func test_arrow_key_agrees_with_the_signs_for_shared_shapes() -> void:
 				"HUD arrow for %s (flip=%s) matches the sign" % [corner, flip])
 
 
-func test_arrow_key_compound_reuses_entry_grade_art() -> void:
-	assert_eq(Pacenotes.arrow_key("Right 4 tightens 2", false), "arrow_4_left",
-		"compound corner reuses its entry-grade (4) board")
-	assert_eq(Pacenotes.arrow_key("Right 4 tightens 2", true), "arrow_4_right",
-		"compound corner, left-hand")
-
-
 # --- notes_to_fracs() --------------------------------------------------------
 
 func test_notes_to_fracs_maps_offset_over_span_from_start_line() -> void:

@@ -188,9 +188,18 @@ static func flee_force(pos: Vector2, car_pos: Vector2, radius: float) -> Vector2
 	return away / d * (t * t)
 
 
-# Push off the carriageway: probe 8 directions at `probe` metres; each direction
-# whose cell is road contributes a push the opposite way. Standing on the road
-# yields a strong outward gradient.
+# Push off the carriageway: probe 8 directions, each in `STEPS` steps out to `probe`
+# metres. A direction whose road is NEAR pushes hard; one whose road is only at the
+# far edge of the probe pushes softly (magnitude = 1 - hit_dist/probe); a direction
+# with no road contributes nothing.
+#
+# The distance grading is what stops roadside spectators jiggling on the spot. A
+# bang-bang probe (full push anywhere within `probe`, zero just past it) has a hard
+# switching surface at exactly `probe` metres from the road: the anchor pull toward
+# home drags a member across it, the road push shoves it back, and — since the push
+# doesn't ease off near the edge — the two never balance, so the member chatters
+# between the two sides forever. Fading the push to zero at `probe` gives it a smooth
+# gradient that meets the anchor pull at a single stable point instead.
 static func road_force(pos: Vector2, road_cells: Dictionary, probe: float) -> Vector2:
 	if road_cells.is_empty() or probe <= 0.0:
 		return Vector2.ZERO
@@ -198,11 +207,16 @@ static func road_force(pos: Vector2, road_cells: Dictionary, probe: float) -> Ve
 		Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
 		Vector2(0.707, 0.707), Vector2(-0.707, 0.707),
 		Vector2(0.707, -0.707), Vector2(-0.707, -0.707)]
+	const STEPS := 10
 	var force := Vector2.ZERO
 	for d in DIRS:
-		var q: Vector2 = pos + d * probe
-		if ScatterMath.on_road(q, road_cells):
-			force -= d
+		# Walk outward; the FIRST (nearest) road hit sets this direction's push. Nearer
+		# road => stronger push, fading to zero at the probe's far edge.
+		for s in range(1, STEPS + 1):
+			var dist := probe * float(s) / float(STEPS)
+			if ScatterMath.on_road(pos + d * dist, road_cells):
+				force -= d * (1.0 - dist / probe)
+				break
 	return force
 
 

@@ -48,7 +48,11 @@ space:
   resting on a slider is enough to change it (WASD matches what arrows / D-pad / stick
   already do natively) — up/down still move focus off to the next row; (4) routes
   **both** `ui_cancel` **and** `menu_back`
-  to `on_back` (omit it and the host keeps its own back handling). `MenuNav` goes inert
+  to `on_back` (omit it and the host keeps its own back handling); (5) switches every
+`ScrollContainer` under `root` to **`follow_focus`**, so directional nav onto a row that's
+scrolled out of view auto-scrolls it into view — without this the cursor can walk onto
+items the user can't see (`follow_focus` is a no-op when nothing overflows, so it's safe
+everywhere). `MenuNav` goes inert
   while its `root` is hidden — including a hidden `CanvasLayer` ancestor (how HQ toggles
   overlays), which `Control.is_visible_in_tree()` alone misses — so a hidden overlay never
   steals input from the station behind it.

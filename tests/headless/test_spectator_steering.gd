@@ -74,15 +74,34 @@ func test_flee_is_stronger_closer() -> void:
 # --- road avoidance -----------------------------------------------------------
 
 func test_road_force_pushes_off_the_carriageway() -> void:
-	# A road cell to the +x of the probe point should push -x.
-	var road := { Vector2i(2, 0): true }  # world x in [1.0, 1.5)
-	var f := SpectatorGroup.road_force(Vector2(0, 0), road, 1.0)
+	# Road on the +x side (world x in [0.5, 1.0)) should push -x.
+	var road := { Vector2i(1, 0): true }
+	var f := SpectatorGroup.road_force(Vector2(0, 0), road, 2.0)
 	assert_lt(f.x, 0.0, "spectator is pushed away from the road on its +x side")
 
 
 func test_road_force_zero_with_no_road_nearby() -> void:
 	assert_eq(SpectatorGroup.road_force(Vector2(0, 0), {}, 1.0), Vector2.ZERO,
 		"no road cells -> no road force")
+
+
+func test_road_force_is_graded_by_distance() -> void:
+	# The push fades with distance to the road: a spectator standing close to the
+	# carriageway is shoved harder than one near the far edge of the probe. This
+	# smooth gradient (rather than a bang-bang full/zero push at the probe edge) is
+	# what lets the road push and the anchor pull meet at a single stable resting
+	# point, instead of chattering across the old hard switching surface.
+	var road := {}
+	for cx in range(4, 40):        # road at world x >= 2.0
+		road[Vector2i(cx, 0)] = true
+	var probe := 4.0
+	var near := SpectatorGroup.road_force(Vector2(1.5, 0), road, probe).length()  # 0.5 m off
+	var far := SpectatorGroup.road_force(Vector2(-1.5, 0), road, probe).length()  # 3.5 m off
+	assert_gt(near, far, "closer to the road -> stronger push")
+	assert_gt(far, 0.0, "still a gentle push within probe range")
+	# Beyond the probe the push has faded to nothing (no hard cliff to oscillate on).
+	assert_almost_eq(SpectatorGroup.road_force(Vector2(-3.0, 0), road, probe).length(), 0.0, 1e-6,
+		"a spectator a full probe-length off the road feels no push")
 
 
 # --- obstacle avoidance -------------------------------------------------------
@@ -155,6 +174,67 @@ func test_combine_partial_budget_blends_lower_priority() -> void:
 	assert_almost_eq(out.x, 1.0, 1e-3, "flee component preserved")
 	assert_gt(out.y, 0.0, "remaining budget spent on avoidance")
 	assert_lte(out.length(), 3.0 + 1e-3, "total never exceeds max_speed")
+
+
+# --- settling (no on-the-spot jiggle) -----------------------------------------
+
+class _StubCar:
+	extends Node3D
+	var linear_velocity := Vector3.ZERO
+
+
+func test_roadside_crowd_settles_instead_of_jiggling() -> void:
+	# The real jiggle: spectators line the verge, so the road push (keep off the
+	# carriageway) and the anchor pull (drift home) act on them at once. With a
+	# bang-bang road push the two can never balance — a member is dragged across the
+	# probe-edge switching surface and shoved back, chattering between two spots
+	# forever. The distance-graded road push gives a smooth gradient that meets the
+	# anchor at a single resting point, so the crowd settles. We measure PATH LENGTH
+	# (a jiggle racks up travel even though its net displacement is ~0).
+	var car := _StubCar.new()
+	add_child_autofree(car)
+	car.global_position = Vector3(1000.0, 0.0, 1000.0)  # far away → nobody is fleeing
+
+	# A straight road band, spectators scattered along both verges (the shipping path).
+	var road := {}
+	for cx in range(190, 221):
+		for cz in range(160, 241):
+			road[Vector2i(cx, cz)] = true
+
+	var p := Config.data.spectator_params()
+	p["seed"] = 1
+	p["active_radius_m"] = 100000.0   # LOD gate always open
+	p["sim_interval"] = 1             # steer every tick for a deterministic run
+	var sep: float = p["separation_m"]
+	var members := SpectatorScatter.members(
+		Vector2(100, 100), Vector2(0, 1), 15.0, 11.0, 50, sep, road, {},
+		p["tree_avoid_m"], 1.5, 1)
+	assert_gt(members.size(), 10, "scattered a real roadside crowd")
+
+	var group := SpectatorGroup.new()
+	add_child_autofree(group)
+	group.setup(members, car, null, road, {}, p)
+
+	# Let it settle.
+	for _i in 400:
+		group._physics_process(1.0 / 60.0)
+
+	# Total distance the whole crowd travels over the next second. A jiggle racks up
+	# travel even with ~0 net displacement; a settled crowd barely moves.
+	var prev := PackedVector2Array()
+	for i in members.size():
+		prev.append(group.member_position(i))
+	var path := 0.0
+	for _i in 60:
+		group._physics_process(1.0 / 60.0)
+		for i in members.size():
+			var now := group.member_position(i)
+			path += prev[i].distance_to(now)
+			prev[i] = now
+	# The unfixed (bang-bang) road force leaves the crowd churning ~9 m of travel a
+	# second here; the graded push settles it to well under a metre.
+	assert_lt(path, 2.0,
+		"a settled roadside crowd barely moves (total path over 1s = %f m)" % path)
 
 
 # --- ragdoll vertical placement -----------------------------------------------
