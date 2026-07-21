@@ -184,9 +184,11 @@ search cost (and its restart/backtrack variability) from both generation sites
   free-roam (`for_config`) always generates live.
 - **Regenerate:** `./cache_tracks.sh` runs the generator scene
   (`tools/generate_track_cache.tscn` → `tools/generate_track_cache.gd`), ~55 s for
-  ~40 events. **Bump `TrackCache.CACHE_VERSION`** (and regenerate) whenever a
-  generator constant or `CornerLibrary.CORNERS` shape changes — otherwise a stale
-  cache would replay pieces the search never re-validated.
+  ~40 events. The key's version segment (`TrackCache._version_tag`) auto-folds a
+  fingerprint of `CornerLibrary.CORNERS` and of the generator's shape/search constants
+  (`TrackGenerator.constants_fingerprint`), so a corner or constant edit invalidates the
+  cache automatically — just regenerate. Only a genuine algorithm/control-flow change
+  the constants don't capture needs a manual `TrackCache.CACHE_VERSION` bump.
 - **Validation:** the lockfile stores a `source_hash` (SHA-256 of the sorted
   event-key set). CI (`tools/verify_track_cache.tscn`, gating the export jobs) and
   the local suite (`test_track_cache.gd`) recompute and compare it — a forgotten

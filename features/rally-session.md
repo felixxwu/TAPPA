@@ -178,6 +178,31 @@ could derive times against a different shape than the run scene generated. See
 [track.md](track.md) → *Turn cache* and
 `docs/superpowers/specs/2026-07-21-track-turn-cache-design.md`.
 
+## Opponent field cache
+
+The whole opponent field (`generate_opponent_field` — names, cars, per-event times,
+wrecks, DNF) is deterministic (rally-seeded RNG + `LapTimeModel.optimum_ms` over the
+cached tracks, no player input), so it is **precomputed and committed** to
+`data/opponent_cache.json` (`scripts/opponent_cache.gd` → `OpponentCache`). `start_rally`
+now does `OpponentCache.lookup(rally)` and only falls back to live
+`generate_opponent_field` on a miss (editor warns / export errors, never crashes) —
+removing ~30–45 lap-time sims from every `start_rally`.
+
+- **Key:** `rally_id | rally_content_fingerprint | global_fingerprint`.
+  `rally_content_fingerprint` = `str(rally).sha256` (captures `difficulty` → pace band,
+  `restriction` → eligible pool, per-event `surface_mix` → grip — none of which are
+  track-*shape* determinants). `global_fingerprint` folds the track lockfile's
+  committed `source_hash`, the car/engine catalogue (incl. `CarLibrary.TORQUE_POWER_FALLOFF`),
+  the authored-base grip (`gravel_grip`/`tarmac_grip` from `Config.CONFIG_PATH`), the
+  field-gen constants + `RIVAL_NAMES`, and `OpponentCache.CACHE_VERSION` (bump only for
+  `LapTimeModel` physics / field-assembly algorithm changes).
+- **Depends on the track cache** — regenerate tracks first. `./cache_all.sh` runs
+  `cache_tracks.sh` then `cache_opponents.sh` in order; `./cache_opponents.sh` alone
+  regenerates just this file. A car/rally/grip/physics retune requires a regen.
+- **Validation:** `tools/verify_opponent_cache.tscn` (a `source_hash` over the sorted
+  per-rally keys) gates CI alongside the track verifier; `test_opponent_cache.gd`
+  runs the same freshness check locally.
+
 ## Tests
 
 `tests/headless/test_rally_session.gd` — happy path + placement, the per-rally

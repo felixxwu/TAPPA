@@ -47,7 +47,7 @@ func _ready() -> void:
 		return
 	# full_precision = true: the default truncates entry_pos/entry_heading doubles,
 	# which would shift rebuilt points and destabilise the committed file.
-	f.store_string(JSON.stringify(out, "  ", true))
+	f.store_string(JSON.stringify(out, "  ", true, true))
 	f.close()
 	print("track cache: wrote %d entries to %s" % [ordered.size(), OUT_PATH])
 	get_tree().quit(1 if failures > 0 else 0)

@@ -133,8 +133,17 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 		# (placeholder). Tests MUST overwrite _opponent_field before making assertions.
 		_opponent_field = RallyLibrary.generate_opponent_field(rally, [], [])
 	else:
+		# results feed the run scene / target-time path and the live fallback below.
 		var results := await _generate_event_tracks(rally)
-		_opponent_field = RallyLibrary.generate_opponent_field(rally, results, rally.get("events", []))
+		_opponent_field = OpponentCache.lookup(rally)
+		if _opponent_field.is_empty():
+			# Editor/tests warn; exported builds error — always live-fallback, never
+			# crash (the CI lockfile check is the real coverage guarantee).
+			if OS.has_feature("editor"):
+				push_warning("OpponentCache miss (%s) — generating field live" % OpponentCache.key_for(rally))
+			else:
+				push_error("OpponentCache miss in exported build (%s) — generating live; regenerate the lockfile (./cache_all.sh)" % OpponentCache.key_for(rally))
+			_opponent_field = RallyLibrary.generate_opponent_field(rally, results, rally.get("events", []))
 	_enter_event()
 
 

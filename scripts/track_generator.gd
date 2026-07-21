@@ -47,6 +47,21 @@ const STRAIGHTNESS_BIAS := 6.0
 const PROGRESS_STEP_INTERVAL := 2
 
 
+# Short fingerprint of every generator constant that can change a committed track's
+# output, folded into the cache key (via TrackCache) so editing any of them
+# auto-invalidates the lockfile without a manual CACHE_VERSION bump. Includes the
+# search-budget/restart knobs (STEPS_*, MAX_RESTARTS, RESTART_SEED_STRIDE): a seed
+# that completed only after a restart depends on them. PROGRESS_STEP_INTERVAL is
+# excluded — it is pacing-only and never affects the RESULT.
+static func constants_fingerprint() -> String:
+	return str([
+		CELL_M, STRAIGHT_OPTIONS_M, RASTER_STEP_M,
+		STEPS_BASE, STEPS_PER_TURN,
+		WATER_CLIP_CELLS, WATER_MAX_WET_FRACTION,
+		MAX_RESTARTS, RESTART_SEED_STRIDE, STRAIGHTNESS_BIAS,
+	]).sha256_text().substr(0, 12)
+
+
 # Transform2D mapping local corner space (x = right, y = forward/heading) to
 # world, anchored at `pos` with the +Y axis along the unit `heading`.
 static func frame_transform(pos: Vector2, heading: Vector2) -> Transform2D:

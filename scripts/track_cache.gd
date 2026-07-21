@@ -47,17 +47,23 @@ static func terrain_fingerprint(cfg: GameConfig) -> String:
 
 
 # Short fingerprint of the corner shape library, folded into the key so a corner
-# shape edit auto-invalidates the cache without a manual CACHE_VERSION bump. (Other
-# generator-constant changes — STRAIGHT_OPTIONS_M, the bias/water tunables — still
-# need a manual CACHE_VERSION bump, since they aren't captured here.)
+# shape edit auto-invalidates the cache without a manual CACHE_VERSION bump.
 static func _corner_fingerprint() -> String:
 	if _corner_fp == "":
 		_corner_fp = str(CornerLibrary.CORNERS).sha256_text().substr(0, 12)
 	return _corner_fp
 
 
+# Version segment of the key: manual CACHE_VERSION + auto fingerprints of the corner
+# library and the generator's shape/search constants, so a corner or generator-constant
+# edit auto-invalidates the cache. Only genuine algorithm changes (control flow the
+# constants don't capture) still need a manual CACHE_VERSION bump.
+static func _version_tag() -> String:
+	return "%s:%s:%s" % [CACHE_VERSION, _corner_fingerprint(), TrackGenerator.constants_fingerprint()]
+
+
 static func key_for(params: TrackGenParams, cfg: GameConfig) -> String:
-	return params.cache_key(terrain_fingerprint(cfg), CACHE_VERSION + ":" + _corner_fingerprint())
+	return params.cache_key(terrain_fingerprint(cfg), _version_tag())
 
 
 static func lookup(params: TrackGenParams, cfg: GameConfig) -> Dictionary:
@@ -91,6 +97,17 @@ static func source_hash_of(keys: Array) -> String:
 	var sorted := keys.duplicate()
 	sorted.sort()
 	return "|".join(PackedStringArray(sorted)).sha256_text()
+
+
+# The source_hash committed in the track lockfile (not recomputed). Lets dependent
+# caches (OpponentCache) fold the track cache's state into their key cheaply.
+static func stored_source_hash() -> String:
+	if not FileAccess.file_exists(CACHE_PATH):
+		return ""
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CACHE_PATH))
+	if typeof(data) == TYPE_DICTIONARY:
+		return String(data.get("source_hash", ""))
+	return ""
 
 
 static func _deserialize_pieces(raw: Array) -> Array:

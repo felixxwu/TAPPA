@@ -79,6 +79,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |
 | Track generation | `scripts/track_generator.gd` |
 | Track turn cache | `scripts/track_cache.gd` (`TrackCache`), `data/track_cache.json`, `tools/generate_track_cache.gd`, `tools/verify_track_cache.gd`, `cache_tracks.sh` |
+| Opponent field cache | `scripts/opponent_cache.gd` (`OpponentCache`), `data/opponent_cache.json`, `tools/generate_opponent_cache.gd`, `tools/verify_opponent_cache.gd`, `cache_opponents.sh`, `cache_all.sh` |
 | Lakes / water | `scripts/lake_field.gd` (`LakeField`), `scripts/track_gen_params.gd` (`TrackGenParams`), `scripts/terrain_noise.gd` (`TerrainNoise`), `shaders/water.gdshader` |
 | Track shape params | `scripts/track_gen_params.gd` (`TrackGenParams` — the required shape contract for `TrackGenerator.generate`) |
 | Trees & bushes | `scripts/tree_scatter.gd`, `scripts/billboard_field.gd`, `shaders/billboard.gdshader` |
