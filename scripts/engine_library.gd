@@ -135,7 +135,7 @@ const ENGINES: Array[Dictionary] = [
 		# ~1,900 N·m @ ~2,000 rpm derives to ~665 bhp — the conservative end of the CLAIMED 750-950 bhp.
 		# Huge crank/flywheel → very lazy revs (big engine_inertia). Loudest, deepest voice in the roster.
 		"id": "merlin_v27_v12", "name": "27L Merlin V12", "layout": "v12", "mass": 745.0,
-		"redline_rpm": 3200.0, "peak_torque": 1900.0, "peak_torque_rpm": 2000.0, "engine_inertia": 1.5,
+		"redline_rpm": 3200.0, "peak_torque": 1890.0, "peak_torque_rpm": 2000.0, "engine_inertia": 1.5,
 		"engine_friction_base": 150.0,  # V12 27L aero monster — far more than the 5.3 despite equal cylinders
 		"low_octave_mix": 0.8, "volume_db": 11.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 3, "shift_time": 0.30,  # GM TH400 3-speed auto
