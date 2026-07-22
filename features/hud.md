@@ -28,7 +28,7 @@ reveals it. See [debug-tools.md](debug-tools.md).
 | `StageDeltaLabel` | `n.nn ahead of/behind P1` pace popup | driven by `StageManager` (top-centre, code-built) |
 | `StageCompletePanel` | finish panel: `FINISH` + time (+ cut breakdown) + `NEXT` button | driven by `StageManager` |
 | `CutFlashLabel` | `CUT +n.ns` live corner-cut flash | driven by `StageManager` (top-right, code-built) |
-| `HPBar` (+ `HPLabel`) | `Health NN%` over a bar | `car.damage` (colour-graded green→amber→red) |
+| `HPBar` (+ `HPLabel`) | `Health NN` over a bar | `car.damage` (colour-graded green→amber→red) |
 | `ImpactFlash` | red screen flash on a hit | `car.damage` (sized to the HP lost, fades out) |
 
 ## Damage gauge
@@ -36,8 +36,8 @@ reveals it. See [debug-tools.md](debug-tools.md).
 The `HPBar`/`HPLabel`/`ImpactFlash` are driven by `_update_damage(delta)` (called
 from `_process`) off the car's `DamageModel` (see [damage.md](damage.md)): the bar
 tracks `hp / max_hp` and is hue-graded from green (full) to red (empty), under a
-**`Health NN%`** label (a percentage, not a raw HP number — "HP" reads as
-horsepower); below `hud_low_hp_warn_frac` it pulses a low-health warning. Any HP drop since the previous
+**`Health NN`** label (the absolute HP value); below `hud_low_hp_warn_frac` it
+pulses a low-health warning. Any HP drop since the previous
 frame bumps the red `ImpactFlash` overlay (sized to the loss), which fades back
 out each frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for
 every car (the starter is a normal wreckable car like any other).

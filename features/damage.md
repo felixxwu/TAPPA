@@ -15,7 +15,7 @@ of every rally event after the first (see *Between-event pit repairs* below).
 
 | Field | Meaning |
 |-------|---------|
-| `max_hp` | the car's HP pool — CarLibrary metadata (`max_hp`, mass-keyed), set per car |
+| `max_hp` | the car's HP pool — CarLibrary metadata, set per car by **durability** (real-world mechanical reliability + build quality + structural rigidity + ease of repair), not purely by mass; see the per-car rationale comments in `car_library.gd` |
 | `hp` | working HP for the current run (starts at the OwnedCar's stored HP) |
 | `instance_id` | OwnedCar binding; **-1 = unbound** (free-roam / dev — never touches `Save`) |
 | `wheel_toe` | permanent per-wheel toe misalignment (rad), keyed by `WHEEL_NAMES` — see *Wheel misalignment* below |
@@ -78,8 +78,10 @@ hp_loss = impact_ref_hp_loss · v² / impact_ref_speed_kmh²
   is still the pure, unit-tested static.
 
 Two things shape survivability:
-- **Per-hit cap** — each tick's loss is clamped to `impact_max_loss_frac` of max HP
-  (`0.4` in `game_config.tres`), so no one spike wrecks the car.
+- **Per-hit cap** — each tick's loss is clamped to a flat `impact_max_loss` HP amount
+  (`450` in `game_config.tres`), so no one spike wrecks the car. Being absolute rather
+  than a fraction of max HP, a car's `max_hp` genuinely matters — a fragile car is
+  wrecked by fewer capped hits than a tough one.
 - **No cooldown.** A pinned/stopped car sheds ~0 velocity/tick, so grinding against a
   wall self-limits with no timer; a genuine multi-bounce **tumble** down a tall drop
   is several real `dv` spikes and racks up several capped hits — so a long fall can
@@ -251,19 +253,19 @@ the summary without building the popup.
 ## In-run HUD (see [hud.md](hud.md))
 
 `hud.gd` reads `car.damage` each frame: a colour-graded **health bar** (`HPBar`,
-green → amber → red) under a **`Health NN%`** label (`HPLabel` — a percentage, not a
-raw HP number, since "HP" reads as horsepower), a low-health **warning pulse** below
+green → amber → red) under a **`Health NN`** label (`HPLabel` — the absolute HP
+value), a low-health **warning pulse** below
 `hud_low_hp_warn_frac`, and a red **impact flash** (`ImpactFlash`) sized to each
-HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off. The percentage
-**reserves `0%` for a genuine wreck** (`hp == 0`): any positive HP rounds UP to at
-least `1%`, so the label never reads `0%` on a still-drivable car (which would look
+HP-losing hit. The gauge is hidden when `hud_hp_enabled` is off. The readout
+**reserves `0` for a genuine wreck** (`hp == 0`): any positive HP rounds UP to at
+least `1`, so the label never reads `0` on a still-drivable car (which would look
 like a broken wreck trigger).
 
 ## Config knobs (`GameConfig`, *Damage* group)
 
 `impact_threshold_g` (the braking-proof deceleration gate — the single sensitivity
 knob), `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
-`impact_max_loss_frac`, `damage_misfire_health_threshold`, `damage_misfire_rate_max`,
+`impact_max_loss`, `damage_misfire_health_threshold`, `damage_misfire_rate_max`,
 `damage_misfire_load_bias`, `damage_misfire_duration_min`, `damage_misfire_duration_max`,
 `damage_wheel_toe_gain`, `damage_wheel_toe_max`, the between-event pit repair
 (`field_repair_hp_fraction`, `field_repair_toe_fraction`), soft contacts

@@ -111,7 +111,7 @@ See [stage.md](stage.md).
 | `impact_threshold_g` | 2.0 | Deceleration (g) a physics tick must exceed before it costs HP — keeps braking/clean landings free; the single sensitivity knob for the unified deceleration-damage model |
 | `impact_ref_speed_kmh` | 60.0 | Reference shed-velocity (km/h) at which a hit costs `impact_ref_hp_loss` |
 | `impact_ref_hp_loss` | 200.0 | HP a reference hit costs (square-law in shed velocity); a full arrest sheds ≈ the approach speed |
-| `impact_max_loss_frac` | 0.34 | Cap on one tick's HP loss, as a fraction of max HP (no single spike wrecks); a stopped car self-limits, a tumble racks up several |
+| `impact_max_loss` | 450 | Cap on one tick's HP loss, as a flat HP amount (no single spike wrecks); absolute so max_hp matters — a fragile car wrecks in fewer hits; a stopped car self-limits, a tumble racks up several |
 | `damage_misfire_health_threshold` | 0.5 | Health fraction at/above which the engine is fully healthy; misfire ramps in below it |
 | `damage_misfire_rate_max` | 9.0 | Engine fuel-cuts/sec at 0 HP under full load (stumbling power loss) |
 | `damage_misfire_load_bias` | 0.35 | How much the misfire fires independent of load (0..1) |

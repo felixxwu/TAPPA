@@ -106,7 +106,7 @@ func test_full_arrest_matches_capped_square_law() -> void:
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
 	var dv := _mps(cfg.impact_ref_speed_kmh)
-	var expected := minf(DamageModel.hp_loss_for_speed(dv, cfg), 1000.0 * cfg.impact_max_loss_frac)
+	var expected := minf(DamageModel.hp_loss_for_speed(dv, cfg), cfg.impact_max_loss)
 	assert_almost_eq(dm.register_deceleration(dv, DT, Vector3.ZERO, cfg), expected, 1e-3,
 		"deceleration damage == capped square law for the shed velocity")
 
@@ -117,10 +117,10 @@ func test_single_spike_is_capped_and_cannot_wreck() -> void:
 	dm.field(1000.0, 1000.0)
 	var wrecks := {"n": 0}
 	dm.wrecked.connect(func() -> void: wrecks["n"] += 1)
-	# A colossal single spike is capped to a fraction of max HP, so it can't wreck.
+	# A colossal single spike is capped to a flat HP amount, so it can't wreck.
 	var loss := dm.register_deceleration(1.0e6, DT, Vector3.ZERO, cfg)
-	assert_almost_eq(loss, 1000.0 * cfg.impact_max_loss_frac, 1e-3,
-		"a single spike is capped to impact_max_loss_frac of max HP")
+	assert_almost_eq(loss, cfg.impact_max_loss, 1e-3,
+		"a single spike is capped to the flat impact_max_loss amount")
 	assert_gt(dm.hp, 0.0, "one crash cannot wreck the car")
 	assert_eq(wrecks["n"], 0, "no wreck from a single hit")
 
@@ -215,7 +215,7 @@ func test_nudge_bends_every_wheel_within_clamp() -> void:
 	var cfg: GameConfig = Config.data
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
-	dm.nudge_wheels(cfg.impact_max_loss_frac * dm.max_hp, cfg)  # a big hit
+	dm.nudge_wheels(cfg.impact_max_loss, cfg)  # a big hit
 	var any_bent := false
 	for a in dm.toe_array():
 		assert_true(abs(a) <= cfg.damage_wheel_toe_max + 1e-6, "each wheel clamped to ±toe_max")
@@ -239,7 +239,7 @@ func test_nudge_always_clamped_over_many_hits() -> void:
 	var dm := DamageModel.new()
 	dm.field(1000.0, 1000.0)
 	for i in 50:
-		dm.nudge_wheels(cfg.impact_max_loss_frac * dm.max_hp, cfg)
+		dm.nudge_wheels(cfg.impact_max_loss, cfg)
 	for a in dm.toe_array():
 		assert_true(abs(a) <= cfg.damage_wheel_toe_max + 1e-6, "toe never exceeds the clamp")
 

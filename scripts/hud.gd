@@ -94,7 +94,7 @@ var _last_rpm := -1
 var _last_hp := -1.0
 var _hp_pulse_t := 0.0
 # Last displayed health percentage, so the label only re-formats on a change.
-var _last_hp_pct := -1
+var _last_hp_shown := -1
 # The speed / gear / rpm readout is a dev diagnostic, hidden by default and
 # toggled with H (`toggle_debug_arrows`) — the same gate as the debug force
 # arrows, and like them only in a debug build (release/web ignore the key).
@@ -275,15 +275,15 @@ func _update_damage(delta: float) -> void:
 	if show_gauge:
 		var frac := clampf(dmg.hp / dmg.max_hp, 0.0, 1.0) if dmg.max_hp > 0.0 else 0.0
 		_hp_bar.value = frac
-		# Label the gauge "Health" + a live percentage (a raw HP number is misleading —
-		# it reads as horsepower). Only re-format when the rounded percent changes.
-		# Any positive HP rounds UP to at least 1% so "0%" is reserved for a genuine
-		# wreck (hp == 0) — otherwise the gauge reads 0% while the car is still alive
-		# and the player wonders why nothing happens when they keep driving.
-		var pct := 0 if dmg.hp <= 0.0 else maxi(1, roundi(frac * 100.0))
-		if pct != _last_hp_pct:
-			_last_hp_pct = pct
-			_hp_label.text = "HEALTH %d%%" % pct
+		# Label the gauge "Health" + the live absolute HP value. Only re-format when
+		# the rounded value changes. Any positive HP rounds UP to at least 1 so "0" is
+		# reserved for a genuine wreck (hp == 0) — otherwise the gauge reads 0 while
+		# the car is still alive and the player wonders why nothing happens when they
+		# keep driving.
+		var shown_hp := 0 if dmg.hp <= 0.0 else maxi(1, roundi(dmg.hp))
+		if shown_hp != _last_hp_shown:
+			_last_hp_shown = shown_hp
+			_hp_label.text = "HEALTH %d" % shown_hp
 		# Green (full) → amber → red (empty) via hue; flash by modulating alpha when
 		# below the low-HP warning fraction so the danger is unmissable.
 		var col := Color.from_hsv(frac * 0.33, 0.8, 0.95)
@@ -300,7 +300,7 @@ func _update_damage(delta: float) -> void:
 		_last_hp = dmg.hp
 	else:
 		_last_hp = -1.0
-		_last_hp_pct = -1
+		_last_hp_shown = -1
 	# Fade the flash back out regardless of gauge visibility.
 	if _impact_flash.color.a > 0.0:
 		_impact_flash.color.a = maxf(0.0, _impact_flash.color.a - delta * _IMPACT_FLASH_DECAY)

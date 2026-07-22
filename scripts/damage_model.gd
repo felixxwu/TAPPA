@@ -165,8 +165,9 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 	var loss := hp_loss_for_speed(dv_mps, cfg)
 	if loss <= 0.0:
 		return 0.0
-	# Cap a single hit so no one crash can wreck the car (survive 2-3 big hits).
-	loss = minf(loss, max_hp * cfg.impact_max_loss_frac)
+	# Cap a single hit (flat HP amount) so no one crash can wreck the car; because
+	# it's absolute, a car's max_hp determines how many capped hits it survives.
+	loss = minf(loss, cfg.impact_max_loss)
 	nudge_wheels(loss, cfg)
 	apply_loss(loss)
 	damaged.emit(loss, contact_point)

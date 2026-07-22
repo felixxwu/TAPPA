@@ -522,11 +522,13 @@ var peak_torque_rpm := 4500.0
 ## ~800-1100, ~200 means most cars survive 4-5 such moderate hits; the square law
 ## then makes a 20 km/h hit cost only a small fraction of this (barely any damage).
 @export_range(0.0, 2000.0) var impact_ref_hp_loss := 200.0
-## Cap on the HP a SINGLE tick's deceleration can cost, as a fraction of max HP — so no
-## one crash wrecks the car outright (it survives a couple). A pinned car sheds ~0
-## velocity/tick so grinding self-limits; a real multi-bounce tumble racks up several
-## capped hits, so a long fall down a drop can still wreck.
-@export_range(0.0, 1.0) var impact_max_loss_frac := 0.34
+## Cap on the HP a SINGLE tick's deceleration can cost, as an absolute HP amount — so no
+## one crash wrecks the car outright (it survives a couple). Being a flat amount (not a
+## fraction of max HP), a car's max_hp genuinely matters: a fragile car is wrecked by
+## fewer capped hits than a tough one. A pinned car sheds ~0 velocity/tick so grinding
+## self-limits; a real multi-bounce tumble racks up several capped hits, so a long fall
+## down a drop can still wreck.
+@export_range(0.0, 2000.0) var impact_max_loss := 450.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
 ## power in stumbling bursts instead of a smooth derate — fully simulated (crank
 ## torque drops to friction) and audible (the synth ducks + crackles on the cut).
