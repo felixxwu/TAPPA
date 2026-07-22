@@ -10,8 +10,7 @@
 			"nodes":[
 				0,
 				1,
-				2,
-				3
+				2
 			]
 		}
 	],
@@ -57,16 +56,6 @@
 				0.6758116483688354,
 				0.002199152484536171
 			]
-		},
-		{
-			"mesh":1,
-			"name":"Cylinder",
-			"rotation":[
-				-0.7071068286895752,
-				0,
-				0,
-				0.7071068286895752
-			]
 		}
 	],
 	"materials":[
@@ -96,19 +85,6 @@
 					"material":0
 				}
 			]
-		},
-		{
-			"name":"Cylinder.001",
-			"primitives":[
-				{
-					"attributes":{
-						"POSITION":4,
-						"NORMAL":5,
-						"TEXCOORD_0":6
-					},
-					"indices":7
-				}
-			]
 		}
 	],
 	"textures":[
@@ -128,11 +104,11 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":288,
+			"count":542,
 			"max":[
 				2.0957822799682617,
 				1.2147177457809448,
-				0
+				0.9576572775840759
 			],
 			"min":[
 				-2.4093658924102783,
@@ -144,103 +120,45 @@
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":288,
+			"count":542,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":288,
+			"count":542,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":504,
-			"type":"SCALAR"
-		},
-		{
-			"bufferView":4,
-			"componentType":5126,
-			"count":168,
-			"max":[
-				1.7549582719802856,
-				1.7287452220916748,
-				0.7443236112594604
-			],
-			"min":[
-				-1.7549582719802856,
-				-1.7287452220916748,
-				-0.10819622874259949
-			],
-			"type":"VEC3"
-		},
-		{
-			"bufferView":5,
-			"componentType":5126,
-			"count":168,
-			"type":"VEC3"
-		},
-		{
-			"bufferView":6,
-			"componentType":5126,
-			"count":168,
-			"type":"VEC2"
-		},
-		{
-			"bufferView":7,
-			"componentType":5123,
-			"count":288,
+			"count":960,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":3456,
+			"byteLength":6504,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":3456,
-			"byteOffset":3456,
+			"byteLength":6504,
+			"byteOffset":6504,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":2304,
-			"byteOffset":6912,
+			"byteLength":4336,
+			"byteOffset":13008,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1008,
-			"byteOffset":9216,
-			"target":34963
-		},
-		{
-			"buffer":0,
-			"byteLength":2016,
-			"byteOffset":10224,
-			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":2016,
-			"byteOffset":12240,
-			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":1344,
-			"byteOffset":14256,
-			"target":34962
-		},
-		{
-			"buffer":0,
-			"byteLength":576,
-			"byteOffset":15600,
+			"byteLength":1920,
+			"byteOffset":17344,
 			"target":34963
 		}
 	],
@@ -252,7 +170,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":16176,
+			"byteLength":19264,
 			"uri":"viper.bin"
 		}
 	]
