@@ -137,6 +137,27 @@ func test_max_lateral_g_drops_with_mass_and_recovers_with_width() -> void:
 		"wider tyres recover grip lost to mass")
 
 
+func test_horsepower_is_consistent_with_power_to_weight() -> void:
+	# horsepower and power_to_weight both come from peak_power_kw, so for any car
+	# the identity horsepower == p/w · mass · (kW→hp) must hold. Synthetic entry:
+	# torque/redline supplied directly so no catalogue engine is needed.
+	var mass := 1200.0
+	var entry := {"peak_torque": 400.0, "redline": 6000.0, "mass": mass}
+	var expected := CarLibrary.power_to_weight(entry) * mass \
+		* CarLibrary.KW_KG_TO_HP_TONNE / 1000.0
+	assert_almost_eq(CarLibrary.horsepower(entry), expected, 0.001,
+		"horsepower is peak power scaled by the shared kW→hp factor")
+	assert_gt(CarLibrary.horsepower(entry), 0.0, "a real engine makes positive power")
+
+
+func test_horsepower_scales_with_torque() -> void:
+	# More torque, all else equal, means more power — must hold for any tuning values.
+	var base := {"peak_torque": 300.0, "redline": 6000.0, "mass": 1200.0}
+	var strong := base.duplicate(); strong["peak_torque"] = 500.0
+	assert_gt(CarLibrary.horsepower(strong), CarLibrary.horsepower(base),
+		"more torque -> more horsepower")
+
+
 func test_tire_load_factor_is_neutral_when_sensitivity_is_zero() -> void:
 	# With the effect disabled the factor is exactly 1.0 for any load/width.
 	var cfg := GameConfig.new()
@@ -268,18 +289,13 @@ func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
 	# car names a model_node + model_texture, shows its model and hides the
 	# procedural boxes; every non-model car does the reverse.
 	var model_spec: Dictionary = {}
-	var box_spec: Dictionary = {}
 	for spec in CarLibrary.CARS:
 		if spec.get("use_model", false):
 			assert_ne(String(spec.get("model_node", "")), "", spec["name"] + " names its model_node")
 			assert_ne(String(spec.get("model_texture", "")), "", spec["name"] + " names its model_texture")
 			if model_spec.is_empty():
 				model_spec = spec
-		else:
-			if box_spec.is_empty():
-				box_spec = spec
 	assert_false(model_spec.is_empty(), "at least one car in the roster uses an authored model")
-	assert_false(box_spec.is_empty(), "at least one car in the roster uses procedural boxes")
 
 	# The model node exists and instances the glb body.
 	_car.apply_car(CarLibrary.index_of(model_spec["id"]))
@@ -303,8 +319,11 @@ func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
 	assert_eq(mat.get_shader_parameter("albedo_color"), Color.WHITE, "model texture shown untinted")
 	assert_not_null(mat.get_shader_parameter("albedo_texture"), "model carries its baked texture")
 
-	# A box car does the reverse: model hidden, boxes shown.
-	_car.apply_car(CarLibrary.index_of(box_spec["id"]))
+	# The procedural-box fallback does the reverse: model hidden, boxes shown.
+	# The shipped roster is all authored-model cars, so drive the fallback path
+	# directly with a synthetic no-model spec rather than depending on a box car
+	# existing in the catalogue.
+	_car._apply_model_visibility({"use_model": false})
 	await get_tree().physics_frame
 	assert_false(model.visible, "box car hides the authored model")
 	assert_true((_car.get_node("Chassis") as MeshInstance3D).visible, "box car shows the chassis box")

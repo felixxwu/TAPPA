@@ -624,7 +624,10 @@ on exit-to-race. `◄ ►` (or
 shot from in front of the car** (`menu_camera_offset` is added in world space; +Z sits
 the eye ahead of the nose-out car, looking back past it at the garage) over
 `menu_camera_move_time`; the focused car **is** the selected car. The overlay shows
-its name + stats (drive / **lateral G** / power-to-weight / **Health %**); there is
+its name + stats (drive / **horsepower (HP)** / **weight (kg)** / **Health %**) via
+`_car_stats_text` — the single stat-list formatter shared by the car-select, LIFT, and
+overflow overlays. Power-to-weight is deliberately **not** shown here; the p/w ratio
+only surfaces where it matters, in the upgrades-menu detune readout. There is
 no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
 Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_kit`)

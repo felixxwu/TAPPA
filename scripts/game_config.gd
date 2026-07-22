@@ -164,7 +164,7 @@ var peak_torque_rpm := 4500.0
 ## loose gravel/grass shears a wedge of material and peaks at a MUCH larger angle
 ## with a broad, forgiving plateau past it — which is why rally is driven
 ## sideways. sin(8°)≈0.14, sin(18°)≈0.31, sin(20°)≈0.34.
-@export var tarmac_slip_peak := 0.25
+@export var tarmac_slip_peak := 0.20
 @export var gravel_slip_peak := 0.35
 @export var grass_slip_peak := 0.40
 ## Post-peak grip retention per surface (see sliding_grip_ratio). Tarmac falls

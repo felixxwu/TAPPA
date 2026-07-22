@@ -3066,9 +3066,11 @@ func _repair_focused_car() -> void:
 
 
 
-# One-line car summary shown in the car-select / overflow overlays. Health reads as a
-# percentage (a raw HP number is misleading — it can read as horsepower); a wrecked
-# (0 HP) car is flagged so the lineup makes clear why it can't be entered.
+# One-line car summary shown in the car-select / overflow overlays: drive layout,
+# peak horsepower, kerb weight, and condition. Health reads as a percentage (kept
+# distinct so it doesn't read as the horsepower figure now shown alongside it); a
+# wrecked (0 HP) car is flagged so the lineup makes clear why it can't be entered.
+# The power-to-weight ratio lives only in the upgrades-menu detune readout.
 func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	var max_hp := float(entry.get("max_hp", 0.0))
 	var hp := float(owned.get("hp", 0.0))
@@ -3078,10 +3080,10 @@ func _car_stats_text(owned: Dictionary, entry: Dictionary) -> String:
 	else:
 		hp_text = "Health %d%%" % roundi(clampf(hp / max_hp, 0.0, 1.0) * 100.0) if max_hp > 0.0 else "Health ?"
 	var meta := UpgradeLibrary.effective_meta(owned, entry)
-	return "%s | %.2f G | %.0f hp/tonne | %s" % [
+	return "%s | %.0f HP | %.0f kg | %s" % [
 		CarLibrary.drive_text(int(entry.get("drive_mode", -1))),
-		CarLibrary.max_lateral_g(meta, Config.data),
-		CarLibrary.power_to_weight(meta) * KW_KG_TO_HP_TONNE,
+		CarLibrary.horsepower(meta),
+		float(meta.get("mass", 0.0)),
 		hp_text,
 	]
 

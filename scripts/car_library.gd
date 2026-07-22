@@ -125,13 +125,13 @@ const CARS: Array[Dictionary] = [
 		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse NA I4, nose-heavy FWD
 		"tire_compound": 0.88,  # economy / touring all-season tyres
 		"brake_bias": 0.25,  # front share of foot-brake torque (nose-heavy FWD)
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 10000,
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.7,
-		"wheel_radius": 0.31, "wheel_width_front": 0.205, "wheel_width_rear": 0.205,  # 205/55R16 square, FWD
+		"wheel_radius": 0.31, "wheel_width_front": 0.235, "wheel_width_rear": 0.185,  # 205/55R16 square, FWD
 		"suspension_travel": 0.35, "suspension_stiffness": 14.0,  # compliant compact hatch
 		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Focus's own wheel.png.
@@ -172,7 +172,7 @@ const CARS: Array[Dictionary] = [
 		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
 		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),
 		"cabin_z": -0.95, "track": 1.21, "wheelbase": 1.90,
-		"wheel_radius": 0.27, "wheel_width_front": 0.145, "wheel_width_rear": 0.145,  # 145R12 kei, very skinny
+		"wheel_radius": 0.27, "wheel_width_front": 0.155, "wheel_width_rear": 0.145,  # 145R12 kei, very skinny
 		"suspension_travel": 0.30, "suspension_stiffness": 13.0,  # soft, tall little truck
 		# Renders blender/acty/acty.glb (Car/ActyBody) with the texture extracted from
 		# the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
@@ -193,7 +193,7 @@ const CARS: Array[Dictionary] = [
 		# 5.28 m x 1.95 m). Long, low, heavy coupe.
 		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
 		"cabin_z": 0.35, "track": 1.6, "wheelbase": 3,
-		"wheel_radius": 0.36, "wheel_width_front": 0.235, "wheel_width_rear": 0.255,  # mild muscle stagger
+		"wheel_radius": 0.36, "wheel_width_front": 0.245, "wheel_width_rear": 0.255,  # mild muscle stagger
 		"suspension_travel": 0.38, "suspension_stiffness": 12.0,  # soft, heavy muscle car
 		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
 		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
@@ -208,11 +208,11 @@ const CARS: Array[Dictionary] = [
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
 		"brake_bias": 0.2,  # front share of foot-brake torque (rear-engine, tail-heavy)
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 5000,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
-		"wheel_radius": 0.32, "wheel_width_front": 0.185, "wheel_width_rear": 0.215,  # 185/215 the "wide" 930 stagger
+		"wheel_radius": 0.32, "wheel_width_front": 0.205, "wheel_width_rear": 0.215,  # 185/215 the "wide" 930 stagger
 		"suspension_travel": 0.35, "suspension_stiffness": 15.0,  # taut sports car, lower ride
 		# Renders blender/911/911.glb (Car/Porsche911Body) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
@@ -230,9 +230,15 @@ const CARS: Array[Dictionary] = [
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
-		"cabin_z": 0.10, "track": 1.60, "wheelbase": 2.44,
-		"wheel_radius": 0.34, "wheel_width_front": 0.275, "wheel_width_rear": 0.335,  # 275/335 stagger
-		"suspension_travel": 0.36, "suspension_stiffness": 18.0,  # firm but a touch softer than the later GTS
+		"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.6,
+		"wheel_radius": 0.34, "wheel_width_front": 0.325, "wheel_width_rear": 0.295,  # 275/335 stagger
+		"suspension_travel": 0.35, "suspension_stiffness": 11.0,  # firm but a touch softer than the later GTS
+		# Renders blender/viper/viper.glb (Car/ViperBody) with its baked body atlas
+		# (texture.png); see car.gd apply_car(). Wheels use its own three-spoke wheel.jpg.
+		"use_model": true,
+		"model_node": "ViperBody",
+		"model_texture": "res://blender/viper/texture.png",
+		"wheel_texture": "res://blender/viper/wheel.jpg",
 	},
 	{
 		"name": "Panthera XJS",  # parody of the Jaguar XJS. 5.3 V12 HE: ~1755 kg, ~295 hp, front V12, RWD GT
@@ -240,11 +246,11 @@ const CARS: Array[Dictionary] = [
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75,  # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95,  # period touring / GT tyres
 		"brake_bias": 0.2,  # front share of foot-brake torque (nose-heavy RWD GT)
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 4000,
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
-		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235,  # 215/235 mild stagger
+		"wheel_radius": 0.33, "wheel_width_front": 0.235, "wheel_width_rear": 0.235,  # 215/235 mild stagger
 		"suspension_travel": 0.35, "suspension_stiffness": 14.0,  # soft long-legged GT
 		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
@@ -259,12 +265,12 @@ const CARS: Array[Dictionary] = [
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.2,  # period touring tyres
 		"brake_bias": 0.1,  # front share of foot-brake torque (nose-heavy RWD)
-		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 2000,  # long, brick-like body → real aero drag
+		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, "steer_assist_torque": 0,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
 		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.45,
-		"wheel_radius": 0.36, "wheel_width_front": 0.235, "wheel_width_rear": 0.275,  # mild stagger
+		"wheel_radius": 0.36, "wheel_width_front": 0.245, "wheel_width_rear": 0.275,  # mild stagger
 		"suspension_travel": 0.37, "suspension_stiffness": 11.0,  # heavy long GT, softer ride
 		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().
 		"use_model": true,
@@ -339,15 +345,26 @@ const TORQUE_POWER_FALLOFF := 0.78
 # the HUD / detail panel / detune slider display (1 kW = 1.34102 hp, 1 tonne = 1000 kg).
 # Single source of truth — hq.gd and RallyLibrary both multiply by this.
 const KW_KG_TO_HP_TONNE := 1341.02
-static func power_to_weight(entry: Dictionary) -> float:
+# Peak power in kW — the shared torque×redline derivation behind both the
+# power-to-weight figure and the horsepower reading. torque/redline resolve the
+# same way as in power_to_weight() (entry keys override the referenced engine).
+static func peak_power_kw(entry: Dictionary) -> float:
 	var eng := EngineLibrary.by_id(entry.get("engine", ""))
 	var torque: float = float(entry.get("peak_torque", eng.get("peak_torque", 0.0)))
 	var redline: float = float(entry.get("redline", eng.get("redline_rpm", 0.0)))
+	return torque * redline * (TAU / 60.0) / 1000.0 * TORQUE_POWER_FALLOFF
+
+static func power_to_weight(entry: Dictionary) -> float:
 	var mass: float = entry.get("mass", 1.0)
 	if mass <= 0.0:
 		return 0.0
-	var peak_power_kw := torque * redline * (TAU / 60.0) / 1000.0 * TORQUE_POWER_FALLOFF
-	return peak_power_kw / mass
+	return peak_power_kw(entry) / mass
+
+# The car's peak power in horsepower — shown on the car stats panel. Derived from
+# peak_power_kw via the same kW→hp factor baked into KW_KG_TO_HP_TONNE (÷1000 to
+# drop the per-tonne mass term), so it stays a single source of truth.
+static func horsepower(entry: Dictionary) -> float:
+	return peak_power_kw(entry) * KW_KG_TO_HP_TONNE / 1000.0
 
 
 # Peak lateral cornering grip, expressed in G. Effective μ = tyre compound × the

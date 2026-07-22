@@ -162,17 +162,19 @@ live in `GameConfig` under the **Speed Lines** group.
 ## Authored body models (MX-5, Focus, Twingo, Acty, Charger, The Beast)
 
 Cars with `use_model` on their CarLibrary spec render an authored glb body
-instead of the procedural chassis+cabin boxes; every other car still uses the
-boxes. Eight cars carry a model today: the **MX-5**
+instead of the procedural chassis+cabin boxes; a car without the flag falls back
+to the boxes. Every car in the shipped roster now carries a model: the **MX-5**
 (`blender/mx5/mx5.glb`, node `Car/Mx5Body`), the **Focus**
 (`blender/focus/focus.glb`, node `Car/FocusBody`), the **Renault Twingo**
 (`blender/twingo/twingo.glb`, node `Car/TwingoBody`), the **Honda Acty**
 (`blender/acty/acty.glb`, node `Car/ActyBody`), the **Charger R/T**
 (`blender/charger/charger.glb`, node `Car/ChargerBody`), **The Beast**
 (`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`), the **911 Turbo**
-(`blender/911/911.glb`, node `Car/Porsche911Body`) and the **Jaguar XJS**
-(`blender/xjs/xjs.glb`, node `Car/XjsBody`). All are
-instanced in `car.tscn`, hidden by default.
+(`blender/911/911.glb`, node `Car/Porsche911Body`), the **Jaguar XJS**
+(`blender/xjs/xjs.glb`, node `Car/XjsBody`) and the **Viper RT/10**
+(`blender/viper/viper.glb`, node `Car/ViperBody`). All are
+instanced in `car.tscn`, hidden by default. The procedural-box path still exists
+as the fallback for any spec that omits `use_model`.
 
 The mapping is spec-driven (not hard-coded per car): each model car names its
 `model_node` (the body node to show) and `model_texture` (the baked albedo). The
