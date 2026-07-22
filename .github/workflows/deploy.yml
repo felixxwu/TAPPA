@@ -138,7 +138,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -296,7 +296,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -380,7 +380,7 @@ jobs:
         # Captured before the Play upload so you can grab the bundle even when
         # that step fails — e.g. the first-ever release, which must be uploaded
         # to the Play Console by hand before the API will accept anything.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rally-aab
           path: build/android-play/rally.aab
@@ -419,13 +419,13 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Upload /docs as the Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
