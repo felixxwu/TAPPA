@@ -104,11 +104,11 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":542,
+			"count":288,
 			"max":[
 				2.0957822799682617,
 				1.2147177457809448,
-				0.9576572775840759
+				0
 			],
 			"min":[
 				-2.4093658924102783,
@@ -120,45 +120,45 @@
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":542,
+			"count":288,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":542,
+			"count":288,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":960,
+			"count":504,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":6504,
+			"byteLength":3456,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":6504,
-			"byteOffset":6504,
+			"byteLength":3456,
+			"byteOffset":3456,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4336,
-			"byteOffset":13008,
+			"byteLength":2304,
+			"byteOffset":6912,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1920,
-			"byteOffset":17344,
+			"byteLength":1008,
+			"byteOffset":9216,
 			"target":34963
 		}
 	],
@@ -170,7 +170,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":19264,
+			"byteLength":10224,
 			"uri":"viper.bin"
 		}
 	]
