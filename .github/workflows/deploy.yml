@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
         run: |
@@ -73,7 +73,7 @@ jobs:
     needs: verify-caches
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Full history so build_web.sh can derive the version from the real
           # commit count (0.<count>). The default shallow clone (depth 1) would
@@ -131,7 +131,7 @@ jobs:
     needs: verify-caches
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Full history: build_android.sh derives the version name AND the
           # Android versionCode from the commit count.
@@ -234,7 +234,7 @@ jobs:
     needs: verify-caches
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Full history so build_windows.sh can derive the version from the
           # real commit count (0.<count>).
@@ -289,7 +289,7 @@ jobs:
     needs: verify-caches
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Full history so build_android_play.sh can derive the version name
           # and the monotonic Android versionCode from the commit count.
@@ -392,7 +392,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: ${{ env.PACKAGE_NAME }}
           releaseFiles: build/android-play/rally.aab
-          track: ${{ env.TRACK }}
+          tracks: ${{ env.TRACK }}
           status: completed
 
   deploy-pages:
@@ -416,7 +416,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
