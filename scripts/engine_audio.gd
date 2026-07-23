@@ -39,8 +39,18 @@ func _ready() -> void:
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
 	gen.buffer_length = BUFFER_SECONDS
-	stream = gen
+	stream = gen  # set the stream unconditionally (smoke test checks its type)
 	_synth = EngineAudioSynth.new(cfg, MIX_RATE)
+	# Headless (test/CI): set up the stream but never PLAY it. Godot's headless
+	# AudioDriverDummy still runs a mix thread, and a *playing* AudioStreamGeneratorPlayback
+	# (which extends AudioStreamPlaybackResampled) is freed underneath it at engine teardown
+	# (-gexit) — a use-after-free that SIGSEGVs in AudioStreamPlaybackResampled::mix. A
+	# stopped player is never mixed. Leaving _playback null is exactly the state
+	# _timed_process()/skip_count() already guard for ("headless / no audio device"), so
+	# nothing synthesizes or mixes and the per-frame DSP fill is skipped. The pure-DSP path
+	# is covered by test_engine_audio (EngineAudioSynth directly). Shipping is never headless.
+	if Platform.is_headless():
+		return
 	play()
 	_playback = get_stream_playback() as AudioStreamGeneratorPlayback
 

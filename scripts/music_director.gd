@@ -126,16 +126,25 @@ func _cfg() -> GameConfig:
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS  # keep music running while paused
-	_ensure_music_bus()
-	_player = AudioStreamPlayer.new()
-	_player.bus = "Music"
-	var poly := AudioStreamPolyphonic.new()
-	poly.polyphony = 4  # >= 2 overlapping voices (outgoing tail + incoming lead-in)
-	_player.stream = poly
-	add_child(_player)
-	_player.play()  # start the continuous polyphonic timeline (our clock)
-	_playback = _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
-	_apply_volume()
+	# Headless (the test/CI runner): skip real playback entirely. Godot's headless
+	# AudioDriverDummy still runs a background mix thread, and a continuously-playing
+	# polyphonic stream (this autoload) gets its resampled voices freed underneath that
+	# thread at engine teardown (-gexit) — a use-after-free that SIGSEGVs in
+	# AudioStreamPlaybackResampled::mix (~1-in-3 full runs, forcing a retry). Leaving
+	# _player/_playback null makes every playback path below no-op via its existing
+	# null guards, so the scheduling logic still runs but nothing is mixed. Shipping
+	# builds are never headless, so game audio is unchanged.
+	if not Platform.is_headless():
+		_ensure_music_bus()
+		_player = AudioStreamPlayer.new()
+		_player.bus = "Music"
+		var poly := AudioStreamPolyphonic.new()
+		poly.polyphony = 4  # >= 2 overlapping voices (outgoing tail + incoming lead-in)
+		_player.stream = poly
+		add_child(_player)
+		_player.play()  # start the continuous polyphonic timeline (our clock)
+		_playback = _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
+		_apply_volume()
 	_current_rally_song = MusicLibrary.random_rally_song()  # a song ready before the first loading screen
 	# No hardcoded autostart — _process picks the song from the live scene state
 	# (see update_for_scene), so the first frame starts the right context track.

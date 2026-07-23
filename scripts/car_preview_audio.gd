@@ -54,7 +54,11 @@ func rev(engine_id: String) -> void:
 	_hold_left = _cfg.preview_rev_hold_seconds
 	_active = true
 	# Flush any tail of the previous rev and restart the generator from empty.
-	if is_inside_tree():
+	# Headless (test/CI): skip real playback — a playing generator is mixed by the
+	# dummy-audio thread and freed underneath it at teardown, SIGSEGV'ing in
+	# AudioStreamPlaybackResampled::mix. _advance()/state still run for tests; leaving
+	# _playback null makes _process's fill a no-op (same guard as engine_audio).
+	if is_inside_tree() and not Platform.is_headless():
 		stop()
 		play()
 		_playback = get_stream_playback() as AudioStreamGeneratorPlayback

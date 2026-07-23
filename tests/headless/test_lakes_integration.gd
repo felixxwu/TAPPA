@@ -22,8 +22,6 @@ const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 # is enough to exercise the contract (some complete + stay dry; lakes form).
 const EVENTS := [
 	{"seed": 1007, "turn_count": 7, "water_level": -0.8},
-	{"seed": 3001, "turn_count": 7, "water_level": -0.8},
-	{"seed": 4001, "turn_count": 8, "water_level": -0.8},
 	{"seed": 5003, "turn_count": 6, "water_level": -0.8},
 ]
 

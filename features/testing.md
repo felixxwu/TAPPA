@@ -107,6 +107,19 @@ levers, in order of payoff:
   cost at all. Reserve the physics fixture for behaviour that genuinely needs
   the car/driveline (idle under load, redline, shifting through the clutch).
 
+- **Audio does not PLAY under headless.** All three AudioStreamPlayers gate their
+  `play()` on `not Platform.is_headless()`: the `Music` autoload
+  (`music_director.gd`), the car's `EngineAudio` (`engine_audio.gd`), and the HQ
+  `CarPreviewAudio` (`car_preview_audio.gd`). Godot's headless `AudioDriverDummy`
+  still runs a mix thread, and a *playing* stream freed underneath it at engine
+  teardown (`-gexit`) SIGSEGV'd in `AudioStreamPlaybackResampled::mix` — the
+  ~1-in-3 crash-and-retry flake the runner used to absorb. Not playing means not
+  mixed, so the crash is gone (and the per-frame engine-audio synthesis is
+  skipped). Test the audio DSP/scheduling directly instead: `EngineAudioSynth`
+  (`test_engine_audio.gd`), the `MusicDirector` schedule via `.new()` never added
+  to the tree (`test_music_director.gd`) — never assert on a *playing* stream in a
+  headless test.
+
 ### Test-catalogue seam — `CarFixtures`
 
 All four content libraries — `CarLibrary`, `EngineLibrary`, `RallyLibrary`,
