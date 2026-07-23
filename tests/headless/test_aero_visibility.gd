@@ -49,6 +49,7 @@ func test_set_aero_visible_null_body_is_noop() -> void:
 
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
+const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 
 var _scene: Node3D
 
@@ -66,11 +67,13 @@ func _first_model_car() -> Dictionary:
 
 func before_each() -> void:
 	SceneHelpers.minimal_world()
+	UpgradeFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 
 
 func after_each() -> void:
+	UpgradeFixtures.restore()
 	Config.reset()
 
 
@@ -101,11 +104,11 @@ func test_aero_visibility_follows_enabled_state() -> void:
 	car.apply_car(int(found.index))
 	var model_id := String(found.spec["id"])
 	car._apply_aero_visibility({
-		"model_id": model_id, "installed_upgrades": ["aero_kit"], "disabled_upgrades": [],
+		"model_id": model_id, "installed_upgrades": ["fx_aero"], "disabled_upgrades": [],
 	})
 	assert_true(stub.visible, "wing shown when aero kit is fitted+enabled")
 	car._apply_aero_visibility({
-		"model_id": model_id, "installed_upgrades": ["aero_kit"], "disabled_upgrades": ["aero_kit"],
+		"model_id": model_id, "installed_upgrades": ["fx_aero"], "disabled_upgrades": ["fx_aero"],
 	})
 	assert_false(stub.visible, "wing hidden when the aero kit is disabled")
 	car._apply_aero_visibility({
@@ -126,7 +129,7 @@ func test_set_body_hidden_restore_keeps_wing_for_upgraded_car() -> void:
 	body.add_child(stub)
 	car.apply_car(int(found.index))
 	car._apply_aero_visibility({
-		"model_id": String(found.spec["id"]), "installed_upgrades": ["aero_kit"], "disabled_upgrades": [],
+		"model_id": String(found.spec["id"]), "installed_upgrades": ["fx_aero"], "disabled_upgrades": [],
 	})
 	assert_true(stub.visible, "precondition: wing shown")
 	car.set_body_hidden(true)

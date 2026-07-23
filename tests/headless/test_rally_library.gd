@@ -18,6 +18,12 @@ func before_each() -> void:
 
 func after_each() -> void:
 	CarFixtures.restore()
+	# Safe to call unconditionally: reset() restores the shipped catalogue, so the
+	# KEEP-CONTRACT cases (which never install these) are unaffected, while the
+	# converted cases that install RallyFixtures/UpgradeFixtures at their top are
+	# cleaned up here even if an assertion fails mid-function.
+	RallyFixtures.restore()
+	UpgradeFixtures.restore()
 
 
 # --- Roster validity (anti-soft-lock) ---------------------------------------
@@ -208,11 +214,12 @@ func test_installed_upgrades_change_rally_eligibility() -> void:
 	# synthetic car and derive each band from the ACTUAL before/after p/w so the test
 	# leans on the mechanism (upgrades flow through effective_meta into eligibility),
 	# not on the MX-5's authored stats or a kit's tuned magnitude.
+	UpgradeFixtures.install()
 	var car := {"mass": 1100.0, "peak_torque": 200.0, "redline": 6500.0,
 		"tire_compound": 1.0, "drive_mode": CarLibrary.RWD}
 	var bare := UpgradeLibrary.effective_meta({"installed_upgrades": []}, car)
-	var powered := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large"]}, car)
-	var maxed := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large", "weight_reduction"]}, car)
+	var powered := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_turbo_big"]}, car)
+	var maxed := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_turbo_big", "fx_lightweight"]}, car)
 	var pw_bare := CarLibrary.power_to_weight(bare) * RallyLibrary.KW_KG_TO_HP_TONNE
 	var pw_powered := CarLibrary.power_to_weight(powered) * RallyLibrary.KW_KG_TO_HP_TONNE
 	var pw_maxed := CarLibrary.power_to_weight(maxed) * RallyLibrary.KW_KG_TO_HP_TONNE
@@ -270,7 +277,8 @@ func test_qualifying_detune_full_power_and_unfixable_cases() -> void:
 # --- Determinism -------------------------------------------------------------
 
 func test_track_generation_is_deterministic() -> void:
-	var ev: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
+	RallyFixtures.install()
+	var ev: Dictionary = RallyLibrary.by_id("fx_open")["events"][0]
 	var a := await TrackGenerator.generate(_params(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
 		int(ev["turn_count"]), RallyLibrary.event_width(ev), 8.0))
 	var b := await TrackGenerator.generate(_params(Vector2.ZERO, Vector2(0, 1), int(ev["seed"]),
@@ -373,7 +381,8 @@ func test_turn_splits_override_rescales_to_total() -> void:
 # --- Opponent field ----------------------------------------------------------
 
 func test_opponent_field_shape_and_bounds() -> void:
-	var rally := RallyLibrary.by_id("coastal_sprint")
+	RallyFixtures.install()
+	var rally := RallyLibrary.by_id("fx_open")
 	var track := _track_with_pieces()
 	var events: Array = (rally["events"] as Array).slice(0, 3)
 	var event_results := [track, track, track]
@@ -399,7 +408,8 @@ func test_opponent_field_shape_and_bounds() -> void:
 
 
 func test_opponent_field_is_deterministic() -> void:
-	var rally := RallyLibrary.by_id("rwd_masters")
+	RallyFixtures.install()
+	var rally := RallyLibrary.by_id("fx_open")
 	var track := _track_with_pieces()
 	var events: Array = (rally["events"] as Array).slice(0, 3)
 	var a := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)
@@ -412,7 +422,8 @@ func test_opponent_names_are_drawn_from_the_pool_uniquely() -> void:
 	# and (since the field is generated once and reused across events) each rival's
 	# name is inherently held across all 3 events. Determinism of the field is covered
 	# by test_opponent_field_is_deterministic; here we assert the naming contract.
-	var rally := RallyLibrary.by_id("coastal_sprint")
+	RallyFixtures.install()
+	var rally := RallyLibrary.by_id("fx_open")
 	var track := _track_with_pieces()
 	var events: Array = (rally["events"] as Array).slice(0, 3)
 	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)
@@ -583,7 +594,8 @@ func test_opponent_field_is_a_ranked_ladder() -> void:
 	# field's paces span a wide ladder rather than every rival averaging to mid-pack.
 	# We measure pace factor (not combined time) so car-floor variety doesn't mask
 	# the skill spread the fix controls.
-	var rally := RallyLibrary.by_id("coastal_sprint")
+	RallyFixtures.install()
+	var rally := RallyLibrary.by_id("fx_open")
 	var track := _track_with_pieces()
 	var events: Array = (rally["events"] as Array).slice(0, 3)
 	var field := RallyLibrary.generate_opponent_field(rally, [track, track, track], events)

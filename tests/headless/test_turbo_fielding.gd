@@ -8,6 +8,7 @@ extends GutTest
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 
 var _scene: Node3D
 
@@ -15,11 +16,13 @@ var _scene: Node3D
 func before_each() -> void:
 	SceneHelpers.minimal_world()
 	CarFixtures.install()
+	UpgradeFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 
 
 func after_each() -> void:
+	UpgradeFixtures.restore()
 	CarFixtures.restore()
 	Config.reset()
 
@@ -28,7 +31,7 @@ func test_turbo_upgrade_on_na_car_reconfigures_audio() -> void:
 	var car: VehicleBody3D = _scene.get_node("Car")
 	var audio := car.get_node("EngineAudio")
 	# Field a fixture (NA) car with a big-turbo upgrade fitted.
-	var owned := {"model_id": "fx_light_rwd", "installed_upgrades": ["turbo_large"], "disabled_upgrades": []}
+	var owned := {"model_id": "fx_light_rwd", "installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
 	car.apply_owned(owned)
 	# The upgrade path ran and enabled the turbo on the live config.
 	assert_true(Config.data.turbo_enabled, "the turbo upgrade enables the turbo on an NA car")

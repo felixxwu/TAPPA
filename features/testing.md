@@ -155,6 +155,34 @@ their entire job is asserting every real entry is well-formed — and instead
 call `CarLibrary.reset()` / `EngineLibrary.reset()` in `before_each` to guard
 against a leaked override from an earlier file.
 
+`tests/headless/rally_fixtures.gd` (`class_name RallyFixtures`) and
+`tests/headless/upgrade_fixtures.gd` (`class_name UpgradeFixtures`) are the
+same pattern for the rally and upgrade catalogues:
+
+- **RallyFixtures:** `fx_open` (open restriction, 3 events — the "any rally with
+  events" workhorse), `fx_rwd_band` / `fx_fwd_band` (drive-mode + power-band
+  gates), `fx_country_us` (country gate), `fx_gated` (`reveal_after`), and
+  `fx_showdown` — all in the real `home` region so reveal/region grouping
+  resolves. Events use a very low `water_level` so track generation never has to
+  route around lakes (fast, deterministic). Eligibility reads `CarLibrary`, so a
+  test checking eligibility should `CarFixtures.install()` its cars too.
+- **UpgradeFixtures:** a turbo slot-pair (`fx_turbo_small`/`fx_turbo_big`,
+  distinct `menu_label`), `fx_aero`, `fx_lightweight` (`mass_mult < 1`),
+  `fx_ballast` (free, `mass_mult > 1`), `fx_brakes`, `fx_drivetrain` — one part
+  per effect shape the apply/`effective_meta` pipeline reads. It re-exports the
+  two **structural** consumables by their real constant ids
+  (`UpgradeLibrary.REPAIR_KIT_ID` / `ENGINE_SWAP_TOKEN_ID`) so the save/reward
+  code that looks them up by constant isn't stranded under the override.
+- Same `install()` / `restore()` contract and the same **mandatory-restore**
+  rule as `CarFixtures`. Two scoping styles are used, both fine: **global**
+  `install()` in `before_each` when the whole file is generic; **per-test**
+  `install()` at the top of only the converted tests when the file also has
+  contract/HQ-pin tests that need the real roster (see `test_rally_session.gd`
+  and `test_menu_flow.gd` — their showdown/region-progression tests deliberately
+  run on the real catalogue, opting out via a `restore()` or by never installing).
+  The seam mechanics for all five libraries are covered by
+  `test_catalogue_seam.gd`.
+
 ### Shared DX helpers (`save_test_helpers.gd`, `node_query.gd`)
 
 Two additional test-only helpers factor out patterns the suite hand-rolls

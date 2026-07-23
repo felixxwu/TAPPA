@@ -233,7 +233,7 @@ func _ready() -> void:
 	if config == null:
 		config = Config.data
 	var cfg: GameConfig = config
-	_default_gravity = float(ProjectSettings.get_setting("physics/3d/default_gravity"))
+	_default_gravity = Platform.gravity()
 	# Spawn the car spawn_clearance metres above the ground at its xz, so the
 	# wheels never start clipping under the terrain regardless of how high the
 	# surface is there. This transform is also what reset / car swaps restore.
@@ -1560,7 +1560,9 @@ func _apply_suspension(wheel: VehicleWheel3D) -> void:
 # inline while relocating wheels; this is the standalone version for when an upgrade
 # changes cfg.suspension_stiffness after apply_car).
 func _sync_suspension_to_wheels() -> void:
-	for wheel in find_children("*", "VehicleWheel3D", false):
+	# _wheel_mounts is keyed by the (fixed, authored) wheel nodes — see line ~262. Iterate
+	# it rather than re-walking the scene tree (find_children allocates an Array each call).
+	for wheel in _wheel_mounts:
 		_apply_suspension(wheel)
 
 
@@ -1629,7 +1631,7 @@ const WHEEL_DROOP_COEFF := 0.25
 
 func settle_wheel_visuals() -> void:
 	var g: float = _default_gravity
-	for wheel in find_children("*", "VehicleWheel3D", false):
+	for wheel in _wheel_mounts:  # cached wheel nodes; avoids a find_children Array alloc
 		var visual: Node3D = wheel.get_node_or_null("Visual")
 		if visual == null:
 			continue
@@ -1669,7 +1671,9 @@ func ground_raycast() -> Callable:
 # wheel.global_position — safe to call every frame (the lift raise/lower).
 func settle_wheels_to_ground(ground_at: Callable) -> void:
 	var g: float = _default_gravity
-	for wheel in find_children("*", "VehicleWheel3D", false):
+	# Called every frame during the lift raise/lower — iterate the cached wheel nodes
+	# (_wheel_mounts keys) instead of a per-frame find_children scene walk + Array alloc.
+	for wheel in _wheel_mounts:
 		var visual: Node3D = wheel.get_node_or_null("Visual")
 		if visual == null:
 			continue

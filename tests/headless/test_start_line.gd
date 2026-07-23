@@ -66,6 +66,7 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
+	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
@@ -91,15 +92,16 @@ func after_each() -> void:
 		RallySession.abandon()
 	Config.reset()
 	CarFixtures.restore()
+	RallyFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-# RWD Masters: a real rally with an event count for the subtitle.
+# Fixture Open: a rally with an event count for the subtitle.
 func _rally() -> Dictionary:
-	return RallyLibrary.by_id("rwd_masters")
+	return RallyLibrary.by_id("fx_open")
 
 
 # Three synthetic leaders in real fixture cars (fastest first) — the grid spawns each
@@ -216,7 +218,7 @@ func test_start_overlay_uses_the_house_button_row_height() -> void:
 	var sl := _make(_leaders())
 	assert_eq(sl._start_button.custom_minimum_size.y, float(UITheme.MENU_ROW_H),
 		"the Start button uses the fixed menu row height")
-	assert_string_contains(sl._subtitle_label.text, "RWD MASTERS", "the rally is named")
+	assert_string_contains(sl._subtitle_label.text, "FIXTURE OPEN", "the rally is named")
 	assert_string_contains(sl._subtitle_label.text, "EVENT 1 OF 3", "the event index is shown")
 
 

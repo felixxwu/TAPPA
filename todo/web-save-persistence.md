@@ -100,7 +100,7 @@ Proposed mechanism, smallest-first:
 ## Dependencies
 
 - **None blocking.** Builds entirely on the shipped `Save` autoload.
-- **Relates to** `todo/settings.md` — its `user://settings.cfg` has the **same**
+- **Relates to** `scripts/settings_menu.gd` — its `user://settings.cfg` has the **same**
   web-persistence concern; whatever flush approach we land here should be reused
   for the settings store (don't solve it twice).
 - **Prerequisite for trusting** any longer play session on the web/itch.io build,

@@ -138,11 +138,12 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
 
 ## Not yet wired
 
-`complete_rally` calls `_recompute_showdown()`, currently a deliberate no-op —
-the showdown-unlock threshold belongs to the rally roster
-(`todo/rally-roster.md`), to be wired when that lands. `item_id`s come from the
-upgrade catalogue (`todo/upgrade-catalogue.md`); `Save` only consumes them as
-opaque strings.
+`complete_rally` calls `_recompute_showdown()`, a deliberate no-op: the
+showdown unlock and per-region reveal gates are derived LIVE from the profile's
+completion records by `RallyLibrary` (`showdown_unlocked()` / `rally_revealed()`,
+see `rally-roster.md`), rather than being precomputed and stored on the save, so
+there is nothing to recompute here. `item_id`s come from the upgrade catalogue
+(`upgrade-catalogue.md`); `Save` only consumes them as opaque strings.
 
 ## Tests
 

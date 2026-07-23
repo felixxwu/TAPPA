@@ -18,6 +18,7 @@ func before_each() -> void:
 	# and test_cycle_car re-instantiates the Car node; a per-test build is the clean way.
 	CarLibrary.reset()
 	EngineLibrary.reset()  # guard against a leaked override from another test file
+	UpgradeFixtures.install()
 	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
@@ -28,6 +29,7 @@ func before_each() -> void:
 func after_each() -> void:
 	Config.reset()  # don't leak a car selection into other test files
 	CarFixtures.restore()
+	UpgradeFixtures.restore()
 
 
 func test_library_has_a_range_of_cars() -> void:
@@ -245,8 +247,8 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 	var spec := CarLibrary.by_id("fx_light_rwd")
 	var base_mass: float = float(spec["mass"])
 	# Derive the multiplier from the catalogue rather than pinning the tuned value.
-	var mult: float = float(UpgradeLibrary.by_id("weight_reduction")["effect"]["mass_mult"])
-	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["weight_reduction"],
+	var mult: float = float(UpgradeLibrary.by_id("fx_lightweight")["effect"]["mass_mult"])
+	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["fx_lightweight"],
 		"hp": float(spec.get("max_hp", 100.0)), "instance_id": -1})
 	await get_tree().physics_frame
 	assert_almost_eq(Config.data.mass, base_mass * mult, 0.001, "config mass scaled by the kit")
@@ -255,7 +257,7 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 
 func test_apply_owned_applies_drivetrain_override() -> void:
 	CarFixtures.install()
-	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["drivetrain_swap"],
+	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": ["fx_drivetrain"],
 		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD})
 	assert_eq(_car.drivetrain.drive_mode, Drivetrain.DriveMode.AWD, "override fielded onto the drivetrain")
 

@@ -9,6 +9,7 @@ extends GutTest
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 
 var _scene: Node3D
 var _car: VehicleBody3D
@@ -17,6 +18,7 @@ var _car: VehicleBody3D
 func before_each() -> void:
 	SceneHelpers.minimal_world()
 	CarFixtures.install()
+	UpgradeFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child_autofree(_scene)
 	_car = _scene.get_node("Car")
@@ -25,6 +27,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	UpgradeFixtures.restore()
 	CarFixtures.restore()
 	Config.reset()
 
@@ -70,9 +73,9 @@ func _owned(upgrades: Array, disabled: Array, tuning: Dictionary) -> Dictionary:
 func test_refit_then_retune_matches_a_fresh_field_no_compounding() -> void:
 	# Field WITH a turbo AND a partial detune, then remove the turbo and tune back to
 	# full power — the exact start-line flow that surfaced the bug.
-	_car.apply_owned(_owned(["turbo_large"], [], {"engine_detune": 0.7}))
-	_car.refit_upgrades(_owned(["turbo_large"], ["turbo_large"], {"engine_detune": 0.7}))
-	var final_state := _owned(["turbo_large"], ["turbo_large"], {"engine_detune": 1.0})
+	_car.apply_owned(_owned(["fx_turbo_big"], [], {"engine_detune": 0.7}))
+	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {"engine_detune": 0.7}))
+	var final_state := _owned(["fx_turbo_big"], ["fx_turbo_big"], {"engine_detune": 1.0})
 	_car.retune(final_state)
 	assert_almost_eq(_car.config.peak_torque, _fresh_field(final_state).peak_torque, 0.01,
 		"refit-then-retune lands on the same power as a fresh field (old tuning not baked in)")
@@ -81,9 +84,9 @@ func test_refit_then_retune_matches_a_fresh_field_no_compounding() -> void:
 # Sibling of the detune case for a grip axis (a tuning-only field the upgrade layer
 # doesn't own): removing an upgrade then re-tuning grip must not compound.
 func test_refit_then_retune_grip_matches_a_fresh_field() -> void:
-	_car.apply_owned(_owned(["turbo_large"], [], {"grip_balance": 0.6}))
-	_car.refit_upgrades(_owned(["turbo_large"], ["turbo_large"], {"grip_balance": 0.6}))
-	var final_state := _owned(["turbo_large"], ["turbo_large"], {"grip_balance": -0.3})
+	_car.apply_owned(_owned(["fx_turbo_big"], [], {"grip_balance": 0.6}))
+	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {"grip_balance": 0.6}))
+	var final_state := _owned(["fx_turbo_big"], ["fx_turbo_big"], {"grip_balance": -0.3})
 	_car.retune(final_state)
 	var fresh := _fresh_field(final_state)
 	assert_almost_eq(_car.config.wheel_friction_slip_front, fresh.wheel_friction_slip_front, 0.0001,
@@ -96,9 +99,9 @@ func test_refit_then_retune_grip_matches_a_fresh_field() -> void:
 # aero balance multiplies). Removing the turbo while keeping the aero kit, then re-tuning
 # aero, must land on a fresh field — the shared field is the ordering-sensitive one.
 func test_refit_then_retune_aero_downforce_matches_a_fresh_field() -> void:
-	_car.apply_owned(_owned(["turbo_large", "aero_kit"], [], {"aero_balance": 0.8}))
-	_car.refit_upgrades(_owned(["turbo_large", "aero_kit"], ["turbo_large"], {"aero_balance": 0.8}))
-	var final_state := _owned(["turbo_large", "aero_kit"], ["turbo_large"], {"aero_balance": -0.4})
+	_car.apply_owned(_owned(["fx_turbo_big", "fx_aero"], [], {"aero_balance": 0.8}))
+	_car.refit_upgrades(_owned(["fx_turbo_big", "fx_aero"], ["fx_turbo_big"], {"aero_balance": 0.8}))
+	var final_state := _owned(["fx_turbo_big", "fx_aero"], ["fx_turbo_big"], {"aero_balance": -0.4})
 	_car.retune(final_state)
 	var fresh := _fresh_field(final_state)
 	assert_almost_eq(_car.config.downforce_front, fresh.downforce_front, 0.0001,
@@ -109,9 +112,9 @@ func test_refit_then_retune_aero_downforce_matches_a_fresh_field() -> void:
 
 # The opposite order: tune first, then change an upgrade. Must also match a fresh field.
 func test_retune_then_refit_matches_a_fresh_field() -> void:
-	_car.apply_owned(_owned(["turbo_large"], [], {"engine_detune": 1.0}))
-	_car.retune(_owned(["turbo_large"], [], {"engine_detune": 0.5}))
-	var final_state := _owned(["turbo_large"], ["turbo_large"], {"engine_detune": 0.5})
+	_car.apply_owned(_owned(["fx_turbo_big"], [], {"engine_detune": 1.0}))
+	_car.retune(_owned(["fx_turbo_big"], [], {"engine_detune": 0.5}))
+	var final_state := _owned(["fx_turbo_big"], ["fx_turbo_big"], {"engine_detune": 0.5})
 	_car.refit_upgrades(final_state)
 	assert_almost_eq(_car.config.peak_torque, _fresh_field(final_state).peak_torque, 0.01,
 		"retune-then-refit lands on a fresh field's power (no stale baseline)")
@@ -120,11 +123,11 @@ func test_retune_then_refit_matches_a_fresh_field() -> void:
 # Repeated refits cycling an upgrade on/off/on must not drift: the baseline is captured
 # once at fielding and every re-derive starts from it.
 func test_repeated_refit_does_not_drift() -> void:
-	_car.apply_owned(_owned(["turbo_large"], [], {}))
-	_car.refit_upgrades(_owned(["turbo_large"], ["turbo_large"], {}))  # off
-	_car.refit_upgrades(_owned(["turbo_large"], [], {}))               # on
-	_car.refit_upgrades(_owned(["turbo_large"], ["turbo_large"], {}))  # off
-	var final_state := _owned(["turbo_large"], [], {})                 # on
+	_car.apply_owned(_owned(["fx_turbo_big"], [], {}))
+	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {}))  # off
+	_car.refit_upgrades(_owned(["fx_turbo_big"], [], {}))               # on
+	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {}))  # off
+	var final_state := _owned(["fx_turbo_big"], [], {})                 # on
 	_car.refit_upgrades(final_state)
 	var fresh := _fresh_field(final_state)
 	assert_almost_eq(_car.config.peak_torque, fresh.peak_torque, 0.01,

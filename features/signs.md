@@ -3,7 +3,7 @@
 **Sources:** `scripts/sign_layout.gd` (`SignLayout`, pure planner) +
 `scripts/sign_field.gd` (`SignField`, the Node3D builder), planned/built in
 `scripts/world.gd._generate_track`. Tunables in the `Roadside Signs` group of
-`scripts/game_config.gd`. See the brief in [../todo/roadside-signs.md](../todo/roadside-signs.md).
+`scripts/game_config.gd`.
 
 Free-standing **A-frame ("wet-floor") boards** along the stage that read the road
 to a driver — **turn arrows** only. The start and finish are marked by the

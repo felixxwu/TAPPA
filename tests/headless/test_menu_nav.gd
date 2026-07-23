@@ -17,9 +17,11 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
+	RallyFixtures.install()
 
 
 func after_each() -> void:
+	RallyFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -202,7 +204,7 @@ func test_audio_page_slider_is_focusable_and_reflects_saved_volume() -> void:
 func test_standings_event_page_then_combined_is_navigable() -> void:
 	RallySession.auto_load_scenes = false
 	var owned: Dictionary = _save.grant_car("mx5")
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = [
 		{"name": "Quick", "car_name": "Porsche 911", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 	]

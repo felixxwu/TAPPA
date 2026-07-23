@@ -11,6 +11,7 @@ var _save: Node
 
 func before_each() -> void:
 	Config.reset()
+	UpgradeFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -22,6 +23,7 @@ func after_each() -> void:
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
+	UpgradeFixtures.restore()
 
 
 func _clean() -> void:
@@ -282,7 +284,7 @@ func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 	var car: Dictionary = _save.grant_car("mx5")
 	var id := int(car["instance_id"])
 	# Upgrades are car-bound — install_upgrade fits the part straight to the car.
-	assert_true(_save.install_upgrade(id, "turbo_small"), "upgrade fitted")
+	assert_true(_save.install_upgrade(id, "fx_turbo_small"), "upgrade fitted")
 	assert_eq(_save.get_car(id)["installed_upgrades"].size(), 1, "one upgrade installed")
 
 	var dm := DamageModel.new()
@@ -295,7 +297,7 @@ func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
 	# The bound car is left at 0 HP in the save (repairable), not destroyed.
 	assert_false(_save.get_car(id).is_empty(), "the wrecked instance is kept in the save")
 	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "the saved car sits at 0 HP")
-	assert_true(_save.get_car(id)["installed_upgrades"].has("turbo_small"),
+	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
 		"the fitted upgrade stays on the wrecked car")
 
 

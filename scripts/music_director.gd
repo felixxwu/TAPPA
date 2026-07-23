@@ -115,7 +115,7 @@ func _resume_stable_sec() -> float:
 func _stall_recovery_enabled() -> bool:
 	if _stall_recovery_override != null:
 		return bool(_stall_recovery_override)
-	return OS.has_feature("web")
+	return Platform.is_web()
 
 
 func _cfg() -> GameConfig:

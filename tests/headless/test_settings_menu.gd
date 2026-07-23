@@ -14,6 +14,7 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
+	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -33,6 +34,7 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	CarFixtures.restore()
+	RallyFixtures.restore()
 
 
 func _clean() -> void:
@@ -44,7 +46,7 @@ func _clean() -> void:
 # Start a rally skipping track generation and return the fielded owned-car dict.
 func _start_rally() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = [
 		{"name": "Rival", "event_times_ms": [], "dnf": false, "combined_ms": 50000},
 	]

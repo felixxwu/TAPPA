@@ -204,7 +204,7 @@ camera you already drive, so the menu count stays tiny.
     "abandon rally?", "install upgrade?", "use repair kit?".
 11. **Settings overlay** — volume sliders (Master / SFX / Music / Engine) + a
     quality toggle, reachable from **Pause** and **Title**. Flat by design (dense
-    controls). Owned by `todo/settings.md` (persists to `settings.cfg`, separate
+    controls). Owned by `scripts/settings_menu.gd` (persists to `settings.cfg`, separate
     from the progression save); this list just notes where it surfaces.
 
 ### Tuning-lift knobs (real config fields)

@@ -205,7 +205,7 @@ boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward. The
 reward draw picks an `UpgradeDef` by `tier`, clamped by progress, excluding parts
 already on the driven car — and never `free` parts (the ballast is always
 available, so it's not a reward) — that policy is reward-system logic
-(`todo/reward-system.md`); this library just provides the tier-keyed pool. The flow
+(`reward-system.md`); this library just provides the tier-keyed pool. The flow
 controller fits each won part straight onto the driven car via
 `Save.install_upgrade(..., enabled=false)` (repair kits, being consumable, go to
 `Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,

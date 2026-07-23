@@ -7,12 +7,14 @@ extends GutTest
 # at once.
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
 
 var _save: Node
 
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
+	UpgradeFixtures.install()
 	_save = get_node("/root/Save")
 	_save.profile_path = "user://test_upgrade_reveal_profile.json"
 	_save.save_disabled = false
@@ -21,6 +23,7 @@ func before_each() -> void:
 func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
+	UpgradeFixtures.restore()
 	CarFixtures.restore()
 
 func _make() -> UpgradeReveal:
@@ -31,16 +34,16 @@ func _make() -> UpgradeReveal:
 func test_slottable_part_reveal_leaves_it_fitted_disabled_and_finishes() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
-	_save.install_upgrade(id, "brake_kit", false)  # reward loop fitted it disabled
+	_save.install_upgrade(id, "fx_brakes", false)  # reward loop fitted it disabled
 	var w := _make()
 	var done := [false]
 	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
-	w.reveal("brake_kit", id)
+	w.reveal("fx_brakes", id)
 	await get_tree().process_frame
 	assert_false(w._choice_pending, "a normal part is one 'Next' step, no Apply/Keep choice")
 	assert_false(w._choice_box.visible, "no choice buttons are shown")
-	assert_true(_save.get_car(id)["installed_upgrades"].has("brake_kit"), "the part stays fitted")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"),
+	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_brakes"), "the part stays fitted")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_brakes"),
 		"the part stays disabled — enabled later in the upgrades menu")
 	assert_true(done[0], "finished fires immediately")
 
@@ -90,10 +93,10 @@ func test_repair_kit_save_it_leaves_car_damaged_and_keeps_the_kit() -> void:
 func test_drivetrain_kit_installs_enabled_without_choice() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
-	_save.install_upgrade(id, "drivetrain_swap", false)
+	_save.install_upgrade(id, "fx_drivetrain", false)
 	var w := _make()
-	w.reveal("drivetrain_swap", id)
+	w.reveal("fx_drivetrain", id)
 	await get_tree().process_frame
 	assert_false(w._choice_pending, "the drivetrain kit skips Apply/Keep")
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "drivetrain_swap"),
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_drivetrain"),
 		"the drivetrain kit installs enabled")

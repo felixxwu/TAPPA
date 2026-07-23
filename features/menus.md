@@ -1,8 +1,11 @@
 # Menus & game-loop shell
 
-**Sources:** `hq.tscn` + `scripts/hq.gd`, `podium.tscn` + `scripts/podium.gd`,
-plus the session-aware fielding in `scripts/world.gd`. See the full design in
-[../todo/menus.md](../todo/menus.md).
+**Sources:** `hq.tscn` + `scripts/hq.gd` (`class_name HqController`), the 2D
+overlay/menu-layer builders in `scripts/hq_overlays.gd` (`class_name HqOverlays` —
+the `build_*_overlay()` methods, split out of `hq.gd` to shrink it; each holds a
+back-reference to the `HqController` and reaches into it for state + button
+callbacks), `podium.tscn` + `scripts/podium.gd`, plus the session-aware fielding
+in `scripts/world.gd`. See the full design in [../todo/menus.md](../todo/menus.md).
 
 This is the **diegetic 3D build** of the menu shell: HQ is one continuous 3D space
 the camera flies through (an exterior title shot, a garage interior, the map table,
@@ -11,8 +14,8 @@ whole meta-game loop — pick a rally on a 3D map, choose an eligible car in the
 park, run it, see the podium — and wires [rally-session.md](rally-session.md) into
 the run scene. The podium + between-event standings are still flat scenes (the 3D
 reward rig / podium are later refinements); remaining diegetic polish (tuning UI,
-per-car paint, camera fly-throughs *between* far stations) lives in
-[../todo/diegetic-hq.md](../todo/diegetic-hq.md) / [../todo/menus.md](../todo/menus.md).
+per-car paint, camera fly-throughs *between* far stations) is tracked in the
+"Deferred (rest of the diegetic 3D build)" section below.
 
 ## The loop
 
@@ -898,9 +901,8 @@ podium transition, no hide/show button).
 ## Deferred (rest of the diegetic 3D build)
 
 The diegetic HQ space (exterior / garage / 3D map table / car park / tuning lift,
-with the camera flying between stations) is in. Still deferred
-([../todo/diegetic-hq.md](../todo/diegetic-hq.md), umbrella in
-[../todo/menus.md](../todo/menus.md)): per-car paint + duplicate-model name suffixes,
+with the camera flying between stations) is in. Still deferred:
+per-car paint + duplicate-model name suffixes,
 designed environment art (blocks are placeholder), the 3D
 reward-reveal rig + 3D podium, and camera fly-through transitions for the longer
 hops. The podium + between-event **standings interstitial** still ship as flat

@@ -13,6 +13,10 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
+	# Most tests here just need "a rally with events"; install the synthetic rally
+	# roster so they don't lean on a shipped rally's identity. The showdown tests
+	# (which need the real region-ordered showdown) opt back out via RallyFixtures.restore().
+	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -33,6 +37,8 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	CarFixtures.restore()
+	RallyFixtures.restore()
+	UpgradeFixtures.restore()  # idempotent; only the drivetrain test installs it
 
 
 func _clean() -> void:
@@ -87,7 +93,7 @@ func _capture_finish() -> Array:
 # event, tracking the event index as the rally advances. -1 when idle.
 func test_current_event_target_ms_tracks_fastest_rival_per_event() -> void:
 	assert_eq(RallySession.current_event_target_ms(), -1, "idle: no time to beat")
-	_start("coastal_sprint")
+	_start("fx_open")
 	RallySession._opponent_field = [
 		{"name": "A", "event_times_ms": [50000, 82000, 82000], "dnf": false, "combined_ms": 214000},
 		{"name": "B", "event_times_ms": [45000, 90000, 90000], "dnf": false, "combined_ms": 225000},
@@ -106,7 +112,7 @@ func test_current_event_target_ms_tracks_fastest_rival_per_event() -> void:
 # first, each with the car they drove — and skips any who DNF'd this event.
 func test_current_event_leaders_lists_top_three_with_cars() -> void:
 	assert_true(RallySession.current_event_leaders().is_empty(), "idle: no leaders")
-	_start("coastal_sprint")
+	_start("fx_open")
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "fx_awd", "car_name": "Fixture AWD", "event_times_ms": [50000, 0, 0], "dnf": false, "combined_ms": 1},
 		{"name": "B", "car_id": "fx_rwd_coupe", "car_name": "Fixture Coupe", "event_times_ms": [45000, 0, 0], "dnf": false, "combined_ms": 1},
@@ -128,7 +134,7 @@ func test_current_event_leaders_lists_top_three_with_cars() -> void:
 # Between-event pit repairs: the fielded car is patched up entering every event
 # AFTER the first (never the first), and the summary is exposed once for the popup.
 func test_pit_repair_fires_at_each_event_after_the_first() -> void:
-	var owned := _start("coastal_sprint")
+	var owned := _start("fx_open")
 	RallySession._opponent_field = _field([200000, 210000, 220000])
 	var id: int = owned["instance_id"]
 	# The first event gets no pit repair — the car starts the rally fresh.
@@ -149,7 +155,7 @@ func test_pit_repair_fires_at_each_event_after_the_first() -> void:
 # wrecked in. Built from a synthetic field so it leans on the delegation, not on a roll.
 func test_current_event_wreck_tracks_the_crashed_rival_per_event() -> void:
 	assert_true(RallySession.current_event_wreck().is_empty(), "idle: no wreck")
-	_start("coastal_sprint")
+	_start("fx_open")
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "carA", "car_name": "Car A", "event_times_ms": [50000, 82000, 82000],
 			"dnf": false, "combined_ms": 214000, "wreck_event": -1, "wreck_progress": 0.0, "wreck_side": 1.0},
@@ -171,7 +177,7 @@ func test_current_event_wreck_tracks_the_crashed_rival_per_event() -> void:
 # The leaderboard carries the car each entrant drove — the rivals' and the
 # player's fielded car.
 func test_standings_carry_the_player_and_rival_cars() -> void:
-	_start("shakedown", "fx_light_rwd")
+	_start("fx_open", "fx_light_rwd")
 	RallySession._opponent_field = [
 		{"name": "Quick", "car_name": "Fixture Coupe", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 	]
@@ -194,7 +200,7 @@ func test_idle_when_no_rally() -> void:
 
 func test_happy_path_accumulates_and_places() -> void:
 	var finish := _capture_finish()
-	_start("shakedown")
+	_start("fx_open")
 	RallySession._opponent_field = _field([50000, 60000, 70000, 80000, 90000])
 	RallySession.report_event_result(20000)
 	RallySession.continue_to_next_event()
@@ -211,13 +217,13 @@ func test_happy_path_accumulates_and_places() -> void:
 	assert_eq(r["placed"], 2, "placement counts faster non-DNF opponents")
 	assert_true(r["completed"], "a top-3 finish completes the rally")
 	assert_false(r["dnf"], "not a DNF")
-	assert_true(_save.rally_completed("shakedown"), "completion recorded in the save")
+	assert_true(_save.rally_completed("fx_open"), "completion recorded in the save")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE after finishing")
 
 
 func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	var finish := _capture_finish()
-	var driven := _start("shakedown")  # the entry rally (a low p/w cap), difficulty 1
+	var driven := _start("fx_open")  # the entry rally (a low p/w cap), difficulty 1
 	# Player combined 60000; one opponent faster (50000) -> placed 2nd, top-3 win.
 	RallySession._opponent_field = _field([50000, 70000, 80000])
 	# Snapshot ownership BEFORE the finish: a top-3 win grants the reward car, so the
@@ -227,7 +233,7 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 		owned_before[String(c.get("model_id", ""))] = true
 	_report_events([20000, 20000, 20000])
 	var r: Dictionary = finish[0]
-	assert_eq(r["rally_name"], "Shakedown", "result names the rally for the podium header")
+	assert_eq(r["rally_name"], "Fixture Open", "result names the rally for the podium header")
 	assert_eq((r["upgrades"] as Array).size(), RallySession.EVENTS_PER_RALLY - 1,
 		"a finished rally captures one upgrade id per non-final event for the record")
 	# The reward must be a real catalogue car (the draw policy itself — garage
@@ -246,7 +252,7 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 	assert_eq(int(r["car_instance_id"]), int(driven["instance_id"]),
 		"the result carries the driven car's instance id for the apply-upgrade choice")
 	# A 2nd-place finish records best placement 2 (drives the world-map stars).
-	assert_eq(_save.best_placement("shakedown"), 2, "the best finishing position is recorded")
+	assert_eq(_save.best_placement("fx_open"), 2, "the best finishing position is recorded")
 	# Standings = field (3) + player, ranked, player classified 2nd.
 	var standings: Array = r["standings"]
 	assert_eq(standings.size(), 4, "standings includes the player plus the opponent field")
@@ -262,7 +268,7 @@ func test_result_carries_rewards_and_standings_for_the_podium() -> void:
 # single event has run) — so the settings dev button can hand the player the car.
 func test_dev_complete_rally_wins_immediately_from_mid_rally() -> void:
 	var finish := _capture_finish()
-	_start("shakedown")
+	_start("fx_open")
 	RallySession._opponent_field = _field([50000, 60000, 70000])
 	# No event has been reported yet; complete the whole rally in one shot.
 	RallySession.dev_complete_rally()
@@ -272,7 +278,7 @@ func test_dev_complete_rally_wins_immediately_from_mid_rally() -> void:
 	assert_eq(r["placed"], 1, "a 0 ms combined out-runs the whole field -> P1")
 	assert_true(r["completed"], "a P1 finish completes the rally (top-3)")
 	assert_false(r["dnf"], "not a DNF")
-	assert_true(_save.rally_completed("shakedown"), "completion recorded in the save")
+	assert_true(_save.rally_completed("fx_open"), "completion recorded in the save")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "session returns to IDLE after finishing")
 
 
@@ -285,7 +291,7 @@ func test_dev_complete_rally_is_a_noop_when_idle() -> void:
 
 
 func test_between_event_standings_pause_and_leaderboard() -> void:
-	_start("shakedown")
+	_start("fx_open")
 	# Two rivals: one quick (40k/event), one slow (80k/event). Player runs 50k/event.
 	RallySession._opponent_field = [
 		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
@@ -312,7 +318,7 @@ func test_per_event_upgrades_bind_to_the_driven_car_without_duplicates() -> void
 	# fitted to the driven car DISABLED, with no slottable part won twice (the
 	# re-roll excludes what's already on the car).
 	var finish := _capture_finish()
-	var driven := _start("shakedown")
+	var driven := _start("fx_open")
 	var driven_id := int(driven["instance_id"])
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	_report_events([10000, 10000, 10000])
@@ -337,7 +343,7 @@ func test_per_event_upgrades_bind_to_the_driven_car_without_duplicates() -> void
 
 
 func test_final_event_awards_no_upgrade() -> void:
-	_start("shakedown")
+	_start("fx_open")
 	RallySession._opponent_field = _field([90000])
 	RallySession.report_event_result(10000)  # event 1
 	RallySession.continue_to_next_event()
@@ -352,7 +358,7 @@ func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
 	# The per-event upgrade is earned by FINISHING event 1; a later wreck (DNF)
 	# keeps it. The final rally still records no car reward on a DNF.
 	var finish := _capture_finish()
-	var owned := _start("shakedown")
+	var owned := _start("fx_open")
 	var id := int(owned["instance_id"])
 	RallySession._opponent_field = _field([50000])
 	RallySession.report_event_result(20000)  # event 1 finishes -> one upgrade drawn
@@ -378,11 +384,11 @@ func test_wreck_after_earning_a_per_event_upgrade_keeps_it() -> void:
 	var after: Dictionary = _save.get_car(id)
 	if not UpgradeLibrary.is_consumable(won):
 		assert_true((after["installed_upgrades"] as Array).has(won), "the earned upgrade survives a later DNF")
-	assert_false(_save.rally_completed("shakedown"), "a DNF leaves the rally incomplete")
+	assert_false(_save.rally_completed("fx_open"), "a DNF leaves the rally incomplete")
 
 
 func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
-	var owned := _start("shakedown")
+	var owned := _start("fx_open")
 	var id := int(owned["instance_id"])
 	var field1: Array = RallySession.opponent_field().duplicate(true)
 	# A slow, non-top-3 finish (slower than every opponent).
@@ -392,12 +398,12 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 	var r: Dictionary = finish[0]
 	assert_false(r["completed"], "a non-top-3 finish does not complete the rally")
 	assert_eq(r["placed"], 6, "slower than all 5 opponents -> placed 6th")
-	assert_false(_save.rally_completed("shakedown"), "an incomplete rally stays incomplete (no retry)")
+	assert_false(_save.rally_completed("fx_open"), "an incomplete rally stays incomplete (no retry)")
 	assert_false(_save.get_car(id).is_empty(), "the car survives a non-DNF finish")
 
 	# Re-enter from the map: state resets, the opponent field is unchanged (fixed
 	# per rally seed), and persisted HP is untouched.
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), _save.get_car(id), true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), _save.get_car(id), true)
 	assert_eq(RallySession.event_index(), 0, "event index resets on re-entry")
 	assert_true(RallySession.event_times_ms().is_empty(), "event times reset on re-entry")
 	assert_eq(RallySession.opponent_field(), field1, "the opponent field is identical across re-attempts")
@@ -407,6 +413,7 @@ func test_showdown_win_beat_instead_of_car_draw() -> void:
 	# The win/credits beat fires only for the FINAL region's showdown — "the_showdown"
 	# (region "home") no longer triggers it now that "greece" is a later region;
 	# use the actual final region's showdown ("gr_showdown") to exercise it.
+	RallyFixtures.restore()  # this test needs the REAL region-ordered showdown roster
 	var won: Array = [false]
 	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
 	_start("gr_showdown")
@@ -423,6 +430,7 @@ func test_non_final_region_showdown_completes_without_win_beat() -> void:
 	# comes after) — a top-3 finish should complete it like any normal rally win
 	# (including a car draw), but must NOT fire the win/credits beat or flag the
 	# endgame podium.
+	RallyFixtures.restore()  # this test needs the REAL region-ordered showdown roster
 	var won: Array = [false]
 	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
 	var result_box := _capture_finish()
@@ -437,12 +445,12 @@ func test_non_final_region_showdown_completes_without_win_beat() -> void:
 
 func test_farming_rewin_grants_car_without_new_completion() -> void:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.complete_rally("shakedown", 999999)  # already won once
+	_save.complete_rally("fx_open", 999999)  # already won once
 	var completed_before: int = _save.completed_rally_count()
 	var cars_before: int = _save.profile["cars"].size()
 	var rewards: Array = [0]
 	RallySession.car_rewarded.connect(func(_m: String) -> void: rewards[0] += 1, CONNECT_ONE_SHOT)
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = _field([90000])  # top-3 re-win
 	_report_events([10000, 10000, 10000])
 	assert_eq(_save.completed_rally_count(), completed_before, "a re-win records no new completion")
@@ -455,7 +463,7 @@ func test_farming_rewin_grants_car_without_new_completion() -> void:
 func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
 	# Idle: no car.
 	assert_true(RallySession.current_event_p1_car().is_empty(), "idle: no P1 car")
-	_start("coastal_sprint")
+	_start("fx_open")
 	# Inject a field with known car_ids and event times for event 0.
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "fx_light_rwd",      "event_times_ms": [55000, 0, 0], "dnf": false, "combined_ms": 1},
@@ -472,7 +480,7 @@ func test_current_event_p1_car_returns_fastest_rivals_car() -> void:
 # cumulative total), sinks a rival who DNF'd THAT event, and carries the player.
 func test_current_event_standings_ranks_by_the_just_completed_event() -> void:
 	assert_true(RallySession.current_event_standings().is_empty(), "idle: no event standings")
-	_start("shakedown", "fx_light_rwd")
+	_start("fx_open", "fx_light_rwd")
 	RallySession._opponent_field = [
 		# Cumulatively "Quick" leads, but for event 1 alone "Slow" is fastest and
 		# "Quick" is slowest — so the event-only ranking differs from the combined one.
@@ -511,7 +519,7 @@ func test_registered_detune_reverts_to_the_prior_tune_when_the_rally_finishes() 
 	_save.set_engine_detune(id, 0.9)
 	RallySession.register_detune_revert(id, _detune_of(id))
 	_save.set_engine_detune(id, 0.6)
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = _field([100000, 200000])
 	# Mid-rally — including the standings pause between events — the temporary
 	# detune must hold; the tune never creeps back up before the rally is over.
@@ -532,7 +540,7 @@ func test_registered_detune_reverts_to_default_on_abandon() -> void:
 	var id := int(owned["instance_id"])
 	RallySession.register_detune_revert(id, _detune_of(id))
 	_save.set_engine_detune(id, 0.7)
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = _field([100000])
 	RallySession.abandon()
 	assert_almost_eq(_detune_of(id), 1.0, 0.0001,
@@ -549,7 +557,7 @@ func test_stale_detune_revert_for_an_unfielded_car_is_settled_at_start() -> void
 	RallySession.register_detune_revert(stale_id, 1.0)
 	_save.set_engine_detune(stale_id, 0.5)  # the agreement's detune, never raced
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	assert_almost_eq(_detune_of(stale_id), 1.0, 0.0001,
 		"the unraced car's temporary detune is undone as soon as another rally starts")
 	RallySession._opponent_field = _field([100000])
@@ -561,9 +569,10 @@ func test_stale_detune_revert_for_an_unfielded_car_is_settled_at_start() -> void
 # --- Temporary drivetrain revert (parallel to detune revert) --------------------------
 
 func test_drivetrain_revert_restores_prior_mode_on_reset() -> void:
+	UpgradeFixtures.install()  # needs the drivetrain-swap kit (fx_drivetrain)
 	var owned: Dictionary = _save.grant_car(String(CarLibrary.all()[0].get("id", "")))
 	var id := int(owned["instance_id"])
-	_save.install_upgrade(id, "drivetrain_swap", true)
+	_save.install_upgrade(id, "fx_drivetrain", true)
 	_save.set_drivetrain_override(id, CarLibrary.RWD)  # garage-set choice
 	# Simulate the car-park agreement: register the prior, then override for the rally.
 	RallySession.register_drivetrain_revert(id, CarLibrary.RWD)

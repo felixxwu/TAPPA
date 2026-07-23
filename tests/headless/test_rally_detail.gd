@@ -12,10 +12,12 @@ var _hq: Node3D
 
 func before_all() -> void:
 	CarFixtures.install()
+	UpgradeFixtures.install()
 
 
 func after_all() -> void:
 	CarFixtures.restore()
+	UpgradeFixtures.restore()
 
 
 func before_each() -> void:
@@ -109,7 +111,7 @@ func test_floor_is_judged_with_ballast_dropped() -> void:
 	# ballasted car below the floor on current stats is still eligible (shed the ballast).
 	var base_pw := _pw("fx_rwd_coupe")  # full tune, no ballast
 	var rally := {"restriction": {"pw_min": base_pw * 0.9}}
-	var owned := _owned("fx_rwd_coupe", {}, ["ballast_large"])
+	var owned := _owned("fx_rwd_coupe", {}, ["fx_ballast"])
 	var plan: Dictionary = _hq._entry_plan(rally, owned)
 	assert_true(plan["eligible"], "eligible: dropping the removable ballast clears the floor")
 

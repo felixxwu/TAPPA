@@ -27,7 +27,7 @@ tree, the countdown, finishing a stage, UI clicks, and the podium result.
   beep.
 - The diegetic menus (`todo/menus.md`) and the **podium / reward reveal** have no
   UI or sting audio, so "presence & atmosphere" is half-delivered.
-- There is **no bus structure**, so the Settings overlay (`todo/settings.md`) has
+- There is **no bus structure**, so the Settings overlay (`scripts/settings_menu.gd`) has
   nothing to attach volume sliders to.
 
 ## Current state (measured from the code)
@@ -59,7 +59,7 @@ Master
 
 - Re-point `engine_audio.gd`'s player to the **Engine** bus (one line:
   `bus = "Engine"`), so engine volume is independently mixable.
-- Settings sliders (`todo/settings.md`) set `AudioServer.set_bus_volume_db` per
+- Settings sliders (`scripts/settings_menu.gd`) set `AudioServer.set_bus_volume_db` per
   bus (Master / SFX / Music / Engine), persisted to `settings.cfg`.
 
 ## An `Audio` autoload (one-shot SFX)
@@ -118,13 +118,13 @@ the damage model already computes, so no new physics read.
 | `sfx_pool_size` | int | `8` | One-shot `AudioStreamPlayer` pool size. |
 | `impact_hard_impulse` | float | — | Impulse above which a crash uses `impact_hard`. Shares the damage-model impulse scale. |
 
-Default **bus volumes** are owned by `todo/settings.md` (persisted to
+Default **bus volumes** are owned by `scripts/settings_menu.gd` (persisted to
 `settings.cfg`), not `GameConfig` — `GameConfig` holds the authored clip wiring,
 the player profile holds chosen volumes.
 
 ## Dependencies
 
-- **Settings** (`todo/settings.md`) — owns the volume sliders that drive the bus
+- **Settings** (`scripts/settings_menu.gd`) — owns the volume sliders that drive the bus
   layout this spec defines. Build the bus layout here; Settings reads/writes it.
 - **Damage model** (`features/damage.md`) — the impact/wreck triggers.
 - **Stage start/end** (`todo/stage-start-and-end.md`) — the countdown triggers.

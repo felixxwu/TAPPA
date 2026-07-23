@@ -355,16 +355,20 @@ and visible set; tune cadence.
 
 ### Alternative direction: opaque low-poly meshes instead of cutout billboards
 
-> **✅ DONE FOR TREES.** Trees now render as opaque low-poly meshes via
-> `scripts/tree_mesh_field.gd` (`TreeMeshField`) using `models/low_poly_tree.glb`
-> — see `features/trees.md`. Rather than the per-frame CPU view-cone cull + visible
-> cap described below, trees are **spatially binned into per-cell MultiMeshes**
-> (`tree_bin_size_m`), each with `visibility_range_end`/fade for the far cull and
-> the importer-generated mesh LODs for distance decimation — no per-frame CPU.
-> **Still open:** (a) a **bush mesh** (bushes remain billboards); (b) the
-> per-frame **view-cone cull + `max_visible_billboards` cap** (items 2/3) if
-> profiling shows the binned fields still over-submit; (c) **collision-box culling**
-> (item 3) — `TreeMeshField` still adds all tree hitboxes up front.
+> **✅ DONE (as a split pipeline).** The two foliage kinds render differently now
+> (see `features/trees.md`, `scripts/foliage.gd`): **trees are opaque billboard
+> cutouts** (`scripts/billboard_field.gd`, `BillboardField`, `textures/tree.png`),
+> and **bushes are opaque low-poly meshes** (`scripts/tree_mesh_field.gd`,
+> `TreeMeshField`, using `models/vegetation/groundcover_opaque.glb`; the earlier
+> `models/low_poly_tree.glb` asset was removed). The bush meshes are **spatially
+> binned into per-cell MultiMeshes** (`tree_bin_size_m`), each with
+> `visibility_range_end`/fade for the far cull and the importer-generated mesh LODs
+> for distance decimation — no per-frame CPU. Both paths are opaque with no
+> `discard`, so early-Z / HSR stays on (item 2's direction).
+> **Still open:** (a) the per-frame **view-cone cull + `max_visible_billboards` cap**
+> (items 2/3) if profiling shows the binned bush fields or the tree billboards still
+> over-submit; (b) **collision-box culling** (item 3) — the tree fields still add all
+> hitboxes up front.
 
 On the target hardware the foliage is **fill-bound**, and alpha-cutout
 billboards are the worst case for it: `discard` disables early-Z/HSR, and even a

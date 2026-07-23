@@ -22,7 +22,7 @@ var _last_size := Vector2i.ZERO
 
 
 func _ready() -> void:
-	if not OS.has_feature("web"):
+	if not Platform.is_web():
 		set_process(false)
 		return
 	_update()
@@ -64,7 +64,7 @@ func _update() -> void:
 # fullscreen, where re-requesting would flip it back to portrait). Public so a
 # host can also trigger it from its own gesture if desired.
 func request_fullscreen() -> void:
-	if not OS.has_feature("web"):
+	if not Platform.is_web():
 		return
 	if not is_portrait(DisplayServer.window_get_size()):
 		return

@@ -23,6 +23,7 @@ func before_each() -> void:
 	Config.data.hq_tree_count = 8
 	Config.data.hq_bush_count = 8
 	CarFixtures.install()
+	UpgradeFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -45,6 +46,8 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	CarFixtures.restore()
+	UpgradeFixtures.restore()
+	RallyFixtures.restore()
 	RallyLibrary.reset()  # drop any synthetic rally roster a test installed
 	RegionLibrary.reset()  # drop any synthetic region roster a test installed
 
@@ -701,10 +704,10 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 	assert_eq(int(_save.profile["cars"].size()), before + 1, "unlocking grants a car instance")
 	# Fit any slottable upgrade: parts are car-bound, so it installs onto the
 	# selected car (not a shared inventory, which no longer holds parts).
-	dev._fit_upgrade("turbo_small", "Small Turbo")
-	assert_true((_save.selected_car().get("installed_upgrades", []) as Array).has("turbo_small"),
+	dev._fit_upgrade("fx_turbo_small", "Small Turbo")
+	assert_true((_save.selected_car().get("installed_upgrades", []) as Array).has("fx_turbo_small"),
 		"fitting an upgrade installs it on the selected car")
-	assert_eq(int(_save.profile["inventory"].get("turbo_small", 0)), 0,
+	assert_eq(int(_save.profile["inventory"].get("fx_turbo_small", 0)), 0,
 		"fitting an upgrade does not touch the consumable inventory")
 	# The repair kit is the one true consumable — it still lands in inventory.
 	dev._add_upgrade(UpgradeLibrary.REPAIR_KIT_ID, "Repair Kit")
@@ -939,8 +942,9 @@ func test_free_roam_finish_next_returns_to_hq() -> void:
 # crowd around it (features/opponent-wrecks.md). Drives the real world build with an
 # active session whose field wrecks one rival in event 0.
 func test_run_scene_stages_a_roadside_opponent_wreck() -> void:
+	RallyFixtures.install()
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	# Overwrite the field so a known rival (in a resolvable fixture car) wrecks event 0.
 	RallySession._opponent_field = [
 		{"name": "A", "car_id": "fx_rwd_coupe", "car_name": "Fixture Coupe",
@@ -1147,6 +1151,7 @@ func test_hq_dragging_the_map_does_not_open_a_rally() -> void:
 
 
 func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
+	RallyFixtures.install()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -1155,7 +1160,7 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	# exactly the owned cars the eligibility rule accepts (derived below, not pinned).
 	_save.grant_car("fx_awd")
 	_save.grant_car("fx_rwd_coupe")
-	hq._on_rally_pin("rwd_masters")
+	hq._on_rally_pin("fx_rwd_band")
 	hq._enter_car_screen()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "Enter Rally flies out to the car park")
@@ -1167,7 +1172,7 @@ func test_hq_choosing_a_rally_filters_to_eligible_cars() -> void:
 	# Derived from the eligibility rule + owned roster (not a pinned model name), so
 	# it stays correct if cars or the rally's p/w band are retuned — what it really
 	# asserts is that HQ parks the library's enterable set, no more, no less.
-	var rally := RallyLibrary.by_id("rwd_masters")
+	var rally := RallyLibrary.by_id("fx_rwd_band")
 	var expected := {}
 	for model_id in ["fx_light_rwd", "fx_awd", "fx_rwd_coupe"]:  # the player's owned roster here
 		var spec := CarLibrary.by_id(model_id)
@@ -1617,7 +1622,7 @@ func test_swap_car_qualifies_for_restricted_rally() -> void:
 	var rally := {"id": "t_rwd", "name": "T", "restriction": {"drive_mode": CarLibrary.RWD}}
 	var entry := {"id": "t_fwd", "name": "FWD car", "drive_mode": CarLibrary.FWD, "engine": "", "mass": 1200.0, "max_hp": 1000.0}
 	var with_kit := {"instance_id": 1, "model_id": "t_fwd", "hp": 1000.0,
-		"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": -1}
+		"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": -1}
 	var no_kit := {"instance_id": 2, "model_id": "t_fwd", "hp": 1000.0,
 		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
 	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
@@ -1644,7 +1649,7 @@ func test_swap_and_detune_stack_for_a_rally_restricting_both() -> void:
 	var rally := {"id": "t_rwd_pw", "name": "T2",
 		"restriction": {"drive_mode": CarLibrary.RWD, "pw_max": pw_max}}
 	var with_kit := {"instance_id": 3, "model_id": "t_fwd_stack",
-		"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": -1}
+		"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": -1}
 	var no_kit := {"instance_id": 4, "model_id": "t_fwd_stack",
 		"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": -1}
 	assert_eq(hq._qualifying_drivetrain_for(rally, with_kit, entry,
@@ -1761,8 +1766,8 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	# Fit a brake kit to a fresh car and select it — its brake-bias slider unlocks.
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
-	_save.add_item("brake_kit")
-	_save.install_upgrade(id, "brake_kit")
+	_save.add_item("fx_brakes")
+	_save.install_upgrade(id, "fx_brakes")
 	_save.set_selected_car(id)
 	hq._enter_lift()
 	await get_tree().process_frame
@@ -1860,7 +1865,7 @@ func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.profile["inventory"]["turbo_small"] = 1  # deliberately stale pool entry
+	_save.profile["inventory"]["fx_turbo_small"] = 1  # deliberately stale pool entry
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
@@ -1868,7 +1873,7 @@ func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
 	for b in hq._lift_upgrades_box.find_children("*", "Button", true, false):
 		assert_false(String(b.text).begins_with("APPLY"),
 			"no apply-from-pool button appears in the garage upgrades menu")
-	assert_false(_save.get_car(id)["installed_upgrades"].has("turbo_small"),
+	assert_false(_save.get_car(id)["installed_upgrades"].has("fx_turbo_small"),
 		"nothing gets fitted from the pool")
 
 
@@ -1887,7 +1892,7 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
 	# Before the kit is won: a greyed kit option sits beside an available None; no toggles.
-	var kit_name := String(UpgradeLibrary.by_id("brake_kit").get("name", "")).to_upper()
+	var kit_name := String(UpgradeLibrary.by_id("fx_brakes").get("name", "")).to_upper()
 	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["Enable", "Disable"]), 0,
 		"no Enable/Disable toggle — the slot is a selector")
 	var kit_btn := _turbo_button(hq._lift_upgrades_box, kit_name)  # matches by (upper-cased) label
@@ -1895,8 +1900,8 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	assert_true(kit_btn.disabled, "the kit option is greyed until it's won")
 	assert_eq(kit_btn.focus_mode, Control.FOCUS_ALL, "the option is keyboard / gamepad focusable")
 	# Win + fit the kit (disabled), reopen: the kit option ungreys.
-	_save.add_item("brake_kit")
-	_save.install_upgrade(id, "brake_kit", false)
+	_save.add_item("fx_brakes")
+	_save.install_upgrade(id, "fx_brakes", false)
 	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
 	assert_false(_turbo_button(hq._lift_upgrades_box, kit_name).disabled,
@@ -1904,12 +1909,12 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	# Picking the kit enables the part; picking None parks it (still fitted, effect off).
 	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", kit_name)
 	await get_tree().process_frame
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "brake_kit"), "picking the kit enables it")
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_brakes"), "picking the kit enables it")
 	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", "STOCK")
 	await get_tree().process_frame
 	var car: Dictionary = _save.get_car(id)
-	assert_true(car["installed_upgrades"].has("brake_kit"), "a parked part stays fitted to the car")
-	assert_false(UpgradeLibrary.is_enabled(car, "brake_kit"), "picking None switches the part off")
+	assert_true(car["installed_upgrades"].has("fx_brakes"), "a parked part stays fitted to the car")
+	assert_false(UpgradeLibrary.is_enabled(car, "fx_brakes"), "picking None switches the part off")
 
 
 func test_hq_back_steps_carpark_to_table_to_garage() -> void:
@@ -2025,8 +2030,9 @@ func test_hq_mobile_start_skips_gate_once_scheme_chosen() -> void:
 func test_standings_interstitial_renders_the_leaderboard() -> void:
 	# After a non-final event the rally pauses on the standings; the scene shows the
 	# cumulative leaderboard so far. (auto_load_scenes is off, so no scene loads.)
+	RallyFixtures.install()
 	var owned: Dictionary = _save.grant_car("fx_awd")
-	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	RallySession._opponent_field = [
 		{"name": "Quick", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 		{"name": "Slow", "event_times_ms": [80000, 80000, 80000], "dnf": false, "combined_ms": 240000},
@@ -2037,7 +2043,7 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	await get_tree().process_frame
 	var text := _label_texts(sc)
 	assert_string_contains(text, "AFTER EVENT 1", "the interstitial headers the event just finished")
-	assert_string_contains(text, "COASTAL SPRINT", "it names the rally")
+	assert_string_contains(text, "FIXTURE OPEN", "it names the rally")
 	assert_string_contains(text, "QUICK", "the opponent field is listed")
 	assert_string_contains(text, "SLOW", "the whole field is shown")
 	# Continue is focused on entry so a keyboard / gamepad can advance with no pointer.
@@ -2051,8 +2057,9 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	# After a non-final event the combined page offers "Collect reward"; pressing it
 	# hides the leaderboard and reveals the won upgrade with a single "Next" (granted to
 	# the garage, installed later), then the button continues to the next event.
+	RallyFixtures.install()
 	var driven: Dictionary = _save.grant_car("fx_awd")
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), driven, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), driven, true)
 	RallySession._opponent_field = [
 		{"name": "Rival", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 	]
@@ -2087,8 +2094,9 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 
 
 func test_standings_final_event_has_no_collect_reward() -> void:
+	RallyFixtures.install()
 	var driven: Dictionary = _save.grant_car("fx_awd")
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), driven, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), driven, true)
 	RallySession._opponent_field = [
 		{"name": "Rival", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
 	]
@@ -2205,7 +2213,7 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
 		"car_reward": "fx_rwd_coupe", "car_reward_is_new": true,
-		"upgrades": ["turbo_small", "brake_kit"],  # recorded, but NOT revealed here
+		"upgrades": ["fx_turbo_small", "fx_brakes"],  # recorded, but NOT revealed here
 		"car_instance_id": driven_id,
 		"standings": [
 			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},
@@ -2267,9 +2275,10 @@ func test_podium_dnf_sequence_has_no_reward_stages() -> void:
 
 
 func test_run_scene_fields_the_bound_session_car() -> void:
+	RallyFixtures.install()
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
-	RallySession.start_rally(RallyLibrary.by_id("coastal_sprint"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	# Boot the run scene with a session active: world.gd fields the OwnedCar.
 	SceneHelpers.minimal_world()
 	var scene: Node3D = load("res://main.tscn").instantiate()
@@ -2749,8 +2758,8 @@ func test_drivetrain_selector_always_shown_gated_until_unlocked() -> void:
 			assert_true(String(b.text).begins_with("["), "stock mode is selected")
 		assert_eq(b.focus_mode, Control.FOCUS_ALL, "each mode button is keyboard / gamepad focusable")
 	# Owning the kit (even DISABLED — the won-but-not-podium-applied state) enables all modes.
-	_save.add_item("drivetrain_swap")
-	_save.install_upgrade(id, "drivetrain_swap", false)
+	_save.add_item("fx_drivetrain")
+	_save.install_upgrade(id, "fx_drivetrain", false)
 	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
 	buttons = _drivetrain_mode_buttons(hq._lift_upgrades_box)
@@ -2769,8 +2778,8 @@ func test_drivetrain_selector_sets_override() -> void:
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.add_item("drivetrain_swap")
-	_save.install_upgrade(id, "drivetrain_swap")
+	_save.add_item("fx_drivetrain")
+	_save.install_upgrade(id, "fx_drivetrain")
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
@@ -2793,8 +2802,8 @@ func test_selecting_a_drivetrain_keeps_the_house_font_size() -> void:
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.add_item("drivetrain_swap")
-	_save.install_upgrade(id, "drivetrain_swap")
+	_save.add_item("fx_drivetrain")
+	_save.install_upgrade(id, "fx_drivetrain")
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
@@ -2836,8 +2845,8 @@ func test_turbo_selector_is_earn_gated() -> void:
 	assert_true(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small locked until its kit is won")
 	assert_true(_turbo_button(hq._lift_upgrades_box, "BIG").disabled, "Big locked until its kit is won")
 	# Winning the Small kit unlocks Small only; Big stays greyed.
-	_save.add_item("turbo_small")
-	_save.install_upgrade(id, "turbo_small", false)
+	_save.add_item("fx_turbo_small")
+	_save.install_upgrade(id, "fx_turbo_small", false)
 	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
 	assert_false(_turbo_button(hq._lift_upgrades_box, "SMALL").disabled, "Small unlocks once its kit is fitted")
@@ -2854,10 +2863,10 @@ func test_turbo_selector_sets_enabled_part() -> void:
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.set_selected_car(id)
-	_save.add_item("turbo_small")
-	_save.install_upgrade(id, "turbo_small", false)
-	_save.add_item("turbo_large")
-	_save.install_upgrade(id, "turbo_large", false)
+	_save.add_item("fx_turbo_small")
+	_save.install_upgrade(id, "fx_turbo_small", false)
+	_save.add_item("fx_turbo_big")
+	_save.install_upgrade(id, "fx_turbo_big", false)
 	hq._enter_lift()
 	await get_tree().process_frame
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
@@ -2866,10 +2875,10 @@ func test_turbo_selector_sets_enabled_part() -> void:
 	# (Button labels render uppercased by the theme.)
 	_press_button_with_text(hq._lift_upgrades_box, "BIG")
 	await get_tree().process_frame
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_large"), "Big enables the large turbo")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "and switches the small one off")
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_big"), "Big enables the large turbo")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_small"), "and switches the small one off")
 	# Picking Stock parks both — no turbo enabled.
 	_press_button_with_text(hq._lift_upgrades_box, "STOCK")
 	await get_tree().process_frame
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_large"), "Stock disables the large turbo")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "turbo_small"), "Stock disables the small turbo")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_big"), "Stock disables the large turbo")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_small"), "Stock disables the small turbo")

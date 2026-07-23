@@ -13,6 +13,7 @@ var _scene: Node3D
 # read-only structural check except the two camera tests, which reset the car's
 # position/velocity themselves — so a single shared instance is safe.
 func before_all() -> void:
+	RallyFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	await get_tree().physics_frame  # let world._ready() generate + apply + build
@@ -20,6 +21,7 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_scene.free()
+	RallyFixtures.restore()
 
 
 func test_scene_instantiates() -> void:
@@ -47,7 +49,7 @@ func test_entering_a_rally_event_generates_its_track() -> void:
 	# Entering a rally event = writing its (seed, turn_count, width) into
 	# Config.data, then generating — the same Config mutation pattern apply_car
 	# uses. Assert that flow builds a track without error (rally-roster.md).
-	var event: Dictionary = RallyLibrary.by_id("coastal_sprint")["events"][0]
+	var event: Dictionary = RallyLibrary.by_id("fx_open")["events"][0]
 	Config.data.track_seed = int(event["seed"])
 	Config.data.track_turn_count = int(event["turn_count"])
 	Config.data.track_width = RallyLibrary.event_width(event)

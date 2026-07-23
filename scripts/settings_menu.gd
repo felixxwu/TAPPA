@@ -110,6 +110,28 @@ func _ready() -> void:
 
 
 func _build() -> void:
+	_build_list_page()
+	_build_audio_page()
+	_build_camera_page()
+	_build_controls_page()
+	_build_schemes_page()
+	_build_benchmark_page()
+	_build_dev_page()
+	_build_seedlab_page()
+
+	# Single source of truth for the swappable pages (list first — it's the
+	# default page). _show_page / focus_current_page fan out over this so adding
+	# a page only means appending it here.
+	_pages = [_list_page, _audio_page, _camera_page, _controls_page, _scheme_page,
+			_benchmark_page, _dev_page, _seedlab_page]
+
+	_refresh_camera_selection()
+	_refresh_scheme_selection()
+	_refresh_controls_selection()
+	_refresh_benchmark_rows()
+
+
+func _build_list_page() -> void:
 	# Category list — one nav button per sub-page, laid out in a 2-column grid so the
 	# list stays short (about half the height) instead of a long single column that
 	# overflows and scrolls.
@@ -130,6 +152,8 @@ func _build() -> void:
 	list_grid.add_child(_make_nav_button("Dev", show_dev))
 	list_grid.add_child(_make_nav_button("Seed lab", show_seedlab))
 
+
+func _build_audio_page() -> void:
 	# Audio sub-page — the music volume slider (room for SFX/engine later).
 	_audio_page = _make_page()
 	add_child(_audio_page)
@@ -137,6 +161,8 @@ func _build() -> void:
 	_audio_page.add_child(_make_sub("Set the music volume:"))
 	_audio_page.add_child(_make_volume_row())
 
+
+func _build_camera_page() -> void:
 	# Camera sub-page.
 	_camera_page = _make_page()
 	add_child(_camera_page)
@@ -146,6 +172,8 @@ func _build() -> void:
 	for entry in CameraManager.MODES:
 		_camera_page.add_child(_make_camera_row(int(entry["mode"]), entry))
 
+
+func _build_controls_page() -> void:
 	# Key-bindings sub-page — one row per action, a keyboard + a controller button.
 	_controls_page = _make_page()
 	add_child(_controls_page)
@@ -157,6 +185,8 @@ func _build() -> void:
 		_controls_page.add_child(_make_control_row(entry))
 	_controls_page.add_child(_make_action_button("Reset to defaults", _reset_bindings))
 
+
+func _build_schemes_page() -> void:
 	# Mobile-controls sub-page.
 	_scheme_page = _make_page()
 	add_child(_scheme_page)
@@ -166,6 +196,8 @@ func _build() -> void:
 	for entry in MobileControls.SCHEMES:
 		_scheme_page.add_child(_make_scheme_row(int(entry["id"]), entry))
 
+
+func _build_benchmark_page() -> void:
 	# Benchmark sub-page — the pre-run feature toggles + Start (features/benchmark.md).
 	_benchmark_page = _make_page()
 	add_child(_benchmark_page)
@@ -181,6 +213,8 @@ func _build() -> void:
 		_benchmark_page.add_child(button)
 	_benchmark_page.add_child(_make_action_button("Start benchmark  >", _start_benchmark))
 
+
+func _build_dev_page() -> void:
 	# Dev sub-page — wipe the whole save, or unlock any car / upgrade in the game.
 	_dev_page = _make_page()
 	add_child(_dev_page)
@@ -210,6 +244,8 @@ func _build() -> void:
 		else:
 			_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
 
+
+func _build_seedlab_page() -> void:
 	# Seed lab — a FULL-SCREEN overlay (like the loading screen), NOT a scrolling
 	# settings page: a black background over the whole screen, the animated track
 	# preview pinned to the top (always visible), and the typeable controls docked at
@@ -293,17 +329,6 @@ func _build() -> void:
 	_build_event_picker()
 	_build_terrain_editor()
 	_seedlab_page.visible = false  # shown only via show_seedlab()
-
-	# Single source of truth for the swappable pages (list first — it's the
-	# default page). _show_page / focus_current_page fan out over this so adding
-	# a page only means appending it here.
-	_pages = [_list_page, _audio_page, _camera_page, _controls_page, _scheme_page,
-			_benchmark_page, _dev_page, _seedlab_page]
-
-	_refresh_camera_selection()
-	_refresh_scheme_selection()
-	_refresh_controls_selection()
-	_refresh_benchmark_rows()
 
 
 # --- Navigation --------------------------------------------------------------

@@ -257,7 +257,7 @@ func _resolve_report_url() -> String:
 	var configured := String(Config.data.bench_report_url)
 	if configured != "":
 		return configured
-	if OS.has_feature("web"):
+	if Platform.is_web():
 		var origin = JavaScriptBridge.eval("window.location.origin", true)
 		if origin != null:
 			return String(origin) + "/bench"

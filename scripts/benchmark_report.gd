@@ -67,7 +67,7 @@ static func probe_device() -> Dictionary:
 		"os": OS.get_name(),
 		"model": OS.get_model_name(),
 		"cpu_count": OS.get_processor_count(),
-		"web": OS.has_feature("web"),
+		"web": Platform.is_web(),
 		"debug_build": OS.is_debug_build(),
 		"build_version": String(ProjectSettings.get_setting("application/config/version", "")),
 		"adapter": RenderingServer.get_video_adapter_name(),
@@ -83,7 +83,7 @@ static func probe_device() -> Dictionary:
 	if tree != null and tree.root != null:
 		var cs := tree.root.content_scale_size
 		d["render_size"] = [int(cs.x), int(cs.y)]
-	if OS.has_feature("web"):
+	if Platform.is_web():
 		# The browser UA pins down the actual phone/browser behind a web run.
 		var ua = JavaScriptBridge.eval("navigator.userAgent", true)
 		if ua != null:

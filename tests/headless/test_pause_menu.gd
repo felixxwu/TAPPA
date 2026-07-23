@@ -21,6 +21,7 @@ func before_all() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
+	RallyFixtures.install()
 	SceneTestHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
@@ -33,6 +34,7 @@ func before_all() -> void:
 func after_all() -> void:
 	get_tree().paused = false
 	_scene.free()
+	RallyFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -188,7 +190,7 @@ func test_quit_to_hq_abandons_the_rally_and_unfreezes() -> void:
 	# the session ends and the tree unfreezes. world.gd handles the trip back to HQ.
 	RallySession.auto_load_scenes = false
 	var owned: Dictionary = _save.grant_car("mx5")
-	RallySession.start_rally(RallyLibrary.by_id("shakedown"), owned, true)
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
 	assert_true(RallySession.is_active(), "a rally is running")
 	_pause.open()
 	_pause.quit_to_hq()
