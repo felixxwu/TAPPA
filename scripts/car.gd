@@ -1213,6 +1213,25 @@ func _apply_model_visibility(spec: Dictionary) -> void:
 		($Cabin as MeshInstance3D).visible = true
 
 
+# Free the authored glb body nodes this car will never show — every model body except
+# the active one (car.tscn embeds all 9 car glbs, so an un-pruned instance keeps 8 hidden
+# bodies alive). DISPLAY / FROZEN PROPS ONLY (see CarProp): a frozen prop never switches
+# its model, so freeing the inactive bodies removes ~8/9 of the CarProp.dup_meshes cost
+# (and their memory) with no visible change. Immediate free() (not queue_free) so the
+# nodes are gone before dup_meshes iterates the tree. Never call on the live player car —
+# it can reshape / re-skin its (single) active body at runtime, but must keep the rest.
+func prune_inactive_bodies() -> void:
+	if _car_index < 0:
+		return  # no car applied yet (baseline -1 would negative-index the roster) — nothing to prune
+	var active := String(CarLibrary.all()[_car_index].get("model_node", ""))
+	for node_name in _model_node_names():
+		if node_name == active:
+			continue
+		var body := get_node_or_null(NodePath(node_name))
+		if body != null:
+			body.free()
+
+
 # Hide the procedural chassis/cabin boxes AND every glb model body. Shared by
 # set_body_hidden(true) and _apply_model_visibility (which then re-reveals one).
 func _hide_all_bodies() -> void:

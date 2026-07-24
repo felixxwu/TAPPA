@@ -245,7 +245,7 @@ model. Each per-car material also carries the tread `albedo_color`
   (off-track reset leash), so it never re-centres or rebuilds at runtime (see
   [terrain.md](terrain.md)). Tunables in `GameConfig` (`distant_terrain_*`).
 - **Fog** demoted from edge-hider to thin aerial haze now that the backdrop hides
-  the edge: `fog_density` (0.005), `fog_sky_affect` (0.15, so the sky reads above
+  the edge: `fog_density` (0.012), `fog_sky_affect` (0.15, so the sky reads above
   the haze), `fog_light_color = background_color` — and `background_color`
   (0.589, 0.544, 0.520) is **matched to the skybox's horizon** so the distant
   terrain dissolves into the sky seam. All applied in `world._ready()` from config.
@@ -300,11 +300,26 @@ the loading cover instead of mid-drive:
 
 The game ships one lean pipeline for every device (no quality tiers). Relevant
 shipped knobs in `GameConfig`:
-- **`target_fps`** (desktop, default 60) / **`target_fps_mobile`** (native mobile,
-  default 60) / **`target_fps_web`** (web, default 30) — a render frame cap applied
-  in `world._ready()` (skipped under `--headless`, so it never throttles the test
-  runner), selected via `GameConfig.target_fps_for(Platform.is_mobile_or_web(),
-  Platform.is_web())` (web wins over the mobile branch since both are true on web).
+- **Frame cap** — the applied `Engine.max_fps`, resolved in `world._ready()`
+  (skipped under `--headless`, so it never throttles the test runner) from
+  **`FpsSetting`** (`scripts/fps_setting.gd`): the player's **Settings → Display**
+  choice of **30 / 60 / uncapped**, persisted under `FpsSetting.SETTING_KEY`
+  (`"fps_cap"`). When the player hasn't chosen, `FpsSetting.default_cap()` falls back
+  to the platform's natural cap via `GameConfig.target_fps_for(Platform.is_mobile_or_web(),
+  Platform.is_web(), Platform.is_touch())`. The picker (`settings_menu.gd` →
+  `select_fps`) writes `Engine.max_fps` **live** (the frame cap is a global engine
+  property, so no live-scene signal is needed — both the HQ and pause hosts take
+  effect immediately) and `world._ready()` re-derives it next run. During a benchmark
+  the config-driven cap wins (`Benchmark.active` → `default_cap()`), so the uncap
+  toggle still works regardless of the player's saved setting. **`target_fps`**
+  (desktop/native, default 60) / **`target_fps_mobile`** (native mobile, default 60) /
+  **`target_fps_web`** (web, default 30) remain the *default* source: the web cap
+  applies only to a web **touch device** (phone/tablet browser); a **desktop browser**
+  (web but not touch) gets the full desktop `target_fps` — the 30fps ceiling is a phone
+  concession, not a browser one. `Platform.is_touch()` is the same reliable check the
+  mobile control picker uses (`DisplayServer.is_touchscreen_available()` + the
+  `mobile_controls_force` override). Web-touch still wins over the mobile branch since
+  both are true on web.
   Web is capped lower than native for thermal/battery headroom, but the floor is set
   by **audio**: on the **single-threaded web build** audio is serviced by the main
   loop (no audio thread), so a lower frame rate drains the generator + WebAudio
@@ -327,7 +342,22 @@ shipped knobs in `GameConfig`:
 Every roadside prop culls at **one shared distance** — `cfg.tree_render_distance_m`
 (fade `tree_render_fade_m`) — so foliage, spectators, signs and the start/finish
 arches all pop in at the same range instead of each system choosing its own (or
-drawing across the whole stage). The mechanism is a `GeometryInstance3D`
+drawing across the whole stage).
+
+That shared distance is **per-target**: a web **touch** device (phone/tablet browser
+— the same low-end target as the 30fps `target_fps_web` cap) gets the shorter
+`tree_render_distance_web_touch_m` (60 m); every other target (native mobile, desktop,
+desktop browser) gets the longer `tree_render_distance_m` (120 m). `world.gd._ready`
+resolves the effective value ONCE at boot via `GameConfig.tree_render_distance_for(web,
+touch)` and writes it back onto `cfg.tree_render_distance_m`, so all the readers below
+stay unchanged. The terrain LOD bands split the same way —
+`terrain_lod_bands_for(web, touch)` picks `terrain_lod_bands_web_touch_m`
+(`[40,70,80,90]`, finer levels dropped sooner) for web-touch vs the higher-quality
+`terrain_lod_bands_m` (`[60,100,115,120]`, finer terrain held out to the longer
+desktop render distance) for everyone else — resolved into `cfg.terrain_lod_bands_m`
+before `apply_terrain_lod()` (see [terrain.md](terrain.md)).
+
+The mechanism is a `GeometryInstance3D`
 `visibility_range_end` + `visibility_range_end_margin` (fade mode `SELF`, so the
 cull dithers rather than pops):
 

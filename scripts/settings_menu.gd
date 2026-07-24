@@ -3,6 +3,10 @@ extends VBoxContainer
 # A reusable settings panel shared by the HQ title screen and the in-run pause
 # menu, so both present the SAME options. It opens on a LIST of categories; each
 # row drills into its own sub-page:
+#   • Display — pick the frame-rate cap (30 / 60 / uncapped), persisted under
+#     FpsSetting.SETTING_KEY. Applied live via Engine.max_fps (a global engine
+#     property, so both hosts take effect immediately); world._ready() re-derives
+#     it next run. Defaults to the platform's cap (web-touch 30, else 60).
 #   • Camera — pick the camera angle (chase / bonnet), persisted under
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately; the HQ has no camera so it just saves
@@ -41,6 +45,7 @@ const _BIND_BUTTON_W := 168.0
 # Selectable rows, exposed for tests / hosts: [{key: Variant, button: Button}].
 var camera_rows: Array = []
 var scheme_rows: Array = []
+var fps_rows: Array = []
 # Key-binding rows, exposed for tests / hosts:
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
@@ -50,6 +55,7 @@ var benchmark_rows: Array = []
 # The swappable pages (only one visible at a time).
 var _list_page: VBoxContainer
 var _audio_page: VBoxContainer
+var _display_page: VBoxContainer
 # The music-volume slider + its live "%"" label on the Audio page (exposed for tests).
 var music_slider: HSlider
 var music_value_label: Label
@@ -112,6 +118,7 @@ func _ready() -> void:
 func _build() -> void:
 	_build_list_page()
 	_build_audio_page()
+	_build_display_page()
 	_build_camera_page()
 	_build_controls_page()
 	_build_schemes_page()
@@ -122,11 +129,12 @@ func _build() -> void:
 	# Single source of truth for the swappable pages (list first — it's the
 	# default page). _show_page / focus_current_page fan out over this so adding
 	# a page only means appending it here.
-	_pages = [_list_page, _audio_page, _camera_page, _controls_page, _scheme_page,
-			_benchmark_page, _dev_page, _seedlab_page]
+	_pages = [_list_page, _audio_page, _display_page, _camera_page, _controls_page,
+			_scheme_page, _benchmark_page, _dev_page, _seedlab_page]
 
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
+	_refresh_fps_selection()
 	_refresh_controls_selection()
 	_refresh_benchmark_rows()
 
@@ -145,6 +153,7 @@ func _build_list_page() -> void:
 	list_grid.add_theme_constant_override("v_separation", 10)
 	_list_page.add_child(list_grid)
 	list_grid.add_child(_make_nav_button("Audio", show_audio))
+	list_grid.add_child(_make_nav_button("Display", show_display))
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
@@ -160,6 +169,17 @@ func _build_audio_page() -> void:
 	_audio_page.add_child(_make_heading("Audio"))
 	_audio_page.add_child(_make_sub("Set the music volume:"))
 	_audio_page.add_child(_make_volume_row())
+
+
+func _build_display_page() -> void:
+	# Display sub-page — the frame-rate cap (FpsSetting): 30 / 60 / uncapped.
+	_display_page = _make_page()
+	add_child(_display_page)
+	_display_page.add_child(_make_heading("Display"))
+	_display_page.add_child(_make_sub("Limit the frame rate:"))
+	fps_rows.clear()
+	for entry in FpsSetting.OPTIONS:
+		_display_page.add_child(_make_fps_row(int(entry["value"]), entry))
 
 
 func _build_camera_page() -> void:
@@ -381,6 +401,10 @@ func show_audio() -> void:
 	_show_page(_audio_page)
 
 
+func show_display() -> void:
+	_show_page(_display_page)
+
+
 func show_camera() -> void:
 	_show_page(_camera_page)
 
@@ -437,6 +461,18 @@ func select_scheme(id: int) -> void:
 	scheme_changed.emit(id)
 
 
+# Persist the chosen frame cap and apply it live. Unlike camera/scheme, the frame
+# cap is a global engine property, so it's applied by writing Engine.max_fps
+# directly (both hosts, HQ and pause, take effect immediately) rather than via a
+# live-scene signal. world._ready() re-derives it from the same setting next run.
+# Skipped under --headless (no rendering to pace / test runner must stay uncapped).
+func select_fps(value: int) -> void:
+	Save.set_setting(FpsSetting.SETTING_KEY, value)
+	_refresh_fps_selection()
+	if not Platform.is_headless():
+		Engine.max_fps = value
+
+
 # Highlight the row in `rows` whose "key" matches the saved setting under `key`
 # (falling back to `default`), un-highlighting the rest.
 func _refresh_selection(rows: Array, key: String, default: int) -> void:
@@ -451,6 +487,12 @@ func _refresh_camera_selection() -> void:
 
 func _refresh_scheme_selection() -> void:
 	_refresh_selection(scheme_rows, MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
+
+
+func _refresh_fps_selection() -> void:
+	# Default highlight = the platform's natural cap (web-touch 30, else 60), so the
+	# option that's actually in force reads as selected before the player picks.
+	_refresh_selection(fps_rows, FpsSetting.SETTING_KEY, FpsSetting.default_cap())
 
 
 # --- Key bindings ------------------------------------------------------------
@@ -640,6 +682,17 @@ func _make_camera_row(mode: int, entry: Dictionary) -> Button:
 	var text := _make_row_text(button)
 	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
 	camera_rows.append({"key": mode, "button": button})
+	return button
+
+
+# An FPS row: same flat name + blurb button as the camera rows; pressing it picks
+# that frame cap (value doubles as Engine.max_fps; 0 = uncapped).
+func _make_fps_row(value: int, entry: Dictionary) -> Button:
+	var button := _make_row_button(64)
+	button.pressed.connect(select_fps.bind(value))
+	var text := _make_row_text(button)
+	_add_row_labels(text, String(entry["name"]), String(entry["desc"]))
+	fps_rows.append({"key": value, "button": button})
 	return button
 
 

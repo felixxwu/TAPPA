@@ -43,8 +43,37 @@ func test_target_fps_for_selects_by_platform() -> void:
 	assert_eq(cfg.target_fps_for(false), 60, "desktop gets the higher cap")
 	# Native mobile: mobile/web true, web false.
 	assert_eq(cfg.target_fps_for(true, false), 45, "native mobile gets the mobile cap")
-	# Web: both true — web must win over the mobile branch.
-	assert_eq(cfg.target_fps_for(true, true), 30, "web gets its own cap, not the mobile one")
+	# Web TOUCH device (phone/tablet browser): all true — web cap wins over mobile.
+	assert_eq(cfg.target_fps_for(true, true, true), 30, "web touch gets its own cap, not the mobile one")
+	# Web DESKTOP browser (web but not a touch device): the 30fps web cap is lifted;
+	# a desktop browser runs at the full desktop cap.
+	assert_eq(cfg.target_fps_for(true, true, false), 60, "web desktop gets the desktop cap, not the web one")
+
+
+func test_render_distance_for_selects_by_platform() -> void:
+	# Contract, not the shipped numbers: only a web TOUCH device gets the web-touch
+	# distance; every other target gets the main one. Sentinel values so retuning
+	# the shipped 60/120 in the inspector can't break this.
+	var cfg := GameConfig.new()
+	cfg.tree_render_distance_m = 999.0
+	cfg.tree_render_distance_web_touch_m = 111.0
+	assert_eq(cfg.tree_render_distance_for(false, false), 999.0, "desktop gets the main distance")
+	assert_eq(cfg.tree_render_distance_for(false, true), 999.0, "native touch (non-web) gets the main distance")
+	assert_eq(cfg.tree_render_distance_for(true, false), 999.0, "web desktop (non-touch) gets the main distance")
+	assert_eq(cfg.tree_render_distance_for(true, true), 111.0, "web touch gets the shorter web-touch distance")
+
+
+func test_terrain_lod_bands_for_selects_by_platform() -> void:
+	# Same web-touch-only split as the render distance, on the LOD band set.
+	var cfg := GameConfig.new()
+	var main := PackedFloat32Array([1.0, 2.0])
+	var web_touch := PackedFloat32Array([3.0, 4.0])
+	cfg.terrain_lod_bands_m = main
+	cfg.terrain_lod_bands_web_touch_m = web_touch
+	assert_eq(cfg.terrain_lod_bands_for(false, false), main, "desktop gets the main LOD bands")
+	assert_eq(cfg.terrain_lod_bands_for(false, true), main, "native touch (non-web) gets the main LOD bands")
+	assert_eq(cfg.terrain_lod_bands_for(true, false), main, "web desktop (non-touch) gets the main LOD bands")
+	assert_eq(cfg.terrain_lod_bands_for(true, true), web_touch, "web touch gets the tighter LOD bands")
 
 
 func test_target_fps_for_passes_through_uncapped() -> void:
@@ -55,7 +84,8 @@ func test_target_fps_for_passes_through_uncapped() -> void:
 	cfg.target_fps_web = 0
 	assert_eq(cfg.target_fps_for(false), 0, "uncapped desktop stays 0")
 	assert_eq(cfg.target_fps_for(true, false), 0, "uncapped mobile stays 0")
-	assert_eq(cfg.target_fps_for(true, true), 0, "uncapped web stays 0")
+	assert_eq(cfg.target_fps_for(true, true, true), 0, "uncapped web touch stays 0")
+	assert_eq(cfg.target_fps_for(true, true, false), 0, "uncapped web desktop stays 0")
 
 
 func test_config_resource_loads() -> void:

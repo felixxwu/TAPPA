@@ -28,6 +28,16 @@ static func is_web() -> bool:
 	return OS.has_feature("web")
 
 
+# True on a touch device (phone/tablet) — or when the mobile controls are
+# force-enabled for testing. The same reliable check the mobile control-scheme
+# picker and on-screen touch controls use (hq._is_mobile(), mobile_controls.gd),
+# centralised so the web frame cap can tell a phone from a desktop browser: the
+# 30fps web ceiling is a thermal/single-thread concession phones need, but a
+# desktop browser should run at the full desktop cap.
+static func is_touch() -> bool:
+	return DisplayServer.is_touchscreen_available() or Config.data.mobile_controls_force
+
+
 # The world's downward gravity magnitude (m/s^2), read from the project's physics
 # settings. Centralised so the hardcoded 9.8 default isn't re-typed at each site;
 # the fallback matches Godot's own default for physics/3d/default_gravity, so the

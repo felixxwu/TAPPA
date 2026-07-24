@@ -90,10 +90,6 @@ at **0 HP** — not destroyed — too damaged to field until repaired),
 **every** owned car is wrecked, and **no** repair kits are held, grants ONE free
 Repair Kit and returns true, else no-op/false; called at the end of `load_or_new`
 and on every garage-lift refresh, `hq.gd:_refresh_lift_ui`),
-`scrap_car(instance_id)` (a deliberate player removal — erases the car, upgrades
-**not** refunded, refuses the player's **last** owned car so the "always own ≥1 car"
-invariant holds and the safety net always has a car to revive; drives HQ's
-garage-overflow prompt),
 `set_tuning(instance_id, tuning)`,
 `swap_engines(id_a, id_b)` (exchanges two owned cars' CURRENT engines; free,
 unlimited, reversible, gated on both sitting at 100% HP via `EngineSwap.can_swap`
@@ -150,7 +146,7 @@ there is nothing to recompute here. `item_id`s come from the upgrade catalogue
 `tests/headless/test_save_manager.gd` — round-trip, default profile, instance-id
 uniqueness, HP seeding, idempotent rally completion, wreck-returns-upgrades,
 the starter wrecking like any car, the `ensure_repair_safety_net` free-kit floor
-(all cars wrecked + none held), scrap refusing the last owned car, inventory counts,
+(all cars wrecked + none held), inventory counts,
 migration refuse/backfill, corrupt-JSON
 and `.bak` fallback, unknown-model pruning, new-game reset. Runs against a
 throwaway `user://test_profile.json`. CarLibrary metadata + id helpers are

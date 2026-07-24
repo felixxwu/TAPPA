@@ -175,10 +175,10 @@ func test_title_has_focusable_exit_game_button_on_desktop() -> void:
 	assert_not_null(hq._title_exit_button, "the title screen has an Exit Game button")
 	assert_eq(hq._title_exit_button.focus_mode, Control.FOCUS_ALL,
 		"the Exit Game button is keyboard/gamepad focusable")
-	# It sits below Settings — the bottom of the title button list.
-	var parent: Node = hq._title_settings_button.get_parent()
-	assert_gt(hq._title_exit_button.get_index(), hq._title_settings_button.get_index(),
-		"Exit Game sits after Settings in the title list")
+	# It sits below Start — the bottom of the title button list.
+	var parent: Node = hq._title_start_button.get_parent()
+	assert_gt(hq._title_exit_button.get_index(), hq._title_start_button.get_index(),
+		"Exit Game sits after Start in the title list")
 	assert_eq(hq._title_exit_button.get_parent(), parent,
 		"Exit Game lives in the same title button list")
 
@@ -223,10 +223,11 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	# Open Settings from the title screen — it lands on the category list.
+	hq._on_exterior_start()  # -> GARAGE, where the Settings button now lives
+	# Open Settings from the garage — it lands on the category list.
 	hq._open_settings(false)
 	assert_true(hq._settings_layer.visible, "the settings overlay is shown")
-	assert_false(hq._title_layer.visible, "the title overlay is hidden in settings")
+	assert_false(hq._garage_layer.visible, "the garage overlay is hidden in settings")
 	assert_true(hq._settings_menu.at_root(), "Settings opens on the category list")
 	# The shared SettingsMenu: a camera-angle row per mode and a row per control scheme.
 	assert_eq(hq._settings_menu.camera_rows.size(), CameraManager.MODES.size(),
@@ -246,20 +247,21 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	hq._settings_menu.select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
 		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
-	# The bottom button backs out a level at a time: sub-page → list → exterior.
+	# The bottom button backs out a level at a time: sub-page → list → garage.
 	hq._on_settings_action()
 	assert_true(hq._settings_menu.at_root(), "Back from a sub-page returns to the list")
 	assert_true(hq._settings_layer.visible, "still in Settings after backing to the list")
 	hq._on_settings_action()
-	assert_true(hq._title_layer.visible, "Back from the list returns to the title")
+	assert_true(hq._garage_layer.visible, "Back from the list returns to the garage")
 	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
 
 
 # --- Keyboard / gamepad navigation -------------------------------------------
 
-# The title is a flat menu (Start / Settings, plus Exit Game on desktop) driven by native
+# The title is a flat menu (Start, plus Exit Game on desktop) driven by native
 # focus: Start is focused on entry so ui_up/ui_down + ui_accept work the menu with no
-# pointer. (Free Roam moved to the garage action row; see test_hq_free_roam_*.)
+# pointer. (Settings moved to the garage action row; free roam is the tuning bay's
+# Test Drive button.)
 func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -269,12 +271,6 @@ func test_hq_title_focuses_start_for_keyboard_nav() -> void:
 	assert_eq(hq._title_start_button.focus_mode, Control.FOCUS_ALL, "Start is focusable")
 	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
 		"the title focuses Start for keyboard / gamepad")
-	assert_eq(hq._title_settings_button.focus_mode, Control.FOCUS_ALL, "Settings is focusable")
-	# Settings sits directly after Start in the flat overlay's child order.
-	var parent: Node = hq._title_start_button.get_parent()
-	assert_eq(parent.get_children().find(hq._title_settings_button),
-		parent.get_children().find(hq._title_start_button) + 1,
-		"Settings sits directly after Start")
 
 
 # Regression: menu_select on the title must fire the FOCUSED button (native focus),
@@ -286,9 +282,13 @@ func test_hq_title_accept_does_not_force_start() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame  # let the deferred grab_focus run
 	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
-	# Focus Settings, then feed a menu_select action as the engine would. The title's
-	# input handler must NOT start the run (which would leave EXTERIOR for GARAGE).
-	hq._title_settings_button.grab_focus()
+	if hq._title_exit_button == null:
+		pass_test("web build has only Start on the title; no second button to focus")
+		return
+	# Focus a NON-Start button (Exit Game), then feed a menu_select action as the engine
+	# would. The title's input handler must NOT start the run (which would leave EXTERIOR
+	# for GARAGE); native focus drives accept instead.
+	hq._title_exit_button.grab_focus()
 	var ev := InputEventAction.new()
 	ev.action = "menu_select"
 	ev.pressed = true
@@ -374,6 +374,45 @@ func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 	hq._activate_table_focus()
 	assert_true(hq._detail_open, "selecting the pin opens its rally detail")
 	assert_eq(hq._selected_rally_id, String(sel.get_meta("rally_id")), "it opens the selected pin's rally")
+	RegionLibrary.reset()
+	RallyLibrary.reset()
+
+
+# Opening the map steers straight to the hardest event the player hasn't beaten:
+# on entry focus (and the camera) land on the highest-difficulty incomplete pin,
+# skipping ones already completed. Falls back to the centre-nearest pin once every
+# event is done.
+func test_hq_table_entry_focuses_hardest_incomplete_rally() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
+	RallyLibrary.override_for_test([
+		{"id": "easy", "name": "Easy", "region": "home", "difficulty": 1, "showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "hard", "name": "Hard", "region": "home", "difficulty": 4, "showdown": false, "map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
+		{"id": "mid", "name": "Mid", "region": "home", "difficulty": 2, "showdown": false, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+	])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	# Nothing completed → focus the highest-difficulty pin ("hard").
+	hq._enter_table()
+	await get_tree().process_frame
+	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "hard",
+		"entry focuses the highest-difficulty incomplete rally")
+
+	# Complete the hardest → entry now skips it and lands on the next-hardest ("mid").
+	_save.complete_rally("hard", 60000, 1)
+	hq._enter_table()
+	await get_tree().process_frame
+	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "mid",
+		"a completed event is skipped; focus falls to the next-hardest incomplete one")
+
+	# Everything done → fall back to the centre-nearest target (still a valid pin).
+	_save.complete_rally("mid", 60000, 1)
+	_save.complete_rally("easy", 60000, 1)
+	hq._enter_table()
+	await get_tree().process_frame
+	assert_gt(hq._table_focus_index, -1, "with all events done, entry still seats a target")
+
 	RegionLibrary.reset()
 	RallyLibrary.reset()
 
@@ -503,36 +542,35 @@ func test_table_arrow_labels_reflect_lock_state() -> void:
 	RallyLibrary.reset()
 
 
-# The tuning hub is a manual up/down cursor over Change Car / Tuning / Upgrades;
-# select fires the focused item, opening a page (native focus) or the car park.
+# The tuning hub is a manual left/right cursor over Tuning / Upgrades / Test Drive;
+# select fires the focused item, opening a page (native focus).
 func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	_save.grant_car("fx_fwd_hatch")  # a second car so Change Car is enabled + navigable
 	hq._enter_lift()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
-	# The hub is a left/right cursor over Back (0) / Change Car (1) / Tuning (2) /
-	# Upgrades (3), wrapping at both ends.
-	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Change Car")
+	# The hub is a left/right cursor over Back (0) / Tuning (1) / Upgrades (2) /
+	# Test Drive (3), wrapping at both ends.
+	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Tuning")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 2, "right moves the cursor to Tuning")
+	assert_eq(hq._hub_focus, 2, "right moves the cursor to Upgrades")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Upgrades")
+	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Test Drive")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 0, "right from the end wraps to Back")
 	hq._move_hub_focus(-1)
-	assert_eq(hq._hub_focus, 3, "left from Back wraps to Upgrades")
+	assert_eq(hq._hub_focus, 3, "left from Back wraps to Test Drive")
 
-	# Select on the Change Car item drops into the car park.
+	# Select on the Tuning item opens the Tune page (stays in the bay).
 	hq._hub_focus = 1
 	hq._activate_hub_focus()
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.CARPARK, "select on Change Car opens the car park")
-	assert_eq(hq._carpark_mode, hq.CarparkMode.CHANGE, "in change-car mode")
-	hq._car_back()
+	assert_eq(hq._view, hq.View.LIFT, "select on Tuning stays in the bay")
+	assert_eq(hq._lift_page, hq.LiftPage.TUNE, "select on Tuning opens the Tune page")
+	hq._lift_hub()
 	await get_tree().process_frame
 
 	# Opening the Tune page seats native focus on one of its sliders.
@@ -810,40 +848,49 @@ func test_hq_start_flies_into_the_garage() -> void:
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in the garage")
 
 
-# The garage overlay is a left/right cursor over Back (0) / Map (1) / Tune Car (2) /
-# Free Roam (3), wrapping at both ends, with select firing the item under the cursor.
-# (Repair lives on the tuning-lift HUB row now, not the garage.)
+# The garage overlay is a left/right cursor over Back (0) / Career (1) / Garage (2) /
+# Free Roam (3) / Settings (4), wrapping at both ends, with select firing the item under
+# the cursor. (Repair lives on the tuning-lift HUB row now, not the garage.)
 func test_hq_garage_is_a_left_right_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
 	assert_eq(hq._view, hq.View.GARAGE, "start lands in the garage")
-	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Map")
+	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Career")
 	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 2, "right moves the cursor to Tune Car")
+	assert_eq(hq._garage_focus, 2, "right moves the cursor to Garage")
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 3, "right moves the cursor to Free Roam")
 	hq._move_garage_focus(1)
+	assert_eq(hq._garage_focus, 4, "right moves the cursor to Settings")
+	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
 	hq._move_garage_focus(-1)
-	assert_eq(hq._garage_focus, 3, "left from Back wraps to Free Roam")
+	assert_eq(hq._garage_focus, 4, "left from Back wraps to Settings")
 
-	# Select on the map-table item opens the map.
+	# Select on the Settings item opens the settings page.
+	hq._garage_focus = 4
+	hq._activate_garage_focus()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.SETTINGS, "select on Settings opens the settings page")
+	hq._go_to(hq.View.GARAGE)
+
+	# Select on the Career item opens the map.
 	hq._garage_focus = 1
 	hq._activate_garage_focus()
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.TABLE, "select on Map opens the map")
+	assert_eq(hq._view, hq.View.TABLE, "select on Career opens the map")
 
 	# Back-to-garage, then select on the Back item leaves for the exterior.
 	hq._go_to(hq.View.GARAGE)
-	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Map")
+	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Career")
 	hq._garage_focus = 0
 	hq._activate_garage_focus()
 	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
 
 
-# Free Roam launches a plain drive: no rally session, and a fresh random seed each
+# Free roam (Test Drive) launches a plain drive: no rally session, and a fresh random seed each
 # entry (so the track differs every time), with neutral terrain settings.
 func test_hq_free_roam_prepares_a_fresh_unseeded_run() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -878,25 +925,34 @@ func test_hq_free_roam_randomises_water_relief_and_location() -> void:
 			"free-roam location is home or Greece")
 
 
-# Free Roam (from the GARAGE action row) opens the car park to pick which owned car
-# to drive: the whole owned collection is parked, and Back returns to the garage.
-func test_hq_free_roam_opens_the_car_park_to_pick_a_car() -> void:
+# The garage "Garage" button opens the car park to pick which owned car to work on:
+# the whole owned collection is parked, Back returns to the garage, and Select drops
+# into the tuning lift bay for the chosen car.
+func test_hq_garage_button_opens_the_car_park_to_pick_a_car() -> void:
 	_save.grant_car("fx_fwd_hatch")  # a second car so the collection isn't just the starter
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 
-	hq._enter_free_roam()
+	hq._open_garage_picker()
 	await _await_lineup(hq)
-	assert_eq(hq._view, hq.View.CARPARK, "Free Roam drops into the car park")
-	assert_eq(hq._carpark_mode, hq.CarparkMode.FREEROAM, "the car park is in free-roam mode")
+	assert_eq(hq._view, hq.View.CARPARK, "Garage drops into the car park")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.GARAGE, "the car park is in garage mode")
 	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
 		"the whole owned collection is parked to pick from")
 
-	# Back leaves free roam for the garage.
+	# Selecting the focused car commits it and enters the tuning lift bay.
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.LIFT, "selecting a car opens the tuning lift bay")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.GARAGE, "garage mode is cleared on the way to the bay")
+
+	# Back from the picker returns to the garage.
+	hq._open_garage_picker()
+	await _await_lineup(hq)
 	hq._car_back()
-	assert_ne(hq._carpark_mode, hq.CarparkMode.FREEROAM, "backing out clears free-roam mode")
-	assert_eq(hq._view, hq.View.GARAGE, "Back from free-roam car pick returns to the garage")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.GARAGE, "backing out clears garage mode")
+	assert_eq(hq._view, hq.View.GARAGE, "Back from the garage car pick returns to the garage")
 
 
 # The run scene fields the owned car the player picked for free roam, with no active
@@ -1114,9 +1170,12 @@ func test_hq_table_drag_pans_and_clamps() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._enter_table()
-	assert_eq(hq._table_pan, Vector3.ZERO, "the map re-centres when opened")
+	# Entry now steers the camera onto the hardest incomplete pin (see the
+	# dedicated test below), so zero the pan first to isolate drag behaviour.
+	hq._table_pan = Vector3.ZERO
+	var before_x: float = hq._table_pan.x
 	hq._pan_table(Vector2(-100, -50))
-	assert_gt(hq._table_pan.x, 0.0, "dragging pans the map view")
+	assert_gt(hq._table_pan.x, before_x, "dragging pans the map view")
 	# A huge drag clamps to the map extents (half the plane each way).
 	hq._pan_table(Vector2(-100000, -100000))
 	var cfg: GameConfig = Config.data
@@ -1259,7 +1318,8 @@ func test_hq_cycling_focus_changes_the_focused_and_selected_car() -> void:
 	hq._cycle_focus(1)
 	assert_eq(hq._focus, 1, "cycling right advances the focus")
 	assert_eq(hq._selected_instance_id, int(hq._eligible[1]["instance_id"]), "the newly focused car is selected")
-	hq._focus = 0
+	hq._cycle_focus(1)
+	assert_eq(hq._focus, 0, "cycling right off the last car wraps to the first")
 	hq._cycle_focus(-1)
 	assert_eq(hq._focus, 1, "cycling left from the first car wraps to the last")
 
@@ -1332,22 +1392,21 @@ func test_hq_carpark_tap_on_a_parked_car_focuses_it() -> void:
 	assert_eq(hq._focus, 1, "tapping empty space keeps the current focus")
 
 
-# The car-park / overflow overlays must NOT swallow pointer input: everything but
-# the buttons is MOUSE_FILTER_IGNORE (via _passthrough_overlay), or a desktop click /
-# touch tap would stop at the full-rect container and never reach _unhandled_input's
-# swipe + tap-a-car handling.
+# The car-park overlay must NOT swallow pointer input: everything but the buttons is
+# MOUSE_FILTER_IGNORE (via _passthrough_overlay), or a desktop click / touch tap would
+# stop at the full-rect container and never reach _unhandled_input's swipe + tap-a-car
+# handling.
 func test_hq_lineup_overlays_pass_pointer_input_through() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	for layer in [hq._car_layer, hq._overflow_layer]:
-		var root: Control = (layer as CanvasLayer).get_child(0)
-		assert_eq(root.mouse_filter, Control.MOUSE_FILTER_IGNORE,
-			"the overlay root lets clicks fall through to the 3D lineup")
-		for n in root.find_children("*", "Control", true, false):
-			if not (n is BaseButton):
-				assert_eq((n as Control).mouse_filter, Control.MOUSE_FILTER_IGNORE,
-					"%s lets clicks fall through to the 3D lineup" % n.get_class())
+	var root: Control = (hq._car_layer as CanvasLayer).get_child(0)
+	assert_eq(root.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+		"the overlay root lets clicks fall through to the 3D lineup")
+	for n in root.find_children("*", "Control", true, false):
+		if not (n is BaseButton):
+			assert_eq((n as Control).mouse_filter, Control.MOUSE_FILTER_IGNORE,
+				"%s lets clicks fall through to the 3D lineup" % n.get_class())
 
 
 func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
@@ -1371,7 +1430,7 @@ func test_hq_carpark_parks_cars_in_bays_facing_the_camera() -> void:
 	# Distinct bay columns along X, centred within the bay grid + aligned to bay centres.
 	assert_ne((hq._markers[0] as Marker3D).position.x, (hq._markers[1] as Marker3D).position.x,
 		"adjacent cars occupy separate bays along X")
-	var bays: int = max(1, cfg.max_owned_cars)
+	var bays: int = max(1, cfg.carpark_page_size)
 	var start: int = max(0, floori((bays - 3) / 2.0))
 	for i in 3:
 		assert_almost_eq((hq._markers[i] as Marker3D).position.x, hq._bay_center_x(start + i, bays), 0.001,
@@ -1394,71 +1453,48 @@ func test_hq_carpark_camera_frames_the_car_from_the_front() -> void:
 	assert_lt(forward.z, 0.0, "the camera looks back toward the car and the garage (−Z)")
 
 
-# --- Garage overflow: scrap a car to make room (max_owned_cars) --------------
+# --- Unbounded collection + car-park pagination ------------------------------
 
-# Boot HQ owning more than the cap and it routes to the OVERFLOW scrap prompt
-# (instead of the title), parking the whole collection.
-func test_hq_over_car_limit_boots_to_the_scrap_prompt() -> void:
-	Config.data.max_owned_cars = 2  # small cap so the test stays light
-	_save.grant_car("fx_awd")
-	_save.grant_car("fx_rwd_coupe")  # 2 granted; the boot starter makes 3 > cap
+# The collection is unbounded: owning far more cars than the car park has bays never
+# gates the player — HQ boots straight to the title, no garage-full prompt. (The car
+# park pages through the collection instead; see test_car_list.gd for the paging logic.)
+func test_hq_boots_to_title_with_more_cars_than_bays() -> void:
+	Config.data.carpark_page_size = 2  # tiny page so a handful of cars overflows a page
+	for _i in 4:
+		_save.grant_car("fx_awd")  # starter + 4 = 5 owned, well over the 2 bays
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.OVERFLOW, "over the cap, HQ boots to the scrap prompt")
-	assert_true(hq._overflow_layer.visible, "the overflow overlay is shown")
-	assert_false(hq._title_layer.visible, "the title overlay is hidden while overflowing")
+	assert_eq(hq._view, hq.View.EXTERIOR, "an over-full garage still boots to the title (no gate)")
+	assert_true(hq._title_layer.visible, "the title overlay is shown")
+
+
+# Free Roam parks the WHOLE catalogue (owned or not) and pages through it: each page
+# holds at most carpark_page_size cars, and cycling past a page boundary flips the page
+# while the global position keeps counting up.
+func test_hq_free_roam_lists_whole_catalogue_and_paginates() -> void:
+	Config.data.carpark_page_size = 2
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_free_roam()
 	await _await_lineup(hq)
-	assert_eq(hq._cars.size(), 3, "the whole collection is parked to choose from")
-	assert_string_contains(hq._overflow_banner.text, "3 / 2", "the banner shows owned vs the cap")
-
-
-# Scrapping cars drops the count and, once back at the cap, flies out to the title.
-func test_hq_scrapping_clears_overflow_and_returns_to_title() -> void:
-	Config.data.max_owned_cars = 2
-	_save.grant_car("fx_awd")
-	_save.grant_car("fx_rwd_coupe")
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	assert_eq(_save.profile["cars"].size(), 3, "3 owned at boot (starter + 2)")
-	# Scrap the focused car (any car is scrappable while others remain).
-	hq._on_scrap_pressed()
-	await get_tree().process_frame
-	assert_eq(_save.profile["cars"].size(), 2, "scrapping removed one car")
-	assert_eq(hq._view, hq.View.EXTERIOR, "back at the cap, HQ flies out to the title")
-	assert_true(hq._title_layer.visible, "the title overlay is shown again")
-
-
-# The player's last car can't be scrapped: with a 0 cap the lone owned car still
-# overflows, and its scrap button is disabled with a note (keeps ≥1 car so the
-# repair-kit safety net always has something to bring back).
-func test_hq_overflow_cannot_scrap_last_car() -> void:
-	Config.data.max_owned_cars = 0  # even one owned car overflows
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	assert_eq(_save.profile["cars"].size(), 1, "just the boot starter owned")
-	assert_eq(hq._view, hq.View.OVERFLOW, "over the (zero) cap on boot")
-	await _await_lineup(hq)
-	assert_true(hq._scrap_button.disabled, "the last owned car's scrap action is disabled")
-	assert_string_contains(hq._overflow_note.text.to_lower(), "last car", "a note explains why")
-	# Scrapping it anyway is a no-op (count unchanged, still overflowing).
-	hq._on_scrap_pressed()
-	assert_eq(_save.profile["cars"].size(), 1, "the last car wasn't scrapped")
-	assert_eq(hq._view, hq.View.OVERFLOW, "still in the scrap prompt")
-
-
-# At or under the cap, HQ boots straight to the title (no scrap prompt).
-func test_hq_at_car_limit_boots_to_the_title() -> void:
-	Config.data.max_owned_cars = 3
-	_save.grant_car("fx_awd")
-	_save.grant_car("fx_rwd_coupe")  # starter + 2 = 3 == cap (not over)
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.EXTERIOR, "at the cap (not over), HQ boots to the title")
-	assert_false(hq._overflow_layer.visible, "no scrap prompt at the cap")
+	assert_eq(hq._view, hq.View.CARPARK, "Free Roam drops into the car park")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.FREEROAM, "the car park is in free-roam mode")
+	assert_eq(hq._lineup.total(), CarLibrary.all().size(),
+		"the whole catalogue is offered to pick from")
+	assert_true(hq._lineup.total() > 2, "the catalogue is bigger than one page for this test")
+	assert_lte(hq._cars.size(), 2, "only one page of cars is parked at a time")
+	# Cycling right off the last car of page 0 flips to page 1's first car.
+	assert_eq(hq._lineup.page, 0, "starts on page 0")
+	hq._cycle_focus(1)  # 0 -> 1 (still page 0)
+	hq._cycle_focus(1)  # 1 -> page 1, car 0
+	assert_eq(hq._lineup.page, 1, "cycling past the page boundary flips to the next page")
+	assert_eq(hq._lineup.global_index(), 2, "the global position keeps counting across pages")
+	# Back returns to the garage.
+	hq._car_back()
+	assert_ne(hq._carpark_mode, hq.CarparkMode.FREEROAM, "backing out clears free-roam mode")
+	assert_eq(hq._view, hq.View.GARAGE, "Back from Free Roam returns to the garage")
 
 
 func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
@@ -1706,7 +1742,7 @@ func test_hq_lift_lowest_pose_matches_the_cars_calculated_rest_height() -> void:
 
 
 func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
-	# The bay opens on the HUB (Change Car + Tuning/Upgrades buttons beside the
+	# The bay opens on the HUB (Tuning/Upgrades + Test Drive buttons beside the
 	# car); each menu button opens that menu as its own page, and Back returns to the hub.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -1714,7 +1750,7 @@ func test_hq_lift_opens_on_a_hub_with_its_own_menu_pages() -> void:
 	hq._enter_lift()
 	await get_tree().process_frame
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "entering the bay lands on the hub page")
-	assert_true(hq._lift_hub_controls.visible, "the hub shows the change-car + menu buttons")
+	assert_true(hq._lift_hub_controls.visible, "the hub shows the menu + test-drive buttons")
 	assert_true(hq._lift_info_panel.visible, "the car description shows on the hub")
 	assert_false(hq._lift_menu_bg.visible, "no sub-menu panel is shown on the hub")
 	# Open Tuning: its page (the sliders) takes over; the hub controls + car desc hide.
@@ -1775,84 +1811,26 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	assert_false(hq._tune_panel._sliders["aero_balance"].editable, "aero still locked (no aero kit)")
 
 
-func test_hq_lift_change_car_opens_the_car_park_and_updates_the_selection() -> void:
+func test_hq_lift_hub_has_a_test_drive_button_targeting_the_lift_car() -> void:
+	# The tuning bay's hub carries a Test Drive button (Back / Tuning / Upgrades /
+	# Test Drive, then a hidden Repair). Test Drive fields the car ALREADY on the lift
+	# for a free-roam drive — no car picker — so it never opens the car park.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var other: Dictionary = _save.grant_car("fx_awd")  # now two owned cars
 	hq._enter_lift()
 	await get_tree().process_frame
-	var before: int = _save.selected_instance_id()
-	# "Change Car" drops into the car park (change-car mode) showing every OTHER owned
-	# car — the one already on the lift is excluded (reselecting it would be a no-op).
-	hq._enter_change_car()
-	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.CARPARK, "Change Car opens the car park")
-	assert_eq(hq._carpark_mode, hq.CarparkMode.CHANGE, "the car park is in change-car mode")
-	assert_eq(hq._eligible.size(), _save.profile["cars"].size() - 1,
-		"every owned car EXCEPT the one on the lift is parked to pick from")
-	for owned in hq._eligible:
-		assert_ne(int(owned.get("instance_id", -1)), before,
-			"the current lift car is not among the options")
-	# The framed car is one of the OTHER cars; Select it.
-	assert_ne(hq._selected_instance_id, before, "it opens framed on a different car")
-	hq._on_start_pressed()
-	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.LIFT, "selecting a car returns to the tuning bay")
-	assert_ne(hq._carpark_mode, hq.CarparkMode.CHANGE, "change-car mode is cleared on the way back")
-	assert_ne(_save.selected_instance_id(), before, "picking a car changes the selected car")
-	assert_eq(_save.selected_instance_id(), int(other["instance_id"]), "the picked car is now selected")
-	assert_eq(hq._lift_car_instance_id, _save.selected_instance_id(),
-		"the raised car follows the new selection")
-
-
-func test_hq_lift_change_car_back_returns_to_the_bay_without_changing_selection() -> void:
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	_save.grant_car("fx_awd")
-	hq._enter_lift()
-	await get_tree().process_frame
-	var before: int = _save.selected_instance_id()
-	hq._enter_change_car()
-	await get_tree().process_frame
-	hq._car_back()
-	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.LIFT, "Back from change-car returns to the tuning bay")
-	assert_ne(hq._carpark_mode, hq.CarparkMode.CHANGE, "change-car mode is cleared")
-	assert_eq(_save.selected_instance_id(), before, "backing out leaves the selection unchanged")
-
-
-func test_hq_lift_change_car_disabled_with_only_one_car() -> void:
-	# The before_each starter is the sole owned car — Change Car has nothing else to
-	# offer (the current car is excluded), so its hub button is disabled and the hub
-	# cursor skips it (seating on Tuning instead of Change Car).
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	assert_eq(_save.profile["cars"].size(), 1, "only the starter is owned for this case")
-	hq._enter_lift()
-	await get_tree().process_frame
-	assert_true(hq._lift_change_car_button.disabled, "Change Car is disabled with one car")
-	assert_ne(hq._hub_focus, 1, "the hub cursor doesn't seat on the disabled Change Car")
-	# Firing the hub while sitting on the (disabled) Change Car slot does nothing.
-	hq._hub_focus = 1
-	hq._activate_hub_focus()
-	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.LIFT, "activating disabled Change Car stays in the bay")
-
-
-func test_hq_lift_change_car_enabled_with_a_second_car() -> void:
-	# Grant a second car and the Change Car button is live again — there's another car
-	# to switch to, so the button enables and the cursor seats on it on entry.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	_save.grant_car("fx_fwd_hatch")
-	hq._enter_lift()
-	await get_tree().process_frame
-	assert_false(hq._lift_change_car_button.disabled, "Change Car is enabled with a second car")
-	assert_eq(hq._hub_focus, 1, "the hub cursor seats on the enabled Change Car")
+	var test_drive: Button = hq._lift_hub_controls.get_child(3)
+	# The menu theme uppercases button labels (_normalize_menus), so compare case-insensitively.
+	assert_eq(test_drive.text.to_upper(), "TEST DRIVE", "the 4th hub control is the Test Drive button")
+	# It's the 4th (index 3) hub cursor stop, so keyboard/gamepad can reach it. (We don't
+	# fire it here: _test_drive delegates to _start_free_roam, whose real scene change
+	# would swap the test runner's scene; the free-roam launch is covered separately.)
+	assert_eq(hq._hub_focus, 1, "the hub cursor still seats on Tuning on entry")
+	hq._move_hub_focus(-1)
+	assert_eq(hq._hub_focus, 0, "left from Tuning lands on Back")
+	hq._move_hub_focus(-1)
+	assert_eq(hq._hub_focus, 3, "left from Back wraps onto Test Drive")
 
 
 func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:

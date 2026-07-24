@@ -48,6 +48,22 @@ func test_wasd_is_bound_on_menu_directions() -> void:
 		assert_true(found, "%s is bound to its WASD key" % action)
 
 
+# Native focus activation and back both run through Godot's ui_accept / ui_cancel
+# (a focused BaseButton fires on ui_accept; MenuNav + hosts route back through
+# ui_cancel). Those actions ship with keyboard defaults but NO joypad binding, so a
+# controller can move the cursor (ui_up/down carry the D-pad + stick) yet not select
+# or go back until we add the gamepad face buttons. Guard that both carry a joypad
+# button so the whole game stays gamepad-navigable — the exact index is a platform
+# convention, not asserted here.
+func test_accept_and_cancel_have_a_gamepad_button() -> void:
+	for action in ["ui_accept", "ui_cancel"]:
+		var found := false
+		for e in InputMap.action_get_events(action):
+			if e is InputEventJoypadButton:
+				found = true
+		assert_true(found, "%s has a gamepad button so controllers can drive menus" % action)
+
+
 # Build a throwaway flat menu (a column of buttons) so we can exercise the framework
 # directly without standing up a whole game scene.
 func _make_flat_menu(count: int) -> Control:
@@ -308,13 +324,13 @@ func test_button_cursor_refresh_paints_only_the_focused_button() -> void:
 
 
 # wrapped() skips DISABLED buttons in the travel direction (a disabled item is not a valid
-# cursor stop, same as native focus) — so a disabled Change Car is stepped over.
+# cursor stop, same as native focus) — so a disabled action button is stepped over.
 func test_button_cursor_wrapped_skips_disabled() -> void:
 	var cursor := ButtonCursor.new()
 	var buttons: Array = []
 	for i in 4:
 		buttons.append(Button.new())
-	buttons[1].disabled = true  # e.g. Change Car with only one owned car
+	buttons[1].disabled = true  # e.g. a hub action that's unavailable in the current state
 	cursor.setup(buttons, [func() -> void: pass, func() -> void: pass,
 		func() -> void: pass, func() -> void: pass])
 	assert_eq(cursor.wrapped(0, 1), 2, "forward from 0 skips the disabled 1 to land on 2")

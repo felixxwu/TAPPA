@@ -164,6 +164,15 @@ a cheap node build + mesh assign. All tunables live in `GameConfig`
 (`apply_terrain_lod`); `TerrainLod` is pure/static and headless-tested
 (`tests/headless/test_terrain_lod.gd`).
 
+The band set is **per-target**: `world.gd._ready` picks it via
+`GameConfig.terrain_lod_bands_for(web, touch)` — a web **touch** device (the low-end
+/ 30fps target) gets the tighter `terrain_lod_bands_web_touch_m` (`[40,70,80,90]`, finer
+levels dropped sooner), every other target the higher-quality `terrain_lod_bands_m`
+(`[60,100,115,120]`, finer terrain held out to match the longer desktop foliage render
+distance — see [rendering.md](rendering.md) → "Shared render distance"). The resolved
+set is written back onto `cfg.terrain_lod_bands_m` **before** `apply_terrain_lod()`, so
+the prebake reads the right one.
+
 **Far chunks prebake fewer levels.** A chunk more than ~`leash + band` from the
 racing line can never be viewed at the finer LOD levels (the car stays within the
 off-track leash), so `cache_chunk` prunes them for `coarse` chunks: only levels

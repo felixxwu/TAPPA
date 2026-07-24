@@ -19,14 +19,12 @@ func build_title_overlay() -> void:
 	# collection) stays visible above them rather than being covered by a centred menu.
 	root.alignment = BoxContainer.ALIGNMENT_END
 
-	# Title screen is a flat list of buttons (Start / Settings, plus Exit Game on non-web
+	# Title screen is a flat list of buttons (Start, plus Exit Game on non-web
 	# builds) over the parked-collection backdrop — no title/subtitle text. It uses native
 	# focus: Start is focused on entry, ui_up/ui_down move between the buttons, ui_accept
-	# fires the focused one. (The 3D stations behind it keep menu_* nav.) Free Roam lives
-	# on the GARAGE action row now, not here (see build_garage_overlay).
+	# fires the focused one. (The 3D stations behind it keep menu_* nav.) Settings lives on
+	# the garage action row now, not here (see build_garage_overlay).
 	_hq._title_start_button = _hq._title_button(root, "Start", 52.0, _hq._on_exterior_start)
-	_hq._title_settings_button = _hq._title_button(root, "Settings", 44.0,
-		func() -> void: _hq._open_settings(false))
 	# Exit Game: quit the application. Sits at the bottom of the title list. Skipped on
 	# the web build, where there's no OS process to quit (the tab owns the lifecycle).
 	if not Platform.is_web():
@@ -54,7 +52,7 @@ func build_title_overlay() -> void:
 	_hq._title_layer.add_child(version_label)
 	_hq._title_version_label = version_label
 
-	# Framework: WASD + arrow + gamepad focus nav for the flat Start/Settings menu
+	# Framework: WASD + arrow + gamepad focus nav for the flat Start (+ Exit Game) menu
 	# (no on_back — EXTERIOR has no back; the diegetic stations behind keep menu_*).
 	# MenuNav goes inert while _title_layer is hidden, so it never steals input from
 	# the 3D stations. hq re-grabs focus itself on view entry.
@@ -76,7 +74,7 @@ func build_garage_overlay() -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
-	# Back / Map / Tune Car / Free Roam form a single left/right ButtonCursor
+	# Back / Career / Garage / Free Roam / Settings form a single left/right ButtonCursor
 	# (_garage_focus). FOCUS_NONE + hand-painted like the tuning hub, since the garage is
 	# a spatially-navigated 3D station, not a native focus graph. Each button's pressed
 	# callable is ALSO the cursor's action for that index, so click and select agree.
@@ -84,18 +82,25 @@ func build_garage_overlay() -> void:
 	var on_back := func() -> void: _hq._go_to(HqController.View.EXTERIOR)
 	var back := _hq._station_button("< Back", on_back)
 	actions.add_child(back)
-	# Convenience buttons mirroring the clickable 3D table / lift.
+	# Convenience button mirroring the clickable 3D table.
 	var to_table := _hq._station_button("Career", _hq._enter_table)
 	actions.add_child(to_table)
-	var to_lift := _hq._station_button("Tune / Upgrade", _hq._enter_lift)
-	actions.add_child(to_lift)
-	# Free Roam: open the car park to pick which owned car to drive and drop into a
-	# freshly-seeded, opponent-less stage (see _enter_free_roam).
-	var free := _hq._station_button("Free Roam", _hq._enter_free_roam)
-	actions.add_child(free)
+	# Garage: open the car park to pick which owned car to work on, then drop straight
+	# into the tuning lift bay for that car (see _open_garage_picker / _select_garage_car).
+	var to_garage := _hq._station_button("Garage", _hq._open_garage_picker)
+	actions.add_child(to_garage)
+	# Free Roam: open the car park across the WHOLE catalogue (owned or not) and drop into
+	# a session-less drive in the picked car (see _enter_free_roam / _start_free_roam).
+	var to_free := _hq._station_button("Free Roam", _hq._enter_free_roam)
+	actions.add_child(to_free)
+	# Settings: the shared camera/controls page. Back from it returns to the garage
+	# (see _on_settings_action / the SETTINGS branch in _unhandled_input).
+	var to_settings_cb := _hq._open_settings.bind(false)
+	var to_settings := _hq._station_button("Settings", to_settings_cb)
+	actions.add_child(to_settings)
 	_hq._garage_cursor.setup(
-		[back, to_table, to_lift, free],
-		[on_back, _hq._enter_table, _hq._enter_lift, _hq._enter_free_roam])
+		[back, to_table, to_garage, to_free, to_settings],
+		[on_back, _hq._enter_table, _hq._open_garage_picker, _hq._enter_free_roam, to_settings_cb])
 
 	_hq._passthrough_overlay(root)  # let taps reach the 3D table / lift behind the HUD
 
@@ -272,7 +277,7 @@ func build_lift_overlay() -> void:
 	root.add_child(_hq._lift_menu_title)
 
 	# A scroll container is kept as a safety net for very short screens, but with each
-	# menu on its own page (no change-car control or tab strip above it) the content is
+	# menu on its own page (no hub controls or tab strip above it) the content is
 	# meant to fit without scrolling.
 	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -309,8 +314,8 @@ func build_lift_overlay() -> void:
 	_hq._lift_back_button.pressed.connect(_hq._lift_hub)
 	root.add_child(_hq._lift_back_button)
 
-	# --- The bottom column: car-description info panel + (on the HUB) the change-car
-	# selector and the Tuning / Upgrades buttons. Spans the full page width (the sub-menu
+	# --- The bottom column: car-description info panel + (on the HUB) the Tuning /
+	# Upgrades buttons and Test Drive. Spans the full page width (the sub-menu
 	# no longer needs room on the right) and grows upward so the info panel sits at the
 	# bottom with the hub controls above it; mouse-transparent except buttons.
 	var left_col := VBoxContainer.new()
@@ -340,7 +345,7 @@ func build_lift_overlay() -> void:
 	info.add_child(_hq._lift_car_label)
 
 	# The hub controls UNDER the car description: a SINGLE bottom row holding Back, the
-	# Change Car button, and the Tuning / Upgrades buttons. Shown only on the HUB page
+	# Tuning / Upgrades buttons, and a Test Drive button. Shown only on the HUB page
 	# (_refresh_lift_ui). Hugs content on the left so the raised car stays in clear view.
 	_hq._lift_hub_controls = HBoxContainer.new()
 	_hq._lift_hub_controls.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -348,23 +353,25 @@ func build_lift_overlay() -> void:
 	_hq._lift_hub_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left_col.add_child(_hq._lift_hub_controls)
 
-	# Back / Change Car / Tuning / Upgrades / Repair form a single left/right ButtonCursor
+	# Back / Tuning / Upgrades / Test Drive form a single left/right ButtonCursor
 	# (_hub_focus). As with the garage row, each button's pressed callable is also the
 	# cursor's action for that index, so a click and a keyboard/gamepad select agree.
+	# (No Change Car here: pick a different car via the garage's Garage button, which
+	# reopens the car park.)
 	var on_back := func() -> void: _hq._go_to(HqController.View.GARAGE)
 	var to_tune_cb := _hq._open_lift_page.bind(HqController.LiftPage.TUNE)
 	var to_upgrades_cb := _hq._open_lift_page.bind(HqController.LiftPage.UPGRADES)
 	var back := _hq._station_button("< Back", on_back)
 	_hq._lift_hub_controls.add_child(back)
-	# Change which car is on the lift: opens the car park to pick a new selected car.
-	var change_car := _hq._station_button("Change Car", _hq._enter_change_car)
-	_hq._lift_hub_controls.add_child(change_car)
-	_hq._lift_change_car_button = change_car
 	# The two menu buttons.
 	var to_tune := _hq._station_button("Tuning", to_tune_cb)
 	_hq._lift_hub_controls.add_child(to_tune)
 	var to_upgrades := _hq._station_button("Upgrades", to_upgrades_cb)
 	_hq._lift_hub_controls.add_child(to_upgrades)
+	# Test Drive: drive the car currently on the lift in free roam — no car picker, we're
+	# already focused on one (see _test_drive).
+	var test_drive := _hq._station_button("Test Drive", _hq._test_drive)
+	_hq._lift_hub_controls.add_child(test_drive)
 	# Repair: spend one Repair Kit on the selected car (full restore). HIDDEN for now —
 	# earning Repair Kits is disabled, so there's nothing to spend. The button is still
 	# built (and _refresh_lift_repair_button still labels it) but kept invisible and OUT
@@ -375,8 +382,8 @@ func build_lift_overlay() -> void:
 	_hq._lift_hub_controls.add_child(repair)
 	_hq._lift_repair_button = repair
 	_hq._hub_cursor.setup(
-		[back, change_car, to_tune, to_upgrades],
-		[on_back, _hq._enter_change_car, to_tune_cb, to_upgrades_cb])
+		[back, to_tune, to_upgrades, test_drive],
+		[on_back, to_tune_cb, to_upgrades_cb, _hq._test_drive])
 
 
 func build_car_overlay() -> void:
@@ -455,50 +462,10 @@ func build_car_overlay() -> void:
 	_hq._passthrough_overlay(root)  # let taps / swipes reach the 3D lineup behind the HUD
 
 
-# The OVERFLOW overlay: a banner + the focused car's name/stats, the same ◄ / ►
-# car selector as the car park, and a "Scrap this car" action. Mirrors the car
-# overlay's bottom-anchored layout so the 3D lineup shows above it.
-func build_overflow_overlay() -> void:
-	var made := _hq._make_overlay(16.0)
-	_hq._overflow_layer = made[0]
-	var root: VBoxContainer = made[1]
-
-	_hq._overflow_banner = _hq._label("", 22)
-	root.add_child(_hq._overflow_banner)
-
-	var hint := _hq._label("Your garage is full. Pick a car to scrap — the just-won car counts too.", 14)
-	root.add_child(hint)
-
-	# Push the nav + actions to the bottom so the 3D car park is visible above.
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(spacer)
-
-	# Car selector: ◄ / ► pan the camera to the prev/next owned car.
-	var nav_made := _hq._build_carpark_nav_row()
-	root.add_child(nav_made[0])
-	_hq._overflow_car_label = nav_made[1]
-
-	_hq._overflow_stats_label = _hq._label("", 12)
-	_hq._overflow_stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	root.add_child(_hq._overflow_stats_label)
-
-	_hq._overflow_note = _hq._label("", 12)
-	_hq._overflow_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hq._overflow_note.modulate = Color(1, 0.8, 0.4)
-	root.add_child(_hq._overflow_note)
-
-	_hq._scrap_button = Button.new()
-	_hq._scrap_button.text = "Scrap this car"
-	_hq._scrap_button.focus_mode = Control.FOCUS_NONE
-	_hq._scrap_button.pressed.connect(_hq._on_scrap_pressed)
-	root.add_child(_hq._scrap_button)
-	_hq._passthrough_overlay(root)  # let taps / swipes reach the 3D lineup behind the HUD
-
-
-# The title-screen Settings overlay: the shared SettingsMenu (camera angle + mobile
-# control scheme). Choices are highlighted and persisted via Save.set_setting; the
-# same component backs the in-run pause menu, so the two pages stay identical.
+# The Settings overlay (opened from the garage action row): the shared SettingsMenu
+# (camera angle + mobile control scheme). Choices are highlighted and persisted via
+# Save.set_setting; the same component backs the in-run pause menu, so the two pages
+# stay identical.
 func build_settings_overlay() -> void:
 	var made := _hq._make_overlay()
 	_hq._settings_layer = made[0]

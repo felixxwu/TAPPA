@@ -144,7 +144,8 @@ settles):
 1. Resolve the driven rally's region — `region_id = "home"` if no
    `RallySession` is active, else
    `RegionLibrary.region_for_rally(RallySession.rally_id()).id`. Free roam has no
-   session but picks a random location: when `free_roam_instance_id >= 0` and
+   session but picks a random location: when a free-roam car is set
+   (`free_roam_instance_id >= 0` OR `free_roam_model_id != ""`) and
    `RallySession.free_roam_region_id` is set (`hq._prepare_free_roam` rolls
    home/Greece), that id is used. This resolution
    lives in `world.gd._current_region_look()`, shared by `_apply_region_look`

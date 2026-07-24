@@ -133,7 +133,13 @@ needed `discard`): the shader scales the whole normalized vertex toward the
 bottom-centre pivot. The **near-camera dissolve** is now ALSO a vertex
 shrink-out (not a dither): within `tree_near_fade_end_m` the card scales back
 toward its base, so a tree the camera pushes inside (the chase cam, or a planted
-replay cam) shrinks away instead of dithering out. Both fades multiply into one
+replay cam) shrinks away instead of dithering out. The near-fade distance is
+measured to the **trunk axis** (the camera projected onto the vertical trunk line,
+clamped to the tree's `[base, base+height]` span), NOT the ground-level base —
+otherwise the chase cam's ~2.5 m elevation (`follow_distance × follow_height_ratio`)
+keeps every base-point distance above `tree_near_fade_end_m` and the collapse never
+fires. Axis distance makes it the horizontal proximity while the camera is inside
+the tree's vertical extent. Both fades multiply into one
 `scale` in `vertex()`, so `billboard_opaque.gdshader` has **no `discard` at all** —
 the mesh-baked cutout keeps it fully opaque, which keeps early-Z / hidden-surface
 removal ON for the draw (the old per-fragment near dither forced HSR off on
@@ -353,7 +359,11 @@ reads against the grass), and — the reason for the swap — **shrinks out near
 camera** (`tree_near_fade_start_m` / `tree_near_fade_end_m`): a vertex-stage collapse
 toward the instance origin, so a bush right in front of the camera (the chase cam
 brushing one, or a planted replay cam sitting among them) shrinks away instead of
-filling the frame. This replaced a per-fragment Bayer `discard`; with no `discard`
+filling the frame. Like the trees, the near-fade distance is measured to the trunk
+axis clamped to the bush's `[base, base+canopy_height]` span (the `canopy_height`
+uniform, set from `bush_height_m` in `Foliage.bush_mesh` — bushes scale uniformly, so
+the shader can't read world height off the instance basis), not the ground-level base,
+so the elevated chase cam doesn't keep the collapse from ever firing. This replaced a per-fragment Bayer `discard`; with no `discard`
 the shader keeps early-Z / HSR on for the draw (a mobile-GPU win). `world.gd` builds
 the tree field and the bush field back to back.
 

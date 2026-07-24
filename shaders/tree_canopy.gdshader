@@ -25,12 +25,21 @@ uniform vec4 tint : source_color = vec4(1.0);
 // near_fade_end it is at full size. Between, it scales in.
 uniform float near_fade_start = 0.5;
 uniform float near_fade_end = 3.0;
+// World-space height of the bush (its target height). Used to clamp the near-fade
+// reference point to the bush's vertical span — see the cam_dist note in vertex().
+uniform float canopy_height = 1.5;
 
 void vertex() {
-	// Per-instance world origin (column 3 of the model matrix) and its camera
-	// distance — uniform across the instance, so the shrink is distortion-free.
+	// Per-instance world origin (base, column 3 of the model matrix). Near-fade
+	// distance is measured to the TRUNK AXIS, not the base point: the camera is
+	// projected onto the vertical axis and clamped to the [base, base+canopy_height]
+	// span, so cam_dist is the HORIZONTAL proximity while the camera sits inside the
+	// bush's height. Measuring to the ground-level base let the chase cam's ~2.5 m
+	// elevation swamp the distance, so the collapse never fired (see billboard_opaque).
 	vec3 origin = MODEL_MATRIX[3].xyz;
-	float cam_dist = distance(INV_VIEW_MATRIX[3].xyz, origin);
+	vec3 cam = INV_VIEW_MATRIX[3].xyz;
+	float ref_y = clamp(cam.y, origin.y, origin.y + canopy_height);
+	float cam_dist = distance(cam, vec3(origin.x, ref_y, origin.z));
 	float grow = clamp((cam_dist - near_fade_start) / max(near_fade_end - near_fade_start, 0.001), 0.0, 1.0);
 	VERTEX *= grow;  // collapse toward the model origin as the camera closes in
 }

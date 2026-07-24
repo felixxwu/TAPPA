@@ -94,6 +94,7 @@ func start() -> void:
 	if RallySession.is_active():
 		RallySession.abandon()  # its scene change is superseded by ours below
 	RallySession.free_roam_instance_id = -1
+	RallySession.free_roam_model_id = ""
 	# Capture the frame pacing only on first entry — a re-start from inside a
 	# running benchmark (pause menu → Settings → Start) must keep the ORIGINAL
 	# cap/vsync so exit_to_hq restores the pre-benchmark state, not our override.

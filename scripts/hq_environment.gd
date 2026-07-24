@@ -244,14 +244,14 @@ func _build_garage(host: Node3D) -> void:
 # --- Car park surface (painted parking bays) ---------------------------------
 
 # Lay a tarmac parking-bay surface in front of the garage: a textured plane over the
-# concrete apron with painted white bay dividers, one bay per max_owned_cars slot, so
+# concrete apron with painted white bay dividers, one bay per carpark_page_size slot, so
 # each parked car sits in its own marked bay. Centred on the lot (hq_carpark_origin +
 # menu_car_park_offset) and sized from the bay width (menu_car_spacing) and depth
 # (menu_carpark_bay_depth) so the bay grid lines up exactly with where _build_lineup
 # parks the cars. Built once with the HQ; the cars are parked/cleared on top of it.
 func _build_carpark(host: Node3D) -> void:
 	var cfg: GameConfig = Config.data
-	var bays: int = max(1, cfg.max_owned_cars)
+	var bays: int = max(1, cfg.carpark_page_size)
 	var bw: float = cfg.menu_car_spacing
 	var depth: float = cfg.menu_carpark_bay_depth
 	var center := carpark_center()

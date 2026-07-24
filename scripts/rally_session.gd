@@ -67,15 +67,20 @@ var _drivetrain_revert: Dictionary = {}
 # cleared by _reset_to_idle — it's read + cleared by hq.gd on its next _ready.
 var return_to_garage := false
 
-# Free-roam handoff: the owned-car instance the player picked for a session-LESS free
-# roam drive (hq.gd → Free Roam). world.gd fields this car when no rally is active
-# instead of the default library car. -1 = a plain dev boot (field library car 0).
-# Cleared when a real rally starts so it can't leak into a rally event's fielding.
+# Free-roam handoff: the car the player picked for a session-LESS free-roam drive.
+#   free_roam_instance_id — an OWNED instance (Test Drive of the tuned car on the lift,
+#     or an owned car picked in Free Roam). world.gd fields it with upgrades + saved HP.
+#   free_roam_model_id     — a bare catalogue MODEL id (a not-yet-owned car picked in
+#     Free Roam). world.gd fields the base model when no owned instance is set.
+# world.gd fields one of these when no rally is active, else the default library car.
+# -1 / "" = a plain dev boot (field library car 0). Both are cleared when a real rally
+# starts so they can't leak into a rally event's fielding.
 var free_roam_instance_id := -1
+var free_roam_model_id := ""
 
 # Region the current free-roam drive should wear (id from RegionLibrary). Chosen at
 # random when hq.gd prepares free roam; "" / a plain dev boot falls back to home.
-# Only consulted while free_roam_instance_id >= 0 (see world.gd _current_region_look).
+# Only consulted while a free-roam car is set (see world.gd _current_region_look).
 var free_roam_region_id := ""
 
 # When true (the default for real play) RallySession performs the per-event scene
@@ -102,6 +107,7 @@ func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := fal
 	_rally = rally
 	# A real rally supersedes any pending free-roam pick (world fields the session car).
 	free_roam_instance_id = -1
+	free_roam_model_id = ""
 	_car_instance_id = int(owned_car.get("instance_id", -1))
 	_car_model_id = String(owned_car.get("model_id", ""))
 	# Keep only the fielded car's pending detune revert. An agreement whose start

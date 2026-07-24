@@ -119,5 +119,9 @@ static func bush_mesh() -> Mesh:
 	mat.set_shader_parameter("tint", cfg.bush_tint)
 	mat.set_shader_parameter("near_fade_start", cfg.tree_near_fade_start_m)
 	mat.set_shader_parameter("near_fade_end", cfg.tree_near_fade_end_m)
+	# Bushes scale uniformly to bush_height_m, so the shader can't read the world
+	# height off the instance basis (unlike the normalized tree mesh) — pass it so the
+	# near-fade clamps its reference point to the bush's vertical span.
+	mat.set_shader_parameter("canopy_height", cfg.bush_height_m)
 	mesh.surface_set_material(0, mat)
 	return mesh

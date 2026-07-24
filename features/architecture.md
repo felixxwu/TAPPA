@@ -112,6 +112,27 @@ Declared in `project.godot` `[autoload]`:
 4. Gameplay loop runs in `_physics_process` (car/drivetrain/engine/camera) and
    `_process` (HUD, audio buffering).
 
+### Principle: push heavy one-time work behind a loading screen
+
+There are two opaque loading covers in the game — the **event / world-gen** one
+(`world.gd._ready`, above) and the **HQ** one (`hq.gd._ready` →
+`scripts/loading_screen.gd`). **Anything expensive that can be done up front should be
+done behind whichever cover is already up, rather than lazily on a button press or the
+first frame it's needed** — especially work that would otherwise cause a visible lag spike
+or stutter mid-interaction. The player already expects to wait at a loading screen; a beat
+added there is invisible, whereas the same beat during play is a hitch.
+
+Concretely, prefer moving into a loading screen: scene/prop instantiation for things the
+player will reach soon (e.g. the Free Roam catalogue pre-warm — `hq.gd._prewarm_free_roam`,
+run synchronously behind the HQ cover and kept in memory, see [menus.md](menus.md)), mesh /
+material / texture duplication, shader pre-warm compiles (see
+[rendering.md](rendering.md) → "Shader pre-warm"), and any first-use resource `load()` that
+would otherwise fire on a transition. When you add a feature whose first use is heavy, ask
+whether the cost can be paid at boot behind a cover instead — if so, move it there and warm
+into a session-lived cache. (The one caveat: don't blindly move UNBOUNDED work behind the
+cover — if the cost scales with, say, a 300-car collection, warm only what's imminently
+needed and keep the rest lazy, so the loading screen itself doesn't grow without limit.)
+
 ## Key conventions
 
 - **Config-first:** never hardcode tuning in scripts/scenes; add a `GameConfig`

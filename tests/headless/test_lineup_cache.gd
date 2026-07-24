@@ -255,3 +255,23 @@ func test_selling_a_car_evicts_its_cached_node() -> void:
 	assert_false(hq._car_cache.has(sold_id), "the sold car's cache entry is dropped")
 	await get_tree().process_frame
 	assert_false(is_instance_valid(sold_node), "the sold car's node is freed")
+
+
+# Free Roam previews are pre-warmed ONCE and kept in memory for the session (negative
+# instance_id). Building an owned-car lineup must NOT evict them — re-warming them is the
+# lag spike the cache exists to avoid. Pins the eviction rule (keep negatives), not a value.
+func test_prewarmed_previews_survive_an_owned_lineup_rebuild() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	# Stand in a pre-warmed preview: a cached node under a NEGATIVE instance id.
+	var preview := Node3D.new()
+	hq.add_child(preview)
+	hq._car_cache[-7] = {"hash": 12345, "node": preview}
+
+	# Building the owned lineup runs _evict_unowned_cached_cars; the preview isn't "owned".
+	await _build_and_wait(hq, _owned_cars())
+
+	assert_true(hq._car_cache.has(-7), "a pre-warmed preview is kept across an owned rebuild")
+	assert_true(is_instance_valid(preview), "the pre-warmed preview node is not freed")

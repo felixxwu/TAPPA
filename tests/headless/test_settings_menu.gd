@@ -67,6 +67,44 @@ func _dev_button(menu: SettingsMenu, prefix: String) -> Button:
 	return null
 
 
+# Find the FPS row whose stored cap == `value`.
+func _fps_row(menu: SettingsMenu, value: int) -> Dictionary:
+	for row in menu.fps_rows:
+		if int(row["key"]) == value:
+			return row
+	return {}
+
+
+# The Display page offers exactly the three FpsSetting options (30 / 60 / uncapped),
+# and nothing is persisted until the player picks — resolve() reports the platform
+# default (headless is neither web nor touch, so 60).
+func test_fps_rows_match_options_and_default_unset() -> void:
+	var menu := _make_menu()
+	assert_eq(menu.fps_rows.size(), FpsSetting.OPTIONS.size(),
+		"one Display row per FpsSetting option")
+	assert_null(_save.get_setting(FpsSetting.SETTING_KEY, null),
+		"no cap saved until the player picks one")
+	assert_eq(FpsSetting.resolve(), FpsSetting.default_cap(),
+		"unset -> the platform default cap")
+
+
+# Pressing an FPS row persists that cap under FpsSetting.SETTING_KEY, so resolve()
+# (what world._ready reads) returns the chosen value — including uncapped (0).
+func test_fps_row_press_persists_the_cap() -> void:
+	var menu := _make_menu()
+	var uncapped := _fps_row(menu, FpsSetting.UNCAPPED)
+	assert_false(uncapped.is_empty(), "an uncapped row exists")
+	uncapped["button"].pressed.emit()
+	assert_eq(int(_save.get_setting(FpsSetting.SETTING_KEY, -1)), FpsSetting.UNCAPPED,
+		"picking Uncapped saves 0")
+	assert_eq(FpsSetting.resolve(), FpsSetting.UNCAPPED, "resolve() honours the saved choice")
+
+	var thirty := _fps_row(menu, 30)
+	thirty["button"].pressed.emit()
+	assert_eq(int(_save.get_setting(FpsSetting.SETTING_KEY, -1)), 30, "re-picking 30 saves 30")
+	assert_eq(FpsSetting.resolve(), 30, "resolve() follows the latest pick")
+
+
 # The dev "Complete rally" button is hidden when no rally is active (HQ settings).
 func test_complete_rally_button_absent_without_a_rally() -> void:
 	assert_false(RallySession.is_active(), "no rally active")

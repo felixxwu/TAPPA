@@ -326,22 +326,6 @@ func ensure_repair_safety_net() -> bool:
 	return true
 
 
-# Permanently scrap an owned car the player chose to remove (e.g. to make room
-# under max_owned_cars). A deliberate player action: the instance is erased and its
-# installed upgrades are NOT returned — upgrades are consumed for good when applied
-# (see install_upgrade), so they're lost with the car. The player's LAST owned car
-# can never be scrapped — always keep at least one car so the repair-kit safety
-# net (ensure_repair_safety_net) always has something to bring back. Returns true
-# if a car was actually removed.
-func scrap_car(instance_id: int) -> bool:
-	var car := get_car(instance_id)
-	if car.is_empty() or profile.get("cars", []).size() <= 1:
-		return false
-	profile["cars"].erase(car)
-	save()
-	return true
-
-
 func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():

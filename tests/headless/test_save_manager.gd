@@ -113,25 +113,6 @@ func test_wreck_keeps_car_at_zero_hp_with_upgrades() -> void:
 		"the upgrade is still installed on the wrecked car")
 
 
-func test_scrap_removes_car_consumes_upgrades_and_spares_last_car() -> void:
-	var starter: Dictionary = _save.grant_car("fx_light_rwd")
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	assert_true(_save.install_upgrade(car["instance_id"], "fx_turbo_small"), "upgrade installed")
-
-	# Scrapping a car removes it; its fitted upgrade is lost with it (bound to the
-	# car, like a wreck — never refunded to a pool).
-	assert_true(_save.scrap_car(car["instance_id"]), "scrapping a car succeeds while others remain")
-	assert_eq(_save.profile["cars"].size(), 1, "scrapped car removed (only the starter remains)")
-	assert_false(_save.profile["inventory"].has("fx_turbo_small"), "the bound upgrade is gone with the car")
-
-	# The player's LAST car can never be scrapped (keeps ≥1 car so the repair-kit
-	# safety net always has something to bring back).
-	assert_false(_save.scrap_car(starter["instance_id"]), "the last owned car can't be scrapped")
-	assert_eq(_save.profile["cars"].size(), 1, "the last car is still owned")
-	# An unknown instance is a harmless no-op.
-	assert_false(_save.scrap_car(99999), "scrapping an unknown instance is a no-op")
-
-
 func test_install_disables_same_slot_incumbent() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	assert_true(_save.install_upgrade(car["instance_id"], "fx_turbo_small"), "first engine kit fitted")

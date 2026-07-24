@@ -34,13 +34,25 @@ func _ready() -> void:
 	add_child(loading)
 
 	var cfg: GameConfig = Config.data
-	# Frame cap: a steady ceiling keeps phones cool (avoids thermal throttling).
-	# Web gets its own audio-bounded cap (target_fps_web), native mobile the thermal
-	# cap (target_fps_mobile), desktop the higher one (target_fps). 0 = uncapped.
-	# Physics stays at the project physics tick. Skipped under --headless (no
-	# rendering to pace) so it can't throttle the frame-awaiting test runner.
-	var fps_cap := cfg.target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())
-	if fps_cap > 0 and not Platform.is_headless():
+	# Resolve the per-target render quality ONCE, before apply_terrain_lod() and any
+	# scatter run: a web TOUCH device (the low-end / 30fps target) gets the shorter
+	# foliage cull distance and tighter terrain LOD bands, every other target the
+	# higher-quality set. Written back onto cfg so all downstream readers (foliage,
+	# signs, spectators, arches, apply_terrain_lod) pick it up unchanged.
+	var _web := Platform.is_web()
+	var _touch := Platform.is_touch()
+	cfg.tree_render_distance_m = cfg.tree_render_distance_for(_web, _touch)
+	cfg.terrain_lod_bands_m = cfg.terrain_lod_bands_for(_web, _touch)
+	# Frame cap: the player's Settings -> Display choice (FpsSetting), which defaults
+	# to the platform's natural cap when unset — a web TOUCH device 30 (audio-bounded),
+	# desktop/native 60 (see FpsSetting.default_cap / GameConfig.target_fps_for). 0 =
+	# uncapped. During a benchmark the config-driven cap wins (the benchmark's uncap
+	# toggle zeroes it), ignoring the user setting. Set unconditionally (0 actively
+	# uncaps if the player switched away from a cap) except under --headless (no
+	# rendering to pace) so it can't throttle the frame-awaiting test runner. Physics
+	# stays at the project physics tick.
+	var fps_cap := FpsSetting.default_cap() if Benchmark.active else FpsSetting.resolve()
+	if not Platform.is_headless():
 		Engine.max_fps = fps_cap
 	var env: Environment = $WorldEnvironment.environment
 	env.fog_density = cfg.fog_density
@@ -115,15 +127,17 @@ func _ready() -> void:
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	if RallySession.is_active():
 		_field_session_car()
-	elif RallySession.free_roam_instance_id >= 0:
-		# Free roam (session-less): field the owned car the player picked in the car
-		# park (baseline + upgrades + saved HP), falling back to the default library
-		# car if the instance has since vanished.
+	elif RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "":
+		# Free roam (session-less): field the car the player picked in the car park.
+		# An OWNED instance runs with its baseline + upgrades + saved HP; a bare catalogue
+		# MODEL (a not-yet-owned car picked in Free Roam) fields the base model by id.
+		# Falls back to the default library car if neither resolves.
 		var owned: Dictionary = Save.get_car(RallySession.free_roam_instance_id)
-		if owned.is_empty():
-			$Car.apply_car(0)
-		else:
+		if not owned.is_empty():
 			$Car.apply_owned(owned)
+		else:
+			var idx := CarLibrary.index_of(RallySession.free_roam_model_id)
+			$Car.apply_car(idx if idx >= 0 else 0)
 	else:
 		$Car.apply_car(0)
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
@@ -1558,7 +1572,8 @@ func _current_region_look() -> Dictionary:
 	var region_id := "home"
 	if RallySession.is_active():
 		region_id = String(RegionLibrary.region_for_rally(RallySession.rally_id()).get("id", "home"))
-	elif RallySession.free_roam_instance_id >= 0 and RallySession.free_roam_region_id != "":
+	elif (RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "") \
+			and RallySession.free_roam_region_id != "":
 		region_id = RallySession.free_roam_region_id
 	_region_look_cache = RegionLibrary.look_of(region_id)
 	_region_look_ready = true

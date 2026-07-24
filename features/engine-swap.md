@@ -223,8 +223,8 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   and OK (`_on_swap_confirmed` → `_commit_engine_swap`) calls `Save.swap_engines`
   (which spends the token). It forces the lift prop to respawn with the new
   engine, and returns to the lift's Upgrades page. **Back**
-  (`_car_back`) returns to the lift with no change, same as change-car and
-  starter-pick modes.
+  (`_car_back`) returns to the lift with no change (each car-park mode's Back returns
+  to its own origin — the garage picker to the garage, the starter picker to the exterior).
   While picking a partner, `hq._refresh_swap_preview()` (called from
   `_focus_changed`) shows a two-way hp/tonne preview in a `RichTextLabel`
   (`hq._swap_preview_label`) below the stats panel: since a swap EXCHANGES
@@ -275,7 +275,7 @@ button on the Upgrades page (native-focus regime — see
 [menus.md](menus.md) → "Menu navigation"), so it's reachable by
 keyboard/gamepad exactly like every other upgrades-menu button, with no extra
 wiring. Once pressed, the car park it opens is the SAME diegetic 3D station
-used by change-car and the starter picker — it reuses that station's existing
+used by the garage picker and the starter picker — it reuses that station's existing
 `menu_left`/`menu_right` (cycle the focused car), `menu_select` (confirm via
 `_on_start_pressed` → `_select_swap_target`), and `menu_back` (`_car_back`,
 which returns to the lift when `_carpark_swap_mode` is set) handlers in

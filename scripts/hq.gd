@@ -4,8 +4,8 @@ extends Node3D
 # camera flies through (todo/diegetic-hq.md) instead of flat overlay screens. One
 # world; the camera moves between "stations":
 #   * EXTERIOR — the boot/title shot: block buildings + the outdoor car park, with
-#     Start / Settings buttons (plus Exit Game on non-web builds). Start flies the
-#     camera into the garage.
+#     a Start button (plus Exit Game on non-web builds). Start flies the camera into
+#     the garage. (Settings lives on the garage action row.)
 #   * GARAGE   — a block garage interior holding the MAP TABLE and the TUNING LIFT.
 #     The player's SELECTED car is raised on the lift here. Tap the table to see the
 #     rallies; tap the lift to tune. Its action row also carries FREE ROAM, which opens
@@ -13,16 +13,16 @@ extends Node3D
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
 #   * LIFT     — the tuning bay: the selected car raised on the lift on one side. The
-#     bay opens on a HUB page (the car's name/description, a Change Car button, and
-#     Tuning / Upgrades buttons) bottom-left beside the car. Change Car drops into the
-#     car park to pick a new car for the lift; each menu button opens that menu as its
-#     OWN full-height page (TUNE = grip/brake/aero sliders; UPGRADES = install parts)
+#     bay opens on a HUB page (the car's name/description, Tuning / Upgrades buttons,
+#     and a Test Drive button) bottom-left beside the car. Each menu button opens that
+#     menu as its OWN full-height page (TUNE = grip/brake/aero sliders; UPGRADES =
+#     install parts); Test Drive drops into free roam with the car on the lift
 #     so neither needs to scroll; Back returns the page to the hub, and the hub's Back
 #     returns to the garage. (A REPAIR button also lives on the hub row but is hidden
 #     for now — earning Repair Kits is disabled.)
 #   * CARPARK  — the outdoor lineup of cars: in RALLY mode the cars ELIGIBLE for the
-#     chosen rally (pan + Start); in CHANGE-CAR mode the whole collection (pan +
-#     Select a new car for the lift).
+#     chosen rally (pan + Start); in GARAGE mode the whole collection (pan +
+#     Select the car to take to the tuning lift).
 # Flow: pick rally (table) -> choose eligible car (car park) -> Start -> RallySession.
 # It is the game's boot scene and stays lightweight (NO track gen).
 #
@@ -39,13 +39,9 @@ extends Node3D
 
 # Camera stations (see the per-station poses in GameConfig "Menu / HQ"). SETTINGS
 # is a flat overlay over the exterior shot (no dedicated camera pose), reached from
-# the title screen.
-#   * OVERFLOW  — the garage-full prompt: shown on entering HQ while the player owns
-#     more than GameConfig.max_owned_cars (e.g. after a win pushed them to 11). The
-#     whole collection is parked in the car park and the player must scrap one car
-#     (the just-won car included; the player's last car excepted) to drop back to the
-#     cap before they can do anything else. Reuses the car-park lineup + framing.
-enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
+# the garage action row. (The collection is unbounded — the car park pages through it,
+# so there's no garage-full gate.)
+enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
 
 # The cars offered on first run (the two authored-body cars). The player picks one in
 # the car park (see _enter_starter_pick); the chosen one becomes the player's first car.
@@ -53,7 +49,7 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }
 const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
 
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
-# name/description + a Change Car button + Tuning/Upgrades buttons); TUNE is
+# name/description + Tuning/Upgrades buttons + a Test Drive button); TUNE is
 # the handling sliders and UPGRADES is install parts / repair. Each menu is its own
 # full-height page (reached from the hub) so neither has to scroll.
 enum LiftPage { HUB, TUNE, UPGRADES }
@@ -101,13 +97,15 @@ var _selected_rally_id := ""
 var _selected_instance_id := -1
 # The car park serves several jobs, one at a time (never overlapping):
 #   RALLY    (default) — cars eligible for the chosen rally; Start launches the rally.
-#   CHANGE   (tuning lift's "Change Car") — ALL owned cars; Select swaps the raised car.
+#   GARAGE   (garage's "Garage" button) — ALL owned cars; Select picks the car to tune
+#            and takes the player straight to the tuning lift bay.
+#   FREEROAM (garage's "Free Roam" button) — the WHOLE catalogue as base-model previews;
+#            Start drops into a session-less drive in the picked car (owned or not).
 #   SWAP     (_enter_engine_swap) — OTHER owned cars; Select picks an engine-swap partner.
 #   STARTER  (first run) — preview cars (garage empty); Select grants the first car.
-#   FREEROAM (garage's "Free Roam") — ALL owned cars; Start launches a session-less drive.
-# One enum instead of four mutually-exclusive booleans: entering a job sets the mode
+# One enum instead of mutually-exclusive booleans: entering a job sets the mode
 # (which inherently clears the others), and every exit/commit/back returns to RALLY.
-enum CarparkMode { RALLY, CHANGE, SWAP, STARTER, FREEROAM }
+enum CarparkMode { RALLY, GARAGE, FREEROAM, SWAP, STARTER }
 var _carpark_mode := CarparkMode.RALLY
 
 # Map-table pan state: drag the table view around (the map can be larger than the
@@ -124,8 +122,13 @@ var _table_dragged := false
 var _lineup_pressing := false
 var _lineup_drag_accum := Vector2.ZERO
 
-# Car-park state: the owned cars eligible for the chosen rally, the parked car nodes
-# + their lot markers (parallel to _eligible), and which slot is focused.
+# Car-park state. `_lineup` (CarList) is the SINGLE owner of the full car list, its
+# pagination, and the cursor across every car-park screen (rally car-select, garage
+# picker, engine-swap, starter, free roam). `_eligible` mirrors the CURRENT PAGE's cars
+# (what's actually parked in the bays) and `_focus` the cursor's page-LOCAL index, both
+# refreshed from `_lineup` after each nav so the rest of hq.gd can keep indexing
+# `_eligible[_focus]` / `_markers[_focus]`. See scripts/car_list.gd.
+var _lineup := CarList.new()
 var _eligible: Array = []
 # instance_id -> the engine-detune fraction that would qualify an over-powered parked
 # car for the chosen rally (RallyLibrary.qualifying_detune). Populated only by the
@@ -155,12 +158,12 @@ var _pending_swap: Dictionary = {}
 var _cars: Array = []
 var _markers: Array = []
 # Reuse cache for parked lineup cars, shared by every lineup (rally car-select,
-# title, overflow) since they all build from the same owned cars. Keyed by the
+# title, free roam) since they all build from the same car dicts. Keyed by the
 # owned car's instance_id -> {"hash": int, "node": Node3D}; the hash is the deep
 # Variant hash of the owned dict, so a car whose tuning / damage / engine changed
 # gets a fresh respawn while unchanged cars are reused as-is (see _build_lineup /
-# _release_lineup). Cars are hidden + detached (not freed) between lineups and
-# freed with the HQ node on exit-to-race.
+# _release_page_props). Cars are hidden + stowed off-screen (not freed) between lineups
+# and freed with the HQ node on exit-to-race.
 var _car_cache: Dictionary = {}
 var _focus := 0
 # Plays a short engine rev for the focused car each time the lineup selection
@@ -169,6 +172,11 @@ var _preview_audio: CarPreviewAudio = null
 # Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
 # lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
 var _settle_generation := 0
+# Free Roam pre-warm: at boot (behind the loading cover) we spawn the catalogue's preview
+# props into _car_cache (hidden) so entering Free Roam reuses them with no fresh instancing
+# — killing the first-entry lag spike. _prewarm_marker is the off-screen stow marker the
+# hidden props seat at until Free Roam re-seats them at real bays.
+var _prewarm_marker: Marker3D = null
 
 # Tuning-lift state: the selected car raised on the lift (a Car prop, separate from
 # the car-park lineup), which OwnedCar it is, and which menu (TUNE / UPGRADES) is up.
@@ -223,7 +231,6 @@ var _detail_layer: CanvasLayer
 var _lift_layer: CanvasLayer
 var _car_layer: CanvasLayer
 var _settings_layer: CanvasLayer
-var _overflow_layer: CanvasLayer
 # Settings page: the shared SettingsMenu (camera angle + mobile controls), reused by
 # the in-run pause menu so both pages match.
 var _settings_menu: SettingsMenu
@@ -254,8 +261,6 @@ var _title_start_button: Button  # EXTERIOR title Start — default keyboard/gam
 # another class now) and read by tests, so GDScript's in-class "unused" check can't see
 # their use — silence it rather than reintroduce a dead in-class reference.
 @warning_ignore("unused_private_class_variable")
-var _title_settings_button: Button  # EXTERIOR title Settings (below Start)
-@warning_ignore("unused_private_class_variable")
 var _title_exit_button: Button  # EXTERIOR title Exit Game (bottom of the list)
 @warning_ignore("unused_private_class_variable")
 var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
@@ -265,29 +270,21 @@ var _car_warning_label: Label
 var _car_repair_button: Button
 
 # Garage overlay cursor: a single left/right cursor over the bottom action row
-# (Back / Map / Tune Car / Free Roam). Buttons are FOCUS_NONE and highlighted by hand
+# (Back / Career / Garage / Free Roam / Settings). Buttons are FOCUS_NONE and highlighted by hand
 # (a ButtonCursor, like the tuning hub) since the garage is a spatially-navigated 3D
 # station, not a focus graph. hq keeps the index (_garage_focus, read by tests); the
 # ButtonCursor owns the shared wrap/paint/fire behaviour (scripts/button_cursor.gd).
 var _garage_cursor := ButtonCursor.new()
 var _garage_focus := 1          # which garage action the cursor sits on (defaults to Map)
 
-# Garage-overflow overlay widgets (the OVERFLOW station — scrap a car to make room).
-var _overflow_banner: Label
-var _overflow_car_label: Label
-var _overflow_stats_label: Label
-var _overflow_note: Label
-var _scrap_button: Button
-
 # Tuning-lift overlay widgets.
 var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
-var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Change Car + Tuning/Upgrades buttons
-# The HUB's Back / Change Car / Tuning / Upgrades row is a left/right ButtonCursor, same
+var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Tuning/Upgrades + Test Drive buttons
+# The HUB's Back / Tuning / Upgrades / Test Drive row is a left/right ButtonCursor, same
 # as the garage: hq keeps the index (_hub_focus, read by tests), the cursor the behaviour.
 var _hub_cursor := ButtonCursor.new()
-var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Change Car, 2 = Tune, 3 = Upgrades)
-var _lift_change_car_button: Button  # disabled by _refresh_lift_ui when no other car is owned
+var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Tune, 2 = Upgrades, 3 = Test Drive)
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_back_button: Button   # the shared "< Back" on a sub-menu page (TUNE/UPGRADES)
@@ -326,6 +323,13 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_build_hq()
+	# Warm the Free Roam picker NOW, behind the opaque cover: car.tscn embeds every car glb,
+	# so building the whole-catalogue lineup is heavy and would hitch the first time it's
+	# opened. Doing it here (once, kept in memory for the session — see _prewarm_free_roam /
+	# the negative-id keep in _evict_unowned_cached_cars) hides the cost entirely.
+	loading.set_step("Warming up the garage…")
+	await get_tree().process_frame  # paint the new step before the synchronous warm runs
+	_prewarm_free_roam()
 	# Let the built scene render one frame before lifting the cover, so the reveal lands
 	# on the title shot rather than a half-built frame.
 	await get_tree().process_frame
@@ -386,7 +390,6 @@ func _build_hq() -> void:
 	_overlays.build_lift_overlay()
 	_overlays.build_car_overlay()
 	_overlays.build_settings_overlay()
-	_overlays.build_overflow_overlay()
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
 	_refresh_map_pins()
@@ -395,16 +398,12 @@ func _build_hq() -> void:
 	# Read + clear it now so it never lingers past this boot.
 	var want_garage: bool = RallySession.return_to_garage
 	RallySession.return_to_garage = false
-	# A win can push the player past the car cap (the car is still granted). If the
-	# garage is over capacity on entry, force the scrap-a-car prompt before anything
-	# else; otherwise boot to the garage (returning from a rally) or the title shot.
-	if _over_car_limit():
-		_enter_overflow(true)
-	else:
-		_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
+	# Boot to the garage (returning from a rally) or the title shot. The collection is
+	# unbounded, so there's no garage-full gate to clear first.
+	_go_to(View.GARAGE if want_garage else View.EXTERIOR, true)
 	# Playing the WEB build in an Android browser: point the player at the itch.io
 	# APK once per boot — the native build performs far better than mobile web.
-	# Only over the title shot (a normal boot); never over the overflow gate.
+	# Only over the title shot (a normal boot).
 	if _should_show_android_app_notice() and _view == View.EXTERIOR:
 		_show_android_app_notice()
 	# Web fullscreen/landscape (the "tap to play" prompt) is handled globally by the
@@ -929,11 +928,10 @@ func _dismiss_android_app_notice() -> void:
 
 
 
-# Build the ◄/► car-selector nav row shared by the rally car-park (_build_car_overlay)
-# and the overflow overlay (_build_overflow_overlay): a "<" prev button, a centred
-# car-name label, and a ">" next button in an HBox, with prev/next wired to
-# _cycle_focus(∓1). Returns [nav_row, center_label] so the caller stashes the label in
-# its own member field (_car_name_label / _overflow_car_label).
+# Build the ◄/► car-selector nav row for the car park (_build_car_overlay): a "<" prev
+# button, a centred car-name label, and a ">" next button in an HBox, with prev/next
+# wired to _cycle_focus(∓1). Returns [nav_row, center_label] so the caller stashes the
+# label in its own member field (_car_name_label).
 func _build_carpark_nav_row() -> Array:
 	var nav := HBoxContainer.new()
 	nav.add_theme_constant_override("separation", 8)
@@ -954,68 +952,12 @@ func _build_carpark_nav_row() -> Array:
 	return [nav, center]
 
 
-# --- Garage overflow (scrap a car to make room) ------------------------------
-
-
-# Whether the player owns more cars than the cap (so the scrap prompt must show).
-func _over_car_limit() -> bool:
-	return _owned_count() > Config.data.max_owned_cars
-
-
-func _owned_count() -> int:
-	return Save.profile.get("cars", []).size()
-
-
-# Enter the scrap-a-car prompt: park the WHOLE collection and frame the first car.
-func _enter_overflow(snap := false) -> void:
-	_build_lineup(Save.profile.get("cars", []).duplicate())
-	_view = View.OVERFLOW
-	_detail_open = false
-	_clear_lift_car()  # not inside the garage while overflowing
-	_update_overlays()
-	_focus = 0
-	_focus_changed(snap)
-
-
-# Scrap the focused car (unless it's the player's last car), then re-evaluate: stay
-# in the prompt while still over the cap, otherwise fly out to the title.
-func _on_scrap_pressed() -> void:
-	if _eligible.is_empty() or _focus >= _eligible.size():
-		return
-	var owned: Dictionary = _eligible[_focus]
-	var id := int(owned.get("instance_id", -1))
-	if not Save.scrap_car(id):
-		return
-	Save.save()
-	if _selected_instance_id == id:
-		_selected_instance_id = -1
-	if _over_car_limit():
-		_enter_overflow(true)  # rebuild the (smaller) lineup, keep prompting
-	else:
-		_clear_lineup()
-		_go_to(View.EXTERIOR, true)
-
-
-# Refresh the overflow overlay for the focused car (banner count, name, stats, and
-# the scrap button — disabled with a note when it's the player's last car).
-func _refresh_overflow_ui(owned: Dictionary, entry: Dictionary, stats: String) -> void:
-	_overflow_banner.text = "GARAGE FULL — scrap a car to make room  (%d / %d)" % [
-		_owned_count(), Config.data.max_owned_cars]
-	_overflow_car_label.text = "%s  (%d of %d)" % [
-		entry.get("name", owned.get("model_id", "?")),
-		_focus + 1, _eligible.size()]
-	_overflow_stats_label.text = stats
-	var last_car := _owned_count() <= 1
-	_scrap_button.disabled = last_car
-	_overflow_note.text = "Your last car can't be scrapped — choose another." if last_car else ""
-
-
 # --- Settings page -----------------------------------------------------------
 
 
 # Open the Settings page. `gate` = the mandatory pre-rally pick (bottom button starts
-# the rally); otherwise it's the title-screen settings (bottom button goes back).
-# Always reset to the category list so each open starts at the top level.
+# the rally); otherwise it's the garage-row settings (bottom button goes back to the
+# garage). Always reset to the category list so each open starts at the top level.
 func _open_settings(gate: bool) -> void:
 	_settings_gate = gate
 	_settings_sub.text = ("Choose your touch controls to start:" if gate
@@ -1057,7 +999,7 @@ func _on_settings_action() -> void:
 	if not _settings_menu.at_root():
 		_settings_menu.show_list()
 		return
-	_go_to(View.EXTERIOR)
+	_go_to(View.GARAGE)
 
 
 # --- Confirmation dialog -----------------------------------------------------
@@ -1071,7 +1013,6 @@ func _update_overlays() -> void:
 	_lift_layer.visible = _view == View.LIFT
 	_car_layer.visible = _view == View.CARPARK
 	_settings_layer.visible = _view == View.SETTINGS
-	_overflow_layer.visible = _view == View.OVERFLOW
 	_normalize_menus()
 
 
@@ -1080,7 +1021,7 @@ func _update_overlays() -> void:
 # after any dynamic text refresh so the rules keep holding as labels change.
 func _normalize_menus() -> void:
 	for layer in [_title_layer, _garage_layer, _table_layer, _detail_layer,
-			_lift_layer, _car_layer, _settings_layer, _overflow_layer]:
+			_lift_layer, _car_layer, _settings_layer]:
 		if layer != null:
 			UITheme.enforce(layer)
 
@@ -1138,49 +1079,68 @@ func _on_exterior_start() -> void:
 		_go_to(View.GARAGE)
 
 
-# Free Roam: open the car park to pick which owned car to drive. Parks the WHOLE owned
-# collection (like Change Car) and frames the currently-selected car; Start launches
-# free roam with the focused car (see _start_free_roam), Back returns to the garage.
-# Entered from the GARAGE action row's Free Roam button (see _build_garage_overlay).
-func _enter_free_roam() -> void:
-	_carpark_mode = CarparkMode.FREEROAM
-	_build_lineup(Save.profile.get("cars", []).duplicate())
-	_rally_banner.text = "Free roam — pick your car"
+# Garage: open the car park to pick which owned car to work on. Parks the WHOLE owned
+# collection and frames the currently-selected car; Select commits that car and drops
+# straight into the tuning lift bay (see _select_garage_car), Back returns to the garage.
+# Entered from the GARAGE action row's Garage button (see _build_garage_overlay).
+func _open_garage_picker() -> void:
+	_carpark_mode = CarparkMode.GARAGE
+	var cars: Array = Save.profile.get("cars", []).duplicate()
+	# Open framed on the currently-selected car (on whatever page it lands), defaulting
+	# to the first parked car.
+	_build_lineup(cars, _index_of_instance(cars, Save.selected_instance_id()))
+	_rally_banner.text = "Garage — pick a car"
 	_no_eligible_label.visible = false
-	_start_button.text = "Start Free Roam"
-	_start_button.disabled = _eligible.is_empty()
+	_start_button.text = "Select Car"
+	_start_button.disabled = _lineup.is_empty()
 	_view = View.CARPARK
 	_detail_open = false
 	_update_overlays()
-	# Frame the currently-selected car, defaulting to the first parked car.
-	_focus = 0
-	var sel := Save.selected_instance_id()
-	for i in _eligible.size():
-		if int(_eligible[i].get("instance_id", -1)) == sel:
-			_focus = i
-			break
 	# Fly (don't snap) — a tween carries the player smoothly from the garage into the
-	# car-select shot. The other car-park entries (_enter_car_screen, _enter_change_car)
-	# snap because they come from adjacent stations.
+	# car-select shot.
 	_focus_changed(false)
 
 
-# Launch free roam with the focused car: no rally, no opponents — just drive. Selects
-# the car, hands its instance to RallySession.free_roam_instance_id (world.gd fields it
-# with no active session), writes a FRESH random seed + neutral (0.5) terrain settings
-# into the live Config, then loads the run scene. The player leaves via Pause → Quit to
-# HQ (pause_menu.gd loads hq.tscn directly when no session is active). A random seed
-# each time means a different track on every entry.
+# The index of the owned car `id` within `cars`, or 0 (the first car) when not present —
+# used to seat the car-park cursor on a specific car when opening a picker.
+func _index_of_instance(cars: Array, id: int) -> int:
+	for i in cars.size():
+		if int(cars[i].get("instance_id", -1)) == id:
+			return i
+	return 0
+
+
+# Free Roam picker Start: field the focused catalogue car for a session-less drive. The
+# picker parks base-model previews (negative instance ids), so field the bare base model
+# by id; an owned entry (id >= 0) would field its tuned instance instead. See _enter_free_roam.
 func _start_free_roam() -> void:
-	if _selected_instance_id < 0:
+	if _eligible.is_empty() or _focus >= _eligible.size():
 		return
-	# Field this car for the drive, and select it so the lift shows it on return.
-	Save.set_selected_car(_selected_instance_id)
-	RallySession.free_roam_instance_id = _selected_instance_id
+	var pick: Dictionary = _eligible[_focus]
+	var id := int(pick.get("instance_id", -1))
+	var model_id := "" if id >= 0 else String(pick.get("model_id", ""))
+	await _launch_free_roam(id, model_id)
+
+
+# Launch a session-less free-roam drive fielding the given car: an OWNED instance
+# (instance_id >= 0 — e.g. Test Drive of the tuned car on the lift, which world.gd fields
+# with its upgrades + saved HP) OR a bare catalogue MODEL (model_id, a not-yet-owned car
+# picked in Free Roam). Writes a FRESH random seed + neutral terrain + random region
+# (_prepare_free_roam) and loads the run scene. The player leaves via Pause → Quit to HQ
+# (pause_menu.gd loads hq.tscn when no session is active). A random seed each time means a
+# different track on every entry.
+func _launch_free_roam(instance_id: int, model_id: String) -> void:
 	_carpark_mode = CarparkMode.RALLY
 	_clear_lineup()
 	_selected_instance_id = -1
-	_prepare_free_roam()
+	_prepare_free_roam()  # may abandon a stale session, which resets the free-roam ids
+	# Field by MODEL when given one (a not-yet-owned preview): normalise the instance id to
+	# the -1 sentinel so it can't be mistaken for a real owned instance (RallySession's
+	# contract: -1 / "" = no pick). Owned Test Drive passes a real id and no model.
+	RallySession.free_roam_instance_id = instance_id if model_id == "" else -1
+	RallySession.free_roam_model_id = model_id
+	if instance_id >= 0:
+		Save.set_selected_car(instance_id)  # so the lift shows it on return
 	var loading := LoadingScreen.new()
 	loading.set_step("Loading free roam…")
 	add_child(loading)
@@ -1215,9 +1175,12 @@ func _enter_table() -> void:
 	_table_dragged = false
 	_table_panning = false
 	_refresh_map_pins()  # reflect any newly-earned stars / showdown unlock
-	# The map opens centred; select whatever target sits nearest that centre. From here
-	# the player pans the camera (arrows / drag) and selection tracks the view centre.
-	_select_target_under_center()
+	# On entry, steer straight to the toughest event the player hasn't finished yet:
+	# focus (and pan the camera to) the highest-difficulty incomplete rally pin. From
+	# there the player pans the camera and selection tracks the view centre. Falls back
+	# to the centre-nearest target when every pin is done (or there are none).
+	if not _focus_hardest_incomplete():
+		_select_target_under_center()
 	_go_to(View.TABLE)
 
 
@@ -1317,6 +1280,33 @@ func _pan_table_step(dir2: Vector2, dist: float) -> void:
 func _table_center_pos() -> Vector3:
 	var cfg: GameConfig = Config.data
 	return Vector3(cfg.hq_table_cam_look.x + _table_pan.x, 0.0, cfg.hq_table_cam_look.z + _table_pan.z)
+
+
+# Seat the cursor on the highest-difficulty rally pin the player hasn't completed yet,
+# panning the camera to it. Difficulty is the hidden authored tier; ties break toward
+# the first such pin in rally order (targets are built in that order). Region-swap arrows
+# and completed pins are skipped. Returns false when there's no incomplete pin here (all
+# done, or the region has no pins), leaving the caller to seat focus some other way.
+func _focus_hardest_incomplete() -> bool:
+	var targets := _table_targets()
+	var best := -1
+	var best_diff := -1
+	for i in targets.size():
+		var t: Dictionary = targets[i]
+		if String(t["kind"]) != "pin":
+			continue
+		var rally_id := String((t["node"] as Node3D).get_meta("rally_id"))
+		if Save.rally_completed(rally_id):
+			continue
+		var rally := RallyLibrary.by_id(rally_id)
+		var diff := int(rally.get("difficulty", 0)) if not rally.is_empty() else 0
+		if diff > best_diff:
+			best_diff = diff
+			best = i
+	if best < 0:
+		return false
+	_focus_table_target(best, true)  # pan the camera onto it so selection sticks
+	return true
 
 
 # Seat the cursor on whichever target (pin or map-swap arrow) sits nearest the view
@@ -1538,11 +1528,11 @@ func _hide_detail() -> void:
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
 # Enter the tuning bay: raise the selected car on the lift, frame it to one side, and
-# show the HUB (car description + Change Car + Tuning/Upgrades buttons).
+# show the HUB (car description + Tuning/Upgrades buttons + Test Drive).
 func _enter_lift() -> void:
 	_ensure_lift_car()
 	_lift_page = LiftPage.HUB
-	_hub_focus = 1  # the cursor starts on Change Car each time we enter the bay
+	_hub_focus = 1  # the cursor starts on Tuning each time we enter the bay
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
 	_raise_lift_car()  # slowly raise the car on the lift as we arrive
@@ -1663,21 +1653,22 @@ func _lift_hub() -> void:
 	_refresh_lift_ui()
 
 
-# Move the garage's left/right cursor between Back (0), Map (1), Tune Car (2) and
-# Free Roam (3), wrapping at the ends, and repaint it.
+# Move the garage's left/right cursor between Back (0), Career (1), Garage (2),
+# Free Roam (3) and Settings (4), wrapping at the ends, and repaint it.
 func _move_garage_focus(step: int) -> void:
 	_garage_focus = _garage_cursor.wrapped(_garage_focus, step)
 	_refresh_garage_focus()
 
 
 # Fire the garage action the cursor sits on: 0 backs out to the exterior, 1 opens the
-# map table, 2 opens the tuning lift, 3 opens free roam (car park → session-less drive).
+# career map table, 2 opens the garage car picker (car park → tuning lift), 3 opens the
+# Free Roam picker (car park → session-less drive), 4 opens Settings.
 func _activate_garage_focus() -> void:
 	_garage_cursor.activate(_garage_focus)
 
 
-# Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Map /
-# Tune Car / Free Roam buttons are highlighted by hand rather than via native focus).
+# Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Career /
+# Garage / Free Roam / Settings buttons are highlighted by hand rather than via native focus).
 func _refresh_garage_focus() -> void:
 	_garage_cursor.refresh(_garage_focus)
 
@@ -1728,22 +1719,22 @@ func _repair_selected_car() -> void:
 	_refresh_lift_repair_button()
 
 
-# Move the HUB's left/right cursor between Back (0), Change Car (1), Tuning (2) and
-# Upgrades (3), wrapping at the ends, and repaint it. (Repair is built but hidden while
+# Move the HUB's left/right cursor between Back (0), Tuning (1), Upgrades (2) and
+# Test Drive (3), wrapping at the ends, and repaint it. (Repair is built but hidden while
 # Repair Kits are disabled, so it's not in the cursor — see _build_lift_overlay.)
 func _move_hub_focus(step: int) -> void:
 	_hub_focus = _hub_cursor.wrapped(_hub_focus, step)
 	_refresh_hub_focus()
 
 
-# Fire the hub item the cursor sits on: 0 backs out to the garage, 1 opens the car park
-# to change car, 2/3 open the Tuning / Upgrades pages.
+# Fire the hub item the cursor sits on: 0 backs out to the garage, 1/2 open the Tuning /
+# Upgrades pages, 3 launches a Test Drive (free roam with the car on the lift).
 func _activate_hub_focus() -> void:
 	_hub_cursor.activate(_hub_focus)
 
 
 # Paint the manual hub cursor (the hub uses left/right + select, not native focus, so the
-# Back / Change Car / Tuning / Upgrades buttons are highlighted by hand instead).
+# Back / Tuning / Upgrades / Test Drive buttons are highlighted by hand instead).
 func _refresh_hub_focus() -> void:
 	_hub_cursor.refresh(_hub_focus)
 
@@ -1834,10 +1825,7 @@ func _refresh_lift_ui() -> void:
 	_tune_panel.refresh()
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap)
 	_refresh_lift_repair_button()  # reflect the selected car's health / kit count
-	# Change Car has nothing to offer when the selected car is the only one owned, so
-	# disable it (greyed + non-firing); the hub cursor then skips it (ButtonCursor).
-	_lift_change_car_button.disabled = _other_owned_cars(Save.selected_instance_id()).is_empty()
-	_hub_focus = _hub_cursor.settled(_hub_focus)  # nudge off Change Car if it just greyed out
+	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
 
@@ -1858,8 +1846,8 @@ func _refresh_lift_car_label() -> void:
 		EngineSwap.display_name(entry, _lift_owned), _car_stats_text(_lift_owned, entry)]
 
 
-# Every owned car other than `current_id`. Shared by engine-swap (_swap_targets) and
-# Change Car (_change_car_targets) — both offer the OTHER owned cars.
+# Every owned car other than `current_id`. Used by engine-swap (_swap_targets), which
+# offers the OTHER owned cars.
 func _other_owned_cars(current_id: int) -> Array:
 	var targets: Array = []
 	for car in Save.profile.get("cars", []):
@@ -1886,7 +1874,7 @@ func _repair_kits_owned() -> int:
 
 # Reset the car-park overlay to its empty state: show `message`, blank the car labels,
 # hide the swap-preview / warning / repair widgets, disable Start, and frame the empty
-# lot. Shared by the rally car-select and Change Car screens when nothing qualifies.
+# lot. Shared by the rally car-select and Garage picker screens when nothing qualifies.
 func _show_empty_carpark(message: String) -> void:
 	_no_eligible_label.visible = true
 	_no_eligible_label.text = message
@@ -1924,27 +1912,43 @@ func _enter_car_screen() -> void:
 	_focus_changed(true)  # snaps the camera onto the first car
 
 
-# Enter the car park from the tuning lift to pick a new car for the lift: park the
-# OTHER owned cars (the one already on the lift is excluded) and frame the first.
-# Select swaps the raised car; Back returns to the bay (see _on_start_pressed /
-# _car_back). With no other car owned, show a hint + disable Start.
-func _enter_change_car() -> void:
-	_carpark_mode = CarparkMode.CHANGE
-	# Exclude the car already on the lift (the selected car) — reselecting it would be a
-	# no-op, so only OTHER owned cars are offered (same rule as engine swap).
-	# Change Car offers the OTHER owned cars (reselecting the current one is a no-op).
-	_build_lineup(_other_owned_cars(Save.selected_instance_id()))
-	_rally_banner.text = "Change car"
-	_start_button.text = "Select Car"
+# Test Drive from the tuning bay: launch free roam with the car currently on the lift —
+# no car picker, we're already focused on one. Fields the OWNED (tuned) instance.
+func _test_drive() -> void:
+	var id := Save.selected_instance_id()
+	if id < 0:
+		return
+	await _launch_free_roam(id, "")
+
+
+# Free Roam: open the car park across the WHOLE catalogue (owned cars and not) as base-
+# model previews, framed on the currently-selected car's model. Start drops into a
+# session-less drive in the picked car (see _start_free_roam); Back returns to the garage.
+# Entered from the GARAGE action row's Free Roam button (see _build_garage_overlay).
+func _enter_free_roam() -> void:
+	_carpark_mode = CarparkMode.FREEROAM
+	var previews := _all_car_previews()
+	_build_lineup(previews, _index_of_model(previews, String(Save.selected_car().get("model_id", ""))))
+	_rally_banner.text = "Free roam — pick any car"
+	_no_eligible_label.visible = false
+	_start_button.text = "Start Free Roam"
+	_start_button.disabled = _lineup.is_empty()
 	_view = View.CARPARK
 	_detail_open = false
 	_update_overlays()
-	if _eligible.is_empty():
-		_show_empty_carpark("No other car to switch to — this is your only car.")
-		return
-	_no_eligible_label.visible = false
-	_focus = 0
-	_focus_changed(true)
+	# Fly (don't snap) — a tween carries the player smoothly from the garage into the shot.
+	_focus_changed(false)
+
+
+# The index of the first preview whose model matches `model_id` within `cars`, or 0 when
+# not present — used to seat the Free Roam cursor on the currently-selected car's model.
+func _index_of_model(cars: Array, model_id: String) -> int:
+	if model_id == "":
+		return 0
+	for i in cars.size():
+		if String(cars[i].get("model_id", "")) == model_id:
+			return i
+	return 0
 
 
 func _car_back() -> void:
@@ -1955,9 +1959,9 @@ func _car_back() -> void:
 	match mode:
 		CarparkMode.STARTER:
 			_go_to(View.EXTERIOR)
-		CarparkMode.FREEROAM:
+		CarparkMode.GARAGE, CarparkMode.FREEROAM:
 			_go_to(View.GARAGE)
-		CarparkMode.SWAP, CarparkMode.CHANGE:
+		CarparkMode.SWAP:
 			_enter_lift()
 		_:
 			_go_to(View.TABLE)
@@ -1973,11 +1977,16 @@ func _enter_engine_swap() -> void:
 	var targets := _swap_targets(current_id)
 	_build_lineup(targets)
 	_rally_banner.text = "Engine swap"
-	_no_eligible_label.visible = false
 	_start_button.text = "Swap Engine"
 	_view = View.CARPARK
 	_detail_open = false
 	_update_overlays()
+	# No partner to swap with (only one car owned) — show a hint + disable Swap instead of
+	# a dead lot with an empty, no-op button (_select_swap_target bails on no selection).
+	if _eligible.is_empty():
+		_show_empty_carpark("No other car to swap engines with — this is your only car.")
+		return
+	_no_eligible_label.visible = false
 	_focus = 0
 	_focus_changed(true)
 
@@ -1996,6 +2005,30 @@ func _starter_previews() -> Array:
 			"instance_id": idx,  # negative: a preview, not an owned car
 			"model_id": id,
 			"hp": float(entry.get("max_hp", 1000.0)),
+			"installed_upgrades": [],
+			"tuning": {},
+		})
+		idx -= 1
+	return previews
+
+
+# One PREVIEW car dict per catalogue entry (CarLibrary.all()), for the Free Roam picker
+# which offers the WHOLE catalogue — owned or not. Negative instance ids mark them as
+# base-model previews (no upgrades / tuning); free roam fields them by model_id.
+# NOTE: these share the negative-id namespace with _starter_previews (both count from -1),
+# and preview entries are now kept warm in _car_cache (never evicted — see
+# _evict_unowned_cached_cars). That's safe ONLY because the two are mutually exclusive: the
+# starter picker exists before the player owns any car, while the Free Roam prewarm runs
+# from the GARAGE (post-ownership). If they ever coexist, give them disjoint id ranges so a
+# starter preview can't collide with a prewarmed catalogue entry at the same negative id.
+func _all_car_previews() -> Array:
+	var previews: Array = []
+	var idx := -1
+	for spec in CarLibrary.all():
+		previews.append({
+			"instance_id": idx,  # negative: a preview, not an owned car
+			"model_id": String(spec.get("id", "")),
+			"hp": float(spec.get("max_hp", 1000.0)),
 			"installed_upgrades": [],
 			"tuning": {},
 		})
@@ -2041,25 +2074,40 @@ func _confirm_starter() -> void:
 
 # --- Car park (the eligible lineup) ------------------------------------------
 
-func _clear_lineup() -> void:
+# Release just the CURRENTLY-PARKED page's props + markers, cancelling any in-flight
+# settle. Leaves `_lineup` and the detune/drivetrain maps intact — a page flip re-renders
+# on top of the same list.
+func _release_page_props() -> void:
 	_settle_generation += 1  # cancel any pending settle-then-freeze for this lineup
-	# Release (hide + detach) the parked cars rather than freeing them, so a re-entry
-	# into any lineup can reuse the cached instances (see _car_cache / _build_lineup).
+	# Hide the parked cars rather than freeing them, so a re-entry into any lineup can
+	# reuse the cached instances (see _car_cache / _build_lineup). Their frozen bodies stay
+	# ray-pickable (CarProp.stop_physics), so STOW them off-screen too — otherwise a hidden
+	# car left sitting in its bay would intercept a tap-to-focus ray meant for the NEW page's
+	# car spawned at the same bay (_car_index_at). Reuse re-seats them via _seat_car_at_marker.
+	var stow := _prewarm_stow_marker().global_position
 	for car in _cars:
 		if is_instance_valid(car):
 			car.visible = false
+			car.global_position = stow
 	for marker in _markers:
 		if is_instance_valid(marker):
 			marker.queue_free()
 	_cars = []
 	_markers = []
+
+
+# Full car-park teardown, used when LEAVING the lot (back / launch): release the page
+# props and forget the list + cursor + per-rally detune maps.
+func _clear_lineup() -> void:
+	_release_page_props()
+	_lineup.setup([], max(1, Config.data.carpark_page_size))
 	_eligible = []
 	_detune_needed = {}
 	_drivetrain_needed = {}
 
 
 # Free every cached (and currently active) parked car outright — used when the cache
-# would otherwise leak, e.g. eviction of sold cars. Frees the node and drops its entry.
+# would otherwise leak, e.g. eviction of preview cars no longer offered. Frees the node and drops its entry.
 func _free_cached_car(instance_id: int) -> void:
 	var entry: Dictionary = _car_cache.get(instance_id, {})
 	var node = entry.get("node")
@@ -2068,13 +2116,21 @@ func _free_cached_car(instance_id: int) -> void:
 	_car_cache.erase(instance_id)
 
 
-# Drop cache entries for cars the player no longer owns (sold / scrapped), freeing
-# their nodes so the cache doesn't outlive the collection.
-func _evict_unowned_cached_cars() -> void:
+# Drop cache entries for cars the player no longer owns, freeing their nodes so the cache
+# doesn't outlive the collection. PREVIEW entries (negative instance_id — Free Roam's
+# whole-catalogue previews, pre-warmed once and kept in memory for the session) are NEVER
+# evicted here: they aren't "owned", but re-warming them is exactly the lag spike we're
+# avoiding, so they persist for the HQ's lifetime (freed only with the HQ node). Entries
+# in `keep` (the list currently being built) are preserved too.
+func _evict_unowned_cached_cars(keep: Array = []) -> void:
 	var owned_ids := {}
 	for car in Save.profile.get("cars", []):
 		owned_ids[int(car.get("instance_id", -1))] = true
+	for car in keep:
+		owned_ids[int(car.get("instance_id", -1))] = true
 	for id in _car_cache.keys():
+		if int(id) < 0:
+			continue  # a preview / pre-warmed car — keep it warm in memory
 		if not owned_ids.has(id):
 			_free_cached_car(id)
 
@@ -2098,7 +2154,7 @@ func _build_eligible_lineup() -> void:
 			needs_drivetrain[id] = int(plan["drivetrain"])
 		if float(plan["detune"]) > 0.0:
 			needs_detune[id] = float(plan["detune"])
-	_build_lineup(eligible)  # clears _detune_needed / _drivetrain_needed (via _clear_lineup)
+	_build_lineup(eligible)  # clears _detune_needed / _drivetrain_needed, then repopulated below
 	_detune_needed = needs_detune
 	_drivetrain_needed = needs_drivetrain
 
@@ -2173,21 +2229,37 @@ func _build_title_lineup() -> void:
 # nose-out toward the courtyard / menu camera (+Z) so the front-3/4 framing shows its
 # face with the garage behind it. Fewer cars than bays are centred within the grid so
 # they stay over real bays. The cars are placed resting on their wheels and frozen at
-# once (see _spawn_parked_car). Shared by the rally car-select lineup (eligible cars)
-# and the title screen (all owned cars).
-func _build_lineup(cars: Array) -> void:
-	_clear_lineup()  # bumps _settle_generation, cancelling any in-flight spawn
-	_evict_unowned_cached_cars()  # drop cached nodes for cars sold since the last build
-	_eligible = cars
+# once (see _spawn_parked_car). Central entry for EVERY car-park screen — rally car-select,
+# the garage picker, engine-swap, the starter picker, Free Roam and the title backdrop —
+# each of which just hands its full car list here; CarList (_lineup) pages through it.
+func _build_lineup(cars: Array, start_global := 0) -> void:
+	_release_page_props()  # bumps _settle_generation, cancelling any in-flight spawn
+	# A fresh list drops any per-rally over-limit maps from the previous build; the rally
+	# car-select repopulates them right after (see _build_eligible_lineup).
+	_detune_needed = {}
+	_drivetrain_needed = {}
+	# Hand the WHOLE list to the paginator and seat the cursor; it hands back one page at
+	# a time. `carpark_page_size` bays per page — the list itself is unbounded.
+	_lineup.setup(cars, max(1, Config.data.carpark_page_size), start_global)
+	_evict_unowned_cached_cars(cars)  # drop cached nodes for cars sold since the last build
+	_render_lineup_page()
+
+
+# Spawn the CURRENT page of the paginator into the painted bays. Called on entry and on
+# every page flip (_cycle_focus); rebuilds only the visible page's props, so a 300-car
+# collection never parks more than `carpark_page_size` heavy physics props at once.
+func _render_lineup_page() -> void:
+	_release_page_props()
+	_eligible = _lineup.page_items()
+	_focus = _lineup.focus
 	var cfg: GameConfig = Config.data
-	var n := cars.size()
-	var bays: int = max(1, cfg.max_owned_cars)
+	var n := _eligible.size()
+	var bays: int = max(1, cfg.carpark_page_size)
 	var center := HQEnvironment.carpark_center()
-	# Lay out ALL the lot markers up front (cheap Marker3Ds): the camera framing and the
+	# Lay out the lot markers up front (cheap Marker3Ds): the camera framing and the
 	# focus cursor key off _markers / _eligible, so they work immediately even while the
-	# heavy car props are still streaming in below.
-	# Centre the occupied bays within the lot (clamped so an over-cap overflow lineup,
-	# which can briefly exceed the bay count, still starts at the first bay).
+	# heavy car props are still streaming in below. Centre a short final page within the
+	# lot so its cars stay over real bays.
 	var start: int = max(0, floori((bays - n) / 2.0))
 	for i in n:
 		var marker := Marker3D.new()
@@ -2202,7 +2274,7 @@ func _build_lineup(cars: Array) -> void:
 	# lets a car that takes longer than one frame to instance spill into its own frame
 	# without piling onto the others. Guarded by _settle_generation so a rebuild (or a
 	# back-out) abandons a half-spawned lineup cleanly.
-	_spawn_lineup_progressive(cars, _settle_generation)
+	_spawn_lineup_progressive(_eligible, _settle_generation)
 
 
 # Stream the parked car props in across frames (see _build_lineup), then let them
@@ -2265,6 +2337,39 @@ func _obtain_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 # copies (see CarProp.dup_meshes) so a mixed lineup shows each at its true size. Placed with
 # its wheels on the bay via the analytic rest ride height (car.gd:settled_ride_height)
 # and frozen at once — no live physics to settle, so nothing to mistime or drift.
+# An off-screen stow marker the pre-warmed Free Roam props seat at until Free Roam re-seats
+# them at real bays. Sunk far below the lot so the hidden, frozen props never intersect the
+# garage / lift cars or get ray-picked. Created lazily and kept for the HQ's lifetime.
+func _prewarm_stow_marker() -> Marker3D:
+	if not is_instance_valid(_prewarm_marker):
+		_prewarm_marker = Marker3D.new()
+		_prewarm_marker.position = Vector3(0.0, -1000.0, 0.0)
+		add_child(_prewarm_marker)
+	return _prewarm_marker
+
+
+# Pre-warm the Free Roam picker: spawn each catalogue preview as a HIDDEN, cached parked
+# prop so entering Free Roam reuses them via _obtain_parked_car with no fresh instancing —
+# that first-entry build (car.tscn embeds all car glbs) is the lag spike. Run ONCE at boot
+# behind the loading cover (see _ready), synchronously — the opaque screen hides the beat,
+# so there's no need to spread it across frames. The props land in _car_cache keyed by their
+# (negative) preview instance_id, exactly where _obtain_parked_car looks, and are kept for
+# the session (never evicted — see _evict_unowned_cached_cars). Idempotent: a preview already
+# warm (matching hash) is skipped, so a stray re-call is a cheap no-op.
+func _prewarm_free_roam() -> void:
+	for preview in _all_car_previews():
+		var instance_id := int(preview.get("instance_id", -1))
+		var preview_hash: int = preview.hash()
+		var cached: Dictionary = _car_cache.get(instance_id, {})
+		if is_instance_valid(cached.get("node")) and int(cached.get("hash", 0)) == preview_hash:
+			continue  # already warm
+		if is_instance_valid(cached.get("node")):
+			cached["node"].queue_free()
+		var node := _spawn_parked_car(preview, _prewarm_stow_marker())
+		node.visible = false
+		_car_cache[instance_id] = {"hash": preview_hash, "node": node}
+
+
 func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	# Frozen prop resting at its pose: no body integration and no per-frame car script
 	# (drivetrain/steering/aero) cost. We stop physics processing (stop_physics) rather
@@ -2302,13 +2407,20 @@ func _add_synthetic_smoke(car: Node) -> void:
 	EngineSmoke.attach_synthetic(car)
 
 
-# Pan the focus to the prev/next eligible car (wrapping). Keyed off _eligible (set
-# up front), so panning works even while the car props are still streaming in.
+# Pan the focus to the prev/next car in the list (wrapping). Delegates to the paginator:
+# a move within the page just re-frames; a move across a page boundary flips the page and
+# re-spawns its props (snapping the camera, since the whole lineup changed). At the ends
+# of the whole list it wraps around (single page → wraps in place). See scripts/car_list.gd.
 func _cycle_focus(step: int) -> void:
-	if _eligible.is_empty():
+	if _lineup.is_empty():
 		return
-	_focus = wrapi(_focus + step, 0, _eligible.size())
-	_focus_changed()
+	var page_flipped := _lineup.advance(step)
+	if page_flipped:
+		_render_lineup_page()   # spawn the new page's props; refreshes _eligible / _focus
+		_focus_changed(true)    # snap — the whole lineup just swapped out
+	else:
+		_focus = _lineup.focus
+		_focus_changed()
 
 
 # React to a focus change: make the focused car the selected car, re-aim the camera
@@ -2324,27 +2436,23 @@ func _focus_changed(snap := false) -> void:
 	if not entry.is_empty():
 		_preview_rev(EngineSwap.current_engine_id(owned, String(entry.get("engine", ""))))
 	var stats := _car_stats_text(owned, entry)
-	# The same lineup + focus machinery drives both the rally car-select (CARPARK)
-	# and the scrap prompt (OVERFLOW); update whichever overlay is up.
-	if _view == View.OVERFLOW:
-		_refresh_overflow_ui(owned, entry, stats)
+	var display_owned: Dictionary = Save.get_car(_selected_instance_id)
+	var display_name: String = (EngineSwap.display_name(entry, display_owned)
+		if not display_owned.is_empty() else String(entry.get("name", owned.get("model_id", "?"))))
+	# Position across the WHOLE list (all pages), not just the current page.
+	_car_name_label.text = "%s  (%d of %d)" % [
+		display_name, _lineup.global_index() + 1, _lineup.total()]
+	_car_stats_label.text = stats
+	_refresh_swap_preview()
+	if _carpark_mode == CarparkMode.SWAP:
+		# Picking a swap partner: no car is excluded on health; the token cost is
+		# surfaced in the confirm popup, so keep Start enabled and the warning clear.
+		_start_button.disabled = false
+		_car_warning_label.visible = false
+		_car_repair_button.visible = false
 	else:
-		var display_owned: Dictionary = Save.get_car(_selected_instance_id)
-		var display_name: String = (EngineSwap.display_name(entry, display_owned)
-			if not display_owned.is_empty() else String(entry.get("name", owned.get("model_id", "?"))))
-		_car_name_label.text = "%s  (%d of %d)" % [
-			display_name, _focus + 1, _eligible.size()]
-		_car_stats_label.text = stats
-		_refresh_swap_preview()
-		if _carpark_mode == CarparkMode.SWAP:
-			# Picking a swap partner: no car is excluded on health; the token cost is
-			# surfaced in the confirm popup, so keep Start enabled and the warning clear.
-			_start_button.disabled = false
-			_car_warning_label.visible = false
-			_car_repair_button.visible = false
-		else:
-			# A wrecked focused car gates Start + offers a Repair (full restore).
-			_refresh_focus_damage(owned)
+		# A wrecked focused car gates Start + offers a Repair (full restore).
+		_refresh_focus_damage(owned)
 	_normalize_menus()  # keep house rules on the just-updated car name / stats
 	_move_camera_to(_camera_target_xform(), snap)
 
@@ -2408,10 +2516,10 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 # over-powered car looks eligible here; the over-limit prompt only surfaces as a
 # confirm popup on Start (_show_over_limit_prompt).
 func _refresh_focus_damage(owned: Dictionary) -> void:
-	# Change-car mode just swaps the car on the lift, so a wrecked car is still a valid
+	# Garage mode just picks the car for the lift, so a wrecked car is still a valid
 	# pick (it can be repaired in the bay). Never gate Select on damage there; nor when
 	# the focused car isn't wrecked.
-	if _carpark_mode == CarparkMode.CHANGE or not Save.car_is_wrecked(owned):
+	if _carpark_mode == CarparkMode.GARAGE or not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
 		_car_warning_label.visible = false
 		_car_repair_button.visible = false
@@ -2541,12 +2649,12 @@ func _repair_focused_car() -> void:
 		return
 	var id := int(_eligible[_focus].get("instance_id", -1))
 	if Save.use_repair_kit(id):
-		_build_lineup(_eligible)  # respawn the healed prop so its fresh (healthy)
-		_focus_changed()          # DamageModel stops the synthetic smoke
+		_render_lineup_page()  # respawn the current page so the healed prop is fresh (healthy)
+		_focus_changed()       # DamageModel stops the synthetic smoke
 
 
 
-# One-line car summary shown in the car-select / overflow overlays: drive layout,
+# One-line car summary shown in the car-select overlay: drive layout,
 # peak horsepower, kerb weight, and condition. Health reads as a percentage (kept
 # distinct so it doesn't read as the horsepower figure now shown alongside it); a
 # wrecked (0 HP) car is flagged so the lineup makes clear why it can't be entered.
@@ -2630,7 +2738,6 @@ func _station_xform(view: int) -> Transform3D:
 		View.TABLE: return _look_xform(cfg.hq_table_cam_eye + _table_pan, cfg.hq_table_cam_look + _table_pan)
 		View.LIFT: return _look_xform(cfg.hq_lift_cam_eye, cfg.hq_lift_cam_look)
 		View.CARPARK: return _camera_target_xform()
-		View.OVERFLOW: return _camera_target_xform()
 		# Title shot: eye + look are OFFSETS from the first (leftmost) parked car, so the
 		# low ~45° "past the first car, down the line" framing tracks the lead car as the
 		# centred lineup grows and its leftmost car slides toward −X (more cars owned).
@@ -2698,10 +2805,10 @@ func _on_start_pressed() -> void:
 		CarparkMode.SWAP:  # exchange engines with the focused car
 			_select_swap_target()
 			return
-		CarparkMode.CHANGE:  # select the focused car for the lift and return to the bay
-			_select_changed_car()
+		CarparkMode.GARAGE:  # select the focused car and drop into the tuning bay
+			_select_garage_car()
 			return
-		CarparkMode.FREEROAM:  # launch free roam with the focused car
+		CarparkMode.FREEROAM:  # launch a session-less drive in the focused car
 			await _start_free_roam()
 			return
 	var owned := Save.get_car(_selected_instance_id)
@@ -2741,9 +2848,9 @@ func _proceed_with_start() -> void:
 
 
 # Commit the focused car as the new selected car (the one raised on the lift) and
-# return to the tuning bay. Any owned car is selectable here — even a wrecked one can
+# enter the tuning bay. Any owned car is selectable here — even a wrecked one can
 # sit on the lift to be repaired / tuned.
-func _select_changed_car() -> void:
+func _select_garage_car() -> void:
 	if _selected_instance_id >= 0:
 		Save.set_selected_car(_selected_instance_id)
 	_clear_lineup()
@@ -2837,7 +2944,7 @@ func _begin_rally_start() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	match _view:
 		View.EXTERIOR:
-			# The title is a flat button menu (Start / Settings / Exit Game) driven by
+			# The title is a flat button menu (Start / Exit Game) driven by
 			# native focus — ui_accept fires whichever button is focused (see
 			# _build_title_overlay).
 			# Don't hard-route menu_select to Start here, or pressing accept on Settings
@@ -2847,14 +2954,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.is_action_pressed("menu_back"):
 				# In the pre-rally gate we show only the mobile-controls page (no category
 				# list), so back cancels the gate straight back to the car park. Otherwise
-				# a sub-page backs out to the category list first, then back exits to title.
+				# a sub-page backs out to the category list first, then back exits to the garage.
 				if _settings_gate:
 					_go_to(View.CARPARK)
 					_settings_gate = false
 				elif not _settings_menu.go_back():
-					_go_to(View.EXTERIOR)
+					_go_to(View.GARAGE)
 		View.GARAGE:
-			# The bottom action row (Back / Map / Tune Car / Free Roam) is a single
+			# The bottom action row (Back / Career / Garage / Free Roam / Settings) is a single
 			# left/right cursor; select fires it. menu_back shortcuts to the exterior.
 			if event.is_action_pressed("menu_left"):
 				_move_garage_focus(-1)
@@ -2866,8 +2973,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
-				# Hub: left/right move the cursor between Back / Change Car / Tuning /
-				# Upgrades; select fires it; menu_back is a shortcut to the garage.
+				# Hub: left/right move the cursor between Back / Tuning / Upgrades /
+				# Test Drive; select fires it; menu_back is a shortcut to the garage.
 				if event.is_action_pressed("menu_left"):
 					_move_hub_focus(-1)
 				elif event.is_action_pressed("menu_right"):
@@ -2899,18 +3006,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _carpark_modal_open():
 				return
 			_cars_input(event)
-		View.OVERFLOW:
-			# Pan the lineup and scrap the focused car. No "back" — the player can't
-			# leave the prompt until the garage is back under the cap. Swipe + tap-a-car
-			# work here too (the overflow shares the lineup machinery).
-			if _lineup_pointer_input(event):
-				pass
-			elif event.is_action_pressed("menu_left"):
-				_cycle_focus(-1)
-			elif event.is_action_pressed("menu_right"):
-				_cycle_focus(1)
-			elif event.is_action_pressed("menu_select") and not _scrap_button.disabled:
-				_on_scrap_pressed()
 
 
 # Drag the map table around (mouse, or finger via emulate_mouse_from_touch). A drag
@@ -2950,7 +3045,7 @@ func _cars_input(event: InputEvent) -> void:
 		_car_back()
 
 
-# Pointer navigation for the car-park / overflow lineup (mouse, or finger via
+# Pointer navigation for the car-park lineup (mouse, or finger via
 # emulate_mouse_from_touch): a horizontal drag past menu_swipe_min_px swipes the
 # focus to the prev/next car (drag left pulls the NEXT car in from the right, like
 # flicking a carousel); a press+release that stayed under menu_tap_max_px is a tap,
@@ -2984,7 +3079,8 @@ func _lineup_pointer_input(event: InputEvent) -> bool:
 func _focus_car_at(screen_pos: Vector2) -> void:
 	var idx := _car_index_at(screen_pos)
 	if idx >= 0 and idx != _focus:
-		_focus = idx
+		_lineup.focus_local(idx)  # a tap stays on the current page; keep the paginator in step
+		_focus = _lineup.focus
 		_focus_changed()
 
 

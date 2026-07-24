@@ -52,9 +52,19 @@ uniform float light_amount = 0.0;
 varying vec3 v_tint;
 
 void vertex() {
-	// Per-instance world origin (column 3 of the model matrix).
+	// Per-instance world origin (base, column 3 of the model matrix) and its scaled
+	// height (column 1 length — the authored size baked into the instance basis).
 	vec3 origin = MODEL_MATRIX[3].xyz;
-	float cam_dist = distance(INV_VIEW_MATRIX[3].xyz, origin);
+	float height = length(MODEL_MATRIX[1].xyz);
+	// Near-fade distance is measured to the TRUNK AXIS, not the ground-level base:
+	// the camera is projected onto the vertical trunk line and clamped to the tree's
+	// [base, base+height] span. That makes cam_dist the HORIZONTAL proximity whenever
+	// the camera sits inside the tree's vertical extent (the chase cam is ~2.5 m up,
+	// so a base-point distance never drops below its height and the collapse never
+	// fired). Only once the camera clears the top/bottom does the vertical gap re-enter.
+	vec3 cam = INV_VIEW_MATRIX[3].xyz;
+	float ref_y = clamp(cam.y, origin.y, origin.y + height);
+	float cam_dist = distance(cam, vec3(origin.x, ref_y, origin.z));
 	// Distance shrink-out: 1 up close, 0 at the far cutoff.
 	float fade = clamp((render_distance - cam_dist) / max(fade_band, 0.001), 0.0, 1.0);
 	// Near-camera shrink-in: 0 right on the camera, 1 beyond near_fade_end. Combined
@@ -89,8 +99,7 @@ void vertex() {
 		vec3 up = vec3(0.0, 1.0, 0.0);
 		vec3 right = normalize(cross(up, to_cam));
 		float sx = length(MODEL_MATRIX[0].xyz);
-		float sy = length(MODEL_MATRIX[1].xyz);
-		vec3 local = (right * (VERTEX.x * sx) + up * (VERTEX.y * sy)) * scale;
+		vec3 local = (right * (VERTEX.x * sx) + up * (VERTEX.y * height)) * scale;
 		world_pos = origin + local;
 		// Card normal == to_cam (horizontal). Same math as the terrain bake; the
 		// dot naturally ignores sun_dir's vertical component against a flat normal.

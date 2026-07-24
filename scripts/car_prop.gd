@@ -13,6 +13,8 @@ extends RefCounted
 #                       freeze/silence tail — the caller does its own positioning here
 #                       (seat at a marker, set a transform, settle wheels) plus any
 #                       prop-specific state (wreck: controls_locked, damage.hp = 0).
+#   * prune_bodies:     free the inactive embedded car bodies before dup_meshes
+#                       (default true; car.gd:prune_inactive_bodies). Frozen props only.
 #   * silence:          call silence_engine_audio() (default true).
 #   * freeze:           value written to car.freeze (default true; podium's LIVE settle
 #                       passes false).
@@ -54,6 +56,12 @@ static func spawn(parent: Node, scene: PackedScene, opts: Dictionary) -> Node3D:
 		car.apply_owned(opts["owned"])
 	else:
 		car.apply_car(int(opts.get("index", 0)))
+	# Frozen display props never switch model, so drop the 8 embedded car.tscn bodies this
+	# one won't show BEFORE dup_meshes — otherwise we'd duplicate every hidden body's meshes
+	# too (car.tscn embeds all 9 car glbs). Opt out with prune_bodies=false. See
+	# car.gd:prune_inactive_bodies.
+	if bool(opts.get("prune_bodies", true)):
+		car.prune_inactive_bodies()
 	dup_meshes(car)
 	var configure: Callable = opts.get("configure", Callable())
 	if configure.is_valid():

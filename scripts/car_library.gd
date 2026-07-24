@@ -111,7 +111,7 @@ const CARS: Array[Dictionary] = [
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.45,
-		"wheel_radius": 0.30, "wheel_width_front": 0.195, "wheel_width_rear": 0.195,  # 195/50R16 square
+		"wheel_radius": 0.30, "wheel_width_front": 0.215, "wheel_width_rear": 0.195,  # 195/50R16 square
 		"suspension_travel": 0.32, "suspension_stiffness": 15.0,  # compliant roadster baseline
 		# Renders the authored blender/mx5/mx5.glb body (Car/Mx5Body) instead of the
 		# procedural chassis+cabin boxes; see car.gd apply_car(). Wheels stay

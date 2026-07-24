@@ -26,7 +26,7 @@ func setup(btns: Array, acts: Array) -> void:
 
 
 # The index `step` places away from `index`, skipping DISABLED buttons (a disabled
-# item — e.g. Change Car with only one owned car — is not a valid cursor stop, same as
+# item — e.g. a hub action unavailable in the current state — is not a valid cursor stop, same as
 # native focus skips disabled controls), wrapping at both ends. Returns `index` unchanged
 # if the row is empty or every button is disabled.
 func wrapped(index: int, step: int) -> int:

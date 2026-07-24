@@ -88,12 +88,12 @@ var peak_torque_rpm := 4500.0
 ## rather than oscillating. Suppressed while the handbrake is held so
 ## deliberate drifts stay possible. 0 disables. An anti-spin aid, not a
 ## physical force.
-@export_range(0.0, 30000.0) var spin_assist_torque := 0.0
+@export_range(0.0, 30000.0) var spin_assist_torque := 5000.0
 ## Slip angle (radians) where spin protection starts. The torque ramps in
 ## linearly from 0 at this angle to full strength at twice it. Keep it above the
 ## surface's optimum slip angle (asin(slip_peak), ≈8–18°) so the two aids never
 ## fight over the same slide. 35° ≈ 0.611 rad.
-@export_range(0.0, 1.571) var spin_assist_angle := deg_to_rad(35.0)
+@export_range(0.0, 1.571) var spin_assist_angle := deg_to_rad(30.0)
 ## Self-righting assist: when one or more wheels leave the ground, a roll+pitch
 ## torque (N·m at full 90° tilt) eases the car back toward flat, scaling with how
 ## far it has tilted. Never yaws the car. 0 disables. A landing/anti-flip aid,
@@ -706,17 +706,18 @@ var peak_torque_rpm := 4500.0
 ## Front-to-back depth (m) of a parking bay: the length of the painted bay surface
 ## along Z, sized to comfortably hold a car parked nose-out toward the courtyard.
 @export var menu_carpark_bay_depth := 5.4
-## Maximum number of cars the player may own. Winning a rally still grants the car
-## even when the garage is full; the next HQ visit then makes the player scrap one
-## (the just-won car included) back down to this cap. See hq.gd's OVERFLOW station.
-@export var max_owned_cars := 10
+## Number of painted parking bays in the car-park lot — i.e. how many cars show on
+## one PAGE of any car-park screen. The player's collection is unbounded; the car park
+## pages through it `carpark_page_size` at a time (see scripts/car_list.gd / hq.gd's
+## car park). NOT an ownership cap.
+@export var carpark_page_size := 10
 ## Car-park lineup placement. The lot centre is shifted this far off the world centre
 ## (m, along +X). The bays run as a centred row ALONG X at hq_carpark_origin, each car
 ## parked nose-out toward the courtyard / camera (+Z) in its own painted bay, so the
 ## front-3/4 menu camera frames the focused car with the garage behind it. The
 ## exterior/title camera is shifted by the same offset so it stays centred on the row.
 @export var menu_car_park_offset := 0.0
-## Minimum horizontal pointer drag (px) in the car-park / overflow lineup for the
+## Minimum horizontal pointer drag (px) in the car-park lineup for the
 ## gesture to count as a SWIPE to the prev/next car (hq.gd _lineup_pointer_input).
 ## Must also out-measure the vertical component so a sloppy vertical drag doesn't pan.
 @export var menu_swipe_min_px := 60.0
@@ -1258,9 +1259,17 @@ var peak_torque_rpm := 4500.0
 ## ploughs on through. 0 disables plough-through entirely (every felled tree
 ## hard-stops). See TreeFall.plough_keep and features/trees.md.
 @export_range(0.0, 1.0) var tree_plough_keep_max := 0.8
-## Distance (m) past which trees are fully culled. Defaults near the loaded
-## terrain extent (RADIUS=2, CHUNK_M=50 -> ~125 m).
-@export_range(10.0, 500.0) var tree_render_distance_m := 80.0
+## Distance (m) past which trees are fully culled — the value used on every target
+## EXCEPT a web TOUCH device (see tree_render_distance_web_touch_m). Defaults near
+## the loaded terrain extent (RADIUS=2, CHUNK_M=50 -> ~125 m). world.gd resolves the
+## effective value once at boot via tree_render_distance_for() and writes it back
+## here, so all downstream readers (foliage, signs, spectators, arches) see it.
+@export_range(10.0, 500.0) var tree_render_distance_m := 120.0
+## Foliage/world-prop cull distance (m) on a web TOUCH device (phone/tablet browser
+## — the same low-end target as the 30fps default target_fps_web). Kept shorter than
+## the desktop/native distance to hold the frame budget; picked by
+## tree_render_distance_for(web, touch).
+@export_range(10.0, 500.0) var tree_render_distance_web_touch_m := 60.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export_range(0.0, 100.0) var tree_render_fade_m := 15.0
 ## Near-camera dissolve: canopy fragments closer than this (m) to the camera are
@@ -1488,7 +1497,15 @@ var peak_torque_rpm := 4500.0
 ## entries (TerrainLod.LOD_STRIDES has `levels`). The display mesh decimates by
 ## distance so far ground costs a fraction of the near-flat 1 m tessellation; the
 ## engine crossfades between levels via visibility_range. See features/terrain.md.
-@export var terrain_lod_bands_m: PackedFloat32Array = PackedFloat32Array([40.0, 70.0, 80.0, 90.0])
+## This set is the higher-quality one used on every target EXCEPT a web TOUCH device
+## (bands pushed farther out so finer terrain persists to match the longer desktop
+## render distance). world.gd resolves the effective set once at boot via
+## terrain_lod_bands_for() and writes it back here before apply_terrain_lod().
+@export var terrain_lod_bands_m: PackedFloat32Array = PackedFloat32Array([60.0, 100.0, 115.0, 120.0])
+## Terrain LOD bands used on a web TOUCH device (the low-end / 30fps target) — the
+## finer levels are dropped sooner to hold the frame budget. Picked by
+## terrain_lod_bands_for(web, touch).
+@export var terrain_lod_bands_web_touch_m: PackedFloat32Array = PackedFloat32Array([40.0, 70.0, 80.0, 90.0])
 ## Downward skirt depth (metres) on each terrain chunk's LOD meshes, hiding the
 ## crack where neighbouring chunks show different levels. Invisible under fog.
 @export_range(0.0, 20.0) var terrain_lod_skirt_m := 3.0
@@ -1510,15 +1527,33 @@ var peak_torque_rpm := 4500.0
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
 # static weight fraction, so each axle's rate is proportional to the load it carries
 # and the car sits LEVEL at rest (compression = load / rate is then equal front and
-# Frame cap to apply for the current target: web gets its own ceiling
-# (target_fps_web, kept lower but audio-bounded — see the field), native mobile
-# the thermal ceiling (target_fps_mobile), desktop the higher one (target_fps).
-# Web takes precedence since is_mobile_or_web() is also true on web. Pure so
-# world.gd can pass Platform queries and tests can pin any branch. 0 = uncapped.
-func target_fps_for(mobile_or_web: bool, web: bool = false) -> int:
+# Frame cap to apply for the current target: a web TOUCH device (phone/tablet
+# browser) gets its own ceiling (target_fps_web, kept lower but audio-bounded —
+# see the field); native mobile the thermal ceiling (target_fps_mobile); desktop
+# — including a DESKTOP browser (web but not a touch device) — the higher one
+# (target_fps). Web-touch takes precedence since is_mobile_or_web() is also true
+# on web. Pure so world.gd can pass Platform queries and tests can pin any branch.
+# 0 = uncapped.
+func target_fps_for(mobile_or_web: bool, web: bool = false, touch: bool = true) -> int:
 	if web:
-		return target_fps_web
+		return target_fps_web if touch else target_fps
 	return target_fps_mobile if mobile_or_web else target_fps
+
+
+# Foliage/world-prop cull distance for the current target: a web TOUCH device
+# (phone/tablet browser — the same low-end target as target_fps_web) gets the
+# shorter tree_render_distance_web_touch_m; every other target (native mobile,
+# desktop, desktop browser) gets the longer tree_render_distance_m. Pure so
+# world.gd resolves it once at boot and tests can pin either branch.
+func tree_render_distance_for(web: bool, touch: bool) -> float:
+	return tree_render_distance_web_touch_m if (web and touch) else tree_render_distance_m
+
+
+# Terrain LOD bands for the current target, split the same way as the render
+# distance above: web-touch gets the tighter terrain_lod_bands_web_touch_m, all
+# other targets the higher-quality terrain_lod_bands_m.
+func terrain_lod_bands_for(web: bool, touch: bool) -> PackedFloat32Array:
+	return terrain_lod_bands_web_touch_m if (web and touch) else terrain_lod_bands_m
 
 
 # rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car

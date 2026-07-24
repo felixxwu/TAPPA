@@ -195,8 +195,8 @@ rides up and down **with** the car; both are tweened in parallel by
 `hq.gd` → `_apply_lift_height`. Clicking the lift flies
 the camera to the bay, framing the car to one side (`hq_lift_cam_*`). The bay opens on
 a **hub** (`LiftPage.HUB`): the car's name/description bottom-left beside the car, with
-a **minimal change-car selector** (cycles the OTHER owned cars, updating the selection) and
-**Tuning** / **Upgrades** buttons under it. Each button opens that menu as its own
+**Tuning** / **Upgrades** buttons and a **Test Drive** button under it (to swap which car
+is on the lift, go back to the garage and reopen the **Garage** picker). Each button opens that menu as its own
 full-height page (a panel on the other side, `hq_lift_menu_width_frac`, so the car
 stays in view); a **< Back** returns to the hub, and the hub's Back returns to the
 garage. Splitting the menus onto their own pages keeps each one from needing to scroll.

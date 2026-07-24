@@ -60,13 +60,24 @@ everywhere). `MenuNav` goes inert
   overlays), which `Control.is_visible_in_tree()` alone misses — so a hidden overlay never
   steals input from the station behind it.
 
+  **Gamepad select / back.** Godot's built-in `ui_up/down/left/right` ship with D-pad
+  + left-stick bindings, but `ui_accept` and `ui_cancel` ship with **keyboard only**
+  (Enter/KP-Enter/Space, and Esc). Since a focused button fires on `ui_accept` and back
+  routes through `ui_cancel`, a controller could move the cursor but neither select nor
+  go back until `project.godot` [input] adds the face buttons: **`ui_accept` → gamepad
+  button 0 (A)** and **`ui_cancel` → gamepad button 1 (B)**, alongside the keyboard
+  defaults. This is the single global fix that makes *every* menu gamepad-selectable and
+  gamepad-back-able — no per-menu wiring — because every back path already runs through
+  `ui_cancel` (host handlers) or `MenuNav`'s `on_back` (which also listens for `menu_back`
+  = B). Guarded by `test_menu_nav.gd` → `test_accept_and_cancel_have_a_gamepad_button`.
+
   `ui_accept` fires the focused control and the **focus highlight is the theme's `focus`
   stylebox**, which `tools/build_ui_theme.gd` defines to match the **hover** look — so a
   focus cursor and a mouse hover read identically (see [ui-design-system.md](ui-design-system.md)).
   `UITheme.focus_grab(ctrl)` is the guarded, call-deferred grab helper (grab a specific
   control); `UITheme.focus_grab_first(root)` / `UITheme.first_focusable(root)` seat the
   cursor on the first focusable control under a root (shared by `MenuNav` and HQ's
-  native-focus pages). `MenuNav` covers: the **title** (Start/Settings),
+  native-focus pages). `MenuNav` covers: the **title** (Start, + Exit Game on desktop),
   the shared **`SettingsMenu`** (rows + bottom action button — used by both the HQ
   settings overlay and the pause menu), the **pause** menu (Resume/Settings/Quit),
   the HUD **finish panel**'s single `NEXT` button (`StageCompletePanel`, attached in
@@ -160,10 +171,10 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   3D car / fly the camera*, not "move focus to the neighbour widget" — so they keep
   HQ's bespoke **`menu_*` action** handlers in `hq.gd._unhandled_input` (the
   `menu_left`/`menu_right`/`menu_up`/`menu_down`/`menu_select`/`menu_back` actions,
-  which bind arrows + WASD + D-pad + Enter/Esc + gamepad A/B). The **car park** /
-  **overflow** cycle the focused car with left/right and Start/Scrap with select; the
-  same lineups are also **pointer-navigable** (`_lineup_pointer_input`, shared by both
-  stations): a horizontal **swipe** (mouse drag, or finger via
+  which bind arrows + WASD + D-pad + Enter/Esc + gamepad A/B). The **car park**
+  cycles the focused car with left/right (flipping pages at a page boundary, see
+  `CarList`) and fires Start with select; the lineup is also **pointer-navigable**
+  (`_lineup_pointer_input`): a horizontal **swipe** (mouse drag, or finger via
   `emulate_mouse_from_touch`) past `GameConfig.menu_swipe_min_px` cycles the focus
   (drag left pulls the next car in, carousel-style), and a **tap** (total travel under
   `GameConfig.menu_tap_max_px`) raycasts into the lot (`_car_index_at`, a plain
@@ -186,6 +197,12 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   edge selects one. `_select_target_under_center()` seats `_table_focus_index` on the
   target nearest `_table_center_pos()` (the fixed table camera's look point offset by the
   live `_table_pan` — `_table_plane_axes` derives on-screen up/right from the camera pose).
+  **On entry (`_enter_table`) the map doesn't open dead-centre: it steers straight to the
+  toughest event still to beat.** `_focus_hardest_incomplete()` picks the highest-difficulty
+  (hidden authored tier) rally pin the player hasn't completed (`Save.rally_completed`),
+  ties breaking toward the first in rally order, and pans the camera onto it so selection
+  sticks there. Only when every pin is done (or there are none) does it fall back to
+  `_select_target_under_center()`.
   Pan is clamped to the map extents, so at an edge the camera simply stops. The selected
   pin gets the hover-style readout underline; a selected arrow glows. `menu_select` fires
   the selected target — a pin opens its rally detail; an unlocked arrow (back arrow, or a
@@ -196,39 +213,54 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   exits to the garage. Clicking a pin or arrow with the pointer still works (`_on_rally_pin` /
   `_on_arrow_input`), and mouse drag still pans the map (selection re-tracks the centre as it
   slides); the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
-  `UITheme.mark_focused`) over **Back / Change Car / Tuning / Upgrades** (its buttons
-  sit side by side in one row), fired with select (`_activate_hub_focus`) — Change Car
-  drops into the car park in change-car mode; the cursor seats on Change Car on entry
-  (`menu_back` is also a shortcut back to the garage). **Change Car is disabled** when the
-  selected car is the only one owned (nothing else to switch to) — `_refresh_lift_ui`
-  greys `_lift_change_car_button` via `_other_owned_cars(...)`, and the cursor then skips
-  it (see the `ButtonCursor` disabled-skip below), seating on Tuning instead. (A **Repair** button also lives on
+  `UITheme.mark_focused`) over **Back / Tuning / Upgrades / Test Drive** (its buttons
+  sit side by side in one row), fired with select (`_activate_hub_focus`); the cursor
+  seats on Tuning on entry (`menu_back` is also a shortcut back to the garage). **Test
+  Drive** (`_test_drive`) launches free roam with the car already on the lift — no car
+  picker, since we're already focused on one; it delegates to `_start_free_roam` (see
+  below). There is no longer a Change Car button on this row — to work on a different car,
+  go back to the garage and reopen the **Garage** picker, which brings up the car park.
+  (A **Repair** button also lives on
   this hub row — spend a Repair Kit to fully restore the selected car
   (`_repair_selected_car` / `_refresh_lift_repair_button`) — but it is currently
   **hidden** and left out of the hub cursor while earning Repair Kits is disabled; see
   `todo/remove-repair-kits.md`.) The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
-  `_activate_garage_focus`) over its side-by-side **Back / Career / Tune Car / Free Roam**
-  row, seated on Career on entry (`menu_back` shortcuts to the exterior). Both of these
+  `_activate_garage_focus`) over its side-by-side **Back / Career / Garage / Free Roam /
+  Settings** row, seated on Career on entry (`menu_back` shortcuts to the exterior).
+  **Garage** (`_open_garage_picker`) opens the car park in GARAGE mode (`CarparkMode.GARAGE`,
+  parking the whole owned collection); Select (`_on_start_pressed` → `_select_garage_car`)
+  commits the focused car as the selected car and drops straight into the tuning lift bay
+  for it, while Back returns to the garage. **Free Roam** (`_enter_free_roam`,
+  `CarparkMode.FREEROAM`) parks the WHOLE catalogue as base-model previews (`_all_car_previews`,
+  owned or not); Start (`_start_free_roam` → `_launch_free_roam`) drops into a session-less
+  drive in the picked car — an owned car fields its tuned instance, a not-yet-owned preview
+  fields the base model via `RallySession.free_roam_model_id` (see the free-roam machinery
+  below and `world.gd`) — Back returns to the garage. **Settings** (`_open_settings(false)`) opens
+  the shared camera/controls page; backing out of it returns to the garage (the title
+  screen no longer carries a Settings button). Both of these
   manual rows share a small **`ButtonCursor`** helper (`scripts/button_cursor.gd`):
   `hq.gd` keeps the index (`_garage_focus` / `_hub_focus`), the cursor owns the shared
   wrap / repaint / fire behaviour, and each button's `pressed` callable is also the
   cursor's action for that index, so a mouse click and a keyboard/gamepad select can
   never fall out of step. The cursor **skips `disabled` buttons** (like native focus):
   `wrapped` steps past them, `settled(index)` re-seats off a button that just greyed out,
-  and `activate` no-ops on a disabled item — this is how a disabled Change Car is left
-  unreachable without rebuilding the row. (The map-table pin cursor stays bespoke — it paints a
-  billboarded pin panel and pans the camera, not a flat button row.) **Free Roam**
-  (`_enter_free_roam`, launched from the **GARAGE action row**, Back returns to the garage)
-  opens the car park in FREE-ROAM mode (`_carpark_freeroam_mode`,
-  parking the whole owned collection); Start (`_start_free_roam`) hands the picked
-  instance to `RallySession.free_roam_instance_id`, writes a fresh random seed + neutral
+  and `activate` no-ops on a disabled item — leaving an unavailable action unreachable
+  without rebuilding the row. (The map-table pin cursor stays bespoke — it paints a
+  billboarded pin panel and pans the camera, not a flat button row.) **Free roam** has two
+  entries, both funnelling through `_launch_free_roam(instance_id, model_id)`: **Test Drive**
+  on the tuning-bay hub (`_test_drive`) drives the on-lift OWNED car (its tuned instance),
+  and the garage **Free Roam** picker (`_start_free_roam`) drives the focused catalogue car —
+  an owned entry by instance, a not-yet-owned preview by `model_id`. `_launch_free_roam` sets
+  `RallySession.free_roam_instance_id` / `free_roam_model_id` accordingly (the id normalised
+  to −1 when a model is given), writes a fresh random seed + neutral
   (0.5) terrain settings into the live Config (`_prepare_free_roam`) — plus a randomised
   landscape each entry: lake depth (`track_water_level_m` in −15..−5), large-scale relief
   (`terrain_layer1_amplitude` in 10..35), and a random home/Greece location
   (`RallySession.free_roam_region_id`, read by `world.gd._current_region_look`) — and loads the run
-  scene with NO active `RallySession`. `world.gd` fields that owned car (falling back to
-  the default library car) and skips the rally/start-line/podium wiring; the player
+  scene with NO active `RallySession`. `world.gd` fields that car — the owned instance if set,
+  else the base model via `CarLibrary.index_of(free_roam_model_id)`, falling back to the
+  default library car — and skips the rally/start-line/podium wiring; the player
   leaves via Pause → Quit to HQ, or by finishing the track — with no session to report
   to, the finish panel's **Next** returns straight to HQ
   (`world._on_session_event_completed`'s no-session branch).
@@ -298,7 +330,7 @@ lineup) is synchronous and takes a beat, so on a real display
 it (`_build_hq`), then reveals — bridging the gap after Godot's boot bar so the load
 never looks frozen. Under the headless test runner it builds synchronously with no
 cover (so tests see a ready HQ after one frame). HQ is **one diegetic 3D space** the camera flies through; an
-`enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS, OVERFLOW }` names the camera **stations** and
+`enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }` names the camera **stations** and
 `_go_to(view)` tweens the single `Camera3D` between their poses
 (`GameConfig.hq_*_cam_eye/look`, eased over `menu_camera_move_time`). Clickable 3D
 objects (the table, the lift, the rally pins) are `Area3D` with `input_ray_pickable`
@@ -326,11 +358,11 @@ rally pins still align. The model is standalone-renderable for visual iteration 
 apron** laid on top around the garage + car park (`hq_concrete_center`/`hq_concrete_size`),
 so the lot reads as paved and everything beyond it as field. The car park itself is a
 **painted parking-bay surface** (`_build_carpark`): a tarmac plane over the apron with
-white bay dividers (one bay per `max_owned_cars`, `menu_car_spacing` wide) generated
+white bay dividers (one bay per `carpark_page_size`, `menu_car_spacing` wide) generated
 procedurally as an `ImageTexture` (`_carpark_bay_texture`), so each parked car sits in
 its own marked bay.
 
-**EXTERIOR (boot/title).** A **Start** button, a **Settings** button, and — on non-web
+**EXTERIOR (boot/title).** A **Start** button and — on non-web
 builds only — an **Exit Game** button
 (`_on_exterior_exit` → `get_tree().quit()`; skipped on web, where the tab owns the
 process lifecycle) at the bottom (in that top-to-bottom order) over an establishing shot of the
@@ -348,8 +380,8 @@ flat button menu driven by **native focus** — `menu_select`/`ui_accept` fires
 whichever button is focused (Start grabs focus on entry; `menu_up`/`menu_down` move
 between them). Start flies the camera into the garage; Settings opens the SETTINGS
 overlay; **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`) quits the app — it's
-built only on non-web builds, since a browser tab owns its own lifecycle. (Free Roam now
-lives on the GARAGE action row, not here.) (The EXTERIOR branch in `_unhandled_input`
+built only on non-web builds, since a browser tab owns its own lifecycle. (Free roam is
+reached via the tuning bay's Test Drive button now, not here.) (The EXTERIOR branch in `_unhandled_input`
 deliberately does *not* route `menu_select` to Start, or accepting on Settings/Exit Game
 would start the run instead.)
 
@@ -360,6 +392,14 @@ match. It opens on a **category list** — one button per area, laid out in a
 **2-column grid** so the list stays short instead of overflowing into a scroll —
 and each button drills into **its own sub-page**:
 
+- **Display** — pick the **frame-rate cap**: **30 / 60 / uncapped**
+  (`FpsSetting.OPTIONS`, `scripts/fps_setting.gd`). The choice persists under
+  `FpsSetting.SETTING_KEY` (`"fps_cap"`) and applies **live** — `select_fps` writes
+  `Engine.max_fps` directly (the frame cap is a global engine property, so no
+  live-scene signal is needed; both hosts take effect immediately), and
+  `world._ready()` re-derives it next run. Defaults to the platform's natural cap when
+  unset (web-touch 30, else 60, via `FpsSetting.default_cap()`); the default option
+  reads as selected. See [rendering.md](rendering.md) → frame cap.
 - **Camera** — pick the **camera angle** (chase / bonnet, from `CameraManager.MODES`);
   the choice persists under `CameraManager.SETTING_KEY` and is applied on the next run
   (or live, in the pause menu, via the `camera_changed` signal). See
@@ -428,30 +468,43 @@ toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a r
 garage the car rests **lowered on the ground** at its calculated settled ride height
 (`car.gd` → `settled_ride_height`; see [tuning.md](tuning.md)).
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
-(LIFT view). A HUD hint + Back (to the exterior) + convenience buttons sit on top: the
-garage station row is **Back / Career / Tune Car / Repair**. **Repair**
-(`_repair_selected_car`) spends one **Repair Kit** on the selected car for a full
-restore; its label reflects state — `Repair (x kit)` when the car is damaged and a kit
-is owned, `Repair — full health` / `Repair — no kits` otherwise — recomputed on garage
-entry (`_refresh_garage_repair_button`, which also runs the wreck-recovery safety net so
-a stranded player is never left with "no kits" and no way to win one). Pressing Repair
-with nothing to do is a no-op. (Repair used to be a row on the **Upgrades** lift page;
-it moved here.)
+(LIFT view) for the currently-selected car. A HUD hint + Back (to the exterior) +
+convenience buttons sit on top: the garage station row is **Back / Career / Garage /
+Free Roam / Settings**. **Garage** (`_open_garage_picker`) opens the **car park** to pick
+which owned car to work on, then drops into the tuning bay for it (see below); **Free
+Roam** (`_enter_free_roam`) opens the car park across the WHOLE catalogue for a
+session-less drive in any car (owned or not). Because `car.tscn` embeds **all** the
+authored car glb bodies (it reveals one and hides the rest — `car.gd` →
+`_apply_model_visibility`), every parked prop is heavy to build, and Free Roam builds the
+whole catalogue at once. Two mitigations keep the click from hitching: (1) each frozen
+display prop **prunes the bodies it will never show** before duplicating meshes
+(`car.gd` → `prune_inactive_bodies`, called from `CarProp.spawn`), and (2) the whole
+catalogue is **pre-warmed once at HQ boot, behind the opaque `LoadingScreen`** (`hq.gd` →
+`_ready` calls `_prewarm_free_roam` synchronously while the cover is up), spawning each
+preview as a hidden cached prop and **keeping it in memory** for the session — preview
+entries use negative instance ids and are **exempt from `_evict_unowned_cached_cars`**, so
+opening Free Roam is a cache hit, never a build. The cover hides the one-time warm cost, so
+there's no in-game hitch. (The underlying cost is that each car still *instantiates* all
+embedded bodies before pruning; a deeper fix — lazy per-model body loading in `car.tscn` —
+is noted but not yet done.) **Settings** (`_open_settings(false)`)
+opens the shared camera/controls page (Back returns to the garage). (A **Repair** button lives on the
+tuning-lift hub row, spending a **Repair Kit** for a full restore via
+`_repair_selected_car` / `_refresh_lift_repair_button`, but is **hidden** for now while
+earning kits is disabled — see `todo/remove-repair-kits.md`.)
 
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
 The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
 (`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
-full page width, and UNDER it a **Change Car** button plus **Tuning** and
-**Upgrades** buttons. **Change Car** (`_enter_change_car`) drops into the **car park**
-in **change-car mode** (`_carpark_change_mode`): every OTHER owned car is parked
-(`_change_car_targets` excludes the car already on the lift — reselecting it would do
-nothing), and **Select Car** (`_on_start_pressed` → `_select_changed_car`) sets the
-**selected car** (`Save.set_selected_car`) and returns to the bay, re-spawning it on
-the lift; **Back** (`_car_back`) returns to the bay with the selection unchanged. With
-no other car owned, a "this is your only car" hint shows and Select is disabled. Any
-other owned car is pickable here — a wrecked one can sit on the lift to be repaired. Each menu button opens that menu as its **own full-height
+full page width, and UNDER it **Tuning** and **Upgrades** buttons plus a **Test Drive**
+button. To put a **different** car on the lift, go **Back** to the garage and reopen the
+**Garage** picker (`_open_garage_picker`, GARAGE mode): the whole owned collection is
+parked, and **Select Car** (`_on_start_pressed` → `_select_garage_car`) sets the
+**selected car** (`Save.set_selected_car`) and enters the bay for it, spawning it on the
+lift — a wrecked car is pickable too (it can sit on the lift to be repaired). **Test
+Drive** (`_test_drive`) launches free roam with the car already on the lift — no picker,
+delegating to `_start_free_roam`. Each menu button opens that menu as its **own full-height
 page** — a solid panel **centred horizontally** and wide
 (`hq_lift_menu_centered_width_frac`, using most of the screen); the car-description
 panel **hides** while a sub-menu is open so the page has room — with a **< Back** that
@@ -617,19 +670,20 @@ owned car's `instance_id` → the built node + a deep `owned.hash()`) means
 `_build_lineup` **rebuilds only the cars whose data actually changed** — an unchanged
 car is shown at its new bay from the cache with no re-instance, mesh duplication, or
 settle (`_obtain_parked_car`), so an unchanged re-entry parks instantly and only a
-freshly-built car pays the per-frame stream + settle. `_clear_lineup` **hides + detaches**
-the parked cars instead of freeing them (they stay parented to HQ, frozen at their
-settled pose); the cache is shared across the car-select, title, and overflow lineups
-(all build from the same owned cars), **evicts** entries for cars the player has sold
-(`_evict_unowned_cached_cars`, run each build), and is freed wholesale with the HQ node
+freshly-built car pays the per-frame stream + settle. `_release_page_props` **hides +
+stows off-screen** the parked page's cars instead of freeing them (they stay parented to
+HQ, frozen; stowed so a hidden car can't intercept a tap-to-focus ray meant for the next
+page's car at the same bay); the cache is shared across every car-park lineup (car-select,
+garage picker, engine-swap, starter, Free Roam, title), **evicts** entries for cars no
+longer offered (`_evict_unowned_cached_cars`, run each build), and is freed wholesale with the HQ node
 on exit-to-race. `◄ ►` (or
 `menu_left`/`menu_right`) move the focus and the camera eases to a **front 3/4 hero
 shot from in front of the car** (`menu_camera_offset` is added in world space; +Z sits
 the eye ahead of the nose-out car, looking back past it at the garage) over
 `menu_camera_move_time`; the focused car **is** the selected car. The overlay shows
 its name + stats (drive / **horsepower (HP)** / **weight (kg)** / **Health %**) via
-`_car_stats_text` — the single stat-list formatter shared by the car-select, LIFT, and
-overflow overlays. Power-to-weight is deliberately **not** shown here; the p/w ratio
+`_car_stats_text` — the single stat-list formatter shared by the car-select and LIFT
+overlays. Power-to-weight is deliberately **not** shown here; the p/w ratio
 only surfaces where it matters, in the upgrades-menu detune readout. There is
 no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
 **too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
@@ -679,17 +733,18 @@ times by generating each track, which is heavy, so the overlay covers that work
 instead of freezing HQ. **◄ Back** (or `menu_back`) returns to the map table and
 clears the lineup. If no owned car qualifies, a hint shows and Start is disabled.
 
-**OVERFLOW (scrap a car to make room).** The player may own at most
-`GameConfig.max_owned_cars` (10) cars. A top-3 finish still grants its car even
-when the garage is full, so on the **next HQ entry** `_build_hq` checks
-`_over_car_limit()` and, if over, routes to the OVERFLOW station instead of the
-title. It parks the **whole collection** (the just-won car included) with the same
-`_build_lineup` + focus machinery as the car park, shows a `GARAGE FULL — (n / cap)`
-banner, and a **Scrap this car** action removes the focused instance via
-`Save.scrap_car` (returns its upgrades to inventory, refuses the player's last car —
-its scrap button is disabled with a note). Scrapping re-evaluates: still over →
-re-prompt; back at the cap → fly to the title. There is no Back — the player can't
-leave until the garage is under the cap.
+**Unbounded collection + pagination.** There is **no ownership cap** — the player can
+own any number of cars, and there is no "garage full" gate or scrapping (both removed).
+Instead every car-park screen **paginates**: `_build_lineup(cars, start_global)` hands
+the WHOLE list to `CarList` (`scripts/car_list.gd`, the `_lineup` member) and
+`_render_lineup_page` spawns only the current page — at most `GameConfig.carpark_page_size`
+(10, the painted-bay count) heavy props at once. `CarList` treats the list as one wrapped
+ring: `_cycle_focus` → `_lineup.advance(step)` moves the cursor car-by-car and, when it
+crosses a page boundary, flips the page and re-spawns its props (snapping the camera);
+past the very first / last car it wraps around (a single page wraps within itself). The
+`(n of N)` label counts across the WHOLE list (`_lineup.global_index()` / `total()`). This
+is the same machinery for rally car-select, the garage picker, engine-swap, the starter
+picker, Free Roam and the title backdrop, so they all page identically.
 
 Star ratings come from `Save.best_placement(rally_id)` — the best (lowest)
 finishing position ever recorded there, stored by `Save.complete_rally(id, ms,
@@ -708,7 +763,7 @@ title shot: mobile-web performance is poor, so it points the player at the itch.
 page (`ANDROID_APP_URL`) hosting the much-faster APK. Two buttons: **Get the Android
 app** (`OS.shell_open` → opens the itch page in a new tab) and **Continue in
 browser** (dismiss). Desktop web and iOS never see it (nothing to install there),
-and it only appears over a normal title boot — never over the garage-overflow gate.
+and it only appears over a normal title boot.
 While the notice is up, `_title_layer` is hidden so the title's MenuNav can't fight
 the notice's for focus; dismissing (button, Esc, or gamepad B via the notice's
 `MenuNav.attach(..., on_back = ...)`) frees the layer and re-shows the title, whose
