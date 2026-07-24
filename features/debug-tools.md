@@ -103,7 +103,7 @@ The **audio overruns** count is the fielded car's engine `AudioStreamGenerator`
 buffer underruns (`EngineAudio.skip_count()`), wired in by `world.gd`. It's the live
 signal for main-thread audio starvation — most visible on the single-threaded web
 build at the 30 fps cap, where a long frame drains the buffer before the next
-`_process` fill (see `engine_audio.gd` `BUFFER_SECONDS`). Drive normally with the
+`_process` fill (see `engine_audio.gd`'s `buffer_seconds()`). Drive normally with the
 overlay up to catch which frames cause overruns.
 
 While active it enables `RenderingServer.viewport_set_measure_render_time` and, on

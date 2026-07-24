@@ -1483,8 +1483,8 @@ var peak_torque_rpm := 4500.0
 ## for thermal/battery headroom, but bounded by audio: the web export is
 ## SINGLE-THREADED, so audio is serviced by the main loop (no audio thread) and a
 ## lower frame rate drains the generator + WebAudio buffers between frames, causing
-## gaps/crackle. 30 is viable only because the audio buffers (engine_audio.gd
-## BUFFER_SECONDS and audio/driver/output_latency.web in project.godot) are sized to
+## gaps/crackle. 30 is viable only because the audio buffers (engine_audio.gd's
+## per-device buffer_seconds() and audio/driver/output_latency.web in project.godot) are sized to
 ## bridge a ~33 ms inter-frame gap plus jitter — raise those before lowering this
 ## further. 0 = uncapped. See features/rendering.md and features/engine-audio.md.
 @export_range(0, 240) var target_fps_web := 30

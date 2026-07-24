@@ -1,8 +1,8 @@
 extends GutTest
 
 const ACTIONS := [
-	"accelerate", "brake_reverse", "steer_left", "steer_right", "reset_car",
-	"shift_up", "shift_down", "toggle_gearbox", "cycle_camera",
+	"accelerate", "brake_reverse", "steer_left", "steer_right",
+	"shift_up", "shift_down", "toggle_gearbox", "cycle_camera", "pause",
 ]
 
 var _scene: Node3D

@@ -108,12 +108,21 @@ func quit_to_hq() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _input_enabled:
 		return  # Esc / gamepad B do nothing while the world is loading
-	if not event.is_action_pressed("ui_cancel"):
+	# The `pause` action (Esc / gamepad Start) TOGGLES the menu. ui_cancel (gamepad B)
+	# is NOT an opener — in gameplay B is the handbrake — it only acts as "back" once the
+	# menu is already open (step out of a sub-page, else resume). This keeps the pause
+	# menu off the B button while still letting B/Esc back out of it.
+	if event.is_action_pressed("pause"):
+		if is_open():
+			resume()
+		else:
+			open()
+		get_viewport().set_input_as_handled()
 		return
-	if not is_open():
-		open()
-	elif _settings_panel.visible:
-		_on_settings_back()  # Esc steps out a level: sub-page → list → menu
+	if not is_open() or not event.is_action_pressed("ui_cancel"):
+		return
+	if _settings_panel.visible:
+		_on_settings_back()  # Esc / B steps out a level: sub-page → list → menu
 	else:
 		resume()
 	get_viewport().set_input_as_handled()

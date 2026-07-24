@@ -41,8 +41,8 @@ const ACTIONS := [
 	{"action": "shift_down", "name": "Shift down"},
 	{"action": "handbrake", "name": "Handbrake"},
 	{"action": "toggle_gearbox", "name": "Toggle gearbox"},
-	{"action": "reset_car", "name": "Reset car"},
 	{"action": "cycle_camera", "name": "Cycle camera"},
+	{"action": "pause", "name": "Pause"},
 ]
 
 # Human labels for joypad buttons (SDL standard layout — Xbox / PlayStation glyphs),

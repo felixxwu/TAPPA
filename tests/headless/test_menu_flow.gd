@@ -552,11 +552,11 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
-	# The hub is a left/right cursor over Back (0) / Tuning (1) / Upgrades (2) /
+	# The hub is a left/right cursor over Back (0) / Upgrades (1) / Tuning (2) /
 	# Test Drive (3), wrapping at both ends.
-	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Tuning")
+	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Upgrades")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 2, "right moves the cursor to Upgrades")
+	assert_eq(hq._hub_focus, 2, "right moves the cursor to Tuning")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Test Drive")
 	hq._move_hub_focus(1)
@@ -565,7 +565,7 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	assert_eq(hq._hub_focus, 3, "left from Back wraps to Test Drive")
 
 	# Select on the Tuning item opens the Tune page (stays in the bay).
-	hq._hub_focus = 1
+	hq._hub_focus = 2
 	hq._activate_hub_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.LIFT, "select on Tuning stays in the bay")

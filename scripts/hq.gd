@@ -13,7 +13,7 @@ extends Node3D
 #   * TABLE    — a near-top-down look at the table's 3D map. Tap a rally pin to open
 #     its detail; Enter flies out to the car park.
 #   * LIFT     — the tuning bay: the selected car raised on the lift on one side. The
-#     bay opens on a HUB page (the car's name/description, Tuning / Upgrades buttons,
+#     bay opens on a HUB page (the car's name/description, Upgrades / Tuning buttons,
 #     and a Test Drive button) bottom-left beside the car. Each menu button opens that
 #     menu as its OWN full-height page (TUNE = grip/brake/aero sliders; UPGRADES =
 #     install parts); Test Drive drops into free roam with the car on the lift
@@ -49,7 +49,7 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
 const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
 
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
-# name/description + Tuning/Upgrades buttons + a Test Drive button); TUNE is
+# name/description + Upgrades/Tuning buttons + a Test Drive button); TUNE is
 # the handling sliders and UPGRADES is install parts / repair. Each menu is its own
 # full-height page (reached from the hub) so neither has to scroll.
 enum LiftPage { HUB, TUNE, UPGRADES }
@@ -280,11 +280,11 @@ var _garage_focus := 1          # which garage action the cursor sits on (defaul
 # Tuning-lift overlay widgets.
 var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
 var _lift_car_label: Label      # selected car name + stats in the bottom-left info panel
-var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Tuning/Upgrades + Test Drive buttons
-# The HUB's Back / Tuning / Upgrades / Test Drive row is a left/right ButtonCursor, same
+var _lift_hub_controls: HBoxContainer  # the HUB page: one row of Back + Upgrades/Tuning + Test Drive buttons
+# The HUB's Back / Upgrades / Tuning / Test Drive row is a left/right ButtonCursor, same
 # as the garage: hq keeps the index (_hub_focus, read by tests), the cursor the behaviour.
 var _hub_cursor := ButtonCursor.new()
-var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Tune, 2 = Upgrades, 3 = Test Drive)
+var _hub_focus := 1             # which hub item the cursor sits on (0 = Back, 1 = Upgrades, 2 = Tune, 3 = Test Drive)
 var _lift_menu_bg: ColorRect    # the right-side panel that backs a sub-menu (TUNE/UPGRADES)
 var _lift_menu_title: Label     # the sub-menu page heading ("TUNE" / "UPGRADES")
 var _lift_back_button: Button   # the shared "< Back" on a sub-menu page (TUNE/UPGRADES)
@@ -1528,11 +1528,11 @@ func _hide_detail() -> void:
 # --- Tuning lift (features/tuning.md / todo/menus.md rig 4) ----------------------
 
 # Enter the tuning bay: raise the selected car on the lift, frame it to one side, and
-# show the HUB (car description + Tuning/Upgrades buttons + Test Drive).
+# show the HUB (car description + Upgrades/Tuning buttons + Test Drive).
 func _enter_lift() -> void:
 	_ensure_lift_car()
 	_lift_page = LiftPage.HUB
-	_hub_focus = 1  # the cursor starts on Tuning each time we enter the bay
+	_hub_focus = 1  # the cursor starts on Upgrades each time we enter the bay
 	_refresh_lift_ui()
 	_go_to(View.LIFT)
 	_raise_lift_car()  # slowly raise the car on the lift as we arrive
@@ -1734,7 +1734,7 @@ func _activate_hub_focus() -> void:
 
 
 # Paint the manual hub cursor (the hub uses left/right + select, not native focus, so the
-# Back / Tuning / Upgrades / Test Drive buttons are highlighted by hand instead).
+# Back / Upgrades / Tuning / Test Drive buttons are highlighted by hand instead).
 func _refresh_hub_focus() -> void:
 	_hub_cursor.refresh(_hub_focus)
 
@@ -2973,7 +2973,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
-				# Hub: left/right move the cursor between Back / Tuning / Upgrades /
+				# Hub: left/right move the cursor between Back / Upgrades / Tuning /
 				# Test Drive; select fires it; menu_back is a shortcut to the garage.
 				if event.is_action_pressed("menu_left"):
 					_move_hub_focus(-1)

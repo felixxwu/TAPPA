@@ -13,9 +13,11 @@ extends AudioStreamPlayer
 # wants floats + a GameConfig, mirroring scripts/engine_audio.gd.
 
 const MIX_RATE := 22050.0
-# Generator buffer depth — same rationale as engine_audio.gd (covers a slow frame
-# on the single-threaded web build). Not a tuning knob.
-const BUFFER_SECONDS := 0.15
+# Generator buffer depth, per-device — same rationale as engine_audio.gd (covers a
+# slow frame on single-threaded web-touch; desktop takes a tight, low-latency
+# buffer). Not a tuning knob. See engine_audio.gd's buffer_seconds() for the touch split.
+const BUFFER_SECONDS_TOUCH := 0.15
+const BUFFER_SECONDS_DESKTOP := 0.05
 # Largest engine sub-step accepted per frame: clamps a stall/GC hitch so a huge
 # delta can't fling the flywheel in one integration step. Not a tuning knob.
 const MAX_STEP := 0.05
@@ -32,7 +34,7 @@ var _active := false  # a rev is climbing or coasting back to idle
 func _ready() -> void:
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
-	gen.buffer_length = BUFFER_SECONDS
+	gen.buffer_length = BUFFER_SECONDS_TOUCH if Platform.is_touch() else BUFFER_SECONDS_DESKTOP
 	stream = gen
 	# Silent until the first rev() — playback starts there so nothing plays on load.
 

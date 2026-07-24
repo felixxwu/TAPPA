@@ -137,8 +137,8 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   key afterward (using the same dying-subtree guard so it doesn't grab the about-to-be-
   freed old one).
 
-  The **`start line`** pre-event overlay has three buttons — **Start**, **Tune Car**,
-  and **Upgrades** — so it uses `MenuNav.attach(root, {first = _start_button})`
+  The **`start line`** pre-event overlay has three buttons — **Start**, **Upgrades**,
+  and **Tune Car** — so it uses `MenuNav.attach(root, {first = _start_button})`
   for keyboard/gamepad focus; a pointer tap on the clear band still launches. Opening
   **Tune Car** hides the start overlay and attaches `MenuNav` to the tune overlay (Back
   routed via `on_back`); it opens the shared `TuningPanel` (three handling-axis sliders)
@@ -799,8 +799,10 @@ is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query)
 This is deliberately **not** `recovery_pose()` (which the off-track leash / stuck
 watchdog use): that pose is pinned to the *furthest* offset reached and freezes the
 moment the car leaves the leash, so a strayed car would reset to a stale point that's
-no longer beside it — feeling like the button does nothing. It's also **not** the
-start line (that's the `R` / `reset_car` key). The menu owns no car reference, so it
+no longer beside it — feeling like the button does nothing. It's also **not** the full
+start-line reset (`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track"
+menu item is now the **only** player-facing way to reset — there is no direct reset
+input any more (see [controls.md](controls.md)). The menu owns no car reference, so it
 emits `reset_to_track_requested`; `world.gd` connects that in `_ready` and performs
 the reset (`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion
 and suppresses the teleport's impact damage — free), then the menu `resume()`s so the
@@ -819,7 +821,8 @@ left **incomplete with no retry penalty** (damage persisted, no reward); `abando
 emits `rally_finished` which `world.gd` routes **straight back to HQ** (the garage
 view) instead of the podium. (With no active session — a plain dev boot of
 `main.tscn` — it just loads `hq.tscn` directly.) `ui_cancel` (Esc / gamepad B)
-toggles the menu and backs out of Settings first. A camera pick applies
+toggles the menu and backs out of Settings first; the gamepad **Start** button
+(`pause` action) also opens it (open-only — it does not double as a menu "back"). A camera pick applies
 **immediately** to the live `CameraManager` (wired via the `SettingsMenu.camera_changed`
 signal → `CameraManager.set_mode`), so the angle changes the moment you choose it.
 A **mobile-control** pick applies just as immediately to the live `MobileControls`

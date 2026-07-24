@@ -363,11 +363,11 @@ func build_lift_overlay() -> void:
 	var to_upgrades_cb := _hq._open_lift_page.bind(HqController.LiftPage.UPGRADES)
 	var back := _hq._station_button("< Back", on_back)
 	_hq._lift_hub_controls.add_child(back)
-	# The two menu buttons.
-	var to_tune := _hq._station_button("Tuning", to_tune_cb)
-	_hq._lift_hub_controls.add_child(to_tune)
+	# The two menu buttons — Upgrades first, then Tuning.
 	var to_upgrades := _hq._station_button("Upgrades", to_upgrades_cb)
 	_hq._lift_hub_controls.add_child(to_upgrades)
+	var to_tune := _hq._station_button("Tuning", to_tune_cb)
+	_hq._lift_hub_controls.add_child(to_tune)
 	# Test Drive: drive the car currently on the lift in free roam — no car picker, we're
 	# already focused on one (see _test_drive).
 	var test_drive := _hq._station_button("Test Drive", _hq._test_drive)
@@ -382,8 +382,8 @@ func build_lift_overlay() -> void:
 	_hq._lift_hub_controls.add_child(repair)
 	_hq._lift_repair_button = repair
 	_hq._hub_cursor.setup(
-		[back, to_tune, to_upgrades, test_drive],
-		[on_back, to_tune_cb, to_upgrades_cb, _hq._test_drive])
+		[back, to_upgrades, to_tune, test_drive],
+		[on_back, to_upgrades_cb, to_tune_cb, _hq._test_drive])
 
 
 func build_car_overlay() -> void:

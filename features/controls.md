@@ -14,13 +14,18 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `handbrake` | Space | — | A / Cross (South) | Rear-axle handbrake (drift) |
 | `toggle_gearbox` | T | — | X / Square (West) | Toggle manual / auto transmission |
 | `cycle_drive_mode` | Y | — | D-pad Up | Cycle RWD → AWD → FWD |
-| `reset_car` | R | — | Y / Triangle (North) | Teleport to start, zero velocity |
-| `cycle_camera` | C | — | B / Circle (East) | Cycle through cameras |
+| `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
+| `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
 | `skip_to_finish` | F | — | — | Dev: instantly complete the current event |
 
 All actions use a 0.2 deadzone.
+
+There is **no direct "reset car" input** — resetting the car onto the track is only
+available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →
+`_on_reset_to_track_pressed`, routed through `world.gd`). The R key and the gamepad
+North button (Y/Triangle) that used to reset now cycle the camera instead.
 
 ## Rebinding (settings → Key bindings)
 

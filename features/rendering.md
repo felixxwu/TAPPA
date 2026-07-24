@@ -325,8 +325,9 @@ shipped knobs in `GameConfig`:
   loop (no audio thread), so a lower frame rate drains the generator + WebAudio
   output buffers between frames and produces gaps/crackle. 30 fps on web is viable
   only because the audio buffers are sized to bridge a ~33 ms inter-frame gap plus
-  jitter — the engine generator `BUFFER_SECONDS` (0.2 s) in `engine_audio.gd` and
-  `audio/driver/output_latency.web` (200 ms) in `project.godot`. Raise those before
+  jitter — the engine generator buffer (`BUFFER_SECONDS_TOUCH` 0.2 s on web-touch,
+  per `engine_audio.gd`'s `buffer_seconds()`) and
+  `audio/driver/output_latency.web` (100 ms) in `project.godot`. Raise those before
   lowering the web cap further; the tradeoff is added throttle→sound latency. The
   native Android APK has a real audio thread and runs fine at 60. `0` = uncapped.
   Physics stays at the project physics tick. See [engine-audio.md](engine-audio.md).

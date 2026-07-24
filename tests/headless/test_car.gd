@@ -8,7 +8,7 @@ extends "res://tests/headless/sim_test.gd"
 # `_scene`, `_car`, `_wait_physics()` and the settle machinery come from
 # sim_test.gd — before_each restores a cached settled car instead of re-dropping.
 
-const ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "reset_car", "handbrake"]
+const ACTIONS := ["accelerate", "brake_reverse", "steer_left", "steer_right", "handbrake"]
 
 
 func before_each() -> void:
@@ -159,9 +159,7 @@ func test_reset_returns_to_start() -> void:
 	await _wait_physics(90)
 	Input.action_release("accelerate")
 	assert_gt((_car.global_position - start_pos).length(), 1.0, "car drove away first")
-	Input.action_press("reset_car")
-	await _wait_physics(5)
-	Input.action_release("reset_car")
+	_car._reset()  # reset is menu-only now (no input action); call the logic directly
 	await _wait_physics(120)  # re-drop from the spawn clearance and settle
 	var settled := _car.global_position
 	assert_lt(Vector2(settled.x - spawn.x, settled.z - spawn.z).length(), 0.3,
@@ -297,9 +295,7 @@ func test_travel_alignment_scales_down_at_low_speed() -> void:
 	var fast_steer := absf(_car.steering)
 
 	# Reset to the spawn transform, then repeat the slide at low speed.
-	Input.action_press("reset_car")
-	await _wait_physics(5)
-	Input.action_release("reset_car")
+	_car._reset()  # reset is menu-only now (no input action); call the logic directly
 	await _wait_physics(120)
 	slide = (-_car.global_transform.basis.z - _car.global_transform.basis.x).normalized()
 	_car.linear_velocity = slide * 4.0
@@ -363,9 +359,7 @@ func _left_steer_yaw_rate(slip_into_turn: float, torque: float) -> float:
 	var cfg: GameConfig = Config.data
 	cfg.steer_assist_torque = torque
 	# Reset to the spawn pose so both torque runs start from an identical state.
-	Input.action_press("reset_car")
-	await _wait_physics(5)
-	Input.action_release("reset_car")
+	_car._reset()  # reset is menu-only now (no input action); call the logic directly
 	await _wait_physics(120)
 	var forward := -_car.global_transform.basis.z
 	var right := _car.global_transform.basis.x
@@ -423,9 +417,7 @@ func _spin_slide_yaw_rate(slip: float, torque: float, handbrake: bool) -> float:
 	cfg.spin_assist_torque = torque
 	cfg.spin_assist_angle = deg_to_rad(20.0)
 	# Reset to the spawn pose so every run starts from an identical state.
-	Input.action_press("reset_car")
-	await _wait_physics(5)
-	Input.action_release("reset_car")
+	_car._reset()  # reset is menu-only now (no input action); call the logic directly
 	await _wait_physics(120)
 	var forward := -_car.global_transform.basis.z
 	var left := -_car.global_transform.basis.x

@@ -5,7 +5,7 @@ extends Node3D
 # live run scene (main.tscn) once the world is built and a RallySession is active,
 # while the car is held locked by the StageManager's STAGING phase:
 #
-#   1. MENU     — black house-style panels offer Start / Tune Car / Upgrades under a
+#   1. MENU     — black house-style panels offer Start / Upgrades / Tune Car under a
 #      rally/event header, while an orbit camera idles on the player's car. The player
 #      launches with the Start button, menu_select or a tap (eligibility gates first).
 #   2. FLY_IN   — the camera flies from the orbit pose to a fixed low 3/4 shot in front
@@ -221,7 +221,7 @@ func _compute_anchor() -> Transform3D:
 	return Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
 
 
-# --- Overlay (MENU: Start / Tune Car / Upgrades) -----------------------------
+# --- Overlay (MENU: Start / Upgrades / Tune Car) -----------------------------
 
 # The MENU UI follows the design system (UITheme): pure-black, sharp-cornered panels,
 # the one house font size, uppercase text. It hugs the TOP (a rally/event header) and
@@ -269,15 +269,15 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	_start_button.pressed.connect(launch)
 	root.add_child(_start_button)
 
-	_tune_button = UITheme.button("Tune Car")
-	_tune_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_tune_button.pressed.connect(_open_tune)
-	root.add_child(_tune_button)
-
 	_upgrades_button = UITheme.button("Upgrades")
 	_upgrades_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_upgrades_button.pressed.connect(_open_upgrades)
 	root.add_child(_upgrades_button)
+
+	_tune_button = UITheme.button("Tune Car")
+	_tune_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_tune_button.pressed.connect(_open_tune)
+	root.add_child(_tune_button)
 
 	UITheme.enforce(_overlay)  # house rules: uppercase + one font size + fixed button height
 	MenuNav.attach(root, {"first": _start_button})
@@ -768,7 +768,7 @@ func _despawn_grid() -> void:
 	_departed = []
 
 
-# --- Pre-race menus (Tune Car / Upgrades) ------------------------------------
+# --- Pre-race menus (Upgrades / Tune Car) ------------------------------------
 
 # The rally's power-to-weight ceiling for the pre-race tune / upgrades menus (-1 = no
 # cap): the restriction's pw_max, or -1 when there's no active rally restriction.

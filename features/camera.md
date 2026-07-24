@@ -1,7 +1,7 @@
 # Cameras
 
-The game has two camera modes, cycled with the **C key** (`cycle_camera`
-action) or picked directly on the **settings page** (title-screen Settings or the
+The game has two camera modes, cycled with the **C / R keys** or the gamepad
+**Y / Triangle (North)** button (`cycle_camera` action) or picked directly on the **settings page** (title-screen Settings or the
 in-run pause menu — see [menus.md](menus.md)). A `CameraManager` node
 (`scripts/camera_manager.gd`, `class_name CameraManager`) in `main.tscn` owns the
 ordered cycle list `[CHASE, BONNET]` and makes exactly one camera `current` at a

@@ -4,17 +4,28 @@ extends AudioStreamPlayer
 # EngineAudioSynth; this node only owns the generator and the per-frame pull.
 
 const MIX_RATE := 22050.0
-# Generator buffer depth. The fill runs in _process on the main thread, so the
-# buffer is the only thing keeping audio alive across a slow frame: if the gap
-# between _process calls exceeds it, the buffer drains and the engine note
-# crackles/drops. On the single-threaded web build a frame is ~33 ms at the 30 fps
-# web cap (target_fps_web) before jitter/GC hitches on top, so the buffer has to
-# bridge that whole gap: 0.2 s ≈ six 30 fps frames of headroom. The cost is
-# throttle→rev latency (roughly BUFFER_SECONDS + the WebAudio output_latency.web
-# from project.godot), so don't raise it further than the underruns actually need.
-# Terrain is precomputed at load (see features/terrain.md) so chunk crossings are
-# cheap; this margin covers the sustained low frame rate plus web-export/GC hitches.
-const BUFFER_SECONDS := 0.2
+# Generator buffer depth, chosen per-device (see buffer_seconds()). The fill runs
+# in _process on the main thread, so the buffer is the only thing keeping audio
+# alive across a slow frame: if the gap between _process calls exceeds it, the
+# buffer drains and the engine note crackles/drops. On a single-threaded web TOUCH
+# device (phone/tablet browser) a frame is ~33 ms at the 30 fps web cap
+# (target_fps_web) before jitter/GC hitches on top, so the buffer has to bridge
+# that whole gap: 0.2 s ≈ six 30 fps frames of headroom. Desktop (native, and
+# desktop web at the full 60 fps cap with far fewer hitches) needs nowhere near
+# that, and the buffer is pure throttle→rev latency — roughly BUFFER_SECONDS_* plus
+# the WebAudio output_latency.web from project.godot — so desktop uses a much
+# tighter buffer to keep the sound responsive. Terrain is precomputed at load (see
+# features/terrain.md) so chunk crossings are cheap; the touch margin covers the
+# sustained low frame rate plus web-export/GC hitches.
+const BUFFER_SECONDS_TOUCH := 0.2    # single-threaded web on a phone: ~6 frames of 30 fps headroom
+const BUFFER_SECONDS_DESKTOP := 0.05 # ~3 frames at 60 fps — responsive, still covers a hitch
+
+
+# Touch devices (incl. web-touch) need the deep underrun margin; desktop (native or
+# desktop web) takes the tight, low-latency buffer. Mirrors Platform.is_touch(), the
+# same split the frame cap and touch-control picker use.
+static func buffer_seconds() -> float:
+	return BUFFER_SECONDS_TOUCH if Platform.is_touch() else BUFFER_SECONDS_DESKTOP
 
 var _synth: EngineAudioSynth
 var _playback: AudioStreamGeneratorPlayback
@@ -38,7 +49,7 @@ func _ready() -> void:
 	var cfg: GameConfig = _car_config()
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
-	gen.buffer_length = BUFFER_SECONDS
+	gen.buffer_length = buffer_seconds()
 	stream = gen  # set the stream unconditionally (smoke test checks its type)
 	_synth = EngineAudioSynth.new(cfg, MIX_RATE)
 	# Headless (test/CI): set up the stream but never PLAY it. Godot's headless

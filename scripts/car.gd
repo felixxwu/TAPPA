@@ -494,9 +494,6 @@ func _timed_physics_process(delta: float) -> void:
 	# Self-righting assist while any wheel is airborne.
 	_apply_level_assist()
 
-	if _driver_input_live() and Input.is_action_just_pressed("reset_car"):
-		_reset()
-
 
 # Drive the body along the recording (looping) and pin the state the effect +
 # audio systems read, so gravel/smoke/engine-note replay in sync. The frozen
