@@ -407,18 +407,36 @@ while a long main-thread frame blocks every refill, so `output_latency.web` is t
 web cap (`target_fps_web`, see `world.gd`) the main thread sleeps ~33 ms between
 frames, so the default 15 ms output buffer would drain before the next refill and
 the *whole mix* crackles — not just the engine note. `project.godot` therefore sets
-`audio/driver/output_latency.web=100` so the WebAudio buffer survives the inter-frame
-gap plus jitter. This is read at driver init (engine boot) — one baked value for the
-**whole** web build (desktop web + web-touch alike), with no runtime setter
-(`AudioServer` exposes only `get_output_latency()`), so it lives in project settings,
-not runtime code. That's why it can't be made desktop-web-only: 100 ms is a
-compromise — deep enough to keep web-touch mostly clean, short enough that desktop
-web isn't sluggish.
+`audio/driver/output_latency.web=150` so the WebAudio buffer survives the inter-frame
+gap plus jitter (≈4.5 frames of 30 fps headroom). This is read at driver init (engine
+boot) — one baked value for the **whole** web build (desktop web + web-touch alike),
+with no runtime setter (`AudioServer` exposes only `get_output_latency()`), so it lives
+in project settings, not runtime code. That's why it can't be made desktop-web-only:
+150 ms is a compromise — deep enough to keep web-touch clean at 30 fps, short enough
+that desktop web isn't sluggish.
+
+Why the two web buffers can't be collapsed into one knob: they sit at different
+**layers** of the pipeline, on different **threads**, with different **lifetimes** and
+**scopes**. The generator buffer is upstream of the `AudioServer` mixer and — with
+`variant/thread_support=false` (`export_presets.cfg`) — is filled on the *same* main
+thread that runs the mixer, so a blocked frame stalls both; its samples can't reach
+the speakers while the mixer that drains it is frozen. `output_latency.web` sizes the
+downstream WebAudio ring buffer, which the browser's audio-worklet thread drains
+*independently* of the main thread — the only handoff that survives a stalled frame,
+hence the only real underrun protection on web. They also can't share a value: the
+generator buffer is a per-`AudioStreamPlayer` `AudioStreamGenerator.buffer_length` set
+at runtime and split per-device (web-touch vs desktop web), while `output_latency` is
+one global audio-*driver* setting baked at boot for the whole web build with no runtime
+setter. Merging would force the downstream, cross-thread, global, boot-baked buffer and
+the upstream, same-thread, per-device, runtime buffer to be the same thing — they
+aren't. On native (real audio thread) the mixer runs off-thread, so the generator
+buffer alone suffices and `output_latency` stays at the engine default; the split only
+exists because single-threaded web collapses the mixer onto the main thread.
 
 Together the two web buffers make the low web frame cap audible without gaps. The
-`output_latency.web=100` half is global; the generator half is per-device
+`output_latency.web=150` half is global; the generator half is per-device
 (`engine_audio.gd`'s `buffer_seconds()`: `0.2` on web-touch, `0.05` on desktop web), so
-desktop web lands at ≈150 ms throttle→sound and web-touch at ≈300 ms. Raise the touch
+desktop web lands at ≈200 ms throttle→sound and web-touch at ≈350 ms. Raise the touch
 generator value (at the cost of latency) before dropping `target_fps_web` lower. The
 native Android APK has a real audio thread, so it is unaffected and keeps its 60 fps
 cap (`target_fps_mobile`).

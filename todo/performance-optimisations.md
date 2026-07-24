@@ -81,7 +81,7 @@
 > thermal/battery headroom; the single-threaded web build services audio on the main
 > loop (no audio thread), so a low frame rate drains the audio buffers between frames —
 > viable only because the buffers are sized to bridge it (`engine_audio.gd`
-> `BUFFER_SECONDS`=0.2 + `audio/driver/output_latency.web`=200 in `project.godot`).
+> `BUFFER_SECONDS`=0.2 + `audio/driver/output_latency.web`=150 in `project.godot`).
 > The native APK has an audio thread and runs fine at 60. See features/rendering.md and
 > features/engine-audio.md), **item 1** (mipmaps on
 > tree/bush `.import` + `lod_bias` uniform in `billboard.gdshader` driven by
