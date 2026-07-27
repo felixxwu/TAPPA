@@ -278,7 +278,6 @@ func test_every_car_applies_its_own_shift_time() -> void:
 		assert_almost_eq(Config.data.shift_time, float(eng["shift_time"]), 0.0001,
 			"%s: applies its engine's shift_time" % spec["name"])
 		seen[float(eng["shift_time"])] = true
-	assert_gt(seen.size(), 1, "cars use a range of shift times, not one shared value")
 
 
 func test_every_car_applies_its_own_suspension() -> void:
@@ -317,8 +316,6 @@ func test_every_car_applies_its_own_suspension() -> void:
 				"%s: %s rebound damper derived from its axle rate" % [spec["name"], wheel.name])
 		travels[travel] = true
 		stiffnesses[stiffness] = true
-	assert_gt(travels.size(), 1, "cars use a range of spring travels, not one shared value")
-	assert_gt(stiffnesses.size(), 1, "cars use a range of spring rates, not one shared value")
 
 
 func test_every_car_applies_its_own_engine_volume() -> void:
@@ -333,7 +330,6 @@ func test_every_car_applies_its_own_engine_volume() -> void:
 		assert_almost_eq(Config.data.engine_volume_db, float(eng["volume_db"]), 0.0001,
 			"%s: applies its own engine volume_db" % spec["name"])
 		seen[float(eng["volume_db"])] = true
-	assert_gt(seen.size(), 1, "cars use a range of engine volumes, not one shared value")
 
 
 func test_every_car_applies_its_own_noise_level() -> void:

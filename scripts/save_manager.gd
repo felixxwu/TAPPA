@@ -216,7 +216,7 @@ func _migrate(p: Dictionary) -> Dictionary:
 # expression in GDScript, and would null this autoload at parse time).
 const _MIGRATABLE_FROM := [1]
 
-# Apply the single version N -> N+1 transform.aa
+# Apply the single version N -> N+1 transform.
 #   1 -> 2: upgrades became CAR-BOUND. The old shared `inventory` pool of
 #           slottable parts is gone (parts now live on the OwnedCar they were won
 #           for), so strip every non-repair-kit entry from `inventory` — those

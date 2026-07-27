@@ -619,9 +619,14 @@ func test_opponent_field_is_a_ranked_ladder() -> void:
 	assert_gt(mean_paces.size(), 2, "enough clean rivals to rank")
 	mean_paces.sort()
 	# The field spans a real ladder: fastest vs slowest surviving rival's pace differ
-	# well beyond the ±5% per-event noise (band is [1.37, 2.42] for this tier — a
-	# ~1.77x ratio before noise and DNF attrition trim the surviving extremes).
-	assert_gt(float(mean_paces[mean_paces.size() - 1]) / float(mean_paces[0]), 1.25,
+	# well beyond the ±noise window. The expected spread is DERIVED from the pace band
+	# the generator actually uses for this rally's difficulty (slow end / fast end);
+	# DNF attrition and per-event noise trim the surviving extremes, so we only require
+	# a fraction of the full band spread rather than the band ratio itself.
+	var band: Vector2 = RallyLibrary._pace_band(int(rally.get("difficulty", 1)))
+	var band_ratio := band.y / band.x
+	assert_gt(float(mean_paces[mean_paces.size() - 1]) / float(mean_paces[0]),
+		1.0 + 0.3 * (band_ratio - 1.0),
 		"field spans a ranked ladder, not a mid-pack cluster")
 
 

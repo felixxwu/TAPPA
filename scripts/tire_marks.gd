@@ -45,6 +45,28 @@ var _last_pos: Array = []   # per wheel: Vector2 last emit XZ, or null = ribbon 
 # appends one quad (and a dropped one trims a quad off the front) instead of
 # rebuilding the whole ribbon from _pairs on every emit. _build_ribbon() is the
 # reference these must always equal (asserted in tests).
+#
+# Storage is a FIXED-CAPACITY RING per wheel, so laying marks at speed allocates
+# nothing: appending writes 6 verts into the slot at (head + count), and dropping
+# the oldest quad just advances head — no array is ever shifted or re-sliced.
+# The rings for every wheel live in two flat member PackedArrays (`_ring_verts` /
+# `_ring_cols`) rather than nested inside an Array: a member Packed array is
+# uniquely referenced, so indexed writes land in place instead of triggering a
+# copy-on-write duplication of the whole buffer on every emit.
+# `_verts` / `_cols` are the COMPACT, oldest-to-newest snapshot of each ring,
+# materialised only at upload time (_sync_snapshot) — that's what the mesh gets,
+# and what tests compare against _build_ribbon.
+const RING_QUAD_VERTS := 6  # verts per ribbon quad (two triangles)
+var _ring_verts := PackedVector3Array()
+var _ring_cols := PackedColorArray()
+var _ring_head := PackedInt32Array()   # per wheel: oldest quad's slot
+var _ring_count := PackedInt32Array()  # per wheel: live quads
+var _ring_cap := 0                     # quad slots per wheel (0 = not built yet)
+# Scratch reused by _sync_snapshot so building the compact view costs no growth.
+var _snap_verts := PackedVector3Array()
+var _snap_cols := PackedColorArray()
+# Reused surface-array scratch for _upload (Mesh.ARRAY_MAX slots, allocated once).
+var _surface_arrays: Array = []
 var _verts: Array = []      # per wheel: PackedVector3Array (ribbon triangle verts)
 var _cols: Array = []       # per wheel: PackedColorArray (matching per-vertex colours)
 
@@ -78,6 +100,10 @@ func _retarget_internal(car: Node) -> void:
 	_last_pos = []
 	_verts = []
 	_cols = []
+	# Force _ensure_ring() to (re)build the rings for the new wheel set.
+	_ring_cap = 0
+	_ring_head = PackedInt32Array()
+	_ring_count = PackedInt32Array()
 	for i in _wheels.size():
 		var mi := MeshInstance3D.new()
 		mi.mesh = ArrayMesh.new()
@@ -184,6 +210,20 @@ func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, connected: bool,
 	var pairs: Array = _pairs[i]
 	var left := center + across
 	var right := center - across
+	var cap: int = maxi(2, Config.data.tire_mark_max_segments)
+	_ensure_ring(cap)
+	# Make room for the point about to be appended BEFORE appending it (the popped
+	# 4-tuple is then recycled below, so a steady-state emit allocates nothing).
+	# Order is equivalent to appending first and popping down to `cap`: pops only
+	# ever remove the FRONT, and the quad append below only touches the BACK.
+	var recycled: Variant = null
+	while pairs.size() >= cap:
+		recycled = pairs.pop_front()
+		# The quad the dropped front point fed (its bridge to the next point) is the
+		# oldest one in the buffer; it exists iff the point NOW at the front was laid
+		# `connected` (a strip start there means no quad crossed the drop).
+		if not pairs.is_empty() and bool(pairs[0][2]):
+			_drop_front_quad(i)
 	# Bridge a quad back to the previous point unless this starts a new strip (a
 	# break leaves a real gap). The quad takes the LATER point's colour, matching
 	# _build_ribbon. `connected` implies a prior consecutive point still in the ring
@@ -194,49 +234,106 @@ func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, connected: bool,
 	# [left, right, connected, color] — `connected` = bridge a quad back to the
 	# previous point (a strip start after a break is false, so jumps leave a real
 	# gap); `color` is the per-segment vertex colour (gravel rut vs tarmac skid).
-	pairs.append([left, right, connected, color])
-	var cap: int = maxi(2, Config.data.tire_mark_max_segments)
-	while pairs.size() > cap:
-		pairs.pop_front()
-		# The quad the dropped front point fed (its bridge to the next point) is the
-		# oldest one in the buffer; it exists iff the point NOW at the front was laid
-		# `connected` (a strip start there means no quad crossed the drop).
-		if not pairs.is_empty() and bool(pairs[0][2]):
-			_drop_front_quad(i)
+	if recycled is Array:
+		var slot: Array = recycled
+		slot[0] = left
+		slot[1] = right
+		slot[2] = connected
+		slot[3] = color
+		pairs.append(slot)
+	else:
+		pairs.append([left, right, connected, color])
 	_upload(i)
+
+
+# Size the per-wheel quad rings to `cap` slots (one per possible segment point —
+# a ribbon of n points holds at most n-1 quads, so that's headroom). Only runs on
+# the first emit after a retarget or if the configured cap changes at runtime,
+# never on the steady-state hot path; existing geometry is rebuilt from _pairs via
+# the reference builder so the invariant "_verts == _build_ribbon(_pairs)" holds.
+func _ensure_ring(cap: int) -> void:
+	if cap == _ring_cap and _ring_head.size() == _wheels.size():
+		return
+	_ring_cap = cap
+	var wheels := _wheels.size()
+	_ring_head.resize(wheels)
+	_ring_count.resize(wheels)
+	_ring_verts.resize(wheels * cap * RING_QUAD_VERTS)
+	_ring_cols.resize(wheels * cap * RING_QUAD_VERTS)
+	for w in wheels:
+		_ring_head[w] = 0
+		_ring_count[w] = 0
+		var rebuilt: Dictionary = _build_ribbon(_pairs[w])
+		var verts: PackedVector3Array = rebuilt["verts"]
+		var cols: PackedColorArray = rebuilt["cols"]
+		@warning_ignore("integer_division")  # floor division: verts is always a whole number of quads
+		var quads: int = mini(verts.size() / RING_QUAD_VERTS, cap)
+		var base: int = w * cap * RING_QUAD_VERTS
+		# Keep the NEWEST quads if the cap shrank (the ring drops from the front).
+		@warning_ignore("integer_division")
+		var skip: int = verts.size() / RING_QUAD_VERTS - quads
+		for n in quads * RING_QUAD_VERTS:
+			_ring_verts[base + n] = verts[skip * RING_QUAD_VERTS + n]
+			_ring_cols[base + n] = cols[skip * RING_QUAD_VERTS + n]
+		_ring_count[w] = quads
 
 
 # Append one ribbon quad (two triangles, 6 verts) bridging the previous segment
 # pair (l0/r0) to the new one (l1/r1). Cull disabled, so winding is cosmetic.
 func _append_quad(i: int, l0: Vector3, r0: Vector3, l1: Vector3, r1: Vector3, color: Color) -> void:
-	var v: PackedVector3Array = _verts[i]
-	v.push_back(l0); v.push_back(l1); v.push_back(r0)
-	v.push_back(r0); v.push_back(l1); v.push_back(r1)
-	_verts[i] = v
-	var c: PackedColorArray = _cols[i]
-	for _n in 6:
-		c.push_back(color)
-	_cols[i] = c
+	if _ring_cap <= 0:
+		return
+	# Full ring (can't happen while quads <= points-1, but never overwrite the head).
+	if _ring_count[i] >= _ring_cap:
+		_drop_front_quad(i)
+	var slot: int = (_ring_head[i] + _ring_count[i]) % _ring_cap
+	var b: int = (i * _ring_cap + slot) * RING_QUAD_VERTS
+	_ring_verts[b] = l0; _ring_verts[b + 1] = l1; _ring_verts[b + 2] = r0
+	_ring_verts[b + 3] = r0; _ring_verts[b + 4] = l1; _ring_verts[b + 5] = r1
+	for n in RING_QUAD_VERTS:
+		_ring_cols[b + n] = color
+	_ring_count[i] += 1
 
 
-# Trim the oldest quad (6 verts/colours) off the front of a wheel's buffer.
+# Drop the oldest quad off a wheel's ring — O(1), just advance the head.
 func _drop_front_quad(i: int) -> void:
-	_verts[i] = (_verts[i] as PackedVector3Array).slice(6)
-	_cols[i] = (_cols[i] as PackedColorArray).slice(6)
+	if _ring_cap <= 0 or _ring_count[i] <= 0:
+		return
+	_ring_head[i] = (_ring_head[i] + 1) % _ring_cap
+	_ring_count[i] -= 1
+
+
+# Materialise a wheel's ring into the compact oldest-to-newest _verts/_cols view
+# the mesh (and the tests) consume. Written through reused member scratch buffers,
+# so this doesn't grow the heap once the ribbon reaches its steady-state length.
+func _sync_snapshot(i: int) -> void:
+	var n: int = maxi(_ring_count[i], 0) * RING_QUAD_VERTS if _ring_cap > 0 else 0
+	if _snap_verts.size() != n:
+		_snap_verts.resize(n)
+		_snap_cols.resize(n)
+	for q in maxi(_ring_count[i], 0):
+		var src: int = (i * _ring_cap + (_ring_head[i] + q) % _ring_cap) * RING_QUAD_VERTS
+		var dst: int = q * RING_QUAD_VERTS
+		for k in RING_QUAD_VERTS:
+			_snap_verts[dst + k] = _ring_verts[src + k]
+			_snap_cols[dst + k] = _ring_cols[src + k]
+	_verts[i] = _snap_verts
+	_cols[i] = _snap_cols
 
 
 # Push the maintained triangle buffer for a wheel onto its ribbon ArrayMesh.
 func _upload(i: int) -> void:
+	_sync_snapshot(i)
 	var mesh := _ribbons[i].mesh as ArrayMesh
 	mesh.clear_surfaces()
 	var verts: PackedVector3Array = _verts[i]
 	if verts.is_empty():
 		return
-	var arr := []
-	arr.resize(Mesh.ARRAY_MAX)
-	arr[Mesh.ARRAY_VERTEX] = verts
-	arr[Mesh.ARRAY_COLOR] = _cols[i]
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	if _surface_arrays.size() != Mesh.ARRAY_MAX:
+		_surface_arrays.resize(Mesh.ARRAY_MAX)
+	_surface_arrays[Mesh.ARRAY_VERTEX] = verts
+	_surface_arrays[Mesh.ARRAY_COLOR] = _cols[i]
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _surface_arrays)
 	mesh.surface_set_material(0, _material)
 
 

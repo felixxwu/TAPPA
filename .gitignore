@@ -1,3 +1,6 @@
+# macOS finder cruft
+.DS_Store
+
 # Godot 4 editor cache
 /.godot/
 

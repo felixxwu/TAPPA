@@ -10,6 +10,16 @@
 # / low-memory phones) and you do NOT need to enable itch.io's "SharedArrayBuffer
 # support" option. Terrain generation runs on a frame-budgeted main-thread queue
 # on web (see features/terrain.md) so chunk loading stays smooth without threads.
+#
+# The preset also sets variant/extensions_support=false. That flag selects Godot's
+# GDExtension-capable web template, which is built with Emscripten DYNAMIC LINKING
+# (MAIN_MODULE/SIDE_MODULE): it emits a small index.wasm loader plus a large
+# index.side.wasm, and pulls Emscripten's runtime dynamic linker into index.js.
+# This project ships no .gdextension libraries (the only addon is GUT, pure
+# GDScript, excluded from the export), so that machinery bought nothing. Turning it
+# off (2026-07) cut build/web from 65.6 MB to 55.4 MB — index.js 5.55 MB -> 0.32 MB
+# (the dynamic linker) and the wasm pair 42.6 MB -> 37.7 MB. Only turn it back on if
+# a real GDExtension is added to the web export.
 set -euo pipefail
 
 GODOT="${GODOT:-/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot}"

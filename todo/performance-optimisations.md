@@ -1,5 +1,47 @@
 # Performance Optimisation Spec — mobile / low-end devices
 
+> **2026-07-27 web-vs-native load measurement (NEW — supersedes the stale native
+> table below).** First actual capture of `load stage:` on a web export. Both runs
+> on the same Mac at v0.628; native = `Godot --path . res://main.tscn` (free roam),
+> web = the same machine's Chrome on the `?bench=1` boot, served from `build/web`.
+>
+> | stage | native (ms) | web (ms) | ratio |
+> |---|---|---|---|
+> | Generating track (live DFS) | 4527 | **29217** | **6.5×** |
+> | Placing signs | 692 | **6379** | **9.2×** |
+> | Scattering bushes | 1117 | 2594 | 2.3× |
+> | Filling lakes | 14 | 1121 | 80× (small abs) |
+> | Carving road into terrain | 3011 | 3474 | **1.15×** |
+> | Precomputing chunks | 2359 | 2826 | **1.20×** |
+> | Scattering trees | 780 | 849 | 1.09× |
+> | Building terrain | 12 | 185 | — |
+> | **total** | **12512** | **46645** | **3.7×** |
+>
+> **This redirects the optimisation effort.** Carve and chunk precompute — the two
+> stages all the work below targets — are only ~1.2× slower under wasm; they are
+> NOT the web problem. The blowups are in stages nobody has profiled: the **DFS
+> track search**, **sign placement**, **lake filling**, and bush scatter. Whatever
+> those do (allocation churn / dict or string hashing / `Curve2D` sampling) is what
+> wasm punishes. Profile those before doing more work on carve/precompute for web.
+>
+> **Caveats — do not over-read individual ratios.** The two runs used different
+> paths (plain free roam vs the benchmark boot, which applies its own overrides), so
+> they generated different tracks: 279 chunks / 35.1 MB cached native vs 314 / 40.3 MB
+> web. The **track-gen ratio is the least trustworthy** — a live DFS with backtracking
+> varies hugely by seed, so part of 4.5 s → 29.2 s may be seed luck rather than wasm.
+> The ~3.7× total and the ~1.2× carve/precompute figures are the solid results. Also
+> note the DFS only runs on free-roam/benchmark: a real rally stage hits `TrackCache`
+> and skips it, so a shipped stage load is nearer ~17 s than ~47 s on this machine.
+>
+> **Also measured:** the corridor cache is **35–40 MB / ~280–315 chunks**, not the
+> 71 MB quoted below — the coarse-chunk prune landed after that number was taken.
+>
+> **Web export size (2026-07-27):** `variant/extensions_support` flipped true → false
+> (no `.gdextension` in the project). build/web 65.6 → 55.4 MB; `index.js` 5.55 → 0.32 MB;
+> wasm pair 42.6 → 37.7 MB. Boot + gameplay verified in Chrome. See `build_web.sh`.
+> Whether it also speeds up execution is **not yet measured** — the table above is the
+> post-flip build, with no pre-flip web run to compare against.
+
 > **2026-07 load-time breakdown (measured).** `world.gd` now logs per-stage load
 > timing (`_stage` / `_end_load_timing`, gated off under headless) — grep the
 > console for `load stage:` / `load total:`. A desktop free-roam boot of

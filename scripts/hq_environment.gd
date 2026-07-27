@@ -209,7 +209,7 @@ func _build_spectators(host: Node3D, trees: PackedVector2Array) -> void:
 	var yaws := PackedFloat32Array()
 	for p in positions:
 		yaws.append(Vector2(-p.x, -p.y).angle_to(Vector2(0, 1)) + (rng.randf() - 0.5) * 0.8)
-	var crowd := Crowd.multimesh_instance("HQSpectators", positions, yaws, Callable())
+	var crowd := Crowd.multimesh_instance("HQSpectators", positions, yaws, Callable(), cfg)
 	if crowd != null:
 		host.add_child(crowd)
 

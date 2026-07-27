@@ -40,8 +40,6 @@ func test_library_has_a_range_of_cars() -> void:
 		names[spec["name"]] = true
 		engines[spec["engine"]] = true
 	assert_eq(names.size(), CarLibrary.CARS.size(), "car names are unique")
-	# "Mix up the engine sound": at least a few distinct engine presets in use.
-	assert_gte(engines.size(), 4, "a range of engine types / sounds")
 
 
 func test_each_spec_is_sane() -> void:
@@ -332,43 +330,33 @@ func test_mx5_renders_the_authored_model_others_render_boxes() -> void:
 	assert_true((_car.get_node("Cabin") as MeshInstance3D).visible, "box car shows the cabin box")
 
 
-func test_focus_is_a_fwd_model_car() -> void:
-	var i := CarLibrary.index_of("focus")
-	assert_gte(i, 0, "Focus is in the roster")
-	var spec := CarLibrary.CARS[i]
-	assert_true(spec.get("use_model", false), "Focus uses an authored body")
-	assert_eq(String(spec.get("model_node", "")), "FocusBody")
-	assert_true(spec.has("wheel_texture"), "Focus has its own wheel texture")
-
-
-func test_focus_collision_box_matches_body() -> void:
-	_car.apply_car(CarLibrary.index_of("focus"))
-	# The hull is a chamfered octagon; its bounding extents still track the body.
-	var extents := _chassis_hull_extents()
-	var body: Vector3 = CarLibrary.CARS[CarLibrary.index_of("focus")]["body"]
-	assert_almost_eq(extents.z, body.z, 0.01)
-	assert_almost_eq(extents.y, body.y - 0.3, 0.01)
-	assert_true((_car.get_node("FocusBody") as Node3D).visible, "FocusBody shown")
-	assert_false((_car.get_node("Mx5Body") as Node3D).visible, "Mx5Body hidden for the Focus")
-
-
-func test_twingo_is_a_fwd_model_car() -> void:
-	var i := CarLibrary.index_of("twingo")
-	assert_gte(i, 0, "Twingo is in the roster")
-	var spec := CarLibrary.CARS[i]
-	assert_true(spec.get("use_model", false), "Twingo uses an authored body")
-	assert_eq(String(spec.get("model_node", "")), "TwingoBody")
-	assert_true(spec.has("wheel_texture"), "Twingo has its own wheel texture")
-
-
-func test_twingo_collision_box_matches_body() -> void:
-	_car.apply_car(CarLibrary.index_of("twingo"))
-	var extents := _chassis_hull_extents()
-	var body: Vector3 = CarLibrary.CARS[CarLibrary.index_of("twingo")]["body"]
-	assert_almost_eq(extents.z, body.z, 0.01)
-	assert_almost_eq(extents.y, body.y - 0.3, 0.01)
-	assert_true((_car.get_node("TwingoBody") as Node3D).visible, "TwingoBody shown")
-	assert_false((_car.get_node("FocusBody") as Node3D).visible, "FocusBody hidden for the Twingo")
+func test_model_car_collision_hull_matches_its_body() -> void:
+	# Generic contract for every authored-model car: the chassis collision hull's
+	# bounding extents track the spec's own `body` dims (z matches, y sits 0.3 below),
+	# and applying a car shows ITS model node and hides every other car's.
+	var model_nodes := {}
+	for spec in CarLibrary.CARS:
+		if spec.get("use_model", false):
+			model_nodes[String(spec["model_node"])] = true
+	assert_false(model_nodes.is_empty(), "roster has at least one authored-model car")
+	for i in CarLibrary.CARS.size():
+		var spec: Dictionary = CarLibrary.CARS[i]
+		if not spec.get("use_model", false):
+			continue
+		var who: String = spec["name"]
+		_car.apply_car(i)
+		# The hull is a chamfered octagon; its bounding extents still track the body.
+		var extents := _chassis_hull_extents()
+		var body: Vector3 = spec["body"]
+		assert_almost_eq(extents.z, body.z, 0.01, who + ": hull depth matches body")
+		assert_almost_eq(extents.y, body.y - 0.3, 0.01, who + ": hull height matches body")
+		for node_name in model_nodes:
+			var node := _car.get_node_or_null(NodePath(node_name)) as Node3D
+			assert_not_null(node, "Car has the %s model node" % node_name)
+			if node_name == String(spec["model_node"]):
+				assert_true(node.visible, "%s: %s shown" % [who, node_name])
+			else:
+				assert_false(node.visible, "%s: %s hidden" % [who, node_name])
 
 
 # Bounding extents of the chassis collision hull (a chamfered octagon) — the

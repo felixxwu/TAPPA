@@ -1074,7 +1074,7 @@ func _spawn_wreck_crowd(parent: Node, center: Vector3, outward: Vector2,
 		yaws.append(atan2(center.x - px, center.z - pz))
 	# The shared Crowd helper owns the figure mesh + foot offset + MultiMesh build
 	# (and the `positions` meta tests read); it seats each figure on the terrain.
-	var crowd := Crowd.multimesh_instance("WreckCrowd", positions, yaws, terrain.height_at)
+	var crowd := Crowd.multimesh_instance("WreckCrowd", positions, yaws, terrain.height_at, cfg)
 	if crowd != null:
 		parent.add_child(crowd)
 

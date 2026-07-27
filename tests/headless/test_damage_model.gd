@@ -11,6 +11,7 @@ var _save: Node
 
 func before_each() -> void:
 	Config.reset()
+	CarFixtures.install()
 	UpgradeFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
@@ -24,6 +25,7 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	UpgradeFixtures.restore()
+	CarFixtures.restore()
 
 
 func _clean() -> void:
@@ -281,7 +283,7 @@ func test_unbound_wreck_emits_without_touching_save() -> void:
 
 
 func test_bound_wreck_zeroes_hp_keeping_car_and_upgrades() -> void:
-	var car: Dictionary = _save.grant_car("mx5")
+	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	var id := int(car["instance_id"])
 	# Upgrades are car-bound — install_upgrade fits the part straight to the car.
 	assert_true(_save.install_upgrade(id, "fx_turbo_small"), "upgrade fitted")
@@ -319,7 +321,7 @@ func test_every_car_takes_damage_and_can_wreck() -> void:
 # --- Persistence handoff -----------------------------------------------------
 
 func test_event_boundary_writeback_round_trips() -> void:
-	var car: Dictionary = _save.grant_car("xjs")
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
 	var max_hp := float(_save.get_car(id)["hp"])  # granted at full HP
 	# Working HP depleted over a run is written back at the event boundary.

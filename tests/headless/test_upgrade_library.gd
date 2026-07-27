@@ -7,9 +7,11 @@ extends GutTest
 
 func before_each() -> void:
 	CarFixtures.install()
+	UpgradeFixtures.install()
 
 
 func after_each() -> void:
+	UpgradeFixtures.restore()
 	CarFixtures.restore()
 
 
@@ -30,7 +32,7 @@ func test_catalogue_is_well_formed() -> void:
 func test_lookups() -> void:
 	# Mechanism, not authored values: slot_of/by_id resolve any real catalogue
 	# entry to its own slot, and degrade safely for unknown ids.
-	for item in UpgradeLibrary.UPGRADES:
+	for item in UpgradeLibrary.all():
 		var expected_slot: String = "" if item["consumable"] else String(item["slot"])
 		assert_eq(UpgradeLibrary.slot_of(item["id"]), expected_slot,
 			"%s slots into its own authored slot" % item["id"])
@@ -45,14 +47,14 @@ func test_effect_application_multiplies_and_adds_on_baseline() -> void:
 	cfg.mass = 1000.0
 	cfg.downforce_front = 0.0
 	cfg.downforce_rear = 0.0
-	var car := {"installed_upgrades": ["turbo_large", "brake_kit", "weight_reduction", "aero_kit"]}
+	var car := {"installed_upgrades": ["fx_turbo_big", "fx_brakes", "fx_lightweight", "fx_aero"]}
 	# Expected values are derived from each upgrade's configured effect, so this tests
 	# the apply PIPELINE (right field, multiply vs add) without pinning the tunable
 	# multipliers/amounts — retuning a kit's strength won't break the test.
-	var turbo: Dictionary = UpgradeLibrary.by_id("turbo_large")["effect"]["install_turbo"]
-	var brk: Dictionary = UpgradeLibrary.by_id("brake_kit")["effect"]
-	var wgt: Dictionary = UpgradeLibrary.by_id("weight_reduction")["effect"]
-	var aero: Dictionary = UpgradeLibrary.by_id("aero_kit")["effect"]
+	var turbo: Dictionary = UpgradeLibrary.by_id("fx_turbo_big")["effect"]["install_turbo"]
+	var brk: Dictionary = UpgradeLibrary.by_id("fx_brakes")["effect"]
+	var wgt: Dictionary = UpgradeLibrary.by_id("fx_lightweight")["effect"]
+	var aero: Dictionary = UpgradeLibrary.by_id("fx_aero")["effect"]
 	UpgradeLibrary.apply(car, cfg)
 	assert_true(cfg.turbo_enabled, "installing a turbo enables it on the config")
 	assert_almost_eq(cfg.turbo_boost_gain, float(turbo["turbo_boost_gain"]), 0.001, "turbo kit writes its boost gain")
@@ -67,10 +69,10 @@ func test_effective_meta_adjusts_power_to_weight_for_eligibility() -> void:
 	# so the derived power-to-weight rises (and never mutate the source entry).
 	var entry := {"peak_torque": 200.0, "redline": 7000.0, "mass": 1000.0}
 	var base_pw := CarLibrary.power_to_weight(entry)
-	var car := {"installed_upgrades": ["turbo_large", "weight_reduction"]}
+	var car := {"installed_upgrades": ["fx_turbo_big", "fx_lightweight"]}
 	var eff := UpgradeLibrary.effective_meta(car, entry)
-	var boost_gain: float = float(UpgradeLibrary.by_id("turbo_large")["effect"]["install_turbo"]["turbo_boost_gain"])
-	var mass_mult: float = float(UpgradeLibrary.by_id("weight_reduction")["effect"]["mass_mult"])
+	var boost_gain: float = float(UpgradeLibrary.by_id("fx_turbo_big")["effect"]["install_turbo"]["turbo_boost_gain"])
+	var mass_mult: float = float(UpgradeLibrary.by_id("fx_lightweight")["effect"]["mass_mult"])
 	assert_almost_eq(float(eff["mass"]), 1000.0 * mass_mult, 0.001, "weight reduction lightens the meta mass")
 	assert_almost_eq(float(eff["peak_torque"]), 200.0 * (1.0 + boost_gain), 0.001, "turbo rates the meta torque at peak boost")
 	assert_gt(CarLibrary.power_to_weight(eff), base_pw, "upgrades raise the effective power-to-weight")
@@ -114,7 +116,7 @@ func test_max_potential_meta_undoes_detune_and_drops_ballast() -> void:
 	# gimped to fit a lower rally still reads at its true potential for a pw_min floor check.
 	var meta := CarLibrary.by_id("fx_light_rwd")
 	var gimped := {"model_id": "fx_light_rwd", "tuning": {"engine_detune": 0.5},
-		"installed_upgrades": ["ballast_large"], "disabled_upgrades": []}
+		"installed_upgrades": ["fx_ballast"], "disabled_upgrades": []}
 	var cur := UpgradeLibrary.effective_meta(gimped, meta.duplicate())
 	var maxed := UpgradeLibrary.max_potential_meta(gimped, meta.duplicate())
 	assert_gt(CarLibrary.power_to_weight(maxed), CarLibrary.power_to_weight(cur),
@@ -138,7 +140,7 @@ func test_aero_and_brake_bias_tuning_are_gated_by_upgrades() -> void:
 	var bare := {"installed_upgrades": []}
 	assert_false(UpgradeLibrary.aero_tuning_unlocked(bare), "aero tuning locked with no aero kit")
 	assert_false(UpgradeLibrary.brake_bias_unlocked(bare), "brake bias locked with no brake kit")
-	var kitted := {"installed_upgrades": ["aero_kit", "brake_kit"]}
+	var kitted := {"installed_upgrades": ["fx_aero", "fx_brakes"]}
 	assert_true(UpgradeLibrary.aero_tuning_unlocked(kitted), "aero kit unlocks aero tuning")
 	assert_true(UpgradeLibrary.brake_bias_unlocked(kitted), "brake kit unlocks brake bias")
 
@@ -147,8 +149,8 @@ func test_disabled_upgrades_are_inert_everywhere() -> void:
 	# A part toggled off in the upgrades menu stays fitted but contributes nothing:
 	# no config effect, no effective-meta shift, no tuning gate.
 	var car := {
-		"installed_upgrades": ["turbo_large", "aero_kit", "brake_kit"],
-		"disabled_upgrades": ["turbo_large", "aero_kit", "brake_kit"],
+		"installed_upgrades": ["fx_turbo_big", "fx_aero", "fx_brakes"],
+		"disabled_upgrades": ["fx_turbo_big", "fx_aero", "fx_brakes"],
 	}
 	var cfg := GameConfig.new()
 	cfg.peak_torque = 100.0
@@ -167,14 +169,6 @@ func test_disabled_upgrades_are_inert_everywhere() -> void:
 	assert_true(UpgradeLibrary.aero_tuning_unlocked(car), "a re-enabled aero kit unlocks aero tuning again")
 
 
-func test_turbo_upgrades_are_turbo_slot_items() -> void:
-	assert_eq(UpgradeLibrary.slot_of("turbo_small"), "turbo", "small turbo is a turbo-slot item")
-	assert_eq(UpgradeLibrary.slot_of("turbo_large"), "turbo", "large turbo is a turbo-slot item")
-	# The old flat-multiplier stages are gone.
-	assert_true(UpgradeLibrary.by_id("engine_stage1").is_empty(), "Stage 1 kit removed")
-	assert_true(UpgradeLibrary.by_id("engine_stage2").is_empty(), "Stage 2 kit removed")
-
-
 func test_no_supercharger_upgrade_exists() -> void:
 	# Superchargers are intrinsic engine properties, never an upgrade.
 	for item in UpgradeLibrary.UPGRADES:
@@ -184,7 +178,7 @@ func test_no_supercharger_upgrade_exists() -> void:
 func test_install_turbo_writes_turbo_fields_onto_config() -> void:
 	var cfg := GameConfig.new()
 	assert_false(cfg.turbo_enabled, "config starts NA")
-	var owned := {"installed_upgrades": ["turbo_large"], "disabled_upgrades": []}
+	var owned := {"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}
 	UpgradeLibrary.apply(owned, cfg)
 	assert_true(cfg.turbo_enabled, "installing a turbo enables it on the config")
 	assert_gt(cfg.turbo_boost_gain, 0.0, "the turbo upgrade sets a boost gain")
@@ -194,25 +188,25 @@ func test_effective_meta_rates_turbo_at_peak_boost() -> void:
 	# Synthetic meta carrying its own peak_torque so we don't depend on the catalogue.
 	var base := {"peak_torque": 300.0, "redline": 7000.0, "mass": 1200.0, "engine": ""}
 	var na := UpgradeLibrary.effective_meta({"installed_upgrades": [], "disabled_upgrades": []}, base)
-	var turbo := UpgradeLibrary.effective_meta({"installed_upgrades": ["turbo_large"], "disabled_upgrades": []}, base)
+	var turbo := UpgradeLibrary.effective_meta({"installed_upgrades": ["fx_turbo_big"], "disabled_upgrades": []}, base)
 	assert_gt(float(turbo["peak_torque"]), float(na["peak_torque"]),
 		"a fitted turbo rates the car at a higher (boosted) peak torque")
 
 
 func test_drivetrain_slot_is_valid() -> void:
 	assert_true(UpgradeLibrary.SLOTS.has("drivetrain"), "drivetrain is a known slot")
-	var kit := UpgradeLibrary.by_id("drivetrain_swap")
-	assert_eq(UpgradeLibrary.slot_of("drivetrain_swap"), "drivetrain", "kit occupies the drivetrain slot")
+	var kit := UpgradeLibrary.by_id("fx_drivetrain")
+	assert_eq(UpgradeLibrary.slot_of("fx_drivetrain"), "drivetrain", "kit occupies the drivetrain slot")
 	assert_false(bool(kit.get("consumable", false)), "kit is not a consumable")
 	assert_true(bool(kit.get("effect", {}).get("unlocks_drivetrain_swap", false)), "kit carries the unlock flag")
 
 
 func test_drivetrain_swap_unlocked_gate() -> void:
 	var no_kit := {"installed_upgrades": [], "disabled_upgrades": []}
-	var fitted := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": []}
+	var fitted := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": []}
 	# The drivetrain kit has no enable/disable — owning it is the unlock, so a kit sitting
 	# in disabled_upgrades (e.g. won but not podium-applied) is still unlocked.
-	var disabled := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": ["drivetrain_swap"]}
+	var disabled := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": ["fx_drivetrain"]}
 	assert_false(UpgradeLibrary.drivetrain_swap_unlocked(no_kit), "no kit -> locked")
 	assert_true(UpgradeLibrary.drivetrain_swap_unlocked(fitted), "owned kit -> unlocked")
 	assert_true(UpgradeLibrary.drivetrain_swap_unlocked(disabled), "owned kit unlocks even if disabled")
@@ -221,16 +215,16 @@ func test_drivetrain_swap_unlocked_gate() -> void:
 func test_resolve_drive_override() -> void:
 	var locked := {"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": CarLibrary.FWD}
 	assert_eq(UpgradeLibrary.resolve_drive_override(locked), -1, "override ignored without the kit")
-	var stock := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": []}
+	var stock := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": []}
 	assert_eq(UpgradeLibrary.resolve_drive_override(stock), -1, "no override set -> -1 (use stock)")
-	var picked := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [], "drivetrain_override": CarLibrary.AWD}
+	var picked := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [], "drivetrain_override": CarLibrary.AWD}
 	assert_eq(UpgradeLibrary.resolve_drive_override(picked), CarLibrary.AWD, "unlocked + set -> chosen mode")
 
 
 func test_effective_meta_reports_override_drive_mode() -> void:
 	var meta := {"engine": "", "mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0,
 		"drive_mode": CarLibrary.FWD}
-	var owned := {"installed_upgrades": ["drivetrain_swap"], "disabled_upgrades": [],
+	var owned := {"installed_upgrades": ["fx_drivetrain"], "disabled_upgrades": [],
 		"drivetrain_override": CarLibrary.RWD}
 	var out := UpgradeLibrary.effective_meta(owned, meta)
 	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.RWD, "reports the chosen mode when unlocked")

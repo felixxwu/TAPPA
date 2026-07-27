@@ -1159,14 +1159,19 @@ func _prepare_free_roam() -> void:
 		RallySession.abandon()
 	var cfg: GameConfig = Config.data
 	cfg.track_seed = randi()
-	cfg.track_straightness = 0.5
-	cfg.track_forestiness = 0.5
-	cfg.track_tarmac_fraction = 0.5
+	cfg.track_straightness = cfg.free_roam_straightness
+	cfg.track_forestiness = cfg.free_roam_forestiness
+	cfg.track_tarmac_fraction = cfg.free_roam_tarmac_fraction
 	# Free roam rolls a fresh landscape each entry: a random lake depth, a random
-	# large-scale relief (layer-1 amplitude), and a random home/Greece location.
-	cfg.track_water_level_m = randf_range(-15.0, -5.0)
-	cfg.terrain_layer1_amplitude = randf_range(10.0, 35.0)
-	RallySession.free_roam_region_id = "greece" if randi() % 2 == 0 else "home"
+	# large-scale relief (layer-1 amplitude), and a random region. The region is drawn
+	# from the whole RegionLibrary roster (not the unlocked subset — free roam is a
+	# sandbox, and Greece was always reachable here), so a newly authored region shows
+	# up in free roam automatically.
+	cfg.track_water_level_m = randf_range(cfg.free_roam_water_level_min_m, cfg.free_roam_water_level_max_m)
+	cfg.terrain_layer1_amplitude = randf_range(cfg.free_roam_relief_min, cfg.free_roam_relief_max)
+	var regions := RegionLibrary.all()
+	RallySession.free_roam_region_id = "" if regions.is_empty() \
+		else String(regions[randi() % regions.size()].get("id", ""))
 
 
 func _enter_table() -> void:

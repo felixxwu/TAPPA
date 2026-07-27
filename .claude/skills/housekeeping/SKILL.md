@@ -1,6 +1,6 @@
 ---
 name: housekeeping
-description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, tests that violate project conventions, mobile-phone performance regressions, or codebase-wide simplification opportunities.
+description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, tests that violate project conventions, broken autoloads or input actions, save-schema compatibility, stale generated caches, build/CI and export-preset health, Android bundle size, mobile-phone performance regressions, git hygiene, or codebase-wide simplification opportunities.
 ---
 
 # Housekeeping
@@ -10,7 +10,10 @@ description: Use when the user invokes /housekeeping or asks for a repo health c
 A periodic health sweep for the `rally` repo: catch the things that quietly rot
 over time — tests breaking, `features/` docs drifting from the code, `todo/`
 specs left stale after work lands, config fields diverging, scripts growing past
-the point they should be split, assets/tests going stale, mobile-phone
+the point they should be split, assets/tests going stale, autoloads and input
+actions pointing at things that moved, save migrations missing for newly-
+persisted fields, committed generated caches going stale, build scripts and
+export presets diverging from CI, the Android download growing, mobile-phone
 performance headroom eroding (the game is meant to run on old phones), and
 simplification/reuse debt accreting across the whole codebase.
 
@@ -65,7 +68,7 @@ Per `CLAUDE.md` (Testing section), flag tests that:
 - **Skip `CarFixtures.install()`** where a synthetic roster belongs (catalogue-
   dependent tests that aren't catalogue-contract tests).
 
-### 4. Docs (`features/`) in sync with code
+### 4. Docs in sync with code (`features/` and beyond)
 
 - Every file in `features/` should be listed in `features/README.md`'s index —
   diff the directory against the index.
@@ -74,6 +77,20 @@ Per `CLAUDE.md` (Testing section), flag tests that:
   Untouched doc + changed code = drift.
 - Check for broken cross-reference links between feature files and to
   `scripts/*.gd` paths that no longer exist.
+- **Docs outside `features/` drift too** — don't stop at the index:
+  - `gameplay.md` is the north star `CLAUDE.md` says to keep aligned when
+    gameplay direction changes. If progression / damage / rewards / tuning moved,
+    check it still describes the game that exists.
+  - `README.md` — do the documented setup steps and script names
+    (`./run_tests.sh`, `./build_web.sh`, the Godot version) still match reality?
+  - `docs/`, `good-seeds.md` — flag content referencing removed systems, and
+    seeds that no longer generate what they claim (track generation changes
+    invalidate them silently).
+  - `CLAUDE.md` and `.claude/skills/*` (**including this file**) — the rules
+    cite concrete paths, symbols and helpers (`CarFixtures.install()`,
+    `SceneTestHelpers.minimal_world()`, `MenuNav.attach`, `scripts/menu_nav.gd`).
+    When one gets renamed or removed, the instructions rot and quietly mislead
+    every future session. Verify the cited symbols still exist.
 
 ### 5. `todo/` specs current
 
@@ -87,7 +104,7 @@ Per `CLAUDE.md` (Testing section), flag tests that:
 ### 6. Config drift (`GameConfig`)
 
 - `config/game_config.tres` is authored data for the `GameConfig` resource
-  (`scripts/game_config.gd`, ~1550 lines). Check the `.tres` for properties that
+  (`scripts/game_config.gd`, ~1780 lines). Check the `.tres` for properties that
   no longer exist as `@export`s in the script (orphaned authored values) and
   `@export`s with no counterpart being exercised.
 - Reminder to surface: tuning values belong in the `.tres`, not script/scene
@@ -96,7 +113,7 @@ Per `CLAUDE.md` (Testing section), flag tests that:
 
 ### 7. Oversized scripts / refactor candidates
 
-- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~3400),
+- `wc -l scripts/*.gd | sort -rn | head`. Current giants: `hq.gd` (~3100),
   `game_config.gd`, `car.gd`, `world.gd` (each >1000). Flag scripts that have
   grown a lot since the last sweep or that mix several responsibilities — these
   are refactor candidates. Don't refactor here; note it and suggest a split.
@@ -107,8 +124,9 @@ Per `CLAUDE.md` (Testing section), flag tests that:
 
 - Assets deleted from disk but still referenced (check `git status` for deleted
   `models/`, `textures/`, `tools/` and grep the codebase for references to
-  them). At time of writing `low_poly_tree.glb`, `leaves.png`, and
-  `tools/lowpoly_tree.gd` were deleted — confirm nothing still loads them.
+  them). For each recently deleted asset — see
+  `git log --diff-filter=D --name-only -- 'models/*' 'textures/*' 'tools/*'` —
+  confirm nothing still loads it.
 - `.import` / `.uid` files whose source asset is gone, or assets with no
   `.import` sibling.
 - Scripts in `scripts/` that nothing references (no `preload`/`load`/`class_name`
@@ -128,7 +146,137 @@ nav test. Grep new/changed menu scripts for `MenuNav.attach`.
 - Uncommitted work: summarize `git status` so the user knows what's in flight
   (don't commit anything without being asked).
 
-### 11. Mobile-phone performance headroom
+### 11. Godot project integrity (import / parse pass)
+
+The test suite (§1) exercises code, but it won't tell you the *project* is
+loadable — a scene pointing at a moved script, or a `.uid` that drifted, can be
+green in tests and broken in the editor.
+
+- Run a headless load pass: `"$GODOT" --headless --path . --check-only --quit`
+  (binary per `CLAUDE.md`; `$GODOT` overrides). Surface every parse error and
+  script warning it prints — these are the ones nobody sees until they open the
+  editor.
+- Enumerate the root scenes explicitly (`main.tscn`, `hq.tscn`, `garage.tscn`,
+  `podium.tscn`, `standings.tscn`, `corner_catalog.tscn`, `car.tscn`) and check
+  each `ext_resource` path in them still exists on disk. A dangling
+  `ext_resource` is the classic post-refactor rot.
+- Check `.uid` files whose sibling script is gone, and scripts with no `.uid`.
+
+### 12. Autoloads and input actions vs code
+
+`project.godot` is hand-authored data that nothing type-checks, so it drifts
+silently when scripts move or features are removed.
+
+- **Autoloads** — the `[autoload]` block registers ~9 singletons (`Config`,
+  `Save`, `InputRemap`, `RallySession`, `Benchmark`, `DisplayStretch`,
+  `WebFullscreen`, `PerfLog`, `Music`). Check each `res://scripts/*.gd` path
+  still exists, and flag any autoload nothing references (grep the singleton
+  name across `scripts/`) — a resident singleton with no callers is dead weight
+  loaded on every boot, including on the weakest phone.
+- **Input actions** — the `[input]` block defines the gameplay map
+  (`accelerate`, `brake_reverse`, `steer_left`, `steer_right`, `pause`,
+  `toggle_debug_arrows`, `toggle_perf_overlay`, `skip_to_finish`, …). Check both
+  directions: an action defined in `project.godot` that no code reads (commit
+  `ed4a9a8` replaced `reset_car` with `pause` — exactly this shape of leftover),
+  and an `is_action_pressed("…")` in code naming an action that isn't defined.
+  Also confirm rebindable actions are known to `scripts/input_remap.gd` and the
+  controls doc (`features/controls.md`) matches.
+
+### 13. Save-schema compatibility
+
+`scripts/save_manager.gd` versions the save file (`SCHEMA_VERSION`) and steps
+old files forward through `_migrate_step(from_version, p)`. A miss here destroys
+real player progress, so treat it as higher severity than anything else in this
+sweep.
+
+- If recent work added a persisted field, check it either got a migration step
+  **or** is covered by the missing-key backfill — and that `SCHEMA_VERSION` was
+  bumped iff a step was added.
+- Verify the migration chain is contiguous: every version between the oldest
+  supported and current has a `_migrate_step` branch, and each branch sets
+  `schema_version` to exactly `from_version + 1`.
+- Check `todo/web-save-persistence.md` and `todo/reactive-save-store.md` against
+  what's landed (§5 rules apply), and confirm `features/save-persistence.md`
+  documents the current schema version.
+
+### 14. Generated data caches
+
+`data/track_cache.json` and `data/opponent_cache.json` are committed generated
+artifacts, baked by `cache_tracks.sh` / `cache_opponents.sh` / `cache_all.sh`.
+If generation code changed after the bake, the game ships content that no longer
+matches the generator — invisible in tests.
+
+- Compare mtimes / last-commit dates: is either cache older than the scripts
+  that produce it (track generation in `world.gd` and friends, opponent
+  generation)? If so, flag it and suggest re-running `./cache_all.sh` — don't
+  regenerate unasked, since it rewrites committed content.
+- Check the cache schema still matches what the loader reads (a renamed field
+  makes entries silently default).
+
+### 15. Build, export presets and CI health
+
+Nothing else in this sweep looks at how the game actually ships.
+
+- **CI** — `.github/workflows/deploy.yml`. Check the last few runs
+  (`gh run list -L 5`) and surface failures. Per the `google-play-publishing`
+  auto-memory a first Play publish is still pending; note anything blocking it.
+- **Presets vs scripts** — `export_presets.cfg` defines `Web`, `Android`, and
+  `Android Play (AAB)`. Confirm every preset name referenced by `build_web.sh`,
+  `build_android.sh`, `build_android_play.sh`, `build_windows.sh` and the
+  workflow still exists and is spelled identically; a renamed preset fails only
+  at release time.
+- **Presets consistent with each other** — the three presets share an
+  `exclude_filter`; if a new asset directory got excluded in one and not the
+  others, that's drift. Also flag `variant/thread_support` flipping to `true`
+  on Web (see §17) and Android `architectures/arm64-v8a` being turned off.
+- **Secrets never committed** — `.gitignore` guards `*.keystore`, `*.jks`,
+  `service-account*.json`, `.env`. Verify `git ls-files` actually agrees
+  (`git ls-files | grep -iE 'keystore|\.jks|service-account|\.env$'` should be
+  empty). A committed signing key is the one finding worth interrupting for.
+
+### 16. Android bundle-size quick wins
+
+The download size gates installs on exactly the low-end audience the game targets
+(§17), and it's the metric Play surfaces first. This is a **report** pass —
+propose wins, don't delete assets or re-encode audio unasked.
+
+- **Measure before theorising.** Read the real payload rather than guessing from
+  the repo: build (or reuse the newest artifact in `build/`) and list the
+  packaged files by size — `unzip -l` the `.apk`/`.aab`, or inspect the `.pck`.
+  Report the top ~20 entries. Repo size ≠ bundle size, and the whole value of
+  this pass is knowing which is which.
+- **Confirm the excludes are doing their job.** All three presets exclude
+  `addons/gut/*, tests/*, docs/*, tools/*, benchmark/*, todo/*, features/*,
+  *.mp3, *.blend, *.blend1`. Two large tracked trees are **not** named there:
+  `ref/` (~28 MB of car reference screenshots) and the non-`.blend` contents of
+  `blender/` (`.gltf`/`.bin`/source `texture.png` alongside the exported
+  `.glb`). Whether they land in the package depends on whether the editor
+  imported them — so **check the packaged file list, then act on the answer**:
+  if they're in there, adding `ref/*` and the `blender/` source siblings to
+  `exclude_filter` is the single biggest win available and costs nothing.
+- **Duplicate model payloads.** Where a car ships both `.gltf` + `.bin` and a
+  `.glb`, only the imported one is needed at runtime. Flag the redundant pair.
+- **Oversized textures.** Check the largest entries under `textures/` (e.g.
+  `greece.png`, `sky_field.png`, `sky-greece.jpg`) against the resolution the
+  game actually samples at — a sky or ground texture authored larger than it's
+  displayed is pure download. Note candidates and let the user decide; keep §17's
+  mipmap requirement intact if anything is re-imported.
+- **Audio.** `music/` is ~4.3 MB of `.ogg` (`.mp3` is already excluded but isn't
+  the shipped format). Flag tracks whose bitrate is well above what a phone
+  speaker resolves, and any `.ogg` no longer referenced by
+  `scripts/music_director.gd` — an orphaned track is free savings.
+- **Unreferenced assets are bundle weight, not just clutter.** Cross-reference
+  §8's orphan findings here: anything imported but never loaded still ships.
+- **Architectures and format.** Only `arm64-v8a` is enabled — confirm it stayed
+  that way (adding `armeabi-v7a` roughly doubles the native payload). For Play,
+  `export_format=1` (AAB) lets Google split delivery per device; flag if it
+  reverted to APK.
+- **Report savings with numbers.** Each candidate gets an estimated KB/MB saved
+  and a risk note (`safe` / `needs a look in-game` / `designer's call`), ranked
+  biggest-win-first. Wins that are pure preset config are the ones to recommend
+  applying first; asset re-encodes are the user's call.
+
+### 17. Mobile-phone performance headroom
 
 The game's design principle is that it's **inherently low-end** — one lean
 pipeline that must run on old phones, no quality-tier switch
@@ -142,10 +290,16 @@ separate, heavier step: the in-game **Settings → Benchmark**
 real suspect — the housekeeping pass itself is grep/read-level.)
 
 - **Frame cap still applied.** `world.gd._ready()` must still cap the render loop
-  via `Engine.max_fps = cfg.target_fps_for(Platform.is_mobile_or_web(), Platform.is_web())`
-  (`target_fps` = 60 desktop, `target_fps_mobile` = 60 native mobile, `target_fps_web`
-  = 30 web; `game_config.gd`). Regression smell: a new `Engine.max_fps = 0`, a removed
-  cap, or the web/mobile branch lost. Grep: `grep -rn "max_fps\|target_fps" scripts/`.
+  via `Engine.max_fps`, now sourced through `FpsSetting` (`scripts/fps_setting.gd`):
+  `FpsSetting.default_cap() if Benchmark.active else FpsSetting.resolve()`, applied
+  unless `Platform.is_headless()`. `FpsSetting.resolve()` returns the player's saved
+  Settings → Display choice, falling back to `FpsSetting.default_cap()`, which is
+  `Config.data.target_fps_for(Platform.is_mobile_or_web(), Platform.is_web(),
+  Platform.is_touch())` (`target_fps` = 60 desktop, `target_fps_mobile` = 60 native
+  mobile, `target_fps_web` = 30 web touch; `game_config.gd`). Regression smell: a new
+  unconditional `Engine.max_fps = 0`, a removed cap, the headless guard gone, or the
+  web/mobile branch lost. Grep:
+  `grep -rn "max_fps\|target_fps\|FpsSetting" scripts/`.
 - **Foliage / draw budget hasn't ballooned.** The scene builds roughly
   `track_turn_count × trees_per_turn` instances (`world.gd`). Check
   `config/game_config.tres` for upward drift in `trees_per_turn`,
@@ -190,7 +344,7 @@ real suspect — the housekeeping pass itself is grep/read-level.)
   collision-box culling) — note if recent work landed any of them (update the
   spec per the `todo/` rules in `CLAUDE.md`) or made an open one more pressing.
 
-### 12. Codebase-wide simplification pass
+### 18. Codebase-wide simplification pass
 
 Run the `/simplify` lens — **reuse, simplification, efficiency, altitude**
 (quality only, *not* bug-hunting; that's `/code-review`) — but over the **entire
@@ -200,7 +354,7 @@ helpers that grew a second responsibility, hand-rolled loops that a built-in or
 an existing utility already covers, dead abstractions, needless indirection.
 
 - **Fan out — don't read the tree serially.** `scripts/` alone has multi-
-  thousand-line files (`hq.gd` ~3400, `game_config.gd`, `car.gd`, `world.gd`).
+  thousand-line files (`hq.gd` ~3100, `game_config.gd`, `car.gd`, `world.gd`).
   Spawn several `Explore` / `general-purpose` subagents, each owning a slice
   (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
   the menu scripts, the terrain files), each returning candidate simplifications
@@ -214,7 +368,7 @@ an existing utility already covers, dead abstractions, needless indirection.
   - **Simplification** — over-nested conditionals, redundant state, a long
     function that reads as 3 smaller ones, dead branches.
   - **Efficiency** — work done per-frame that could be hoisted/cached (respect
-    the mobile-perf lens in §11), `find_children` in hot paths, needless
+    the mobile-perf lens in §17), `find_children` in hot paths, needless
     allocations — *quality-level*, leave deep perf work to the perf spec.
   - **Altitude** — logic sitting at the wrong layer (gameplay constants hardcoded
     in a script instead of `GameConfig`; a script reaching across a boundary it
@@ -223,7 +377,7 @@ an existing utility already covers, dead abstractions, needless indirection.
   value (broad duplication and dead abstractions first; micro-nits last — don't
   dump every trivial tidy), and give a recommended change for each. **Do not
   refactor silently.** This overlaps §7 (oversized scripts) — fold size-driven
-  split suggestions in there and keep §12 for the quality/reuse findings.
+  split suggestions in there and keep §18 for the quality/reuse findings.
 - **Applying, once the user picks.** For the subset they choose, either apply a
   small safe batch directly or run `/simplify --fix` scoped to those files. Then
   honour `CLAUDE.md`: it's a **behaviour-preserving** change, so the relevant
@@ -231,6 +385,25 @@ an existing utility already covers, dead abstractions, needless indirection.
   (be generous about blast radius) and run them (`./run_tests.sh --fast <name>`).
   Never weaken a test to accommodate a "simplification"; if a green test breaks,
   the refactor changed behaviour — back it out.
+
+### 19. Repo and git hygiene
+
+Low severity, purely report-only — but it accretes, so it's worth a glance each
+sweep. Never delete a branch or commit anything here without being asked.
+
+- **Merged branches** — `git branch -r --merged origin/main | wc -l` against
+  `git branch -r | wc -l`. When most remote branches are already merged, offer to
+  list them for pruning. Same for stale locals (`git branch --merged main`).
+- **Junk tracked in git** — check for `.DS_Store` and other OS/editor detritus in
+  the index (`git ls-files | grep -iE '\.DS_Store|Thumbs\.db|\.swp$'`) and whether
+  `.gitignore` actually covers them. Committed `.DS_Store` files are the common
+  case in this repo.
+- **Ignore-rule drift** — `.gitignore` names specific scratch artifacts
+  (`/tools/render_out/`, the sign/UI preview PNGs, `/fonts/candidates/`,
+  `/.superpowers/`). Flag rules whose target no longer exists (dead rule) and
+  generated scratch files sitting tracked or untracked-but-unignored.
+- **Large files** — flag any newly-committed file over a few MB; git keeps it
+  forever. Cross-reference §16 if it also ships in the bundle.
 
 ## Report format
 
@@ -252,3 +425,11 @@ how many are clean, how many need attention. End with a `result:` line.
   confirming first.
 - **Running the full test suite twice** — if you just ran it for section 1,
   reuse that result.
+- **Guessing bundle size from repo size** — §16 is worthless without reading the
+  actual packaged file list. `ref/` being 28 MB on disk says nothing about
+  whether it ships. Measure, then recommend.
+- **Regenerating caches or re-encoding assets unasked** — §14 and §16 rewrite
+  committed content. Report the finding and the estimated saving; let the user
+  trigger the rebake.
+- **Pruning branches or deleting tracked junk on your own** — §19 is report-only,
+  same as the rest.

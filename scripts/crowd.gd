@@ -43,8 +43,15 @@ static func foot_offset(m: Mesh) -> float:
 # RenderingServer no-op stub under --headless). Returns null when the shared mesh is
 # missing or no positions were supplied (nothing to render). The caller adds the
 # returned node to the tree.
+#
+# `cfg` supplies the shared world-prop render distance (tree_render_distance_m /
+# tree_render_fade_m) so a decorative crowd culls at the same range as the trees,
+# signs and stage spectators around it — every instanced field in the world must be
+# distance-bounded for mobile. Omit it and we read the Config autoload's live config;
+# pass one explicitly when the caller already holds it (or in a headless test).
 static func multimesh_instance(node_name: String, positions: PackedVector2Array,
-		yaws: PackedFloat32Array, ground_at: Callable) -> MultiMeshInstance3D:
+		yaws: PackedFloat32Array, ground_at: Callable,
+		cfg: GameConfig = null) -> MultiMeshInstance3D:
 	var m := mesh()
 	if m == null or positions.is_empty():
 		return null
@@ -61,4 +68,16 @@ static func multimesh_instance(node_name: String, positions: PackedVector2Array,
 	mmi.name = node_name
 	mmi.multimesh = mm
 	mmi.set_meta("positions", positions)
+	var c := cfg
+	if c == null:
+		# Autoloads are tree nodes, not Engine singletons (Engine.has_singleton("Config")
+		# is false), and a static func has no `self` to resolve the global against — so
+		# reach the live config through the scene tree. Absent in --script-only contexts,
+		# where we simply leave the crowd unbounded.
+		var loop := Engine.get_main_loop() as SceneTree
+		var node := loop.root.get_node_or_null(^"/root/Config") if loop != null else null
+		if node != null:
+			c = node.data as GameConfig
+	if c != null:
+		MeshUtil.apply_visibility_range(mmi, c.tree_render_distance_m, c.tree_render_fade_m)
 	return mmi

@@ -48,8 +48,10 @@ func _has_swap_button(m: Control) -> bool:
 
 func before_each() -> void:
 	CarFixtures.install()
+	UpgradeFixtures.install()
 
 func after_each() -> void:
+	UpgradeFixtures.restore()
 	CarFixtures.restore()
 
 func _owned_fixture_car() -> Dictionary:

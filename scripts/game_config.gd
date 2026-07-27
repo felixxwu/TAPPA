@@ -824,6 +824,21 @@ var peak_torque_rpm := 4500.0
 ## horizontally so the menu uses more space (the car description hides while it's up).
 @export_range(0.5, 1.0) var hq_lift_menu_centered_width_frac := 0.82
 
+@export_group("Free Roam")
+## Free roam (Test Drive) generation settings — hq.gd's _prepare_free_roam writes
+## these into the live Config before the scene change. The three shape values are
+## fixed ("neutral" track); the water level and layer-1 relief are rolled per entry
+## inside the min/max bands below, so every entry gets a fresh landscape.
+@export_range(0.0, 1.0) var free_roam_straightness := 0.5
+@export_range(0.0, 1.0) var free_roam_forestiness := 0.5
+@export_range(0.0, 1.0) var free_roam_tarmac_fraction := 0.5
+## Random lake depth band (world Y) rolled per free-roam entry.
+@export var free_roam_water_level_min_m := -15.0
+@export var free_roam_water_level_max_m := -5.0
+## Random large-scale relief band (terrain layer-1 amplitude) rolled per entry.
+@export_range(0.0, 100.0) var free_roam_relief_min := 10.0
+@export_range(0.0, 100.0) var free_roam_relief_max := 35.0
+
 @export_group("World")
 ## Exponential distance fog. Demoted from "opaque wall hiding the ~75 m terrain
 ## edge" to thin aerial haze now that DistantTerrain provides a far horizon — low

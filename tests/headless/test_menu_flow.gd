@@ -908,8 +908,8 @@ func test_hq_free_roam_prepares_a_fresh_unseeded_run() -> void:
 	assert_ne(Config.data.track_seed, first_seed, "free roam re-seeds the track on every entry")
 
 
-# Free roam rolls a random lake depth, large-scale relief, and home/Greece location
-# each entry — every roll must land inside the requested ranges / region set.
+# Free roam rolls a random lake depth, large-scale relief, and region each entry —
+# every roll must land inside the configured bands / the real region roster.
 func test_hq_free_roam_randomises_water_relief_and_location() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -917,12 +917,14 @@ func test_hq_free_roam_randomises_water_relief_and_location() -> void:
 	hq._on_exterior_start()
 	for _i in 20:
 		hq._prepare_free_roam()
-		assert_between(Config.data.track_water_level_m, -15.0, -5.0,
-			"free-roam water level stays in the -15..-5 band")
-		assert_between(Config.data.terrain_layer1_amplitude, 10.0, 35.0,
-			"free-roam layer-1 amplitude stays in the 10..35 band")
-		assert_true(RallySession.free_roam_region_id in ["home", "greece"],
-			"free-roam location is home or Greece")
+		assert_between(Config.data.track_water_level_m,
+			Config.data.free_roam_water_level_min_m, Config.data.free_roam_water_level_max_m,
+			"free-roam water level stays inside the configured band")
+		assert_between(Config.data.terrain_layer1_amplitude,
+			Config.data.free_roam_relief_min, Config.data.free_roam_relief_max,
+			"free-roam layer-1 amplitude stays inside the configured band")
+		assert_true(RegionLibrary.index_of(RallySession.free_roam_region_id) >= 0,
+			"free-roam location is a real RegionLibrary region")
 
 
 # The garage "Garage" button opens the car park to pick which owned car to work on:
@@ -2283,19 +2285,19 @@ func test_first_run_start_opens_starter_pick_then_grants_first_car() -> void:
 	await _await_lineup(hq)
 	assert_eq(hq._view, hq.View.CARPARK, "first run lands in the car park")
 	assert_eq(hq._carpark_mode, hq.CarparkMode.STARTER, "in starter-pick mode")
-	assert_eq(hq._eligible.size(), 3, "three starter cars parked (mx5 + focus + twingo)")
-	# Pick the focus.
-	for i in hq._eligible.size():
-		if String(hq._eligible[i].get("model_id", "")) == "focus":
-			hq._focus = i
-			hq._focus_changed(true)
-			break
+	assert_eq(hq._eligible.size(), hq.STARTER_MODEL_IDS.size(),
+		"one parked starter preview per STARTER_MODEL_IDS entry")
+	# Pick whichever starter is parked first — the flow, not a particular car.
+	hq._focus = 0
+	hq._focus_changed(true)
+	var picked_id := String(hq._eligible[0].get("model_id", ""))
+	assert_ne(picked_id, "", "the parked preview names its model")
 	hq._on_start_pressed()
 	assert_true(bool(_save.profile["starter_picked"]), "starter recorded")
-	assert_eq(String(_save.profile["starter_model_id"]), "focus")
+	assert_eq(String(_save.profile["starter_model_id"]), picked_id)
 	var cars: Array = _save.profile["cars"]
 	assert_eq(cars.size(), 1, "exactly one car granted")
-	assert_eq(String(cars[0]["model_id"]), "focus")
+	assert_eq(String(cars[0]["model_id"]), picked_id, "the granted car is the picked starter")
 	assert_false(_save.car_is_wrecked(cars[0]), "the chosen starter is a healthy, ordinary car")
 	assert_eq(_save.selected_instance_id(), int(cars[0]["instance_id"]), "the starter is selected")
 	assert_eq(hq._view, hq.View.GARAGE, "lands in the garage after picking")
@@ -2413,11 +2415,16 @@ func test_swap_preview_visible_only_in_swap_mode() -> void:
 
 
 func test_display_name_reflects_swap() -> void:
-	# EngineSwap.display_name looks the swapped engine's layout up in EngineLibrary by id,
-	# so it needs a real engine id to resolve — restore the real catalogue for this one test.
-	CarFixtures.restore()
-	assert_eq(EngineSwap.display_name({"name": "Twingo", "engine": "renault_12_i4"},
-		{"swapped_engine": "ford_50_v8"}), "V8 Twingo", "swapped owned car shows the layout prefix")
+	# EngineSwap.display_name looks the swapped engine's layout up in EngineLibrary by id
+	# and upper-cases it into a prefix. Driven off the synthetic fixture engines, with the
+	# expected prefix derived from the swapped engine's own `layout` field.
+	var swapped: Dictionary = EngineLibrary.by_id("fx_v8")
+	var prefix := String(swapped["layout"]).to_upper()
+	assert_eq(EngineSwap.display_name({"name": "Fixture Roadster", "engine": "fx_i4"},
+		{"swapped_engine": "fx_v8"}), "%s Fixture Roadster" % prefix,
+		"swapped owned car shows the swapped engine's layout as a prefix")
+	assert_eq(EngineSwap.display_name({"name": "Fixture Roadster", "engine": "fx_i4"}, {}),
+		"Fixture Roadster", "an unswapped car keeps its plain name")
 
 
 func test_tuning_sliders_are_all_the_same_length() -> void:

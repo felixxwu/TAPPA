@@ -31,6 +31,28 @@ var _synth: EngineAudioSynth
 var _playback: AudioStreamGeneratorPlayback
 var _scratch := PackedVector2Array()
 
+# Resolved-once references for the per-frame fill. Walking the parent chain (and the
+# dynamic string-keyed `get("config")` in _car_config()) every frame is exactly the
+# per-frame node-walking this project bans on low-end mobile; the car, its engine and
+# its config only change at spawn / car swap, and every one of those paths already
+# calls reconfigure() (car.gd `_reconfigure_engine_audio`), so that's where we refresh.
+var _car: Node3D
+var _engine: EngineSim
+var _cfg: GameConfig
+# The active camera CAN legitimately change at runtime (chase ↔ free-roam ↔ replay), so
+# it's check-and-update rather than cache-once: compare the viewport's current camera to
+# the cached one and only re-seat when it actually differs.
+var _cam: Camera3D
+
+
+# Re-resolve the cached car / engine / config. Safe to call before the parent car's
+# _ready() has run (drivetrain is still null then) — the per-frame path re-resolves
+# lazily until the real references exist.
+func _resolve_refs() -> void:
+	_car = get_parent() as Node3D
+	_cfg = _car_config()
+	_engine = _car.drivetrain.engine if _car != null and _car.get("drivetrain") != null else null
+
 
 # The car injects an isolated GameConfig copy into its own `config` (so a prop/
 # display car can't clobber the active car's tuning via the global Config.data).
@@ -46,7 +68,8 @@ func _car_config() -> GameConfig:
 
 
 func _ready() -> void:
-	var cfg: GameConfig = _car_config()
+	_resolve_refs()
+	var cfg: GameConfig = _cfg
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
 	gen.buffer_length = buffer_seconds()
@@ -69,7 +92,8 @@ func _ready() -> void:
 # Rebuild the synth from the current config — call after a car swap changes the
 # engine (cylinder count + firing order), which the synth caches at init.
 func reconfigure() -> void:
-	_synth = EngineAudioSynth.new(_car_config(), MIX_RATE)
+	_resolve_refs()
+	_synth = EngineAudioSynth.new(_cfg, MIX_RATE)
 
 
 # Cumulative generator buffer underruns ("skips"): each one is a frame that drained
@@ -89,7 +113,11 @@ func _process(delta: float) -> void:
 func _timed_process(_delta: float) -> void:
 	if _playback == null:
 		return  # headless / no audio device
-	var engine: EngineSim = get_parent().drivetrain.engine
+	if _engine == null:
+		_resolve_refs()  # parent car wasn't built yet at our _ready(); resolve on first use
+		if _engine == null:
+			return
+	var engine: EngineSim = _engine
 	var n := _playback.get_frames_available()
 	if n <= 0:
 		return
@@ -97,14 +125,16 @@ func _timed_process(_delta: float) -> void:
 	# avoiding a per-frame slice() allocation. resize only fires when n changes.
 	if _scratch.size() != n:
 		_scratch.resize(n)
-	var cfg: GameConfig = _car_config()
+	var cfg: GameConfig = _cfg
 	# Proximity attenuation: quieter as the active camera moves away. Non-positional
 	# player, so we drive volume_db ourselves from the squared camera distance (no
 	# sqrt) through the physical 1/d curve. Never runs headless (guarded above by the
 	# null _playback), so tests that instantiate the intro are unaffected.
-	var cam := get_viewport().get_camera_3d()
-	if cam != null:
-		var d2 := cam.global_position.distance_squared_to(get_parent().global_position)
+	var cur := get_viewport().get_camera_3d()
+	if cur != _cam:
+		_cam = cur  # check-and-update: only re-seat when the active camera actually changed
+	if _cam != null and _car != null:
+		var d2 := _cam.global_position.distance_squared_to(_car.global_position)
 		volume_db = EngineAudioSynth.attenuation_db(
 			d2, cfg.engine_audio_ref_distance_m, cfg.engine_audio_max_attenuation_db)
 	# fuel_cut (limiter OR damage misfire) ducks the note; the crackle burst is

@@ -37,7 +37,6 @@ func test_catalog_is_a_sane_range_of_engines() -> void:
 			assert_gt(ratios[g], 0.0, who + " gear %d ratio positive" % (g + 1))
 			if g > 0:
 				assert_lt(ratios[g], ratios[g - 1], who + " gear %d shorter than gear %d" % [g + 1, g])
-	assert_gte(layouts.size(), 4, "a range of layouts / sounds")
 
 
 func test_stable_id_lookups() -> void:

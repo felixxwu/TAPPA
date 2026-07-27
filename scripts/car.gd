@@ -226,6 +226,10 @@ func end_replay() -> void:
 # the instant a key is pressed.
 var _steer := 0.0
 
+# Reusable return buffer for _update_steering (see _inputs_scratch) — filled and
+# returned every physics tick so it allocates no Dictionary.
+var _steer_scratch := {"slip_angle": 0.0, "travel_angle": 0.0, "slip_peak": 0.0}
+
 
 func _ready() -> void:
 	# Default to the shared global config unless a spawner already handed this
@@ -538,20 +542,26 @@ func _step_replay(delta: float) -> void:
 	# ReplayRecorder samples in), iterated here to avoid allocating a fresh
 	# `front_wheels + rear_wheels` Array each replay frame.
 	var wheels := drivetrain.all_wheels if drivetrain != null else []
-	var omap := {}
+	# Reused scratch dict (cleared + refilled in place) rather than a fresh
+	# Dictionary per replay frame — same no-allocation reasoning as all_wheels
+	# above. Nothing retains a replay_omega reference across frames: drivetrain
+	# only reads it inside the same tick, and end_replay swaps in a fresh {}.
+	_replay_omega_scratch.clear()
 	for i in wheels.size():
 		var w: VehicleWheel3D = wheels[i]
 		if i < f["wheel_steer"].size():
 			w.steering = f["wheel_steer"][i]
 		if i < f["wheel_omega"].size():
-			omap[w] = f["wheel_omega"][i]
+			_replay_omega_scratch[w] = f["wheel_omega"][i]
 	if drivetrain != null:
-		drivetrain.replay_omega = omap
+		drivetrain.replay_omega = _replay_omega_scratch
 
 
 # Reusable return buffer for _resolve_drive_inputs — filled and returned every
 # physics tick so it allocates no Dictionary. The sole caller unpacks all four
 # fields immediately.
+var _replay_omega_scratch := {}
+
 var _inputs_scratch := {"drive": 0.0, "brake_input": 0.0, "handbrake": false, "declutch": false}
 
 # Resolve the driver's continuous controls into the drivetrain step's inputs: the
@@ -662,6 +672,8 @@ func _apply_aero() -> void:
 # and lays the persisted damage toe on top. Returns the travel geometry
 # {slip_angle, travel_angle} the yaw assists key off.
 func _update_steering(delta: float, speed: float, align_scale: float) -> Dictionary:
+	# Returns _steer_scratch, a reused buffer (no per-tick Dictionary alloc);
+	# the sole caller unpacks its fields immediately.
 	var cfg: GameConfig = config
 	var local_vel := global_transform.basis.inverse() * linear_velocity
 	var slip_angle := 0.0  # unclamped travel-direction yaw; also feeds spin protection
@@ -702,7 +714,10 @@ func _update_steering(delta: float, speed: float, align_scale: float) -> Diction
 	# direction (and the wheel visual off it too). No synthetic steer bias. See
 	# features/damage.md / DamageModel.nudge_wheels.
 	_apply_wheel_toe()
-	return {"slip_angle": slip_angle, "travel_angle": travel_angle, "slip_peak": slip_peak}
+	_steer_scratch["slip_angle"] = slip_angle
+	_steer_scratch["travel_angle"] = travel_angle
+	_steer_scratch["slip_peak"] = slip_peak
+	return _steer_scratch
 
 
 # Direct yaw torque about the car's up axis while steering, to fight understeer

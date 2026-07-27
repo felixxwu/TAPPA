@@ -146,8 +146,10 @@ settles):
    `RegionLibrary.region_for_rally(RallySession.rally_id()).id`. Free roam has no
    session but picks a random location: when a free-roam car is set
    (`free_roam_instance_id >= 0` OR `free_roam_model_id != ""`) and
-   `RallySession.free_roam_region_id` is set (`hq._prepare_free_roam` rolls
-   home/Greece), that id is used. This resolution
+   `RallySession.free_roam_region_id` is set (`hq._prepare_free_roam` draws a
+   uniform random id from the full `RegionLibrary.all()` roster — ignoring unlock
+   gating, so any newly authored region is reachable in free roam immediately),
+   that id is used. This resolution
    lives in `world.gd._current_region_look()`, shared by `_apply_region_look`
    (materials/sky/fog) and the foliage spawn (below).
 2. `var look := RegionLibrary.look_of(region_id)`; if empty (home, or an

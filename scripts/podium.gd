@@ -192,7 +192,7 @@ func _build_scenery() -> void:
 	flat.free()
 	var layout := _spectator_layout(cfg)
 	# The podium ground is a flat plane at y = 0 (no terrain), so no ground_at Callable.
-	var crowd := Crowd.multimesh_instance("Crowd", layout["pos"], layout["yaw"], Callable())
+	var crowd := Crowd.multimesh_instance("Crowd", layout["pos"], layout["yaw"], Callable(), cfg)
 	if crowd != null:
 		add_child(crowd)
 

@@ -735,35 +735,35 @@ func test_bent_front_wheels_veer_the_car_via_physics() -> void:
 	assert_gt(absf(yaw_delta), 0.05, "bent front wheels veer the car with no synthetic steer bias")
 
 
-func test_mx5_wheels_use_its_own_wheel_texture() -> void:
-	_car.apply_car(CarLibrary.index_of("mx5"))
+func test_wheels_use_the_specs_own_wheel_texture() -> void:
+	# A car that authors a wheel_texture gets exactly THAT texture on its wheel caps.
+	# Driven off a synthetic spec so the assertion is "the spec's own field", not a
+	# particular catalogue car's artwork path.
+	var cars := CarFixtures.cars()
+	cars[0]["wheel_texture"] = "res://blender/mx5/wheel.png"
+	CarFixtures.install()
+	CarLibrary.override_for_test(cars)
+	_car.apply_car(CarLibrary.index_of(String(cars[0]["id"])))
 	var tire := _car.get_node("WheelFL/Visual/Tire") as MeshInstance3D
 	var mat := tire.get_surface_override_material(0) as ShaderMaterial
 	assert_not_null(mat, "tire has a ShaderMaterial override")
 	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
-	assert_not_null(tex, "mx5 wheel cap has a texture")
-	assert_true(str(tex.resource_path).ends_with("mx5/wheel.png"),
-		"mx5 uses its own wheel.png, got %s" % tex.resource_path)
+	assert_not_null(tex, "a car with a wheel_texture gets a wheel cap texture")
+	assert_eq(str(tex.resource_path), String(cars[0]["wheel_texture"]),
+		"the wheel cap wears the spec's own wheel_texture, got %s" % tex.resource_path)
 
 
 func test_modelless_car_gets_blank_wheel_texture() -> void:
-	# viper has no wheel_texture spec -> blank dark disc, NOT the mx5 photo.
-	_car.apply_car(CarLibrary.index_of("viper"))
+	# A spec with no wheel_texture -> blank dark disc, NOT another car's wheel photo.
+	CarFixtures.install()  # fixture cars author no wheel_texture
+	var spec: Dictionary = CarLibrary.all()[0]
+	assert_false(spec.has("wheel_texture"), "the fixture car authors no wheel_texture")
+	_car.apply_car(0)
 	var tire := _car.get_node("WheelFL/Visual/Tire") as MeshInstance3D
 	var mat := tire.get_surface_override_material(0) as ShaderMaterial
 	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
 	assert_false(str(tex.resource_path).ends_with("wheel.png"),
-		"a model-less car must not borrow a car's wheel photo")
-
-
-func test_mx5_model_node_shown_via_spec_fields() -> void:
-	_car.apply_car(CarLibrary.index_of("mx5"))
-	assert_true((_car.get_node("Mx5Body") as Node3D).visible, "Mx5Body shown for the mx5")
-	assert_false((_car.get_node("Chassis") as MeshInstance3D).visible, "boxes hidden for a model car")
-	var mi := _car.get_node("Mx5Body").find_children("*", "MeshInstance3D", true)[0] as MeshInstance3D
-	var mat := mi.get_surface_override_material(0) as ShaderMaterial
-	var tex := mat.get_shader_parameter("albedo_texture") as Texture2D
-	assert_true(str(tex.resource_path).ends_with("mx5_texture.png"), "mx5 body uses its own texture")
+		"a car with no wheel_texture must not borrow a car's wheel photo")
 
 
 func test_apply_car_sets_custom_center_of_mass_from_weight_front() -> void:
