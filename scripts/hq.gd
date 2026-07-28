@@ -2549,7 +2549,7 @@ func _make_carpark_modal(build_body: Callable) -> Control:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.0, 0.0, 0.0, 0.96)
+	dim.color = UITheme.MODAL_DIM
 	root.add_child(dim)
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)

@@ -79,7 +79,7 @@ var peak_torque_rpm := 4500.0
 ## Minimum speed (m/s) before the steer-assist yaw torque kicks in. Below this
 ## the car is too slow for understeer to matter and the aid only makes low-speed
 ## handling twitchy, so it is suppressed. 30 km/h ≈ 8.333 m/s.
-@export_range(0.0, 50.0) var steer_assist_min_speed := 17
+@export_range(0.0, 50.0) var steer_assist_min_speed := 13
 ## Spin protection: corrective yaw torque (N·m) that pulls the nose back toward
 ## the direction of travel once the car has rotated further than
 ## spin_assist_angle into a slide — the counterpart to steer_assist_torque
@@ -88,12 +88,12 @@ var peak_torque_rpm := 4500.0
 ## rather than oscillating. Suppressed while the handbrake is held so
 ## deliberate drifts stay possible. 0 disables. An anti-spin aid, not a
 ## physical force.
-@export_range(0.0, 30000.0) var spin_assist_torque := 5000.0
+@export_range(0.0, 30000.0) var spin_assist_torque := 10000.0
 ## Slip angle (radians) where spin protection starts. The torque ramps in
 ## linearly from 0 at this angle to full strength at twice it. Keep it above the
 ## surface's optimum slip angle (asin(slip_peak), ≈8–18°) so the two aids never
 ## fight over the same slide. 35° ≈ 0.611 rad.
-@export_range(0.0, 1.571) var spin_assist_angle := deg_to_rad(30.0)
+@export_range(0.0, 1.571) var spin_assist_angle := deg_to_rad(20.0)
 ## Self-righting assist: when one or more wheels leave the ground, a roll+pitch
 ## torque (N·m at full 90° tilt) eases the car back toward flat, scaling with how
 ## far it has tilted. Never yaws the car. 0 disables. A landing/anti-flip aid,
@@ -883,11 +883,11 @@ var peak_torque_rpm := 4500.0
 @export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.0
 
 @export_group("PS1 Look")
-@export var virtual_resolution := Vector2(533, 400)  # keep matching [display] in project.godot
+@export var virtual_resolution := Vector2(480, 360)  # keep matching [display] in project.godot (360 tall, 4:3)
 ## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
-## and UI alike. 1.0 = off; 1.1 draws everything 10% wider than reality. Applied
+## and UI alike. 1.0 = off; 1.2 draws everything 20% wider than reality. Applied
 ## globally by the DisplayStretch autoload (scripts/display_stretch.gd).
-@export_range(0.5, 2.0) var horizontal_stretch := 1.1
+@export_range(0.5, 2.0) var horizontal_stretch := 1.2
 @export var chassis_color := Color(0.85, 0.2, 0.15)
 @export var cabin_color := Color(0.25, 0.3, 0.4)
 @export var wheel_color := Color(0.12, 0.12, 0.12)

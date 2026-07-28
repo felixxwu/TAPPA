@@ -134,7 +134,7 @@ func build_detail_overlay() -> void:
 	# A solid backing so the detail reads as a panel over the map.
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.0, 0.0, 0.0, 0.96)
+	bg.color = UITheme.MODAL_DIM
 	_hq._detail_layer.add_child(bg)
 	_hq._detail_layer.move_child(bg, 0)
 
@@ -260,7 +260,7 @@ func build_lift_overlay() -> void:
 	_hq._lift_menu_bg.anchor_right = 1.0 - (1.0 - frac) * 0.5
 	_hq._lift_menu_bg.anchor_top = 0.0
 	_hq._lift_menu_bg.anchor_bottom = 1.0
-	_hq._lift_menu_bg.color = Color(0.0, 0.0, 0.0, 0.96)
+	_hq._lift_menu_bg.color = UITheme.MODAL_DIM
 	_hq._lift_layer.add_child(_hq._lift_menu_bg)
 
 	var margin := MarginContainer.new()

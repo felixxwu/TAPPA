@@ -35,10 +35,15 @@ precisely so it reaches the UI: the post-process pass only sees the 3D
 viewport, while the HUD/menus live on higher CanvasLayers drawn after it. On
 boot (and every window resize) the autoload switches the root window's aspect to
 `IGNORE` (per-axis scaling) and drives `content_scale_size`: the logical height
-stays the design height (360, so vertical is never distorted) while the logical
+stays the design height (`DisplayStretch.DESIGN_HEIGHT`, so vertical is never
+distorted) while the logical
 width is shrunk by the stretch factor, forcing the window to scale it back out
-horizontally by exactly that factor. Because the width is derived from
-`360 / stretch` and not the raw window width, the stretch stays constant on any
+horizontally by exactly that factor. `DESIGN_HEIGHT` is read at load from
+project.godot's `display/window/size/viewport_height` — that
+project setting is the single source of truth for the fixed vertical resolution;
+the horizontal one is dynamic (it follows the window aspect). Because the width
+is derived from `DESIGN_HEIGHT / stretch` and not the raw window width, the
+stretch stays constant on any
 device aspect, and wider screens still reveal more world width — just fatter.
 The width math is the pure static `DisplayStretch.logical_size()`, unit-tested in
 `tests/headless/test_display_stretch.gd`.
@@ -120,7 +125,8 @@ HQ renders normally). The shader samples the container's `TEXTURE` (the
 subviewport frame) directly — deliberately NOT `hint_screen_texture`, which
 would force a full-screen backbuffer copy (render-pass break + mid-frame GPU
 submit) every frame on the Compatibility backend. Uniform: `virtual_resolution`
-(set from `cfg.virtual_resolution`, [480,360], by `world.gd`).
+(set from `cfg.virtual_resolution` by `world.gd` — read the config for the current
+grid; it's authored to match the design height, so don't restate the numbers here).
 
 Algorithm: sample frame → quantize to virtual resolution → apply a 4×4 ordered
 (Bayer) dither matrix → truncate to 5-bit RGB (32 levels/channel) → output.
@@ -213,7 +219,7 @@ model. Each per-car material also carries the tread `albedo_color`
 | Wheels (all 4) | `albedo_color` | `wheel_color` (black) — now carried by each per-car tire material (see "Per-car wheel-cap textures") |
 | Car meshes + authored body | fake-light uniforms | Lighting group (`cfg.apply_car_light`) |
 | Floor (terrain) | baked vertex-colour shading | Lighting group (`cfg.apply_terrain_light`) |
-| PostProcess (SubViewportContainer) | `virtual_resolution` | `virtual_resolution` [480,360] |
+| PostProcess (SubViewportContainer) | `virtual_resolution` | `cfg.virtual_resolution` |
 
 ## Environment
 

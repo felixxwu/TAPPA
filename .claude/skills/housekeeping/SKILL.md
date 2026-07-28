@@ -1,6 +1,6 @@
 ---
 name: housekeeping
-description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, tests that violate project conventions, broken autoloads or input actions, save-schema compatibility, stale generated caches, build/CI and export-preset health, Android bundle size, mobile-phone performance regressions, git hygiene, or codebase-wide simplification opportunities.
+description: Use when the user invokes /housekeeping or asks for a repo health check, maintenance sweep, or to find things that have drifted — failing tests, docs out of sync with code, orphaned assets, oversized scripts needing refactor, config drift, tests that violate project conventions, broken autoloads or input actions, save-schema compatibility, stale generated caches, build/CI and export-preset health, Android bundle size, mobile-phone performance regressions, git hygiene, duplicated single-sources-of-truth (the same value hardcoded in project.godot, a scene, a script, a test and a doc), or codebase-wide simplification opportunities.
 ---
 
 # Housekeeping
@@ -404,6 +404,76 @@ sweep. Never delete a branch or commit anything here without being asked.
   generated scratch files sitting tracked or untracked-but-unignored.
 - **Large files** — flag any newly-committed file over a few MB; git keeps it
   forever. Cross-reference §16 if it also ships in the bundle.
+
+### 20. Single-source-of-truth smells
+
+A value that means one thing but is *written down* in more than one place will
+drift — silently, and usually in the direction that's hardest to notice (a doc,
+a scene literal, a test's private copy). This pass hunts duplicated definitions
+of the same fact and, where the duplicate is unavoidable, checks a test or a
+comment pins them together. Report-only, like the rest of the skill; the fix is
+almost always "derive the copy from the original" or "add a guard test".
+
+What to look for, cheapest first:
+
+- **Engine settings copied into GDScript.** Anything in `project.godot` that a
+  script also hardcodes. The established pattern is to READ the setting instead:
+  `Platform.gravity()` → `physics/3d/default_gravity`, and
+  `DisplayStretch.DESIGN_HEIGHT` → `display/window/size/viewport_height` (a
+  `static var` from `ProjectSettings.get_setting`, since `const` can't call it).
+  Flag any new literal that mirrors a project setting — the render resolution,
+  gravity, physics tick rate, orientation, window size — and recommend reading it.
+- **Scene literals shadowing `GameConfig`.** A node/material property authored in
+  a `.tscn` that a script also writes from `cfg` at boot: the scene value is a
+  dead fallback that reads as authoritative. `main.tscn`'s
+  `shader_parameter/virtual_resolution` vs `cfg.virtual_resolution` is the type
+  case. Check `test_config_applied.gd` covers each such pair — that test IS the
+  pin; a config→scene pair with no assertion there is the finding.
+- **Derived values authored independently.** Two config fields where one is a
+  function of the other (an aspect-ratio pair, a min/max that must bracket a
+  default, a duration and the frame count that covers it). Either derive it or
+  note the relationship in the `@export` comment and guard the *relationship*
+  (not the values — see the tuning-value rule in `CLAUDE.md`).
+- **A test with its own copy of a production list/constant.** e.g.
+  `tests/headless/test_smoke.gd`'s local `ACTIONS` array alongside
+  `InputRemap.ACTIONS`, or a duplicated `DESIGN_HEIGHT`. A test asserting a
+  hand-copied list can't catch the production list changing. Recommend
+  referencing the real symbol (iterating the production table as opaque input is
+  the encouraged pattern; hand-copying it is the smell).
+- **Docs restating a number instead of naming the symbol.** `features/*.md`
+  quoting `[480,360]` or "the design height (360)" rots at the next retune. Flag
+  literals in docs where the symbol name (`cfg.virtual_resolution`,
+  `DisplayStretch.DESIGN_HEIGHT`) would say it durably — same spirit as the
+  "prefer file + symbol over line numbers" rule in `CLAUDE.md`. Cross-check
+  against §4: a doc number that disagrees with the code is the loud version of
+  this, a doc number that currently agrees is the quiet one.
+- **Palette / theme values re-typed as raw literals.** `scripts/ui_theme.gd`
+  owns the UI palette (`PANEL`, `INK`, `GREEN`, `GOLD`, …) and the spacing
+  scale (`GAP`, `MARGIN`, `MENU_ROW_H`). A UI script writing
+  `Color(0.0, 0.0, 0.0, 0.96)` instead of `UiTheme.PANEL` is a near-miss that no
+  test catches. Sweep with `grep -rn "Color(0\.[0-9]" --include="*.gd" scripts`
+  and triage: 3D/world/material colours are legitimately outside the palette —
+  only flag colours on `Control`/`CanvasLayer` UI. Same for magic pixel gaps that
+  duplicate the spacing constants.
+- **Magic strings for things that have a table.** Bare `"Music"` / `"Master"` bus
+  names, save-profile keys (`"cars"`, `"rallies"`, `"owned"`) and `res://*.tscn`
+  paths repeated across many scripts. Low severity — flag only when a key is
+  spread wide enough that a rename would realistically miss one, and recommend a
+  `const` on the owning module (`Save`, `Music`) rather than a new indirection
+  layer.
+- **Two places that must be bumped together.** Version/schema-ish pairs:
+  `SaveManager.SCHEMA_VERSION` vs the migration steps it walks, the Godot version
+  in CI vs `android/.build_version`, `export_presets.cfg` `version/code` vs what
+  the build script stamps. Confirm the coupling is either scripted (the
+  `build_*.sh` `sed` stamps are the right pattern — git is the single source for
+  version) or asserted; an unpinned pair is the finding.
+
+Report each as: the fact, the places it's written, which one should be the source
+of truth, and the pin (derive / read the setting / guard test). Rank by blast
+radius — a duplicated engine setting or config↔scene pair above a repeated
+string key. Overlaps §4 (docs), §6 (config drift), §12 (autoloads/input actions)
+and §18 (reuse); fold each finding into whichever section the user will act on
+and don't report it twice.
 
 ## Report format
 

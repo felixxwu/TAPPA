@@ -58,7 +58,7 @@ shader_parameter/tarmac_color = Color(0.32, 0.32, 0.34, 1)
 
 [sub_resource type="ShaderMaterial" id="mat_post"]
 shader = ExtResource("2_post")
-shader_parameter/virtual_resolution = Vector2(640, 480)
+shader_parameter/virtual_resolution = Vector2(480, 360)
 
 [sub_resource type="ShaderMaterial" id="mat_lines"]
 shader = ExtResource("2_lines")

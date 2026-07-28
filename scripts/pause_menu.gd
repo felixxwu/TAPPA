@@ -161,7 +161,7 @@ func _build() -> void:
 
 	var backdrop := ColorRect.new()
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.color = Color(0, 0, 0, 0.6)
+	backdrop.color = UITheme.PANEL_DIM
 	_overlay.add_child(backdrop)
 
 	_menu_panel = _build_menu_panel()

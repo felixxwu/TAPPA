@@ -940,7 +940,7 @@ func _build_event_picker() -> void:
 	_seedlab_popup.mouse_filter = Control.MOUSE_FILTER_STOP
 	_seedlab_page.add_child(_seedlab_popup)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.85)
+	dim.color = UITheme.MODAL_DIM
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_seedlab_popup.add_child(dim)
@@ -1045,7 +1045,7 @@ func _build_terrain_editor() -> void:
 	_seedlab_terrain_popup.mouse_filter = Control.MOUSE_FILTER_STOP
 	_seedlab_page.add_child(_seedlab_terrain_popup)
 	var panel := ColorRect.new()
-	panel.color = Color(0, 0, 0, 0.92)
+	panel.color = UITheme.MODAL_DIM
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel.anchor_top = 0.63  # leave the preview (top ~62%) visible for live feedback
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE

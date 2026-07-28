@@ -268,7 +268,7 @@ const CARS: Array[Dictionary] = [
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
-		"wheel_radius": 0.33, "wheel_width_front": 0.235, "wheel_width_rear": 0.235,  # 215/235 mild stagger
+		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235,  # 215/235 mild stagger
 		"suspension_travel": 0.35, "suspension_stiffness": 14.0,  # soft long-legged GT
 		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.

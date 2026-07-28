@@ -26,9 +26,12 @@ extends Node
 # The factor itself is the authored look value Config.data.horizontal_stretch
 # (config/game_config.tres); 1.0 makes this a no-op.
 
-# Logical frame height the game is laid out against (project.godot
-# window/size/viewport_height, locked by the original "keep_height" aspect).
-const DESIGN_HEIGHT := 400.0
+# Logical frame height the game is laid out against, read straight from
+# project.godot (window/size/viewport_height) so that setting is the SINGLE source
+# of truth — change the vertical resolution there and nothing else needs editing.
+# (Static var rather than const because const can't call into ProjectSettings.)
+static var DESIGN_HEIGHT: float = float(ProjectSettings.get_setting(
+	"display/window/size/viewport_height", 360))
 
 
 var _last_window_size := Vector2i.ZERO

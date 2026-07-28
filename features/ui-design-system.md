@@ -69,6 +69,15 @@ Don't scatter new colour/size literals through the UI scripts — add them to
 materials (concrete, tarmac, podium steps, garage) are **not** UI and keep their
 own colours.
 
+Backdrops in particular used to drift (a hand-typed `Color(0, 0, 0, 0.96)` per
+popup). There are exactly two:
+
+- `UITheme.PANEL_DIM` — a menu sits over the still-legible world (pause menu).
+- `UITheme.MODAL_DIM` — a blocking modal fully interrupts it (`confirm_popup.gd`,
+  the HQ car-park prompts, the seed-lab popups).
+
+Use one of those for any new dimmer rather than picking a fresh alpha.
+
 ## Where it's used
 
 The global theme covers HUD, mobile controls, the loading screen and every menu.

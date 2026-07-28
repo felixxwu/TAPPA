@@ -30,7 +30,7 @@ func _build(title: String, body: String, default_index: int) -> void:
 
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.color = Color(0.0, 0.0, 0.0, 0.96)
+	dim.color = UITheme.MODAL_DIM
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP  # swallow taps so nothing falls through
 	add_child(dim)
 

@@ -50,8 +50,8 @@ func _ready() -> void:
 	_label = Label.new()
 	_label.position = Vector2(4, 4)
 	_label.add_theme_font_size_override("font_size", FONT_SIZE)
-	_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
-	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_label.add_theme_color_override("font_color", UITheme.GREEN)
+	_label.add_theme_color_override("font_outline_color", UITheme.BLACK)
 	_label.add_theme_constant_override("outline_size", 3)
 	add_child(_label)
 	if terrain != null:

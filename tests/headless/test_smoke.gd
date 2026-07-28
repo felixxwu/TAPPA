@@ -1,9 +1,13 @@
 extends GutTest
 
-const ACTIONS := [
-	"accelerate", "brake_reverse", "steer_left", "steer_right",
-	"shift_up", "shift_down", "toggle_gearbox", "cycle_camera", "pause",
-]
+# The gameplay/menu actions, taken from InputRemap (the single source of truth for
+# the rebindable set — see scripts/input_remap.gd) rather than hand-copied here, so
+# adding an action there automatically brings it under these checks.
+static func _rebindable_actions() -> Array[String]:
+	var out: Array[String] = []
+	for entry in InputRemap.ACTIONS:
+		out.append(str(entry["action"]))
+	return out
 
 var _scene: Node3D
 
@@ -204,7 +208,7 @@ func test_flat_fixture_has_car_and_ground() -> void:
 
 
 func test_input_actions_exist() -> void:
-	for action in ACTIONS:
+	for action in _rebindable_actions():
 		assert_true(InputMap.has_action(action), "action exists: " + action)
 
 
@@ -212,8 +216,7 @@ func test_input_actions_exist() -> void:
 # layout: triggers throttle/brake, left stick steer, bumpers shift, face buttons
 # for the rest). Debug-only actions stay keyboard-only and are excluded here.
 func test_gameplay_actions_have_joypad_bindings() -> void:
-	var controller_actions := ACTIONS + ["handbrake"]
-	for action in controller_actions:
+	for action in _rebindable_actions():
 		var has_joypad := false
 		for event in InputMap.action_get_events(action):
 			if event is InputEventJoypadButton or event is InputEventJoypadMotion:
