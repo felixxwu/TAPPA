@@ -628,13 +628,20 @@ default `STOP`) would swallow every touch and the 3D pins would never get a pick
 Tapping a pin opens the **rally detail** sub-panel — a **two-column card** built
 in `_build_detail_overlay` / populated in `_show_detail`. Header: rally name,
 region tag, and a gold **SHOWDOWN** chip on showdown rallies. **Left column
-(STAGES):** one row per event — stage number and the surface-mix text — then the
-"combined time sets your result" note. **Right column:** the eligible-cars **restriction** (the
-power-to-weight gate, not the hidden difficulty tier); an **eligibility read-out**
-— `_eligibility_summary(rally, owned)` tallies **"N of M cars qualify"** (GREEN,
-or RED "no cars qualify") with a GOLD caution for how many **need a tune / swap to
+(STAGES):** one row per event — stage number and the surface-mix text, on a tight
+4 px separation so a long mix stays on one line — then the "combined stage times
+decide your result" note. **Right column:** the eligible-cars **restriction** (the
+power-to-weight gate, not the hidden difficulty tier — the band is printed as a bare
+`N–M hp/tonne`, the unit carries the meaning); an **eligibility read-out** —
+`_eligibility_summary(rally, owned)` collects the qualifying cars and
+`_qualifying_cars_text` **names them** (GREEN), up to `MAX_QUALIFY_NAMES` with a
+`+N more` tail, or RED "no cars qualify" / muted "no cars owned yet" — with a GOLD
+caution for how many **need a tune / swap to
 fit** — and a **YOUR RECORD** line (best finish + a
-`StarRow`). Everything is uppercase + one font size (`UITheme.enforce`), so
+`StarRow`, hidden entirely until the rally has a placement). The two columns are
+anchored at a fixed `SPLIT` (60/40 in favour of STAGES, whose rows carry the long
+surface-mix text) rather than laid out by an HBox, so the ratio is exact regardless of
+content. Everything is uppercase + one font size (`UITheme.enforce`), so
 hierarchy comes from **layout, colour, and separators**, not font size. The
 summary is tallied on top of `_entry_plan` so it always agrees with the map pin.
 **Enter Rally** flies out to the car park, **◄ Map** dismisses the panel, and the

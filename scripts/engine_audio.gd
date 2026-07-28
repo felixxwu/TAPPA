@@ -3,6 +3,11 @@ extends AudioStreamPlayer
 # pushes synthesized PCM into an AudioStreamGenerator. The DSP lives in
 # EngineAudioSynth; this node only owns the generator and the per-frame pull.
 
+# Base (full-rate) synth mix rate. Every target runs at this EXCEPT a web TOUCH
+# device, which resolves a lower rate through GameConfig.engine_mix_rate_for() —
+# the synth is a per-sample GDScript loop, so its CPU cost is proportional to the
+# mix rate, not the frame rate. Always go through the resolver (never branch on
+# Platform here) so the project keeps ONE notion of "mobile".
 const MIX_RATE := 22050.0
 # Generator buffer depth, chosen per-device (see buffer_seconds()). The fill runs
 # in _process on the main thread, so the buffer is the only thing keeping audio
@@ -30,6 +35,7 @@ static func buffer_seconds() -> float:
 var _synth: EngineAudioSynth
 var _playback: AudioStreamGeneratorPlayback
 var _scratch := PackedVector2Array()
+var _scratch_silent := false  # true while _scratch holds the all-zero silence buffer
 
 # Resolved-once references for the per-frame fill. Walking the parent chain (and the
 # dynamic string-keyed `get("config")` in _car_config()) every frame is exactly the
@@ -43,6 +49,16 @@ var _cfg: GameConfig
 # it's check-and-update rather than cache-once: compare the viewport's current camera to
 # the cached one and only re-seat when it actually differs.
 var _cam: Camera3D
+# Effective mix rate for this device, resolved once per (re)configure.
+var _mix_rate := MIX_RATE
+
+
+# Mix rate the synth and the generator run at on this device. Pure pass-through to
+# the config resolver so web-touch is the only branch and it lives in one place.
+func _resolve_mix_rate(cfg: GameConfig) -> float:
+	if cfg == null:
+		return MIX_RATE
+	return cfg.engine_mix_rate_for(Platform.is_web(), Platform.is_touch(), MIX_RATE)
 
 
 # Re-resolve the cached car / engine / config. Safe to call before the parent car's
@@ -70,11 +86,12 @@ func _car_config() -> GameConfig:
 func _ready() -> void:
 	_resolve_refs()
 	var cfg: GameConfig = _cfg
+	_mix_rate = _resolve_mix_rate(cfg)
 	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = MIX_RATE
+	gen.mix_rate = _mix_rate
 	gen.buffer_length = buffer_seconds()
 	stream = gen  # set the stream unconditionally (smoke test checks its type)
-	_synth = EngineAudioSynth.new(cfg, MIX_RATE)
+	_synth = EngineAudioSynth.new(cfg, _mix_rate)
 	# Headless (test/CI): set up the stream but never PLAY it. Godot's headless
 	# AudioDriverDummy still runs a mix thread, and a *playing* AudioStreamGeneratorPlayback
 	# (which extends AudioStreamPlaybackResampled) is freed underneath it at engine teardown
@@ -93,7 +110,21 @@ func _ready() -> void:
 # engine (cylinder count + firing order), which the synth caches at init.
 func reconfigure() -> void:
 	_resolve_refs()
-	_synth = EngineAudioSynth.new(_cfg, MIX_RATE)
+	var rate := _resolve_mix_rate(_cfg)
+	# The car injects its own GameConfig copy, so the resolved rate CAN change on a
+	# swap. The generator's mix_rate is baked into the live playback, so re-seat the
+	# stream when (and only when) it actually differs — a swap is already an audible
+	# discontinuity, whereas a synth running at a rate the generator doesn't share
+	# would be permanently detuned.
+	if not is_equal_approx(rate, _mix_rate):
+		_mix_rate = rate
+		var gen := stream as AudioStreamGenerator
+		if gen != null:
+			gen.mix_rate = rate
+		if _playback != null:
+			play()
+			_playback = get_stream_playback() as AudioStreamGeneratorPlayback
+	_synth = EngineAudioSynth.new(_cfg, _mix_rate)
 
 
 # Cumulative generator buffer underruns ("skips"): each one is a frame that drained
@@ -102,6 +133,27 @@ func reconfigure() -> void:
 # (features/benchmark.md). 0 headless / before the device is up.
 func skip_count() -> int:
 	return _playback.get_skips() if _playback != null else 0
+
+
+# True when the proximity attenuation has bottomed out at its floor, i.e. the voice
+# is at the quietest level the curve can produce and synthesizing it is pointless.
+# The small epsilon keeps this a "reached the clamp" test rather than an exact
+# float compare. Pure/static so it's testable without an audio device.
+static func is_audio_inaudible(vol_db: float, floor_db: float) -> bool:
+	return vol_db <= floor_db + 0.001
+
+
+# Fill the scratch buffer with silence and push it. Keeps the generator fed (an
+# unfed buffer underruns and crackles) at a fraction of the cost of a real fill.
+# The scratch is only re-zeroed on the transition into silence — once it's all
+# zeros it stays that way while we keep taking this path.
+# Takes no frame count: the caller has already sized _scratch to exactly n frames
+# (see the resize in _timed_process) before reaching either fill path.
+func _push_silence() -> void:
+	if not _scratch_silent:
+		_scratch.fill(Vector2.ZERO)
+		_scratch_silent = true
+	_playback.push_buffer(_scratch)
 
 
 func _process(delta: float) -> void:
@@ -125,6 +177,7 @@ func _timed_process(_delta: float) -> void:
 	# avoiding a per-frame slice() allocation. resize only fires when n changes.
 	if _scratch.size() != n:
 		_scratch.resize(n)
+		_scratch_silent = false  # a grown buffer keeps its old (non-zero) head samples
 	var cfg: GameConfig = _cfg
 	# Proximity attenuation: quieter as the active camera moves away. Non-positional
 	# player, so we drive volume_db ourselves from the squared camera distance (no
@@ -137,6 +190,16 @@ func _timed_process(_delta: float) -> void:
 		var d2 := _cam.global_position.distance_squared_to(_car.global_position)
 		volume_db = EngineAudioSynth.attenuation_db(
 			d2, cfg.engine_audio_ref_distance_m, cfg.engine_audio_max_attenuation_db)
+	# Far enough away that attenuation has pinned the level to its floor: the synth
+	# output is inaudible, so paying the per-sample DSP for it is wasted CPU. Push
+	# silence instead and skip the fill entirely. Matters wherever several cars are
+	# alive but distant — the start line, and the opponent wreck out on the stage.
+	# The buffer still has to be pushed (an unfed generator underruns), and the
+	# latched bov_event still has to be consumed so the sim re-arms.
+	if is_audio_inaudible(volume_db, cfg.engine_audio_max_attenuation_db):
+		_push_silence()
+		engine.bov_event = false
+		return
 	# fuel_cut (limiter OR damage misfire) ducks the note; the crackle burst is
 	# limiter-only (engine.limiting) — a damaged engine sputters without the pop.
 	# turbo_spin normalizes the shaft speed so the whistle pitch tracks it; boost/
@@ -147,4 +210,5 @@ func _timed_process(_delta: float) -> void:
 	var bov := engine.bov_event
 	engine.bov_event = false
 	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active)
+	_scratch_silent = false
 	_playback.push_buffer(_scratch)

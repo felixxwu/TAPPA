@@ -67,6 +67,55 @@ func test_drive_mode_restriction_counts_only_matching_cars() -> void:
 	assert_eq(summary["adjust"], 0, "none needed a tune or swap to qualify")
 
 
+func test_summary_names_the_qualifying_cars() -> void:
+	# The panel names the qualifying cars rather than counting them, so the summary has
+	# to carry one name per qualifier — and only for the cars that can actually enter.
+	var rally := {"restriction": {"drive_mode": CarFixtures.RWD}}
+	var roster := [_owned("fx_light_rwd"), _owned("fx_fwd_hatch"), _owned("fx_rwd_coupe")]
+	var summary: Dictionary = _hq._eligibility_summary(rally, roster)
+	var names: Array = summary["names"]
+	assert_eq(names.size(), int(summary["qualify"]), "one name per qualifying car")
+	assert_true(names.has(String(CarLibrary.by_id("fx_light_rwd").get("name", ""))),
+		"a qualifying car is named")
+	assert_false(names.has(String(CarLibrary.by_id("fx_fwd_hatch").get("name", ""))),
+		"an ineligible car is not named")
+
+
+func test_qualifying_text_lists_all_names_up_to_the_cap() -> void:
+	var names := ["Alpha", "Beta", "Cee"]
+	var text: String = _hq._qualifying_cars_text(names)
+	for n in names:
+		assert_true(text.contains(n), "%s is listed" % n)
+	assert_false(text.contains("more"), "nothing is elided at the cap")
+
+
+func test_qualifying_text_elides_the_overflow() -> void:
+	var names: Array[String] = []
+	for i in _hq.MAX_QUALIFY_NAMES + 2:
+		names.append("Car%d" % i)
+	var text: String = _hq._qualifying_cars_text(names)
+	assert_true(text.contains("Car0"), "the first names are still listed")
+	assert_false(text.contains("Car%d" % (_hq.MAX_QUALIFY_NAMES + 1)),
+		"names past the cap are elided, not listed")
+	assert_true(text.contains("+2 more"), "the elided count is reported")
+
+
+func test_star_row_is_hidden_until_the_rally_has_a_record() -> void:
+	# An unrun rally shows "not yet completed" with NO star row; once there's a placement
+	# the medals appear. Uses whatever the first roster rally is — the identity is
+	# irrelevant, only the has-a-record / has-no-record branch matters.
+	var rally_id := String(RallyLibrary.all()[0].get("id", ""))
+	var saved: Dictionary = Save.profile["rallies"].duplicate(true)
+	Save.profile["rallies"].erase(rally_id)
+	_hq._selected_rally_id = rally_id
+	_hq._show_detail()
+	assert_false(_hq._detail_stars.visible, "no record → no star row")
+	Save.profile["rallies"][rally_id] = {"best_placed": 1}
+	_hq._show_detail()
+	assert_true(_hq._detail_stars.visible, "a placement shows the medals")
+	Save.profile["rallies"] = saved
+
+
 func test_over_cap_car_lands_in_adjust_via_detune() -> void:
 	# A ceiling just under the car's power-to-weight: it's over the cap, but tuning the
 	# engine down ducks it under — so it qualifies, flagged as needing a tune to fit.

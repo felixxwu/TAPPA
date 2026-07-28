@@ -1,6 +1,13 @@
 # Web Save Persistence — implementation spec
 
-> Status: **planned, not yet implemented.** Split out from
+> Status: **implemented (code), pending the manual web verification.** The
+> lifecycle flush described in Step 2 has landed — `Save.flush_and_sync()` plus
+> `install_web_lifecycle()` / `request_web_sync()` in `scripts/save_manager.gd`,
+> covered by `tests/headless/test_save_web_lifecycle.gd` and documented in
+> `features/save-persistence.md`. What remains is **Step 1's manual round-trip on
+> a real web build** (mutate progress → close tab → reopen → confirm), on desktop
+> and mobile browsers; nobody has done it yet. Retire this file once that passes.
+> Split out from
 > `todo/save-persistence.md`, whose only remaining open item is *"verifying the
 > save round-trip on an actual web export (IndexedDB flush — highest-risk,
 > untested)."* The desktop save path is **DONE and green**
@@ -45,10 +52,11 @@ work shipped so far actually persists** for the real audience.
 - **No web-specific code exists.** No `OS.has_feature("web")` branch, no
   `JavaScriptBridge` usage anywhere (`grep` confirms). The save layer is
   platform-blind today.
-- **The export is threaded.** `export_presets.cfg` Web preset has
-  `thread_support=true`; `build_web.sh` notes itch.io must enable
-  **SharedArrayBuffer** (cross-origin isolation) or the game won't boot — a
-  prerequisite for the round-trip even being testable.
+- **The export is SINGLE-threaded.** `export_presets.cfg` Web preset has
+  `variant/thread_support=false`, so there is no SharedArrayBuffer /
+  cross-origin-isolation requirement and no worker thread: everything, including
+  the save write, runs on the main loop. The write is cheap; the risk is purely
+  the async IndexedDB sync not landing before the page goes away.
   `progressive_web_app/enabled=false` (no service-worker caching to muddy the
   picture — good for a clean test).
 
@@ -57,8 +65,8 @@ work shipped so far actually persists** for the real audience.
 The highest-value action is a real measurement; the fix may be small or
 unnecessary depending on what we find.
 
-1. `./build_web.sh`, serve `build/web/` with cross-origin-isolation headers
-   (COOP/COEP — required for SharedArrayBuffer; a plain static server won't do).
+1. `./build_web.sh`, serve `build/web/` with any plain static server (the build
+   is single-threaded, so no COOP/COEP cross-origin-isolation headers needed).
 2. In a desktop browser: play far enough to mutate the profile (grant a car / take
    damage / complete a rally), then **reload**. Does the profile survive?
 3. Repeat with a **hard tab close + reopen**, and with **backgrounding** (switch
@@ -71,9 +79,22 @@ unnecessary depending on what we find.
 **If it already persists** on reload and normal backgrounding, scope collapses to
 documenting that + the mobile-close caveat. **If it doesn't**, Step 2.
 
-## Step 2 — Harden the flush (only as needed)
+## Step 2 — Harden the flush — **DONE**
 
-Proposed mechanism, smallest-first:
+Landed as described below, without waiting for Step 1 (the hook is cheap, inert
+off web, and Step 1 needs a human at a browser):
+
+- `Save.flush_and_sync()` is the ONE flush entry point; `_notification`
+  (desktop close/pause) and the web listeners both call it.
+- `install_web_lifecycle()` (from `_ready`, no-op off web, idempotent) registers
+  `visibilitychange`→hidden and `pagehide` via `JavaScriptBridge.create_callback`
+  parked on `window.rallySaveFlush`.
+- `request_web_sync()` issues a defensive `FS.syncfs(false, …)`.
+- The debounce is untouched (single-threaded export; write cost was never the risk).
+- `save_disabled` still short-circuits the write, so blocked storage stays
+  in-memory-only.
+
+Original proposal, kept for context:
 
 - **Trust a real browser lifecycle signal.** The only event mobile browsers fire
   reliably when a page is going away is **`visibilitychange`→`hidden`** (and
@@ -100,9 +121,10 @@ Proposed mechanism, smallest-first:
 ## Dependencies
 
 - **None blocking.** Builds entirely on the shipped `Save` autoload.
-- **Relates to** `scripts/settings_menu.gd` — its `user://settings.cfg` has the **same**
-  web-persistence concern; whatever flush approach we land here should be reused
-  for the settings store (don't solve it twice).
+- **Settings need no separate solution.** There is NO `ConfigFile` /
+  `user://settings.cfg` in this project: player preferences live in
+  `profile["settings"]` via `Save.get_setting` / `set_setting`, so they ride the
+  exact same write + flush path as career progress and are fixed by the same change.
 - **Prerequisite for trusting** any longer play session on the web/itch.io build,
   so effectively gates a public release.
 
@@ -118,14 +140,16 @@ Proposed mechanism, smallest-first:
 
 ## Out of scope / open questions
 
-- **Which lifecycle signal to trust** — does Godot 4's web export deliver
-  `NOTIFICATION_APPLICATION_PAUSED` / `FOCUS_OUT` on `visibilitychange`, or must
-  we go through `JavaScriptBridge`? **Decide via Step 1 instrumentation.**
-- **Whether a forced `FS.syncfs` is needed** at all, or the engine's automatic
-  sync already suffices for reload/background (only hard-close is at risk).
-- **Eager vs debounced save on web** — drop the 1s debounce on web for
-  safety, or keep it and rely on the lifecycle flush? Trade-off: IDB write
-  frequency vs loss window.
+- ~~**Which lifecycle signal to trust**~~ — **decided:** don't rely on any Godot
+  notification on web; hook `visibilitychange`→hidden + `pagehide` directly
+  through `JavaScriptBridge`. The native notifications remain for desktop/mobile.
+- ~~**Whether a forced `FS.syncfs` is needed**~~ — **decided:** request it
+  defensively. It's harmless if redundant and it's the exact failure mode at risk.
+- ~~**Eager vs debounced save on web**~~ — **decided:** keep the 1s debounce; the
+  lifecycle flush closes the loss window and the export is single-threaded, so the
+  write was never the cost.
+- **Still open:** confirm `DirAccess.rename` (the `.tmp`→real atomic dance) behaves
+  on IDBFS — only observable on a real web build, part of the manual pass.
 - **Named save slots / cloud sync** — explicitly out; single auto-saved profile
   stays the model (`todo/save-persistence.md` › *Decided*).
 - **The `_recompute_showdown()` wiring** noted as open in `save-persistence.md`

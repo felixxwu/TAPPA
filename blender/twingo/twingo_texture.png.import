@@ -3,11 +3,9 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bfi4t7cd8ksis"
-path.s3tc="res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.s3tc.ctex"
-path.etc2="res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.etc2.ctex"
+path="res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 generator_parameters={
 "md5": "3b0b762685746b4ea7da71c2dc51f272"
@@ -16,11 +14,11 @@ generator_parameters={
 [deps]
 
 source_file="res://blender/twingo/twingo_texture.png"
-dest_files=["res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.s3tc.ctex", "res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.etc2.ctex"]
+dest_files=["res://.godot/imported/twingo_texture.png-4921696fb6ba216b6cf7cd536f1ddba5.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -41,5 +39,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=0

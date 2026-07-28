@@ -21,6 +21,21 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
   nearest, e.g. the ground-cover bush in `Foliage.bush_mesh()`. The sole
   exception is the panorama sky, a smooth
   gradient where filtering is intended.
+- **Anisotropic filtering is off** (`textures/default_filters/anisotropic_filtering_level=0`).
+  Nothing in the game filters linearly, so anisotropic sampling on top of nearest was
+  pure wasted bandwidth on a tile GPU.
+- **Mesh LOD** switches at `mesh_lod/lod_change/threshold_pixels=4.0` (default 1.0).
+  The car GLBs import with `meshes/generate_lods=true`, so the levels exist and were
+  barely being used.
+- **`limits/opengl/max_lights_per_object=4`** (default 8) — it sizes the
+  GL-Compatibility light loop. The stage has no lights, the HQ one sun, the garage one
+  sun plus per-bay omnis.
+- **Texture compression / import settings** — which textures are VRAM-compressed,
+  which are lossy, why the car bodies are deliberately 512² lossy, and why
+  `detect_3d/compress_to=0` matters, are all in
+  [asset-pipeline.md](asset-pipeline.md). Note `[importer_defaults] compress/mode=1`
+  is **Lossy, not VRAM-compressed** — the ETC2/ASTC export flags do nothing for a
+  mode-1 texture.
 
 ## Horizontal stretch (`scripts/display_stretch.gd`)
 

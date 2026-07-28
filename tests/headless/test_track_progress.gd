@@ -313,6 +313,92 @@ func test_recovery_target_is_the_last_on_road_pose() -> void:
 		"recovery teleports to the last on-road pose, not the start")
 
 
+# --- Offset lookup: agreement with the curve, and re-acquisition ---------------
+
+# A winding synthetic curve (built here, never a catalogue track) — the case where a
+# cheap approximate lookup would drift away from the real nearest point.
+func _winding_curve() -> Curve2D:
+	var c := Curve2D.new()
+	for i in 20:
+		c.add_point(Vector2(sin(float(i) * 0.6) * 25.0, float(i) * 15.0))
+	return c
+
+
+func test_tracked_offset_matches_a_direct_curve_query_while_driving() -> void:
+	# Walk the car along the true centerline; the tracked offset must agree with what
+	# Curve2D itself reports for that position, all the way down the road.
+	var curve := _winding_curve()
+	var length := curve.get_baked_length()
+	var p0 := curve.sample_baked(0.0)
+	_put_car(p0.x, p0.y)
+	var tp := _progress_on(curve)
+	var o := 0.0
+	var worst := 0.0
+	while o <= length:
+		var p := curve.sample_baked(o)
+		_put_car(p.x, p.y)
+		tp._physics_process(0.0)
+		worst = maxf(worst, absf(tp.progress_offset() - curve.get_closest_offset(p)))
+		o += 1.5
+	assert_lt(worst, 1.5, "tracked offset agrees with the curve's own query (worst %f m)" % worst)
+	assert_almost_eq(tp.progress_percent(), 1.0, 0.02, "driving the whole road reads 100%")
+
+
+func test_offset_reacquires_after_an_off_track_reset() -> void:
+	# Recovery path: a stray + reset is a position discontinuity. Afterwards tracking
+	# must pick the car up again rather than leaving the offset stranded.
+	var curve := _winding_curve()
+	var p0 := curve.sample_baked(0.0)
+	_put_car(p0.x, p0.y)
+	var tp := _progress_on(curve)
+	var mid := curve.sample_baked(60.0)
+	_put_car(mid.x, mid.y)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_offset(), 60.0, 1.5, "progress reached the middle of the road")
+	# Stray far off-road: the leash fires and teleports the car back to _best_reset.
+	_put_car(mid.x + 200.0, mid.y)
+	tp._physics_process(0.0)
+	assert_eq(_car.reset_calls.size(), 1, "the stray triggered the off-track reset")
+	var back: Transform3D = _car.reset_calls[0]
+	_put_car(back.origin.x, back.origin.z)
+	# Drive on from there — progress must resume advancing, not sit stranded.
+	var ahead := curve.sample_baked(90.0)
+	_put_car(ahead.x, ahead.y)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_offset(), 90.0, 1.5, "tracking re-acquires and advances after the reset")
+
+
+func test_offset_reacquires_after_a_teleport_via_retarget() -> void:
+	# A car swap / respawn drops the car somewhere new on the same road; retarget()
+	# does the full re-acquisition, so progress reads the new position, not the old one.
+	var curve := _winding_curve()
+	var p0 := curve.sample_baked(0.0)
+	_put_car(p0.x, p0.y)
+	var tp := _progress_on(curve)
+	var far := curve.sample_baked(150.0)
+	_put_car(far.x, far.y)
+	tp.retarget(_car, null)
+	assert_almost_eq(tp.progress_offset(), 150.0, 1.5, "retarget re-acquires at the new position")
+	var on := curve.sample_baked(170.0)
+	_put_car(on.x, on.y)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_offset(), 170.0, 1.5, "and tracking continues from there")
+
+
+func test_jump_to_finish_leaves_tracking_usable_at_the_finish() -> void:
+	# The dev teleport is the biggest discontinuity there is: progress is pinned at the
+	# finish and must stay there once the car actually arrives.
+	var curve := _winding_curve()
+	var p0 := curve.sample_baked(0.0)
+	_put_car(p0.x, p0.y)
+	var tp := _progress_on(curve)
+	var pose := tp.jump_to_finish()
+	_put_car(pose.origin.x, pose.origin.z)
+	tp._physics_process(0.0)
+	assert_almost_eq(tp.progress_percent(), 1.0, 0.001, "still 100% after landing at the finish")
+	assert_eq(_car.reset_calls.size(), 0, "landing at the finish is not treated as off-track")
+
+
 func _hairpin_curve() -> Curve2D:
 	# Out along +Z to z=50, a short neck across to x=6, then back down to z=0.
 	# Arc length ~= 50 + 6 + 50 = ~106 m; the two legs sit 6 m apart at the neck.

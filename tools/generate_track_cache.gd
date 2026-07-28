@@ -24,6 +24,31 @@ func _ready() -> void:
 				push_error("track cache: rally %s seed %d did not complete" % [rally.get("id", "?"), params.seed])
 				failures += 1
 			entries[key] = { "pieces": _serialize(result["pieces"]), "complete": result["complete"] }
+	# Non-event (for_config) parameter sets — the benchmark boot and a default-config
+	# boot of main.tscn. world.gd routes these through TrackGenerator.generate() with an
+	# OPTIONAL cache consult (generate_optional_cached), so baking them removes the live
+	# DFS from those boots too. See todo/mobile-web-performance.md §2.6.
+	#
+	# Their keys are deliberately NOT folded into source_hash: that hash is the rally
+	# library's freshness fingerprint and CI recomputes it from TrackCache.all_event_keys()
+	# (events only). Adding these would make every CI check fail.
+	#
+	# NOTE (verified 2026-07-28): a real FREE-ROAM entry cannot be prebaked. hq.gd
+	# _prepare_free_roam randomises track_seed, track_water_level_m and
+	# terrain_layer1_amplitude per entry, and all three feed the cache key — so free roam
+	# always misses by construction. What is bakeable is the benchmark (fixed seed/turns/
+	# straightness) and the authored-config boot; §2.6's "free roam" claim overstates this.
+	for entry_spec in _config_param_sets():
+		var ccfg: GameConfig = entry_spec["cfg"]
+		print("track cache: generating %s ..." % entry_spec["label"])
+		var cparams := TrackGenParams.for_config(ccfg)
+		var cresult := await TrackGenerator.generate(cparams)
+		if not cresult["complete"]:
+			push_error("track cache: %s did not complete" % entry_spec["label"])
+			failures += 1
+		entries[TrackCache.key_for(cparams, ccfg)] = {
+			"pieces": _serialize(cresult["pieces"]), "complete": cresult["complete"],
+		}
 	# Sort keys so the committed diff is stable across runs.
 	var sorted_keys := entries.keys()
 	sorted_keys.sort()
@@ -51,6 +76,20 @@ func _ready() -> void:
 	f.close()
 	print("track cache: wrote %d entries to %s" % [ordered.size(), OUT_PATH])
 	get_tree().quit(1 if failures > 0 else 0)
+
+
+# The for_config parameter sets worth baking, each as { label, cfg }. Every cfg is a
+# COPY of the authored config so nothing here mutates the live resource; the benchmark
+# one is produced by Benchmark.apply_overrides itself, so the baked set can never drift
+# from what benchmark_mode.gd actually writes at run time.
+func _config_param_sets() -> Array:
+	var out: Array = []
+	var authored: GameConfig = Config.data.duplicate(true)
+	out.append({ "label": "default-config boot", "cfg": authored })
+	var bench: GameConfig = Config.data.duplicate(true)
+	Benchmark.apply_overrides(bench)  # one-shot tool: the snapshot it holds is never used
+	out.append({ "label": "benchmark stage", "cfg": bench })
+	return out
 
 
 func _serialize(pieces: Array) -> Array:

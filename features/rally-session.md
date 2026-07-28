@@ -203,6 +203,15 @@ removing ~30–45 lap-time sims from every `start_rally`.
   per-rally keys) gates CI alongside the track verifier; `test_opponent_cache.gd`
   runs the same freshness check locally.
 
+
+**Fingerprint memoisation.** `OpponentCache.global_fingerprint()` used to re-parse the
+full 248 KB `data/track_cache.json`, `load()` the config resource and SHA-256 the whole
+car + engine catalogue on **every** `lookup()` — i.e. once per rally start, likely
+50-150 ms of a menu transition on wasm. It is now memoised, keyed on the modified-times
+of the lockfile and the config resource, so an in-process rewrite invalidates it
+automatically. `OpponentCache.reset_cache()` / `TrackCache.reset_source_hash_cache()` are
+the explicit invalidation seams (both are called from the existing `reset()` paths).
+
 ## Tests
 
 `tests/headless/test_rally_session.gd` — happy path + placement, the per-rally

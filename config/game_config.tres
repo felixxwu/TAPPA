@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 turbo_boost_response = 3.0
+engine_mix_rate_web_touch = 11025.0
 distant_terrain_enabled = false
 fog_density = 0.02
 water_enabled = true

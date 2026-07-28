@@ -87,6 +87,33 @@ Stuck-recovery knobs live in the **Recovery** group: `recovery_enabled`,
 `recovery_timeout_s` (3.0), `recovery_speed_mps` (0.7), `recovery_depth_m` (3.0),
 `recovery_upright_dot` (0.3).
 
+## Baked centerline table (performance)
+
+`TrackProgress` owns a resampled copy of the road centerline and every hot-path
+lookup goes through it instead of `Curve2D.sample_baked`.
+
+- `TrackProgress.baked_points(curve)` resamples once at ~1 m (`BAKE_STEP_M`) with
+  equal-width cells, cached against the curve instance *and* its baked length, so a
+  re-baked or replaced track rebuilds automatically.
+- `TrackProgress.point_on(pts, length, offset)` is the drop-in for `sample_baked`. It
+  **linearly interpolates** between adjacent samples and clamps at both ends.
+  **Do not index the table directly** — truncating to the cell quantises position to
+  1 m, which shifts stage progress, split timing and tire-mark placement.
+- `TireMarks` consumes the SAME table via `baked_points`, so the two systems resample
+  the curve once between them.
+
+Why: the window scan here plus the windowed and per-wheel scans in `TireMarks` were
+issuing roughly **26,000 `sample_baked` engine calls per second** at 60 Hz over a curve
+that is static for the whole event. The table turns each into a `PackedVector2Array`
+index plus a `lerp`.
+
+> **The search WINDOW was deliberately left wide.** Narrowing it to a few metres around
+> the previous offset was considered and **rejected**: `_accrue_cut` detects a corner cut
+> by seeing the nearest-point offset leap tens of metres in a single tick when the car
+> crosses a hairpin's neck. A narrow window cannot see that jump, so corner-cutting
+> penalties would silently stop being billed. The same width is what lets the off-track
+> leash re-acquire after a big excursion. Optimise the per-probe cost, never the window.
+
 ## Corner-cutting penalty
 
 `TrackProgress` also detects **corner cutting** off the same per-tick advance:

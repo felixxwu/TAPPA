@@ -44,6 +44,11 @@ var save_disabled := false
 
 var _debounce: Timer
 
+# Kept alive for the lifetime of the autoload: JavaScriptBridge callbacks are
+# only valid while the JavaScriptObject wrapper is referenced from GDScript, so
+# dropping this would silently detach the browser lifecycle listeners.
+var _web_lifecycle_cb: JavaScriptObject = null
+
 
 func _ready() -> void:
 	_debounce = Timer.new()
@@ -52,14 +57,94 @@ func _ready() -> void:
 	_debounce.timeout.connect(save_now)
 	add_child(_debounce)
 	load_or_new()
+	install_web_lifecycle()
 
 
 # Persist on the way out, including when a mobile/web tab is backgrounded — on
 # the HTML5 export user:// is IndexedDB, which may not flush before the tab
 # closes, so we force a synchronous write on these notifications.
+#
+# NOTE these are DESKTOP/native signals: browsers never send
+# NOTIFICATION_WM_CLOSE_REQUEST, so the web build reaches the same flush entry
+# point (flush_and_sync) through the browser lifecycle listeners installed by
+# install_web_lifecycle() instead.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED:
-		save_now()
+		flush_and_sync()
+
+
+# --- Web lifecycle -----------------------------------------------------------
+# On the HTML5 export user:// is IndexedDB (Emscripten IDBFS): FileAccess writes
+# land in an in-memory FS that is flushed to IndexedDB ASYNCHRONOUSLY. Two things
+# have to happen before the page goes away:
+#   1. the debounced write must actually run (flush), and
+#   2. the resulting FS state must be pushed to IndexedDB (sync).
+# The only page-teardown signals mobile browsers fire reliably are
+# `visibilitychange`→hidden and `pagehide`, so we hook both. The export is
+# SINGLE-THREADED (`variant/thread_support=false` in export_presets.cfg), so the
+# write itself is cheap and synchronous on the main thread — the risk being
+# mitigated here is the async IDB sync not landing, not write cost.
+
+# The single flush entry point used by BOTH the desktop close notification and
+# the web lifecycle listeners: write immediately, then ask the browser FS to push
+# the result to IndexedDB (a no-op off the web build).
+func flush_and_sync() -> void:
+	save_now()
+	request_web_sync()
+
+
+# Register the browser lifecycle listeners. Returns true if they were installed
+# (web only); a harmless no-op everywhere else, so it can be called
+# unconditionally. Idempotent — a second call does nothing.
+func install_web_lifecycle() -> bool:
+	if not Platform.is_web():
+		return false
+	if _web_lifecycle_cb != null:
+		return true
+	_web_lifecycle_cb = JavaScriptBridge.create_callback(_on_web_lifecycle)
+	var window := JavaScriptBridge.get_interface("window")
+	if window == null:
+		_web_lifecycle_cb = null
+		return false
+	# Stash the callback on window so plain JS can wire it to the events. Both
+	# listeners are registered: visibilitychange→hidden is the reliable mobile
+	# "page is going away" signal, pagehide covers navigation/tab close.
+	window.rallySaveFlush = _web_lifecycle_cb
+	JavaScriptBridge.eval("""
+		document.addEventListener('visibilitychange', function () {
+			if (document.visibilityState === 'hidden' && window.rallySaveFlush) {
+				window.rallySaveFlush();
+			}
+		});
+		window.addEventListener('pagehide', function () {
+			if (window.rallySaveFlush) { window.rallySaveFlush(); }
+		});
+	""", true)
+	return true
+
+
+# Invoked from JS when the page is hidden / unloading.
+func _on_web_lifecycle(_args: Array) -> void:
+	flush_and_sync()
+
+
+# Ask the Emscripten filesystem to push its in-memory state to IndexedDB. Godot
+# schedules its own sync after writes, but it is async and may not land before a
+# tab close, so we request one explicitly at the lifecycle boundary. Defensive by
+# design: FS is not guaranteed to be exposed on the JS globals, and a failure
+# here must never take the game down — worst case we fall back to the engine's
+# own sync. No-op off the web build.
+func request_web_sync() -> void:
+	if not Platform.is_web():
+		return
+	JavaScriptBridge.eval("""
+		(function () {
+			try {
+				var fs = window.FS || (window.Module && window.Module.FS);
+				if (fs && fs.syncfs) { fs.syncfs(false, function () {}); }
+			} catch (e) { console.warn('[rally] IDB sync failed', e); }
+		})();
+	""", true)
 
 
 # --- Load --------------------------------------------------------------------

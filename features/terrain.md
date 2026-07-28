@@ -46,7 +46,11 @@ Owns all terrain state and the chunk lifecycle.
 - `chunk_material: Material` — applied to every chunk mesh (set to the shared
   floor material in `main.tscn` so it survives runtime mesh assignment).
 - `focus_path: NodePath` — the node whose position drives loading (the car,
-  `../Car`). Empty in tests so the focus is driven explicitly.
+  `../Car`). Empty in tests so the focus is driven explicitly. `_focus_node()`
+  runs every rendered frame, so the resolved node is **cached** (`_focus_cached`,
+  invalidated by the `focus_path` setter and by `is_instance_valid`) — a
+  `get_node_or_null()` scene-tree walk per frame is the pattern this project bans
+  on low-end mobile (same fix as `engine_audio.gd`'s resolved-once car/engine refs).
 
 Key methods:
 
@@ -88,6 +92,44 @@ Key methods:
   (used by tests and `_rebuild_loaded`, which must refill after a seed/layer
   change). `corridor_bounds()` is the world-XZ AABB of the cached coords —
   `world.gd` dilates it for the static `DistantTerrain` backdrop.
+
+### What the cache keeps — and what is freed (memory)
+
+The cache is the game's largest resident allocation, so most of what
+`TerrainChunkBuilder.data()` produces is dropped again as soon as it has been
+consumed (`todo/mobile-web-performance.md` 1.6 / 1.7 / 2.7):
+
+- **Dropped immediately, in `cache_chunk`** — `vertices`, `uvs`, `colors`,
+  `uv2s`, `indices` (`TerrainManager.DEAD_AFTER_PREBAKE`). `TerrainLod.build_all`
+  has already turned them into GPU meshes, and nothing reads them off the cache
+  again. They are ~5/6 of a full-res chunk's bytes.
+  - **Hazard, handled:** `TerrainChunk.apply_data` has a fallback that rebuilds
+    the LOD meshes from those arrays when `lod_meshes` is empty — correct for
+    on-demand (editor/test) data straight out of `compute_chunk_data`, impossible
+    for a cached dict. It now checks for `vertices` first and `push_error`s
+    instead of building garbage (collision, which only needs `heights`, still builds).
+- **Dropped on `load_finished`, via `free_load_only_data()`** (wired in `_ready`
+  to the host's signal — see [loading.md](loading.md)):
+  - `lights` on every cached chunk. Every `light_at` caller (`tree_mesh_field`
+    bush tint, `distant_terrain` backdrop, `road_markings`) is a one-shot build
+    that runs during generation, and the value is folded into the mesh vertex
+    colours anyway.
+  - `road_heights`, `road_blend`, `cliff_offsets` — read **only** by
+    `TerrainChunkBuilder`, and gated on `corridor_complete()` so the editor /
+    on-demand rebuild path (no corridor) keeps them. `track_weights` and
+    `track_surface` are **kept**: `surface_at()` drives per-tick grip.
+- **Kept forever:** `heights` (collision + `height_at`), `center`, `lod_meshes`,
+  `coarse`, `grid_n`, `stride`.
+
+Both frees would otherwise fail **silently** — `_cached_light_at` and a rebuilt
+chunk would return plausible-but-wrong values — so each has a loud sentinel:
+`_lights_freed` makes a post-free `light_at` `push_error`, and `_bake_fields_freed`
+makes `_rebuild_loaded` `push_error` (its chunks would lose the road flatten).
+Both latches track the **data, not the event**: a fresh `bake_track` clears
+`_bake_fields_freed` and `set_corridor` clears `_lights_freed`, so a world
+**regeneration** (`_generate_track` run again on a booted world — `load_finished`
+has already latched and will not re-fire) is correct rather than permanently
+poisoned. Covered by `tests/headless/test_terrain_memory.gd`.
 
 - **Per-chunk resolution classification** (`corridor_coords` → `_classify_chunk`,
   `chunk_class(coord)`). As the corridor is built, each chunk is classed
@@ -209,6 +251,9 @@ the true terrain across a transition band just outside the road edge, using
 **alpha** channel; the shader fades `albedo_texture → road_texture` by it (see
 [rendering.md](rendering.md)). `default_cell_color` is a flat RGB ground tint
 (white by default):
+
+`road_heights`, `road_blend` and `cliff_offsets` are **load-only** — see *What the
+cache keeps* above; `track_weights` / `track_surface` are resident for the whole run.
 
 - `road_heights: Dictionary` — grid-vertex index (`Vector2i`,
   `coord.x*(SAMPLES-1)+xi`, shared across seams) → terrain Y at the vertex's exact
@@ -429,10 +474,17 @@ from the track, so the reachable chunk set is knowable in advance:
    `TerrainManager.corridor_coords(centerline, leash_m)` to get the full coord
    list, then `set_corridor(coords)` and loops `cache_chunk(coord)` in
    **batches of 8 per awaited frame** so the loading bar keeps painting.
-   Measured on the default stage: **204 chunks, 46.2 MB** cached
-   (`print("terrain precompute: %d chunks, %.1f MB cached")`), roughly
-   **~185 KB/chunk** (heights + mesh arrays + baked lights, all packed
-   arrays — see `cache_size_mb()`'s per-type accounting).
+   The `print("terrain precompute: %d chunks, %.1f MB cached")` line reports the
+   total (`cache_size_mb()`'s per-type packed-array accounting). It is logged
+   *during* the precompute, so it still counts the baked `lights` that
+   `load_finished` drops shortly afterwards — the resident figure is lower.
+   Since the dead-array free (see **What the cache keeps** above) a stage measures
+   in the **single-digit MB**, down from ~46 MB for ~200 chunks before it.
+   `bake_track` also logs its five dictionaries' entry counts
+   (`track bake fields: …`) — `cliff_offsets` dominates, and on a measured stage
+   the three freed dicts came to ~99k entries (≈6–9 MB at Godot's ~60–90 bytes per
+   `HashMap` entry), i.e. materially **less** than `todo/mobile-web-performance.md`
+   2.7's 20–30 MB estimate.
 2. Chunk generation itself is unchanged at the single-chunk level:
    `compute_chunk_data(coord)` (noise + mesh arrays, pure CPU) runs a
    `TerrainChunkBuilder.build()` (`scripts/terrain_chunk_builder.gd`) to
@@ -481,6 +533,13 @@ focus; distant chunks freed when the focus moves).
 `test_cached_chunk_data_matches_fresh_compute` guards that a cached chunk's
 data is byte-identical to a fresh `compute_chunk_data` call (replaces the old
 incremental-vs-monolithic comparison now that there's only one build path).
+
+`tests/headless/test_terrain_memory.gd` — what the cache and the track bake keep
+versus drop, and the sentinels: dead mesh arrays erased but collision / `height_at`
+still correct, despawn-and-respawn from cache, `apply_data`'s missing-arrays branch
+erroring loudly while still building collision, `light_at` baked before the free and
+loud after it, `surface_at` surviving the bake-field free, and the corridor-complete
+gate leaving the on-demand rebake path working.
 
 `tests/headless/test_terrain_precompute.gd` — the precomputed-corridor
 machinery: `corridor_coords` region math (covers every reachable position

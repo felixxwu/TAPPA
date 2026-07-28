@@ -9,7 +9,12 @@ extends RefCounted
 
 const CELL_M := 0.5                                  # global cell grid size
 const STRAIGHT_OPTIONS_M := [0.0, 5.0, 10.0, 20.0]   # connecting straight lengths
-const RASTER_STEP_M := 0.25                          # centerline sampling for cells
+# Legacy centerline sampling step. Both rasterizers (rasterize_cells and
+# _collide_and_cells) now scan each segment's bounding box with a point-to-segment
+# distance test instead of walking discrete samples, so NOTHING samples by this any
+# more. Retained only in constants_fingerprint() so removing it isn't a silent
+# cache-key change; delete it (with a CACHE_VERSION bump) if it stays unused.
+const RASTER_STEP_M := 0.25
 # Per-attempt placement+backtrack budget = STEPS_BASE + turn_count * STEPS_PER_TURN.
 # A healthy search places each corner first- or second-try, completing in roughly
 # `turn_count` steps; a seed that boxes itself in backtracks exponentially and blows
@@ -45,6 +50,17 @@ const STRAIGHTNESS_BIAS := 6.0
 # total yields are bounded by the search's own step budget (STEPS_BASE + restarts), so
 # even a thrashing seed can't animate unboundedly. Pacing only — never affects the RESULT.
 const PROGRESS_STEP_INTERVAL := 2
+# Upper bound on how long the search may run between preview yields. The step
+# interval alone leaves the yield COUNT unbounded (55-1300 for a thrashing seed), and
+# each yield costs a whole frame of wall clock, so a hard seed spends most of its time
+# waiting for frames rather than searching. This adds a floor on the work done per
+# yield: the search only pauses once BOTH the step interval and this budget are met.
+# Justified on preview smoothness (the drawn line still grows every few ms), not load
+# time. PACING ONLY — like PROGRESS_STEP_INTERVAL it decides WHEN to pause, never what
+# is searched, in what order, or when to stop, so it is excluded from
+# constants_fingerprint(). Ignored under headless, which keeps the deterministic fixed
+# stride so the --fixed-fps 60 test runner stays reproducible.
+const PROGRESS_MIN_INTERVAL_MS := 16
 
 
 # Short fingerprint of every generator constant that can change a committed track's
@@ -86,32 +102,45 @@ static func mirror_points(points: Array, flip: bool) -> Array:
 
 
 # Every global cell (Vector2i) within half `width` of the polyline.
+#
+# Each segment scans its bounding box ONCE (point-to-segment distance), the same shape
+# as _collide_and_cells — see that function's comment. The previous form walked the
+# polyline in RASTER_STEP_M samples and stamped a reach×reach block at each, so every
+# cell was constructed and hashed ~half/RASTER_STEP times over (the distance maths was
+# already skipped by the `cells.has` guard, but the Vector2i + hash per sample was not).
+# Cost drops from O(samples × reach²) to O(bbox area) per segment.
+#
+# NOTE: this is marginally MORE inclusive than the sample-based version at the ends and
+# outsides of a bend — the segment test measures distance to the whole segment, not to
+# a discrete set of samples along it — so the cell set can differ at the margins.
+# reserve_behind feeds generated shape, hence the cache regeneration this landed with.
 static func rasterize_cells(polyline: PackedVector2Array, width: float) -> Dictionary:
 	var cells: Dictionary = {}
 	var half := width / 2.0
-	var reach := int(ceil(half / CELL_M)) + 1
-	for i in range(1, polyline.size()):
+	var half_sq := half * half
+	var i := 1
+	var n := polyline.size()
+	while i < n:
 		var a := polyline[i - 1]
 		var b := polyline[i]
-		var seg_len := a.distance_to(b)
-		var steps := int(ceil(seg_len / RASTER_STEP_M)) + 1
-		for s in steps + 1:
-			var t := float(s) / float(steps) if steps > 0 else 0.0
-			var p := a.lerp(b, t)
-			var cx := floori(p.x / CELL_M)
-			var cz := floori(p.y / CELL_M)
-			for dz in range(-reach, reach + 1):
-				for dx in range(-reach, reach + 1):
-					var cell := Vector2i(cx + dx, cz + dz)
-					# Already stamped by a nearby sample? Adjacent samples (every
-					# RASTER_STEP_M) re-cover most of the same cells, so this skip avoids
-					# ~half/RASTER_STEP redundant distance checks per cell.
-					if cells.has(cell):
-						continue
-					# Cell centre in world space.
-					var centre := Vector2((cell.x + 0.5) * CELL_M, (cell.y + 0.5) * CELL_M)
-					if centre.distance_to(p) <= half:
-						cells[cell] = true
+		i += 1
+		var cx0 := floori((minf(a.x, b.x) - half) / CELL_M)
+		var cx1 := floori((maxf(a.x, b.x) + half) / CELL_M)
+		var cz0 := floori((minf(a.y, b.y) - half) / CELL_M)
+		var cz1 := floori((maxf(a.y, b.y) + half) / CELL_M)
+		var cz := cz0
+		while cz <= cz1:
+			var cx := cx0
+			while cx <= cx1:
+				var cell := Vector2i(cx, cz)
+				cx += 1
+				if cells.has(cell):
+					continue
+				# Cell centre in world space.
+				var centre := Vector2((cell.x + 0.5) * CELL_M, (cell.y + 0.5) * CELL_M)
+				if _point_seg_dist_sq(centre, a, b) <= half_sq:
+					cells[cell] = true
+			cz += 1
 	return cells
 
 
@@ -204,6 +233,19 @@ static func generate_cached(params: TrackGenParams, cfg: GameConfig,
 		push_warning("TrackCache miss (%s) — generating live" % key)
 	else:
 		push_error("TrackCache miss in exported build (%s) — generating live; regenerate the lockfile (./cache_tracks.sh)" % key)
+	return await generate(params, on_progress, should_abort)
+
+
+# Cache consult for the NON-event (for_config) paths: the benchmark boot and a
+# default-config boot. Unlike generate_cached this treats a miss as completely normal
+# and silent — free roam rolls a fresh random seed (plus water level and relief) on
+# every entry (hq.gd _prepare_free_roam), so those keys can never be in the lockfile and
+# a warning/error there would be pure noise. See todo/mobile-web-performance.md §2.6.
+static func generate_optional_cached(params: TrackGenParams, cfg: GameConfig,
+		on_progress: Callable = Callable(), should_abort: Callable = Callable()) -> Dictionary:
+	var hit := TrackCache.lookup(params, cfg)
+	if not hit.is_empty() and hit.get("complete", false):
+		return hit
 	return await generate(params, on_progress, should_abort)
 
 
@@ -300,33 +342,78 @@ static func _turn_corners() -> Array:
 # favours easy turns; 0 leaves the order an unbiased shuffle (the original layout).
 static func _candidates(corners: Array, rng: RandomNumberGenerator,
 		straightness: float = 0.0) -> Array:
-	var list: Array = []
-	for ci in corners.size():
-		for flip in [false, true]:
-			for sl in STRAIGHT_OPTIONS_M:
-				list.append({ "corner_index": ci, "flip": flip, "straight": sl })
+	_ensure_candidate_template(corners)
+	# A fresh Array each call (the caller shuffles/consumes it) over the SHARED,
+	# never-mutated candidate dictionaries — the set is identical at every DFS depth,
+	# so rebuilding 64 dictionaries per step was pure garbage.
+	var list: Array = _candidate_template.duplicate()
 	if straightness <= 0.0:
-		# Fisher-Yates with the seeded rng for determinism (unbiased).
-		for i in range(list.size() - 1, 0, -1):
+		# Fisher-Yates with the seeded rng for determinism (unbiased). `while` rather
+		# than a 3-arg range(), which would allocate a throwaway Array per call.
+		var i := list.size() - 1
+		while i > 0:
 			var j := rng.randi_range(0, i)
 			var tmp = list[i]; list[i] = list[j]; list[j] = tmp
+			i -= 1
 		return list
 	# Straightness-weighted shuffle. Each candidate gets a sampling weight rising
 	# with how straight it is; ordering is an Efraimidis-Spirakis weighted draw
 	# (key = u^(1/weight), sorted high→low), which stays fully seeded → deterministic.
 	# Every candidate is still present, just reordered, so the DFS can backtrack onto
 	# a sharp corner when a gentle one won't fit and completeness is unaffected.
+	# Sorted as an INDEX permutation against a float64 key buffer, rather than 64
+	# throwaway { cand, key } dictionaries. float64 (not float32) so the keys are the
+	# exact same values the dictionary form compared — no precision-induced reordering.
+	# The comparator carries an explicit index tie-break because sort_custom is NOT
+	# stable: without it, two candidates with bit-identical keys could come out in
+	# either order and change the DFS exploration order (and hence the track shape)
+	# run to run. With it the permutation is fully determined by (key, index).
 	var w := clampf(straightness, 0.0, 1.0)
-	var keyed: Array = []
-	for cand in list:
-		var weight := 1.0 + w * STRAIGHTNESS_BIAS * _candidate_straightness(corners, cand)
+	var n := list.size()
+	var keys := PackedFloat64Array()
+	keys.resize(n)
+	var order: Array = []
+	order.resize(n)
+	var i := 0
+	while i < n:
+		var weight := 1.0 + w * STRAIGHTNESS_BIAS * _candidate_straightness(corners, list[i])
 		var u := maxf(rng.randf(), 1e-9)  # u in (0, 1]; guard pow against 0
-		keyed.append({ "cand": cand, "key": pow(u, 1.0 / weight) })
-	keyed.sort_custom(func(a, b): return a["key"] > b["key"])
+		keys[i] = pow(u, 1.0 / weight)
+		order[i] = i
+		i += 1
+	order.sort_custom(func(a, b):
+		if keys[a] == keys[b]:
+			return a < b
+		return keys[a] > keys[b])
 	var out: Array = []
-	for e in keyed:
-		out.append(e["cand"])
+	out.resize(n)
+	i = 0
+	while i < n:
+		out[i] = list[order[i]]
+		i += 1
 	return out
+
+
+# The (corner_index, flip, straight) candidate set, built once. Identical at every DFS
+# depth and across generate() calls, so it is cached statically; rebuilt only if the
+# corner list it was built from changes (a different library, or a test injecting one).
+static var _candidate_template: Array = []
+static var _candidate_template_key := ""
+
+
+static func _ensure_candidate_template(corners: Array) -> void:
+	var names := PackedStringArray()
+	for spec in corners:
+		names.append(spec["name"])
+	var key := "|".join(names)
+	if key == _candidate_template_key and not _candidate_template.is_empty():
+		return
+	_candidate_template_key = key
+	_candidate_template = []
+	for ci in corners.size():
+		for flip in [false, true]:
+			for sl in STRAIGHT_OPTIONS_M:
+				_candidate_template.append({ "corner_index": ci, "flip": flip, "straight": sl })
 
 
 # Straightness of one candidate piece in [0, 1]: 1 = dead straight (a gentle corner
@@ -338,13 +425,26 @@ static func _candidate_straightness(corners: Array, cand: Dictionary) -> float:
 	return clampf(0.7 * corner_score + 0.3 * straight_score, 0.0, 1.0)
 
 
+# Memo for _corner_straightness, keyed by corner name. The value is a constant of the
+# authored corner shape, but the naive form tessellates a fresh Curve2D on every DFS
+# candidate (~12,800 throwaway tessellations across a 200-step search to compute the
+# same 8 numbers). Static, so it also survives across generate() calls.
+static var _corner_straightness_memo: Dictionary = {}
+
+
 # Gentleness of a library corner in [0, 1]: 1 = no turn, 0 = a 180° hairpin.
 # Derived from the corner's total heading change (entry heads +Y), so it needs no
 # hand-maintained per-corner table and tracks the authored shapes automatically.
+# Memoised (see above) — same value, obtained once per corner instead of per candidate.
 static func _corner_straightness(spec: Dictionary) -> float:
+	var key: String = spec["name"]
+	if _corner_straightness_memo.has(key):
+		return _corner_straightness_memo[key]
 	var poly := CornerLibrary.build_curve(spec).tessellate()
 	var angle := absf(Vector2(0.0, 1.0).angle_to(exit_heading(poly)))
-	return clampf(1.0 - angle / PI, 0.0, 1.0)
+	var value := clampf(1.0 - angle / PI, 0.0, 1.0)
+	_corner_straightness_memo[key] = value
+	return value
 
 
 # Corners to undo for a given `backoff_level` (0-based). Doubling growth from 1
@@ -384,12 +484,10 @@ static func _build_candidate(cand: Dictionary, corners: Array, frame_pos: Vector
 		# Insert the straight end as its own point (linear from the previous
 		# point), then the corner points after it.
 		appended.append([straight_end, Vector2.ZERO, merge_out])
-		for i in range(1, world_pts.size()):
-			appended.append(world_pts[i])
+		_append_tail(appended, world_pts)
 		merge_out = Vector2.ZERO  # previous point leaves straight (no handle)
 	else:
-		for i in range(1, world_pts.size()):
-			appended.append(world_pts[i])
+		_append_tail(appended, world_pts)
 	# 3. Tessellate the new portion for cells + exit heading. Build a temp curve
 	# from the join point (with merge_out) through the appended points.
 	var temp := Curve2D.new()
@@ -407,6 +505,16 @@ static func _build_candidate(cand: Dictionary, corners: Array, frame_pos: Vector
 		"exit_heading": exit_heading(poly),
 		"merge_out": merge_out,
 	}
+
+
+# Append src[1..] to dst. A `while` rather than `for i in range(1, n)`, which would
+# allocate a throwaway Array on every candidate build.
+static func _append_tail(dst: Array, src: Array) -> void:
+	var i := 1
+	var n := src.size()
+	while i < n:
+		dst.append(src[i])
+		i += 1
 
 
 # Squared distance from point p to segment a-b.
@@ -430,9 +538,14 @@ static func _point_seg_dist_sq(p: Vector2, a: Vector2, b: Vector2) -> float:
 # stamping a reach×reach block at every RASTER_STEP_M sample — the old way re-tested
 # the same cells ~half/RASTER_STEP times over, which made each candidate ~70 ms and
 # turned a heavy-backtracking seed into a multi-minute hang.
+# `extra` is an ADDITIONAL read-only occupancy set tested alongside `occupied` (never
+# written to). It exists so the runoff check can treat "placed track + the candidate
+# corner's own cells" as occupied without duplicating `occupied` — which holds the
+# whole track footprint (~50,000 Vector2i keys) and was being copied once per candidate
+# at the final depth.
 static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 		occupied: Dictionary, reserved: Dictionary, frame_pos: Vector2,
-		params: TrackGenParams = null) -> Dictionary:
+		params: TrackGenParams = null, extra: Dictionary = {}) -> Dictionary:
 	var cells: Dictionary = {}
 	var half := width / 2.0
 	var half_sq := half * half
@@ -448,15 +561,23 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 	var water := params != null and params.water_enabled and params.water_sampler.is_valid()
 	var water_ceiling := params.water_level if water else 0.0
 	var wet_count := 0
-	for i in range(1, polyline.size()):
+	# `while` throughout rather than 2-arg range(), which allocates a throwaway Array
+	# per row per segment per candidate — the hottest allocation in the DFS.
+	var i := 1
+	var n := polyline.size()
+	while i < n:
 		var a := polyline[i - 1]
 		var b := polyline[i]
+		i += 1
 		var cx0 := floori((minf(a.x, b.x) - half) / CELL_M)
 		var cx1 := floori((maxf(a.x, b.x) + half) / CELL_M)
 		var cz0 := floori((minf(a.y, b.y) - half) / CELL_M)
 		var cz1 := floori((maxf(a.y, b.y) + half) / CELL_M)
-		for cz in range(cz0, cz1 + 1):
-			for cx in range(cx0, cx1 + 1):
+		var cz := cz0
+		while cz <= cz1:
+			var cx := cx0 - 1
+			while cx < cx1:
+				cx += 1
 				var cell := Vector2i(cx, cz)
 				if cells.has(cell):
 					continue
@@ -470,9 +591,10 @@ static func _collide_and_cells(polyline: PackedVector2Array, width: float,
 					wet_count += 1
 				# Collide against placed track OR the reserved lead-in corridor; cells
 				# within the join buffer of the current frame are allowed to touch.
-				if (occupied.has(cell) or reserved.has(cell)) \
+				if (occupied.has(cell) or extra.has(cell) or reserved.has(cell)) \
 						and centre.distance_squared_to(frame_pos) > buffer_sq:
 					return { "collides": true, "cells": cells }
+			cz += 1
 	# Substantial water crossing ⇒ the piece is IN a lake, not skimming a shore.
 	if water and cells.size() > 0:
 		var limit := maxi(WATER_CLIP_CELLS, int(WATER_MAX_WET_FRACTION * float(cells.size())))
@@ -501,6 +623,10 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 	# caller restart with a fresh, far-apart seed (cheap — see generate()).
 	var max_steps: int = STEPS_BASE + turn_count * STEPS_PER_TURN
 	var last_yield_step := 0
+	# Wall-clock pacing state (see PROGRESS_MIN_INTERVAL_MS). Headless keeps the
+	# fixed step stride so the test runner's yield pattern stays deterministic.
+	var last_yield_ms := Time.get_ticks_msec()
+	var headless_pacing := Platform.is_headless()
 	# Escalating backtrack retreat: undo 2^backoff_level corners on a dead end, so a
 	# boxed-in search reels back a chunk (and the live preview retreats decisively)
 	# instead of churning candidates at the frontier. backoff_level RISES on each dead
@@ -527,8 +653,10 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		# Cancelled by the caller (inputs changed / screen left) — stop doing work.
 		if should_abort.is_valid() and should_abort.call():
 			break
-		if on_progress.is_valid() and steps - last_yield_step >= PROGRESS_STEP_INTERVAL:
+		if on_progress.is_valid() and steps - last_yield_step >= PROGRESS_STEP_INTERVAL \
+				and (headless_pacing or Time.get_ticks_msec() - last_yield_ms >= PROGRESS_MIN_INTERVAL_MS):
 			last_yield_step = steps
+			last_yield_ms = Time.get_ticks_msec()
 			on_progress.call(_snapshot(world_points))
 			await Engine.get_main_loop().process_frame
 		# Ensure the current depth has a candidate iterator (the frontier).
@@ -552,13 +680,13 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 				var exit_pos: Vector2 = built["exit_pos"]
 				var exit_head: Vector2 = built["exit_heading"]
 				var runoff_end := exit_pos + exit_head * runoff_m
-				# occupied doesn't yet include this candidate's cells; add them so the
-				# runoff can't overlap the very corner it extends from (beyond the join).
-				var occ_with := occupied.duplicate()
-				for c in hit["cells"]:
-					occ_with[c] = true
+				# occupied doesn't yet include this candidate's cells; pass them as the
+				# `extra` occupancy set so the runoff can't overlap the very corner it
+				# extends from (beyond the join) — the same test as before, without
+				# copying the whole ~50k-key occupancy dictionary per candidate.
 				var r_hit := _collide_and_cells(
-					PackedVector2Array([exit_pos, runoff_end]), width, occ_with, reserved, exit_pos, params)
+					PackedVector2Array([exit_pos, runoff_end]), width, occupied, reserved,
+					exit_pos, params, hit["cells"])
 				if r_hit["collides"]:
 					continue  # runoff won't fit -> reject this last corner, backtrack
 				this_runoff = { "end_pos": runoff_end, "heading": exit_head }

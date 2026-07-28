@@ -226,6 +226,43 @@ distant idle isn't hard-cut; otherwise every intro car simply idles, attenuated
 by its distance from the reveal camera (the old bespoke fade + queued-car mute
 are gone — see [start-line.md](start-line.md)).
 
+## Per-target mix rate
+
+`EngineAudio.MIX_RATE` (22050) is the **base/full** rate. The effective rate is resolved
+once per instance through `GameConfig.engine_mix_rate_for(web, touch, MIX_RATE)`, which
+returns `engine_mix_rate_web_touch` on a web TOUCH device and the base rate everywhere
+else — the same `(web and touch)` split as `tree_render_distance_for`. `reconfigure()`
+re-resolves it and re-seats the playback only when the rate actually changed, so the
+synth and the generator can never run detuned relative to each other.
+
+Why: `fill()` is a per-sample GDScript DSP loop, so its CPU cost scales with **sample
+rate, not frame rate** — it is the largest single script cost in the game (~0.96 ms/frame
+even on native desktop, and the web export is single-threaded, so the mixer *is* the main
+loop). The shipped `game_config.tres` sets the web-touch rate to **11025**. The audible
+price is dulled crackle and turbo-whistle layers (Nyquist drops to ~5.5 kHz), not a lost
+engine fundamental.
+
+`buffer_seconds()` is in *seconds*, so a lower rate simply means fewer frames for the
+same wall-clock depth — `BUFFER_SECONDS_TOUCH` and `output_latency.web` stay correct.
+
+## Silence path
+
+When proximity attenuation has pinned the level to `engine_audio_max_attenuation_db` the
+synth output is inaudible, so `_timed_process` pushes a cached all-zero buffer
+(`_push_silence`) and skips `fill()` entirely. The buffer still has to be pushed (an
+unfed generator underruns) and the latched `engine.bov_event` is still consumed so the
+sim re-arms. Matters wherever several cars are alive but distant — the start line, and
+the opponent wreck.
+
+## Noise table
+
+The five noise consumers (noise floor, crackle, turbo whistle, blow-off, anti-lag) read a
+4096-sample baked white-noise table built once at init from the seeded RNG, via per-layer
+rolling indices with distinct offsets and co-prime strides so the layers stay
+decorrelated. This replaced up to five `RandomNumberGenerator.randf()` bound-method calls
+*per sample* — about 110,000 engine calls a second. Layers whose envelope is zero are
+skipped entirely.
+
 ## Tests
 
 `tests/headless/test_engine_audio.gd` — firing-phase setup, `fill()` output,

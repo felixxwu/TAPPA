@@ -18,8 +18,74 @@ const SEARCH_BACK_M := 40.0
 const SEARCH_FWD_M := 140.0
 const SEARCH_STEP_M := 1.0
 
+# --- Centerline point table --------------------------------------------------
+#
+# The window scan above probes the centerline ~181 times per physics tick, and
+# TireMarks scans it another ~255 times: at 60 Hz that was ~26k Curve2D.sample_baked
+# calls per second, and on wasm the engine-call overhead dominates the actual maths.
+# The centerline is STATIC for the whole event, so it is resampled ONCE into a flat
+# PackedVector2Array and every per-tick lookup reads that array instead.
+#
+# The table is linearly INTERPOLATED, never truncated to a cell — quantising to the
+# cell size would coarsen progress, split timing and tyre-mark placement. Curve2D
+# itself only stores baked points every `bake_interval` (5 m by default) and lerps
+# between them, so a ~1 m table lerped the same way tracks sample_baked very closely
+# (asserted in tests/headless/test_centerline_table.gd).
+#
+# Owned here and shared with TireMarks through the static cache below, so the two
+# systems resample the same curve once between them.
+const BAKE_STEP_M := 1.0
+
+static var _table_curve: WeakRef = null
+static var _table_length := -1.0
+static var _table_pts := PackedVector2Array()
+
+
+# The centerline resampled to ~BAKE_STEP_M spacing. Cached on the curve instance (and
+# its baked length), so TrackProgress and TireMarks share one table per track; a new
+# (or re-baked) curve rebuilds it.
+static func baked_points(curve: Curve2D) -> PackedVector2Array:
+	if curve == null:
+		return PackedVector2Array()
+	var length := curve.get_baked_length()
+	if _table_curve != null and _table_curve.get_ref() == curve and is_equal_approx(_table_length, length):
+		return _table_pts
+	var pts := PackedVector2Array()
+	if length <= 0.0:
+		pts.append(curve.sample_baked(0.0))
+	else:
+		# One extra point so the LAST sample lands exactly on the baked length, and every
+		# cell is the same (slightly sub-BAKE_STEP_M) width — that keeps point_on()'s
+		# index/fraction split exact right to the end of the curve.
+		var n := maxi(2, int(ceil(length / BAKE_STEP_M)) + 1)
+		var step := length / float(n - 1)
+		pts.resize(n)
+		for i in n:
+			pts[i] = curve.sample_baked(minf(i * step, length))
+	_table_curve = weakref(curve)
+	_table_length = length
+	_table_pts = pts
+	return pts
+
+
+# Point at a baked `offset` on a table built by baked_points() for a curve of
+# `length` metres — the drop-in replacement for Curve2D.sample_baked(offset).
+static func point_on(pts: PackedVector2Array, length: float, offset: float) -> Vector2:
+	var n := pts.size()
+	if n == 0:
+		return Vector2.ZERO
+	if n == 1 or length <= 0.0:
+		return pts[0]
+	var t := clampf(offset, 0.0, length) / (length / float(n - 1))
+	var i := int(t)
+	if i >= n - 1:
+		return pts[n - 1]
+	return pts[i].lerp(pts[i + 1], t - float(i))
+
+
 var _centerline: Curve2D
 var _baked_length: float
+var _pts := PackedVector2Array()   # centerline point table (see baked_points)
 var _car: Node            # a Car (VehicleBody3D) — uses global_transform + reset_to
 var _terrain: Node        # a TerrainManager (height_at), or null on flat fixtures
 
@@ -66,6 +132,7 @@ signal cut_billed(incident_s: float, total_s: float)
 func setup(centerline: Curve2D, car: Node, terrain: Node, finish_off := -1.0) -> void:
 	_centerline = centerline
 	_baked_length = centerline.get_baked_length()
+	_pts = baked_points(centerline)
 	_finish_offset = _baked_length if finish_off < 0.0 else minf(finish_off, _baked_length)
 	_car = car
 	_terrain = terrain
@@ -142,7 +209,7 @@ func _timed_physics_process(delta: float) -> void:
 	var p: Vector3 = _car.global_transform.origin
 	var here := Vector2(p.x, p.z)
 	var offset := _local_closest_offset(here)
-	var on_curve := _centerline.sample_baked(offset)
+	var on_curve := _point_at(offset)
 	var dist := here.distance_to(on_curve)
 	if dist <= Config.data.track_progress_max_dist_m:
 		_accrue_cut(offset)
@@ -226,7 +293,7 @@ func _local_closest_offset(here: Vector2) -> float:
 	var best_d := INF
 	var o := lo
 	while o <= hi:
-		var d := here.distance_squared_to(_centerline.sample_baked(o))
+		var d := here.distance_squared_to(_point_at(o))
 		if d < best_d:
 			best_d = d
 			best_o = o
@@ -235,10 +302,16 @@ func _local_closest_offset(here: Vector2) -> float:
 	# SEARCH_STEP_M short of `hi`, so at the very end of the curve (hi == baked_length)
 	# progress would otherwise cap ~1 m short — never quite 100%. Sampling `hi`
 	# exactly lets progress reach the finish line (and the 100% stage-complete edge).
-	var d_hi := here.distance_squared_to(_centerline.sample_baked(hi))
+	var d_hi := here.distance_squared_to(_point_at(hi))
 	if d_hi < best_d:
 		best_o = hi
 	return best_o
+
+
+# Point on the centerline at a baked offset — reads the resampled table (see
+# baked_points), so a per-tick window scan costs array maths, not engine calls.
+func _point_at(offset: float) -> Vector2:
+	return point_on(_pts, _baked_length, offset)
 
 
 # Dev cheat (F key): jump progress straight to the finish line. Pins progress to
@@ -257,13 +330,13 @@ func jump_to_finish() -> Transform3D:
 # Convert a baked offset on the 2D curve into a 3D pose on the road facing along
 # the road's forward tangent (a Node3D faces -Z, so -Z ends up down the road).
 func _reset_xform_at(offset: float) -> Transform3D:
-	var here := _centerline.sample_baked(offset)
+	var here := _point_at(offset)
 	# Forward tangent: sample a little further along, falling back to behind at
 	# the very end of the curve.
-	var ahead := _centerline.sample_baked(minf(offset + 1.0, _baked_length))
+	var ahead := _point_at(minf(offset + 1.0, _baked_length))
 	var dir2 := ahead - here
 	if dir2.length() < 0.001:
-		dir2 = here - _centerline.sample_baked(maxf(offset - 1.0, 0.0))
+		dir2 = here - _point_at(maxf(offset - 1.0, 0.0))
 	var fwd := Vector3(dir2.x, 0.0, dir2.y)
 	if fwd.length() < 0.001:
 		fwd = Vector3(0.0, 0.0, 1.0)  # degenerate curve guard

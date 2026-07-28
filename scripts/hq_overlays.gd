@@ -162,19 +162,22 @@ func build_detail_overlay() -> void:
 
 	root.add_child(HSeparator.new())
 
-	# --- Two columns: STAGES (left) | status sidebar (right). Laid out as two halves
-	# ANCHORED to 50% each (not an HBox), so the split is always exactly equal — an HBox
+	# --- Two columns: STAGES (left) | status sidebar (right). Laid out by ANCHOR at a
+	# fixed SPLIT (not an HBox), so the ratio is exact regardless of content — an HBox
 	# only shares LEFTOVER space by ratio and keeps each column's content-driven minimum
-	# first, which left the wider STAGES side bigger. `cols` is a plain Control that fills
-	# the remaining height; the two halves anchor to its left/right with a centre gutter.
+	# first, which let the wider side dictate the split. `cols` is a plain Control that
+	# fills the remaining height; the two columns anchor to its left/right with a centre
+	# gutter. STAGES gets the larger share: its rows carry the long surface-mix text,
+	# while the sidebar is short status lines.
 	const HALF_GUTTER := 16.0
+	const SPLIT := 0.55
 	var cols := Control.new()
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(cols)
 
 	var left := VBoxContainer.new()
 	left.anchor_left = 0.0
-	left.anchor_right = 0.5
+	left.anchor_right = SPLIT
 	left.anchor_top = 0.0
 	left.anchor_bottom = 1.0
 	left.offset_right = -HALF_GUTTER
@@ -191,8 +194,8 @@ func build_detail_overlay() -> void:
 	# A thin centre divider between the two halves.
 	var divider := ColorRect.new()
 	divider.color = UITheme.INK_DIM
-	divider.anchor_left = 0.5
-	divider.anchor_right = 0.5
+	divider.anchor_left = SPLIT
+	divider.anchor_right = SPLIT
 	divider.anchor_top = 0.0
 	divider.anchor_bottom = 1.0
 	divider.offset_left = -1.0
@@ -201,7 +204,7 @@ func build_detail_overlay() -> void:
 	cols.add_child(divider)
 
 	var right := VBoxContainer.new()
-	right.anchor_left = 0.5
+	right.anchor_left = SPLIT
 	right.anchor_right = 1.0
 	right.anchor_top = 0.0
 	right.anchor_bottom = 1.0

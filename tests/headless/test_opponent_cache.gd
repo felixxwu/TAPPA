@@ -63,6 +63,34 @@ func test_committed_cache_covers_every_rally() -> void:
 		assert_false(got.is_empty(),
 			"rally %s missing from opponent lockfile — run ./cache_all.sh" % rally.get("id", "?"))
 
+# --- fingerprint memoisation -------------------------------------------------
+# global_fingerprint() is memoised (it parses the 248 KB track lockfile, load()s the
+# config and hashes the whole catalogue). The memo must be transparent — same answer
+# whether or not it's warm — and must be droppable so an in-process regeneration can't
+# bake a stale fingerprint into the lockfile. No hash VALUE is asserted here.
+func test_fingerprint_is_stable_across_calls() -> void:
+	OpponentCache.reset_cache()
+	var cold := OpponentCache.global_fingerprint()
+	assert_eq(OpponentCache.global_fingerprint(), cold, "warm memo returns the same fingerprint")
+	OpponentCache.reset_cache()
+	assert_eq(OpponentCache.global_fingerprint(), cold,
+		"recomputing from scratch reproduces the memoised fingerprint")
+
+func test_reset_cache_drops_the_memo() -> void:
+	OpponentCache.global_fingerprint()
+	assert_ne(OpponentCache._global_fp_key, "", "precondition: the memo is warm")
+	OpponentCache.reset_cache()
+	assert_eq(OpponentCache._global_fp_key, "", "reset_cache() invalidates the fingerprint memo")
+	assert_eq(TrackCache._source_hash_stamp, -1, "reset_cache() also drops the track source-hash memo")
+	# And the next call really recomputes rather than returning the emptied memo.
+	assert_ne(OpponentCache.global_fingerprint(), "", "next call recomputes a real fingerprint")
+
+# The track source hash is memoised too; a fresh read must agree with the warm one.
+func test_stored_source_hash_survives_a_reset() -> void:
+	var warm := TrackCache.stored_source_hash()
+	TrackCache.reset_source_hash_cache()
+	assert_eq(TrackCache.stored_source_hash(), warm, "re-read from disk matches the memoised hash")
+
 func test_committed_source_hash_is_fresh() -> void:
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(OpponentCache.CACHE_PATH))
 	assert_eq(typeof(data), TYPE_DICTIONARY, "lockfile parses")

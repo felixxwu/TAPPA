@@ -41,7 +41,17 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 
 	var meshes: Array = data.get("lod_meshes", [])
 	if meshes.is_empty():
-		meshes = TerrainLod.build_all(data, manager.lod_skirt_m)
+		# On-demand (editor / test) data straight out of compute_chunk_data still carries
+		# the mesh source arrays, so it can build its levels here. A CACHED dict never
+		# can: cache_chunk erases them once TerrainLod.build_all has consumed them
+		# (TerrainManager.DEAD_AFTER_PREBAKE). Reaching this branch without `vertices`
+		# means a cached chunk lost its prebaked meshes — fail LOUDLY with a mesh-less
+		# (but still collidable) chunk rather than building garbage off missing arrays.
+		if not data.has("vertices"):
+			push_error("terrain chunk %s has no prebaked lod_meshes and no source arrays "
+				% chunk_coord + "— cached mesh arrays are freed after prebake")
+		else:
+			meshes = TerrainLod.build_all(data, manager.lod_skirt_m)
 	_ensure_mesh_instances(meshes.size())
 	var bands: PackedFloat32Array = manager.lod_band_ends()
 	for i in _mesh_instances.size():

@@ -29,6 +29,13 @@ const TARMAC_WEIGHT_MAX := 0.5
 
 var _centerline: Curve2D
 var _baked_length := 0.0
+# Resampled centerline point table, SHARED with TrackProgress (TrackProgress.baked_points
+# caches one table per curve, so the two systems resample the track once between them).
+# Every per-tick nearest-point probe below reads this array instead of calling
+# Curve2D.sample_baked — the car scan plus four wheel scans were ~255 engine calls a
+# tick. Lookups interpolate (TrackProgress.point_on), so mark placement is not
+# quantised to the table spacing.
+var _pts := PackedVector2Array()
 var _terrain: Node          # TerrainManager (height_at), or null on flat fixtures
 var _car: Node              # the VehicleBody3D (read for linear_velocity)
 var _half_width := 3.0      # road half-width (track_width * 0.5)
@@ -76,6 +83,7 @@ var _cols: Array = []       # per wheel: PackedColorArray (matching per-vertex c
 func setup(centerline: Curve2D, car: Node, terrain: Node, half_width: float) -> void:
 	_centerline = centerline
 	_baked_length = centerline.get_baked_length()
+	_pts = TrackProgress.baked_points(centerline)
 	_terrain = terrain
 	_half_width = half_width
 	_offset = 0.0
@@ -159,7 +167,7 @@ func _timed_physics_process(_delta: float) -> void:
 		var w_off := _wheel_offset(wxz)
 		# True distance to the wheel's nearest road point: off the road (incl. the
 		# verge margin) — i.e. on the grass — breaks the ribbon.
-		if wxz.distance_to(_centerline.sample_baked(w_off)) > gate:
+		if wxz.distance_to(_point_at(w_off)) > gate:
 			_last_pos[i] = null
 			continue
 		# On the road — pick the mark by surface. Gravel lays a continuous rut; tarmac
@@ -362,10 +370,10 @@ static func _build_ribbon(pairs: Array) -> Dictionary:
 
 # The left road normal at an offset (for the ribbon's width direction).
 func _normal_at(offset: float) -> Vector2:
-	var p := _centerline.sample_baked(offset)
-	var tangent := _centerline.sample_baked(minf(offset + 1.0, _baked_length)) - p
+	var p := _point_at(offset)
+	var tangent := _point_at(minf(offset + 1.0, _baked_length)) - p
 	if tangent.length() < 0.001:
-		tangent = p - _centerline.sample_baked(maxf(offset - 1.0, 0.0))
+		tangent = p - _point_at(maxf(offset - 1.0, 0.0))
 	if tangent.length() < 0.001:
 		tangent = Vector2(0.0, 1.0)
 	tangent = tangent.normalized()
@@ -390,12 +398,17 @@ func _search_offset(here: Vector2, from_m: float, to_m: float) -> float:
 	var best_d := INF
 	var o := lo
 	while o <= hi:
-		var d := here.distance_squared_to(_centerline.sample_baked(o))
+		var d := here.distance_squared_to(_point_at(o))
 		if d < best_d:
 			best_d = d
 			best_o = o
 		o += SEARCH_STEP_M
 	return best_o
+
+
+# Point on the centerline at a baked offset, off the shared table (see _pts).
+func _point_at(offset: float) -> Vector2:
+	return TrackProgress.point_on(_pts, _baked_length, offset)
 
 
 # Force the ribbon material's shader variant to compile NOW (during track

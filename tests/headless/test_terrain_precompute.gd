@@ -72,7 +72,12 @@ func test_cached_chunk_data_matches_fresh_compute() -> void:
 	assert_true(m.has_cached(coord), "corridor chunk cached")
 	var fresh: Dictionary = m.compute_chunk_data(coord)
 	var cached: Dictionary = m._chunk_cache[coord]
+	# The mesh-source arrays are deliberately dropped once TerrainLod has consumed
+	# them (TerrainManager.DEAD_AFTER_PREBAKE) — see test_terrain_memory.gd. Every
+	# key the cache still keeps must be byte-identical to a fresh compute.
 	for key in fresh:
+		if TerrainManager.DEAD_AFTER_PREBAKE.has(key):
+			continue
 		assert_eq(cached[key], fresh[key], "cached %s byte-identical to fresh compute" % key)
 
 

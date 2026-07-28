@@ -93,9 +93,22 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
 - **Shader** (`shaders/water.gdshader`): `unshaded`, **flat and opaque** (a solid PS1
   colour block; a screen-door dither read as noise against the low-res pixelation),
   no `hint_screen_texture` read (preserving the Compatibility no-backbuffer choice;
-  see [rendering.md](rendering.md)). A **seamless generated tiling texture**
-  (`LakeField._make_water_texture`, a `NoiseTexture2D`) is scrolled in two directions
+  see [rendering.md](rendering.md)). A **seamless (tileable) 128x128 noise texture**
+  (`textures/water_noise.png`, `LakeField.WATER_TEX`) is scrolled in two directions
   for visible movement, tinted between deep/shore colours, with a sparkle glint.
+- **The water tile is a committed asset, not baked at load.** It used to be a
+  `NoiseTexture2D` built by `LakeField._make_water_texture` on every stage load.
+  `NoiseTexture2D` bakes on a *worker thread* — but the web export ships
+  `variant/thread_support = false`, so on web there is no worker and the bake ran on
+  the main loop; `seamless = true` makes Godot generate and cross-blend a larger
+  buffer (~4x the samples), which is why "filling lakes" measured ~1121 ms on web vs
+  ~14 ms native. The tile is seed-independent, so it's pre-baked and committed
+  (import: lossy, `lossy_quality` 1.0, mipmaps on, `detect_3d/compress_to` disabled so
+  3D use can't silently flip it to VRAM compression) and `preload`ed alongside the
+  shader. General lesson: **engine APIs with implicit threading silently degrade on
+  web** — check for one before assuming an async bake is free. To regenerate, bake a
+  `NoiseTexture2D` with the settings recorded in `lake_field.gd` and save its image
+  over the asset.
 - **Hazard:** the "in water" query is a **direct terrain-height check** — `world.gd`
   wires `car.gd`'s `set_water_query` to `floor.height_at(x,z) < water_level`.
   `_apply_aero` adds `cfg.water_drag` linear drag while in water. No reset — the car

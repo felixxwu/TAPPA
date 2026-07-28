@@ -23,6 +23,28 @@ Six tracks ship today, four segments each, as ~128 kbps Ogg Vorbis
 `threaded`, `whoyouare` are the rally pool). Segments must be authored so N→N+1,
 the 4→1 wrap, and a cross-song 4→(new)1 all sum cleanly.
 
+## Lazy loading (boot memory)
+
+`SONGS` stores segment **paths**, not preloaded streams. A `preload` inside a
+`const` resolves at parse time, so the old table pulled all 24 segments (~4.5 MB)
+into memory the instant anything touched `MusicLibrary` — which the `Music`
+autoload does at boot, on the single-threaded wasm cold-start path, for audio that
+is only ever one song (~4 × 180 KB) at a time (`todo/mobile-web-performance.md`
+§2.11).
+
+- `MusicLibrary.by_id(id)` is the **loading** accessor: on first request for an id
+  it `load()`s that song's segments and caches the resolved entry
+  (`{id, bpm, segments}`) in a static dict, so replaying a song never re-loads.
+  `MusicDirector._bpm` and `_launch` both go through it, so a song is loaded the
+  first time it's scheduled and stays resident thereafter.
+- `MusicLibrary.entry_of(id)` returns the **raw authored entry** (paths) and loads
+  nothing; `segment_count` is built on it. Anything that only needs shape or
+  existence must use these — calling `by_id` for a mere existence check defeats
+  the laziness.
+- `is_loaded(id)` / `clear_cache()` are the test hooks
+  (`tests/headless/test_music_library.gd` asserts first-request load, second-request
+  caching, and that iterating the catalogue loads nothing).
+
 ## Context selection (scene state, not transitions)
 
 Which track plays is decided by the **live scene state**, not by transition hooks
@@ -84,10 +106,10 @@ straight to that song's segment 1 at the next beat-aligned handoff.
   (bar durations, `fire_start`, `late_by`, `advance_handoff`, `seed_handoff`,
   `catch_up`). No nodes/audio; fully unit-tested (`tests/headless/test_music_schedule.gd`).
 - **`scripts/music_library.gd`** (`MusicLibrary`) — the `SONGS` catalogue
-  (`id → {bpm, segments}`) + `by_id` / `segment_count`, plus the scene→song
-  mapping (`HQ_SCENE`/`HQ_SONG`/`is_hq_scene`) and the rally pool
+  (`id → {bpm, segment_paths}`) + `by_id` / `entry_of` / `segment_count`, plus the
+  scene→song mapping (`HQ_SCENE`/`HQ_SONG`/`is_hq_scene`) and the rally pool
   (`RALLY_SONGS`/`random_rally_song`). Same pattern as
-  `EngineLibrary`.
+  `EngineLibrary`, except the audio is **lazy-loaded** (below).
 - **`scripts/music_director.gd`** (`class_name MusicDirector`, autoload singleton
   **`Music`** — the singleton can't be named `MusicDirector` without colliding
   with the class) — one `AudioStreamPlayer` + `AudioStreamPolyphonic`; each 8-bar
@@ -167,7 +189,7 @@ dies, wall clock races), not just the loading screen.
 ## Tests
 
 `tests/headless/test_music_schedule.gd` (timing relationships),
-`test_music_library.gd` (catalogue contract), `test_music_director.gd`
+`test_music_library.gd` (catalogue contract + lazy loading), `test_music_director.gd`
 (scheduling logic, no real audio), plus an autoload-present check in
 `test_smoke.gd`. Per project rules, none pin authored values (bpm, durations,
 song identity) — they assert relationships and logic.

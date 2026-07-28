@@ -15,6 +15,16 @@
 #   ./serve_web.sh            # build if needed, then serve on https://0.0.0.0:8080
 #   ./serve_web.sh 9000       # use a custom port
 #   ./serve_web.sh --no-build # skip the export, serve existing build/web
+#
+# WARNING: LOAD-TIME MEASUREMENTS TAKEN THROUGH THIS SCRIPT ARE NOT REPRESENTATIVE.
+# tools/bench_collector.py serves everything UNCOMPRESSED (no Content-Encoding,
+# no pre-compressed .gz), so index.wasm goes over the wire at its full ~37.7 MB
+# and index.pck at its full ~17.3 MB. Production (itch.io, behind Cloudflare)
+# gzips both — verified 2026-07-28: index.wasm 9.93 MB and index.pck 9.28 MB
+# on the wire with `Content-Encoding: gzip`. So a download/boot timing measured
+# here OVERSTATES the real transfer cost by roughly 3-4x. Compare frame times
+# and CPU-side work here; do NOT quote local download timings as real-world
+# numbers — re-measure against the deployed itch build for those.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -37,6 +47,44 @@ fi
 if [[ ! -f "$OUT_DIR/index.html" ]]; then
   echo "error: $OUT_DIR/index.html not found — run ./build_web.sh first" >&2
   exit 1
+fi
+
+# --- dev-only live reload ---------------------------------------------------
+# The collector serves /reload-token (a token that changes when the build does).
+# This poller USED TO live in the Web export preset's html/head_include, which
+# meant it shipped to itch.io and to every player's phone: one fetch per second
+# for the whole session (battery + radio wake on mobile), a 404/second against
+# the host, and a real reload hazard if a host ever returns a varying body for
+# an unknown path (CDN error pages, ad interstitials, SPA catch-alls). It is now
+# injected HERE instead — into the local build output only, never into the
+# preset — so production ships no background timer. (The landscape-lock script
+# stays in the preset; that one is legitimate.) See
+# todo/mobile-web-performance.md 1.4.
+#
+# Injection is idempotent: guarded by a marker so re-running (or --no-build over
+# an already-patched index.html) does not stack multiple pollers.
+RELOAD_MARKER="__rally_dev_reload"
+if ! grep -q "$RELOAD_MARKER" "$OUT_DIR/index.html"; then
+  python3 - "$OUT_DIR/index.html" "$RELOAD_MARKER" <<'PY'
+import sys
+path, marker = sys.argv[1], sys.argv[2]
+script = (
+    "<script>/*" + marker + " — local dev only, injected by serve_web.sh*/"
+    "(function(){var cur=null;function p(){"
+    "fetch('/reload-token',{cache:'no-store'})"
+    ".then(function(r){return r.ok?r.text():null;})"
+    ".then(function(t){if(t===null){return;}"
+    "if(cur===null){cur=t;}else if(t!==cur){location.reload();}})"
+    ".catch(function(){});}setInterval(p,1000);})();</script>"
+)
+html = open(path, encoding="utf-8").read()
+if "</head>" in html:
+    html = html.replace("</head>", script + "</head>", 1)
+else:
+    html += script
+open(path, "w", encoding="utf-8").write(html)
+PY
+  echo "Injected dev live-reload poller into $OUT_DIR/index.html (local dev only)."
 fi
 
 # Best-effort LAN IP (macOS): try common interfaces.

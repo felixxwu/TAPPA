@@ -664,3 +664,78 @@ func test_attenuation_clamped_at_floor() -> void:
 	# Very far -> never exceeds the passed floor (never -inf).
 	var v := EngineAudioSynth.attenuation_db(100000.0 * 100000.0, 8.0, -60.0)
 	assert_eq(v, -60.0, "clamped to the floor")
+
+
+# --- Mix-rate resolution + inaudible skip (todo/mobile-web-performance.md 2.1) ---
+
+const EngineAudioScript := preload("res://scripts/engine_audio.gd")
+
+
+func test_mix_rate_resolver_picks_web_touch_branch_only_on_web_touch() -> void:
+	# Behaviour, not values: web AND touch takes the web-touch field, every other
+	# target passes the full rate straight through.
+	var cfg := GameConfig.new()
+	cfg.engine_mix_rate_web_touch = 12345.0  # synthetic, not the shipped tuning
+	var full := 40000.0
+	assert_eq(cfg.engine_mix_rate_for(true, true, full), 12345.0, "web touch -> web-touch rate")
+	assert_eq(cfg.engine_mix_rate_for(true, false, full), full, "desktop browser -> full rate")
+	assert_eq(cfg.engine_mix_rate_for(false, true, full), full, "native mobile -> full rate")
+	assert_eq(cfg.engine_mix_rate_for(false, false, full), full, "native desktop -> full rate")
+
+
+func test_synth_output_is_valid_at_a_reduced_mix_rate() -> void:
+	# The synth must stay well-formed at ANY mix rate it can be constructed with,
+	# not just the base one — the per-sample coefficients are all rate-derived.
+	var cfg := GameConfig.new()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	for rate in [MIX_RATE, MIX_RATE * 0.5]:
+		var synth := EngineAudioSynth.new(cfg, rate)
+		var buf := PackedVector2Array()
+		buf.resize(512)
+		# Exercise every layer: boost/spool, blow-off, anti-lag and a limiter cut.
+		synth.fill(buf, 4000.0, 1.0, false, 512, true, true, 0.8, 0.6, true, true)
+		var any_nonzero := false
+		for s in buf:
+			assert_false(is_nan(s.x), "no NaN samples at rate %s" % rate)
+			assert_false(is_inf(s.x), "no infinite samples at rate %s" % rate)
+			assert_true(s.x >= -1.0 and s.x <= 1.0, "sample in [-1, 1] at rate %s" % rate)
+			assert_eq(s.x, s.y, "both channels carry the same mono sample")
+			if absf(s.x) > 0.0001:
+				any_nonzero = true
+		assert_true(any_nonzero, "audible output at rate %s" % rate)
+
+
+func test_noise_table_layers_are_decorrelated() -> void:
+	# The noise layers read one baked table, so they must NOT read the same samples:
+	# adding the crackle burst has to change the waveform's SHAPE, not just scale it.
+	# (If crackle reused the base noise samples, the sum would be an exact multiple
+	# of the noise-only signal at every sample.)
+	var cfg := GameConfig.new()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	cfg.engine_volume_db = -80.0  # mute the tonal voice so only noise layers remain
+	var plain := EngineAudioSynth.new(cfg, MIX_RATE)
+	var burst := EngineAudioSynth.new(cfg, MIX_RATE)
+	var a := PackedVector2Array()
+	var b := PackedVector2Array()
+	a.resize(256)
+	b.resize(256)
+	plain.fill(a, 3000.0, 0.5, false, 256)
+	burst.fill(b, 3000.0, 0.5, false, 256, false, true)  # crackle_cut fires the burst
+	var proportional := true
+	for i in range(64):  # early samples, where the crackle envelope is still large
+		if absf(a[i].x) > 0.0001 and not is_equal_approx(b[i].x / a[i].x, b[0].x / a[0].x):
+			proportional = false
+			break
+	assert_false(proportional, "the crackle layer draws different noise than the noise floor")
+
+
+func test_inaudible_only_at_the_attenuation_floor() -> void:
+	# The skip-synthesis guard must fire only once the distance curve has bottomed
+	# out, never while the car is still audible. Synthetic dB values throughout.
+	var floor_db := -60.0
+	var far := EngineAudioSynth.attenuation_db(100000.0 * 100000.0, 8.0, floor_db)
+	var near := EngineAudioSynth.attenuation_db(0.0, 8.0, floor_db)
+	var mid := EngineAudioSynth.attenuation_db(40.0 * 40.0, 8.0, floor_db)
+	assert_true(EngineAudioScript.is_audio_inaudible(far, floor_db), "clamped at the floor")
+	assert_false(EngineAudioScript.is_audio_inaudible(near, floor_db), "at the listener")
+	assert_false(EngineAudioScript.is_audio_inaudible(mid, floor_db), "audible mid-range")

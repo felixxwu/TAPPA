@@ -331,3 +331,80 @@ func test_generate_stays_synchronous_without_callback() -> void:
 	var result: Dictionary = await TrackGenerator.generate(_params(START_POS, START_HEADING, 7, 6, 6.0))
 	assert_true(result.has("centerline"), "returns the full track dict with no on_progress")
 	assert_true(result.has("pieces"), "result includes the placed pieces")
+
+
+# --- Hot-path rewrites (todo/mobile-web-performance.md §2.3/§2.4) ---------------
+# These cover the BEHAVIOUR the optimisations must preserve, not their speed.
+
+func test_rasterize_cells_matches_a_brute_force_distance_scan() -> void:
+	# rasterize_cells now scans each segment's bounding box with a point-to-segment
+	# distance test. Its contract is unchanged: a cell is in the set iff its centre is
+	# within half-width of the polyline. Checked against an independent brute-force
+	# sweep of every cell in a generous box around a bent polyline.
+	var line := PackedVector2Array([Vector2(0.0, 0.0), Vector2(8.0, 0.0), Vector2(8.0, 6.0)])
+	var width := 3.0
+	var half := width / 2.0
+	var cells := TrackGenerator.rasterize_cells(line, width)
+	var cell_m := TrackGenerator.CELL_M
+	for cz in range(-8, 20):
+		for cx in range(-8, 24):
+			var centre := Vector2((cx + 0.5) * cell_m, (cz + 0.5) * cell_m)
+			var nearest := INF
+			for i in range(1, line.size()):
+				nearest = minf(nearest, sqrt(TrackGenerator._point_seg_dist_sq(centre, line[i - 1], line[i])))
+			var expected := nearest <= half
+			assert_eq(cells.has(Vector2i(cx, cz)), expected,
+				"cell %s inclusion matches the distance test" % Vector2i(cx, cz))
+
+
+func test_collide_and_cells_extra_set_is_treated_as_occupied() -> void:
+	# The `extra` parameter replaced a full duplicate() of the occupancy dictionary in
+	# the runoff check: cells passed there must collide exactly as if they were in
+	# `occupied`. Probe a straight far from the frame position so the join buffer
+	# (which legitimately allows touching near the entry) can't mask the result.
+	var line := PackedVector2Array([Vector2(100.0, 0.0), Vector2(140.0, 0.0)])
+	var width := 6.0
+	var footprint := TrackGenerator.rasterize_cells(line, width)
+	var clean := TrackGenerator._collide_and_cells(line, width, {}, {}, Vector2.ZERO)
+	assert_false(clean["collides"], "nothing occupied -> no collision")
+	var via_extra := TrackGenerator._collide_and_cells(line, width, {}, {}, Vector2.ZERO, null, footprint)
+	assert_true(via_extra["collides"], "a cell in `extra` collides")
+	var via_occupied := TrackGenerator._collide_and_cells(line, width, footprint, {}, Vector2.ZERO)
+	assert_eq(via_extra["collides"], via_occupied["collides"],
+		"`extra` and `occupied` are tested identically")
+
+
+func test_corner_straightness_is_memoised_to_the_same_value() -> void:
+	# Memoising must not change the value: a second call returns the first one, and it
+	# still agrees with the freshly tessellated shape.
+	for spec in CornerLibrary.CORNERS:
+		var first := TrackGenerator._corner_straightness(spec)
+		var second := TrackGenerator._corner_straightness(spec)
+		assert_eq(first, second, "memoised value is stable for '%s'" % spec["name"])
+		var poly := CornerLibrary.build_curve(spec).tessellate()
+		var angle := absf(Vector2(0.0, 1.0).angle_to(TrackGenerator.exit_heading(poly)))
+		assert_almost_eq(first, clampf(1.0 - angle / PI, 0.0, 1.0), 1e-9,
+			"memo agrees with the corner's actual heading change ('%s')" % spec["name"])
+
+
+func test_candidate_order_is_a_deterministic_permutation() -> void:
+	# The weighted draw now sorts an index permutation with an explicit (key, index)
+	# tie-break instead of dictionaries, so the order must be fully determined by the
+	# seed — and must still contain every candidate exactly once.
+	var corners := TrackGenerator._turn_corners()
+	var expected := corners.size() * 2 * TrackGenerator.STRAIGHT_OPTIONS_M.size()
+	for straightness in [0.0, 0.5, 1.0]:
+		var a_rng := RandomNumberGenerator.new()
+		a_rng.seed = 4242
+		var b_rng := RandomNumberGenerator.new()
+		b_rng.seed = 4242
+		var a := TrackGenerator._candidates(corners, a_rng, straightness)
+		var b := TrackGenerator._candidates(corners, b_rng, straightness)
+		assert_eq(a.size(), expected, "every (corner, flip, straight) candidate is present")
+		var seen: Dictionary = {}
+		for i in a.size():
+			var c: Dictionary = a[i]
+			var id := "%d/%s/%f" % [c["corner_index"], c["flip"], c["straight"]]
+			assert_false(seen.has(id), "candidate %s appears once" % id)
+			seen[id] = true
+			assert_eq(str(b[i]), str(c), "same seed -> same order at index %d" % i)

@@ -18,6 +18,24 @@ func test_build_makes_one_water_plane() -> void:
 	assert_almost_eq((meshes[0] as MeshInstance3D).position.y, -0.5, 0.001,
 		"plane sits at the water level")
 
+func test_water_plane_has_a_ready_shader_material() -> void:
+	# The surface detail tile is a committed asset (not a NoiseTexture2D baked at
+	# load — see lake_field.gd), so the material is fully wired the moment build()
+	# returns: shader present, tile present and non-empty.
+	var lf := LakeField.new()
+	add_child_autofree(lf)
+	lf.build(0.0, GameConfig.new())
+	var mi := lf.get_child(0) as MeshInstance3D
+	var mat := mi.material_override as ShaderMaterial
+	assert_not_null(mat, "water plane uses a ShaderMaterial")
+	assert_not_null(mat.shader, "shader is loaded")
+	var tex: Texture2D = mat.get_shader_parameter("water_tex")
+	assert_not_null(tex, "water tile is assigned")
+	assert_gt(tex.get_width(), 0, "water tile has real pixels")
+	assert_gt(tex.get_height(), 0, "water tile has real pixels")
+	assert_false(tex is NoiseTexture2D,
+		"water tile is a committed asset, not baked at load")
+
 func test_submerged_cells_marks_below_water_ground() -> void:
 	# Synthetic water: everything with z > 5 is underwater.
 	var sampler := func(x: float, z: float) -> float:

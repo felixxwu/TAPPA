@@ -1507,6 +1507,42 @@ var peak_torque_rpm := 4500.0
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
 @export_range(0.0, 4.0) var texture_lod_bias := 0.75
+
+# --- Web-touch quality tier (todo/mobile-web-performance.md) -----------------
+# Every field below follows the SAME split as tree_render_distance_m /
+# terrain_lod_bands_m: a web TOUCH device (phone/tablet browser — the low-end
+# target) gets the *_web_touch value, and EVERY other target (native mobile,
+# desktop, and desktop BROWSER) gets the base value. Resolve them through the
+# matching *_for(web, touch) function below, never by branching on Platform at
+# the call site — one notion of "mobile", not several.
+#
+# Defaults are deliberately equal to the base value where the change is not yet
+# wired, so adding the field is a no-op until the owning item lands.
+
+## Engine-synth mix rate (Hz) on a web TOUCH device. The synth is a per-sample
+## GDScript DSP loop, so its CPU cost scales with THIS number, not with frame
+## rate — on wasm it is the largest single script cost in the game. Halving it
+## halves that cost; the audible price is dulled crackle/turbo-whistle layers
+## (Nyquist drops to ~5.5 kHz) rather than a lost engine fundamental.
+## Changing this changes the generator buffer frame counts — re-check the
+## benchmark's skip_count() after. See engine_audio.gd's MIX_RATE.
+@export_range(8000.0, 48000.0) var engine_mix_rate_web_touch := 22050.0
+
+## Ground-plane subdivision for the HQ apron and the podium floor. These are flat
+## planes whose only per-vertex variation is the tarmac feather weight, so the
+## subdivision buys nothing except feather-band resolution — at 240 the HQ ground
+## alone is ~115k triangles, drawn continuously on the game's first screen.
+@export_range(8, 512) var ground_subdiv := 240
+## Ground-plane subdivision on a web TOUCH device. Widen the tarmac feather
+## slightly if the band reads too hard at the lower resolution.
+@export_range(8, 512) var ground_subdiv_web_touch := 240
+
+## Rendered viewport HEIGHT on a web TOUCH device. The engine renders at
+## [display] window/size/viewport_height with stretch/aspect="keep_height", so
+## HEIGHT is authoritative and width follows the window aspect — there is no
+## single "480x360 setting". Keep virtual_resolution (the PS1 post-process
+## parameter) in proportion when changing this.
+@export_range(120, 1080) var viewport_height_web_touch := 360
 ## Terrain LOD far-cutoff distances (metres), one per level boundary — the
 ## coarsest level draws to the ring edge with no cutoff, so this has (levels - 1)
 ## entries (TerrainLod.LOD_STRIDES has `levels`). The display mesh decimates by
@@ -1569,6 +1605,24 @@ func tree_render_distance_for(web: bool, touch: bool) -> float:
 # other targets the higher-quality terrain_lod_bands_m.
 func terrain_lod_bands_for(web: bool, touch: bool) -> PackedFloat32Array:
 	return terrain_lod_bands_web_touch_m if (web and touch) else terrain_lod_bands_m
+
+
+# Engine-synth mix rate for the current target, split the same way: a web TOUCH
+# device gets engine_mix_rate_web_touch, every other target the full rate. Pure
+# so engine_audio.gd resolves it once and tests can pin either branch.
+func engine_mix_rate_for(web: bool, touch: bool, full_rate: float) -> float:
+	return engine_mix_rate_web_touch if (web and touch) else full_rate
+
+
+# Flat-ground subdivision (HQ apron / podium floor) for the current target.
+func ground_subdiv_for(web: bool, touch: bool) -> int:
+	return ground_subdiv_web_touch if (web and touch) else ground_subdiv
+
+
+# Rendered viewport height for the current target. The caller is responsible for
+# keeping virtual_resolution in proportion — see the field comment.
+func viewport_height_for(web: bool, touch: bool, base_height: int) -> int:
+	return viewport_height_web_touch if (web and touch) else base_height
 
 
 # rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car

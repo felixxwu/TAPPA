@@ -24,6 +24,12 @@ const CLIFF_SEED_SALT := 0x5C1FF
 
 const ChunkScript := preload("res://scripts/terrain_chunk.gd")
 
+# Mesh-source arrays TerrainChunkBuilder.data() produces that are DEAD once
+# TerrainLod.build_all has turned them into GPU meshes. cache_chunk erases them from
+# the cached dict; TerrainChunk.apply_data must never fall back to rebuilding meshes
+# from a cached dict (it checks for `vertices` and errors loudly instead).
+const DEAD_AFTER_PREBAKE := ["vertices", "uvs", "colors", "uv2s", "indices"]
+
 @export var noise_seed: int = 1337:
 	set(value):
 		noise_seed = value
@@ -127,8 +133,16 @@ var precompute_safety_slack_m: float = 40.0
 # Debug chunk-border overlay (H toggle, debug builds). Lazily created on first use.
 var _border_debug: ChunkBorderDebug = null
 
-# Node whose position drives chunk loading (the car). Resolved lazily.
-@export var focus_path: NodePath = NodePath("../Car")
+# Node whose position drives chunk loading (the car). Resolved lazily and then
+# CACHED — _focus_node() runs every rendered frame, and re-walking the scene tree
+# via get_node_or_null() per frame is the pattern this project bans on low-end
+# mobile (see the same fix in engine_audio.gd's resolved-once car/engine refs).
+# Assigning focus_path drops the cache so a retarget still resolves.
+@export var focus_path: NodePath = NodePath("../Car"):
+	set(value):
+		focus_path = value
+		_focus_cached = null
+var _focus_cached: Node3D = null
 
 # coord (Vector2i) -> TerrainChunk
 var _chunks: Dictionary = {}
@@ -159,6 +173,13 @@ var _noise_cache_valid := false
 # (~0.2 ms node build), and height_at/light_at serve from it (it is the terrain
 # the player actually sees: road flattening included, unlike the raw noise).
 var _chunk_cache: Dictionary = {}
+
+# Load-only data frees (see features/loading.md → the load_finished hook, and
+# todo/mobile-web-performance.md 1.7 / 2.7). Both are SENTINELS as much as flags:
+# the freed data is read through `.get(..., default)` accessors that would silently
+# return a plausible-but-wrong value, so every post-free read must be loud.
+var _lights_freed := false          # per-chunk baked light dropped from _chunk_cache
+var _bake_fields_freed := false     # road_heights / road_blend / cliff_offsets dropped
 
 # coord -> {"l_min": int, "full_res": bool}. Populated by corridor_coords, kept across
 # set_corridor's cache clear so _rebuild_loaded reproduces the same near/far split.
@@ -358,6 +379,14 @@ func light_at(x: float, z: float) -> Color:
 # no NAN sentinel). Falls through when the chunk is unlit (empty lights array).
 func _cached_light_at(x: float, z: float) -> Color:
 	if not _resolve_bilinear(x, z):
+		return Color(0, 0, 0, -1.0)
+	if _lights_freed:
+		# LOUD on purpose: the baked light is gone, so this call is about to fall back
+		# to a fresh live-noise bake — a plausible but subtly different colour, with no
+		# other symptom. Every shipped light_at caller is a one-shot build that runs
+		# BEFORE load_finished; a caller landing here is a real bug (see free_load_only_data).
+		push_error("light_at called after the baked terrain light was freed at load_finished "
+			+ "— the value is a live-noise re-bake, not the baked one")
 		return Color(0, 0, 0, -1.0)
 	var lights: PackedColorArray = _chunk_cache[_bl_coord].get("lights", PackedColorArray())
 	if lights.is_empty():
@@ -649,6 +678,12 @@ func set_corridor(coords: Array[Vector2i]) -> void:
 	# it must survive the cache clear so _rebuild_loaded reproduces the near/far split.
 	_chunk_cache.clear()
 	_logged_misses.clear()
+	# A new corridor means the whole cache is about to be rebuilt, baked light and
+	# all — so the "lights were freed" sentinel no longer applies. This is what keeps
+	# a REGENERATION (world.gd::_generate_track run a second time, e.g. entering a
+	# rally event on an already-booted world) correct: load_finished has latched and
+	# will not re-fire, but the freshly cached chunks really do carry their light again.
+	_lights_freed = false
 
 
 # The coords the current corridor covers (empty when no precompute has run).
@@ -679,6 +714,13 @@ func cache_chunk(coord: Vector2i) -> void:
 	# so runtime chunk spawns are a cheap node build + mesh assign, not a mesh build.
 	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m)
 	data["coarse"] = false
+	# build_all has consumed the CPU-side mesh source arrays into GPU meshes, and
+	# nothing reads them again: apply_data only needs center/lod_meshes/heights/coarse,
+	# and the strided coarse path builds off its own local TerrainChunkBuilder. Drop
+	# them — they are ~5/6 of the cache's bytes (see cache_size_mb / features/terrain.md).
+	# `heights` stays (collision + height_at); `lights` is freed later, on load_finished.
+	for dead_key in DEAD_AFTER_PREBAKE:
+		data.erase(dead_key)
 	_chunk_cache[coord] = data
 
 
@@ -701,6 +743,43 @@ func corridor_bounds() -> Rect2:
 		hi = Vector2i(maxi(hi.x, c.x), maxi(hi.y, c.y))
 	return Rect2(lo.x * CHUNK_M, lo.y * CHUNK_M,
 		(hi.x - lo.x + 1) * CHUNK_M, (hi.y - lo.y + 1) * CHUNK_M)
+
+
+# True once every corridor coord has been cached — i.e. TerrainChunkBuilder can no
+# longer be asked to build a corridor chunk, so the road/cliff bake fields it reads
+# are dead. False for the editor / on-demand test path (no corridor), which keeps
+# rebuilding chunks from those fields and must never have them freed.
+func corridor_complete() -> bool:
+	if _corridor_coords.is_empty():
+		return false
+	for coord in _corridor_coords:
+		if not _chunk_cache.has(coord):
+			return false
+	return true
+
+
+# Drop everything the LOAD needed but the running game does not. Wired to world.gd's
+# `load_finished` signal (features/loading.md); safe to call directly in tests.
+#
+#  - the per-chunk baked `lights` arrays: every light_at caller (tree_mesh_field,
+#    distant_terrain, road_markings) is a one-shot build that has already run by now,
+#    and the value is folded into the mesh vertex colours anyway. _cached_light_at
+#    push_errors afterwards so a future per-frame caller can't fail silently.
+#  - road_heights / road_blend / cliff_offsets: read ONLY by TerrainChunkBuilder, and
+#    the corridor is fully cached, so no chunk will ever be built again in play.
+#    track_weights / track_surface are KEPT — surface_at() drives per-tick grip.
+func free_load_only_data() -> void:
+	if not _lights_freed:
+		_lights_freed = true
+		for data in _chunk_cache.values():
+			data.erase("lights")
+	# Gated: the editor / on-demand rebuild path (no corridor, or a partial one) still
+	# needs the bake fields to produce flattened chunks.
+	if corridor_complete() and not _bake_fields_freed:
+		_bake_fields_freed = true
+		road_heights = {}
+		road_blend = {}
+		cliff_offsets = {}
 
 
 func has_cached(coord: Vector2i) -> bool:
@@ -759,6 +838,7 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	track_weights = {}
 	track_surface = {}
 	cliff_offsets = {}
+	_bake_fields_freed = false  # a fresh bake restores what free_load_only_data dropped
 	var poly := centerline.tessellate()
 	if poly.size() < 2:
 		return
@@ -1000,6 +1080,14 @@ func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_f
 	# Release the scratch (large packed arrays + the grid) — it's only valid during a bake.
 	_cv_grid = []
 
+	# These five Vector2i->float Dictionaries are the least-measured memory line in
+	# todo/mobile-web-performance.md (2.7): a Godot HashMap entry costs ~60-90 bytes vs
+	# 4 in a flat array, and the cliff band is a wide ribbon at 1 m resolution. Log the
+	# entry counts so the estimate can be checked from any real stage load.
+	print("track bake fields: road_heights=%d road_blend=%d track_weights=%d track_surface=%d cliff_offsets=%d"
+		% [road_heights.size(), road_blend.size(), track_weights.size(),
+			track_surface.size(), cliff_offsets.size()])
+
 
 # Nearest centerline segment to world point (qx, qz), via the _cv_* spatial hash: an
 # early-terminated ring search over the (2R+1)² block of grid cells, culling any cell whose
@@ -1180,6 +1268,15 @@ func _ready() -> void:
 	# always previews, so it builds regardless of the flag.
 	if Engine.is_editor_hint() or not defer_initial_build:
 		build_initial()
+	# Hang the load-only frees off the host's shared "load finished" hook (world.gd;
+	# see features/loading.md). Duck-typed so the manager still works standalone —
+	# the editor preview, the HQ/podium `flat()` dressing and headless tests have no
+	# such host and simply never free.
+	if not Engine.is_editor_hint():
+		var host := get_parent()
+		if host != null and host.has_signal("load_finished") \
+				and not host.is_connected("load_finished", free_load_only_data):
+			host.connect("load_finished", free_load_only_data)
 
 
 # Build the initial 3x3 ring synchronously around the focus (the car), so there
@@ -1219,9 +1316,13 @@ func _toggle_chunk_borders() -> void:
 
 
 func _focus_node() -> Node3D:
+	if _focus_cached != null and is_instance_valid(_focus_cached):
+		return _focus_cached
+	_focus_cached = null
 	if focus_path.is_empty():
 		return null
-	return get_node_or_null(focus_path) as Node3D
+	_focus_cached = get_node_or_null(focus_path) as Node3D
+	return _focus_cached
 
 
 # Reconcile the loaded 3x3 set to be centred on `pos`. Cheap to call every
@@ -1273,6 +1374,14 @@ func _spawn_chunk(coord: Vector2i, data: Dictionary) -> void:
 
 func _rebuild_loaded() -> void:
 	_noise_cache_valid = false  # seed / layers / wavelength changed
+	if _bake_fields_freed:
+		# The road/cliff bake fields were dropped at load_finished, so a refill here
+		# would rebuild the corridor UNFLATTENED (and cliff-less) — geometry that no
+		# longer matches the track. Loud, because the symptom is purely visual/physical.
+		push_error("terrain params changed after the road/cliff bake fields were freed "
+			+ "— rebuilt chunks would lose the road flatten; re-bake the track first")
+	# Refilling repopulates the per-chunk baked light, so the freed sentinel lifts.
+	_lights_freed = false
 	# Stale cached arrays must never survive a terrain-param change; refill for
 	# the stored corridor (dev-time synchronous hitch is fine — this only fires
 	# from the inspector / tests).

@@ -64,6 +64,14 @@ is missing, or the car is gone):
   The trail length is `tire_mark_max_segments × tire_mark_segment_step_m` — at the
   configured 20 × 0.5 m that is a **10 m** trail behind each wheel.
 
+## Centerline lookups (performance)
+
+`_search_offset` (car and per-wheel), the road gate and `_normal_at` do **not** call
+`Curve2D.sample_baked`. They read the shared baked centerline table that `TrackProgress`
+owns — `TrackProgress.baked_points(centerline)`, resolved once in `setup` — through the
+interpolating `point_on` accessor. See [progress.md](progress.md) → *Baked centerline
+table* for why, and for the rule that the lookup must interpolate rather than truncate.
+
 ## Colour
 
 Per-segment vertex colour, so the two surfaces read differently in one ribbon:

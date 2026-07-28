@@ -1,5 +1,53 @@
 # Performance Optimisation Spec — mobile / low-end devices
 
+> ## ⚠️ 2026-07-28 — the track-generation number below is FRAME-CAP CONTAMINATED
+>
+> **The stage totals are only partly trustworthy. Read this before prioritising
+> from the table.**
+>
+> `world.gd::_ready` applies `Engine.max_fps = fps_cap` (**30 on web-touch**)
+> *before* `await _generate_track(...)` runs, and generation yields hundreds of
+> frames — `track_generator.gd::_search` alone yields every 2 DFS steps. Godot's
+> frame limiter sleeps for the *remainder* of the frame budget, so idle at a yield
+> is `max(0, 33 ms − work already done that frame)`: near-zero where the work
+> between yields is heavy, near a full 33 ms where it is cheap.
+>
+> | site | work between yields | real idle |
+> |---|---|---|
+> | carve — `progress_stride = cand_total / 40` | ~87 ms | ~0 |
+> | precompute, **full-res** chunks | heavy | ~0 |
+> | precompute, **coarse** chunks (`cache_chunk` early-return) | cheap | ~33 ms each, ~0.5 s |
+> | corridor pre-warm (2 frames × 15 waypoints) | only the first few compile shaders | ~0.5–1.0 s |
+> | **track-gen DFS `_search`** — 2 steps per yield | cheap | **the largest block** |
+>
+> So the **carve and precompute stage totals below are roughly sound**, and the
+> contamination is concentrated in the **track-generation stage** — which only runs
+> on free roam and the benchmark, since career stages hit `TrackCache`. Career mode
+> does lose ~1–2 s to the pre-warm and coarse-chunk yields, which the stage table
+> attributes to the wrong stages (see the sign-label note below).
+>
+> **Also unverified:** whether `Engine.max_fps` paces `await process_frame` on the
+> web export at all (the web main loop is `requestAnimationFrame`-driven with
+> `thread_support = false`). If it does not, this entire caveat is void. Item 1.1
+> of the new spec makes that a five-minute step-0 check.
+>
+> Separately, **"Placing signs 6379 ms" is a mislabelled bucket.** `_end_load_timing`
+> closes the last `_stage()` label, so the sign stage absorbs `_spawn_spectators`,
+> `_build_arches`, `_spawn_opponent_wreck`, `_build_persistent_managers` and the
+> 30-frame `_prewarm_corridor` shader warm-up. A stage has only 16–22 signs; sign
+> placement is **not** a load-time problem and should not be optimised.
+>
+> Both are tracked as items 1.1 and 1.2 in **`todo/mobile-web-performance.md`**,
+> which supersedes this document for prioritisation. Re-capture the table after
+> they land. The "done" sections below (the carve/cliff distance-field rewrite)
+> remain accurate history.
+>
+> Also stale in this document: `_use_budgeted_generation()`, `is_streaming_chunks()`,
+> `MAX_BUILD_ROWS_PER_FRAME`, `DistantTerrain.ROWS_PER_FRAME` and
+> `force_main_thread_budget` are described here but **exist nowhere in `scripts/`**.
+> The shipped web export has `variant/thread_support = false` and there is no
+> frame-budgeted generation queue.
+
 > **2026-07-27 web-vs-native load measurement (NEW — supersedes the stale native
 > table below).** First actual capture of `load stage:` on a web export. Both runs
 > on the same Mac at v0.628; native = `Godot --path . res://main.tscn` (free roam),

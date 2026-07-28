@@ -125,10 +125,33 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
 - **Migration** is keyed by version (`_MIGRATIONS`, currently empty) as pure
   `Dictionary -> Dictionary` transforms; a newer-than-known version refuses to
   load and runs in-memory rather than clobbering the file.
-- **Web build:** on the HTML5 export `user://` is IndexedDB (async); `Save`
-  forces a synchronous `save_now()` on `NOTIFICATION_WM_CLOSE_REQUEST` /
-  `NOTIFICATION_APPLICATION_PAUSED` so a backgrounded tab persists. Round-trip on
-  an actual web export is still the highest-risk area to verify.
+- **Web build:** on the HTML5 export `user://` is IndexedDB (Emscripten IDBFS) —
+  `FileAccess` writes land in an in-memory FS that is pushed to IndexedDB
+  *asynchronously*, so a write that hasn't synced when the page goes away is
+  lost. Both platforms funnel through one entry point, `Save.flush_and_sync()`
+  (immediate `save_now()` + `request_web_sync()`):
+  - **Desktop/native** reaches it from `_notification` on
+    `NOTIFICATION_WM_CLOSE_REQUEST` / `NOTIFICATION_APPLICATION_PAUSED`.
+  - **Web** never gets those (a browser sends no window-manager close), so
+    `install_web_lifecycle()` — called from `_ready`, a no-op off web, idempotent —
+    registers JS listeners via `JavaScriptBridge` on the two signals mobile
+    browsers actually fire when a page goes away: `visibilitychange`→`hidden` and
+    `pagehide`. They call back into `flush_and_sync()` through a
+    `JavaScriptBridge.create_callback` handle parked on `window.rallySaveFlush`
+    (the handle is held in a member var — dropping it detaches the listeners).
+  - `request_web_sync()` then asks the Emscripten FS for an explicit
+    `FS.syncfs(false, …)`, defensively (FS may not be exposed on the JS globals;
+    failure falls back to the engine's own async sync and never takes the game down).
+  The web export is **single-threaded** (`variant/thread_support=false` in
+  `export_presets.cfg`), so the write itself is cheap and synchronous on the main
+  loop — the risk being mitigated is the async IDB sync not landing, not write
+  cost, which is why the ~1s debounce is left alone. **Still unverified:** the
+  manual round-trip on a real web build (mutate progress → close the tab →
+  reopen → confirm it survived), on desktop *and* mobile browsers. There is no
+  automated web harness, so that manual pass is the acceptance check.
+  Player settings ride the same path — they live in `profile["settings"]` via
+  `get_setting`/`set_setting`, **not** in a separate `ConfigFile`, so there is
+  only one store to make durable.
 - **Blocked storage** (private browsing / read-only fs): writes degrade to an
   in-memory-only profile (`save_disabled`) instead of crashing.
 
@@ -148,7 +171,13 @@ uniqueness, HP seeding, idempotent rally completion, wreck-returns-upgrades,
 the starter wrecking like any car, the `ensure_repair_safety_net` free-kit floor
 (all cars wrecked + none held), inventory counts,
 migration refuse/backfill, corrupt-JSON
-and `.bak` fallback, unknown-model pruning, new-game reset. Runs against a
+and `.bak` fallback, unknown-model pruning, new-game reset.
+`tests/headless/test_save_web_lifecycle.gd` — the web lifecycle seam: the shared
+`flush_and_sync()` entry point writes immediately (bypassing the debounce) and
+round-trips, the desktop close notification reaches that same entry point, a
+disabled store stays in-memory, and `install_web_lifecycle()`/`request_web_sync()`
+are inert off web (a browser event can't be fired headlessly, so the tests assert
+either side of it). Both run against a
 throwaway `user://test_profile.json`. CarLibrary metadata + id helpers are
 covered in `test_car_library.gd`; the autoload-registered smoke check is in
 `test_smoke.gd`.

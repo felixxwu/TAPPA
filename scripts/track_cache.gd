@@ -37,6 +37,7 @@ static func load_from(entries: Dictionary) -> void:
 static func reset() -> void:
 	_entries = {}
 	_loaded = false
+	reset_source_hash_cache()
 
 
 static func terrain_fingerprint(cfg: GameConfig) -> String:
@@ -101,13 +102,33 @@ static func source_hash_of(keys: Array) -> String:
 
 # The source_hash committed in the track lockfile (not recomputed). Lets dependent
 # caches (OpponentCache) fold the track cache's state into their key cheaply.
+# Memoised: the naive form parses the whole 248 KB lockfile, and OpponentCache calls
+# this on every lookup(). The memo is keyed on the file's modified time so a generator
+# that REWRITES the lockfile in-process (cache_*.sh, the editor) can't read a stale
+# hash back; reset_source_hash_cache() is the explicit seam for tests.
+static var _source_hash := ""
+static var _source_hash_stamp := -1
+
+
 static func stored_source_hash() -> String:
 	if not FileAccess.file_exists(CACHE_PATH):
+		_source_hash = ""
+		_source_hash_stamp = -1
 		return ""
+	var stamp := int(FileAccess.get_modified_time(CACHE_PATH))
+	if stamp == _source_hash_stamp:
+		return _source_hash
+	_source_hash = ""
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CACHE_PATH))
 	if typeof(data) == TYPE_DICTIONARY:
-		return String(data.get("source_hash", ""))
-	return ""
+		_source_hash = String(data.get("source_hash", ""))
+	_source_hash_stamp = stamp
+	return _source_hash
+
+
+static func reset_source_hash_cache() -> void:
+	_source_hash = ""
+	_source_hash_stamp = -1
 
 
 static func _deserialize_pieces(raw: Array) -> Array:

@@ -12,6 +12,15 @@ const CarScript := preload("res://scripts/car.gd")
 # display cars); the onlookers reuse the shared low-poly spectator figure.
 const WRECK_CAR_SCENE := "res://car.tscn"
 
+# Frame cap applied for the DURATION of world generation only (see _ready). Loading
+# yields hundreds of frames, and a low cap makes each of those yields idle away most
+# of its frame budget instead of generating. Bounded rather than uncapped on touch:
+# running a phone flat-out through a long load is the thermal/battery failure this is
+# meant to avoid, and a throttled phone then plays worse. 0 = uncapped. Deliberately
+# NOT a GameConfig field — a transient loading-only cap is not a value anyone retunes.
+const LOADING_MAX_FPS := 0         # non-touch (desktop/native): no ceiling for the load
+const LOADING_TOUCH_MAX_FPS := 60  # touch/web: fast, but still a ceiling
+
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
 # world the instant main.tscn is instantiated, exactly as before this overlay.
@@ -23,6 +32,25 @@ var _headless := false
 var _stage_t0 := 0
 var _stage_label := ""
 var _load_t0 := 0
+
+# Latches once _on_load_finished() has fired, so a later regeneration can't emit
+# load_finished twice and double-free load-only data.
+var _load_finished := false
+
+# Every frame cap _ready has applied, in order: [loading cap, post-load cap]. Recorded
+# even under headless (where the real Engine.max_fps write is suppressed so the
+# frame-awaiting test runner isn't throttled), so tests can assert the INTENT — that a
+# loading cap was applied at all, and that the post-load cap is whatever the resolver
+# chose for that mode — without reading Engine.max_fps.
+var applied_fps_caps: Array[int] = []
+
+
+# Apply a frame cap and record the intent. The Engine write is suppressed under
+# --headless (nothing to pace, and it would throttle the test runner).
+func _apply_fps_cap(cap: int) -> void:
+	applied_fps_caps.append(cap)
+	if not Platform.is_headless():
+		Engine.max_fps = cap
 
 
 func _ready() -> void:
@@ -52,8 +80,18 @@ func _ready() -> void:
 	# rendering to pace) so it can't throttle the frame-awaiting test runner. Physics
 	# stays at the project physics tick.
 	var fps_cap := FpsSetting.default_cap() if Benchmark.active else FpsSetting.resolve()
-	if not Platform.is_headless():
-		Engine.max_fps = fps_cap
+	# ...but NOT yet during generation. A 30 fps cap paces every
+	# `await process_frame` the load performs (verified on the web export: 33.4 ms per
+	# awaited frame at cap 30 vs 8.3 ms uncapped), so the hundreds of yields world
+	# generation makes idle away most of their frame budget. Raise the cap for the
+	# duration of the load and apply the real one after (see the _end_load_timing call
+	# in this function). Skipped under a benchmark: benchmark_mode.gd snapshots
+	# Engine.max_fps to restore later, and a transient loading cap must never be what
+	# it captures. See todo/mobile-web-performance.md §1.1.
+	if not Benchmark.active:
+		_apply_fps_cap(LOADING_TOUCH_MAX_FPS if _touch else LOADING_MAX_FPS)
+	else:
+		_apply_fps_cap(fps_cap)
 	var env: Environment = $WorldEnvironment.environment
 	env.fog_density = cfg.fog_density
 	env.background_color = cfg.background_color
@@ -147,6 +185,16 @@ func _ready() -> void:
 
 	await _generate_track(cfg, loading)
 	_end_load_timing()
+	# The real frame cap lands HERE, not inside _end_load_timing() — that function
+	# early-returns on headless / no recorded stage, which would leave the loading cap
+	# (possibly uncapped) in place for the whole session. See todo/mobile-web-performance.md §1.1.
+	_apply_fps_cap(fps_cap)
+	# Everything the load needed but the running game does not is freed here. MUST be
+	# a separate unconditional call, NOT folded into _end_load_timing() — that function
+	# early-returns under headless / with no recorded stage, so a hook inside it would
+	# silently never fire for the test runner (and for any path that skipped _stage).
+	# See todo/mobile-web-performance.md (shared "load finished" hook).
+	_on_load_finished()
 
 	# The stage finish is handled in EVERY mode: a session run reports the event to
 	# the orchestrator; free roam / a dev boot has no session, so the finish panel's
@@ -246,6 +294,23 @@ func _stage(loading: LoadingScreen, label: String) -> void:
 	if loading != null:
 		loading.set_step(label)
 	await _yield_frame()
+
+
+## Emitted once, after generation has finished and the final stage timing is closed.
+## Subscribers free load-only data (baked terrain light, the road/cliff bake
+## dictionaries) that nothing reads during play. Fires on EVERY path including
+## headless, so tests can assert against it.
+signal load_finished
+
+
+# Fire the shared "load finished" hook. Guarded so a second generation pass (a
+# programmatic regeneration) can't double-free: subscribers may drop data that is
+# expensive or impossible to rebuild mid-run.
+func _on_load_finished() -> void:
+	if _load_finished:
+		return
+	_load_finished = true
+	load_finished.emit()
 
 
 # Close the final stage and print the total. Called once generation is done.
@@ -400,12 +465,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		var wp: Array = LakeField.preview_cells(params, box)
 		loading.update_water(wp[0], wp[1], box)
 	# Rally events read the committed lockfile (falling back to live generation on a
-	# miss); free-roam / benchmark (for_config) is not cached and always generates.
+	# miss, loudly — every event key IS baked). The for_config path (benchmark boot,
+	# default-config boot, free roam) consults the same lockfile but treats a miss as
+	# normal: free roam randomises seed/water/relief per entry, so it always misses and
+	# live-generates exactly as before. See todo/mobile-web-performance.md §2.6.
 	var result: Dictionary
 	if not event.is_empty():
 		result = await TrackGenerator.generate_cached(params, cfg, on_progress)
 	else:
-		result = await TrackGenerator.generate(params, on_progress)
+		result = await TrackGenerator.generate_optional_cached(params, cfg, on_progress)
 	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
 	# it stays drawn through the remaining stages until finish().
 	if loading != null and not _headless:
@@ -482,7 +550,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 			await _yield_frame()
 	if show_chunks:
 		loading.update_loaded_chunks(chunk_corners)  # final batch (loop count not a multiple of 8)
-	print("terrain precompute: %d chunks, %.1f MB cached"
+	# PEAK, not resident: this prints while generation is still running, so it counts the
+	# baked `lights` array that TerrainManager.free_load_only_data() drops moments later on
+	# world's load_finished signal. The resident figure after that free is substantially
+	# lower — see features/terrain.md -> "What the cache keeps — and what is freed".
+	# cache_size_mb() also sums only Packed*Array values, so it excludes the prebaked
+	# lod_meshes (GPU-side) entirely.
+	print("terrain precompute: %d chunks, %.1f MB cached (peak, pre-free)"
 		% [precompute_done, floor_tm.cache_size_mb()])
 
 	await _stage(loading, "Building terrain…")
@@ -514,6 +588,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if cfg.signs_enabled:
 		await _build_signs(cfg, result, loading)
 
+	# Everything from here to the pre-warm used to be billed to the PREVIOUS stage
+	# label ("Placing signs"), because _stage() only closes a stage when the NEXT one
+	# opens and _end_load_timing() runs after _generate_track returns. That made signs
+	# look like a 6-second stage when a stage has only ~16-22 of them; the real cost
+	# was the props + shader pre-warm below. See todo/mobile-web-performance.md item 1.2.
+	await _stage(loading, "Placing props…")
+
 	# Roadside spectators: crowds that react to the car (todo/roadside-spectators.md).
 	# One group at the start, one at the end, and one at a seeded mid-stage point.
 	# Built after trees so members can avoid spawning inside foliage; reuses the
@@ -544,6 +625,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# already cached (identical renderer settings) and there's no overlay to hide
 	# the flash.
 	if loading != null and not _headless:
+		# Own stage label: the pre-warm is 30 rendered frames of first-use shader
+		# compilation and is a real multi-second cost on web, but it was previously
+		# invisible — folded into whichever label happened to be open. Item 1.2.
+		await _stage(loading, "Warming shaders…")
 		var wp := _warm_up_point()
 		# Auto-discover every node implementing the warm_up()/clear_warm_up() contract
 		# (surface-FX pools, tyre marks, the spectator ragdoll variant, and anything

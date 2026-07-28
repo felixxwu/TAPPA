@@ -7,7 +7,17 @@ extends Node3D
 # (wired by world.gd), and the 2D previews sample below-water cells via
 # submerged_cells(); neither needs this node.
 
-const WATER_SHADER := "res://shaders/water.gdshader"
+const WATER_SHADER := preload("res://shaders/water.gdshader")
+# Pre-baked seamless (tileable) Perlin tile scrolled as the water surface detail.
+# It used to be generated at load by a NoiseTexture2D — whose bake only goes to a
+# worker thread when threads exist. The web export ships
+# `variant/thread_support = false`, so there was no worker and the bake (4x the
+# samples, because `seamless` cross-blends a larger buffer) ran on the main loop:
+# ~1.1 s per stage load on web vs ~14 ms native. Committing the tile removes it
+# entirely. Regenerate by baking a NoiseTexture2D with the same settings
+# (FastNoiseLite, Perlin, FBM, 3 octaves, frequency 0.06, seed 0, 128x128,
+# seamless) and saving its image over the asset.
+const WATER_TEX := preload("res://textures/water_noise.png")
 # Plane edge length (m). Centred on the origin it covers ±5 km — far larger than
 # any stage — so it never needs to follow the car.
 const SPAN := 10000.0
@@ -15,12 +25,12 @@ const SPAN := 10000.0
 
 func build(water_level: float, cfg: GameConfig) -> void:
 	var mat := ShaderMaterial.new()
-	mat.shader = load(WATER_SHADER)
+	mat.shader = WATER_SHADER
 	mat.set_shader_parameter("water_color", cfg.water_color)
 	mat.set_shader_parameter("shore_color", cfg.water_shore_color)
 	mat.set_shader_parameter("scroll_speed", cfg.water_ripple_speed)
 	mat.set_shader_parameter("sparkle_strength", cfg.water_sparkle_strength)
-	mat.set_shader_parameter("water_tex", _make_water_texture())
+	mat.set_shader_parameter("water_tex", WATER_TEX)
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(SPAN, SPAN)
 	var mi := MeshInstance3D.new()
@@ -57,20 +67,3 @@ static func preview_cells(params: TrackGenParams, bounds: Rect2) -> Array:
 	var grid := 220.0
 	var step: float = maxf(TerrainManager.CELL_M, maxf(bounds.size.x, bounds.size.y) / grid)
 	return [submerged_cells(params.water_sampler, params.water_level, bounds, step), step]
-
-
-# A seamless (tileable) Perlin texture used as the scrolling water surface detail.
-# Generated so the water repeats cleanly across the whole plane and needs no asset
-# on disk. NoiseTexture2D bakes on a worker thread; the material picks it up when ready.
-static func _make_water_texture() -> NoiseTexture2D:
-	var noise := FastNoiseLite.new()
-	noise.noise_type = FastNoiseLite.TYPE_PERLIN
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.fractal_octaves = 3
-	noise.frequency = 0.06
-	var tex := NoiseTexture2D.new()
-	tex.width = 128
-	tex.height = 128
-	tex.seamless = true
-	tex.noise = noise
-	return tex

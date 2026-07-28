@@ -36,12 +36,31 @@ static func load_from(entries: Dictionary) -> void:
 static func reset() -> void:
 	_entries = {}
 	_loaded = false
+	reset_cache()
+
+
+static var _global_fp := ""
+static var _global_fp_key := ""
 
 
 # Inputs outside the rally dict that shift any field's times. Uses the AUTHORED base
 # config (never the mutable Config.data session copy) so the runtime key can't drift
 # from the generator's.
+#
+# Memoised: lookup() calls this once per rally start, and the uncached form parses the
+# full 248 KB track lockfile, load()s the config resource and SHA-256s the whole car +
+# engine catalogue — 50-150 ms of a menu transition on wasm. Every remaining input is a
+# `const` (CARS / ENGINES / the RallyLibrary constants), so the only things that can
+# change WITHIN a process are the two files, and the memo key stats both: the track
+# lockfile via TrackCache.stored_source_hash() (itself modified-time keyed) and the
+# config resource via its modified time. That matters for the generators, which rewrite
+# those files in-process — a memo that never invalidated could bake a stale fingerprint
+# into a regenerated lockfile. reset_cache() is the explicit belt-and-braces seam.
 static func global_fingerprint() -> String:
+	var track_hash := TrackCache.stored_source_hash()
+	var memo_key := "%s|%d" % [track_hash, int(FileAccess.get_modified_time(Config.CONFIG_PATH))]
+	if memo_key == _global_fp_key and _global_fp != "":
+		return _global_fp
 	var base := load(Config.CONFIG_PATH) as GameConfig
 	var catalogue := str(CarLibrary.CARS) + str(EngineLibrary.ENGINES) + str(CarLibrary.TORQUE_POWER_FALLOFF)
 	var grip := "%.6f|%.6f" % [base.gravel_grip, base.tarmac_grip]
@@ -53,8 +72,18 @@ static func global_fingerprint() -> String:
 		RallyLibrary.PACE_EVENT_NOISE, RallyLibrary.PACE_MIN_FLOOR,
 		RallyLibrary.OPPONENT_WRECK_CHANCE,
 	]) + str(RallyLibrary.RIVAL_NAMES)
-	var parts := "v%s|%s|%s|%s|%s" % [CACHE_VERSION, TrackCache.stored_source_hash(), catalogue, grip, consts]
-	return parts.sha256_text().substr(0, 16)
+	var parts := "v%s|%s|%s|%s|%s" % [CACHE_VERSION, track_hash, catalogue, grip, consts]
+	_global_fp = parts.sha256_text().substr(0, 16)
+	_global_fp_key = memo_key
+	return _global_fp
+
+
+# Drop the memoised fingerprint (and the track cache's memoised source hash). Tests and
+# any in-process regeneration path should call this after mutating the inputs.
+static func reset_cache() -> void:
+	_global_fp = ""
+	_global_fp_key = ""
+	TrackCache.reset_source_hash_cache()
 
 
 # Per-rally content hash: captures difficulty (pace band), restriction (eligible

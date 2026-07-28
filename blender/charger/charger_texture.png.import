@@ -3,21 +3,19 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://pdb7pdcksmg3"
-path.s3tc="res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.s3tc.ctex"
-path.etc2="res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.etc2.ctex"
+path="res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 
 [deps]
 
 source_file="res://blender/charger/charger_texture.png"
-dest_files=["res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.s3tc.ctex", "res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.etc2.ctex"]
+dest_files=["res://.godot/imported/charger_texture.png-b4d86fe4992e7af5fadeca0785c78b65.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -38,5 +36,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=0

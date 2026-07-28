@@ -41,6 +41,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [engine-audio.md](engine-audio.md) | Procedural engine sound synthesis |
 | [music.md](music.md) | Interactive looping background music — `MusicSchedule` timing math, `MusicLibrary` catalogue, `MusicDirector` autoload (single-player polyphonic double-buffer), Music bus |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (audio-only) — engine property, stock or via `turbo_small`/`turbo_large` upgrades |
+| [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
@@ -62,6 +63,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [garage.md](garage.md) | Procedural rally-team service-park garage model + the multi-angle render harness |
 | [mobile-controls.md](mobile-controls.md) | On-screen touch buttons: steer/throttle/brake (phones/web) |
 | [rendering.md](rendering.md) | PS1 shaders, dither post-process, materials, fog |
+| [asset-pipeline.md](asset-pipeline.md) | Source art → PCK: texture import settings, the live/orphan car-texture trap, export exclude filters, PCK sizing |
 | [debug-tools.md](debug-tools.md) | Force-arrow visualization overlay |
 | [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven long stage at 50 km/h, perf overlay + end-of-run stats breakdown |
 | [controls.md](controls.md) | Full input map / key bindings |

@@ -142,6 +142,32 @@ note tests may call the public callback directly — keep its signature).
 breakdown from the representative *release* web build (the per-second logger
 above is off there). See [benchmark.md](benchmark.md) → "Feedback loop".
 
+## HQ boot cost logging
+
+`hq.gd` logs its own boot split on the non-headless path, in the same greppable style as
+`load stage:`:
+
+```
+hq boot stage: build                    349 ms
+hq boot stage: free-roam prewarm       1093 ms
+hq boot total: 1442 ms
+hq car cache: 10 props (9 preview, 1 owned-garage), 25 meshes, ~0.26 MB mesh data (est)
+```
+
+`_car_cache_mesh_cost()` walks the cache reading only ArrayMesh surface *header* counts
+(never `surface_get_arrays`), so it is cheap; non-ArrayMesh meshes are skipped, making it
+a deliberate under-estimate.
+
+What the numbers showed on a fast Mac: the **free-roam prewarm is ~3x the entire rest of
+the HQ build**, while duplicated mesh data is negligible (~26 KB per prop). So the
+resident-memory concern about per-car mesh copies is real but small, and the cost worth
+attacking is the prewarm's contribution to time-to-first-interaction. Note the mesh walk
+does not see nodes, physics bodies, materials or textures — for a true RAM figure measure
+`Performance.MEMORY_STATIC` / `RENDER_VIDEO_MEM_USED` deltas around the prewarm instead.
+
+The prewarm and the session-resident `_car_cache` are a **deliberate** trade documented in
+`hq.gd`: the cost is paid once behind the loading cover to hide the first-entry lag spike.
+
 ## Standalone performance benchmark
 
 **Source:** `benchmark/perf_benchmark.gd` + `benchmark/perf_benchmark.tscn`, run

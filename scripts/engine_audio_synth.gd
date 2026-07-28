@@ -61,6 +61,19 @@ const TURBO_AIR_LP_HZ := 1800.0
 const SUPERCHARGER_BELT_HZ_PER_RPM := 0.12  # whine pitch = rpm * this (belt ratio)
 const ANTILAG_BANG_INTERVAL := 0.08  # seconds between anti-lag bangs while coasting
 
+# Precomputed white-noise table. The per-sample loop needs up to five independent
+# noise values (engine noise floor, crackle, turbo whistle, blow-off, anti-lag);
+# calling _rng.randf() for each is ~5 bound-method calls per sample — at 22 kHz
+# that's >100k engine calls a second, one of the synth's largest costs and pure
+# overhead on wasm. Baking a few thousand random samples ONCE and reading them
+# back with a rolling index is audibly indistinguishable (white noise has no
+# perceptible long-term structure at this length), as long as the layers don't
+# read the SAME samples — so each layer keeps its own index and advances by its
+# own co-prime stride, which decorrelates them. Power-of-two size so the wrap is
+# a mask, not a modulo.
+const NOISE_TABLE_SIZE := 4096
+const NOISE_TABLE_MASK := NOISE_TABLE_SIZE - 1
+
 var _mix_rate: float
 var _firing_phases: Array[float]
 var _harmonics: int
@@ -86,6 +99,15 @@ var _crackle_env := 0.0  # decaying amplitude of the current crackle burst
 var _dc_x_prev := 0.0  # DC-blocker state: previous input sample
 var _dc_y_prev := 0.0  # DC-blocker state: previous output sample
 var _rng := RandomNumberGenerator.new()
+# The baked white-noise table plus one rolling read index per layer. Offsets start
+# the layers far apart in the table and the strides are odd/co-prime with the
+# power-of-two size, so every layer walks the whole table on a different orbit.
+var _noise_table := PackedFloat32Array()
+var _ni_noise := 0
+var _ni_crackle := 1013
+var _ni_whistle := 2039
+var _ni_bov := 3067
+var _ni_antilag := 601
 var _voice_bank: Array[PackedFloat32Array] = []  # [VOICE_LOAD_TABLES] of [VOICE_TABLE_SIZE]
 var _turbo_whistle_gain := 0.0
 # Turbo whistle = resonant band-pass-filtered noise. Sweep range + resonance + the
@@ -148,7 +170,16 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_supercharger_whine_gain = cfg.engine_supercharger_whine_gain
 	_build_whistle_table()
 	_rng.seed = 1  # deterministic for tests
+	_build_noise_table()
 	_build_voice_bank()
+
+
+# Bake NOISE_TABLE_SIZE white-noise samples in [-1, 1]. One-time cost at init;
+# replaces the per-sample _rng.randf() calls in fill().
+func _build_noise_table() -> void:
+	_noise_table.resize(NOISE_TABLE_SIZE)
+	for i in range(NOISE_TABLE_SIZE):
+		_noise_table[i] = _rng.randf() * 2.0 - 1.0
 
 
 func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false, boost := 0.0, turbo_spin := 0.0, bov_event := false, antilag_active := false) -> void:
@@ -219,15 +250,25 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 		# volume_db changes the engine note's loudness without altering the
 		# noise floor.
 		var voice := sample * _master_gain * _cut_gain
-		var noise := (_rng.randf() * 2.0 - 1.0) * _noise_level * (0.2 + 0.8 * _sm_throttle)
+		# Noise layers read the baked table (see NOISE_TABLE_SIZE) instead of calling
+		# into the RNG, and each layer is skipped entirely when its envelope is zero
+		# — the crackle / blow-off / anti-lag bursts are silent most of the time, so
+		# their reads were pure waste.
+		var noise := 0.0
+		if _noise_level != 0.0:
+			_ni_noise = (_ni_noise + 1) & NOISE_TABLE_MASK
+			noise = _noise_table[_ni_noise] * _noise_level * (0.2 + 0.8 * _sm_throttle)
 		# Exhaust crackle rides on top of the steady noise floor as a decaying burst.
-		noise += (_rng.randf() * 2.0 - 1.0) * _crackle_env
+		if _crackle_env > 0.0:
+			_ni_crackle = (_ni_crackle + 3) & NOISE_TABLE_MASK
+			noise += _noise_table[_ni_crackle] * _crackle_env
 		# Turbo spool: resonant band-pass-filtered NOISE (centre freq tracks shaft
 		# speed) blended with a broadband air-rush layer — reads as airflow, not a
 		# pure tone. White noise → TPT SVF band-pass (v1), normalized by k so Q sets
 		# tone not level; air rush is the same noise one-pole low-passed.
 		if whistle_active:
-			var wn := _rng.randf() * 2.0 - 1.0
+			_ni_whistle = (_ni_whistle + 5) & NOISE_TABLE_MASK
+			var wn := _noise_table[_ni_whistle]
 			var v3 := wn - _svf_ic2
 			var v1 := svf_a1 * _svf_ic1 + svf_a2 * v3
 			var v2 := _svf_ic2 + svf_a2 * _svf_ic1 + svf_a3 * v3
@@ -249,7 +290,9 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 		if _bov_flutter_amount > 0.0 and _bov_env > 0.0:
 			_bov_flutter_phase = fposmod(_bov_flutter_phase + _bov_flutter_hz * dt, 1.0)
 			bov_lfo = 1.0 - _bov_flutter_amount * (0.5 + 0.5 * sin(TAU * _bov_flutter_phase))
-		noise += (_rng.randf() * 2.0 - 1.0) * _bov_env * bov_lfo
+		if _bov_env > 0.0:
+			_ni_bov = (_ni_bov + 7) & NOISE_TABLE_MASK
+			noise += _noise_table[_ni_bov] * _bov_env * bov_lfo
 		# Anti-lag bangs: retrigger a short burst at intervals while coasting on boost.
 		if antilag_active:
 			_antilag_timer -= dt
@@ -257,7 +300,9 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 				_antilag_env = _turbo_antilag_bang_gain
 				_antilag_timer = ANTILAG_BANG_INTERVAL
 		_antilag_env *= _antilag_decay
-		noise += (_rng.randf() * 2.0 - 1.0) * _antilag_env
+		if _antilag_env > 0.0:
+			_ni_antilag = (_ni_antilag + 11) & NOISE_TABLE_MASK
+			noise += _noise_table[_ni_antilag] * _antilag_env
 		var env := lerpf(_idle_gain, 1.0, _sm_throttle) * cut
 		# DC-block the combined signal BEFORE the soft clipper (see DC_BLOCK_R) so
 		# the positive-biased voice is centred and overdrive swings both rails

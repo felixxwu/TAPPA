@@ -30,7 +30,7 @@ func _initialize() -> void:
 	# the starter makes a full 10-car collection (== the cap → boots to the title).
 	sm.profile["cars"] = []
 	for id in ["focus", "charger", "porsche911", "viper", "xjs", "focus", "charger", "porsche911", "viper"]:
-		sm.grant_car(id, false)
+		sm.grant_car(id)
 
 	var svp := SubViewport.new()
 	svp.size = Vector2i(1280, 720)

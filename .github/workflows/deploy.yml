@@ -403,6 +403,16 @@ jobs:
     # automatic "pages-build-deployment" run so everything lives in one workflow.
     # Requires the repo's Pages source to be set to "GitHub Actions"
     # (Settings -> Pages -> Build and deployment -> Source).
+    #
+    # NOTE: this job does NOT publish the game. docs/index.html is a redirect to
+    # https://felixxwu.itch.io/tappa; the playable web build is uploaded to itch
+    # by export-web above and served from html.itch.zone behind Cloudflare. So
+    # Pages headers (compression, cache-control) are irrelevant to load time —
+    # itch's are what matter, and as of 2026-07-28 itch already gzips index.wasm
+    # (37.7 MB -> 9.93 MB) and index.pck (17.3 MB -> 9.28 MB), and serves each
+    # upload from a build-unique, inherently version-stamped path. See the
+    # header comment in build_web.sh for the measurements and why we must not
+    # pre-compress into build/web.
     permissions:
       contents: read
       pages: write

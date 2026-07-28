@@ -63,6 +63,8 @@ enum LiftPage { HUB, TUNE, UPGRADES }
 signal lineup_built
 
 const MAX_STARS := 3
+# How many qualifying cars the rally-detail card names before it tails off with "+N more".
+const MAX_QUALIFY_NAMES := 1
 const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of truth for the kW/kg -> hp/tonne display conversion
 
 # The map-pin readout box: a 2D UITheme panel (rally name + StarRow) rendered to a
@@ -247,7 +249,7 @@ var _detail_showdown: Label      # gold "SHOWDOWN" chip on the header row
 var _detail_stages: VBoxContainer  # one row per event (index + surface bar + mix text)
 var _detail_combined: Label      # "combined time sets your result" note
 var _detail_restriction: Label   # the eligibility restriction summary
-var _detail_qualify: Label       # "N of M cars qualify" (GREEN / RED / muted)
+var _detail_qualify: Label       # the qualifying cars, named (GREEN / RED / muted)
 var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
 var _detail_record: Label        # best-finish text beside the StarRow
 var _detail_stars: StarRow       # medal row for the player's best finish
@@ -322,14 +324,19 @@ func _ready() -> void:
 	# draws it, so the build doesn't run before the cover is actually on screen.
 	await get_tree().process_frame
 	await get_tree().process_frame
+	var boot_t0 := Time.get_ticks_msec()
 	_build_hq()
+	var build_ms := Time.get_ticks_msec() - boot_t0
 	# Warm the Free Roam picker NOW, behind the opaque cover: car.tscn embeds every car glb,
 	# so building the whole-catalogue lineup is heavy and would hitch the first time it's
 	# opened. Doing it here (once, kept in memory for the session — see _prewarm_free_roam /
 	# the negative-id keep in _evict_unowned_cached_cars) hides the cost entirely.
 	loading.set_step("Warming up the garage…")
 	await get_tree().process_frame  # paint the new step before the synchronous warm runs
+	var prewarm_t0 := Time.get_ticks_msec()
 	_prewarm_free_roam()
+	var prewarm_ms := Time.get_ticks_msec() - prewarm_t0
+	_log_boot_cost(build_ms, prewarm_ms)
 	# Let the built scene render one frame before lifting the cover, so the reveal lands
 	# on the title shot rather than a half-built frame.
 	await get_tree().process_frame
@@ -1455,7 +1462,7 @@ func _show_detail() -> void:
 	var events: Array = rally.get("events", [])
 	for i in events.size():
 		_detail_stages.add_child(_stage_row(i + 1, events[i]))
-	_detail_combined.text = "Combined time across all stages sets your result."
+	_detail_combined.text = "Combined stage times decide your result."
 
 	# --- Eligibility: restriction + how many of the player's cars can enter.
 	_detail_restriction.text = _restriction_text(rally.get("restriction", {}))
@@ -1469,7 +1476,7 @@ func _show_detail() -> void:
 		_detail_qualify.text = "No cars qualify"
 		_detail_qualify.add_theme_color_override("font_color", UITheme.RED)
 	else:
-		_detail_qualify.text = "%d of %d cars qualify" % [qualify, total]
+		_detail_qualify.text = _qualifying_cars_text(elig["names"])
 		_detail_qualify.add_theme_color_override("font_color", UITheme.GREEN)
 	var adjust := int(elig["adjust"])
 	_detail_adjust.visible = adjust > 0
@@ -1478,6 +1485,9 @@ func _show_detail() -> void:
 	# --- Record: best finish + medal stars.
 	var best := Save.best_placement(_selected_rally_id)
 	_detail_record.text = "Best: P%d" % best if best > 0 else "Not yet completed"
+	# An unrun rally has no medals to show — an empty star row next to "not yet completed"
+	# is noise, so hide it entirely rather than drawing three blanks.
+	_detail_stars.visible = best > 0
 	_detail_stars.setup(_stars_for(_selected_rally_id), MAX_STARS)
 
 	_detail_open = true
@@ -1489,9 +1499,11 @@ func _show_detail() -> void:
 # and the human-readable surface mix. All three share one line via an HBox.
 func _stage_row(index: int, event: Dictionary) -> HBoxContainer:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
+	# Tight gap + a narrow number column: the mix text wraps, so every pixel spent here
+	# is a pixel a long mix ("60% gravel / 40% tarmac") loses off its single line.
+	row.add_theme_constant_override("separation", 4)
 	var num := _label(str(index), 16)
-	num.custom_minimum_size = Vector2(18, 0)
+	num.custom_minimum_size = Vector2(14, 0)
 	row.add_child(num)
 	var mix := _label(_surface_mix_text(event), 16)
 	mix.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1503,14 +1515,16 @@ func _stage_row(index: int, event: Dictionary) -> HBoxContainer:
 # How many of the player's owned `cars` can enter `rally`, tallied on top of
 # _entry_plan so this agrees exactly with the green/grey map pin (_has_eligible_car)
 # and the car-park lineup — the ONE eligibility decision, never re-derived here.
-# Returns {total, qualify, adjust}: `total` counts owned cars whose model still
+# Returns {total, qualify, adjust, names}: `total` counts owned cars whose model still
 # resolves (a removed model is skipped, not counted); `qualify` = can enter at all
 # (matches the pin); `adjust` = qualify but only after a detune and/or drivetrain
-# switch. `adjust` is a subset of `qualify`.
+# switch. `adjust` is a subset of `qualify`. `names` lists the qualifying cars' display
+# names, in roster order, so the panel can name them instead of just counting them.
 func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 	var total := 0
 	var qualify := 0
 	var adjust := 0
+	var names: Array[String] = []
 	for car in cars:
 		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
 		if entry.is_empty():
@@ -1520,9 +1534,22 @@ func _eligibility_summary(rally: Dictionary, cars: Array) -> Dictionary:
 		if not bool(plan["eligible"]):
 			continue
 		qualify += 1
+		names.append(EngineSwap.display_name(entry, car))
 		if float(plan["detune"]) > 0.0 or int(plan["drivetrain"]) >= 0:
 			adjust += 1
-	return {"total": total, "qualify": qualify, "adjust": adjust}
+	return {"total": total, "qualify": qualify, "adjust": adjust, "names": names}
+
+
+# The qualifying-car read-out: name the cars rather than counting them. Caps the list at
+# MAX_QUALIFY_NAMES and tails the rest as "+N more" so a big garage can't blow the panel
+# out. Callers only reach this with a non-empty list (empty is its own RED message).
+func _qualifying_cars_text(names: Array) -> String:
+	if names.size() <= MAX_QUALIFY_NAMES:
+		return ", ".join(names)
+	var shown: Array[String] = []
+	for i in MAX_QUALIFY_NAMES:
+		shown.append(String(names[i]))
+	return "%s, +%d more" % [", ".join(shown), names.size() - MAX_QUALIFY_NAMES]
 
 
 func _hide_detail() -> void:
@@ -2375,6 +2402,66 @@ func _prewarm_free_roam() -> void:
 		_car_cache[instance_id] = {"hash": preview_hash, "node": node}
 
 
+# --- Boot instrumentation (todo/mobile-web-performance.md §2.14) --------------------
+# HQ is run/main_scene, so its _ready is the first cost every player pays, and the props
+# _prewarm_free_roam parks in _car_cache stay resident for the WHOLE session — one CarProp
+# per catalogue preview plus one per parked owned car, each with its own duplicated meshes
+# (CarProp.dup_meshes). That trade is deliberate and documented above; these logs exist to
+# MEASURE it, not to change it, because it is missing from the web build's resident-RAM
+# budget and the per-car mesh copies scale linearly with the player's garage.
+#
+# Line format mirrors world.gd's "load stage:" / "terrain precompute:" lines so a boot log
+# greps cleanly. Called only from the non-headless path in _ready, so it is silent under
+# the test runner exactly like world.gd::_stage.
+
+# Rough per-vertex byte cost of an interleaved car vertex (position + normal + tangent +
+# UV, packed). Only used to turn vertex/index counts into an order-of-magnitude MB figure
+# in the log below — it is an estimate label, never a budget.
+const CAR_MESH_VERTEX_BYTES := 32
+const CAR_MESH_INDEX_BYTES := 4
+
+
+# Print HQ's boot wall-clock and the resident cost of _car_cache at the current garage
+# size. Cheap: the mesh walk reads ArrayMesh surface header counts
+# (surface_get_array_len / surface_get_array_index_len) — it never copies a surface array
+# — and it runs once, behind the loading cover.
+func _log_boot_cost(build_ms: int, prewarm_ms: int) -> void:
+	print("hq boot stage: %-22s %5d ms" % ["build", build_ms])
+	print("hq boot stage: %-22s %5d ms" % ["free-roam prewarm", prewarm_ms])
+	print("hq boot total: %d ms" % (build_ms + prewarm_ms))
+	var cost := _car_cache_mesh_cost()
+	print("hq car cache: %d props (%d preview, %d owned-garage), %d meshes, ~%.2f MB mesh data (est)"
+		% [cost["props"], cost["previews"], cost["props"] - cost["previews"],
+			cost["meshes"], float(cost["bytes"]) / 1048576.0])
+
+
+# Resident cost of _car_cache: how many props are held, how many of them are the
+# never-evicted Free Roam previews (negative instance_id — see _evict_unowned_cached_cars),
+# how many duplicated meshes they own, and an estimate of those meshes' vertex/index bytes.
+# Returns {"props", "previews", "meshes", "bytes"}.
+func _car_cache_mesh_cost() -> Dictionary:
+	var out := {"props": 0, "previews": 0, "meshes": 0, "bytes": 0}
+	for id in _car_cache:
+		var node = _car_cache[id].get("node")
+		if not is_instance_valid(node):
+			continue
+		out["props"] += 1
+		if int(id) < 0:
+			out["previews"] += 1
+		for child in node.find_children("*", "MeshInstance3D", true, false):
+			# ArrayMesh only: the car glbs import as ArrayMesh, and primitives (if any ever
+			# appear) carry no surface-array counts to read cheaply, so they're skipped
+			# rather than guessed at. That keeps this an under-estimate, never an over-one.
+			var mesh := (child as MeshInstance3D).mesh as ArrayMesh
+			if mesh == null:
+				continue
+			out["meshes"] += 1
+			for s in mesh.get_surface_count():
+				out["bytes"] += (mesh.surface_get_array_len(s) * CAR_MESH_VERTEX_BYTES
+					+ mesh.surface_get_array_index_len(s) * CAR_MESH_INDEX_BYTES)
+	return out
+
+
 func _spawn_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	# Frozen prop resting at its pose: no body integration and no per-frame car script
 	# (drivetrain/steering/aero) cost. We stop physics processing (stop_physics) rather
@@ -2700,15 +2787,16 @@ func _restriction_text(restriction: Dictionary) -> String:
 	# inside it — over pw_max is capped out (detune to duck under), under pw_min is
 	# ineligible. Both edges are authored in hp/tonne (RallyLibrary converts a car's kW/kg
 	# to hp/tonne before comparing), the same unit as every player-facing p/w readout (the
-	# car stats + the detune slider), so display them straight — no conversion here.
+	# car stats + the detune slider), so display them straight — no conversion here. The
+	# unit carries the meaning, so there's no "power-to-weight" label on the figure.
 	var has_min: bool = restriction.has("pw_min")
 	var has_max: bool = restriction.has("pw_max")
 	if has_min and has_max:
-		parts.append("power-to-weight %.0f–%.0f hp/tonne" % [float(restriction["pw_min"]), float(restriction["pw_max"])])
+		parts.append("%.0f–%.0f hp/tonne" % [float(restriction["pw_min"]), float(restriction["pw_max"])])
 	elif has_max:
-		parts.append("power-to-weight <= %.0f hp/tonne" % float(restriction["pw_max"]))
+		parts.append("<= %.0f hp/tonne" % float(restriction["pw_max"]))
 	elif has_min:
-		parts.append("power-to-weight >= %.0f hp/tonne" % float(restriction["pw_min"]))
+		parts.append(">= %.0f hp/tonne" % float(restriction["pw_min"]))
 	return ", ".join(parts)
 
 
