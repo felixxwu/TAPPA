@@ -653,6 +653,60 @@ func test_level_assist_quiet_when_planted() -> void:
 	assert_lt(_car.angular_velocity.length(), 0.3, "grounded car is not spun by the assist")
 
 
+# --- Grounded level assist (the anti-roll regime) --------------------------
+# level_assist_grounded > 0 keeps the aid alive with all four wheels planted,
+# where it damps body roll / pitch instead of righting a flip. The knob is a
+# tunable fraction, so these assert the MECHANISM (a grounded car's roll rate
+# decays faster with the aid on than off, and the aid is inert at 0), never a
+# particular strength.
+
+# Seed a roll rate on the settled car and report how much of it survives after
+# `frames` of physics, with the grounded aid at `fraction`. Re-settles first, so
+# both runs start from the identical cached pose. The rate is small enough that
+# all four wheels stay in contact (a lifted wheel would hand BOTH runs the
+# full-strength airborne branch and hide the difference).
+func _grounded_roll_survival(fraction: float, frames: int) -> float:
+	await setup_settled_car()
+	_car.config.level_assist_grounded = fraction
+	_car.angular_velocity = -_car.global_transform.basis.z * 0.5
+	await _wait_physics(frames)
+	var up := _car.global_transform.basis.y
+	return (_car.angular_velocity - up * _car.angular_velocity.dot(up)).length()
+
+
+func test_grounded_level_assist_damps_body_roll() -> void:
+	# Same seeded roll, aid off vs aid on: the aid must bleed the roll rate off
+	# faster. This is the anti-roll-bar behaviour the knob exists for.
+	var off: float = await _grounded_roll_survival(0.0, 6)
+	var on: float = await _grounded_roll_survival(1.0, 6)
+	assert_lt(on, off, "the grounded level assist damps a rolling grounded car")
+
+
+func test_grounded_level_assist_inert_at_zero() -> void:
+	# The knob's 0 default must reproduce airborne-only behaviour exactly: a
+	# settled, level car gets no torque at all.
+	await setup_settled_car()
+	_car.config.level_assist_grounded = 0.0
+	var before := _car.global_transform.basis.y.dot(Vector3.UP)
+	await _wait_physics(30)
+	assert_almost_eq(_car.global_transform.basis.y.dot(Vector3.UP), before, 0.02,
+		"level_assist_grounded = 0 leaves a planted car untouched")
+
+
+func test_grounded_level_assist_quiet_on_a_settled_car() -> void:
+	# With the aid ON, a car already at rest and flat on the surface must stay
+	# put — the correction is zero at zero tilt-from-surface, so a fully enabled
+	# aid must not nudge, lift or spin a parked car.
+	await setup_settled_car()
+	_car.config.level_assist_grounded = 1.0
+	var before := _car.global_transform
+	await _wait_physics(30)
+	assert_almost_eq(_car.global_transform.basis.y.dot(before.basis.y), 1.0, 0.01,
+		"the grounded aid does not tilt a car that is already flat on its surface")
+	assert_lt(_car.angular_velocity.length(), 0.3, "and does not spin it")
+	assert_lt((_car.global_position - before.origin).length(), 0.25, "and does not shove it")
+
+
 # --- Damage model integration (features/damage.md) -------------------------
 # The DamageModel maths are unit-tested in test_damage_model.gd; these check the
 # car wires it in — contact monitoring is enabled and the per-tick power/steer

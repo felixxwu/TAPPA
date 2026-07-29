@@ -114,6 +114,31 @@ func test_post_process_shader_wired() -> void:
 		"post-process subviewport shares the main World3D")
 
 
+func test_hq_hosts_the_same_post_process_pass() -> void:
+	# The HQ hub gets the identical PS1 pass as the stage, so the colour grade covers
+	# the whole game's 3D rather than stopping at the garage door.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	var container := hq.get_node_or_null("PostProcess") as SubViewportContainer
+	assert_not_null(container, "HQ has a post-process SubViewportContainer")
+	if container == null:
+		return
+	_assert_shader_material(container.material, "HQ post-process SubViewportContainer")
+	var view := container.get_node("View") as SubViewport
+	assert_eq(view.find_world_3d(), container.get_viewport().find_world_3d(),
+		"HQ post-process subviewport shares the HQ World3D")
+	# The container must not swallow mouse events: the HQ's table / lift / pin
+	# stations are Area3D picked through the ROOT viewport.
+	assert_eq(container.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+		"HQ post-process container ignores the mouse so 3D picking still reaches the stations")
+	# Grade values must actually be pushed, not left on the shader defaults.
+	var cfg: GameConfig = Config.data
+	var mat := container.material as ShaderMaterial
+	assert_eq(mat.get_shader_parameter("grade_saturation"), cfg.grade_saturation,
+		"HQ grade pushed from config")
+
+
 func test_post_process_mirror_camera_syncs() -> void:
 	var src := _scene.get_viewport().get_camera_3d()
 	assert_not_null(src, "an active gameplay camera exists")
@@ -151,6 +176,26 @@ func test_speed_lines_shader_radial_edge_effect() -> void:
 	# Radial mask (inner/outer radius) is what keeps the screen centre clear.
 	assert_true(src.contains("inner_radius") and src.contains("outer_radius"),
 		"speed-lines shader masks the centre via inner/outer radius")
+
+
+func test_post_process_grades_before_quantising() -> void:
+	var src := FileAccess.get_file_as_string("res://shaders/ps1_post_process.gdshader")
+	for param in ["grade_amount", "grade_saturation", "grade_contrast", "grade_shadow_tint",
+			"grade_highlight_tint", "grade_vignette_strength", "grade_vignette_radius"]:
+		assert_true(src.contains("uniform") and src.contains(param),
+			"post-process shader exposes " + param)
+	# The grade MUST run ahead of the 5-bit truncation, so the banding lands in the
+	# graded palette instead of the grade smearing already-quantised levels back
+	# into intermediate values. Ordering is the one thing a source check can pin.
+	var grade_at := src.find("mix(vec3(luma)")
+	var quantise_at := src.find("floor((color + dither)")
+	assert_gt(grade_at, -1, "grade maths present in fragment()")
+	assert_gt(quantise_at, -1, "5-bit quantise present in fragment()")
+	assert_lt(grade_at, quantise_at, "colour grade runs BEFORE the 5-bit quantise")
+	# grade_amount = 0 must be a true bypass, vignette included — so the vignette
+	# has to be folded into the graded value ahead of the master mix.
+	assert_lt(src.find("grade_vignette_strength)"), src.find("mix(original, graded"),
+		"vignette applies inside the graded branch, before the grade_amount blend")
 
 
 func test_shader_sources_load() -> void:

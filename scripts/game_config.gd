@@ -99,6 +99,13 @@ var peak_torque_rpm := 4500.0
 ## far it has tilted. Never yaws the car. 0 disables. A landing/anti-flip aid,
 ## not a physical force.
 @export_range(0.0, 30000.0) var level_assist_torque := 8000.0
+## Fraction of level_assist_torque the aid keeps while ALL FOUR wheels are
+## planted, where it acts as a cheap anti-roll bar: it resists body roll in
+## corners and dive/squat under braking, and settles the chassis flat ON THE
+## SURFACE (the aid references the average wheel contact normal when grounded,
+## not world up, so it never fights a cambered or off-camber road). 0 = the
+## classic airborne-only behaviour.
+@export_range(0.0, 1.0) var level_assist_grounded := 0.0
 ## Weight of drive force in the traction ellipse: 0.5 = Godot's solver (tires
 ## transmit up to 2x more drive than side force), 1.0 = strict circle (drive
 ## and lateral share one friction budget).
@@ -677,6 +684,13 @@ var peak_torque_rpm := 4500.0
 ## (distance ∝ 1/tan(fov/2), the car stays the same size). Values in between
 ## soften an over-eager pull-in.
 @export_range(0.0, 1.0) var chase_dolly_mix := 0.5
+## Where along the car the chase camera aims, as a multiple of the car's half
+## length measured forward from the body origin (the wheelbase centre). 0 aims at
+## the middle of the model; 1 aims at the nose. Because the aim point rides the
+## car's FACING while the camera sits behind its direction of TRAVEL, a non-zero
+## value makes the framing slide sideways as the car drifts — the nose swings out
+## of centre — which adds motion the centred aim can't show.
+@export_range(0.0, 2.0) var chase_look_ahead_ratio := 0.7
 ## G-force camera lean (chase only). The chase camera derives the car's
 ## acceleration each frame and leans into it: lateral g rolls the view, forward
 ## g pitches it (brake dips the nose, throttle lifts it). Gains are degrees of
@@ -684,7 +698,7 @@ var peak_torque_rpm := 4500.0
 ## The result is clamped to ±chase_tilt_max_deg and eased at chase_tilt_smoothing
 ## (higher = snappier; the same 1-exp(-rate·dt) idiom as the orbit/FOV smoothing),
 ## so the tilt decays back to level once the g-forces drop.
-@export_range(-2.0, 2.0) var chase_tilt_roll_gain := -0.2
+@export_range(-2.0, 2.0) var chase_tilt_roll_gain := -0.3
 @export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.0
 @export_range(0.0, 30.0) var chase_tilt_max_deg := 4.0
 @export_range(0.1, 20.0) var chase_tilt_smoothing := 6.0
@@ -891,6 +905,34 @@ var peak_torque_rpm := 4500.0
 @export var chassis_color := Color(0.85, 0.2, 0.15)
 @export var cabin_color := Color(0.25, 0.3, 0.4)
 @export var wheel_color := Color(0.12, 0.12, 0.12)
+
+# Colour grade over the stage's 3D frame — the Race Driver: GRID look (less
+# saturated, more contrasty, tinted a light warm brown). Pushed onto
+# shaders/ps1_post_process.gdshader by world.gd's _ready, and applied there
+# BEFORE the dither/quantise so the 5-bit banding lands in the graded palette.
+# Grades the world, props and sky ONLY: the HUD/menus sit on CanvasLayers drawn
+# after the post-process pass, and so do the speed lines. No per-target variants
+# (unlike virtual_resolution) — a grade is resolution-independent.
+## Master strength of the whole grade. 0 = off (exact passthrough, vignette
+## included), 1 = full. Retuning any value below needs a stage restart.
+@export_range(0.0, 1.0) var grade_amount := 0.5
+## 1 = colours untouched, 0 = fully greyscale.
+@export_range(0.0, 1.0) var grade_saturation := 0.7
+## Contrast around mid-grey. 1 = untouched. Pushing this hard makes the 5-bit
+## banding visible in the sky gradient and on flat terrain (the dither only
+## masks so much).
+@export_range(0.5, 2.0) var grade_contrast := 1.15
+## Tint pushed into the dark end of the image — a desaturated brown gives GRID's
+## muddy warm blacks. Only the HUE matters: the shader divides out the tint's own
+## luminance so it can't change overall brightness.
+@export var grade_shadow_tint := Color(0.62, 0.52, 0.40)
+## Tint pushed into the bright end — a warm cream for GRID's yellowed highlights.
+@export var grade_highlight_tint := Color(1.0, 0.94, 0.78)
+## Corner darkening strength. 0 = no vignette.
+@export_range(0.0, 1.0) var grade_vignette_strength := 0.25
+## Normalised radius (1.0 = the edge midpoints) at which the corner darkening
+## starts to ramp in; it reaches full strength in the corners.
+@export_range(0.0, 1.5) var grade_vignette_radius := 0.75
 
 @export_group("Speed Lines")
 # Anime "edge speed lines" overlay (features/rendering.md): black streaks
@@ -1750,6 +1792,24 @@ func terrain_layers() -> Array[Vector2]:
 		Vector2(terrain_layer2_wavelength, terrain_layer2_amplitude),
 		Vector2(terrain_layer3_wavelength, terrain_layer3_amplitude),
 	]
+
+
+# Push every ps1_post_process.gdshader uniform onto a post-process material —
+# the dither grid plus the whole colour grade. Shared by BOTH hosts of that pass
+# (world.gd for the stage, hq.gd for the HQ hub) so the two can never drift into
+# grading the game differently depending on which screen you're on.
+# `base_height` is DisplayStretch.base_design_height(); only the dither grid is
+# per-target (it has to keep its proportion on a shorter web-touch frame), while
+# the grade is resolution-independent and pushed raw.
+func apply_post_process(mat: ShaderMaterial, web: bool, touch: bool, base_height: int) -> void:
+	mat.set_shader_parameter("virtual_resolution", virtual_resolution_for(web, touch, base_height))
+	mat.set_shader_parameter("grade_amount", grade_amount)
+	mat.set_shader_parameter("grade_saturation", grade_saturation)
+	mat.set_shader_parameter("grade_contrast", grade_contrast)
+	mat.set_shader_parameter("grade_shadow_tint", grade_shadow_tint)
+	mat.set_shader_parameter("grade_highlight_tint", grade_highlight_tint)
+	mat.set_shader_parameter("grade_vignette_strength", grade_vignette_strength)
+	mat.set_shader_parameter("grade_vignette_radius", grade_vignette_radius)
 
 
 # Push the fake car-lighting uniforms onto a ps1_models.gdshader material. Used

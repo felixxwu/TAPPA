@@ -69,6 +69,41 @@ Don't scatter new colour/size literals through the UI scripts — add them to
 materials (concrete, tarmac, podium steps, garage) are **not** UI and keep their
 own colours.
 
+### The palette is grade-baked
+
+The palette constants are **derived, not authored**: each one has been run through
+the world's colour grade (the GRID look — see
+[rendering.md](rendering.md) → "Colour grade") so menus sit in the same palette as
+the 3D they overlay. Each line keeps its authored design intent in a trailing
+comment, and that authored value is the real intent.
+
+The UI is deliberately **not** shader-graded. It lives on CanvasLayers drawn above
+the post-process container, so reaching it would need a top layer sampling
+`hint_screen_texture` — whose `BackBufferCopy` costs a render-pass break every
+frame, a fixed cost that doesn't shrink with resolution and forces a tile-buffer
+resolve on mobile GPUs. Because `UITheme` already centralises the palette as flat
+constants, grading them once offline buys the same cohesion for zero runtime cost.
+
+The consequence: **retuning the grade does not update the UI.** Re-bake, then
+regenerate the theme:
+
+```
+godot --headless --script tools/bake_ui_palette.gd      # prints graded literals
+godot --headless --script tools/build_ui_theme.gd       # → theme/ui_theme.tres
+```
+
+Paste the bake output over the palette block. `tools/bake_ui_palette.gd` holds the
+authored palette itself and re-derives from that, so it's idempotent — running it
+twice never double-grades. Its grade maths must stay in step with
+`shaders/ps1_post_process.gdshader`; the vignette is omitted (a spatial screen
+effect is meaningless on a palette entry) and alpha is passed through untouched.
+
+Two things the bake does **not** cover, both intentional: the pure blacks come out
+unchanged (a black pixel has no hue to shift and the contrast curve clamps at
+zero), so house rule 4 still holds exactly; and anything *dynamically rendered*
+into the UI — car thumbnails, the map-pin label viewports, `SubViewport` previews —
+is real rendered content rather than a palette entry, so it stays ungraded.
+
 Backdrops in particular used to drift (a hand-typed `Color(0, 0, 0, 0.96)` per
 popup). There are exactly two:
 

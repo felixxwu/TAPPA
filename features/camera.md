@@ -66,7 +66,8 @@ travel_dir = slerp(travel_dir, target_dir, 1 - exp(-smoothing * delta))  # eased
 horizontal = sqrt(follow_distance^2 - dy^2)
 position   = target.position - travel_dir * horizontal       # behind the smoothed orbit
 position.y = ground_height_at(position.xz) + follow_distance * follow_height_ratio  # clearance over terrain
-look_at(target.position, UP)                 # exact — look-at is NOT smoothed
+aim = target.position + (-target.basis.z) * half_length * chase_look_ahead_ratio
+look_at(aim, UP)                             # exact — look-at is NOT smoothed
 ```
 
 `travel_dir` is the smoothed orbital direction, carried between frames; while
@@ -97,10 +98,19 @@ what feeds the terrain clearance solve below.
 
 **Per-car length.** Before the dolly ratio is applied, the target car's half
 length (`Car.half_length()` — half the spec's `body.z`) is added to
-`follow_distance`. The look-at anchors on the body origin (the wheelbase centre),
-so a longer car would otherwise poke its nose/tail out of frame; pushing the
-camera back by half the body length keeps the whole car visible. Falls back to no
-adjustment when the target doesn't expose `half_length()` (flat test fixtures).
+`follow_distance`. The camera is placed relative to the body origin (the wheelbase
+centre), so a longer car would otherwise poke its nose/tail out of frame; pushing
+the camera back by half the body length keeps the whole car visible. Falls back to
+no adjustment when the target doesn't expose `half_length()` (flat test fixtures).
+
+**Aim point (`_aim_point`).** The look-at does NOT target the middle of the car —
+it targets a point `chase_look_ahead_ratio × half_length()` forward along the
+car's **facing** (`-basis.z`), i.e. the nose at the default `1.0`. Because the
+camera sits behind the car's direction of **travel** while the aim point rides its
+facing, a drift (non-zero slip angle) swings the nose off the travel axis and the
+whole frame slides sideways with it — motion a centred aim can't show. Set
+`chase_look_ahead_ratio = 0` to go back to aiming at the body origin; targets
+without `half_length()` (flat test fixtures) always aim at the origin.
 
 **G-force lean.** After the look-at aims the camera, it leans into the car's
 acceleration for a sense of weight transfer. The acceleration is the
@@ -132,6 +142,8 @@ camera is unaffected (it already inherits the car body's suspension roll/pitch).
 - `chase_dolly_mix` (0–1) — how strongly the follow distance is pulled in to
   counteract the speed FOV (0 = distance fixed, 1 = full dolly zoom holding the
   car's on-screen size).
+- `chase_look_ahead_ratio` (0–2) — how far forward the look-at aims, in multiples
+  of the car's half length (0 = body centre, 1 = nose).
 - `chase_tilt_roll_gain` / `chase_tilt_pitch_gain` (deg per m/s²) — how far the
   view leans per unit of lateral / longitudinal acceleration; negative inverts.
 - `chase_tilt_max_deg` — clamp on the g-force lean magnitude (either axis).

@@ -18,6 +18,9 @@ var _fov_speed_boost: float
 var _fov_speed: float
 var _fov_smoothing: float
 var _dolly_mix: float
+# How far forward along the car's facing the look-at point sits, as a multiple of
+# the car's half length. See GameConfig.chase_look_ahead_ratio.
+var _look_ahead_ratio: float
 
 # G-force lean: the view rolls into lateral acceleration and pitches with
 # forward acceleration (brake dips the nose, throttle lifts it). Gains are
@@ -60,6 +63,7 @@ func _ready() -> void:
 	_fov_speed = cfg.chase_fov_speed
 	_fov_smoothing = cfg.chase_fov_smoothing
 	_dolly_mix = cfg.chase_dolly_mix
+	_look_ahead_ratio = cfg.chase_look_ahead_ratio
 	_tilt_roll_gain = cfg.chase_tilt_roll_gain
 	_tilt_pitch_gain = cfg.chase_tilt_pitch_gain
 	_tilt_max = deg_to_rad(cfg.chase_tilt_max_deg)
@@ -120,8 +124,9 @@ func _timed_physics_process(delta: float) -> void:
 	var full_ratio := tan(half_base) / maxf(tan(half_now), 0.0001)
 	var ratio := lerpf(1.0, full_ratio, _dolly_mix)
 	# Give longer cars more room: add the car's half length to the follow distance
-	# so its nose/tail stays in frame. The look-at anchors on the body origin (the
-	# wheelbase centre), so half the body length reaches from there to the tip.
+	# so its nose/tail stays in frame. The camera is PLACED relative to the body
+	# origin (the wheelbase centre), so half the body length reaches from there to
+	# the tip. (The look-at aims further forward — see _aim_point.)
 	var base_distance := _distance
 	if target.has_method("half_length"):
 		base_distance += target.half_length()
@@ -148,15 +153,30 @@ func _timed_physics_process(delta: float) -> void:
 	final_pos.y = _ground_height_at(final_pos.x, final_pos.z) + _height
 	global_position = final_pos
 
-	# Point straight at the car (un-smoothed). Guard the degenerate cases look_at
-	# can't handle: the camera coinciding with the car, or sitting directly
-	# above/below it (view direction parallel to UP) — both leave the aim from the
-	# previous frame rather than erroring.
-	var to_target := target.global_position - global_position
+	# Point at the car's nose rather than its centre (un-smoothed). The aim point
+	# follows the car's FACING while the camera sits behind its direction of TRAVEL,
+	# so under a drift the nose is off to one side of the travel axis and the framing
+	# slides with the slip angle instead of staying dead-centre. Guard the degenerate
+	# cases look_at can't handle: the camera coinciding with the aim point, or sitting
+	# directly above/below it (view direction parallel to UP) — both leave the aim
+	# from the previous frame rather than erroring.
+	var aim := _aim_point()
+	var to_target := aim - global_position
 	if to_target.length() > 0.001 and absf(to_target.normalized().dot(Vector3.UP)) < 0.999:
-		look_at(target.global_position, Vector3.UP)
+		look_at(aim, Vector3.UP)
 
 	_apply_gforce_tilt(delta)
+
+
+# The world point the camera aims at: _look_ahead_ratio × the car's half length
+# forward along its own facing, from the body origin (the wheelbase centre).
+# Falls back to the origin for targets that don't expose half_length().
+func _aim_point() -> Vector3:
+	var origin: Vector3 = target.global_position
+	if _look_ahead_ratio == 0.0 or not target.has_method("half_length"):
+		return origin
+	var forward: Vector3 = -target.global_transform.basis.z
+	return origin + forward * (target.half_length() * _look_ahead_ratio)
 
 
 # Lean the (already aimed) camera into the car's acceleration: roll toward

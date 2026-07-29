@@ -38,6 +38,7 @@ the `.tres` requires a scene reload to take effect.
 | `spin_assist_torque` | 6000.0 | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held; 0 disables |
 | `spin_assist_angle` | 0.611 rad | Slip angle (≈35°) where spin protection starts; ramps to full at twice this angle |
 | `level_assist_torque` | 8000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
+| `level_assist_grounded` | 0.0 | Fraction of `level_assist_torque` kept with all four wheels planted, where the aid acts as an anti-roll bar (referenced to the wheel contact normal, not world up); 0 = airborne-only |
 | `wheel_roll_influence` | 0.1 | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM, 1 = contact patch |
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |
 | `wheel_friction_slip_rear` | 0.6 | Rear tire grip coefficient μ |

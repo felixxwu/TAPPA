@@ -152,12 +152,14 @@ func _ready() -> void:
 	# The MX-5 body model is lit in car.gd's _apply_model_material when built.
 	for car_mesh in [$Car/Chassis, $Car/Cabin, $Car/WheelFL/Visual/Tire]:
 		cfg.apply_car_light(_mat(car_mesh))
-	# PS1 dither/quantise grid. Scaled by the same factor DisplayStretch applied to the
-	# logical frame height, so a web-touch device's lower render resolution keeps the
-	# authored grid-to-frame proportion instead of the dither pattern coarsening.
-	# Every other target (native mobile, desktop, desktop browser) gets the authored value.
-	($PostProcess.material as ShaderMaterial).set_shader_parameter("virtual_resolution",
-		cfg.virtual_resolution_for(_web, _touch, int(DisplayStretchScript.base_design_height())))
+	# PS1 dither/quantise grid + the colour grade, both pushed by apply_post_process
+	# (shared with hq.gd, the other host of this pass, so the two can't grade the
+	# game differently). The grid is scaled by the same factor DisplayStretch applied
+	# to the logical frame height, so a web-touch device's lower render resolution
+	# keeps the authored grid-to-frame proportion instead of the dither pattern
+	# coarsening; every other target gets the authored value.
+	cfg.apply_post_process($PostProcess.material as ShaderMaterial, _web, _touch,
+		int(DisplayStretchScript.base_design_height()))
 
 	# Hold the car still for the entire boot. Generation below spans many awaited
 	# frames with the loading overlay up (non-headless); the car is already in the

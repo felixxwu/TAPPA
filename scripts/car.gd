@@ -779,22 +779,58 @@ func _apply_spin_protection(assist_scale: float, slip_angle: float, handbrake: b
 			steer_assist_readout += spin_assist_yaw
 
 
-# Self-righting assist: while any wheel is off the ground, ease the chassis back
-# toward level. up × world_up is the roll+pitch axis that rotates the car's up
-# toward vertical — it lies in the horizontal plane, so it adds no yaw — and its
-# length is sin(tilt), so the correction grows the further the car is from flat
-# (peaking near 90°). A damping term opposing the roll+pitch angular velocity (the
-# yaw component, about the car's own up, is left free) keeps it from overshooting
-# level and wobbling. No effect once all four wheels plant.
+# Self-righting assist: ease the chassis back toward level. up × reference_up is
+# the roll+pitch axis that rotates the car's up toward the reference — it is
+# perpendicular to the car's own up, so it adds no yaw — and its length is
+# sin(tilt), so the correction grows the further the car is from flat (peaking
+# near 90°). A damping term opposing the roll+pitch angular velocity (the yaw
+# component, about the car's own up, is left free) keeps it from overshooting
+# level and wobbling.
+#
+# Two regimes, sharing one strength knob:
+#
+# * AIRBORNE (any wheel off the ground) — full level_assist_torque, referenced to
+#   WORLD up. A landing / anti-flip aid: it wants the car flat to the world,
+#   because that's the attitude that lands on four wheels.
+# * GROUNDED (all four planted) — level_assist_torque × level_assist_grounded,
+#   referenced to the average wheel CONTACT NORMAL. Here it behaves like an
+#   anti-roll bar: it resists cornering roll and braking dive, and stands the car
+#   back up on its springs. Referencing the surface (not world up) is what keeps
+#   it from fighting a cambered corner or an off-camber verge, where levelling to
+#   the world would mean a permanent torque trying to peel the car off the slope.
+#   With level_assist_grounded = 0 (the script default) this regime is inert and
+#   the aid is airborne-only, as it originally was.
 func _apply_level_assist() -> void:
 	var cfg: GameConfig = config
-	if cfg.level_assist_torque > 0.0 and _any_wheel_airborne():
-		var up := global_transform.basis.y
-		var roll_pitch_rate := angular_velocity - up * angular_velocity.dot(up)
-		apply_torque(
-			up.cross(Vector3.UP) * cfg.level_assist_torque
-			- roll_pitch_rate * cfg.level_assist_torque * LEVEL_ASSIST_DAMPING
-		)
+	if cfg.level_assist_torque <= 0.0:
+		return
+	var strength := cfg.level_assist_torque
+	var reference_up := Vector3.UP
+	if not _any_wheel_airborne():
+		strength *= cfg.level_assist_grounded
+		if strength <= 0.0:
+			return
+		reference_up = _ground_normal()
+	var up := global_transform.basis.y
+	var roll_pitch_rate := angular_velocity - up * angular_velocity.dot(up)
+	apply_torque(
+		up.cross(reference_up) * strength
+		- roll_pitch_rate * strength * LEVEL_ASSIST_DAMPING
+	)
+
+
+# Average contact normal of the wheels currently touching the ground — the
+# "up" of the surface the car is standing on, which the grounded level assist
+# levels to instead of world up. Falls back to world up if nothing is in
+# contact or the normals cancel out.
+func _ground_normal() -> Vector3:
+	var sum := Vector3.ZERO
+	for wheel in drivetrain.all_wheels:
+		if wheel.is_in_contact():
+			sum += wheel.get_contact_normal()
+	if sum.is_zero_approx():
+		return Vector3.UP
+	return sum.normalized()
 
 
 # The unified damage tick + the (decoupled) object-reaction pass. Runs every physics

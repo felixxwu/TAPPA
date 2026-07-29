@@ -48,6 +48,10 @@ enum View { EXTERIOR, GARAGE, TABLE, LIFT, CARPARK, SETTINGS }
 # Generalises over this list, so a third starter is a one-line add.
 const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
 
+# Static access to base_design_height() for the post-process dither grid; the same
+# preload world.gd uses, since the autoload instance isn't needed for a static call.
+const DisplayStretchScript := preload("res://scripts/display_stretch.gd")
+
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
 # name/description + Upgrades/Tuning buttons + a Test Drive button); TUNE is
 # the handling sliders and UPGRADES is install parts / repair. Each menu is its own
@@ -382,9 +386,24 @@ func _apply_bench_sweep_config() -> void:
 	Benchmark.two_pass = bool(data.get("two_pass", false))
 
 
+# Push the dither grid + colour grade onto the PostProcess container's material, so
+# the HQ's 3D world gets the same PS1 treatment as the driving stage (features/
+# rendering.md → "Colour grade"). Shares GameConfig.apply_post_process with
+# world.gd so the two screens can never grade differently. The station OVERLAYS are
+# CanvasLayers drawn above the container and stay ungraded, exactly like the HUD.
+func _apply_post_process() -> void:
+	var container := get_node_or_null("PostProcess") as SubViewportContainer
+	if container == null or container.material == null:
+		return
+	Config.data.apply_post_process(container.material as ShaderMaterial,
+		Platform.is_web(), Platform.is_touch(),
+		int(DisplayStretchScript.base_design_height()))
+
+
 # Build the whole HQ (environment, station overlays, map pins, initial title view).
 # Synchronous; the caller decides whether to cover it with a loading screen.
 func _build_hq() -> void:
+	_apply_post_process()
 	_env = HQEnvironment.new()
 	# The pickable table / lift areas route their clicks back to hq's own handlers.
 	_env.build(self, _on_table_input, _on_lift_input, _on_arrow_input)

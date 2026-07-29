@@ -129,11 +129,29 @@ for each).
 	 has none — no hidden global), and the aero_kit upgrade adds on top. Every car
 	 carries a small `downforce_rear` to keep the tail planted under power; front
 	 is 0 unless a spec sets it.
-5. **Self-righting assist:** when one or more wheels are off the ground, a
-   roll+pitch torque (`level_assist_torque`) eases the chassis back toward
-   level. The torque axis is `car_up × world_up` — it lies in the horizontal
-   plane (so it never yaws) and its magnitude is `sin(tilt)`, so the correction
-   grows the further the car is from flat. Inert once all four wheels plant.
+5. **Self-righting assist:** a roll+pitch torque (`level_assist_torque`) eases the
+   chassis back toward level (`car.gd` → `_apply_level_assist`). The torque axis is
+   `car_up × reference_up`, perpendicular to the car's own up (so it never yaws),
+   with magnitude `sin(tilt)`, so the correction grows the further the car is from
+   flat; a damping term (`LEVEL_ASSIST_DAMPING`) opposing the roll+pitch rate keeps
+   it from overshooting. It runs in **two regimes off one strength knob**:
+   - **Airborne** (any wheel off the ground) — full strength, referenced to **world
+     up**. A landing / anti-flip aid: world-flat is the attitude that lands on four
+     wheels.
+   - **Grounded** (all four planted) — `level_assist_torque × level_assist_grounded`,
+     referenced to the **average wheel contact normal** (`_ground_normal()`). Here it
+     acts as a cheap **anti-roll bar**: it resists cornering roll and braking dive and
+     stands the car back up on its springs. Referencing the *surface* rather than world
+     up is what stops it fighting a cambered corner or off-camber verge, where
+     levelling to the world would mean a permanent torque trying to peel the car off
+     the slope. At realistic body-roll angles the `sin(tilt)` term is small, so the
+     **damping term dominates** the feel. Note this damps the chassis *attitude* only —
+     unlike a real anti-roll bar it does not shift left/right suspension load, so it
+     cannot be used to trim understeer/oversteer balance (that would need a load-
+     transfer term in `Drivetrain.wheel_normal_force()`). It also resists **pitch** as
+     well as roll, so a high setting flattens dive/squat too; splitting the roll and
+     pitch weights would need separate knobs. `level_assist_grounded = 0` (the script
+     default) makes the aid airborne-only, as it originally was.
 6. **Tire/engine step:** `drivetrain.step(delta, throttle, brake, handbrake)`
    computes and applies all wheel contact forces.
 
@@ -324,5 +342,6 @@ holds the player put during the countdown (`handbrake_locked` forces the handbra
 
 `mass`, `drag_coefficient`, `downforce_front/rear`, `steer_*`,
 `spin_assist_torque`, `spin_assist_angle`, `level_assist_torque`,
+`level_assist_grounded`,
 `suspension_*`, `brake_torque`, `handbrake_torque`. See
 [configuration.md](configuration.md).

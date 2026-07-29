@@ -130,23 +130,97 @@ Used by: car chassis/cabin/wheels, and the authored body models (MX-5, Focus, Tw
 (see below).
 
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
-Applied as the material of the `PostProcess` **SubViewportContainer**
-(`scripts/post_process_view.gd`). The 3D world stays in the main tree but is
-rendered through `PostProcess/View`, a `SubViewport` that shares the main
+Applied as the material of a `PostProcess` **SubViewportContainer**
+(`scripts/post_process_view.gd`), hosted by **both `main.tscn` (the driving
+stage) and `hq.tscn` (the hub)** so the PS1 treatment covers the whole game's 3D
+rather than stopping at the garage door. The 3D world stays in the main tree but
+is rendered through `PostProcess/View`, a `SubViewport` that shares the host's
 `World3D` (`own_world_3d = false`) and carries a `ViewCamera` mirror camera
-synced every frame to the active gameplay camera; the root viewport's own 3D
-pass is disabled while the stage scene is in the tree (restored on exit, so the
-HQ renders normally). The shader samples the container's `TEXTURE` (the
+synced every frame to the active camera; the root viewport's own 3D pass is
+disabled while such a scene is in the tree (restored on exit). The host script is
+entirely generic — it mirrors whatever `get_viewport().get_camera_3d()` returns,
+so it needed no HQ-specific camera wiring. The shader samples the container's `TEXTURE` (the
 subviewport frame) directly — deliberately NOT `hint_screen_texture`, which
 would force a full-screen backbuffer copy (render-pass break + mid-frame GPU
-submit) every frame on the Compatibility backend. Uniform: `virtual_resolution`
-(set from `cfg.virtual_resolution` by `world.gd` — read the config for the current
-grid; it's authored to match the design height, so don't restate the numbers here).
+submit) every frame on the Compatibility backend.
 
-Algorithm: sample frame → quantize to virtual resolution → apply a 4×4 ordered
-(Bayer) dither matrix → truncate to 5-bit RGB (32 levels/channel) → output.
-The dither applies to the 3D world only: SpeedLines / HUD / menus live on
-CanvasLayers drawn above the container.
+Every uniform — the `virtual_resolution` dither grid plus the whole colour grade
+— is pushed by **`GameConfig.apply_post_process`**, called from `world.gd`'s
+`_ready` and `hq.gd`'s `_apply_post_process`. That single helper is deliberately
+the only writer: two hosts each setting their own uniforms would eventually drift
+into grading the stage and the hub differently. Read the config for the current
+values; the grid is authored to match the design height, so don't restate the
+numbers here.
+
+Algorithm: sample frame → **colour grade** (below) → quantize to virtual
+resolution → apply a 4×4 ordered (Bayer) dither matrix → truncate to 5-bit RGB
+(32 levels/channel) → output. The dither applies to the 3D world only:
+SpeedLines / HUD / menus live on CanvasLayers drawn above the container.
+
+#### Colour grade (Race Driver: GRID look)
+
+A desaturate + contrast + warm-brown **split tone** + vignette, in the same pass
+ahead of the dither. GRID's look was never a uniform sepia wash — it was muddy
+warm-brown crushed blacks against yellowed highlights — so shadows and
+highlights are tinted separately, crossfaded by luma. Knobs live in the **PS1
+Look** group of `game_config.tres` (`grade_amount`, `grade_saturation`,
+`grade_contrast`, `grade_shadow_tint`, `grade_highlight_tint`,
+`grade_vignette_strength`, `grade_vignette_radius`), pushed by `world.gd`'s
+`_ready` alongside `virtual_resolution`. `grade_amount = 0` is an exact
+passthrough. Read the config for the values; don't restate them here.
+
+Five things about it that are load-bearing rather than incidental:
+
+- **It grades BEFORE the quantize**, so the 5-bit banding lands in the graded
+  palette. Grading afterwards would smear the 32 quantised levels back into
+  intermediate values and soften the exact banding this renderer is built on.
+  Pinned by `test_render_smoke.gd` → `test_post_process_grades_before_quantising`.
+- **The tint is luma-normalised** (`luma_normalized`, with a `max(..., 1e-3)`
+  guard). A plain tint multiply can only ever darken — the inspector clamps a
+  `Color` export to 1.0 — so a brown tint would dim the whole stage, the tuner
+  would fight it with contrast, and the result is mud. Normalising keeps hue and
+  exposure independent knobs. The guard matters because a near-black shadow tint
+  is exactly what "crushed warm blacks" invites.
+- **Luma is taken once from the untouched sample**, feeding both the desaturation
+  and the split-tone crossfade, so retuning contrast doesn't slide the
+  shadow/highlight boundary around.
+- **The vignette sits inside the graded branch**, before the `grade_amount` blend,
+  or `0` would still darken the corners and the bypass contract would be a lie.
+  It's computed in UV space, so it's an ellipse whose shape follows the window
+  aspect (the frame is ~1.48:1 in pixels at 16:9 before the anamorphic stretch
+  widens it further) — intended, but wide displays get a more stretched vignette.
+- **The maths is sRGB-space**, not linear: `TEXTURE` is the SubViewport's
+  already-encoded output. That suits the era; don't "correct" it.
+
+Scope is the 3D frame of **both** the stage and the HQ — world, props, cars and
+sky. In the HQ that includes the hub geometry, the map table and the parked
+lineup; its station **overlays** are CanvasLayers above the container and stay
+ungraded, exactly like the HUD. Note the HQ's clickable stations (table, lift,
+pins) are `Area3D`s picked through the ROOT viewport, which is why the container
+sets `mouse_filter = IGNORE` — `disable_3d` only skips the render pass, so the
+camera stays current and picking is unaffected. `test_render_smoke.gd` →
+`test_hq_hosts_the_same_post_process_pass` pins both the shared world and the
+mouse-filter.
+
+The HUD, menus **and the speed
+lines** are all on CanvasLayers above the container, so the shader never sees them.
+Speed lines being outside it is worth remembering: they're a *world* effect, and
+a non-black `speed_lines_color` would visibly break out of the grade.
+
+Shader-grading the UI was considered and rejected — it needs a top layer sampling
+`hint_screen_texture`, whose `BackBufferCopy` render-pass break is a fixed
+per-frame cost that doesn't shrink with resolution and forces a tile-buffer
+resolve on mobile GPUs. Don't "fix" the gap that way. Instead the UI matches by
+**palette bake**: `UITheme`'s colour constants are pre-graded offline by
+`tools/bake_ui_palette.gd`, giving the same cohesion for zero runtime cost — see
+[ui-design-system.md](ui-design-system.md) → "The palette is grade-baked". That
+tool's maths must stay in step with the shader's `fragment()`.
+
+Several world colours in `GameConfig` were authored against the *ungraded* image
+and read a little oddly under warm brown — the fog/horizon most of all. Note the
+fog is tuned via **`GameConfig.background_color`** and the per-region look tables,
+NOT `main.tscn`: `world.gd` overwrites `env.fog_light_color` from
+`cfg.background_color` every boot and `_apply_region_look` overrides it again.
 
 ### `billboard_particle.gdshader` — `spatial`, `unshaded`, `depth_draw_opaque`
 Screen-aligned billboard with a **per-instance roll, size and colour** — the

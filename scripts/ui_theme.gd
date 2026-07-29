@@ -32,8 +32,9 @@ extends RefCounted
 # building (HQ re-runs it on every view change so dynamic text obeys too).
 #
 # Tune the look HERE (then re-run tools/build_ui_theme.gd to regenerate the .tres);
-# don't scatter new colour/size literals through the UI scripts. See
-# features/ui-design-system.md.
+# don't scatter new colour/size literals through the UI scripts. NOTE the palette
+# values are GRADE-BAKED — read the Palette section below before editing a colour.
+# See features/ui-design-system.md.
 
 # Syne Mono is the UI face: a hand-drawn monospace, so stat read-outs and money
 # columns line up while the lettering keeps a characterful, slightly informal feel.
@@ -42,6 +43,24 @@ const FONT_PATH := "res://fonts/SyneMono.ttf"
 # --- Palette -----------------------------------------------------------------
 # Surfaces are pure black; over the 3D world panels stay nearly opaque so the
 # terminal text reads cleanly against grass/sky.
+#
+# GRADE-BAKED. Every value below has been run through the world's colour grade
+# (the GRID look — desaturate + contrast + warm split tone; see
+# features/rendering.md → "Colour grade") so the UI sits in the same palette as
+# the 3D it overlays. The authored design intent is kept in each trailing comment
+# and is the real source of truth: the UI is NOT shader-graded, because it lives
+# on CanvasLayers above the post-process container and reaching it would cost a
+# hint_screen_texture backbuffer copy every frame.
+#
+# These are therefore DERIVED values. Retuning the grade in
+# config/game_config.tres does NOT update them — re-run
+# `godot --headless --script tools/bake_ui_palette.gd`, paste its output here, then
+# re-run tools/build_ui_theme.gd to regenerate theme/ui_theme.tres. The bake tool
+# holds the authored palette itself, so it stays idempotent.
+#
+# Note the pure blacks survive the grade unchanged (a black pixel has no hue to
+# shift and the contrast curve clamps at zero), so HOUSE RULE 4 — menu
+# backgrounds are PURE BLACK — still holds exactly.
 const BLACK := Color(0.0, 0.0, 0.0, 1.0)            # solid panel / fully opaque surface
 const PANEL := Color(0.0, 0.0, 0.0, 0.9)            # panel over the 3D world
 const PANEL_DIM := Color(0.0, 0.0, 0.0, 0.6)        # dim backdrop behind a menu
@@ -49,16 +68,16 @@ const MODAL_DIM := Color(0.0, 0.0, 0.0, 0.96)       # backdrop behind a blocking
                                                     # (confirm popup / car-park prompts):
                                                     # heavier than PANEL_DIM so the world
                                                     # behind reads as fully interrupted
-const SURFACE := Color(0.05, 0.06, 0.05, 1.0)       # raised surface (button face)
-const SURFACE_HOVER := Color(0.11, 0.14, 0.11, 1.0) # button hover/pressed lift
+const SURFACE := Color(0.0028, 0.0132, 0.0071, 1.0)      # raised surface (button face) — authored Color(0.05, 0.06, 0.05)
+const SURFACE_HOVER := Color(0.0807, 0.0989, 0.0642, 1.0) # button hover/pressed lift — authored Color(0.11, 0.14, 0.11)
 
 # Text + accents.
-const INK := Color(0.92, 0.95, 0.90, 1.0)           # primary text — crisp warm white
-const INK_DIM := Color(0.92, 0.95, 0.90, 0.55)      # secondary / hint text
-const GREEN := Color(0.33, 0.86, 0.36, 1.0)         # active / selected / positive
-const GOLD := Color(0.97, 0.80, 0.13, 1.0)          # money / winnings / reward
-const RED := Color(0.89, 0.27, 0.22, 1.0)           # danger / run timer / warning
-const MUTED := Color(0.58, 0.66, 0.54, 0.55)        # locked / disabled (olive-grey)
+const INK := Color(1.0, 0.9938, 0.8346, 1.0)        # primary text — warm off-white — authored Color(0.92, 0.95, 0.90)
+const INK_DIM := Color(1.0, 0.9938, 0.8346, 0.55)   # secondary / hint text — authored Color(0.92, 0.95, 0.90, 0.55)
+const GREEN := Color(0.4272, 0.8594, 0.3718, 1.0)   # active / selected / positive — authored Color(0.33, 0.86, 0.36)
+const GOLD := Color(1.0, 0.8269, 0.2127, 1.0)       # money / winnings / reward — authored Color(0.97, 0.80, 0.13)
+const RED := Color(0.8747, 0.2743, 0.1982, 1.0)     # danger / run timer / warning — authored Color(0.89, 0.27, 0.22)
+const MUTED := Color(0.6368, 0.6679, 0.4914, 0.55)  # locked / disabled (olive-grey) — authored Color(0.58, 0.66, 0.54, 0.55)
 const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 
 # --- Size (rule 2: one fixed font size everywhere) ---------------------------

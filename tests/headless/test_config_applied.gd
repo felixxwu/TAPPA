@@ -157,6 +157,13 @@ func test_world_values_applied() -> void:
 	assert_eq(chassis_mat.get_shader_parameter("albedo_color"), cfg.chassis_color, "chassis color from config")
 	var post_mat: ShaderMaterial = _scene.get_node("PostProcess").material
 	assert_eq(post_mat.get_shader_parameter("virtual_resolution"), cfg.virtual_resolution, "dither grid from config")
+	# Colour grade: assert every knob REACHES the shader, never what it is set to —
+	# these are authored look tunables, so comparing against cfg keeps the test
+	# value-agnostic under retuning. Unlike the dither grid above there is no
+	# per-target _for() accessor to mirror; a grade is resolution-independent.
+	for param in ["grade_amount", "grade_saturation", "grade_contrast", "grade_shadow_tint",
+			"grade_highlight_tint", "grade_vignette_strength", "grade_vignette_radius"]:
+		assert_eq(post_mat.get_shader_parameter(param), cfg.get(param), "%s from config" % param)
 	var tire_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Tire").get_surface_override_material(0)
 	assert_eq(tire_mat.get_shader_parameter("albedo_color"), cfg.wheel_color, "tire color from config")
 
