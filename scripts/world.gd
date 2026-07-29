@@ -880,6 +880,9 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 	_wheel_particles = _ensure_child("WheelParticles",
 		func() -> Node: return WheelParticles.new()) as WheelParticles
 	_wheel_particles.setup($Car)
+	# Region grass-blade colour override (e.g. Greece's dry olive vs. home's
+	# green) — falls back to GameConfig when the region authors none.
+	_wheel_particles.set_grass_color_override(region_look.get("grass_particle_color", Color(0, 0, 0, 0)))
 
 	# Grey smoke puffed from the bonnet each time a damaged engine misfires. Its own
 	# small MultiMesh pool; reads the car's engine misfire counter live. See
@@ -1410,6 +1413,15 @@ func _show_repair_popup(summary: Dictionary) -> void:
 	card.reveal(summary)
 	await card.finished
 	layer.queue_free()
+	# Freeing the popup's focused Continue button clears the viewport's focus owner
+	# outright (Godot does not auto-migrate focus off a freed Control), and nothing
+	# re-grabs it afterwards: the start-line overlay was already built + MenuNav-attached
+	# before the popup ever showed, so its own visibility_changed re-grab never fires.
+	# Release explicitly, then hand it straight back to Start for staged runs — the
+	# hq.gd pattern (CLAUDE.md), applied on the way OUT of an overlay instead of in.
+	get_viewport().gui_release_focus()
+	if is_instance_valid(_start_line):
+		_start_line.grab_start_focus()
 
 
 # Build the pre-event start-line sequence around the fielded car (the times-to-beat

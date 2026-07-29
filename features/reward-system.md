@@ -62,7 +62,14 @@ The reward is then revealed on **that event's standings interstitial** via the
 shared `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — same slot-machine
 spinner as the podium, anchored to the **bottom** of the screen so it doesn't
 block the car in the replay behind it — behind a **Collect reward** button that hides the
-leaderboard (see `features/menus.md`). For a normal slottable part, the reveal
+leaderboard (see `features/menus.md`). While the reel is actually animating (real
+play, non-zero `podium_slot_spin_time`) a **Skip** button
+(`UpgradeReveal._on_skip_pressed`) appears so impatient players can fast-forward
+straight to the landed result — it kills the running tween and runs the exact
+landing steps a natural finish would, so it always lands on the real won item and
+every downstream choice/finish path (Apply/Keep, repair choice) behaves
+identically to letting the spin play out. Hidden headless / when the spin is
+already instant, since there's nothing to skip. For a normal slottable part, the reveal
 displays a single **Next** step: the part (already fitted disabled by the flow
 controller) is confirmed with the caption "added to your garage — install it at
 the next stage", and the player enables it later from the upgrades menu at the next

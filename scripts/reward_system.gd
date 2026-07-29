@@ -25,7 +25,7 @@ const REPAIR_KIT_DROP_WEIGHT := 0
 # The engine swap token's weight in the per-event upgrade pool, relative to a
 # part's weight of 1.0. Kept low like the repair kit — swaps are an occasional
 # treat, not a staple. Placeholder; becomes a GameConfig tunable in the balance pass.
-const ENGINE_SWAP_TOKEN_DROP_WEIGHT := 0.5
+const ENGINE_SWAP_TOKEN_DROP_WEIGHT := 0.2
 
 
 # --- Tier model & clamp ------------------------------------------------------

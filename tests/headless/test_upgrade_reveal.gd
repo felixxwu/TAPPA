@@ -4,7 +4,8 @@ extends GutTest
 # player enables them later in the upgrades menu); a repair kit still offers an
 # Apply/Keep choice (Repair now / Save it) when the driven car is below full
 # health. Headless -> the slot resolves instantly, so finish/choice is reachable
-# at once.
+# at once. A Skip button fast-forwards a real (non-headless) spin straight to the
+# actual won item; tests force a real spin by flipping `_headless` post-construction.
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
@@ -89,6 +90,38 @@ func test_repair_kit_save_it_leaves_car_damaged_and_keeps_the_kit() -> void:
 	w._keep_button.pressed.emit()
 	assert_eq(float(_save.get_car(id)["hp"]), damaged_hp, "Save it leaves the car damaged")
 	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.REPAIR_KIT_ID, 0)), 1, "Save it keeps the kit in inventory")
+
+func test_skip_button_hidden_when_spin_resolves_instantly() -> void:
+	# Headless (the default in tests) resolves the spin synchronously, so there's
+	# nothing to fast-forward — the Skip button must stay hidden.
+	var car: Dictionary = _save.grant_car("fx_awd")
+	var id := int(car["instance_id"])
+	_save.install_upgrade(id, "fx_aero", false)
+	var w := _make()
+	w.reveal("fx_aero", id)
+	await get_tree().process_frame
+	assert_false(w._skip_button.visible, "no running spin to skip once it's already landed")
+
+func test_skip_fast_forwards_a_running_spin_to_the_actual_won_item() -> void:
+	# Force a REAL animated spin (as in normal, non-headless play) by flipping the
+	# instance flag after construction, then press Skip immediately — it must land on
+	# the actual won part without waiting out podium_slot_spin_time.
+	var car: Dictionary = _save.grant_car("fx_awd")
+	var id := int(car["instance_id"])
+	_save.install_upgrade(id, "fx_aero", false)
+	var w := _make()
+	w._headless = false
+	var done := [false]
+	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
+	w.reveal("fx_aero", id)
+	assert_true(w._skip_button.visible, "Skip appears while a real spin is animating")
+	assert_false(done[0], "the reveal has not landed yet")
+	w._skip_button.pressed.emit()
+	assert_false(w._skip_button.visible, "Skip hides once the spin has landed")
+	assert_true(w._reveal_done, "skipping counts as the spin having landed")
+	assert_eq(w._slot_label.text, UITheme.caps(String(UpgradeLibrary.by_id("fx_aero").get("name", "fx_aero"))),
+		"skipping lands on the actual won item, not a random reel stop")
+	assert_true(done[0], "the normal landing steps still run (finished fires) after a skip")
 
 func test_drivetrain_kit_installs_enabled_without_choice() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")

@@ -206,6 +206,67 @@ func test_lift_prop_respawns_when_the_selected_cars_data_changes() -> void:
 		"a data change to the selected car respawns the lift prop (fresh node)")
 
 
+# The tuning lift and the car-park lineup share _car_cache (hq.gd._spawn_lift_car /
+# _obtain_parked_car): a car already warmed by one must be reused by the other instead
+# of paying CarProp.spawn again (car.tscn embeds every car glb — the "small lag on
+# every tuning-lift car swap" this cache-sharing avoids).
+func test_ensure_lift_car_reuses_an_already_parked_lineup_node() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var cars := _owned_cars()
+	await _build_and_wait(hq, cars)  # warms _car_cache for both owned cars
+	var parked_id: int = hq._cars[0].get_instance_id()
+
+	_save.set_selected_car(int(cars[0].get("instance_id", -1)))
+	hq._ensure_lift_car()
+
+	assert_true(is_instance_valid(hq._lift_car), "the lift holds a car")
+	assert_eq(hq._lift_car.get_instance_id(), parked_id,
+		"the lift reuses the already-warm parked-lineup node instead of re-instancing")
+
+
+# The flip side of the sharing: releasing the lift car must not free a node the cache
+# still tracks, or the cache would hold a dangling reference the next reader crashes on.
+func test_clearing_the_lift_car_keeps_a_cached_node_alive_and_hidden() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.set_selected_car(id)
+	hq._ensure_lift_car()
+	var node: Node3D = hq._lift_car
+
+	hq._clear_lift_car()
+
+	assert_true(is_instance_valid(node), "the released lift car node is not freed")
+	assert_true(hq._car_cache.has(id), "it stays warm in _car_cache for reuse")
+	assert_eq(hq._car_cache[id].get("node"), node,
+		"the cache entry still points at the same live node")
+	assert_false(node.visible, "the released node is hidden rather than left on show")
+
+
+# A car built fresh BY the lift (nothing parked yet) still lands in _car_cache, so a
+# later car-park lineup build reuses it instead of instancing its own copy.
+func test_a_car_spawned_by_the_lift_warms_the_cache_for_the_parked_lineup() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.set_selected_car(id)
+	hq._ensure_lift_car()
+	var lift_node_id: int = hq._lift_car.get_instance_id()
+	hq._clear_lift_car()  # leave the lift, as _go_to(CARPARK) would on the way out
+
+	await _build_and_wait(hq, _owned_cars())
+
+	assert_eq(hq._cars[0].get_instance_id(), lift_node_id,
+		"the parked lineup reuses the node the lift already built, not a fresh instance")
+
+
 # The flip side: with no data change, _ensure_lift_car reuses the exact same prop node —
 # it must not respawn on every call (that's what the hash guard buys over a blind rebuild).
 func test_lift_prop_reused_when_the_selected_car_is_unchanged() -> void:

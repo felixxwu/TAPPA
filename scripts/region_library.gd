@@ -15,6 +15,7 @@ const LOOK_KEYS := [
 	"map_image", "sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
 	"terrain_tint", "terrain_layers", "tarmac_color", "road_marking_color",
+	"grass_particle_color",
 ]
 
 # The home region's billboard tree (also the fallback when a region authors no
@@ -46,6 +47,9 @@ const REGIONS: Array[Dictionary] = [
 	# bushes entirely (the arid map has no lush undergrowth). Terrain tints inherit home
 	# for now, but the tarmac runs quite a bit brighter than home's (sun-bleached
 	# Mediterranean asphalt) and its lane paint is yellow rather than home's off-white.
+	# grass_particle_color overrides GameConfig's home-green wheel-dust blade with
+	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
+	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
 		"id": "greece", "name": "Greece",
 		"map_image": "res://textures/greece.png",
@@ -59,6 +63,7 @@ const REGIONS: Array[Dictionary] = [
 		"gravel_texture": "res://textures/gravel-greece.jpg",
 		"tarmac_color": Color(0.52, 0.50, 0.46),
 		"road_marking_color": Color(0.85, 0.70, 0.16),
+		"grass_particle_color": Color(0.52, 0.49, 0.38),
 	},
 ]
 

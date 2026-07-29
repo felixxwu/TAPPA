@@ -21,21 +21,11 @@
   `_animate`) rather than a bare line number, which rots on the next refactor.
 - **Menus must be keyboard + gamepad navigable.** Every menu in the game supports
   up / down / left / right / enter / back on keyboard AND controller (not just
-  mouse / touch) — see `features/menus.md` → "Menu navigation". When you ADD a new
-  menu or CHANGE an existing one, wire its navigation in the SAME piece of work:
-  - A flat widget list (overlay / panel): call `MenuNav.attach(root, {first = <button>,
-    on_back = <Callable>})` once after building it (`scripts/menu_nav.gd`). The framework
-    makes the widgets `FOCUS_ALL`, seats + re-seats the cursor, fills the WASD gap (native
-    `ui_*` binds arrows + D-pad + stick but not WASD), and routes `ui_cancel` / `menu_back`
-    to `on_back`. Omit `on_back` if the host owns "back" itself; mark a widget with the
-    `menu_nav_skip` meta to leave it `FOCUS_NONE`. The theme's `focus` stylebox paints the
-    cursor (it matches hover), so there's no extra visual work.
-  - A diegetic 3D HQ station: add a `menu_*` branch in `hq.gd._unhandled_input` and
-    `get_viewport().gui_release_focus()` on entry (HQ hides overlays via CanvasLayer,
-    which does not clear Control focus).
-  Add / update a nav test (`tests/headless/test_menu_nav.gd`, or the nav cases in
-  `test_menu_flow.gd` / `test_pause_menu.gd`). Don't ship a menu reachable only by
-  pointer.
+  mouse / touch). When you ADD a new menu or CHANGE an existing one, wire its
+  navigation in the SAME piece of work and add/update a nav test — see
+  `features/menus.md` → "Menu navigation" for the how (the `MenuNav.attach`
+  framework for flat widget lists vs. the `hq.gd._unhandled_input` pattern for
+  the diegetic 3D HQ). Don't ship a menu reachable only by pointer.
 - `gameplay.md` is the high-level gameplay design / vision doc ("Gran Turismo,
   but with rally stages") — the north star the `todo/` specs ladder up to. Read
   it for intent on progression, damage, rewards, tuning, and the final showdown.
@@ -125,24 +115,19 @@
   `build_web.sh`, etc. are all directly in the repo root, so there's no subdirectory
   to `cd` into. Invoke the runners by path (`./run_tests.sh`) from the root.
 - **Test runtime budget (~5 minutes).** The full suite should stay under about 5
-  minutes. If a full run takes longer than that, spend some effort bringing the
-  runtime back down before declaring the work complete — don't just accept the
-  regression. The cost is CPU-bound (the runner uses `--fixed-fps 60`, so awaited
-  frames are cheap); the usual culprit is full-world generation — instantiating
-  `main.tscn` runs `world.gd._ready()`, which generates the track + scatters
-  trees/bushes for ~15 s per instance. Reach for the cheap patterns first:
+  minutes; if a full run takes longer than that — or a run ever takes noticeably
+  longer than expected — investigate and bring it back down before declaring the
+  work complete, rather than shrugging it off or accepting the regression. The
+  cost is CPU-bound (the runner uses `--fixed-fps 60`, so awaited frames are
+  cheap); the usual culprits are full-world generation (instantiating `main.tscn`
+  runs `world.gd._ready()`, which generates the track + scatters trees/bushes for
+  ~15 s per instance) and a `before_each` re-instantiating it per test where a
+  shared `before_all` would do. Reach for the cheap patterns first:
   `SceneTestHelpers.minimal_world()` for tests that don't inspect the
-  track/terrain/foliage (cuts a build to <1 s), `sim_test.gd`'s cached settle for
-  physics tests, and bare-logic tests (no scene) where possible. Reserve full
-  generation for the few files that genuinely assert on it. See
-  `features/testing.md` for the cost model and the available levers.
-- If a test run ever takes noticeably longer than expected, investigate the
-  tests rather than shrugging it off. With the runner's `--fixed-fps 60` the
-  loop runs at CPU speed, so cost is dominated by genuine CPU work — usually a
-  `before_each` re-instantiating `main.tscn` (full terrain + track generation)
-  per test where a single shared `before_all` instance would do, or a long
-  `await`-in-loop settle. Read `features/testing.md` for the cost model and the
-  `sim_test.gd` warm-restore pattern.
+  track/terrain/foliage (cuts a build to <1 s), `sim_test.gd`'s cached settle/
+  warm-restore for physics tests, and bare-logic tests (no scene) where possible.
+  Reserve full generation for the few files that genuinely assert on it. See
+  `features/testing.md` for the full cost model and the available levers.
 - Don't start a test run while another `./run_tests.sh` is already in
   progress — wait for it to finish and use its result. Concurrent runs waste
   resources and produce confusing, interleaved output.
@@ -157,23 +142,21 @@
 
 ## Parallel agents share this checkout
 
-- **Assume other agents are editing this same working tree right now.** Multiple
-  agents may run in parallel against this one checkout, so uncommitted changes you
-  didn't make are normal and are almost certainly someone else's in-flight work.
-  Leave them alone: don't revert, clean, or "tidy up" files outside the scope of
-  your own task.
-- **NEVER stash to isolate a test failure.** Do not run `git stash`,
-  `git checkout -- <file>`, `git restore`, `git reset --hard`, or any other
-  "let me temporarily remove the changes and re-run to see if it was me" move.
-  It can silently destroy another agent's work, and stash/restore races are not
-  recoverable. If a test fails, leave every change in place and REPORT the
-  failure with its output, plus your read on whether your work looks implicated.
-  Reason about causality by reading the code and the diff, not by rewinding the
-  tree.
-- Because a failure may originate from another agent's concurrent edits, "this
-  test fails" is not automatically evidence that your change is wrong — but it's
-  also not licence to weaken the test. Say plainly what failed, what you touched,
-  and let the user arbitrate if it isn't clearly yours.
+- **Assume other agents are editing this same working tree right now, and NEVER
+  stash/revert to isolate a failure.** Uncommitted changes you didn't make are
+  normal and almost certainly someone else's in-flight work — leave them alone
+  (don't revert, clean, or "tidy up" files outside the scope of your own task).
+  Do not run `git stash`, `git checkout -- <file>`, `git restore`,
+  `git reset --hard`, or any other "let me temporarily remove the changes and
+  re-run to see if it was me" move — it can silently destroy another agent's
+  work, and stash/restore races are not recoverable. Reason about causality by
+  reading the code and the diff, not by rewinding the tree.
+- If a test fails, leave every change in place and REPORT the failure with its
+  output plus your read on whether your work looks implicated — a failure may
+  originate from another agent's concurrent edits, so "this test fails" is not
+  automatically evidence your change is wrong, but it's also not licence to
+  weaken the test. Say plainly what failed, what you touched, and let the user
+  arbitrate if it isn't clearly yours.
 - Keep commits scoped to your own files. Never `git commit -a` / `git add -A`
   when unrelated modified files are present — stage the specific paths you
   changed.

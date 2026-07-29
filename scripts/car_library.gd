@@ -203,7 +203,7 @@ const CARS: Array[Dictionary] = [
 		# 5.28 m x 1.95 m). Long, low, heavy coupe.
 		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
 		"cabin_z": 0.35, "track": 1.6, "wheelbase": 3,
-		"wheel_radius": 0.36, "wheel_width_front": 0.245, "wheel_width_rear": 0.255,  # mild muscle stagger
+		"wheel_radius": 0.36, "wheel_width_front": 0.255, "wheel_width_rear": 0.255,  # mild muscle stagger
 		"suspension_travel": 0.38, "suspension_stiffness": 12.0,  # soft, heavy muscle car
 		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
 		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
@@ -246,7 +246,7 @@ const CARS: Array[Dictionary] = [
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
 		"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.6,
-		"wheel_radius": 0.34, "wheel_width_front": 0.325, "wheel_width_rear": 0.295,  # 275/335 stagger
+		"wheel_radius": 0.34, "wheel_width_front": 0.345, "wheel_width_rear": 0.295,  # 275/335 stagger
 		"suspension_travel": 0.35, "suspension_stiffness": 11.0,  # firm but a touch softer than the later GTS
 		# Renders blender/viper/viper.glb (Car/ViperBody) with its baked body atlas
 		# (texture.png); see car.gd apply_car(). Wheels use its own three-spoke wheel.jpg.
@@ -291,7 +291,7 @@ const CARS: Array[Dictionary] = [
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
 		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.45,
-		"wheel_radius": 0.36, "wheel_width_front": 0.245, "wheel_width_rear": 0.275,  # mild stagger
+		"wheel_radius": 0.36, "wheel_width_front": 0.235, "wheel_width_rear": 0.275,  # mild stagger
 		"suspension_travel": 0.37, "suspension_stiffness": 11.0,  # heavy long GT, softer ride
 		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().
 		"use_model": true,

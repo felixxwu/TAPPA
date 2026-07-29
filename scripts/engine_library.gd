@@ -52,8 +52,16 @@ const FIRING := {
 	"i6":  [0.0, 120.0, 240.0, 360.0, 480.0, 600.0],
 	"v6":  [0.0, 90.0, 240.0, 330.0, 480.0, 570.0],
 	"v8":  [0.0, 80.0, 180.0, 260.0, 360.0, 440.0, 540.0, 620.0],
-	"v10": [0.0, 72.0, 144.0, 216.0, 288.0, 360.0, 432.0, 504.0, 576.0, 648.0],
+	# Uneven: the real Viper V10 (a 90°-V, not a native 72°-V10) fires at irregular
+	# intervals rather than a perfectly even 72° spacing — alternating short/long
+	# gaps mirroring the v8's asymmetric approach, scaled to 10 cylinders.
+	"v10": [0.0, 60.0, 144.0, 204.0, 288.0, 348.0, 432.0, 492.0, 576.0, 636.0],
 	"v12": [0.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0, 420.0, 480.0, 540.0, 600.0, 660.0],
+	# Deliberately uneven V12 (design choice, not a real-world firing order): alternating
+	# short/long 50°/70° gaps around the even 60° average, for a lopier "dirtier" voice
+	# than the even v12 table — used only by the Merlin, which wants a rowdier character
+	# than the smooth Jaguar V12 shares the plain "v12" table for.
+	"v12_uneven": [0.0, 50.0, 120.0, 170.0, 240.0, 290.0, 360.0, 410.0, 480.0, 530.0, 600.0, 650.0],
 }
 
 const ENGINES: Array[Dictionary] = [
@@ -134,7 +142,10 @@ const ENGINES: Array[Dictionary] = [
 		# Aero engines rev LOW (~3,000 rpm limit) but make colossal torque; in road tune here
 		# ~1,900 N·m @ ~2,000 rpm derives to ~665 bhp — the conservative end of the CLAIMED 750-950 bhp.
 		# Huge crank/flywheel → very lazy revs (big engine_inertia). Loudest, deepest voice in the roster.
-		"id": "merlin_v27_v12", "name": "27L Merlin V12", "layout": "v12", "mass": 745.0,
+		# Deliberate design departure from the real (even-firing) Merlin: uses its own
+		# "v12_uneven" layout for a dirtier, lopier voice than the smooth Jaguar V12 shares
+		# the plain "v12" table for — a stylistic choice, not a firing-order correction.
+		"id": "merlin_v27_v12", "name": "27L Merlin V12", "layout": "v12_uneven", "mass": 745.0,
 		"redline_rpm": 3200.0, "peak_torque": 1890.0, "peak_torque_rpm": 2000.0, "engine_inertia": 1.5,
 		"engine_friction_base": 150.0,  # V12 27L aero monster — far more than the 5.3 despite equal cylinders
 		"low_octave_mix": 0.8, "volume_db": 11.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,

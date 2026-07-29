@@ -43,9 +43,22 @@ const TARMAC_WEIGHT_MAX := 0.5
 
 var _car: Node                 # the VehicleBody3D (read for drivetrain + position)
 
+# Region override for the grass blade colour (RegionLibrary look_of()'s
+# "grass_particle_color", e.g. Greece's dry olive vs. the home world's green).
+# Alpha 0 means "unset" — fall back to GameConfig.wheel_particle_grass_color.
+# Set once by world.gd (which resolves the driven rally's region) right after
+# setup()/retarget(); this pool has no region awareness of its own.
+var _grass_color_override := Color(0.0, 0.0, 0.0, 0.0)
+
 
 func _stride() -> int:
 	return STRIDE
+
+
+# Called by world.gd after setup()/retarget() with the resolved region look's
+# grass colour (or an unset Color() to fall back to the GameConfig default).
+func set_grass_color_override(c: Color) -> void:
+	_grass_color_override = c
 
 
 # Wire to the current car. The wheel/surface state is read live off the car's
@@ -104,12 +117,17 @@ static func _gravel_look(cfg: GameConfig) -> Look:
 	return Look.new(half, half, cfg.wheel_particle_color)
 
 
-# The grass blade: a slim tall sliver of green.
-static func _grass_look(cfg: GameConfig) -> Look:
+# The grass blade: a slim tall sliver of green. Uses the region's
+# grass_particle_color override when one is set (e.g. Greece's dry olive),
+# otherwise the GameConfig home-world default.
+func _grass_look(cfg: GameConfig) -> Look:
+	var color := cfg.wheel_particle_grass_color
+	if _grass_color_override.a > 0.0:
+		color = _grass_color_override
 	return Look.new(
 		cfg.wheel_particle_grass_width_m * 0.5,
 		cfg.wheel_particle_grass_length_m * 0.5,
-		cfg.wheel_particle_grass_color)
+		color)
 
 
 # Vary a look's colour brightness a little per particle so a burst reads as many

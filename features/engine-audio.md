@@ -55,7 +55,20 @@ State: `_crank_phase`, `_firing_phases` (per-cylinder firing times, 0..1),
 The firing phases come from `engine_firing_phases()` on `GameConfig`, derived
 from the fielded car's `engine_firing_angles` (written by `EngineLibrary.apply()`
 from the referenced engine's layout) — so different engine layouts (i4 vs v8,
-etc.) sound distinct.
+etc.) sound distinct. `EngineLibrary.FIRING` (`scripts/engine_library.gd`) is
+evenly spaced for the inline layouts (i3/i4/i5/i6) but deliberately uneven for
+v6/v8/**v10** — the alternating short/long gaps give the burble/lopiness real
+V-engines with non-ideal bank angles have; a native-angle V12 stays even. The
+`v10` table models the real Viper's 90°-V (not a native 72°-V10) uneven firing
+character rather than an idealized even-fire V10.
+
+There is also a second, distinct 12-cylinder table, `"v12_uneven"` — used only
+by `merlin_v27_v12`. Unlike the v10 fix above, this one is **not** a real-world
+correctness fix: a 60°-V12 (including the real Merlin) is genuinely even-firing,
+but the Merlin wanted a deliberately dirtier/lopier voice than the smooth
+`jaguar_53_v12` shares the plain `"v12"` table with, so it got its own uneven
+12-interval table (alternating 50°/70° around the 60° average) rather than
+mutating the shared even table that `jaguar_53_v12` still relies on.
 
 ## Low octave
 

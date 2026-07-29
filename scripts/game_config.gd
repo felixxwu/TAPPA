@@ -1203,8 +1203,12 @@ var peak_torque_rpm := 4500.0
 @export_range(16, 2000) var wheel_particle_max := 50
 ## Edge length of each square gravel clod billboard, in metres.
 @export var wheel_particle_size_m := 0.12
-## Blade colour for grass thrown up off the road footprint.
-@export var wheel_particle_grass_color := Color(0.29, 0.44, 0.17)
+## Blade colour for grass thrown up off the road footprint on the home world —
+## matched to textures/grass.jpg (samples average ~(0.35, 0.44, 0.19); the most
+## common quantised pixel clusters land right on that). Region overrides (e.g.
+## Greece's dry olive ground) supply their own colour via
+## RegionLibrary look_of()["grass_particle_color"] — see wheel_particles.gd.
+@export var wheel_particle_grass_color := Color(0.35, 0.44, 0.19)
 ## Width of a grass blade billboard, in metres (the slim axis).
 @export var wheel_particle_grass_width_m := 0.03
 ## Length of a grass blade billboard, in metres (the long axis).

@@ -148,6 +148,17 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 	_update_orbit()
 
 
+# Re-seat keyboard/gamepad focus on the Start button. Used by world.gd after a
+# between-event popup (RepairReveal) that was shown ON TOP of this menu closes: the
+# popup's own MenuNav focus dies with its CanvasLayer, and nothing else re-grabs the
+# cursor onto this (already-built, already-attached) overlay since MenuNav only
+# re-grabs on ITS OWN root's visibility_changed — this menu's root never toggles
+# visibility here, so the popup closing would otherwise leave the cursor dead.
+func grab_start_focus() -> void:
+	if is_instance_valid(_start_button):
+		_start_button.grab_focus()
+
+
 # How many opponent cars actually line up ahead of the player: the top three, or fewer
 # if the field is short (dev/test harnesses pass an empty leaders list).
 func _grid_ahead_count() -> int:

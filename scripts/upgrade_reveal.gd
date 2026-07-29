@@ -7,7 +7,9 @@ class_name UpgradeReveal
 # full health; otherwise consumables and the drivetrain kit skip the choice. Emits `finished`
 # once the reveal (+ repair choice, where offered) resolves. Used by the standings
 # interstitial; visually matches the podium reward card (features/menus.md,
-# features/reward-system.md).
+# features/reward-system.md). A "Skip >" button appears only while the reel is
+# actually animating (real play, non-zero spin time) and fast-forwards straight
+# to the actual won item — see _on_skip_pressed.
 
 signal finished()
 
@@ -26,6 +28,12 @@ var _slot_caption: Label
 var _choice_box: HBoxContainer
 var _apply_button: Button
 var _keep_button: Button
+var _skip_button: Button
+# The spin target + landing callback, stashed so a skip can run the SAME landing
+# steps a natural finish would (see _on_skip_pressed) — the result is always the
+# actual won item, never a random reel stop.
+var _spin_target := ""
+var _spin_on_done: Callable
 
 
 func _ready() -> void:
@@ -38,13 +46,17 @@ func _build_ui() -> void:
 	# Anchor the reward card to the bottom of the screen so it doesn't block the
 	# view of the car in the replay behind it. A full-rect VBox aligned to the end
 	# drops the (shrink-centred) panel to the bottom, with a margin off the edge.
+	# Kept small: this Control fills the space ABOVE the host's Continue/Next
+	# button (standings.gd stacks one right below it with its own separation), so
+	# this margin is the only gap between the card and that button — a large value
+	# here reads as a big dead gap, not screen-edge breathing room.
 	var bottom := VBoxContainer.new()
 	bottom.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bottom.alignment = BoxContainer.ALIGNMENT_END
 	bottom.add_theme_constant_override("separation", 0)
 	add_child(bottom)
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_bottom", 40)
+	margin.add_theme_constant_override("margin_bottom", 12)
 	bottom.add_child(margin)
 
 	var panel := PanelContainer.new()
@@ -69,6 +81,16 @@ func _build_ui() -> void:
 	_slot_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_slot_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_slot_caption)
+
+	# Fast-forward for impatient players: visible only while the reel is actually
+	# spinning (headless / zero spin-time reveals resolve instantly and never show
+	# it — see _start_slot). Lands on the real won item, not a random reel stop.
+	_skip_button = Button.new()
+	_skip_button.focus_mode = Control.FOCUS_ALL
+	_skip_button.text = "Skip >"
+	_skip_button.visible = false
+	_skip_button.pressed.connect(_on_skip_pressed)
+	col.add_child(_skip_button)
 
 	# The repair-kit apply/keep choice: Repair now spends the just-won kit on the
 	# driven car, Save it banks it for later. Both buttons focusable so the choice
@@ -153,12 +175,23 @@ static func build_reel(names: Array, target: String) -> Array:
 func _start_slot(reel_names: Array, target: String, on_done: Callable) -> void:
 	_reveal_done = false
 	_slot_caption.text = ""
+	_spin_target = target
+	_spin_on_done = on_done
 	if _slot_tween != null and _slot_tween.is_valid():
 		_slot_tween.kill()
 	_slot_tween = start_spin(self, _slot_label, reel_names, target,
 		Config.data.podium_slot_spin_time, _headless, func() -> void:
 			_reveal_done = true
+			_skip_button.visible = false
 			on_done.call())
+	# start_spin returns null (and resolves synchronously) when headless or the
+	# configured spin time is non-positive — no running animation to skip, so the
+	# button only appears for a real, currently-spinning tween.
+	_skip_button.visible = _slot_tween != null
+	if _skip_button.visible:
+		# Framework: focus + WASD/arrow/gamepad nav onto Skip (no on_back — the host
+		# owns back). Re-attach is cheap and matches the repair-choice pattern below.
+		MenuNav.attach(self, {first = _skip_button})
 
 
 # The won part is already fitted (disabled) to the driven car; the reveal just
@@ -219,6 +252,23 @@ func _on_keep() -> void:
 	if _choice_mode == "repair":
 		_slot_caption.text = UITheme.caps("Repair kit saved to your inventory")
 		_resolve_choice()
+
+
+# Fast-forwards a running spin straight to the landed result — impatient players
+# don't have to sit through the full slot-machine animation. Kills the tween and
+# runs the exact landing steps a natural finish would (set the label to the
+# target + call the stashed on_done), so skipping always lands on the actual
+# won item and every downstream choice/finish path behaves identically to letting
+# it play out.
+func _on_skip_pressed() -> void:
+	if _slot_tween == null or not _slot_tween.is_valid():
+		return
+	_slot_tween.kill()
+	_slot_label.text = UITheme.caps(_spin_target)
+	_reveal_done = true
+	_skip_button.visible = false
+	if _spin_on_done.is_valid():
+		_spin_on_done.call()
 
 
 func _resolve_choice() -> void:

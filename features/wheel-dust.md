@@ -44,6 +44,16 @@ clod at `wheel_particle_size_m`) or `_grass_look` (a slim blade at
 +/- `wheel_particle_color_jitter` so a burst reads as many separate bits of debris
 rather than one flat smear.
 
+The grass blade colour is per-region: `_grass_look` uses `wheel_particle_grass_color`
+(`game_config.gd`, tuned to the home world's `textures/grass.jpg`) unless
+`world.gd` has set `WheelParticles._grass_color_override` from the driven rally's
+`RegionLibrary.look_of()["grass_particle_color"]` (e.g. Greece's dry olive/tan,
+tuned to `textures/grass-greece.jpg`, instead of the home green). `world.gd` sets
+the override once via `set_grass_color_override()` right after `_wheel_particles.setup()`,
+since the region is fixed for the world's lifetime. A region that authors no
+override falls back to the GameConfig default (alpha-0 `Color()` is the "unset"
+sentinel).
+
 ### Why a hand-written billboard shader
 
 `BaseMaterial3D`'s `BILLBOARD_ENABLED` rebuilds the model-view basis from the

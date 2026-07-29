@@ -222,6 +222,21 @@ func test_start_overlay_uses_the_house_button_row_height() -> void:
 	assert_string_contains(sl._subtitle_label.text, "STAGE 1 OF 3", "the event index is shown")
 
 
+func test_grab_start_focus_seats_the_cursor_on_start() -> void:
+	# world.gd calls this after the between-event pit-repair popup (RepairReveal)
+	# dismisses, since freeing that popup's focused Continue button clears the
+	# viewport's focus owner outright and nothing else re-grabs it (the start-line
+	# overlay's own MenuNav only re-grabs on ITS root's visibility_changed, which never
+	# fires here). Without this hand-off keyboard/gamepad players are left with no
+	# focus at all after dismissing the popup.
+	var sl := _make(_leaders())
+	await get_tree().process_frame  # let MenuNav's deferred initial grab land first
+	get_viewport().gui_release_focus()
+	assert_null(get_viewport().gui_get_focus_owner(), "focus is cleared, simulating the popup teardown")
+	sl.grab_start_focus()
+	assert_true(sl._start_button.has_focus(), "focus lands back on Start")
+
+
 func test_launch_flies_the_camera_then_reveals_the_first_opponent() -> void:
 	var sl := _make(_leaders())
 	sl.launch()

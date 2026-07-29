@@ -106,8 +106,11 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   repair kit offers **Repair now / Save it** when the driven car is damaged, else it
   auto-resolves; the drivetrain kit auto-resolves). A **Continue to next stage >** button
   appears only once the reveal + choice resolves, then resumes the rally
-  (`continue_to_next_event`). The `UpgradeReveal` wires its own `MenuNav` across
-  Apply/Keep, and standings re-attaches `MenuNav` on Continue when it's shown, so the
+  (`continue_to_next_event`). While the reel is actually spinning (real play, not
+  headless/instant), a **Skip >** button is shown — `UpgradeReveal._on_skip_pressed`
+  fast-forwards straight to the actual won item, running the same landing steps a
+  natural finish would. The `UpgradeReveal` wires its own `MenuNav` across
+  Skip and Apply/Keep, and standings re-attaches `MenuNav` on Continue when it's shown, so the
   whole flow is keyboard/gamepad navigable. The **final event** keeps
   `Continue to podium >` with no reward step (the podium reveals the car). See
   [reward-system.md](reward-system.md).
@@ -139,7 +142,18 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 
   The **`start line`** pre-event overlay has three buttons — **Start**, **Upgrades**,
   and **Tune Car** — so it uses `MenuNav.attach(root, {first = _start_button})`
-  for keyboard/gamepad focus; a pointer tap on the clear band still launches. Opening
+  for keyboard/gamepad focus; a pointer tap on the clear band still launches.
+  `world.gd._show_repair_popup` builds the between-event **pit-repair popup**
+  (`repair_reveal.gd`, its own `MenuNav.attach(self, {first = _continue_button})`)
+  in a CanvasLayer stacked ON TOP of an already-built, already-attached start-line
+  overlay — but freeing that popup's Continue button (`layer.queue_free()`) clears the
+  viewport's focus owner outright, and nothing re-grabs it: `MenuNav` only re-grabs on
+  its OWN root's `visibility_changed`, which the start-line overlay never fires here.
+  Left alone this strands keyboard/gamepad players with no focus after dismissing the
+  popup. The fix, mirroring the `hq.gd` in/out pattern but on the way OUT of an overlay:
+  after `queue_free()`, `_show_repair_popup` calls `get_viewport().gui_release_focus()`
+  then `_start_line.grab_start_focus()` (`start_line.gd`), a small public wrapper around
+  `_start_button.grab_focus()`. Opening
   **Tune Car** hides the start overlay and attaches `MenuNav` to the tune overlay (Back
   routed via `on_back`); it opens the shared `TuningPanel` (three handling-axis sliders)
   for the car about to race (see [tuning.md](tuning.md)), edits re-field the live car via
@@ -369,7 +383,18 @@ process lifecycle) at the bottom (in that top-to-bottom order) over an establish
 outdoor car park, with a block skyline **behind the garage** and trees framing the
 lot. The player's **whole owned collection** is parked in the car park here
 (`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
-car. The title camera is a **low, near-ground front-3/4 hero shot** posed ~45° off
+car. Because `_render_lineup_page`'s per-car build is progressive (one fresh prop per
+frame — below), and `_build_hq` never awaits it, `hq.gd::_ready` explicitly `await
+lineup_built` after `_build_hq()` (EXTERIOR boot only, before `loading.finish()`):
+without that await, `_build_hq()`'s call returns the instant the first uncached owned
+car yields a frame, so the rest of that page's fresh spawns — bounded to
+`carpark_page_size`, but still the expensive `CarProp.spawn` per car (below) — would
+trickle out **after** the loading cover lifts, landing as the "big lag spike right
+after the game first loads" for a player with several owned cars. Awaiting
+`lineup_built` keeps that whole page's worth of cold-instantiate cost **behind the
+cover**, where a brief wait reads as loading rather than gameplay jank, and it warms
+`_car_cache` for every parked car so the garage picker and tuning lift (above) start
+from a hit, not a cold build. The title camera is a **low, near-ground front-3/4 hero shot** posed ~45° off
 the front of the **first (leftmost) parked car**, looking diagonally down the line
 to reveal the rest of the lineup. Its `hq_exterior_cam_eye`/`_look` (GameConfig) are
 **offsets from that lead car** (`_station_xform` → `_first_car_anchor`), so the framing
@@ -464,7 +489,20 @@ lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_ca
 spawned whenever the camera is inside — garage/lift — and dropped otherwise). Like the
 car park, the lift prop is **reused only while both its instance id and a deep
 `owned.hash()` match** — so any in-place data change to the selected car (repair, upgrade
-toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a rebuild. In the
+toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a rebuild.
+
+The lift and the car park **share the same `_car_cache`** (`hq.gd` → `_spawn_lift_car`
+checks `_car_cache` before building, exactly like `_obtain_parked_car`): a car already
+warmed by the parked lineup — the garage picker you just came from, the title screen, or
+Free Roam — is *borrowed* onto the lift by reconfiguring its transform/process-mode
+rather than paying `CarProp.spawn` again (the expensive step: `car.tscn` embeds every
+car glb, so instantiating it — even to immediately prune 8 unused bodies — is the "small
+lag every time the tuning-lift car changes"). `_clear_lift_car` returns the favour: if
+the departing lift car is the node `_car_cache` tracks for it, it's hidden + stowed
+(same pattern as `_release_page_props`), never freed, so the next parked-lineup build or
+lift visit reuses it. GARAGE/LIFT and CARPARK are mutually exclusive views, so handing
+the one live node back and forth between the two contexts is safe. See
+[tuning.md](tuning.md) → *The tuning lift (UI)*. In the
 garage the car rests **lowered on the ground** at its calculated settled ride height
 (`car.gd` → `settled_ride_height`; see [tuning.md](tuning.md)).
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**

@@ -336,6 +336,20 @@ func _ready() -> void:
 	await get_tree().process_frame
 	var boot_t0 := Time.get_ticks_msec()
 	_build_hq()
+	# _build_hq (View.EXTERIOR) kicks off _build_title_lineup, which parks the
+	# player's owned-car page via the progressive, one-fresh-car-per-frame
+	# _spawn_lineup_progressive. That's an async call _build_hq never awaits, so
+	# without this it "returns" the instant the first uncached car yields a frame,
+	# and every following per-car spawn — the actual cold-instantiate cost
+	# (car.tscn embeds every car glb) — trickles out AFTER loading.finish() below,
+	# landing as a stutter right when the player expects a live HQ. That's the
+	# "big lag spike on first load with a lot of cars in the garage". Waiting for
+	# lineup_built here keeps the whole (page_size-capped) build behind the cover,
+	# where a brief wait is expected instead of in-game jank; it also warms
+	# _car_cache for those cars, so the tuning lift and garage picker reuse them
+	# instead of re-instancing (see _spawn_lift_car / _obtain_parked_car).
+	if _view == View.EXTERIOR:
+		await lineup_built
 	var build_ms := Time.get_ticks_msec() - boot_t0
 	_log_boot_cost(build_ms)
 	# Let the built scene render one frame before lifting the cover, so the reveal lands
@@ -1812,26 +1826,61 @@ func _clear_lift_car() -> void:
 	if _lift_tween != null and _lift_tween.is_valid():
 		_lift_tween.kill()  # the tween targets the car we're about to free
 	if is_instance_valid(_lift_car):
-		_lift_car.queue_free()
+		var cached: Dictionary = _car_cache.get(_lift_car_instance_id, {})
+		if cached.get("node") == _lift_car:
+			# This node is also the warm _car_cache entry for this car (built or
+			# borrowed via _spawn_lift_car below) — don't free it, just hide + stow it,
+			# exactly like _release_page_props does for parked cars, so the car park /
+			# Free Roam / a future lift visit can reuse it with no re-instancing.
+			_lift_car.visible = false
+			_lift_car.global_position = _prewarm_stow_marker().global_position
+		else:
+			_lift_car.queue_free()
 	_lift_car = null
 	_lift_car_instance_id = -2
 	_lift_car_hash = 0
 
 
-# Build the selected car as a silent, frozen prop on the lift platform at the current
-# pose height (lowered in the garage, raised in the bay — so a re-spawn while raised
-# appears already raised). Its own mesh copies, like the car-park props (CarProp.dup_meshes).
+# Build (or reuse) the selected car as a silent, frozen prop on the lift platform at
+# the current pose height (lowered in the garage, raised in the bay — so a re-spawn
+# while raised appears already raised). Its own mesh copies, like the car-park props
+# (CarProp.dup_meshes).
+#
+# Checks _car_cache first: this car may already be warm from the garage picker's
+# parked lineup, the title lineup, or a previous lift visit (car.tscn embeds every
+# car glb, so CarProp.spawn — instantiate + prune 8 unused bodies + dup_meshes — is
+# the expensive step; that's the "small lag on every tuning-lift car swap" this
+# avoids). GARAGE/LIFT and CARPARK views are mutually exclusive (see
+# _evict_unowned_cached_cars), so borrowing a parked-lineup node for the lift, and
+# handing it back on _clear_lift_car, is safe.
 func _spawn_lift_car(owned: Dictionary) -> Node3D:
 	var cfg: GameConfig = Config.data
 	var xform := Transform3D.IDENTITY
 	xform.origin = Vector3(cfg.hq_lift_pos.x, _lift_car_y(_lift_raised), cfg.hq_lift_pos.z)
 	var configure := func(c) -> void: c.global_transform = xform
-	return CarProp.spawn(self, _car_scene_res(), {
+	var instance_id := int(owned.get("instance_id", -1))
+	var owned_hash := owned.hash()
+	var cached: Dictionary = _car_cache.get(instance_id, {})
+	var node = cached.get("node")
+	if is_instance_valid(node) and int(cached.get("hash", 0)) == owned_hash:
+		# Already warm — reconfigure the cached node for lift display instead of
+		# paying the full CarProp.spawn cost again. Smoke was already attached the
+		# first time this node was built (spawn attaches it once; reuse never re-adds
+		# it — see _obtain_parked_car / _warm_one_preview, which follow the same rule).
+		configure.call(node)
+		node.process_mode = Node.PROCESS_MODE_DISABLED
+		node.visible = true
+		return node
+	if is_instance_valid(node):
+		node.queue_free()
+	var fresh := CarProp.spawn(self, _car_scene_res(), {
 		"owned": owned,
 		"configure": configure,
 		"disable_process": true,
 		"smoke": _add_synthetic_smoke,
 	})
+	_car_cache[instance_id] = {"hash": owned_hash, "node": fresh}
+	return fresh
 
 
 # Refresh the whole menu for the current selected car: name + stats, which menu is
@@ -2352,9 +2401,11 @@ func _obtain_parked_car(owned: Dictionary, marker: Marker3D) -> Node3D:
 	if is_instance_valid(node) and int(cached.get("hash", 0)) == owned_hash:
 		# Reuse: it's already built, sized, and frozen. Re-seat it analytically at the new
 		# bay so it sits on its wheels (writing the raw marker transform would drop the
-		# body to ground level — marker y = 0 — and sink it).
+		# body to ground level — marker y = 0 — and sink it). Reset process_mode in case
+		# this node was last borrowed by the tuning lift (_spawn_lift_car disables it).
 		_seat_car_at_marker(node, marker)
 		node.visible = true
+		node.process_mode = Node.PROCESS_MODE_INHERIT
 		node.set_meta("lineup_fresh", false)
 		node.set_meta("owned_instance_id", instance_id)
 		return node
