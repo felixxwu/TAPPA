@@ -164,6 +164,64 @@ func test_height_at_falls_back_to_noise_outside_corridor() -> void:
 		"outside the corridor height_at silently serves pure noise (backdrop territory)")
 
 
+# Pre-built collision (features/terrain.md -> "Collision pre-build"): every chunk within
+# the leash-bounded collision band gets its HeightMapShape3D built at cache_chunk time
+# (behind the loading screen), not the first time it's spawned into the live ring. This
+# is the bounded pre-build-ahead buffer -- bounded by the SAME leash distance passed into
+# precompute_corridor (the off-track reset leash), not a separately invented radius.
+func test_chunks_in_collision_band_have_prebuilt_shape_after_precompute() -> void:
+	var m := _make_manager()
+	var leash := 25.0
+	m.precompute_corridor(_straight_centerline(), leash)
+	var any_checked := false
+	for coord in m._corridor_coords:
+		var cls: Dictionary = m.chunk_class(coord)
+		if not cls.get("in_collision_band", false):
+			continue
+		any_checked = true
+		var data: Dictionary = m._chunk_cache[coord]
+		assert_true(data.get("shape") != null,
+			"chunk %s is in the collision band -> shape prebuilt at load" % coord)
+		assert_true(data["shape"] is HeightMapShape3D,
+			"prebuilt shape is a HeightMapShape3D")
+	assert_true(any_checked, "test track has at least one chunk in the collision band")
+
+
+# Chunks outside the collision band (still full-res via near-camera LOD, but never able
+# to carry live collision) must NOT get a prebuilt shape -- no wasted PhysicsServer
+# resource for a chunk that can never be enabled.
+func test_chunks_outside_collision_band_have_no_prebuilt_shape() -> void:
+	var m := _make_manager()
+	m.precompute_corridor(_straight_centerline(), 25.0)
+	var any_checked := false
+	for coord in m._corridor_coords:
+		var cls: Dictionary = m.chunk_class(coord)
+		if cls.get("in_collision_band", false) or not cls.get("full_res", false):
+			continue
+		any_checked = true
+		var data: Dictionary = m._chunk_cache[coord]
+		assert_true(data.get("shape") == null,
+			"chunk %s outside the collision band has no prebuilt shape" % coord)
+	if not any_checked:
+		pass_test("no full-res-but-outside-band chunk on this short test track; nothing to assert")
+
+
+# Crossing into a chunk inside the collision band must reuse the SAME prebuilt shape
+# resource rather than building a fresh one -- the whole point of pre-building.
+func test_spawned_chunk_reuses_prebuilt_shape_not_a_fresh_one() -> void:
+	var m := _make_manager()
+	var leash := 25.0
+	m.precompute_corridor(_straight_centerline(), leash)
+	var coord := Vector2i(1, 0)
+	var cls: Dictionary = m.chunk_class(coord)
+	assert_true(cls.get("in_collision_band", false), "test coord must be in the collision band")
+	var cached_shape: Resource = m._chunk_cache[coord]["shape"]
+	m.update_focus(Vector3(1.0 * TerrainManager.CHUNK_M + 25.0, 0.0, 0.0))
+	var chunk: TerrainChunk = m._chunks[coord]
+	assert_eq(chunk._collision.shape, cached_shape,
+		"live chunk's collision shape is the SAME resource pre-built at load, not a new one")
+
+
 func test_light_at_serves_from_cache_when_lit() -> void:
 	var m := _make_manager()
 	m.light_amount = 1.0

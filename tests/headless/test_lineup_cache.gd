@@ -267,6 +267,38 @@ func test_a_car_spawned_by_the_lift_warms_the_cache_for_the_parked_lineup() -> v
 		"the parked lineup reuses the node the lift already built, not a fresh instance")
 
 
+# Regression: opening the garage picker borrows the lift car's node into the parked
+# lineup (_obtain_parked_car, sharing _car_cache with the lift). Reselecting the SAME
+# car from the picker used to hit _ensure_lift_car's id/hash "no-op" fast path while
+# the node was still hidden + stowed off-screen (_release_page_props, run by
+# _clear_lineup on the way back to the lift) — the car vanished from the lift instead
+# of staying shown. Reproduces the picker's hide-then-reselect sequence directly.
+func test_reselecting_the_same_car_from_the_garage_picker_keeps_it_on_the_lift() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var id := int(_save.profile["cars"][0]["instance_id"])
+	_save.set_selected_car(id)
+	hq._ensure_lift_car()
+	assert_true(hq._lift_car.visible, "precondition: the selected car is shown on the lift")
+
+	# Open the garage picker: it borrows the SAME cached node into the parked lineup.
+	await _build_and_wait(hq, _owned_cars())
+	assert_true(hq._car_cache[id]["node"] == hq._lift_car,
+		"precondition: the picker borrowed the lift's own node, not a fresh one")
+
+	# Reselect the SAME car (id/hash unchanged) — this is what _select_garage_car does
+	# on the way back: hide/stow the parked page, then _ensure_lift_car for the same id.
+	hq._release_page_props()
+	assert_false(hq._lift_car.visible, "precondition: leaving the picker stowed the shared node")
+
+	hq._ensure_lift_car()
+
+	assert_true(is_instance_valid(hq._lift_car), "the lift still holds a car")
+	assert_true(hq._lift_car.visible, "reselecting the same car re-shows it on the lift")
+
+
 # The flip side: with no data change, _ensure_lift_car reuses the exact same prop node —
 # it must not respawn on every call (that's what the hash guard buys over a blind rebuild).
 func test_lift_prop_reused_when_the_selected_car_is_unchanged() -> void:

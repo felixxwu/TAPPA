@@ -46,6 +46,21 @@ collisions (and, on a head-on hit, arrests the body) *before* `_integrate_forces
 sees the state, so a collision's full velocity loss shows up in `dv` — with **no
 contact inspection**.
 
+> **Skipped while the car is deliberately held.** The measurement is skipped
+> entirely when `car.is_held()` is true (the countdown's handbrake-only lock, or
+> the full staging/finish lock — see [stage.md](stage.md)). During the countdown
+> the player can rev the engine while `_apply_parking_hold` (`car.gd`) fights the
+> drive force back to a standstill each tick; because the hold force is sized off
+> the *previous* tick's velocity and the drive force is applied later the *same*
+> tick, the chassis genuinely creeps forward a hair and gets yanked back — a
+> small, real vibration, not a rendering artifact. Before this guard,
+> `_integrate_forces` faithfully read that hold-vs-throttle jitter as a
+> deceleration and charged it as impact damage every tick above threshold, so a
+> long rev against the line could quietly cost real HP the player never actually
+> caused through driving or a collision. Fixed in `car.gd._integrate_forces`;
+> regression test `test_no_damage_accumulates_while_held_and_revving` in
+> `tests/headless/test_car.gd`.
+
 > **Tree plough-through feeds this for free.** The object-reaction loop runs
 > *before* this measurement and, when it fells a small tree, restores some of the
 > arrested forward momentum back into `state.linear_velocity` (see

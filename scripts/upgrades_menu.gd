@@ -224,7 +224,14 @@ func _make_slot_row(slot: String, instance_id: int, installed: Array) -> Control
 # exactly like a part option greys until its kit is fitted. The whole selector is
 # earn-gated by owning the kit, not per option.
 func _make_drivetrain_selector(instance_id: int) -> Control:
-	var row := HBoxContainer.new()
+	# A single HFlowContainer (label + every button as flowed siblings) rather than an
+	# HBoxContainer wrapping a nested HFlowContainer: nesting a wrapping container inside a
+	# fixed-line one made each slot ROW's own reported height unreliable (a wrap changes the
+	# inner container's height mid-layout), which was throwing off the VBoxContainer that
+	# stacks the slot rows above one another — rows lost their vertical stacking. A single
+	# flow container sizes itself in one pass, so its box-row parent stacks it correctly
+	# (confirmed empirically: rows stay stacked even when a row wraps to 2 lines).
+	var row := HFlowContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var unlocked := UpgradeLibrary.drivetrain_swap_unlocked(_owned)
 	var stock := int(CarLibrary.by_id(String(_owned.get("model_id", ""))).get("drive_mode", CarLibrary.RWD))
@@ -233,6 +240,10 @@ func _make_drivetrain_selector(instance_id: int) -> Control:
 	var label := Label.new()
 	label.text = "Drivetrain:"
 	label.add_theme_font_size_override("font_size", 15)
+	# EXPAND_FILL on the label (not the buttons): FlowContainer honours per-child expand
+	# WITHIN a line (confirmed empirically), so the label eats the line's leftover width,
+	# pushing the option buttons after it flush to the row's right edge — label left,
+	# buttons right, gap between, matching the house look.
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
 	# Available = every mode once unlocked, else only the stock mode. Reuses the shared
@@ -257,11 +268,15 @@ func _set_drivetrain(instance_id: int, mode: int) -> void:
 # and the active option is bracketed. The button label is the part's `menu_label` if
 # present (Turbo's short Small / Big), else its full `name`.
 func _make_option_selector(slot: String, instance_id: int, installed: Array) -> Control:
-	var row := HBoxContainer.new()
+	# A single HFlowContainer (label + every option button as flowed siblings), not an
+	# HBoxContainer wrapping a nested HFlowContainer — see _make_drivetrain_selector for
+	# why the nested version broke the slot rows' vertical stacking.
+	var row := HFlowContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var label := Label.new()
 	label.text = "%s:" % slot.capitalize()
 	label.add_theme_font_size_override("font_size", 15)
+	# See _make_drivetrain_selector: expand-fill pushes the option buttons flush right.
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
 	# The catalogue parts for this slot, in catalogue order, and which one (if any) is
@@ -344,11 +359,13 @@ func _clear_slot(instance_id: int, slot: String) -> void:
 # mass (e.g. "+500kg" / "-200kg"); Stock is the no-change default. Ballast options are
 # `free` (always selectable); the lightweight option greys until won as a reward.
 func _make_weight_selector(instance_id: int, installed: Array) -> Control:
-	var row := HBoxContainer.new()
+	# A single HFlowContainer, not a nested HBox+HFlow pair — see _make_drivetrain_selector.
+	var row := HFlowContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var label := Label.new()
 	label.text = "Weight:"
 	label.add_theme_font_size_override("font_size", 15)
+	# See _make_drivetrain_selector: expand-fill pushes the option buttons flush right.
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
 

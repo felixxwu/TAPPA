@@ -228,6 +228,104 @@
 > one tick. Remaining: a real-device pass to confirm smoothness and tune the row
 > budgets.
 >
+> **2026-07-29 — benchmark run: small residual per-crossing spike, cause not fully
+> pinned.** Ran `./run_benchmark.sh --headless` (20 s sampled, 2898 frames, seed
+> `Benchmark.TRACK_SEED`). Overall stats were clean (`frame ms avg 6.90 p99 7.14
+> max 9.03`, `spikes>28ms 0` — headless has no GPU/vsync cost, so absolute numbers
+> don't match windowed play). But the per-second `[perf]`/`[perf-scripts]` log
+> (`scripts/perf_log.gd`) shows a recurring irregular ~8ms `process` bump (vs a
+> ~0.5ms steady-state baseline) at 6 of the 20 logged seconds, each one lining up
+> with `terrain_manager`'s own instrumented cost rising from its ~0.004ms baseline
+> to ~0.2–0.8ms (`scripts/terrain_manager.gd` `_process`/`PerfLog.track`) — i.e.
+> the bump correlates with a chunk-ring crossing (`_reconcile` → `_spawn_chunk` →
+> `TerrainChunk.apply_data`, which assigns a new `MeshInstance3D.mesh` and a fresh
+> `HeightMapShape3D` per crossing chunk). The correlation is real, but the
+> *magnitude* isn't explained: terrain_manager's own wrapped time only accounts for
+> ~0.2–0.8ms of the ~8ms bump, so most of the cost is happening outside the
+> GDScript timer — plausibly RenderingServer mesh upload / PhysicsServer shape
+> build being deferred to the engine's own server-sync step for that frame rather
+> than executing synchronously inside `apply_data`. Not confirmed; would need
+> finer instrumentation (wrapping `_spawn_chunk`/`apply_data` alone, or a
+> RenderingServer/PhysicsServer-side timer) to pin the exact source before this is
+> actionable. No code change made — reporting only.
+>
+> **2026-07-29 (later) — RESOLVED: the entry above was measuring two lies.** The
+> "clean overall stats vs mysterious 8ms bump" contradiction was an instrumentation
+> artefact, not a real puzzle:
+>
+> 1. **`frame_ms` was Godot's *smoothed* delta.** `BenchmarkRunner._process` used
+>    `delta * 1000.0`, and `application/run/delta_smoothing` (on by default) snaps
+>    delta to divisors of the estimated refresh rate. Measured side by side on this
+>    stage: smoothed reported `p99 8.33 / max 25 ms` while true
+>    `Time.get_ticks_usec()` intervals over the same frames were `p99 16.6 / max
+>    40 ms`. This is why `spikes>28ms` had *always* read 0 — the counter was
+>    thresholding a value that smoothing had already flattened.
+>    **Fixed:** `BenchmarkRunner._frame_interval_ms()` now uses the monotonic wall
+>    clock. The same run now honestly reports `p95 13.6 / p99 16.8 / max 36.9 ms`,
+>    `spikes>28ms 6`, and a 1% low of ~60 fps instead of a fictional 120.
+> 2. **`Performance.TIME_PROCESS` is a per-second MAXIMUM, not a per-frame value.**
+>    Verified directly: 21 distinct values over 2876 sampled frames in a 20 s run
+>    (i.e. one refresh per second), each the worst frame of its second. So the
+>    "recurring irregular ~8ms process bump against a ~0.5ms baseline" was never a
+>    per-frame spike series at all — it is a once-per-second worst-case sampler, and
+>    a "2.5ms" second just means no frame that second exceeded 2.5ms. Every
+>    per-frame correlation drawn from this monitor (including the earlier conclusion
+>    that spikes do *not* line up with chunk crossings) was invalid.
+>
+> With honest per-frame numbers, the actual cost structure is unambiguous:
+>
+> - **Physics-tick frames are the periodic spike.** Grouping true frame intervals by
+>   whether a physics tick ran that frame: `ticks=0 → n=1676, mean 4.10 ms`;
+>   `ticks=1 → n=1200, mean 10.94 ms, p95 15.5, max 40.5`. Not one of the 30 slowest
+>   frames had `ticks=0`. At 60 Hz physics under a ~144 fps render loop a tick lands
+>   every 2nd–3rd frame with a jittering pattern (`physics_jitter_fix`), which is
+>   exactly the "periodic, irregular cadence" that kicked off this investigation.
+>   **This is inherent to a fixed-tick engine, not a bug** — the question is only
+>   whether ~6.8 ms of physics step is too much (`car` is the dominant script).
+> - **Chunk-ring crossings are the *worst* spikes, and it IS `_reconcile`.** The
+>   top spikes (29–40 ms) all carry `integrations_this_frame = 7` and
+>   `terrain_manager` per-frame cost of 17–29 ms — because `_reconcile` spawns the
+>   entire new ring row (7 chunks) in a single frame. Across the worst 1% of frames,
+>   `terrain_manager` accounts for ~22% of total time. The earlier "only 0.2–0.8 ms
+>   of the 8 ms bump" figure was per-frame cost *averaged over a whole second* by
+>   `PerfLog.end_capture`, which divides by the frame count — 0.9 ms/frame × 144
+>   frames ≈ 130 ms of real work concentrated in one or two frames. There is no
+>   unexplained magnitude and no hidden server-sync cost; drop that hypothesis.
+>
+> **Open (not done, needs a decision):** spread `_reconcile`'s row spawn across
+> frames instead of doing all 7 `_spawn_chunk` calls at once. Note a per-frame
+> budget pump for exactly this (`MAX_BUILD_ROWS_PER_FRAME`,
+> `_use_budgeted_generation`) previously existed here and was deliberately removed
+> (see the threaded-generation note earlier in this file), and `_reconcile`'s
+> current contract is "prefer a HOLE over a mid-drive build hitch" — so
+> re-introducing budgeting is a behaviour change with hole-risk, not a free win.
+> **Superseded — see the RESOLVED entry below.** Batching `_spawn_chunk` was NOT the
+> fix (it is not the spike), and widening the `leash_m` precompute buffer was also
+> ruled out (the cache was already warm on every spiking frame).
+>
+> **2026-07-30 — RESOLVED AND FIXED.** Component-level measurement retired both
+> earlier hypotheses and found the real cost. `_spawn_chunk` was never the spike
+> (**35.6 ms across a whole 20 s run**, 0.30 ms/chunk, ~2 ms for a 7-chunk row), and
+> `_reconcile`'s suspected overhead was a non-issue (the O(n²) `wanted.has()` scan =
+> 0.032 ms/crossing, the 49 `set_collision_enabled` broadphase toggles = 0.038 ms;
+> whole `_reconcile` ≈ 1.95 ms/crossing). The real cost was `_drain_detail_queue` →
+> `TerrainLod.build_finest` at **430 ms/run** — ~6.2 ms per call, 67% of it the 8
+> `track_weights`/`track_surface` dictionary lookups per vertex in
+> `_vertex_color_row`/`_surface_uv2_row` over 51×51 vertices — already budgeted at
+> `detail_builds_per_frame = 1`, so no further batching could help.
+>
+> **Fix shipped:** `GameConfig.terrain_lazy_finest_lod` now defaults to **false** —
+> `cache_chunk` prebakes the finest LOD for the whole corridor at load, so there is no
+> runtime rebuild and the detail queue stays empty. Enabled on **every target
+> including web** (deliberately not platform-gated); the flag remains as the
+> single-line escape hatch if a low-VRAM device ever fails. Windowed A/B, same seed:
+> frame p99 **11.03 → 4.52 ms**, 1% low **90.6 → 234.6 fps**, `spikes>28ms` **1 → 0**,
+> for **+25.6 MB VRAM** and **−1.6 MB RAM** (`l0_light` becomes dead weight and is
+> dropped). Tests: `test_terrain_memory.gd` →
+> `test_prebaked_finest_level_needs_no_detail_queue`,
+> `test_prebake_does_not_retain_the_lazy_rebuild_light` (both directions of the flag,
+> no pinned VRAM/timing values). Docs: `features/terrain.md` → "Lazy finest LOD level".
+>
 > **Still open — BLOCKED ON YOUR DECISIONS / ASSETS:**
 > - **Items 2 + 3** (foliage view-cone cull + visible cap, collision-box cull):
 >   gated on the **billboard-vs-opaque-low-poly-mesh decision** (and the `.glb`

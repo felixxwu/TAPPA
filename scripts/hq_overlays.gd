@@ -223,12 +223,22 @@ func build_lift_overlay() -> void:
 	_hq._lift_menu_bg.anchor_top = 0.0
 	_hq._lift_menu_bg.anchor_bottom = 1.0
 	_hq._lift_menu_bg.color = UITheme.MODAL_DIM
+	# Clip: a row that needs more width than the panel (e.g. a slot's option buttons)
+	# must never visually spill past the dark background into the 3D scene behind it —
+	# ColorRect doesn't clip children by default. Content is also wrapped (see the
+	# HFlowContainer button rows in upgrades_menu.gd) so clipping is a safety net, not
+	# how overflow is normally handled.
+	_hq._lift_menu_bg.clip_contents = true
 	_hq._lift_layer.add_child(_hq._lift_menu_bg)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# 12, not 20: the logical UI canvas is only a few hundred units wide (see
+	# hq_lift_menu_centered_width_frac), so a 20-unit inset on each side was itself a
+	# meaningful bite out of the content width a wide row (the detune slider, a 4-option
+	# slot row) needed.
 	for side in ["left", "top", "right", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 20)
+		margin.add_theme_constant_override("margin_" + side, 12)
 	_hq._lift_menu_bg.add_child(margin)
 
 	var root := VBoxContainer.new()
@@ -330,6 +340,12 @@ func build_lift_overlay() -> void:
 	_hq._lift_hub_controls.add_child(to_upgrades)
 	var to_tune := _hq._station_button("Tuning", to_tune_cb)
 	_hq._lift_hub_controls.add_child(to_tune)
+	# Wheels: cosmetic wheel styles. Leaves the lift for the solo car-park view, where the
+	# car sits SETTLED on its suspension under a side-on camera (the lift holds it raised,
+	# and wheels are judged by stance). See features/wheel-customization.md.
+	var to_wheels_cb := _hq._enter_wheel_swap
+	var to_wheels := _hq._station_button("Wheels", to_wheels_cb)
+	_hq._lift_hub_controls.add_child(to_wheels)
 	# Test Drive: drive the car currently on the lift in free roam — no car picker, we're
 	# already focused on one (see _test_drive).
 	var test_drive := _hq._station_button("Test Drive", _hq._test_drive)
@@ -344,8 +360,8 @@ func build_lift_overlay() -> void:
 	_hq._lift_hub_controls.add_child(repair)
 	_hq._lift_repair_button = repair
 	_hq._hub_cursor.setup(
-		[back, to_upgrades, to_tune, test_drive],
-		[on_back, to_upgrades_cb, to_tune_cb, _hq._test_drive])
+		[back, to_upgrades, to_tune, to_wheels, test_drive],
+		[on_back, to_upgrades_cb, to_tune_cb, to_wheels_cb, _hq._test_drive])
 
 
 func build_car_overlay() -> void:

@@ -106,6 +106,18 @@ Every `blender/*/wheel.*` now has `mipmaps/generate = true`; seven of the eight 
 it off while being sampled in 3D, which thrashes the texture cache at distance
 (`blender/mx5/wheel.png` was the one already-correct reference).
 
+**Every `blender/*/wheel.*` also now has `detect_3d/compress_to = 0`** (again, mx5
+was the one already-correct file). This matters more for wheels than for any other
+texture family: the cosmetic wheel swap
+([wheel-customization.md](wheel-customization.md)) means *every* car's wheel texture
+can be sampled in 3D on *any* body, so every one of them is exposed to the silent
+re-import above — and `blender/xjs/wheel.png` is **127×127**, which ETC2/ASTC (4×4
+blocks) cannot represent cleanly, so a drift to mode 2 would break it on Android
+while a desktop D3D12/Vulkan build looked fine. `tests/headless/test_wheel_texture_imports.gd`
+guards both halves of the rule (opted out of the 3D re-import; and any wheel texture
+that *is* mode 2 has block-aligned imported dimensions) without pinning which
+textures exist or what any of them chose.
+
 ## Shadow meshes
 
 `meshes/create_shadow_meshes = false` on every `blender/*/*.glb` import. A shadow

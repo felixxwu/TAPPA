@@ -65,7 +65,13 @@ measurement or implementation refuted. Re-deriving them would waste the same eff
 7. **`detect_3d/compress_to = 0` is load-bearing** and was missing from the audit. With
    Godot's default of `1`, a 3D-sampled texture is silently re-imported as
    VRAM-compressed — which is how the car textures drifted to mode 2 originally, and
-   would have undone that item within one editor session.
+   would have undone that item within one editor session. **Extended 2026-07-30:** the
+   audit only covered car *bodies*; seven of the eight `blender/*/wheel.*` were still on
+   the default `1`. The cosmetic wheel swap made every wheel texture 3D-sampled on every
+   body, and `blender/xjs/wheel.png` is 127×127 — not ETC2/ASTC block-aligned — so the
+   drift would have been an Android-only breakage. All wheel imports are now
+   `detect_3d/compress_to = 0` and `tests/headless/test_wheel_texture_imports.gd` asserts
+   the rule (not the values). See features/asset-pipeline.md.
 8. **2.7's 20–30 MB estimate was 3–4× too high** (~99k dict entries ≈ 6–9 MB), while
    1.6 over-delivered. Treat any remaining *(estimated)* figure as an upper bound.
 9. **Freed-data flags must latch on the DATA, not the event.** `_generate_track` can run

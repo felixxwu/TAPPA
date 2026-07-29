@@ -88,6 +88,11 @@ and advanced by `show_pacenotes(current)`.
   bake in — so the HUD reads correctly with the signs' convention, not the opposite of
   it. The `arrow_5`/`arrow_6` boards are baked by
   `tools/bake_sign_arrows.gd` (see [signs.md](signs.md)).
+  `hud.gd::_pace_texture` looks lazy (`load()` on a cache miss), but it is **not** a
+  mid-drive cost: `set_pacenotes` — called from `world.gd::_setup_pacenotes` during track
+  generation, behind the loading screen — resolves a texture for *every* note in the
+  list, so all distinct arrow textures are already loaded and cached before the drive
+  starts. Nothing to pre-warm here.
 - **Advance.** `world.gd` also hands the per-corner progress **fractions**
   (`Pacenotes.notes_to_fracs`, same start-line span as the pace splits) to
   `StageManager.setup_pacenotes`. Each RUNNING tick `_maybe_advance_pacenotes` counts

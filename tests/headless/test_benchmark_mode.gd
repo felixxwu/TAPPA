@@ -284,3 +284,25 @@ func test_throttle_for_holds_the_target_speed() -> void:
 		"at target: coast")
 	assert_lt(BenchmarkRunner.throttle_for(target + 5.0, target), 0.0,
 		"above target: brake")
+
+
+# --- Frame-time measurement source ---------------------------------------------
+# The runner must time frames off the monotonic wall clock, NOT _process's delta:
+# Godot's delta smoothing snaps delta to refresh-rate divisors and flattens exactly
+# the hitches the benchmark exists to catch (it silently held spikes>28ms at 0 through
+# genuine 40 ms frames). No timing THRESHOLD is asserted here — only that the source
+# is a real elapsed-time clock that advances between calls.
+func test_frame_interval_measures_elapsed_wall_time() -> void:
+	var runner := BenchmarkRunner.new()
+	add_child_autofree(runner)
+	runner._frame_interval_ms()  # baseline the clock
+	var before := Time.get_ticks_usec()
+	while Time.get_ticks_usec() - before < 2000:
+		pass  # burn a measurable, smoothing-independent amount of wall time
+	var first := runner._frame_interval_ms()
+	assert_gt(first, 0.0, "the interval is a real elapsed time, not a fixed delta")
+	# Called again immediately, the baseline has advanced, so the second interval is
+	# far shorter than the burnt one — proving each call measures the gap since the
+	# LAST call rather than since some fixed origin.
+	var second := runner._frame_interval_ms()
+	assert_lt(second, first, "each call re-baselines to now")

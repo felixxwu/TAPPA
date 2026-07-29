@@ -10,7 +10,10 @@ Player state lives on each `OwnedCar` (`Save`,
 
 **Tuning** is the **free, reversible** half of *Tuning & upgrades* — handling
 nudges the player makes at the garage **tuning lift**, as distinct from consumable
-**upgrades** ([upgrade-catalogue.md](upgrade-catalogue.md)). Tuning is stored as
+**upgrades** ([upgrade-catalogue.md](upgrade-catalogue.md)). A third, purely
+**cosmetic** system — swapping any car's wheels onto this one — shares tuning's
+free-and-reversible character but touches no stat at all; see
+[wheel-customization.md](wheel-customization.md). Tuning is stored as
 per-car deltas, costs nothing, and is reset instantly; it is never written back to
 the authored `.tres`.
 

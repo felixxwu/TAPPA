@@ -86,7 +86,27 @@ left unsampled.
 
 Each rendered frame it records: frame interval, draw calls, objects, primitives,
 render CPU/GPU time (from the `PostProcess/View` viewport), and the process +
-physics-process times. It also tracks **audio overruns** — the fielded car's engine
+physics-process times.
+
+**Two measurement traps to know about here** (both have already produced one
+round of wrong conclusions — see `todo/performance-optimisations.md`):
+
+- The frame interval comes from `BenchmarkRunner._frame_interval_ms()`, a
+  `Time.get_ticks_usec()` delta — **not** `_process`'s `delta`. Godot's delta
+  smoothing (`application/run/delta_smoothing`, on by default) snaps the reported
+  delta to integer divisors of the estimated refresh rate to hide judder from
+  gameplay code, which flattens exactly the hitches a profiler exists to find.
+  Never profile off `delta`.
+- `Performance.TIME_PROCESS` / `TIME_PHYSICS_PROCESS` (the `process_ms` /
+  `physics_ms` streams, and the `[perf]` line `scripts/perf_log.gd` prints) are
+  **not per-frame values**. The engine publishes them once per second and each is
+  the *maximum* over that second, so they repeat unchanged for ~100+ consecutive
+  frames. They are a useful "worst frame in the last second" indicator; reading
+  one as "this frame's cost" — or correlating it per-frame against anything — is
+  meaningless. For real per-frame attribution use `PerfLog`'s per-script counters
+  or a `Time.get_ticks_usec()` bracket.
+
+It also tracks **audio overruns** — the fielded car's engine
 `AudioStreamGenerator` buffer underruns (`EngineAudio.skip_count()` →
 `AudioStreamGeneratorPlayback.get_skips()`), a per-frame delta so a skip is
 attributed to the (usually slow) frame it happened on; the run total is reported as

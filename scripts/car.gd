@@ -104,6 +104,12 @@ var _car_index := -1  # selected CarLibrary entry, or -1 for the untouched basel
 # Per-fielding drivetrain override (0/1/2), or -1 = use the spec's stock drive_mode.
 # Set by apply_owned before the drivetrain rebuilds; -1 for free-roam apply_car.
 var _owned_drive_override := -1
+# Per-fielding COSMETIC wheel-texture override, or "" = use the spec's own wheel
+# texture. Set by apply_owned before the wheels are built (same pattern as
+# _owned_drive_override); free-roam / prop / opponent fielding via apply_car leaves it
+# empty, so unowned cars always show stock wheels. Texture ONLY — wheel radius/width
+# always come from the car's own spec. See features/wheel-customization.md.
+var _owned_wheel_texture := ""
 # The last owned dict applied to this car (apply_owned / live re-derive). Empty
 # until fielded from an owned car. Used by set_body_hidden(false) to re-derive
 # aero-part visibility after the debug overlay restores the body.
@@ -909,9 +915,16 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# Unified deceleration damage, computed from the POST-restore velocity so a tree the
 	# car ploughs through costs little HP. Skipped for a couple of ticks after a
 	# reset/teleport, whose discontinuous velocity zeroing would read as a false dv.
+	# Also skipped entirely while the car is deliberately held (is_held(): the
+	# countdown's handbrake-only lock, or the full staging/finish lock) — revving
+	# the engine against the parking hold (_apply_parking_hold) legitimately jitters
+	# the chassis a little each tick as the hold force cancels that tick's creep, and
+	# without this guard _integrate_forces faithfully reads that hold-vs-throttle
+	# vibration as a real deceleration and taxes it as impact damage, tick after tick,
+	# for the whole countdown. See features/damage.md.
 	if _suppress_impact_frames > 0:
 		_suppress_impact_frames -= 1
-	else:
+	elif not is_held():
 		var dv := (_approach_velocity - state.linear_velocity).length()
 		var contact_point := state.get_contact_local_position(0) if contacts > 0 else global_position
 		damage.register_deceleration(dv, state.step, contact_point, cfg)
@@ -1073,6 +1086,17 @@ func half_length() -> float:
 		return 0.0
 	var body: Vector3 = CarLibrary.all()[_car_index]["body"]
 	return body.z * 0.5
+
+
+# Half the current body WIDTH (metres, along the car's local X axis). The replay
+# camera's onboard WHEEL shot adds a clearance margin on top of this so its lateral
+# mount point never lands inside (or right on the surface of) the car body mesh,
+# regardless of how wide the fielded car is. Zero before a car is fielded.
+func half_width() -> float:
+	if _car_index < 0:
+		return 0.0
+	var body: Vector3 = CarLibrary.all()[_car_index]["body"]
+	return body.x * 0.5
 
 
 # Give this car its OWN private GameConfig (a deep copy of the current global
@@ -1352,8 +1376,11 @@ func _relocate_wheels(spec: Dictionary) -> void:
 			cyl.top_radius = radius
 			cyl.bottom_radius = radius
 			cyl.height = width
-			# Per-car wheel cap: the car's own wheel.png, or a blank dark disc.
-			tire.set_surface_override_material(0, _wheel_material(String(spec.get("wheel_texture", ""))))
+			# Per-car wheel cap: the car's own wheel.png, or a blank dark disc — unless a
+			# cosmetic wheel style is fitted, which substitutes the DONOR's texture and
+			# nothing else (radius/width above stay the car's own; see
+			# features/wheel-customization.md).
+			tire.set_surface_override_material(0, _wheel_material(_wheel_texture_for(spec)))
 
 	# VehicleWheel3D latches its suspension connection point when it enters the
 	# tree and repaints the node transform every physics step, so the position
@@ -1429,6 +1456,9 @@ func apply_owned(owned: Dictionary) -> String:
 	# Resolve the player's chosen drivetrain (gated by the swap kit) so both apply_car's
 	# baseline rebuild and the engine-swap rebuild adopt it. -1 = keep the stock layout.
 	_owned_drive_override = UpgradeLibrary.resolve_drive_override(owned)
+	# Cosmetic wheel style: resolved BEFORE apply_car so _relocate_wheels skins the
+	# wheels with the donor's texture in one pass. Texture only — no stat moves.
+	_owned_wheel_texture = WheelStyle.texture_for(owned, model_id)
 	var car_name := apply_car(idx, false)
 	# Step 1b: engine swap — if this car runs a non-stock engine, overwrite the
 	# engine profile + recompute mass / weight distribution BEFORE upgrades (so a
@@ -1467,6 +1497,10 @@ func apply_owned(owned: Dictionary) -> String:
 	damage.field(max_hp, float(owned.get("hp", max_hp)), int(owned.get("instance_id", -1)),
 		owned.get("wheel_toe", []))
 	_owned_drive_override = -1
+	# Clear the per-fielding wheel override so a later BARE apply_car (free-roam /
+	# prop / opponent re-fielding of this same instance) falls back to stock wheels
+	# rather than inheriting this owned car's donor style.
+	_owned_wheel_texture = ""
 	return car_name
 
 
@@ -1826,6 +1860,35 @@ func _active_body() -> Node:
 func _apply_aero_visibility(owned: Dictionary) -> void:
 	_last_owned = owned
 	_set_aero_visible(_active_body(), UpgradeLibrary.aero_tuning_unlocked(owned))
+
+
+# The wheel texture this fielding should render: the cosmetic style fitted by
+# apply_owned if any, else the car's own authored wheel_texture.
+func _wheel_texture_for(spec: Dictionary) -> String:
+	if not _owned_wheel_texture.is_empty():
+		return _owned_wheel_texture
+	return String(spec.get("wheel_texture", ""))
+
+
+# Re-skin the tire caps in place, WITHOUT touching geometry, physics or the pose — the
+# live "try on a wheel" preview used by the HQ wheel-swap view. Pass "" to restore the
+# car's own stock wheels. Safe on a frozen display prop and on a live body: nothing but
+# the surface override material changes (contrast _relocate_wheels, whose detach /
+# re-attach dance exists only to re-latch moved suspension points).
+#
+# STATELESS BY DESIGN: it deliberately does NOT write _owned_wheel_texture. That field is
+# the FIELDING override and belongs to apply_owned alone; a preview stored there would
+# outlive the preview on a node that gets reused (HQ props are pooled in _car_cache and
+# borrowed by the lift / free-roam prewarm) and leak the wrong wheels into a later bare
+# apply_car on that same node.
+func reskin_wheels(tex_path: String) -> void:
+	var spec: Dictionary = CarLibrary.all()[_car_index] if _car_index >= 0 else {}
+	var resolved := tex_path if not tex_path.is_empty() else String(spec.get("wheel_texture", ""))
+	var mat := _wheel_material(resolved)
+	for wheel in find_children("*", "VehicleWheel3D", false):
+		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
+		if tire != null:
+			tire.set_surface_override_material(0, mat)
 
 
 # A ShaderMaterial for the tire caps using `tex_path` (a wheel.png), or a blank dark

@@ -26,7 +26,8 @@ extends Node3D
 # not a constant), so crawling into the crowd topples them gently instead of flinging
 # them skyward. Ragdolls collide with the ground but are masked off the car, so a crowd
 # can never bog it down. Once the car is well past (despawn_behind_m behind it), the
-# ragdoll is freed.
+# ragdoll is retired — parked inert back in the pre-built pool for the next knock (see
+# _build_ragdoll / _release_ragdoll), or freed if the pool is already full.
 
 # --- agent state (parallel arrays, index = member) ----------------------------
 var _pos: PackedVector2Array      # world XZ
@@ -71,6 +72,20 @@ var _capsule_radius := 0.3
 var _center := Vector2.ZERO       # group centroid, for the LOD distance test
 var _mm_origin := Vector3.ZERO     # MultiMeshInstance3D node origin (= centroid); instance transforms are relative to it
 var _ragdolls: Array[RigidBody3D] = []
+# Pre-built, inert ragdoll bodies waiting to be knocked into service. Each one is a
+# complete RigidBody3D + CapsuleShape3D + MeshInstance3D, built during setup() (i.e.
+# behind the loading screen) rather than on the frame of the hit: constructing a body,
+# its shape and its mesh instance — and registering all three with the servers — is
+# several hundred microseconds of work that used to land at the exact instant the car
+# ploughs into a crowd, and a fast pass knocks SEVERAL members on the same tick. A
+# pooled body is frozen, hidden and on no collision layer, so it is inert until acquired
+# and after release. Ragdolls that age out come BACK here instead of being freed (up to
+# the pool cap), so a stage-long mow through several crowds only ever pays the build cost
+# once. Overflow (more simultaneous ragdolls than the pool holds) still builds a fresh
+# body, so pool size can never change how many spectators can be knocked over.
+var _ragdoll_pool: Array[RigidBody3D] = []
+var _ragdoll_pool_cap := 0
+var _ragdolls_built := 0          # bodies actually constructed (tests / debug)
 var _rng := RandomNumberGenerator.new()
 var _drag_strength := 0.0         # fraction of horizontal speed a knock sheds (soft drag)
 var _sim_accum := 0.0             # delta banked since the last steered tick (decimation)
@@ -118,6 +133,10 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 		_capsule_radius = maxf(maxf(aabb.size.x, aabb.size.z) * 0.5, 0.1)
 	_build_multimesh(mesh, n)
 	_refresh_all_instances()
+	# Pre-build the recycled ragdoll bodies now (load time), never on the knock frame.
+	_ragdoll_pool_cap = maxi(int(params.get("ragdoll_pool_size", 0)), 0)
+	for _k in _ragdoll_pool_cap:
+		_ragdoll_pool.append(_build_ragdoll())
 
 
 func _build_multimesh(mesh: Mesh, n: int) -> void:
@@ -503,34 +522,11 @@ func _knock_over(i: int) -> void:
 	var z := _pos[i].y
 	var ground := _ground(x, z)
 
-	var body := RigidBody3D.new()
-	body.mass = _p["ragdoll_mass_kg"]
-	body.collision_layer = int(_p["ragdoll_layer"])
-	body.collision_mask = int(_p["ragdoll_mask"])
-	add_child(body)
+	var body := _acquire_ragdoll()
 	# Body origin = capsule centre = figure mid-height, so the auto centre-of-mass
 	# (single centred capsule) sits at the body's middle and it tumbles about its
-	# waist, not its head.
-	body.global_position = Vector3(x, ragdoll_body_y(ground, _capsule_height), z)
-	# Ragdolls land on the terrain/trees (all on layer 1) but must never collide
-	# with the car — the car shares layer 1, so an explicit exception is the only
-	# way to let a crowd be driven through without bogging the vehicle down.
-	if _car is CollisionObject3D:
-		body.add_collision_exception_with(_car)
-
-	var shape := CollisionShape3D.new()
-	var cap := CapsuleShape3D.new()
-	cap.radius = _capsule_radius
-	cap.height = maxf(_capsule_height, _capsule_radius * 2.0)
-	shape.shape = cap
-	body.add_child(shape)
-
-	var mi := MeshInstance3D.new()
-	mi.mesh = _mm.mesh if _mm != null else null
-	# Offset the mesh within the body so its feet meet the capsule bottom on the
-	# ground (accounting for the mesh's own foot offset above its origin).
-	mi.position = Vector3(0, ragdoll_mesh_offset_y(_foot_offset, _capsule_height), 0)
-	body.add_child(mi)
+	# waist, not its head. Upright pose: a recycled body must not start mid-tumble.
+	body.global_transform = Transform3D(Basis(), Vector3(x, ragdoll_body_y(ground, _capsule_height), z))
 
 	# Launch along the car's travel direction, with the WHOLE impulse scaled by the car's
 	# speed: launch speed is `speed x factor` (clamped), the upward kick is a fraction of
@@ -546,6 +542,81 @@ func _knock_over(i: int) -> void:
 	# features/damage.md.
 	if _car != null and _drag_strength > 0.0 and _car.has_method("apply_soft_drag"):
 		_car.apply_soft_drag(_drag_strength)
+
+
+# Construct one ragdoll body (RigidBody3D + centred capsule + figure mesh), parked
+# INERT: frozen, hidden and on no collision layer, so it neither draws nor touches the
+# physics broadphase until _acquire_ragdoll wakes it. This is the only place a ragdoll is
+# ever built; setup() calls it pool_size times behind the loading screen, and a knock only
+# reaches it when the pool is exhausted.
+func _build_ragdoll() -> RigidBody3D:
+	_ragdolls_built += 1
+	var body := RigidBody3D.new()
+	body.mass = _p["ragdoll_mass_kg"]
+	add_child(body)
+
+	var shape := CollisionShape3D.new()
+	var cap := CapsuleShape3D.new()
+	cap.radius = _capsule_radius
+	cap.height = maxf(_capsule_height, _capsule_radius * 2.0)
+	shape.shape = cap
+	body.add_child(shape)
+
+	var mi := MeshInstance3D.new()
+	mi.mesh = _mm.mesh if _mm != null else null
+	# Offset the mesh within the body so its feet meet the capsule bottom on the
+	# ground (accounting for the mesh's own foot offset above its origin).
+	mi.position = Vector3(0, ragdoll_mesh_offset_y(_foot_offset, _capsule_height), 0)
+	body.add_child(mi)
+
+	# Ragdolls land on the terrain/trees (all on layer 1) but must never collide
+	# with the car — the car shares layer 1, so an explicit exception is the only
+	# way to let a crowd be driven through without bogging the vehicle down.
+	if _car is CollisionObject3D:
+		body.add_collision_exception_with(_car)
+
+	_park_ragdoll(body)
+	return body
+
+
+# Make `body` inert: no simulation, no collision layers/mask, not drawn, no residual
+# velocity. The state a pooled body sits in between uses.
+func _park_ragdoll(body: RigidBody3D) -> void:
+	body.freeze = true
+	body.collision_layer = 0
+	body.collision_mask = 0
+	body.linear_velocity = Vector3.ZERO
+	body.angular_velocity = Vector3.ZERO
+	body.visible = false
+
+
+# Take a pooled body if one is free, else build a fresh one, and bring it live: the
+# configured layers/mask, simulating and visible. The caller then poses and launches it.
+func _acquire_ragdoll() -> RigidBody3D:
+	var body: RigidBody3D = null
+	while not _ragdoll_pool.is_empty():
+		var candidate: RigidBody3D = _ragdoll_pool.pop_back()
+		if is_instance_valid(candidate):
+			body = candidate
+			break
+	if body == null:
+		body = _build_ragdoll()
+	body.freeze = false
+	body.collision_layer = int(_p["ragdoll_layer"])
+	body.collision_mask = int(_p["ragdoll_mask"])
+	body.visible = true
+	return body
+
+
+# Retire a settled ragdoll: back to the pool if there's room (so the next crowd reuses
+# it), otherwise freed — the pool cap is what keeps bodies from accumulating across a
+# whole stage, exactly as queue_free() used to.
+func _release_ragdoll(body: RigidBody3D) -> void:
+	if _ragdoll_pool.size() < _ragdoll_pool_cap:
+		_park_ragdoll(body)
+		_ragdoll_pool.append(body)
+	else:
+		body.queue_free()
 
 
 # Launch velocity for a knocked body: along `dir` at magnitude `speed x factor`
@@ -588,7 +659,8 @@ static func apply_knock_launch(body: RigidBody3D, car: Node, params: Dictionary,
 	).normalized() * float(params["knock_spin"]) * knock_spin_scale(speed, factor, speed_max)
 
 
-# Free ragdolls the car has left well behind, so bodies don't accumulate.
+# Retire ragdolls the car has left well behind, so bodies don't accumulate (recycled
+# into the pool, or freed once it's full — see _release_ragdoll).
 func _age_ragdolls(car_xf: Transform3D = Transform3D()) -> void:
 	if _ragdolls.is_empty():
 		return
@@ -602,7 +674,7 @@ func _age_ragdolls(car_xf: Transform3D = Transform3D()) -> void:
 		var to_body := b.global_position - car_pos
 		# Behind the car (negative along forward) and farther than the threshold.
 		if to_body.dot(fwd) < 0.0 and to_body.length() > behind:
-			b.queue_free()
+			_release_ragdoll(b)
 		else:
 			kept.append(b)
 	_ragdolls = kept
@@ -619,6 +691,17 @@ func upright_count() -> int:
 
 func ragdoll_count() -> int:
 	return _ragdolls.size()
+
+
+# Inert pre-built bodies currently waiting in the pool.
+func pooled_ragdoll_count() -> int:
+	return _ragdoll_pool.size()
+
+
+# How many ragdoll bodies this group has ever CONSTRUCTED. Prebuilt at setup and then
+# recycled, so a knock must not increase this while the pool has a body free.
+func ragdolls_built() -> int:
+	return _ragdolls_built
 
 
 func member_position(i: int) -> Vector2:

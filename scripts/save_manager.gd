@@ -436,6 +436,24 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 	save()
 
 
+# Fit a COSMETIC wheel style — a donor car's stable CarLibrary id — to an owned car
+# (features/wheel-customization.md). Free, ungated and reversible: no token, no
+# consumable, no eligibility rules, and it changes NOTHING but the wheel texture.
+# "Stock" is canonically represented as the key being ABSENT (an empty id, or the
+# car's own model_id, erases it), which keeps the owned dict's hash — the key the HQ
+# car-prop caches use — stable across a revert. No schema migration is needed: an
+# absent per-car key already means stock, exactly as swapped_engine does.
+func set_wheels(instance_id: int, wheel_id: String) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	if wheel_id.is_empty() or wheel_id == String(car.get("model_id", "")):
+		car.erase("wheels")
+	else:
+		car["wheels"] = wheel_id
+	save()
+
+
 # Exchange the CURRENT engines of two owned cars (features/engine-swap.md). Costs
 # one engine swap token per swap (including reverting to stock); health is irrelevant
 # and a damaged car keeps its HP. Each car's swapped_engine is set to the OTHER's

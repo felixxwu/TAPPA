@@ -140,7 +140,14 @@ deterministic, testable `_tick(delta)` (no RNG, no engine-clock reads):
   forward + right, low and near hub/ground height, in line with the wheel laterally),
   **looking forward down the road** rather than at the car, so the churning front wheel
   fills the near foreground. The only shot whose look target isn't the car itself
-  (`look_target = c + fwd*14 + right*0.5`).
+  (`look_target = c + fwd*14 + right*0.5`). The lateral mount distance
+  (`_wheel_cam_lateral()`) is derived from the target's own `half_width()` (Car's body
+  half-width for the currently fielded `CarLibrary` entry) plus a clearance margin
+  (`GameConfig.wheel_cam_lateral_clearance`), rather than a fixed constant — a fixed
+  offset could sit at/inside a wide car's body mesh since `body.x` varies per catalogue
+  entry (up to ~1.92 m, i.e. ~0.96 m half-width, which used to sit level with the old
+  hardcoded 0.95 m offset). Falls back to a fixed `GameConfig.wheel_cam_fallback_lateral`
+  for targets that don't expose `half_width()` (flat test fixtures).
 - **HIGH_WIDE** — a high, pulled-back `(0, 14, 16)` establishing shot.
 - **ROADSIDE** — a "someone filming from the verge" shot. Unlike the others (which track
   the car every frame), the camera **plants a fixed spot** beside the road well up ahead

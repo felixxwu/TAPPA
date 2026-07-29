@@ -201,6 +201,11 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   is the same station reused with a mode flag, so it inherits this nav for free: left/right
   cycles the swap-eligible target cars, select confirms the swap (`_select_swap_target`),
   and back (`_car_back`) returns to the tuning-lift Upgrades page instead of the map table;
+  the car park's **cosmetic wheel mode** (`CarparkMode.WHEELS`,
+  [wheel-customization.md](wheel-customization.md)) reuses the same station for one car
+  ALONE under a low side-on camera (`hq_wheel_cam_offset`), where left/right **and**
+  up/down cycle wheel styles live on the settled car (`_cycle_focus` → `_cycle_wheel`),
+  select fits them and back discards the preview and returns to the lift;
   the **map table** is driven by a **camera glide**: holding
   `menu_up/down/left/right` slides the camera smoothly over the map (polled in
   `hq.gd._process`, glide speed `hq_table_pan_glide`), and selection tracks whichever
@@ -227,7 +232,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   exits to the garage. Clicking a pin or arrow with the pointer still works (`_on_rally_pin` /
   `_on_arrow_input`), and mouse drag still pans the map (selection re-tracks the centre as it
   slides); the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
-  `UITheme.mark_focused`) over **Back / Tuning / Upgrades / Test Drive** (its buttons
+  `UITheme.mark_focused`) over **Back / Upgrades / Tuning / Wheels / Test Drive** (its buttons
   sit side by side in one row), fired with select (`_activate_hub_focus`); the cursor
   seats on Tuning on entry (`menu_back` is also a shortcut back to the garage). **Test
   Drive** (`_test_drive`) launches free roam with the car already on the lift — no car
@@ -501,7 +506,15 @@ lag every time the tuning-lift car changes"). `_clear_lift_car` returns the favo
 the departing lift car is the node `_car_cache` tracks for it, it's hidden + stowed
 (same pattern as `_release_page_props`), never freed, so the next parked-lineup build or
 lift visit reuses it. GARAGE/LIFT and CARPARK are mutually exclusive views, so handing
-the one live node back and forth between the two contexts is safe. See
+the one live node back and forth between the two contexts is safe — but it means
+`_ensure_lift_car`'s id/hash "already there, no-op" fast path must also check
+`_lift_car.visible`: the garage picker (`_open_garage_picker`) borrows the lift's node
+into its parked lineup without going through `_go_to` (so `_clear_lift_car` never runs
+while the picker is open), and `_select_garage_car` hides + stows that lineup
+(`_clear_lineup`) on the way back to the lift — so reselecting the SAME car used to hit
+the id/hash match while the shared node was still stowed off-screen, vanishing from the
+lift instead of staying shown. Requiring `.visible` too forces the fall-through spawn
+path, whose cache hit just repositions the node back onto the lift. See
 [tuning.md](tuning.md) → *The tuning lift (UI)*. In the
 garage the car rests **lowered on the ground** at its calculated settled ride height
 (`car.gd` → `settled_ride_height`; see [tuning.md](tuning.md)).
@@ -541,8 +554,10 @@ tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
 The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
 (`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
-full page width, and UNDER it **Tuning** and **Upgrades** buttons plus a **Test Drive**
-button. To put a **different** car on the lift, go **Back** to the garage and reopen the
+full page width, and UNDER it **Upgrades**, **Tuning** and **Wheels** buttons plus a
+**Test Drive** button. **Wheels** (`_enter_wheel_swap`) LEAVES the lift for the car park's
+solo wheel view — cosmetic wheel styles are judged by stance, and the lift holds the car
+raised off its suspension (see [wheel-customization.md](wheel-customization.md)). To put a **different** car on the lift, go **Back** to the garage and reopen the
 **Garage** picker (`_open_garage_picker`, GARAGE mode): the whole owned collection is
 parked, and **Select Car** (`_on_start_pressed` → `_select_garage_car`) sets the
 **selected car** (`Save.set_selected_car`) and enters the bay for it, spawning it on the

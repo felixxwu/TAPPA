@@ -40,6 +40,29 @@ var _audio_skips_total := 0           # generator underruns over the sampled win
 var _spike_ms := BenchmarkStats.SPIKE_MS  # spike threshold, relative to the fps cap (see setup)
 var _run_time := 0.0                  # sampled driving time; the run finishes at MAX_RUN_SECONDS
 var _results_screen: BenchmarkResults
+var _last_frame_usec := 0              # wall clock at the previous sampled frame
+
+
+# The TRUE elapsed time since the previous sampled frame, in ms.
+#
+# Deliberately NOT `_process`'s `delta`: Godot applies delta smoothing
+# (`application/run/delta_smoothing`, on by default) which snaps the reported
+# delta to integer divisors of the estimated refresh rate to hide judder from
+# gameplay code. That is right for physics/animation and WRONG for a profiler —
+# measured on this stage, smoothing reported p99 8.3 ms / max 25 ms while the
+# real intervals were p99 16.6 ms / max 40 ms, so real hitches were averaged
+# away and the `spikes >= _spike_ms` counter read 0 through genuine 30-40 ms
+# frames. The monotonic wall clock is unsmoothed, so spikes survive.
+#
+# Note also that Performance.TIME_PROCESS / TIME_PHYSICS_PROCESS (sampled below)
+# are NOT per-frame values: the engine publishes them once per second, and each
+# is the MAXIMUM over that second. They are useful as a worst-frame indicator per
+# second, but must never be read as "this frame's cost".
+func _frame_interval_ms() -> float:
+	var now := Time.get_ticks_usec()
+	var elapsed := now - _last_frame_usec
+	_last_frame_usec = now
+	return float(elapsed) / 1000.0
 
 
 # Wire the runner to the live scene and start driving. `view` is the viewport
@@ -121,8 +144,11 @@ func _process(delta: float) -> void:
 			# don't count against the measured window.
 			if _engine_audio != null and _engine_audio.has_method("skip_count"):
 				_last_skips = _engine_audio.skip_count()
+			# Baseline the wall clock so the first sampled interval measures a real
+			# frame, not the span back into warm-up. See _frame_interval_ms.
+			_last_frame_usec = Time.get_ticks_usec()
 		return
-	var frame_ms := delta * 1000.0
+	var frame_ms := _frame_interval_ms()
 	var rcpu := RenderingServer.viewport_get_measured_render_time_cpu(_view_rid)
 	var proc := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var phys := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0

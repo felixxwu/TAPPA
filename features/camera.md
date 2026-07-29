@@ -194,8 +194,11 @@ to take over the viewport for the duration of the standings screen. A determinis
 testable `_tick(delta)` (no RNG, no engine-clock reads) cycles through five shots
 (`enum Shot { ORBIT, FLYBY, WHEEL, HIGH_WIDE, ROADSIDE }`): an orbiting shot circling the
 car, a fixed offset flyby, an onboard **wheel cam** by the front wheel looking forward
-down the road, a high wide establishing shot, and a planted **roadside** "filming from
-the verge" shot. The four tracking shots dwell `SHOT_DWELL := 4.0` s each; ROADSIDE
+down the road (its lateral mount clears the target's actual body half-width plus a
+clearance margin — `GameConfig.wheel_cam_lateral_clearance` / `wheel_cam_fallback_lateral`
+— rather than a fixed offset, so it never clips a wide car's body; see
+[event-replay.md](event-replay.md)), a high wide establishing shot, and a planted
+**roadside** "filming from the verge" shot. The four tracking shots dwell `SHOT_DWELL := 4.0` s each; ROADSIDE
 instead holds a fixed trackside spot and cuts only after the car passes and drives off.
 See [event-replay.md](event-replay.md) for the full shot list. It goes away with the
 overlay once the standings screen closes (the player's chosen `CameraManager` mode

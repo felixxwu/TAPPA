@@ -765,6 +765,29 @@ func test_head_on_collision_costs_hp() -> void:
 	assert_lt(_car.damage.hp, 1000.0, "a head-on collision must cost HP")
 
 
+# Regression: revving the engine against the countdown's handbrake-only hold
+# (StageManager.setup: controls_locked = false, handbrake_locked = true) makes
+# _apply_parking_hold cancel the tiny per-tick creep the drive force keeps
+# introducing — a small, legitimate chassis vibration while the car is
+# deliberately held at the line. _integrate_forces used to read that hold-vs-
+# throttle jitter as a real deceleration and charge it as impact damage, tick
+# after tick, for the whole countdown — accumulating "a bunch of small damage"
+# the player never actually caused. car.gd now skips the deceleration-damage
+# measurement entirely while is_held() is true. See features/damage.md.
+func test_no_damage_accumulates_while_held_and_revving() -> void:
+	_car.damage.field(1000.0, 1000.0)
+	var impacts: Array = []
+	_car.damage.damaged.connect(func(loss, _pt): impacts.append(loss))
+	_car.controls_locked = false
+	_car.handbrake_locked = true
+	Input.action_press("accelerate")
+	await _wait_physics(90)
+	Input.action_release("accelerate")
+	_car.handbrake_locked = false
+	assert_eq(impacts.size(), 0, "no impact/damage events while held (countdown) and revving")
+	assert_eq(_car.damage.hp, 1000.0, "HP must not drop while the car is deliberately held")
+
+
 # A car fielded with bent wheels must veer from the physics ALONE — the damage
 # steer bias was removed, so if the toe weren't applied to the actual wheel nodes
 # (and their steer axle re-captured on re-parent), the car would track straight.

@@ -28,8 +28,9 @@ func _straight_centerline() -> Curve2D:
 
 
 # A precomputed manager with a road baked in, so the flatten/surface fields are real.
-func _baked_manager() -> TerrainManager:
+func _baked_manager(lazy_finest := false) -> TerrainManager:
 	var m := _make_manager()
+	m.lazy_finest_lod = lazy_finest
 	m.light_amount = 1.0
 	var line := _straight_centerline()
 	await m.bake_track(line, 7.0, 3.0)
@@ -210,7 +211,9 @@ func _mesh_instances_of(chunk: TerrainChunk) -> Array:
 # finest level was never prebaked: the level is built on entry to the detail ring, and its
 # geometry agrees with the collision heightfield it shares.
 func test_lazily_built_finest_level_has_the_cached_geometry() -> void:
-	var m: TerrainManager = await _baked_manager()
+	# Explicitly opts into the lazy path: it is the escape hatch, not the default, so
+	# this test must not depend on whichever way the default happens to be set.
+	var m: TerrainManager = await _baked_manager(true)
 	assert_true(m.lazy_finest_lod, "precondition: the finest level is deferred")
 	var focus := Vector3(150, 0, 0)
 	m.update_focus(focus)
@@ -232,7 +235,9 @@ func test_lazily_built_finest_level_has_the_cached_geometry() -> void:
 # Spawn -> despawn -> re-spawn: the deferred level rebuilds identically each time (the
 # cache entry it is rebuilt from is not consumed by the first build).
 func test_finest_level_rebuilds_identically_after_a_respawn() -> void:
-	var m: TerrainManager = await _baked_manager()
+	# Lazy path (the escape hatch): this asserts deferral/rebuild behaviour that
+	# only exists when the finest level is NOT prebaked, so opt in explicitly.
+	var m: TerrainManager = await _baked_manager(true)
 	var focus := Vector3(50, 0, 0)
 	m.update_focus(focus)
 	m.flush_detail_queue()
@@ -253,7 +258,9 @@ func test_finest_level_rebuilds_identically_after_a_respawn() -> void:
 # Only the detail ring keeps a built finest level; chunks loaded beyond it hold none (that
 # is the whole VRAM saving), and they get it the moment the focus reaches them.
 func test_finest_level_follows_the_detail_ring() -> void:
-	var m: TerrainManager = await _baked_manager()
+	# Lazy path (the escape hatch): this asserts deferral/rebuild behaviour that
+	# only exists when the finest level is NOT prebaked, so opt in explicitly.
+	var m: TerrainManager = await _baked_manager(true)
 	var focus := Vector3(150, 0, 0)
 	m.update_focus(focus)
 	m.flush_detail_queue()
@@ -276,7 +283,9 @@ func test_finest_level_follows_the_detail_ring() -> void:
 # An absent finest level must never be a hole: the next present level takes over the near
 # band instead of starting at the finest level's cutoff.
 func test_absent_finest_level_leaves_no_uncovered_near_band() -> void:
-	var m: TerrainManager = await _baked_manager()
+	# Lazy path (the escape hatch): this asserts deferral/rebuild behaviour that
+	# only exists when the finest level is NOT prebaked, so opt in explicitly.
+	var m: TerrainManager = await _baked_manager(true)
 	var focus := Vector3(150, 0, 0)
 	m.update_focus(focus)
 	m.flush_detail_queue()
@@ -297,7 +306,9 @@ func test_absent_finest_level_leaves_no_uncovered_near_band() -> void:
 # load-only data, so a chunk spawned after the frees still shades like its neighbours
 # rather than falling back to flat white (and does so without tripping any sentinel).
 func test_finest_level_still_builds_after_the_load_only_frees() -> void:
-	var m: TerrainManager = await _baked_manager()
+	# Lazy path (the escape hatch): this asserts deferral/rebuild behaviour that
+	# only exists when the finest level is NOT prebaked, so opt in explicitly.
+	var m: TerrainManager = await _baked_manager(true)
 	m.free_load_only_data()
 	var focus := Vector3(150, 0, 0)
 	m.update_focus(focus)
@@ -321,7 +332,9 @@ func test_finest_level_still_builds_after_the_load_only_frees() -> void:
 # whole boundary crossing's worth of mesh building on one frame: entering chunks queue up
 # and the drain honours its per-frame limit.
 func test_entering_chunks_queue_instead_of_building_all_at_once() -> void:
-	var m: TerrainManager = await _baked_manager()
+	# Lazy path (the escape hatch): this asserts deferral/rebuild behaviour that
+	# only exists when the finest level is NOT prebaked, so opt in explicitly.
+	var m: TerrainManager = await _baked_manager(true)
 	m.update_focus(Vector3(50, 0, 0))
 	m.flush_detail_queue()
 	assert_true(m._detail_queue.is_empty(), "precondition: the ring is fully detailed")
@@ -396,7 +409,9 @@ func test_initial_ring_comes_from_the_corridor_cache() -> void:
 
 
 func test_initial_ring_participates_in_the_lazy_finest_path() -> void:
+	# Explicitly opts into the lazy path (the escape hatch, not the default).
 	var m := _focused_manager()
+	m.lazy_finest_lod = true
 	var line := _straight_centerline()
 	for i in 3:
 		m._timed_process(0.016)
@@ -415,3 +430,63 @@ func test_initial_ring_participates_in_the_lazy_finest_path() -> void:
 			"chunk %s holds its finest level iff it is inside the detail ring" % coord)
 		checked += 1
 	assert_gt(checked, 0, "precondition: the ring contains full-res chunks")
+
+
+# --- Prebaked finest level (lazy_finest_lod = false) ----------------------------
+# The shipped default since 2026-07-30 is to PREBAKE the finest LOD for the whole
+# corridor rather than rebuild it on demand, because each on-demand rebuild is a
+# mid-drive frame hitch (features/terrain.md -> "Lazy finest LOD level"). These assert the LOGIC of
+# both directions of the flag, never its default value or any VRAM/timing number — a
+# designer flipping the default back for a low-VRAM device must not break them.
+
+# Prebake path: cache_chunk builds level 0 up front, so a spawned chunk already has its
+# finest mesh, is not "deferred", and never enqueues detail work.
+func test_prebaked_finest_level_needs_no_detail_queue() -> void:
+	var m := _make_manager()
+	m.lazy_finest_lod = false
+	m.light_amount = 1.0
+	var line := _straight_centerline()
+	await m.bake_track(line, 7.0, 3.0)
+	m.precompute_corridor(line, 25.0)
+	var focus := Vector3(150, 0, 0)
+	m.update_focus(focus)
+	var checked := 0
+	for coord in m._chunks:
+		if not bool(m.chunk_class(coord)["full_res"]):
+			continue  # coarse chunks prune their fine levels for good
+		var chunk: TerrainChunk = m._chunks[coord]
+		assert_false(chunk.is_finest_deferred(),
+			"prebaked chunk %s has nothing left to defer" % coord)
+		assert_true(chunk.has_finest_mesh(),
+			"prebaked chunk %s carries its finest level straight from the cache" % coord)
+		checked += 1
+	assert_gt(checked, 0, "precondition: the ring contains full-res chunks")
+	assert_true(m._detail_queue.is_empty(),
+		"no runtime rebuild is queued when every level was prebaked")
+
+
+# The saving that pays for the extra VRAM: the quantised level-0 light is retained ONLY
+# to feed a lazy rebuild, so prebaking must not keep it. Asserts presence/absence, not
+# byte counts.
+func test_prebake_does_not_retain_the_lazy_rebuild_light() -> void:
+	var line := _straight_centerline()
+	var lazy := _make_manager()
+	lazy.lazy_finest_lod = true
+	lazy.light_amount = 1.0
+	await lazy.bake_track(line, 7.0, 3.0)
+	lazy.precompute_corridor(line, 25.0)
+	var prebaked := _make_manager()
+	prebaked.lazy_finest_lod = false
+	prebaked.light_amount = 1.0
+	await prebaked.bake_track(line, 7.0, 3.0)
+	prebaked.precompute_corridor(line, 25.0)
+	var checked := 0
+	for coord in lazy._chunk_cache:
+		if not bool(lazy.chunk_class(coord)["full_res"]):
+			continue
+		assert_true(lazy._chunk_cache[coord].has("l0_light"),
+			"the lazy path keeps l0_light to rebuild level 0 from")
+		assert_false(prebaked._chunk_cache[coord].has("l0_light"),
+			"the prebake path has no rebuild to feed, so l0_light is dead weight")
+		checked += 1
+	assert_gt(checked, 0, "precondition: the corridor contains full-res chunks")

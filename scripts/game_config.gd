@@ -64,7 +64,7 @@ var peak_torque_rpm := 4500.0
 @export var steer_speed := 5.0
 ## How much the front wheels caster toward the direction of travel: 1.0 = fully
 ## track it (automatic countersteer), 0.0 = steering input only.
-@export_range(0.0, 1.0) var steer_travel_alignment := 1.0
+@export_range(0.0, 1.0) var steer_travel_alignment := 0.8
 ## Speed (m/s) at/above which the low-speed steer-lock blend is fully into the
 ## slip-based cap. Below it, optimum_steer_limit() blends linearly from the full
 ## mechanical steer_limit at standstill up to the slip-based cap at this speed, so
@@ -667,7 +667,7 @@ var peak_torque_rpm := 4500.0
 ## negative Z sits the camera over the bonnet; +Y raises it to eye height.
 @export var bonnet_offset := Vector3(0.0, 0.7, -0.6)
 ## Field of view (degrees) for the bonnet camera.
-@export_range(30.0, 120.0) var bonnet_fov := 75.0
+@export_range(30.0, 120.0) var bonnet_fov := 85.0
 ## Base field of view (degrees) for the chase camera at a standstill.
 @export_range(30.0, 120.0) var chase_fov := 90.0
 ## Extra FOV (degrees) added on top of chase_fov at chase_fov_speed and above, to
@@ -702,6 +702,15 @@ var peak_torque_rpm := 4500.0
 @export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.0
 @export_range(0.0, 30.0) var chase_tilt_max_deg := 4.0
 @export_range(0.1, 20.0) var chase_tilt_smoothing := 6.0
+## Replay WHEEL shot: lateral clearance (m) kept OUTSIDE the target car's half-width
+## when mounting the onboard wheel-cam rig. The rig sits at (car half-width +
+## this margin) out from the body centreline, so it never lands inside — or right on
+## the surface of — a wide car's body mesh. See replay_camera.gd (Shot.WHEEL).
+@export_range(0.0, 1.0) var wheel_cam_lateral_clearance := 0.2
+## Replay WHEEL shot: fallback lateral offset (m) used only when the replay target
+## doesn't expose half_width() (e.g. a flat test fixture) — mirrors the old fixed rig
+## position so behaviour is unchanged for targets with no known body width.
+@export var wheel_cam_fallback_lateral := 0.95
 
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car
@@ -714,6 +723,16 @@ var peak_torque_rpm := 4500.0
 @export var menu_camera_offset := Vector3(2.6, 1.5, 6.2)
 ## Height (m) above the car's origin that the HQ menu camera looks at.
 @export var menu_camera_look_height := 0.7
+## Camera position (relative to the car, WORLD space) for the COSMETIC WHEEL view — the
+## solo car-park mode where the player tries wheels on (features/wheel-customization.md).
+## Replaces menu_camera_offset while that mode is open. Low and side-on (+X, small +Z) so
+## the settled car's flank and BOTH wheels fill the frame — wheels are judged by stance,
+## which is why this view uses the car park (car resting on its suspension) and not the
+## tuning lift (car raised off the ground).
+@export var hq_wheel_cam_offset := Vector3(6.4, 0.9, 0.6)
+## Height (m) above the car's origin the wheel-view camera looks at. Lower than
+## menu_camera_look_height so the shot sits at wheel height, not window height.
+@export var hq_wheel_cam_look_height := 0.45
 ## Width (m) of one parking bay in the HQ car park — the spacing between parked cars
 ## along the lot's X, and the period of the painted bay markings (_build_carpark).
 @export var menu_car_spacing := 3.4
@@ -836,7 +855,12 @@ var peak_torque_rpm := 4500.0
 @export_range(0.25, 0.6) var hq_lift_menu_width_frac := 0.42
 ## Fraction of the screen width an OPEN tuning/upgrades page occupies, centred
 ## horizontally so the menu uses more space (the car description hides while it's up).
-@export_range(0.5, 1.0) var hq_lift_menu_centered_width_frac := 0.82
+## The game's logical UI canvas is narrow (DisplayStretch lays every menu out against
+## ~DESIGN_HEIGHT * aspect / horizontal_stretch units — a few hundred wide, not desktop
+## pixel counts), so rows authored with generous fixed widths (slider_row.gd's 180-unit
+## label column, a 4-button option row) need most of that width just to avoid wrapping/
+## clipping — see features/menus.md "Upgrades / Tune panel width".
+@export_range(0.5, 1.0) var hq_lift_menu_centered_width_frac := 0.94
 
 @export_group("Free Roam")
 ## Free roam (Test Drive) generation settings — hq.gd's _prepare_free_roam writes
@@ -884,13 +908,13 @@ var peak_torque_rpm := 4500.0
 @export_group("Terrain Layers")
 # Three stacked perlin noise layers: wavelength in metres, amplitude in metres.
 ## Layer 1 wavelength (m): spacing of the largest, rolling hills.
-@export_range(1.0, 1000.0) var terrain_layer1_wavelength := 67.0
+@export_range(1.0, 1000.0) var terrain_layer1_wavelength := 100.0
 ## Layer 1 amplitude (m): height of the largest, rolling hills.
 @export_range(0.0, 100.0) var terrain_layer1_amplitude := 10.0
 ## Layer 2 wavelength (m): spacing of the mid-scale undulations.
-@export_range(1.0, 200.0) var terrain_layer2_wavelength := 15.0
+@export_range(1.0, 200.0) var terrain_layer2_wavelength := 50.0
 ## Layer 2 amplitude (m): height of the mid-scale undulations.
-@export_range(0.0, 10.0) var terrain_layer2_amplitude := 1.0
+@export_range(0.0, 10.0) var terrain_layer2_amplitude := 0.0
 ## Layer 3 wavelength (m): spacing of the finest surface bumps.
 @export_range(1.0, 200.0) var terrain_layer3_wavelength := 3.0
 ## Layer 3 amplitude (m): height of the finest surface bumps.
@@ -1057,6 +1081,14 @@ var peak_torque_rpm := 4500.0
 ## Master switch for the off-track auto-reset. Progress tracking (for the HUD)
 ## runs regardless; this only gates the snap-back-onto-road behaviour.
 @export var off_track_reset_enabled := true
+## Absolute world Y below which the car is considered to have fallen off the
+## world entirely (a void with no water plane) and is snapped back to the last
+## on-road pose (TrackProgress._best_reset), regardless of lateral distance from
+## the road. Used as a fallback floor; on tracks with water (`water_enabled`),
+## the per-track `track_water_level_m` (below) is the primary trigger instead,
+## since a track's flood height varies per rally event and can sit well above
+## this fixed floor.
+@export var fell_off_world_y := -50.0
 ## Master switch for the corner-cutting time penalty (features/corner-cutting.md).
 ## When off, cuts are never billed and cut_penalty_s() is always 0.
 @export var cut_penalty_enabled := true
@@ -1084,6 +1116,12 @@ var peak_torque_rpm := 4500.0
 ## Kept small: it's ADDED to water_level in the reject test, so a large value would
 ## exclude most of the (low-amplitude) terrain and starve the track search.
 @export_range(0.0, 2.0) var water_shore_clearance_m := 0.3
+## Depth (m) below the per-track `track_water_level_m` at which the car is
+## considered to have fallen INTO the water (submerged, not just splashing at
+## the shore/surface) and is snapped back to the last on-road pose. Only
+## checked while `water_enabled` is on, since `track_water_level_m` is
+## meaningless otherwise.
+@export var water_submersion_reset_depth_m := 3.0
 ## Extra linear drag applied to the chassis while in water (soft hazard — the car
 ## slows but can still drive out; no reset).
 @export_range(0.0, 30.0) var water_drag := 6.0
@@ -1342,7 +1380,8 @@ var peak_torque_rpm := 4500.0
 @export_range(0.0, 1.0) var tree_plough_keep_max := 0.8
 ## Distance (m) past which trees are fully culled — the value used on every target
 ## EXCEPT a web TOUCH device (see tree_render_distance_web_touch_m). Defaults near
-## the loaded terrain extent (RADIUS=2, CHUNK_M=50 -> ~125 m). world.gd resolves the
+## the loaded terrain extent (TerrainManager.RADIUS=3, CHUNK_M=50 -> ~175 m to the
+## ring edge; this default sits inside that). world.gd resolves the
 ## effective value once at boot via tree_render_distance_for() and writes it back
 ## here, so all downstream readers (foliage, signs, spectators, arches) see it.
 @export_range(10.0, 500.0) var tree_render_distance_m := 120.0
@@ -1519,6 +1558,11 @@ var peak_torque_rpm := 4500.0
 ## slows, so a gentle bump produces a gentle tumble.
 @export_range(0.0, 30.0) var spectator_knock_spin := 9.0
 @export_range(1.0, 200.0) var spectator_ragdoll_mass_kg := 65.0
+## How many ragdoll bodies each crowd pre-builds at load time and then recycles, so a
+## car-into-crowd hit reuses an existing RigidBody3D (+ capsule + mesh instance) instead
+## of constructing one mid-drive. A hit that outruns the pool still falls back to building
+## a fresh body, so this bounds the PREBUILT set, never the number of ragdolls.
+@export_range(0, 32) var spectator_ragdoll_pool_size := 8
 ## Distance (m) behind the car at which a settled ragdoll is freed.
 @export_range(10.0, 300.0) var spectator_despawn_behind_m := 70.0
 
@@ -1651,13 +1695,29 @@ var peak_torque_rpm := 4500.0
 ## If a replay shot ever shows unbuilt terrain, RAISE THIS FIRST.
 @export_range(0.0, 200.0) var terrain_precompute_safety_slack_m := 25.0
 ## Defer each full-res chunk's FINEST LOD level instead of prebaking it for the whole
-## corridor, rebuilding it on demand as chunks enter the detail ring. Measured 26.8 MB
-## -> 7.6 MB of VRAM added by the corridor prebake. Off = prebake every level (the old
-## behaviour) — the escape hatch if a device shows a rebuild hitch.
-@export var terrain_lazy_finest_lod := true
-## Finest-level rebuilds allowed per rendered frame. A rebuild is ~4.8 ms, and a chunk
-## boundary crossing brings a whole column in at once, so building them all in one frame
-## hitches; 1 clears a crossing in a handful of frames, well before the car reaches them.
+## corridor, rebuilding it on demand as chunks enter the detail ring.
+##
+## DEFAULT OFF (prebake every level at load) since 2026-07-30, on EVERY target
+## including web — deliberately NOT gated per-platform. Deferring saves VRAM but pays
+## for it with a mid-drive hitch: each on-demand rebuild is a measured ~6.2 ms, of
+## which ~67% is the 8 dictionary lookups per vertex in TerrainManager's
+## _vertex_color_row / _surface_uv2_row over 51x51 vertices, and a chunk crossing
+## queues a whole row of them (drained at terrain_detail_builds_per_frame).
+##
+## Windowed A/B on the benchmark stage, same seed (see features/terrain.md ->
+## "Lazy finest LOD level"):
+##   lazy (on)  -> frame p99 11.03 ms, 1% low  90.6 fps, VRAM +9.5 MB, cache 12.3 MB
+##   prebake    -> frame p99  4.52 ms, 1% low 221.3 fps, VRAM +35.1 MB, cache 10.7 MB
+## So prebaking costs ~+25.6 MB VRAM and SAVES ~1.6 MB RAM (the retained `l0_light`,
+## kept only to feed the lazy rebuild, becomes unnecessary) for a 59% better p99 and a
+## 2.4x better 1% low. Turn back ON only if a real device runs out of VRAM — that is
+## the trade this flag exists to express, in that direction.
+@export var terrain_lazy_finest_lod := false
+## Finest-level rebuilds allowed per rendered frame. A rebuild is a measured ~6.2 ms,
+## and a chunk boundary crossing brings a whole row in at once, so building them all in
+## one frame hitches; 1 clears a crossing in a handful of frames, well before the car
+## reaches them. Only reached when terrain_lazy_finest_lod is ON — with the default
+## (prebake) the detail queue stays empty, so this is the escape-hatch path's knob.
 @export_range(1, 16) var terrain_detail_builds_per_frame := 1
 
 
@@ -1950,6 +2010,7 @@ func spectator_params() -> Dictionary:
 		"knock_lift_ratio": spectator_knock_lift_ratio,
 		"knock_spin": spectator_knock_spin,
 		"ragdoll_mass_kg": spectator_ragdoll_mass_kg,
+		"ragdoll_pool_size": spectator_ragdoll_pool_size,
 		"despawn_behind_m": spectator_despawn_behind_m,
 		"drag_strength": spectator_drag_strength,
 		"ragdoll_layer": 1 << 4,

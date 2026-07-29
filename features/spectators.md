@@ -48,7 +48,34 @@ the tumble spin tapers to zero as the car slows — so a slow nudge topples a sp
 gently instead of flinging them skyward. Ragdolls collide with the
 terrain/trees (all on physics layer 1) but carry an explicit
 `add_collision_exception_with(car)`, so a crowd can never bog the car down. Once
-the car is `spectator_despawn_behind_m` behind a ragdoll, it is freed.
+the car is `spectator_despawn_behind_m` behind a ragdoll, it is **retired** — see the
+pool below.
+
+#### Ragdoll bodies are pre-built and recycled, never built on the knock frame
+
+Constructing a ragdoll (a `RigidBody3D` + `CollisionShape3D` + `CapsuleShape3D` + a
+`MeshInstance3D`, all three registered with the servers) is work that used to land on
+the exact frame the car ploughs into a crowd — and a fast pass knocks *several* members
+on the same tick. `setup()` now pre-builds `spectator_ragdoll_pool_size` bodies per group
+while the loading screen is up (`SpectatorGroup._build_ragdoll`), parked **inert**:
+`freeze = true`, `collision_layer`/`collision_mask` 0, hidden, no residual velocity
+(`_park_ragdoll`). A knock takes one from the pool and brings it live
+(`_acquire_ragdoll` — configured layers, unfrozen, visible, pose reset to standing so a
+recycled body can't start mid-tumble); a retired ragdoll goes back into the pool
+(`_release_ragdoll`) instead of being freed, so mowing through several crowds over a
+whole stage pays the build cost once.
+
+The pool bounds only the **prebuilt** set, never how many spectators can be knocked
+over: a knock that finds the pool empty still builds a body on the spot, and a release
+with the pool already full still frees it (which is what keeps bodies from accumulating,
+exactly as the old `queue_free()` did). `ragdolls_built()` / `pooled_ragdoll_count()`
+are the test readouts.
+
+The other first-hit cost, the shader program for the ragdoll's **single**-instance draw
+of the crowd mesh (a different `gl_compatibility` program than the upright crowd's
+MultiMesh, so `_prewarm_corridor`'s flythrough never compiles it), is primed by
+`SpectatorGroup.warm_up` / `clear_warm_up` via world.gd's warm-up contract walk — see
+[rendering.md](rendering.md) → *Shader pre-warm*.
 
 ### Steering (boids on the XZ plane)
 
@@ -137,13 +164,15 @@ replaces rather than stacks them (mirrors `_place_arch`).
 - Upright crowd: no physics bodies at all (pure data + MultiMesh).
 - Ragdolls: own layer (bit 5) with mask = layer 1 (terrain + trees), plus a
   per-body collision exception with the car. The car's own layer/mask are
-  unchanged.
+  unchanged. A **pooled** (not-yet-knocked or already-retired) body sits on layer/mask
+  **0** and is frozen, so the prebuilt set never touches the broadphase.
 
 ## Config
 
 `@export_group("Spectators")` in `game_config.gd` (group size, mid-progress band,
 crowd-band length/width, separation, flee/knock radii, max speed + accel, LOD radius,
-the five steering weights, ragdoll launch params, despawn distance). Disable with
+the five steering weights, ragdoll launch params, `spectator_ragdoll_pool_size`, despawn
+distance). Disable with
 `spectators_enabled = false` or `spectator_group_size = 0`. The knock-drag knob
 (`spectator_drag_strength`) lives in the **Damage** group but is plumbed through
 `spectator_params()`.

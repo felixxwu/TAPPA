@@ -219,6 +219,13 @@ Two distinct systems:
   **repair kit** (consumed to heal damage). *(Exact upgrade list + how each maps
   to config knobs → its own todo.)*
 
+- **Appearance** — a third, purely **cosmetic** system: any car's **wheels** can be
+  fitted to any owned car, **free and ungated**, with every car's wheels available
+  from the start regardless of what the player owns. No stat consequence of any kind,
+  and unrelated to the engine-swap economy. Tried on in a solo car-park view where
+  the car sits settled on its suspension (wheels are judged by stance).
+  *(Implementation: `features/wheel-customization.md`.)*
+
 Per the project's config-first rule, every tuning value and upgrade effect should
 resolve into `GameConfig`/`CarLibrary` values, never hardcoded.
 

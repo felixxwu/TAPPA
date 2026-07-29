@@ -8,6 +8,15 @@ class FlatTerrain:
 	func height_at(_x: float, _z: float) -> float:
 		return surface_y
 
+# A synthetic replay target exposing half_width(), like Car, but with a controllable
+# body width — so the WHEEL shot's clearance behaviour can be checked across a RANGE of
+# widths without pinning to any one authored CarLibrary car.
+class WideTarget:
+	extends Node3D
+	var body_half_width := 0.0
+	func half_width() -> float:
+		return body_half_width
+
 var _target: Node3D
 var _rec: ReplayRecorder
 var _cam: ReplayCamera
@@ -49,6 +58,33 @@ func test_wheel_cam_mounts_at_the_front_and_looks_forward() -> void:
 	# Aimed forward down the track, not back at the car body.
 	assert_gt((-_cam.global_transform.basis.z).dot(fwd.normalized()), 0.5,
 		"wheel cam looks forward past the wheel, not back at the car")
+
+
+func test_wheel_cam_clears_the_car_body_across_a_range_of_widths() -> void:
+	# Regression: the WHEEL shot used to mount at a FIXED lateral offset regardless of
+	# the fielded car's actual width, so a wide enough car's body would reach out to (or
+	# past) the camera's mount point -- the rig would sit at/inside the body mesh. The
+	# mount must now scale with the target's own half_width() plus a clearance margin,
+	# for ANY reasonable body width (not a specific authored car's dimensions).
+	var wide := WideTarget.new()
+	add_child_autofree(wide)
+	var cam := ReplayCamera.new()
+	add_child_autofree(cam)
+	cam.setup(wide, _rec)
+	cam._shot = ReplayCamera.Shot.WHEEL
+	cam._shot_age = 0.0
+	var clearance: float = Config.data.wheel_cam_lateral_clearance
+	for half_width in [0.3, 0.6, 0.95, 1.2, 1.6]:
+		wide.body_half_width = half_width
+		wide.global_position = Vector3(0, 0, 0)
+		cam._tick(0.016)
+		var right := wide.global_transform.basis.x.normalized()
+		var lateral_reach := (cam.global_position - wide.global_position).dot(right)
+		assert_almost_eq(lateral_reach, half_width + clearance, 0.01,
+			"wheel cam lateral reach (%s) must clear half-width %s by the configured margin"
+				% [lateral_reach, half_width])
+		assert_gt(lateral_reach, half_width,
+			"wheel cam must sit strictly outside the car's half-width (no clipping)")
 
 
 func test_shot_cycles_after_dwell() -> void:

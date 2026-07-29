@@ -240,13 +240,13 @@ const CARS: Array[Dictionary] = [
 		# panels that crack — a reliable brute held back by rawness.
 		"id": "viper", "country": "US", "car_type": "roadster", "max_hp": 800.0, "reward_tier": 4,
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
-		"tire_compound": 1.0,  # sticky performance tyres (period bias-belted rubber)
+		"tire_compound": 0.9,  # sticky performance tyres (period bias-belted rubber)
 		"brake_bias": 0.25,  # front share of foot-brake torque (~49/51 front-mid RWD)
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "steer_assist_torque": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
 		"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.6,
-		"wheel_radius": 0.34, "wheel_width_front": 0.345, "wheel_width_rear": 0.295,  # 275/335 stagger
+		"wheel_radius": 0.34, "wheel_width_front": 0.345, "wheel_width_rear": 0.285,  # 275/335 stagger
 		"suspension_travel": 0.35, "suspension_stiffness": 11.0,  # firm but a touch softer than the later GTS
 		# Renders blender/viper/viper.glb (Car/ViperBody) with its baked body atlas
 		# (texture.png); see car.gd apply_car(). Wheels use its own three-spoke wheel.jpg.
@@ -331,6 +331,26 @@ static func index_of(id: String) -> int:
 # The CarLibrary entry for a stable id, or an empty Dictionary if unknown.
 static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
+
+
+# Every car's WHEELS, offered as a cosmetic style any car can wear (see
+# features/wheel-customization.md). Derived from the roster — adding a car adds its
+# wheels for free, and there is no separate authored wheel table to keep in sync.
+# Returns [{ "id": <car id>, "name": <car name>, "texture": <wheel_texture> }, …] in
+# roster order. Cars with no authored wheel_texture are skipped: they render a blank
+# dark disc, which isn't a style worth offering.
+static func wheel_catalogue() -> Array:
+	var out: Array = []
+	for entry in all():
+		var tex := String(entry.get("wheel_texture", ""))
+		if tex.is_empty():
+			continue
+		out.append({
+			"id": String(entry.get("id", "")),
+			"name": String(entry.get("name", "")),
+			"texture": tex,
+		})
+	return out
 
 
 # Short label for a drive_mode (matches Drivetrain.DriveMode), for stat readouts.

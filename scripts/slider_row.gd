@@ -2,7 +2,7 @@ class_name SliderRow
 extends RefCounted
 # Shared builder for the house "labeled slider row" used by the tuning panel
 # (TuningPanel, the handling axes) and the upgrades menu (UpgradesMenu, the engine
-# detune). One place owns the layout, the fixed 180px label column, the font sizes,
+# detune). One place owns the layout, the fixed 130px label column, the font sizes,
 # the extremity end-labels, and the focus-highlight wiring — so the rows can't drift
 # apart (they used to be two hand-copied builders). Pure construction, no per-frame
 # state, so it's a static builder rather than a scene/node.
@@ -29,7 +29,11 @@ static func build(spec: Dictionary) -> Dictionary:
 	# gets the same leftover width, so all sliders line up to the same length.
 	var label_col := VBoxContainer.new()
 	label_col.add_theme_constant_override("separation", 2)
-	label_col.custom_minimum_size = Vector2(180, 0)
+	# 130, not the old 180: the logical UI canvas these rows lay out against is only a
+	# few hundred units wide (DisplayStretch), so 180 alone was eating roughly half the
+	# available width and starving the slider + its end labels — see
+	# features/menus.md "Upgrades / Tune panel width".
+	label_col.custom_minimum_size = Vector2(130, 0)
 	label_col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	row.add_child(label_col)
 	var name_label := Label.new()

@@ -109,10 +109,29 @@ var _selected_instance_id := -1
 #            Start drops into a session-less drive in the picked car (owned or not).
 #   SWAP     (_enter_engine_swap) — OTHER owned cars; Select picks an engine-swap partner.
 #   STARTER  (first run) — preview cars (garage empty); Select grants the first car.
+#   WHEELS   (_enter_wheel_swap) — the selected car ALONE in the lot, settled on its
+#            suspension, with a low side-on camera; left/right cycles cosmetic wheel
+#            styles live on the car and Start fits the shown one. Uses the car park
+#            (not the tuning lift) precisely because the lift holds the car RAISED and
+#            wheels are judged by stance. See features/wheel-customization.md.
 # One enum instead of mutually-exclusive booleans: entering a job sets the mode
 # (which inherently clears the others), and every exit/commit/back returns to RALLY.
-enum CarparkMode { RALLY, GARAGE, FREEROAM, SWAP, STARTER }
+enum CarparkMode { RALLY, GARAGE, FREEROAM, SWAP, STARTER, WHEELS }
 var _carpark_mode := CarparkMode.RALLY
+
+# Cosmetic wheel-swap state, live only in CarparkMode.WHEELS. _wheel_options is the
+# style list from WheelStyle.options_for (stock first); _wheel_index is the cursor into
+# it, previewed on the parked car as it moves. The preview is VISUAL ONLY — nothing is
+# written to the save until Start (_commit_wheels), and backing out re-skins the car
+# back to its saved style (_revert_wheel_preview) so no uncommitted skin can be left
+# on the shared _car_cache node.
+var _wheel_options: Array = []
+var _wheel_index := 0
+# The owned car this wheel session is for, captured ONCE on entry. Preview / revert /
+# commit all key off this instead of re-deriving the car from _lift_owned in one place and
+# Save.selected_instance_id() in another — two sources that agree today but would silently
+# apply a commit to the WRONG car if they ever drifted apart.
+var _wheel_instance_id := -1
 
 # Map-table pan state: drag the table view around (the map can be larger than the
 # screen once zoomed in). _table_pan is the camera's X/Z offset from its base pose;
@@ -1805,7 +1824,16 @@ func _ensure_lift_car() -> void:
 		return
 	var id := int(owned.get("instance_id", -1))
 	var owned_hash := owned.hash()
-	if is_instance_valid(_lift_car) and _lift_car_instance_id == id and _lift_car_hash == owned_hash:
+	# The id/hash match alone is NOT enough to skip re-showing it: _lift_car shares its
+	# node with _car_cache (see _spawn_lift_car), and the garage picker's parked lineup
+	# borrows that very node while open (_obtain_parked_car) then HIDES + STOWS it on the
+	# way out (_release_page_props / _clear_lineup, called by _select_garage_car before
+	# _enter_lift). Reselecting the SAME car hits this id/hash match with the node still
+	# stowed off-screen from that hide — the "car vanishes from the lift" bug. Requiring
+	# `.visible` too forces the fall-through spawn path below, whose _car_cache hit just
+	# reconfigures (not rebuilds) the node back onto the lift — cheap, and correct.
+	if is_instance_valid(_lift_car) and _lift_car_instance_id == id and _lift_car_hash == owned_hash \
+			and _lift_car.visible:
 		_lift_owned = owned
 		return
 	_clear_lift_car()
@@ -2036,6 +2064,20 @@ func _index_of_model(cars: Array, model_id: String) -> int:
 
 
 func _car_back() -> void:
+	# Backing out of the wheel view DISCARDS the preview. Re-skin the parked car back to
+	# its saved style BEFORE _clear_lineup: the node survives in _car_cache under an
+	# UNCHANGED owned.hash() (nothing was saved), and the tuning lift borrows that very
+	# same node — so a preview left on it would reappear on the lift. Same class of leak
+	# as the "car vanishes from the lift" cache bug documented in _ensure_lift_car.
+	if _carpark_mode == CarparkMode.WHEELS:
+		_revert_wheel_preview()
+		_wheel_options = []
+		_wheel_instance_id = -1
+		# Backing out MID-STREAM abandons the spawn before it emits lineup_built, so the
+		# one-shot preview hook would otherwise stay connected — surviving into unrelated
+		# lineup builds and erroring on the next connect. Drop it here.
+		if lineup_built.is_connected(_apply_wheel_preview):
+			lineup_built.disconnect(_apply_wheel_preview)
 	_clear_lineup()
 	_selected_instance_id = -1
 	var mode := _carpark_mode
@@ -2045,7 +2087,7 @@ func _car_back() -> void:
 			_go_to(View.EXTERIOR)
 		CarparkMode.GARAGE, CarparkMode.FREEROAM:
 			_go_to(View.GARAGE)
-		CarparkMode.SWAP:
+		CarparkMode.SWAP, CarparkMode.WHEELS:
 			_enter_lift()
 		_:
 			_go_to(View.TABLE)
@@ -2073,6 +2115,108 @@ func _enter_engine_swap() -> void:
 	_no_eligible_label.visible = false
 	_focus = 0
 	_focus_changed(true)
+
+
+# Open the COSMETIC WHEEL view: the selected car ALONE in the lot (a one-element
+# lineup, which the paginator centres in the bays), framed by a low side-on camera.
+# left/right cycles wheel styles, previewing each live on the settled car; Start fits
+# the shown one. Free and ungated — every car's wheels are always on offer. Entered
+# from the tuning lift's HUB row. See features/wheel-customization.md.
+func _enter_wheel_swap() -> void:
+	# _lift_owned is the authoritative car on the lift (the entry point), not merely the
+	# save's selection — mirror the lift's own source of truth.
+	var owned := _lift_owned
+	if owned.is_empty():
+		return
+	_carpark_mode = CarparkMode.WHEELS
+	_wheel_instance_id = int(owned.get("instance_id", -1))
+	var model_id := String(owned.get("model_id", ""))
+	_wheel_options = WheelStyle.options_for(model_id)
+	_wheel_index = WheelStyle.option_index(_wheel_options, owned, model_id)
+	# A ONE-CAR lineup: _render_lineup_page centres a short page in the lot, so the car
+	# stands alone over a real bay with no neighbours competing for the side-on frame.
+	_build_lineup([owned])
+	_rally_banner.text = "Wheels"
+	_start_button.text = "Fit Wheels"
+	_view = View.CARPARK
+	_detail_open = false
+	_update_overlays()
+	if _eligible.is_empty():
+		_show_empty_carpark("No car to fit wheels to.")
+		return
+	_no_eligible_label.visible = false
+	_focus = 0
+	# One full _focus_changed to seat the selection / camera / damage row, then the wheel
+	# label takes over the name line. Subsequent cycling deliberately does NOT re-run
+	# _focus_changed (it would rev the engine and rewrite the label "1 of 1" every flick).
+	_focus_changed(true)
+	# The parked prop is streamed in ASYNCHRONOUSLY (_spawn_lineup_progressive awaits at
+	# least a physics frame before it settles the wheels and emits), so applying the
+	# preview now would run against an empty _cars. Fire it once the lot is actually built.
+	# Guarded: backing out MID-STREAM abandons the spawn on its generation check, so the
+	# signal never fires and the one-shot is never consumed — re-entering would then push a
+	# "signal already connected" error. (_car_back also disconnects it on the way out.)
+	if not lineup_built.is_connected(_apply_wheel_preview):
+		lineup_built.connect(_apply_wheel_preview, CONNECT_ONE_SHOT)
+
+
+# Step the wheel-style cursor and preview the new style on the parked car. Wraps both
+# ways. This is what left/right drives in CarparkMode.WHEELS instead of paging bays —
+# a solo lineup has no pages, so _cycle_focus hands the input here.
+func _cycle_wheel(step: int) -> void:
+	if _wheel_options.is_empty():
+		return
+	_wheel_index = posmod(_wheel_index + step, _wheel_options.size())
+	_apply_wheel_preview()
+
+
+# Re-skin the parked car to the cursor's style and label it. Visual only — nothing is
+# saved (see _commit_wheels) and no geometry/physics/pose is touched (car.reskin_wheels).
+func _apply_wheel_preview() -> void:
+	# Guard the deferred (lineup_built) call: the player can back out before the lot
+	# finishes streaming in, by which point there is nothing to preview onto.
+	if _wheel_options.is_empty() or _carpark_mode != CarparkMode.WHEELS:
+		return
+	var option: Dictionary = _wheel_options[_wheel_index]
+	for car in _cars:
+		if is_instance_valid(car):
+			car.reskin_wheels(String(option.get("texture", "")))
+	_car_name_label.text = "%s  (%d of %d)" % [
+		String(option.get("name", "?")), _wheel_index + 1, _wheel_options.size()]
+	_car_stats_label.text = "Wheels are cosmetic — no effect on performance."
+	_normalize_menus()  # house text rules on the just-written wheel name / note
+
+
+# Re-skin the parked car back to its SAVED style. Called when backing out, so an
+# uncommitted preview can never persist on the shared _car_cache node (which the tuning
+# lift borrows for the very same car — see _obtain_parked_car / _spawn_lift_car).
+func _revert_wheel_preview() -> void:
+	var owned := Save.get_car(_wheel_instance_id)
+	if owned.is_empty():
+		return
+	var saved := WheelStyle.texture_for(owned, String(owned.get("model_id", "")))
+	for car in _cars:
+		if is_instance_valid(car):
+			car.reskin_wheels(saved)
+
+
+# Fit the shown wheels to the selected car and return to the lift. Free and ungated:
+# no token, no consumable, no confirm popup. Writing the style into the owned dict
+# changes owned.hash(), which invalidates the car-prop caches so the lift respawns the
+# car wearing its new wheels.
+func _commit_wheels() -> void:
+	if _wheel_options.is_empty():
+		return
+	var option: Dictionary = _wheel_options[_wheel_index]
+	# "Stock" commits as an ERASE (Save.set_wheels normalises), keeping the owned dict's
+	# hash identical to a never-customised car.
+	var id := "" if bool(option.get("stock", false)) else String(option.get("id", ""))
+	Save.set_wheels(_wheel_instance_id, id)
+	_wheel_options = []
+	_wheel_instance_id = -1
+	_clear_lineup()
+	_carpark_mode = CarparkMode.RALLY
+	_enter_lift()
 
 
 # One PREVIEW car dict per STARTER_MODEL_IDS (not owned cars — the garage is empty),
@@ -2608,6 +2752,14 @@ func _add_synthetic_smoke(car: Node) -> void:
 # re-spawns its props (snapping the camera, since the whole lineup changed). At the ends
 # of the whole list it wraps around (single page → wraps in place). See scripts/car_list.gd.
 func _cycle_focus(step: int) -> void:
+	# The cosmetic wheel view parks ONE car, so there are no bays to page: the same
+	# left/right input (plus the ◄ ► nav-row buttons and the swipe gesture, which both
+	# route here) steps the WHEEL list instead. Deliberately bypasses _focus_changed —
+	# the focused car never changes, and that path would rev the engine and overwrite the
+	# wheel name label on every flick.
+	if _carpark_mode == CarparkMode.WHEELS:
+		_cycle_wheel(step)
+		return
 	if _lineup.is_empty():
 		return
 	var page_flipped := _lineup.advance(step)
@@ -2713,9 +2865,11 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 # confirm popup on Start (_show_over_limit_prompt).
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Garage mode just picks the car for the lift, so a wrecked car is still a valid
-	# pick (it can be repaired in the bay). Never gate Select on damage there; nor when
-	# the focused car isn't wrecked.
-	if _carpark_mode == CarparkMode.GARAGE or not Save.car_is_wrecked(owned):
+	# pick (it can be repaired in the bay). WHEELS is purely COSMETIC — a wrecked car
+	# can always be re-shod, so damage must never gate it either. Never gate Select on
+	# damage in those modes; nor when the focused car isn't wrecked.
+	if _carpark_mode == CarparkMode.GARAGE or _carpark_mode == CarparkMode.WHEELS \
+			or not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
 		_car_warning_label.visible = false
 		_car_repair_button.visible = false
@@ -2953,6 +3107,12 @@ func _first_car_anchor() -> Vector3:
 func _camera_target_xform() -> Transform3D:
 	var cfg: GameConfig = Config.data
 	var car_pos := _focused_car_pos()
+	# The cosmetic wheel view swaps in a LOW SIDE-ON framing so the settled car's flank
+	# and both wheels fill the frame. Branched here (not in _station_xform) because
+	# _snap_camera_to_focus / _focus_changed come through this function directly.
+	if _carpark_mode == CarparkMode.WHEELS:
+		return _look_xform(car_pos + cfg.hq_wheel_cam_offset,
+			car_pos + Vector3.UP * cfg.hq_wheel_cam_look_height)
 	return _look_xform(car_pos + cfg.menu_camera_offset, car_pos + Vector3.UP * cfg.menu_camera_look_height)
 
 
@@ -2989,6 +3149,9 @@ func _on_start_pressed() -> void:
 			return
 		CarparkMode.SWAP:  # exchange engines with the focused car
 			_select_swap_target()
+			return
+		CarparkMode.WHEELS:  # fit the previewed cosmetic wheels (free, no confirm)
+			_commit_wheels()
 			return
 		CarparkMode.GARAGE:  # select the focused car and drop into the tuning bay
 			_select_garage_car()
@@ -3224,6 +3387,13 @@ func _cars_input(event: InputEvent) -> void:
 		_cycle_focus(-1)
 	elif event.is_action_pressed("menu_right"):
 		_cycle_focus(1)
+	# The cosmetic wheel view reads as a LIST, so up/down cycles it too (keyboard W/S +
+	# arrows, gamepad D-pad/stick). Harmless to bind only there: paging bays is a
+	# horizontal action, and the other modes leave up/down free.
+	elif _carpark_mode == CarparkMode.WHEELS and event.is_action_pressed("menu_up"):
+		_cycle_wheel(-1)
+	elif _carpark_mode == CarparkMode.WHEELS and event.is_action_pressed("menu_down"):
+		_cycle_wheel(1)
 	elif event.is_action_pressed("menu_select") and not _start_button.disabled:
 		_on_start_pressed()
 	elif event.is_action_pressed("menu_back"):
@@ -3262,6 +3432,8 @@ func _lineup_pointer_input(event: InputEvent) -> bool:
 # in the physics space (freeze + PROCESS_MODE_DISABLED don't remove their bodies),
 # so a plain space query finds them without any per-car Area3D plumbing.
 func _focus_car_at(screen_pos: Vector2) -> void:
+	if _carpark_mode == CarparkMode.WHEELS:
+		return  # one car, already focused — a tap must not re-run _focus_changed here
 	var idx := _car_index_at(screen_pos)
 	if idx >= 0 and idx != _focus:
 		_lineup.focus_local(idx)  # a tap stays on the current page; keep the paginator in step

@@ -164,6 +164,17 @@ Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
 Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mirrors
 `apply_terrain_light`). `cliff_seed = track_seed`.
 
+### Menu / HQ
+The `Menu / HQ` group holds the diegetic HQ's camera stations, car-park layout and lift
+timings (see [menus.md](menus.md)). Not enumerated exhaustively here; the entries below
+are the ones a feature doc points at directly.
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `menu_camera_offset` | (2.6, 1.5, 6.2) | Car-park camera position relative to the focused car — the front-3/4 hero shot |
+| `menu_camera_look_height` | 0.7 | Height (m) above the car's origin that camera looks at |
+| `hq_wheel_cam_offset` | (6.4, 0.9, 0.6) | Camera position for the **cosmetic wheel view** — low and side-on, so the settled car's flank and both wheels fill the frame ([wheel-customization.md](wheel-customization.md)) |
+| `hq_wheel_cam_look_height` | 0.45 | Look height for that view — wheel height, not window height |
+
 ## Engine data
 
 `GameConfig` no longer owns an engine preset system — it has no

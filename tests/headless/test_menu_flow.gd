@@ -542,7 +542,8 @@ func test_table_arrow_labels_reflect_lock_state() -> void:
 	RallyLibrary.reset()
 
 
-# The tuning hub is a manual left/right cursor over Tuning / Upgrades / Test Drive;
+# The tuning hub is a manual left/right cursor over Upgrades / Tuning / Wheels /
+# Test Drive;
 # select fires the focused item, opening a page (native focus).
 func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -553,16 +554,18 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
 	# The hub is a left/right cursor over Back (0) / Upgrades (1) / Tuning (2) /
-	# Test Drive (3), wrapping at both ends.
+	# Wheels (3) / Test Drive (4), wrapping at both ends.
 	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Upgrades")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 2, "right moves the cursor to Tuning")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Test Drive")
+	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Wheels")
+	hq._move_hub_focus(1)
+	assert_eq(hq._hub_focus, 4, "right again moves the cursor to Test Drive")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 0, "right from the end wraps to Back")
 	hq._move_hub_focus(-1)
-	assert_eq(hq._hub_focus, 3, "left from Back wraps to Test Drive")
+	assert_eq(hq._hub_focus, 4, "left from Back wraps onto Test Drive")
 
 	# Select on the Tuning item opens the Tune page (stays in the bay).
 	hq._hub_focus = 2
@@ -1826,17 +1829,25 @@ func test_hq_lift_hub_has_a_test_drive_button_targeting_the_lift_car() -> void:
 	await get_tree().process_frame
 	hq._enter_lift()
 	await get_tree().process_frame
-	var test_drive: Button = hq._lift_hub_controls.get_child(3)
-	# The menu theme uppercases button labels (_normalize_menus), so compare case-insensitively.
-	assert_eq(test_drive.text.to_upper(), "TEST DRIVE", "the 4th hub control is the Test Drive button")
-	# It's the 4th (index 3) hub cursor stop, so keyboard/gamepad can reach it. (We don't
-	# fire it here: _test_drive delegates to _start_free_roam, whose real scene change
-	# would swap the test runner's scene; the free-roam launch is covered separately.)
+	# Find Test Drive by LABEL, not by row index — the hub row grows as pages are added
+	# (Wheels landed after this test was written) and its position isn't the contract.
+	var test_drive: Button = null
+	for child in hq._lift_hub_controls.get_children():
+		# The menu theme uppercases button labels (_normalize_menus), so compare
+		# case-insensitively.
+		if child is Button and (child as Button).text.to_upper() == "TEST DRIVE":
+			test_drive = child
+	assert_not_null(test_drive, "the hub row has a Test Drive button")
+	# It's the LAST hub cursor stop, so keyboard/gamepad can reach it by wrapping left off
+	# Back. (We don't fire it here: _test_drive delegates to _start_free_roam, whose real
+	# scene change would swap the test runner's scene; the launch is covered separately.)
+	assert_eq(hq._hub_cursor.buttons.back(), test_drive, "Test Drive is the last cursor stop")
 	assert_eq(hq._hub_focus, 1, "the hub cursor still seats on Tuning on entry")
 	hq._move_hub_focus(-1)
 	assert_eq(hq._hub_focus, 0, "left from Tuning lands on Back")
 	hq._move_hub_focus(-1)
-	assert_eq(hq._hub_focus, 3, "left from Back wraps onto Test Drive")
+	assert_eq(hq._hub_focus, hq._hub_cursor.buttons.size() - 1,
+		"left from Back wraps onto Test Drive")
 
 
 func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:

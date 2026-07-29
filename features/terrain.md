@@ -213,8 +213,9 @@ exact subsamples (shared vertices don't move), the terrain is gentle, fog soften
 distance, and seams between neighbouring chunks at different levels are covered by
 a downward **skirt** (`terrain_lod_skirt_m`) appended to each level mesh. The coarser LOD meshes are **prebaked
 at load** in `cache_chunk` (`TerrainLod.build_all`), so runtime chunk spawns stay
-a cheap node build + mesh assign; the finest level is built on demand (see **Lazy
-finest LOD level** below). All tunables live in `GameConfig`
+a cheap node build + mesh assign. **Every** level including the finest is prebaked by
+default; deferring the finest one to an on-demand runtime build is an opt-in escape
+hatch (see **Lazy finest LOD level** below). All tunables live in `GameConfig`
 (`apply_terrain_lod`); `TerrainLod` is pure/static and headless-tested
 (`tests/headless/test_terrain_lod.gd`).
 
@@ -240,8 +241,11 @@ decimating the full-res grid — seams with full-res neighbours still match. See
 per-chunk classification under **TerrainManager**; tests in
 `tests/headless/test_terrain_resolution.gd`.
 
-**Lazy finest LOD level** (`TerrainManager.lazy_finest_lod`, on by default;
-`todo/mobile-web-performance.md` 3.6). An `ArrayMesh` is resident VRAM from the moment
+**Lazy finest LOD level** (`TerrainManager.lazy_finest_lod` /
+`GameConfig.terrain_lazy_finest_lod` — **OFF by default since 2026-07-30, on every
+target including web**; kept as the escape hatch for a device that runs out of VRAM).
+Read the "Why it is off" note at the end of this section before turning it back on.
+An `ArrayMesh` is resident VRAM from the moment
 it is built, whether or not its chunk is one of the `(2·RADIUS+1)²` currently spawned —
 so prebaking level 0 for the *whole corridor* (~280 chunks) to serve the handful that
 can display it was the single largest avoidable GPU allocation at load. `cache_chunk`
@@ -267,6 +271,39 @@ level 0 is left `null` and built per-chunk at runtime by `TerrainLod.build_fines
   `flush_detail_queue()` builds them all at once behind the loading screen
   (`build_initial`). Latency is free here: a chunk enters the ring about a chunk-width
   outside level 0's band.
+- **Why it is OFF by default (2026-07-30).** The amortisation above bounds the hitch to
+  *one* rebuild per frame, but cannot make that rebuild cheap: it is a measured ~6.2 ms,
+  of which ~67% is the 8 `track_weights`/`track_surface` dictionary lookups per vertex
+  in `_vertex_color_row` / `_surface_uv2_row` across 51×51 vertices, ~24% `build_level`
+  (arrays + `add_surface_from_arrays`), and the rest vertex/UV setup and
+  `decode_lights`. Since a crossing queues a whole row, the cost lands as a sustained
+  ~6 ms/frame burst after every crossing. Windowed A/B on the benchmark stage, same
+  seed (see `todo/performance-optimisations.md` for the full breakdown):
+
+  | | lazy ON | prebaked (default) |
+  |---|---|---|
+  | frame p99 | 11.03 ms | **4.52 ms** |
+  | 1% low | 90.6 fps | **221.3 fps** |
+  | `spikes>28ms` | 1 | **0** |
+  | VRAM added by prebake | 9.5 MB | 35.1 MB |
+  | RAM cache (peak) | 12.3 MB | **10.7 MB** |
+
+  So prebaking costs ~+25.6 MB VRAM and *saves* ~1.6 MB RAM — `l0_light` exists only to
+  feed a lazy rebuild, so prebaking drops it (`test_terrain_memory.gd` →
+  `test_prebake_does_not_retain_the_lazy_rebuild_light`). Deliberately **not** gated per
+  platform the way `terrain_lod_bands_for()` / `tree_render_distance_for()` are: web gets
+  the smoothness win too. If a low-VRAM browser/device ever fails, flipping this flag
+  back on is the single-line mitigation.
+- **What it costs at load.** Prebaking level 0 for the whole corridor moves that work
+  behind the loading screen, where it is paid once instead of mid-drive. `world.gd`'s
+  precompute loop (`for coord in floor_tm.corridor(): floor_tm.cache_chunk(coord)`)
+  yields only every 8th chunk, so on a ~350-chunk corridor the extra level-0 builds add
+  roughly **1–2 s of load time** (a few ms per full-res chunk). This degrades
+  gracefully — the loading screen keeps painting its chunk grid on each yield and there
+  is no timeout to trip — but it is a real, deliberate trade: a one-off second or two of
+  load in exchange for removing every mid-drive rebuild hitch. If load time ever becomes
+  the binding constraint, lowering the yield interval spreads it more smoothly rather
+  than reducing it.
 - **An absent level 0 is never a hole.** `TerrainChunk._apply_level_bands` starts each
   present level's `visibility_range_begin` at the previous **present** level's cutoff,
   so when level 0 is missing (deferred *or* coarse-pruned) level 1 covers the near band
@@ -499,7 +536,10 @@ Beyond the wasted compute, the on-demand path was a correctness problem for LOD:
 built from `compute_chunk_data` builds *every* level itself (`TerrainChunk._lazy_finest`
 stays false), so the ring the player actually stands on never joined the lazy finest-LOD
 path and pinned its level-0 buffers until the chunk first despawned. Coming from the
-cache, the initial ring is lazy like every other chunk.
+cache, the initial ring behaves like every other chunk — which by default means fully
+prebaked, and under the `lazy_finest_lod` escape hatch means finest-deferred like the
+rest (`test_terrain_memory.gd` →
+`test_initial_ring_participates_in_the_lazy_finest_path` covers the latter).
 
 `on_demand_builds` counts `_reconcile`'s raw-noise builds. It is legitimately non-zero
 for the editor preview and for tests that never precompute; **on a real load it must be

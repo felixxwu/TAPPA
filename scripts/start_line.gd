@@ -793,7 +793,8 @@ func _pw_limit() -> float:
 
 # Build a pre-race menu overlay: a CanvasLayer (layer 6, above the start overlay) with a
 # centred house panel wrapping a titled `component` and a Back button wired to `on_back`.
-func _build_menu_overlay(title: String, component: Control, on_back: Callable, connect_back := true) -> CanvasLayer:
+func _build_menu_overlay(title: String, component: Control, on_back: Callable, connect_back := true,
+		width := 520.0) -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	layer.layer = 6   # above the start overlay (layer 5)
 	add_child(layer)
@@ -804,7 +805,7 @@ func _build_menu_overlay(title: String, component: Control, on_back: Callable, c
 	center.add_child(panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", UITheme.GAP)
-	col.custom_minimum_size = Vector2(520, 0)
+	col.custom_minimum_size = Vector2(width, 0)
 	panel.add_child(col)
 	col.add_child(UITheme.title(title))
 	col.add_child(component)
@@ -856,7 +857,10 @@ func _close_tune() -> void:
 
 func _build_tune_overlay() -> void:
 	_tune_panel = TuningPanel.new()
-	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune)
+	# Same 380 as the Upgrades overlay (_build_upgrades_overlay): TuningPanel's rows are
+	# the same SliderRow shape as the detune row (180px label + an expand-fill slider), so
+	# the old shared 520 floor stretched this slider bar just as unnecessarily wide.
+	_tune_layer = _build_menu_overlay("Tune Car", _tune_panel, _close_tune, true, 380.0)
 
 
 # An edit was made in the tune panel. Re-apply ONLY the tuning to the live config
@@ -883,7 +887,11 @@ func _close_upgrades() -> void:
 
 func _build_upgrades_overlay() -> void:
 	_upgrades_menu = UpgradesMenu.new()
-	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false)
+	# Narrower than Tune Car's default 520: Upgrades' rows (short slot-option buttons +
+	# the one detune slider) need far less room than the handling-axis sliders, and the
+	# shared 520 floor was stretching the detune slider's SIZE_EXPAND_FILL bar across the
+	# leftover width for no reason — reading as an oversized panel.
+	_upgrades_layer = _build_menu_overlay("Upgrades", _upgrades_menu, _close_upgrades, false, 380.0)
 	_upgrades_back = _menu_last_back
 
 

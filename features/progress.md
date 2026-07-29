@@ -37,6 +37,29 @@ along-track-far section of a winding track — so it's independent of
 `track_clearance` (the old below-`track_clearance` assert is gone). The spawn seed
 in `setup` still uses a global query (unambiguous at the start line).
 
+## Fallen off the world (water/void)
+
+Before the lateral check, `_timed_physics_process` does a plain Y-coordinate
+check, independent of lateral distance from the road (a car can be perfectly
+on-line laterally but have dropped straight down through a lake):
+
+- **On a track with water** (`Config.data.water_enabled`): the trigger is the
+  **per-track** flood height, `Config.data.track_water_level_m` — set per rally
+  event (`event["water_level"]`, see [lakes.md](lakes.md)), not a fixed
+  constant, since it varies per track. The car resets once it's
+  `water_submersion_reset_depth_m` below that surface (a small margin so
+  resting at the shoreline/surface doesn't false-trigger — roads are routed
+  above `water_level + water_shore_clearance_m`, so normal driving never
+  approaches it).
+- **Fallback floor**: `Config.data.fell_off_world_y`, a fixed absolute Y, for
+  tracks with no water at all (a sheer drop off the map with nothing to define
+  a "water level").
+
+Either condition teleports straight to `_best_reset` (the last recorded
+on-road pose) — no stuck-timeout wait, unlike the pit watchdog. Deliberately
+just a Y-coordinate gate reusing the same `reset_to(_best_reset)` path as the
+lateral/stuck recovery above — no separate respawn/checkpoint system.
+
 ## Stuck-car recovery (inside the leash)
 
 The lateral reset only fires when the car strays *sideways* past the threshold. With
@@ -86,6 +109,10 @@ off-track recovery now share one code path.
 Stuck-recovery knobs live in the **Recovery** group: `recovery_enabled`,
 `recovery_timeout_s` (3.0), `recovery_speed_mps` (0.7), `recovery_depth_m` (3.0),
 `recovery_upright_dot` (0.3).
+
+| `fell_off_world_y` | `-50.0` | Fallback absolute world Y below which the car is snapped back to `_best_reset` — used on tracks with no water at all. |
+| `track_water_level_m` | `0.0` | Per-track flood height (Water group; set per rally event via `event["water_level"]`, see [lakes.md](lakes.md)) — the primary "fallen in water" trigger when `water_enabled` is on. |
+| `water_submersion_reset_depth_m` | `3.0` | Depth (Water group) below `track_water_level_m` at which the car is considered submerged (not just resting at the surface/shore) and is reset. |
 
 ## Baked centerline table (performance)
 
@@ -161,4 +188,8 @@ fraction driven, reads 0% at the start line despite the lead-in, and `mark_start
 re-zeros it at the car's position. The **stuck-recovery watchdog**: a stationary car
 that's flooring it / flipped / in a pit auto-recovers after the timeout (and not
 before), a parked upright car or a moving car never does, recovery can be disabled,
-and it teleports to the last on-road pose.
+and it teleports to the last on-road pose. Falling below `fell_off_world_y`
+(no-water tracks) or below the per-track `track_water_level_m` minus
+`water_submersion_reset_depth_m` (water tracks) resets to the last on-road pose
+immediately, using synthetic Y/threshold values rather than pinning the
+authored defaults.

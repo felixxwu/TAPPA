@@ -172,6 +172,53 @@ func test_off_track_reset_can_be_disabled() -> void:
 	assert_eq(_car.reset_calls.size(), 0, "no reset fires when off_track_reset_enabled is false")
 
 
+func test_falling_below_the_world_y_resets_to_last_progress_pose() -> void:
+	# Fallen off the world entirely (no water on this track): even laterally on-line,
+	# dropping below the configured floor snaps back to the last recorded on-road pose
+	# immediately (no stuck-timeout wait, unlike the pit watchdog).
+	Config.data.water_enabled = false
+	_put_car(0, 0)
+	var tp := _make_progress()
+	_put_car(0, 30)  # bank progress to ~30 m, on-road
+	tp._physics_process(0.0)
+	# Arbitrary/synthetic Y well below the configured threshold — not pinning the
+	# threshold's value, just proving the behaviour fires below it.
+	_car.global_transform = Transform3D(Basis.IDENTITY,
+		Vector3(0, Config.data.fell_off_world_y - 10.0, 30))
+	tp._physics_process(0.0)
+	assert_eq(_car.reset_calls.size(), 1, "falling below the world Y triggers exactly one reset")
+	var xform: Transform3D = _car.reset_calls[0]
+	assert_almost_eq(xform.origin.z, 30.0, 0.5, "reset Z at recorded progress")
+
+
+func test_falling_below_the_tracks_water_level_resets_to_last_progress_pose() -> void:
+	# When the track has water, the per-track water_level (which varies per rally
+	# event) is the relevant trigger, not the fixed off-world floor — a track can
+	# flood well above fell_off_world_y. Use synthetic water_level/depth values,
+	# not the authored defaults, to prove it's the RELATIVE check that fires.
+	# water_level sits BELOW the null-terrain fixture's ground (0), as it would on a
+	# real track (roads are routed above water_level + shore_clearance) — the road
+	# stays dry, and only a car that leaves the road and drops into a basin submerges.
+	Config.data.water_enabled = true
+	Config.data.track_water_level_m = -5.0
+	Config.data.water_submersion_reset_depth_m = 2.0
+	Config.data.fell_off_world_y = -9999.0  # far below; must not be what fires here
+	_put_car(0, 0)
+	var tp := _make_progress()
+	_put_car(0, 30)
+	tp._physics_process(0.0)
+	# Just above the water's surface: no reset (still floating/on the shore).
+	_car.global_transform = Transform3D(Basis.IDENTITY, Vector3(0, -4.0, 30))
+	tp._physics_process(0.0)
+	assert_eq(_car.reset_calls.size(), 0, "resting near the water surface does not reset")
+	# Below water_level - submersion depth: submerged, resets.
+	_car.global_transform = Transform3D(Basis.IDENTITY, Vector3(0, -9.0, 30))
+	tp._physics_process(0.0)
+	assert_eq(_car.reset_calls.size(), 1, "submerging past the per-track water level resets")
+	var xform: Transform3D = _car.reset_calls[0]
+	assert_almost_eq(xform.origin.z, 30.0, 0.5, "reset Z at recorded progress")
+
+
 func test_progress_percent_tracks_fraction() -> void:
 	_put_car(0, 0)
 	var tp := _make_progress()

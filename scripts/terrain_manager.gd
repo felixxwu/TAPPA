@@ -139,8 +139,14 @@ var precompute_safety_slack_m: float = 40.0
 # couple of chunks can ever DISPLAY it, so prebaking it for the whole corridor is the
 # single largest avoidable GPU allocation at load (todo/mobile-web-performance.md 3.6).
 # The coarser levels stay prebaked: they are small, and they are what far chunks draw.
-# Off = the old behaviour (every level prebaked for every full-res chunk).
-var lazy_finest_lod: bool = true
+#
+# DEFAULT FALSE (prebake every level) — an on-demand rebuild is a measured ~6.2 ms of
+# mid-drive hitch, which costs more than the VRAM it saves. See
+# GameConfig.terrain_lazy_finest_lod (the shipping value, applied via apply_terrain_lod)
+# and features/terrain.md -> "Lazy finest LOD level". Kept as the escape hatch for a
+# device that runs out of VRAM; this node-level default mirrors the config default so an
+# editor preview or ad-hoc test behaves like the real game.
+var lazy_finest_lod: bool = false
 
 # Debug chunk-border overlay (H toggle, debug builds). Lazily created on first use.
 var _border_debug: ChunkBorderDebug = null
@@ -667,7 +673,7 @@ func _classify_chunk(min_dist_m: float, leash_m: float, band_chunks: int,
 		if e <= closest_cam:
 			l_min += 1
 	var full_res := in_collision_band or l_min == 0
-	return {"l_min": l_min, "full_res": full_res}
+	return {"l_min": l_min, "full_res": full_res, "in_collision_band": in_collision_band}
 
 
 func corridor_coords(centerline: Curve2D, leash_m: float) -> Array[Vector2i]:
@@ -792,6 +798,24 @@ func cache_chunk(coord: Vector2i) -> void:
 	# `heights` stays (collision + height_at); `lights` is freed later, on load_finished.
 	for dead_key in DEAD_AFTER_PREBAKE:
 		data.erase(dead_key)
+	# Pre-build the PhysicsServer collision shape now, behind the loading screen, for
+	# every chunk that could EVER carry live collision — the leash-bounded band
+	# (`in_collision_band`, sized off the off-track reset leash passed into
+	# precompute_corridor, never a hardcoded distance). This is the actual expensive
+	# step (PhysicsServer3D committing a full SAMPLES x SAMPLES heightfield), previously
+	# paid on the main thread the first time a chunk crossed into the live ring
+	# (TerrainChunk.apply_data). Doing it here means a crossing later just hands the
+	# chunk this already-built shape (or flips it enabled/disabled) instead of building
+	# one from scratch. Chunks outside the band never get a shape at all — no extra
+	# broadphase cost, since an unattached Shape3D resource isn't part of any collision
+	# object until a CollisionShape3D.shape points at it.
+	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
+	if cls.get("in_collision_band", false) and heights.size() == SAMPLES * SAMPLES:
+		var shape := HeightMapShape3D.new()
+		shape.map_width = SAMPLES
+		shape.map_depth = SAMPLES
+		shape.map_data = heights
+		data["shape"] = shape
 	_chunk_cache[coord] = data
 	_log_precompute_vram()
 

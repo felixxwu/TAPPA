@@ -67,8 +67,17 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 	# Collision only when the full-res heightfield is present (full-res chunks). Coarse
 	# chunks are never inside collision_ring (see collision-band classification), so a
 	# missing shape is safe; assert the invariant to catch any drift loudly.
+	#
+	# Prefer a PREBUILT shape (TerrainManager.cache_chunk built it behind the loading
+	# screen for every chunk in the leash-bounded collision band — see
+	# features/terrain.md) so a chunk crossing just reuses the same PhysicsServer
+	# resource instead of paying the HeightMapShape3D commit cost again on this frame.
+	# Only the on-demand paths (editor preview, tests, cache-empty fallback) lack a
+	# prebuilt shape and fall back to building one fresh here.
 	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
-	if heights.size() == TerrainManager.SAMPLES * TerrainManager.SAMPLES:
+	if data.get("shape") != null:
+		_collision.shape = data["shape"]
+	elif heights.size() == TerrainManager.SAMPLES * TerrainManager.SAMPLES:
 		var shape := HeightMapShape3D.new()
 		shape.map_width = TerrainManager.SAMPLES
 		shape.map_depth = TerrainManager.SAMPLES

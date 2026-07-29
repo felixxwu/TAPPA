@@ -1,0 +1,610 @@
+extends GutTest
+# Cosmetic wheel customisation (features/wheel-customization.md): the wheel-style
+# catalogue derived from the roster, WheelStyle's resolution rules, the optional
+# "wheels" key on an owned car, and the solo car-park view that fits them.
+#
+# Deliberately value-free: no test pins a wheel_texture PATH, a car's stats, or which
+# donor is offered — only the CONTRACTS (stock is absent, unknown degrades to stock,
+# every option is a real catalogue id, and fitting wheels moves no stat).
+
+const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
+const TEST_PATH := "user://test_wheel_customization_profile.json"
+
+var _save: Node
+
+
+func before_each() -> void:
+	get_viewport().gui_release_focus()
+	Config.reset()
+	# The HQ builds here never assert on scenery counts; trim the framing scatter so
+	# each hq.tscn build stays cheap (see test_menu_flow's note).
+	Config.data.hq_tree_count = 8
+	Config.data.hq_bush_count = 8
+	CarFixtures.install()
+	_install_wheel_roster()
+	_save = get_node("/root/Save")
+	_clean()
+	_save.profile_path = TEST_PATH
+	_save.save_disabled = false
+	_save.load_or_new()
+	_save.profile["starter_picked"] = true
+	_save.profile["starter_model_id"] = "fx_light_rwd"
+	_save.grant_car("fx_light_rwd")
+
+
+func after_each() -> void:
+	_clean()
+	_save.profile_path = _save.DEFAULT_PROFILE_PATH
+	Config.reset()
+	CarFixtures.restore()
+
+
+func _clean() -> void:
+	if FileAccess.file_exists(TEST_PATH):
+		DirAccess.remove_absolute(TEST_PATH)
+
+
+# The fixture roster with a wheel_texture added per car. CarFixtures deliberately
+# authors NO wheel_texture (test_car.gd leans on that for the blank-disc fallback), but
+# a wheel STYLE is a texture — so these tests install their own roster on top. The paths
+# are real, loadable assets; nothing here asserts WHICH path a car uses.
+func _install_wheel_roster() -> void:
+	var textures := [
+		"res://blender/mx5/wheel.png",
+		"res://blender/focus/wheel.png",
+		"res://blender/twingo/wheel.png",
+		"res://blender/acty/wheel.png",
+	]
+	var cars: Array[Dictionary] = CarFixtures.cars()
+	for i in cars.size():
+		cars[i]["wheel_texture"] = textures[i % textures.size()]
+	CarLibrary.override_for_test(cars)
+
+
+# The id of some catalogue car that is NOT `model_id` — a donor, without naming one.
+func _other_car_id(model_id: String) -> String:
+	for entry in CarLibrary.all():
+		var id := String(entry.get("id", ""))
+		if id != model_id and not String(entry.get("wheel_texture", "")).is_empty():
+			return id
+	return ""
+
+
+# --- Catalogue -------------------------------------------------------------------
+
+# Every offered style is a real catalogue car with a real texture. Iterates the whole
+# table as opaque input rather than expecting any particular donor.
+func test_wheel_catalogue_entries_are_all_real_catalogue_cars() -> void:
+	var catalogue := CarLibrary.wheel_catalogue()
+	assert_gt(catalogue.size(), 0, "the roster donates at least one wheel style")
+	for option in catalogue:
+		var entry := CarLibrary.by_id(String(option["id"]))
+		assert_false(entry.is_empty(), "%s is a resolvable catalogue id" % option["id"])
+		assert_eq(String(option["texture"]), String(entry.get("wheel_texture", "")),
+			"the offered texture is the donor car's own")
+		assert_false(String(option["texture"]).is_empty(), "a style always has a texture")
+
+
+# A car with no authored wheel texture renders a blank disc, which isn't a style.
+func test_cars_without_a_wheel_texture_donate_nothing() -> void:
+	var textureless: String = String(CarLibrary.all()[0]["id"])
+	var cars: Array[Dictionary] = CarLibrary.all().duplicate(true)
+	cars[0].erase("wheel_texture")
+	var typed: Array[Dictionary] = []
+	typed.assign(cars)
+	CarLibrary.override_for_test(typed)
+	var catalogue := CarLibrary.wheel_catalogue()
+	assert_gt(catalogue.size(), 0, "the other cars still donate their wheels")
+	for option in catalogue:
+		assert_ne(String(option["id"]), textureless,
+			"a car with no wheel texture is not offered as a style")
+
+
+# The picker lists the car's OWN wheels first, so "revert to stock" is always reachable
+# without hunting, and every entry is a real catalogue id.
+func test_options_put_the_cars_own_wheels_first() -> void:
+	var options := WheelStyle.options_for("fx_fwd_hatch")
+	assert_gt(options.size(), 1, "more than one style is on offer")
+	assert_eq(String(options[0]["id"]), "fx_fwd_hatch", "the car's own wheels lead the list")
+	assert_true(bool(options[0]["stock"]), "the leading option is flagged as stock")
+	for i in range(1, options.size()):
+		assert_false(bool(options[i]["stock"]), "only one option is the stock one")
+
+
+# Regression: a car that authors NO wheel_texture donates nothing, so it wouldn't appear
+# in its OWN option list — stranding the player on a donor style with no way back to
+# their own wheels. Its stock option must be synthesized instead.
+func test_a_textureless_car_still_gets_a_stock_option() -> void:
+	var cars: Array[Dictionary] = CarLibrary.all().duplicate(true)
+	var bare := String(cars[0]["id"])
+	cars[0].erase("wheel_texture")
+	var typed: Array[Dictionary] = []
+	typed.assign(cars)
+	CarLibrary.override_for_test(typed)
+
+	var options := WheelStyle.options_for(bare)
+	assert_eq(String(options[0]["id"]), bare, "its own wheels still lead the list")
+	assert_true(bool(options[0]["stock"]), "and are flagged as the stock option")
+	assert_eq(String(options[0]["texture"]), "",
+		"stock for a textureless car is the blank disc, i.e. no texture")
+	# So the cursor seats on stock, not silently on some donor's wheels.
+	assert_eq(WheelStyle.option_index(options, {"model_id": bare}, bare), 0,
+		"a textureless car's cursor seats on its own stock option")
+	# And exactly one stock option is offered, not two.
+	var stock_count := 0
+	for option in options:
+		if bool(option["stock"]):
+			stock_count += 1
+	assert_eq(stock_count, 1, "exactly one option is the stock one")
+
+
+# --- Resolution rules ------------------------------------------------------------
+
+func test_absent_key_means_stock_wheels() -> void:
+	var owned := {"model_id": "fx_light_rwd"}
+	assert_eq(WheelStyle.current_wheel_id(owned, "fx_light_rwd"), "fx_light_rwd",
+		"a car with no wheels key wears its own")
+	assert_false(WheelStyle.is_swapped(owned, "fx_light_rwd"), "stock is not a swap")
+	assert_eq(WheelStyle.texture_for(owned, "fx_light_rwd"),
+		String(CarLibrary.by_id("fx_light_rwd").get("wheel_texture", "")),
+		"stock resolves to the car's own texture")
+
+
+func test_a_fitted_style_resolves_to_the_donors_texture() -> void:
+	var donor := _other_car_id("fx_light_rwd")
+	var owned := {"model_id": "fx_light_rwd", "wheels": donor}
+	assert_eq(WheelStyle.current_wheel_id(owned, "fx_light_rwd"), donor, "the donor is worn")
+	assert_true(WheelStyle.is_swapped(owned, "fx_light_rwd"), "a donor style is a swap")
+	assert_eq(WheelStyle.texture_for(owned, "fx_light_rwd"),
+		String(CarLibrary.by_id(donor).get("wheel_texture", "")),
+		"the donor's own texture is rendered")
+
+
+# The catalogue is always subject to change: a style whose donor was renamed or dropped
+# must degrade to the car's own wheels, never to a blank disc or an error.
+func test_unknown_style_falls_back_to_stock() -> void:
+	var owned := {"model_id": "fx_light_rwd", "wheels": "no_such_car_at_all"}
+	assert_eq(WheelStyle.texture_for(owned, "fx_light_rwd"),
+		String(CarLibrary.by_id("fx_light_rwd").get("wheel_texture", "")),
+		"a dangling style id degrades to the car's own wheels")
+
+
+func test_option_index_finds_the_worn_style_and_defaults_to_stock() -> void:
+	var donor := _other_car_id("fx_light_rwd")
+	var options := WheelStyle.options_for("fx_light_rwd")
+	var worn := {"model_id": "fx_light_rwd", "wheels": donor}
+	assert_eq(String(options[WheelStyle.option_index(options, worn, "fx_light_rwd")]["id"]), donor,
+		"the cursor seats on the worn style")
+	var dangling := {"model_id": "fx_light_rwd", "wheels": "gone"}
+	assert_eq(WheelStyle.option_index(options, dangling, "fx_light_rwd"), 0,
+		"an unknown style seats the cursor on stock")
+
+
+# --- Save round-trip -------------------------------------------------------------
+
+func test_set_wheels_round_trips() -> void:
+	var id: int = _save.selected_instance_id()
+	var donor := _other_car_id("fx_light_rwd")
+	_save.set_wheels(id, donor)
+	assert_eq(String(_save.get_car(id).get("wheels", "")), donor, "the style is stored")
+	# And it survives a save/load cycle.
+	_save.save_now()
+	_save.load_or_new()
+	assert_eq(String(_save.get_car(id).get("wheels", "")), donor, "the style persists")
+
+
+# "Stock" is canonically the key being ABSENT — that keeps owned.hash() (the key the HQ
+# car-prop caches use) identical to a never-customised car, so a revert invalidates the
+# cached prop exactly as a fit does.
+func test_reverting_to_stock_erases_the_key_and_restores_the_hash() -> void:
+	var id: int = _save.selected_instance_id()
+	var before: int = _save.get_car(id).hash()
+	var donor := _other_car_id("fx_light_rwd")
+	_save.set_wheels(id, donor)
+	assert_ne(_save.get_car(id).hash(), before, "fitting wheels changes the owned hash")
+	_save.set_wheels(id, "")
+	assert_false(_save.get_car(id).has("wheels"), "an empty id erases the key")
+	assert_eq(_save.get_car(id).hash(), before, "reverting restores the original hash")
+	# Passing the car's OWN model id is also a revert, not a stored self-reference.
+	_save.set_wheels(id, "fx_light_rwd")
+	assert_false(_save.get_car(id).has("wheels"), "the car's own id erases the key")
+
+
+# A new car is born stock: no wheels key, so no migration is needed for old saves.
+func test_new_cars_carry_no_wheels_key() -> void:
+	var car: Dictionary = _save.grant_car("fx_awd")
+	assert_false(car.has("wheels"), "a granted car has no wheels key")
+
+
+func test_set_wheels_on_an_unknown_car_is_a_no_op() -> void:
+	_save.set_wheels(-999, "fx_awd")
+	pass_test("setting wheels on a car that doesn't exist doesn't crash")
+
+
+# Wheels are a SEPARATE system: fitting them never touches the engine-swap state or
+# spends a swap token.
+func test_wheels_are_independent_of_the_engine_swap_system() -> void:
+	var id: int = _save.selected_instance_id()
+	var tokens_before: int = _save.engine_swap_tokens_owned()
+	_save.set_wheels(id, _other_car_id("fx_light_rwd"))
+	var car: Dictionary = _save.get_car(id)
+	assert_false(car.has("swapped_engine"), "fitting wheels doesn't touch the engine")
+	assert_eq(_save.engine_swap_tokens_owned(), tokens_before,
+		"fitting wheels spends no engine-swap token")
+
+
+# --- Cosmetic-only guarantee -----------------------------------------------------
+
+# THE load-bearing test: a car wearing someone else's wheels must be physically
+# identical to the same car on stock wheels. Compares the whole resolved config, so a
+# future change that lets the donor's radius/width leak through fails here.
+func test_fitting_wheels_changes_no_physics() -> void:
+	var scene: PackedScene = load("res://car.tscn")
+	var stock_owned := {"model_id": "fx_light_rwd", "instance_id": 1, "hp": 800.0}
+	var shod_owned := {"model_id": "fx_light_rwd", "instance_id": 2, "hp": 800.0,
+		"wheels": _other_car_id("fx_light_rwd")}
+
+	var stock: Variant = scene.instantiate()
+	add_child_autofree(stock)
+	stock.use_isolated_config()
+	stock.apply_owned(stock_owned)
+	var shod: Variant = scene.instantiate()
+	add_child_autofree(shod)
+	shod.use_isolated_config()
+	shod.apply_owned(shod_owned)
+	await get_tree().physics_frame
+
+	assert_eq(shod.config.wheel_radius, stock.config.wheel_radius, "wheel radius is unchanged")
+	assert_eq(shod.config.wheel_width_front, stock.config.wheel_width_front,
+		"front tyre width is unchanged")
+	assert_eq(shod.config.wheel_width_rear, stock.config.wheel_width_rear,
+		"rear tyre width is unchanged")
+	assert_eq(shod.config.mass, stock.config.mass, "mass is unchanged")
+	assert_eq(shod.config.wheel_friction_slip_front, stock.config.wheel_friction_slip_front,
+		"front grip is unchanged")
+	assert_eq(shod.config.wheel_friction_slip_rear, stock.config.wheel_friction_slip_rear,
+		"rear grip is unchanged")
+	# The physics wheels themselves keep the car's own radius.
+	for wheel in shod.find_children("*", "VehicleWheel3D", false):
+		# almost_eq: wheel_radius round-trips through the node's 32-bit float property.
+		assert_almost_eq(wheel.wheel_radius, stock.config.wheel_radius, 0.0001,
+			"every fitted wheel keeps the car's own physics radius")
+
+
+# The visual DOES change: the tyre caps render the donor's texture. Asserted on the
+# shader parameter, not material identity (_wheel_material builds per texture path).
+func test_fitting_wheels_changes_the_rendered_texture() -> void:
+	var donor := _other_car_id("fx_light_rwd")
+	var scene: PackedScene = load("res://car.tscn")
+	var car: Variant = scene.instantiate()
+	add_child_autofree(car)
+	car.use_isolated_config()
+	car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "hp": 800.0, "wheels": donor})
+	await get_tree().physics_frame
+	var want: String = String(CarLibrary.by_id(donor).get("wheel_texture", ""))
+	var seen := 0
+	for wheel in car.find_children("*", "VehicleWheel3D", false):
+		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
+		if tire == null:
+			continue
+		var mat := tire.get_surface_override_material(0) as ShaderMaterial
+		assert_not_null(mat, "each tyre cap has its own material")
+		var tex: Texture2D = mat.get_shader_parameter("albedo_texture")
+		assert_eq(tex.resource_path, want, "the tyre cap renders the donor's wheel texture")
+		seen += 1
+	assert_eq(seen, 4, "all four wheels are re-skinned (no per-axle staggering)")
+
+
+# An UNOWNED fielding (free roam / prop / opponent, via apply_car) must show stock
+# wheels even if this same instance previously wore a donor style.
+func test_bare_apply_car_reverts_to_stock_wheels() -> void:
+	var donor := _other_car_id("fx_light_rwd")
+	var scene: PackedScene = load("res://car.tscn")
+	var car: Variant = scene.instantiate()
+	add_child_autofree(car)
+	car.use_isolated_config()
+	car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "hp": 800.0, "wheels": donor})
+	car.apply_car(CarLibrary.index_of("fx_light_rwd"))
+	await get_tree().physics_frame
+	var want: String = String(CarLibrary.by_id("fx_light_rwd").get("wheel_texture", ""))
+	var wheel: Node = car.find_children("*", "VehicleWheel3D", false)[0]
+	var mat := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path, want,
+		"an unowned fielding wears the car's own wheels")
+
+
+# reskin_wheels is the live try-on: it repaints the caps without disturbing geometry.
+func test_reskin_wheels_changes_only_the_texture() -> void:
+	var donor := _other_car_id("fx_light_rwd")
+	var scene: PackedScene = load("res://car.tscn")
+	var car: Variant = scene.instantiate()
+	add_child_autofree(car)
+	car.use_isolated_config()
+	car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "hp": 800.0})
+	await get_tree().physics_frame
+	var wheel: Node = car.find_children("*", "VehicleWheel3D", false)[0]
+	var radius_before: float = wheel.wheel_radius
+	var pos_before: Vector3 = wheel.position
+
+	car.reskin_wheels(String(CarLibrary.by_id(donor).get("wheel_texture", "")))
+	var mat := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path,
+		String(CarLibrary.by_id(donor).get("wheel_texture", "")), "the preview texture is applied")
+	assert_eq(wheel.wheel_radius, radius_before, "a re-skin doesn't resize the wheel")
+	assert_eq(wheel.position, pos_before, "a re-skin doesn't move the wheel")
+
+	# Regression: a preview must NOT be recorded as the fielding override, or it would
+	# outlive the preview on a pooled/reused node and leak into a later bare apply_car.
+	# Re-fielding this same instance UNOWNED must therefore show its own wheels, even
+	# though a donor style is currently previewed on it.
+	car.apply_car(CarLibrary.index_of("fx_light_rwd"))
+	await get_tree().physics_frame
+	var mat_after := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+	assert_eq((mat_after.get_shader_parameter("albedo_texture") as Texture2D).resource_path,
+		String(CarLibrary.by_id("fx_light_rwd").get("wheel_texture", "")),
+		"a live preview never leaks into a later unowned fielding")
+
+	# "" restores the car's own wheels.
+	car.reskin_wheels(String(CarLibrary.by_id(donor).get("wheel_texture", "")))
+	car.reskin_wheels("")
+	var mat2 := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+	assert_eq((mat2.get_shader_parameter("albedo_texture") as Texture2D).resource_path,
+		String(CarLibrary.by_id("fx_light_rwd").get("wheel_texture", "")),
+		"an empty re-skin restores the car's own wheels")
+
+
+# --- The HQ wheel view -----------------------------------------------------------
+
+func _hq() -> Node3D:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	return hq
+
+
+func _await_lineup(hq: Node3D) -> void:
+	if hq._cars.size() < hq._eligible.size():
+		await hq.lineup_built
+	await get_tree().process_frame
+
+
+# Entering from the lift parks the car ALONE (no neighbours) so the side-on framing has
+# a clear view of its stance.
+func test_wheel_view_parks_the_car_alone() -> void:
+	_save.grant_car("fx_fwd_hatch")  # a second owned car, which must NOT be parked here
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	assert_eq(hq._view, hq.View.CARPARK, "the wheel view uses the car park")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.WHEELS, "in cosmetic wheel mode")
+	assert_eq(hq._eligible.size(), 1, "the car stands alone in the lot")
+	assert_eq(int(hq._eligible[0].get("instance_id", -1)), _save.selected_instance_id(),
+		"the parked car is the one that was on the lift")
+	assert_gt(hq._wheel_options.size(), 1, "a list of styles is on offer")
+
+
+# The camera uses the low SIDE-ON framing here, not the front-3/4 menu shot — the whole
+# reason this lives in the car park is showing the car settled on its suspension.
+func test_wheel_view_uses_the_side_on_camera() -> void:
+	var cfg: GameConfig = Config.data
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	var xform: Transform3D = hq._camera_target_xform()
+	var car_pos: Vector3 = hq._focused_car_pos()
+	assert_almost_eq(xform.origin, car_pos + cfg.hq_wheel_cam_offset, Vector3.ONE * 0.001,
+		"the wheel view poses the camera from hq_wheel_cam_offset")
+	hq._carpark_mode = hq.CarparkMode.RALLY
+	assert_almost_eq(hq._camera_target_xform().origin, car_pos + cfg.menu_camera_offset,
+		Vector3.ONE * 0.001, "every other mode keeps the normal menu framing")
+
+
+# Cycling steps the STYLE (the lone car never changes) and previews it on the car.
+func test_cycling_steps_the_style_and_previews_it() -> void:
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	var first: int = hq._wheel_index
+	hq._cycle_focus(1)
+	assert_ne(hq._wheel_index, first, "cycling moves the style cursor")
+	var want := String(hq._wheel_options[hq._wheel_index]["texture"])
+	var wheel: Node = hq._cars[0].find_children("*", "VehicleWheel3D", false)[0]
+	var mat := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path, want,
+		"the parked car wears the previewed style")
+	# Nothing is written until Start.
+	assert_false(_save.get_car(_save.selected_instance_id()).has("wheels"),
+		"previewing saves nothing")
+	# And the cursor wraps both ways rather than dead-ending.
+	hq._wheel_index = 0
+	hq._cycle_wheel(-1)
+	assert_eq(hq._wheel_index, hq._wheel_options.size() - 1, "the style list wraps")
+
+
+# Start fits the previewed style; the owned car records it.
+func test_fitting_wheels_saves_the_style_and_returns_to_the_lift() -> void:
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	# Step off stock so there's something to fit.
+	hq._cycle_focus(1)
+	var want := String(hq._wheel_options[hq._wheel_index]["id"])
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	assert_eq(String(_save.get_car(_save.selected_instance_id()).get("wheels", "")), want,
+		"the fitted style is saved on the car")
+	assert_eq(hq._view, hq.View.LIFT, "fitting returns to the tuning lift")
+	assert_ne(hq._carpark_mode, hq.CarparkMode.WHEELS, "wheel mode is cleared on the way out")
+
+
+# Committing the STOCK option erases the key rather than storing a self-reference.
+func test_fitting_the_stock_option_reverts_to_stock() -> void:
+	var id: int = _save.selected_instance_id()
+	_save.set_wheels(id, _other_car_id("fx_light_rwd"))
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	hq._wheel_index = 0  # the stock option always leads the list
+	hq._on_start_pressed()
+	await get_tree().process_frame
+	assert_false(_save.get_car(id).has("wheels"), "fitting stock erases the style")
+
+
+# Backing out DISCARDS the preview — and must re-skin the parked node, which survives in
+# _car_cache under an unchanged hash and is the very node the lift displays.
+func test_backing_out_discards_the_preview_and_reskins_the_car() -> void:
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	var car: Node = hq._cars[0]
+	hq._cycle_focus(1)  # preview something other than stock
+	hq._car_back()
+	await get_tree().process_frame
+	assert_false(_save.get_car(_save.selected_instance_id()).has("wheels"),
+		"backing out saves nothing")
+	assert_eq(hq._view, hq.View.LIFT, "Back from the wheel view returns to the lift")
+	# The cached node must be back on the car's own wheels, or the preview would leak
+	# onto the lift (same node) — the state-leak this guards.
+	var want: String = String(CarLibrary.by_id("fx_light_rwd").get("wheel_texture", ""))
+	var wheel: Node = car.find_children("*", "VehicleWheel3D", false)[0]
+	var mat := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path, want,
+		"the discarded preview is re-skinned back to stock")
+
+
+# Regression: backing out BEFORE the lot finishes streaming abandons the spawn on its
+# generation check, so lineup_built never fires and the one-shot preview hook is never
+# consumed. Re-entering must not push a "signal already connected" error, must not leave
+# the hook attached across unrelated lineup builds, and must still preview correctly.
+func test_re_entering_after_an_early_back_out_rewires_cleanly() -> void:
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+
+	# Enter and back out IMMEDIATELY — before awaiting the lineup, i.e. mid-stream.
+	hq._enter_wheel_swap()
+	assert_true(hq.lineup_built.is_connected(hq._apply_wheel_preview),
+		"entering hooks the preview onto lineup_built")
+	hq._car_back()
+	await get_tree().process_frame
+	assert_false(hq.lineup_built.is_connected(hq._apply_wheel_preview),
+		"an early back-out drops the preview hook rather than leaking it")
+
+	# Re-enter: the connect must not double up (which Godot would flag as an error).
+	hq._enter_wheel_swap()
+	var hooks := 0
+	for connection in hq.lineup_built.get_connections():
+		if (connection["callable"] as Callable) == Callable(hq, "_apply_wheel_preview"):
+			hooks += 1
+	assert_eq(hooks, 1, "exactly one preview hook is attached after re-entry")
+
+	# And the view still works end to end: the preview lands on the parked car.
+	await _await_lineup(hq)
+	assert_eq(hq._carpark_mode, hq.CarparkMode.WHEELS, "re-entry is in wheel mode")
+	hq._cycle_focus(1)
+	var want := String(hq._wheel_options[hq._wheel_index]["texture"])
+	var wheel: Node = hq._cars[0].find_children("*", "VehicleWheel3D", false)[0]
+	var mat := (wheel.get_node("Visual/Tire") as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
+	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path, want,
+		"the re-entered view still previews onto the parked car")
+	# The hook fired, so it's consumed again (CONNECT_ONE_SHOT).
+	assert_false(hq.lineup_built.is_connected(hq._apply_wheel_preview),
+		"the one-shot hook is consumed once the lot is built")
+
+
+# Cosmetic means cosmetic: a WRECKED car can still be re-shod, so damage must not gate
+# the Fit button (contrast entering a rally, which it does gate).
+func test_a_wrecked_car_can_still_change_wheels() -> void:
+	var id: int = _save.selected_instance_id()
+	_save.wreck_car(id)
+	assert_true(_save.car_is_wrecked(_save.get_car(id)), "the car is wrecked")
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	assert_false(hq._start_button.disabled, "damage never gates a cosmetic wheel change")
+	assert_false(hq._car_warning_label.visible, "no damage warning in the wheel view")
+
+
+# --- Navigation (keyboard + gamepad; CLAUDE.md's menu rule) -----------------------
+
+# The wheel view is spatially navigated (like the rest of the car park), so it uses the
+# _unhandled_input action path rather than MenuNav focus walking. Every direction, plus
+# select and back, must be reachable from keyboard AND gamepad — the actions below are
+# bound to both (see features/controls.md).
+func test_wheel_view_is_keyboard_and_gamepad_navigable() -> void:
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+
+	# Right / left step the list both ways.
+	var start: int = hq._wheel_index
+	hq._cars_input(_action(&"menu_right"))
+	var after_right: int = hq._wheel_index
+	assert_ne(after_right, start, "menu_right steps the style list")
+	hq._cars_input(_action(&"menu_left"))
+	assert_eq(hq._wheel_index, start, "menu_left steps back")
+
+	# Down / up do too — the list reads vertically, so both axes are bound here.
+	hq._cars_input(_action(&"menu_down"))
+	assert_ne(hq._wheel_index, start, "menu_down steps the style list")
+	hq._cars_input(_action(&"menu_up"))
+	assert_eq(hq._wheel_index, start, "menu_up steps back")
+
+	# Select commits, so the style lands on the car.
+	hq._cycle_wheel(1)
+	var want := String(hq._wheel_options[hq._wheel_index]["id"])
+	hq._cars_input(_action(&"menu_select"))
+	await get_tree().process_frame
+	assert_eq(String(_save.get_car(_save.selected_instance_id()).get("wheels", "")), want,
+		"menu_select fits the shown wheels")
+
+
+func test_wheel_view_back_action_leaves_the_view() -> void:
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._enter_wheel_swap()
+	await _await_lineup(hq)
+	hq._cars_input(_action(&"menu_back"))
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.LIFT, "menu_back leaves the wheel view for the lift")
+
+
+# The lift's HUB row offers Wheels, and it's in the row's keyboard/gamepad cursor —
+# a menu reachable only by pointer would violate the project's navigation rule.
+func test_the_lift_hub_offers_wheels_in_its_cursor() -> void:
+	var hq: Node3D = await _hq()
+	hq._enter_lift()
+	await get_tree().process_frame
+	var found: Button = null
+	for child in hq._lift_hub_controls.get_children():
+		if child is Button and String((child as Button).text).to_lower().contains("wheel"):
+			found = child
+	assert_not_null(found, "the lift hub row has a Wheels button")
+	assert_true(hq._hub_cursor.buttons.has(found),
+		"the Wheels button is in the hub's keyboard/gamepad cursor")
+	assert_eq(hq._hub_cursor.buttons.size(), hq._hub_cursor.actions.size(),
+		"the cursor's buttons and actions stay in step")
+
+
+func _action(action: StringName) -> InputEventAction:
+	var event := InputEventAction.new()
+	event.action = action
+	event.pressed = true
+	return event

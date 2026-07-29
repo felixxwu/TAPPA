@@ -89,8 +89,13 @@ func _tick(delta: float) -> void:
 			# Onboard rig down and BEHIND the front wheel: low (near hub/ground height) and in
 			# line with the wheel laterally, sitting back toward the car's middle so the front
 			# wheel (ahead of the body origin, at the front axle) is actually in shot in the
-			# near foreground, looking ahead along the road.
-			pos = c + fwd * 0.2 + right * 0.95 + up * 0.2
+			# near foreground, looking ahead along the road. Lateral reach is derived from the
+			# fielded car's ACTUAL half-width (+ a clearance margin), not a fixed constant --
+			# a fixed offset can sit at/inside a wide car's body mesh (clipping) since body
+			# width varies per CarLibrary entry. Falls back to the old fixed offset for
+			# targets without half_width() (flat test fixtures).
+			var lateral := _wheel_cam_lateral()
+			pos = c + fwd * 0.2 + right * lateral + up * 0.2
 			look_target = c + fwd * 14.0 + right * 0.5
 		Shot.HIGH_WIDE:
 			pos = c + Vector3(0.0, 14.0, 16.0)
@@ -161,6 +166,19 @@ func _plant(c: Vector3) -> void:
 	ground = maxf(ground, _water_level)
 	_plant_pos = Vector3(spot.x, ground + ROADSIDE_HEIGHT, spot.z)
 	_has_plant = true
+
+# Lateral mount distance (m) for the WHEEL shot, kept clear of the car body regardless
+# of which car is fielded. When the target exposes half_width() (Car does), the rig
+# sits at half_width + a configured clearance margin, so a wide car's wider body still
+# keeps the camera outside its mesh. Falls back to the old fixed constant (both from
+# GameConfig, tunable) for targets that don't expose half_width() — e.g. flat test
+# fixtures — so their framing is unchanged.
+func _wheel_cam_lateral() -> float:
+	var cfg: GameConfig = Config.data
+	if _target.has_method("half_width"):
+		return _target.half_width() + cfg.wheel_cam_lateral_clearance
+	return cfg.wheel_cam_fallback_lateral
+
 
 func _advance_shot() -> void:
 	_shot_age = 0.0

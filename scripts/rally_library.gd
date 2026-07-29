@@ -192,9 +192,9 @@ const RALLIES: Array[Dictionary] = [
 		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
 		"restriction": {"pw_min": 40.0, "pw_max": 100.0},
 		"events": [
-			{"seed": 7031, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 5.0},
-			{"seed": 7102, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 5.0},
-			{"seed": 7233, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 5.0},
+			{"seed": 7031, "turn_count": 9, "forestiness": 0.3, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 3.0},
+			{"seed": 7102, "turn_count": 10, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 3.0},
+			{"seed": 7233, "turn_count": 9, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 3.0},
 		],
 	},
 	{

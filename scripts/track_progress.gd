@@ -207,6 +207,20 @@ func _timed_physics_process(delta: float) -> void:
 	if _car.get("replay_playback"):
 		return
 	var p: Vector3 = _car.global_transform.origin
+	# Fallen into water/off the world entirely: just check the Y coordinate,
+	# independent of the lateral off-track leash below (a car can be perfectly
+	# on-line laterally but have dropped straight down through a lake). On a
+	# track with water, the per-track flood height (`track_water_level_m`, set
+	# per rally event — see features/lakes.md) is the relevant threshold, not a
+	# fixed constant, since it varies per track. `fell_off_world_y` is the
+	# fallback for tracks with no water at all (a sheer drop off the map).
+	var cfg: GameConfig = Config.data
+	var underwater := cfg.water_enabled \
+		and p.y < cfg.track_water_level_m - cfg.water_submersion_reset_depth_m
+	if underwater or p.y < cfg.fell_off_world_y:
+		_car.reset_to(_best_reset)
+		_stuck_time = 0.0
+		return
 	var here := Vector2(p.x, p.z)
 	var offset := _local_closest_offset(here)
 	var on_curve := _point_at(offset)
