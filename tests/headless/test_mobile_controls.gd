@@ -51,6 +51,7 @@ func before_each() -> void:
 	# watchdog, and a leftover live set would reconcile away the other tests' pointers.
 	_controls._live_touches = null
 	_controls._touch_seq = -1
+	_seq = 0
 
 
 func after_each() -> void:
@@ -241,9 +242,20 @@ func test_set_scheme_releases_old_inputs() -> void:
 # --- Stuck-touch recovery (web watchdog reconciliation) -----------------------
 # Mobile browsers sometimes never deliver the touchend for a finger lifted while
 # others are still down. A JS watchdog publishes the browser's authoritative list
-# of fingers currently down and the overlay reconciles held pointers against it
-# every frame (sync_live_touches / _reconcile_pointers). These cover the GDScript
-# side of that path — the JS itself can't run headless.
+# of fingers currently down (pushed via a JavaScriptBridge callback AND pulled once
+# a frame) and the overlay reconciles held pointers against it every frame
+# (_adopt_live_touches / _reconcile_pointers). These cover the GDScript side of that
+# path — the JS itself can't run headless.
+
+# Adopt a snapshot the way both the push and the pull paths do, then reconcile as
+# _timed_process would. `seq` must climb, which is what makes the two paths idempotent.
+var _seq := 0
+
+func _live(ids: String) -> void:
+	_seq += 1
+	_controls._adopt_live_touches(_seq, ids)
+	_controls._reconcile_pointers()
+
 
 func test_lost_touch_clears_a_stuck_button() -> void:
 	# Two fingers down; the steer button's release event never arrives, so the
@@ -253,7 +265,7 @@ func test_lost_touch_clears_a_stuck_button() -> void:
 	_controls._pointers[1] = "steer_left"
 	_controls._apply_actions()
 	assert_gt(Input.get_action_strength("steer_left"), 0.0, "steering held before recovery")
-	_controls.sync_live_touches([0])
+	_live("0")
 	_controls._apply_actions()
 	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
 		"a pointer missing from the live touch list stops steering")
@@ -266,7 +278,7 @@ func test_lost_touch_recenters_the_slider() -> void:
 	_controls._slider_x = 20.0
 	_controls._apply_actions()
 	assert_gt(Input.get_action_strength("steer_left"), 0.0, "slider steering before recovery")
-	_controls.sync_live_touches([])
+	_live("")
 	_controls._apply_actions()
 	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
 		"losing the slider pointer springs steering back to centre")
@@ -277,7 +289,7 @@ func test_live_touches_leave_held_fingers_alone() -> void:
 	# Reconciliation must only ever drop pointers the browser says are UP; a finger
 	# still listed keeps its region, and ids we don't track are simply ignored.
 	_controls._pointers[0] = "gas"
-	_controls.sync_live_touches([0, 7])
+	_live("0,7")
 	_controls._apply_actions()
 	assert_true(Input.is_action_pressed("accelerate"),
 		"a finger still in the live list keeps holding its action")
@@ -300,38 +312,44 @@ func test_reconcile_keeps_the_mouse_pointer() -> void:
 	# The mouse is index -1 and never appears in a browser touch list, so an empty
 	# list must not release it — desktop testing with mobile_controls_force.
 	_controls._pointers[-1] = "gas"
-	_controls.sync_live_touches([])
+	_live("")
 	_controls._apply_actions()
 	assert_true(Input.is_action_pressed("accelerate"),
 		"reconciling touch pointers leaves the mouse pointer held")
 
 
-func test_stale_drag_cannot_resurrect_a_lifted_finger() -> void:
-	# THE regression this guards: Godot flushes buffered input a frame late, so a
-	# drag queued while the finger was still down can arrive AFTER we learned the
-	# finger is up. Acting on it re-added the pointer, and with the touchend dropped
-	# nothing was left to clear it — the button stuck until the next touch. This is
-	# why the bug only showed when a finger MOVED slightly before being released.
+func test_stale_drag_is_reconciled_away_not_left_stuck() -> void:
+	# THE regression this guards: Godot flushes buffered input a frame late, so a drag
+	# queued while the finger was still down can arrive AFTER we learned the finger is
+	# up, re-adding the pointer. The old one-shot watchdog had already fired by then
+	# and never looked again, so the button stuck until the next touch — which is why
+	# the bug only showed when a finger MOVED slightly before being released.
+	# The drag is deliberately still ACTED on (gating it swallows real input); what
+	# must hold is that the next reconcile undoes it, every time.
 	_fixed_button_rects()
 	_controls._input(_touch(0, Vector2(550, 550), true))
 	_controls._input(_touch(1, Vector2(750, 550), true))
 	# Finger 1 lifts, but its touchend never arrives — only the browser knows.
-	_controls.sync_live_touches([0])
+	_live("0")
 	assert_false(_controls._pointers.has(1), "the lost pointer is dropped")
-	# Now its stale drag lands.
+	# Its stale drag lands and resurrects it...
 	_controls._input(_drag_event(1, Vector2(750, 550)))
-	assert_false(_controls._pointers.has(1), "a drag for a lifted finger is ignored")
+	# ...and the very next frame drops it again, before any action is applied.
+	_controls._reconcile_pointers()
+	_controls._apply_actions()
+	assert_false(_controls._pointers.has(1), "a resurrected pointer does not survive a frame")
+	assert_false(Input.is_action_pressed("brake_reverse"), "so its action never reaches the car")
 	assert_eq(_controls._pointers.get(0), "gas", "the finger still down is untouched")
-	# ...and the gate must not over-block: a finger the browser still lists drags normally.
+	# And a finger the browser still lists drags between regions as normal.
 	_controls._input(_drag_event(0, Vector2(750, 550)))
 	assert_eq(_controls._pointers.get(0), "brake", "a live finger still drags between regions")
 
 
 func test_reconcile_redrops_a_resurrected_pointer() -> void:
-	# Belt to the braces above: even if a pointer for a lifted finger gets re-added
-	# some other way, the per-frame reconcile drops it again rather than leaving it
-	# stuck forever the way the old one-shot watchdog did.
-	_controls.sync_live_touches([0])
+	# Belt to the braces above: however a pointer for a lifted finger gets re-added,
+	# the per-frame reconcile drops it again rather than leaving it stuck forever the
+	# way the old one-shot watchdog did.
+	_live("0")
 	_controls._pointers[1] = "gas"
 	_controls._reconcile_pointers()
 	_controls._apply_actions()
