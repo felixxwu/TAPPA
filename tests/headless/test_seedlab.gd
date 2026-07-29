@@ -52,7 +52,7 @@ func test_seedlab_leftright_walks_button_row() -> void:
 	_menu.show_seedlab()
 	await get_tree().process_frame
 	var buttons: Array = []
-	for text in ["Load event…", "Terrain…", "Randomize seed", "Back"]:
+	for text in ["Load stage…", "Terrain…", "Randomize seed", "Back"]:
 		var b := _find_button(_menu._seedlab_page, text)
 		assert_not_null(b, "found button '%s'" % text)
 		buttons.append(b)

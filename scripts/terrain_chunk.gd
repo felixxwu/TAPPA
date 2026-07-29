@@ -16,6 +16,11 @@ class_name TerrainChunk
 var coord: Vector2i
 var _mesh_instances: Array[MeshInstance3D] = []
 var _collision: CollisionShape3D
+# True when level 0 was deliberately left unbuilt by the precompute and can be built (and
+# dropped again) on demand — see TerrainManager's detail ring / TerrainLod.build_finest.
+# False for coarse chunks (whose fine levels are pruned for good) and for on-demand
+# editor/test builds (which build every level up front).
+var _lazy_finest := false
 
 
 func _init() -> void:
@@ -53,28 +58,11 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 		else:
 			meshes = TerrainLod.build_all(data, manager.lod_skirt_m)
 	_ensure_mesh_instances(meshes.size())
-	var bands: PackedFloat32Array = manager.lod_band_ends()
 	for i in _mesh_instances.size():
-		var mi := _mesh_instances[i]
-		mi.mesh = meshes[i]                 # may be null for a pruned coarse level
-		mi.visible = meshes[i] != null
-		if meshes[i] == null:
-			continue
-		mi.material_override = manager.chunk_material
-		# Band: level i is visible from the previous band's end out to bands[i],
-		# HARD cutoff (no fade). The dithered visibility-range fade is a Forward+/
-		# Mobile feature — the Compatibility renderer this game uses IGNORES it and
-		# hard-cuts anyway, and the dither is an alpha-hash `discard` that would
-		# defeat early-Z on tile GPUs (bad on our opaque terrain). The pop is small
-		# and hidden by construction: coarse levels are EXACT subsamples (shared
-		# vertices don't move), the terrain is gentle, skirts cover the crack, and
-		# fog softens distance. Indices clamped so a bands/levels length mismatch
-		# can't range-error (deepest levels then share the last boundary).
-		var begin := bands[mini(i - 1, bands.size() - 1)] if i > 0 else 0.0
-		var end := bands[i] if i < bands.size() else 0.0  # last level: no far cutoff
-		mi.visibility_range_begin = begin
-		mi.visibility_range_end = end
-		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		_mesh_instances[i].mesh = meshes[i]   # may be null (pruned coarse / lazy finest)
+	_lazy_finest = not data.get("coarse", false) and not meshes.is_empty() \
+		and meshes[0] == null
+	_apply_level_bands(manager)
 
 	# Collision only when the full-res heightfield is present (full-res chunks). Coarse
 	# chunks are never inside collision_ring (see collision-band classification), so a
@@ -89,6 +77,65 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 	else:
 		_collision.shape = null
 		assert(data.get("coarse", false), "chunk without full-res heights must be coarse")
+
+
+# Configure each present level's visibility band from the manager's cutoffs.
+#
+# Level i is visible from the previous PRESENT level's cutoff out to bands[i], a HARD
+# cutoff (no fade). The dithered visibility-range fade is a Forward+/Mobile feature — the
+# Compatibility renderer this game uses IGNORES it and hard-cuts anyway, and the dither is
+# an alpha-hash `discard` that would defeat early-Z on tile GPUs (bad on our opaque
+# terrain). The pop is small and hidden by construction: coarse levels are EXACT
+# subsamples (shared vertices don't move), the terrain is gentle, skirts cover the crack,
+# and fog softens distance. Indices are clamped so a bands/levels length mismatch can't
+# range-error (deepest levels then share the last boundary).
+#
+# "Previous PRESENT level" is what makes an absent level safe rather than a hole: when
+# level 0 has not been built (lazy) or was pruned (coarse), level 1 simply starts at 0 and
+# covers the near band itself. Worst case the ground is one step coarser than ideal — it
+# is never missing. Called again whenever a level's mesh appears or disappears.
+func _apply_level_bands(manager: TerrainManager) -> void:
+	var bands: PackedFloat32Array = manager.lod_band_ends()
+	for i in _mesh_instances.size():
+		var mi := _mesh_instances[i]
+		if mi.mesh == null:
+			mi.visible = false
+			continue
+		mi.visible = true
+		mi.material_override = manager.chunk_material
+		var prev := i - 1
+		while prev >= 0 and _mesh_instances[prev].mesh == null:
+			prev -= 1
+		var begin := bands[mini(prev, bands.size() - 1)] if prev >= 0 else 0.0
+		var end := bands[i] if i < bands.size() else 0.0  # last level: no far cutoff
+		mi.visibility_range_begin = begin
+		mi.visibility_range_end = end
+		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+
+
+# Build (or drop) the lazily-deferred finest level. No-op unless this chunk's level 0 was
+# deferred by the precompute. Dropping the mesh releases its GPU buffers, so a chunk that
+# leaves the detail ring gives the VRAM straight back; the band re-apply keeps the next
+# level covering the near distance either way.
+func set_finest_detail(manager: TerrainManager, data: Dictionary, on: bool) -> void:
+	if not _lazy_finest or _mesh_instances.is_empty():
+		return
+	var mi := _mesh_instances[0]
+	if on == (mi.mesh != null):
+		return
+	mi.mesh = TerrainLod.build_finest(manager, coord, data, manager.lod_skirt_m) if on else null
+	_apply_level_bands(manager)
+
+
+# Whether the finest level currently has a built mesh (tests / debug).
+func has_finest_mesh() -> bool:
+	return not _mesh_instances.is_empty() and _mesh_instances[0].mesh != null
+
+
+# Whether this chunk's finest level is the DEFERRED kind — i.e. set_finest_detail can
+# build it. False for coarse chunks (pruned for good) and for fully-prebaked ones.
+func is_finest_deferred() -> bool:
+	return _lazy_finest
 
 
 # Grow/shrink the pool of per-level MeshInstance3D children to `count`.

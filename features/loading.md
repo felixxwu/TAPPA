@@ -13,7 +13,7 @@ runs the whole build behind it. The stages, in order:
 
 | stage label | what it does | where |
 |---|---|---|
-| Building terrain | `TerrainManager` init | `terrain_manager.gd` |
+| Building terrain | `TerrainManager.build_initial()` — the 7x7 ring, pulled from the cache | `terrain_manager.gd` |
 | Generating track | DFS corner search — **skipped when a cached stage exists** | `track_generator.gd::generate` / `TrackCache` |
 | Carving road into terrain | unified cliff/road distance-field pass | `terrain_manager.gd::bake_track` |
 | Precomputing chunks | per-chunk grid + LOD prebake over the corridor | `terrain_manager.gd::cache_chunk` |
@@ -37,6 +37,19 @@ runs the whole build behind it. The stages, in order:
 
 `_yield_frame()` collapses to a synchronous no-op under headless, so tests see a fully
 built world within `_ready`.
+
+## The car is frozen for the whole window
+
+`_generate_track` sets `$Car.freeze = true` on entry and restores the previous value
+immediately after `$Floor.build_initial()`. `_ready`'s `controls_locked` only stops the
+player *driving*; the body itself simulates across every awaited frame below, and from
+the start of generation until `build_initial()` there is deliberately **no terrain under
+it** (see `terrain.md` → *Who builds the initial ring*). Without the freeze the car falls
+for the length of the load. With it, the car drops onto carved, flattened ground with
+several hundred ms of covered frames left to settle before `_build_start_line` or the
+player sees it.
+
+If you add work between those two points, do not assume the car is on the ground there.
 
 ## Frame cap during load
 

@@ -129,7 +129,7 @@ directly).
 
 Every event — **including the final one** — shows the standings screen's two pages (the
 just-finished event's times, then the cumulative leaderboard) before anything else
-happens; the final event's combined page still reads a "Continue to next event >"
+happens; the final event's combined page still reads a "Continue to next stage >"
 button, but pressing it resolves the rally instead. Its Continue calls
 `continue_to_next_event()`: for a non-final event this loads the next event; for
 the final event it instead resolves the rally (`_resolve_results` → `PODIUM`) and

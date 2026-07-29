@@ -59,8 +59,8 @@ static func box(size: Vector3, material: Material, pos := Vector3.ZERO) -> MeshI
 	return mi
 
 
-# A flat, subdivided square ground grid (size × size, centred on the origin)
-# carrying per-vertex the grass→tarmac blend the road-blend shader
+# A flat square ground grid (size × size, centred on the origin) carrying
+# per-vertex the grass→tarmac blend the road-blend shader
 # (ps1_models.gdshader, blend_road = true) consumes: COLOR.a is the tarmac
 # weight — 1 inside any of the rectangular `pads` (Rect2 in world XZ),
 # smoothstep-feathered to 0 across `feather` metres beyond the pad edge — and
@@ -68,18 +68,28 @@ static func box(size: Vector3, material: Material, pos := Vector3.ZERO) -> MeshI
 # material's texture_tile sets the grass tiling. Shared by the podium's tarmac
 # pads and the HQ's concrete apron, so every tarmac edge in the game dissolves
 # into grass the way the generated track's verges do.
+#
+# The grid is deliberately NON-UNIFORM. The plane is flat, so the ONLY thing
+# subdivision buys is resolution for the feather band around the pad edges —
+# and that band is a few metres of a 120–240 m plane. So instead of a uniform
+# (subdiv+1)^2 grid (58k verts / 115k tris at the old HQ setting, drawn every
+# frame on the game's first screen), the vertex lines per axis are the union of
+#   * a COARSE lattice of `subdiv` divisions across the whole plane, and
+#   * a FINE lattice, only inside the feather band on either side of each pad
+#     edge on that axis.
+# It stays a tensor-product grid (a sorted x line-set × a sorted z line-set), so
+# the triangulation below is unchanged and corners are covered too — a fine x
+# line spans the full z extent. Net effect: the feather band is sampled FINER
+# than the old uniform grid managed, for ~2% of the vertices.
 static func feathered_ground_mesh(size: float, subdiv: int, pads: Array[Rect2], feather: float) -> ArrayMesh:
 	var fth := maxf(feather, 0.001)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var n := maxi(subdiv, 1)
-	var step := size / float(n)
-	var origin := -size * 0.5
-	# Build the (n+1)^2 vertex grid, then index two triangles per cell.
-	for j in n + 1:
-		for i in n + 1:
-			var x := origin + float(i) * step
-			var z := origin + float(j) * step
+	var xs := _ground_grid_lines(size, subdiv, pads, fth, true)
+	var zs := _ground_grid_lines(size, subdiv, pads, fth, false)
+	# Build the |xs| × |zs| vertex grid, then index two triangles per cell.
+	for z in zs:
+		for x in xs:
 			var w := 0.0
 			for pad in pads:
 				var c := pad.get_center()
@@ -92,9 +102,9 @@ static func feathered_ground_mesh(size: float, subdiv: int, pads: Array[Rect2], 
 			st.set_uv2(Vector2(1.0, 0.0))
 			st.set_normal(Vector3.UP)  # flat floor; keeps the mesh well-formed
 			st.add_vertex(Vector3(x, 0.0, z))
-	var row := n + 1
-	for j in n:
-		for i in n:
+	var row := xs.size()
+	for j in zs.size() - 1:
+		for i in row - 1:
 			var a := j * row + i
 			var b := a + 1
 			var cc := a + row
@@ -104,6 +114,54 @@ static func feathered_ground_mesh(size: float, subdiv: int, pads: Array[Rect2], 
 			st.add_index(a); st.add_index(b); st.add_index(cc)
 			st.add_index(b); st.add_index(d); st.add_index(cc)
 	return st.commit()
+
+
+# The sorted, de-duplicated vertex line positions along ONE axis of the ground
+# grid (`x_axis` picks X, else Z): the coarse whole-plane lattice, plus a fine
+# lattice local to each pad edge on this axis so the smoothstep feather band
+# keeps its resolution. Always spans the full [-size/2, +size/2] extent.
+static func _ground_grid_lines(size: float, subdiv: int, pads: Array[Rect2],
+		feather: float, x_axis: bool) -> PackedFloat32Array:
+	var lo := -size * 0.5
+	var hi := size * 0.5
+	var n := maxi(subdiv, 1)
+	var coarse := size / float(n)
+	# Sample the feather ramp with several vertices; also reach a little INSIDE the
+	# pad so the w = 1 plateau starts cleanly at the edge.
+	var fine := maxf(feather * 0.25, 0.01)
+	var inner := feather * 0.5
+	var outer := feather * 1.25
+	var raw := PackedFloat32Array()
+	for i in n + 1:
+		raw.append(lo + float(i) * coarse)
+	for pad in pads:
+		var c := pad.get_center()
+		var half := (pad.size.x if x_axis else pad.size.y) * 0.5
+		var centre := c.x if x_axis else c.y
+		for edge in [centre - half, centre + half]:
+			var start: float = edge - inner
+			var span: float = inner + outer
+			var steps := int(ceil(span / fine))
+			for k in steps + 1:
+				var v: float = start + float(k) * span / float(maxi(steps, 1))
+				if v > lo and v < hi:
+					raw.append(v)
+	var out := PackedFloat32Array(raw)
+	out.sort()
+	# Drop near-duplicates (a fine sample landing on a coarse line) — coincident
+	# vertices would make degenerate zero-area triangles.
+	var eps := minf(coarse, fine) * 0.25
+	var dedup := PackedFloat32Array()
+	for v in out:
+		if dedup.is_empty() or v - dedup[dedup.size() - 1] > eps:
+			dedup.append(v)
+	# The plane must span the full extent: snap the end lines back onto it rather
+	# than appending (an appended line within `eps` would be a degenerate sliver).
+	if dedup.size() < 2:
+		return PackedFloat32Array([lo, hi])
+	dedup[0] = lo
+	dedup[dedup.size() - 1] = hi
+	return dedup
 
 
 # The road-blend ground material the feathered ground mesh is drawn with: the

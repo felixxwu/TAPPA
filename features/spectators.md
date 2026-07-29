@@ -81,6 +81,22 @@ keeps escaping the car the dominant direction, and the accel-limited integration
 car nearby, flee is zero and the lower tiers get the full budget (so they still space
 out and avoid the road when idle).
 
+**Static-field cache (perf):** the road and the trees **do not move**, so the combined
+weighted `road_force + obstacle_force` push is a *static field* sampled at the member's
+position — re-deriving it every steered tick (8 dirs × 10 steps of `ScatterMath.on_road`
+= up to 80 dictionary probes per member, plus a 3×3 tree-grid scan) recomputes the same
+answer over and over. `SpectatorGroup` caches that push per member alongside the position
+it was sampled at (`_avoid` / `_avoid_at`), and re-samples only once the member has
+drifted `AVOID_CACHE_STEP_M` (= `ScatterMath.CELL_M`, one road-raster cell — the
+resolution the field is rasterised at, so a cached push can't hide a road boundary).
+A standing member samples once, ever; a fleeing member re-samples every half metre of
+travel. `live_avoid_force()` / `cached_avoid_force()` / `avoid_sample_count()` expose the
+field and the probe count for tests. Separation is deliberately **not** cached —
+neighbours move. The two grid scans also share a `static var _EMPTY_*` default instead of
+allocating a throwaway Packed array on each of their nine `Dictionary.get` cell probes,
+the `_p[...]` param lookups are hoisted out of the per-member loop, and the every-tick
+knock-over scan uses `distance_squared_to`.
+
 **LOD:** only the group within `spectator_active_radius_m` of the car runs
 steering; the other two stand still until the car approaches.
 
@@ -138,7 +154,9 @@ the five steering weights, ragdoll launch params, despawn distance). Disable wit
   determinism; member count cap, determinism, within-radius, separation floor,
   off-road, tree-avoid, grid bucketing.
 - `tests/headless/test_spectator_steering.gd` — each steering force's direction +
-  radius cutoff, and the speed clamp.
+  radius cutoff, the speed clamp, and the static-field cache (cached push equals the
+  live probe, reused while the member barely moves, re-probed after real movement, a
+  settled crowd stops probing, road avoidance + neighbour separation still hold).
 - `tests/headless/test_spectator_damage.gd` — knocking a member over applies soft drag
   to the car (`spectator_drag_strength`), which the unified damage rule turns into HP loss.
 - `tests/headless/test_smoke.gd` — groups spawn with standing members and are not

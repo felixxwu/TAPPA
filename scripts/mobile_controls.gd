@@ -65,6 +65,11 @@ const _REGION_LABEL := {
 	"simple_left": "<", "simple_right": ">",
 }
 
+# Sentinel index the web touch watchdog passes to force_release() to mean "drop
+# EVERY pointer" (page hidden / window blurred, where no per-touch id survives).
+# Well clear of any real pointer index, including the mouse's -1.
+const RELEASE_ALL_INDEX := -1000
+
 var _active := false
 var _scheme := DEFAULT_SCHEME
 
@@ -90,8 +95,15 @@ var _thumb_w := 40.0
 
 # Visual nodes, rebuilt per scheme: region name -> ColorRect, plus the slider.
 var _panels := {}
+# Last held state pushed to each panel's tint, so _update_visuals only touches a
+# ColorRect's colour on a transition. region name -> bool.
+var _panel_held := {}
 var _slider_track: ColorRect
 var _slider_thumb: ColorRect
+
+# Web only: the JS -> GDScript callback the stuck-touch watchdog calls. Held in a
+# member so the reference stays alive for the lifetime of the node.
+var _touch_lost_cb: JavaScriptObject = null
 
 
 func _ready() -> void:
@@ -104,6 +116,7 @@ func _ready() -> void:
 	_scheme = _scheme_from_save()
 	_build()
 	get_viewport().size_changed.connect(_layout)
+	_install_touch_watchdog()
 
 
 # The persisted scheme (clamped to a valid id), or the default when unset. Save is
@@ -160,6 +173,7 @@ func _build() -> void:
 	for p in _panels.values():
 		p.queue_free()
 	_panels.clear()
+	_panel_held.clear()
 	if _slider_track != null:
 		_slider_track.queue_free()
 		_slider_track = null
@@ -314,12 +328,27 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		_drag(event.index, event.position)
 	elif event is InputEventMouseButton:
+		if _is_emulated_mouse(event):
+			return
 		if event.pressed:
 			_press(-1, event.position)
 		else:
 			_release(-1)
 	elif event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		if _is_emulated_mouse(event):
+			return
 		_drag(-1, event.position)
+
+
+# True for a mouse event the engine SYNTHESISED from a touch (the project setting
+# `input_devices/pointing/emulate_mouse_from_touch` is on by default). The real
+# InputEventScreenTouch/Drag is handled above, so acting on the emulated twin too
+# would process every finger TWICE — once at its own index, once at -1. Godot tags
+# synthesised events with device == InputEvent.DEVICE_ID_EMULATION; a real mouse
+# reports its own (non-negative) device id, so a desktop tester running with
+# mobile_controls_force still drives the overlay normally.
+func _is_emulated_mouse(event: InputEvent) -> bool:
+	return event.device == InputEvent.DEVICE_ID_EMULATION
 
 
 func _press(idx: int, pos: Vector2) -> void:
@@ -354,10 +383,98 @@ func _release(idx: int) -> void:
 	_pointers.erase(idx)
 
 
+# Drop a pointer as if its release event had arrived — the recovery path for the
+# web stuck-touch bug (see _install_touch_watchdog). RELEASE_ALL_INDEX drops every
+# pointer at once. Idempotent: harmless for an index that isn't held, so the
+# watchdog can fire alongside a release that DID arrive normally.
+func force_release(idx: int) -> void:
+	if idx == RELEASE_ALL_INDEX:
+		_pointers.clear()
+		_slider_owner = null
+		return
+	_release(idx)
+
+
+# --- Web: stuck-touch watchdog ------------------------------------------------
+#
+# Mobile browsers sometimes never deliver the `touchend` for a finger that is
+# lifted while OTHER fingers are still down, so the button stays held until some
+# later touch happens to shake it loose — you lift off a steer button and the car
+# keeps turning. Two documented causes:
+#   * iOS Safari/Chrome drop one of a touchstart/touchend pair that land in the
+#     same frame (one hand pressing as the other lifts).
+#   * Blink/older WebKit can end a slightly-moved touch with `touchcancel` and
+#     then dispatch nothing further at all.
+# Neither is something Godot can fix from its side: the engine's web input layer
+# only ever reads `evt.changedTouches`, never `evt.touches` — the browser's
+# authoritative list of fingers CURRENTLY down — so a dropped release leaves
+# _pointers/_slider_owner populated with no event that would ever clear them.
+#
+# The fix is to stop trusting `touchend` and reconcile instead. This installs a
+# CAPTURE-phase listener on the canvas (so it runs ahead of the engine's own) that
+# diffs the live `evt.touches` identifiers on every touch event and force-releases
+# any pointer that has silently vanished. Firing for a release that DID arrive
+# normally is harmless — force_release is idempotent.
+#
+# Browser touch identifiers are what the engine passes straight through as the
+# Godot touch index, so no translation is needed. Inert off the web build.
+func _install_touch_watchdog() -> void:
+	if not OS.has_feature("web"):
+		return
+	var window := JavaScriptBridge.get_interface("window")
+	if window == null:
+		return
+	_touch_lost_cb = JavaScriptBridge.create_callback(_on_touch_lost)
+	window.godotTouchLost = _touch_lost_cb
+	JavaScriptBridge.eval(_TOUCH_WATCHDOG_JS % RELEASE_ALL_INDEX, true)
+
+
+# Args come from JS as an array; arg 0 is the lost touch identifier (or
+# RELEASE_ALL_INDEX). Guarded so a malformed call can't break input handling.
+func _on_touch_lost(args: Array) -> void:
+	if args.is_empty():
+		return
+	force_release(int(args[0]))
+
+
+const _TOUCH_WATCHDOG_JS := """
+(function () {
+	if (window.__rallyTouchWatchdog) { return; }
+	window.__rallyTouchWatchdog = true;
+	var canvas = document.getElementById('canvas') || document.querySelector('canvas');
+	if (!canvas) { return; }
+	var live = [];
+	function lost(id) { if (window.godotTouchLost) { window.godotTouchLost(id); } }
+	// Reconcile our idea of what's down against the browser's authoritative list.
+	function sync(e) {
+		var now = [];
+		for (var i = 0; i < e.touches.length; i++) { now.push(e.touches[i].identifier); }
+		for (var j = 0; j < live.length; j++) {
+			if (now.indexOf(live[j]) === -1) { lost(live[j]); }
+		}
+		live = now;
+	}
+	['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(function (t) {
+		canvas.addEventListener(t, sync, true);
+	});
+	// Backgrounding the page ends every touch with no per-id event to observe.
+	function dropAll() { live = []; lost(%d); }
+	window.addEventListener('blur', dropAll);
+	window.addEventListener('pagehide', dropAll);
+	document.addEventListener('visibilitychange', function () {
+		if (document.hidden) { dropAll(); }
+	});
+})();
+"""
+
+
 # True if any active pointer is on the given region.
 func _region_pressed(region: String) -> bool:
-	for r in _pointers.values():
-		if r == region:
+	# Iterate the Dictionary directly — .values() would allocate a fresh Array on
+	# every call, and this runs several times per frame (_apply_actions +
+	# _update_visuals) on exactly the platform where GC churn hurts most.
+	for idx in _pointers:
+		if _pointers[idx] == region:
 			return true
 	return false
 
@@ -376,14 +493,22 @@ func _set_action(action: StringName, on: bool) -> void:
 # steer_left, right presses steer_right (proportional strength); centre releases both.
 # (car.gd: positive get_axis = steer left, so a thumb dragged left gives _steer < 0.)
 func _apply_steer() -> void:
-	if _steer < 0.0:
-		Input.action_press(&"steer_left", -_steer)
-	else:
-		Input.action_release(&"steer_left")
-	if _steer > 0.0:
-		Input.action_press(&"steer_right", _steer)
-	else:
-		Input.action_release(&"steer_right")
+	_apply_steer_side(&"steer_left", -_steer)
+	_apply_steer_side(&"steer_right", _steer)
+
+
+# Press one steer action at `strength` while positive, release it otherwise. The
+# RELEASE is change-guarded (the same pattern as _set_action) so a centred stick
+# doesn't fire an action_release event every single frame. The PRESS is not: the
+# strength is analog and has to be re-pushed whenever it moves, exactly as Godot's
+# own analog input does — re-pressing a held action doesn't change its held-ness.
+func _apply_steer_side(action: StringName, strength: float) -> void:
+	if strength > 0.0:
+		_action_held[action] = true
+		Input.action_press(action, strength)
+	elif _action_held.get(action, false):
+		_action_held[action] = false
+		Input.action_release(action)
 
 
 # Translate the current pointer / tilt state into held input actions + visuals for
@@ -433,7 +558,11 @@ func _update_visuals(brake: bool, gas: bool) -> void:
 			"gas": held = gas
 			"brake": held = brake
 			_: held = _region_pressed(region)
-		(_panels[region] as ColorRect).color = _PRESSED_COLOR if held else _IDLE_COLOR
+		# Only write on a change: assigning ColorRect.color dirties the canvas item
+		# even when the value is identical, and that's 2-4 panels every frame.
+		if _panel_held.get(region, null) != held:
+			_panel_held[region] = held
+			(_panels[region] as ColorRect).color = _PRESSED_COLOR if held else _IDLE_COLOR
 	_position_thumb()
 
 
@@ -461,9 +590,11 @@ func _timed_process(_delta: float) -> void:
 func _release_all() -> void:
 	for action in [&"accelerate", &"brake_reverse"]:
 		_set_action(action, false)
-	Input.action_release(&"steer_left")
-	Input.action_release(&"steer_right")
 	_steer = 0.0
+	# Through the same helper, so the held-state cache can never be left claiming a
+	# steer action is down after we've released it.
+	_apply_steer_side(&"steer_left", 0.0)
+	_apply_steer_side(&"steer_right", 0.0)
 
 
 func _exit_tree() -> void:

@@ -148,25 +148,32 @@ above is off there). See [benchmark.md](benchmark.md) → "Feedback loop".
 `load stage:`:
 
 ```
-hq boot stage: build                    349 ms
-hq boot stage: free-roam prewarm       1093 ms
-hq boot total: 1442 ms
-hq car cache: 10 props (9 preview, 1 owned-garage), 25 meshes, ~0.26 MB mesh data (est)
+hq boot stage: build                    352 ms
+hq boot total: 352 ms
+hq prewarm (deferred, off boot path): 9 props over 2009 ms wall-clock
+hq car cache: 18 props (9 preview, 9 owned-garage), 44 meshes, ~0.49 MB mesh data (est)
 ```
+
+The last two lines arrive **after** the loading cover lifts — the free-roam prewarm no
+longer runs inside boot (see below), so its wall-clock is elapsed time *while HQ is
+already interactive*, not time the player waits. The car-cache line rides with it because
+the cache only reaches full size once the warm completes.
 
 `_car_cache_mesh_cost()` walks the cache reading only ArrayMesh surface *header* counts
 (never `surface_get_arrays`), so it is cheap; non-ArrayMesh meshes are skipped, making it
 a deliberate under-estimate.
 
-What the numbers showed on a fast Mac: the **free-roam prewarm is ~3x the entire rest of
-the HQ build**, while duplicated mesh data is negligible (~26 KB per prop). So the
-resident-memory concern about per-car mesh copies is real but small, and the cost worth
-attacking is the prewarm's contribution to time-to-first-interaction. Note the mesh walk
+What the numbers showed on a fast Mac: the **free-roam prewarm was ~3x the entire rest of
+the HQ build** (349 ms build + 1093 ms prewarm = 1442 ms boot), while duplicated mesh data
+is negligible (~26 KB per prop). So the resident-memory concern about per-car mesh copies
+is real but small, and the cost worth attacking was the prewarm's contribution to
+time-to-first-interaction — now fixed by deferring it (`hq.gd` →
+`_prewarm_free_roam_deferred`), taking HQ boot to ~352 ms. Note the mesh walk
 does not see nodes, physics bodies, materials or textures — for a true RAM figure measure
 `Performance.MEMORY_STATIC` / `RENDER_VIDEO_MEM_USED` deltas around the prewarm instead.
 
 The prewarm and the session-resident `_car_cache` are a **deliberate** trade documented in
-`hq.gd`: the cost is paid once behind the loading cover to hide the first-entry lag spike.
+`hq.gd`: the cost is paid once, shortly after boot, to hide the first-entry lag spike.
 
 ## Standalone performance benchmark
 

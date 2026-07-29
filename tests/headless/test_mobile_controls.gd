@@ -232,3 +232,174 @@ func test_set_scheme_releases_old_inputs() -> void:
 	_controls.set_scheme(MobileControls.SCHEME_SIMPLE_LR_AUTO)
 	assert_false(Input.is_action_pressed("accelerate"),
 		"switching schemes releases inputs held under the old one")
+
+
+# --- Stuck-touch recovery (web watchdog entry point) -------------------------
+# Mobile browsers sometimes never deliver the touchend for a finger lifted while
+# others are still down, so a JS watchdog reconciles against the live touch list
+# and calls force_release for pointers that vanished. These cover the GDScript
+# side of that path — the JS itself can't run headless.
+
+func test_force_release_clears_a_stuck_button() -> void:
+	# Two fingers down; the steer button's release event never arrives.
+	_controls.set_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
+	_controls._pointers[0] = "gas"
+	_controls._pointers[1] = "steer_left"
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_left"), 0.0, "steering held before recovery")
+	_controls.force_release(1)
+	_controls._apply_actions()
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
+		"a force-released pointer stops steering")
+	assert_true(Input.is_action_pressed("accelerate"),
+		"the OTHER finger keeps its action — only the lost pointer is dropped")
+
+
+func test_force_release_recenters_the_slider() -> void:
+	_controls._slider_owner = 1
+	_controls._slider_x = 20.0
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_left"), 0.0, "slider steering before recovery")
+	_controls.force_release(1)
+	_controls._apply_actions()
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
+		"losing the slider pointer springs steering back to centre")
+
+
+func test_force_release_is_idempotent_for_unheld_pointers() -> void:
+	# The watchdog also fires for releases that DID arrive normally, so a
+	# force_release for an index we aren't tracking must be a no-op.
+	_controls._pointers[0] = "gas"
+	_controls.force_release(7)
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("accelerate"),
+		"releasing an untracked pointer leaves held pointers alone")
+
+
+func test_release_all_index_drops_every_pointer() -> void:
+	# Backgrounding the page ends every touch with no per-id event to observe.
+	_controls.set_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
+	_controls._pointers[0] = "gas"
+	_controls._pointers[1] = "steer_left"
+	_controls._slider_owner = 2
+	_controls.force_release(MobileControls.RELEASE_ALL_INDEX)
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("accelerate"), "throttle dropped")
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6, "steering dropped")
+	assert_null(_controls._slider_owner, "slider ownership dropped")
+
+
+# --- Steering edges (the press/release change-guard) --------------------------
+# _apply_steer only fires action_release on a TRANSITION back to centre rather
+# than every frame, so these walk the value across the centre threshold in both
+# directions and check the action state is right on each side — a mis-placed
+# guard shows up as steering that never releases (stuck) or never presses.
+
+func test_steer_presses_and_releases_across_repeated_frames() -> void:
+	_controls._slider_owner = 0
+	# Hold left for several frames: still steering left on every one of them.
+	_controls._slider_x = 20.0
+	for i in 3:
+		_controls._apply_actions()
+		assert_gt(Input.get_action_strength("steer_left"), 0.0, "left steer holds while the finger is held")
+	# Back to centre: releases, and stays released across further frames.
+	_controls._slider_x = 100.0
+	for i in 3:
+		_controls._apply_actions()
+		assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
+			"centring the slider releases left steer and keeps it released")
+	# And it can be re-pressed afterwards — the guard must not latch.
+	_controls._slider_x = 20.0
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_left"), 0.0, "steering presses again after a release")
+
+
+func test_steer_swaps_sides_cleanly() -> void:
+	_controls._slider_owner = 0
+	_controls._slider_x = 20.0
+	_controls._apply_actions()
+	# Straight across to the other edge: the old side must release as the new one presses.
+	_controls._slider_x = 180.0
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_right"), 0.0, "the new side steers")
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
+		"the old side releases when steering crosses centre")
+
+
+func test_release_all_clears_a_held_steer() -> void:
+	# _release_all runs on scheme switch / exit; a change-guarded release must still
+	# leave nothing held (and must not block a later press).
+	_controls._slider_owner = 0
+	_controls._slider_x = 20.0
+	_controls._apply_actions()
+	_controls._release_all()
+	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
+		"releasing everything drops a held steer")
+	_controls._slider_owner = 0
+	_controls._slider_x = 20.0
+	_controls._apply_actions()
+	assert_gt(Input.get_action_strength("steer_left"), 0.0, "steering works again after a full release")
+
+
+# --- Pointer routing: touch vs (emulated) mouse -------------------------------
+# The project leaves emulate_mouse_from_touch on, so every finger ALSO arrives as
+# a mouse event at index -1. _input ignores the synthesised twin (device ==
+# DEVICE_ID_EMULATION) so each finger is processed once — while a real mouse
+# (its own device id) still drives the overlay for desktop testing.
+
+# Park two hit rects well away from the slider so presses land on buttons.
+func _fixed_button_rects() -> void:
+	_controls._rects = {
+		"gas": Rect2(500, 500, 100, 100),
+		"brake": Rect2(700, 500, 100, 100),
+	}
+	_controls._slider_rect = Rect2(-1000, -1000, 1, 1)
+
+
+func _touch(index: int, pos: Vector2, pressed: bool) -> InputEventScreenTouch:
+	var e := InputEventScreenTouch.new()
+	e.index = index
+	e.position = pos
+	e.pressed = pressed
+	return e
+
+
+func _mouse(pos: Vector2, pressed: bool, device: int) -> InputEventMouseButton:
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.position = pos
+	e.pressed = pressed
+	e.device = device
+	return e
+
+
+func test_two_touches_make_two_distinct_pointers() -> void:
+	_fixed_button_rects()
+	_controls._input(_touch(0, Vector2(550, 550), true))
+	_controls._input(_touch(1, Vector2(750, 550), true))
+	assert_eq(_controls._pointers.size(), 2, "two fingers down = two tracked pointers")
+	assert_eq(_controls._pointers.get(0), "gas", "the first finger holds its own region")
+	assert_eq(_controls._pointers.get(1), "brake", "the second finger holds its own region")
+	# Lifting one leaves the other exactly as it was.
+	_controls._input(_touch(0, Vector2(550, 550), false))
+	assert_eq(_controls._pointers.size(), 1, "lifting one finger drops only that pointer")
+	assert_eq(_controls._pointers.get(1), "brake", "the finger still down keeps its region")
+
+
+func test_touch_emulated_mouse_is_ignored() -> void:
+	_fixed_button_rects()
+	_controls._input(_touch(0, Vector2(550, 550), true))
+	# The engine's synthesised twin of that same finger must not register a second
+	# pointer (which would then be processed, and released, independently).
+	_controls._input(_mouse(Vector2(550, 550), true, InputEvent.DEVICE_ID_EMULATION))
+	assert_eq(_controls._pointers.size(), 1, "a finger is tracked once, not twice")
+	assert_false(_controls._pointers.has(-1), "no phantom mouse pointer from an emulated event")
+
+
+func test_real_mouse_still_drives_the_controls() -> void:
+	_fixed_button_rects()
+	_controls._input(_mouse(Vector2(550, 550), true, 0))
+	assert_eq(_controls._pointers.get(-1), "gas",
+		"a real mouse press still works (desktop testing with mobile_controls_force)")
+	_controls._input(_mouse(Vector2(550, 550), false, 0))
+	assert_false(_controls._pointers.has(-1), "and its release still clears the pointer")

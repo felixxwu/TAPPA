@@ -26,18 +26,38 @@ extends Node
 # The factor itself is the authored look value Config.data.horizontal_stretch
 # (config/game_config.tres); 1.0 makes this a no-op.
 
-# Logical frame height the game is laid out against, read straight from
-# project.godot (window/size/viewport_height) so that setting is the SINGLE source
-# of truth — change the vertical resolution there and nothing else needs editing.
+# Logical frame height the game is laid out against. The AUTHORED base comes
+# straight from project.godot (window/size/viewport_height) so that setting stays the
+# single source of truth for the full-quality frame; _ready() then resolves the
+# effective height for the current target through GameConfig.viewport_height_for(),
+# which drops it on a web TOUCH device only (phone/tablet browser). Native mobile,
+# desktop and a DESKTOP browser all keep the authored value.
+# Because everything (3D world AND every UI CanvasLayer) is laid out against this,
+# lowering it is the one true fragment lever — the frame is rendered at this height
+# and scaled up to the window. Keep GameConfig.virtual_resolution in proportion via
+# virtual_resolution_for() (world.gd does this for the PS1 post-process).
 # (Static var rather than const because const can't call into ProjectSettings.)
-static var DESIGN_HEIGHT: float = float(ProjectSettings.get_setting(
-	"display/window/size/viewport_height", 360))
+static var DESIGN_HEIGHT: float = base_design_height()
+
+
+# The authored, untiered logical height from project.godot. Kept separate from
+# DESIGN_HEIGHT (which _ready may lower for the web-touch tier) so the tier resolver
+# always has the base to compare against.
+static func base_design_height() -> float:
+	return float(ProjectSettings.get_setting("display/window/size/viewport_height", 360))
 
 
 var _last_window_size := Vector2i.ZERO
 
 
 func _ready() -> void:
+	# Resolve the render resolution tier once, before the first _apply(): a web TOUCH
+	# device renders at the lower Config.data.viewport_height_web_touch, every other
+	# target at the authored project.godot height. Done here (rather than in world.gd)
+	# because the stretch system owns the logical frame for EVERY scene — HQ, menus and
+	# the stage alike — so one assignment covers the whole game.
+	DESIGN_HEIGHT = float(Config.data.viewport_height_for(
+		Platform.is_web(), Platform.is_touch(), int(base_design_height())))
 	var window := get_window()
 	# Per-axis scaling: let horizontal and vertical fit the window independently.
 	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT

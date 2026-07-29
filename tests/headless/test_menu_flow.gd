@@ -2022,7 +2022,7 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	add_child_autofree(sc)
 	await get_tree().process_frame
 	var text := _label_texts(sc)
-	assert_string_contains(text, "AFTER EVENT 1", "the interstitial headers the event just finished")
+	assert_string_contains(text, "AFTER STAGE 1", "the interstitial headers the event just finished")
 	assert_string_contains(text, "FIXTURE OPEN", "it names the rally")
 	assert_string_contains(text, "QUICK", "the opponent field is listed")
 	assert_string_contains(text, "SLOW", "the whole field is shown")
@@ -2065,7 +2065,7 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 			and UpgradeLibrary.slot_of(won) != "drivetrain":
 		assert_false(sc._reveal._choice_pending, "a slottable reward no longer opens Apply/Keep")
 	await get_tree().process_frame
-	assert_eq(sc._action_button.text, UITheme.caps("Continue to next event >"),
+	assert_eq(sc._action_button.text, UITheme.caps("Continue to next stage >"),
 		"after collecting, the button continues to the next event")
 
 	sc._action_button.pressed.emit()

@@ -32,10 +32,11 @@ const CAR_SCENE_PATH := "res://car.tscn"
 # the shared Crowd helper (so all three use the SAME representation + scale as the
 # stage + HQ) — placed as plain decorative fields (no collision, no AI).
 
-# Floor is a square PlaneMesh side (m); subdivided finely enough that the pad
-# feather bands stay smooth.
+# Floor is a square PlaneMesh side (m). Its subdivision is the shared
+# cfg.ground_subdiv_for (the same tunable the HQ apron uses) — a COARSE lattice
+# only; MeshUtil.feathered_ground_mesh refines the pad edges by itself so the
+# feather bands stay smooth without paying for a fine grid across the whole plane.
 const FLOOR_SIZE := 120.0
-const FLOOR_SUBDIV := 160
 
 var _result: Dictionary = {}
 var _stages: Array[int] = []
@@ -140,7 +141,8 @@ func _build_environment() -> void:
 		Rect2(Vector2(PODIUM_CENTER.x, PODIUM_CENTER.z) - pad_size * 0.5, pad_size),
 		Rect2(Vector2(SHOWROOM_CENTER.x, SHOWROOM_CENTER.z) - pad_size * 0.5, pad_size),
 	]
-	ground.mesh = MeshUtil.feathered_ground_mesh(FLOOR_SIZE, FLOOR_SUBDIV, pads,
+	ground.mesh = MeshUtil.feathered_ground_mesh(FLOOR_SIZE,
+		cfg.ground_subdiv_for(Platform.is_web(), Platform.is_touch()), pads,
 		cfg.podium_tarmac_feather_m)
 	ground.position.y = -0.01
 	ground.material_override = MeshUtil.feathered_ground_material(cfg)

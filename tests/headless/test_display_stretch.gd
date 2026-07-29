@@ -71,3 +71,74 @@ func test_non_benchmark_never_swaps() -> void:
 	# Normal play always uses the real window orientation (portrait stays portrait).
 	assert_eq(DisplayStretch.benchmark_window_size(Vector2i(400, 900), false), Vector2i(400, 900),
 		"outside a benchmark the real window size is used")
+
+
+# --- Mobile-web render resolution tier (todo/mobile-web-performance.md §3.2) ------
+# The rendered frame height is driven by DisplayStretch.DESIGN_HEIGHT, seeded from
+# [display] window/size/viewport_height and then lowered for the web-TOUCH tier only.
+# These assert the BRANCH, never the chosen numbers (both are tunables).
+
+const BASE_HEIGHT := 360
+
+
+func _tier_cfg() -> GameConfig:
+	# Synthetic config: a base height and a deliberately different low-tier height, so
+	# the branch is observable without depending on the authored values.
+	var cfg := GameConfig.new()
+	cfg.viewport_height_web_touch = 200
+	cfg.virtual_resolution = Vector2(480, 360)
+	return cfg
+
+
+func test_web_touch_takes_the_low_resolution_tier() -> void:
+	var cfg := _tier_cfg()
+	assert_eq(cfg.viewport_height_for(true, true, BASE_HEIGHT), cfg.viewport_height_web_touch,
+		"a web TOUCH device renders at the low-tier height")
+
+
+func test_every_other_target_keeps_the_base_height() -> void:
+	# The constraint that matters: only (web AND touch) is tiered down.
+	var cfg := _tier_cfg()
+	assert_eq(cfg.viewport_height_for(false, false, BASE_HEIGHT), BASE_HEIGHT,
+		"desktop keeps the authored height")
+	assert_eq(cfg.viewport_height_for(true, false, BASE_HEIGHT), BASE_HEIGHT,
+		"a DESKTOP browser keeps the authored height")
+	assert_eq(cfg.viewport_height_for(false, true, BASE_HEIGHT), BASE_HEIGHT,
+		"native mobile keeps the authored height")
+
+
+func test_low_tier_is_not_higher_than_the_base() -> void:
+	# Sanity guard only: the tier is a reduction, never an upscale.
+	var cfg := load("res://config/game_config.tres") as GameConfig
+	assert_lte(cfg.viewport_height_web_touch, int(DisplayStretch.base_design_height()),
+		"the web-touch height never exceeds the authored base height")
+	assert_gt(cfg.viewport_height_web_touch, 0, "the web-touch height is positive")
+
+
+func test_virtual_resolution_stays_in_proportion() -> void:
+	var cfg := _tier_cfg()
+	var height := cfg.viewport_height_for(true, true, BASE_HEIGHT)
+	var scaled := cfg.virtual_resolution_for(true, true, BASE_HEIGHT)
+	var ratio := float(height) / float(BASE_HEIGHT)
+	assert_almost_eq(scaled.x, cfg.virtual_resolution.x * ratio, 1.0,
+		"the post-process grid width scales with the render height")
+	assert_almost_eq(scaled.y, cfg.virtual_resolution.y * ratio, 1.0,
+		"the post-process grid height scales with the render height")
+	# ...and the grid's own aspect is preserved, so the dither pattern keeps its shape.
+	assert_almost_eq(scaled.x / scaled.y,
+		cfg.virtual_resolution.x / cfg.virtual_resolution.y, 0.02,
+		"the post-process grid keeps its authored aspect")
+
+
+func test_virtual_resolution_untouched_off_the_low_tier() -> void:
+	var cfg := _tier_cfg()
+	for target in [[false, false], [true, false], [false, true]]:
+		assert_eq(cfg.virtual_resolution_for(target[0], target[1], BASE_HEIGHT),
+			cfg.virtual_resolution,
+			"post-process grid unchanged for web=%s touch=%s" % [target[0], target[1]])
+
+
+func test_zero_base_height_is_safe() -> void:
+	var cfg := _tier_cfg()
+	assert_eq(cfg.virtual_resolution_for(true, true, 0), cfg.virtual_resolution,
+		"a degenerate base height falls back to the authored grid rather than dividing by zero")

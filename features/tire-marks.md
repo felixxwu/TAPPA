@@ -20,7 +20,18 @@ The project renders with `gl_compatibility` (desktop + mobile), which has **no
 buffer is maintained **incrementally** — a new segment appends one quad and a
 dropped one trims a quad off the front — rather than reconstructed from the whole
 segment list on every emit (`_build_ribbon` is the reference that incremental
-buffer must equal, asserted in `test_tire_marks`). Same unshaded, cull-disabled
+buffer must equal, asserted in `test_tire_marks`).
+
+**Uploads are coalesced to one per wheel per rendered frame.** Emitting a segment only
+flags that wheel dirty (`_mark_dirty`); the snapshot copy plus the
+`clear_surfaces` + `add_surface_from_arrays` + `surface_set_material` rebuild happen in
+`_process` → `flush_uploads()`. Physics runs at 60 Hz and can tick twice per rendered
+frame on a capped web build, and at speed a wheel emits nearly every tick, so this cuts
+a large fraction of the driver-level buffer re-uploads with no visual change (the flush
+runs after the frame's physics and before the draw, so a mark still appears on the frame
+it was laid). `_process` is self-disabling — nothing dirty, no per-frame work.
+`flush_uploads()` is also the explicit entry point tests use, since they drive
+`_physics_process` directly. Same unshaded, cull-disabled
 material style as the `wheel_force_debug` overlay. Each segment carries its
 own **vertex colour** (the shared material has `vertex_color_use_as_albedo`), so one
 ribbon per wheel shows both the gravel rut and the tarmac skid in their own shades.

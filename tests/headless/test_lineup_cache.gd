@@ -275,3 +275,100 @@ func test_prewarmed_previews_survive_an_owned_lineup_rebuild() -> void:
 
 	assert_true(hq._car_cache.has(-7), "a pre-warmed preview is kept across an owned rebuild")
 	assert_true(is_instance_valid(preview), "the pre-warmed preview node is not freed")
+
+
+# --- Deferred Free Roam prewarm (todo/mobile-web-performance.md §2.14 / E8) ----------
+# The catalogue prewarm used to run synchronously inside HQ's boot, behind the loading
+# cover, where it dominated time-to-first-interaction. It now runs one prop per frame
+# AFTER the cover lifts (hq.gd._prewarm_free_roam_deferred). These tests pin that the
+# deferred work actually COMPLETES and that Free Roam still gets cached props — never a
+# timing or a prop count, both of which are measurements / authored data.
+
+# Every catalogue preview id is warm in the cache once the deferred loop returns.
+func _all_previews_warm(hq: Node3D) -> bool:
+	for preview in hq._all_car_previews():
+		var id := int(preview.get("instance_id", -1))
+		if not hq._car_cache.has(id):
+			return false
+		if not is_instance_valid(hq._car_cache[id].get("node")):
+			return false
+	return true
+
+
+func test_deferred_prewarm_runs_to_completion() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	assert_false(hq._prewarm_complete, "HQ boot leaves the prewarm still to do")
+	await hq._prewarm_free_roam_deferred()
+
+	assert_true(hq._prewarm_complete, "the deferred prewarm reports completion")
+	assert_false(hq._prewarm_running, "the deferred prewarm is no longer in flight")
+	assert_true(_all_previews_warm(hq), "every catalogue preview is warm in the cache")
+
+
+func test_deferred_prewarm_is_idempotent() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	await hq._prewarm_free_roam_deferred()
+	var first := {}
+	for id in hq._car_cache:
+		if int(id) < 0:
+			first[id] = hq._car_cache[id]["node"].get_instance_id()
+
+	await hq._prewarm_free_roam_deferred()  # a stray second call must be a no-op
+
+	for id in first:
+		assert_true(hq._car_cache.has(id), "preview %d is still cached" % int(id))
+		assert_eq(hq._car_cache[id]["node"].get_instance_id(), first[id],
+			"preview %d kept its warm prop rather than respawning" % int(id))
+
+
+# The whole point of the prewarm: opening Free Roam parks the ALREADY-WARM props instead
+# of instancing fresh ones.
+func test_free_roam_entry_reuses_the_prewarmed_props() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	await hq._prewarm_free_roam_deferred()
+
+	var warm := {}
+	for id in hq._car_cache:
+		if int(id) < 0:
+			warm[hq._car_cache[id]["node"].get_instance_id()] = true
+
+	hq._enter_free_roam()
+	await _wait_for_lineup(hq)
+
+	assert_false(hq._cars.is_empty(), "Free Roam parks a lineup")
+	for car in hq._cars:
+		assert_true(warm.has(car.get_instance_id()),
+			"the parked Free Roam car is a pre-warmed prop, not a fresh instance")
+
+
+# Entering Free Roam BEFORE the deferred warm finishes must still work: the lineup builds
+# its own props (the pre-deferral cost, for the not-yet-warm remainder), those land in the
+# same cache, and the deferred loop still runs to completion afterwards without
+# respawning or freeing anything the live lineup is using.
+func test_free_roam_entered_before_the_prewarm_finishes_still_works() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	hq._enter_free_roam()   # immediately — nothing warm yet
+	await _wait_for_lineup(hq)
+	assert_false(hq._cars.is_empty(), "Free Roam parks a lineup with a cold cache")
+	var live := []
+	for car in hq._cars:
+		live.append(car.get_instance_id())
+
+	await hq._prewarm_free_roam_deferred()
+
+	assert_true(hq._prewarm_complete, "the deferred prewarm still completes")
+	assert_true(_all_previews_warm(hq), "every catalogue preview ends up warm")
+	for id in live:
+		assert_true(is_instance_valid(instance_from_id(id)),
+			"the live Free Roam prop was not freed out from under the lineup")

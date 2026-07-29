@@ -332,7 +332,7 @@ func _build_seedlab_page() -> void:
 	sl_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_theme_constant_override("separation", 24)
 	sl_panel.add_child(sl_actions)
-	var sl_load := _make_action_button("Load event…", _open_event_picker)
+	var sl_load := _make_action_button("Load stage…", _open_event_picker)
 	sl_load.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_child(sl_load)
 	var sl_terrain := _make_action_button("Terrain…", _open_terrain_editor)
@@ -956,7 +956,7 @@ func _build_event_picker() -> void:
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 6)
 	scroll.add_child(list)
-	list.add_child(_make_heading("Preview event"))
+	list.add_child(_make_heading("Preview stage"))
 	for rally in RallyLibrary.all():
 		var name_text := "%s  (%s)" % [String(rally.get("name", "?")),
 			String(rally.get("region", ""))]
@@ -964,7 +964,7 @@ func _build_event_picker() -> void:
 		var events: Array = rally.get("events", [])
 		for i in events.size():
 			var event: Dictionary = events[i]
-			var label := "Event %d — seed %d, %d turns" % [i + 1,
+			var label := "Stage %d — seed %d, %d turns" % [i + 1,
 				int(event.get("seed", 0)), int(event.get("turn_count", 0))]
 			var btn := _make_action_button(label, _load_event.bind(event))
 			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL

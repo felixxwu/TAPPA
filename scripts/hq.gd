@@ -174,11 +174,19 @@ var _preview_audio: CarPreviewAudio = null
 # Bumped each time a lineup is (re)built so an in-flight progressive spawn for an old
 # lineup stops adding cars when it resumes (see _spawn_lineup_progressive).
 var _settle_generation := 0
-# Free Roam pre-warm: at boot (behind the loading cover) we spawn the catalogue's preview
+# Free Roam pre-warm: just AFTER boot (once the loading cover lifts, one prop per frame —
+# see _prewarm_free_roam_deferred) we spawn the catalogue's preview
 # props into _car_cache (hidden) so entering Free Roam reuses them with no fresh instancing
 # — killing the first-entry lag spike. _prewarm_marker is the off-screen stow marker the
 # hidden props seat at until Free Roam re-seats them at real bays.
 var _prewarm_marker: Marker3D = null
+# True once every catalogue preview is warm in _car_cache (the deferred prewarm ran to
+# completion, or _prewarm_free_roam was called synchronously). Read by tests; also lets a
+# stray re-start of the deferred loop bail immediately.
+var _prewarm_complete := false
+# True while the deferred (one-prop-per-frame) prewarm loop is in flight, so it can't be
+# started twice and overlap itself.
+var _prewarm_running := false
 
 # Tuning-lift state: the selected car raised on the lift (a Car prop, separate from
 # the car-park lineup), which OwnedCar it is, and which menu (TUNE / UPGRADES) is up.
@@ -327,20 +335,18 @@ func _ready() -> void:
 	var boot_t0 := Time.get_ticks_msec()
 	_build_hq()
 	var build_ms := Time.get_ticks_msec() - boot_t0
-	# Warm the Free Roam picker NOW, behind the opaque cover: car.tscn embeds every car glb,
-	# so building the whole-catalogue lineup is heavy and would hitch the first time it's
-	# opened. Doing it here (once, kept in memory for the session — see _prewarm_free_roam /
-	# the negative-id keep in _evict_unowned_cached_cars) hides the cost entirely.
-	loading.set_step("Warming up the garage…")
-	await get_tree().process_frame  # paint the new step before the synchronous warm runs
-	var prewarm_t0 := Time.get_ticks_msec()
-	_prewarm_free_roam()
-	var prewarm_ms := Time.get_ticks_msec() - prewarm_t0
-	_log_boot_cost(build_ms, prewarm_ms)
+	_log_boot_cost(build_ms)
 	# Let the built scene render one frame before lifting the cover, so the reveal lands
 	# on the title shot rather than a half-built frame.
 	await get_tree().process_frame
 	loading.finish()
+	# Warm the Free Roam picker AFTER the reveal, off the boot critical path: car.tscn
+	# embeds every car glb, so building the whole-catalogue lineup is heavy and would hitch
+	# the first time it's opened. It used to run here behind the cover, where it cost ~3x
+	# the entire rest of HQ boot — pure time-to-first-interaction on the game's very first
+	# screen. Now the player reaches an interactive HQ immediately and the warm trickles in
+	# one prop per frame while they read the title (see _prewarm_free_roam_deferred).
+	_prewarm_free_roam_deferred()
 
 
 # True on the web build when the page URL carries ?bench=1 — the dev auto-profiling
@@ -2382,24 +2388,66 @@ func _prewarm_stow_marker() -> Marker3D:
 
 # Pre-warm the Free Roam picker: spawn each catalogue preview as a HIDDEN, cached parked
 # prop so entering Free Roam reuses them via _obtain_parked_car with no fresh instancing —
-# that first-entry build (car.tscn embeds all car glbs) is the lag spike. Run ONCE at boot
-# behind the loading cover (see _ready), synchronously — the opaque screen hides the beat,
-# so there's no need to spread it across frames. The props land in _car_cache keyed by their
+# that first-entry build (car.tscn embeds all car glbs) is the lag spike. This is the
+# SYNCHRONOUS form (one long beat); the shipped boot path uses the frame-spread
+# _prewarm_free_roam_deferred instead, off the critical path. The props land in _car_cache keyed by their
 # (negative) preview instance_id, exactly where _obtain_parked_car looks, and are kept for
 # the session (never evicted — see _evict_unowned_cached_cars). Idempotent: a preview already
 # warm (matching hash) is skipped, so a stray re-call is a cheap no-op.
 func _prewarm_free_roam() -> void:
 	for preview in _all_car_previews():
-		var instance_id := int(preview.get("instance_id", -1))
-		var preview_hash: int = preview.hash()
-		var cached: Dictionary = _car_cache.get(instance_id, {})
-		if is_instance_valid(cached.get("node")) and int(cached.get("hash", 0)) == preview_hash:
-			continue  # already warm
-		if is_instance_valid(cached.get("node")):
-			cached["node"].queue_free()
-		var node := _spawn_parked_car(preview, _prewarm_stow_marker())
-		node.visible = false
-		_car_cache[instance_id] = {"hash": preview_hash, "node": node}
+		_warm_one_preview(preview)
+	_prewarm_complete = true
+
+
+# Spawn ONE catalogue preview into _car_cache as a hidden, stowed prop. Returns true when
+# it actually spawned (false = already warm, so the call was a no-op). The unit of work
+# shared by _prewarm_free_roam and its deferred, frame-spread twin below.
+func _warm_one_preview(preview: Dictionary) -> bool:
+	var instance_id := int(preview.get("instance_id", -1))
+	var preview_hash: int = preview.hash()
+	var cached: Dictionary = _car_cache.get(instance_id, {})
+	if is_instance_valid(cached.get("node")) and int(cached.get("hash", 0)) == preview_hash:
+		return false  # already warm
+	if is_instance_valid(cached.get("node")):
+		cached["node"].queue_free()
+	var node := _spawn_parked_car(preview, _prewarm_stow_marker())
+	node.visible = false
+	_car_cache[instance_id] = {"hash": preview_hash, "node": node}
+	return true
+
+
+# The deferred prewarm: the same work as _prewarm_free_roam, but started AFTER the loading
+# cover lifts and spread one prop per frame, so HQ is interactive at the end of _build_hq
+# instead of one whole prewarm later (§2.14 / E8 — the prewarm measured ~3x the rest of
+# HQ boot). Each spawn is still a single indivisible beat, so the trickle isn't free: it's
+# a handful of frames of hitch while the player looks at the static title shot, instead of
+# a frozen boot. Awaiting a frame BETWEEN spawns also lets input and the reveal tween run.
+#
+# If the player opens Free Roam before this finishes, nothing breaks and nothing is
+# dropped: _build_lineup goes through _obtain_parked_car, which reuses whatever is already
+# warm and instances the rest on the spot (the old first-entry cost, but only for the
+# not-yet-warmed remainder), and those lineup nodes land in _car_cache under the same
+# key + hash, so this loop simply skips them when it resumes on the next frame.
+#
+# Idempotent and self-cancelling: re-entrant calls bail, and the loop stops if the HQ
+# leaves the tree (exit to a race frees the node and everything it cached).
+func _prewarm_free_roam_deferred() -> void:
+	if _prewarm_complete or _prewarm_running:
+		return
+	_prewarm_running = true
+	var t0 := Time.get_ticks_msec()
+	var spawned := 0
+	for preview in _all_car_previews():
+		if not is_inside_tree():
+			_prewarm_running = false
+			return
+		if _warm_one_preview(preview):
+			spawned += 1
+			await get_tree().process_frame
+	_prewarm_running = false
+	_prewarm_complete = true
+	_log_prewarm_cost(Time.get_ticks_msec() - t0, spawned)
 
 
 # --- Boot instrumentation (todo/mobile-web-performance.md §2.14) --------------------
@@ -2425,10 +2473,18 @@ const CAR_MESH_INDEX_BYTES := 4
 # size. Cheap: the mesh walk reads ArrayMesh surface header counts
 # (surface_get_array_len / surface_get_array_index_len) — it never copies a surface array
 # — and it runs once, behind the loading cover.
-func _log_boot_cost(build_ms: int, prewarm_ms: int) -> void:
+func _log_boot_cost(build_ms: int) -> void:
 	print("hq boot stage: %-22s %5d ms" % ["build", build_ms])
-	print("hq boot stage: %-22s %5d ms" % ["free-roam prewarm", prewarm_ms])
-	print("hq boot total: %d ms" % (build_ms + prewarm_ms))
+	print("hq boot total: %d ms" % build_ms)
+
+
+# Printed when the deferred Free Roam prewarm finishes (see _prewarm_free_roam_deferred).
+# Wall-clock here spans the awaited frames, so it is NOT boot cost — it's how long after
+# the reveal the cache took to fill. The resident car-cache figures follow it because the
+# cache is only at full size once the warm completes.
+func _log_prewarm_cost(elapsed_ms: int, spawned: int) -> void:
+	print("hq prewarm (deferred, off boot path): %d props over %d ms wall-clock"
+		% [spawned, elapsed_ms])
 	var cost := _car_cache_mesh_cost()
 	print("hq car cache: %d props (%d preview, %d owned-garage), %d meshes, ~%.2f MB mesh data (est)"
 		% [cost["props"], cost["previews"], cost["props"] - cost["previews"],

@@ -103,12 +103,12 @@ func _build_ui() -> void:
 	var rows: Array
 	var button_text := ""
 	if _showing_event_page:
-		title.text = "EVENT %d RESULT" % done
-		subtitle.text = "%s — this event's time" % String(rally.get("name", ""))
+		title.text = "STAGE %d RESULT" % done
+		subtitle.text = "%s — this stage's time" % String(rally.get("name", ""))
 		rows = RallySession.current_event_standings()
 		button_text = "See overall standings >"
 	else:
-		title.text = "STANDINGS — after event %d of %d" % [done, RallySession.EVENTS_PER_RALLY]
+		title.text = "STANDINGS — after stage %d of %d" % [done, RallySession.EVENTS_PER_RALLY]
 		subtitle.text = "%s — combined time so far" % String(rally.get("name", ""))
 		rows = RallySession.current_standings()
 		# A non-final event awards an upgrade: the button collects it (reveal + Apply/
@@ -119,7 +119,7 @@ func _build_ui() -> void:
 		elif done >= RallySession.EVENTS_PER_RALLY:
 			button_text = "Continue to podium >"
 		else:
-			button_text = "Continue to next event >"
+			button_text = "Continue to next stage >"
 	title.add_theme_font_size_override("font_size", 28)
 	root.add_child(title)
 	subtitle.add_theme_font_size_override("font_size", 14)
@@ -224,7 +224,7 @@ func _collect_reward() -> void:
 	# Continue appears only once the reveal (and any Apply/Keep choice) resolves, so
 	# the player can't skip past the reward card before deciding.
 	var cont := Button.new()
-	cont.text = "Continue to next event >"
+	cont.text = "Continue to next stage >"
 	cont.focus_mode = Control.FOCUS_ALL
 	cont.visible = false
 	cont.pressed.connect(_on_action)  # _reward_collected is set, so this continues

@@ -35,6 +35,28 @@ var _home: PackedVector2Array     # spawn anchor (return target)
 var _upright: PackedByteArray     # 1 = standing agent, 0 = knocked (now a ragdoll)
 var _yaw: PackedFloat32Array      # facing, radians
 
+# --- static-field cache (road + tree avoidance) -------------------------------
+# The road and the trees DO NOT MOVE, and members barely do: the combined weighted
+# road+obstacle push is a static field sampled at the member's position, so probing it
+# every steered tick (8 dirs x 10 steps of ScatterMath.on_road per member, plus a 3x3
+# tree-grid scan) re-derives the same answer over and over. Instead each member keeps
+# its last push and the position it was sampled at, and only re-samples once it has
+# drifted a road-raster cell (CELL_M) away — the resolution the road field is rasterised
+# at in the first place, so a cached push can't hide a road boundary. Members that stand
+# still (the common case away from the car) sample exactly once, ever; fleeing members
+# re-sample every half metre of travel.
+var _avoid: PackedVector2Array    # cached weighted road+tree push
+var _avoid_at: PackedVector2Array # position the cached push was sampled at
+var _avoid_ok: PackedByteArray    # 1 = _avoid[i] holds a sample
+var _avoid_samples := 0           # live probes taken (tests / debug)
+
+const AVOID_CACHE_STEP_M := ScatterMath.CELL_M
+
+# Shared empty results, so the 3x3 grid probes below don't allocate a throwaway Packed
+# array as a `Dictionary.get` default on every cell — hit or miss.
+static var _EMPTY_POINTS := PackedVector2Array()
+static var _EMPTY_INDICES := PackedInt32Array()
+
 var _car: Node                    # VehicleBody3D-ish: global_transform (+ linear_velocity)
 var _terrain: Node                # TerrainManager (height_at) or null on flat fixtures
 var _terrain_has_height := false  # cached in setup(); _ground() runs per agent per frame
@@ -74,6 +96,9 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	_vel = PackedVector2Array(); _vel.resize(n)
 	_upright = PackedByteArray(); _upright.resize(n)
 	_yaw = PackedFloat32Array(); _yaw.resize(n)
+	_avoid = PackedVector2Array(); _avoid.resize(n)
+	_avoid_at = PackedVector2Array(); _avoid_at.resize(n)
+	_avoid_ok = PackedByteArray(); _avoid_ok.resize(n)  # all 0 = nothing sampled yet
 	for i in n:
 		_upright[i] = 1
 		_center += _pos[i]
@@ -147,7 +172,7 @@ static func separation_force(i: int, positions: PackedVector2Array, upright: Pac
 	var base := SpatialGrid.cell_key(here, cell)
 	for ox in range(-1, 2):
 		for oz in range(-1, 2):
-			var idxs: PackedInt32Array = grid.get(Vector2i(base.x + ox, base.y + oz), PackedInt32Array())
+			var idxs: PackedInt32Array = grid.get(Vector2i(base.x + ox, base.y + oz), _EMPTY_INDICES)
 			for j in idxs:
 				if j == i or upright[j] == 0:
 					continue
@@ -229,12 +254,42 @@ static func obstacle_force(pos: Vector2, grid: Dictionary, cell: float, radius: 
 	var base := SpatialGrid.cell_key(pos, cell)
 	for ox in range(-1, 2):
 		for oz in range(-1, 2):
-			var arr: PackedVector2Array = grid.get(Vector2i(base.x + ox, base.y + oz), PackedVector2Array())
+			var arr: PackedVector2Array = grid.get(Vector2i(base.x + ox, base.y + oz), _EMPTY_POINTS)
 			for q in arr:
 				var d := pos.distance_to(q)
 				if d > 0.0001 and d < radius:
 					force += (pos - q) / d * (1.0 - d / radius)
 	return force
+
+
+# The combined weighted STATIC-world push (road + trees) at `pos`, sampled live. This is
+# the ground truth the per-member cache below approximates; nothing in it depends on the
+# car or on the other members, which is exactly why it can be cached.
+func live_avoid_force(pos: Vector2) -> Vector2:
+	return _sample_avoid(pos, _p["road_probe_m"], _p["w_road"],
+		_p["tree_cell_m"], _p["tree_avoid_m"], _p["w_obstacle"])
+
+
+func _sample_avoid(pos: Vector2, road_probe: float, w_road: float,
+		tree_cell: float, tree_avoid: float, w_obstacle: float) -> Vector2:
+	_avoid_samples += 1
+	return road_force(pos, _road_cells, road_probe) * w_road \
+		+ obstacle_force(pos, _tree_grid, tree_cell, tree_avoid) * w_obstacle
+
+
+# Cached static-world push for member i, re-sampled only once the member has drifted
+# AVOID_CACHE_STEP_M from where the cached value was taken. Params are passed in
+# (hoisted out of the per-member loop) rather than re-read from `_p` per call.
+func _cached_avoid_force(i: int, road_probe: float, w_road: float,
+		tree_cell: float, tree_avoid: float, w_obstacle: float) -> Vector2:
+	var here := _pos[i]
+	if _avoid_ok[i] == 1 and _avoid_at[i].distance_squared_to(here) < AVOID_CACHE_STEP_M * AVOID_CACHE_STEP_M:
+		return _avoid[i]
+	var f := _sample_avoid(here, road_probe, w_road, tree_cell, tree_avoid, w_obstacle)
+	_avoid[i] = f
+	_avoid_at[i] = here
+	_avoid_ok[i] = 1
+	return f
 
 
 # Gentle pull back toward the spawn anchor, ignored within `dead_zone` so settled
@@ -322,9 +377,10 @@ func _timed_physics_process(delta: float) -> void:
 	# independent of the decimated steering below. The car moves every tick, so
 	# testing it against the (possibly stale) positions still catches contact.
 	var knock_r: float = _p["knock_radius_m"]
+	var knock_r2 := knock_r * knock_r  # squared test: no sqrt per member per tick
 	var to_knock: Array[int] = []
 	for i in _pos.size():
-		if _upright[i] == 1 and car_xz.distance_to(_pos[i]) < knock_r:
+		if _upright[i] == 1 and car_xz.distance_squared_to(_pos[i]) < knock_r2:
 			to_knock.append(i)
 	for i in to_knock:
 		_knock_over(i)
@@ -347,6 +403,19 @@ func _timed_physics_process(delta: float) -> void:
 	# instead of the every-pair O(N^2) it was. Cell = separation radius.
 	var sep_radius: float = _p["separation_m"]
 	var sep_grid := build_separation_grid(_pos, _upright, sep_radius)
+	# Hoist the string-keyed param lookups out of the per-member loop — they are
+	# constant for the whole tick, and a Dictionary hash per member per force adds up
+	# at 50 members x ~10 keys.
+	var flee_radius: float = _p["flee_radius_m"]
+	var w_flee: float = _p["w_flee"]
+	var road_probe: float = _p["road_probe_m"]
+	var w_road: float = _p["w_road"]
+	var tree_cell: float = _p["tree_cell_m"]
+	var tree_avoid: float = _p["tree_avoid_m"]
+	var w_obstacle: float = _p["w_obstacle"]
+	var w_separation: float = _p["w_separation"]
+	var anchor_dead_zone: float = _p["anchor_dead_zone_m"]
+	var w_anchor: float = _p["w_anchor"]
 
 	for i in _pos.size():
 		if _upright[i] == 0:
@@ -354,11 +423,12 @@ func _timed_physics_process(delta: float) -> void:
 		# Prioritised, not a flat weighted sum: fleeing the car is blended with neighbour
 		# separation at the top tier (so a fleeing crowd fans out instead of collapsing),
 		# then static obstacle (road + tree) avoidance, then the anchor pull.
-		var flee: Vector2 = flee_force(_pos[i], car_xz, _p["flee_radius_m"]) * _p["w_flee"]
-		var avoid: Vector2 = road_force(_pos[i], _road_cells, _p["road_probe_m"]) * _p["w_road"]
-		avoid += obstacle_force(_pos[i], _tree_grid, _p["tree_cell_m"], _p["tree_avoid_m"]) * _p["w_obstacle"]
-		var sep: Vector2 = separation_force(i, _pos, _upright, sep_radius, sep_grid, sep_radius) * _p["w_separation"]
-		var anchor: Vector2 = anchor_force(_pos[i], _home[i], _p["anchor_dead_zone_m"]) * _p["w_anchor"]
+		var flee: Vector2 = flee_force(_pos[i], car_xz, flee_radius) * w_flee
+		# Road + tree avoidance is a STATIC field: served from the per-member cache and
+		# re-probed only once this member has drifted a road cell (_cached_avoid_force).
+		var avoid := _cached_avoid_force(i, road_probe, w_road, tree_cell, tree_avoid, w_obstacle)
+		var sep: Vector2 = separation_force(i, _pos, _upright, sep_radius, sep_grid, sep_radius) * w_separation
+		var anchor: Vector2 = anchor_force(_pos[i], _home[i], anchor_dead_zone) * w_anchor
 		var desired := combine(flee, avoid, sep, anchor, max_speed)
 		# Steer current velocity toward the target, then advance (step = accumulated
 		# delta since the last steered tick — see the decimation gate above).
@@ -553,3 +623,21 @@ func ragdoll_count() -> int:
 
 func member_position(i: int) -> Vector2:
 	return _pos[i]
+
+
+# How many times the static road+tree field has actually been probed since setup.
+# Without the cache this would be one probe per upright member per steered tick.
+func avoid_sample_count() -> int:
+	return _avoid_samples
+
+
+# The cached static-world push currently in use for member i (Vector2.ZERO before the
+# first sample). Compare against live_avoid_force(member_position(i)) in tests.
+func cached_avoid_force(i: int) -> Vector2:
+	return _avoid[i]
+
+
+# Move member i without touching the cache (tests only), so a test can prove the drift
+# threshold is what triggers a re-probe.
+func _test_set_member_position(i: int, p: Vector2) -> void:
+	_pos[i] = p

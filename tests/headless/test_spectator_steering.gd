@@ -237,6 +237,153 @@ func test_roadside_crowd_settles_instead_of_jiggling() -> void:
 		"a settled roadside crowd barely moves (total path over 1s = %f m)" % path)
 
 
+# --- static-field (road + tree) avoidance cache --------------------------------
+# The road and the trees don't move, so the combined road+tree push is a static field:
+# each member caches it and re-probes only after drifting AVOID_CACHE_STEP_M. These
+# tests pin the CONTRACT (cached == live at the sampled position, re-probes on real
+# movement, behaviour unchanged), never magnitudes/weights/radii.
+
+func _road_band() -> Dictionary:
+	# A straight carriageway band along +z, world x in [95, 105).
+	var road := {}
+	for cx in range(190, 211):
+		for cz in range(0, 400):
+			road[Vector2i(cx, cz)] = true
+	return road
+
+
+func _flat_params() -> Dictionary:
+	var p: Dictionary = Config.data.spectator_params()
+	p["seed"] = 7
+	p["active_radius_m"] = 100000.0   # LOD gate always open
+	p["sim_interval"] = 1             # steer every tick, deterministic
+	return p
+
+
+func _group(members: PackedVector2Array, road: Dictionary, trees: Dictionary,
+		car: Node3D, p: Dictionary) -> SpectatorGroup:
+	var g := SpectatorGroup.new()
+	add_child_autofree(g)
+	g.setup(members, car, null, road, trees, p)
+	return g
+
+
+func _far_car() -> _StubCar:
+	var car := _StubCar.new()
+	add_child_autofree(car)
+	# Well outside any flee radius (nobody flees) but inside the widened LOD radius
+	# these tests set, so the group still steers.
+	car.global_position = Vector3(0.0, 0.0, -1000.0)
+	return car
+
+
+func _sample(g: SpectatorGroup, i: int, p: Dictionary) -> Vector2:
+	return g._cached_avoid_force(i, p["road_probe_m"], p["w_road"],
+		p["tree_cell_m"], p["tree_avoid_m"], p["w_obstacle"])
+
+
+func test_cached_static_push_equals_the_live_probe() -> void:
+	# The cache must be an exact stand-in for the live 8-direction road probe + tree
+	# scan at the position it was sampled at — same vector, hence the same steering
+	# decision downstream.
+	var p := _flat_params()
+	var road := _road_band()
+	var trees := SpectatorScatter.build_point_grid(
+		PackedVector2Array([Vector2(108, 50), Vector2(92, 51)]), p["tree_cell_m"])
+	var members := PackedVector2Array([
+		Vector2(106, 50),    # just off the +x verge
+		Vector2(94, 50),     # just off the -x verge
+		Vector2(108.4, 50),  # right beside a tree
+		Vector2(200, 300),   # far from everything: no road, no tree
+	])
+	var g := _group(members, road, trees, _far_car(), p)
+	for i in members.size():
+		var live: Vector2 = g.live_avoid_force(members[i])
+		var cached: Vector2 = _sample(g, i, p)
+		assert_almost_eq(cached.x, live.x, 1e-6, "cached x matches the live probe (member %d)" % i)
+		assert_almost_eq(cached.y, live.y, 1e-6, "cached y matches the live probe (member %d)" % i)
+	# ...and the interesting members really are feeling the field (not a trivial 0==0).
+	assert_gt(g.cached_avoid_force(0).length(), 0.0, "the verge member is pushed by the road")
+	assert_gt(g.cached_avoid_force(2).length(), 0.0, "the member beside a tree is pushed by it")
+
+
+func test_static_push_is_reused_while_the_member_barely_moves() -> void:
+	var p := _flat_params()
+	var g := _group(PackedVector2Array([Vector2(106, 50)]), _road_band(), {}, _far_car(), p)
+	var first: Vector2 = _sample(g, 0, p)
+	var probes: int = g.avoid_sample_count()
+	# A twitch well under the refresh step reuses the cached value — no new probe.
+	g._test_set_member_position(0, Vector2(106.05, 50.02))
+	assert_eq(_sample(g, 0, p), first, "a barely-moved member reuses its cached push")
+	assert_eq(g.avoid_sample_count(), probes, "and costs no new probe of the static field")
+
+
+func test_static_push_re_probes_once_the_member_has_really_moved() -> void:
+	# The invalidation that keeps crowds off the road: a member that walks away from
+	# where it sampled must get a fresh push for its NEW surroundings.
+	var p := _flat_params()
+	var road := _road_band()
+	var probe: float = p["road_probe_m"]
+	var g := _group(PackedVector2Array([Vector2(105.0 + probe * 0.9, 50)]), road, {}, _far_car(), p)
+	var far_push: Vector2 = _sample(g, 0, p)
+	var probes: int = g.avoid_sample_count()
+	# Walk it right up to the carriageway edge.
+	var near_pos := Vector2(105.2, 50)
+	g._test_set_member_position(0, near_pos)
+	var near_push: Vector2 = _sample(g, 0, p)
+	assert_gt(g.avoid_sample_count(), probes, "real movement re-probes the static field")
+	var live: Vector2 = g.live_avoid_force(near_pos)
+	assert_almost_eq(near_push.x, live.x, 1e-6, "the refreshed push matches a live probe")
+	assert_almost_eq(near_push.y, live.y, 1e-6, "the refreshed push matches a live probe")
+	assert_gt(near_push.length(), far_push.length(),
+		"standing at the kerb is pushed harder than standing back from it")
+
+
+func test_standing_crowd_probes_the_static_field_once_not_every_tick() -> void:
+	# The point of the whole change: a settled crowd stops re-deriving an unchanging
+	# field. Probe count must not grow with tick count.
+	var p := _flat_params()
+	var members := PackedVector2Array([Vector2(106, 50), Vector2(107, 52), Vector2(94, 51)])
+	var g := _group(members, _road_band(), {}, _far_car(), p)
+	for _i in 30:
+		g._physics_process(1.0 / 60.0)
+	var after_30: int = g.avoid_sample_count()
+	assert_gt(after_30, 0, "the steered tick really does go through the cached field")
+	for _i in 120:
+		g._physics_process(1.0 / 60.0)
+	assert_lt(g.avoid_sample_count(), after_30 + members.size() * 120,
+		"a settled crowd does not re-probe the static field every tick")
+
+
+func test_cached_push_still_moves_a_spectator_off_the_carriageway() -> void:
+	# Behaviour, not magnitude: someone standing ON the road walks off it.
+	var p := _flat_params()
+	var road := _road_band()
+	# Just inside the +x kerb — the probe sees road behind and open ground ahead, so
+	# the push is off the carriageway. (Deep inside a wide band the 8-way probe is
+	# symmetric and cancels; that is the force's own long-standing shape, not the cache.)
+	var g := _group(PackedVector2Array([Vector2(105.2, 50)]), road, {}, _far_car(), p)
+	assert_true(ScatterMath.on_road(g.member_position(0), road), "starts on the carriageway")
+	for _i in 600:
+		g._physics_process(1.0 / 60.0)
+	assert_false(ScatterMath.on_road(g.member_position(0), road),
+		"the cached road push still clears the carriageway (ended at %s)" % g.member_position(0))
+
+
+func test_cached_push_leaves_neighbour_separation_intact() -> void:
+	# Separation is NOT part of the static cache (neighbours move); a bunched pair
+	# must still push apart.
+	var p := _flat_params()
+	var sep: float = p["separation_m"]
+	var g := _group(PackedVector2Array([Vector2(300, 300), Vector2(300 + sep * 0.2, 300)]),
+		{}, {}, _far_car(), p)
+	var before: float = g.member_position(0).distance_to(g.member_position(1))
+	for _i in 240:
+		g._physics_process(1.0 / 60.0)
+	var after: float = g.member_position(0).distance_to(g.member_position(1))
+	assert_gt(after, before, "crowded neighbours still spread apart (%f -> %f)" % [before, after])
+
+
 # --- ragdoll vertical placement -----------------------------------------------
 
 func test_ragdoll_centre_of_mass_is_mid_body() -> void:

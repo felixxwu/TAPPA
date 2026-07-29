@@ -1,8 +1,9 @@
 extends GutTest
-# WheelParticles: cheap gravel spray flung from the driven wheels under wheelspin
+# WheelParticles: cheap surface debris flung from the driven wheels under wheelspin
 # (features/wheel-dust.md). Driven against a stub car + stub drivetrain + stub
-# wheels + a stub terrain surface, so the gating / emission / ring-buffer logic is
-# exercised without a real vehicle or rendering.
+# wheels + a stub terrain surface, so the gating / emission / ring-buffer logic and
+# the per-particle look (colour / dimensions / roll) are exercised without a real
+# vehicle or rendering.
 
 
 # Stub wheel: the bits WheelParticles reads off a wheel.
@@ -133,13 +134,14 @@ func test_no_emit_when_not_spinning_faster_than_ground() -> void:
 	assert_eq(wp.live_count(), 0, "no dirt when the wheel only rolls (no wheelspin)")
 
 
-func test_no_emit_on_grass() -> void:
-	var wp := _make()
+func test_grass_emits_blades() -> void:
 	# Driven wheel spinning, but 10 m off to the side -> off the road (grass).
+	# Grass throws its own particles (slim green blades) rather than nothing.
+	var wp := _make()
 	_wheels[2].position = Vector3(10, 0, 0)
 	_wheels[2].omega = _omega_for(10.0)
 	_tick(wp)
-	assert_eq(wp.live_count(), 0, "a wheel spinning on grass (off the road) throws nothing")
+	assert_gt(wp.live_count(), 0, "a wheel spinning on grass throws grass up")
 
 
 func test_no_emit_on_tarmac() -> void:
@@ -185,3 +187,104 @@ func test_ring_buffer_caps_live_particles() -> void:
 	for s in 50:
 		_tick(wp)  # delta 0 -> nothing ages out, so only the cap can bound the count
 	assert_eq(wp.live_count(), 5, "the live pool is capped to wheel_particle_max")
+
+
+# --- Per-particle appearance (colour / dimensions / roll) --------------------
+
+# The pool is shared by every surface, so one cap and one draw call cover both the
+# gravel clods and the grass blades.
+func test_one_shared_pool_for_every_surface() -> void:
+	Config.data.wheel_particle_max = 32
+	var wp := _make()
+	assert_true(wp.multimesh.use_colors, "instances carry their own colour")
+	assert_eq(wp.multimesh.instance_count, 32, "one MultiMesh sized to the shared cap")
+	assert_eq(wp._buffer.size(), 32 * WheelParticles.STRIDE,
+		"the buffer holds transform + colour floats for every slot")
+	# Spin one wheel on the road and another off it in the same tick: both surfaces
+	# feed the SAME ring buffer rather than a pool each.
+	_wheels[2].omega = _omega_for(10.0)
+	_wheels[3].position = Vector3(10, 0, 0)
+	_wheels[3].omega = _omega_for(10.0)
+	_tick(wp)
+	assert_gt(wp.live_count(), 1, "gravel and grass particles share one pool")
+
+
+# _write_slot's basis is the contract billboard_particle.gdshader reads back:
+# column lengths are the half-extents, column 0's direction is the roll. Asserted
+# against the values handed to _write_slot, not against any authored config.
+func test_slot_basis_encodes_size_and_roll() -> void:
+	var wp := _make()
+	var look := WheelParticles.Look.new(0.5, 2.0, Color(0.1, 0.2, 0.3, 1.0))
+	var roll := PI / 3.0
+	wp._write_slot(0, Vector3(1, 2, 3), look, roll, look.color)
+	var b: PackedFloat32Array = wp._buffer
+	# Row-major 3x4: column 0 is floats 0/4/8, column 1 is floats 1/5/9.
+	var col0 := Vector3(b[0], b[4], b[8])
+	var col1 := Vector3(b[1], b[5], b[9])
+	assert_almost_eq(col0.length(), 0.5, 0.001, "column 0 length is the half-width")
+	assert_almost_eq(col1.length(), 2.0, 0.001, "column 1 length is the half-height")
+	assert_almost_eq(col0.x / 0.5, cos(roll), 0.001, "column 0 direction carries cos(roll)")
+	assert_almost_eq(col0.y / 0.5, sin(roll), 0.001, "column 0 direction carries sin(roll)")
+	assert_almost_eq(b[3], 1.0, 0.001, "origin x")
+	assert_almost_eq(b[7], 2.0, 0.001, "origin y")
+	assert_almost_eq(b[11], 3.0, 0.001, "origin z")
+
+
+# A slim look and a square look of the same area must still be distinguishable in
+# the basis — i.e. the two axes are written independently (non-uniform scale).
+func test_slot_half_extents_are_independent_axes() -> void:
+	var wp := _make()
+	wp._write_slot(0, Vector3.ZERO, WheelParticles.Look.new(0.02, 0.5, Color.WHITE), 0.0, Color.WHITE)
+	var b: PackedFloat32Array = wp._buffer
+	assert_almost_eq(Vector3(b[0], b[4], b[8]).length(), 0.02, 0.0001, "slim axis stays slim")
+	assert_almost_eq(Vector3(b[1], b[5], b[9]).length(), 0.5, 0.0001, "long axis stays long")
+
+
+# Per-instance colour lands in the trailing RGBA floats.
+func test_slot_writes_per_instance_colour() -> void:
+	var wp := _make()
+	var col := Color(0.25, 0.5, 0.75, 1.0)
+	wp._write_slot(1, Vector3.ZERO, WheelParticles.Look.new(0.1, 0.1, col), 0.0, col)
+	var b := 1 * WheelParticles.STRIDE
+	assert_almost_eq(wp._buffer[b + 12], 0.25, 0.001, "red")
+	assert_almost_eq(wp._buffer[b + 13], 0.5, 0.001, "green")
+	assert_almost_eq(wp._buffer[b + 14], 0.75, 0.001, "blue")
+
+
+# The spawn angle is FROZEN: integrating the pool moves a particle's origin but
+# must leave its basis (size + roll) and colour exactly as emitted. This is what
+# keeps the per-tick cost at three float writes per live particle.
+func test_advance_moves_origin_but_freezes_look() -> void:
+	var wp := _make()
+	_wheels[2].omega = _omega_for(10.0)
+	_tick(wp)
+	var i: int = wp._next
+	var b: int = i * WheelParticles.STRIDE
+	var basis_before := []
+	for f in [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15]:
+		basis_before.append(wp._buffer[b + f])
+	var y_before: float = wp._buffer[b + 7]
+	wp._physics_process(0.1)  # real delta -> gravity + drag actually integrate
+	for n in basis_before.size():
+		var f: int = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15][n]
+		assert_almost_eq(wp._buffer[b + f], basis_before[n], 0.0,
+			"basis/colour float %d is frozen after emit" % f)
+	assert_ne(wp._buffer[b + 7], y_before, "the origin does move as the particle flies")
+
+
+# With jitter disabled a particle takes its look's colour verbatim — the jitter is
+# a variation ON the configured colour, never a replacement for it.
+func test_zero_jitter_uses_the_look_colour_verbatim() -> void:
+	Config.data.wheel_particle_color_jitter = 0.0
+	var base := Color(0.4, 0.3, 0.2, 1.0)
+	assert_eq(WheelParticles._jittered(Config.data, base), base,
+		"zero jitter leaves the colour untouched")
+
+
+# Tarmac is unchanged by the multi-surface work: paved road still throws nothing.
+func test_look_for_surface_picks_by_surface() -> void:
+	var wp := _make()
+	var cfg: GameConfig = Config.data
+	assert_null(wp._look_for_surface(cfg, Vector2(1.0, 1.0)), "tarmac throws nothing")
+	assert_not_null(wp._look_for_surface(cfg, Vector2(1.0, 0.0)), "gravel road throws clods")
+	assert_not_null(wp._look_for_surface(cfg, Vector2(0.0, 0.0)), "off-road throws grass")

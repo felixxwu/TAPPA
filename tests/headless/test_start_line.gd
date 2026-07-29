@@ -219,7 +219,7 @@ func test_start_overlay_uses_the_house_button_row_height() -> void:
 	assert_eq(sl._start_button.custom_minimum_size.y, float(UITheme.MENU_ROW_H),
 		"the Start button uses the fixed menu row height")
 	assert_string_contains(sl._subtitle_label.text, "FIXTURE OPEN", "the rally is named")
-	assert_string_contains(sl._subtitle_label.text, "EVENT 1 OF 3", "the event index is shown")
+	assert_string_contains(sl._subtitle_label.text, "STAGE 1 OF 3", "the event index is shown")
 
 
 func test_launch_flies_the_camera_then_reveals_the_first_opponent() -> void:

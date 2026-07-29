@@ -7,6 +7,11 @@ const BUSH_SEED_OFFSET := 1013
 # car.gd has no class_name; preload it to reach its static helpers (compression_budget).
 const CarScript := preload("res://scripts/car.gd")
 
+# display_stretch.gd has no class_name either; preload it to reach base_design_height()
+# (the authored, untiered [display] frame height) as a static call rather than through
+# the DisplayStretch autoload instance.
+const DisplayStretchScript := preload("res://scripts/display_stretch.gd")
+
 # Assets for a staged roadside opponent wreck (features/opponent-wrecks.md). The car
 # is the same scene the player drives (spawned as a frozen prop, like the podium/HQ
 # display cars); the onlookers reuse the shared low-poly spectator figure.
@@ -147,7 +152,12 @@ func _ready() -> void:
 	# The MX-5 body model is lit in car.gd's _apply_model_material when built.
 	for car_mesh in [$Car/Chassis, $Car/Cabin, $Car/WheelFL/Visual/Tire]:
 		cfg.apply_car_light(_mat(car_mesh))
-	($PostProcess.material as ShaderMaterial).set_shader_parameter("virtual_resolution", cfg.virtual_resolution)
+	# PS1 dither/quantise grid. Scaled by the same factor DisplayStretch applied to the
+	# logical frame height, so a web-touch device's lower render resolution keeps the
+	# authored grid-to-frame proportion instead of the dither pattern coarsening.
+	# Every other target (native mobile, desktop, desktop browser) gets the authored value.
+	($PostProcess.material as ShaderMaterial).set_shader_parameter("virtual_resolution",
+		cfg.virtual_resolution_for(_web, _touch, int(DisplayStretchScript.base_design_height())))
 
 	# Hold the car still for the entire boot. Generation below spans many awaited
 	# frames with the loading overlay up (non-headless); the car is already in the
@@ -409,6 +419,19 @@ func _warm_up_point() -> Vector3:
 # yields a frame first (outside headless) so the message paints before the
 # blocking work runs; `loading` is freed once the world is ready.
 func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
+	# Suspend the car's physics for the whole generation window. controls_locked (set in
+	# _ready) stops the PLAYER driving off, but the body itself is still simulating across
+	# the hundreds of awaited frames below — and from here until build_initial() there is
+	# deliberately NO terrain under it (TerrainManager._initial_pending keeps the ring out
+	# of the loading frames so it can be built once, from the corridor cache). Frozen, the
+	# car simply waits at its spawn pose and drops onto carved, flattened ground when the
+	# ring exists. Previously it slid down UNFLATTENED on-demand terrain during the carve,
+	# far enough to drag a whole extra chunk column into the ring.
+	# Restore rather than hard-clear: a regeneration must not silently unfreeze a car some
+	# other system parked.
+	var car_body := $Car as RigidBody3D
+	var was_frozen := car_body.freeze
+	car_body.freeze = true
 	await _stage(loading, "Generating track…")
 	var xform: Transform3D = $Car.global_transform
 	var start_pos := Vector2(xform.origin.x, xform.origin.z)
@@ -561,6 +584,10 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	await _stage(loading, "Building terrain…")
 	$Floor.build_initial()
+	# Ground exists (carved, coloured, cache-built) — hand the car back to the physics
+	# engine. Everything after this point still runs behind the loading cover, so it has
+	# many frames to settle onto its wheels before the player or the start line sees it.
+	car_body.freeze = was_frozen
 
 	# Static coarse backdrop over the whole reachable play area + margin, so the
 	# reduced fog reveals a horizon instead of the detail ring's edge. Built ONCE

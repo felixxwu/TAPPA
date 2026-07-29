@@ -86,9 +86,21 @@ func test_terrain_chunks_have_shader_materials() -> void:
 	# any loaded chunk's mesh and verify its material survives mesh assignment.
 	var floor_node := _scene.get_node("Floor")
 	assert_gt(floor_node.loaded_coords().size(), 0, "chunks loaded around the car")
-	var chunk = floor_node._chunks[floor_node.loaded_coords()[0]]
-	var chunk_mesh := chunk.get_node("LOD0") as MeshInstance3D
-	assert_not_null(chunk_mesh, "chunk LOD0 MeshInstance3D present")
+	# Pick a level that actually HAS a mesh: a chunk's LOD0 is legitimately null when it
+	# is coarse (fine levels pruned) or when its finest level is lazily deferred outside
+	# the detail ring, and _apply_level_bands only materials the present levels.
+	var chunk_mesh: MeshInstance3D = null
+	for coord in floor_node.loaded_coords():
+		for child in floor_node._chunks[coord].get_children():
+			var mi := child as MeshInstance3D
+			if mi != null and mi.mesh != null:
+				chunk_mesh = mi
+				break
+		if chunk_mesh != null:
+			break
+	assert_not_null(chunk_mesh, "some loaded chunk has a built LOD MeshInstance3D")
+	if chunk_mesh == null:
+		return
 	_assert_shader_material(chunk_mesh.material_override, "chunk mesh")
 
 

@@ -129,6 +129,18 @@ var precompute_prune_enabled: bool = true
 # (replay_camera.gd ROADSIDE/FLYBY shots ~40 m) so a replay shot never exposes a
 # pruned level. Errs toward keeping one extra finer level. Set from GameConfig.
 var precompute_safety_slack_m: float = 40.0
+# When true, the precompute does NOT prebake the FINEST (stride 1) LOD level for full-res
+# corridor chunks; each spawned chunk builds it on demand once it enters the detail ring
+# (detail_ring / TerrainChunk.set_finest_detail) and drops it again on the way out.
+#
+# Why: ArrayMesh.add_surface_from_arrays uploads to the RenderingServer the instant the
+# mesh is created, so a prebaked level is resident VRAM whether or not the chunk is one of
+# the (2*RADIUS+1)^2 currently spawned. Level 0 is ~3/4 of a chunk's mesh bytes and only a
+# couple of chunks can ever DISPLAY it, so prebaking it for the whole corridor is the
+# single largest avoidable GPU allocation at load (todo/mobile-web-performance.md 3.6).
+# The coarser levels stay prebaked: they are small, and they are what far chunks draw.
+# Off = the old behaviour (every level prebaked for every full-res chunk).
+var lazy_finest_lod: bool = true
 
 # Debug chunk-border overlay (H toggle, debug builds). Lazily created on first use.
 var _border_debug: ChunkBorderDebug = null
@@ -147,13 +159,41 @@ var _focus_cached: Node3D = null
 # coord (Vector2i) -> TerrainChunk
 var _chunks: Dictionary = {}
 var _last_focus_coord: Vector2i = Vector2i(2147483647, 0)  # force first reconcile
+# Loaded chunks inside the detail ring still waiting for their lazily-built finest LOD
+# level, nearest first. Drained a FEW PER FRAME rather than all at once (_drain_detail_
+# queue): a full-res level-0 rebuild is several ms of GDScript, and crossing a chunk
+# boundary brings a whole new column into the ring at the same instant — building them
+# together would be a visible stutter, which is exactly what the prebake existed to avoid.
+# Deferring them a few frames costs nothing: a chunk only ENTERS the ring about a chunk's
+# width outside level 0's visibility band, and until its level 0 lands the next coarser
+# level covers the near distance (see TerrainChunk._apply_level_bands), so the worst case
+# is a fraction of a second of slightly coarser ground, never a hole.
+var _detail_queue: Array[Vector2i] = []
+# Finest-level rebuilds allowed per rendered frame. 1 clears a boundary crossing's worth
+# in a handful of frames, well before the car can reach them.
+var detail_builds_per_frame: int = 1
 # When true, _ready does NOT build the initial ring — a parent (world.gd) builds
 # it via build_initial() after the track is applied, so flattening is baked in on
 # the first build. The editor always previews terrain regardless of this flag.
 @export var defer_initial_build: bool = false
+# Armed by _ready when the build is deferred, cleared by build_initial(). While armed,
+# _process must NOT reconcile the ring: the host is still generating (the corridor cache
+# is empty and the road is not carved yet), so _reconcile would take its on-demand branch
+# and build all (2*RADIUS+1)^2 chunks from raw noise — on the very frames the loading
+# yields were meant to give to generation. Those chunks are then thrown away twice over
+# (set_track re-setup()s every loaded chunk after the carve, and the precompute caches the
+# same coords again), and because an on-demand chunk builds every LOD level itself it never
+# joins the lazy finest-LOD path, so it pins level-0 VRAM until it first despawns.
+# build_initial() owns the ring; nothing else may create it. See features/terrain.md ->
+# "Who builds the initial ring".
+var _initial_pending := false
 # Total chunk nodes spawned (mesh + collision built on the main thread). Read by
 # PerfOverlay to correlate frame-time spikes with terrain integration work.
 var integrations_total: int = 0
+# Of those, how many were built from raw noise by _reconcile's on-demand branch instead of
+# coming out of the corridor cache. Legitimately non-zero for the editor preview and for
+# tests that never precompute; on a real load it must stay 0 (the initial ring is cached).
+var on_demand_builds: int = 0
 
 # Main-thread noise cache for height_at(): FastNoiseLite instances are expensive
 # to build, and height_at used to rebuild all layers on every call (it is hit
@@ -180,6 +220,10 @@ var _chunk_cache: Dictionary = {}
 # return a plausible-but-wrong value, so every post-free read must be loud.
 var _lights_freed := false          # per-chunk baked light dropped from _chunk_cache
 var _bake_fields_freed := false     # road_heights / road_blend / cliff_offsets dropped
+
+# VRAM instrumentation for the corridor prebake (see _log_precompute_vram).
+var _vram_at_corridor_mb := 0.0
+var _vram_logged := false
 
 # coord -> {"l_min": int, "full_res": bool}. Populated by corridor_coords, kept across
 # set_corridor's cache clear so _rebuild_loaded reproduces the same near/far split.
@@ -678,6 +722,8 @@ func set_corridor(coords: Array[Vector2i]) -> void:
 	# it must survive the cache clear so _rebuild_loaded reproduces the near/far split.
 	_chunk_cache.clear()
 	_logged_misses.clear()
+	_vram_at_corridor_mb = video_mem_mb()
+	_vram_logged = false
 	# A new corridor means the whole cache is about to be rebuilt, baked light and
 	# all — so the "lights were freed" sentinel no longer applies. This is what keeps
 	# a REGENERATION (world.gd::_generate_track run a second time, e.g. entering a
@@ -689,6 +735,21 @@ func set_corridor(coords: Array[Vector2i]) -> void:
 # The coords the current corridor covers (empty when no precompute has run).
 func corridor() -> Array[Vector2i]:
 	return _corridor_coords
+
+
+# Chebyshev chunk radius (around the focus chunk) within which a loaded chunk keeps a
+# built FINEST LOD level. Derived from the live tunables, never hard-coded: a chunk at
+# Chebyshev distance d has no point closer than (d-1)*CHUNK_M to the focus (the focus can
+# sit anywhere inside its own chunk), and the camera can be up to
+# precompute_safety_slack_m from the focus, so a chunk can only ever fall inside level 0's
+# band when (d-1)*CHUNK_M <= lod_band_ends_m[0] + slack. Clamped to the loaded ring — and
+# even if this were somehow too tight, an unbuilt level 0 is not a hole: TerrainChunk
+# extends level 1's band down to cover it.
+func detail_ring() -> int:
+	if lod_band_ends_m.is_empty():
+		return RADIUS
+	var reach: float = lod_band_ends_m[0] + precompute_safety_slack_m
+	return clampi(int(floor(reach / CHUNK_M)) + 1, 1, RADIUS)
 
 
 # The per-level far-cutoff distances (metres). Read by TerrainChunk to configure
@@ -708,12 +769,22 @@ func cache_chunk(coord: Vector2i) -> void:
 			"lod_meshes": TerrainLod.build_levels_from(self, coord, cls["l_min"], lod_skirt_m),
 			"coarse": true,
 		}
+		_log_precompute_vram()
 		return
 	var data := compute_chunk_data(coord)
 	# Prebake the decimated LOD display meshes at load (behind the loading screen),
 	# so runtime chunk spawns are a cheap node build + mesh assign, not a mesh build.
-	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m)
+	# The FINEST level is skipped under lazy_finest_lod (see that field) and rebuilt on
+	# demand from `heights` + `l0_light` + the live track fields.
+	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m, 1 if lazy_finest_lod else 0)
 	data["coarse"] = false
+	if lazy_finest_lod:
+		# The one finest-level input that is NOT derivable from what the cache retains:
+		# the baked per-vertex light. Quantised to RGB8 (~1/5 the bytes of the
+		# PackedColorArray) and kept deliberately past free_load_only_data, which drops the
+		# full-precision `lights`. This is a LIVE need, not load-only — do not fold it into
+		# the frees there.
+		data["l0_light"] = TerrainLod.encode_lights(data.get("lights", PackedColorArray()))
 	# build_all has consumed the CPU-side mesh source arrays into GPU meshes, and
 	# nothing reads them again: apply_data only needs center/lod_meshes/heights/coarse,
 	# and the strided coarse path builds off its own local TerrainChunkBuilder. Drop
@@ -722,6 +793,28 @@ func cache_chunk(coord: Vector2i) -> void:
 	for dead_key in DEAD_AFTER_PREBAKE:
 		data.erase(dead_key)
 	_chunk_cache[coord] = data
+	_log_precompute_vram()
+
+
+# One-shot log of the GPU-side cost of the corridor prebake, printed the moment the last
+# corridor chunk is cached. This is the half cache_size_mb() CANNOT see: it sums
+# Packed*Array values only, while `lod_meshes` is an Array of ArrayMesh whose buffers were
+# uploaded to the RenderingServer on creation. Same greppable style as world.gd's
+# "terrain precompute:" line. Reads 0 in a headless run (no rendering device).
+func _log_precompute_vram() -> void:
+	if _vram_logged or _corridor_coords.is_empty():
+		return
+	if _chunk_cache.size() < _corridor_coords.size() or not corridor_complete():
+		return
+	_vram_logged = true
+	var now := video_mem_mb()
+	print("terrain precompute vram: %.1f MB total, %.1f MB added by the prebake (%d chunks, lazy_finest=%s)"
+		% [now, now - _vram_at_corridor_mb, _corridor_coords.size(), lazy_finest_lod])
+
+
+# Video memory currently reported in use by the RenderingServer, in MB. 0 headless.
+func video_mem_mb() -> float:
+	return Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1.0e6
 
 
 # Synchronous convenience: compute + cache the whole corridor in one call.
@@ -792,7 +885,9 @@ func cache_size_mb() -> float:
 	var total := 0
 	for data in _chunk_cache.values():
 		for value in data.values():
-			if value is PackedFloat32Array or value is PackedInt32Array:
+			if value is PackedByteArray:
+				total += value.size()
+			elif value is PackedFloat32Array or value is PackedInt32Array:
 				total += value.size() * 4
 			elif value is PackedVector2Array:
 				total += value.size() * 8
@@ -1268,6 +1363,8 @@ func _ready() -> void:
 	# always previews, so it builds regardless of the flag.
 	if Engine.is_editor_hint() or not defer_initial_build:
 		build_initial()
+	else:
+		_initial_pending = true
 	# Hang the load-only frees off the host's shared "load finished" hook (world.gd;
 	# see features/loading.md). Duck-typed so the manager still works standalone —
 	# the editor preview, the HQ/podium `flat()` dressing and headless tests have no
@@ -1282,10 +1379,14 @@ func _ready() -> void:
 # Build the initial 3x3 ring synchronously around the focus (the car), so there
 # is always ground under the car at spawn.
 func build_initial() -> void:
+	_initial_pending = false
 	var focus := _focus_node()
 	var origin: Vector3 = focus.global_position if focus != null else Vector3.ZERO
 	_reconcile(chunk_coord_for(origin))
 	_last_focus_coord = chunk_coord_for(origin)
+	# The initial ring is built behind the loading screen, so pay for its finest levels
+	# now rather than trickling them in over the player's first seconds of driving.
+	flush_detail_queue()
 
 
 func _process(delta: float) -> void:
@@ -1295,6 +1396,10 @@ func _process(delta: float) -> void:
 
 
 func _timed_process(_delta: float) -> void:
+	# Deferred ring not built yet: the host is mid-generation, so stay out of its way
+	# entirely (see _initial_pending).
+	if _initial_pending:
+		return
 	# H (`toggle_debug_arrows`, the shared debug key) toggles the chunk-border
 	# overlay in debug builds — lazily created so release/editor pay nothing.
 	if OS.is_debug_build() and not Engine.is_editor_hint() \
@@ -1303,6 +1408,33 @@ func _timed_process(_delta: float) -> void:
 	var focus := _focus_node()
 	if focus != null:
 		update_focus(focus.global_position)
+	_drain_detail_queue(detail_builds_per_frame)
+
+
+# Build up to `limit` queued finest LOD levels (negative = all of them). Entries are
+# re-validated on the way out: a chunk can be despawned or leave the detail ring between
+# being queued and being reached, and those are simply dropped.
+func _drain_detail_queue(limit: int) -> void:
+	if _detail_queue.is_empty():
+		return
+	var detail := detail_ring()
+	var built := 0
+	while not _detail_queue.is_empty() and (limit < 0 or built < limit):
+		var coord: Vector2i = _detail_queue.pop_front()
+		var chunk: TerrainChunk = _chunks.get(coord)
+		if chunk == null:
+			continue
+		var d := maxi(absi(coord.x - _last_focus_coord.x), absi(coord.y - _last_focus_coord.y))
+		if d > detail:
+			continue
+		chunk.set_finest_detail(self, _chunk_cache.get(coord, {}), true)
+		built += 1
+
+
+# Build every queued finest LOD level right now. Used behind the loading screen (and by
+# tests) where a synchronous cost is free and a partially-detailed ring would show.
+func flush_detail_queue() -> void:
+	_drain_detail_queue(-1)
 
 
 # Create-on-first-use, then flip visibility; rebuild when turning on.
@@ -1347,7 +1479,10 @@ func _reconcile(center: Vector2i) -> void:
 		if _chunk_cache.has(coord):
 			_spawn_chunk(coord, _chunk_cache[coord])
 		elif _chunk_cache.is_empty():
-			# Editor / tests / pre-precompute: silent on-demand build.
+			# Editor / tests: silent on-demand build. A real load never reaches this —
+			# build_initial() runs after the precompute, and _initial_pending keeps
+			# _process out until then.
+			on_demand_builds += 1
 			_spawn_chunk(coord, compute_chunk_data(coord))
 		elif not _logged_misses.has(coord):
 			# Real-play corridor miss: prefer a HOLE over a mid-drive build hitch.
@@ -1355,10 +1490,25 @@ func _reconcile(center: Vector2i) -> void:
 			_logged_misses[coord] = true
 			push_error("terrain cache miss at %s — corridor region/leash invariant broke (leaving a hole)" % coord)
 	# Collision only on the near band: chunks within `collision_ring` of the focus
-	# carry live collision, farther loaded (render-only) chunks disable theirs.
+	# carry live collision, farther loaded (render-only) chunks disable theirs. The
+	# detail ring does the same for the lazily-built finest LOD level (a no-op on
+	# chunks whose level 0 was prebaked or pruned).
+	var detail := detail_ring()
 	for coord in _chunks:
 		var d := maxi(absi(coord.x - center.x), absi(coord.y - center.y))
-		_chunks[coord].set_collision_enabled(d <= collision_ring)
+		var chunk: TerrainChunk = _chunks[coord]
+		chunk.set_collision_enabled(d <= collision_ring)
+		if not chunk.is_finest_deferred():
+			continue
+		if d > detail:
+			chunk.set_finest_detail(self, {}, false)   # dropping reads no data
+		elif not chunk.has_finest_mesh() and not _detail_queue.has(coord):
+			_detail_queue.append(coord)
+	# Nearest first: if the player is about to see one of these at full detail, it is the
+	# closest one.
+	_detail_queue.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return maxi(absi(a.x - center.x), absi(a.y - center.y)) \
+			< maxi(absi(b.x - center.x), absi(b.y - center.y)))
 	# Keep the debug overlay in sync when the loaded set changes (crossing).
 	if _border_debug != null and _border_debug.visible:
 		_border_debug.rebuild(self, _chunks.keys(), center)

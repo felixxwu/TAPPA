@@ -7,6 +7,9 @@ const INTERVAL := 1.0
 var _accum := 0.0
 var _frames := 0
 var _script_us: Dictionary = {}  # StringName -> accumulated usec since last print
+# OS.is_debug_build() cached once — track() is called ~34x/frame and the whole
+# point of the early-out is to not pay per call. Tests flip it via set_debug().
+var _debug := OS.is_debug_build()
 
 # --- Benchmark capture window --------------------------------------------------
 # A second, independent accumulator the benchmark opens for a whole run so it can
@@ -21,9 +24,16 @@ var _cap_us: Dictionary = {}  # StringName -> accumulated usec since begin_captu
 ## Called by the timing wrappers around per-frame callbacks (see e.g.
 ## car.gd._physics_process). Accumulates cost per script between prints.
 func track(key: StringName, usec: int) -> void:
-	_script_us[key] = int(_script_us.get(key, 0)) + usec
+	# In a release build _process is off, so nothing ever reads or clears
+	# _script_us — accumulating into it is pure waste on every wrapped callback.
+	# The debug flag is cached (an OS.is_debug_build() call per track() would cost
+	# more than it saves); _capturing still records in ANY build so the benchmark
+	# can profile the release export.
 	if _capturing:
 		_cap_us[key] = int(_cap_us.get(key, 0)) + usec
+	if not _debug:
+		return
+	_script_us[key] = int(_script_us.get(key, 0)) + usec
 
 
 ## Start a benchmark capture window: clears the accumulator and records every
@@ -49,8 +59,21 @@ func end_capture(frame_count: int) -> Dictionary:
 		out[String(key)] = float(_cap_us[key]) / 1000.0 / float(frame_count)
 	return out
 
+## Override the cached debug flag. Exists so a test can exercise the RELEASE path
+## (where the per-second logger is off and track() must not accumulate) without
+## needing an actual release build.
+func set_debug(on: bool) -> void:
+	_debug = on
+	set_process(on)
+
+
+## Per-script totals accumulated since the last per-second print (test readout).
+func script_totals() -> Dictionary:
+	return _script_us
+
+
 func _ready() -> void:
-	if not OS.is_debug_build():
+	if not _debug:
 		set_process(false)
 
 func _process(delta: float) -> void:

@@ -254,7 +254,7 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	var total: int = rally.get("events", []).size()
 	if total <= 0:
 		total = RallySession.EVENTS_PER_RALLY
-	_subtitle_label = UITheme.title("%s — Event %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
+	_subtitle_label = UITheme.title("%s — Stage %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
 	top_box.add_child(_subtitle_label)
 
 	# --- Clear band: lets the orbiting car show between the cards -------------
@@ -578,6 +578,9 @@ func _timed_process(delta: float) -> void:
 			if _seq_t >= _cfg().start_fade_seconds:
 				_fade.visible = false
 				_seq = Seq.DONE
+				# Nothing left to drive: stop paying for a _process call (and its
+				# PerfLog wrapper) every frame for the rest of the run.
+				set_process(false)
 		Seq.DONE:
 			pass
 

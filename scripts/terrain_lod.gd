@@ -24,6 +24,13 @@ extends RefCounted
 # The coarsest (25) is a 2×2-cell chunk (8 tris + skirt) for the far ring.
 const LOD_STRIDES: PackedInt32Array = [1, 2, 5, 10, 25]
 
+# Encoding range for the quantised per-vertex baked light kept for the LAZY finest-level
+# rebuild (see build_finest / TerrainManager.cache_chunk). The baked tint is
+# hemisphere-ambient + sun, so it can exceed 1.0; 2.0 covers any sane lighting config with
+# ~1/128 steps, which is invisible in an 8-bit framebuffer but keeps the lazily-built
+# level 0 shading-identical to the prebaked coarser levels.
+const LIGHT_ENCODE_SCALE := 2.0
+
 
 # Build the decimated ArrayMesh for one level from a chunk's full-res `data`
 # dict (the shape compute_chunk_data returns). `stride` picks every stride-th L0
@@ -84,11 +91,93 @@ static func build_level(data: Dictionary, stride: int, skirt_m: float) -> ArrayM
 
 
 # All LOD levels for a chunk, one ArrayMesh per LOD_STRIDES entry (index = level).
-static func build_all(data: Dictionary, skirt_m: float) -> Array:
+# Levels below `from_level` come back null — the caller has chosen to build them LATER
+# (TerrainManager's lazy finest level: an ArrayMesh uploads to the RenderingServer the
+# moment it is created, so a level prebaked for a chunk that is not currently spawned is
+# pure resident VRAM). A null level is not a hole: TerrainChunk extends the next present
+# level's visibility band down to cover it.
+static func build_all(data: Dictionary, skirt_m: float, from_level: int = 0) -> Array:
 	var out: Array = []
-	for stride in LOD_STRIDES:
-		out.append(build_level(data, stride, skirt_m))
+	for i in LOD_STRIDES.size():
+		out.append(null if i < from_level else build_level(data, LOD_STRIDES[i], skirt_m))
 	return out
+
+
+# Quantise the baked per-vertex light to RGB8 (see LIGHT_ENCODE_SCALE). Empty in, empty
+# out (an unlit chunk needs nothing kept). This is the ONE input to the finest level that
+# cannot be reconstructed from what the chunk cache retains, so it is deliberately kept
+# past `free_load_only_data` at ~1/5 the cost of the PackedColorArray it replaces.
+static func encode_lights(lights: PackedColorArray) -> PackedByteArray:
+	var out := PackedByteArray()
+	if lights.is_empty():
+		return out
+	out.resize(lights.size() * 3)
+	for i in lights.size():
+		var c := lights[i]
+		var b := i * 3
+		out[b] = int(clampf(c.r / LIGHT_ENCODE_SCALE, 0.0, 1.0) * 255.0 + 0.5)
+		out[b + 1] = int(clampf(c.g / LIGHT_ENCODE_SCALE, 0.0, 1.0) * 255.0 + 0.5)
+		out[b + 2] = int(clampf(c.b / LIGHT_ENCODE_SCALE, 0.0, 1.0) * 255.0 + 0.5)
+	return out
+
+
+# Inverse of encode_lights. Empty in, empty out (vertex_colors treats that as white).
+static func decode_lights(bytes: PackedByteArray) -> PackedColorArray:
+	var out := PackedColorArray()
+	if bytes.is_empty():
+		return out
+	var n := bytes.size() / 3
+	out.resize(n)
+	var k := LIGHT_ENCODE_SCALE / 255.0
+	for i in n:
+		var b := i * 3
+		out[i] = Color(bytes[b] * k, bytes[b + 1] * k, bytes[b + 2] * k)
+	return out
+
+
+# Rebuild the FINEST (stride 1) level for a cached full-res chunk, on demand, from what
+# the chunk cache still holds — `heights` (already road-flattened and cliff-offset),
+# `center`, the quantised `l0_light`, and the manager's live track_weights/track_surface.
+# Everything else the original build produced is derivable: local vertex positions from
+# the heights grid, UVs from world XZ × texture_tile_per_meter, indices from arithmetic.
+# The output is the same surface build_level(data, 1, …) produced at precompute time (bar
+# the light quantisation), so it cannot disagree with collision or the coarser levels.
+# Returns null (loudly) if the full-res heights are gone — a coarse chunk has no level 0.
+static func build_finest(manager: TerrainManager, coord: Vector2i, data: Dictionary,
+		skirt_m: float) -> ArrayMesh:
+	var samples: int = TerrainManager.SAMPLES
+	var count := samples * samples
+	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
+	if heights.size() != count:
+		push_error("terrain chunk %s: cannot lazily build the finest LOD level " % coord
+			+ "— the cached full-res heights are missing (coarse chunk?)")
+		return null
+	var center: Vector3 = data.get("center", Vector3.ZERO)
+	var tile: float = manager.texture_tile_per_meter
+	var half: float = TerrainManager.CHUNK_M / 2.0
+	var cell: float = TerrainManager.CELL_M
+
+	var verts := PackedVector3Array(); verts.resize(count)
+	var uvs := PackedVector2Array(); uvs.resize(count)
+	for zi in samples:
+		var lz := -half + zi * cell
+		var wz := center.z + lz
+		for xi in samples:
+			var lx := -half + xi * cell
+			var idx := zi * samples + xi
+			verts[idx] = Vector3(lx, heights[idx], lz)
+			uvs[idx] = Vector2(center.x + lx, wz) * tile
+
+	var lights := decode_lights(data.get("l0_light", PackedByteArray()))
+	var colors := PackedColorArray(); colors.resize(count)
+	var uv2s := PackedVector2Array(); uv2s.resize(count)
+	for zi in samples:
+		manager._vertex_color_row(coord, zi, lights, colors)
+		manager._surface_uv2_row(coord, zi, uv2s)
+
+	return build_level({
+		"vertices": verts, "uvs": uvs, "colors": colors, "uv2s": uv2s,
+	}, 1, skirt_m)
 
 
 # Mesh an n×n grid (data["grid_n"]) as one surface, stride 1, with a downward skirt.

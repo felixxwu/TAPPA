@@ -123,8 +123,10 @@ or stutter mid-interaction. The player already expects to wait at a loading scre
 added there is invisible, whereas the same beat during play is a hitch.
 
 Concretely, prefer moving into a loading screen: scene/prop instantiation for things the
-player will reach soon (e.g. the Free Roam catalogue pre-warm — `hq.gd._prewarm_free_roam`,
-run synchronously behind the HQ cover and kept in memory, see [menus.md](menus.md)), mesh /
+player will reach soon (e.g. the Free Roam catalogue pre-warm — `hq.gd`, kept in memory,
+see [menus.md](menus.md); it is the one case where the cover was the *wrong* place —
+it dominated boot, so it now trickles in one prop per frame just AFTER the cover lifts via
+`_prewarm_free_roam_deferred`), mesh /
 material / texture duplication, shader pre-warm compiles (see
 [rendering.md](rendering.md) → "Shader pre-warm"), and any first-use resource `load()` that
 would otherwise fire on a transition. When you add a feature whose first use is heavy, ask

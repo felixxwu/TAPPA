@@ -386,3 +386,19 @@ func test_health_readout_reserves_zero_for_a_real_wreck() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_eq(label.text, "HEALTH 0", "0 is reserved for hp == 0")
+
+
+func test_elapsed_label_keeps_updating_as_the_clock_runs() -> void:
+	# show_elapsed skips the re-format when the DISPLAYED value hasn't moved, so
+	# check the skip can't latch: successive advancing times must each show.
+	var hud := _scene.get_node("HUD")
+	var label := _scene.get_node("HUD/ElapsedLabel") as Label
+	Config.data.hud_elapsed_enabled = true
+	hud.show_elapsed(1.0)
+	var first := label.text
+	hud.show_elapsed(1.0)
+	assert_eq(label.text, first, "an unchanged reading shows the same text")
+	hud.show_elapsed(2.0)
+	assert_ne(label.text, first, "the timer still advances on the next reading")
+	hud.show_elapsed(3.0)
+	assert_eq(label.text, UITheme.format_time(3000), "and matches the formatted time")

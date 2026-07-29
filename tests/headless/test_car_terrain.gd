@@ -55,3 +55,23 @@ func test_world_border_catches_car_beyond_terrain() -> void:
 	# than racing the coast-down to a stop.
 	assert_gt(_car.global_position.y, -13.0, "car rests on the border, not in the void")
 	assert_lt(absf(_car.linear_velocity.y), 0.5, "car no longer falling or bouncing")
+
+
+func test_initial_ring_is_built_from_the_cache_not_on_demand() -> void:
+	# world.gd generates behind a loading screen, then calls build_initial() so the ring
+	# is pulled from the precomputed corridor. Nothing may build a ring chunk from raw
+	# noise before that: TerrainManager stays out of the loading frames (_initial_pending)
+	# precisely so the 7x7 ring is computed once. See features/terrain.md ->
+	# "Who builds the initial ring".
+	var floor_node: Node = _scene.get_node("Floor")
+	assert_eq(floor_node.on_demand_builds, 0,
+		"every chunk under the car came from the corridor cache")
+	for coord in floor_node.loaded_coords():
+		assert_true(floor_node.has_cached(coord), "ring chunk %s is a cache pull" % coord)
+
+
+func test_car_is_handed_back_to_physics_after_generation() -> void:
+	# The car is frozen for the generation window (there is deliberately no terrain under
+	# it until build_initial()), and must be unfrozen again by the time _ready returns —
+	# otherwise it would hang in the air, immovable, for the whole run.
+	assert_false(_car.freeze, "the car is simulating again once the world is built")

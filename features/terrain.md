@@ -119,7 +119,18 @@ consumed (`todo/mobile-web-performance.md` 1.6 / 1.7 / 2.7):
     on-demand rebuild path (no corridor) keeps them. `track_weights` and
     `track_surface` are **kept**: `surface_at()` drives per-tick grip.
 - **Kept forever:** `heights` (collision + `height_at`), `center`, `lod_meshes`,
-  `coarse`, `grid_n`, `stride`.
+  `coarse`, `grid_n`, `stride`, and — when the finest LOD level is deferred —
+  `l0_light` (see **Lazy finest LOD level** below). `l0_light` is a deliberate
+  *live* need, not load-only data: do not fold it into `free_load_only_data`.
+
+**`cache_size_mb()` only sees the CPU side.** It sums `Packed*Array` values, so it
+misses `lod_meshes` entirely — an `ArrayMesh` uploads to the RenderingServer the
+instant `add_surface_from_arrays` runs, and the GPU-side buffers are the larger
+half. `TerrainManager` therefore logs the real figure too, once the last corridor
+chunk is cached: `terrain precompute vram: … MB total, … MB added by the prebake`
+(from `Performance.RENDER_VIDEO_MEM_USED`; reads 0 in a headless run). Measured on
+a free-roam stage (279 corridor chunks, desktop bands): **26.8 MB added by the
+prebake with every level prebaked, 7.6 MB with the finest level deferred.**
 
 Both frees would otherwise fail **silently** — `_cached_light_at` and a rebuilt
 chunk would return plausible-but-wrong values — so each has a loud sentinel:
@@ -200,9 +211,10 @@ alpha-hash `discard` would defeat early-Z on tile GPUs — bad for our opaque
 terrain. The level pop is small and hidden by construction: coarse levels are
 exact subsamples (shared vertices don't move), the terrain is gentle, fog softens
 distance, and seams between neighbouring chunks at different levels are covered by
-a downward **skirt** (`terrain_lod_skirt_m`) appended to each level mesh. The LOD meshes are **prebaked
+a downward **skirt** (`terrain_lod_skirt_m`) appended to each level mesh. The coarser LOD meshes are **prebaked
 at load** in `cache_chunk` (`TerrainLod.build_all`), so runtime chunk spawns stay
-a cheap node build + mesh assign. All tunables live in `GameConfig`
+a cheap node build + mesh assign; the finest level is built on demand (see **Lazy
+finest LOD level** below). All tunables live in `GameConfig`
 (`apply_terrain_lod`); `TerrainLod` is pure/static and headless-tested
 (`tests/headless/test_terrain_lod.gd`).
 
@@ -227,6 +239,38 @@ decimating the full-res grid — seams with full-res neighbours still match. See
 `docs/superpowers/specs/2026-07-21-per-chunk-terrain-resolution-design.md` and the
 per-chunk classification under **TerrainManager**; tests in
 `tests/headless/test_terrain_resolution.gd`.
+
+**Lazy finest LOD level** (`TerrainManager.lazy_finest_lod`, on by default;
+`todo/mobile-web-performance.md` 3.6). An `ArrayMesh` is resident VRAM from the moment
+it is built, whether or not its chunk is one of the `(2·RADIUS+1)²` currently spawned —
+so prebaking level 0 for the *whole corridor* (~280 chunks) to serve the handful that
+can display it was the single largest avoidable GPU allocation at load. `cache_chunk`
+now calls `TerrainLod.build_all(data, skirt, 1)`: levels 1…n are prebaked as before,
+level 0 is left `null` and built per-chunk at runtime by `TerrainLod.build_finest`.
+
+- **Nothing is lost.** Everything level 0 needs is either still cached or derivable:
+  local vertices from `heights` (already road-flattened and cliff-offset), UVs from
+  world XZ × `texture_tile_per_meter`, colours/UV2 from the retained `track_weights` /
+  `track_surface`, indices from arithmetic. The one exception is the baked per-vertex
+  light, kept as `l0_light` — the same values quantised to RGB8 (~1/5 the bytes, and
+  invisible in an 8-bit framebuffer). `test_terrain_lod.gd` asserts the rebuilt level
+  matches the prebaked one vertex for vertex.
+- **A detail ring, not the whole loaded ring.** `TerrainManager.detail_ring()` derives
+  from the live tunables — a chunk at Chebyshev distance `d` is never closer than
+  `(d−1)·CHUNK_M` to the focus, and the camera can be `precompute_safety_slack_m` from
+  the focus, so level 0 can only matter while `(d−1)·CHUNK_M ≤ lod_band_ends_m[0] +
+  slack`. Chunks leaving the ring drop the mesh and give the VRAM straight back.
+- **Amortised, so it is not the stutter the prebake existed to prevent.** A full-res
+  level-0 rebuild is ~5 ms of GDScript, and crossing a chunk boundary brings a whole
+  column into the ring at once. `_detail_queue` holds them nearest-first and
+  `_drain_detail_queue` builds `detail_builds_per_frame` (1) per frame;
+  `flush_detail_queue()` builds them all at once behind the loading screen
+  (`build_initial`). Latency is free here: a chunk enters the ring about a chunk-width
+  outside level 0's band.
+- **An absent level 0 is never a hole.** `TerrainChunk._apply_level_bands` starts each
+  present level's `visibility_range_begin` at the previous **present** level's cutoff,
+  so when level 0 is missing (deferred *or* coarse-pruned) level 1 covers the near band
+  itself. Worst case the ground is one LOD step coarser for a few frames.
 
 **Debug overlay:** press **H** (`toggle_debug_arrows`, the shared debug key, debug
 builds only) to toggle a Minecraft-style chunk-border grid
@@ -424,6 +468,47 @@ and needs no hand-authoring.
 initial ring so `world.gd` can apply the track first, then call `build_initial()`
 — the ring is built once, already flattened, with no rebuild. The editor always
 previews terrain regardless of the flag.
+
+#### Who builds the initial ring
+
+**`build_initial()` — and nothing else.** Skipping the build in `_ready` is only half
+the deferral: `_process` also reconciles the ring, and `world.gd`'s generation spans
+hundreds of awaited frames (`_yield_frame`) on the interactive path. Deferring `_ready`
+alone therefore just moved the build into the *first loading frame*, where `_reconcile`
+found an empty `_chunk_cache` and took its on-demand branch for the whole
+`(2*RADIUS+1)^2` ring. Measured on a real (non-headless) free-roam load before the fix:
+all 49 coords built from raw noise during the *carve* stage, plus another column as the
+unfrozen car slid downhill on that un-flattened ground — then `set_track` re-`setup()`ed
+every one of them after the carve, the precompute cached the same coords a third time,
+and `build_initial` found `_chunks` already populated and did nothing.
+
+Two flags close it, and they belong together:
+
+- `TerrainManager._initial_pending` — armed by `_ready` when the build is deferred,
+  cleared by `build_initial()`. While armed, `_timed_process` returns immediately, so
+  the ring cannot exist before the corridor cache does.
+- `world.gd::_generate_track` **freezes the car** (`RigidBody3D.freeze`) for the whole
+  generation window and restores the previous value right after `$Floor.build_initial()`.
+  `controls_locked` stops the *player* driving off; it does not stop the *body* falling,
+  and between the two flags there is deliberately no collision under it. Frozen, the car
+  waits at its spawn pose and drops onto carved, flattened ground once the ring exists —
+  strictly better than the old behaviour, where it settled on terrain that was then
+  re-baked underneath it.
+
+Beyond the wasted compute, the on-demand path was a correctness problem for LOD: a chunk
+built from `compute_chunk_data` builds *every* level itself (`TerrainChunk._lazy_finest`
+stays false), so the ring the player actually stands on never joined the lazy finest-LOD
+path and pinned its level-0 buffers until the chunk first despawned. Coming from the
+cache, the initial ring is lazy like every other chunk.
+
+`on_demand_builds` counts `_reconcile`'s raw-noise builds. It is legitimately non-zero
+for the editor preview and for tests that never precompute; **on a real load it must be
+0**, and `test_car_terrain.gd` asserts exactly that on `main.tscn`.
+
+Tests: `test_terrain_memory.gd` (`_process` builds nothing while pending; the ring is a
+cache pull; the ring is finest-deferred like any later chunk), `test_car_terrain.gd`
+(zero on-demand builds on the real scene, car handed back to physics), and
+`test_terrain.gd::test_defer_initial_build_skips_ring_until_called`.
 
 ## Boundary
 

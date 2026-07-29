@@ -11,17 +11,23 @@ extends CanvasLayer
 # and stacked under the rpm/gear labels; shows the live boost pressure as a
 # percentage of full boost, or "N/A" on a naturally-aspirated engine.
 var _boost_label: Label
-var _last_boost_text := ""
+# Last DISPLAYED boost percent (-1 = naturally aspirated) and the turbo flag it
+# was formatted under, so the label only re-formats when the readout changes.
+var _last_boost_pct := -999
+var _last_turbo := false
 # Track-seed readout, part of the H debug overlay. Built in code and stacked
 # under the boost label; shows the current world seed (Config.data.track_seed)
 # so a run can be identified/reproduced.
 var _seed_label: Label
-var _last_seed_text := ""
+var _last_seed := -999999
 # Stage flow widgets, driven by StageManager (todo/stage-start-and-end.md):
 # the big centered 3·2·1·GO, the small top-right run timer, and the placeholder
 # stage-complete panel. Hidden until the stage flow calls the methods below.
 @onready var _countdown_label: Label = $CountdownLabel
 @onready var _elapsed_label: Label = $ElapsedLabel
+# Last centisecond shown on the run timer, so show_elapsed only re-formats and
+# re-assigns the label when the DISPLAYED value moves (-1 = nothing shown yet).
+var _last_elapsed_cs := -1
 @onready var _stage_complete_panel: Control = $StageCompletePanel
 @onready var _stage_complete_label: Label = $StageCompletePanel/Box/StageCompleteLabel
 # Finish-panel NEXT button (built in code, added to the panel's Box). Pressing it
@@ -250,14 +256,19 @@ func _timed_process(_delta: float) -> void:
 	if rpm != _last_rpm:
 		_last_rpm = rpm
 		_rpm_label.text = "%d rpm" % rpm
-	var boost_str := boost_text(Config.data.turbo_enabled, engine.boost)
-	if boost_str != _last_boost_text:
-		_last_boost_text = boost_str
-		_boost_label.text = boost_str
-	var seed_str := seed_text(Config.data.track_seed)
-	if seed_str != _last_seed_text:
-		_last_seed_text = seed_str
-		_seed_label.text = seed_str
+	# Compare the underlying values, not formatted strings: building a String every
+	# frame purely to discover it's identical is the allocation the cache exists to
+	# avoid. Boost is keyed on the displayed integer percent (plus the turbo flag).
+	var turbo: bool = Config.data.turbo_enabled
+	var boost_pct := roundi(clampf(engine.boost, 0.0, 1.0) * 100.0) if turbo else -1
+	if boost_pct != _last_boost_pct or turbo != _last_turbo:
+		_last_boost_pct = boost_pct
+		_last_turbo = turbo
+		_boost_label.text = boost_text(turbo, engine.boost)
+	var track_seed: int = Config.data.track_seed
+	if track_seed != _last_seed:
+		_last_seed = track_seed
+		_seed_label.text = seed_text(track_seed)
 	_update_damage(_delta)
 	# Hide each transient popup once its on-screen time elapses.
 	_stage_delta_left = _tick_fade(_stage_delta_left, _delta, _stage_delta_label)
@@ -333,7 +344,15 @@ func show_elapsed(seconds: float) -> void:
 	if not Config.data.hud_elapsed_enabled:
 		return
 	_elapsed_label.visible = true
-	_elapsed_label.text = UITheme.format_time(roundi(seconds * 1000.0))
+	# The readout only shows centiseconds, so quantise to one and skip the re-format
+	# + re-assign when it hasn't moved: writing Label.text re-runs TextServer shaping
+	# even for identical text. Formatting FROM the quantised value keeps the string a
+	# pure function of what we compare, so nothing can drift between the two.
+	var cs := roundi(seconds * 100.0)
+	if cs == _last_elapsed_cs:
+		return
+	_last_elapsed_cs = cs
+	_elapsed_label.text = UITheme.format_time(cs * 10)
 
 
 # Placeholder stage-complete panel — at minimum the final time. The menu's

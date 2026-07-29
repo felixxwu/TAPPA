@@ -1129,6 +1129,12 @@ var peak_torque_rpm := 4500.0
 @export var tire_mark_min_speed_mps := 2.0
 ## Distance the wheel must travel before a new ribbon segment is added, in metres.
 @export var tire_mark_segment_step_m := 0.5
+## Tire-mark segment spacing on a web TOUCH device. Each segment is an emit plus an
+## eventual ArrayMesh surface rebuild, so doubling the spacing halves both. This
+## composes with the per-rendered-frame upload coalescing in tire_marks.gd: coalescing
+## only wins where physics outruns rendering (a capped or slow build), whereas a bigger
+## step cuts the work at any frame rate.
+@export var tire_mark_segment_step_m_web_touch := 1.0
 ## Max segments retained per wheel (ring buffer); older marks recycle. ~100 m at
 ## the default step — bounds memory, and the chase cam looks forward anyway.
 @export var tire_mark_max_segments := 200
@@ -1141,17 +1147,31 @@ var peak_torque_rpm := 4500.0
 
 
 @export_group("Wheel Particles")
-## Cheap gravel spray flung from the driven wheels when they spin faster than the
-## ground (features/wheel-dust.md). One MultiMesh of billboarded quads.
+## Cheap debris flung from the driven wheels when they spin faster than the ground
+## (features/wheel-dust.md). ONE MultiMesh of billboarded quads serves every
+## surface — each particle carries its own colour, size and roll, picked at emit
+## time: grey clods on gravel, slim green blades on grass, nothing on tarmac.
 @export var wheel_particles_enabled := true
 ## Clod colour — matched to the gravel road (gravel.jpg averages ~0.42 grey).
 ## Unshaded, so tune it against the lit road in-game.
 @export var wheel_particle_color := Color(0.42, 0.40, 0.36)
 ## Hard cap on live particles (the ring-buffer size + MultiMesh instance count).
-## Oldest clods are recycled first, so memory and draw cost are bounded.
+## Shared across ALL surfaces, so total draw cost is bounded wherever the car is;
+## oldest particles recycle first.
 @export_range(16, 2000) var wheel_particle_max := 50
-## Edge length of each square clod billboard, in metres.
+## Edge length of each square gravel clod billboard, in metres.
 @export var wheel_particle_size_m := 0.12
+## Blade colour for grass thrown up off the road footprint.
+@export var wheel_particle_grass_color := Color(0.29, 0.44, 0.17)
+## Width of a grass blade billboard, in metres (the slim axis).
+@export var wheel_particle_grass_width_m := 0.03
+## Length of a grass blade billboard, in metres (the long axis).
+@export var wheel_particle_grass_length_m := 0.22
+## Per-particle random brightness variation, as a +/- fraction of the base colour
+## (0 = every particle identical). Breaks a burst up so it reads as many separate
+## bits of debris rather than one flat smear. Free — each instance already carries
+## its own colour.
+@export_range(0.0, 1.0) var wheel_particle_color_jitter := 0.18
 ## Minimum wheelspin (tread speed minus ground speed along the roll direction, m/s)
 ## before any dirt is thrown — keeps a cleanly-rolling wheel from spraying.
 @export var wheel_particle_min_slip_mps := 1.5
@@ -1530,19 +1550,22 @@ var peak_torque_rpm := 4500.0
 
 ## Ground-plane subdivision for the HQ apron and the podium floor. These are flat
 ## planes whose only per-vertex variation is the tarmac feather weight, so the
-## subdivision buys nothing except feather-band resolution — at 240 the HQ ground
-## alone is ~115k triangles, drawn continuously on the game's first screen.
-@export_range(8, 512) var ground_subdiv := 240
+## subdivision buys nothing except feather-band resolution. The mesh is now a
+## non-uniform grid (coarse lattice + a fine ring around each pad edge), so this is
+## the COARSE lattice density only — the feather band is sampled finely regardless.
+## At the old uniform 240 the HQ ground alone was ~115k triangles, drawn continuously
+## on the game's first screen; at 24 it is ~3.2k with a finer feather band.
+@export_range(8, 512) var ground_subdiv := 24
 ## Ground-plane subdivision on a web TOUCH device. Widen the tarmac feather
 ## slightly if the band reads too hard at the lower resolution.
-@export_range(8, 512) var ground_subdiv_web_touch := 240
+@export_range(8, 512) var ground_subdiv_web_touch := 16
 
 ## Rendered viewport HEIGHT on a web TOUCH device. The engine renders at
 ## [display] window/size/viewport_height with stretch/aspect="keep_height", so
 ## HEIGHT is authoritative and width follows the window aspect — there is no
 ## single "480x360 setting". Keep virtual_resolution (the PS1 post-process
 ## parameter) in proportion when changing this.
-@export_range(120, 1080) var viewport_height_web_touch := 360
+@export_range(120, 1080) var viewport_height_web_touch := 288
 ## Terrain LOD far-cutoff distances (metres), one per level boundary — the
 ## coarsest level draws to the ring edge with no cutoff, so this has (levels - 1)
 ## entries (TerrainLod.LOD_STRIDES has `levels`). The display mesh decimates by
@@ -1572,7 +1595,24 @@ var peak_torque_rpm := 4500.0
 ## deciding which LOD levels it can show. Must exceed the largest replay-camera offset
 ## from the car (finish-replay roadside/flyby shots ~40 m) so a replay never exposes a
 ## pruned level. Larger = more conservative (keeps finer levels farther out).
-@export_range(0.0, 200.0) var terrain_precompute_safety_slack_m := 40.0
+## Was 40.0. Lowered to 25.0 (2026-07-29) after actually reading replay_camera.gd:
+## the 40 was assumed to protect the FLYBY shot, but FLYBY is c + (6, 2, 6) ~= 8.7 m.
+## The real maxima are HIGH_WIDE (0, 14, 16) ~= 21.3 m and ORBIT ~= 9.6 m. ROADSIDE's
+## 35/40 m constants are ALONG THE ROAD — the plant sits on the car's own travel line,
+## so it barely changes distance-to-centerline, which is what the chunk classification
+## measures. 25 keeps ~4 m over the true worst case, classifies fewer chunks full-res,
+## and drops detail_ring() from 3 to 2 on desktop.
+## If a replay shot ever shows unbuilt terrain, RAISE THIS FIRST.
+@export_range(0.0, 200.0) var terrain_precompute_safety_slack_m := 25.0
+## Defer each full-res chunk's FINEST LOD level instead of prebaking it for the whole
+## corridor, rebuilding it on demand as chunks enter the detail ring. Measured 26.8 MB
+## -> 7.6 MB of VRAM added by the corridor prebake. Off = prebake every level (the old
+## behaviour) — the escape hatch if a device shows a rebuild hitch.
+@export var terrain_lazy_finest_lod := true
+## Finest-level rebuilds allowed per rendered frame. A rebuild is ~4.8 ms, and a chunk
+## boundary crossing brings a whole column in at once, so building them all in one frame
+## hitches; 1 clears a crossing in a handful of frames, well before the car reaches them.
+@export_range(1, 16) var terrain_detail_builds_per_frame := 1
 
 
 # Per-axle spring rate: the overall suspension_stiffness split front/rear by the
@@ -1614,15 +1654,35 @@ func engine_mix_rate_for(web: bool, touch: bool, full_rate: float) -> float:
 	return engine_mix_rate_web_touch if (web and touch) else full_rate
 
 
+# Tire-mark segment spacing for the current target, split the same way.
+func tire_mark_segment_step_for(web: bool, touch: bool) -> float:
+	return tire_mark_segment_step_m_web_touch if (web and touch) else tire_mark_segment_step_m
+
+
 # Flat-ground subdivision (HQ apron / podium floor) for the current target.
 func ground_subdiv_for(web: bool, touch: bool) -> int:
 	return ground_subdiv_web_touch if (web and touch) else ground_subdiv
 
 
-# Rendered viewport height for the current target. The caller is responsible for
-# keeping virtual_resolution in proportion — see the field comment.
+# Rendered viewport height for the current target. `base_height` is the authored
+# [display] window/size/viewport_height (DisplayStretch.base_design_height()) —
+# the value every target EXCEPT a web TOUCH device keeps. Pair it with
+# virtual_resolution_for() so the PS1 post-process grid stays in proportion.
 func viewport_height_for(web: bool, touch: bool, base_height: int) -> int:
 	return viewport_height_web_touch if (web and touch) else base_height
+
+
+# The PS1 post-process dither/quantise grid for the current target, scaled by the
+# SAME factor viewport_height_for() applies to the rendered height, so the authored
+# 480x360 grid keeps its proportion to the frame instead of coarsening/fining as the
+# render resolution is tiered down. Base targets get the authored value untouched.
+func virtual_resolution_for(web: bool, touch: bool, base_height: int) -> Vector2:
+	if base_height <= 0:
+		return virtual_resolution
+	var height := viewport_height_for(web, touch, base_height)
+	if height == base_height:
+		return virtual_resolution
+	return (virtual_resolution * (float(height) / float(base_height))).round()
 
 
 # rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car
@@ -1724,6 +1784,8 @@ func apply_terrain_lod(tm: TerrainManager) -> void:
 	tm.collision_ring = terrain_collision_ring
 	tm.precompute_prune_enabled = terrain_precompute_prune_enabled
 	tm.precompute_safety_slack_m = terrain_precompute_safety_slack_m
+	tm.lazy_finest_lod = terrain_lazy_finest_lod
+	tm.detail_builds_per_frame = terrain_detail_builds_per_frame
 
 
 # Push the Cliffs group onto the terrain manager before bake_track (mirrors

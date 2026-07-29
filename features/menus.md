@@ -99,12 +99,12 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 
   **Collect reward on the standings.** On the combined page of a **non-final event**
   that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`), the
-  action button reads **`Collect reward >`** instead of `Continue to next event >`.
+  action button reads **`Collect reward >`** instead of `Continue to next stage >`.
   Pressing it clears the leaderboard and takes over the screen with the shared
   `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
   as the podium** — which lands on the won part and offers **Apply/Keep** (a won
   repair kit offers **Repair now / Save it** when the driven car is damaged, else it
-  auto-resolves; the drivetrain kit auto-resolves). A **Continue to next event >** button
+  auto-resolves; the drivetrain kit auto-resolves). A **Continue to next stage >** button
   appears only once the reveal + choice resolves, then resumes the rally
   (`continue_to_next_event`). The `UpgradeReveal` wires its own `MenuNav` across
   Apply/Keep, and standings re-attaches `MenuNav` on Continue when it's shown, so the
@@ -479,12 +479,18 @@ authored car glb bodies (it reveals one and hides the rest — `car.gd` →
 whole catalogue at once. Two mitigations keep the click from hitching: (1) each frozen
 display prop **prunes the bodies it will never show** before duplicating meshes
 (`car.gd` → `prune_inactive_bodies`, called from `CarProp.spawn`), and (2) the whole
-catalogue is **pre-warmed once at HQ boot, behind the opaque `LoadingScreen`** (`hq.gd` →
-`_ready` calls `_prewarm_free_roam` synchronously while the cover is up), spawning each
-preview as a hidden cached prop and **keeping it in memory** for the session — preview
-entries use negative instance ids and are **exempt from `_evict_unowned_cached_cars`**, so
-opening Free Roam is a cache hit, never a build. The cover hides the one-time warm cost, so
-there's no in-game hitch. (The underlying cost is that each car still *instantiates* all
+catalogue is **pre-warmed once just after HQ boot** (`hq.gd` → `_ready` starts
+`_prewarm_free_roam_deferred` *after* the `LoadingScreen` lifts, spawning **one prop per
+frame**), each preview becoming a hidden cached prop **kept in memory** for the session —
+preview entries use negative instance ids and are **exempt from
+`_evict_unowned_cached_cars`**, so opening Free Roam is a cache hit, never a build. It used
+to run synchronously behind the cover, but measured ~3x the entire rest of HQ boot
+(see [debug-tools.md](debug-tools.md) → "HQ boot cost logging"), and HQ is
+`run/main_scene` — so the warm now happens off the boot critical path while the player
+looks at the title shot. If the player opens Free Roam *before* it finishes, nothing is
+lost: `_obtain_parked_car` reuses whatever is warm and builds the remainder on the spot
+(the old first-entry cost, for that remainder only), and the deferred loop skips those on
+its next frame. (The underlying cost is that each car still *instantiates* all
 embedded bodies before pruning; a deeper fix — lazy per-model body loading in `car.tscn` —
 is noted but not yet done.) **Settings** (`_open_settings(false)`)
 opens the shared camera/controls page (Back returns to the garage). (A **Repair** button lives on the
@@ -931,7 +937,7 @@ single event's time already equals its combined time, so there's nothing extra t
 show). Every event **after** the first — including the **final** event — shows
 **both** pages before Continue: the event page's button reads **"See overall
 standings >"** and advances to the combined page in place (`_showing_event_page =
-false; _build_ui()`); the combined page's button reads **"Continue to next event >"**
+false; _build_ui()`); the combined page's button reads **"Continue to next stage >"**
 and calls `continue_to_next_event()`. On a middling event that loads the next event;
 on the final event `continue_to_next_event()` instead resolves the rally
 (`_resolve_results` → `PODIUM`, `rally_finished`), and the scene (connected to

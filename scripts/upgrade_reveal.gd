@@ -203,7 +203,7 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 	# Normal slottable part: grant it to the garage (already fitted-disabled by
 	# rally_session) and let the player install it later in the upgrades menu at
 	# the next event. No Apply/Keep here — one "Next".
-	_slot_caption.text = UITheme.caps("%s added to your garage — install it at the next event" % item_name)
+	_slot_caption.text = UITheme.caps("%s added to your garage — install it at the next stage" % item_name)
 	finished.emit()
 
 

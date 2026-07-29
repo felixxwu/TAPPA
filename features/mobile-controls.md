@@ -132,3 +132,21 @@ throttle-unless-braking rule, the simple both-sides-brake, the pure `tilt_steer`
 maths, and scheme switching releasing old inputs. The Settings page + pre-rally gate
 are covered in `test_menu_flow.gd`; the saved-setting round-trip in
 `test_save_manager.gd`.
+
+## Touch events are processed once, not twice
+
+`project.godot` leaves `input_devices/pointing/emulate_mouse_from_touch` at its default
+`true`, so Godot synthesises a mouse event for every touch. `mobile_controls.gd::_input`
+handles touch *and* mouse, so each finger used to be processed twice — once at
+`event.index`, once at index -1.
+
+`_input` now early-returns on `_is_emulated_mouse(event)` for both the
+`InputEventMouseButton` and `InputEventMouseMotion` branches. Godot stamps synthesised
+events with `device == InputEvent.DEVICE_ID_EMULATION` (-1); a real mouse reports a
+non-negative device id. So a finger is handled once, and a desktop tester running with
+`mobile_controls_force` still drives the overlay with a real mouse.
+
+> **Do NOT "fix" this by setting `emulate_mouse_from_touch = false` project-wide.** The
+> menus and the HQ table-pan *depend* on touch-generated mouse events (see
+> [menus.md](menus.md)); flipping the project setting would break them. Filtering inside
+> `_input` is the safe, local fix.

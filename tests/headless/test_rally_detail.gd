@@ -82,7 +82,12 @@ func test_summary_names_the_qualifying_cars() -> void:
 
 
 func test_qualifying_text_lists_all_names_up_to_the_cap() -> void:
-	var names := ["Alpha", "Beta", "Cee"]
+	# Exactly the cap: every name is listed and nothing is elided. Sized FROM
+	# MAX_QUALIFY_NAMES rather than a literal — the cap is a display knob (it is 1 today),
+	# so a hardcoded list would pin it and fail the moment it is retuned.
+	var names: Array[String] = []
+	for i in _hq.MAX_QUALIFY_NAMES:
+		names.append("Car%d" % i)
 	var text: String = _hq._qualifying_cars_text(names)
 	for n in names:
 		assert_true(text.contains(n), "%s is listed" % n)

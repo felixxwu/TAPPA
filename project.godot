@@ -209,5 +209,5 @@ renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 shading/overrides/force_vertex_shading=true
 textures/default_filters/anisotropic_filtering_level=0
-mesh_lod/lod_change/threshold_pixels=4.0
 limits/opengl/max_lights_per_object=4
+mesh_lod/lod_change/threshold_pixels=4.0

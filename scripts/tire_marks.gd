@@ -40,6 +40,10 @@ var _terrain: Node          # TerrainManager (height_at), or null on flat fixtur
 var _car: Node              # the VehicleBody3D (read for linear_velocity)
 var _half_width := 3.0      # road half-width (track_width * 0.5)
 var _offset := 0.0          # cached windowed nearest-offset for the car centre
+# Per-target segment spacing, resolved ONCE in setup() (a web TOUCH device lays coarser
+# marks). Resolved rather than read per tick so the tier can't be re-derived 60x/second,
+# matching how world.gd resolves the other per-target values at boot.
+var _segment_step := 0.5
 var _material: StandardMaterial3D
 var _warm_mi: MeshInstance3D  # throwaway quad used by warm_up() to prime the shader
 
@@ -60,9 +64,12 @@ var _last_pos: Array = []   # per wheel: Vector2 last emit XZ, or null = ribbon 
 # `_ring_cols`) rather than nested inside an Array: a member Packed array is
 # uniquely referenced, so indexed writes land in place instead of triggering a
 # copy-on-write duplication of the whole buffer on every emit.
-# `_verts` / `_cols` are the COMPACT, oldest-to-newest snapshot of each ring,
-# materialised only at upload time (_sync_snapshot) — that's what the mesh gets,
-# and what tests compare against _build_ribbon.
+# `_snap_verts` / `_snap_cols` hold the COMPACT, oldest-to-newest view of ONE wheel's
+# ring, materialised only at upload time (_sync_snapshot) — that's what the mesh gets.
+# It is ONE shared scratch buffer, overwritten per wheel, so it is only valid for the
+# wheel just synced; nothing may hold on to it (a stored reference would alias the next
+# wheel's data). Tests read a wheel's geometry through ribbon_verts/ribbon_cols, which
+# re-sync and hand back a copy.
 const RING_QUAD_VERTS := 6  # verts per ribbon quad (two triangles)
 var _ring_verts := PackedVector3Array()
 var _ring_cols := PackedColorArray()
@@ -74,8 +81,16 @@ var _snap_verts := PackedVector3Array()
 var _snap_cols := PackedColorArray()
 # Reused surface-array scratch for _upload (Mesh.ARRAY_MAX slots, allocated once).
 var _surface_arrays: Array = []
-var _verts: Array = []      # per wheel: PackedVector3Array (ribbon triangle verts)
-var _cols: Array = []       # per wheel: PackedColorArray (matching per-vertex colours)
+# Upload coalescing. Emitting a segment only marks the wheel DIRTY; the snapshot copy
+# plus the ArrayMesh surface rebuild happen at most once per wheel per RENDERED frame,
+# in _process (which runs after the frame's physics ticks and before the draw, so a
+# mark still appears on the very frame it was laid). Physics is 60 Hz and can run two
+# ticks per rendered frame on a capped/slow build, and at speed a wheel emits a segment
+# nearly every tick — so this removes a large fraction of the ~240 full
+# `clear_surfaces` + `add_surface_from_arrays` rebuilds/second with no visual change.
+# `_process` is self-disabling: nothing dirty, no per-frame work at all.
+var _dirty := PackedByteArray()   # per wheel: 1 = ring changed since its last upload
+var _upload_count := 0            # total surface rebuilds performed (readout for tests)
 
 
 # Wire to a freshly generated track + the current car. half_width is the road
@@ -87,6 +102,8 @@ func setup(centerline: Curve2D, car: Node, terrain: Node, half_width: float) -> 
 	_terrain = terrain
 	_half_width = half_width
 	_offset = 0.0
+	_segment_step = Config.data.tire_mark_segment_step_for(
+		Platform.is_web(), Platform.is_touch())
 	_ensure_material()
 	_retarget_internal(car)
 
@@ -106,8 +123,8 @@ func _retarget_internal(car: Node) -> void:
 	_ribbons = []
 	_pairs = []
 	_last_pos = []
-	_verts = []
-	_cols = []
+	_dirty = PackedByteArray()
+	set_process(false)
 	# Force _ensure_ring() to (re)build the rings for the new wheel set.
 	_ring_cap = 0
 	_ring_head = PackedInt32Array()
@@ -119,8 +136,7 @@ func _retarget_internal(car: Node) -> void:
 		_ribbons.append(mi)
 		_pairs.append([])
 		_last_pos.append(null)
-		_verts.append(PackedVector3Array())
-		_cols.append(PackedColorArray())
+		_dirty.append(0)
 
 
 # A car's wheels — duck-typed on is_in_contact() so VehicleWheel3D (real play) and
@@ -156,7 +172,11 @@ func _timed_physics_process(_delta: float) -> void:
 	# tangent and would be wrongly rejected).
 	_offset = _windowed_offset(Vector2(_car.global_position.x, _car.global_position.z))
 	var gate := _half_width + Config.data.tire_mark_gravel_margin_m
-	var step := Config.data.tire_mark_segment_step_m
+	# Per-target segment spacing: a web TOUCH device lays coarser marks, halving both the
+	# emit rate and the eventual ArrayMesh surface rebuilds. Complements the per-rendered-
+	# frame upload coalescing below — that only wins where physics outruns rendering,
+	# whereas a bigger step cuts the work at any frame rate.
+	var step := _segment_step
 	for i in _wheels.size():
 		var wheel: Node = _wheels[i]
 		if not wheel.is_in_contact():
@@ -251,7 +271,10 @@ func _emit_segment(i: int, wheel_pos: Vector3, road_n: Vector2, connected: bool,
 		pairs.append(slot)
 	else:
 		pairs.append([left, right, connected, color])
-	_upload(i)
+	# Coalesced: the mesh is rebuilt once for this wheel in _process, however many
+	# segments the physics ticks of this rendered frame appended. Every append is
+	# already in the ring, so nothing is lost — the flush uploads the whole ring.
+	_mark_dirty(i)
 
 
 # Size the per-wheel quad rings to `cap` slots (one per possible segment point —
@@ -284,6 +307,7 @@ func _ensure_ring(cap: int) -> void:
 			_ring_verts[base + n] = verts[skip * RING_QUAD_VERTS + n]
 			_ring_cols[base + n] = cols[skip * RING_QUAD_VERTS + n]
 		_ring_count[w] = quads
+		_mark_dirty(w)
 
 
 # Append one ribbon quad (two triangles, 6 verts) bridging the previous segment
@@ -311,9 +335,10 @@ func _drop_front_quad(i: int) -> void:
 	_ring_count[i] -= 1
 
 
-# Materialise a wheel's ring into the compact oldest-to-newest _verts/_cols view
-# the mesh (and the tests) consume. Written through reused member scratch buffers,
-# so this doesn't grow the heap once the ribbon reaches its steady-state length.
+# Materialise a wheel's ring into the compact oldest-to-newest _snap_verts/_snap_cols
+# view the mesh consumes. Written through reused member scratch buffers, so this
+# doesn't grow the heap once the ribbon reaches its steady-state length — which is why
+# the result is only valid until the NEXT wheel is synced.
 func _sync_snapshot(i: int) -> void:
 	var n: int = maxi(_ring_count[i], 0) * RING_QUAD_VERTS if _ring_cap > 0 else 0
 	if _snap_verts.size() != n:
@@ -325,22 +350,44 @@ func _sync_snapshot(i: int) -> void:
 		for k in RING_QUAD_VERTS:
 			_snap_verts[dst + k] = _ring_verts[src + k]
 			_snap_cols[dst + k] = _ring_cols[src + k]
-	_verts[i] = _snap_verts
-	_cols[i] = _snap_cols
+
+
+# Flag a wheel's ribbon as needing a re-upload on the next rendered frame.
+func _mark_dirty(i: int) -> void:
+	if i < 0 or i >= _dirty.size():
+		return
+	_dirty[i] = 1
+	set_process(true)
+
+
+# One rendered frame = at most one upload per wheel. Runs only while something is
+# dirty (set_process is switched back off once the queue drains).
+func _process(_delta: float) -> void:
+	flush_uploads()
+
+
+# Upload every dirty wheel's ribbon now. Called once per rendered frame; also the
+# explicit entry point tests use, since they drive _physics_process directly.
+func flush_uploads() -> void:
+	for i in _dirty.size():
+		if _dirty[i] != 0:
+			_dirty[i] = 0
+			_upload(i)
+	set_process(false)
 
 
 # Push the maintained triangle buffer for a wheel onto its ribbon ArrayMesh.
 func _upload(i: int) -> void:
+	_upload_count += 1
 	_sync_snapshot(i)
 	var mesh := _ribbons[i].mesh as ArrayMesh
 	mesh.clear_surfaces()
-	var verts: PackedVector3Array = _verts[i]
-	if verts.is_empty():
+	if _snap_verts.is_empty():
 		return
 	if _surface_arrays.size() != Mesh.ARRAY_MAX:
 		_surface_arrays.resize(Mesh.ARRAY_MAX)
-	_surface_arrays[Mesh.ARRAY_VERTEX] = verts
-	_surface_arrays[Mesh.ARRAY_COLOR] = _cols[i]
+	_surface_arrays[Mesh.ARRAY_VERTEX] = _snap_verts
+	_surface_arrays[Mesh.ARRAY_COLOR] = _snap_cols
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _surface_arrays)
 	mesh.surface_set_material(0, _material)
 
@@ -464,3 +511,27 @@ func wheel_count() -> int:
 
 func segment_count(wheel: int) -> int:
 	return (_pairs[wheel] as Array).size() if wheel >= 0 and wheel < _pairs.size() else 0
+
+
+# How many ArrayMesh surface rebuilds have happened since this node was built —
+# the thing upload coalescing exists to keep down.
+func upload_count() -> int:
+	return _upload_count
+
+
+# A COPY of the compact triangle buffer last uploaded (or about to be) for a wheel —
+# the thing tests compare against _build_ribbon. A copy because the snapshot scratch
+# is shared between wheels and overwritten by the next sync.
+func ribbon_verts(wheel: int) -> PackedVector3Array:
+	if wheel < 0 or wheel >= _ring_count.size():
+		return PackedVector3Array()
+	_sync_snapshot(wheel)
+	return _snap_verts.duplicate()
+
+
+# The matching per-vertex colours — see ribbon_verts.
+func ribbon_cols(wheel: int) -> PackedColorArray:
+	if wheel < 0 or wheel >= _ring_count.size():
+		return PackedColorArray()
+	_sync_snapshot(wheel)
+	return _snap_cols.duplicate()

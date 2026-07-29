@@ -1,9 +1,11 @@
-# Wheel dust (gravel spray)
+# Wheel particles (surface debris)
 
 `WheelParticles` (`scripts/wheel_particles.gd`, `class_name WheelParticles extends
-CpuParticlePool`) flings cheap gravel/dirt clods backwards from the **driven**
-wheels whenever they spin faster than the ground — a standing burnout, a wheelspin
-launch, or a spinning slide. Created + wired by `world.gd._generate_track` (reused
+CpuParticlePool`) flings cheap debris backwards from the **driven** wheels whenever
+they spin faster than the ground — a standing burnout, a wheelspin launch, or a
+spinning slide. **One pool serves every surface**, with each particle carrying its
+own colour, dimensions and roll picked at emit time: grey-brown clods on gravel,
+slim green blades on grass, nothing on tarmac (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
 across event regenerations, re-targeted on a car swap in `world.gd.cycle_car`),
 exactly like `TireMarks`.
 
@@ -11,11 +13,10 @@ exactly like `TireMarks`.
 
 The project renders with `gl_compatibility` (desktop + mobile), which has no
 `Decal` support and only thin GPU-particle physics. So the spray is the **cheapest
-particle that still reads as a clod of dirt**: a CPU particle pool drawn through a
-single `MultiMesh` of small **billboarded quads** — one draw call, one shared
-2-triangle mesh, a fixed `instance_count`, no per-particle scene nodes. The
-material is unshaded, cull-disabled, billboarded, tinted to the gravel colour (same
-style as the tire marks / debug overlays).
+particle that still reads as a bit of thrown-up ground**: a CPU particle pool drawn
+through a single `MultiMesh` of small **billboarded quads** — one draw call, one
+shared 2-triangle mesh, a fixed `instance_count`, no per-particle scene nodes. The
+material is unshaded, cull-disabled and opaque.
 
 ## Shared pool base — `CpuParticlePool`
 
@@ -30,6 +31,46 @@ shader-compile dance, `_emit_slot()` (the ring recycle), and the `live_count()` 
 plus their own writer), how a dead slot is parked (`_hide_slot()`), the per-tick
 integration (`_advance()`), and the emission source (`_physics_process()`). Direct
 coverage of the base ring lives in `tests/headless/test_cpu_particle_pool.gd`.
+
+## Per-particle look (colour, dimensions, roll)
+
+Every particle carries its own **colour**, **half-extents** and **roll**, chosen at
+emit time by `_look_for_surface` from the one `surface_at` sample the emitter
+already takes, then **frozen for the particle's whole life**. A `Look` (an inner
+`RefCounted`: `half_w`, `half_h`, `color`) is built by `_gravel_look` (a square
+clod at `wheel_particle_size_m`) or `_grass_look` (a slim blade at
+`wheel_particle_grass_width_m` x `wheel_particle_grass_length_m`); tarmac returns
+`null` and throws nothing. `_jittered` then varies the brightness per particle by
++/- `wheel_particle_color_jitter` so a burst reads as many separate bits of debris
+rather than one flat smear.
+
+### Why a hand-written billboard shader
+
+`BaseMaterial3D`'s `BILLBOARD_ENABLED` rebuilds the model-view basis from the
+camera columns every frame and **discards whatever basis the MultiMesh supplied**,
+keeping only the origin. That is free when every particle is an identical square —
+the pool used to pre-seed an identity basis and rewrite only the origin — but it
+leaves nowhere for a per-particle rotation to live. `billboard_keep_scale`
+re-applies the instance *scale* after the fact, but never a roll.
+
+So the billboard is done by hand in `shaders/billboard_particle.gdshader`
+(screen-aligned off `INV_VIEW_MATRIX`'s right/up columns, direct `POSITION`
+rewrite — the same approach as `shaders/billboard.gdshader`), and the instance
+basis is *read* instead of thrown away:
+
+    column 0 = (cos * half_w,  sin * half_w, 0)   -> length = half_w, direction = roll
+    column 1 = (-sin * half_h, cos * half_h, 0)   -> length = half_h
+
+Column **lengths** carry the half-extents and column 0's **direction** carries the
+roll, so the transform stride stays the standard 12 floats — no `INSTANCE_CUSTOM`,
+no extra per-instance stream. `_write_slot` in `wheel_particles.gd` writes that
+layout (row-major, so column 0 is floats 0/4/8 and column 1 is floats 1/5/9); the
+shader header documents the same contract from the other side. Keep the two in
+sync if you change it.
+
+The **spawn angle is frozen**, not tumbling: a tumbling blade would mean rewriting
+nine basis floats per particle per tick, where a fixed angle costs nothing after
+emit. `_advance` still touches only the three origin floats.
 
 ## Ring buffer
 
@@ -57,10 +98,12 @@ hide a flash.
 ## Performance — one buffer upload, not N transform calls
 
 The instance transforms are pushed as a **single `multimesh.buffer` assignment
-per tick**, not per-instance `set_instance_transform()` calls. Each slot keeps an
-identity basis (the billboard material orients the quad anyway), so only the three
-origin floats per slot are ever rewritten in a persistent `PackedFloat32Array`
-(`_buffer`, `STRIDE` = 12 floats/instance, origin at offsets 3/7/11). N
+per tick**, not per-instance `set_instance_transform()` calls. A slot's basis
+(size + roll) and colour are written **once at emit** and never touched again, so
+only the three origin floats per slot are rewritten each tick in a persistent
+`PackedFloat32Array` (`_buffer`, `STRIDE` = 16 floats/instance: a 3x4 row-major
+transform with the origin at offsets 3/7/11, then RGBA at 12-15, via
+`multimesh.use_colors`). N
 per-instance engine round-trips a frame is the classic MultiMesh trap — it murders
 mobile/WebGL; one bulk upload sidesteps it. The upload is **skipped entirely when
 nothing changed**: `_advance` is a no-op while `_alive == 0`, so an idle car (or
@@ -69,10 +112,12 @@ surface gate is a single `TerrainManager.surface_at` dictionary lookup (no
 centerline search), evaluated only after a wheel has already passed the wheelspin
 test.
 
-If the spray still costs too much on a weak device, the cheapest dials (in order
-of impact) are `wheel_particle_max` (pool size = the per-tick loop length),
-`wheel_particle_spawn_count`, and `wheel_particle_lifetime_s` (fewer clods alive
-at once).
+Because **all surfaces share one pool**, total particle cost is bounded by
+`wheel_particle_max` wherever the car is — driving on grass does not add a second
+pool, a second draw call, or a second cap. If the spray still costs too much on a
+weak device, the cheapest dials (in order of impact) are `wheel_particle_max`
+(pool size = the per-tick loop length), `wheel_particle_spawn_count`, and
+`wheel_particle_lifetime_s` (fewer particles alive at once).
 
 ## Per-tick logic
 
@@ -90,14 +135,15 @@ Each `_physics_process` (skipped when `wheel_particles_enabled` is off):
     (`Drivetrain.wheel_forward`), **not** the car's total speed. This is the key to
     the slide case: a car drifting sideways at speed still counts as spinning as
     long as the tread turns faster than it rolls forward.
-  - **Surface gate** — one `Drivetrain.terrain.surface_at(x, z)` lookup returns
-    `(road_weight, tarmac_weight)`. The wheel must be at least half onto the road
-    (`road_weight ≥ ROAD_WEIGHT_MIN`, else it's **grass**) AND on the gravel half
-    (`tarmac_weight ≤ TARMAC_WEIGHT_MAX`, else it's **tarmac**, which throws no
-    dirt). Both thresholds sit at the midpoint of the same feather bands the road
-    colour/grip blend across. With no terrain wired (flat fixtures), nothing
-    sprays. This reuses the surface system added for per-surface grip — see
-    `features/drivetrain-and-tires.md`.
+  - **Surface chooser** (`_look_for_surface`) — one
+    `Drivetrain.terrain.surface_at(x, z)` lookup returns `(road_weight,
+    tarmac_weight)` and picks the flavour rather than merely rejecting:
+    `road_weight < ROAD_WEIGHT_MIN` is off the road footprint -> **grass blades**;
+    otherwise `tarmac_weight > TARMAC_WEIGHT_MAX` is **tarmac** -> nothing;
+    otherwise **gravel clods**. Both thresholds sit at the midpoint of the same
+    feather bands the road colour/grip blend across. With no terrain wired (flat
+    fixtures), nothing is thrown. This reuses the surface system added for
+    per-surface grip — see `features/drivetrain-and-tires.md`.
 
 ## Throw direction & speed
 
@@ -117,7 +163,9 @@ clods are emitted per spinning wheel per tick.
 ## Configuration
 
 All in `GameConfig` (the "Wheel Particles" group): `wheel_particles_enabled`,
-`wheel_particle_color`, `wheel_particle_max`, `wheel_particle_size_m`,
+`wheel_particle_color`, `wheel_particle_grass_color`,
+`wheel_particle_grass_width_m`, `wheel_particle_grass_length_m`,
+`wheel_particle_color_jitter`, `wheel_particle_max`, `wheel_particle_size_m`,
 `wheel_particle_min_slip_mps`, `wheel_particle_lifetime_s`,
 `wheel_particle_speed_scale`, `wheel_particle_up_speed_mps`,
 `wheel_particle_gravity_mps2`, `wheel_particle_air_resistance`,
@@ -125,16 +173,24 @@ All in `GameConfig` (the "Wheel Particles" group): `wheel_particles_enabled`,
 
 ## Surfaces
 
-Both excluded surfaces are now handled by the live `surface_at` gate: **grass**
-(off the road footprint) and **tarmac** (paved — throws no dirt). Only the gravel
-road sprays. This landed once the per-surface system existed; there is no longer a
-pending tarmac TODO here.
+The live `surface_at` sample drives all three cases: **gravel** road throws square
+grey clods, **grass** (off the road footprint) throws slim green blades, and
+**tarmac** (paved) throws nothing. Adding a further surface means one more `Look`
+in `_look_for_surface` — no new pool, mesh, material or draw call.
 
 ## Tests
 
 `tests/headless/test_wheel_particles.gd` — a stub car with a stub drivetrain, stub
 wheels and a stub terrain surface drive the gating / emission / ring-buffer logic
 without a real vehicle or rendering: dirt flies from a driven, spinning, on-gravel
-wheel; none from an undriven wheel, a wheel rolling no faster than the ground, a
-wheel on grass (off the road), or a wheel on tarmac; a spinning *and* sliding wheel
+wheel; none from an undriven wheel, a wheel rolling no faster than the ground, or a
+wheel on tarmac; a wheel on grass throws grass; a spinning *and* sliding wheel
 still emits and throws backward + sideways; and the ring buffer caps the live count.
+
+The per-particle look has its own cases: gravel and grass share one pool/cap,
+`_write_slot`'s basis encodes the half-extents as column lengths and the roll as
+column 0's direction (asserted against the values passed in, not against authored
+config), the two half-extent axes stay independent (a slim blade stays slim), the
+colour lands in the trailing RGBA floats, `_advance` moves a particle's origin
+while leaving its basis + colour frozen, and `_look_for_surface` returns grass /
+gravel / `null` for the three surfaces.

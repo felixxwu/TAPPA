@@ -57,7 +57,11 @@ func build(host: Node3D, on_table_input: Callable, on_lift_input: Callable, on_a
 	ground.name = "HQGround"
 	var apron := Rect2(Vector2(cfg.hq_concrete_center.x, cfg.hq_concrete_center.z)
 		- cfg.hq_concrete_size * 0.5, cfg.hq_concrete_size)
-	ground.mesh = MeshUtil.feathered_ground_mesh(240.0, 240, [apron],
+	# Subdivision is the COARSE lattice only — feathered_ground_mesh refines the
+	# apron edges by itself — and comes from GameConfig so a web touch device can
+	# take a cheaper plane (cfg.ground_subdiv_for).
+	ground.mesh = MeshUtil.feathered_ground_mesh(240.0,
+		cfg.ground_subdiv_for(Platform.is_web(), Platform.is_touch()), [apron],
 		cfg.podium_tarmac_feather_m)
 	ground.position.y = -0.01
 	ground.material_override = MeshUtil.feathered_ground_material(cfg)

@@ -148,6 +148,27 @@ Algorithm: sample frame → quantize to virtual resolution → apply a 4×4 orde
 The dither applies to the 3D world only: SpeedLines / HUD / menus live on
 CanvasLayers drawn above the container.
 
+### `billboard_particle.gdshader` — `spatial`, `unshaded`, `depth_draw_opaque`
+Screen-aligned billboard with a **per-instance roll, size and colour** — the
+material behind the wheel-particle pool (`scripts/wheel_particles.gd`, see
+[wheel-dust.md](wheel-dust.md)). It exists because `BaseMaterial3D`'s
+`BILLBOARD_ENABLED` rebuilds the model-view basis from the camera columns and
+**discards the basis the MultiMesh supplied**, keeping only the origin — so a
+per-particle rotation has nowhere to live under the stock material
+(`billboard_keep_scale` restores the scale, never a roll).
+
+The instance basis is therefore *read* rather than thrown away: column **lengths**
+are the quad's half-extents and column 0's **direction** is `(cos, sin)` of the
+roll, which keeps the MultiMesh stride at the standard 12 transform floats (+4 for
+`use_colors`) with no `INSTANCE_CUSTOM` stream. The vertex shader scales the unit
+quad, rolls it in the billboard plane, then projects onto `INV_VIEW_MATRIX`'s
+right/up columns and rewrites `POSITION` directly (same bypass as
+`billboard.gdshader`). Fully screen-aligned (spherical) rather than the
+world-Y-up cylindrical form the tree billboards use — a flung clod has no
+meaningful "upright". Per-instance `COLOR` goes straight to `ALBEDO` (unshaded).
+Opaque, so a pool at its cap costs no transparency sorting. **The basis layout is a
+contract shared with `wheel_particles.gd._write_slot` — change both together.**
+
 ### `speed_lines.gdshader` — `canvas_item` (full-screen overlay)
 Anime "edge speed lines": black streaks radiating inward from the screen edges
 toward the centre, leaving the middle clear — the classic manga sense-of-speed
@@ -303,10 +324,25 @@ the loading cover instead of mid-drive:
   `_generate_track` is gated on `loading != null and not _headless`, before the
   overlay drops, so the fly is never visible). Measured to cut cold-run benchmark
   spikes ~3× (9 → 3).
-  Residual spikes are gameplay-only draw variants (e.g. a knocked spectant's
-  single-instance ragdoll mesh) that a static camera can't reproduce; these are
-  web-only (the native APK keeps a persistent shader cache) and need on-device GL
-  tooling (chrome://inspect) to pin further.
+  Residual spikes are gameplay-only draw variants that a static camera fly can't
+  reproduce; these are web-only (the native APK keeps a persistent shader cache) and
+  need on-device GL tooling (chrome://inspect) to pin further. NOTE: the knocked
+  spectator's single-instance ragdoll mesh — long cited here as the example — now
+  implements the warm-up contract and is primed by the contract walk, so it is no
+  longer a residual. The last known gap was the **speed-lines overlay**, which is a
+  `CanvasLayer` the corridor fly structurally cannot reach (see below); it now
+  implements the contract too.
+
+  **Anything a camera fly can't bring into view needs the contract, not the
+  corridor.** The corridor pre-warm only compiles 3D materials that fall inside a
+  forward-looking frustum along the racing line. A screen-space overlay, or anything
+  hidden until a gameplay event fires, must implement `warm_up()`/`clear_warm_up()`
+  or it will compile mid-drive. `speed_lines.gd` is the worked example: it starts
+  hidden (`_apply_intensity(0.0)` hides the rect so a stationary car never shades a
+  transparent full screen), so its full-screen program used to compile the first
+  time the car crossed `speed_lines_start_kmh` — mid-acceleration off the start
+  line. Its `warm_up()` simply shows the rect for the warmed frame with `intensity`
+  still at 0, so the compile lands while the shader outputs fully transparent.
 - **Per-chunk terrain resolution** (`terrain_manager.gd`, behind the loading cover):
   the corridor precompute classifies each chunk near/far from the racing line and
   only builds the LOD levels a far chunk can ever display — far chunks skip the full
@@ -405,3 +441,47 @@ shader sources) is covered by `test_render_smoke.gd` — see
 [testing.md](testing.md). There is no pixel-diff golden test: it only worked
 windowed and was chronically flaky, so the actual rendered look is not asserted
 pixel-for-pixel. Eyeball intentional look changes in the running app.
+
+### Flat ground planes (HQ apron / podium floor)
+
+The HQ hub and the podium share one flat-ground builder,
+`MeshUtil.feathered_ground_mesh(size, subdiv, pads, feather)` — a grass plane with
+rectangular tarmac `pads` cut into it, the tarmac weight written per vertex into
+`COLOR.a` and blended by the road-blend shader (`ps1_models.gdshader`,
+`blend_road = true`), the same treatment the generated track's verges get.
+
+The plane is **flat**, so the ONLY thing subdivision buys is resolution for the
+smoothstep feather band around the pad edges — a few metres of a 120–240 m plane.
+A uniform `(subdiv+1)²` grid therefore spends essentially all its vertices on
+nothing: the HQ ground alone used to be **58,081 verts / 115,200 tris**, drawn
+every frame on `hq.tscn`, the game's first screen. With no lights, no shadows and
+a low virtual resolution, the game is vertex- and draw-call-bound, not
+fragment-bound, so that was the single largest vertex outlier in the project.
+
+The grid is now **non-uniform** (`MeshUtil._ground_grid_lines`). Per axis, the
+vertex lines are the union of
+
+- a **coarse** lattice of `subdiv` divisions across the whole plane, and
+- a **fine** lattice covering only the feather band either side of each pad edge
+  on that axis (step `feather/4`, spanning `feather*0.5` inside to `feather*1.25`
+  outside the edge), de-duplicated against the coarse lines.
+
+It stays a tensor-product grid (sorted x line-set × sorted z line-set), so the
+triangulation is unchanged and pad **corners** are covered too — a fine x line
+spans the full z extent. Net effect: the feather band is sampled *finer* than the
+old uniform grid managed, at ~3% of the vertices (HQ: 1,681 verts / 3,200 tris;
+podium floor: 2,337 / 4,480).
+
+`subdiv` is now only the coarse lattice, and both callers read it from
+`GameConfig.ground_subdiv_for(web, touch)` (`ground_subdiv` /
+`ground_subdiv_web_touch`) rather than hardcoding it — `HQEnvironment.build` and
+`podium.gd::_build_environment`. Verification aid:
+`tools/render_ground_feather.gd` renders the apron and a podium pad with the old
+uniform grid and the new one (`docs/perf/ground_*.png`) so the band can be
+compared directly.
+
+> **The speed-lines rect is hidden below `VISIBLE_EPSILON`.** It used to stay `visible`
+> whenever `speed_lines_enabled`, so below `speed_lines_start_kmh` the shader still
+> rasterised the whole screen (an `atan` plus three `sin`-based hashes) to blend a
+> fully transparent result. `speed_lines.gd::_apply_intensity` now toggles visibility and
+> skips the `set_shader_parameter` when the value hasn't changed.

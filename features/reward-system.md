@@ -65,7 +65,7 @@ block the car in the replay behind it — behind a **Collect reward** button tha
 leaderboard (see `features/menus.md`). For a normal slottable part, the reveal
 displays a single **Next** step: the part (already fitted disabled by the flow
 controller) is confirmed with the caption "added to your garage — install it at
-the next event", and the player enables it later from the upgrades menu at the next
+the next stage", and the player enables it later from the upgrades menu at the next
 event (see `features/upgrade-catalogue.md`). A won part never moves to another car
 and a car never holds two of the same (per-car dedup). A won **repair kit** lands
 in inventory, but if the car you just drove is below full health

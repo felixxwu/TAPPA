@@ -139,7 +139,7 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
 - The **dev seed-lab** (Settings → Seed lab, `settings_menu.gd`) trials track
   parameters via typeable SpinBox fields against a large live `TrackPreview` that
   **animates the generation** (on_progress, like the loading screen), with a
-  generation token dropping stale runs. Bottom action row: **Load event…** /
+  generation token dropping stale runs. Bottom action row: **Load stage…** /
   **Terrain…** / Randomize / Back (`go_back` returns to the category list).
 - **Faithful generation.** `_regen_seedlab` builds an EventDef from the inputs
   (`_seedlab_event`) and generates through the **exact career path** —
@@ -151,7 +151,7 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
   terrain from the canonical config, so the preview equals the real stage (verified by
   `test_seedlab.gd` → `test_loaded_event_matches_career_cache_key`, which compares the
   lab's and career's `TrackCache.key_for`).
-- **Load event…** (`_open_event_picker` → `_build_event_picker`) opens a keyboard/
+- **Load stage…** (`_open_event_picker` → `_build_event_picker`) opens a keyboard/
   gamepad-navigable popup listing every rally (`RallyLibrary.all()`) and its 3 events.
   Picking one (`_load_event`) copies the event's fields — the four core inputs + the
   six terrain-noise fields — into the spinboxes; the inputs stay the single source of

@@ -675,7 +675,10 @@ func _update_steering(delta: float, speed: float, align_scale: float) -> Diction
 	# Returns _steer_scratch, a reused buffer (no per-tick Dictionary alloc);
 	# the sole caller unpacks its fields immediately.
 	var cfg: GameConfig = config
-	var local_vel := global_transform.basis.inverse() * linear_velocity
+	# transposed(), not inverse(): a rigid body's basis is orthonormal (this node is
+	# never scaled), so the transpose IS the inverse — and it skips the determinant
+	# + cofactor work inverse() does, every physics tick.
+	var local_vel := global_transform.basis.transposed() * linear_velocity
 	var slip_angle := 0.0  # unclamped travel-direction yaw; also feeds spin protection
 	var travel_angle := 0.0
 	if Vector2(local_vel.x, local_vel.z).length() > 2.0 and local_vel.z < 0.0:
