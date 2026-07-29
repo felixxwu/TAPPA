@@ -47,6 +47,10 @@ func before_each() -> void:
 	_controls.set_scheme(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
 	_controls._slider_rect = Rect2(0, 0, 200, 40)
 	_controls._thumb_w = 40.0
+	# Forget any browser touch snapshot a stuck-touch test adopted — headless has no
+	# watchdog, and a leftover live set would reconcile away the other tests' pointers.
+	_controls._live_touches = null
+	_controls._touch_seq = -1
 
 
 func after_each() -> void:
@@ -234,59 +238,105 @@ func test_set_scheme_releases_old_inputs() -> void:
 		"switching schemes releases inputs held under the old one")
 
 
-# --- Stuck-touch recovery (web watchdog entry point) -------------------------
+# --- Stuck-touch recovery (web watchdog reconciliation) -----------------------
 # Mobile browsers sometimes never deliver the touchend for a finger lifted while
-# others are still down, so a JS watchdog reconciles against the live touch list
-# and calls force_release for pointers that vanished. These cover the GDScript
+# others are still down. A JS watchdog publishes the browser's authoritative list
+# of fingers currently down and the overlay reconciles held pointers against it
+# every frame (sync_live_touches / _reconcile_pointers). These cover the GDScript
 # side of that path — the JS itself can't run headless.
 
-func test_force_release_clears_a_stuck_button() -> void:
-	# Two fingers down; the steer button's release event never arrives.
+func test_lost_touch_clears_a_stuck_button() -> void:
+	# Two fingers down; the steer button's release event never arrives, so the
+	# browser's list is the only thing that knows the finger is up.
 	_controls.set_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
 	_controls._pointers[0] = "gas"
 	_controls._pointers[1] = "steer_left"
 	_controls._apply_actions()
 	assert_gt(Input.get_action_strength("steer_left"), 0.0, "steering held before recovery")
-	_controls.force_release(1)
+	_controls.sync_live_touches([0])
 	_controls._apply_actions()
 	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
-		"a force-released pointer stops steering")
+		"a pointer missing from the live touch list stops steering")
 	assert_true(Input.is_action_pressed("accelerate"),
 		"the OTHER finger keeps its action — only the lost pointer is dropped")
 
 
-func test_force_release_recenters_the_slider() -> void:
+func test_lost_touch_recenters_the_slider() -> void:
 	_controls._slider_owner = 1
 	_controls._slider_x = 20.0
 	_controls._apply_actions()
 	assert_gt(Input.get_action_strength("steer_left"), 0.0, "slider steering before recovery")
-	_controls.force_release(1)
+	_controls.sync_live_touches([])
 	_controls._apply_actions()
 	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6,
 		"losing the slider pointer springs steering back to centre")
+	assert_null(_controls._slider_owner, "slider ownership dropped")
 
 
-func test_force_release_is_idempotent_for_unheld_pointers() -> void:
-	# The watchdog also fires for releases that DID arrive normally, so a
-	# force_release for an index we aren't tracking must be a no-op.
+func test_live_touches_leave_held_fingers_alone() -> void:
+	# Reconciliation must only ever drop pointers the browser says are UP; a finger
+	# still listed keeps its region, and ids we don't track are simply ignored.
 	_controls._pointers[0] = "gas"
-	_controls.force_release(7)
+	_controls.sync_live_touches([0, 7])
 	_controls._apply_actions()
 	assert_true(Input.is_action_pressed("accelerate"),
-		"releasing an untracked pointer leaves held pointers alone")
+		"a finger still in the live list keeps holding its action")
+	assert_eq(_controls._pointers.size(), 1, "an untracked live id adds no pointer")
 
 
-func test_release_all_index_drops_every_pointer() -> void:
-	# Backgrounding the page ends every touch with no per-id event to observe.
-	_controls.set_scheme(MobileControls.SCHEME_BUTTONS_GAS_BRAKE)
+func test_reconcile_is_a_noop_before_any_snapshot() -> void:
+	# Off the web build (and in these tests) there is no browser snapshot at all, so
+	# the per-frame reconcile must not touch anything — "no snapshot" is not "no
+	# fingers down".
+	_controls._live_touches = null
 	_controls._pointers[0] = "gas"
-	_controls._pointers[1] = "steer_left"
-	_controls._slider_owner = 2
-	_controls.force_release(MobileControls.RELEASE_ALL_INDEX)
+	_controls._slider_owner = 1
+	_controls._reconcile_pointers()
+	assert_eq(_controls._pointers.get(0), "gas", "no snapshot leaves held pointers alone")
+	assert_eq(_controls._slider_owner, 1, "no snapshot leaves the slider owner alone")
+
+
+func test_reconcile_keeps_the_mouse_pointer() -> void:
+	# The mouse is index -1 and never appears in a browser touch list, so an empty
+	# list must not release it — desktop testing with mobile_controls_force.
+	_controls._pointers[-1] = "gas"
+	_controls.sync_live_touches([])
 	_controls._apply_actions()
-	assert_false(Input.is_action_pressed("accelerate"), "throttle dropped")
-	assert_almost_eq(Input.get_action_strength("steer_left"), 0.0, 1e-6, "steering dropped")
-	assert_null(_controls._slider_owner, "slider ownership dropped")
+	assert_true(Input.is_action_pressed("accelerate"),
+		"reconciling touch pointers leaves the mouse pointer held")
+
+
+func test_stale_drag_cannot_resurrect_a_lifted_finger() -> void:
+	# THE regression this guards: Godot flushes buffered input a frame late, so a
+	# drag queued while the finger was still down can arrive AFTER we learned the
+	# finger is up. Acting on it re-added the pointer, and with the touchend dropped
+	# nothing was left to clear it — the button stuck until the next touch. This is
+	# why the bug only showed when a finger MOVED slightly before being released.
+	_fixed_button_rects()
+	_controls._input(_touch(0, Vector2(550, 550), true))
+	_controls._input(_touch(1, Vector2(750, 550), true))
+	# Finger 1 lifts, but its touchend never arrives — only the browser knows.
+	_controls.sync_live_touches([0])
+	assert_false(_controls._pointers.has(1), "the lost pointer is dropped")
+	# Now its stale drag lands.
+	_controls._input(_drag_event(1, Vector2(750, 550)))
+	assert_false(_controls._pointers.has(1), "a drag for a lifted finger is ignored")
+	assert_eq(_controls._pointers.get(0), "gas", "the finger still down is untouched")
+	# ...and the gate must not over-block: a finger the browser still lists drags normally.
+	_controls._input(_drag_event(0, Vector2(750, 550)))
+	assert_eq(_controls._pointers.get(0), "brake", "a live finger still drags between regions")
+
+
+func test_reconcile_redrops_a_resurrected_pointer() -> void:
+	# Belt to the braces above: even if a pointer for a lifted finger gets re-added
+	# some other way, the per-frame reconcile drops it again rather than leaving it
+	# stuck forever the way the old one-shot watchdog did.
+	_controls.sync_live_touches([0])
+	_controls._pointers[1] = "gas"
+	_controls._reconcile_pointers()
+	_controls._apply_actions()
+	assert_false(_controls._pointers.has(1), "reconciliation re-drops a resurrected pointer")
+	assert_false(Input.is_action_pressed("accelerate"), "and its action never sticks")
 
 
 # --- Steering edges (the press/release change-guard) --------------------------
@@ -361,6 +411,13 @@ func _touch(index: int, pos: Vector2, pressed: bool) -> InputEventScreenTouch:
 	e.index = index
 	e.position = pos
 	e.pressed = pressed
+	return e
+
+
+func _drag_event(index: int, pos: Vector2) -> InputEventScreenDrag:
+	var e := InputEventScreenDrag.new()
+	e.index = index
+	e.position = pos
 	return e
 
 

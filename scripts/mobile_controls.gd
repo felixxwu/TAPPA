@@ -20,6 +20,9 @@ extends CanvasLayer
 #
 # Raw touch events are handled here (not Control buttons) so several pointers
 # register at once — you must steer and use the throttle/brake simultaneously.
+# On the web, held pointers are also reconciled every frame against the browser's
+# own list of fingers currently down, because mobile browsers drop `touchend`
+# events (see _install_touch_watchdog).
 #
 # Shown only on touch devices, or when mobile_controls_force is set (testing).
 
@@ -65,17 +68,13 @@ const _REGION_LABEL := {
 	"simple_left": "<", "simple_right": ">",
 }
 
-# Sentinel index the web touch watchdog passes to force_release() to mean "drop
-# EVERY pointer" (page hidden / window blurred, where no per-touch id survives).
-# Well clear of any real pointer index, including the mouse's -1.
-const RELEASE_ALL_INDEX := -1000
-
 var _active := false
 var _scheme := DEFAULT_SCHEME
 
 # Digital regions: pointer index -> region name. Index -1 is the mouse, kept so the
 # controls are drivable with a mouse when force-enabled. The steering slider is
-# owned separately (a captured pointer), so it never appears here.
+# owned separately (a captured pointer), so it never appears here. Entries are NOT
+# trusted to be cleared by a release event on the web — see _reconcile_pointers.
 var _pointers := {}
 # Held input actions, so we only press/release on transitions (and can release all
 # on exit). action StringName -> bool.
@@ -101,9 +100,16 @@ var _panel_held := {}
 var _slider_track: ColorRect
 var _slider_thumb: ColorRect
 
-# Web only: the JS -> GDScript callback the stuck-touch watchdog calls. Held in a
-# member so the reference stays alive for the lifetime of the node.
-var _touch_lost_cb: JavaScriptObject = null
+# Web only: the `window` JS object, kept so the per-frame touch poll can read the
+# watchdog's snapshot without re-eval'ing JS. null off the web build.
+var _js_window: JavaScriptObject = null
+# Sequence number of the last watchdog snapshot we read (-1 = none yet; JS starts
+# its counter at 0 and only bumps it when the set of fingers down changes).
+var _touch_seq := -1
+# The browser's authoritative set of fingers CURRENTLY down: touch index -> true.
+# `null` means "no snapshot" — the state off the web build and in tests — and
+# disables reconciliation entirely, so nothing there is ever force-released.
+var _live_touches = null
 
 
 func _ready() -> void:
@@ -364,6 +370,17 @@ func _press(idx: int, pos: Vector2) -> void:
 
 
 func _drag(idx: int, pos: Vector2) -> void:
+	# Drop a drag for a finger the browser says is already UP. Godot buffers input
+	# and flushes it a frame late (use_accumulated_input), so a drag queued just
+	# before a finger lifted can still arrive AFTER the lift — and if that lift's
+	# touchend was one the browser dropped, re-adding the pointer here would strand
+	# it with no event left that could ever clear it. See _install_touch_watchdog.
+	# Re-poll first: the flush runs BEFORE _process, so the snapshot adopted there is
+	# a frame old, and judging a brand-new finger against it would discard the first
+	# drag of a press+slide that landed in the same frame.
+	_poll_live_touches()
+	if _is_lifted(idx):
+		return
 	# The captured slider pointer keeps steering even if it slides off the rail
 	# (clamped); any other pointer re-tests which region it's over.
 	if idx == _slider_owner:
@@ -383,24 +400,11 @@ func _release(idx: int) -> void:
 	_pointers.erase(idx)
 
 
-# Drop a pointer as if its release event had arrived — the recovery path for the
-# web stuck-touch bug (see _install_touch_watchdog). RELEASE_ALL_INDEX drops every
-# pointer at once. Idempotent: harmless for an index that isn't held, so the
-# watchdog can fire alongside a release that DID arrive normally.
-func force_release(idx: int) -> void:
-	if idx == RELEASE_ALL_INDEX:
-		_pointers.clear()
-		_slider_owner = null
-		return
-	_release(idx)
-
-
 # --- Web: stuck-touch watchdog ------------------------------------------------
 #
 # Mobile browsers sometimes never deliver the `touchend` for a finger that is
-# lifted while OTHER fingers are still down, so the button stays held until some
-# later touch happens to shake it loose — you lift off a steer button and the car
-# keeps turning. Two documented causes:
+# lifted while OTHER fingers are still down, so the button stays held and the car
+# keeps steering / accelerating on its own. Two documented causes:
 #   * iOS Safari/Chrome drop one of a touchstart/touchend pair that land in the
 #     same frame (one hand pressing as the other lifts).
 #   * Blink/older WebKit can end a slightly-moved touch with `touchcancel` and
@@ -410,55 +414,132 @@ func force_release(idx: int) -> void:
 # authoritative list of fingers CURRENTLY down — so a dropped release leaves
 # _pointers/_slider_owner populated with no event that would ever clear them.
 #
-# The fix is to stop trusting `touchend` and reconcile instead. This installs a
-# CAPTURE-phase listener on the canvas (so it runs ahead of the engine's own) that
-# diffs the live `evt.touches` identifiers on every touch event and force-releases
-# any pointer that has silently vanished. Firing for a release that DID arrive
-# normally is harmless — force_release is idempotent.
+# So we stop trusting `touchend` and RECONCILE instead. The JS below publishes the
+# live `evt.touches` identifiers to `window.__rallyTouchIds` (plus a change counter,
+# `__rallyTouchSeq`, so the poll below is a single cheap int read on a quiet frame),
+# and _reconcile_pointers drops any pointer missing from that set. Browser touch
+# identifiers are what the engine passes straight through as the Godot touch index,
+# so no translation is needed. Inert off the web build.
 #
-# Browser touch identifiers are what the engine passes straight through as the
-# Godot touch index, so no translation is needed. Inert off the web build.
+# Two properties of this design matter, and the FIRST version of this fix had
+# neither — which is why it didn't work:
+#
+#   1. It is POLLED, not event-driven, and therefore SELF-CORRECTING. The old
+#      version diffed inside the DOM handler and force-released once, synchronously
+#      — i.e. AHEAD of Godot's buffered-input flush for that frame. Any drag already
+#      queued for the lifted finger was then flushed on top and re-added the pointer,
+#      and because that finger sends no further events nothing ever reconciled again.
+#      That's exactly the reported symptom: a finger only sticks if it MOVED slightly
+#      before being released, because a stationary finger queues no drag to resurrect
+#      it. Re-checking every frame means a resurrected pointer dies again immediately
+#      (_reconcile_pointers runs before _apply_actions, so it never reaches the car).
+#   2. The listeners are on `window`, capture phase. Capture on `window` is the first
+#      step of every event's propagation path, so the snapshot can never be staler
+#      than an engine touch event that has already been flushed — which is what makes
+#      it safe for _is_lifted to discard a drag (given _drag re-polls, since the flush
+#      itself runs a frame ahead of _process). It also drops the old version's
+#      dependency on finding the canvas element by id.
 func _install_touch_watchdog() -> void:
 	if not OS.has_feature("web"):
 		return
-	var window := JavaScriptBridge.get_interface("window")
-	if window == null:
+	_js_window = JavaScriptBridge.get_interface("window")
+	if _js_window == null:
 		return
-	_touch_lost_cb = JavaScriptBridge.create_callback(_on_touch_lost)
-	window.godotTouchLost = _touch_lost_cb
-	JavaScriptBridge.eval(_TOUCH_WATCHDOG_JS % RELEASE_ALL_INDEX, true)
+	JavaScriptBridge.eval(_TOUCH_WATCHDOG_JS, true)
 
 
-# Args come from JS as an array; arg 0 is the lost touch identifier (or
-# RELEASE_ALL_INDEX). Guarded so a malformed call can't break input handling.
-func _on_touch_lost(args: Array) -> void:
-	if args.is_empty():
+# Adopt the watchdog snapshot if the set of fingers down changed since we last read
+# it. Cheap enough to call per frame AND per drag event: the common path is a single
+# int property read, and the id list is only fetched + parsed on an actual change
+# (the counter doesn't move while fingers merely slide around).
+func _poll_live_touches() -> void:
+	if _js_window == null:
 		return
-	force_release(int(args[0]))
+	# null when the eval never ran (or a host page clobbered it) — reconciliation
+	# then stays off rather than treating "no snapshot" as "no fingers down". seq 0 is
+	# the initial "no touch has happened yet" value, for exactly the same reason.
+	var raw_seq = _js_window.__rallyTouchSeq
+	if raw_seq == null:
+		return
+	var seq := int(raw_seq)
+	if seq == _touch_seq or seq <= 0:
+		return
+	var raw_ids = _js_window.__rallyTouchIds
+	if raw_ids == null:
+		return
+	_touch_seq = seq
+	sync_live_touches(str(raw_ids).split(",", false))
+
+
+# Adopt the browser's list of fingers currently down (touch indices, as ints or
+# strings) and reconcile against it immediately. The seam the JS poll and the tests
+# both go through.
+func sync_live_touches(live_ids) -> void:
+	var live := {}
+	for id in live_ids:
+		live[int(id)] = true
+	_live_touches = live
+	_reconcile_pointers()
+
+
+# Drop every tracked pointer the browser says is no longer down. Runs each frame
+# (before _apply_actions) so a stuck pointer costs at most one frame, and a pointer
+# resurrected by a late-flushed drag is dropped again rather than sticking forever.
+func _reconcile_pointers() -> void:
+	if _live_touches == null:
+		return
+	var live: Dictionary = _live_touches
+	# Two passes so the common (nothing lost) case allocates nothing: iterating the
+	# Dictionary directly is allocation-free, .keys() is not, and this runs per frame
+	# on exactly the platform where GC churn hurts most.
+	var lost := false
+	for idx in _pointers:
+		if _is_lifted_in(live, idx):
+			lost = true
+			break
+	if lost:
+		for idx in _pointers.keys():
+			if _is_lifted_in(live, idx):
+				_pointers.erase(idx)
+	if _slider_owner != null and _is_lifted_in(live, _slider_owner):
+		_slider_owner = null  # spring the steering back to centre
+
+
+# True when we hold a browser snapshot and `idx` is a touch pointer missing from it.
+# The mouse is index -1 and never appears in a touch list, so it's excluded — a real
+# mouse must keep working for desktop testing with mobile_controls_force.
+func _is_lifted(idx: int) -> bool:
+	return _live_touches != null and _is_lifted_in(_live_touches, idx)
+
+
+func _is_lifted_in(live: Dictionary, idx: int) -> bool:
+	return idx >= 0 and not live.has(idx)
 
 
 const _TOUCH_WATCHDOG_JS := """
 (function () {
 	if (window.__rallyTouchWatchdog) { return; }
 	window.__rallyTouchWatchdog = true;
-	var canvas = document.getElementById('canvas') || document.querySelector('canvas');
-	if (!canvas) { return; }
-	var live = [];
-	function lost(id) { if (window.godotTouchLost) { window.godotTouchLost(id); } }
-	// Reconcile our idea of what's down against the browser's authoritative list.
+	window.__rallyTouchIds = '';
+	window.__rallyTouchSeq = 0;
+	function publish(ids) {
+		var s = ids.join(',');
+		if (s === window.__rallyTouchIds) { return; }
+		window.__rallyTouchIds = s;
+		window.__rallyTouchSeq++;
+	}
+	// evt.touches is the browser's authoritative list of fingers currently down —
+	// unlike changedTouches (all the engine reads) it can't miss a dropped release.
 	function sync(e) {
 		var now = [];
 		for (var i = 0; i < e.touches.length; i++) { now.push(e.touches[i].identifier); }
-		for (var j = 0; j < live.length; j++) {
-			if (now.indexOf(live[j]) === -1) { lost(live[j]); }
-		}
-		live = now;
+		publish(now);
 	}
 	['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(function (t) {
-		canvas.addEventListener(t, sync, true);
+		window.addEventListener(t, sync, true);
 	});
 	// Backgrounding the page ends every touch with no per-id event to observe.
-	function dropAll() { live = []; lost(%d); }
+	function dropAll() { publish([]); }
 	window.addEventListener('blur', dropAll);
 	window.addEventListener('pagehide', dropAll);
 	document.addEventListener('visibilitychange', function () {
@@ -582,6 +663,10 @@ func _process(delta: float) -> void:
 
 
 func _timed_process(_delta: float) -> void:
+	# Reconcile BEFORE applying: a pointer the browser says is up must never reach
+	# the car's input actions, not even for a single frame.
+	_poll_live_touches()
+	_reconcile_pointers()
 	_apply_actions()
 
 

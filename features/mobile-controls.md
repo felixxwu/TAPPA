@@ -57,7 +57,9 @@ title-screen Settings page has no live controls, so there it just saves.)
   sensor.
 - **Multitouch.** Raw `InputEventScreenTouch`/`Drag` are handled directly (indexed
   by pointer), so steering and a pedal register simultaneously. Mouse events also
-  drive the controls (index -1) for desktop testing.
+  drive the controls (index -1) for desktop testing. On the web, held pointers are
+  reconciled every frame against the browser's own list of fingers down — see
+  "Stuck-touch reconciliation" below.
 - Held actions are tracked in `_action_held` so they only press/release on
   transitions; `_release_all()` (on scheme switch + `_exit_tree`) clears everything
   so no phantom input lingers.
@@ -124,12 +126,73 @@ Pressing back cancels the gate to the car park. See [menus.md](menus.md) › Set
 editor), `tilt_sensitivity`, `tilt_deadzone` (the TILT scheme). See
 [configuration.md](configuration.md).
 
+## Stuck-touch reconciliation (web)
+
+**Source:** `mobile_controls.gd` → `_install_touch_watchdog`, `_poll_live_touches`,
+`sync_live_touches`, `_reconcile_pointers`, `_is_lifted`.
+
+Mobile browsers sometimes never deliver the `touchend` for a finger lifted while
+other fingers are still down, so a pedal or steer button stays held and the car
+drives itself. Godot can't fix this from its side: the engine's web input layer only
+reads `evt.changedTouches`, never `evt.touches` — the browser's authoritative list of
+fingers **currently down** — so a dropped release leaves `_pointers` /
+`_slider_owner` populated with no event that could ever clear them.
+
+So the overlay stops trusting `touchend` and **reconciles** instead:
+
+- A one-time `JavaScriptBridge.eval` (`_TOUCH_WATCHDOG_JS`) registers
+  **capture-phase** `touchstart`/`touchmove`/`touchend`/`touchcancel` listeners on
+  **`window`**, and publishes the live `evt.touches` identifiers to
+  `window.__rallyTouchIds` with a change counter, `window.__rallyTouchSeq`.
+  Backgrounding the page (`blur` / `pagehide` / `visibilitychange`) publishes an
+  empty list, since that ends every touch with no per-id event to observe.
+- `_timed_process` **polls** the counter every frame — one cheap int read on a quiet
+  frame; the id list is only fetched and parsed on a change — then reconciles and
+  only *then* applies actions, so a dead pointer never reaches the car's input
+  actions. Browser touch identifiers are what the engine passes straight through as
+  the Godot touch index, so no translation is needed.
+- `_reconcile_pointers` drops any tracked pointer missing from the live set (and
+  recentres the slider if its owner vanished). Index -1 is the mouse and never
+  appears in a touch list, so it's excluded.
+- `_is_lifted` also makes `_drag` **discard a drag for a finger the browser says is
+  already up**. `_drag` re-polls first, because the engine's buffered-input flush runs
+  *before* `_process` — judging a brand-new finger against the previous frame's
+  snapshot would throw away the first drag of a press-and-slide that landed in the
+  same frame. Polling is cheap enough for that: the counter only moves when the set of
+  fingers changes, so a finger merely sliding around costs one int read.
+
+Everything is inert off the web build: with no snapshot, `_live_touches` stays
+`null` and reconciliation is a no-op — "no snapshot" is deliberately not treated as
+"no fingers down".
+
+### Why the first attempt at this didn't work
+
+The original version diffed the touch list inside the DOM handler and force-released
+lost pointers **once, synchronously** — i.e. *ahead of* Godot's buffered-input flush
+for that frame (`use_accumulated_input` is on by default). Any `InputEventScreenDrag`
+already queued for the lifted finger was then flushed on top and **re-added** the
+pointer, and because that finger sends no further events, the one-shot watchdog never
+reconciled again — so the button stuck indefinitely. That's exactly why the bug only
+appeared when a finger **moved slightly** before being released: a stationary finger
+queues no drag to resurrect it.
+
+The two properties that fix it: reconciliation is **polled every frame** (so it is
+self-correcting rather than one-shot — a resurrected pointer dies again immediately),
+and the listeners sit on **`window` in capture phase**, the first step of every
+event's propagation path, so the snapshot can never be staler than an engine touch
+event that has already been flushed. That's what makes it safe for `_is_lifted` to
+discard a drag outright. It also removes the old version's dependency on finding the
+canvas element by id.
+
 ## Tests
 
 `tests/headless/test_mobile_controls.gd` — visibility gating, the default scheme
 (gas / brake / analog slider, recentring, multitouch), steer buttons, the auto-gas
 throttle-unless-braking rule, the simple both-sides-brake, the pure `tilt_steer`
-maths, and scheme switching releasing old inputs. The Settings page + pre-rally gate
+maths, scheme switching releasing old inputs, and the stuck-touch reconciliation
+above (a lost finger clears its button / recentres the slider, held fingers and the
+mouse pointer survive, no snapshot means no reconciliation, and — the regression —
+a stale drag can't resurrect a lifted finger). The Settings page + pre-rally gate
 are covered in `test_menu_flow.gd`; the saved-setting round-trip in
 `test_save_manager.gd`.
 
