@@ -1130,8 +1130,8 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	# 0 means no assist — no hidden global baseline. Only the focus authors a value.
 	cfg.steer_assist_torque = spec.get("steer_assist_torque", 0.0)
 	# Per-car default brake bias (front share of foot-brake torque). This is the
-	# baseline the brakes-kit tuning slider re-centres on (TuningLibrary.apply, run
-	# after); without the kit the car keeps this default. Omit to inherit the
+	# baseline the brake-bias tuning slider re-centres on (TuningLibrary.apply, run
+	# after); at neutral the car keeps this default. Omit to inherit the
 	# GameConfig.brake_bias default.
 	cfg.brake_bias = spec.get("brake_bias", cfg.brake_bias)
 	# Per-car suspension: overall spring rate + per-axle travel. The front/rear

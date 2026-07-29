@@ -1164,6 +1164,11 @@ func test_hq_tapping_a_pin_opens_its_detail() -> void:
 	assert_true(hq._detail_layer.visible, "the detail overlay is shown")
 	assert_false(hq._table_layer.visible, "the map HUD is hidden behind the detail")
 	assert_string_contains(hq._detail_title.text, "RWD MASTERS", "the detail names the rally")
+	# The stage count rides on the title instead of a per-stage column; derive the
+	# expected count from the rally itself so retuning the roster can't break this.
+	var stages: int = (RallyLibrary.by_id("rwd_masters").get("events", []) as Array).size()
+	assert_string_contains(hq._detail_title.text, "%d STAGE" % stages,
+		"the title carries the rally's stage count")
 	assert_string_contains(hq._detail_restriction.text, "RWD CARS", "the detail spells out the eligibility")
 
 
@@ -1797,20 +1802,19 @@ func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	await get_tree().process_frame
 	hq._enter_lift()
 	await get_tree().process_frame
-	# The starter has no kits: grip is tunable, brake bias + aero are locked.
+	# The starter has no kits: grip + brake bias are free, aero is locked.
 	assert_true(hq._tune_panel._sliders["grip_balance"].editable, "grip is always tunable")
-	assert_false(hq._tune_panel._sliders["brake_bias"].editable, "brake bias locked without the brake kit")
+	assert_true(hq._tune_panel._sliders["brake_bias"].editable, "brake bias is always tunable")
 	assert_false(hq._tune_panel._sliders["aero_balance"].editable, "aero locked without the aero kit")
-	# Fit a brake kit to a fresh car and select it — its brake-bias slider unlocks.
+	# Fit an aero kit to a fresh car and select it — its aero slider unlocks.
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
-	_save.add_item("fx_brakes")
-	_save.install_upgrade(id, "fx_brakes")
+	_save.add_item("fx_aero")
+	_save.install_upgrade(id, "fx_aero")
 	_save.set_selected_car(id)
 	hq._enter_lift()
 	await get_tree().process_frame
-	assert_true(hq._tune_panel._sliders["brake_bias"].editable, "the brake kit unlocks brake-bias tuning")
-	assert_false(hq._tune_panel._sliders["aero_balance"].editable, "aero still locked (no aero kit)")
+	assert_true(hq._tune_panel._sliders["aero_balance"].editable, "the aero kit unlocks aero tuning")
 
 
 func test_hq_lift_hub_has_a_test_drive_button_targeting_the_lift_car() -> void:
@@ -1857,7 +1861,7 @@ func test_hq_lift_upgrades_menu_has_no_apply_from_pool_rows() -> void:
 		"nothing gets fitted from the pool")
 
 
-# A single-part slot (brakes) is a None / <Kit> option selector, earn-gated like turbo:
+# A single-part slot (aero) is a None / <Kit> option selector, earn-gated like turbo:
 # None is always available, the kit is greyed until fitted, and picking it enables the part
 # (picking None parks it). Free, instant, reversible — no confirmation dialog.
 func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
@@ -1872,7 +1876,7 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	hq._open_lift_page(hq.LiftPage.UPGRADES)
 	await get_tree().process_frame
 	# Before the kit is won: a greyed kit option sits beside an available None; no toggles.
-	var kit_name := String(UpgradeLibrary.by_id("fx_brakes").get("name", "")).to_upper()
+	var kit_name := String(UpgradeLibrary.by_id("fx_aero").get("name", "")).to_upper()
 	assert_eq(_count_buttons_with_text(hq._lift_upgrades_box, ["Enable", "Disable"]), 0,
 		"no Enable/Disable toggle — the slot is a selector")
 	var kit_btn := _turbo_button(hq._lift_upgrades_box, kit_name)  # matches by (upper-cased) label
@@ -1880,21 +1884,21 @@ func test_hq_lift_single_part_slot_is_an_option_selector() -> void:
 	assert_true(kit_btn.disabled, "the kit option is greyed until it's won")
 	assert_eq(kit_btn.focus_mode, Control.FOCUS_ALL, "the option is keyboard / gamepad focusable")
 	# Win + fit the kit (disabled), reopen: the kit option ungreys.
-	_save.add_item("fx_brakes")
-	_save.install_upgrade(id, "fx_brakes", false)
+	_save.add_item("fx_aero")
+	_save.install_upgrade(id, "fx_aero", false)
 	hq._lift_upgrades_box.rebuild()
 	await get_tree().process_frame
 	assert_false(_turbo_button(hq._lift_upgrades_box, kit_name).disabled,
 		"the kit option ungreys once fitted")
 	# Picking the kit enables the part; picking None parks it (still fitted, effect off).
-	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", kit_name)
+	_press_slot_button_with_text(hq._lift_upgrades_box, "aero", kit_name)
 	await get_tree().process_frame
-	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_brakes"), "picking the kit enables it")
-	_press_slot_button_with_text(hq._lift_upgrades_box, "brakes", "STOCK")
+	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_aero"), "picking the kit enables it")
+	_press_slot_button_with_text(hq._lift_upgrades_box, "aero", "STOCK")
 	await get_tree().process_frame
 	var car: Dictionary = _save.get_car(id)
-	assert_true(car["installed_upgrades"].has("fx_brakes"), "a parked part stays fitted to the car")
-	assert_false(UpgradeLibrary.is_enabled(car, "fx_brakes"), "picking None switches the part off")
+	assert_true(car["installed_upgrades"].has("fx_aero"), "a parked part stays fitted to the car")
+	assert_false(UpgradeLibrary.is_enabled(car, "fx_aero"), "picking None switches the part off")
 
 
 func test_hq_back_steps_carpark_to_table_to_garage() -> void:
@@ -2193,7 +2197,7 @@ func test_podium_sequence_reveals_leaderboard_then_car() -> void:
 		"placed": 1, "completed": true, "combined_ms": 60000, "dnf": false,
 		"rally_name": "Coastal Sprint", "showdown_won": false,
 		"car_reward": "fx_rwd_coupe", "car_reward_is_new": true,
-		"upgrades": ["fx_turbo_small", "fx_brakes"],  # recorded, but NOT revealed here
+		"upgrades": ["fx_turbo_small", "fx_aero"],  # recorded, but NOT revealed here
 		"car_instance_id": driven_id,
 		"standings": [
 			{"name": "You", "combined_ms": 60000, "dnf": false, "is_player": true, "placed": 1},

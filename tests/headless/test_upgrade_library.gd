@@ -43,22 +43,19 @@ func test_lookups() -> void:
 func test_effect_application_multiplies_and_adds_on_baseline() -> void:
 	var cfg := GameConfig.new()
 	cfg.peak_torque = 100.0
-	cfg.brake_torque = 1000.0
 	cfg.mass = 1000.0
 	cfg.downforce_front = 0.0
 	cfg.downforce_rear = 0.0
-	var car := {"installed_upgrades": ["fx_turbo_big", "fx_brakes", "fx_lightweight", "fx_aero"]}
+	var car := {"installed_upgrades": ["fx_turbo_big", "fx_lightweight", "fx_aero"]}
 	# Expected values are derived from each upgrade's configured effect, so this tests
 	# the apply PIPELINE (right field, multiply vs add) without pinning the tunable
 	# multipliers/amounts — retuning a kit's strength won't break the test.
 	var turbo: Dictionary = UpgradeLibrary.by_id("fx_turbo_big")["effect"]["install_turbo"]
-	var brk: Dictionary = UpgradeLibrary.by_id("fx_brakes")["effect"]
 	var wgt: Dictionary = UpgradeLibrary.by_id("fx_lightweight")["effect"]
 	var aero: Dictionary = UpgradeLibrary.by_id("fx_aero")["effect"]
 	UpgradeLibrary.apply(car, cfg)
 	assert_true(cfg.turbo_enabled, "installing a turbo enables it on the config")
 	assert_almost_eq(cfg.turbo_boost_gain, float(turbo["turbo_boost_gain"]), 0.001, "turbo kit writes its boost gain")
-	assert_almost_eq(cfg.brake_torque, 1000.0 * float(brk["brake_torque_mult"]), 0.001, "brake kit multiplies brake torque")
 	assert_almost_eq(cfg.mass, 1000.0 * float(wgt["mass_mult"]), 0.001, "weight reduction multiplies mass")
 	assert_almost_eq(cfg.downforce_front, float(aero["downforce_front"]), 0.001, "aero kit adds front downforce")
 	assert_almost_eq(cfg.downforce_rear, float(aero["downforce_rear"]), 0.001, "aero kit adds rear downforce")
@@ -136,21 +133,19 @@ func test_no_upgrades_leaves_config_untouched() -> void:
 	assert_almost_eq(cfg.peak_torque, 250.0, 0.001, "empty upgrade list is a no-op")
 
 
-func test_aero_and_brake_bias_tuning_are_gated_by_upgrades() -> void:
+func test_aero_tuning_is_gated_by_the_aero_upgrade() -> void:
 	var bare := {"installed_upgrades": []}
 	assert_false(UpgradeLibrary.aero_tuning_unlocked(bare), "aero tuning locked with no aero kit")
-	assert_false(UpgradeLibrary.brake_bias_unlocked(bare), "brake bias locked with no brake kit")
-	var kitted := {"installed_upgrades": ["fx_aero", "fx_brakes"]}
+	var kitted := {"installed_upgrades": ["fx_aero"]}
 	assert_true(UpgradeLibrary.aero_tuning_unlocked(kitted), "aero kit unlocks aero tuning")
-	assert_true(UpgradeLibrary.brake_bias_unlocked(kitted), "brake kit unlocks brake bias")
 
 
 func test_disabled_upgrades_are_inert_everywhere() -> void:
 	# A part toggled off in the upgrades menu stays fitted but contributes nothing:
 	# no config effect, no effective-meta shift, no tuning gate.
 	var car := {
-		"installed_upgrades": ["fx_turbo_big", "fx_aero", "fx_brakes"],
-		"disabled_upgrades": ["fx_turbo_big", "fx_aero", "fx_brakes"],
+		"installed_upgrades": ["fx_turbo_big", "fx_aero", "fx_lightweight"],
+		"disabled_upgrades": ["fx_turbo_big", "fx_aero", "fx_lightweight"],
 	}
 	var cfg := GameConfig.new()
 	cfg.peak_torque = 100.0
@@ -161,7 +156,6 @@ func test_disabled_upgrades_are_inert_everywhere() -> void:
 	var eff := UpgradeLibrary.effective_meta(car, entry)
 	assert_almost_eq(float(eff["peak_torque"]), 200.0, 0.001, "a disabled part doesn't shift effective stats")
 	assert_false(UpgradeLibrary.aero_tuning_unlocked(car), "a disabled aero kit doesn't unlock aero tuning")
-	assert_false(UpgradeLibrary.brake_bias_unlocked(car), "a disabled brake kit doesn't unlock brake bias")
 	# enabled_upgrades reflects the toggle; re-enabling brings the part back.
 	assert_eq(UpgradeLibrary.enabled_upgrades(car).size(), 0, "everything disabled -> nothing enabled")
 	car["disabled_upgrades"] = []

@@ -519,7 +519,8 @@ and page chrome live on the hub, each menu page gets the **full panel height to
 itself** and doesn't need to scroll. The two pages:
 
 - **Tune** (`LiftPage.TUNE`) — a slider per handling tuning axis (grip / brake-bias /
-  aero; locked axes greyed with a "needs X kit" note) plus **Reset to neutral** (which
+  aero; aero is greyed with a "needs Aero Kit" note until the kit is fitted — grip and
+  brake bias are always tunable) plus **Reset to neutral** (which
   clears only the handling axes and **preserves** engine detune); each change saves via
   `Save.set_tuning`. The engine-detune slider is NOT here — it moved to the **Upgrades**
   page's `UpgradesMenu` (detune is a power / power-to-weight knob, not a handling axis).
@@ -631,12 +632,14 @@ opens the pin under the finger. **Crucially the station overlays are made
 pass-through** (`_passthrough_overlay` sets every non-button control to
 `MOUSE_FILTER_IGNORE`) — otherwise the full-rect HUD container/labels/spacer (all
 default `STOP`) would swallow every touch and the 3D pins would never get a pick.
-Tapping a pin opens the **rally detail** sub-panel — a **two-column card** built
-in `_build_detail_overlay` / populated in `_show_detail`. Header: rally name,
-region tag, and a gold **SHOWDOWN** chip on showdown rallies. **Left column
-(STAGES):** one row per event — stage number and the surface-mix text, on a tight
-4 px separation so a long mix stays on one line — then the "combined stage times
-decide your result" note. **Right column:** the eligible-cars **restriction** (the
+Tapping a pin opens the **rally detail** sub-panel — a **single-column card** built
+in `build_detail_overlay` (`hq_overlays.gd`) / populated in `_show_detail`. Header:
+rally name **with the stage count appended** (`"Coastal Sprint - 3 stages"`, singular
+"stage" for a one-stage rally), region tag, and a gold **SHOWDOWN** chip on showdown
+rallies. There is deliberately **no per-stage breakdown** — the old left-hand STAGES
+column (one row per event with its gravel/tarmac surface mix) was removed to free the
+full panel width on small screens; the stage count on the title is the whole story.
+**Body (full width):** the eligible-cars **restriction** (the
 power-to-weight gate, not the hidden difficulty tier — the band is printed as a bare
 `N–M hp/tonne`, the unit carries the meaning); an **eligibility read-out** —
 `_eligibility_summary(rally, owned)` collects the qualifying cars and
@@ -644,10 +647,8 @@ power-to-weight gate, not the hidden difficulty tier — the band is printed as 
 `+N more` tail, or RED "no cars qualify" / muted "no cars owned yet" — with a GOLD
 caution for how many **need a tune / swap to
 fit** — and a **YOUR RECORD** line (best finish + a
-`StarRow`, hidden entirely until the rally has a placement). The two columns are
-anchored at a fixed `SPLIT` (60/40 in favour of STAGES, whose rows carry the long
-surface-mix text) rather than laid out by an HBox, so the ratio is exact regardless of
-content. Everything is uppercase + one font size (`UITheme.enforce`), so
+`StarRow`, hidden entirely until the rally has a placement).
+Everything is uppercase + one font size (`UITheme.enforce`), so
 hierarchy comes from **layout, colour, and separators**, not font size. The
 summary is tallied on top of `_entry_plan` so it always agrees with the map pin.
 **Enter Rally** flies out to the car park, **◄ Map** dismisses the panel, and the

@@ -26,7 +26,7 @@ torque scale, default `1.0` (full power), stored in the same `tuning` bag but
 | Axis | Slider | Maps to | Gated by |
 |------|--------|---------|----------|
 | `grip_balance` | −1 understeer ↔ +1 oversteer | shifts `wheel_friction_slip_front`/`_rear` | always available |
-| `brake_bias` | −1 rearward ↔ +1 forward | the front/rear `brake_bias` split (drivetrain) | the **brakes** upgrade (`unlocks_brake_bias`) |
+| `brake_bias` | −1 rearward ↔ +1 forward | the front/rear `brake_bias` split (drivetrain) | always available |
 | `aero_balance` | −1 front ↔ +1 rear | shifts `downforce_front`/`_rear` | the **aero** upgrade (`unlocks_aero_tuning`) |
 
 **`engine_detune`** ([engine-swap.md](engine-swap.md)) is stored in the per-car
@@ -87,9 +87,8 @@ or invert a value:
 - **aero:** same shape on `downforce_front`/`_rear`, **only** with the aero kit; a
   no-op otherwise. The aero kit's visual wing (spoiler/splitter) is covered in [aero-parts.md](aero-parts.md).
 - **brake bias:** each car authors its own default `brake_bias` in `CarLibrary`,
-  seeded onto `cfg` by `apply_car`. With the brakes kit the slider shifts it about
-  that per-car baseline: `brake_bias += t·brake_authority`; without the kit the car
-  keeps its default (so a re-fielded car can't keep an unlocked bias). Free-roam
+  seeded onto `cfg` by `apply_car`. The slider shifts it about that per-car
+  baseline: `brake_bias += t·brake_authority`, ungated (no upgrade needed). Free-roam
   (`apply_car`, no `OwnedCar`) uses the car's default directly. A car that omits the
   field falls back to the `GameConfig.brake_bias` default.
 
@@ -220,7 +219,8 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
 ## Tests
 
 - `tests/headless/test_tuning_library.gd` — neutral is a no-op; grip shifts rearward
-  forward (oversteer) monotonically and needs no upgrade; aero/brake-bias gating; slider clamp.
+  forward (oversteer) monotonically and needs no upgrade; brake bias is tunable with no
+  upgrades; aero gating; slider clamp.
 - `tests/headless/test_drivetrain.gd` — the brake-bias split sends the foot brake to
   the chosen axle (`brake_bias` 1.0 locks the front, 0.0 the rear); `0.5` regression.
 - `tests/headless/test_menu_flow.gd` — the lift raises the selected car; sliders save

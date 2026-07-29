@@ -254,8 +254,6 @@ var _map_meter: Label           # progress-to-showdown meter on the table HUD
 var _detail_title: Label
 var _detail_region: Label        # region tag under the title (muted)
 var _detail_showdown: Label      # gold "SHOWDOWN" chip on the header row
-var _detail_stages: VBoxContainer  # one row per event (index + surface bar + mix text)
-var _detail_combined: Label      # "combined time sets your result" note
 var _detail_restriction: Label   # the eligibility restriction summary
 var _detail_qualify: Label       # the qualifying cars, named (GREEN / RED / muted)
 var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
@@ -1453,7 +1451,12 @@ func _on_rally_pin(rally_id: String) -> void:
 # Show the detail panel for the selected rally (a sub-state of the TABLE view).
 func _show_detail() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
-	_detail_title.text = String(rally.get("name", "?"))
+	# The stage COUNT is all the per-stage detail the panel shows now — it rides on the
+	# title ("Coastal Sprint - 3 stages") instead of a whole left-hand column.
+	var stage_count: int = (rally.get("events", []) as Array).size()
+	_detail_title.text = "%s - %d %s" % [
+		String(rally.get("name", "?")), stage_count,
+		"stage" if stage_count == 1 else "stages"]
 	var region := String(rally.get("region", ""))
 	_detail_region.text = region  # UITheme.enforce uppercases it
 	_detail_region.visible = region != ""
@@ -1461,14 +1464,6 @@ func _show_detail() -> void:
 	# sees) — the eligible-car requirement is the visible gate. The showdown chip
 	# replaces the old trailing "THE SHOWDOWN" body line.
 	_detail_showdown.visible = bool(rally.get("showdown", false))
-
-	# --- Stages: one row each — index, a gravel/tarmac bar, and the mix text.
-	for child in _detail_stages.get_children():
-		child.queue_free()
-	var events: Array = rally.get("events", [])
-	for i in events.size():
-		_detail_stages.add_child(_stage_row(i + 1, events[i]))
-	_detail_combined.text = "Combined stage times decide your result."
 
 	# --- Eligibility: restriction + how many of the player's cars can enter.
 	_detail_restriction.text = _restriction_text(rally.get("restriction", {}))
@@ -1491,31 +1486,14 @@ func _show_detail() -> void:
 	# --- Record: best finish + medal stars.
 	var best := Save.best_placement(_selected_rally_id)
 	_detail_record.text = "Best: P%d" % best if best > 0 else "Not yet completed"
-	# An unrun rally has no medals to show — an empty star row next to "not yet completed"
-	# is noise, so hide it entirely rather than drawing three blanks.
-	_detail_stars.visible = best > 0
+	# The star row always shows, unrun or not — an empty row of three reads as
+	# "no medals yet" and keeps the record line's layout stable between rallies.
+	_detail_stars.visible = true
 	_detail_stars.setup(_stars_for(_selected_rally_id), MAX_STARS)
 
 	_detail_open = true
 	_view = View.TABLE
 	_update_overlays()
-
-
-# One stage row for the detail card: the stage number, a gravel/tarmac colour bar,
-# and the human-readable surface mix. All three share one line via an HBox.
-func _stage_row(index: int, event: Dictionary) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	# Tight gap + a narrow number column: the mix text wraps, so every pixel spent here
-	# is a pixel a long mix ("60% gravel / 40% tarmac") loses off its single line.
-	row.add_theme_constant_override("separation", 4)
-	var num := _label(str(index), 16)
-	num.custom_minimum_size = Vector2(14, 0)
-	row.add_child(num)
-	var mix := _label(_surface_mix_text(event), 16)
-	mix.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	mix.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(mix)
-	return row
 
 
 # How many of the player's owned `cars` can enter `rally`, tallied on top of
@@ -2854,18 +2832,6 @@ func _restriction_text(restriction: Dictionary) -> String:
 	elif has_min:
 		parts.append(">= %.0f hp/tonne" % float(restriction["pw_min"]))
 	return ", ".join(parts)
-
-
-# Human-readable gravel/tarmac surface mix for one rally event. Full-one-surface
-# events read as just "all gravel" / "all tarmac"; mixed events show both shares.
-func _surface_mix_text(event: Dictionary) -> String:
-	var tarmac := RallyLibrary.event_tarmac_fraction(event)
-	if tarmac <= 0.0:
-		return "all gravel"
-	if tarmac >= 1.0:
-		return "all tarmac"
-	var tarmac_pct := int(round(tarmac * 100.0))
-	return "%d%% gravel / %d%% tarmac" % [100 - tarmac_pct, tarmac_pct]
 
 
 # --- Camera ------------------------------------------------------------------

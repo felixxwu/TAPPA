@@ -180,7 +180,7 @@ func test_toggle_upgrade_enabled_is_exclusive_per_slot() -> void:
 	assert_false(UpgradeLibrary.is_enabled(fitted_car, "fx_turbo_small"),
 		"enabling one part disables the same-slot other")
 	# A part that isn't on the car can't be toggled.
-	assert_false(_save.set_upgrade_enabled(id, "fx_brakes", true), "toggling an unapplied part is rejected")
+	assert_false(_save.set_upgrade_enabled(id, "fx_aero", true), "toggling an unapplied part is rejected")
 
 
 func test_install_rejects_consumables_and_unknown_items() -> void:
@@ -274,6 +274,20 @@ func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 	assert_eq(_save.profile["cars"][0]["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "backfilled straight")
 
 
+func test_sanitise_drops_parts_retired_from_the_catalogue() -> void:
+	# A part removed from UpgradeLibrary leaves stale ids on old saves; load must
+	# prune them from both lists so the id can't occupy a phantom slot in the menu.
+	_save.profile["cars"] = [{
+		"instance_id": 9, "model_id": "fx_light_rwd", "hp": 500.0,
+		"installed_upgrades": ["fx_aero", "retired_part"],
+		"disabled_upgrades": ["retired_part"], "tuning": {},
+	}]
+	_save.profile = _save._sanitise(_save.profile)
+	var car: Dictionary = _save.profile["cars"][0]
+	assert_eq(car["installed_upgrades"], ["fx_aero"], "the retired part is dropped, the real one kept")
+	assert_eq(car["disabled_upgrades"], [], "the retired part is dropped from the toggles too")
+
+
 func test_repair_kit_revives_a_wrecked_car() -> void:
 	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
 	var id := int(car["instance_id"])
@@ -349,12 +363,12 @@ func test_migration_v1_strips_unbound_slottable_parts_keeps_repair_kits() -> voi
 	# kits (the one consumable) stay pooled.
 	var v1: Dictionary = _save._default_profile()
 	v1["schema_version"] = 1
-	v1["inventory"] = {"fx_turbo_small": 2, "fx_brakes": 1, UpgradeLibrary.REPAIR_KIT_ID: 3}
+	v1["inventory"] = {"fx_turbo_small": 2, "fx_aero": 1, UpgradeLibrary.REPAIR_KIT_ID: 3}
 	var migrated: Dictionary = _save._migrate(v1)
 	assert_eq(int(migrated["schema_version"]), _save.SCHEMA_VERSION, "migrated to current schema")
 	var inv: Dictionary = migrated["inventory"]
 	assert_false(inv.has("fx_turbo_small"), "unbound slottable part dropped")
-	assert_false(inv.has("fx_brakes"), "unbound slottable part dropped")
+	assert_false(inv.has("fx_aero"), "unbound slottable part dropped")
 	assert_eq(int(inv.get(UpgradeLibrary.REPAIR_KIT_ID, 0)), 3, "repair kits preserved")
 
 

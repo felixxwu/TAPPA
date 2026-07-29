@@ -215,16 +215,16 @@ var peak_torque_rpm := 4500.0
 # normalized sliders in [-1, +1] (grip_balance / brake_bias / aero_balance);
 # TuningLibrary.apply re-balances the live config from these, scaled by the
 # authority knobs below so a slider can never zero or invert a value. The lift
-# UI (hq.gd) drives the sliders; gating (aero/brake) comes from installed upgrades.
+# UI (hq.gd) drives the sliders; the aero gate comes from the installed aero kit.
 ## Front share of the foot-brake torque (the front/rear split drivetrain.gd
 ## applies). 0.5 = equal split. This is only the FALLBACK: CarLibrary.apply_car
-## seeds it per-car from each car's authored brake_bias, and the brakes-kit slider
+## seeds it per-car from each car's authored brake_bias, and the brake-bias slider
 ## shifts it about that baseline. Used directly only for a car that omits the field.
 @export_range(0.0, 1.0) var brake_bias := 0.5
 ## Max fraction of grip shifted front<->rear at slider |1| (grip_balance).
 @export_range(0.0, 1.0) var tuning_grip_authority := 0.3
-## Half-span the brake_bias slider can move from the car's default (gated by the
-## brakes upgrade) — e.g. 0.3 lets a car with a 0.55 default reach [0.25, 0.85].
+## Half-span the brake_bias slider can move from the car's default (ungated — brake
+## bias is free) — e.g. 0.3 lets a car with a 0.55 default reach [0.25, 0.85].
 @export_range(0.0, 0.5) var tuning_brake_authority := 0.3
 ## Max fraction of downforce shifted front<->rear at slider |1| (aero_balance,
 ## gated by the aero upgrade).

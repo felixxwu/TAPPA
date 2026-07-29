@@ -6,7 +6,7 @@ extends GutTest
 
 const TuningPanelScript = preload("res://scripts/tuning_panel.gd")
 
-# A synthetic owned car — brake/aero locked (no upgrades), grip always tunable.
+# A synthetic owned car — aero locked (no upgrades); grip + brake bias always tunable.
 func _owned() -> Dictionary:
 	return {"instance_id": 1, "model_id": "synthetic", "tuning": {}, "upgrades": {}}
 
@@ -32,8 +32,9 @@ func test_editing_grip_writes_axis_and_fires_callback() -> void:
 
 func test_locked_axis_slider_not_editable() -> void:
 	var p = _panel(_owned())
-	assert_false(p._sliders["brake_bias"].editable, "brake_bias locked without kit")
+	assert_false(p._sliders["aero_balance"].editable, "aero_balance locked without the aero kit")
 	assert_true(p._sliders["grip_balance"].editable, "grip always editable")
+	assert_true(p._sliders["brake_bias"].editable, "brake bias always editable")
 
 func test_reset_clears_handling_axes() -> void:
 	var owned := _owned()

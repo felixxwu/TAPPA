@@ -155,6 +155,29 @@
   code — never weaken thresholds, flip signs, or delete assertions just to
   get back to green.
 
+## Parallel agents share this checkout
+
+- **Assume other agents are editing this same working tree right now.** Multiple
+  agents may run in parallel against this one checkout, so uncommitted changes you
+  didn't make are normal and are almost certainly someone else's in-flight work.
+  Leave them alone: don't revert, clean, or "tidy up" files outside the scope of
+  your own task.
+- **NEVER stash to isolate a test failure.** Do not run `git stash`,
+  `git checkout -- <file>`, `git restore`, `git reset --hard`, or any other
+  "let me temporarily remove the changes and re-run to see if it was me" move.
+  It can silently destroy another agent's work, and stash/restore races are not
+  recoverable. If a test fails, leave every change in place and REPORT the
+  failure with its output, plus your read on whether your work looks implicated.
+  Reason about causality by reading the code and the diff, not by rewinding the
+  tree.
+- Because a failure may originate from another agent's concurrent edits, "this
+  test fails" is not automatically evidence that your change is wrong — but it's
+  also not licence to weaken the test. Say plainly what failed, what you touched,
+  and let the user arbitrate if it isn't clearly yours.
+- Keep commits scoped to your own files. Never `git commit -a` / `git add -A`
+  when unrelated modified files are present — stage the specific paths you
+  changed.
+
 ## Environment
 
 - Godot binary: `/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot`

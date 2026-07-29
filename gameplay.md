@@ -215,7 +215,7 @@ Two distinct systems:
   pool on apply, so fitting is a one-time, confirmed commitment; once fitted a
   part can be enabled/disabled per car but never moved), won as rewards and lost
   with the car if it is destroyed. Examples:
-  engine/power, aero kit (unlocks aero tuning), suspension, brakes, plus the
+  engine/power, aero kit (unlocks aero tuning), suspension, plus the
   **repair kit** (consumed to heal damage). *(Exact upgrade list + how each maps
   to config knobs → its own todo.)*
 

@@ -71,9 +71,9 @@ extends RefCounted
 # drive_mode matches Drivetrain.DriveMode: 0 RWD, 1 AWD, 2 FWD.
 #
 # brake_bias (0..1) is the car's default front share of foot-brake torque, copied
-# onto cfg.brake_bias in car.gd apply_car(). It's the baseline the brakes-kit
+# onto cfg.brake_bias in car.gd apply_car(). It's the baseline the brake-bias
 # tuning slider re-centres on (TuningLibrary.apply, ±tuning_brake_authority);
-# without the kit the car simply keeps this default. Omit to fall back to the
+# at neutral the car simply keeps this default. Omit to fall back to the
 # GameConfig.brake_bias default. Higher = more front braking. See features/tuning.md.
 #
 # bonnet_cam_offset (Vector3, metres, car-local) nudges the bonnet/hood camera on

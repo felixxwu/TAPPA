@@ -17,9 +17,8 @@ extends RefCounted
 # (Config.data) in place, scaled by the GameConfig authority knobs so a slider
 # can never zero or invert a value. Pure static; mutates only the passed-in cfg.
 
-# The three handling axes the tuning lift exposes. grip is always available;
-# brake_bias / aero are gated by the brakes / aero upgrades (UpgradeLibrary),
-# matching the lift UI. engine_detune is NOT here — it's a power (p/w) knob, so
+# The three handling axes the tuning lift exposes. grip + brake_bias are always
+# available; aero is gated by the aero upgrade (UpgradeLibrary), matching the lift UI. engine_detune is NOT here — it's a power (p/w) knob, so
 # its slider lives in the upgrades menu (UpgradesMenu); apply() still reads the
 # stored tuning.engine_detune below, wherever it was set from.
 const AXES := ["grip_balance", "brake_bias", "aero_balance"]
@@ -43,13 +42,10 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	# brake_bias: −1 rearward ↔ +1 forward. Maps to the front/rear foot-brake split
 	# (cfg.brake_bias, applied in drivetrain.gd). Like grip/aero above, it shifts the
 	# value already in cfg — the car's per-car default brake bias, seeded by
-	# CarLibrary.apply_car. The brakes kit lets the slider move it
-	# ±tuning_brake_authority about that baseline; without the kit the car simply keeps
-	# its default — so a previously-tuned car re-fielded without the kit can't keep an
-	# unlocked bias.
-	if UpgradeLibrary.brake_bias_unlocked(owned_car):
-		var b := clampf(float(tuning.get("brake_bias", 0.0)), -1.0, 1.0)
-		cfg.brake_bias += b * cfg.tuning_brake_authority
+	# CarLibrary.apply_car. The slider moves it ±tuning_brake_authority about that
+	# baseline; always available (no upgrade gate).
+	var b := clampf(float(tuning.get("brake_bias", 0.0)), -1.0, 1.0)
+	cfg.brake_bias += b * cfg.tuning_brake_authority
 
 	# aero_balance: −1 front ↔ +1 rear downforce. Same shape as grip on the
 	# downforce pair. Gated by the aero upgrade; a no-op without it.
@@ -65,12 +61,10 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 	cfg.peak_torque *= clampf(float(tuning.get("engine_detune", 1.0)), 0.0, 1.0)
 
 
-# Whether an axis is tunable for this car: grip always, brake_bias / aero only with
-# the matching upgrade installed. Used by the lift UI to enable/disable each slider.
+# Whether an axis is tunable for this car: grip + brake_bias always, aero only with
+# the aero upgrade installed. Used by the lift UI to enable/disable each slider.
 static func axis_unlocked(owned_car: Dictionary, axis: String) -> bool:
 	match axis:
-		"brake_bias":
-			return UpgradeLibrary.brake_bias_unlocked(owned_car)
 		"aero_balance":
 			return UpgradeLibrary.aero_tuning_unlocked(owned_car)
 		_:

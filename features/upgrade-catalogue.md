@@ -21,7 +21,7 @@ is the upgrades half.
 ## Catalogue
 
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
-(`turbo` / `aero` / `weight` / `brakes` / `drivetrain`, or `""` for consumables),
+(`turbo` / `aero` / `weight` / `drivetrain`, or `""` for consumables),
 `tier` (reward-tier gating), `consumable`, an optional `free` flag (always-available,
 never-drawn parts — the ballast; see below), and `effect` (config-field → delta/multiplier).
 
@@ -57,7 +57,7 @@ The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the ge
 earn-gated option row — see below.
 Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
 tier 2), an aero kit, the three **weight** parts above,
-a big brake kit, and the two consumables — the **repair kit** and the **engine
+the drivetrain swap kit, and the two consumables — the **repair kit** and the **engine
 swap token** (both `slot: ""`, held in the shared `inventory`; the token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md)). The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
@@ -138,13 +138,13 @@ predictably:
 4. **Damage multipliers** — power/steer degraded by HP fraction (`features/damage.md`).
 
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored
-`.tres`. `*_mult` keys multiply the baseline (`brake_torque`, `mass`); additive
+`.tres`. `*_mult` keys multiply the baseline (`mass`); additive
 keys add (`downforce_front` / `downforce_rear`); `install_turbo` writes the turbo
 fields (see above).
 `unlocks_*` keys are **flags**, skipped by `apply` — they gate tuning sliders, not
-config. `aero_tuning_unlocked(car)` / `brake_bias_unlocked(car)` read those flags
-so the tuning lift only exposes aero / brake-bias sliders when the matching kit
-is fitted.
+config. `aero_tuning_unlocked(car)` reads that flag so the tuning lift only exposes
+the aero slider when the kit is fitted. Brake bias is **not** gated — it's a free
+tuning axis on every car (see [tuning.md](tuning.md)).
 
 > **Mass re-sync:** `car.gd.apply_car` copies the baseline `mass` onto the
 > RigidBody, but upgrades run *after* it (step 2), so `apply_owned` re-assigns
@@ -216,8 +216,8 @@ not the podium) confirms the part with a single "Next" step — see `features/re
 `tests/headless/test_upgrade_library.gd` — catalogue validity (unique ids, known
 slots, consumables have no slot), lookups, effect application (multiplies/adds on a
 baseline incl. `mass_mult`; empty list is a no-op), `effective_meta`
-(lightens/empowers a meta copy without mutating the source), and the aero /
-brake-bias tuning gates. `test_rally_library.gd` covers an installed upgrade
+(lightens/empowers a meta copy without mutating the source), and the aero
+tuning gate. `test_rally_library.gd` covers an installed upgrade
 qualifying / disqualifying a car for a rally's pw band; `test_car_library.gd`
 covers `apply_owned` re-syncing the RigidBody mass after a weight-reduction kit.
 Disabled parts being inert everywhere (config, effective stats, tuning gates) is

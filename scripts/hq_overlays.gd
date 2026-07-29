@@ -162,55 +162,14 @@ func build_detail_overlay() -> void:
 
 	root.add_child(HSeparator.new())
 
-	# --- Two columns: STAGES (left) | status sidebar (right). Laid out by ANCHOR at a
-	# fixed SPLIT (not an HBox), so the ratio is exact regardless of content — an HBox
-	# only shares LEFTOVER space by ratio and keeps each column's content-driven minimum
-	# first, which let the wider side dictate the split. `cols` is a plain Control that
-	# fills the remaining height; the two columns anchor to its left/right with a centre
-	# gutter. STAGES gets the larger share: its rows carry the long surface-mix text,
-	# while the sidebar is short status lines.
-	const HALF_GUTTER := 16.0
-	const SPLIT := 0.55
-	var cols := Control.new()
-	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(cols)
-
-	var left := VBoxContainer.new()
-	left.anchor_left = 0.0
-	left.anchor_right = SPLIT
-	left.anchor_top = 0.0
-	left.anchor_bottom = 1.0
-	left.offset_right = -HALF_GUTTER
-	cols.add_child(left)
-	left.add_child(_hq._detail_heading("Stages"))
-	_hq._detail_stages = VBoxContainer.new()
-	_hq._detail_stages.add_theme_constant_override("separation", 8)
-	left.add_child(_hq._detail_stages)
-	_hq._detail_combined = _hq._label("", 16)
-	_hq._detail_combined.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hq._detail_combined.add_theme_color_override("font_color", UITheme.INK_DIM)
-	left.add_child(_hq._detail_combined)
-
-	# A thin centre divider between the two halves.
-	var divider := ColorRect.new()
-	divider.color = UITheme.INK_DIM
-	divider.anchor_left = SPLIT
-	divider.anchor_right = SPLIT
-	divider.anchor_top = 0.0
-	divider.anchor_bottom = 1.0
-	divider.offset_left = -1.0
-	divider.offset_right = 1.0
-	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cols.add_child(divider)
-
+	# --- One full-width status column. The old per-stage breakdown (surface mix per
+	# event) was more detail than the player needs here and cost half the panel; the
+	# stage COUNT now rides on the header title instead ("Coastal Sprint - 3 stages"),
+	# which frees the whole width for the eligibility read-out on small screens.
 	var right := VBoxContainer.new()
-	right.anchor_left = SPLIT
-	right.anchor_right = 1.0
-	right.anchor_top = 0.0
-	right.anchor_bottom = 1.0
-	right.offset_left = HALF_GUTTER
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 4)
-	cols.add_child(right)
+	root.add_child(right)
 	right.add_child(_hq._detail_heading("Eligibility"))
 	# All sidebar text wraps within the column so a long restriction / caution can't
 	# draw past the panel edge (Labels don't clip by default).

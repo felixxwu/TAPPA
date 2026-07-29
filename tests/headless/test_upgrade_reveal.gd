@@ -34,16 +34,16 @@ func _make() -> UpgradeReveal:
 func test_slottable_part_reveal_leaves_it_fitted_disabled_and_finishes() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
-	_save.install_upgrade(id, "fx_brakes", false)  # reward loop fitted it disabled
+	_save.install_upgrade(id, "fx_aero", false)  # reward loop fitted it disabled
 	var w := _make()
 	var done := [false]
 	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
-	w.reveal("fx_brakes", id)
+	w.reveal("fx_aero", id)
 	await get_tree().process_frame
 	assert_false(w._choice_pending, "a normal part is one 'Next' step, no Apply/Keep choice")
 	assert_false(w._choice_box.visible, "no choice buttons are shown")
-	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_brakes"), "the part stays fitted")
-	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_brakes"),
+	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_aero"), "the part stays fitted")
+	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_aero"),
 		"the part stays disabled — enabled later in the upgrades menu")
 	assert_true(done[0], "finished fires immediately")
 

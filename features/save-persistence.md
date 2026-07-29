@@ -121,7 +121,10 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
   file is never silently overwritten (parsed via the `JSON` instance API so
   malformed input returns an error code rather than crashing).
 - **Unknown `model_id`** (a car dropped from `CarLibrary`) is pruned on load with
-  a warning, keeping old saves loadable as the roster evolves.
+  a warning, keeping old saves loadable as the roster evolves. The same pass
+  (`_prune_unknown_upgrades`) drops fitted / toggled-off part ids that no longer
+  resolve against `UpgradeLibrary`, so a part retired from the catalogue can't
+  linger in a car's `installed_upgrades` and occupy a phantom slot in the menu.
 - **Migration** is keyed by version (`_MIGRATIONS`, currently empty) as pure
   `Dictionary -> Dictionary` transforms; a newer-than-known version refuses to
   load and runs in-memory rather than clobbering the file.
@@ -171,7 +174,7 @@ uniqueness, HP seeding, idempotent rally completion, wreck-returns-upgrades,
 the starter wrecking like any car, the `ensure_repair_safety_net` free-kit floor
 (all cars wrecked + none held), inventory counts,
 migration refuse/backfill, corrupt-JSON
-and `.bak` fallback, unknown-model pruning, new-game reset.
+and `.bak` fallback, unknown-model + retired-part pruning, new-game reset.
 `tests/headless/test_save_web_lifecycle.gd` — the web lifecycle seam: the shared
 `flush_and_sync()` entry point writes immediately (bypassing the debounce) and
 round-trips, the desktop close notification reaches that same entry point, a

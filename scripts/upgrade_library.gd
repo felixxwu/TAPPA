@@ -23,7 +23,7 @@ const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
-const SLOTS := ["turbo", "aero", "weight", "brakes", "drivetrain"]
+const SLOTS := ["turbo", "aero", "weight", "drivetrain"]
 
 
 # Each entry is an UpgradeDef. `effect` maps to GameConfig fields applied in
@@ -69,11 +69,6 @@ const UPGRADES: Array[Dictionary] = [
 	{
 		"id": "weight_reduction", "name": "Weight Reduction", "slot": "weight",
 		"tier": 1, "consumable": false, "effect": {"mass_mult": 0.80},
-	},
-	{
-		"id": "brake_kit", "name": "Big Brake Kit", "slot": "brakes",
-		"tier": 1, "consumable": false,
-		"effect": {"brake_torque_mult": 1.20, "unlocks_brake_bias": true},
 	},
 	{
 		"id": "drivetrain_swap", "name": "Drivetrain Swap", "slot": "drivetrain",
@@ -157,12 +152,10 @@ static func is_enabled(owned_car: Dictionary, item_id: String) -> bool:
 #              effective_meta must mirror it; the rest are cfg-only.
 const EFFECTS := {
 	"install_turbo":       {"field": "", "op": "install_turbo", "feeds_pw": true},
-	"brake_torque_mult":   {"field": "brake_torque", "op": "mult", "feeds_pw": false},
 	"mass_mult":           {"field": "mass", "op": "mult", "feeds_pw": true},
 	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false},
 	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false},
 	"unlocks_aero_tuning": {"field": "", "op": "flag", "feeds_pw": false},
-	"unlocks_brake_bias":  {"field": "", "op": "flag", "feeds_pw": false},
 	"unlocks_drivetrain_swap": {"field": "", "op": "flag", "feeds_pw": false},
 }
 
@@ -202,7 +195,7 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 # a fitted engine kit or weight reduction shifts the displayed hp/tonne AND can
 # qualify / disqualify the car for a rally's pw band (RallyLibrary.is_eligible).
 # Pure: returns a fresh dict, never touches the authored CARS entry. Only the
-# meta-level numeric stats are adjusted here; downforce / brake / tuning gates
+# meta-level numeric stats are adjusted here; downforce / tuning gates
 # don't feed power-to-weight, so they're left to the live-config `apply` above.
 static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 	if meta.is_empty():
@@ -290,19 +283,15 @@ static func max_potential_meta(owned_car: Dictionary, meta: Dictionary) -> Dicti
 
 
 # --- Tuning gates ------------------------------------------------------------
-# Aero / brake-bias tuning is only live when the matching upgrade is installed
-# (todo/menus.md › tuning-lift knobs). These read the car's installed items.
+# Aero tuning is only live when the aero kit is installed (todo/menus.md ›
+# tuning-lift knobs). Brake bias is NOT gated — it's a free axis on every car.
 
 static func aero_tuning_unlocked(owned_car: Dictionary) -> bool:
 	return _has_flag(owned_car, "unlocks_aero_tuning")
 
 
-static func brake_bias_unlocked(owned_car: Dictionary) -> bool:
-	return _has_flag(owned_car, "unlocks_brake_bias")
-
-
 static func drivetrain_swap_unlocked(owned_car: Dictionary) -> bool:
-	# Unlike the aero / brake gates, the drivetrain kit has NO enable/disable — owning
+	# Unlike the aero gate, the drivetrain kit has NO enable/disable — owning
 	# it IS the unlock, and the selector's stock choice plays the "off" role (disabling
 	# would just re-select the original drive mode). So this checks INSTALLED, not
 	# enabled: a won-but-not-yet-podium-applied kit is usable immediately, not stranded.

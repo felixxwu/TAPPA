@@ -7,8 +7,7 @@ extends RefCounted
 #
 # The fixture parts cover every EFFECT shape the apply / effective_meta pipeline
 # reads: install_turbo, mass_mult (both a reduction < 1 and a `free` ballast > 1),
-# unlocks_aero_tuning + downforce, brake_torque_mult + unlocks_brake_bias, and
-# unlocks_drivetrain_swap. It also re-exports the two STRUCTURAL consumables by
+# unlocks_aero_tuning + downforce, and unlocks_drivetrain_swap. It also re-exports the two STRUCTURAL consumables by
 # their real constant ids (UpgradeLibrary.REPAIR_KIT_ID / ENGINE_SWAP_TOKEN_ID) —
 # these are referenced by constant across the save / reward code (like the engine
 # FIRING layout keys the car fixtures reuse), so keeping them present means an
@@ -48,11 +47,6 @@ static func upgrades() -> Array[Dictionary]:
 		{
 			"id": "fx_ballast", "name": "Fixture Ballast", "slot": "weight",
 			"tier": 1, "consumable": false, "free": true, "effect": {"mass_mult": 1.3},
-		},
-		{
-			"id": "fx_brakes", "name": "Fixture Brakes", "slot": "brakes", "tier": 1,
-			"consumable": false,
-			"effect": {"brake_torque_mult": 1.20, "unlocks_brake_bias": true},
 		},
 		{
 			"id": "fx_drivetrain", "name": "Fixture Drivetrain", "slot": "drivetrain",

@@ -82,7 +82,7 @@ func refresh() -> void:
 		if unlocked:
 			value.text = "%+.2f" % slider.value
 		else:
-			value.text = "needs %s" % ("Big Brake Kit" if axis == "brake_bias" else "Aero Kit")
+			value.text = "needs Aero Kit"
 
 
 func _on_slider_changed(value: float, axis: String) -> void:

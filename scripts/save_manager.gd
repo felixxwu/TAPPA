@@ -194,8 +194,9 @@ func _read_file(path: String) -> Dictionary:
 	return json.data
 
 
-# Drop entries that no longer resolve against the current roster (a car removed
-# from CarLibrary) so old saves stay loadable as the roster evolves.
+# Drop entries that no longer resolve against the current catalogues (a car removed
+# from CarLibrary, a part removed from UpgradeLibrary) so old saves stay loadable as
+# the content evolves.
 func _sanitise(p: Dictionary) -> Dictionary:
 	var kept: Array = []
 	for car in p.get("cars", []):
@@ -203,11 +204,27 @@ func _sanitise(p: Dictionary) -> Dictionary:
 			# Backfill per-wheel damage misalignment on saves that predate it (straight).
 			if not car.has("wheel_toe"):
 				car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
+			_prune_unknown_upgrades(car)
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
 	p["cars"] = kept
 	return p
+
+
+# Drop fitted / toggled-off part ids that no longer exist in UpgradeLibrary (a part
+# retired from the catalogue). An unknown id is already inert everywhere — by_id
+# returns {} so it has no effect and no slot — but leaving it on the car would let it
+# occupy a phantom slot in the upgrades menu, so clear it out on load.
+func _prune_unknown_upgrades(car: Dictionary) -> void:
+	for key in ["installed_upgrades", "disabled_upgrades"]:
+		var kept: Array = []
+		for item_id in car.get(key, []):
+			if UpgradeLibrary.index_of(String(item_id)) >= 0:
+				kept.append(item_id)
+			else:
+				push_warning("Save: dropping unknown upgrade '%s'" % item_id)
+		car[key] = kept
 
 
 func has_save() -> bool:

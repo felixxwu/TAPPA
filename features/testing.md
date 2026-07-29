@@ -181,7 +181,7 @@ same pattern for the rally and upgrade catalogues:
   test checking eligibility should `CarFixtures.install()` its cars too.
 - **UpgradeFixtures:** a turbo slot-pair (`fx_turbo_small`/`fx_turbo_big`,
   distinct `menu_label`), `fx_aero`, `fx_lightweight` (`mass_mult < 1`),
-  `fx_ballast` (free, `mass_mult > 1`), `fx_brakes`, `fx_drivetrain` — one part
+  `fx_ballast` (free, `mass_mult > 1`), `fx_drivetrain` — one part
   per effect shape the apply/`effective_meta` pipeline reads. It re-exports the
   two **structural** consumables by their real constant ids
   (`UpgradeLibrary.REPAIR_KIT_ID` / `ENGINE_SWAP_TOKEN_ID`) so the save/reward

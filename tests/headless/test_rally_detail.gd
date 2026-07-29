@@ -105,19 +105,21 @@ func test_qualifying_text_elides_the_overflow() -> void:
 	assert_true(text.contains("+2 more"), "the elided count is reported")
 
 
-func test_star_row_is_hidden_until_the_rally_has_a_record() -> void:
-	# An unrun rally shows "not yet completed" with NO star row; once there's a placement
-	# the medals appear. Uses whatever the first roster rally is — the identity is
-	# irrelevant, only the has-a-record / has-no-record branch matters.
+func test_star_row_always_shows_and_fills_with_the_record() -> void:
+	# The star row is always visible: unrun it reads as an empty row (0 earned), and a
+	# placement lights the medals. Uses whatever the first roster rally is — the identity
+	# is irrelevant, only the has-a-record / has-no-record branch matters.
 	var rally_id := String(RallyLibrary.all()[0].get("id", ""))
 	var saved: Dictionary = Save.profile["rallies"].duplicate(true)
 	Save.profile["rallies"].erase(rally_id)
 	_hq._selected_rally_id = rally_id
 	_hq._show_detail()
-	assert_false(_hq._detail_stars.visible, "no record → no star row")
+	assert_true(_hq._detail_stars.visible, "no record → still an (empty) star row")
+	assert_eq(_hq._detail_stars.earned, 0, "no record → no stars lit")
 	Save.profile["rallies"][rally_id] = {"best_placed": 1}
 	_hq._show_detail()
 	assert_true(_hq._detail_stars.visible, "a placement shows the medals")
+	assert_gt(_hq._detail_stars.earned, 0, "a placement lights at least one star")
 	Save.profile["rallies"] = saved
 
 
