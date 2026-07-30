@@ -258,6 +258,11 @@ var _viewed_region_index := 0   # which region's map/pins the table shows
 var _overlays: HqOverlays
 var _title_layer: CanvasLayer
 var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once dismissed
+# Optional cloud save, reachable from the title screen as well as from Settings —
+# a player restoring a career on a new device shouldn't have to find it in a
+# submenu. Null while closed. See features/cloud-save.md.
+var _account_layer: CanvasLayer
+var _account_menu: AccountMenu
 var _garage_layer: CanvasLayer
 var _table_layer: CanvasLayer
 var _detail_layer: CanvasLayer
@@ -291,6 +296,8 @@ var _title_start_button: Button  # EXTERIOR title Start — default keyboard/gam
 # These three are populated by HqOverlays.build_title_overlay (the assignment lives in
 # another class now) and read by tests, so GDScript's in-class "unused" check can't see
 # their use — silence it rather than reintroduce a dead in-class reference.
+@warning_ignore("unused_private_class_variable")
+var _title_account_button: Button  # EXTERIOR title Account (optional cloud save)
 @warning_ignore("unused_private_class_variable")
 var _title_exit_button: Button  # EXTERIOR title Exit Game (bottom of the list)
 @warning_ignore("unused_private_class_variable")
@@ -988,6 +995,46 @@ func _dismiss_android_app_notice() -> void:
 	_android_notice_layer.queue_free()
 	_android_notice_layer = null
 	_title_layer.visible = _view == View.EXTERIOR
+
+
+# --- Account overlay ---------------------------------------------------------
+# The title-screen route into optional cloud save. Same AccountMenu widget the
+# Settings page mounts; here it gets its own modal layer over the title so a
+# returning player can sign in before touching anything else.
+
+func _open_account_overlay() -> void:
+	if _account_layer != null:
+		return
+	_title_layer.visible = false
+	var made := _make_overlay()
+	_account_layer = made[0]
+	var root: VBoxContainer = made[1]
+	root.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	_account_menu = AccountMenu.new()
+	_account_menu.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_account_menu.custom_minimum_size = Vector2(420, 0)
+	root.add_child(_account_menu)
+
+	var back := Button.new()
+	back.text = "< Back"
+	back.focus_mode = Control.FOCUS_ALL
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	back.custom_minimum_size = Vector2(220, 44)
+	back.pressed.connect(_close_account_overlay)
+	root.add_child(back)
+
+	UITheme.enforce(root)
+
+
+func _close_account_overlay() -> void:
+	if _account_layer == null:
+		return
+	_account_layer.queue_free()
+	_account_layer = null
+	_account_menu = null
+	_title_layer.visible = _view == View.EXTERIOR
+	UITheme.focus_grab.bind(_title_start_button).call_deferred()
 
 
 
@@ -3302,6 +3349,19 @@ func _begin_rally_start() -> void:
 # --- Menu input (keyboard / gamepad; clicking 3D objects is the primary path) -
 
 func _unhandled_input(event: InputEvent) -> void:
+	# While the player is typing (the account sign-in form is the only text input
+	# in the game), the HQ must not read bare keys as station navigation, and Back
+	# belongs to the field — MenuNav turns it into "stop typing". One shared
+	# predicate so this guard cannot drift from the one MenuNav uses.
+	if MenuNav.is_text_editing():
+		return
+	# The account overlay is modal over the title screen: it owns Back until closed.
+	if _account_layer != null:
+		if event.is_action_pressed("menu_back") or event.is_action_pressed("ui_cancel"):
+			if not _account_menu.go_back():
+				_close_account_overlay()
+			get_viewport().set_input_as_handled()
+		return
 	match _view:
 		View.EXTERIOR:
 			# The title is a flat button menu (Start / Exit Game) driven by

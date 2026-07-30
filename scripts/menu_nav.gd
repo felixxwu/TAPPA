@@ -84,6 +84,11 @@ func _make_focusable(root: Node) -> void:
 		_enable(node as Control)
 	for node in root.find_children("*", "Slider", true, false):
 		_enable(node as Control)
+	# Text fields are focusable too, so a form (the account sign-in page) can be
+	# filled in with a gamepad / keyboard alone. Handled here rather than at the
+	# call site so every future form gets it without remembering to ask.
+	for node in root.find_children("*", "LineEdit", true, false):
+		_enable(node as Control)
 
 
 func _enable(c: Control) -> void:
@@ -117,11 +122,40 @@ func _menu_visible() -> bool:
 	return true
 
 
+# Is the player typing into a text field right now?
+#
+# Menus are driven by bare letter keys (WASD) and by Esc/B for back, both of
+# which a player also has to be able to TYPE. A focused LineEdit consumes
+# printable keys in the GUI phase before _unhandled_input, so WASD is safe by
+# construction — but Esc is NOT consumed, and any host with its own
+# _unhandled_input (hq.gd's station nav, settings_menu.gd's key-rebind capture)
+# sees everything regardless. One shared predicate so those hosts all ask the
+# same question rather than each inventing a guard.
+static func is_text_editing() -> bool:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var vp := (loop as SceneTree).root.get_viewport()
+		if vp != null:
+			var focused := vp.gui_get_focus_owner()
+			return focused is LineEdit or focused is TextEdit
+	return false
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Inert while the menu is hidden — otherwise a hidden overlay (e.g. an HQ panel
 	# layered over a diegetic station) would keep eating menu_* / ui_cancel and
 	# steal them from whatever is actually on screen.
 	if not _menu_visible():
+		return
+
+	# While typing, Back means "stop typing", not "leave the page" — otherwise Esc
+	# discards a half-entered email instead of just releasing the field.
+	if is_text_editing() \
+			and (event.is_action_pressed("ui_cancel") or event.is_action_pressed("menu_back")):
+		var editing := get_viewport().gui_get_focus_owner()
+		if editing != null:
+			editing.release_focus()
+		get_viewport().set_input_as_handled()
 		return
 
 	# Back first: Esc / gamepad B. Only if the host handed us an on_back.

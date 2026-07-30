@@ -316,6 +316,45 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 > `tests/headless/test_menu_nav.gd` / the nav cases in `test_menu_flow.gd` /
 > `test_pause_menu.gd`).
 
+## Text input (`text_field.gd`)
+
+`TextField` is the project's **only** text input (there was none at all before
+the account form — see [cloud-save.md](cloud-save.md)). A labelled `LineEdit`,
+built in code like every other menu widget. Making typing coexist with a menu
+driven by bare letter keys took four things:
+
+- **`MenuNav._make_focusable` now walks `LineEdit` too**, not just `BaseButton`
+  and `Slider` — otherwise a form is unreachable without a mouse.
+- **Up/down leave the field, left/right stay caret movement.**
+  `TextField.wire_column([...])` chains a form's controls explicitly (top and
+  bottom do not wrap — wrapping reads as the cursor teleporting) rather than
+  relying on Godot's automatic neighbour search.
+- **WASD is safe by construction**: a focused `LineEdit` consumes printable keys
+  in the GUI phase, before `_unhandled_input`. **Esc is not**, so
+  `MenuNav._unhandled_input` turns Back-while-typing into "release the field"
+  instead of "leave the page", and any host with its own `_unhandled_input`
+  (`hq.gd`) stands down via the shared **`MenuNav.is_text_editing()`** static.
+  One predicate, so those guards cannot drift apart.
+- **Enter submits** (`submitted` signal) — on a phone the on-screen keyboard can
+  cover the button, so this is sometimes the only way to submit at all.
+  `virtual_keyboard_enabled` is on for Android/web.
+
+Note that **Space is both `ui_accept` and a legal password character**; the
+focused field consumes it first, so typing wins. That is correct, but it is the
+thing to re-check by hand if the input map ever changes.
+
+Covered by `tests/headless/test_text_field.gd`.
+
+## Account page (`account_menu.gd`)
+
+`AccountMenu` is the optional cloud-save UI — one builder with **two hosts**,
+the same arrangement `SettingsMenu` uses: a category page inside Settings
+(`show_account`), and a standalone modal overlay from the title screen
+(`hq.gd::_open_account_overlay`). It exposes `at_root()` / `go_back()` so both
+hosts treat its sub-forms exactly like Settings sub-pages —
+`SettingsMenu.go_back()` gives it first refusal before backing out of the page.
+See [cloud-save.md](cloud-save.md).
+
 ## ConfirmPopup (`confirm_popup.gd`)
 
 A reusable on-brand confirm modal for blocking decisions — a full-screen **dim

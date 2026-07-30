@@ -30,7 +30,7 @@ func after_each() -> void:
 
 
 func _clean() -> void:
-	for suffix in ["", ".bak", ".tmp"]:
+	for suffix in ["", ".bak", ".tmp", ".conflict.bak"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
@@ -569,3 +569,100 @@ func _instance_ids() -> Array:
 	for car in _save.profile.get("cars", []):
 		ids.append(int(car["instance_id"]))
 	return ids
+
+
+# --- Cloud-save bookkeeping ---------------------------------------------------
+# The two fields the optional cloud layer keeps on the profile, and the entry
+# points it uses. Tested here (not in the cloud tests) because they are part of
+# Save's contract: they must behave correctly whether or not anyone is signed in.
+
+func test_a_fresh_profile_has_never_synced() -> void:
+	assert_eq(int(_save.profile["cloud_revision"]), 0)
+	assert_false(_save.has_unsynced(), "a brand-new profile owes the cloud nothing")
+
+
+func test_the_cloud_fields_are_backfilled_onto_an_older_profile() -> void:
+	# Added without a SCHEMA_VERSION bump, so they must arrive via the key
+	# backfill rather than requiring a migration step.
+	var f := FileAccess.open(TEST_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"schema_version": _save.SCHEMA_VERSION, "cars": []}))
+	f.close()
+	_save.load_or_new()
+	assert_true(_save.profile.has("cloud_revision"))
+	assert_true(_save.profile.has("unsynced"))
+
+
+func test_saving_marks_the_profile_unsynced() -> void:
+	_save.mark_synced()
+	assert_false(_save.has_unsynced())
+	_save.save()
+	assert_true(_save.has_unsynced(), "a local change is owed to the cloud")
+
+
+func test_the_unsynced_flag_survives_a_restart() -> void:
+	# Progress made offline must still be recognised as unsynced after a relaunch,
+	# or the next pull would see "cloud ahead, local clean" and discard the session.
+	_save.grant_car("fx_light_rwd")
+	_save.save_now()
+	_save.profile = {}
+	_save.load_or_new()
+	assert_true(_save.has_unsynced())
+
+
+func test_marking_synced_writes_immediately() -> void:
+	_save.save()
+	_save.mark_synced()
+	_save.profile = {}
+	_save.load_or_new()
+	assert_false(_save.has_unsynced(), "the cleared flag must be on disk, not just in memory")
+
+
+func test_save_emits_profile_changed() -> void:
+	watch_signals(_save)
+	_save.save()
+	assert_signal_emitted(_save, "profile_changed")
+
+
+func test_blocked_storage_still_notifies_the_cloud() -> void:
+	# Blocked local storage (private browsing, read-only fs) is exactly when a
+	# cloud copy matters most, so it must not also switch off cloud sync.
+	_save.save_disabled = true
+	watch_signals(_save)
+	_save.save()
+	assert_signal_emitted(_save, "profile_changed")
+
+
+func test_flush_and_sync_emits_flushed() -> void:
+	watch_signals(_save)
+	_save.flush_and_sync()
+	assert_signal_emitted(_save, "flushed")
+
+
+func test_adopting_a_profile_runs_it_through_the_shared_load_path() -> void:
+	# A downloaded profile gets the same pruning a local file does — one
+	# validation path, so cloud data can never be less checked than disk data.
+	var incoming: Dictionary = _save._default_profile()
+	incoming["starter_picked"] = true
+	incoming["cars"] = [{"instance_id": 1, "model_id": "a_model_that_does_not_exist", "hp": 50}]
+	assert_true(_save.adopt_profile(incoming))
+	assert_true(_save.profile["starter_picked"])
+	assert_eq((_save.profile["cars"] as Array).size(), 0, "unknown models are pruned as on load")
+
+
+func test_adopting_a_newer_profile_is_refused_and_changes_nothing() -> void:
+	_save.profile["starter_model_id"] = "keep_me"
+	var incoming: Dictionary = _save._default_profile()
+	incoming["schema_version"] = _save.SCHEMA_VERSION + 1
+	assert_false(_save.adopt_profile(incoming))
+	assert_eq(_save.profile["starter_model_id"], "keep_me",
+		"a profile we cannot read must not replace one we can")
+
+
+func test_the_conflict_backup_is_separate_from_the_rolling_bak() -> void:
+	# The ordinary .bak is consumed by the very next write; a conflict backup has
+	# to outlive that to be worth anything.
+	_save.profile["starter_model_id"] = "replaced"
+	_save.write_conflict_backup()
+	_save.save_now()
+	_save.save_now()
+	assert_true(FileAccess.file_exists(TEST_PATH + ".conflict.bak"))

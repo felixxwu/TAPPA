@@ -72,6 +72,23 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
   `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old
   profiles missing it are backfilled on load.
+- `cloud_revision` (int, default 0) / `unsynced` (bool, default false) — the
+  optional cloud-save bookkeeping, described in [cloud-save.md](cloud-save.md).
+  Both arrive via `_migrate`'s key backfill, so neither needed a
+  `SCHEMA_VERSION` bump. `unsynced` is PERSISTED deliberately: progress made
+  offline must still read as unsynced after a relaunch.
+
+**Credentials are NOT stored here.** `settings` lives inside the blob uploaded
+to Firestore, so auth tokens would be published to the database if they were
+kept in the profile. They live in a separate, never-synced `user://auth.json`
+(see [cloud-save.md](cloud-save.md) › "Credential storage").
+
+`Save` also exposes, for that layer only: the `profile_changed` / `flushed`
+signals, `has_unsynced()` / `mark_synced()`, `adopt_profile()` (runs a
+downloaded profile through the same migrate + sanitise path as a file on disk)
+and `write_conflict_backup()` (a `.conflict.bak` that outlives the rolling
+`.bak`). The dependency runs one way — `Cloud` knows about `Save`, never the
+reverse.
 
 Max-HP is **CarLibrary metadata, not stored**; `OwnedCar.hp` is seeded from and
 clamps to it. Opponent times, track geometry, etc. are derived from seeds, not

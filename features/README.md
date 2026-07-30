@@ -24,6 +24,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [architecture.md](architecture.md) | Project layout, scene tree, autoloads, data flow |
 | [configuration.md](configuration.md) | `GameConfig` resource — every tunable, the `Config` autoload |
 | [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, rally completion) at `user://profile.json` |
+| [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
 | [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`, opponent field, showdown gating) |
 | [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, the HQ table's diegetic region swap, sequential unlock + per-region showdown + final-region credits |
 | [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — upgrade items + the effect-application pipeline (slotted parts, repair kit, tuning gates) |

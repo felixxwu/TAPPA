@@ -24,6 +24,7 @@ driver/output_latency.web=150
 
 Config="*res://scripts/config.gd"
 Save="*res://scripts/save_manager.gd"
+Cloud="*res://scripts/cloud/cloud_manager.gd"
 InputRemap="*res://scripts/input_remap.gd"
 RallySession="*res://scripts/rally_session.gd"
 Benchmark="*res://scripts/benchmark_mode.gd"

@@ -25,6 +25,10 @@ func build_title_overlay() -> void:
 	# fires the focused one. (The 3D stations behind it keep menu_* nav.) Settings lives on
 	# the garage action row now, not here (see build_garage_overlay).
 	_hq._title_start_button = _hq._title_button(root, "Start", 52.0, _hq._on_exterior_start)
+	# Account (optional cloud save) sits directly under Start: a player reinstalling
+	# or moving to a new device needs it BEFORE they start a fresh career, so burying
+	# it in Settings would be the wrong place. Also mirrored as a Settings page.
+	_hq._title_account_button = _hq._title_button(root, "Account", 44.0, _hq._open_account_overlay)
 	# Exit Game: quit the application. Sits at the bottom of the title list. Skipped on
 	# the web build, where there's no OS process to quit (the tab owns the lifecycle).
 	if not Platform.is_web():

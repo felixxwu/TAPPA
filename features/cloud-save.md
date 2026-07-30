@@ -1,0 +1,260 @@
+# Cloud Save (optional account)
+
+An **optional** account backs the player's career up to Firebase and lets them
+continue it on another device. Signing in is never required: a player who
+ignores it sees no change at all, and every failure mode here degrades to "you
+keep playing locally".
+
+`user://profile.json` remains the **source of truth for the running session**
+(see [save-persistence.md](save-persistence.md)). The cloud holds a copy.
+
+Backend: Firebase project **`tapparally`**, using the **REST APIs** over
+`HTTPRequest` — Identity Toolkit for auth, Firestore for the document. There is
+no Godot Firebase SDK in use, and none is wanted: REST behaves identically on
+web, Android, Windows and macOS, which is exactly the property this needs.
+
+## Layout
+
+| File | Responsibility |
+|---|---|
+| `scripts/cloud/cloud_manager.gd` | The **`Cloud` autoload** — the facade the game talks to. Owns the other four. |
+| `scripts/cloud/firebase_config.gd` | `FirebaseConfig` — project id, API key, OAuth client ids, endpoint builders. |
+| `scripts/cloud/rest_client.gd` | `RestClient` — the ONLY `HTTPRequest` in the project. The test seam. |
+| `scripts/cloud/auth_service.gd` | `AuthService` — sign-in, token refresh, credential storage, error mapping. |
+| `scripts/cloud/cloud_sync.gd` | `CloudSync` — Firestore document encoding, the conflict model, debounce/backoff. |
+| `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). |
+| `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by Settings and by the title screen. |
+| `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
+| `firestore.rules` | Security rules, kept in git rather than only in the console. |
+
+**Dependency direction: `Cloud` → `Save`, never the reverse.** `Save` emits
+`profile_changed` / `flushed` and knows nothing about who is listening, so the
+save layer and its tests behave identically whether or not cloud save exists.
+
+## Authentication
+
+Two methods, both through Identity Toolkit REST:
+
+- **Email + password** (`accounts:signInWithPassword` / `signUp`), plus password
+  reset via `accounts:sendOobCode`.
+- **Google** (`accounts:signInWithIdp`) — see below.
+
+**Anonymous ("guest") sign-in was deliberately NOT built**, despite Firebase
+offering it and it being an obvious third option. It would protect against
+nothing here. A guest account's only credential is the refresh token in
+`user://auth.json`, which sits beside the profile it is meant to be insuring:
+lose the device or reinstall, and both go together, leaving the cloud document
+permanently orphaned. The one scenario cloud save exists for is the one guest
+mode cannot cover. Its other supposed benefit — "link later and keep your
+career" — is already what ordinary sign-up does, since the first sign-in pushes
+whatever progress is on the device. Not signing in IS the no-account state; it
+needs no button. Do not add it back without a reason that survives that
+argument.
+
+### Google sign-in — one native flow, one web flow
+
+**Native (Windows, macOS, *and Android*): loopback redirect + PKCE.** Bind a
+`TCPServer` on `127.0.0.1` (port 0, never `0.0.0.0`), `OS.shell_open` Google's
+consent screen with `redirect_uri=http://127.0.0.1:<port>`, catch the single
+inbound GET, verify the `state` nonce, and exchange the code with the PKCE
+verifier. No client secret — a desktop OAuth client is a public client and PKCE
+is what authenticates the exchange.
+
+Including Android in this path is the single biggest simplification in the
+design: the obvious alternative (a custom URL scheme / deep link) needs an
+`AndroidManifest` intent-filter, which needs a custom Godot Android build, which
+this project does not have. A loopback listener needs none of it.
+
+**Web: Google Identity Services.** Driven over `JavaScriptBridge` using the same
+`create_callback` + member-held-`JavaScriptObject` pattern as `save_manager.gd`'s
+web lifecycle hook (drop the handle and the listener silently detaches). GIS
+alone, **not** the Firebase JS SDK — GIS returns an ID token directly, and the
+Firebase SDK would mean a second copy of auth state we already own in GDScript.
+The prompt is invoked straight from the button's input event so the browser does
+not classify it as a blocked popup; a blocked or failed load produces a specific
+message rather than a hang.
+
+### Credential storage — the trap
+
+Tokens live in **`user://auth.json`**, never in the profile.
+
+`profile["settings"]` is *inside the blob uploaded to Firestore*. A refresh token
+parked there would publish a long-lived credential into the database and
+replicate it to every other device on the account. `auth.json` holds the refresh
+token, uid and email; the short-lived `id_token` is kept in memory
+only and never written; the password is never stored anywhere.
+`test_cloud_auth.gd` asserts all three of those.
+
+## The Firestore document
+
+One document per user: `users/{uid}`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `profile` | string | The profile JSON, verbatim |
+| `schema_version` | integer | `Save.SCHEMA_VERSION` at write time |
+| `revision` | integer | Monotonic; +1 per successful push |
+| `updated_utc` | string | For display only — nothing branches on it |
+| `device` | string | `web` / `android` / `windows` / `macos` — for the conflict prompt |
+
+Storing the profile as **one opaque blob** is deliberate: the existing local
+migration machinery (`Save._migrate`, `_sanitise`) applies to a downloaded blob
+unchanged, so there is no hand-written Firestore field mapping to keep in step
+with the schema forever.
+
+Encoding lives in the pure statics `CloudSync.to_document` / `from_document`.
+Note that Firestore encodes `integerValue` as a JSON **string** (so 64-bit values
+survive JSON); decoding it as a number would silently yield 0 and break every
+revision comparison. `PATCH` always carries an explicit `updateMask.fieldPaths`,
+without which Firestore treats the write as a full replace.
+
+## Conflict model — revisions, not clocks
+
+"Newest wins" needs an ordering, and wall-clock time is not one: a phone and a
+desktop routinely disagree, and one wrong clock would silently eat the other
+device's career.
+
+Two profile fields carry the state, both backfilled by `_migrate`'s key backfill
+so **no `SCHEMA_VERSION` bump was needed**:
+
+- **`cloud_revision`** (int, default 0) — the document revision this profile last
+  agreed with.
+- **`unsynced`** (bool, default false) — does this device hold changes the cloud
+  has not accepted? **Persisted on purpose**: progress made offline must still
+  read as unsynced after a relaunch, or the next pull would see "cloud ahead,
+  local clean" and quietly discard a whole offline session.
+
+`Save.save()` sets `unsynced`; `Save.mark_synced()` clears it and writes
+immediately.
+
+| Cloud | Local | Action |
+|---|---|---|
+| No document (404) | any | Push local |
+| `revision <= cloud_revision` | clean | Nothing |
+| `revision <= cloud_revision` | unsynced | Push |
+| `revision > cloud_revision` | clean | Download and apply |
+| `revision > cloud_revision` | unsynced | **Conflict → ask the player** |
+| `schema_version > SCHEMA_VERSION` | any | Refuse; do not push either |
+| blob unparseable | any | Report; never overwrite the remote copy |
+
+The conflict prompt is a `ConfirmPopup` with legible summaries produced by
+`CloudSync.describe_profile` ("5 cars, 12 rallies completed") rather than raw
+revision numbers:
+
+- **Keep this device** — push at `remote.revision + 1`, so the other device sees
+  a clean "cloud is ahead" next time.
+- **Use cloud** — apply the downloaded profile, after writing
+  `profile.json.conflict.bak`. Deliberately a *separate* filename from the
+  rolling `.bak`, which the next ordinary write consumes within seconds.
+- **Decide later** (also the back action) — sync stays paused with a warning on
+  the Account page. Explicitly **not** a silent pick of either side.
+
+A downloaded profile goes through `Save.adopt_profile`, i.e. the same
+migrate + sanitise path as a local file, so cloud data is never less validated
+than disk data.
+
+## Sync triggers
+
+Push is debounced **~8 s** (distinct from Save's ~1 s local debounce: a disk
+write is free, a network round trip is not) and flushed immediately on
+`Save.flush_and_sync()`. That last point matters: the existing web
+`visibilitychange`/`pagehide` listeners and the native close/pause notifications
+already funnel through that one entry point, so the cloud path inherits
+tab-close and app-pause handling on every platform **with no new lifecycle
+plumbing**.
+
+Pull happens at sign-in and on `NOTIFICATION_APPLICATION_RESUMED`.
+
+Failures back off exponentially (2 s → 60 s, jittered). The retry queue is a
+single "dirty" bit, not a list of operations — the payload is always the whole
+current profile, so a retry can never apply stale data.
+
+## Error handling
+
+| Failure | Behaviour |
+|---|---|
+| Offline / timeout / 429 / 5xx | Queue, back off, "not synced". No popups mid-race. |
+| Refresh rejected (auth) | Sign out locally, one notice, local play untouched |
+| Refresh failed (network) | Retry; **do not** sign out |
+| 401 / 403 | Named plainly with the code — a rules misconfiguration, not a player error |
+| Cloud schema newer | Refuse to apply *or* overwrite; "update the game" |
+| Cloud blob unparseable | Report; leave the remote copy alone |
+| `Save.save_disabled` | Cloud sync still runs — blocked local storage is when it matters most |
+
+## UI
+
+`AccountMenu` is one builder with two hosts, mirroring how `SettingsMenu`
+already works:
+
+- **Settings → Account** (`settings_menu.gd`: `_build_account_page`,
+  `show_account`, an entry in `_pages` and in the category grid).
+- **Title screen → Account** (`hq_overlays.gd::build_title_overlay` →
+  `hq.gd::_open_account_overlay`), directly under Start. A player reinstalling or
+  moving to a new device needs it *before* starting a fresh career, so burying it
+  in Settings would be the wrong place.
+
+Signed out: Google (hidden when unconfigured) / sign in with email / create an
+account. There is deliberately no "continue without an account" button — that is
+what closing the page does, and the Back button already says so. Signed in:
+identity, sync status, last sync, Sync now, Sign out.
+
+Signing out needs no confirm and **never touches the local profile**: nothing is
+destroyed, the career on the device carries on, and the cloud copy is reachable
+again by signing back in.
+
+## Setup prerequisites (console work)
+
+1. Authentication → enable **Email/Password** and **Google**. (Anonymous is
+   deliberately unused — see above.)
+2. Enabling Google auto-creates a **Web** OAuth client → `GOOGLE_WEB_CLIENT_ID`.
+3. Google Cloud → Credentials → **OAuth client ID → Desktop app** →
+   `GOOGLE_DESKTOP_CLIENT_ID`. (Only desktop-type clients may use loopback
+   redirects; the web client may not.)
+4. Firestore → create the database (Native mode); deploy `firestore.rules`.
+5. Auth → Settings → **Authorised domains** → add the itch.io origin.
+
+Both client-id constants are **empty** until step 2/3 are done;
+`FirebaseConfig.google_configured()` is false meanwhile and the UI hides the
+Google button rather than offering an option that cannot work.
+
+The **API key is public by design** and safe to commit — it identifies the
+project, it does not authorise anything. `firestore.rules` is what protects the
+data.
+
+## Tests
+
+- `tests/headless/fake_rest_client.gd` — the stand-in for `RestClient`. A real
+  coroutine (it awaits a frame), so code under test takes the same await path it
+  takes against a live network.
+- `tests/headless/test_cloud_auth.gd` — each sign-in path's endpoint and body,
+  local validation short-circuits, mapped **and unmapped** error codes,
+  network-vs-auth refresh failure, credential persistence and the three
+  "no credential in the profile / no password on disk" guards.
+- `tests/headless/test_cloud_sync.gd` — document encoding (incl. the
+  integer-as-string trap), every row of the conflict matrix, all three
+  resolutions, the `.conflict.bak`, failure classification, backoff growth and
+  cap, the update mask, and that the uploaded blob is not marked unsynced.
+- `tests/headless/test_text_field.gd` — the nav support (see [menus.md](menus.md)).
+- `tests/headless/test_save_manager.gd` — the two new profile fields, their
+  backfill onto older profiles, `profile_changed` / `flushed`, `adopt_profile`
+  refusing a newer schema, and the conflict backup outliving the rolling `.bak`.
+- `tests/headless/test_smoke.gd` — the `Cloud` autoload is registered and inert.
+
+## Not yet verified (needs a human)
+
+None of the following can be exercised headlessly; this list is the acceptance
+check, and **nothing here has been run yet**:
+
+1. Email register → sign out → sign in, on desktop.
+2. Google sign-in on Windows/macOS (loopback), Android (loopback), web (GIS).
+3. **CORS from the itch.io origin** for `identitytoolkit`, `securetoken`,
+   `firestore.googleapis.com` and the GIS script. Godot web `HTTPRequest` goes
+   through `fetch`; these endpoints are documented as browser-usable, but this
+   is unverified from that origin and is the most plausible blocker.
+4. Two-device round trip: progress on desktop → sign in on phone → it appears.
+5. Genuine divergence: play offline on both, reconnect, confirm the prompt.
+6. Airplane mode mid-session: no hang, no data loss, sync resumes.
+
+Related: the local web round-trip in `todo/web-save-persistence.md` is still
+unverified too. Do that one **first** — a broken local IndexedDB flush would make
+check 4 above ambiguous.

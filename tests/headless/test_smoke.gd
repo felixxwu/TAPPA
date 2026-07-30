@@ -41,6 +41,15 @@ func test_save_autoload_registered() -> void:
 	assert_true(save.has_method("grant_car"), "Save exposes grant_car()")
 
 
+func test_cloud_autoload_registered() -> void:
+	# Optional cloud save (features/cloud-save.md). Present on every build; inert
+	# until the player signs in, so its mere existence must never change anything.
+	var cloud := get_node_or_null("/root/Cloud")
+	assert_not_null(cloud, "Cloud autoload registered")
+	assert_true(cloud.has_method("sign_in_email"), "Cloud exposes sign_in_email()")
+	assert_false(cloud.is_signed_in(), "a fresh test run is signed out")
+
+
 func test_music_director_autoload_is_registered() -> void:
 	# The autoload SINGLETON is named "Music" (it can't be "MusicDirector" — that
 	# would collide with the class_name). Its type is MusicDirector.

@@ -16,6 +16,19 @@ extends Node
 # diverge in HP / upgrades / tuning (the random-car reward can grant a model you
 # already own). Max-HP is CarLibrary metadata, derived not stored.
 
+# Emitted after any mutation marks the profile dirty. The optional cloud-save
+# layer (the `Cloud` autoload) subscribes to this to schedule an upload.
+#
+# The dependency runs ONE WAY: Cloud knows about Save, Save knows nothing about
+# Cloud. That keeps this autoload — and its tests — working identically whether
+# or not cloud save is present or signed in.
+signal profile_changed()
+
+# Emitted by flush_and_sync(), the single "we are about to go away" entry point
+# (desktop close / app pause / browser visibilitychange + pagehide). Cloud uses
+# it to attempt a last upload.
+signal flushed()
+
 # Bump on any breaking shape change to PlayerProfile; older files are migrated
 # forward on load (see _migrate), newer files are refused rather than truncated.
 const SCHEMA_VERSION := 2
@@ -91,6 +104,10 @@ func _notification(what: int) -> void:
 func flush_and_sync() -> void:
 	save_now()
 	request_web_sync()
+	# Give the optional cloud layer its chance to upload too. It is fire-and-
+	# forget: a browser tab can die before an HTTP request completes, which is
+	# why the local file — already written above — stays the source of truth.
+	flushed.emit()
 
 
 # Register the browser lifecycle listeners. Returns true if they were installed
@@ -237,9 +254,14 @@ func has_save() -> bool:
 # / call sites after a change; the actual disk write happens once the burst
 # settles. No-op when storage is disabled.
 func save() -> void:
+	# Mark unsynced + notify BEFORE the save_disabled bail-out: blocked local
+	# storage (private browsing, read-only fs) is exactly the situation where a
+	# cloud copy is most valuable, so it must not also switch off cloud sync.
+	profile["updated_utc"] = Time.get_datetime_string_from_system(true)
+	profile["unsynced"] = true
+	profile_changed.emit()
 	if save_disabled:
 		return
-	profile["updated_utc"] = ""  # caller may stamp; cosmetic, see Notes in spec
 	_debounce.start()
 
 
@@ -273,6 +295,51 @@ func reset_new_game() -> void:
 	save_now()
 
 
+# --- Cloud-save support ------------------------------------------------------
+# These exist for the optional `Cloud` autoload. They live here, rather than in
+# the cloud layer, so that the ONE profile-validation path (migrate + sanitise)
+# is shared: a downloaded profile is checked exactly as strictly as a file on
+# disk, and there is no second implementation to drift out of step with the
+# schema.
+
+# Does this device hold changes the cloud has not accepted yet?
+func has_unsynced() -> bool:
+	return bool(profile.get("unsynced", false))
+
+
+# Record that the current profile state has been accepted by the cloud. Writes
+# immediately (not via save(), which would just mark it unsynced again).
+func mark_synced() -> void:
+	profile["unsynced"] = false
+	save_now()
+
+
+# Replace the in-memory profile with one received from the cloud, running it
+# through the SAME migrate + sanitise pipeline as a local file. Returns false —
+# leaving the current profile untouched — when the incoming profile is newer
+# than this build understands, which is the one case where overwriting would
+# lose data we cannot even read.
+func adopt_profile(incoming: Dictionary) -> bool:
+	var migrated := _migrate(incoming.duplicate(true))
+	if migrated.is_empty():
+		return false
+	profile = _sanitise(migrated)
+	ensure_repair_safety_net()
+	return true
+
+
+# Snapshot the profile before a cloud copy replaces it, so "Use cloud" chosen by
+# mistake is recoverable. Deliberately a SEPARATE filename from the rolling .bak
+# (which the next ordinary write would consume within seconds).
+func write_conflict_backup() -> void:
+	var f := FileAccess.open(profile_path + ".conflict.bak", FileAccess.WRITE)
+	if f == null:
+		push_warning("Save: could not write a conflict backup before replacing the profile")
+		return
+	f.store_string(JSON.stringify(profile, "\t"))
+	f.close()
+
+
 func _default_profile() -> Dictionary:
 	return {
 		"schema_version": SCHEMA_VERSION,
@@ -289,6 +356,16 @@ func _default_profile() -> Dictionary:
 		"showdown_completed": false,
 		"reward_history": [],
 		"settings": {},
+		# --- Optional cloud save (see features/cloud-save.md) ---
+		# The Firestore document revision this profile last agreed with. 0 means
+		# "never synced". Both fields are backfilled by _migrate's key backfill,
+		# so no SCHEMA_VERSION bump was needed.
+		"cloud_revision": 0,
+		# Does this device hold changes the cloud has not accepted? PERSISTED on
+		# purpose: progress made offline must still be recognised as unsynced
+		# after a restart, otherwise the next pull would see "cloud is ahead,
+		# local is clean" and quietly discard a whole offline session.
+		"unsynced": false,
 	}
 
 

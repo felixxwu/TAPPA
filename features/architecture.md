@@ -68,6 +68,13 @@ Declared in `project.godot` `[autoload]`:
   autosaves on every meaningful change. Per-player *mutable progress*, kept
   distinct from `Config`'s authored baseline. See
   [save-persistence.md](save-persistence.md).
+- **`Cloud`** → `scripts/cloud/cloud_manager.gd`. Optional Firebase account +
+  Firestore profile sync. Inert until the player signs in, and the dependency
+  runs ONE WAY (`Cloud` subscribes to `Save`'s `profile_changed`/`flushed`;
+  `Save` knows nothing about it), so the game behaves identically with cloud
+  save unused. It owns the project's only `HTTPRequest`, behind `RestClient` —
+  which is also the seam the headless tests fake. See
+  [cloud-save.md](cloud-save.md).
 - **`RallySession`** → `scripts/rally_session.gd`. The rally-level event-flow
   orchestrator — idle until a rally starts, then survives the per-event scene
   reloads while it sequences events, placement and rewards. See

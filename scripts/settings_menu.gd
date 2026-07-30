@@ -65,6 +65,8 @@ var _scheme_page: VBoxContainer
 var _benchmark_page: VBoxContainer
 var _dev_page: VBoxContainer
 var _dev_status: Label  # feedback line on the dev page ("Granted …", "Wiped …")
+var _account_page: VBoxContainer
+var _account: AccountMenu  # optional cloud save; see features/cloud-save.md
 var _pages: Array[Control] = []  # all swappable pages, list first; see _build()
 
 # Seed-lab page: trial (seed, water level, …) combinations against a live
@@ -124,13 +126,14 @@ func _build() -> void:
 	_build_schemes_page()
 	_build_benchmark_page()
 	_build_dev_page()
+	_build_account_page()
 	_build_seedlab_page()
 
 	# Single source of truth for the swappable pages (list first — it's the
 	# default page). _show_page / focus_current_page fan out over this so adding
 	# a page only means appending it here.
 	_pages = [_list_page, _audio_page, _display_page, _camera_page, _controls_page,
-			_scheme_page, _benchmark_page, _dev_page, _seedlab_page]
+			_scheme_page, _benchmark_page, _dev_page, _account_page, _seedlab_page]
 
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
@@ -158,6 +161,7 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
 	list_grid.add_child(_make_nav_button("Benchmark", show_benchmark))
+	list_grid.add_child(_make_nav_button("Account", show_account))
 	list_grid.add_child(_make_nav_button("Dev", show_dev))
 	list_grid.add_child(_make_nav_button("Seed lab", show_seedlab))
 
@@ -265,6 +269,16 @@ func _build_dev_page() -> void:
 			_dev_page.add_child(_make_action_button("Fit %s" % up_name, _fit_upgrade.bind(up_id, up_name)))
 
 
+# Account sub-page — optional cloud save. The AccountMenu widget owns the whole
+# page (it is also hosted standalone from the title screen), so this is just a
+# mount point.
+func _build_account_page() -> void:
+	_account_page = _make_page()
+	add_child(_account_page)
+	_account = AccountMenu.new()
+	_account_page.add_child(_account)
+
+
 func _build_seedlab_page() -> void:
 	# Seed lab — a FULL-SCREEN overlay (like the loading screen), NOT a scrolling
 	# settings page: a black background over the whole screen, the animated track
@@ -365,6 +379,11 @@ func at_root() -> bool:
 func go_back() -> bool:
 	if at_root():
 		return false
+	# The account page has its own sub-forms (sign in / register / reset), so give
+	# it first refusal before backing out of the page entirely.
+	if _account_page != null and _account_page.visible and _account != null \
+			and _account.go_back():
+		return true
 	show_list()
 	return true
 
@@ -423,6 +442,10 @@ func show_benchmark() -> void:
 
 func show_dev() -> void:
 	_show_page(_dev_page)
+
+
+func show_account() -> void:
+	_show_page(_account_page)
 
 
 func show_seedlab() -> void:
