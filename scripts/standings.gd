@@ -194,8 +194,9 @@ func _on_action() -> void:
 
 
 # Hide the leaderboard and take over the screen with the reward reveal (same card
-# as the podium). The card stays up; once the reveal + Apply/Keep choice resolves a
-# Continue button appears beneath it that resumes into the next event.
+# as the podium). The card stays up; the reveal's own Upgrades/Next row (see
+# UpgradeReveal._show_actions) is the only "I'm done" affordance — pressing Next
+# resolves `finished`, which continues straight into the next event.
 func _collect_reward() -> void:
 	_reward_collected = true  # so _reward_pending() is false once we continue
 	for c in get_children():
@@ -220,26 +221,10 @@ func _collect_reward() -> void:
 	_reveal = UpgradeReveal.new()
 	_reveal.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(_reveal)
+	_action_button = null
 
-	# Continue appears only once the reveal (and any Apply/Keep choice) resolves, so
-	# the player can't skip past the reward card before deciding.
-	var cont := Button.new()
-	cont.text = "Continue to next stage >"
-	cont.focus_mode = Control.FOCUS_ALL
-	cont.visible = false
-	cont.pressed.connect(_on_action)  # _reward_collected is set, so this continues
-	root.add_child(cont)
-	_action_button = cont
-
-	_reveal.finished.connect(_on_reward_collected.bind(cont), CONNECT_ONE_SHOT)
+	_reveal.finished.connect(RallySession.continue_to_next_event, CONNECT_ONE_SHOT)
 	_reveal.reveal(RallySession.current_event_upgrade(), RallySession.car_instance_id())
-
-
-func _on_reward_collected(cont: Button) -> void:
-	cont.visible = true
-	UITheme.enforce(self)  # house rules on the freshly-shown button
-	# Framework wires focus + WASD/arrow/gamepad nav to Continue now that it's shown.
-	MenuNav.attach(self, {first = cont, on_back = _on_back_pressed})
 
 
 # Back (keyboard/gamepad, via MenuNav on_back): from the combined page (reached from

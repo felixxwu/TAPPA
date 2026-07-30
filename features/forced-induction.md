@@ -142,7 +142,8 @@ Two non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
     }},
 },
 {
-    "id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 2, "consumable": false,
+    "id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 1,
+    "requires_upgrade_id": "turbo_small", "consumable": false,
     "effect": {"install_turbo": {
         "turbo_boost_gain": 0.8, "turbo_inertia": 2.0e-2, "turbo_omega_ref": 14000.0,
         "turbo_drive_gain": 0.028, "turbo_drag_coef": 6.5e-7, "turbo_parasitic_friction": 18.0,
@@ -154,6 +155,12 @@ Two non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
 (These exact numbers are authored balance placeholders — see
 [configuration.md](configuration.md)'s tuning philosophy; do not pin them in
 tests.)
+
+Big Turbo is **prerequisite-gated** rather than difficulty-gated: it sits at
+ordinary tier 1 (same as Small Turbo) but carries `requires_upgrade_id:
+"turbo_small"`, so `RewardSystem`'s reward draw won't offer it until Small
+Turbo is already owned somewhere in the garage — see `upgrade-catalogue.md`'s
+"Prerequisite gate" and `reward-system.md`'s upgrade-draw section.
 
 `UpgradeLibrary.apply()` handles the shared `"install_turbo"` effect key
 generically: it sets `cfg.turbo_enabled = true`, then copies every key/value

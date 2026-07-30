@@ -134,6 +134,13 @@ off the line recedes naturally as it drives away, and is silenced
 still-audible distant idle isn't hard-cut. (This replaced the earlier custom
 per-car mute + manual distance fade, which proximity attenuation subsumes.)
 
+Because `start_queue_gap` (7 m) is smaller than the normal full-volume radius and the
+falloff is logarithmic, every queued car used to sit at/near full volume at once —
+cluttered. `engine_audio.gd` now tightens the radius for queued cars (not the one on
+the reveal card) while `sequence_phase() == Seq.REVEAL`, reading `StartLine.active_instance`
+and `reveal_focus_car()` (`_grid[0]`) to tell them apart — see
+[engine-audio.md](engine-audio.md) → *Tighter radius while queued at the start line*.
+
 ## Straight start lead-in (staged runs)
 
 The grid needs straight road ahead (for the cars' run-off) and behind (for the staged

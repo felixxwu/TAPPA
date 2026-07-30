@@ -112,7 +112,6 @@ road colour uses (grass↔road and gravel↔tarmac — see [terrain.md](terrain.
 - `velocity_at(point)` — linear + angular×offset.
 - `driveline_omega()` — effective driven-wheel speed (rear for RWD/AWD, front for
   FWD), fed to the engine.
-- `cycle_drive_mode()` — RWD → AWD → FWD.
 - `_update_visuals()` — rotates wheel meshes from simulated spin (not Godot's
   ground estimate).
 

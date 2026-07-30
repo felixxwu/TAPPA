@@ -82,10 +82,11 @@ func test_by_id_unknown_returns_empty() -> void:
 
 
 func test_context_songs_resolve_to_real_catalogue_entries() -> void:
-	# The HQ song and every rally-pool id must point at real songs (contract, not
+	# Every HQ-pool and rally-pool id must point at real songs (contract, not
 	# pinning which song or its bpm).
-	assert_false(MusicLibrary.entry_of(MusicLibrary.HQ_SONG).is_empty(),
-		"HQ_SONG is a real catalogue entry")
+	for id in MusicLibrary.HQ_SONGS:
+		assert_false(MusicLibrary.entry_of(id).is_empty(),
+			"HQ song '%s' is a real catalogue entry" % id)
 	for id in MusicLibrary.RALLY_SONGS:
 		assert_false(MusicLibrary.entry_of(id).is_empty(),
 			"rally song '%s' is a real catalogue entry" % id)
@@ -109,3 +110,17 @@ func test_random_rally_song_avoids_the_excluded_id() -> void:
 	for i in 50:
 		assert_ne(MusicLibrary.random_rally_song(exclude), exclude,
 			"random_rally_song must not return the excluded id")
+
+
+func test_random_hq_song_is_always_a_pool_member() -> void:
+	for i in 50:
+		assert_true(MusicLibrary.HQ_SONGS.has(MusicLibrary.random_hq_song()),
+			"a random HQ song is a member of the pool")
+
+
+func test_random_hq_song_avoids_the_excluded_id() -> void:
+	# With a >1 pool, the excluded id (the song just played) never comes back.
+	var exclude: String = MusicLibrary.HQ_SONGS[0]
+	for i in 50:
+		assert_ne(MusicLibrary.random_hq_song(exclude), exclude,
+			"random_hq_song must not return the excluded id")

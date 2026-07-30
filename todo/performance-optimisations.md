@@ -388,10 +388,11 @@
   (`:294`); `tree_collision_height_m` default `4.0` (`:289`).
 - Net result: `scripts/world.gd:80-95` scatters and builds **~30 turns × 200 =
   ~6,000 trees + ~6,000 bushes**, each an instance in one `MultiMesh` per field.
-- Terrain: `CHUNK_M = 50`, `CELL_M = 1.0`, `SAMPLES = 51`, `RADIUS = 1` →
-  **3×3 = 9 loaded chunks** (`scripts/terrain_manager.gd:10-13`). NB: a couple
-  of `features/*.md` lines say "5×5"; the code is `RADIUS=1` → 3×3. Fix the docs
-  while here.
+- Terrain: `CHUNK_M = 50`, `CELL_M = 1.0`, `SAMPLES = 51`, `RADIUS = 3` →
+  **7×7 = 49 loaded chunks** (`scripts/terrain_manager.gd:14`), matching what
+  `features/terrain.md:22` already correctly says. (An earlier version of this
+  doc claimed `RADIUS=1`/3×3 and said the `features/*.md` "5×5"/49-chunk figure
+  was wrong — that claim was itself stale; `RADIUS=3`/7×7/49 is correct.)
 
 Items 1–5 below are the **GPU / fill / render-side** work; items 6–12 (in the
 **CPU & platform** section further down) are the pure-CPU and platform costs the
@@ -675,7 +676,7 @@ rendered area but reduce the collision surface per body.
 
 ### Recommendation: **don't do this first; it's low/negative ROI.** Reasoning:
 
-1. **Only 9 chunks have collision today** (`RADIUS=1`, 3×3). Each is a
+1. **49 chunks have collision today** (`RADIUS=3`, 7×7). Each is a
    `HeightMapShape3D` of 51×51 (`terrain_chunk.gd:46-50`). Jolt builds a
    BVH/quadtree over each heightmap; **narrowphase only tests triangles under the
    car's AABB**, and broadphase only flags the 1–4 chunk AABBs the car overlaps.
@@ -895,12 +896,13 @@ overlay's render-gpu line, the alternative is rendering the scene to a
 `SubViewport` and doing the dither as a single blit instead of a back-buffer
 copy. Low priority; the current cost is small.
 
-## 10. HUD per-frame string allocation (minor)
+## 10. HUD per-frame string allocation (minor) — ✅ DONE
 
-`scripts/hud.gd:_process` (`:39`) rebuilds ~6 label strings every frame
-(`"%d km/h"`, `"%d rpm"`, etc.) even when the values are unchanged → small
-per-frame GC. Cache the last numeric values and only re-format / re-assign
-`.text` when they change. Minor; do it alongside other cleanup.
+`scripts/hud.gd`'s `_timed_process` (around `:236`) now caches
+`_last_speed`/`_last_gear`/`_last_rpm`/`_last_boost_pct` and only re-formats /
+re-assigns a label's `.text` when the underlying value actually changes, instead
+of rebuilding every label string unconditionally each frame. No further action
+needed here.
 
 ## 11. `downforce_readouts` allocated when debug is off (minor)
 

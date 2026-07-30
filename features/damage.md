@@ -46,20 +46,19 @@ collisions (and, on a head-on hit, arrests the body) *before* `_integrate_forces
 sees the state, so a collision's full velocity loss shows up in `dv` — with **no
 contact inspection**.
 
-> **Skipped while the car is deliberately held.** The measurement is skipped
-> entirely when `car.is_held()` is true (the countdown's handbrake-only lock, or
-> the full staging/finish lock — see [stage.md](stage.md)). During the countdown
-> the player can rev the engine while `_apply_parking_hold` (`car.gd`) fights the
-> drive force back to a standstill each tick; because the hold force is sized off
-> the *previous* tick's velocity and the drive force is applied later the *same*
-> tick, the chassis genuinely creeps forward a hair and gets yanked back — a
-> small, real vibration, not a rendering artifact. Before this guard,
-> `_integrate_forces` faithfully read that hold-vs-throttle jitter as a
-> deceleration and charged it as impact damage every tick above threshold, so a
-> long rev against the line could quietly cost real HP the player never actually
-> caused through driving or a collision. Fixed in `car.gd._integrate_forces`;
-> regression test `test_no_damage_accumulates_while_held_and_revving` in
-> `tests/headless/test_car.gd`.
+> **NOT skipped while the car is held.** The measurement runs unconditionally (bar the
+> couple of post-teleport ticks `_suppress_impact_frames` covers) — including while the
+> car is deliberately held at the line by `controls_locked` / `handbrake_locked` (see
+> [stage.md](stage.md)). There was briefly an `is_held()` exemption here, because revving
+> against the old velocity-cancel parking hold made the chassis jitter and creep every
+> tick and `_integrate_forces` faithfully charged that as impact damage for the whole
+> countdown. That was a gate over a physics bug: the hold is now a damped spring to an
+> anchor point (`car.gd._apply_parking_hold`, and see
+> [car-physics.md](car-physics.md) → the parking hold) so a held car is genuinely still,
+> there is no spurious `dv` left to hide, and the damage rule needs no special case.
+> Regression test: `test_held_car_stays_put_under_steady_disturbance` in
+> `tests/headless/test_car.gd` asserts both halves at once — a held car does not creep,
+> and it takes no damage while held and revving.
 
 > **Tree plough-through feeds this for free.** The object-reaction loop runs
 > *before* this measurement and, when it fells a small tree, restores some of the

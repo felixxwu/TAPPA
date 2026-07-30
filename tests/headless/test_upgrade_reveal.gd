@@ -1,11 +1,12 @@
 extends GutTest
 # UpgradeReveal: the shared slot-spin reward card (features/menus.md). Normal
-# parts are a single "Next" step (granted fitted-disabled, no Apply/Keep — the
-# player enables them later in the upgrades menu); a repair kit still offers an
-# Apply/Keep choice (Repair now / Save it) when the driven car is below full
-# health. Headless -> the slot resolves instantly, so finish/choice is reachable
-# at once. A Skip button fast-forwards a real (non-headless) spin straight to the
-# actual won item; tests force a real spin by flipping `_headless` post-construction.
+# parts land on an Upgrades/Next action row (granted fitted-disabled, no Apply/Keep
+# — the player enables them later, either right now via Upgrades or later in the
+# garage); a repair kit still offers an Apply/Keep choice (Repair now / Save it)
+# when the driven car is below full health. Headless -> the slot resolves
+# instantly, so the action row/choice is reachable at once. A Skip button
+# fast-forwards a real (non-headless) spin straight to the actual won item; tests
+# force a real spin by flipping `_headless` post-construction.
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 const UpgradeFixtures = preload("res://tests/headless/upgrade_fixtures.gd")
@@ -26,13 +27,17 @@ func after_each() -> void:
 	Config.reset()
 	UpgradeFixtures.restore()
 	CarFixtures.restore()
+	if RallySession.is_active():
+		RallySession.abandon()
+	RallySession.auto_load_scenes = true
+	RallyLibrary.reset()
 
 func _make() -> UpgradeReveal:
 	var w := UpgradeReveal.new()
 	add_child_autofree(w)
 	return w
 
-func test_slottable_part_reveal_leaves_it_fitted_disabled_and_finishes() -> void:
+func test_slottable_part_reveal_offers_upgrades_and_next() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
 	_save.install_upgrade(id, "fx_aero", false)  # reward loop fitted it disabled
@@ -42,13 +47,18 @@ func test_slottable_part_reveal_leaves_it_fitted_disabled_and_finishes() -> void
 	w.reveal("fx_aero", id)
 	await get_tree().process_frame
 	assert_false(w._choice_pending, "a normal part is one 'Next' step, no Apply/Keep choice")
-	assert_false(w._choice_box.visible, "no choice buttons are shown")
+	assert_false(w._choice_box.visible, "no Apply/Keep choice buttons are shown")
 	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_aero"), "the part stays fitted")
 	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_aero"),
-		"the part stays disabled — enabled later in the upgrades menu")
-	assert_true(done[0], "finished fires immediately")
+		"the part stays disabled — enabled via Next-into-garage or the Upgrades button now")
+	assert_true(w._action_box.visible, "the Upgrades/Next row is shown once the reveal lands")
+	assert_true(w._upgrades_button.visible, "an Upgrades button is offered")
+	assert_true(w._next_button.visible, "a Next button is offered")
+	assert_false(done[0], "finished does not fire until Next/Upgrades-done is pressed")
+	w._next_button.pressed.emit()
+	assert_true(done[0], "Next continues the flow exactly like the old immediate finish")
 
-func test_repair_kit_on_full_health_car_skips_the_choice_and_finishes() -> void:
+func test_repair_kit_on_full_health_car_skips_the_choice_and_offers_next() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")  # granted at full HP
 	var id := int(car["instance_id"])
 	var w := _make()
@@ -57,7 +67,10 @@ func test_repair_kit_on_full_health_car_skips_the_choice_and_finishes() -> void:
 	w.reveal(UpgradeLibrary.REPAIR_KIT_ID, id)
 	await get_tree().process_frame
 	assert_false(w._choice_pending, "a full-health car shows no use-now choice")
-	assert_true(done[0], "finished fires immediately when there's nothing to repair")
+	assert_true(w._action_box.visible, "the Upgrades/Next row is shown instead")
+	assert_false(done[0], "finished does not fire until Next is pressed")
+	w._next_button.pressed.emit()
+	assert_true(done[0], "Next continues the flow when there's nothing to repair")
 
 func test_repair_kit_on_damaged_car_offers_use_now_and_repairs() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
@@ -121,7 +134,10 @@ func test_skip_fast_forwards_a_running_spin_to_the_actual_won_item() -> void:
 	assert_true(w._reveal_done, "skipping counts as the spin having landed")
 	assert_eq(w._slot_label.text, UITheme.caps(String(UpgradeLibrary.by_id("fx_aero").get("name", "fx_aero"))),
 		"skipping lands on the actual won item, not a random reel stop")
-	assert_true(done[0], "the normal landing steps still run (finished fires) after a skip")
+	assert_true(w._action_box.visible, "the normal landing steps still run (Upgrades/Next shown) after a skip")
+	assert_false(done[0], "finished waits for Next/Upgrades-done even after a skip")
+	w._next_button.pressed.emit()
+	assert_true(done[0], "Next finishes the flow after a skip")
 
 func test_drivetrain_kit_installs_enabled_without_choice() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
@@ -133,3 +149,67 @@ func test_drivetrain_kit_installs_enabled_without_choice() -> void:
 	assert_false(w._choice_pending, "the drivetrain kit skips Apply/Keep")
 	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_drivetrain"),
 		"the drivetrain kit installs enabled")
+
+
+# --- Upgrades button: opens the real UpgradesMenu, reusing the same rally p/w-limit
+# warning the pre-stage start line / HQ garage popup use. -----------------------------
+
+func test_upgrades_button_opens_the_real_upgrades_menu_component() -> void:
+	var car: Dictionary = _save.grant_car("fx_awd")
+	var id := int(car["instance_id"])
+	_save.install_upgrade(id, "fx_aero", false)
+	var w := _make()
+	w.reveal("fx_aero", id)
+	await get_tree().process_frame
+	assert_true(w._action_box.visible, "precondition: the action row is showing")
+	w._upgrades_button.pressed.emit()
+	assert_not_null(w._upgrades_menu, "pressing Upgrades builds the menu component")
+	assert_true(w._upgrades_menu is UpgradesMenu,
+		"it's the real UpgradesMenu component, not a stub reimplementation")
+	assert_true(w._upgrades_overlay.visible, "the upgrades overlay is shown")
+	assert_eq(int(w._upgrades_menu._owned.get("instance_id", -1)), id,
+		"the menu is fed the driven car")
+
+func test_upgrades_menu_surfaces_the_same_rally_over_limit_warning_as_pre_stage() -> void:
+	# A synthetic rally with a p/w ceiling far below any fixture car's ratio — mirrors
+	# test_upgrades_menu.gd's "1 hp/tonne is below any real car's ratio" pattern, so
+	# this never depends on a specific catalogue rally/car, only the logic.
+	var tiny_limit_rally: Dictionary = {
+		"id": "fx_tiny_limit_reveal", "name": "Fixture Tiny Limit", "region": "home",
+		"difficulty": 1, "showdown": false, "restriction": {"pw_max": 1.0}, "events": [],
+	}
+	RallyLibrary.override_for_test([tiny_limit_rally])
+	RallySession.auto_load_scenes = false
+	var car: Dictionary = _save.grant_car("fx_awd")
+	var id := int(car["instance_id"])
+	RallySession.start_rally(tiny_limit_rally, _save.get_car(id), true)
+	_save.install_upgrade(id, "fx_aero", false)
+	var w := _make()
+	w.reveal("fx_aero", id)
+	await get_tree().process_frame
+	w._upgrades_button.pressed.emit()
+	assert_true(w._upgrades_menu.over_pw_limit(),
+		"the driven car's build reads as over the active rally's p/w ceiling")
+	assert_false(w._upgrades_menu.can_close(),
+		"the menu blocks closing over the limit — same gate as the pre-stage popup")
+	assert_true(String(w._upgrades_back.text).begins_with("Over limit"),
+		"the Done button reddens/reprompts exactly like UpgradesMenu.bind_close_button does pre-stage")
+	w._upgrades_back.pressed.emit()
+	assert_true(w._upgrades_overlay.visible,
+		"pressing Done while over the limit does not close the overlay")
+
+func test_finishing_the_upgrades_menu_continues_the_flow_like_next() -> void:
+	var car: Dictionary = _save.grant_car("fx_awd")
+	var id := int(car["instance_id"])
+	_save.install_upgrade(id, "fx_aero", false)
+	var w := _make()
+	var done := [false]
+	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
+	w.reveal("fx_aero", id)
+	await get_tree().process_frame
+	w._upgrades_button.pressed.emit()
+	assert_true(w._upgrades_overlay.visible, "precondition: the overlay is open")
+	assert_false(done[0], "finished has not fired yet — the player is inside Upgrades")
+	w._upgrades_back.pressed.emit()  # no rally limit set → Done closes freely
+	assert_false(w._upgrades_overlay.visible, "Done closes the overlay")
+	assert_true(done[0], "finishing Upgrades continues the flow exactly like Next")

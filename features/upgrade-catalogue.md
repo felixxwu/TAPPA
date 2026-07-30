@@ -23,7 +23,22 @@ is the upgrades half.
 `const UPGRADES: Array[Dictionary]`, each an UpgradeDef: `id`, `name`, `slot`
 (`turbo` / `aero` / `weight` / `drivetrain`, or `""` for consumables),
 `tier` (reward-tier gating), `consumable`, an optional `free` flag (always-available,
-never-drawn parts — the ballast; see below), and `effect` (config-field → delta/multiplier).
+never-drawn parts — the ballast; see below), an optional `requires_upgrade_id`
+(prerequisite gating — see below), and `effect` (config-field → delta/multiplier).
+
+**Prerequisite gate (`requires_upgrade_id`).** An alternative to the `tier`
+gate for an item that should unlock through owning ANOTHER item rather than
+through raw rally difficulty. `""`/absent (the default) means no
+prerequisite. `UpgradeLibrary.requires_upgrade_id(id)` reads the field;
+`UpgradeLibrary.owned_anywhere(profile, item_id)` checks whether ANY car in
+the garage has that id fitted (upgrades are car-bound, so ownership has to be
+checked across the whole garage, not just the car being rewarded);
+`UpgradeLibrary.prerequisite_met(item_id, profile)` combines the two and is
+what `RewardSystem._parts_at_or_below` consults to keep a gated item out of
+the draw pool until its prerequisite is owned. **Big Turbo (`turbo_large`)**
+is the one entry that currently uses this: it requires `turbo_small` and sits
+at ordinary tier 1 (the old tier-2 difficulty gate it used to carry is gone —
+see `reward-system.md`).
 
 The **`drivetrain` slot** holds the **Drivetrain Swap** kit, whose `effect` is a single
 `unlocks_drivetrain_swap` flag (skipped by `apply`, like the other `unlocks_*` gates).
@@ -56,7 +71,7 @@ rally class (a p/w lever alongside engine detune). Weight Reduction is the slot'
 The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the generic
 earn-gated option row — see below.
 Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
-tier 2), an aero kit, the three **weight** parts above,
+tier 1 + prerequisite-gated on owning `turbo_small`, see above), an aero kit, the three **weight** parts above,
 the drivetrain swap kit, and the two consumables — the **repair kit** and the **engine
 swap token** (both `slot: ""`, held in the shared `inventory`; the token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md)). The concrete part
@@ -64,10 +79,15 @@ list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults. The aero kit also **reveals the car's spoiler/splitter mesh** while enabled — see [aero-parts.md](aero-parts.md).
 
 The upgrades menu is a **reusable `UpgradesMenu` component** (`scripts/upgrades_menu.gd`,
-mirroring `TuningPanel`): the HQ lift mounts it as its Upgrades page, and the car-park
+mirroring `TuningPanel`): the HQ lift mounts it as its Upgrades page, the car-park
 **detune-to-enter prompt** mounts a second instance in its Change-Upgrades popup so a
 too-powerful car can shed power by stripping parts instead of detuning (see
-[menus.md](menus.md) → CARPARK). It owns its `Save` persistence and reports edits via an
+[menus.md](menus.md) → CARPARK), and the standings/podium **reward reveal**
+(`scripts/upgrade_reveal.gd`, `_on_upgrades_pressed`/`_build_upgrades_overlay`) mounts a
+third instance behind an **Upgrades** button on its post-spin action row, so a player can
+slot the just-won part immediately instead of waiting for the next stage/HQ visit — see
+[menus.md](menus.md) → "Collect reward on the standings". It owns its `Save` persistence
+and reports edits via an
 `on_change` callback so the host re-fields the car. There is **no stats line** at the top;
 the live power-to-weight readout instead lives on the **engine-detune slider's value label**
 (e.g. `80% - 200 hp/tonne`, recomputed from `effective_meta` on every rebuild), and that
@@ -77,7 +97,9 @@ The engine-swap row is **lift-only** (the host passes `on_swap`); the popup
 leaves it unset and drops the row, since the swap flow would change the HQ view.
 
 When a host passes a power-to-weight limit (`pw_limit >= 0` — the start-line pre-race
-overlay and the car-park over-powered Change-Upgrades popup), the overlay's **close button
+overlay, the car-park over-powered Change-Upgrades popup, and the reward reveal's
+Upgrades overlay, which reads it off `RallyLibrary.by_id(RallySession.rally_id())
+.restriction.pw_max` — the same source the start line uses), the overlay's **close button
 is gated** (`UpgradesMenu.bind_close_button` + `request_close()` / `can_close()`): it reads
 **Done**, and while the current build exceeds the cap it turns **red**, its text becomes
 **"Over limit — reduce to N hp/tonne"**, and it **blocks closing** — both the button press
@@ -203,9 +225,12 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
 Upgrades are the **per-event** reward: one is drawn at each non-final event
 boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward. The
 reward draw picks an `UpgradeDef` by `tier`, clamped by progress, excluding parts
-already on the driven car — and never `free` parts (the ballast is always
-available, so it's not a reward) — that policy is reward-system logic
-(`reward-system.md`); this library just provides the tier-keyed pool. The flow
+already on the driven car, never `free` parts (the ballast is always
+available, so it's not a reward), and never a part whose `requires_upgrade_id`
+prerequisite isn't yet owned (Big Turbo, until Small Turbo is owned somewhere in
+the garage) — that policy is reward-system logic (`reward-system.md`); this
+library just provides the tier-keyed pool plus the `requires_upgrade_id` /
+`owned_anywhere` / `prerequisite_met` helpers it reads. The flow
 controller fits each won part straight onto the driven car via
 `Save.install_upgrade(..., enabled=false)` (repair kits, being consumable, go to
 `Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,

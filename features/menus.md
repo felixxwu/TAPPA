@@ -102,18 +102,34 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   action button reads **`Collect reward >`** instead of `Continue to next stage >`.
   Pressing it clears the leaderboard and takes over the screen with the shared
   `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
-  as the podium** — which lands on the won part and offers **Apply/Keep** (a won
-  repair kit offers **Repair now / Save it** when the driven car is damaged, else it
-  auto-resolves; the drivetrain kit auto-resolves). A **Continue to next stage >** button
-  appears only once the reveal + choice resolves, then resumes the rally
-  (`continue_to_next_event`). While the reel is actually spinning (real play, not
-  headless/instant), a **Skip >** button is shown — `UpgradeReveal._on_skip_pressed`
-  fast-forwards straight to the actual won item, running the same landing steps a
-  natural finish would. The `UpgradeReveal` wires its own `MenuNav` across
-  Skip and Apply/Keep, and standings re-attaches `MenuNav` on Continue when it's shown, so the
-  whole flow is keyboard/gamepad navigable. The **final event** keeps
-  `Continue to podium >` with no reward step (the podium reveals the car). See
-  [reward-system.md](reward-system.md).
+  as the podium** — which lands on the won part. A won repair kit offers **Repair now /
+  Save it** when the driven car is damaged (else it auto-resolves; the drivetrain kit
+  auto-resolves too); every other landing shows an **Upgrades / Next** action row
+  (`UpgradeReveal._show_actions`) instead of finishing on its own. **Next**
+  (`_on_next_pressed`) is the plain continue — exactly the old immediate
+  `finished.emit()`. **Upgrades** (`_on_upgrades_pressed`) builds and opens the SAME
+  `UpgradesMenu` component the pre-stage start line / HQ garage use
+  ([upgrade-catalogue.md](upgrade-catalogue.md)), fed the driven car and the active
+  rally's power-to-weight ceiling (`RallyLibrary.by_id(RallySession.rally_id())
+  .restriction.pw_max`) so `UpgradesMenu.bind_close_button`/`request_close` gate the
+  **Done** button on the SAME over-limit warning the pre-stage popup shows — no
+  bespoke warning logic in the reveal. Closing that overlay (`_close_upgrades`) resumes
+  the flow exactly as Next would, so the player is never stranded mid-edit. The
+  reveal's own **Next** (or Upgrades → Done) IS the continue step — `standings.gd`
+  connects `_reveal.finished` directly to `RallySession.continue_to_next_event`
+  (`CONNECT_ONE_SHOT`), so a single press resumes the rally. (There used to be a
+  separate host-side **Continue to next stage >** button that only appeared once
+  `finished` fired, requiring a second, redundant press with no work happening in
+  between — removed; `_action_button` is cleared to `null` for the reveal phase since
+  the reveal owns its own action row/focus.) While the reel is actually spinning (real
+  play, not headless/instant), a **Skip >** button is shown —
+  `UpgradeReveal._on_skip_pressed` fast-forwards straight to the actual won item,
+  running the same landing steps a natural finish would. The `UpgradeReveal` wires its
+  own `MenuNav` across Skip, the repair Apply/Keep choice, and the Upgrades/Next row
+  (no `on_back` — same linear, host-owns-back-but-doesn't-wire-one convention the
+  podium reward reveal uses), so the whole flow is keyboard/gamepad navigable. The
+  **final event** keeps `Continue to podium >` with no reward step (the podium
+  reveals the car). See [reward-system.md](reward-system.md).
 
   A few flat menus keep their own `_unhandled_input` and attach `MenuNav` **without**
   `on_back`: the **pause** menu (its handler also *opens* the menu when closed, and
@@ -570,6 +586,30 @@ panel **hides** while a sub-menu is open so the page has room — with a **< Bac
 returns to the hub; the hub's own Back returns to the garage. Because the hub controls
 and page chrome live on the hub, each menu page gets the **full panel height to
 itself** and doesn't need to scroll. The two pages:
+
+### Upgrades / Tune panel width
+
+The panel's actual content width is NOT `hq_lift_menu_centered_width_frac * window
+width` — it's that fraction of the **logical UI canvas**, which `scripts/display_stretch.gd`
+lays out at `DisplayStretch.DESIGN_HEIGHT * window_aspect / Config.data.horizontal_stretch`
+(a real per-instance `content_scale_size`, not the raw window). `horizontal_stretch`
+(authored ~1.2) is a purely visual anamorphic widening applied via the stretch system,
+and it SHRINKS the logical canvas UI actually lays out against — any width measurement
+that skips the `/ horizontal_stretch` step overstates available space by that same
+factor. At the narrowest supported aspect (4:3, `project.godot`'s
+`window_width_override`/`window_height_override` = 1280×960), the true content width is
+tight enough that a busy row (`upgrades_menu.gd`'s WEIGHT slot: Stock + several parts,
+with the selected option bracketed — `_option_button` wraps the label in `[...]`, adding
+width to whichever option happens to be selected) needed more room than the shared
+`theme/ui_theme.tres` Button style's 14px content margins left, even at
+`hq_lift_menu_centered_width_frac` maxed to 1.0. The fix (see `_tighten_option_padding`
+in `upgrades_menu.gd`) duplicates each option button's stylebox with a smaller
+left/right content margin scoped to just these multi-option selector buttons — not the
+shared theme — rather than continuing to chase the panel's width_frac upward, since frac
+alone tops out below what the row needs at true 4:3. When re-measuring this by hand,
+always go through `DisplayStretch.logical_size()` (or an equivalent `/ horizontal_stretch`
+step) and replicate the actual worst-case selected/bracketed option — a measurement that
+skips either one will look fine in a throwaway test and still wrap in the real game.
 
 - **Tune** (`LiftPage.TUNE`) — a slider per handling tuning axis (grip / brake-bias /
   aero; aero is greyed with a "needs Aero Kit" note until the kit is fitted — grip and

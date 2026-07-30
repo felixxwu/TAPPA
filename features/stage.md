@@ -105,6 +105,12 @@ downforce, suspension, camera) keeps running so the car settles naturally during
 the countdown. On the flat test fixture there is no `StageManager`, so the flag
 stays `false` and the car is freely drivable.
 
+While the car is held — either lock — the forced handbrake plus the **static parking
+hold** (`car.gd._apply_parking_hold`, a damped spring to the spot the car stopped on)
+keeps it genuinely still: no vibration, no sideways creep, and therefore no spurious
+deceleration damage (the damage rule has **no** held-car exemption — see
+[damage.md](damage.md) and [car-physics.md](car-physics.md) → the parking hold).
+
 ## Signals
 
 - `stage_started` — countdown finished, timer running.

@@ -327,11 +327,6 @@ func is_wheel_driven(wheel: VehicleWheel3D) -> bool:
 			return wheel.use_as_traction
 
 
-# Advance RWD -> AWD -> FWD -> RWD (the UI / keyboard toggle).
-func cycle_drive_mode() -> void:
-	drive_mode = ((drive_mode + 1) % 3) as DriveMode
-
-
 # The wheel speed the engine is geared to: the driven axle(s)' representative
 # spin. FWD reads the front spool; RWD and AWD read the rear — in AWD the
 # locked centre diff makes the front spool equal to the rear, so rear_omega

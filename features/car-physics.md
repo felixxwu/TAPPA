@@ -63,8 +63,8 @@ for each).
 
 ## Per-step loop (`_physics_process`)
 
-1. **Mode inputs:** `toggle_gearbox` (T) flips `engine.auto`; `cycle_drive_mode`
-   (Y) cycles RWD→AWD→FWD; `shift_up`/`shift_down` (E/Q) request manual shifts.
+1. **Mode inputs:** `toggle_gearbox` (T) flips `engine.auto`;
+   `shift_up`/`shift_down` (E/Q) request manual shifts.
 2. **Throttle/brake resolution:**
    - *Auto:* `engine.select_forward/select_reverse` pick a gear at low speed;
 	 `engine.update_auto` handles upshifts based on ground speed.
@@ -315,15 +315,36 @@ free-revving on the handbrake's open clutch.
 
 Regardless of source, a car that is fully braked (handbrake **or** the low-speed
 parking brake) and below `HANDBRAKE_LOCK_SPEED` (0.5 m/s) gets a **static-friction
-hold** — `_apply_parking_hold` cancels its residual in-plane velocity each frame with
-a counter-force, clamped to `parking_hold_grip · m · g`. This is needed because the
-tire model's longitudinal force fades to zero as slip does (`_tire_force` caps it at
-`|slip|·m/h`), so at creep speed gravity's slope component would otherwise win and the
-car would dribble downhill. The hold behaves like real stiction: it pins the car on any
-sane grade but a wall-steep slope still slides, and — unlike the old `freeze` hack — the
-car stays a **live rigid body** (no snap on release, still collidable). This keeps a
-settling [start-line](start-line.md) queue car from creeping into the car ahead and
-holds the player put during the countdown (`handbrake_locked` forces the handbrake).
+hold** — `_apply_parking_hold` anchors it to the spot it stopped on and ties it there
+with a **damped spring** (`parking_hold_stiffness` / `parking_hold_damping`, both in
+acceleration terms so they are mass-independent), clamped to `parking_hold_grip · m · g`.
+The anchor is taken on the first engaged tick and dropped the moment the hold
+disengages; when the clamp is reached (a very steep grade, or a shove) the car slides
+and the anchor follows `parking_hold_slack` behind it, so no unbounded slack builds up.
+This is needed because the tire model's longitudinal force fades to zero as slip does
+(`_tire_force` caps it at `|slip|·m/h`), so at creep speed gravity's slope component
+would otherwise win and the car would dribble downhill. The hold behaves like real
+stiction: it pins the car on any sane grade (a centimetre or so of slack) but a
+wall-steep slope still slides, and — unlike the old `freeze` hack — the car stays a
+**live rigid body** (no snap on release, still collidable). This keeps a settling
+[start-line](start-line.md) queue car from creeping into the car ahead and holds the
+player put during the countdown (`handbrake_locked` forces the handbrake).
+
+> **Why a spring and not a velocity cancel** (the countdown-vibration fix — don't
+> regress it). The hold used to be `F = -m·v_h/dt` sized off the **previous** tick's
+> velocity: "erase whatever velocity the car had". That has no position feedback and
+> always runs a tick behind the disturbance, so every tick it wiped last tick's velocity
+> while the grade/drivetrain added a fresh `a·dt` — a held car therefore lurched along at
+> a steady `v ≈ a·dt` **forever** (measured: ~3 cm/s under an ~12° grade's worth of pull),
+> which is exactly the countdown "vibration + sideways creep". It also double-counted the
+> pinned tires' own friction (both cancel the same velocity in the same step), so the body
+> could overshoot through zero and ring, and the `μ·m·g` clip rectified that ringing into
+> yet more drift. The anchored spring fixes both: it corrects **displacement**, so the
+> resting offset is bounded (`≈ a / parking_hold_stiffness`), and its per-tick authority is
+> `k·offset·dt² ≪ offset`, so it converges instead of oscillating. It also leaves the
+> chassis's own roll/pitch sway alone — a velocity cancel stiffened the body and killed
+> body roll dead. Regression test: `test_held_car_stays_put_under_steady_disturbance`
+> in `tests/headless/test_car.gd` (it fails on the old velocity-cancel hold).
 
 ## Braking summary
 

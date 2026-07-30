@@ -1,5 +1,5 @@
 extends GutTest
-# RWD / AWD / FWD drivetrain layouts: torque routing and the mode cycle.
+# RWD / AWD / FWD drivetrain layouts: torque routing.
 
 var _scene: Node3D
 var _car: VehicleBody3D
@@ -50,17 +50,6 @@ func test_routing_helpers_per_mode() -> void:
 	dt.drive_mode = Drivetrain.DriveMode.AWD
 	assert_almost_eq(dt.driveline_omega(), 10.0, 0.01,
 		"AWD locked centre diff geared to the shared driveline (rear) speed")
-
-
-func test_cycle_wraps_rwd_awd_fwd() -> void:
-	var dt: Drivetrain = _car.drivetrain
-	dt.drive_mode = Drivetrain.DriveMode.RWD
-	dt.cycle_drive_mode()
-	assert_eq(dt.drive_mode, Drivetrain.DriveMode.AWD, "RWD -> AWD")
-	dt.cycle_drive_mode()
-	assert_eq(dt.drive_mode, Drivetrain.DriveMode.FWD, "AWD -> FWD")
-	dt.cycle_drive_mode()
-	assert_eq(dt.drive_mode, Drivetrain.DriveMode.RWD, "FWD -> RWD")
 
 
 func test_fwd_spins_fronts_and_leaves_rear_rolling() -> void:

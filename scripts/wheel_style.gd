@@ -46,11 +46,15 @@ static func _texture_of(model_id: String) -> String:
 	return String(entry.get("wheel_texture", ""))
 
 
-# The wheel styles on offer for a car, in roster order with the car's OWN wheels first
-# (the "Stock" option). Every entry is { "id", "name", "texture", "stock" } where `id`
-# is a real CarLibrary id and `name` is the donor car's name. Cars with no authored
-# wheel_texture donate nothing (a blank disc isn't a style).
-static func options_for(stock_model_id: String) -> Array:
+# The wheel styles on offer for a car, in owned order with the car's OWN wheels first
+# (the "Stock" option). Only wheels donated by cars in `profile["cars"]` (the player's
+# garage) are on offer — see features/wheel-customization.md's "Eligibility" section.
+# Every entry is { "id", "name", "texture", "stock" } where `id` is a real CarLibrary
+# id and `name` is the donor car's name. Cars with no authored wheel_texture donate
+# nothing (a blank disc isn't a style). The customized car's OWN stock option is
+# always present regardless of ownership (see the synthesis below) — a player must
+# always be able to revert to their own car's stock wheels.
+static func options_for(stock_model_id: String, profile: Dictionary) -> Array:
 	var out: Array = []
 	var stock_first: Array = []
 	# A car that authors NO wheel_texture donates nothing, so it wouldn't appear in its own
@@ -67,7 +71,7 @@ static func options_for(stock_model_id: String) -> Array:
 				"texture": "",
 				"stock": true,
 			})
-	for entry in CarLibrary.wheel_catalogue():
+	for entry in CarLibrary.wheel_catalogue(profile):
 		var is_stock: bool = String(entry.get("id", "")) == stock_model_id
 		var option := {
 			"id": String(entry.get("id", "")),
@@ -79,6 +83,20 @@ static func options_for(stock_model_id: String) -> Array:
 			stock_first.append(option)
 		else:
 			out.append(option)
+	# wheel_catalogue() only donates wheels from OWNED cars — the customized car must
+	# always be able to offer its own stock wheels regardless of ownership bookkeeping,
+	# so synthesize the stock option directly from CarLibrary if the loop above (and
+	# the empty-texture branch) didn't already add it (e.g. a car with a wheel_texture
+	# whose owned instance isn't reflected in `profile` for some reason).
+	if stock_first.is_empty():
+		var stock_entry := CarLibrary.by_id(stock_model_id)
+		if not stock_entry.is_empty():
+			stock_first.append({
+				"id": stock_model_id,
+				"name": "%s (Stock)" % String(stock_entry.get("name", "")),
+				"texture": String(stock_entry.get("wheel_texture", "")),
+				"stock": true,
+			})
 	return stock_first + out
 
 

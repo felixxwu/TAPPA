@@ -88,9 +88,9 @@ func rebuild() -> void:
 # The engine-detune slider row: a direct 0–100% torque scale (default 100% = full
 # power). Lives here rather than in TuningPanel because it moves power-to-weight,
 # which is what this menu is about. The slider spans the full range — rally
-# eligibility is enforced at Start, not by capping — and its label pairs the percent
-# with the car's live p/w at that setting (e.g. "80% - 200 hp/tonne"), flagging the
-# ceiling / OVER LIMIT when a pw_limit is set (start line / car-park popup).
+# eligibility is enforced at Start, not by capping — and its label shows the car's
+# live p/w at that setting (e.g. "227 HP/T"), flagging the ceiling / OVER LIMIT
+# when a pw_limit is set (start line / car-park popup).
 func _make_detune_row(instance_id: int) -> Control:
 	# Same house slider-row as the tuning panel's handling axes (shared SliderRow
 	# builder), so the detune row matches them exactly — including the focus highlight.
@@ -106,18 +106,19 @@ func _make_detune_row(instance_id: int) -> Control:
 	var frac := clampf(float(_owned.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
 	_detune_slider.set_value_no_signal(frac * 100.0)
 	_detune_slider.value_changed.connect(_on_detune_changed.bind(instance_id))
-	_detune_value.text = _detune_label_text(int(round(frac * 100.0)))
+	_detune_value.text = _detune_label_text()
 	return handles["panel"]
 
 
-# The detune slider's value label: the percent plus the car's LIVE p/w at that
-# setting — the menu's only p/w readout (the standalone stats subtitle was removed).
-# The max-p/w cap / OVER-LIMIT flag lives on the close button now (bind_close_button),
-# not here.
-func _detune_label_text(pct: int) -> String:
+# The detune slider's value label: the car's LIVE p/w at the current setting —
+# the menu's only p/w readout (the standalone stats subtitle was removed). Kept
+# to just "<value> HP/T" (no percent/dash prefix) so it fits the narrow label
+# column without wrapping or clipping. The max-p/w cap / OVER-LIMIT flag lives
+# on the close button now (bind_close_button), not here.
+func _detune_label_text() -> String:
 	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
 	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(_owned, entry)) * _KW_KG_TO_HP_TONNE
-	return "%d%% - %.0f hp/tonne" % [pct, pw]
+	return "%.0f HP/T" % pw
 
 
 # Bind the host overlay's close button so it reflects the p/w gate. `on_close` is the
@@ -172,7 +173,7 @@ func _on_detune_changed(value: float, instance_id: int) -> void:
 	var tuning: Dictionary = _owned.get("tuning", {})
 	tuning["engine_detune"] = frac
 	_owned["tuning"] = tuning
-	_detune_value.text = _detune_label_text(int(round(value)))
+	_detune_value.text = _detune_label_text()
 	_refresh_close_button()  # dragging power under/over the cap toggles the gate
 	if _on_change.is_valid():
 		_on_change.call()
@@ -184,7 +185,10 @@ func over_pw_limit() -> bool:
 		return false
 	var entry := CarLibrary.by_id(String(_owned.get("model_id", "")))
 	var meta := UpgradeLibrary.effective_meta(_owned, entry)
-	return CarLibrary.power_to_weight(meta) * _KW_KG_TO_HP_TONNE > _pw_limit
+	# Compare the ROUNDED hp/tonne the player sees in _detune_label_text, not the raw float —
+	# otherwise a build displaying exactly the limit (e.g. 100 hp/t off a raw 100.4) reads as
+	# "over" even though nothing on screen shows it exceeding the cap.
+	return CarLibrary.power_to_weight_hp_tonne(meta) > roundi(_pw_limit)
 
 
 func _make_slot_row(slot: String, instance_id: int, installed: Array) -> Control:
@@ -311,9 +315,35 @@ func _option_button(text: String, active: bool, available: bool, focus_key: Stri
 		b.add_theme_color_override("font_color", UITheme.GREEN)
 		b.add_theme_color_override("font_hover_color", UITheme.GREEN)
 		b.add_theme_color_override("font_focus_color", UITheme.GREEN)
+	_tighten_option_padding(b)
 	b.set_meta("upgrade_focus_key", focus_key)
 	b.pressed.connect(on_press)
 	return b
+
+
+# A slot-option row can hold 4+ of these side by side (Stock + several parts), and the
+# shared house Button style's 14px left/right content margin (theme/ui_theme.tres) — sized
+# for standalone action buttons like "< Map" — eats width fast across that many buttons.
+# Measured against the real logical canvas (DisplayStretch: DESIGN_HEIGHT * aspect /
+# horizontal_stretch, NOT the raw window size) at the narrowest supported aspect (4:3),
+# the WEIGHT row with its lightweight option selected/bracketed needs ~411 logical px but
+# the panel can offer at most ~400 there — see the width_frac comment in game_config.gd.
+# Duplicating each state's stylebox with a smaller content margin (scoped to just these
+# option buttons, not the shared theme, so other buttons in the game are unaffected)
+# claws back ~6px of padding per side per button — 4 buttons wide is enough to fit.
+const _OPTION_BUTTON_PAD := 6.0
+
+func _tighten_option_padding(b: Button) -> void:
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var src := b.get_theme_stylebox(state, "Button")
+		if src == null:
+			continue
+		var box := src.duplicate() as StyleBoxFlat
+		if box == null:
+			continue
+		box.content_margin_left = _OPTION_BUTTON_PAD
+		box.content_margin_right = _OPTION_BUTTON_PAD
+		b.add_theme_stylebox_override(state, box)
 
 
 func _set_slot_option(instance_id: int, slot: String, item_id: String) -> void:

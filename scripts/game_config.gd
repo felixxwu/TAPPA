@@ -185,6 +185,18 @@ var peak_torque_rpm := 4500.0
 ## cancels the residual in-plane velocity, clamped to this·m·g — like real stiction,
 ## it holds any sane grade but a wall-steep slope still slides. ~1.0 ≈ gravel μ.
 @export_range(0.0, 2.0) var parking_hold_grip := 1.0
+## Stiction spring stiffness (1/s², acceleration per metre of slack) pulling a held car
+## back to the spot it stopped on. Sets how much slack a grade buys: offset ≈ g·sinθ / this.
+## Must stay well under 1/dt² (~3600) — that is what keeps the hold convergent instead of
+## the ringing/vibration the old velocity-cancel hold produced.
+@export_range(0.0, 400.0) var parking_hold_stiffness := 300.0
+## Damping (1/s) on that stiction spring. ~2·sqrt(stiffness) is critical; the default is
+## about 0.6 of critical, enough to settle without stiffening the suspension's own body roll.
+@export_range(0.0, 40.0) var parking_hold_damping := 20.0
+## Slack (m) the anchor keeps behind the car once the grade beats the stiction cap — the
+## car slides, and the anchor follows this far back instead of building unbounded slack
+## that would snap the car back when the grade eased.
+@export_range(0.0, 1.0) var parking_hold_slack := 0.05
 ## Speed (m/s) below which a braked, grounded car engages the static parking hold
 ## (_apply_parking_hold) that cancels residual creep. Above it the car is rolling
 ## and the hold stays off.
@@ -323,6 +335,16 @@ var peak_torque_rpm := 4500.0
 ## from the active camera a car's engine plays at 0 dB; beyond it the level falls
 ## off with distance (1/d sound-pressure law, -6 dB per doubling). Tunable.
 @export var engine_audio_ref_distance_m := 8.0
+## Full-volume radius (m) used INSTEAD of engine_audio_ref_distance_m for cars
+## waiting behind the reveal-card focus car during the start-line REVEAL sequence
+## (start_line.gd). The queue spacing (start_queue_gap, 7 m) is smaller than the
+## normal 8 m radius, so with the general radius every queued car sits at/near full
+## volume at once — cluttered. A smaller radius here makes queued cars fall off
+## faster with distance while the reveal camera is anchored, without touching the
+## general/racing-context radius or the departing car's already-fine falloff once
+## it has actually launched. Tunable; keep it comfortably under start_queue_gap so
+## adjacent queued cars actually differentiate.
+@export var engine_audio_ref_distance_reveal_m := 0.5
 ## Attenuation floor (dB, <= 0) for a distant engine — the quietest a car's voice
 ## drops to, so a far car recedes to near-silence without going to -inf. Tunable.
 @export var engine_audio_max_attenuation_db := -60.0
@@ -860,7 +882,7 @@ var peak_torque_rpm := 4500.0
 ## pixel counts), so rows authored with generous fixed widths (slider_row.gd's 180-unit
 ## label column, a 4-button option row) need most of that width just to avoid wrapping/
 ## clipping — see features/menus.md "Upgrades / Tune panel width".
-@export_range(0.5, 1.0) var hq_lift_menu_centered_width_frac := 0.94
+@export_range(0.5, 1.0) var hq_lift_menu_centered_width_frac := 0.97
 
 @export_group("Free Roam")
 ## Free roam (Test Drive) generation settings — hq.gd's _prepare_free_roam writes

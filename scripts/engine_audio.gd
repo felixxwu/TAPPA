@@ -84,6 +84,14 @@ func _car_config() -> GameConfig:
 
 
 func _ready() -> void:
+	# Route through the dedicated "Engine" bus (created by MusicDirector._ready,
+	# an autoload that's always ready before this node — see
+	# music_director.gd _ensure_engine_bus) so the whole engine mix can be muted
+	# with one AudioServer call while a loading screen is up (music_director.gd
+	# _apply_engine_mute) without touching Music/Master or threading a flag through
+	# every EngineAudio instance. Harmless if the bus doesn't exist yet (falls back
+	# to Master) and irrelevant headless, where play() is never called below.
+	bus = &"Engine"
 	_resolve_refs()
 	var cfg: GameConfig = _cfg
 	_mix_rate = _resolve_mix_rate(cfg)
@@ -188,8 +196,19 @@ func _timed_process(_delta: float) -> void:
 		_cam = cur  # check-and-update: only re-seat when the active camera actually changed
 	if _cam != null and _car != null:
 		var d2 := _cam.global_position.distance_squared_to(_car.global_position)
+		# During the start-line REVEAL sequence, tighten the radius for cars waiting
+		# behind the reveal-card focus car (see engine_audio_ref_distance_reveal_m):
+		# the queue spacing is smaller than the normal radius, so every queued car
+		# otherwise sits at/near full volume at once. The focus car itself (the one
+		# on the card, closest to the anchored camera) is exempted so it keeps
+		# sounding exactly as it did before this change; a car that has actually
+		# launched is never in _grid any more, so its normal falloff is untouched.
+		var ref_dist := cfg.engine_audio_ref_distance_m
+		var sl := StartLine.active_instance
+		if sl != null and _car != sl.reveal_focus_car() and sl.sequence_phase() == StartLine.Seq.REVEAL:
+			ref_dist = cfg.engine_audio_ref_distance_reveal_m
 		volume_db = EngineAudioSynth.attenuation_db(
-			d2, cfg.engine_audio_ref_distance_m, cfg.engine_audio_max_attenuation_db)
+			d2, ref_dist, cfg.engine_audio_max_attenuation_db)
 	# Far enough away that attenuation has pinned the level to its floor: the synth
 	# output is inaudible, so paying the per-sample DSP for it is wasted CPU. Push
 	# silence instead and skip the fill entirely. Matters wherever several cars are

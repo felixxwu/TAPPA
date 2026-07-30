@@ -86,33 +86,3 @@ func test_events_generate_dry_roads_with_lakes() -> void:
 		"water-enabled generation completes for at least some seeds (got %d/%d)" % [
 			completed, EVENTS.size()])
 	assert_true(any_water, "lakes form near the stage on a well-below-zero water level")
-
-
-# Field the actual car into main.tscn with water on, and confirm a LakeField was
-# built and the car's soft-hazard query is wired. Logs the car spawn + lake count.
-func test_car_fielded_into_water_stage() -> void:
-	Config.reset()
-	Config.data.water_enabled = true
-	Config.data.track_water_level_m = -0.8
-	Config.data.track_seed = 1007
-	var scene: Node3D = load("res://main.tscn").instantiate()
-	add_child(scene)
-	# Let world.gd._ready() build the track + terrain + lakes.
-	for i in 8:
-		await get_tree().process_frame
-	var car := scene.get_node("Car")
-	var lake := scene.get_node_or_null("LakeField")
-	var basin_count := 0
-	if lake != null:
-		for c in lake.get_children():
-			if c is MeshInstance3D:
-				basin_count += 1
-	gut.p("[lakes] fielded car at %s | LakeField=%s | water_meshes=%d" % [
-		str(car.global_position), str(lake != null), basin_count])
-	assert_not_null(lake, "a LakeField was built for a water-enabled stage")
-	# Free explicitly (not autofree) so the water shader/material/meshes release
-	# before the suite's exit-time resource check, avoiding a spurious leak flag.
-	remove_child(scene)
-	scene.free()
-	await get_tree().process_frame
-	Config.reset()

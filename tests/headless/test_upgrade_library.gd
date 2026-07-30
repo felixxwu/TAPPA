@@ -231,3 +231,44 @@ func test_effective_meta_keeps_stock_mode_without_kit() -> void:
 	var owned := {"installed_upgrades": [], "disabled_upgrades": [], "drivetrain_override": CarLibrary.RWD}
 	var out := UpgradeLibrary.effective_meta(owned, meta)
 	assert_eq(int(out.get("drive_mode", -1)), CarLibrary.FWD, "override inert without the kit")
+
+
+# --- Prerequisite gate (requires_upgrade_id) ----------------------------------
+# The mechanism that replaced Big Turbo's old difficulty/tier gate: an item can
+# name another item as a prerequisite, and is only reward-eligible once that
+# prerequisite is owned somewhere in the garage. Synthetic entries throughout —
+# see CLAUDE.md: never pin logic tests to a specific catalogue id.
+
+func test_prerequisite_met_is_true_with_no_requirement() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_plain", "name": "Plain", "slot": "aero", "tier": 1, "consumable": false, "effect": {}},
+	])
+	assert_true(UpgradeLibrary.prerequisite_met("fx_plain", {}),
+		"an item with no requires_upgrade_id is always prerequisite-eligible")
+
+
+func test_prerequisite_met_requires_the_prereq_to_be_owned() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_small", "name": "Small", "slot": "turbo", "tier": 1, "consumable": false, "effect": {}},
+		{"id": "fx_big", "name": "Big", "slot": "turbo", "tier": 1, "consumable": false,
+			"requires_upgrade_id": "fx_small", "effect": {}},
+	])
+	var without_prereq := {"cars": [{"instance_id": 1, "model_id": "m", "installed_upgrades": []}]}
+	assert_false(UpgradeLibrary.prerequisite_met("fx_big", without_prereq),
+		"gated until the prerequisite is owned")
+	var with_prereq := {"cars": [{"instance_id": 1, "model_id": "m", "installed_upgrades": ["fx_small"]}]}
+	assert_true(UpgradeLibrary.prerequisite_met("fx_big", with_prereq),
+		"eligible once the prerequisite is owned")
+
+
+func test_owned_anywhere_scans_every_car_in_the_garage() -> void:
+	var profile := {"cars": [
+		{"instance_id": 1, "model_id": "m1", "installed_upgrades": []},
+		{"instance_id": 2, "model_id": "m2", "installed_upgrades": ["fx_fitted"]},
+	]}
+	assert_true(UpgradeLibrary.owned_anywhere(profile, "fx_fitted"),
+		"ownership is checked across the whole garage, not just one car")
+	assert_false(UpgradeLibrary.owned_anywhere(profile, "fx_never_fitted"),
+		"an id fitted to no car is not reported as owned")
+	assert_false(UpgradeLibrary.owned_anywhere({}, "fx_fitted"),
+		"an empty profile owns nothing")

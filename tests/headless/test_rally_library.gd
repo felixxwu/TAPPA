@@ -186,6 +186,24 @@ func test_power_to_weight_restriction_filters() -> void:
 	assert_false(RallyLibrary.is_eligible(floor_only, low), "a car under the floor fails a floor-only gate")
 
 
+func test_pw_gate_rounds_before_comparing_like_the_display_does() -> void:
+	# Regression: the player-facing hp/tonne readouts (detune slider, close-button cap,
+	# ineligibility message) all round to the nearest whole number via "%.0f"/roundi, so a
+	# car whose RAW power-to-weight sits just a hair under a whole-number requirement can
+	# still display as meeting it exactly (e.g. raw 99.6 shows "100 hp/t"). The eligibility
+	# gate must compare the SAME rounded figure the player sees, not the raw float, or a car
+	# that visually meets the requirement gets blocked anyway. Build a synthetic car whose
+	# raw hp/tonne lands just under a whole number, then set the rally's pw_min to exactly
+	# that rounded whole number.
+	var car := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0, "drive_mode": CarLibrary.RWD}
+	var raw_pw := CarLibrary.power_to_weight(car) * RallyLibrary.KW_KG_TO_HP_TONNE
+	var rounded_pw := CarLibrary.power_to_weight_hp_tonne(car)
+	assert_ne(raw_pw, float(rounded_pw), "the synthetic car's raw p/w must not already be a whole number")
+	var rally := {"restriction": {"pw_min": float(rounded_pw)}}
+	assert_true(RallyLibrary.is_eligible(rally, car),
+		"a car whose displayed (rounded) p/w meets the floor must be eligible, even if the raw float sits a hair under it")
+
+
 func test_pw_floor_is_judged_at_the_supplied_floor_meta() -> void:
 	# The pw_min floor accepts a separate floor_meta so an owned car currently DETUNED or
 	# ballasted below the floor is still eligible when its MAX potential clears it (the

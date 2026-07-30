@@ -30,6 +30,10 @@ func before_each() -> void:
 	_save.profile["starter_picked"] = true
 	_save.profile["starter_model_id"] = "fx_light_rwd"
 	_save.grant_car("fx_light_rwd")
+	# A second owned car by default, so wheel_catalogue()'s ownership filter (only owned
+	# cars donate wheels) still offers more than the bare stock option to HQ tests below
+	# that don't care about eligibility specifically — they just need >1 style to cycle.
+	_save.grant_car("fx_rwd_coupe")
 
 
 func after_each() -> void:
@@ -70,12 +74,38 @@ func _other_car_id(model_id: String) -> String:
 	return ""
 
 
+# _other_car_id, granted into the save so it's OWNED (donates wheels under the new
+# eligibility rule — see "Eligibility" below).
+func _other_owned_car_id(model_id: String) -> String:
+	var id := _other_car_id(model_id)
+	if not id.is_empty() and not _is_owned(id):
+		_save.grant_car(id)
+	return id
+
+
+func _is_owned(model_id: String) -> bool:
+	for car in _save.profile.get("cars", []):
+		if String((car as Dictionary).get("model_id", "")) == model_id:
+			return true
+	return false
+
+
 # --- Catalogue -------------------------------------------------------------------
+
+# Grant every fixture car so wheel_catalogue()'s ownership filter doesn't itself
+# constrain a test whose whole point is iterating the catalogue as opaque input.
+func _grant_every_car() -> void:
+	for entry in CarLibrary.all():
+		var id := String(entry.get("id", ""))
+		if not _is_owned(id):
+			_save.grant_car(id)
+
 
 # Every offered style is a real catalogue car with a real texture. Iterates the whole
 # table as opaque input rather than expecting any particular donor.
 func test_wheel_catalogue_entries_are_all_real_catalogue_cars() -> void:
-	var catalogue := CarLibrary.wheel_catalogue()
+	_grant_every_car()
+	var catalogue := CarLibrary.wheel_catalogue(_save.profile)
 	assert_gt(catalogue.size(), 0, "the roster donates at least one wheel style")
 	for option in catalogue:
 		var entry := CarLibrary.by_id(String(option["id"]))
@@ -87,23 +117,61 @@ func test_wheel_catalogue_entries_are_all_real_catalogue_cars() -> void:
 
 # A car with no authored wheel texture renders a blank disc, which isn't a style.
 func test_cars_without_a_wheel_texture_donate_nothing() -> void:
+	_grant_every_car()
 	var textureless: String = String(CarLibrary.all()[0]["id"])
 	var cars: Array[Dictionary] = CarLibrary.all().duplicate(true)
 	cars[0].erase("wheel_texture")
 	var typed: Array[Dictionary] = []
 	typed.assign(cars)
 	CarLibrary.override_for_test(typed)
-	var catalogue := CarLibrary.wheel_catalogue()
+	var catalogue := CarLibrary.wheel_catalogue(_save.profile)
 	assert_gt(catalogue.size(), 0, "the other cars still donate their wheels")
 	for option in catalogue:
 		assert_ne(String(option["id"]), textureless,
 			"a car with no wheel texture is not offered as a style")
 
 
+# --- Eligibility (only owned cars donate wheels) ----------------------------------
+
+# An unowned car's wheels are NOT on offer, even though it authors a real texture.
+func test_an_unowned_cars_wheels_are_excluded() -> void:
+	var unowned := _other_car_id("fx_light_rwd")
+	assert_false(_is_owned(unowned), "the donor is not owned")
+	var options := WheelStyle.options_for("fx_light_rwd", _save.profile)
+	for option in options:
+		assert_ne(String(option["id"]), unowned,
+			"an unowned car's wheels are not offered as a style")
+
+
+# An owned car's wheels ARE on offer.
+func test_an_owned_cars_wheels_are_included() -> void:
+	var owned := _other_owned_car_id("fx_light_rwd")
+	var options := WheelStyle.options_for("fx_light_rwd", _save.profile)
+	var found := false
+	for option in options:
+		if String(option["id"]) == owned:
+			found = true
+	assert_true(found, "an owned car's wheels are offered as a style")
+
+
+# The customized car's OWN stock wheels are always on offer, even for a player who
+# owns only this one car (no other donor exists yet) — the very first car.
+func test_the_customized_cars_own_stock_is_always_available_with_only_one_owned_car() -> void:
+	# A hand-built single-car profile, independent of before_each's default second car —
+	# the very first car a player owns, with no other donor in the garage yet.
+	var solo_profile := {"cars": [{"model_id": "fx_light_rwd", "instance_id": 1}]}
+	var options := WheelStyle.options_for("fx_light_rwd", solo_profile)
+	assert_eq(options.size(), 1, "with only one owned car, only its own stock option is on offer")
+	assert_eq(String(options[0]["id"]), "fx_light_rwd",
+		"with only one owned car, its own stock wheels still lead the list")
+	assert_true(bool(options[0]["stock"]), "and are flagged as stock")
+
+
 # The picker lists the car's OWN wheels first, so "revert to stock" is always reachable
 # without hunting, and every entry is a real catalogue id.
 func test_options_put_the_cars_own_wheels_first() -> void:
-	var options := WheelStyle.options_for("fx_fwd_hatch")
+	_save.grant_car("fx_fwd_hatch")
+	var options := WheelStyle.options_for("fx_fwd_hatch", _save.profile)
 	assert_gt(options.size(), 1, "more than one style is on offer")
 	assert_eq(String(options[0]["id"]), "fx_fwd_hatch", "the car's own wheels lead the list")
 	assert_true(bool(options[0]["stock"]), "the leading option is flagged as stock")
@@ -122,7 +190,7 @@ func test_a_textureless_car_still_gets_a_stock_option() -> void:
 	typed.assign(cars)
 	CarLibrary.override_for_test(typed)
 
-	var options := WheelStyle.options_for(bare)
+	var options := WheelStyle.options_for(bare, _save.profile)
 	assert_eq(String(options[0]["id"]), bare, "its own wheels still lead the list")
 	assert_true(bool(options[0]["stock"]), "and are flagged as the stock option")
 	assert_eq(String(options[0]["texture"]), "",
@@ -170,8 +238,8 @@ func test_unknown_style_falls_back_to_stock() -> void:
 
 
 func test_option_index_finds_the_worn_style_and_defaults_to_stock() -> void:
-	var donor := _other_car_id("fx_light_rwd")
-	var options := WheelStyle.options_for("fx_light_rwd")
+	var donor := _other_owned_car_id("fx_light_rwd")
+	var options := WheelStyle.options_for("fx_light_rwd", _save.profile)
 	var worn := {"model_id": "fx_light_rwd", "wheels": donor}
 	assert_eq(String(options[WheelStyle.option_index(options, worn, "fx_light_rwd")]["id"]), donor,
 		"the cursor seats on the worn style")

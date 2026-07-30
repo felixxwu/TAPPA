@@ -19,9 +19,10 @@ short 8-bar re-trigger means a song swap can land roughly every 8 bars (~11 s at
 with looping OFF and no leading/trailing silence.
 
 Six tracks ship today, four segments each, as ~128 kbps Ogg Vorbis
-(`music/echochamber1..4.ogg` is the HQ theme; `skillz`, `deadlock`, `nightandday`,
-`threaded`, `whoyouare` are the rally pool). Segments must be authored so N→N+1,
-the 4→1 wrap, and a cross-song 4→(new)1 all sum cleanly.
+(`echo_chamber` and `skillz` are the HQ pool — `skillz` also doubles as a rally
+song; `skillz`, `deadlock`, `nightandday`, `threaded`, `whoyouare` are the rally
+pool). Segments must be authored so N→N+1, the 4→1 wrap, and a cross-song
+4→(new)1 all sum cleanly.
 
 ## Lazy loading (boot memory)
 
@@ -51,31 +52,38 @@ Which track plays is decided by the **live scene state**, not by transition hook
 (which are fragile). Every frame `MusicDirector._process` reads
 `get_tree().current_scene.scene_file_path` and resolves it via
 `MusicDirector._song_for_scene`: the **HQ scene** (`res://hq.tscn`, tested by
-`MusicLibrary.is_hq_scene`) always wants `HQ_SONG` (echo_chamber); **every other
-scene** (loading/start line/driving `main.tscn`, `standings.tscn`, `podium.tscn`,
-…) wants the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS`
-(`skillz`, `deadlock`, `nightandday`, `threaded`, `whoyouare`). The result is
-re-queued via `play_song`, which is idempotent and **latches the swap for the next
-8-bar handoff** — so leaving the HQ doesn't cut to the rally song immediately; the
-current Echo Chamber loop finishes and the rally song comes in beat-aligned (and
-vice-versa on return). The `MusicDirector` autoload persists across scene changes,
-so playback is continuous throughout.
+`MusicLibrary.is_hq_scene`) wants the **current HQ song** — one entry of
+`MusicLibrary.HQ_SONGS` (`echo_chamber`, `skillz`); **every other scene**
+(loading/start line/driving `main.tscn`, `standings.tscn`, `podium.tscn`, …) wants
+the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS` (`skillz`,
+`deadlock`, `nightandday`, `threaded`, `whoyouare`). The result is re-queued via
+`play_song`, which is idempotent and **latches the swap for the next 8-bar
+handoff** — so leaving the HQ doesn't cut to the rally song immediately; the
+current HQ loop finishes and the rally song comes in beat-aligned (and vice-versa
+on return). The `MusicDirector` autoload persists across scene changes, so
+playback is continuous throughout.
 
-### Random rally song (per event)
+### Random HQ song and rally song (per visit / per event)
 
-The rally context does not play a fixed song. `MusicDirector` holds
-`_current_rally_song`, and **re-picks it at every loading screen**: `_tick` calls
-`_update_loading_edge`, which watches the `loading_screen` group and, on its rising
-edge (empty → present), calls `MusicLibrary.random_rally_song(_current_rally_song)`
-— a uniformly random pool entry, **never the one just played** (no back-to-back
-repeat). So a fresh song is chosen each time an event loads / you return to HQ /
-the next event begins, and it's held for that whole event (every non-HQ scene
-resolves to the same locked-in song until the next loading edge). The edge check
-runs **before** the stall/suspend early-returns, so it still fires on the web build
-(where a load suspends the director) — the pick lands while the loading screen is
-up, so the following rally uses it. `_current_rally_song` is seeded once in
-`_ready` (and lazily by `_song_for_scene`) so a rally entered before any loading
-screen still has a valid song. HQ music is unaffected — it's always echo_chamber.
+Neither context plays a fixed song. `MusicDirector` holds `_current_hq_song` and
+`_current_rally_song`, and **re-picks both at every loading screen**: `_tick`
+calls `_update_loading_edge`, which watches the `loading_screen` group and, on its
+rising edge (empty → present), calls
+`MusicLibrary.random_rally_song(_current_rally_song)` and
+`MusicLibrary.random_hq_song(_current_hq_song)` — each a uniformly random pool
+entry, **never the one just played** (no back-to-back repeat within that pool).
+So a fresh song is chosen for whichever context is entered next each time an event
+loads / you return to HQ / the next event begins, and it's held for that whole
+visit (every HQ-scene frame resolves to the same locked-in HQ song, every non-HQ
+scene resolves to the same locked-in rally song, until the next loading edge).
+The edge check runs **before** the stall/suspend early-returns, so it still fires
+on the web build (where a load suspends the director) — the pick lands while the
+loading screen is up, so the following scene uses it. `_current_hq_song` and
+`_current_rally_song` are each seeded once in `_ready` (and lazily by
+`_song_for_scene`) so a scene entered before any loading screen still has a valid
+song. `skillz` is shared by both pools — it's an independent per-context pick, so
+a rally can play `skillz` at the same time HQ's own pick (independently) also
+happens to be `skillz`.
 
 > Cross-tempo caveat: an HQ↔rally swap sums Echo Chamber's lead-out with the rally
 > song's lead-in (and vice-versa). These are now Ogg Vorbis, which carries no fixed
@@ -107,9 +115,11 @@ straight to that song's segment 1 at the next beat-aligned handoff.
   `catch_up`). No nodes/audio; fully unit-tested (`tests/headless/test_music_schedule.gd`).
 - **`scripts/music_library.gd`** (`MusicLibrary`) — the `SONGS` catalogue
   (`id → {bpm, segment_paths}`) + `by_id` / `entry_of` / `segment_count`, plus the
-  scene→song mapping (`HQ_SCENE`/`HQ_SONG`/`is_hq_scene`) and the rally pool
-  (`RALLY_SONGS`/`random_rally_song`). Same pattern as
-  `EngineLibrary`, except the audio is **lazy-loaded** (below).
+  scene→song mapping (`HQ_SCENE`/`is_hq_scene`), the HQ pool
+  (`HQ_SONGS`/`random_hq_song`), and the rally pool
+  (`RALLY_SONGS`/`random_rally_song`) — both pool pickers share the private
+  `_random_from_pool` helper. Same pattern as `EngineLibrary`, except the audio
+  is **lazy-loaded** (below).
 - **`scripts/music_director.gd`** (`class_name MusicDirector`, autoload singleton
   **`Music`** — the singleton can't be named `MusicDirector` without colliding
   with the class) — one `AudioStreamPlayer` + `AudioStreamPolyphonic`; each 8-bar
@@ -130,8 +140,10 @@ straight to that song's segment 1 at the next beat-aligned handoff.
 ## Audio routing & volume
 
 `MusicDirector` creates a dedicated **Music** bus at `_ready` (routed to Master),
-independent of the procedural engine audio (`features/engine-audio.md`, on
-Master). Volume is a **player setting** persisted in the save profile
+independent of the procedural engine audio (`features/engine-audio.md`, on its
+own **Engine** bus — also created here, by `_ensure_engine_bus`, and muted while a
+`loading_screen`-group node is present; see engine-audio.md → "Muted during the
+loading screen"). Volume is a **player setting** persisted in the save profile
 (`Save.set_setting("music_volume", …)`, linear [0,1], default `DEFAULT_VOLUME =
 0.6`) — the single source of truth (there is no `GameConfig` volume). `_ready`
 reads it via `Save.get_setting`; `Music.set_volume(linear, persist := true)`

@@ -43,6 +43,9 @@ the `.tres` requires a scene reload to take effect.
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |
 | `wheel_friction_slip_rear` | 0.6 | Rear tire grip coefficient μ |
 | `parking_hold_grip` | 1.0 | Static-friction hold cap (`·m·g`) for a stopped, fully-braked car so it doesn't creep down a slope (`car._apply_parking_hold`); 0 disables |
+| `parking_hold_stiffness` | 300.0 | Stiction spring stiffness (1/s²) pulling a held car back to its anchor; resting slack ≈ disturbance accel / this. Must stay well under `1/dt²` to remain convergent |
+| `parking_hold_damping` | 20.0 | Damping (1/s) on that stiction spring (~0.6 of critical) |
+| `parking_hold_slack` | 0.05 | Slack (m) the anchor trails the car by once the grade beats the stiction cap and the car slides |
 | `suspension_travel` | 0.5 | Spring compression distance (m) / wheel rest length |
 | `suspension_travel_front` | 0.0 | Front travel override; 0 = inherit `suspension_travel` |
 | `suspension_travel_rear` | 0.0 | Rear travel override; 0 = inherit `suspension_travel` |

@@ -2120,7 +2120,8 @@ func _enter_engine_swap() -> void:
 # Open the COSMETIC WHEEL view: the selected car ALONE in the lot (a one-element
 # lineup, which the paginator centres in the bays), framed by a low side-on camera.
 # left/right cycles wheel styles, previewing each live on the settled car; Start fits
-# the shown one. Free and ungated — every car's wheels are always on offer. Entered
+# the shown one. Free and ungated, but restricted to the player's garage — only wheels
+# from owned cars are on offer (plus this car's own stock wheels, always). Entered
 # from the tuning lift's HUB row. See features/wheel-customization.md.
 func _enter_wheel_swap() -> void:
 	# _lift_owned is the authoritative car on the lift (the entry point), not merely the
@@ -2131,7 +2132,7 @@ func _enter_wheel_swap() -> void:
 	_carpark_mode = CarparkMode.WHEELS
 	_wheel_instance_id = int(owned.get("instance_id", -1))
 	var model_id := String(owned.get("model_id", ""))
-	_wheel_options = WheelStyle.options_for(model_id)
+	_wheel_options = WheelStyle.options_for(model_id, Save.profile)
 	_wheel_index = WheelStyle.option_index(_wheel_options, owned, model_id)
 	# A ONE-CAR lineup: _render_lineup_page centres a short page in the lot, so the car
 	# stands alone over a real bay with no neighbours competing for the side-on frame.
@@ -2183,7 +2184,7 @@ func _apply_wheel_preview() -> void:
 			car.reskin_wheels(String(option.get("texture", "")))
 	_car_name_label.text = "%s  (%d of %d)" % [
 		String(option.get("name", "?")), _wheel_index + 1, _wheel_options.size()]
-	_car_stats_label.text = "Wheels are cosmetic — no effect on performance."
+	_car_stats_label.text = "Unlock more wheels by owning more cars."
 	_normalize_menus()  # house text rules on the just-written wheel name / note
 
 
@@ -2396,7 +2397,10 @@ func _qualifying_detune_for(rally: Dictionary, owned: Dictionary, entry: Diction
 	var r: Dictionary = rally.get("restriction", {})
 	if not r.has("pw_max"):
 		return -1.0
-	if CarLibrary.power_to_weight(meta) * KW_KG_TO_HP_TONNE <= float(r["pw_max"]):
+	# Compare the ROUNDED hp/tonne (the figure the player actually sees) so this agrees with
+	# RallyLibrary.ineligibility_reason — a car already at/under the displayed cap shouldn't
+	# be treated as needing a detune.
+	if CarLibrary.power_to_weight_hp_tonne(meta) <= roundi(float(r["pw_max"])):
 		return -1.0
 	var frac := RallyLibrary.qualifying_detune(rally, _full_power_meta(owned, entry, drive_override))
 	return frac if frac > 0.0 and frac < 1.0 else -1.0

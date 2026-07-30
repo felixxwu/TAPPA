@@ -38,6 +38,15 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
     the car runs its own `CarLibrary` stock engine.
   - **`tuning.engine_detune`** (float, default `1.0`) — a `[0, 1]` torque scale
     living in the existing `tuning` bag, written by `Save.set_engine_detune`.
+  - **`wheel_toe`** (`Array` of 4 floats, default `[0.0, 0.0, 0.0, 0.0]`,
+    ordered like `DamageModel.WHEEL_NAMES`) — per-wheel damage misalignment in
+    radians, written by `Save.set_wheel_toe` and defaulted on read for old
+    saves; see `features/damage.md`.
+  - **`drivetrain_override`** (int, default `-1`, meaning "no override — use the
+    car's stock drive mode") — written by `Save.set_drivetrain_override`.
+  - **`wheels`** (string, default absent — absence means "stock wheels") — a
+    non-stock wheel cosmetic id fitted to the car, written/erased by
+    `Save.set_wheels`; purely visual, see `features/wheel-customization.md`.
 - `selected_instance_id` — the owned car the player has **selected** (the one raised
   on the garage tuning lift; see `features/tuning.md`). Resolved lazily by
   `Save.selected_car()`, which self-heals to the first owned car when the stored id
@@ -125,9 +134,16 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
   (`_prune_unknown_upgrades`) drops fitted / toggled-off part ids that no longer
   resolve against `UpgradeLibrary`, so a part retired from the catalogue can't
   linger in a car's `installed_upgrades` and occupy a phantom slot in the menu.
-- **Migration** is keyed by version (`_MIGRATIONS`, currently empty) as pure
-  `Dictionary -> Dictionary` transforms; a newer-than-known version refuses to
-  load and runs in-memory rather than clobbering the file.
+- **Migration** is keyed by version (`_MIGRATABLE_FROM`, currently `[1]`) as pure
+  `Dictionary -> Dictionary` transforms (`_migrate_step`); a newer-than-known
+  version, or a version with no step in `_MIGRATABLE_FROM`, refuses to load and
+  runs in-memory rather than clobbering the file. Current `SCHEMA_VERSION` is
+  `2`; the one authored step is **1 → 2**, added alongside upgrades becoming
+  CAR-BOUND: the old shared `inventory` pool of slottable parts is gone (parts
+  now live on the `OwnedCar` they were won for), so the step strips every
+  non-repair-kit entry from `inventory` — those unbound parts were never
+  applied and have no car to belong to — while leaving repair kits (the one
+  remaining pooled consumable) untouched.
 - **Web build:** on the HTML5 export `user://` is IndexedDB (Emscripten IDBFS) —
   `FileAccess` writes land in an in-memory FS that is pushed to IndexedDB
   *asynchronously*, so a write that hasn't synced when the page goes away is

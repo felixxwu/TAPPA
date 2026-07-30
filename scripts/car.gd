@@ -166,6 +166,12 @@ var _saved_process_priority := 0
 # Project gravity, cached once (never changes at runtime) so the parking-hold path
 # doesn't do a string-keyed ProjectSettings lookup every physics frame.
 var _default_gravity := Platform.gravity()
+# Parking-hold anchor: the horizontal spot the car was standing on when the stiction hold
+# engaged, and whether it is currently set. The hold is a damped spring back to this point
+# (see _apply_parking_hold); it is dropped the moment the hold disengages so the next stop
+# anchors where the car actually ends up.
+var _hold_anchor := Vector3.ZERO
+var _hold_anchor_set := false
 
 func replay_cursor() -> float:
 	return _replay_t
@@ -857,8 +863,6 @@ func _ground_normal() -> Vector3:
 # arrested forward momentum (a central, torque-free impulse — the solver's off-center
 # spin survives), so the post-restore velocity is what the deceleration damage keys off.
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
-	if damage == null:
-		return
 	# The replay ghost is positioned via the physics server (see _step_replay); it must
 	# take no damage and fell no trees — the per-frame reposition would otherwise read
 	# as a huge deceleration and "wreck" it (wreck screen / spurious DNF).
@@ -915,16 +919,13 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# Unified deceleration damage, computed from the POST-restore velocity so a tree the
 	# car ploughs through costs little HP. Skipped for a couple of ticks after a
 	# reset/teleport, whose discontinuous velocity zeroing would read as a false dv.
-	# Also skipped entirely while the car is deliberately held (is_held(): the
-	# countdown's handbrake-only lock, or the full staging/finish lock) — revving
-	# the engine against the parking hold (_apply_parking_hold) legitimately jitters
-	# the chassis a little each tick as the hold force cancels that tick's creep, and
-	# without this guard _integrate_forces faithfully reads that hold-vs-throttle
-	# vibration as a real deceleration and taxes it as impact damage, tick after tick,
-	# for the whole countdown. See features/damage.md.
+	# NOT gated on is_held(): a held car is now genuinely still (the parking hold is a soft
+	# anchored spring, not a velocity cancel, so there is no hold-vs-tire ringing left to
+	# misread as deceleration), so the countdown needs no damage exemption. See
+	# features/damage.md.
 	if _suppress_impact_frames > 0:
 		_suppress_impact_frames -= 1
-	elif not is_held():
+	elif damage != null:
 		var dv := (_approach_velocity - state.linear_velocity).length()
 		var contact_point := state.get_contact_local_position(0) if contacts > 0 else global_position
 		damage.register_deceleration(dv, state.step, contact_point, cfg)
@@ -961,26 +962,64 @@ func _reset() -> void:
 # reset and the off-track recovery (TrackProgress). Restores velocities, wheel
 # spin and engine state so the car drops in cleanly rather than carrying over
 # stale momentum.
-# Static-friction hold for a nearly-stopped, fully-braked car so it doesn't slowly
-# creep down a slope. The tire model's longitudinal force fades to zero as slip does
+# Static-friction hold for a nearly-stopped, fully-braked car so it doesn't slowly creep
+# down a slope. The tire model's longitudinal force fades to zero as slip does
 # (drivetrain._tire_force caps it at |slip|·m/h), so at creep speed gravity's slope
-# component wins and the car dribbles downhill. Rather than freeze the body (which
-# takes it out of the sim and snaps on release), we cancel the residual in-plane
-# velocity each frame with a counter-force, clamped to a friction limit so it acts
-# like real stiction — it holds any sane slope but a wall-steep grade still slides.
+# component wins and the car dribbles downhill. Rather than freeze the body (which takes
+# it out of the sim and snaps on release), the car is tied to an ANCHOR point — the spot
+# it was standing on when the hold engaged — by a soft, damped spring, capped at
+# `parking_hold_grip · m · g` so it behaves like real stiction: it pins the car on any sane
+# grade (a couple of cm of slack at most), but a wall-steep grade overruns the cap and
+# still slides.
+#
+# WHY A SPRING AND NOT A VELOCITY CANCEL (this is the countdown vibration/creep fix — don't
+# "simplify" it back): this used to be F = -m·v_h/dt, i.e. "erase the velocity the car had
+# last tick", sized off the PRE-solve velocity. Two things are wrong with that. First, it
+# has no position feedback at all: nothing ties the car to the ground it is standing on, so
+# it only ever chases velocity. Second, it always runs a tick behind the disturbance — it
+# wipes last tick's velocity while the grade / drivetrain / a nudge injects a fresh a·dt in
+# the same step, so the steady state is not "stopped" but "moving at v ≈ a·dt, every tick,
+# forever". Measured on the old code: a held car crept ~3 cm/s under an ~12° grade's worth
+# of pull, i.e. the visible countdown shudder and sideways creep. (It also double-counted
+# the pinned tires' own friction — both cancel the same velocity in the same step — so the
+# body could be pushed back through zero, and the μ·m·g clip rectified that into yet more
+# drift. Either way the per-tick velocity swing was big enough for the deceleration-damage
+# rule to charge HP for it, which is why that rule was once gated on is_held().)
+#
+# The anchored spring fixes the cause: it corrects DISPLACEMENT, so the resting offset is
+# bounded at ≈ a / parking_hold_stiffness (~1 cm on that same grade) instead of growing
+# without limit, and its per-tick authority is k·offset·dt² ≪ offset (k·dt² ≈ 0.08, ζ ≈ 0.6
+# at the shipped values) so it converges rather than ringing. Correcting displacement rather
+# than velocity also leaves the chassis's own roll/pitch sway to breathe — a velocity cancel
+# stiffens the body and kills body roll dead.
 func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 	# Only hold once the car is actually resting on the ground — a boot-locked car
 	# (StageManager forces the handbrake) must be free to drop onto its wheels first.
 	if not (braked and speed < config.handbrake_lock_speed and _is_grounded()) or delta <= 0.0:
+		_hold_anchor_set = false
 		return
-	# Null the horizontal velocity component (leave vertical to gravity/suspension):
-	# F = -m·v_h/dt zeroes it in one step, so per-frame creep never accumulates.
+	# First engaged tick: anchor on the spot the car is standing (horizontal only —
+	# vertical stays the suspension's / gravity's business).
+	if not _hold_anchor_set:
+		_hold_anchor = global_position
+		_hold_anchor_set = true
+	var cfg: GameConfig = config
+	var offset := global_position - _hold_anchor
+	offset.y = 0.0
 	var v_h := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
-	var hold := -v_h * mass / delta
-	# Clamp to μ·m·g so it behaves like static friction, not an infinite clamp.
-	var cap := config.parking_hold_grip * mass * _default_gravity
+	# Damped spring back to the anchor, in acceleration terms (so it is mass-independent).
+	var accel := -offset * cfg.parking_hold_stiffness - v_h * cfg.parking_hold_damping
+	var hold := accel * mass
+	# Clamp to μ·m·g so it acts like static friction, not an infinite clamp.
+	var cap := cfg.parking_hold_grip * mass * _default_gravity
 	if hold.length() > cap:
 		hold = hold.normalized() * cap
+		# Cap reached: the grade (or a shove) is beating stiction, so let the anchor be
+		# dragged along with the car instead of building unbounded slack it would later
+		# snap back across. (offset can be ~0 here when the damping term alone hits the cap;
+		# normalized() returns zero then, which simply re-anchors under the car.)
+		_hold_anchor = global_position - offset.normalized() * cfg.parking_hold_slack
+		_hold_anchor.y = global_position.y
 	apply_central_force(hold)
 
 

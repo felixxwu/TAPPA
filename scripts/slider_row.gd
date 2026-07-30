@@ -24,9 +24,9 @@ static func build(spec: Dictionary) -> Dictionary:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	# Left column: name on top of the current value. FIXED width (clip, don't grow) so
-	# a longer value — e.g. the detune row's "80% - 200 hp/tonne" readout — can't widen
-	# this column and shrink only that row's slider. Every row's slider column then
-	# gets the same leftover width, so all sliders line up to the same length.
+	# a longer value — e.g. the detune row's "227 HP/T" readout — can't widen this
+	# column and shrink only that row's slider. Every row's slider column then gets
+	# the same leftover width, so all sliders line up to the same length.
 	var label_col := VBoxContainer.new()
 	label_col.add_theme_constant_override("separation", 2)
 	# 130, not the old 180: the logical UI canvas these rows lay out against is only a

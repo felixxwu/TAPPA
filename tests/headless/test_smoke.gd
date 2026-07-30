@@ -119,9 +119,18 @@ func test_chase_camera_orbit_eases_but_always_looks_at_car() -> void:
 	# Travel along +X; the camera should orbit to the -X side, but gradually.
 	car.linear_velocity = Vector3(10.0, 0.0, 0.0)
 	cam._physics_process(0.016)
-	# Look-at is exact every frame: camera points straight at the car immediately.
+	# Look-at is exact every frame (not smoothed) but is NOT the car's centre: it's
+	# offset ahead along the car's facing by chase_look_ahead_ratio × half_length
+	# (see chase_camera.gd's _aim_point). Mirror that formula here with the car's
+	# own live facing/half_length rather than pinning the ratio, so a retune of
+	# chase_look_ahead_ratio can't break this test.
+	var to_aim: Vector3 = (_expected_aim_point(cam, car) - cam.global_position).normalized()
+	assert_gt((-cam.global_transform.basis.z).dot(to_aim), 0.999, "look-at is exact, not smoothed")
+	# The look-ahead offset must stay a genuine "look near the car" behaviour: the
+	# aim point should still be close enough that the camera is clearly still
+	# facing the car, not pointed somewhere unrelated.
 	var to_car: Vector3 = (car.global_position - cam.global_position).normalized()
-	assert_gt((-cam.global_transform.basis.z).dot(to_car), 0.999, "look-at is exact, not smoothed")
+	assert_gt((-cam.global_transform.basis.z).dot(to_car), 0.9, "still roughly faces the car despite look-ahead")
 	# Orbital position eases: after one step it has not fully reached the -X side.
 	assert_gt(cam.global_position.x, -_distance() * 0.9, "orbit eases, does not snap in one step")
 	# After many steps the orbital position converges behind the travel direction.
@@ -133,8 +142,24 @@ func test_chase_camera_orbit_eases_but_always_looks_at_car() -> void:
 	for _i in range(120):
 		cam._physics_process(0.016)
 	assert_lt(cam.global_position.x, -_distance() * 0.6, "orbit converges behind direction of travel")
-	assert_gt((-cam.global_transform.basis.z).dot(
-		(car.global_position - cam.global_position).normalized()), 0.999, "still looks at car")
+	to_aim = (_expected_aim_point(cam, car) - cam.global_position).normalized()
+	assert_gt((-cam.global_transform.basis.z).dot(to_aim), 0.999, "still looks at the (look-ahead) aim point")
+	to_car = (car.global_position - cam.global_position).normalized()
+	assert_gt((-cam.global_transform.basis.z).dot(to_car), 0.9, "still roughly faces the car despite look-ahead")
+
+
+# Mirrors chase_camera.gd's private _aim_point(): the world point the camera aims
+# at, offset ahead of the car's origin along its own facing by the configured
+# chase_look_ahead_ratio × the car's half length. Recomputed here (rather than
+# reaching into the camera's private state) so the test tracks the real formula
+# without pinning the ratio's authored value.
+func _expected_aim_point(cam: Camera3D, car: VehicleBody3D) -> Vector3:
+	var ratio: float = (Config.data as GameConfig).chase_look_ahead_ratio
+	var origin: Vector3 = car.global_position
+	if ratio == 0.0 or not car.has_method("half_length"):
+		return origin
+	var forward: Vector3 = -car.global_transform.basis.z
+	return origin + forward * (car.half_length() * ratio)
 
 
 func _distance() -> float:

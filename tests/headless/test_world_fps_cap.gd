@@ -30,22 +30,17 @@ func after_each() -> void:
 
 
 func test_a_loading_cap_is_applied_before_the_final_one() -> void:
+	# Guards against the post-load cap being applied somewhere that can early-return
+	# (e.g. inside _end_load_timing) — that would leave the loading cap, possibly
+	# uncapped, in force for the whole session, cooking the player's phone.
 	var caps: Array = await _boot()
-	assert_eq(caps.size(), 2, "one loading cap, then one post-load cap")
+	assert_eq(caps.size(), 2, "one loading cap, then one post-load cap on every path")
 
 
 func test_post_load_cap_is_the_resolver_s_choice() -> void:
 	var caps: Array = await _boot()
 	assert_eq(caps[caps.size() - 1], FpsSetting.resolve(),
 		"the cap left in place after loading is whatever FpsSetting.resolve() selects")
-
-
-func test_loading_cap_is_never_left_in_place() -> void:
-	# The real failure mode this guards: applying the post-load cap somewhere that can
-	# early-return (e.g. inside _end_load_timing) would leave the loading cap — possibly
-	# uncapped — in force for the whole session, cooking the player's phone.
-	var caps: Array = await _boot()
-	assert_ne(caps.size(), 1, "the post-load cap must run on every path, headless included")
 
 
 func test_benchmark_never_sees_a_transient_loading_cap() -> void:

@@ -34,7 +34,11 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 `draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`:
 pool = parts at the target tier (stepping down to the nearest lower tier that has
 an eligible part, since not every tier has one; `_parts_at_or_below` also skips
-**`free` parts** — the ballast is always available, so it's never a reward) **plus
+**`free` parts** — the ballast is always available, so it's never a reward —
+and any part whose `requires_upgrade_id` **prerequisite isn't yet owned**
+anywhere in the garage, via `UpgradeLibrary.prerequisite_met`; e.g. Big Turbo
+stays out of the pool until Small Turbo is owned — see
+`upgrade-catalogue.md`'s "Prerequisite gate") **plus
 the repair kit and the
 engine swap token as low-weight entries** (`REPAIR_KIT_DROP_WEIGHT` /
 `ENGINE_SWAP_TOKEN_DROP_WEIGHT`, both placeholders). Parts **already

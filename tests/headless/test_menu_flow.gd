@@ -2080,11 +2080,13 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 			and UpgradeLibrary.slot_of(won) != "drivetrain":
 		assert_false(sc._reveal._choice_pending, "a slottable reward no longer opens Apply/Keep")
 	await get_tree().process_frame
-	assert_eq(sc._action_button.text, UITheme.caps("Continue to next stage >"),
-		"after collecting, the button continues to the next event")
-
-	sc._action_button.pressed.emit()
-	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING, "continue resumes the next event")
+	# There's no separate host-side Continue button any more — the reveal's own
+	# Upgrades/Next row (UpgradeReveal._show_actions) is the only affordance, and
+	# pressing Next resolves `finished`, which advances straight into the next event
+	# with a single press (no redundant second confirmation).
+	assert_true(sc._reveal._next_button.visible, "the reveal shows its own Next action")
+	sc._reveal._next_button.pressed.emit()
+	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING, "Next resumes the next event")
 	RallySession.abandon()
 
 
@@ -2482,8 +2484,7 @@ func test_detune_label_shows_power_to_weight() -> void:
 	var id: int = _save.selected_instance_id()
 	hq._lift_upgrades_box._on_detune_changed(80.0, id)
 	var txt := String(hq._lift_upgrades_box._detune_value.text)
-	assert_true(txt.begins_with("80%"), "detune label leads with the percent")
-	assert_true(txt.to_lower().contains("hp/tonne"), "detune label shows the power-to-weight readout")
+	assert_true(txt.to_upper().contains("HP/T"), "detune label shows the power-to-weight readout")
 
 
 func test_detune_slider_is_present_and_focusable() -> void:

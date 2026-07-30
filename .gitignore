@@ -52,3 +52,6 @@ service-account*.json
 /.superpowers/
 
 /docs/superpowers/
+
+# Blender autosave/backup files
+*.blend1

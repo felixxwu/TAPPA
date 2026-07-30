@@ -1,6 +1,7 @@
 extends GutTest
 # The reward reveal must NOT auto-enable a normal part; the player enables it later
-# in the upgrades menu. Synthetic car + synthetic granted part (no catalogue lean).
+# (either via the reveal's own Upgrades button or the garage). Synthetic car +
+# synthetic granted part (no catalogue lean).
 
 const CarFixtures = preload("res://tests/headless/car_fixtures.gd")
 
@@ -26,7 +27,7 @@ func after_each() -> void:
 	UpgradeLibrary.reset()
 	CarFixtures.restore()
 
-func test_normal_part_reveal_leaves_part_fitted_disabled_and_emits_finished() -> void:
+func test_normal_part_reveal_leaves_part_fitted_disabled_and_offers_next() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
 	var item_id := "t_reveal_part"
@@ -41,4 +42,7 @@ func test_normal_part_reveal_leaves_part_fitted_disabled_and_emits_finished() ->
 	var owned_car: Dictionary = _save.get_car(id)
 	assert_true(owned_car["installed_upgrades"].has(item_id), "part stays fitted")
 	assert_false(UpgradeLibrary.is_enabled(owned_car, item_id), "part stays DISABLED (no auto-enable)")
-	assert_true(got_finished[0], "reveal emits finished without Apply/Keep")
+	assert_false(got_finished[0], "finished waits for Next/Upgrades-done, no more Apply/Keep")
+	assert_true(reveal._action_box.visible, "the Upgrades/Next row is offered instead")
+	reveal._next_button.pressed.emit()
+	assert_true(got_finished[0], "Next continues the flow")

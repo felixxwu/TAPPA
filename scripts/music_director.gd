@@ -28,6 +28,7 @@ var current_segment := 0    # which segment of current_song is playing (0-based)
 var next_handoff := 0.0     # grid time (s) of the next segment's main-loop start
 
 var _current_rally_song := ""  # rally song locked in for the current event ("" = unpicked)
+var _current_hq_song := ""     # HQ song locked in for the current HQ visit ("" = unpicked)
 var _loading_active := false   # true while a loading screen is up (edge-detects re-picks)
 
 var _bpm_override := {}              # test hook: {id: bpm}; bypasses MusicLibrary
@@ -136,6 +137,7 @@ func _ready() -> void:
 	# builds are never headless, so game audio is unchanged.
 	if not Platform.is_headless():
 		_ensure_music_bus()
+		_ensure_engine_bus()
 		_player = AudioStreamPlayer.new()
 		_player.bus = "Music"
 		var poly := AudioStreamPolyphonic.new()
@@ -146,6 +148,7 @@ func _ready() -> void:
 		_playback = _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
 		_apply_volume()
 	_current_rally_song = MusicLibrary.random_rally_song()  # a song ready before the first loading screen
+	_current_hq_song = MusicLibrary.random_hq_song()  # a song ready before the first HQ visit
 	# No hardcoded autostart — _process picks the song from the live scene state
 	# (see update_for_scene), so the first frame starts the right context track.
 
@@ -244,26 +247,54 @@ func update_for_scene(scene_path: String) -> void:
 		play_song(want)
 
 
-# The song a scene wants: the fixed HQ song in the HQ scene, else the rally song
-# chosen for the current event. Lazily seeds a rally song if none has been picked
-# yet (e.g. a rally entered before any loading screen, or in an off-tree test).
+# The song a scene wants: the HQ song locked in for this HQ visit in the HQ
+# scene, else the rally song chosen for the current event. Lazily seeds a song
+# if none has been picked yet (e.g. a scene entered before any loading screen,
+# or in an off-tree test).
 func _song_for_scene(scene_path: String) -> String:
 	if MusicLibrary.is_hq_scene(scene_path):
-		return MusicLibrary.HQ_SONG
+		if _current_hq_song == "":
+			_current_hq_song = MusicLibrary.random_hq_song()
+		return _current_hq_song
 	if _current_rally_song == "":
 		_current_rally_song = MusicLibrary.random_rally_song()
 	return _current_rally_song
 
 
-# Re-pick the rally song on the rising edge of the loading_screen group (a new
-# event / return-to-HQ / next-event is loading), avoiding an immediate repeat.
+# Re-pick the rally song and the HQ song on the rising edge of the
+# loading_screen group (a new event / return-to-HQ / next-event is loading),
+# avoiding an immediate repeat of whichever one was actually just played.
+#
+# Also the single place that mutes/unmutes the "Engine" bus (see _ensure_engine_bus):
+# engine_audio.gd's EngineAudio nodes exist and _process (car.gd places $Car, and
+# world.gd calls apply_car on it, BEFORE track/terrain generation runs) well before
+# the loading screen drops, so without this the engine note is audible throughout
+# the whole load. The loading_screen group presence — not world.gd's applied_fps_caps
+# transition — is the right signal here: it's already polled every frame for the
+# song-repick above, and it tracks exactly when the overlay is actually on screen,
+# whereas the final fps cap lands at a different point on the staged-run path (before
+# loading.finish() there) vs. the non-staged path (after it in _generate_track).
 func _update_loading_edge() -> void:
 	if not is_inside_tree():
 		return
 	var loading := not get_tree().get_nodes_in_group("loading_screen").is_empty()
 	if loading and not _loading_active:
 		_current_rally_song = MusicLibrary.random_rally_song(_current_rally_song)
+		_current_hq_song = MusicLibrary.random_hq_song(_current_hq_song)
 	_loading_active = loading
+	_apply_engine_mute(loading)
+
+
+# Mute/unmute the whole "Engine" bus for the duration a loading screen is up. A
+# bus-level mute (rather than a flag threaded through every EngineAudio instance)
+# is one lever for however many cars have an EngineAudio child alive at once
+# (player + opponent wreck + HQ display cars). No-op if the bus was never created
+# (headless — see _ready — where EngineAudio never calls play() either).
+func _apply_engine_mute(loading: bool) -> void:
+	var idx := AudioServer.get_bus_index("Engine")
+	if idx == -1:
+		return
+	AudioServer.set_bus_mute(idx, loading)
 
 
 func _audio_now() -> float:
@@ -300,6 +331,20 @@ func _ensure_music_bus() -> void:
 	var idx := AudioServer.bus_count
 	AudioServer.add_bus(idx)
 	AudioServer.set_bus_name(idx, "Music")
+	AudioServer.set_bus_send(idx, "Master")
+
+
+# Dedicated bus every EngineAudio instance routes to (see engine_audio.gd _ready),
+# so its volume/mute is one lever independent of the Music/Master buses. Created
+# here (not in engine_audio.gd) so it exists before the first EngineAudio._ready()
+# runs: autoloads are ready before the main scene, and Music is the last-declared
+# autoload in project.godot, so this always runs first.
+func _ensure_engine_bus() -> void:
+	if AudioServer.get_bus_index("Engine") != -1:
+		return
+	var idx := AudioServer.bus_count
+	AudioServer.add_bus(idx)
+	AudioServer.set_bus_name(idx, "Engine")
 	AudioServer.set_bus_send(idx, "Master")
 
 

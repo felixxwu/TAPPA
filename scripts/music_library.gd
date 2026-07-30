@@ -86,14 +86,16 @@ const SONGS: Array[Dictionary] = [
 ]
 
 # Which song plays in which context. Driven by the live SCENE STATE (not by
-# transition hooks, which are fragile): the HQ scene gets HQ_SONG, every other
-# scene (loading, start line, driving, standings, podium …) gets a RALLY song.
-# The HQ song is fixed; the rally song is one of RALLY_SONGS, chosen at random by
-# MusicDirector at every loading screen (see MusicDirector._pick_rally_song) and
-# held for the whole event. The swap latches at the next 8-bar handoff, so it
-# always lands beat-aligned.
+# transition hooks, which are fragile): the HQ scene gets a song from HQ_SONGS,
+# every other scene (loading, start line, driving, standings, podium …) gets a
+# RALLY song. Both the HQ song and the rally song are chosen at random by
+# MusicDirector at every loading screen (see MusicDirector._update_loading_edge)
+# and held for the whole HQ visit / event respectively. The swap latches at the
+# next 8-bar handoff, so it always lands beat-aligned.
 const HQ_SCENE := "res://hq.tscn"
-const HQ_SONG := "echo_chamber"
+# The pool the HQ context draws from. Any of these is a valid HQ song; the
+# director picks one per HQ visit. Order is not significant.
+const HQ_SONGS: Array[String] = ["echo_chamber", "skillz"]
 # The pool the rally context draws from. Any of these is a valid rally song; the
 # director picks one per event. Order is not significant.
 const RALLY_SONGS: Array[String] = ["skillz", "deadlock", "nightandday", "threaded", "whoyouare"]
@@ -161,7 +163,20 @@ static func is_hq_scene(scene_path: String) -> bool:
 # entry (so the same song never plays two events in a row). `exclude_id` may be
 # "" (nothing to avoid, e.g. the first pick).
 static func random_rally_song(exclude_id := "") -> String:
-	var pool := RALLY_SONGS.duplicate()
-	if pool.size() > 1 and pool.has(exclude_id):
-		pool.erase(exclude_id)
-	return pool[randi() % pool.size()]
+	return _random_from_pool(RALLY_SONGS, exclude_id)
+
+
+# A random HQ song id, avoiding `exclude_id` when the pool has more than one
+# entry (so the same song never plays two HQ visits in a row). `exclude_id` may
+# be "" (nothing to avoid, e.g. the first pick).
+static func random_hq_song(exclude_id := "") -> String:
+	return _random_from_pool(HQ_SONGS, exclude_id)
+
+
+# Shared picker: a uniformly random entry of `pool`, avoiding `exclude_id` when
+# the pool has more than one entry.
+static func _random_from_pool(pool: Array[String], exclude_id: String) -> String:
+	var choices := pool.duplicate()
+	if choices.size() > 1 and choices.has(exclude_id):
+		choices.erase(exclude_id)
+	return choices[randi() % choices.size()]

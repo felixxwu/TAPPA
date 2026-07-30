@@ -127,7 +127,7 @@ const RALLIES: Array[Dictionary] = [
 		"map_pos": Vector2(0.34, 0.5),
 		"restriction": {"pw_min": 150.0, "pw_max": 230.0},  # band above Shakedown: MX-5/XJS + Charger/911
 		"events": [
-			{"seed": 2104, "turn_count": 18, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.0},
+			{"seed": 2204, "turn_count": 18, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.0},
 			{"seed": 2105, "turn_count": 18, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65, "water_level": -5.0, "terrain_layer1_amplitude": 18.0},
 			{"seed": 2207, "turn_count": 18, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3, "cliffiness": 0.5, "water_level": -5.0, "terrain_layer1_amplitude": 19.0},
 		],
@@ -346,14 +346,20 @@ static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary, floor_
 	if r.has("engine_max_l") and disp > float(r["engine_max_l"]):
 		return "Engine too large for this class"
 	# power_to_weight is kW/kg; the authored band edges are hp/tonne — convert before comparing.
-	var pw := CarLibrary.power_to_weight(car_meta) * KW_KG_TO_HP_TONNE
-	if r.has("pw_max") and pw > float(r["pw_max"]):
-		return "Power-to-weight too high (%d hp/t, max %d)" % [roundi(pw), roundi(float(r["pw_max"]))]
+	# Compare the ROUNDED hp/tonne figure (CarLibrary.power_to_weight_hp_tonne) — the exact
+	# number the player sees on screen — not the raw float, so a car displaying e.g. "100 hp/t"
+	# that's actually 99.6 isn't blocked by a 100 hp/t requirement it visually meets.
+	# The requirement itself is also rounded before comparing — authored bands are already
+	# whole numbers, so this is a no-op for real rally data, but it keeps BOTH sides of the
+	# comparison on the same rounding rule (matters for synthetic thresholds in tests/tools).
+	var pw := CarLibrary.power_to_weight_hp_tonne(car_meta)
+	if r.has("pw_max") and pw > roundi(float(r["pw_max"])):
+		return "Power-to-weight too high (%d hp/t, max %d)" % [pw, roundi(float(r["pw_max"]))]
 	if r.has("pw_min"):
 		# The floor is judged at the car's MAX potential when the caller supplies floor_meta.
-		var floor_pw := pw if floor_meta.is_empty() else CarLibrary.power_to_weight(floor_meta) * KW_KG_TO_HP_TONNE
-		if floor_pw < float(r["pw_min"]):
-			return "Power-to-weight too low (%d hp/t, min %d)" % [roundi(floor_pw), roundi(float(r["pw_min"]))]
+		var floor_pw := pw if floor_meta.is_empty() else CarLibrary.power_to_weight_hp_tonne(floor_meta)
+		if floor_pw < roundi(float(r["pw_min"])):
+			return "Power-to-weight too low (%d hp/t, min %d)" % [floor_pw, roundi(float(r["pw_min"]))]
 	return ""
 
 

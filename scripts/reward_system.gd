@@ -61,7 +61,7 @@ static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
 static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: RandomNumberGenerator = null, owned_car: Dictionary = {}) -> String:
 	rng = _ensure_rng(rng)
 	var tier := target_tier(rally_difficulty, profile)
-	var parts := _parts_at_or_below(tier, owned_car.get("installed_upgrades", []))
+	var parts := _parts_at_or_below(tier, owned_car.get("installed_upgrades", []), profile)
 	# Weighted pool: each part weight 1.0, plus the repair kit at its low weight.
 	var pool: Array = []
 	for item_id in parts:
@@ -74,13 +74,17 @@ static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: Random
 # Part ids at exactly `tier`, or — if that tier has no eligible part — at the
 # nearest lower tier that does. Excludes consumables (the repair kit is added
 # separately as a weighted entry), `free` parts (ballast is always available, never
-# a reward), and any id in `exclude` (parts already fitted to the driven car). Empty
-# when everything at/below the tier is excluded.
-static func _parts_at_or_below(tier: int, exclude: Array = []) -> Array:
+# a reward), any id in `exclude` (parts already fitted to the driven car), and any
+# item whose prerequisite isn't yet owned (UpgradeLibrary.prerequisite_met — e.g.
+# Big Turbo stays out of the pool until Small Turbo is owned somewhere in the
+# garage). Empty when everything at/below the tier is excluded.
+static func _parts_at_or_below(tier: int, exclude: Array = [], profile: Dictionary = {}) -> Array:
 	for t in range(tier, 0, -1):
 		var parts: Array = []
 		for item in UpgradeLibrary.UPGRADES:
 			if item["consumable"] or bool(item.get("free", false)):
+				continue
+			if not UpgradeLibrary.prerequisite_met(String(item["id"]), profile):
 				continue
 			if int(item["tier"]) == t and not exclude.has(item["id"]):
 				parts.append(item["id"])

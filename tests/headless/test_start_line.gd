@@ -259,6 +259,71 @@ func test_reveal_card_shows_the_current_front_opponents_name_and_time() -> void:
 	assert_string_contains(sl._reveal_time_label.text, "1:15.43", "P1's time to beat is shown (m:ss.cc)")
 
 
+# --- Reveal-queue radius wiring (engine_audio.gd reads these) ----------------
+# engine_audio.gd tightens its proximity radius for queued cars while REVEAL is
+# active, using StartLine.active_instance + reveal_focus_car() to tell "the car
+# on the card" (normal radius) apart from "everyone still waiting" (tighter
+# radius). These are the wiring's own contract, independent of any dB value.
+
+func test_active_instance_is_set_while_the_sequence_is_live() -> void:
+	var sl := _make(_leaders())
+	assert_eq(StartLine.active_instance, sl, "setup() seats itself as the live instance")
+	sl.free()
+	await get_tree().process_frame
+	assert_null(StartLine.active_instance, "freeing the instance clears the static ref")
+
+
+func test_reveal_focus_car_is_null_outside_reveal() -> void:
+	var sl := _make(_leaders())
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU)
+	assert_null(sl.reveal_focus_car(), "no focus car while waiting in MENU")
+
+
+func test_reveal_focus_car_is_the_front_grid_car_during_reveal() -> void:
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL)
+	assert_eq(sl.reveal_focus_car(), sl._grid[0], "the focus car is the one on the reveal card")
+	assert_ne(sl.reveal_focus_car(), sl._grid[1], "a queued car behind it is not the focus car")
+
+
+# Regression: next_car() advances the reveal card (and _grid[0]) the instant the front
+# car is waved off, but the NEW front car takes a moment to physically roll up into the
+# shot from its old queue slot — so for a beat after every tap, `_grid[0]` is the
+# data-correct "next" car while the car still nearest the camera (the one actually on
+# screen) is the one that just departed. reveal_focus_car() must track whichever car is
+# physically closest to the reveal camera at each moment — including through that
+# hand-off beat — not just blindly report `_grid[0]`, or engine_audio.gd exempts the
+# wrong car from attenuation and the player hears the car "behind" the one on screen.
+func test_reveal_focus_car_tracks_the_camera_target_through_the_hand_off() -> void:
+	var sl := _make(_leaders())
+	_launch_to_reveal(sl)
+	var cam_pos: Vector3 = sl._orbit_cam.global_position
+
+	# Before any tap: the front grid car is already parked in the shot, closest to the
+	# camera — it's the focus, matching the earlier (data-index) test above.
+	assert_eq(sl.reveal_focus_car(), sl._grid[0], "at rest, the parked front car is the focus")
+
+	# Tap Next: P1 is sent off (now in _departed) but hasn't actually moved yet this
+	# frame, so it is still physically nearest the camera — the reveal card has already
+	# flipped to P2, but P2 (now _grid[0]) is still back in its old queue slot. The focus
+	# car must stay with the (still on-screen) departing car, not jump to data's `_grid[0]`.
+	var departing = sl._grid[0]
+	sl.next_car()
+	assert_eq(sl.reveal_index(), 1, "the card has already advanced to the next opponent")
+	assert_ne(sl.reveal_focus_car(), sl._grid[0],
+		"the new front car hasn't rolled into shot yet, so it is NOT the focus")
+	assert_eq(sl.reveal_focus_car(), departing,
+		"the just-departed car is still nearest the camera, so it stays the focus")
+
+	# As the departing car actually pulls away and the new front car rolls up, the focus
+	# hands over the moment the new front car becomes the nearer of the two — matching
+	# what the player now sees on screen.
+	departing.global_position = cam_pos + Vector3(0, 0, -200.0)  # long gone down the lead-in
+	assert_eq(sl.reveal_focus_car(), sl._grid[0],
+		"once the departed car is far away, focus hands over to the (now nearest) new front car")
+
+
 func test_reveal_card_shows_the_gap_to_the_fastest_rival() -> void:
 	# The card shows each rival's gap to the fastest (P1); the benchmark reads FASTEST.
 	var sl := _make(_leaders())

@@ -333,20 +333,27 @@ static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
 
 
-# Every car's WHEELS, offered as a cosmetic style any car can wear (see
-# features/wheel-customization.md). Derived from the roster — adding a car adds its
-# wheels for free, and there is no separate authored wheel table to keep in sync.
-# Returns [{ "id": <car id>, "name": <car name>, "texture": <wheel_texture> }, …] in
-# roster order. Cars with no authored wheel_texture are skipped: they render a blank
-# dark disc, which isn't a style worth offering.
-static func wheel_catalogue() -> Array:
+# Every OWNED car's WHEELS, offered as a cosmetic style that car can wear (see
+# features/wheel-customization.md). `profile` is a Save profile Dictionary (the same
+# shape UpgradeLibrary.owned_anywhere reads) — only cars in `profile["cars"]` donate
+# wheels, matching the "only wheels for cars in the garage" eligibility rule. Distinct
+# model ids are returned once each, in first-owned order. Cars with no authored
+# wheel_texture are skipped: they render a blank dark disc, which isn't a style worth
+# offering.
+static func wheel_catalogue(profile: Dictionary) -> Array:
 	var out: Array = []
-	for entry in all():
-		var tex := String(entry.get("wheel_texture", ""))
-		if tex.is_empty():
+	var seen := {}
+	for owned_car in profile.get("cars", []):
+		var model_id := String((owned_car as Dictionary).get("model_id", ""))
+		if model_id.is_empty() or seen.has(model_id):
 			continue
+		var entry := by_id(model_id)
+		var tex := String(entry.get("wheel_texture", ""))
+		if entry.is_empty() or tex.is_empty():
+			continue
+		seen[model_id] = true
 		out.append({
-			"id": String(entry.get("id", "")),
+			"id": model_id,
 			"name": String(entry.get("name", "")),
 			"texture": tex,
 		})
@@ -400,6 +407,16 @@ static func power_to_weight(entry: Dictionary) -> float:
 	if mass <= 0.0:
 		return 0.0
 	return peak_power_kw(entry) / mass
+
+# The player-facing hp/tonne figure, ROUNDED to the nearest whole number — the same
+# rounding every hp/tonne readout applies via "%.0f" (HUD, detail panel, detune slider).
+# Single source of truth for "what number does the player see": any code that gates
+# eligibility against a rally's pw_min/pw_max band must compare THIS value, not the raw
+# kW/kg-derived float, so a car showing e.g. "100 hp/t" that's actually 99.6 is judged
+# eligible for a 100 hp/t floor exactly as displayed (see RallyLibrary.ineligibility_reason,
+# UpgradesMenu.over_pw_limit).
+static func power_to_weight_hp_tonne(entry: Dictionary) -> float:
+	return roundi(power_to_weight(entry) * KW_KG_TO_HP_TONNE)
 
 # The car's peak power in horsepower — shown on the car stats panel. Derived from
 # peak_power_kw via the same kW→hp factor baked into KW_KG_TO_HP_TONNE (÷1000 to

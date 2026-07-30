@@ -146,7 +146,7 @@ func test_detune_label_shows_pw_but_not_the_cap() -> void:
 	# The detune label carries the live p/w readout; the max-p/w cap moved to the close
 	# button, so the label never mentions the limit even when one is set.
 	var with_limit = _menu_with_limit(_owned_fixture_car(), 160.0)
-	assert_string_contains(with_limit._detune_value.text.to_lower(), "hp/tonne")
+	assert_string_contains(with_limit._detune_value.text.to_upper(), "HP/T")
 	assert_false(with_limit._detune_value.text.to_lower().contains("max"),
 		"the cap is on the button now, not the detune label")
 

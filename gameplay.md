@@ -33,9 +33,9 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Topic | Decision |
 |---|---|
 | Economy | **No currency.** Progression is purely cars + upgrades won. |
-| Damage repair | **Repair only via rare items** (a "repair kit" lootbox reward). |
+| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits never drop (`RewardSystem.REPAIR_KIT_DROP_WEIGHT := 0`, `scripts/reward_system.gd:23`), the lift-HQ repair button is hidden (`scripts/hq.gd` `_build_lift_overlay`, `repair.visible = false`), and repair instead happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`, `scripts/rally_session.gd:392-400`). See `todo/remove-repair-kits.md` for the full retirement (some pieces, e.g. the anti-soft-lock replacement for a fully-wrecked car, are still open design questions there — not yet decided). |
 | Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
-| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + the car is **kept at 0 HP** (too damaged to field until a repair kit revives it), not destroyed. |
+| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + the car is **kept at 0 HP** (too damaged to field), not destroyed. *(Updated: recovery is no longer a spent repair kit — see the Damage repair row above; the current auto-repair mechanic runs between events, so the exact path back from a full 0-HP wreck is one of the open questions in `todo/remove-repair-kits.md`.)* |
 | Rally complete | **Finish top 3** in a rally (combined time). |
 | Showdown unlock | **All rallies completed** (top-3 each). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
@@ -58,7 +58,7 @@ roguelike**: do you risk your best car to win, or play it safe?
   starter — `todo/save-persistence.md`.)*
 - **Car metadata for restrictions.** Every car needs tags so rallies can filter
   it: **engine size/type**, **drivetrain layout** (FWD/RWD/AWD — the sim already
-  has drive modes via `drivetrain.cycle_drive_mode`), **country**, **car type**
+  models drive modes via `Drivetrain.drive_mode`), **country**, **car type**
   (e.g. hatch/coupe/saloon), and **power-to-weight** (derivable from engine
   torque + `mass`). Home for this: extend **`CarLibrary`** (per-car overrides
   already live there) with these tags. *(New: metadata schema → its own todo.)*
@@ -93,7 +93,10 @@ roguelike**: do you risk your best car to win, or play it safe?
   start line) tells the player and offers to **return to HQ**. The wrecked car is
   **kept in the garage at 0 HP** — **too damaged to enter a rally** until repaired,
   and its installed upgrades **stay fitted** (parts are consumed on fit, so they're
-  never returned; the car is no longer destroyed).
+  never returned; the car is no longer destroyed). *(Updated: "until repaired" no
+  longer means a spent repair kit — see the Damage repair row in Locked decisions;
+  the exact recovery path for a fully-wrecked (0 HP) car under the auto-repair
+  model is still an open question, see `todo/remove-repair-kits.md`.)*
 - **HP carries over** across events and rallies — chip damage from one rally
   weakens the car in the next unless repaired.
 - **Getting stuck auto-recovers for free.** If a car ends up trapped — pinned,
@@ -108,9 +111,15 @@ roguelike**: do you risk your best car to win, or play it safe?
   cue, so the player can make the "back off or push?" call in the moment.
   *(Implementation in `features/damage.md` › HUD; impact/crash audio in
   `todo/audio.md`.)*
-- **Repair** is via a rare **"repair kit"** item, which **fully restores** a car's
-  health. It can be spent at the **tuning lift**, or at the **car-select screen**
-  when a chosen-but-wrecked car is too damaged to enter — repair it there and race.
+- **Repair — SUPERSEDED.** Originally designed as a rare **"repair kit"** item,
+  spent at the tuning lift or the car-select screen, that fully restores a car's
+  health. As implemented, repair kits never drop and the lift/car-park repair
+  buttons are hidden; repair instead happens **automatically between events**
+  (`Save.field_repair`, `scripts/rally_session.gd:392-400`) — currently a partial
+  restore (see `field_repair_hp_fraction` / `field_repair_toe_fraction` in
+  `config/game_config.tres`), not the kit's full restore. Whether a fully-wrecked
+  (0 HP) car gets a separate full-restore path is still an open question — see
+  `todo/remove-repair-kits.md`.
 - *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
   power degrade with HP lost are tuning numbers; defer exact values to a damage
   todo + playtesting. Reuses the existing collision on signs/trees as impact
@@ -155,7 +164,8 @@ roguelike**: do you risk your best car to win, or play it safe?
 - **No retry, damage sticks:** there is no in-place retry. A rally you don't win
   drops you back to HQ; you can **re-enter it later from the map** (a fresh full
   attempt), but any damage taken persists and the opponent field is unchanged.
-  Re-attempting therefore routes through HQ — repair or swap cars first.
+  Re-attempting therefore routes through HQ — auto-repair happens between events,
+  or swap cars first.
 - **Player DNF:** the only fail-out is **wrecking the car** (HP → 0). There is no
   time-cut DNF — a slow run just places badly; only running out of HP ends the
   rally early.
@@ -176,9 +186,10 @@ roguelike**: do you risk your best car to win, or play it safe?
   re-racing, and the player can grind any rally for replacements. **The
   progress-tier ceiling still clamps farmed rewards** (you farm at your current
   power band, not above it), so grinding builds *breadth*, not a difficulty skip.
-  Per-rally upgrade drops (incl. the repair kit) already repeat simply by running
-  rallies. This is what guarantees the showdown (100% completion) is always
-  reachable — see *Anti-soft-lock*.
+  Per-rally upgrade drops already repeat simply by running rallies (repair kits
+  no longer drop at all — see the Damage repair row in Locked decisions). This is
+  what guarantees the showdown (100% completion) is always reachable — see
+  *Anti-soft-lock*.
 - **Reveal as a lootbox / slot machine** — spinning reels that settle on the
   reward, so the player glimpses the breadth of cars/upgrades that exist (a
   discovery hook, not just a grant).
@@ -215,8 +226,10 @@ Two distinct systems:
   pool on apply, so fitting is a one-time, confirmed commitment; once fitted a
   part can be enabled/disabled per car but never moved), won as rewards and lost
   with the car if it is destroyed. Examples:
-  engine/power, aero kit (unlocks aero tuning), suspension, plus the
-  **repair kit** (consumed to heal damage). *(Exact upgrade list + how each maps
+  engine/power, aero kit (unlocks aero tuning), suspension. *(The repair kit was
+  originally planned as an upgrade-catalogue item too, but it's been retired —
+  repair is now automatic between events, see the Damage repair row in Locked
+  decisions and `todo/remove-repair-kits.md`. Exact upgrade list + how each maps
   to config knobs → its own todo.)*
 
 - **Appearance** — a third, purely **cosmetic** system: any car's **wheels** can be

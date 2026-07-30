@@ -228,6 +228,35 @@ tests that instantiate the intro are unaffected. Tunables:
 `engine_audio_max_attenuation_db` (floor), both on `GameConfig` /
 `game_config.tres`.
 
+**Tighter radius while queued at the start line.** `start_line.gd` queues cars
+`start_queue_gap` apart (7 m), smaller than the normal 8 m `engine_audio_ref_distance_m`
+— and because the falloff is logarithmic (−6 dB/doubling), a car well past the ref
+radius is still only a few dB down, so during the REVEAL phase every queued car sat
+at/near full volume at once (cluttered). `engine_audio.gd._timed_process` now swaps
+in a tighter `engine_audio_ref_distance_reveal_m` (3.5 m default) for any car that
+ISN'T the current reveal-focus car, so queued cars fall off faster while the reveal
+camera is anchored:
+
+```gdscript
+var ref_dist := cfg.engine_audio_ref_distance_m
+var sl := StartLine.active_instance
+if sl != null and _car != sl.reveal_focus_car() and sl.sequence_phase() == StartLine.Seq.REVEAL:
+    ref_dist = cfg.engine_audio_ref_distance_reveal_m
+```
+
+`StartLine.active_instance` is a static ref seated in `setup()` and cleared in
+`_exit_tree()` (null on a plain dev boot, which never builds a `StartLine`).
+`StartLine.reveal_focus_car()` returns `_grid[0]` (the car on the reveal card,
+front-first) only while `sequence_phase() == Seq.REVEAL`, else `null` — so the focus
+car keeps its normal radius (the anchored reveal camera sits ~7.3 m from it per
+`start_reveal_cam_front/side/height_m`, already near the edge of the normal 8 m
+radius, so shrinking its radius too would have made it sound muffled) while every
+car still waiting behind it in `_grid` gets the tighter one. A car that has actually
+launched is popped out of `_grid` by `next_car()` before it drives off, so its
+already-fine natural falloff (mechanism described above) is untouched. This only
+narrows the radius during the reveal queue — the general/racing-context radius
+(`engine_audio_ref_distance_m`) is unchanged everywhere else.
+
 **Suppressing the voice** is done by disabling the node's processing, never by
 fighting the per-frame `volume_db` writer: `car.gd`'s `silence_engine_audio()`
 (props / HQ lift / world wrecks) sets `process_mode = DISABLED`, and
@@ -238,6 +267,24 @@ the frame before `queue_free()` in `_prune_departed()`, so a still-audible
 distant idle isn't hard-cut; otherwise every intro car simply idles, attenuated
 by its distance from the reveal camera (the old bespoke fade + queued-car mute
 are gone — see [start-line.md](start-line.md)).
+
+## Muted during the loading screen
+
+Cars (and their `EngineAudio` children) are placed and `apply_car()`'d — and start
+`_process`ing — well before track/terrain generation runs (`world.gd._ready`: `$Car.apply_car(...)`
+happens, then `await _generate_track(cfg, loading)`), so the engine note would otherwise
+be audible under the loading overlay for the whole load. `engine_audio.gd._ready()` routes
+its `AudioStreamPlayer` through a dedicated **Engine** bus (`bus = &"Engine"`, mirroring how
+`MusicDirector` sets up the Music bus). `MusicDirector` creates that bus (`_ensure_engine_bus`,
+in `_ready`, alongside `_ensure_music_bus`; skipped headless, matching `EngineAudio` never
+calling `play()` there) and mutes/unmutes it every frame in `_update_loading_edge` off the
+`loading_screen` group's presence (`AudioServer.set_bus_mute("Engine", …)`) — the SAME signal
+already used there to re-pick the rally/HQ song on the rising edge, and the one that tracks
+exactly when the overlay is on screen (unlike `world.gd`'s `applied_fps_caps` transition,
+which lands at a different point relative to `loading.finish()` on the staged vs. non-staged
+path). One bus mute covers every `EngineAudio` instance alive at once (player, opponent
+wreck, HQ display cars) without threading a flag through each. Music/UI sfx are unaffected —
+only the Engine bus is touched.
 
 ## Per-target mix rate
 
@@ -296,6 +343,8 @@ checks the replay-leaderboard mute disables `EngineAudio` processing.
 volume/noise/low-octave/post-gain correctly for each catalog entry.
 `tests/headless/test_car_types.gd` checks each car's referenced engine ends up
 applied to the live config (volume, noise level, post-gain).
+`tests/headless/test_music_director.gd`'s `test_engine_bus_is_muted_while_loading_screen_present_and_unmuted_after`
+checks the Engine bus mutes while a `LoadingScreen` is in the tree and unmutes once it's gone.
 
 ## Forced induction
 

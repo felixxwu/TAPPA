@@ -12,8 +12,15 @@ and it sits with tuning in spirit: **free, ungated and reversible**.
   height, load sensitivity and grip — always come from the car's **own**
   `CarLibrary` entry. A wheel change cannot move a single stat.
 - **Free and ungated.** No currency, no token, no consumable, no confirm dialog.
-- **Every car's wheels are always on offer**, whether or not the player owns that
-  car. Wheel choice is not a progression reward.
+- **Eligibility: only wheels from cars the player OWNS are on offer.** This
+  reverses an earlier decision ("every car's wheels are always on offer,
+  regardless of ownership") — a car not yet in the garage doesn't donate its
+  wheels. The car currently being customized always keeps its own stock wheel
+  option available regardless of ownership bookkeeping, so a player can always
+  revert to their own car's stock look — even the very first car, before any
+  other car has been acquired. Wheel choice is still not a *committed* reward
+  (nothing is spent or consumed to fit a style you're eligible for) — it's
+  gated on ownership, not on a separate unlock.
 - **Separate from the engine swap** ([engine-swap.md](engine-swap.md)): it borrows
   that system's *shape* but none of its code and none of its token economy.
 - **No per-axle staggering.** One selection re-skins all four wheels. (The
@@ -32,8 +39,8 @@ already works on any body.
 
 | Piece | Where |
 |---|---|
-| Resolution rules | `scripts/wheel_style.gd` (`WheelStyle`) — `current_wheel_id`, `texture_for`, `options_for`, `option_index` |
-| Style catalogue | `scripts/car_library.gd` → `wheel_catalogue()` — derived from `CARS`, no authored wheel table |
+| Resolution rules | `scripts/wheel_style.gd` (`WheelStyle`) — `current_wheel_id`, `texture_for`, `options_for(stock_model_id, profile)`, `option_index` |
+| Style catalogue | `scripts/car_library.gd` → `wheel_catalogue(profile)` — derived from `profile["cars"]` (owned cars only), no authored wheel table |
 | Persistence | `scripts/save_manager.gd` → `set_wheels()` |
 | Applied to the car | `scripts/car.gd` → `_owned_wheel_texture`, `_wheel_texture_for`, `reskin_wheels` |
 | The wheel view | `scripts/hq.gd` → `CarparkMode.WHEELS`, `_enter_wheel_swap`, `_cycle_wheel`, `_apply_wheel_preview`, `_revert_wheel_preview`, `_commit_wheels` |
@@ -94,7 +101,10 @@ no neighbour competes for the frame. `_camera_target_xform` swaps in the low sid
   solo lineup has no bays to page), which wraps the cursor and previews the style on
   the car via `_apply_wheel_preview`. Deliberately bypasses `_focus_changed`: the
   focused car never changes, and that path would rev the engine and overwrite the
-  wheel name label on every flick.
+  wheel name label on every flick. The stats line under the wheel name reads "Unlock
+  more wheels by owning more cars." — it surfaces the eligibility rule (own more
+  cars to widen the style list), not the cosmetic-only guarantee (that's still true,
+  just no longer what this particular label says).
 - **Fit** — the action button (`_commit_wheels`) writes the style and returns to the
   lift. The stock option commits as an erase.
 - **Back** — `_car_back` calls `_revert_wheel_preview` **before** `_clear_lineup`.

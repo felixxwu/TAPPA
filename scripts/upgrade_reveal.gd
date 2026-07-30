@@ -1,12 +1,16 @@
 extends Control
 class_name UpgradeReveal
 # A self-contained reward card: a slot-machine spin that lands on a won upgrade,
-# then a single "Next" step — normal parts are granted fitted-disabled to the
-# driven car and enabled later in the upgrades menu, no Apply/Keep here.
+# then an Upgrades/Next action row — normal parts are granted fitted-disabled to
+# the driven car and enabled later in the upgrades menu (no Apply/Keep here); Next
+# continues past the card, Upgrades opens the same real UpgradesMenu component the
+# pre-stage start line / HQ garage use (features/upgrade-catalogue.md) so the player
+# can slot the just-won part right away, gated by the same rally p/w-limit warning.
 # A won repair kit offers a Repair-now/Save-it choice when the driven car is below
-# full health; otherwise consumables and the drivetrain kit skip the choice. Emits `finished`
-# once the reveal (+ repair choice, where offered) resolves. Used by the standings
-# interstitial; visually matches the podium reward card (features/menus.md,
+# full health; otherwise consumables and the drivetrain kit skip straight to the
+# Upgrades/Next row. Emits `finished` once the reveal (+ repair choice, where
+# offered, or Next/Upgrades-done) resolves. Used by the standings interstitial;
+# visually matches the podium reward card (features/menus.md,
 # features/reward-system.md). A "Skip >" button appears only while the reel is
 # actually animating (real play, non-zero spin time) and fast-forwards straight
 # to the actual won item — see _on_skip_pressed.
@@ -29,6 +33,16 @@ var _choice_box: HBoxContainer
 var _apply_button: Button
 var _keep_button: Button
 var _skip_button: Button
+# Shown once the reveal lands with no repair choice pending (e.g. "Install it at the
+# next stage"): Upgrades jumps straight into the real garage upgrades menu so the
+# player can slot the just-won part immediately; Next continues exactly as the bare
+# `finished.emit()` used to. See _show_actions / _on_upgrades_pressed.
+var _action_box: HBoxContainer
+var _upgrades_button: Button
+var _next_button: Button
+var _upgrades_menu: UpgradesMenu
+var _upgrades_overlay: CanvasLayer
+var _upgrades_back: Button
 # The spin target + landing callback, stashed so a skip can run the SAME landing
 # steps a natural finish would (see _on_skip_pressed) — the result is always the
 # actual won item, never a random reel stop.
@@ -110,6 +124,24 @@ func _build_ui() -> void:
 	_keep_button.text = "Keep for later"
 	_keep_button.pressed.connect(_on_keep)
 	_choice_box.add_child(_keep_button)
+
+	# The Upgrades/Next action row: same side-by-side HBoxContainer pattern as
+	# _choice_box above, shown once the reveal has landed with nothing left to choose.
+	_action_box = HBoxContainer.new()
+	_action_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_action_box.add_theme_constant_override("separation", 12)
+	_action_box.visible = false
+	col.add_child(_action_box)
+	_upgrades_button = Button.new()
+	_upgrades_button.focus_mode = Control.FOCUS_ALL
+	_upgrades_button.text = "Upgrades"
+	_upgrades_button.pressed.connect(_on_upgrades_pressed)
+	_action_box.add_child(_upgrades_button)
+	_next_button = Button.new()
+	_next_button.focus_mode = Control.FOCUS_ALL
+	_next_button.text = "Next"
+	_next_button.pressed.connect(_on_next_pressed)
+	_action_box.add_child(_next_button)
 
 	UITheme.enforce(self)
 
@@ -225,19 +257,18 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 		return
 	if driven.is_empty() or UpgradeLibrary.slot_of(item_id) == "" or UpgradeLibrary.is_consumable(item_id):
 		_slot_caption.text = UITheme.caps("%s — added to your inventory" % item_name)
-		finished.emit()
+		_show_actions()
 		return
-	var car_name := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
 	if UpgradeLibrary.slot_of(item_id) == "drivetrain":
 		Save.set_upgrade_enabled(_car_instance_id, item_id, true)
-		_slot_caption.text = UITheme.caps("%s installed on your %s — pick a drive mode in the garage" % [item_name, car_name])
-		finished.emit()
+		_slot_caption.text = UITheme.caps("Pick a drive mode in the garage")
+		_show_actions()
 		return
 	# Normal slottable part: grant it to the garage (already fitted-disabled by
-	# rally_session) and let the player install it later in the upgrades menu at
-	# the next event. No Apply/Keep here — one "Next".
-	_slot_caption.text = UITheme.caps("%s added to your garage — install it at the next stage" % item_name)
-	finished.emit()
+	# rally_session) and let the player install it later in the upgrades menu, or
+	# right now via the Upgrades button below — no caption needed here, the reel
+	# above already names the won part and the Upgrades/Next row says what's next.
+	_show_actions()
 
 
 func _on_apply() -> void:
@@ -277,3 +308,75 @@ func _resolve_choice() -> void:
 	_choice_pending = false
 	_choice_box.visible = false
 	finished.emit()
+
+
+# Show the Upgrades/Next action row: hop into the real Upgrades menu right now, or
+# move on. Shown in place of an immediate `finished.emit()` once the
+# reveal has landed with nothing left to choose (repair now/save it — _resolve_choice
+# above — still finishes on its own choice, unchanged).
+func _show_actions() -> void:
+	_action_box.visible = true
+	UITheme.enforce(self)
+	# Framework: focus + WASD/arrow/gamepad nav across Upgrades/Next (no on_back — the
+	# host owns back). Seats the cursor on Next so a repeated confirm-press continues
+	# past the reveal instead of landing on Upgrades.
+	MenuNav.attach(self, {first = _next_button})
+
+
+# Next: continue past the reveal exactly as the bare `finished.emit()` used to.
+func _on_next_pressed() -> void:
+	finished.emit()
+
+
+# Upgrades: open the SAME UpgradesMenu component the pre-stage start line / HQ garage
+# use (features/upgrade-catalogue.md), fed the driven car + the active rally's p/w
+# ceiling so the over-limit warning (UpgradesMenu.bind_close_button/request_close)
+# behaves identically to the pre-stage usage — no bespoke warning logic here.
+func _on_upgrades_pressed() -> void:
+	if _upgrades_overlay == null:
+		_build_upgrades_overlay()
+	var owned: Dictionary = Save.get_car(_car_instance_id)
+	var restriction: Dictionary = RallyLibrary.by_id(RallySession.rally_id()).get("restriction", {})
+	var pw_limit := float(restriction.get("pw_max", -1.0))
+	_upgrades_menu.setup(owned, Callable(), Callable(), pw_limit)
+	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
+	_upgrades_overlay.visible = true
+	get_viewport().gui_release_focus()
+	MenuNav.attach(_upgrades_overlay.get_child(0), {
+		"first": _upgrades_menu.first_control(),
+		"on_back": _upgrades_menu.request_close,
+	})
+
+
+# Done (or back) in the Upgrades overlay: only reachable once UpgradesMenu.can_close()
+# is satisfied (the same p/w gate as the pre-stage popup). Hide the overlay and
+# continue exactly as Next would — the player is never stuck once they're done editing.
+func _close_upgrades() -> void:
+	_upgrades_overlay.visible = false
+	_on_next_pressed()
+
+
+# Build the Upgrades overlay once: same CanvasLayer-over-CenterContainer-over-panel
+# shape as start_line._build_menu_overlay / hq's upgrades popup, just built locally
+# since this card doesn't have a shared host overlay builder to call into.
+func _build_upgrades_overlay() -> void:
+	_upgrades_menu = UpgradesMenu.new()
+	var layer := CanvasLayer.new()
+	layer.layer = 6
+	add_child(layer)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(center)
+	var panel := UITheme.panel(UITheme.PANEL.a)
+	center.add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", UITheme.GAP)
+	col.custom_minimum_size = Vector2(380.0, 0)
+	panel.add_child(col)
+	col.add_child(UITheme.title("Upgrades"))
+	col.add_child(_upgrades_menu)
+	_upgrades_back = UITheme.button("Done")
+	_upgrades_back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	col.add_child(_upgrades_back)
+	UITheme.enforce(layer)
+	_upgrades_overlay = layer

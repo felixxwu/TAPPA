@@ -103,6 +103,13 @@ var _start_xform: Transform3D
 var _player_staged := false   # true once the player is scripted for the roll-up
 var _player_auto_was := false # the player's gearbox auto flag, restored at hand-off
 
+# The live StartLine for this run, if any — set in setup(), cleared in _exit_tree().
+# engine_audio.gd reads this to tell whether ITS car is sitting in the reveal queue
+# (as opposed to already racing), so it can tighten the proximity radius for the
+# cars waiting behind the one currently on the reveal card. A plain dev boot never
+# calls setup(), so this stays null and engine_audio falls back to its normal radius.
+static var active_instance: StartLine = null
+
 
 func _cfg() -> GameConfig:
 	return Config.data
@@ -116,6 +123,7 @@ func _cfg() -> GameConfig:
 func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
 		event_index: int, leaders: Array, camera_manager: CameraManager = null,
 		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
+	active_instance = self
 	_player = player
 	_terrain = terrain
 	_rally = rally  # kept so Tune Car can cap detune at the rally's qualifying power
@@ -941,3 +949,40 @@ func queue_car_ids() -> Array[String]:
 
 func reveal_index() -> int:
 	return _reveal_index
+
+
+# The car actually under the reveal camera's focus right now, while REVEAL is waiting
+# for Next — null outside REVEAL (or with nothing left to show). engine_audio.gd uses
+# this to exempt the focus car from the tightened reveal-queue radius: it's the one the
+# player is looking at, so it should keep sounding at its normal, pre-reveal loudness
+# while the cars waiting behind it get quieter.
+#
+# NOT simply `_grid[0]`: next_car() advances the reveal index (and the card) the
+# instant the front car is waved off, but the NEW front car takes a moment to physically
+# roll up into the shot from its old queue slot (_roll_grid_to_slots), and the departing
+# car takes a moment to actually pull away. So for a brief window after every tap,
+# `_grid[0]` is the data-correct "next" car while the car still nearest the camera — the
+# one actually on screen — is the one that just departed. Picking `_grid[0]` there
+# exempted the wrong car: the player heard the (still-attenuated) car one slot behind
+# the one their eyes were on. Instead, pick whichever car — queued or just-departed —
+# is physically nearest the reveal camera; the exemption then hands over naturally at
+# the moment the new front car actually arrives in shot, matching what's on screen.
+func reveal_focus_car() -> Node3D:
+	if _seq != Seq.REVEAL:
+		return null
+	var cam_pos: Vector3 = _orbit_cam.global_position if _orbit_cam != null else _start_xform.origin
+	var best: Node3D = null
+	var best_d2 := INF
+	for car in _grid + _departed:
+		if car == null or not is_instance_valid(car):
+			continue
+		var d2: float = cam_pos.distance_squared_to(car.global_position)
+		if d2 < best_d2:
+			best = car
+			best_d2 = d2
+	return best
+
+
+func _exit_tree() -> void:
+	if active_instance == self:
+		active_instance = null

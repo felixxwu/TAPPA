@@ -110,20 +110,21 @@ func test_set_volume_can_skip_persistence() -> void:
 
 func test_scene_state_seeds_hq_song_then_latches_rally_song() -> void:
 	var md: MusicDirector = autofree(MusicDirector.new())  # not in tree: no audio, no _ready
-	# Entering the HQ scene from idle seeds + starts the HQ song immediately.
+	# Entering the HQ scene from idle seeds + starts an HQ-pool song immediately.
 	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_eq(md.current_song, MusicLibrary.HQ_SONG, "HQ scene -> HQ song, seeded now")
-	assert_eq(md.requested_song, MusicLibrary.HQ_SONG, "requested is the HQ song")
+	assert_true(MusicLibrary.HQ_SONGS.has(md.current_song), "HQ scene -> an HQ-pool song, seeded now")
+	assert_eq(md.requested_song, md.current_song, "requested is the seeded HQ song")
+	var hq_song: String = md.current_song
 	# Moving to any non-HQ scene queues the current rally song WITHOUT swapping mid-loop.
 	md.update_for_scene("res://main.tscn")
 	assert_true(MusicLibrary.RALLY_SONGS.has(md.requested_song),
 		"non-HQ scene queues a rally-pool song")
-	assert_eq(md.current_song, MusicLibrary.HQ_SONG, "swap is latched, not applied until the handoff")
+	assert_eq(md.current_song, hq_song, "swap is latched, not applied until the handoff")
 	# The rally scene plays exactly the song the director has locked in.
 	assert_eq(md.requested_song, md._current_rally_song, "rally scene queues the locked-in rally song")
-	# Returning to the HQ scene queues the HQ song again.
+	# Returning to the HQ scene queues the locked-in HQ song again.
 	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_eq(md.requested_song, MusicLibrary.HQ_SONG, "back in HQ -> HQ song queued again")
+	assert_eq(md.requested_song, md._current_hq_song, "back in HQ -> the locked-in HQ song queued again")
 
 
 func test_scene_uses_the_locked_rally_song_across_frames() -> void:
@@ -135,6 +136,17 @@ func test_scene_uses_the_locked_rally_song_across_frames() -> void:
 	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "uses the locked rally song")
 	md.update_for_scene("res://standings.tscn")
 	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "still the same rally song, no re-roll")
+
+
+func test_scene_uses_the_locked_hq_song_across_frames() -> void:
+	# Once an HQ song is picked, the HQ scene resolves to that same song until a
+	# new pick (loading edge) changes it — no re-roll per frame.
+	var md: MusicDirector = autofree(MusicDirector.new())
+	md._current_hq_song = MusicLibrary.HQ_SONGS[0]
+	md.update_for_scene(MusicLibrary.HQ_SCENE)
+	assert_eq(md.requested_song, MusicLibrary.HQ_SONGS[0], "uses the locked HQ song")
+	md.update_for_scene(MusicLibrary.HQ_SCENE)
+	assert_eq(md.requested_song, MusicLibrary.HQ_SONGS[0], "still the same HQ song, no re-roll")
 
 
 func test_catch_up_after_a_stall_still_fires_aligned() -> void:
@@ -267,3 +279,32 @@ func test_resume_clears_suspended_when_gates_pass() -> void:
 	md._tick(100.5)                        # window met, group empty -> resume
 	assert_false(md._suspended, "gates pass -> resume clears suspended")
 	md.queue_free()
+
+
+# Engine audio muting (the loading screen should fully silence engine sound —
+# EngineAudio nodes exist and process well before the overlay drops, see
+# music_director.gd _apply_engine_mute). _ready() skips bus creation under
+# headless (nothing plays), so this forces it to isolate the mute LOGIC from
+# real audio device setup; the bus is a real AudioServer bus either way, so
+# is_bus_mute() is exercising the actual lever engine_audio.gd routes through.
+func test_engine_bus_is_muted_while_loading_screen_present_and_unmuted_after() -> void:
+	var md: MusicDirector = autofree(MusicDirector.new())
+	get_tree().root.add_child(md)
+	var pre_existed := AudioServer.get_bus_index("Engine") != -1
+	md._ensure_engine_bus()
+	var idx := AudioServer.get_bus_index("Engine")
+	assert_ne(idx, -1, "Engine bus exists once ensured")
+
+	var ls: LoadingScreen = LoadingScreen.new()
+	get_tree().root.add_child(ls)
+	md._tick(1.0)
+	assert_true(AudioServer.is_bus_mute(idx), "engine bus muted while the loading screen is up")
+
+	get_tree().root.remove_child(ls)
+	ls.free()   # free immediately (not queue_free) so it's gone before the next tick
+	md._tick(1.1)
+	assert_false(AudioServer.is_bus_mute(idx), "engine bus unmuted once the loading screen is gone")
+
+	md.queue_free()
+	if not pre_existed:
+		AudioServer.remove_bus(idx)   # leave AudioServer as we found it for later tests

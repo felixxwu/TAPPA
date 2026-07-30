@@ -660,25 +660,31 @@ func test_level_assist_quiet_when_planted() -> void:
 # decays faster with the aid on than off, and the aid is inert at 0), never a
 # particular strength.
 
-# Seed a roll rate on the settled car and report how much of it survives after
-# `frames` of physics, with the grounded aid at `fraction`. Re-settles first, so
-# both runs start from the identical cached pose. The rate is small enough that
-# all four wheels stay in contact (a lifted wheel would hand BOTH runs the
-# full-strength airborne branch and hide the difference).
+# Seed a roll rate on the settled car and report how much of it (signed, about the
+# seeded roll axis) survives after `frames` of physics, with the grounded aid at
+# `fraction`. Re-settles first, so both runs start from the identical cached pose. The
+# rate is small enough that all four wheels stay in contact (a lifted wheel would hand
+# BOTH runs the full-strength airborne branch and hide the difference).
+#
+# The window is deliberately SHORT (a tick or two). The suspension + tire + parking-hold
+# solve bleeds a seeded roll away almost immediately on its own, so after a handful of
+# ticks what is left is numerical residue — non-monotonic run to run, and no longer a
+# measurement of the aid at all. One tick of the aid's damping torque, read along the
+# seeded axis, is the clean signal (multiples apart, not percent).
 func _grounded_roll_survival(fraction: float, frames: int) -> float:
 	await setup_settled_car()
 	_car.config.level_assist_grounded = fraction
-	_car.angular_velocity = -_car.global_transform.basis.z * 0.5
+	var axis := -_car.global_transform.basis.z
+	_car.angular_velocity = axis * 0.5
 	await _wait_physics(frames)
-	var up := _car.global_transform.basis.y
-	return (_car.angular_velocity - up * _car.angular_velocity.dot(up)).length()
+	return _car.angular_velocity.dot(axis)
 
 
 func test_grounded_level_assist_damps_body_roll() -> void:
 	# Same seeded roll, aid off vs aid on: the aid must bleed the roll rate off
 	# faster. This is the anti-roll-bar behaviour the knob exists for.
-	var off: float = await _grounded_roll_survival(0.0, 6)
-	var on: float = await _grounded_roll_survival(1.0, 6)
+	var off: float = await _grounded_roll_survival(0.0, 1)
+	var on: float = await _grounded_roll_survival(1.0, 1)
 	assert_lt(on, off, "the grounded level assist damps a rolling grounded car")
 
 
@@ -765,26 +771,49 @@ func test_head_on_collision_costs_hp() -> void:
 	assert_lt(_car.damage.hp, 1000.0, "a head-on collision must cost HP")
 
 
-# Regression: revving the engine against the countdown's handbrake-only hold
-# (StageManager.setup: controls_locked = false, handbrake_locked = true) makes
-# _apply_parking_hold cancel the tiny per-tick creep the drive force keeps
-# introducing — a small, legitimate chassis vibration while the car is
-# deliberately held at the line. _integrate_forces used to read that hold-vs-
-# throttle jitter as a real deceleration and charge it as impact damage, tick
-# after tick, for the whole countdown — accumulating "a bunch of small damage"
-# the player never actually caused. car.gd now skips the deceleration-damage
-# measurement entirely while is_held() is true. See features/damage.md.
-func test_no_damage_accumulates_while_held_and_revving() -> void:
+# Regression (the countdown vibration + sideways creep). While the car is held at the line
+# by the countdown's handbrake-only hold (StageManager.setup: controls_locked = false,
+# handbrake_locked = true) driver input stays LIVE, so the player revs against the static
+# parking hold. That hold used to be a velocity CANCEL sized off the PREVIOUS tick's
+# velocity (F = -m·v_h/dt), which always ran a tick behind whatever was pushing the car:
+# each tick it wiped last tick's velocity while the disturbance (a grade, the drivetrain,
+# a nudge) added a fresh a·dt — so a held car lurched along at a steady v ≈ a·dt forever,
+# with nothing tying it to the ground it was standing on. Measured on the old code, an
+# ~12° grade's worth of pull made a held car creep ~3 cm/s indefinitely, visibly
+# shuddering. The hold is now a damped spring to an ANCHOR (car.gd _apply_parking_hold),
+# so displacement — not just velocity — is corrected and the offset is bounded.
+#
+# This asserts the invariant, not a tuned number: under a steady sub-cap disturbance a held
+# car settles to a bounded offset and then STOPS MOVING (the second half of the window adds
+# essentially no further displacement), and no damage is dealt — the deceleration-damage
+# rule is no longer gated on is_held(), so a vibrating hold would show up here as HP loss.
+func test_held_car_stays_put_under_steady_disturbance() -> void:
 	_car.damage.field(1000.0, 1000.0)
 	var impacts: Array = []
 	_car.damage.damaged.connect(func(loss, _pt): impacts.append(loss))
 	_car.controls_locked = false
 	_car.handbrake_locked = true
+	# Let the hold engage and anchor before sampling.
+	await _wait_physics(20)
+	# The flat fixture has no slope, so stand in for one with a steady sub-cap horizontal
+	# pull (2·m N ≈ an ~12° grade — well under the μ·m·g stiction cap), and rev against it.
+	var pull := -_car.global_transform.basis.z * (_car.mass * 2.0)
 	Input.action_press("accelerate")
-	await _wait_physics(90)
+	var start := _car.global_position
+	var half := Vector3.ZERO
+	for i in range(240):
+		_car.apply_central_force(pull)
+		await _wait_physics(1)
+		if i == 119:
+			half = _car.global_position
 	Input.action_release("accelerate")
 	_car.handbrake_locked = false
-	assert_eq(impacts.size(), 0, "no impact/damage events while held (countdown) and revving")
+	var settled_move := (_car.global_position - half).length()
+	assert_lt((_car.global_position - start).length(), 0.05,
+		"a held car takes up only a little stiction slack, it does not creep away")
+	assert_lt(settled_move, 0.005,
+		"a held car stops moving once anchored — no ongoing creep under a steady pull")
+	assert_eq(impacts.size(), 0, "a genuinely still held car registers no impact/damage events")
 	assert_eq(_car.damage.hp, 1000.0, "HP must not drop while the car is deliberately held")
 
 

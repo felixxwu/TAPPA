@@ -13,7 +13,6 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `shift_down` | Q | — | Left bumper (LB/L1) | Manual downshift |
 | `handbrake` | Space | — | A / Cross (South) | Rear-axle handbrake (drift) |
 | `toggle_gearbox` | T | — | X / Square (West) | Toggle manual / auto transmission |
-| `cycle_drive_mode` | Y | — | D-pad Up | Cycle RWD → AWD → FWD |
 | `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
