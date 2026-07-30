@@ -415,7 +415,29 @@ after the game first loads" for a player with several owned cars. Awaiting
 `lineup_built` keeps that whole page's worth of cold-instantiate cost **behind the
 cover**, where a brief wait reads as loading rather than gameplay jank, and it warms
 `_car_cache` for every parked car so the garage picker and tuning lift (above) start
-from a hit, not a cold build. The title camera is a **low, near-ground front-3/4 hero shot** posed ~45° off
+from a hit, not a cold build.
+
+**A car that fails to spawn must never hang boot forever (regression, fixed).**
+`_spawn_lineup_progressive` (`hq.gd`) loops `_obtain_parked_car` → `_spawn_parked_car`
+→ `CarProp.spawn` (`car_prop.gd`) for each car on the page; if the underlying model
+scene fails to instantiate (e.g. a texture dependency the export stripped — see the
+`export_presets.cfg` note below), `CarProp.spawn`'s `scene.instantiate()` itself
+returns null, and that null propagates all the way up. Each GDScript runtime error
+along the way (`use_isolated_config` on null, `set_meta` on null) aborts only the
+**current function's** execution and returns to its caller — so the null bubbles up
+one frame at a time until it reaches `_spawn_lineup_progressive`'s own
+`car.get_meta("lineup_fresh", false)` check. Erroring there aborted
+`_spawn_lineup_progressive` itself **permanently**, before the `for` loop could reach
+its later cars or the trailing `emit_signal("lineup_built")` — so `_ready`'s
+`await lineup_built` (above) never resolved and the `LoadingScreen` cover stayed up
+forever, even though the scene underneath had already finished building and was
+rendering at a steady frame rate (confirmed via `adb logcat` on a real device: the
+`[perf]` counter kept ticking at 60fps behind the stuck "Preparing the garage…" cover).
+The fix is a plain `if car == null: push_warning(...); continue` right before that
+`get_meta` call — a single bad car is now skipped and logged, and the rest of the page
+(and `lineup_built`) still complete normally. See
+`tests/headless/test_lineup_cache.gd::test_a_car_that_fails_to_spawn_is_skipped_not_hung`
+and the test double `tests/headless/hq_null_spawn_double.gd`. The title camera is a **low, near-ground front-3/4 hero shot** posed ~45° off
 the front of the **first (leftmost) parked car**, looking diagonally down the line
 to reveal the rest of the lineup. Its `hq_exterior_cam_eye`/`_look` (GameConfig) are
 **offsets from that lead car** (`_station_xform` → `_first_car_anchor`), so the framing

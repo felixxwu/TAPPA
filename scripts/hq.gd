@@ -2516,6 +2516,14 @@ func _spawn_lineup_progressive(cars: Array, generation: int) -> void:
 		if generation != _settle_generation:
 			return  # a rebuild / back-out replaced this lineup mid-stream
 		var car := _obtain_parked_car(cars[i], _markers[i])
+		# A failed spawn (e.g. a car model/texture that couldn't load) returns null —
+		# skip it rather than let the null escape into _cars or the get_meta call below,
+		# which would throw and silently abort this coroutine mid-loop, leaving
+		# lineup_built never emitted and the boot's `await lineup_built` (see _ready)
+		# hung forever behind the loading cover.
+		if car == null:
+			push_warning("HQ: skipping lineup slot %d — car spawn returned null (bad model/texture?)" % i)
+			continue
 		_cars.append(car)
 		# Both fresh and cached cars are placed frozen at rest (see _spawn_parked_car /
 		# _obtain_parked_car), so there's nothing to settle. Only a freshly-instanced car

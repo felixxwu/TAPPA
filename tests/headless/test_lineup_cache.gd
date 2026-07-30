@@ -465,3 +465,46 @@ func test_free_roam_entered_before_the_prewarm_finishes_still_works() -> void:
 	for id in live:
 		assert_true(is_instance_valid(instance_from_id(id)),
 			"the live Free Roam prop was not freed out from under the lineup")
+
+
+# Regression (features/menus.md → "A car that fails to spawn must never hang boot
+# forever"): a car whose spawn fails (e.g. a model/texture load that makes
+# PackedScene.instantiate() return null — see features/asset-pipeline.md for the real
+# incident) used to throw an unguarded `car.get_meta(...)` on that null in
+# _spawn_lineup_progressive, which permanently aborted the coroutine before it ever
+# reached `emit_signal("lineup_built")` — hanging HQ boot behind the loading cover
+# forever, even though the rest of the scene had already finished building. The fix
+# skips the failed slot instead. Uses a test double (hq_null_spawn_double.gd) to force
+# one specific car's spawn to fail, rather than depending on a real broken asset.
+const NullSpawnHQScript := preload("res://tests/headless/hq_null_spawn_double.gd")
+
+
+func test_a_car_that_fails_to_spawn_is_skipped_not_hung() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	hq.set_script(NullSpawnHQScript)
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var cars := _owned_cars()
+	assert_eq(cars.size(), 2, "fixture roster hands two owned cars")
+	hq.fail_instance_id = int(cars[0]["instance_id"])
+
+	hq._build_lineup(cars)
+
+	# _wait_for_lineup can't be reused here: it waits for _cars.size() >=
+	# _eligible.size(), but the failed slot is skipped so _cars only ever reaches
+	# eligible.size() - 1. Poll bounded on frames instead — the regression this
+	# guards against is the coroutine aborting and NEVER reaching this state, so a
+	# bounded wait that reaches size 1 (not stuck at 0) is exactly the signal that
+	# _spawn_lineup_progressive kept running past the null car instead of dying on
+	# its unguarded get_meta call. (Not asserting on the trailing `lineup_built`
+	# signal itself — like every other test in this file, see `_wait_for_lineup`
+	# above, it relies on `await get_tree().physics_frame`, which GUT's headless
+	# runner doesn't reliably pump.)
+	for _i in 600:
+		if hq._cars.size() >= 1:
+			break
+		await get_tree().process_frame
+
+	assert_eq(hq._cars.size(), 1,
+		"the failed car is skipped (not appended) while the other still parks — the coroutine did not abort")

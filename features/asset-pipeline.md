@@ -19,34 +19,52 @@ Measured on the Web preset (2026-07-28), before and after the two size items bel
 | build | entries | file size |
 |---|---|---|
 | baseline | 483 | 17,349,280 B |
-| after orphan-texture exclusion | 455 | 12,369,260 B |
+| ~~after orphan-texture exclusion~~ (reverted 2026-07-30 — see below, this broke HQ boot) | 455 | 12,369,260 B |
 | after car-body import hygiene | 455 | **7,612,460 B** |
 
-**−9.74 MB, −56%.** The wasm (~37.7 MB uncompressed) is unaffected and remains the
-larger download.
+**−9.74 MB, −56%, measured at the time** — the "orphan-texture exclusion" row's
+saving is **no longer present**: those files turned out to be load-bearing (needed
+by `PackedScene.instantiate()`, not actually orphaned) and excluding them shipped a
+boot-hang/crash bug, so the exclusion was reverted. The "car-body import hygiene"
+saving is unaffected. The wasm (~37.7 MB uncompressed) is unaffected either way and
+remains the larger download.
 
-## Car body textures — the live/orphan trap
+## Car body textures — NOT an orphan, corrected 2026-07-30
+
+> **This section previously claimed the second per-car PNG was a safely-strippable
+> orphan and excluded it from every export preset. That was wrong and shipped a live
+> bug** — see the incident below. The exclusion has been **reverted**
+> (`export_presets.cfg` no longer names any of these files in `exclude_filter`); do
+> not re-add it without re-reading this section.
 
 `CarLibrary.CARS[*].model_texture` names **one** PNG per car, and `car.gd`
 (`_apply_model_material`) loads it by path and assigns it to every non-aero
-`MeshInstance3D` of the car's GLB body. The GLB scenes themselves reference **no**
-textures — the body skin is applied entirely from `model_texture`.
+`MeshInstance3D` of the car's GLB body **after** the model loads — this is the
+"live" skin players actually see.
 
-Seven of the nine car folders contain a **second, byte-identical copy** of the body
-texture. It exists because the unreferenced `.gltf`/`.bin` sidecars next to each
-`.glb` are imported too, and each import extracts its own image. Each orphan cost
-~0.667 MB of VRAM-compressed `.ctex` in the PCK.
+But the claim that "the GLB scenes reference no textures" was false: each `.glb` is
+a self-contained binary glTF with its **own baked material image embedded inside
+it** (`materials[].pbrMetallicRoughness.baseColorTexture` → `images[].bufferView`,
+confirmed by dumping `mx5.glb`'s JSON chunk with `strings` — the embedded image's
+`bufferView.byteLength` matches the extracted PNG's file size exactly, byte for
+byte). Godot's glTF importer extracts that embedded image to a **separate PNG file
+on disk** next to the `.glb` (named after the glTF image's internal `name` field —
+that's why mx5's extracted file is `mx5_Untitled.png`, not `mx5_texture.png`), and
+the **compiled, imported scene's material references the extracted file by UID**.
+That extracted file is what `scene.instantiate()` (`car_prop.gd::spawn`) needs
+at the moment `car.tscn` (which embeds all nine cars' bodies, see below) is
+instantiated — **before** `_apply_model_material` ever runs and overrides it.
+Strip the extracted file from the export and `PackedScene.instantiate()` doesn't
+substitute a blank texture and carry on — it can fail outright and return **null**.
 
-> ### ⚠️ The orphan is NOT consistently named
->
-> For **911, viper and xjs** the *live* file is the bare `texture.png`; for
-> **focus, twingo and thebeast** the bare `texture.png` is the *orphan*. A
-> `texture.png` glob and a `*_texture.png` glob would each strip three live cars.
-> **Every orphan is named individually** in the export presets' `exclude_filter`.
-> If you add a car, re-derive this table from `model_texture` — never from the
-> filename.
+So there are two real, legitimately-different textures per car: the model's own
+extracted/baked material image (load-bearing for instantiation) and the
+hand-authored `model_texture` skin (what the car actually looks like once
+built). They're byte-identical only for `charger` and `acty` (one file serves
+both roles); for the other seven they're genuinely different images and BOTH are
+needed at runtime, for different moments in the same car's construction.
 
-| car | live (`model_texture`) | orphan (excluded from export) |
+| car | model_texture (applied after load) | glb-embedded/extracted (needed to instantiate) |
 |---|---|---|
 | 911 | `blender/911/texture.png` | `blender/911/911_texture.png` |
 | viper | `blender/viper/texture.png` | `blender/viper/viper_texture.png` |
@@ -55,16 +73,39 @@ texture. It exists because the unreferenced `.gltf`/`.bin` sidecars next to each
 | twingo | `blender/twingo/twingo_texture.png` | `blender/twingo/texture.png` |
 | thebeast | `blender/thebeast/mrbeast_texture.png` | `blender/thebeast/texture.png` |
 | mx5 | `blender/mx5/mx5_texture.png` | `blender/mx5/mx5_Untitled.png` |
+| charger | `blender/charger/charger_texture.png` | *(same file)* |
+| acty | `blender/acty/acty_texture.png` | *(same file)* |
 
-`acty` and `charger` have a single body texture each and are not affected.
+### The incident this caused
 
-The orphans and the `.gltf`/`.bin` sidecars are **kept on disk** (they may be part of
-the Blender round-trip) and excluded from the export instead — see the
-`exclude_filter` in every preset in `export_presets.cfg`:
+Excluding the right-hand column shipped in a real Android release and crashed HQ's
+boot for players (device bugreport: `SIGSEGV`/`SEGV_MAPERR` on the GL render
+thread ~3s after launch, deep in a recursive `Object::callp` ↔
+`GDScriptFunction::call` ↔ `Variant::callp` cycle — symbolized against Godot
+4.6.3's official debug-symbols release asset, Build ID
+`e3254c34ee1b6c5b6d2bf697520e8089b4ebe5bc`, matching the shipped `.so` exactly).
+A local debug-signed reproduction (JDK 17 + `android-commandlinetools` +
+NDK r23c installed via `sdkmanager`, debug APK sideloaded onto a Pixel 8) surfaced
+the missing-texture errors directly in `adb logcat` and traced them to a related,
+separately-fixed bug: a null car returned by a failed spawn permanently hung
+`hq.gd::_spawn_lineup_progressive` instead of crashing outright (see
+`menus.md` → *"A car that fails to spawn must never hang boot forever"*). Both the
+export-config regression (this section) and the missing null-guard (`menus.md`)
+needed fixing; neither alone was sufficient.
+
+The `.gltf`/`.bin` sidecars next to each `.glb` genuinely are unreferenced (Godot
+imports them a second time only because they sit next to the `.glb`, producing
+duplicate, never-loaded `.scn` resources) and **remain excluded** — only the
+per-car texture entries were reverted:
 
 ```
-blender/*/*.gltf, blender/*/*.bin, <the seven orphan PNGs, named individually>
+blender/*/*.gltf, blender/*/*.bin, ref/*
 ```
+
+If this size cost needs recovering again, do it in a way that can't hard-fail
+`instantiate()` — e.g. re-export each `.glb` from Blender with its material
+stripped (so there's nothing for the importer to extract), not by excluding an
+already-referenced file from the PCK.
 
 The sidecar exclusion also drops the seven duplicate `.scn` scenes (every car model
 was being imported twice). The double *import* cost at edit time remains; only the
