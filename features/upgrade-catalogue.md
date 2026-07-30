@@ -30,12 +30,13 @@ never-drawn parts — the ballast; see below), an optional `requires_upgrade_id`
 gate for an item that should unlock through owning ANOTHER item rather than
 through raw rally difficulty. `""`/absent (the default) means no
 prerequisite. `UpgradeLibrary.requires_upgrade_id(id)` reads the field;
-`UpgradeLibrary.owned_anywhere(profile, item_id)` checks whether ANY car in
-the garage has that id fitted (upgrades are car-bound, so ownership has to be
-checked across the whole garage, not just the car being rewarded);
-`UpgradeLibrary.prerequisite_met(item_id, profile)` combines the two and is
-what `RewardSystem._parts_at_or_below` consults to keep a gated item out of
-the draw pool until its prerequisite is owned. **Big Turbo (`turbo_large`)**
+`UpgradeLibrary.prerequisite_met(item_id, owned_car)` checks it against
+**that car's** `installed_upgrades` and is what
+`RewardSystem._parts_at_or_below` consults to keep a gated item out of the
+draw pool until the driven car has its prerequisite fitted. The gate is
+deliberately **per-car, not garage-wide** — upgrades are car-bound, so every
+car has to climb its own ladder; a sibling car owning Small Turbo does not
+unlock Big Turbo elsewhere. **Big Turbo (`turbo_large`)**
 is the one entry that currently uses this: it requires `turbo_small` and sits
 at ordinary tier 1 (the old tier-2 difficulty gate it used to carry is gone —
 see `reward-system.md`).
@@ -71,7 +72,7 @@ rally class (a p/w lever alongside engine detune). Weight Reduction is the slot'
 The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the generic
 earn-gated option row — see below.
 Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
-tier 1 + prerequisite-gated on owning `turbo_small`, see above), an aero kit, the three **weight** parts above,
+tier 1 + prerequisite-gated on the same car having `turbo_small`, see above), an aero kit, the three **weight** parts above,
 the drivetrain swap kit, and the two consumables — the **repair kit** and the **engine
 swap token** (both `slot: ""`, held in the shared `inventory`; the token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md)). The concrete part
@@ -227,10 +228,10 @@ boundary (events 1 & 2 of a 3-event rally); the car is the per-rally reward. The
 reward draw picks an `UpgradeDef` by `tier`, clamped by progress, excluding parts
 already on the driven car, never `free` parts (the ballast is always
 available, so it's not a reward), and never a part whose `requires_upgrade_id`
-prerequisite isn't yet owned (Big Turbo, until Small Turbo is owned somewhere in
-the garage) — that policy is reward-system logic (`reward-system.md`); this
+prerequisite isn't yet on the driven car (Big Turbo, until that car has Small
+Turbo) — that policy is reward-system logic (`reward-system.md`); this
 library just provides the tier-keyed pool plus the `requires_upgrade_id` /
-`owned_anywhere` / `prerequisite_met` helpers it reads. The flow
+`prerequisite_met` helpers it reads. The flow
 controller fits each won part straight onto the driven car via
 `Save.install_upgrade(..., enabled=false)` (repair kits, being consumable, go to
 `Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,

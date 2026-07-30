@@ -43,8 +43,8 @@ const UPGRADES: Array[Dictionary] = [
 	{
 		# No longer difficulty-gated (used to sit at tier 2, unreachable until the
 		# reward-tier ceiling opened up) — instead it's PREREQUISITE-gated: only
-		# drawable once the player already owns a Small Turbo somewhere in the
-		# garage (see requires_upgrade_id / UpgradeLibrary.prerequisite_met, used by
+		# drawable for a car that already has a Small Turbo fitted (per-car, not
+		# garage-wide — see requires_upgrade_id / UpgradeLibrary.prerequisite_met, used by
 		# RewardSystem._parts_at_or_below). Sits at tier 1 like turbo_small so the
 		# tier system no longer double-gates it.
 		"id": "turbo_large", "name": "Big Turbo", "menu_label": "Big", "slot": "turbo", "tier": 1,
@@ -133,31 +133,23 @@ static func is_free(id: String) -> bool:
 
 # --- Prerequisite gate --------------------------------------------------------
 # An optional alternative to the tier/difficulty gate: some items (e.g. Big
-# Turbo) should only become winnable once the player already owns another item
-# (Small Turbo), rather than at a raw difficulty/tier threshold. "" (the
+# Turbo) should only become winnable once THIS car already has another item
+# (Small Turbo) fitted, rather than at a raw difficulty/tier threshold. "" (the
 # default) means no prerequisite — every other authored item is ungated here.
 
 static func requires_upgrade_id(id: String) -> String:
 	return String(by_id(id).get("requires_upgrade_id", ""))
 
 
-# Whether ANY car in the profile has `item_id` fitted. Upgrades are car-bound
-# (installed_upgrades lives per-OwnedCar, never in a shared pool — see the
-# schema-version-2 migration above), so "does the player own X" has to scan
-# every car in the garage, not just the one being rewarded.
-static func owned_anywhere(profile: Dictionary, item_id: String) -> bool:
-	for car in profile.get("cars", []):
-		if (car.get("installed_upgrades", []) as Array).has(item_id):
-			return true
-	return false
-
-
-# Whether `item_id` is currently eligible to be drawn/won as a reward on
-# prerequisite grounds: true when it has none, or its prerequisite is already
-# owned somewhere in the garage. Used by RewardSystem._parts_at_or_below.
-static func prerequisite_met(item_id: String, profile: Dictionary) -> bool:
+# Whether `item_id` is currently eligible to be drawn/won as a reward for
+# `owned_car` on prerequisite grounds: true when it has none, or the
+# prerequisite is already fitted TO THAT CAR. The gate is deliberately per-car,
+# not garage-wide — upgrades are car-bound (installed_upgrades lives per
+# OwnedCar), so each car has to earn its way up its own turbo ladder.
+# Used by RewardSystem._parts_at_or_below.
+static func prerequisite_met(item_id: String, owned_car: Dictionary) -> bool:
 	var req := requires_upgrade_id(item_id)
-	return req == "" or owned_anywhere(profile, req)
+	return req == "" or (owned_car.get("installed_upgrades", []) as Array).has(req)
 
 
 # The applied upgrades that currently take effect on a car: installed minus the

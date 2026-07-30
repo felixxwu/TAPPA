@@ -127,19 +127,20 @@ func test_draw_upgrade_never_awards_a_part_the_driven_car_has() -> void:
 # Contract test (not a logic test): Big Turbo is authored with requires_upgrade_id
 # "turbo_small" (replacing its old tier-2 difficulty gate — see upgrade_library.gd),
 # so _parts_at_or_below must honor that wiring against the real catalogue: excluded
-# from the pool until Small Turbo is owned somewhere in the garage, present once it is.
+# from the pool until THE DRIVEN CAR has Small Turbo fitted, present once it does.
 func test_parts_at_or_below_excludes_big_turbo_until_small_turbo_is_owned() -> void:
-	var without := _profile([], [])
+	var without := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
 	for t in range(1, RewardSystem.MAX_TIER + 1):
 		assert_does_not_have(RewardSystem._parts_at_or_below(t, [], without), "turbo_large",
-			"Big Turbo stays out of the pool until its prerequisite is owned")
-	var with_small := {"cars": [{"instance_id": 1, "model_id": "mx5", "hp": 100.0,
-		"installed_upgrades": ["turbo_small"], "tuning": {}}]}
+			"Big Turbo stays out of the pool until this car has its prerequisite")
+	var with_small := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": ["turbo_small"], "tuning": {}}
 	var found := false
 	for t in range(1, RewardSystem.MAX_TIER + 1):
 		if RewardSystem._parts_at_or_below(t, [], with_small).has("turbo_large"):
 			found = true
-	assert_true(found, "Big Turbo becomes drawable once Small Turbo is owned")
+	assert_true(found, "Big Turbo becomes drawable once this car has Small Turbo")
 
 
 func test_draw_upgrade_falls_back_to_consumables_when_car_has_everything() -> void:

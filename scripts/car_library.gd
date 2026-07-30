@@ -335,7 +335,7 @@ static func by_id(id: String) -> Dictionary:
 
 # Every OWNED car's WHEELS, offered as a cosmetic style that car can wear (see
 # features/wheel-customization.md). `profile` is a Save profile Dictionary (the same
-# shape UpgradeLibrary.owned_anywhere reads) — only cars in `profile["cars"]` donate
+# shape Save keeps) — only cars in `profile["cars"]` donate
 # wheels, matching the "only wheels for cars in the garage" eligibility rule. Distinct
 # model ids are returned once each, in first-owned order. Cars with no authored
 # wheel_texture are skipped: they render a blank dark disc, which isn't a style worth

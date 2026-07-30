@@ -276,21 +276,32 @@ data.
   refusing a newer schema, and the conflict backup outliving the rolling `.bak`.
 - `tests/headless/test_smoke.gd` — the `Cloud` autoload is registered and inert.
 
-## Not yet verified (needs a human)
+## Manual verification (needs a human)
 
-None of the following can be exercised headlessly; this list is the acceptance
-check, and **nothing here has been run yet**:
+None of this can be exercised headlessly, so this list is the acceptance check.
+Record results here as they land.
 
-1. Email register → sign out → sign in, on desktop.
-2. Google sign-in on Windows/macOS (loopback), Android (loopback), web (GIS).
-3. **CORS from the itch.io origin** for `identitytoolkit`, `securetoken`,
-   `firestore.googleapis.com` and the GIS script. Godot web `HTTPRequest` goes
-   through `fetch`; these endpoints are documented as browser-usable, but this
-   is unverified from that origin and is the most plausible blocker.
-4. Two-device round trip: progress on desktop → sign in on phone → it appears.
-5. Genuine divergence: play offline on both, reconnect, confirm the prompt.
-6. Airplane mode mid-session: no hang, no data loss, sync resumes.
+- [x] **Google sign-in on macOS (loopback + PKCE)** — passes, 2026-07-31. Getting
+      there needed one fix: Google requires the Desktop client's `client_secret`
+      in the token exchange (its docs exempt only Android, iOS and Chrome
+      clients), so a PKCE-only exchange failed with
+      `invalid_request: client_secret is missing`.
+- [ ] Email register → sign out → sign in, on desktop.
+- [ ] Google sign-in on Android (loopback) and web (GIS).
+- [ ] **CORS from the itch.io origin** for `identitytoolkit`, `securetoken`,
+      `firestore.googleapis.com` and the GIS script. Godot web `HTTPRequest`
+      goes through `fetch`; these endpoints are documented as browser-usable,
+      but this is unverified from that origin and is the most plausible blocker.
+- [ ] Two-device round trip: progress on desktop → sign in on phone → it appears.
+- [ ] Genuine divergence: play offline on both, reconnect, confirm the prompt.
+- [ ] Airplane mode mid-session: no hang, no data loss, sync resumes.
+
+Still outstanding on the console side: the itch.io serving origin must be added
+to the **Web** OAuth client's *Authorised JavaScript origins* before web Google
+sign-in can work. Note that itch serves HTML games from a CDN subdomain rather
+than `itch.io`, and Google requires exact origins with no wildcards — check what
+`location.origin` actually reports from the running game before relying on it.
 
 Related: the local web round-trip in `todo/web-save-persistence.md` is still
 unverified too. Do that one **first** — a broken local IndexedDB flush would make
-check 4 above ambiguous.
+the two-device check ambiguous.

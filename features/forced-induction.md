@@ -158,8 +158,9 @@ tests.)
 
 Big Turbo is **prerequisite-gated** rather than difficulty-gated: it sits at
 ordinary tier 1 (same as Small Turbo) but carries `requires_upgrade_id:
-"turbo_small"`, so `RewardSystem`'s reward draw won't offer it until Small
-Turbo is already owned somewhere in the garage — see `upgrade-catalogue.md`'s
+"turbo_small"`, so `RewardSystem`'s reward draw won't offer it to a car until
+that car already has Small Turbo fitted (per-car, not garage-wide — each car
+climbs its own turbo ladder) — see `upgrade-catalogue.md`'s
 "Prerequisite gate" and `reward-system.md`'s upgrade-draw section.
 
 `UpgradeLibrary.apply()` handles the shared `"install_turbo"` effect key

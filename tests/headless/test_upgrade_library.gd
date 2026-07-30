@@ -235,8 +235,9 @@ func test_effective_meta_keeps_stock_mode_without_kit() -> void:
 
 # --- Prerequisite gate (requires_upgrade_id) ----------------------------------
 # The mechanism that replaced Big Turbo's old difficulty/tier gate: an item can
-# name another item as a prerequisite, and is only reward-eligible once that
-# prerequisite is owned somewhere in the garage. Synthetic entries throughout —
+# name another item as a prerequisite, and is only reward-eligible for a car
+# that already has that prerequisite fitted (per-car, not garage-wide).
+# Synthetic entries throughout —
 # see CLAUDE.md: never pin logic tests to a specific catalogue id.
 
 func test_prerequisite_met_is_true_with_no_requirement() -> void:
@@ -253,22 +254,24 @@ func test_prerequisite_met_requires_the_prereq_to_be_owned() -> void:
 		{"id": "fx_big", "name": "Big", "slot": "turbo", "tier": 1, "consumable": false,
 			"requires_upgrade_id": "fx_small", "effect": {}},
 	])
-	var without_prereq := {"cars": [{"instance_id": 1, "model_id": "m", "installed_upgrades": []}]}
+	var without_prereq := {"instance_id": 1, "model_id": "m", "installed_upgrades": []}
 	assert_false(UpgradeLibrary.prerequisite_met("fx_big", without_prereq),
-		"gated until the prerequisite is owned")
-	var with_prereq := {"cars": [{"instance_id": 1, "model_id": "m", "installed_upgrades": ["fx_small"]}]}
+		"gated until the prerequisite is fitted to this car")
+	var with_prereq := {"instance_id": 1, "model_id": "m", "installed_upgrades": ["fx_small"]}
 	assert_true(UpgradeLibrary.prerequisite_met("fx_big", with_prereq),
-		"eligible once the prerequisite is owned")
+		"eligible once the prerequisite is fitted to this car")
 
 
-func test_owned_anywhere_scans_every_car_in_the_garage() -> void:
-	var profile := {"cars": [
-		{"instance_id": 1, "model_id": "m1", "installed_upgrades": []},
-		{"instance_id": 2, "model_id": "m2", "installed_upgrades": ["fx_fitted"]},
-	]}
-	assert_true(UpgradeLibrary.owned_anywhere(profile, "fx_fitted"),
-		"ownership is checked across the whole garage, not just one car")
-	assert_false(UpgradeLibrary.owned_anywhere(profile, "fx_never_fitted"),
-		"an id fitted to no car is not reported as owned")
-	assert_false(UpgradeLibrary.owned_anywhere({}, "fx_fitted"),
-		"an empty profile owns nothing")
+# The gate is per-car: another car in the garage owning the prerequisite does
+# NOT unlock the gated item for a car that lacks it.
+func test_prerequisite_is_not_satisfied_by_another_car_in_the_garage() -> void:
+	UpgradeLibrary.override_for_test([
+		{"id": "fx_small", "name": "Small", "slot": "turbo", "tier": 1, "consumable": false, "effect": {}},
+		{"id": "fx_big", "name": "Big", "slot": "turbo", "tier": 1, "consumable": false,
+			"requires_upgrade_id": "fx_small", "effect": {}},
+	])
+	var bare_car := {"instance_id": 2, "model_id": "m2", "installed_upgrades": []}
+	assert_false(UpgradeLibrary.prerequisite_met("fx_big", bare_car),
+		"a sibling car owning the prerequisite doesn't unlock it for this one")
+	assert_false(UpgradeLibrary.prerequisite_met("fx_big", {}),
+		"an empty car dict owns nothing")
