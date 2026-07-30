@@ -29,6 +29,24 @@ const AUTH_DOMAIN := "tapparally.firebaseapp.com"
 const GOOGLE_WEB_CLIENT_ID := "406164142327-v43njgg3s2sr7m35mqgabcg78c865rph.apps.googleusercontent.com"
 const GOOGLE_DESKTOP_CLIENT_ID := "406164142327-ts31091ct9kc92e63otb7brul3kvfk4g.apps.googleusercontent.com"
 
+# The Desktop client's secret. Google REQUIRES this in the token exchange even
+# though PKCE is also in use: its docs exempt only Android, iOS and Chrome
+# clients from client_secret, and a "Desktop app" client is none of those —
+# omitting it fails with `invalid_request: client_secret is missing`.
+#
+# It therefore ships inside the game, which Google's installed-app model
+# explicitly anticipates ("the client_secret is obviously not treated as a
+# secret" in that context) — any distributed binary can be unpacked in minutes,
+# so hiding it here would buy nothing real. It is NOT a credential for player
+# data: it identifies the app to Google, and PKCE is what actually
+# authenticates each individual exchange. Player data is protected by
+# firestore.rules and the per-user id token.
+#
+# The one genuine consequence of it being public: someone could build an app
+# that shows YOUR consent screen. If that ever happens, rotate it on the
+# Credentials page and ship a build with the new value.
+const GOOGLE_DESKTOP_CLIENT_SECRET := "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"
+
 # --- Endpoints ---------------------------------------------------------------
 
 const IDENTITY_URL := "https://identitytoolkit.googleapis.com/v1"
@@ -57,7 +75,9 @@ static func user_doc(uid: String) -> String:
 static func google_configured() -> bool:
 	if Platform.is_web():
 		return GOOGLE_WEB_CLIENT_ID != ""
-	return GOOGLE_DESKTOP_CLIENT_ID != ""
+	# Native needs BOTH halves: a Desktop client id without its secret cannot
+	# complete the token exchange, so offering the button would be a dead end.
+	return GOOGLE_DESKTOP_CLIENT_ID != "" and GOOGLE_DESKTOP_CLIENT_SECRET != ""
 
 
 # Short platform tag stored on the cloud document so the conflict prompt can say

@@ -20,9 +20,11 @@ extends Node
 #     token directly, and pulling in the Firebase SDK would mean a second copy of
 #     the auth state we already own in GDScript.
 #
-# PKCE (RFC 7636) is what makes shipping a client id without a secret safe: the
-# code is only redeemable by whoever knows the verifier, which never leaves the
-# process.
+# PKCE (RFC 7636) is what makes each exchange safe: the authorization code is
+# only redeemable by whoever knows the verifier, which never leaves the process.
+# Google additionally requires the Desktop client's client_secret to be sent —
+# see FirebaseConfig.GOOGLE_DESKTOP_CLIENT_SECRET for why that is not the
+# contradiction it looks like.
 
 # Give up rather than leaking a listening socket if the player wanders off.
 const TIMEOUT_SEC := 180.0
@@ -89,20 +91,26 @@ func _sign_in_native() -> Dictionary:
 	if not callback.ok:
 		return _error(callback.error)
 
-	# Exchange the one-time code for tokens. No client secret: a desktop OAuth
-	# client is a "public" client, and PKCE is what authenticates the exchange.
+	# Exchange the one-time code for tokens.
+	#
+	# client_secret is required here. PKCE (code_verifier) is what actually
+	# authenticates THIS exchange, but Google exempts only Android, iOS and
+	# Chrome clients from sending a secret — a Desktop client must send one, and
+	# omitting it fails with `invalid_request: client_secret is missing`.
+	# See the note on FirebaseConfig.GOOGLE_DESKTOP_CLIENT_SECRET.
 	var response = await rest.request_json(
 		HTTPClient.METHOD_POST, FirebaseConfig.GOOGLE_TOKEN_URL,
 		RestClient.form_headers(),
 		RestClient.form_encode({
 			"client_id": FirebaseConfig.GOOGLE_DESKTOP_CLIENT_ID,
+			"client_secret": FirebaseConfig.GOOGLE_DESKTOP_CLIENT_SECRET,
 			"code": callback.code,
 			"code_verifier": verifier,
 			"grant_type": "authorization_code",
 			"redirect_uri": redirect,
 		}))
 	if not response.ok:
-		return _error("Google sign-in failed (%s)." % String(response.get("error", "unknown")))
+		return _error(_token_error(response))
 	var data: Dictionary = response.json if typeof(response.json) == TYPE_DICTIONARY else {}
 	var token := String(data.get("id_token", ""))
 	if token == "":
@@ -290,6 +298,42 @@ static func _s256(verifier: String) -> String:
 	ctx.start(HashingContext.HASH_SHA256)
 	ctx.update(verifier.to_utf8_buffer())
 	return _base64url(ctx.finish())
+
+
+# Turn a failed token exchange into something diagnosable.
+#
+# The OAuth token endpoint ALWAYS explains itself in the response body
+# (`error` plus a human-readable `error_description`), and reporting only the
+# HTTP status throws that away — "failed (http_400)" is indistinguishable
+# between a stale code, a redirect_uri mismatch and a bad PKCE verifier, which
+# are three completely different fixes. Mirrors AuthService._message_for: map
+# what we recognise, but never swallow what we don't.
+func _token_error(response: Dictionary) -> String:
+	var body: Variant = response.get("json", {})
+	var code := ""
+	var detail := ""
+	if typeof(body) == TYPE_DICTIONARY:
+		code = String((body as Dictionary).get("error", ""))
+		detail = String((body as Dictionary).get("error_description", ""))
+	# Also to the log: the on-screen message has to stay short, but the raw pair
+	# is what actually identifies the fault when someone reports it.
+	push_warning("GoogleSignIn: token exchange failed (status %d) %s %s"
+		% [int(response.get("status", 0)), code, detail])
+	match code:
+		"invalid_grant":
+			# The code was already used, expired (they are short-lived), or was
+			# issued for a different client.
+			return "Google sign-in expired — please try again."
+		"redirect_uri_mismatch":
+			return "Google rejected the sign-in redirect (redirect_uri_mismatch). %s" % detail
+		"invalid_client":
+			return "This build's Google client ID is wrong or is not a Desktop client."
+		_:
+			if code != "" and detail != "":
+				return "Google sign-in failed: %s — %s" % [code, detail]
+			if code != "":
+				return "Google sign-in failed: %s" % code
+			return "Google sign-in failed (status %d)." % int(response.get("status", 0))
 
 
 func _error(message: String) -> Dictionary:
