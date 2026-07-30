@@ -6,12 +6,17 @@ name: Release
 #   - export-android  -> itch.io (sideloadable .apk)
 #   - export-windows  -> itch.io (.exe)
 #   - publish-play    -> Google Play Console (.aab)
+#   - deploy-rules    -> Firestore security rules (only when they change)
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
 #   BUTLER_API_KEY             - itch.io butler API key (web/android/windows)
 #   ANDROID_KEYSTORE_B64       - base64 of the upload keystore (android + play)
 #   ANDROID_KEYSTORE_PASSWORD  - that keystore's password
 #   PLAY_SERVICE_ACCOUNT_JSON  - full contents of the GCP service-account JSON key
+#   FIREBASE_SERVICE_ACCOUNT   - GCP service-account JSON key for the tapparally
+#                                Firebase project, role "Firebase Rules Admin".
+#                                A DIFFERENT key from PLAY_SERVICE_ACCOUNT_JSON
+#                                (different project, far narrower permissions).
 #
 # NOTE ON THE FIRST PLAY RELEASE: the Play Developer API refuses the very first
 # upload for a brand-new app. You must upload one build by hand in the Play
@@ -439,3 +444,104 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+  deploy-rules:
+    name: Deploy Firestore rules
+    runs-on: ubuntu-latest
+    # Independent of the export jobs (no `needs`): deploying security rules has
+    # nothing to do with building the game, so it must not wait on the caches
+    # gate, and a rules failure must not stop a release going out.
+    #
+    # WHY THE CHANGE CHECK: this workflow runs on every push to main, but the
+    # rules change roughly never. GitHub's `paths:` filter is workflow-level,
+    # not job-level, so the equivalent has to be done here by hand — otherwise
+    # every unrelated push would redeploy the rules, and (until the Firestore
+    # database exists) would paint every single release run red.
+    #
+    # Deploying is idempotent, so the check errs towards RUNNING whenever it
+    # cannot tell what changed: a redundant deploy costs ~30s, a skipped one
+    # silently leaves the live rules behind main, which is the failure this
+    # automation exists to prevent.
+    #
+    # Requires the FIREBASE_SERVICE_ACCOUNT secret (see header).
+    permissions:
+      contents: read
+    # Never let two rules deploys race — the winner would be whichever finished
+    # last rather than whichever was newer.
+    concurrency:
+      group: firestore-rules
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Enough history to diff this push against its parent. Full history is
+          # ~100 MiB here, which is not worth cloning to answer one question.
+          fetch-depth: 2
+
+      - name: Did the rules change?
+        id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          run_it=true
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # Diff the push range when we can reach both ends; otherwise fall
+            # through to run_it=true (new branch, force push, shallow miss).
+            if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]] \
+                && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              changed="$(git diff --name-only "${BEFORE}" "${{ github.sha }}")"
+              if grep -qE '^(firestore\.rules|firebase\.json|\.firebaserc)$' <<<"${changed}"; then
+                run_it=true
+              else
+                run_it=false
+              fi
+            fi
+          fi
+          echo "run=${run_it}" >> "$GITHUB_OUTPUT"
+          if [[ "${run_it}" == "true" ]]; then
+            echo "Rules deploy will run."
+          else
+            echo "No rules changes in this push — skipping deploy."
+          fi
+
+      - name: Set up Node
+        if: steps.check.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install firebase-tools
+        if: steps.check.outputs.run == 'true'
+        run: npm install -g firebase-tools@13
+
+      - name: Write service-account credentials
+        if: steps.check.outputs.run == 'true'
+        env:
+          # Via env, not inline in the script: a secret interpolated straight
+          # into a shell command can be mangled by quoting and is easier to leak
+          # into a trace.
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SERVICE_ACCOUNT}" ]]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT secret is not set — see this workflow's header."
+            exit 1
+          fi
+          printf '%s' "${SERVICE_ACCOUNT}" > "${RUNNER_TEMP}/firebase-key.json"
+          chmod 600 "${RUNNER_TEMP}/firebase-key.json"
+
+      - name: Deploy rules
+        if: steps.check.outputs.run == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-key.json
+        run: |
+          set -euo pipefail
+          firebase deploy --only firestore:rules --project tapparally --non-interactive
+
+      - name: Remove credentials
+        # Always, so a key never outlives the step that needed it (the runner is
+        # ephemeral, but this costs nothing).
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/firebase-key.json"

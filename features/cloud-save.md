@@ -27,7 +27,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `firestore.rules` | Security rules, kept in git rather than only in the console. |
 | `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project. |
-| `.github/workflows/firebase-rules.yml` | Deploys the rules on change (and on manual dispatch). |
+| `.github/workflows/deploy.yml` › `deploy-rules` | Deploys the rules on change (and on manual dispatch). |
 
 **Dependency direction: `Cloud` → `Save`, never the reverse.** `Save` emits
 `profile_changed` / `flushed` and knows nothing about who is listening, so the
@@ -226,14 +226,21 @@ Google button rather than offering an option that cannot work.
 single source of truth for who can read a player's save rather than something
 that silently drifts from whatever was last pasted into the console.
 
-`.github/workflows/firebase-rules.yml` runs on pushes to `main` that touch the
-rules (or `firebase.json` / `.firebaserc`), and can be run manually via
-**workflow_dispatch** — which is how you do the *first* deploy, since the
-initial commit of the workflow may land before the secret exists.
+The `deploy-rules` job in `.github/workflows/deploy.yml` handles it. It runs on
+pushes to `main` and on **workflow_dispatch** — the latter is how you do the
+*first* deploy, since the workflow may land before the secret exists.
 
-It is deliberately a separate workflow from `deploy.yml`: rules change roughly
-never and take seconds, and coupling them to the game exports would mean a rules
-typo blocks a release, or a broken Android export blocks a security fix.
+It lives in the Release workflow rather than a workflow of its own purely to
+keep the Actions tab to one entry. Two consequences are worth knowing:
+
+- It has **no `needs`**, so it runs alongside the export jobs rather than behind
+  the cache gate, and a rules failure cannot stop a game release going out.
+- GitHub's `paths:` filter is workflow-level, not job-level, so the "only when
+  the rules changed" check is done in the job itself by diffing the push range.
+  It deliberately errs towards deploying whenever it can't tell what changed
+  (force push, new branch, shallow miss): a redundant deploy costs ~30 seconds,
+  a wrongly skipped one leaves the live rules behind `main`, which is the exact
+  failure this automation exists to prevent.
 
 **One-time setup**: create a service-account key in the `tapparally` GCP project
 with the **Firebase Rules Admin** role (`roles/firebaserules.admin`), and put the
