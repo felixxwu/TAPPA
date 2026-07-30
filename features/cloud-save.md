@@ -26,6 +26,8 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by Settings and by the title screen. |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `firestore.rules` | Security rules, kept in git rather than only in the console. |
+| `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project. |
+| `.github/workflows/firebase-rules.yml` | Deploys the rules on change (and on manual dispatch). |
 
 **Dependency direction: `Cloud` → `Save`, never the reverse.** `Save` emits
 `profile_changed` / `flushed` and knows nothing about who is listening, so the
@@ -210,12 +212,39 @@ again by signing back in.
 3. Google Cloud → Credentials → **OAuth client ID → Desktop app** →
    `GOOGLE_DESKTOP_CLIENT_ID`. (Only desktop-type clients may use loopback
    redirects; the web client may not.)
-4. Firestore → create the database (Native mode); deploy `firestore.rules`.
+4. Firestore → create the database (Native mode). The **rules deploy is
+   automated** — see below.
 5. Auth → Settings → **Authorised domains** → add the itch.io origin.
 
 Both client-id constants are **empty** until step 2/3 are done;
 `FirebaseConfig.google_configured()` is false meanwhile and the UI hides the
 Google button rather than offering an option that cannot work.
+
+### Deploying the rules
+
+`firestore.rules` is deployed by CI, not by hand, so the committed file is the
+single source of truth for who can read a player's save rather than something
+that silently drifts from whatever was last pasted into the console.
+
+`.github/workflows/firebase-rules.yml` runs on pushes to `main` that touch the
+rules (or `firebase.json` / `.firebaserc`), and can be run manually via
+**workflow_dispatch** — which is how you do the *first* deploy, since the
+initial commit of the workflow may land before the secret exists.
+
+It is deliberately a separate workflow from `deploy.yml`: rules change roughly
+never and take seconds, and coupling them to the game exports would mean a rules
+typo blocks a release, or a broken Android export blocks a security fix.
+
+**One-time setup**: create a service-account key in the `tapparally` GCP project
+with the **Firebase Rules Admin** role (`roles/firebaserules.admin`), and put the
+whole JSON in the `FIREBASE_SERVICE_ACCOUNT` repository secret. This is a
+different key from `PLAY_SERVICE_ACCOUNT_JSON` — different project, different
+permissions — so do not reuse that one. The workflow fails with a clear message
+if the secret is missing.
+
+Until the first deploy runs, a new Firestore database denies everything, and
+sign-in will succeed while every sync fails with the 403 that `CloudSync`
+reports as "Check the Firestore rules".
 
 The **API key is public by design** and safe to commit — it identifies the
 project, it does not authorise anything. `firestore.rules` is what protects the
