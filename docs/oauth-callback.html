@@ -39,19 +39,25 @@
 <p id="status">Signing you in…</p>
 <script>
 (function () {
-  // The game window's origin. Google's redirect lands here, and the token is
-  // posted back to whoever opened us — targeted explicitly rather than '*' so
-  // the token cannot be read by an unrelated frame.
-  var GAME_ORIGINS = [
-    'https://html.itch.zone',   // itch.io HTML game CDN
-    'http://localhost',         // local test server
-    'http://127.0.0.1'
-  ];
-
   var params = new URLSearchParams((location.hash || '').replace(/^#/, ''));
   var token = params.get('id_token') || '';
   var state = params.get('state') || '';
   var error = params.get('error') || '';
+
+  // The game passes its own origin through `state` as "<nonce>|<origin>".
+  // postMessage needs an exact targetOrigin, and a mismatch is dropped
+  // SILENTLY — the window closes and the game waits forever with no error
+  // anywhere. Guessing the origin from a hardcoded list was exactly that bug:
+  // itch serves games from html.itch.zone AND html-classic.itch.zone.
+  //
+  // Only https (or localhost for development) is accepted as a target, so a
+  // crafted state cannot redirect the token to an arbitrary scheme.
+  var target = '';
+  var bar = state.lastIndexOf('|');
+  if (bar >= 0) { target = state.slice(bar + 1); }
+  var allowed = /^https:\/\/[^\/]+$/.test(target)
+    || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(target);
+  if (!allowed) { target = ''; }
 
   // Remove the token from the address bar straight away: it should not sit in
   // history, or be visible if the user pauses on this page.
@@ -71,12 +77,11 @@
     error: error
   };
 
-  // The opener's exact origin is not knowable from here, so post to each
-  // candidate; a postMessage whose targetOrigin does not match the receiver is
-  // silently dropped by the browser, so only the real one is ever delivered.
-  GAME_ORIGINS.forEach(function (origin) {
-    try { window.opener.postMessage(message, origin); } catch (e) {}
-  });
+  if (!target) {
+    status.textContent = 'Sign-in could not be verified. Please try again from the game.';
+    return;
+  }
+  try { window.opener.postMessage(message, target); } catch (e) {}
 
   status.textContent = error
     ? 'Sign-in was cancelled. You can close this window.'

@@ -348,7 +348,14 @@ func _sign_in_web() -> Dictionary:
 		_web_cb = JavaScriptBridge.create_callback(_on_web_credential)
 	window.rallyGoogleAuth = _web_cb
 
-	var state := _random_urlsafe(24)
+	# Carry THIS page's origin through the round trip inside `state`. The callback
+	# has to postMessage back to a specific targetOrigin, and a mismatch is
+	# dropped by the browser SILENTLY — the popup closes and the game waits
+	# forever. Hardcoding a guess is fragile: itch serves games from both
+	# html.itch.zone and html-classic.itch.zone depending on the upload. The game
+	# already knows where it is, so it says so rather than the callback guessing.
+	var origin := String(JavaScriptBridge.eval("location.origin", true))
+	var state := "%s|%s" % [_random_urlsafe(24), origin]
 	var url := "%s?%s" % [FirebaseConfig.GOOGLE_AUTH_URL, RestClient.form_encode({
 		"client_id": FirebaseConfig.GOOGLE_WEB_CLIENT_ID,
 		"redirect_uri": FirebaseConfig.GOOGLE_WEB_REDIRECT_URI,
@@ -380,11 +387,14 @@ func _sign_in_web() -> Dictionary:
 			}
 			window.addEventListener('message', onMessage);
 			var popup = window.open('%s', 'tappa_signin', 'width=480,height=680');
-			if (!popup) {
-				window.removeEventListener('message', onMessage);
-				window.rallyGoogleError = 'blocked';
-				window.rallyGoogleAuth('');
-			}
+			// A null handle does NOT mean the popup was blocked. A sandboxed
+			// iframe, or a Cross-Origin-Opener-Policy header on this page, severs
+			// the opener relationship and returns null even though the window
+			// opened perfectly well. Treating that as failure reported "your
+			// browser blocked the sign-in window" while the window was visibly
+			// on screen. Record it and keep waiting for the token instead; if
+			// nothing arrives we time out and say so accurately.
+			if (!popup) { window.rallyGoogleError = 'no_handle'; }
 		})();
 	""" % [state, FirebaseConfig.GOOGLE_WEB_CALLBACK_ORIGIN, url], true)
 
@@ -393,14 +403,19 @@ func _sign_in_web() -> Dictionary:
 		if _cancelled:
 			return _error("Sign-in cancelled.")
 		await get_tree().process_frame
+	var reason := String(JavaScriptBridge.eval("window.rallyGoogleError || ''", true))
 	if not _web_done:
+		if reason == "no_handle":
+			# The window opened but could not talk back to us — the opener link is
+			# severed, so postMessage never arrives. Naming it beats "timed out".
+			return _error("Sign-in couldn't report back to the game. "
+				+ "This browser or host blocks the sign-in window from returning.")
 		return _error("Sign-in timed out.")
 	if _web_result == "":
-		var reason := String(JavaScriptBridge.eval("window.rallyGoogleError || ''", true))
-		if reason == "blocked":
-			return _error("Your browser blocked the sign-in window. Allow pop-ups and try again.")
 		if reason == "state":
 			return _error("Sign-in couldn\'t be verified. Please try again.")
+		if reason == "blocked":
+			return _error("Your browser blocked the sign-in window. Allow pop-ups and try again.")
 		return _error("Google sign-in was cancelled.")
 	return {"ok": true, "id_token": _web_result, "error": ""}
 
