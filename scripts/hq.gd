@@ -296,6 +296,7 @@ var _detail_qualify: Label       # the qualifying cars, named (GREEN / RED / mut
 var _detail_adjust: Label        # "N need a tune/swap" caution (GOLD, hidden when 0)
 var _detail_record: Label        # best-finish text beside the StarRow
 var _detail_stars: StarRow       # medal row for the player's best finish
+var _detail_enter_button: Button # "Enter Rally" — disabled when no owned car qualifies
 var _rally_banner: Label
 var _car_name_label: Label
 var _car_stats_label: Label
@@ -1708,6 +1709,9 @@ func _show_detail() -> void:
 	var adjust := int(elig["adjust"])
 	_detail_adjust.visible = adjust > 0
 	_detail_adjust.text = "%d need a tune / swap to fit" % adjust
+	# No owned car qualifies for this rally yet — the button would only lead to an
+	# empty car park, so disable it rather than let the player tap through to it.
+	_detail_enter_button.disabled = qualify == 0
 
 	# --- Record: best finish + medal stars.
 	var best := Save.best_placement(_selected_rally_id)

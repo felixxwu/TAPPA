@@ -123,6 +123,30 @@ func test_star_row_always_shows_and_fills_with_the_record() -> void:
 	Save.profile["rallies"] = saved
 
 
+func test_enter_button_disabled_when_no_owned_car_qualifies() -> void:
+	# A rally with no eligible car for the player's roster: the Enter button must be
+	# disabled, not just informationally red — tapping through led to an empty car park.
+	var rally_id := String(RallyLibrary.all()[0].get("id", ""))
+	var saved_cars: Array = Save.profile["cars"].duplicate(true)
+	Save.profile["cars"] = []
+	_hq._selected_rally_id = rally_id
+	_hq._show_detail()
+	assert_true(_hq._detail_enter_button.disabled, "no owned cars → nothing can qualify")
+	Save.profile["cars"] = saved_cars
+
+
+func test_enter_button_enabled_when_a_car_qualifies() -> void:
+	var rally_id := "fx_open"
+	var saved_cars: Array = Save.profile["cars"].duplicate(true)
+	Save.profile["cars"] = [_owned("fx_rwd_coupe")]
+	RallyFixtures.install()
+	_hq._selected_rally_id = rally_id
+	_hq._show_detail()
+	assert_false(_hq._detail_enter_button.disabled, "an owned car qualifies for the open class")
+	RallyFixtures.restore()
+	Save.profile["cars"] = saved_cars
+
+
 func test_over_cap_car_lands_in_adjust_via_detune() -> void:
 	# A ceiling just under the car's power-to-weight: it's over the cap, but tuning the
 	# engine down ducks it under — so it qualifies, flagged as needing a tune to fit.

@@ -211,6 +211,7 @@ func build_detail_overlay() -> void:
 	enter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	enter.pressed.connect(_hq._enter_car_screen)
 	actions.add_child(enter)
+	_hq._detail_enter_button = enter
 
 
 func build_lift_overlay() -> void:

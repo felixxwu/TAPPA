@@ -1046,17 +1046,17 @@ func _yaw() -> float:
 # authored separately, so this cannot be tuned into an oscillation — a car that
 # wobbles on the start line is never what anyone wants, whatever the stiffness is
 # set to. Reuses parking_hold_stiffness so the two halves of the hold stay one knob.
-func _apply_heading_hold(delta: float) -> void:
+func _apply_heading_hold(_delta: float) -> void:
 	var cfg: GameConfig = config
 	var k: float = cfg.parking_hold_stiffness
 	if k <= 0.0:
 		return
 	var error := wrapf(_hold_anchor_yaw - _yaw(), -PI, PI)
 	var rate := angular_velocity.y
-	# Torque = I * angular acceleration; inertia keeps it mass/size independent.
+	# Torque = I * angular acceleration; yaw_inertia keeps it mass/size independent.
 	var accel := error * k - rate * 2.0 * sqrt(k)
-	var inertia := get_inverse_inertia_tensor().inverse() * Vector3.UP
-	apply_torque(inertia * accel)
+	var yaw_inertia := get_inverse_inertia_tensor().inverse() * Vector3.UP
+	apply_torque(yaw_inertia * accel)
 
 
 # True once the car is settled on its wheels (a solid majority in ground contact),
