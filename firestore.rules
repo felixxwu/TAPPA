@@ -73,6 +73,96 @@ service cloud.firestore {
                     && request.resource.data.time_ms < resource.data.time_ms;
     }
 
+    // Daily / Weekly / Monthly Rally Challenge leaderboard: one document per
+    // player per period, mirroring stage_times's trust model one level
+    // deeper. World-readable, owner-only write, updated after every stage
+    // (not just at the end) — see docs/superpowers/specs/
+    // 2026-07-31-rally-challenge-design.md section 5 for the full rationale.
+    //
+    // Each cum_ms_N field is write-once (a stage's checkpoint, once posted,
+    // never changes); dnf is the one field that is NOT write-once (it must
+    // flip false -> true on a wreck), so it gets its own separate update
+    // branch (isDnfFlip) rather than falling under the same "no field may
+    // change" umbrella as the checkpoints.
+    match /challenge_runs/{period_key}/entries/{uid} {
+      // The legal stage count differs by challenge kind and can't be derived
+      // from the collection path alone, so it's looked up from the kind
+      // prefix embedded in period_key ("daily:" / "weekly:" / "monthly:").
+      function maxStage(periodKey) {
+        return periodKey.matches('^daily:.*') ? 1
+             : periodKey.matches('^weekly:.*') ? 4
+             : 10;
+      }
+      function checkpointField(k) {
+        return 'cum_ms_' + string(k);
+      }
+
+      // CREATE: a document may only ever be born at stage 1.
+      function isValidCreate() {
+        let d = request.resource.data;
+        return d.stages_completed == 1
+            && d.dnf == false
+            && d.cum_ms_1 is int && d.cum_ms_1 > 0 && d.cum_ms_1 < 86400000
+            && d.keys().hasAll(['name', 'car_name', 'car_id', 'stages_completed', 'dnf', 'cum_ms_1'])
+            && d.keys().hasOnly(['name', 'car_name', 'car_id', 'stages_completed', 'dnf', 'cum_ms_1'])
+            && d.name is string    && d.name.size() >= 1 && d.name.size() <= 16
+            && d.car_name is string && d.car_name.size() <= 40
+            && d.car_id is string   && d.car_id.size() <= 40;
+      }
+
+      // UPDATE, path A: advancing exactly one checkpoint. Blocked once dnf is
+      // true — a DNF'd run is over, no further checkpoint may ever be posted
+      // to it. periodKey is passed in explicitly from the match block's own
+      // path variable (a rules function has no implicit access to path
+      // segments of its caller). Binding the new field's *name* to
+      // `k = before.stages_completed + 1` (rather than trusting the client
+      // to only ever touch "the next" key) is what closes the
+      // checkpoint-skipping hole: affectedKeys().hasOnly([field,
+      // 'stages_completed']) rejects any write that touches a cum_ms_*
+      // field other than the one computed from the document's own current
+      // stages_completed.
+      //
+      // `request.resource.data[field]`-style dynamic-key indexing on a
+      // computed string is the one construct here that must be confirmed
+      // against a live Firestore Rules emulator run before this ships — if
+      // computed-key map indexing turns out to be unsupported, the fallback
+      // is enumerating k in [1..10] as an explicit k == N ? ... : ... chain
+      // instead of a function parameterized on k.
+      function isStageAdvance(periodKey) {
+        let before = resource.data;
+        let after = request.resource.data;
+        let k = before.stages_completed + 1;
+        let field = checkpointField(k);
+        return before.dnf == false
+            && k <= maxStage(periodKey)
+            && after.stages_completed == k
+            && after.diff(before).affectedKeys().hasOnly([field, 'stages_completed'])
+            && after[field] is int
+            && after[field] > (k == 2 ? before.cum_ms_1 : before[checkpointField(k - 1)])
+            && after[field] < 86400000 * k
+            && after.dnf == before.dnf;
+      }
+
+      // UPDATE, path B: flipping dnf, and nothing else, at any point up to
+      // and including the moment right after a checkpoint post (dnf still
+      // false).
+      function isDnfFlip() {
+        let before = resource.data;
+        let after = request.resource.data;
+        return before.dnf == false && after.dnf == true
+            && after.diff(before).affectedKeys().hasOnly(['dnf']);
+      }
+
+      allow read: if true;
+
+      allow create: if request.auth.uid == uid && isValidCreate();
+
+      allow update: if request.auth.uid == uid
+                    && (isStageAdvance(period_key) || isDnfFlip());
+
+      allow delete: if false;
+    }
+
     // Everything else is closed. New collections must opt in explicitly.
     match /{document=**} {
       allow read, write: if false;
