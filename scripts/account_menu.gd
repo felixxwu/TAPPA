@@ -24,6 +24,9 @@ var _email_field: TextField
 var _password_field: TextField
 var _confirm_field: TextField
 var _conflict_open := false
+# One name prompt at a time, and no reopening it on the rebuild that follows a
+# player cancelling out of it (see _maybe_prompt_username).
+var _username_prompt_open := false
 
 
 func _ready() -> void:
@@ -131,6 +134,14 @@ func _build_main() -> void:
 		add_child(_action("Resolve sync conflict",
 			func() -> void: _prompt_conflict(Cloud.sync.conflict_summary())))
 
+	# The leaderboard display name. Only shown signed in, because it is only ever
+	# used on a posted time and only a signed-in player can post one. Captured on
+	# first post (the global standings page); this is the edit-it-afterwards path.
+	var username := UsernamePopup.current()
+	add_child(_sub("Leaderboard name: %s" % (username if username != "" else "not set")))
+	add_child(_action("Change leaderboard name" if username != "" else "Set a leaderboard name",
+		_on_username_pressed))
+
 	add_child(_action("Sync now", _on_sync_now_pressed))
 	add_child(_action("Sign out", _on_sign_out_pressed))
 
@@ -199,7 +210,10 @@ func _on_google_pressed() -> void:
 	# complete. See GoogleSignIn.waiting_message.
 	if not _begin(GoogleSignIn.waiting_message()):
 		return
-	_finish(await Cloud.sign_in_google())
+	# Google is the path with no form of its own, so it is the one most easily
+	# left out of the post-sign-in hook. It goes through the same call as the rest.
+	if _finish(await Cloud.sign_in_google()):
+		_maybe_prompt_username()
 
 
 func _on_sign_in_pressed() -> void:
@@ -209,6 +223,7 @@ func _on_sign_in_pressed() -> void:
 		return
 	if _finish(await Cloud.sign_in_email(address, password)):
 		_show(View.MAIN)
+		_maybe_prompt_username()
 
 
 func _on_register_pressed() -> void:
@@ -220,6 +235,7 @@ func _on_register_pressed() -> void:
 		return
 	if _finish(await Cloud.register_email(address, password)):
 		_show(View.MAIN)
+		_maybe_prompt_username()
 
 
 func _on_reset_pressed() -> void:
@@ -235,6 +251,46 @@ func _on_sync_now_pressed() -> void:
 	if not _begin("Syncing…"):
 		return
 	_finish(await Cloud.sync_now())
+
+
+# --- Leaderboard name ---------------------------------------------------------
+
+# Ask for a leaderboard name the moment an account exists without one.
+#
+# WHY HERE, and not on the leaderboard page. A signed-in player with a blank
+# username posts NOTHING, silently — the cloud layer degrades a blank name to a
+# read-only fetch. Leaving that to a button on the post-stage page meant relying
+# on the player noticing and pressing it, on a screen they want to leave. Just
+# after a successful sign-in is the one moment they are already setting their
+# account up, and it happens once instead of after every stage.
+#
+# The global standings page KEEPS its own prompt as the fallback: players who
+# signed in before this existed have a blank username and no sign-in event coming.
+#
+# Called from all three sign-in paths (email, register, Google) rather than from
+# `_finish`, which is also the exit for Sync now / password reset / conflict
+# resolution — none of which should raise a name prompt.
+func _maybe_prompt_username() -> void:
+	if _username_prompt_open or UsernamePopup.current() != "":
+		return
+	# Same guard the conflict modal uses: the popup is a layer-101 CanvasLayer that
+	# seizes focus, so it must never be raised from a page parked inside a hidden
+	# overlay. is_on_screen, NOT is_visible_in_tree — the latter ignores a hidden
+	# CanvasLayer ancestor.
+	if not MenuNav.is_on_screen(self):
+		return
+	_username_prompt_open = true
+	var popup := UsernamePopup.open(self)
+	popup.finished.connect(func(_name: String) -> void:
+		_username_prompt_open = false
+		rebuild())
+
+
+func _on_username_pressed() -> void:
+	# Nothing to await and nothing to fail: the name lives in the profile and rides
+	# the ordinary cloud sync, so there is no busy state and no error path here.
+	var popup := UsernamePopup.open(self)
+	popup.finished.connect(func(_name: String) -> void: rebuild())
 
 
 func _on_sign_out_pressed() -> void:

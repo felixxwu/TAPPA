@@ -253,7 +253,8 @@ func current_event_standings() -> Array:
 # The player's fielded car name, for their row in the leaderboards. "" when no car
 # is fielded or the model id resolves to nothing (e.g. headless tests).
 func _player_car_name() -> String:
-	return String(CarLibrary.by_id(_car_model_id).get("name", ""))
+	var entry := CarLibrary.by_id(_car_model_id)
+	return EngineSwap.display_name(entry, Save.get_car(_car_instance_id))
 
 
 # The top `n` rivals for the CURRENT event — each rival's time for THIS event with

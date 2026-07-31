@@ -381,6 +381,25 @@ func test_migration_backfills_missing_keys() -> void:
 	assert_true(migrated.has("settings"), "missing settings bag backfilled (old profiles)")
 
 
+func test_migration_backfills_username_on_an_older_profile() -> void:
+	# username (global leaderboards, features/global-leaderboards.md) rides the same
+	# key-backfill mechanism as cloud_revision/unsynced — no SCHEMA_VERSION bump, so
+	# an older, correctly-versioned profile that predates the field simply gets "".
+	var older := {"schema_version": _save.SCHEMA_VERSION, "cars": []}
+	assert_false(older.has("username"), "fixture predates the field")
+	var migrated: Dictionary = _save._migrate(older)
+	assert_true(migrated.has("username"), "username backfilled")
+	assert_eq(String(migrated["username"]), "", "backfilled default is empty")
+
+
+func test_username_survives_save_and_reload() -> void:
+	_save.profile["username"] = "KANGAROO"
+	_save.save_now()
+	_save.profile = {}
+	_save.load_or_new()
+	assert_eq(String(_save.profile["username"]), "KANGAROO", "username reloaded")
+
+
 func test_settings_get_set_round_trip() -> void:
 	# Unset keys return the supplied default.
 	assert_eq(_save.get_setting("mobile_control_scheme", 0), 0, "unset setting returns the default")

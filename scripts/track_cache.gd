@@ -10,6 +10,13 @@ const CACHE_PATH := "res://data/track_cache.json"
 # change (otherwise a stale cache would replay pieces the search never revalidated).
 const CACHE_VERSION := "1"
 
+# Global reset for the global stage leaderboards' stage_key (RallyLibrary.stage_key).
+# Folds in everything stage_key deliberately does NOT hash per-event (this cache's
+# CACHE_VERSION, the corner-shape library, generator constants, config-wide terrain
+# settings) — bump this whenever you bump CACHE_VERSION, so a shape-affecting engine
+# change resets every board instead of leaving them silently stale.
+const BOARD_EPOCH := 1
+
 static var _entries: Dictionary = {}
 static var _loaded := false
 static var _corner_fp := ""

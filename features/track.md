@@ -189,6 +189,17 @@ search cost (and its restart/backtrack variability) from both generation sites
   (`TrackGenerator.constants_fingerprint`), so a corner or constant edit invalidates the
   cache automatically — just regenerate. Only a genuine algorithm/control-flow change
   the constants don't capture needs a manual `TrackCache.CACHE_VERSION` bump.
+  **`TrackCache.BOARD_EPOCH` lives right next to `CACHE_VERSION` in this file for
+  exactly this reason — bump it too, in the same edit, whenever you bump
+  `CACHE_VERSION`.** `BOARD_EPOCH` is folded into `RallyLibrary.stage_key()`
+  (see [global-leaderboards.md](global-leaderboards.md)), which is the id every
+  posted [global leaderboard](global-leaderboards.md) entry is keyed by. A
+  `CACHE_VERSION` bump means the cached track for a stage changed shape, so any
+  time already posted against that stage's old key is no longer a fair
+  comparison — `BOARD_EPOCH` forces a fresh key and the board starts clean for
+  that stage. Bumping `CACHE_VERSION` alone, without also bumping
+  `BOARD_EPOCH`, leaves old leaderboard entries silently attached to a stage
+  whose layout has since changed underneath them.
 - **Validation:** the lockfile stores a `source_hash` (SHA-256 of the sorted
   event-key set). CI (`tools/verify_track_cache.tscn`, gating the export jobs) and
   the local suite (`test_track_cache.gd`) recompute and compare it — a forgotten

@@ -376,6 +376,12 @@ func _default_profile() -> Dictionary:
 		# after a restart, otherwise the next pull would see "cloud is ahead,
 		# local is clean" and quietly discard a whole offline session.
 		"unsynced": false,
+		# Display name posted with a global stage-leaderboard entry (see
+		# features/global-leaderboards.md). "" until the player names themselves on
+		# first post. Backfilled by _migrate's key backfill like cloud_revision/
+		# unsynced above, so no SCHEMA_VERSION bump — and it rides the existing
+		# cloud-save sync to the player's other devices for free.
+		"username": "",
 	}
 
 

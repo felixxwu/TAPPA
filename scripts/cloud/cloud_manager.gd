@@ -19,6 +19,9 @@ var rest: Node = null
 var auth: AuthService = null
 var sync: CloudSync = null
 var google: GoogleSignIn = null
+# Global per-stage boards. Entirely passive — it makes no request until the UI
+# asks, so a player who never finishes a stage never touches it.
+var leaderboard: Leaderboard = null
 
 
 func _ready() -> void:
@@ -40,6 +43,12 @@ func _ready() -> void:
 	sync.conflict_detected.connect(func(summary: Dictionary) -> void: conflict_detected.emit(summary))
 	sync.profile_replaced.connect(func() -> void: profile_replaced.emit())
 	add_child(sync)
+
+	leaderboard = Leaderboard.new()
+	leaderboard.name = "Leaderboard"
+	leaderboard.rest = rest
+	leaderboard.auth = auth
+	add_child(leaderboard)
 
 	google = GoogleSignIn.new()
 	google.name = "GoogleSignIn"

@@ -193,6 +193,26 @@ func test_standings_carry_the_player_and_rival_cars() -> void:
 	assert_eq(String(player["car_name"]), "Fixture Roadster", "the player's fielded car is in the standings")
 
 
+func test_standings_carry_the_garage_name_for_a_swapped_engine() -> void:
+	# _player_car_name() must report the GARAGE name (EngineSwap.display_name, layout-
+	# prefixed) into the standings, not the bare catalogue name — matching what HQ
+	# calls the same car one screen earlier. fx_light_rwd's stock engine is "fx_i4"
+	# (layout i4); swap it directly to "fx_v8" (layout v8) on the fielded instance.
+	var owned := _start("fx_open", "fx_light_rwd")
+	var car: Dictionary = _save.get_car(int(owned["instance_id"]))
+	car["swapped_engine"] = "fx_v8"
+	RallySession._opponent_field = [
+		{"name": "Quick", "car_name": "Fixture Coupe", "event_times_ms": [40000, 40000, 40000], "dnf": false, "combined_ms": 120000},
+	]
+	RallySession.report_event_result(50000)
+	var player := {}
+	for e in RallySession.current_standings():
+		if e["is_player"]:
+			player = e
+	assert_eq(String(player["car_name"]), "V8 Fixture Roadster",
+		"the swapped-in engine's layout prefixes the garage display name")
+
+
 func test_idle_when_no_rally() -> void:
 	assert_false(RallySession.is_active(), "no session active at rest")
 	assert_eq(RallySession.phase(), RallySession.Phase.IDLE, "phase is IDLE")

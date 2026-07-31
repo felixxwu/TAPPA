@@ -97,6 +97,46 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   on every `_build_ui()` rebuild; `attach` reuses the existing node rather than stacking
   handlers, and re-seats the cursor on the freshly-built button.
 
+  **Page 2: the global stage leaderboard (`GlobalStandings`, see
+  [global-leaderboards.md](global-leaderboards.md)).** `Standings._advance()` is now
+  the **SOLE exit** from the whole standings screen — both the plain Continue path and
+  the reward-reveal's `finished` route through it, so intercepting only `_on_action`
+  would show the global page after stage 3 and nowhere else. First call shows page 2;
+  every call after that resumes the rally via `RallySession.continue_to_next_event()`.
+  Page 2 is a sibling `Control` added over page 1 that REPLACES its content rather than
+  sitting beside it: page 1's root VBox (or, on the reward path, the spent
+  `UpgradeReveal` card) is hidden — `visible = false` — which also makes page 1's
+  `MenuNav` inert (`MenuNav._unhandled_input` is gated on its root being visible), so
+  only page 2's own `MenuNav.attach(self, {first = cont, on_back = _on_back})` (inside
+  `global_standings.gd`) is live and the two can never race on a Back press. **This
+  only works because `standings.gd` attaches page 1's `MenuNav` to the node it hides,
+  not to itself** — `_build_ui` calls `MenuNav.attach(root, …)` and
+  `_on_global_back` calls `MenuNav.attach(_root_box, …)`, both onto the same VBox that
+  gets `visible = false`. Attaching either one to `self` (the screen, which is never
+  hidden) instead of `root`/`_root_box` was a real bug: `MenuNav` would stay live
+  behind page 2 regardless of the hide, and input would leak through to it. Five
+  states —
+  `LOADING`/`SIGNED_OUT`/`NO_USERNAME`/`POSTED`/`UNAVAILABLE` — each with its own body
+  built by `_build_body`. Separately from `_state`, an extra full-width affordance
+  button (Sign in / Choose a name) can appear above the Back/Continue row — this is
+  now this page's **fallback** name-capture tier (see
+  [global-leaderboards.md](global-leaderboards.md) for the primary, at-sign-in tier
+  and why the fallback exists), driven by `_prompt_kind()` off LOCAL facts
+  (signed-in / has-a-username / has-a-time), **not** off `_state` or the fetch
+  result — an earlier version gated it on a successful fetch, which meant the
+  player most likely to hit a failed read (the first one on a brand-new board)
+  could never be prompted at all. Each button opens its own `MenuNav`-wired
+  overlay (`AccountMenu` in a `CanvasLayer`, or `UsernamePopup` — dismissable, does
+  not reopen on decline) that re-runs the fetch on close so a just-set time can
+  post without re-driving; the cursor seats on this button, not Continue, whenever
+  it's showing. Back only appears when there is a page 1 left to return to
+  (`show_back := is_instance_valid(_root_box)`) — after the reward path, page 1 is
+  already gone, so page 2 shows Continue alone; `_on_back` is a no-op guard for that
+  case rather than trusting every host to omit the button correctly.
+  `Standings._on_global_back` frees page 2, un-hides page 1, and re-attaches page 1's
+  `MenuNav` with focus back on the action button — deliberately NOT re-running page 1's
+  row reveal, since replaying a board the player already read is noise.
+
   **Collect reward on the standings.** On the interstitial of a **non-final event**
   that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`), the
   action button reads **`Collect reward >`** instead of `Continue to next stage >`.

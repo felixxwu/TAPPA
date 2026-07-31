@@ -2175,7 +2175,18 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	# with a single press (no redundant second confirmation).
 	assert_true(sc._reveal._next_button.visible, "the reveal shows its own Next action")
 	sc._reveal._next_button.pressed.emit()
-	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING, "Next resumes the next event")
+	# Next no longer drops STRAIGHT back into the rally: the global stage
+	# leaderboard is now interposed between the reward and the next stage, on this
+	# path exactly as on the plain-Continue one (see _advance). Its Continue is
+	# what resumes — so the same press count still gets the player moving, it just
+	# passes a page on the way.
+	await get_tree().process_frame
+	assert_not_null(sc._global_page, "Next hands off to the global leaderboard page")
+	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
+		"and the rally has NOT resumed behind it")
+	sc._global_page._on_continue()
+	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
+		"the global page's Continue resumes the next event")
 	RallySession.abandon()
 
 
@@ -3022,3 +3033,355 @@ func test_turbo_selector_sets_enabled_part() -> void:
 	await get_tree().process_frame
 	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_big"), "Stock disables the large turbo")
 	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_turbo_small"), "Stock disables the small turbo")
+
+
+# --- Global stage leaderboard (page 2 of the interstitial) -------------------
+# docs/superpowers/specs/2026-07-31-global-leaderboards-design.md §5/§6. The
+# interstitial has TWO exits to the rally and both must land on page 2 first; the
+# page then owns the only route onward.
+
+# A stand-in for Cloud.leaderboard.submit_and_fetch: no network, no catalogue, no
+# tunables — just the result shape the page reads.
+func _fake_board(rank: int = 0, total: int = 12, signed_in: bool = false) -> Callable:
+	return func(_key: String, _ms: int, _identity: Dictionary) -> Dictionary:
+		var rows: Array = []
+		for i in 3:
+			rows.append({"placed": i + 1, "name": "RIVAL%d" % i, "car_name": "TEST CAR",
+				"combined_ms": 50000 + i * 100, "dnf": false, "is_player": false})
+		var mine: Dictionary = {}
+		if rank >= 1:
+			mine = {"placed": rank, "name": "TESTER", "car_name": "TEST CAR",
+				"combined_ms": 60000, "dnf": false, "is_player": true}
+		return {"ok": true, "error": "", "rows": rows, "total": total,
+			"signed_in": signed_in, "player_rank": rank, "player_row": mine,
+			"posted": rank >= 1}
+
+
+func _global_page(fetch: Callable, opts: Dictionary = {}) -> GlobalStandings:
+	var page := GlobalStandings.new()
+	page.fetcher = fetch
+	var base := {"stage_key": "test__0__abc__e1", "stage_number": 2, "time_ms": 60000,
+		"car_name": "TEST CAR", "car_id": "test_car"}
+	base.merge(opts, true)
+	page.configure(base)
+	add_child_autofree(page)
+	return page
+
+
+# Park the rally on the standings after a non-final stage, with a rival field, and
+# return the built interstitial.
+func _standings_after_stage_one() -> Control:
+	RallyFixtures.install()
+	var owned: Dictionary = _save.grant_car("fx_awd")
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
+	RallySession._opponent_field = [
+		{"name": "Rival", "event_times_ms": [40000, 40000, 40000], "dnf": false,
+			"combined_ms": 120000},
+	]
+	RallySession.report_event_result(50000)
+	var sc: Control = load("res://standings.tscn").instantiate()
+	add_child_autofree(sc)
+	return sc
+
+
+# EXIT 1 — the plain Continue. It must NOT resume the rally; it hands off to the
+# global page, which owns the route onward.
+func test_standings_continue_shows_the_global_page_before_resuming() -> void:
+	var sc := _standings_after_stage_one()
+	await get_tree().process_frame
+	sc._reward_collected = true  # no reward pending: the plain-Continue path
+	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS, "parked on the standings")
+
+	sc._on_action()
+	await get_tree().process_frame
+	assert_not_null(sc._global_page, "Continue hands off to the global page")
+	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
+		"and does NOT resume the rally on the way past")
+	assert_false(sc._root_box.visible,
+		"page 2 replaces page 1's content rather than stacking over it")
+
+	sc._global_page._on_continue()
+	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
+		"page 2's Continue is what resumes the next stage")
+	RallySession.abandon()
+
+
+# EXIT 2 — the upgrade reveal, which used to connect STRAIGHT to
+# continue_to_next_event. A reward is drawn on every non-final stage, so this is
+# the path that actually runs in normal play; missing it would show the global
+# page after the final stage only.
+func test_upgrade_reveal_also_routes_through_the_global_page() -> void:
+	var sc := _standings_after_stage_one()
+	await get_tree().process_frame
+	assert_ne(RallySession.current_event_upgrade(), "", "stage 1 awarded an upgrade")
+	assert_eq(sc._action_button.text, UITheme.caps("Collect reward >"),
+		"so the button collects the reward first")
+
+	sc._action_button.pressed.emit()
+	await get_tree().process_frame
+	assert_true(is_instance_valid(sc._reveal), "collecting shows the reward reveal")
+
+	sc._reveal.finished.emit()
+	await get_tree().process_frame
+	assert_not_null(sc._global_page,
+		"finishing the reveal lands on the global page, not straight back in the rally")
+	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
+		"the reveal path does not resume the rally either")
+
+	sc._global_page._on_continue()
+	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
+		"page 2's Continue resumes from the reveal path too")
+	RallySession.abandon()
+
+
+# A signed-out player still sees the board, is told how many times are posted, and
+# is offered a way in — nothing about being signed out blocks Continue.
+func test_global_page_signed_out_offers_sign_in_and_still_continues() -> void:
+	var page := _global_page(_fake_board(0, 12, false))
+	await get_tree().process_frame
+	assert_eq(page.state(), GlobalStandings.State.SIGNED_OUT, "signed out is its own state")
+	assert_not_null(page._action_button, "the state carries an extra affordance")
+	assert_string_contains(page._action_button.text.to_upper(), "SIGN IN",
+		"which is the way in")
+	assert_string_contains(_label_texts(page), "12 TIMES POSTED",
+		"the total shows even signed out — it says whether the board is really empty")
+	assert_false(page._continue_button.disabled, "Continue is live from the first frame")
+	var advanced := [false]
+	page.continued.connect(func() -> void: advanced[0] = true)
+	page._continue_button.pressed.emit()
+	assert_true(advanced[0], "and advancing is never gated on signing in")
+
+
+# Signed in with no name chosen yet: the board reads, and the prompt is to pick a
+# name rather than to sign in (§3 — the name is captured on first post).
+func test_global_page_signed_in_without_a_name_prompts_for_one() -> void:
+	_save.profile["username"] = ""
+	var page := _global_page(_fake_board(0, 7, true))
+	await get_tree().process_frame
+	assert_eq(page.state(), GlobalStandings.State.NO_USERNAME,
+		"signed in but nameless is its own state")
+	assert_string_contains(page._action_button.text.to_upper(), "NAME",
+		"the prompt is to choose a name, not to sign in")
+
+
+# Any failure class at all — offline, timeout, 5xx, 429, unparseable — is one dim
+# line, and the rally still advances. A lost board can never cost a player a rally.
+func test_global_page_unavailable_still_advances() -> void:
+	var page := _global_page(func(_k: String, _m: int, _i: Dictionary) -> Dictionary:
+		return {"ok": false, "error": "offline"})
+	await get_tree().process_frame
+	assert_eq(page.state(), GlobalStandings.State.UNAVAILABLE, "a failed fetch is unavailable")
+	assert_string_contains(_label_texts(page).to_upper(), "UNAVAILABLE",
+		"which reads as one dim line")
+	var advanced := [false]
+	page.continued.connect(func() -> void: advanced[0] = true)
+	page._continue_button.pressed.emit()
+	assert_true(advanced[0], "Continue still resumes the rally")
+
+
+# The name the board posts under is sanitised to the house style: uppercase,
+# A-Z / 0-9 / space only, trimmed, and capped in length.
+func test_username_sanitiser_enforces_the_house_rules() -> void:
+	assert_eq(UsernamePopup.sanitize("  kangaroo "), "KANGAROO", "trimmed and uppercased")
+	assert_eq(UsernamePopup.sanitize("k@ng#aroo!"), "KNGAROO", "illegal characters dropped")
+	assert_eq(UsernamePopup.sanitize("a     b"), "A B", "runs of spaces collapse")
+	assert_eq(UsernamePopup.sanitize("   "), "", "a name that filters away to nothing is empty")
+	assert_lte(UsernamePopup.sanitize("ABCDEFGHIJKLMNOPQRSTUVWXYZ").length(),
+		UsernamePopup.MAX_LEN, "a long name is capped")
+
+
+# The chosen name round-trips through the profile, so the account menu and the
+# board agree about who the player is.
+func test_username_is_stored_on_the_profile() -> void:
+	assert_eq(UsernamePopup.store("milk float"), "MILK FLOAT", "store returns the stored form")
+	assert_eq(UsernamePopup.current(), "MILK FLOAT", "and current() reads it back")
+	assert_eq(UsernamePopup.store("!!!"), "", "an unusable name is rejected")
+	assert_eq(UsernamePopup.current(), "MILK FLOAT", "and leaves the existing one alone")
+
+
+# REGRESSION (reported from the real game): the page rendered its heading and its
+# Continue button with NOTHING in between — no rows, no total, not even the
+# "unavailable" line. The body was built hidden by a staggered per-row reveal that
+# then failed to un-hide it, and because that reveal was skipped headless
+# (Platform.is_headless) NO test ever exercised the code the player actually ran.
+#
+# So this asserts the invariant directly, in every state: the body is never empty
+# and never invisible. It fails against the reveal, and it does not care how the
+# page chooses to animate — only that something is on screen.
+func test_global_page_body_is_never_blank_in_any_state() -> void:
+	var cases := {
+		"signed out": _fake_board(0, 12, false),
+		"posted": _fake_board(7, 40, true),
+		"on the podium": _fake_board(2, 40, true),
+		"empty board": func(_k: String, _m: int, _i: Dictionary) -> Dictionary:
+			return {"ok": true, "error": "", "rows": [], "total": 0, "signed_in": true,
+				"player_rank": 0, "player_row": {}, "posted": false},
+		"unavailable": func(_k: String, _m: int, _i: Dictionary) -> Dictionary:
+			return {"ok": false, "error": "offline"},
+	}
+	for label in cases:
+		var page := _global_page(cases[label])
+		await get_tree().process_frame
+		var shown: Array[String] = []
+		for l in page.find_children("*", "Label", true, false):
+			var text := String((l as Label).text)
+			assert_true((l as Label).is_visible_in_tree(),
+				"%s: every body line the page builds is actually on screen (%s)" % [label, text])
+			if not text.begins_with("GLOBAL"):
+				shown.append(text)
+		assert_gt(shown.size(), 0,
+			"%s: the page renders SOMETHING between the heading and Continue" % label)
+
+
+# REGRESSION: a signed-in player with no leaderboard name posts NOTHING, silently
+# — the cloud layer degrades to a plain read on a blank name. So this prompt is
+# the only thing that ever gets such a player onto the board, and it must be
+# genuinely on screen (is_visible_in_tree, not merely built), focusable, and
+# seated under the cursor. It must ALSO survive the board failing to load: the
+# first player on a new board can be the one whose read fails, and gating the
+# prompt on a successful fetch left them permanently unable to post.
+func test_no_username_player_is_offered_a_visible_focusable_prompt() -> void:
+	# A failed fetch returns no "signed_in" field — there was no answer to be had —
+	# so the page falls back to asking Cloud. That means the player has to be
+	# ACTUALLY signed in for this branch to be the scenario it claims to be;
+	# `signed_in: true` in a fetcher result the failing branch never returns is not
+	# a sign-in. Same stub test_account_menu.gd uses.
+	var saved := {"uid": Cloud.auth.uid, "refresh": Cloud.auth.refresh_token}
+	Cloud.auth.uid = "test_uid"
+	Cloud.auth.refresh_token = "test_refresh"
+	for label in ["board loaded", "board unavailable"]:
+		_save.profile["username"] = ""
+		var fetch: Callable = _fake_board(0, 5, true)
+		if label == "board unavailable":
+			fetch = func(_k: String, _m: int, _i: Dictionary) -> Dictionary:
+				return {"ok": false, "error": "offline"}
+		var page := _global_page(fetch)
+		await get_tree().process_frame
+		await get_tree().process_frame  # deferred focus grab settles
+		var prompt: Button = page._action_button
+		assert_not_null(prompt, "%s: the player is prompted to choose a name" % label)
+		if prompt == null:
+			continue
+		assert_true(prompt.is_visible_in_tree(),
+			"%s: the prompt is actually on screen, not just built" % label)
+		assert_eq(prompt.focus_mode, Control.FOCUS_ALL,
+			"%s: keyboard / gamepad can reach the prompt" % label)
+		assert_eq(page.get_viewport().gui_get_focus_owner(), prompt,
+			"%s: and the cursor starts on it" % label)
+		assert_string_contains(prompt.text.to_upper(), "NAME",
+			"%s: it asks for a name rather than a sign-in" % label)
+	Cloud.auth.uid = String(saved["uid"])
+	Cloud.auth.refresh_token = String(saved["refresh"])
+
+
+# Answering the prompt posts the time THERE AND THEN — the player does not have
+# to drive another stage for their name to take effect. The name is written where
+# the cloud layer reads it from (the identity handed to submit_and_fetch).
+func test_choosing_a_name_re_posts_the_time_immediately() -> void:
+	_save.profile["username"] = ""
+	var seen: Array = []
+	var page := _global_page(func(_k: String, ms: int, identity: Dictionary) -> Dictionary:
+		seen.append({"time_ms": ms, "name": String(identity.get("name", ""))})
+		return {"ok": true, "error": "", "rows": [], "total": 0, "signed_in": true,
+			"player_rank": 0, "player_row": {}, "posted": false})
+	await get_tree().process_frame
+	assert_eq(page.state(), GlobalStandings.State.NO_USERNAME, "starts with no name")
+	assert_eq(seen.size(), 1, "the first pass fetched")
+	assert_eq(String(seen[0]["name"]), "", "and carried no name, so it posted nothing")
+
+	# Answer the prompt through the real popup, so the write path is the one the
+	# player uses rather than a direct poke at the profile.
+	page._on_choose_name_pressed()
+	var popup: UsernamePopup = null
+	for child in page.get_children():
+		if child is UsernamePopup:
+			popup = child as UsernamePopup
+	assert_not_null(popup, "the prompt opens the name popup")
+	popup._field.set_text("kangaroo")
+	popup._on_save()
+	await get_tree().process_frame
+	assert_eq(UsernamePopup.current(), "KANGAROO",
+		"the popup writes the name to profile[\"username\"], where the page reads it")
+
+	assert_eq(seen.size(), 2, "choosing a name re-runs submit-and-fetch in place")
+	assert_eq(String(seen[1]["name"]), "KANGAROO",
+		"and this time the identity carries the name the cloud layer needs to write")
+	assert_eq(int(seen[1]["time_ms"]), int(seen[0]["time_ms"]),
+		"posting the SAME time — no need to drive the stage again")
+
+
+# --- Name capture at sign-in (AccountMenu) -----------------------------------
+# The leaderboard name is asked for the moment an account exists without one,
+# rather than relying on the player noticing a button on the post-stage page. All
+# three sign-in paths (email, register, Google) route through
+# _maybe_prompt_username, which is what these drive.
+
+func _account_menu() -> AccountMenu:
+	var menu := AccountMenu.new()
+	add_child_autofree(menu)
+	return menu
+
+
+func _popup_under(node: Node) -> UsernamePopup:
+	for child in node.get_children():
+		if child is UsernamePopup:
+			return child as UsernamePopup
+	return null
+
+
+func test_sign_in_with_a_blank_username_prompts_for_a_name() -> void:
+	_save.profile["username"] = ""
+	var menu := _account_menu()
+	await get_tree().process_frame
+	menu._maybe_prompt_username()
+	await get_tree().process_frame
+	var popup := _popup_under(menu)
+	assert_not_null(popup, "a fresh account is asked for a leaderboard name")
+	if popup == null:
+		return
+	assert_true(popup._field.line.is_visible_in_tree(),
+		"the field is actually on screen, not merely built")
+	assert_eq(popup._field.line.focus_mode, Control.FOCUS_ALL,
+		"and it can be typed into from a keyboard / gamepad")
+
+
+func test_sign_in_with_an_existing_username_does_not_prompt() -> void:
+	UsernamePopup.store("kangaroo")
+	var menu := _account_menu()
+	await get_tree().process_frame
+	menu._maybe_prompt_username()
+	await get_tree().process_frame
+	assert_null(_popup_under(menu),
+		"a player who already has a name is not asked again on every sign-in")
+
+
+# The name captured at sign-in lands in the same place, through the same
+# sanitiser, as the one captured from the leaderboard page — the two entry points
+# cannot diverge.
+func test_name_captured_at_sign_in_is_stored_where_the_cloud_layer_reads_it() -> void:
+	_save.profile["username"] = ""
+	var menu := _account_menu()
+	await get_tree().process_frame
+	menu._maybe_prompt_username()
+	await get_tree().process_frame
+	var popup := _popup_under(menu)
+	popup._field.set_text("  milk float!! ")
+	popup._on_save()
+	await get_tree().process_frame
+	assert_eq(UsernamePopup.current(), "MILK FLOAT",
+		"stored sanitised, at profile[\"username\"], which is what the page posts")
+
+
+# Declining is allowed (the popup is deliberately dismissable — the global page's
+# prompt and the Account row are the two ways back), and declining must not leave
+# the prompt reopening on every rebuild.
+func test_declining_the_name_prompt_writes_nothing_and_does_not_reopen() -> void:
+	_save.profile["username"] = ""
+	var menu := _account_menu()
+	await get_tree().process_frame
+	menu._maybe_prompt_username()
+	await get_tree().process_frame
+	_popup_under(menu)._on_cancel()
+	await get_tree().process_frame
+	assert_eq(UsernamePopup.current(), "", "cancelling writes no name")
+	assert_null(_popup_under(menu), "and the prompt does not immediately come back")

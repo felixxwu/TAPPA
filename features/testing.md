@@ -120,6 +120,21 @@ levers, in order of payoff:
   to the tree (`test_music_director.gd`) — never assert on a *playing* stream in a
   headless test.
 
+- **A `Platform.is_headless()` gate must skip only the ANIMATION, never the
+  final visible state — the audio gate above is the safe shape, and it is
+  safe specifically because "not played" is genuinely the correct end state
+  in both paths.** The global standings page (`GlobalStandings`, see
+  [global-leaderboards.md](global-leaderboards.md)) got this wrong: it built
+  its body nodes hidden and relied on a `_reveal()` coroutine to un-hide them
+  one at a time, with the coroutine itself skipped headless — so headless saw
+  the nodes (never hidden in the first place) while a real player saw a
+  genuinely blank page whenever the reveal didn't run to completion. Headless
+  and the real game were rendering through different code, so a green suite
+  could not have caught it. The fix deleted the reveal outright rather than
+  patching the gate. When a gate like this is unavoidable, prefer asserting
+  `is_visible_in_tree()`, not mere node existence — existence is exactly what
+  passed here while the screen was blank.
+
 ### Test-catalogue seam — `CarFixtures`
 
 All four content libraries — `CarLibrary`, `EngineLibrary`, `RallyLibrary`,

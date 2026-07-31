@@ -289,21 +289,22 @@ func apply_remote(remote: Dictionary, backup := false) -> Dictionary:
 
 
 # --- Firestore document encoding ---------------------------------------------
-# Pure functions, no state, no network — the easiest thing in this file to test
-# and the easiest to get subtly wrong. Firestore's REST API wraps every value in
-# a type tag; we only ever store strings and integers, so that is all we handle.
+# The value-level encoding (type tags, the integer-as-string trap) lives in
+# FirestoreCodec, shared with Leaderboard. What stays here is only the SHAPE of
+# the user document — which fields it has and what they mean.
+
+const DOC_FIELDS := ["profile", "schema_version", "revision", "updated_utc", "device"]
+
 
 static func to_document(profile_json: String, schema_version: int, revision: int,
 		updated_utc: String, device: String) -> Dictionary:
-	return {
-		"fields": {
-			"profile": {"stringValue": profile_json},
-			"schema_version": {"integerValue": str(schema_version)},
-			"revision": {"integerValue": str(revision)},
-			"updated_utc": {"stringValue": updated_utc},
-			"device": {"stringValue": device},
-		}
-	}
+	return FirestoreCodec.document({
+		"profile": profile_json,
+		"schema_version": schema_version,
+		"revision": revision,
+		"updated_utc": updated_utc,
+		"device": device,
+	})
 
 
 # Inverse of to_document. Returns {} when the document is missing the fields we
@@ -311,35 +312,16 @@ static func to_document(profile_json: String, schema_version: int, revision: int
 static func from_document(doc: Variant) -> Dictionary:
 	if typeof(doc) != TYPE_DICTIONARY:
 		return {}
-	var fields: Variant = (doc as Dictionary).get("fields", {})
-	if typeof(fields) != TYPE_DICTIONARY:
-		return {}
-	var f := fields as Dictionary
+	var f := FirestoreCodec.fields_of(doc)
 	if not f.has("profile"):
 		return {}
 	return {
-		"profile": _string_field(f, "profile"),
-		"schema_version": _int_field(f, "schema_version"),
-		"revision": _int_field(f, "revision"),
-		"updated_utc": _string_field(f, "updated_utc"),
-		"device": _string_field(f, "device"),
+		"profile": FirestoreCodec.string_field(f, "profile"),
+		"schema_version": FirestoreCodec.int_field(f, "schema_version"),
+		"revision": FirestoreCodec.int_field(f, "revision"),
+		"updated_utc": FirestoreCodec.string_field(f, "updated_utc"),
+		"device": FirestoreCodec.string_field(f, "device"),
 	}
-
-
-static func _string_field(fields: Dictionary, key: String) -> String:
-	var wrapped: Variant = fields.get(key, {})
-	if typeof(wrapped) != TYPE_DICTIONARY:
-		return ""
-	return String((wrapped as Dictionary).get("stringValue", ""))
-
-
-# Firestore encodes integers as STRINGS in JSON (to survive 64-bit values that
-# JSON numbers cannot represent), so this must go through str -> int.
-static func _int_field(fields: Dictionary, key: String) -> int:
-	var wrapped: Variant = fields.get(key, {})
-	if typeof(wrapped) != TYPE_DICTIONARY:
-		return 0
-	return String((wrapped as Dictionary).get("integerValue", "0")).to_int()
 
 
 # A short human summary of a profile, for the conflict prompt. Counting is done
@@ -364,10 +346,7 @@ static func describe_profile(p: Dictionary) -> String:
 # without it, Firestore treats the request as a full replace, which would drop
 # any field added by a newer build of the game.
 func _patch_url() -> String:
-	var mask := ""
-	for field in ["profile", "schema_version", "revision", "updated_utc", "device"]:
-		mask += ("&" if mask != "" else "?") + "updateMask.fieldPaths=" + field
-	return FirebaseConfig.user_doc(auth.uid) + mask
+	return FirebaseConfig.user_doc(auth.uid) + FirestoreCodec.update_mask(DOC_FIELDS)
 
 
 # The revision this device can legitimately claim to have agreed with.

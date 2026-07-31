@@ -361,3 +361,209 @@ func test_button_cursor_settled_and_disabled_activate() -> void:
 	assert_eq(fired[0], -1, "activate on a disabled index fires nothing")
 	for b in buttons:
 		b.free()
+
+
+# --- GlobalStandings (page 2 of the interstitial) ----------------------------
+# The global stage leaderboard is a menu like any other, so it carries the whole
+# keyboard + gamepad contract: a seated cursor, WASD/arrow/D-pad movement between
+# its buttons, and a Back that both the pointer and Esc / gamepad B can reach.
+# See features/menus.md → "Menu navigation".
+
+# A stand-in for Cloud.leaderboard.submit_and_fetch: no network, no catalogue, no
+# tunables — just the result shape the page reads.
+func _fake_board(rank: int = 0, total: int = 12, top_n: int = 3,
+		signed_in: bool = false) -> Callable:
+	return func(_key: String, _ms: int, _identity: Dictionary) -> Dictionary:
+		var rows: Array = []
+		for i in top_n:
+			rows.append({"placed": i + 1, "name": "RIVAL%d" % i, "car_name": "TEST CAR",
+				"combined_ms": 50000 + i * 100, "dnf": false, "is_player": false})
+		var mine: Dictionary = {}
+		if rank >= 1:
+			mine = {"placed": rank, "name": "TESTER", "car_name": "TEST CAR",
+				"combined_ms": 60000, "dnf": false, "is_player": true}
+		return {"ok": true, "error": "", "rows": rows, "total": total,
+			"signed_in": signed_in, "player_rank": rank, "player_row": mine,
+			"posted": rank >= 1}
+
+
+func _global_page(fetch: Callable, opts: Dictionary = {}) -> GlobalStandings:
+	var page := GlobalStandings.new()
+	page.fetcher = fetch
+	var base := {"stage_key": "test__0__abc__e1", "stage_number": 2, "time_ms": 60000,
+		"car_name": "TEST CAR", "car_id": "test_car"}
+	base.merge(opts, true)
+	page.configure(base)
+	page.custom_minimum_size = Vector2(640, 480)
+	add_child_autofree(page)
+	return page
+
+
+func _nav_of(root: Node) -> MenuNav:
+	for child in root.get_children():
+		if child is MenuNav:
+			return child as MenuNav
+	return null
+
+
+# With nothing standing between the player and a posted time, the cursor seats on
+# Continue so the rally can be advanced with no pointer.
+func test_global_standings_seats_the_cursor_on_continue() -> void:
+	_save.profile["username"] = "TESTER"
+	var page := _global_page(_fake_board(4, 12, 3, true))
+	await get_tree().process_frame
+	await get_tree().process_frame  # deferred focus grab settles
+	assert_null(page._action_button, "a signed-in, named player has no prompt to answer")
+	assert_eq(page._continue_button.focus_mode, Control.FOCUS_ALL,
+		"the page's Continue is keyboard / gamepad focusable")
+	assert_eq(page.get_viewport().gui_get_focus_owner(), page._continue_button,
+		"Continue is focused on entry")
+
+
+# When there IS a prompt, the cursor seats on THAT instead: a player who never
+# answers it never posts a time, silently, so it must be the default action for a
+# keyboard and a gamepad rather than something to spot and aim at.
+func test_global_standings_seats_the_cursor_on_the_prompt_when_there_is_one() -> void:
+	_save.profile["username"] = ""
+	var page := _global_page(_fake_board(0, 12, 3, true))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_not_null(page._action_button, "a signed-in player with no name is prompted")
+	assert_eq(page.get_viewport().gui_get_focus_owner(), page._action_button,
+		"and the cursor starts on the prompt, not on Continue")
+
+
+# Every button on the page is focusable and WASD walks between them — the page is
+# not pointer-only.
+func test_global_standings_wasd_moves_between_its_buttons() -> void:
+	var page := _global_page(_fake_board())
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var buttons := page.find_children("*", "Button", true, false)
+	assert_gt(buttons.size(), 1, "the page carries Back alongside Continue")
+	for b in buttons:
+		assert_eq((b as Button).focus_mode, Control.FOCUS_ALL,
+			"%s is keyboard / gamepad focusable" % (b as Button).text)
+	var nav := _nav_of(page)
+	assert_not_null(nav, "the page is wired to the MenuNav framework")
+	nav._unhandled_input(_press("menu_left"))
+	assert_ne(page.get_viewport().gui_get_focus_owner(), null,
+		"a directional press keeps a live cursor on the page")
+
+
+# Back (Esc / gamepad B) leaves the page, and so does its on-screen button.
+func test_global_standings_back_fires_for_keyboard_and_gamepad() -> void:
+	var page := _global_page(_fake_board())
+	await get_tree().process_frame
+	var hits := [0]
+	page.back_pressed.connect(func() -> void: hits[0] += 1)
+	var nav := _nav_of(page)
+	nav._unhandled_input(_press("ui_cancel"))
+	nav._unhandled_input(_press("menu_back"))
+	assert_eq(hits[0], 2, "Back fires for both Esc and the gamepad B button")
+
+
+# With no page 1 behind it (the reward path tore it down), Back is neither drawn
+# nor reachable — a Back that lands on a dead end is worse than no Back.
+func test_global_standings_without_a_page_one_has_no_back() -> void:
+	var page := _global_page(_fake_board(), {"show_back": false})
+	await get_tree().process_frame
+	var hits := [0]
+	page.back_pressed.connect(func() -> void: hits[0] += 1)
+	_nav_of(page)._unhandled_input(_press("menu_back"))
+	assert_eq(hits[0], 0, "back is swallowed when there is nowhere to go back to")
+	for b in page.find_children("*", "Button", true, false):
+		assert_false(String((b as Button).text).to_upper().contains("BACK"),
+			"no Back button is drawn either")
+
+
+# Back returns to page 1, restores its cursor, and — crucially — the parent's nav
+# does NOT also consume that same press (only one nav is live at a time, because
+# showing page 2 hides page 1's root).
+func test_global_standings_back_restores_page_one_focus() -> void:
+	RallySession.auto_load_scenes = false
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
+	RallySession._opponent_field = [
+		{"name": "Quick", "car_name": "Rival Car", "event_times_ms": [40000, 40000, 40000],
+			"dnf": false, "combined_ms": 120000},
+	]
+	RallySession.report_event_result(50000)
+
+	var s := preload("res://standings.tscn").instantiate()
+	add_child_autofree(s)
+	await get_tree().process_frame
+	var page_one_button: Button = s._action_button
+
+	s._advance()  # the sole exit: first call shows page 2
+	await get_tree().process_frame
+	assert_not_null(s._global_page, "the first exit shows the global page")
+	assert_false(s._root_box.visible,
+		"page 1's root VBox is hidden, so its MenuNav goes inert with it")
+	# The parent's MenuNav hangs off the VBox that page 2 hides, so it reports
+	# itself off-screen and swallows nothing — only page 2's nav is live.
+	var parent_nav := _nav_of(s._root_box)
+	assert_not_null(parent_nav, "page 1's nav lives on the VBox that page 2 hides")
+	assert_false(parent_nav._menu_visible(),
+		"the parent nav does not consume input while page 2 is up")
+
+	s._global_page._on_back()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(s._root_box.visible, "Back re-shows page 1")
+	assert_eq(s.get_viewport().gui_get_focus_owner(), page_one_button,
+		"and re-seats the cursor on page 1's Continue")
+
+	if RallySession.is_active():
+		RallySession.abandon()
+	RallySession.auto_load_scenes = true
+
+
+# --- UsernamePopup -----------------------------------------------------------
+# A new modal, so it carries the whole contract: a seated cursor, an explicitly
+# wired up/down column (a LineEdit swallows left/right for the caret), and a Back
+# that both Esc and gamepad B reach. It must not ship pointer-only.
+
+func test_username_popup_is_keyboard_and_gamepad_navigable() -> void:
+	var host := Control.new()
+	add_child_autofree(host)
+	var popup := UsernamePopup.open(host)
+	await get_tree().process_frame  # deferred focus grab settles
+
+	assert_eq(popup._field.line.focus_mode, Control.FOCUS_ALL, "the field is focusable")
+	assert_eq(host.get_viewport().gui_get_focus_owner(), popup._field.line,
+		"the cursor starts in the field, so typing works with no pointer")
+	var buttons := popup.find_children("*", "Button", true, false)
+	assert_eq(buttons.size(), 2, "Save and Cancel")
+	for b in buttons:
+		assert_true((b as Button).is_visible_in_tree(),
+			"%s is on screen" % (b as Button).text)
+		assert_eq((b as Button).focus_mode, Control.FOCUS_ALL,
+			"%s is keyboard / gamepad focusable" % (b as Button).text)
+	# TextField.wire_column chains the field to Save explicitly, because the
+	# automatic neighbour search can't be trusted once a LineEdit is in the column.
+	assert_eq(popup._field.line.focus_neighbor_bottom, buttons[0].get_path(),
+		"down out of the field lands on Save")
+
+
+# Back closes the popup having written nothing — it is deliberately dismissable
+# (the leaderboard page's prompt and the Account row are the two ways back).
+func test_username_popup_back_cancels_without_writing() -> void:
+	Save.profile["username"] = ""
+	var host := Control.new()
+	add_child_autofree(host)
+	var popup := UsernamePopup.open(host)
+	await get_tree().process_frame
+	var results: Array = []
+	popup.finished.connect(func(name: String) -> void: results.append(name))
+
+	# The nav is attached to the popup's centring container, not the CanvasLayer.
+	var center := popup.get_child(1) as CenterContainer
+	var nav := _nav_of(center)
+	assert_not_null(nav, "the popup is wired to the MenuNav framework")
+	# Release the field first: while typing, Back means "stop typing"
+	# (MenuNav.is_text_editing), which is the behaviour a half-entered name wants.
+	popup._field.line.release_focus()
+	nav._unhandled_input(_press("menu_back"))
+	assert_eq(results, [""], "gamepad B cancels, reporting no name")
+	assert_eq(UsernamePopup.current(), "", "and writes nothing")

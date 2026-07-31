@@ -315,6 +315,33 @@ static func event_cliffiness(event: Dictionary) -> float:
 	return clampf(float(event.get("cliffiness", 0.0)), 0.0, 1.0)
 
 
+# The global leaderboards' board key for one stage: a track IDENTITY, not a stage
+# number. Hashes the WHOLE authored per-event dict (sorted keys, so any authored
+# field — not just seed/turn_count/width — retunes the board), never the real
+# track-cache key (TrackGenParams.cache_key/TrackCache.key_for): those need a
+# GameConfig, which would stop this being a pure static, and would fold in things
+# (CACHE_VERSION, the corner library, generator constants, cfg.terrain_layers())
+# that should reset EVERY board at once, not one designer's retune of one event.
+# That global-reset half is handled by hand via TrackCache.BOARD_EPOCH instead —
+# bump it whenever CACHE_VERSION bumps. Pure and deterministic: same rally +
+# event_index → same key; changing any authored field of that event, or bumping
+# BOARD_EPOCH, changes it. Result is Firestore document-id safe (no '/', far
+# under the 1500-byte limit).
+static func stage_key(rally: Dictionary, event_index: int) -> String:
+	var events: Array = rally.get("events", [])
+	var event: Dictionary = {}
+	if event_index >= 0 and event_index < events.size():
+		event = events[event_index]
+	var keys := event.keys()
+	keys.sort()
+	var parts := PackedStringArray()
+	for k in keys:
+		parts.append("%s=%s" % [k, str(event[k])])
+	var event_hash := "|".join(parts).sha256_text().substr(0, 12)
+	var rally_id := String(rally.get("id", ""))
+	return "%s__%d__%s__e%d" % [rally_id, event_index, event_hash, TrackCache.BOARD_EPOCH]
+
+
 # --- Eligibility -------------------------------------------------------------
 
 # Whether `car_meta` (a CarLibrary entry dict, resolved by the owned car's stable

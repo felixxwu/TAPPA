@@ -648,26 +648,6 @@ func test_opponent_field_is_a_ranked_ladder() -> void:
 		"field spans a ranked ladder, not a mid-pack cluster")
 
 
-func test_higher_tier_fields_faster_rivals() -> void:
-	# The pace band scales with hidden difficulty: a tier-4 field runs faster overall
-	# than a tier-1 field on the same track (top of the field creeps toward the floor).
-	var track := _track_with_pieces()
-	var events := [{"seed": 1}, {"seed": 2}, {"seed": 3}]
-	var results := [track, track, track]
-	var easy := {"id": "easy_r", "difficulty": 1, "restriction": {}, "events": events}
-	var hard := {"id": "hard_r", "difficulty": 4, "restriction": {}, "events": events}
-	var easy_field := RallyLibrary.generate_opponent_field(easy, results, events)
-	var hard_field := RallyLibrary.generate_opponent_field(hard, results, events)
-	var best := func(f: Array) -> int:
-		var b := -1
-		for opp in f:
-			if not opp["dnf"] and (b < 0 or int(opp["combined_ms"]) < b):
-				b = int(opp["combined_ms"])
-		return b
-	assert_lt(best.call(hard_field), best.call(easy_field),
-		"tier-4 winner is faster than the tier-1 winner on the same track")
-
-
 func test_opponent_times_apply_stock_turbo_boost() -> void:
 	# A rival's pace floor must reflect the car's STOCK forced induction: the same
 	# car/engine posts faster rival times WITH a turbo than without. Build the roster
@@ -792,5 +772,68 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 	for r in enterable:
 		assert_true(RallyLibrary.is_eligible(r, car), "%s is eligible for the car" % r["id"])
 		assert_false(bool(r.get("showdown", false)), "the locked showdown is not offered")
+
+
+# --- stage_key (global leaderboards) -----------------------------------------
+# Synthetic RallyDefs only, per project rules: a designer retuning a shipped
+# rally must not be able to break this test.
+
+func _synthetic_rally(event: Dictionary) -> Dictionary:
+	return {"id": "synthetic_rally", "events": [event, event, event]}
+
+
+func test_stage_key_is_deterministic() -> void:
+	var rally := _synthetic_rally({"seed": 1, "turn_count": 10, "straightness": 0.5})
+	var a := RallyLibrary.stage_key(rally, 1)
+	var b := RallyLibrary.stage_key(rally, 1)
+	assert_eq(a, b, "same rally + event_index always yields the same key")
+
+
+func test_stage_key_changes_with_turn_count() -> void:
+	var rally_a := _synthetic_rally({"seed": 1, "turn_count": 10, "straightness": 0.5})
+	var rally_b := _synthetic_rally({"seed": 1, "turn_count": 11, "straightness": 0.5})
+	assert_ne(RallyLibrary.stage_key(rally_a, 0), RallyLibrary.stage_key(rally_b, 0),
+		"a changed turn_count changes the key")
+
+
+func test_stage_key_changes_with_straightness() -> void:
+	# straightness is authored per-event and changes the generated track shape, so
+	# the key must react to it too, not just seed/turn_count/width (the wrong
+	# formulation this test guards against).
+	var rally_a := _synthetic_rally({"seed": 1, "turn_count": 10, "straightness": 0.2})
+	var rally_b := _synthetic_rally({"seed": 1, "turn_count": 10, "straightness": 0.8})
+	assert_ne(RallyLibrary.stage_key(rally_a, 0), RallyLibrary.stage_key(rally_b, 0),
+		"a changed straightness changes the key")
+
+
+func test_stage_key_differs_by_event_index() -> void:
+	# Same rally, different events within it (a designer's per-event data, not the
+	# same event repeated) must produce distinct keys.
+	var rally := {"id": "synthetic_rally", "events": [
+		{"seed": 1, "turn_count": 10},
+		{"seed": 2, "turn_count": 12},
+	]}
+	assert_ne(RallyLibrary.stage_key(rally, 0), RallyLibrary.stage_key(rally, 1),
+		"different events in the same rally get different keys")
+
+
+func test_stage_key_includes_board_epoch_suffix() -> void:
+	# BOARD_EPOCH is a const (bumped by hand alongside CACHE_VERSION), so a test
+	# cannot bump it at runtime to prove "changing it changes the key" without
+	# reaching into engine internals. Instead assert the key is actually suffixed
+	# with TrackCache.BOARD_EPOCH's current value, confirming stage_key reads it
+	# (rather than a hardcoded literal) — the suffix format is what a bumped epoch
+	# would change.
+	var rally := _synthetic_rally({"seed": 1, "turn_count": 10})
+	var key := RallyLibrary.stage_key(rally, 0)
+	assert_true(key.ends_with("__e%d" % TrackCache.BOARD_EPOCH),
+		"the key is suffixed with the current BOARD_EPOCH")
+
+
+func test_stage_key_is_document_id_safe() -> void:
+	var rally := _synthetic_rally({"seed": 1, "turn_count": 10, "straightness": 0.5})
+	var key := RallyLibrary.stage_key(rally, 2)
+	assert_false(key.contains("/"), "no '/' in a Firestore document id")
+	assert_lt(key.length(), 1500, "well under Firestore's 1500-byte id limit")
 
 

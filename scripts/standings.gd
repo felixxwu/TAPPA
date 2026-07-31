@@ -26,6 +26,13 @@ var leaderboard_hidden := false
 var _action_button: Button = null
 var _reveal_gen := 0  # bumped per reveal so a stale coroutine can't touch freed rows
 
+# Page 2 — the global stage leaderboard (features/menus.md, features/global-leaderboards.md).
+# A page concept on the local-vs-global axis, living in the child control rather
+# than as a mode flag here. Shown once, on the way out of this screen.
+var _global_page: GlobalStandings = null
+var _global_shown := false
+var _root_box: VBoxContainer = null  # page 1's content, hidden while page 2 is up
+
 # Seconds between each leaderboard line appearing. Shorter than it was when this
 # screen showed one list at a time: two stacked sections mean roughly twice as many
 # lines, and the whole fill-in should still be over in a couple of seconds.
@@ -91,6 +98,10 @@ static func visible_rows(rows: Array, top: int = PODIUM_ROWS) -> Array:
 func _build_ui() -> void:
 	for c in get_children():
 		c.queue_free()
+	# Every child just went; drop the page-1 / page-2 handles with them so nothing
+	# below reasons about a node that is on its way out.
+	_root_box = null
+	_global_page = null
 
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
@@ -127,6 +138,7 @@ func _build_ui() -> void:
 	root.offset_bottom = -16.0
 	root.add_theme_constant_override("separation", 8)
 	add_child(root)
+	_root_box = root
 
 	var done := RallySession.events_completed()
 
@@ -197,7 +209,12 @@ func _build_ui() -> void:
 	# Framework wires focus + WASD/arrow/gamepad nav and routes back (see
 	# features/menus.md → MenuNav). Re-run each _build_ui so the fresh button is
 	# picked up; attach() reuses the existing node rather than stacking handlers.
-	MenuNav.attach(self, {first = cont, on_back = _on_back_pressed})
+	#
+	# ATTACHED TO `root`, NOT `self`. MenuNav goes inert while its ROOT is hidden
+	# (MenuNav._menu_visible), and page 2 replaces this page by hiding `root` — so
+	# the nav must hang off the thing that gets hidden. Attached to `self` it
+	# stayed live behind page 2 and both navs consumed the same Back press.
+	MenuNav.attach(root, {first = cont, on_back = _on_back_pressed})
 
 	if not Platform.is_headless():
 		_reveal_standings(row_nodes)
@@ -252,7 +269,68 @@ func _on_action() -> void:
 	if _reward_pending():
 		_collect_reward()
 	else:
+		_advance()
+
+
+# THE SOLE EXIT from this screen. Both routes off the interstitial funnel through
+# here — the plain Continue above, and the upgrade reveal's `finished` below —
+# because a reward is drawn on EVERY non-final stage, so intercepting only
+# _on_action would show the global page after stage 3 and nowhere else.
+#
+# First call shows page 2 (the global stage leaderboard); every call after that
+# resumes the rally. Page 2's own Continue calls back into here, which is how the
+# second call happens.
+func _advance() -> void:
+	if _global_shown:
 		RallySession.continue_to_next_event()
+		return
+	_global_shown = true
+	_show_global_page()
+
+
+# Page 2 REPLACES page 1's content: hiding the root VBox takes the parent's
+# MenuNav inert along with it (MenuNav._unhandled_input is gated on its root being
+# visible), so the child's is the only live nav and the two cannot race on Back.
+func _show_global_page() -> void:
+	var opts := GlobalStandings.for_current_stage()
+	# Back only exists when there is a page 1 to go back TO. After the reward path
+	# page 1 was torn down and replaced by the (now spent) reveal card, so page 2
+	# carries Continue alone rather than a Back that lands on a dead end.
+	var have_page_one := is_instance_valid(_root_box)
+	opts["show_back"] = have_page_one
+	opts["overlay_mode"] = overlay_mode
+	opts["continue_text"] = "Continue to podium >" \
+		if RallySession.events_completed() >= RallySession.EVENTS_PER_RALLY \
+		else "Continue to next stage >"
+
+	if have_page_one:
+		_root_box.visible = false
+	elif is_instance_valid(_reveal):
+		_reveal.visible = false
+
+	_global_page = GlobalStandings.new()
+	_global_page.name = "GlobalStandings"
+	_global_page.configure(opts)
+	_global_page.continued.connect(_advance)
+	_global_page.back_pressed.connect(_on_global_back)
+	add_child(_global_page)
+
+
+func _on_global_back() -> void:
+	if is_instance_valid(_global_page):
+		_global_page.queue_free()
+	_global_page = null
+	# Allow page 2 to be reached again from the restored Continue — Back means
+	# "let me re-read the local standings", not "skip the global board".
+	_global_shown = false
+	if is_instance_valid(_root_box):
+		_root_box.visible = true
+	# Re-grab focus on Continue. attach() reuses the existing MenuNav rather than
+	# stacking handlers, and the row reveal deliberately does NOT re-run: the rows
+	# are already built and visible, and re-playing a board the player has read is
+	# noise.
+	if is_instance_valid(_root_box) and is_instance_valid(_action_button):
+		MenuNav.attach(_root_box, {first = _action_button, on_back = _on_back_pressed})
 
 
 # Hide the leaderboard and take over the screen with the reward reveal (same card
@@ -263,6 +341,7 @@ func _collect_reward() -> void:
 	_reward_collected = true  # so _reward_pending() is false once we continue
 	for c in get_children():
 		c.queue_free()
+	_root_box = null  # page 1 is gone; the reveal card owns the screen now
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.name = "Background"
@@ -285,7 +364,11 @@ func _collect_reward() -> void:
 	root.add_child(_reveal)
 	_action_button = null
 
-	_reveal.finished.connect(RallySession.continue_to_next_event, CONNECT_ONE_SHOT)
+	# NOT connected straight to RallySession.continue_to_next_event: this is the
+	# route taken on every non-final stage, so it must funnel through _advance()
+	# like the plain Continue does, or the global page would only ever appear
+	# after the final stage.
+	_reveal.finished.connect(_advance, CONNECT_ONE_SHOT)
 	_reveal.reveal(RallySession.current_event_upgrade(), RallySession.car_instance_id())
 
 
