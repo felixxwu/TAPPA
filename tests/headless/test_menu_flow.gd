@@ -2122,8 +2122,14 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 	add_child_autofree(sc)
 	await get_tree().process_frame
 	var text := _label_texts(sc)
-	assert_string_contains(text, "AFTER STAGE 1", "the interstitial headers the event just finished")
-	assert_string_contains(text, "FIXTURE OPEN", "it names the rally")
+	# No screen title / rally-name line any more — the section heading is the header,
+	# so both leaderboards fit without scrolling.
+	assert_string_contains(text, "STAGE 1 RESULT", "the section heading names the stage")
+	# Stage 1's two lists are identical, but BOTH still show — the screen keeps the
+	# same shape from the first stage to the last.
+	assert_string_contains(text, UITheme.caps(Standings.overall_heading(1)),
+		"stage 1 still carries the overall section, marked as stage 1 only")
+	assert_false(text.contains("FIXTURE OPEN"), "the rally-name line is gone")
 	assert_string_contains(text, "QUICK", "the opponent field is listed")
 	assert_string_contains(text, "SLOW", "the whole field is shown")
 	# Continue is focused on entry so a keyboard / gamepad can advance with no pointer.
@@ -2150,8 +2156,6 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	var sc: Control = load("res://standings.tscn").instantiate()
 	add_child_autofree(sc)
 	await get_tree().process_frame
-	# Event 1 skips the event-only page, so we're on the combined page already.
-	assert_false(sc.showing_event_page(), "event 1 opens on the combined page")
 	assert_eq(sc._action_button.text, UITheme.caps("Collect reward >"),
 		"a non-final event with an award offers Collect reward")
 
@@ -2190,12 +2194,58 @@ func test_standings_final_event_has_no_collect_reward() -> void:
 	var sc: Control = load("res://standings.tscn").instantiate()
 	add_child_autofree(sc)
 	await get_tree().process_frame
-	while sc.showing_event_page():
-		sc._action_button.pressed.emit()
-		await get_tree().process_frame
 	assert_eq(sc._action_button.text, UITheme.caps("Continue to podium >"),
 		"the final event has no reward to collect")
 	RallySession.abandon()
+
+
+# Each leaderboard section on the interstitial lists only the top few finishers, so
+# both fit on one page. Standings.visible_rows decides what survives that trim.
+func _ranked(names: Array, player: String) -> Array:
+	var rows: Array = []
+	for i in names.size():
+		rows.append({"name": names[i], "placed": i + 1, "is_player": names[i] == player})
+	return rows
+
+
+func test_visible_rows_keeps_only_the_podium_when_the_player_is_on_it() -> void:
+	var rows := _ranked(["A", "You", "C", "D", "E"], "You")
+	var shown: Array = Standings.visible_rows(rows, 3)
+	assert_eq(shown.size(), 3, "a player inside the top 3 needs no extra row")
+	assert_eq(String(shown[1].get("name", "")), "You", "the player keeps their real position")
+
+
+func test_visible_rows_appends_the_player_below_the_podium() -> void:
+	var rows := _ranked(["A", "B", "C", "D", "E", "You"], "You")
+	var shown: Array = Standings.visible_rows(rows, 3)
+	assert_eq(shown.size(), 5, "top 3, a gap marker, then the player")
+	assert_true(bool(shown[3].get("gap", false)), "a non-adjacent player is cut in with a gap")
+	assert_eq(String(shown[4].get("name", "")), "You", "the player's own row is always shown")
+
+
+func test_visible_rows_omits_the_gap_when_the_player_is_next_in_line() -> void:
+	var rows := _ranked(["A", "B", "C", "You"], "You")
+	var shown: Array = Standings.visible_rows(rows, 3)
+	assert_eq(shown.size(), 4, "P4 follows the podium directly")
+	for entry in shown:
+		assert_false(bool(entry.get("gap", false)), "nothing was skipped, so no gap marker")
+
+
+func test_visible_rows_handles_a_field_smaller_than_the_podium() -> void:
+	var rows := _ranked(["You", "B"], "You")
+	var shown: Array = Standings.visible_rows(rows, 3)
+	assert_eq(shown.size(), 2, "a short field is shown whole")
+
+
+# The OVERALL heading spells out which stages it sums, so stage 1's identical pair of
+# lists reads as intentional rather than as a duplicate.
+func test_overall_heading_names_every_stage_summed_so_far() -> void:
+	assert_eq(Standings.overall_heading(1), "OVERALL — stage 1 only",
+		"stage 1 says outright that only one stage is in the total")
+	assert_eq(Standings.overall_heading(2), "OVERALL — stages 1 + 2",
+		"stage 2 lists both stages")
+	assert_eq(Standings.overall_heading(3), "OVERALL — stages 1 + 2 + 3",
+		"stage 3 lists all three")
 
 
 func test_podium_shows_the_finish_summary() -> void:
@@ -2742,10 +2792,10 @@ func test_android_notice_is_navigable_and_back_dismisses() -> void:
 		"focus returns to the title Start button")
 
 
-# The final event used to skip straight to the podium from its event-only page. It
-# should now show the SAME two-page flow as every other event: event result page,
-# then Continue steps to the combined/cumulative standings page before resolving.
-func test_final_event_shows_combined_page_before_proceeding() -> void:
+# The final event used to skip straight to the podium. It now pauses on the SAME
+# interstitial as every other event, carrying BOTH leaderboards — that stage's
+# result and the overall standings — stacked on one page before it resolves.
+func test_final_event_shows_both_leaderboards_before_proceeding() -> void:
 	var owned := _first_owned_car()
 	RallySession.start_rally(_any_rally(), owned, true)
 	RallySession.report_event_result(1000, 0.0)   # event 1
@@ -2755,9 +2805,13 @@ func test_final_event_shows_combined_page_before_proceeding() -> void:
 	RallySession.report_event_result(1000, 0.0)   # event 3 (final)
 	var s: Control = load("res://standings.tscn").instantiate()
 	add_child_autofree(s)
-	assert_true(s.showing_event_page(), "final event opens on the event page")
-	s._on_action()                                 # advance from the event page
-	assert_false(s.showing_event_page(), "final event now shows the combined page")
+	var text := _label_texts(s)
+	assert_string_contains(text, UITheme.caps("STAGE 3 RESULT"),
+		"the final event's own stage result is on the page")
+	assert_string_contains(text, UITheme.caps(Standings.overall_heading(3)),
+		"the cumulative standings are on the same page, naming all three stages")
+	assert_eq(s._action_button.text, UITheme.caps("Continue to podium >"),
+		"one press resolves to the podium — no second page in between")
 
 
 # Drivetrain selector on the upgrades page's drivetrain slot row (todo/drivetrain-swap):

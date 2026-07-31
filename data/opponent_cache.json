@@ -1,17 +1,17 @@
 {
   "entries": {
-    "american_muscle|4124a787680ce14f|4f0b446dc5794daa": [
+    "american_muscle|24790aae67146ca6|fe3139441db35321": [
       {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 290244,
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 420863,
         "dnf": false,
         "event_times_ms": [
-          98039,
-          95141,
-          97064
+          143170,
+          143759,
+          133934
         ],
-        "name": "Tomas Novak",
+        "name": "Bruno Alves",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -19,42 +19,12 @@
       {
         "car_id": "viper",
         "car_name": "Swerve Serpent RT/10",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          100378,
-          101496,
-          -1
-        ],
-        "name": "Dieter Faust",
-        "wreck_event": 2,
-        "wreck_progress": 0.2403629720211029,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          131514,
-          -1,
-          -1
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": 1,
-        "wreck_progress": 0.6904757022857666,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 306680,
+        "combined_ms": 441751,
         "dnf": false,
         "event_times_ms": [
-          99076,
-          105768,
-          101836
+          152897,
+          148839,
+          140015
         ],
         "name": "Sami Korhonen",
         "wreck_event": -1,
@@ -62,14 +32,59 @@
         "wreck_side": 1.0
       },
       {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          100287,
+          101658,
+          -1
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": 2,
+        "wreck_progress": 0.4885495603084564,
+        "wreck_side": 1.0
+      },
+      {
         "car_id": "viper",
         "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 323818,
+        "combined_ms": 322574,
         "dnf": false,
         "event_times_ms": [
-          109384,
-          107433,
-          107001
+          109798,
+          108104,
+          104672
+        ],
+        "name": "Ott Rebane",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          120148,
+          -1,
+          -1
+        ],
+        "name": "Rauno Mäkinen",
+        "wreck_event": 1,
+        "wreck_progress": 0.4937504827976227,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 287071,
+        "dnf": false,
+        "event_times_ms": [
+          96719,
+          97117,
+          93235
         ],
         "name": "Lucia Ferrer",
         "wreck_event": -1,
@@ -79,14 +94,14 @@
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
-        "combined_ms": 379270,
+        "combined_ms": 479501,
         "dnf": false,
         "event_times_ms": [
-          124544,
-          131126,
-          123600
+          166176,
+          161958,
+          151367
         ],
-        "name": "Andre Dubois",
+        "name": "Yuki Tanaka",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -94,14 +109,14 @@
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
-        "combined_ms": 394850,
+        "combined_ms": 309338,
         "dnf": false,
         "event_times_ms": [
-          133772,
-          132270,
-          128808
+          108089,
+          101550,
+          99699
         ],
-        "name": "Elena Vasquez",
+        "name": "Hans Gruber",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -109,121 +124,46 @@
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
-        "combined_ms": 275341,
+        "combined_ms": 445200,
         "dnf": false,
         "event_times_ms": [
-          92818,
-          89624,
-          92899
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 298046,
-        "dnf": false,
-        "event_times_ms": [
-          103476,
-          99629,
-          94941
-        ],
-        "name": "Marco Bianchi",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 278905,
-        "dnf": false,
-        "event_times_ms": [
-          92429,
-          93558,
-          92918
+          146859,
+          150373,
+          147968
         ],
         "name": "Petra Havel",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 390567,
-        "dnf": false,
-        "event_times_ms": [
-          138640,
-          128681,
-          123246
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
       }
     ],
-    "coastal_sprint|131396fe87a9595d|4f0b446dc5794daa": [
+    "coastal_sprint|a9e644eae71f7429|fe3139441db35321": [
       {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 177221,
-        "dnf": false,
+        "car_id": "mx5",
+        "car_name": "Miot Roadster",
+        "combined_ms": -1,
+        "dnf": true,
         "event_times_ms": [
-          57203,
-          58995,
-          61023
+          76014,
+          77159,
+          -1
         ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 164332,
-        "dnf": false,
-        "event_times_ms": [
-          54379,
-          56491,
-          53462
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
+        "name": "Hans Gruber",
+        "wreck_event": 2,
+        "wreck_progress": 0.7811989784240723,
         "wreck_side": 1.0
       },
       {
         "car_id": "xjs",
         "car_name": "Panthera XJS",
-        "combined_ms": 167259,
+        "combined_ms": 247978,
         "dnf": false,
         "event_times_ms": [
-          51955,
-          59330,
-          55974
+          81228,
+          87313,
+          79437
         ],
         "name": "Marco Bianchi",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 188189,
-        "dnf": false,
-        "event_times_ms": [
-          62169,
-          64399,
-          61621
-        ],
-        "name": "Katya Orlova",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -231,12 +171,286 @@
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
-        "combined_ms": 201052,
+        "combined_ms": 189591,
         "dnf": false,
         "event_times_ms": [
-          65816,
-          67391,
-          67845
+          62912,
+          64720,
+          61959
+        ],
+        "name": "Ivar Solberg",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "mx5",
+        "car_name": "Miot Roadster",
+        "combined_ms": 291785,
+        "dnf": false,
+        "event_times_ms": [
+          97168,
+          100628,
+          93989
+        ],
+        "name": "Mireia Costa",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "mx5",
+        "car_name": "Miot Roadster",
+        "combined_ms": 235982,
+        "dnf": false,
+        "event_times_ms": [
+          74605,
+          81565,
+          79812
+        ],
+        "name": "Petra Havel",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 242709,
+        "dnf": false,
+        "event_times_ms": [
+          78558,
+          85007,
+          79144
+        ],
+        "name": "Kaj Lindqvist",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          -1,
+          -1,
+          -1
+        ],
+        "name": "Sofia Romano",
+        "wreck_event": 0,
+        "wreck_progress": 0.7580112218856812,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 259084,
+        "dnf": false,
+        "event_times_ms": [
+          81433,
+          91185,
+          86466
+        ],
+        "name": "Lucia Ferrer",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 258501,
+        "dnf": false,
+        "event_times_ms": [
+          81607,
+          90070,
+          86824
+        ],
+        "name": "Ott Rebane",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "front_runners|6f4c544b0ef3b7e7|fe3139441db35321": [
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 254027,
+        "dnf": false,
+        "event_times_ms": [
+          81742,
+          81348,
+          90937
+        ],
+        "name": "Lucia Ferrer",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          79491,
+          -1,
+          -1
+        ],
+        "name": "Nikos Papadakis",
+        "wreck_event": 1,
+        "wreck_progress": 0.8306658267974854,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 286130,
+        "dnf": false,
+        "event_times_ms": [
+          92857,
+          89633,
+          103640
+        ],
+        "name": "Tomas Novak",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 284579,
+        "dnf": false,
+        "event_times_ms": [
+          92468,
+          94412,
+          97699
+        ],
+        "name": "Bruno Alves",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          67623,
+          65617,
+          -1
+        ],
+        "name": "Dieter Faust",
+        "wreck_event": 2,
+        "wreck_progress": 0.5616638660430908,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 278669,
+        "dnf": false,
+        "event_times_ms": [
+          89838,
+          88553,
+          100278
+        ],
+        "name": "Katya Orlova",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 220573,
+        "dnf": false,
+        "event_times_ms": [
+          72053,
+          72138,
+          76382
+        ],
+        "name": "Marco Bianchi",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 269779,
+        "dnf": false,
+        "event_times_ms": [
+          87482,
+          87647,
+          94650
+        ],
+        "name": "Ivar Solberg",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 271249,
+        "dnf": false,
+        "event_times_ms": [
+          87624,
+          88946,
+          94679
+        ],
+        "name": "Mireia Costa",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "gr_ancient_ruins|9b43e0d89298e10c|fe3139441db35321": [
+      {
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          59258,
+          68147,
+          -1
+        ],
+        "name": "Rauno Mäkinen",
+        "wreck_event": 2,
+        "wreck_progress": 0.7062057256698608,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          55294,
+          -1,
+          -1
+        ],
+        "name": "Sami Korhonen",
+        "wreck_event": 1,
+        "wreck_progress": 0.33262452483177185,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 161472,
+        "dnf": false,
+        "event_times_ms": [
+          50883,
+          59430,
+          51159
         ],
         "name": "Andre Dubois",
         "wreck_event": -1,
@@ -244,31 +458,213 @@
         "wreck_side": 1.0
       },
       {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 255324,
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 210530,
         "dnf": false,
         "event_times_ms": [
-          84945,
-          84763,
-          85616
+          65116,
+          73008,
+          72406
         ],
-        "name": "Sofia Romano",
+        "name": "Yuki Tanaka",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
       },
       {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 223186,
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 200860,
         "dnf": false,
         "event_times_ms": [
-          73379,
-          76075,
-          73732
+          61996,
+          72946,
+          65918
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 190256,
+        "dnf": false,
+        "event_times_ms": [
+          58993,
+          70764,
+          60499
+        ],
+        "name": "Katya Orlova",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 173359,
+        "dnf": false,
+        "event_times_ms": [
+          53619,
+          63914,
+          55826
+        ],
+        "name": "Dieter Faust",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 237583,
+        "dnf": false,
+        "event_times_ms": [
+          75502,
+          82111,
+          79970
+        ],
+        "name": "Ott Rebane",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 182464,
+        "dnf": false,
+        "event_times_ms": [
+          55795,
+          64147,
+          62522
+        ],
+        "name": "Ivar Solberg",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "gr_mountain_pass|175cf5ae5a7d8af6|fe3139441db35321": [
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 189547,
+        "dnf": false,
+        "event_times_ms": [
+          60782,
+          63044,
+          65721
         ],
         "name": "Sami Korhonen",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 235145,
+        "dnf": false,
+        "event_times_ms": [
+          77768,
+          74138,
+          83239
+        ],
+        "name": "Katya Orlova",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 176751,
+        "dnf": false,
+        "event_times_ms": [
+          57558,
+          56102,
+          63091
+        ],
+        "name": "Lucia Ferrer",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 195679,
+        "dnf": false,
+        "event_times_ms": [
+          62526,
+          67546,
+          65607
+        ],
+        "name": "Tomas Novak",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 203383,
+        "dnf": false,
+        "event_times_ms": [
+          65377,
+          67225,
+          70781
+        ],
+        "name": "Dieter Faust",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 171501,
+        "dnf": false,
+        "event_times_ms": [
+          52453,
+          59196,
+          59852
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 220207,
+        "dnf": false,
+        "event_times_ms": [
+          70353,
+          72646,
+          77208
+        ],
+        "name": "Andre Dubois",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 205752,
+        "dnf": false,
+        "event_times_ms": [
+          63684,
+          69978,
+          72090
+        ],
+        "name": "Hans Gruber",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -279,71 +675,116 @@
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
-          67600,
-          -1,
+          78090,
+          75345,
           -1
         ],
         "name": "Ivar Solberg",
-        "wreck_event": 1,
-        "wreck_progress": 0.8262678384780884,
-        "wreck_side": 1.0
-      },
+        "wreck_event": 2,
+        "wreck_progress": 0.6045869588851929,
+        "wreck_side": -1.0
+      }
+    ],
+    "gr_olive_coast|c74a1790680eab4b|fe3139441db35321": [
       {
         "car_id": "mx5",
         "car_name": "Miot Roadster",
+        "combined_ms": 193556,
+        "dnf": false,
+        "event_times_ms": [
+          59106,
+          71983,
+          62467
+        ],
+        "name": "Mireia Costa",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 166290,
+        "dnf": false,
+        "event_times_ms": [
+          50913,
+          59243,
+          56134
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 146568,
+        "dnf": false,
+        "event_times_ms": [
+          44893,
+          53084,
+          48591
+        ],
+        "name": "Sofia Romano",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 136769,
+        "dnf": false,
+        "event_times_ms": [
+          43556,
+          48715,
+          44498
+        ],
+        "name": "Andre Dubois",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          61541,
+          73648,
+          -1
+        ],
+        "name": "Marco Bianchi",
+        "wreck_event": 2,
+        "wreck_progress": 0.1717866212129593,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 187245,
+        "dnf": false,
+        "event_times_ms": [
+          56511,
+          67360,
+          63374
+        ],
+        "name": "Nikos Papadakis",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
         "combined_ms": 177572,
         "dnf": false,
         "event_times_ms": [
-          56741,
-          61487,
-          59344
-        ],
-        "name": "Yuki Tanaka",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 249861,
-        "dnf": false,
-        "event_times_ms": [
-          83072,
-          81805,
-          84984
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 218835,
-        "dnf": false,
-        "event_times_ms": [
-          71098,
-          75756,
-          71981
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "front_runners|092e21b34bef7ab2|4f0b446dc5794daa": [
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 166464,
-        "dnf": false,
-        "event_times_ms": [
-          52575,
-          53011,
-          60878
+          55209,
+          64561,
+          57802
         ],
         "name": "Rauno Mäkinen",
         "wreck_event": -1,
@@ -351,119 +792,14 @@
         "wreck_side": 1.0
       },
       {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 218283,
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 170280,
         "dnf": false,
         "event_times_ms": [
-          68449,
-          72142,
-          77692
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 174010,
-        "dnf": false,
-        "event_times_ms": [
-          54234,
-          56363,
-          63413
-        ],
-        "name": "Lucia Ferrer",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          -1,
-          -1,
-          -1
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": 0,
-        "wreck_progress": 0.8378204107284546,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 172187,
-        "dnf": false,
-        "event_times_ms": [
-          54121,
-          56974,
-          61092
-        ],
-        "name": "Sami Korhonen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 221876,
-        "dnf": false,
-        "event_times_ms": [
-          68612,
-          71000,
-          82264
-        ],
-        "name": "Marco Bianchi",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 260160,
-        "dnf": false,
-        "event_times_ms": [
-          82788,
-          82414,
-          94958
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 212934,
-        "dnf": false,
-        "event_times_ms": [
-          68448,
-          71162,
-          73324
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 234296,
-        "dnf": false,
-        "event_times_ms": [
-          76189,
-          76844,
-          81263
+          53250,
+          59552,
+          57478
         ],
         "name": "Elena Vasquez",
         "wreck_event": -1,
@@ -471,1836 +807,33 @@
         "wreck_side": 1.0
       },
       {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
+        "car_id": "mx5",
+        "car_name": "Miot Roadster",
         "combined_ms": -1,
         "dnf": true,
         "event_times_ms": [
-          65640,
-          64910,
-          -1
-        ],
-        "name": "Andre Dubois",
-        "wreck_event": 2,
-        "wreck_progress": 0.502601146697998,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 265993,
-        "dnf": false,
-        "event_times_ms": [
-          84942,
-          81995,
-          99056
-        ],
-        "name": "Yuki Tanaka",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 244743,
-        "dnf": false,
-        "event_times_ms": [
-          78354,
-          80985,
-          85404
-        ],
-        "name": "Katya Orlova",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 178276,
-        "dnf": false,
-        "event_times_ms": [
-          54835,
-          56597,
-          66844
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 183488,
-        "dnf": false,
-        "event_times_ms": [
-          59419,
-          55943,
-          68126
-        ],
-        "name": "Petra Havel",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 245647,
-        "dnf": false,
-        "event_times_ms": [
-          74266,
-          84208,
-          87173
-        ],
-        "name": "Kaj Lindqvist",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "gr_ancient_ruins|8422ff634b6f906c|4f0b446dc5794daa": [
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 199222,
-        "dnf": false,
-        "event_times_ms": [
-          62629,
-          68345,
-          68248
-        ],
-        "name": "Andre Dubois",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 167476,
-        "dnf": false,
-        "event_times_ms": [
-          54154,
-          57483,
-          55839
-        ],
-        "name": "Colin Brennan",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 186340,
-        "dnf": false,
-        "event_times_ms": [
-          56428,
-          67239,
-          62673
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 155317,
-        "dnf": false,
-        "event_times_ms": [
-          48489,
-          56977,
-          49851
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 156256,
-        "dnf": false,
-        "event_times_ms": [
-          47586,
-          56033,
-          52637
-        ],
-        "name": "Elena Vasquez",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 178871,
-        "dnf": false,
-        "event_times_ms": [
-          56246,
-          64237,
-          58388
-        ],
-        "name": "Kaj Lindqvist",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 158336,
-        "dnf": false,
-        "event_times_ms": [
-          48988,
-          55186,
-          54162
-        ],
-        "name": "Yuki Tanaka",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 183227,
-        "dnf": false,
-        "event_times_ms": [
-          55722,
-          64481,
-          63024
-        ],
-        "name": "Rauno Mäkinen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 186310,
-        "dnf": false,
-        "event_times_ms": [
-          56813,
-          68779,
-          60718
-        ],
-        "name": "Petra Havel",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          -1,
+          70315,
           -1,
           -1
-        ],
-        "name": "Sami Korhonen",
-        "wreck_event": 0,
-        "wreck_progress": 0.442381352186203,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 196118,
-        "dnf": false,
-        "event_times_ms": [
-          62045,
-          70883,
-          63190
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 188968,
-        "dnf": false,
-        "event_times_ms": [
-          58483,
-          65933,
-          64552
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 200545,
-        "dnf": false,
-        "event_times_ms": [
-          62126,
-          69672,
-          68747
-        ],
-        "name": "Ivar Solberg",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 193496,
-        "dnf": false,
-        "event_times_ms": [
-          59237,
-          68248,
-          66011
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 150031,
-        "dnf": false,
-        "event_times_ms": [
-          47558,
-          52547,
-          49926
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "gr_mountain_pass|f03e9ac03d63cd66|4f0b446dc5794daa": [
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 194452,
-        "dnf": false,
-        "event_times_ms": [
-          62915,
-          65766,
-          65771
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 174841,
-        "dnf": false,
-        "event_times_ms": [
-          55516,
-          58993,
-          60332
         ],
         "name": "Lucia Ferrer",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          64424,
-          62890,
-          -1
-        ],
-        "name": "Katya Orlova",
-        "wreck_event": 2,
-        "wreck_progress": 0.3425496220588684,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 172723,
-        "dnf": false,
-        "event_times_ms": [
-          54451,
-          58885,
-          59387
-        ],
-        "name": "Petra Havel",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 145430,
-        "dnf": false,
-        "event_times_ms": [
-          48765,
-          49230,
-          47435
-        ],
-        "name": "Andre Dubois",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          -1,
-          -1,
-          -1
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": 0,
-        "wreck_progress": 0.5962063074111938,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 159318,
-        "dnf": false,
-        "event_times_ms": [
-          51470,
-          54557,
-          53291
-        ],
-        "name": "Kaj Lindqvist",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 173470,
-        "dnf": false,
-        "event_times_ms": [
-          54710,
-          59694,
-          59066
-        ],
-        "name": "Ivar Solberg",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 163527,
-        "dnf": false,
-        "event_times_ms": [
-          52758,
-          56256,
-          54513
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 183608,
-        "dnf": false,
-        "event_times_ms": [
-          57889,
-          61809,
-          63910
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 204139,
-        "dnf": false,
-        "event_times_ms": [
-          64294,
-          69036,
-          70809
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "gr_olive_coast|9250d8f0278773d5|4f0b446dc5794daa": [
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 130527,
-        "dnf": false,
-        "event_times_ms": [
-          39177,
-          45416,
-          45934
-        ],
-        "name": "Sami Korhonen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          39123,
-          45197,
-          -1
-        ],
-        "name": "Marco Bianchi",
-        "wreck_event": 2,
-        "wreck_progress": 0.7917284965515137,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 135274,
-        "dnf": false,
-        "event_times_ms": [
-          41950,
-          46480,
-          46844
-        ],
-        "name": "Ivar Solberg",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 178847,
-        "dnf": false,
-        "event_times_ms": [
-          55100,
-          63640,
-          60107
-        ],
-        "name": "Dieter Faust",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 193657,
-        "dnf": false,
-        "event_times_ms": [
-          57082,
-          68757,
-          67818
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 177378,
-        "dnf": false,
-        "event_times_ms": [
-          53155,
-          64555,
-          59668
-        ],
-        "name": "Lucia Ferrer",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 162346,
-        "dnf": false,
-        "event_times_ms": [
-          52100,
-          56145,
-          54101
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 136178,
-        "dnf": false,
-        "event_times_ms": [
-          43549,
-          47922,
-          44707
-        ],
-        "name": "Colin Brennan",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 174518,
-        "dnf": false,
-        "event_times_ms": [
-          55900,
-          58970,
-          59648
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          39324,
-          -1,
-          -1
-        ],
-        "name": "Andre Dubois",
         "wreck_event": 1,
-        "wreck_progress": 0.555211067199707,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 155587,
-        "dnf": false,
-        "event_times_ms": [
-          48726,
-          54197,
-          52664
-        ],
-        "name": "Petra Havel",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 117608,
-        "dnf": false,
-        "event_times_ms": [
-          35440,
-          41666,
-          40502
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 181091,
-        "dnf": false,
-        "event_times_ms": [
-          55483,
-          64843,
-          60765
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
+        "wreck_progress": 0.5811716318130493,
+        "wreck_side": -1.0
       }
     ],
-    "gr_showdown|bdaa14244a182e90|4f0b446dc5794daa": [
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 252904,
-        "dnf": false,
-        "event_times_ms": [
-          81154,
-          90247,
-          81503
-        ],
-        "name": "Dieter Faust",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 221020,
-        "dnf": false,
-        "event_times_ms": [
-          69080,
-          79228,
-          72712
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
+    "gr_showdown|ad9dd29dedb912f9|fe3139441db35321": [
       {
         "car_id": "xjs",
         "car_name": "Panthera XJS",
-        "combined_ms": 214906,
+        "combined_ms": 319482,
         "dnf": false,
         "event_times_ms": [
-          69240,
-          75748,
-          69918
-        ],
-        "name": "Yuki Tanaka",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 258389,
-        "dnf": false,
-        "event_times_ms": [
-          82740,
-          91303,
-          84346
+          98114,
+          117419,
+          103949
         ],
         "name": "Lucia Ferrer",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 215670,
-        "dnf": false,
-        "event_times_ms": [
-          69316,
-          75601,
-          70753
-        ],
-        "name": "Elena Vasquez",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          -1,
-          -1,
-          -1
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": 0,
-        "wreck_progress": 0.4648236036300659,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 219113,
-        "dnf": false,
-        "event_times_ms": [
-          71883,
-          76654,
-          70576
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 270661,
-        "dnf": false,
-        "event_times_ms": [
-          83544,
-          101823,
-          85294
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 273045,
-        "dnf": false,
-        "event_times_ms": [
-          86409,
-          97542,
-          89094
-        ],
-        "name": "Sami Korhonen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 269167,
-        "dnf": false,
-        "event_times_ms": [
-          84432,
-          96150,
-          88585
-        ],
-        "name": "Colin Brennan",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 228939,
-        "dnf": false,
-        "event_times_ms": [
-          72000,
-          84159,
-          72780
-        ],
-        "name": "Marco Bianchi",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          85058,
-          93457,
-          -1
-        ],
-        "name": "Kaj Lindqvist",
-        "wreck_event": 2,
-        "wreck_progress": 0.7524704933166504,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 263336,
-        "dnf": false,
-        "event_times_ms": [
-          81536,
-          98894,
-          82906
-        ],
-        "name": "Andre Dubois",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "grand_tour|498aeb76a7b3aed2|4f0b446dc5794daa": [
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 281057,
-        "dnf": false,
-        "event_times_ms": [
-          87642,
-          97897,
-          95518
-        ],
-        "name": "Yuki Tanaka",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 312119,
-        "dnf": false,
-        "event_times_ms": [
-          96417,
-          109950,
-          105752
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 308283,
-        "dnf": false,
-        "event_times_ms": [
-          95412,
-          102398,
-          110473
-        ],
-        "name": "Ivar Solberg",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 271958,
-        "dnf": false,
-        "event_times_ms": [
-          85210,
-          89142,
-          97606
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 236212,
-        "dnf": false,
-        "event_times_ms": [
-          70013,
-          84408,
-          81791
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 258954,
-        "dnf": false,
-        "event_times_ms": [
-          77084,
-          91870,
-          90000
-        ],
-        "name": "Sami Korhonen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 265415,
-        "dnf": false,
-        "event_times_ms": [
-          78993,
-          96464,
-          89958
-        ],
-        "name": "Kaj Lindqvist",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 288483,
-        "dnf": false,
-        "event_times_ms": [
-          90119,
-          96088,
-          102276
-        ],
-        "name": "Marco Bianchi",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 253602,
-        "dnf": false,
-        "event_times_ms": [
-          75715,
-          90558,
-          87329
-        ],
-        "name": "Dieter Faust",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 302663,
-        "dnf": false,
-        "event_times_ms": [
-          89826,
-          107691,
-          105146
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 296955,
-        "dnf": false,
-        "event_times_ms": [
-          87839,
-          101432,
-          107684
-        ],
-        "name": "Katya Orlova",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          82378,
-          -1,
-          -1
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": 1,
-        "wreck_progress": 0.2537030875682831,
-        "wreck_side": 1.0
-      }
-    ],
-    "rising_sun|983c143df6e08ff9|4f0b446dc5794daa": [
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 221302,
-        "dnf": false,
-        "event_times_ms": [
-          71710,
-          80918,
-          68674
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 279047,
-        "dnf": false,
-        "event_times_ms": [
-          92342,
-          100457,
-          86248
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 272902,
-        "dnf": false,
-        "event_times_ms": [
-          83999,
-          99046,
-          89857
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 256878,
-        "dnf": false,
-        "event_times_ms": [
-          85517,
-          88099,
-          83262
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 315851,
-        "dnf": false,
-        "event_times_ms": [
-          99437,
-          114646,
-          101768
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 242654,
-        "dnf": false,
-        "event_times_ms": [
-          77360,
-          87200,
-          78094
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 231297,
-        "dnf": false,
-        "event_times_ms": [
-          70671,
-          85903,
-          74723
-        ],
-        "name": "Andre Dubois",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 307896,
-        "dnf": false,
-        "event_times_ms": [
-          94853,
-          115105,
-          97938
-        ],
-        "name": "Elena Vasquez",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 264492,
-        "dnf": false,
-        "event_times_ms": [
-          81728,
-          98836,
-          83928
-        ],
-        "name": "Colin Brennan",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 246971,
-        "dnf": false,
-        "event_times_ms": [
-          75752,
-          89590,
-          81629
-        ],
-        "name": "Katya Orlova",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 283404,
-        "dnf": false,
-        "event_times_ms": [
-          90214,
-          101614,
-          91576
-        ],
-        "name": "Ivar Solberg",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 317157,
-        "dnf": false,
-        "event_times_ms": [
-          102248,
-          111398,
-          103511
-        ],
-        "name": "Dieter Faust",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 282194,
-        "dnf": false,
-        "event_times_ms": [
-          93849,
-          99374,
-          88971
-        ],
-        "name": "Lucia Ferrer",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 279913,
-        "dnf": false,
-        "event_times_ms": [
-          90155,
-          101799,
-          87959
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "rwd_masters|360b30e697b68c80|4f0b446dc5794daa": [
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 221763,
-        "dnf": false,
-        "event_times_ms": [
-          75185,
-          74090,
-          72488
-        ],
-        "name": "Kaj Lindqvist",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 280628,
-        "dnf": false,
-        "event_times_ms": [
-          90030,
-          92664,
-          97934
-        ],
-        "name": "Colin Brennan",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 196708,
-        "dnf": false,
-        "event_times_ms": [
-          66363,
-          62386,
-          67959
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 258583,
-        "dnf": false,
-        "event_times_ms": [
-          88094,
-          82962,
-          87527
-        ],
-        "name": "Yuki Tanaka",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 261196,
-        "dnf": false,
-        "event_times_ms": [
-          84042,
-          86911,
-          90243
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 251743,
-        "dnf": false,
-        "event_times_ms": [
-          86551,
-          79182,
-          86010
-        ],
-        "name": "Elena Vasquez",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 204092,
-        "dnf": false,
-        "event_times_ms": [
-          66394,
-          63923,
-          73775
-        ],
-        "name": "Marco Bianchi",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 271286,
-        "dnf": false,
-        "event_times_ms": [
-          89651,
-          89723,
-          91912
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": 243240,
-        "dnf": false,
-        "event_times_ms": [
-          79920,
-          78973,
-          84347
-        ],
-        "name": "Rauno Mäkinen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "charger",
-        "car_name": "Swerve Surger R/T",
-        "combined_ms": 265348,
-        "dnf": false,
-        "event_times_ms": [
-          86658,
-          83488,
-          95202
-        ],
-        "name": "Lucia Ferrer",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "viper",
-        "car_name": "Swerve Serpent RT/10",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          -1,
-          -1,
-          -1
-        ],
-        "name": "Petra Havel",
-        "wreck_event": 0,
-        "wreck_progress": 0.20730406045913696,
-        "wreck_side": -1.0
-      }
-    ],
-    "shakedown|fc943d1881e18dfd|4f0b446dc5794daa": [
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          -1,
-          -1,
-          -1
-        ],
-        "name": "Colin Brennan",
-        "wreck_event": 0,
-        "wreck_progress": 0.4680003523826599,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 157114,
-        "dnf": false,
-        "event_times_ms": [
-          54171,
-          55445,
-          47498
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 217517,
-        "dnf": false,
-        "event_times_ms": [
-          72280,
-          72298,
-          72939
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 174576,
-        "dnf": false,
-        "event_times_ms": [
-          57184,
-          60766,
-          56626
-        ],
-        "name": "Katya Orlova",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 231705,
-        "dnf": false,
-        "event_times_ms": [
-          77775,
-          82250,
-          71680
-        ],
-        "name": "Ivar Solberg",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 192725,
-        "dnf": false,
-        "event_times_ms": [
-          65997,
-          65008,
-          61720
-        ],
-        "name": "Rauno Mäkinen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "mx5",
-        "car_name": "Miot Roadster",
-        "combined_ms": 225690,
-        "dnf": false,
-        "event_times_ms": [
-          71813,
-          79410,
-          74467
-        ],
-        "name": "Andre Dubois",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 232434,
-        "dnf": false,
-        "event_times_ms": [
-          81394,
-          78984,
-          72056
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          79059,
-          79670,
-          -1
-        ],
-        "name": "Dieter Faust",
-        "wreck_event": 2,
-        "wreck_progress": 0.31566423177719116,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 198778,
-        "dnf": false,
-        "event_times_ms": [
-          66308,
-          69563,
-          62907
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "shitbox_cup|bcc63db8b189ee72|4f0b446dc5794daa": [
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 179845,
-        "dnf": false,
-        "event_times_ms": [
-          59673,
-          62542,
-          57630
-        ],
-        "name": "Dieter Faust",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 107056,
-        "dnf": false,
-        "event_times_ms": [
-          37426,
-          34497,
-          35133
-        ],
-        "name": "Colin Brennan",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          37472,
-          -1,
-          -1
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": 1,
-        "wreck_progress": 0.28948062658309937,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 166156,
-        "dnf": false,
-        "event_times_ms": [
-          56535,
-          57702,
-          51919
-        ],
-        "name": "Ott Rebane",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 178371,
-        "dnf": false,
-        "event_times_ms": [
-          62667,
-          61172,
-          54532
-        ],
-        "name": "Rauno Mäkinen",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 151329,
-        "dnf": false,
-        "event_times_ms": [
-          49968,
-          51993,
-          49368
-        ],
-        "name": "Sofia Romano",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "acty",
-        "car_name": "Honcho Actus",
-        "combined_ms": 130697,
-        "dnf": false,
-        "event_times_ms": [
-          44033,
-          42689,
-          43975
-        ],
-        "name": "Elena Vasquez",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 171032,
-        "dnf": false,
-        "event_times_ms": [
-          60210,
-          56656,
-          54166
-        ],
-        "name": "Nikos Papadakis",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "acty",
-        "car_name": "Honcho Actus",
-        "combined_ms": 153906,
-        "dnf": false,
-        "event_times_ms": [
-          51745,
-          53224,
-          48937
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "acty",
-        "car_name": "Honcho Actus",
-        "combined_ms": 187837,
-        "dnf": false,
-        "event_times_ms": [
-          61453,
-          64092,
-          62292
-        ],
-        "name": "Tomas Novak",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 113970,
-        "dnf": false,
-        "event_times_ms": [
-          37719,
-          37827,
-          38424
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      }
-    ],
-    "the_showdown|e212d934b549d135|4f0b446dc5794daa": [
-      {
-        "car_id": "focus",
-        "car_name": "Fjord Focal",
-        "combined_ms": 336030,
-        "dnf": false,
-        "event_times_ms": [
-          109550,
-          111668,
-          114812
-        ],
-        "name": "Hans Gruber",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": 305434,
-        "dnf": false,
-        "event_times_ms": [
-          100393,
-          100265,
-          104776
-        ],
-        "name": "Bruno Alves",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "xjs",
-        "car_name": "Panthera XJS",
-        "combined_ms": -1,
-        "dnf": true,
-        "event_times_ms": [
-          116923,
-          -1,
-          -1
-        ],
-        "name": "Mireia Costa",
-        "wreck_event": 1,
-        "wreck_progress": 0.39581573009490967,
-        "wreck_side": -1.0
-      },
-      {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 427723,
-        "dnf": false,
-        "event_times_ms": [
-          136838,
-          138531,
-          152354
-        ],
-        "name": "Kaj Lindqvist",
-        "wreck_event": -1,
-        "wreck_progress": 0.0,
-        "wreck_side": 1.0
-      },
-      {
-        "car_id": "acty",
-        "car_name": "Honcho Actus",
-        "combined_ms": 403856,
-        "dnf": false,
-        "event_times_ms": [
-          135438,
-          129876,
-          138542
-        ],
-        "name": "Petra Havel",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -2308,12 +841,134 @@
       {
         "car_id": "porsche911",
         "car_name": "Porker 930 Turbo",
-        "combined_ms": 350685,
+        "combined_ms": 304995,
         "dnf": false,
         "event_times_ms": [
-          116626,
-          111960,
-          122099
+          97849,
+          110043,
+          97103
+        ],
+        "name": "Nikos Papadakis",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 280984,
+        "dnf": false,
+        "event_times_ms": [
+          86158,
+          102143,
+          92683
+        ],
+        "name": "Elena Vasquez",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 281821,
+        "dnf": false,
+        "event_times_ms": [
+          90027,
+          104375,
+          87419
+        ],
+        "name": "Dieter Faust",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 232834,
+        "dnf": false,
+        "event_times_ms": [
+          73611,
+          85876,
+          73347
+        ],
+        "name": "Rauno Mäkinen",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 322276,
+        "dnf": false,
+        "event_times_ms": [
+          106591,
+          115595,
+          100090
+        ],
+        "name": "Ott Rebane",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": 365064,
+        "dnf": false,
+        "event_times_ms": [
+          112157,
+          134609,
+          118298
+        ],
+        "name": "Sami Korhonen",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 240046,
+        "dnf": false,
+        "event_times_ms": [
+          74456,
+          88261,
+          77329
+        ],
+        "name": "Kaj Lindqvist",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "mx5",
+        "car_name": "Miot Roadster",
+        "combined_ms": 241664,
+        "dnf": false,
+        "event_times_ms": [
+          77558,
+          87806,
+          76300
+        ],
+        "name": "Yuki Tanaka",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "grand_tour|df15a6ff3eb1af62|fe3139441db35321": [
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 346964,
+        "dnf": false,
+        "event_times_ms": [
+          107122,
+          117621,
+          122221
         ],
         "name": "Colin Brennan",
         "wreck_event": -1,
@@ -2321,46 +976,153 @@
         "wreck_side": 1.0
       },
       {
-        "car_id": "porsche911",
-        "car_name": "Porker 930 Turbo",
-        "combined_ms": 358235,
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 296839,
         "dnf": false,
         "event_times_ms": [
-          123938,
-          112821,
-          121476
+          91565,
+          99173,
+          106101
         ],
-        "name": "Tomas Novak",
+        "name": "Bruno Alves",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
       },
       {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 397992,
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 353819,
         "dnf": false,
         "event_times_ms": [
-          134398,
-          127451,
-          136143
+          113734,
+          120202,
+          119883
         ],
-        "name": "Lucia Ferrer",
+        "name": "Andre Dubois",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
       },
       {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 459436,
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 368558,
         "dnf": false,
         "event_times_ms": [
-          157212,
-          150935,
-          151289
+          111436,
+          125827,
+          131295
+        ],
+        "name": "Sofia Romano",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          106263,
+          128071,
+          -1
+        ],
+        "name": "Katya Orlova",
+        "wreck_event": 2,
+        "wreck_progress": 0.7252613306045532,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 364848,
+        "dnf": false,
+        "event_times_ms": [
+          113121,
+          124862,
+          126865
+        ],
+        "name": "Sami Korhonen",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 363300,
+        "dnf": false,
+        "event_times_ms": [
+          111678,
+          123823,
+          127799
         ],
         "name": "Ivar Solberg",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 375583,
+        "dnf": false,
+        "event_times_ms": [
+          116330,
+          125120,
+          134133
+        ],
+        "name": "Elena Vasquez",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 330857,
+        "dnf": false,
+        "event_times_ms": [
+          103705,
+          115552,
+          111600
+        ],
+        "name": "Kaj Lindqvist",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "rising_sun|91c0b2142561b331|fe3139441db35321": [
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 249982,
+        "dnf": false,
+        "event_times_ms": [
+          81930,
+          85330,
+          82722
+        ],
+        "name": "Hans Gruber",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 344570,
+        "dnf": false,
+        "event_times_ms": [
+          112354,
+          125416,
+          106800
+        ],
+        "name": "Sofia Romano",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -2375,22 +1137,37 @@
           -1,
           -1
         ],
-        "name": "Rauno Mäkinen",
+        "name": "Ott Rebane",
         "wreck_event": 0,
-        "wreck_progress": 0.24037453532218933,
-        "wreck_side": -1.0
+        "wreck_progress": 0.6452969312667847,
+        "wreck_side": 1.0
       },
       {
-        "car_id": "beast",
-        "car_name": "The Beast",
-        "combined_ms": 345135,
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 357333,
         "dnf": false,
         "event_times_ms": [
-          114251,
-          107614,
-          123270
+          112335,
+          126388,
+          118610
         ],
-        "name": "Sami Korhonen",
+        "name": "Colin Brennan",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 296629,
+        "dnf": false,
+        "event_times_ms": [
+          94690,
+          102742,
+          99197
+        ],
+        "name": "Lucia Ferrer",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
@@ -2398,12 +1175,316 @@
       {
         "car_id": "charger",
         "car_name": "Swerve Surger R/T",
-        "combined_ms": 364734,
+        "combined_ms": 329263,
         "dnf": false,
         "event_times_ms": [
-          125783,
-          111209,
-          127742
+          107260,
+          114668,
+          107335
+        ],
+        "name": "Marco Bianchi",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          104720,
+          116643,
+          -1
+        ],
+        "name": "Nikos Papadakis",
+        "wreck_event": 2,
+        "wreck_progress": 0.32250314950942993,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 269812,
+        "dnf": false,
+        "event_times_ms": [
+          82581,
+          97916,
+          89315
+        ],
+        "name": "Mireia Costa",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 276247,
+        "dnf": false,
+        "event_times_ms": [
+          87311,
+          96011,
+          92925
+        ],
+        "name": "Bruno Alves",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "rwd_masters|54b74a9549a404e6|fe3139441db35321": [
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 259538,
+        "dnf": false,
+        "event_times_ms": [
+          89106,
+          82830,
+          87602
+        ],
+        "name": "Lucia Ferrer",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 224231,
+        "dnf": false,
+        "event_times_ms": [
+          75216,
+          72185,
+          76830
+        ],
+        "name": "Marco Bianchi",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          -1,
+          -1,
+          -1
+        ],
+        "name": "Andre Dubois",
+        "wreck_event": 0,
+        "wreck_progress": 0.5484760999679565,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 212891,
+        "dnf": false,
+        "event_times_ms": [
+          74293,
+          68791,
+          69807
+        ],
+        "name": "Petra Havel",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 229723,
+        "dnf": false,
+        "event_times_ms": [
+          76051,
+          72969,
+          80703
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 284819,
+        "dnf": false,
+        "event_times_ms": [
+          91491,
+          93732,
+          99596
+        ],
+        "name": "Nikos Papadakis",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 247081,
+        "dnf": false,
+        "event_times_ms": [
+          80508,
+          84580,
+          81993
+        ],
+        "name": "Tomas Novak",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 322024,
+        "dnf": false,
+        "event_times_ms": [
+          111268,
+          100970,
+          109786
+        ],
+        "name": "Mireia Costa",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 219410,
+        "dnf": false,
+        "event_times_ms": [
+          70444,
+          75503,
+          73463
+        ],
+        "name": "Kaj Lindqvist",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "shakedown|e31461571eab3842|fe3139441db35321": [
+      {
+        "car_id": "porsche911",
+        "car_name": "Porker 930 Turbo",
+        "combined_ms": 235077,
+        "dnf": false,
+        "event_times_ms": [
+          80101,
+          78675,
+          76301
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 230589,
+        "dnf": false,
+        "event_times_ms": [
+          79545,
+          80999,
+          70045
+        ],
+        "name": "Kaj Lindqvist",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 204436,
+        "dnf": false,
+        "event_times_ms": [
+          69951,
+          70539,
+          63946
+        ],
+        "name": "Ott Rebane",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "porsche911",
+        "car_name": "Porker 930 Turbo",
+        "combined_ms": 231019,
+        "dnf": false,
+        "event_times_ms": [
+          79355,
+          78987,
+          72677
+        ],
+        "name": "Hans Gruber",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 245772,
+        "dnf": false,
+        "event_times_ms": [
+          81970,
+          81533,
+          82269
+        ],
+        "name": "Katya Orlova",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "focus",
+        "car_name": "Fjord Focal",
+        "combined_ms": 227454,
+        "dnf": false,
+        "event_times_ms": [
+          78405,
+          73942,
+          75107
+        ],
+        "name": "Yuki Tanaka",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 187510,
+        "dnf": false,
+        "event_times_ms": [
+          63476,
+          62226,
+          61808
+        ],
+        "name": "Nikos Papadakis",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "mx5",
+        "car_name": "Miot Roadster",
+        "combined_ms": 222078,
+        "dnf": false,
+        "event_times_ms": [
+          75019,
+          78925,
+          68134
         ],
         "name": "Sofia Romano",
         "wreck_event": -1,
@@ -2411,22 +1492,296 @@
         "wreck_side": 1.0
       },
       {
-        "car_id": "twingo",
-        "car_name": "Rondel Twist",
-        "combined_ms": 453874,
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 168753,
         "dnf": false,
         "event_times_ms": [
-          151598,
-          142427,
-          159849
+          56479,
+          56496,
+          55778
+        ],
+        "name": "Rauno Mäkinen",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      }
+    ],
+    "shitbox_cup|40bb5f3a65931885|fe3139441db35321": [
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          52574,
+          51573,
+          -1
+        ],
+        "name": "Dieter Faust",
+        "wreck_event": 2,
+        "wreck_progress": 0.7951960563659668,
+        "wreck_side": -1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": 152673,
+        "dnf": false,
+        "event_times_ms": [
+          52194,
+          53334,
+          47145
+        ],
+        "name": "Andre Dubois",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": 190884,
+        "dnf": false,
+        "event_times_ms": [
+          64934,
+          66367,
+          59583
+        ],
+        "name": "Bruno Alves",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 173185,
+        "dnf": false,
+        "event_times_ms": [
+          60990,
+          59261,
+          52934
+        ],
+        "name": "Tomas Novak",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          -1,
+          -1,
+          -1
+        ],
+        "name": "Lucia Ferrer",
+        "wreck_event": 0,
+        "wreck_progress": 0.4909767806529999,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": 134303,
+        "dnf": false,
+        "event_times_ms": [
+          44598,
+          46094,
+          43611
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 135780,
+        "dnf": false,
+        "event_times_ms": [
+          46056,
+          46233,
+          43491
+        ],
+        "name": "Mireia Costa",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 202261,
+        "dnf": false,
+        "event_times_ms": [
+          68131,
+          68514,
+          65616
+        ],
+        "name": "Kaj Lindqvist",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": 152587,
+        "dnf": false,
+        "event_times_ms": [
+          51746,
+          53273,
+          47568
         ],
         "name": "Katya Orlova",
         "wreck_event": -1,
         "wreck_progress": 0.0,
         "wreck_side": 1.0
+      }
+    ],
+    "the_showdown|6c78e428c35ec9bb|fe3139441db35321": [
+      {
+        "car_id": "beast",
+        "car_name": "The Beast",
+        "combined_ms": 377849,
+        "dnf": false,
+        "event_times_ms": [
+          123691,
+          122788,
+          131370
+        ],
+        "name": "Dieter Faust",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "viper",
+        "car_name": "Swerve Serpent RT/10",
+        "combined_ms": 373570,
+        "dnf": false,
+        "event_times_ms": [
+          127642,
+          115548,
+          130380
+        ],
+        "name": "Ivar Solberg",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": 582775,
+        "dnf": false,
+        "event_times_ms": [
+          194713,
+          191626,
+          196436
+        ],
+        "name": "Mireia Costa",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "twingo",
+        "car_name": "Rondel Twist",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          177888,
+          -1,
+          -1
+        ],
+        "name": "Ott Rebane",
+        "wreck_event": 1,
+        "wreck_progress": 0.301420658826828,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 394418,
+        "dnf": false,
+        "event_times_ms": [
+          135593,
+          122505,
+          136320
+        ],
+        "name": "Marco Bianchi",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "charger",
+        "car_name": "Swerve Surger R/T",
+        "combined_ms": 413262,
+        "dnf": false,
+        "event_times_ms": [
+          137781,
+          132439,
+          143042
+        ],
+        "name": "Katya Orlova",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": 490154,
+        "dnf": false,
+        "event_times_ms": [
+          163235,
+          164488,
+          162431
+        ],
+        "name": "Kaj Lindqvist",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "xjs",
+        "car_name": "Panthera XJS",
+        "combined_ms": 359417,
+        "dnf": false,
+        "event_times_ms": [
+          118384,
+          117278,
+          123755
+        ],
+        "name": "Andre Dubois",
+        "wreck_event": -1,
+        "wreck_progress": 0.0,
+        "wreck_side": 1.0
+      },
+      {
+        "car_id": "acty",
+        "car_name": "Honcho Actus",
+        "combined_ms": -1,
+        "dnf": true,
+        "event_times_ms": [
+          197564,
+          179662,
+          -1
+        ],
+        "name": "Colin Brennan",
+        "wreck_event": 2,
+        "wreck_progress": 0.7037684917449951,
+        "wreck_side": -1.0
       }
     ]
   },
-  "source_hash": "10ba122b6032c41522a81bdd29f37d13266bcde1c68836ab7be6001ce431e0c7",
+  "source_hash": "b446c8bb16bcae1a484d9b45eccbf117789d5f68dd32010701d604758ae24708",
   "version": 1
 }

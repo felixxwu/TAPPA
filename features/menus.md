@@ -85,19 +85,19 @@ everywhere). `MenuNav` goes inert
 shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 [stage.md](stage.md)), the **standings** interstitial's single action button —
 `FOCUS_ALL`, re-grabbed via
-  `UITheme.focus_grab` both when the scene first opens and again every time
-  `_build_ui()` rebuilds for a page switch (event page ↔ combined page), so the
+  `UITheme.focus_grab` both when the scene first opens and again on every
+  `_build_ui()` rebuild (e.g. the overlay's show/hide toggle), so the
   cursor never drops when the button text/target changes — the **podium** Next, and
   the tuning-lift **Tune** (sliders — left/right nudges the focused one) and
   **Upgrades** (install parts / engine swap) pages. On the standings interstitial specifically,
-  the `MenuNav` `on_back` callback (`_on_back_pressed`) steps **back** from the combined
-  page to the event page — but only when there's an event page to return to (2+ events
-  completed); on the first event (combined-only) and while showing the event page
-  itself, back does nothing (there's nowhere to go). Standings re-runs `MenuNav.attach`
+  the `MenuNav` `on_back` callback (`_on_back_pressed`) is a deliberate **no-op**: it
+  is a single page mid-rally with nowhere to go back TO, and consuming the press stops
+  it falling through to whatever is behind (pause / the replay host).
+  Standings re-runs `MenuNav.attach`
   on every `_build_ui()` rebuild; `attach` reuses the existing node rather than stacking
   handlers, and re-seats the cursor on the freshly-built button.
 
-  **Collect reward on the standings.** On the combined page of a **non-final event**
+  **Collect reward on the standings.** On the interstitial of a **non-final event**
   that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`), the
   action button reads **`Collect reward >`** instead of `Continue to next stage >`.
   Pressing it clears the leaderboard and takes over the screen with the shared
@@ -1091,28 +1091,44 @@ menu is covered above (`pause_menu.gd`); the between-event **standings**
 
 Shown after **every** event (`RallySession.report_event_result` always enters
 `Phase.STANDINGS`), not just the ones before a next event. For any event after the
-first it is **two pages**, both built by the same `UITheme.standings_row` renderer (the
-row's `combined_ms` field carries the event-only time on page 1, the cumulative time
-on page 2):
+first it stacks **two leaderboards on ONE page**. There is deliberately **no screen
+title or rally-name line** — the section headings already say what each list is, and
+those two lines cost enough height to push the second leaderboard below the fold on a
+phone. Both lists are built by the same `UITheme.standings_row`
+renderer (the row's `combined_ms` field carries the stage time in the first section,
+the cumulative time in the second), each behind a dim section heading added by
+`_add_section`:
 
-1. **Event page** ("EVENT n RESULT") — that one event's finishing times, ranked via
+1. **"STAGE n RESULT"** — that one event's finishing times, ranked via
    `RallySession.current_event_standings()`. A rival who DNF'd just that event sinks
-   to the bottom of this page (they may still be alive overall).
-2. **Combined page** ("STANDINGS — after event n of 3") — the cumulative leaderboard
-   via `RallySession.current_standings()`.
+   to the bottom of this section (they may still be alive overall).
+2. **"OVERALL — stages 1 + 2"** — the cumulative leaderboard via
+   `RallySession.current_standings()`. The heading spells out exactly which stages
+   are summed, built by the pure `Standings.overall_heading(done)`: "OVERALL — stage 1
+   only" after stage 1, then "OVERALL — stages 1 + 2", "OVERALL — stages 1 + 2 + 3".
 
-The **first** event skips the event page and opens straight on the combined page (a
-single event's time already equals its combined time, so there's nothing extra to
-show). Every event **after** the first — including the **final** event — shows
-**both** pages before Continue: the event page's button reads **"See overall
-standings >"** and advances to the combined page in place (`_showing_event_page =
-false; _build_ui()`); the combined page's button reads **"Continue to next stage >"**
-and calls `continue_to_next_event()`. On a middling event that loads the next event;
+Each section is **trimmed to the top `Standings.PODIUM_ROWS` (3)** so both fit on one
+screen. When the player finished outside that, their own row is appended at the
+bottom — with a dim `...` marker between when the two aren't adjacent — so they can
+always see where they came. The pure `Standings.visible_rows(rows, top)` does that
+selection and is unit-tested directly (it returns `{"gap": true}` for the marker).
+
+The action row is an **`HBoxContainer`** — in overlay mode **Watch Replay sits left
+and the forward action right**, each `SIZE_EXPAND_FILL` — rather than two stacked
+full-width buttons, for the same vertical-space reason. Geometry gives `MenuNav`
+left/right between them for free (`find_valid_focus_neighbor`).
+
+BOTH sections show on **every** stage, including the first — where the two lists are
+necessarily identical (one stage's time IS the combined time). The duplication is
+deliberate: the screen keeps the same shape from stage 1 to stage 3 rather than
+changing layout under the player, and the "stage 1 only" heading is what stops the
+repeated list reading as a bug. Every stage — including
+the **final** one — then has a single action button reading **"Continue to next
+stage >"** which calls `continue_to_next_event()`. On a middling event that loads the next event;
 on the final event `continue_to_next_event()` instead resolves the rally
 (`_resolve_results` → `PODIUM`, `rally_finished`), and the scene (connected to
 `RallySession.rally_finished` in non-overlay mode) then changes to `podium.tscn` itself
-— the combined view for the finished rally lives on the podium's LEADERBOARD stage
-instead of a second standings page.
+— the finished rally's full leaderboard lives on the podium's LEADERBOARD stage.
 
 **Overlay mode** (`overlay_mode := false`, set by the host BEFORE `_ready`): `world.gd`
 hosts this scene over the in-world **event-replay** cinematic instead of as a flat
@@ -1168,7 +1184,7 @@ shed power permanently via the detune slider / ballast / stripping parts, then t
 player re-presses Start); **Back** steps car park → table →
 garage and clears the lineup; pin → enter →
 car → Start launches a session; the **between-event standings interstitial** renders
-both the event-only and cumulative leaderboards across its two pages (and the
+both the stage-only and cumulative leaderboards stacked on one page (and the
 final event's interstitial hands off to the podium on `rally_finished`); the podium
 renders the finish summary **and the reward reveal + standings**; and the run scene
 fields the bound session car. The settings

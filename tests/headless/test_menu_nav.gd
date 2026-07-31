@@ -216,10 +216,10 @@ func test_audio_page_slider_is_focusable_and_reflects_saved_volume() -> void:
 	Save.save_disabled = prev_disabled
 
 
-# The standings interstitial shows the event-only leaderboard first (for events
-# after the first), its button is keyboard/gamepad-focusable, and pressing it
-# switches to the combined-standings page (mid-rally). See features/menus.md.
-func test_standings_event_page_then_combined_is_navigable() -> void:
+# The standings interstitial stacks BOTH leaderboards (this stage's result and the
+# overall standings) on one page, and its single Continue button is keyboard /
+# gamepad focusable and focused on entry. See features/menus.md.
+func test_standings_shows_both_leaderboards_and_is_navigable() -> void:
 	RallySession.auto_load_scenes = false
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), owned, true)
@@ -234,17 +234,17 @@ func test_standings_event_page_then_combined_is_navigable() -> void:
 	add_child_autofree(s)
 	await get_tree().process_frame
 
-	assert_true(s.showing_event_page(), "a later event opens on the event-only page")
+	var headings: Array[String] = []
+	for l in s.find_children("*", "Label", true, false):
+		headings.append(String(l.text))
+	var joined := "\n".join(headings)
+	assert_true(joined.contains(UITheme.caps("STAGE 2 RESULT")),
+		"this stage's own result is on the page")
+	assert_true(joined.contains(UITheme.caps(Standings.overall_heading(2))),
+		"the overall standings are on the SAME page, naming both stages so far")
 	assert_false(s.is_final_event(), "the 2nd of 3 events is not the final event")
 	assert_eq(s._action_button.focus_mode, Control.FOCUS_ALL, "the page button is focusable")
 	assert_eq(s.get_viewport().gui_get_focus_owner(), s._action_button, "the button is focused on entry")
-
-	# Pressing the event-page button switches to the combined page (no scene change,
-	# since this is a mid-rally event).
-	s._action_button.pressed.emit()
-	await get_tree().process_frame
-	assert_false(s.showing_event_page(), "the button advances to the combined page")
-	assert_eq(s.get_viewport().gui_get_focus_owner(), s._action_button, "focus re-grabs on the combined page")
 
 	if RallySession.is_active():
 		RallySession.abandon()

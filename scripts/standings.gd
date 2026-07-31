@@ -1,12 +1,15 @@
+class_name Standings
 extends Control
 # Between-event standings interstitial (features/menus.md, features/rally-session.md).
-# Shown after each event. For every event after the first it shows TWO pages:
-#   1. EVENT n RESULT — that one event's finishing times, ranked (current_event_standings)
-#   2. STANDINGS — the cumulative leaderboard so far (current_standings)
-# The FIRST event skips page 1 (its event time == its combined time). Every event,
-# INCLUDING the final one, shows both pages before Continue — the final event's page 2
-# then hands off to the podium (which carries the combined view).
-# Continue resumes into the next event / results (RallySession.continue_to_next_event).
+# Shown after each event, as ONE page carrying both leaderboards stacked:
+#   1. STAGE n RESULT — that one stage's finishing times, ranked (current_event_standings)
+#   2. OVERALL — the cumulative leaderboard so far (current_standings)
+# Each section lists the top PODIUM_ROWS finishers; if the player placed outside
+# them their own row is appended at the bottom (with a gap marker when it isn't
+# adjacent) so they can always see where they came. Both sections show on EVERY stage,
+# including the first — where they are identical — so the screen keeps one shape.
+# Continue resumes into the next event / results (RallySession.continue_to_next_event);
+# after the final event that resolves to the podium (which carries the combined view).
 
 signal leaderboard_hidden_changed(hidden: bool)
 
@@ -20,11 +23,15 @@ var _reveal: UpgradeReveal = null
 var overlay_mode := false
 var leaderboard_hidden := false
 
-var _showing_event_page := false
 var _action_button: Button = null
 var _reveal_gen := 0  # bumped per reveal so a stale coroutine can't touch freed rows
 
-const REVEAL_STEP := 0.5  # seconds between each leaderboard name appearing
+# Seconds between each leaderboard line appearing. Shorter than it was when this
+# screen showed one list at a time: two stacked sections mean roughly twice as many
+# lines, and the whole fill-in should still be over in a couple of seconds.
+const REVEAL_STEP := 0.3
+# How many finishers each section lists before it cuts to the player's own row.
+const PODIUM_ROWS := 3
 
 
 func _ready() -> void:
@@ -33,26 +40,52 @@ func _ready() -> void:
 	# live host owns this transition instead.
 	if not overlay_mode and not RallySession.rally_finished.is_connected(_on_rally_finished):
 		RallySession.rally_finished.connect(_on_rally_finished)
-	# Events after the first open on the event-only page; the first event has only the
-	# combined page (its single event time is its combined time).
-	_showing_event_page = RallySession.events_completed() >= 2
 	_build_ui()
-
-
-func showing_event_page() -> bool:
-	return _showing_event_page
 
 
 func is_final_event() -> bool:
 	return RallySession.events_completed() >= RallySession.EVENTS_PER_RALLY
 
 
-# True on the combined page of a non-final event that awarded an upgrade still to
-# be collected. The event-only page never collects (it's page 1 of 2).
+# True when this event awarded an upgrade still to be collected — the action button
+# then collects it (reveal + Apply/Keep) instead of continuing straight on.
 func _reward_pending() -> bool:
-	return not _showing_event_page and not _reward_collected \
+	return not _reward_collected \
 		and RallySession.events_completed() < RallySession.EVENTS_PER_RALLY \
 		and RallySession.current_event_upgrade() != ""
+
+
+# Which entries of a ranked leaderboard a section actually shows: the top `top`,
+# plus the player's own row when they finished outside it. A {"gap": true} marker
+# is inserted between the two when they are not already adjacent, so the jump in
+# position reads as a cut rather than a mistake. Pure + static so it can be tested
+# without building the scene.
+# Heading for the cumulative section, spelling out exactly which stages are summed:
+# "OVERALL — stage 1 only", then "OVERALL — stages 1 + 2", "OVERALL — stages 1 + 2 + 3".
+# On stage 1 the two lists are identical, so saying "stage 1 only" is what stops that
+# duplication reading as a bug.
+static func overall_heading(done: int) -> String:
+	if done <= 1:
+		return "OVERALL — stage 1 only"
+	var parts: PackedStringArray = []
+	for i in done:
+		parts.append(str(i + 1))
+	return "OVERALL — stages %s" % " + ".join(parts)
+
+
+static func visible_rows(rows: Array, top: int = PODIUM_ROWS) -> Array:
+	var player_index := -1
+	for i in rows.size():
+		if bool(rows[i].get("is_player", false)):
+			player_index = i
+	var out: Array = []
+	for i in mini(top, rows.size()):
+		out.append(rows[i])
+	if player_index >= top:
+		if player_index > top:
+			out.append({"gap": true})
+		out.append(rows[player_index])
+	return out
 
 
 func _build_ui() -> void:
@@ -95,35 +128,24 @@ func _build_ui() -> void:
 	root.add_theme_constant_override("separation", 8)
 	add_child(root)
 
-	var rally := RallyLibrary.by_id(RallySession.rally_id())
 	var done := RallySession.events_completed()
 
-	var title := Label.new()
-	var subtitle := Label.new()
-	var rows: Array
+	# No screen title / rally-name subtitle: the two section headings ("STAGE n
+	# RESULT" and "OVERALL") already say what each list is, and the player knows
+	# which rally they're in. Those two lines cost enough vertical space to push the
+	# second leaderboard below the fold on a phone, which is worse than any context
+	# they added.
+
+	# A non-final event awards an upgrade: the button collects it (reveal + Apply/
+	# Keep) before continuing. After the final event the interstitial resolves to
+	# the podium instead of another event.
 	var button_text := ""
-	if _showing_event_page:
-		title.text = "STAGE %d RESULT" % done
-		subtitle.text = "%s — this stage's time" % String(rally.get("name", ""))
-		rows = RallySession.current_event_standings()
-		button_text = "See overall standings >"
+	if _reward_pending():
+		button_text = "Collect reward >"
+	elif done >= RallySession.EVENTS_PER_RALLY:
+		button_text = "Continue to podium >"
 	else:
-		title.text = "STANDINGS — after stage %d of %d" % [done, RallySession.EVENTS_PER_RALLY]
-		subtitle.text = "%s — combined time so far" % String(rally.get("name", ""))
-		rows = RallySession.current_standings()
-		# A non-final event awards an upgrade: the button collects it (reveal + Apply/
-		# Keep) before continuing. After the final event the interstitial resolves to
-		# the podium instead of another event.
-		if _reward_pending():
-			button_text = "Collect reward >"
-		elif done >= RallySession.EVENTS_PER_RALLY:
-			button_text = "Continue to podium >"
-		else:
-			button_text = "Continue to next stage >"
-	title.add_theme_font_size_override("font_size", 28)
-	root.add_child(title)
-	subtitle.add_theme_font_size_override("font_size", 14)
-	root.add_child(subtitle)
+		button_text = "Continue to next stage >"
 
 	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -135,27 +157,41 @@ func _build_ui() -> void:
 	scroll.add_child(content)
 	# Build every row up front but hidden, then reveal them P1-down one at a
 	# time so the leaderboard fills in dramatically (see _reveal_standings).
+	# BOTH sections show on every stage, including the first — where the two lists are
+	# necessarily identical (one stage's time IS the combined time). That duplication
+	# is deliberate: the screen keeps the same shape from stage 1 to stage 3, so the
+	# player learns where to look once instead of having the layout change under them.
 	var row_nodes: Array[Control] = []
-	for entry in rows:
-		var row := UITheme.standings_row(entry)
-		if not Platform.is_headless():
-			row.visible = false
-		content.add_child(row)
-		row_nodes.append(row)
+	row_nodes.append_array(_add_section(content, "STAGE %d RESULT" % done,
+		RallySession.current_event_standings()))
+	row_nodes.append_array(_add_section(content, overall_heading(done),
+		RallySession.current_standings()))
 
-	var cont := Button.new()
-	cont.text = button_text
-	cont.focus_mode = Control.FOCUS_ALL
-	cont.pressed.connect(_on_action)
-	root.add_child(cont)
-	_action_button = cont
+	# The action row sits side by side rather than stacked: two full-width buttons
+	# eat a leaderboard row's worth of height each, and this screen is tight enough
+	# that the second list was scrolling off. Geometry gives MenuNav left/right
+	# between them for free (find_valid_focus_neighbor).
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	root.add_child(actions)
 
+	# Watch Replay sits on the LEFT and the forward action on the RIGHT, so the
+	# button that advances the rally is where the eye ends up.
 	if overlay_mode:
 		var hide_btn := Button.new()
 		hide_btn.text = "Watch Replay"
 		hide_btn.focus_mode = Control.FOCUS_ALL
+		hide_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hide_btn.pressed.connect(toggle_leaderboard)
-		root.add_child(hide_btn)
+		actions.add_child(hide_btn)
+
+	var cont := Button.new()
+	cont.text = button_text
+	cont.focus_mode = Control.FOCUS_ALL
+	cont.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cont.pressed.connect(_on_action)
+	actions.add_child(cont)
+	_action_button = cont
 
 	UITheme.enforce(self)  # house rules: uppercase + one font size
 	# Framework wires focus + WASD/arrow/gamepad nav and routes back (see
@@ -165,6 +201,35 @@ func _build_ui() -> void:
 
 	if not Platform.is_headless():
 		_reveal_standings(row_nodes)
+
+
+# One leaderboard block: a heading plus its trimmed rows. Returns the nodes in
+# reveal order (the heading first), which the caller concatenates so the two
+# sections fill in top-to-bottom as one continuous sequence.
+func _add_section(parent: VBoxContainer, heading: String, rows: Array) -> Array[Control]:
+	var built: Array[Control] = []
+	if parent.get_child_count() > 0:
+		# Breathing room between the two stacked leaderboards. Always visible (it is
+		# blank) so the reveal doesn't shuffle the layout as rows appear.
+		var spacer := Control.new()
+		spacer.custom_minimum_size.y = 12.0
+		parent.add_child(spacer)
+	var head := UITheme.label(heading, "dim")
+	parent.add_child(head)
+	built.append(head)
+	for entry in visible_rows(rows):
+		var row: Control
+		if bool(entry.get("gap", false)):
+			# The cut between the podium and the player's own position.
+			row = UITheme.label("...", "dim")
+		else:
+			row = UITheme.standings_row(entry)
+		parent.add_child(row)
+		built.append(row)
+	if not Platform.is_headless():
+		for node in built:
+			node.visible = false
+	return built
 
 
 # Reveal leaderboard rows from P1 downward, one every REVEAL_STEP seconds,
@@ -181,13 +246,10 @@ func _reveal_standings(rows: Array) -> void:
 			row.visible = true
 
 
-# The button advances: event page -> combined page (mid-rally), or event/combined
-# page -> next event / podium via RallySession.
+# The button advances: collect the event's reward, else on to the next event /
+# podium via RallySession.
 func _on_action() -> void:
-	if _showing_event_page:
-		_showing_event_page = false
-		_build_ui()
-	elif _reward_pending():
+	if _reward_pending():
 		_collect_reward()
 	else:
 		RallySession.continue_to_next_event()
@@ -227,13 +289,11 @@ func _collect_reward() -> void:
 	_reveal.reveal(RallySession.current_event_upgrade(), RallySession.car_instance_id())
 
 
-# Back (keyboard/gamepad, via MenuNav on_back): from the combined page (reached from
-# the event page) step back to the event page. On the event page there's nothing to
-# go back to, so we simply do nothing (MenuNav still consumes the press).
+# Back (keyboard/gamepad, via MenuNav on_back): the interstitial is a single page
+# mid-rally, so there is nowhere to go back TO — the press is consumed and ignored
+# rather than falling through to whatever is behind (pause / the replay host).
 func _on_back_pressed() -> void:
-	if not _showing_event_page and RallySession.events_completed() >= 2:
-		_showing_event_page = true
-		_build_ui()
+	pass
 
 
 func toggle_leaderboard() -> void:
