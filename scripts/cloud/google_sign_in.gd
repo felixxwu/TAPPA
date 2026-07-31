@@ -36,6 +36,10 @@ const TIMEOUT_SEC := 180.0
 const SCOPES := "openid email profile"
 
 var _server: TCPServer = null
+var _thread: Thread = null
+var _mutex := Mutex.new()
+var _callback_result: Dictionary = {}
+var _expected_state := ""
 var _web_cb: JavaScriptObject = null
 var _web_result := ""
 var _web_done := false
@@ -60,7 +64,7 @@ static func waiting_message() -> String:
 	if Platform.is_web():
 		return "Opening Google sign-in…"
 	if Platform.is_touch():
-		return "Approve in your browser, then RETURN TO THE GAME to finish."
+		return "Approve in your browser, then come back here."
 	return "Approve in your browser to finish signing in…"
 
 
@@ -78,7 +82,11 @@ func sign_in() -> Dictionary:
 # socket so the port is not held for the rest of the session.
 func cancel() -> void:
 	_cancelled = true
-	_close_server()
+	# Do NOT stop the server here: the serving thread may be mid-accept, and
+	# pulling the socket out from under it would race. It observes _cancelled and
+	# exits on its own; _sign_in_native closes the server after joining.
+	if _thread == null:
+		_close_server()
 
 
 # --- Native: loopback + PKCE --------------------------------------------------
@@ -144,37 +152,113 @@ func _sign_in_native() -> Dictionary:
 
 # Poll the loopback listener for the browser's redirect. Returns
 # {ok, code, error}.
+# Wait for the browser's redirect, SERVING IT FROM A BACKGROUND THREAD.
+#
+# The thread is the whole point. On Android, handing off to the system browser
+# backgrounds the game and Godot stops running frames — so a frame-polled accept
+# loop cannot answer the browser until the player manually returns, leaving
+# Google's page spinning with nothing on screen to explain why. The player is
+# looking at the browser, which is the one surface an in-game message cannot
+# reach.
+#
+# A Thread keeps accepting and replying while the main loop is paused, so the
+# browser immediately renders "Signed in. Return to TAPPA to finish" — the
+# instruction arrives where the player is actually looking. The main loop then
+# picks the result up whenever it next runs.
+#
+# Only the native flow uses this; the web export (single-threaded, no
+# thread_support) never reaches here.
 func _await_callback(expected_state: String) -> Dictionary:
+	_expected_state = expected_state
+	_callback_result = {}
+	_thread = Thread.new()
+	if _thread.start(_serve_callback) != OK:
+		# Could not spawn: fall back to serving on the frame loop. Correct, just
+		# subject to the backgrounding caveat above.
+		_thread = null
+		return await _serve_on_main_loop(expected_state)
+
+	var deadline := Time.get_ticks_msec() + int(TIMEOUT_SEC * 1000.0)
+	while _thread.is_alive() and Time.get_ticks_msec() < deadline:
+		if _cancelled:
+			break
+		await get_tree().process_frame
+	_cancelled = _cancelled or Time.get_ticks_msec() >= deadline
+	# Always join: a Thread that is never waited on leaks, and Godot complains
+	# loudly at shutdown.
+	_thread.wait_to_finish()
+	_thread = null
+
+	_mutex.lock()
+	var result: Dictionary = _callback_result.duplicate()
+	_mutex.unlock()
+	if result.is_empty():
+		return {"ok": false, "code": "", "error": "Sign-in timed out."}
+	return result
+
+
+# Runs ON THE THREAD. Blocking-with-polling rather than await, since there is no
+# frame loop here to await against.
+func _serve_callback() -> void:
 	var deadline := Time.get_ticks_msec() + int(TIMEOUT_SEC * 1000.0)
 	while Time.get_ticks_msec() < deadline:
-		if _cancelled:
-			return {"ok": false, "code": "", "error": "Sign-in cancelled."}
-		if _server == null:
+		if _cancelled or _server == null:
+			_store_result({"ok": false, "code": "", "error": "Sign-in cancelled."})
+			return
+		if _server.is_connection_available():
+			_handle_connection(_server.take_connection())
+			return
+		# Sleep rather than spin: this thread is competing with a paused main
+		# loop on a phone, and a busy-wait would cost battery for nothing.
+		OS.delay_msec(50)
+	_store_result({"ok": false, "code": "", "error": "Sign-in timed out."})
+
+
+# Parse one request, answer it, and record the outcome. Thread-side.
+func _handle_connection(peer: StreamPeerTCP) -> void:
+	var params := _query_params(_read_request_line_blocking(peer))
+	var body := "Signed in. Return to TAPPA to finish."
+	var result := {"ok": false, "code": "", "error": "Sign-in failed."}
+	if params.get("state", "") != _expected_state:
+		# Mismatched state means this response is not the one we started —
+		# a CSRF attempt or a stale tab. Refuse it.
+		body = "Sign-in could not be verified. Please try again from the game."
+		result = {"ok": false, "code": "", "error": "Sign-in couldn't be verified."}
+	elif params.has("error"):
+		body = "Sign-in was cancelled. You can close this tab."
+		result = {"ok": false, "code": "", "error": "Sign-in was cancelled."}
+	elif params.has("code"):
+		result = {"ok": true, "code": String(params["code"]), "error": ""}
+	_respond(peer, body)
+	_store_result(result)
+
+
+func _store_result(result: Dictionary) -> void:
+	_mutex.lock()
+	_callback_result = result
+	_mutex.unlock()
+
+
+# The frame-loop fallback, used only if a Thread could not be started.
+func _serve_on_main_loop(expected_state: String) -> Dictionary:
+	_expected_state = expected_state
+	var deadline := Time.get_ticks_msec() + int(TIMEOUT_SEC * 1000.0)
+	while Time.get_ticks_msec() < deadline:
+		if _cancelled or _server == null:
 			return {"ok": false, "code": "", "error": "Sign-in cancelled."}
 		if _server.is_connection_available():
-			var peer := _server.take_connection()
-			var request_line := await _read_request_line(peer)
-			var params := _query_params(request_line)
-			var body := "Signed in. Return to TAPPA to finish."
-			var result := {"ok": false, "code": "", "error": "Sign-in failed."}
-			if params.get("state", "") != expected_state:
-				# Mismatched state means this response is not the one we started —
-				# a CSRF attempt or a stale tab. Refuse it.
-				body = "Sign-in could not be verified. Please try again from the game."
-				result = {"ok": false, "code": "", "error": "Sign-in couldn't be verified."}
-			elif params.has("error"):
-				body = "Sign-in was cancelled. You can close this tab."
-				result = {"ok": false, "code": "", "error": "Sign-in was cancelled."}
-			elif params.has("code"):
-				result = {"ok": true, "code": String(params["code"]), "error": ""}
-			_respond(peer, body)
+			_handle_connection(_server.take_connection())
+			_mutex.lock()
+			var result: Dictionary = _callback_result.duplicate()
+			_mutex.unlock()
 			return result
 		await get_tree().process_frame
 	return {"ok": false, "code": "", "error": "Sign-in timed out."}
 
 
 # Read just the request line ("GET /?code=... HTTP/1.1"), which is all we need.
-func _read_request_line(peer: StreamPeerTCP) -> String:
+# Blocking form, safe to call from either the thread or the main loop.
+func _read_request_line_blocking(peer: StreamPeerTCP) -> String:
 	var text := ""
 	var deadline := Time.get_ticks_msec() + 5000
 	while Time.get_ticks_msec() < deadline:
@@ -186,9 +270,9 @@ func _read_request_line(peer: StreamPeerTCP) -> String:
 			var chunk: Array = peer.get_partial_data(available)
 			if chunk.size() > 1:
 				text += (chunk[1] as PackedByteArray).get_string_from_utf8()
-			if text.contains("\r\n") or text.contains("\n"):
+			if text.contains("\n"):
 				break
-		await get_tree().process_frame
+		OS.delay_msec(10)
 	return text.split("\n")[0].strip_edges()
 
 
