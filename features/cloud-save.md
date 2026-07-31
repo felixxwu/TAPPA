@@ -220,6 +220,20 @@ requests ever start failing on a 200 again, check this first.
 Native keeps gzip enabled: there the engine owns the transfer and handles it
 correctly.
 
+### Refreshing live UI after a download
+
+A pull that REPLACES the local profile (first sign-in on a new device, or "Use
+cloud" on a conflict) changes the career out from under a running HQ. `CloudSync`
+emits **`profile_replaced`**, re-emitted by `Cloud`, and `hq.gd` rebuilds on it
+(`_on_cloud_profile_replaced`): it clears the car cache, rebuilds the title
+lineup or the lift car depending on the current view, and refreshes the map pins
+and progress meter.
+
+Without it the player signs in, their cars are restored *on disk*, and the car
+park still shows the empty lot they started with until they relaunch — the save
+worked but nothing on screen said so. Distinct from `state_changed`, which is
+only about sync status.
+
 ## Error handling
 
 | Failure | Behaviour |

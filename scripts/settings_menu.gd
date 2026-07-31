@@ -42,6 +42,23 @@ signal page_changed(is_root: bool)
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
 const _BIND_BUTTON_W := 168.0
 
+# Test override for dev_tools_enabled(): -1 = use the real build type, 0 = force
+# off, 1 = force on. A test cannot change OS.is_debug_build(), and "players don't
+# see the dev pages" is exactly the case worth asserting.
+static var dev_tools_override := -1
+
+
+# Are the developer-only settings pages (Benchmark / Dev / Seed lab) reachable?
+#
+# Gated on the build type, matching how the rest of the project decides this
+# (car.gd, hud.gd, world.gd, perf_log.gd all key off OS.is_debug_build()). An
+# exported release build is not a debug build, so players never see them; the
+# editor and debug exports — and the headless test runner — do.
+static func dev_tools_enabled() -> bool:
+	if dev_tools_override >= 0:
+		return dev_tools_override == 1
+	return OS.is_debug_build()
+
 # Selectable rows, exposed for tests / hosts: [{key: Variant, button: Button}].
 var camera_rows: Array = []
 var scheme_rows: Array = []
@@ -160,10 +177,14 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
-	list_grid.add_child(_make_nav_button("Benchmark", show_benchmark))
 	list_grid.add_child(_make_nav_button("Account", show_account))
-	list_grid.add_child(_make_nav_button("Dev", show_dev))
-	list_grid.add_child(_make_nav_button("Seed lab", show_seedlab))
+	# Developer tooling is hidden from players. The pages are still BUILT (and the
+	# show_* methods still work, which is how the tests reach them) — only the way
+	# in is removed, so nothing else has to learn about the distinction.
+	if dev_tools_enabled():
+		list_grid.add_child(_make_nav_button("Benchmark", show_benchmark))
+		list_grid.add_child(_make_nav_button("Dev", show_dev))
+		list_grid.add_child(_make_nav_button("Seed lab", show_seedlab))
 
 
 func _build_audio_page() -> void:

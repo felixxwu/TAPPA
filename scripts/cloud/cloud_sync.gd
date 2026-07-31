@@ -17,6 +17,11 @@ extends Node
 # so the conflict prompt can say "2 hours ago"; nothing branches on it.
 
 signal state_changed()
+# Emitted when a pull REPLACED the local profile with the cloud's copy. Distinct
+# from state_changed (which is about sync status): this says "the career you are
+# looking at is not the one you were looking at a moment ago", so any live UI
+# showing owned cars has to rebuild or the player sees a stale garage.
+signal profile_replaced()
 # Emitted when a pull finds that both sides moved on independently. The UI turns
 # this into a player choice; sync stays paused until one is made.
 signal conflict_detected(summary: Dictionary)
@@ -279,6 +284,7 @@ func apply_remote(remote: Dictionary, backup := false) -> Dictionary:
 	pending = false
 	last_sync_utc = String(remote.get("updated_utc", ""))
 	Save.mark_synced()
+	profile_replaced.emit()
 	return {"ok": true, "error": ""}
 
 

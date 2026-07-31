@@ -771,6 +771,91 @@ func test_hq_title_parks_all_owned_cars() -> void:
 	assert_eq(hq._cars.size(), 2, "the title parks every owned car (starter + XJS)")
 
 
+func test_returning_to_the_title_still_parks_the_selected_car() -> void:
+	# REGRESSION: _lift_car shares its node with _car_cache, and _clear_lift_car
+	# hides + stows that node. _go_to used to build the title lineup BEFORE
+	# clearing the lift, so the selected car was parked and then immediately
+	# hidden — and because set_selected_car promotes it to index 0, the first bay
+	# on the title screen was always empty.
+	_save.grant_car("fx_awd")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	await _await_lineup(hq)
+
+	# Go inside (the selected car moves onto the lift), then back out to the title.
+	hq._go_to(hq.View.GARAGE)
+	await get_tree().process_frame
+	hq._go_to(hq.View.EXTERIOR)
+	await get_tree().process_frame
+	await _await_lineup(hq)
+
+	assert_eq(hq._cars.size(), 2, "both owned cars are parked again")
+	for car in hq._cars:
+		assert_true(is_instance_valid(car) and (car as Node3D).visible,
+			"every parked car is actually visible — no empty bay")
+
+
+func test_a_cloud_restored_career_rebuilds_the_car_park() -> void:
+	# Signing in on a new device downloads a career while the HQ is already up. If
+	# the lot is not rebuilt the player is told they are signed in while still
+	# looking at the empty garage they started with.
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	await _await_lineup(hq)
+	var before: int = hq._cars.size()
+
+	# Stand in for the download: the profile gains cars, then Cloud announces it.
+	_save.grant_car("fx_awd")
+	_save.grant_car("fx_rwd_coupe")
+	Cloud.profile_replaced.emit()
+	await get_tree().process_frame
+	await _await_lineup(hq)
+
+	assert_gt(hq._cars.size(), before,
+		"the restored cars appear in the car park without a relaunch")
+
+
+# The settings CATEGORY buttons (the list page), joined for substring checks.
+func _settings_category_labels(menu: SettingsMenu) -> String:
+	var labels: Array = []
+	for node in menu._list_page.find_children("*", "Button", true, false):
+		labels.append((node as Button).text)
+	return "|".join(PackedStringArray(labels))
+
+
+func test_players_do_not_see_the_developer_settings_pages() -> void:
+	# Benchmark / Dev / Seed lab are dev tooling — a release build must not offer
+	# them. The pages still exist (show_* still works); only the way in is gone.
+	SettingsMenu.dev_tools_override = 0
+	var menu := SettingsMenu.new()
+	add_child_autofree(menu)
+	await get_tree().process_frame
+	# Scope to the CATEGORY LIST: the dev pages themselves are still built (only
+	# unreachable), and their own buttons would otherwise match.
+	var joined := _settings_category_labels(menu)
+	SettingsMenu.dev_tools_override = -1
+
+	assert_false(joined.contains("BENCHMARK"), "no Benchmark entry for players")
+	assert_false(joined.contains("DEV"), "no Dev entry for players")
+	assert_false(joined.contains("SEED LAB"), "no Seed lab entry for players")
+	assert_true(joined.contains("AUDIO"), "the real settings are still there")
+	assert_true(joined.contains("ACCOUNT"), "and so is the account page")
+
+
+func test_developer_builds_still_reach_the_dev_pages() -> void:
+	SettingsMenu.dev_tools_override = 1
+	var menu := SettingsMenu.new()
+	add_child_autofree(menu)
+	await get_tree().process_frame
+	var joined := _settings_category_labels(menu)
+	SettingsMenu.dev_tools_override = -1
+
+	assert_true(joined.contains("BENCHMARK"))
+	assert_true(joined.contains("SEED LAB"))
+
+
 func test_hq_title_parks_starter_previews_when_garage_is_empty() -> void:
 	# A fresh player (no car owned, starter not picked) would have an empty lot behind
 	# the title — instead the starter cars are shown as previews so it's populated.

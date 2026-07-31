@@ -333,6 +333,10 @@ var _lift_upgrades_box: UpgradesMenu  # the UPGRADES menu (shared UpgradesMenu c
 func _ready() -> void:
 	_ensure_starter()
 	_ensure_selection()
+	# Optional cloud save can swap the whole profile out from under a live HQ (a
+	# first sign-in that restores a career, or "Use cloud" on a conflict), so the
+	# car park has to rebuild rather than keep showing the old collection.
+	Cloud.profile_replaced.connect(_on_cloud_profile_replaced)
 	# Dev profiling loop: with ?bench=1 in the web URL, boot straight into the
 	# benchmark (skip building HQ we'd immediately discard). Paired with the page's
 	# reload-listener (export_presets head_include) + the LAN collector, this lets a
@@ -1151,12 +1155,15 @@ func _go_to(view: int, snap := false) -> void:
 	# station. The native-focus views (the title, below; Settings + lift sub-pages
 	# via their own paths) re-grab a control immediately after.
 	get_viewport().gui_release_focus()
-	# The title screen shows the player's whole collection parked in the car park.
-	if view == View.EXTERIOR:
-		_build_title_lineup()
 	# The selected car sits on the lift whenever we're inside (garage/lift); it costs
 	# nothing once frozen, so keep it around while inside and drop it otherwise. In the
 	# garage it rests LOWERED on the ground; entering the bay (_enter_lift) raises it.
+	#
+	# ORDER MATTERS: this runs BEFORE the title lineup is built. _lift_car SHARES its
+	# node with _car_cache, and _clear_lift_car hides + stows that node. Building the
+	# lineup first meant the selected car was parked in a bay and then immediately
+	# hidden by the clear below — and since set_selected_car promotes the selected car
+	# to index 0, the FIRST slot on the title screen was always empty.
 	if view == View.GARAGE:
 		_ensure_lift_car()
 		_lower_lift_car()
@@ -1166,6 +1173,9 @@ func _go_to(view: int, snap := false) -> void:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	else:
 		_clear_lift_car()
+	# The title screen shows the player's whole collection parked in the car park.
+	if view == View.EXTERIOR:
+		_build_title_lineup()
 	# Land the keyboard/gamepad cursor on the title's Start button (the title is the one
 	# HQ overlay driven by native focus; the rest use spatial menu_* nav).
 	if view == View.EXTERIOR:
@@ -1174,6 +1184,27 @@ func _go_to(view: int, snap := false) -> void:
 	if view == View.CARPARK:
 		return  # camera handled by _focus_changed once the lineup exists
 	_move_camera_to(_station_xform(view), snap)
+
+
+# The cloud replaced the local profile with a downloaded career (first sign-in on
+# a new device, or "Use cloud" on a conflict). Everything on screen is now showing
+# somebody else's — or an older — set of cars, so rebuild the views that read the
+# profile. Without this the player signs in, their cars ARE restored, and the car
+# park still shows the empty lot they started with until they quit and relaunch.
+#
+# Only the profile-backed views need it; the lift car is re-derived from the new
+# selection, and the map pins / meter read completion counts that just changed.
+func _on_cloud_profile_replaced() -> void:
+	if not is_inside_tree():
+		return
+	_car_cache.clear()  # cached nodes belong to cars that may no longer be owned
+	if _view == View.EXTERIOR:
+		_clear_lift_car()
+		_build_title_lineup()
+	elif _view == View.GARAGE or _view == View.LIFT:
+		_ensure_lift_car()
+	_refresh_map_pins()
+	_refresh_meter()
 
 
 func _on_exterior_exit() -> void:

@@ -9,6 +9,8 @@ extends Node
 
 signal state_changed()
 signal conflict_detected(summary: Dictionary)
+# The local profile was replaced by a downloaded one — live UI must rebuild.
+signal profile_replaced()
 signal signed_in(uid: String)
 signal signed_out()
 signal auth_lost(reason: String)
@@ -36,6 +38,7 @@ func _ready() -> void:
 	sync.auth = auth
 	sync.state_changed.connect(func() -> void: state_changed.emit())
 	sync.conflict_detected.connect(func(summary: Dictionary) -> void: conflict_detected.emit(summary))
+	sync.profile_replaced.connect(func() -> void: profile_replaced.emit())
 	add_child(sync)
 
 	google = GoogleSignIn.new()

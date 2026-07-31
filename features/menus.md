@@ -316,6 +316,20 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
 > `tests/headless/test_menu_nav.gd` / the nav cases in `test_menu_flow.gd` /
 > `test_pause_menu.gd`).
 
+### Developer-only pages
+
+**Benchmark, Dev and Seed lab are hidden from players.** `_build_list_page` adds
+those three category buttons only when `SettingsMenu.dev_tools_enabled()` — which
+keys off `OS.is_debug_build()`, the same signal `car.gd` / `hud.gd` / `world.gd` /
+`perf_log.gd` use, so an exported release build never shows them while the editor,
+debug exports and the headless test runner do.
+
+The pages are still **built**, and `show_benchmark()` / `show_dev()` /
+`show_seedlab()` still work — only the way in is removed. That keeps `_pages`,
+focus handling and the tests that drive those pages directly unchanged.
+`dev_tools_override` (static, `-1` = real build type) exists so a test can assert
+the player-facing case, which `OS.is_debug_build()` alone makes untestable.
+
 ## Text input (`text_field.gd`)
 
 `TextField` is the project's **only** text input (there was none at all before

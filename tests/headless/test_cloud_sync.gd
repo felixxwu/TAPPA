@@ -407,3 +407,23 @@ func test_downloading_a_profile_keeps_this_devices_settings() -> void:
 	await _sync.pull()
 	assert_eq(_save.get_setting("mobile_control_scheme", -1), 2,
 		"another device's control scheme must not override this one's")
+
+
+func test_downloading_a_career_announces_that_the_profile_was_replaced() -> void:
+	# Live UI (the HQ car park) is showing the OLD career until it hears this, so
+	# a player who signs in sees their cars restored on disk but an empty lot.
+	_save.profile["cloud_revision"] = 1
+	_save.mark_synced()
+	watch_signals(_sync)
+	_rest.queue_ok(_remote_doc(9, _remote_profile(2)))
+	await _sync.pull()
+	assert_signal_emitted(_sync, "profile_replaced")
+
+
+func test_an_ordinary_push_does_not_announce_a_replacement() -> void:
+	# Nothing changed locally, so nothing needs rebuilding.
+	watch_signals(_sync)
+	_sync.pending = true
+	_rest.queue_ok({})
+	await _sync.push()
+	assert_signal_not_emitted(_sync, "profile_replaced")
