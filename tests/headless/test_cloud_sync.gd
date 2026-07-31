@@ -38,6 +38,11 @@ func before_each() -> void:
 	_sync.auth = _auth
 	add_child_autofree(_sync)
 
+	# Default posture: this device is already paired with the signed-in account,
+	# so a stored cloud_revision means what it says. The account-switching tests
+	# below override cloud_uid to exercise the other case.
+	_save.profile["cloud_uid"] = _auth.uid
+
 
 func after_each() -> void:
 	SaveTestHelpers.cleanup(TEST_PATH)
@@ -324,3 +329,81 @@ func test_the_uploaded_blob_is_not_marked_unsynced() -> void:
 	var json := JSON.new()
 	json.parse(blob)
 	assert_false(bool((json.data as Dictionary).get("unsynced", true)))
+
+
+# --- Account switching --------------------------------------------------------
+# A revision number is only meaningful against ONE account's document. Signing
+# out of A and into B must not compare B's document against A's counter — doing
+# so reads as "we are ahead" and overwrites B's career with A's.
+
+func test_switching_account_does_not_push_over_the_new_accounts_save() -> void:
+	# Local profile belongs to account A, well ahead of B's document.
+	_save.profile["cloud_uid"] = "uid_account_a"
+	_save.profile["cloud_revision"] = 7
+	_save.profile["starter_model_id"] = "account_a_career"
+	_save.mark_synced()
+
+	var remote := _remote_profile()
+	remote["starter_model_id"] = "account_b_career"
+	_rest.queue_ok(_remote_doc(3, remote))
+	var result: Dictionary = await _sync.pull()
+
+	assert_eq(result.state, "applied",
+		"a different account's document is authoritative, not stale-looking")
+	assert_eq(_save.profile["starter_model_id"], "account_b_career")
+	assert_eq(_rest.requests.size(), 1, "nothing may be pushed over account B")
+
+
+func test_switching_account_with_unsynced_work_asks_instead_of_choosing() -> void:
+	_save.profile["cloud_uid"] = "uid_account_a"
+	_save.profile["cloud_revision"] = 7
+	_save.save()  # unsynced work belonging to account A
+
+	_rest.queue_ok(_remote_doc(3, _remote_profile()))
+	var result: Dictionary = await _sync.pull()
+	assert_eq(result.state, "conflict",
+		"unsynced work from the previous account must not be silently discarded")
+
+
+func test_a_push_records_which_account_it_synced_with() -> void:
+	_sync.pending = true
+	_rest.queue_ok({})
+	await _sync.push()
+	assert_eq(_save.profile["cloud_uid"], "uid123",
+		"without this the next account switch has nothing to compare against")
+
+
+func test_adopting_a_remote_profile_records_the_account() -> void:
+	_save.profile["cloud_revision"] = 1
+	_save.mark_synced()
+	_rest.queue_ok(_remote_doc(5, _remote_profile()))
+	await _sync.pull()
+	assert_eq(_save.profile["cloud_uid"], "uid123")
+
+
+# --- Device-local settings ----------------------------------------------------
+
+func test_settings_are_not_uploaded() -> void:
+	# They describe the hardware in the player's hands (touch scheme, frame cap,
+	# key bindings), not their career.
+	_save.set_setting("mobile_control_scheme", 2)
+	_sync.pending = true
+	_rest.queue_ok({})
+	await _sync.push()
+	var blob: String = _rest.last_body()["fields"]["profile"]["stringValue"]
+	var json := JSON.new()
+	json.parse(blob)
+	assert_false((json.data as Dictionary).has("settings"),
+		"device settings must not be published to the cloud")
+
+
+func test_downloading_a_profile_keeps_this_devices_settings() -> void:
+	_save.set_setting("mobile_control_scheme", 2)
+	_save.profile["cloud_revision"] = 1
+	_save.mark_synced()
+	var remote := _remote_profile()
+	remote["settings"] = {"mobile_control_scheme": 99}
+	_rest.queue_ok(_remote_doc(9, remote))
+	await _sync.pull()
+	assert_eq(_save.get_setting("mobile_control_scheme", -1), 2,
+		"another device's control scheme must not override this one's")

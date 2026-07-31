@@ -323,7 +323,13 @@ func adopt_profile(incoming: Dictionary) -> bool:
 	var migrated := _migrate(incoming.duplicate(true))
 	if migrated.is_empty():
 		return false
+	# Settings stay DEVICE-LOCAL and survive the swap. They describe the hardware
+	# in the player's hands — touch control scheme, frame cap, key bindings — not
+	# their career, so letting a phone's settings ride down onto a desktop (or the
+	# reverse) would be a downgrade, not a restore.
+	var device_settings: Variant = profile.get("settings", {})
 	profile = _sanitise(migrated)
+	profile["settings"] = device_settings
 	ensure_repair_safety_net()
 	return true
 
@@ -361,6 +367,10 @@ func _default_profile() -> Dictionary:
 		# "never synced". Both fields are backfilled by _migrate's key backfill,
 		# so no SCHEMA_VERSION bump was needed.
 		"cloud_revision": 0,
+		# Which account this profile's cloud_revision refers to. A revision number
+		# is only meaningful relative to ONE Firestore document, so signing into a
+		# different account must not compare against the previous account's count.
+		"cloud_uid": "",
 		# Does this device hold changes the cloud has not accepted? PERSISTED on
 		# purpose: progress made offline must still be recognised as unsynced
 		# after a restart, otherwise the next pull would see "cloud is ahead,

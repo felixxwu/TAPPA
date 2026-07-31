@@ -108,18 +108,30 @@ func _enable_scroll_follow(root: Node) -> void:
 		(node as ScrollContainer).follow_focus = true
 
 
-# Is the menu actually on screen? Control.is_visible_in_tree() only walks Control
+# Is `node` actually on screen? Control.is_visible_in_tree() only walks Control
 # ancestors, so it MISSES a CanvasLayer ancestor being hidden (how HQ toggles its
-# station overlays). Check both: the Control chain AND any CanvasLayer ancestor.
-func _menu_visible() -> bool:
-	if not is_instance_valid(_root) or not _root.is_visible_in_tree():
+# station overlays) — a panel inside a hidden overlay reports itself visible.
+# Check both: the Control chain AND any CanvasLayer ancestor.
+#
+# Static because this is not only MenuNav's problem: anything that grabs focus
+# from a panel that might be parked inside a hidden overlay needs the same
+# question answered (AccountMenu does, and stole focus from the HQ title screen
+# before it asked it).
+static func is_on_screen(node: Node) -> bool:
+	if not is_instance_valid(node):
 		return false
-	var n: Node = _root
+	if node is Control and not (node as Control).is_visible_in_tree():
+		return false
+	var n: Node = node
 	while n != null:
 		if n is CanvasLayer and not (n as CanvasLayer).visible:
 			return false
 		n = n.get_parent()
 	return true
+
+
+func _menu_visible() -> bool:
+	return is_on_screen(_root)
 
 
 # Is the player typing into a text field right now?

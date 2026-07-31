@@ -1,0 +1,110 @@
+extends GutTest
+# AccountMenu structure (see features/cloud-save.md › "UI").
+#
+# These are deliberately dumb "is the control actually on screen" checks rather
+# than assertions about wording or layout. They exist because the first version
+# of the sign-in forms BUILT their buttons and never parented them: every form
+# shipped with no Create account / Sign in / Back button, reachable only by
+# pressing Enter. Every widget the player must be able to press needs a test
+# that it is in the tree, because "it was constructed" is not the same thing.
+
+var _menu: AccountMenu
+var _saved_uid := ""
+var _saved_refresh := ""
+var _saved_email := ""
+
+
+func before_each() -> void:
+	# Present as signed OUT regardless of the machine's real state. The Cloud
+	# autoload restores a live session from user://auth.json at boot, so on a
+	# developer machine that has actually signed in, the page would render its
+	# signed-in variant and these assertions would flip.
+	#
+	# The in-memory fields are blanked directly rather than calling sign_out(),
+	# which DELETES the credential file — a test must not log the developer out
+	# of their own game.
+	_saved_uid = Cloud.auth.uid
+	_saved_refresh = Cloud.auth.refresh_token
+	_saved_email = Cloud.auth.email
+	Cloud.auth.uid = ""
+	Cloud.auth.refresh_token = ""
+	Cloud.auth.email = ""
+
+	_menu = AccountMenu.new()
+	add_child_autofree(_menu)
+
+
+func after_each() -> void:
+	Cloud.auth.uid = _saved_uid
+	Cloud.auth.refresh_token = _saved_refresh
+	Cloud.auth.email = _saved_email
+	var focused := get_tree().root.get_viewport().gui_get_focus_owner()
+	if focused != null:
+		focused.release_focus()
+
+
+# Every Button anywhere under the menu, by its (uppercased by UITheme) label.
+func _button_labels() -> Array:
+	var labels: Array = []
+	for node in _menu.find_children("*", "Button", true, false):
+		labels.append((node as Button).text)
+	return labels
+
+
+func _has_button_containing(fragment: String) -> bool:
+	for label in _button_labels():
+		if String(label).contains(fragment.to_upper()):
+			return true
+	return false
+
+
+func test_signed_out_offers_a_way_in() -> void:
+	assert_true(_has_button_containing("sign in with email"),
+		"signed-out account page must offer email sign-in")
+	assert_true(_has_button_containing("create an account"))
+
+
+func test_the_register_form_has_a_submit_button() -> void:
+	# The exact regression: the form rendered with fields but nothing to press.
+	_menu._show(AccountMenu.View.REGISTER)
+	assert_true(_has_button_containing("create account"),
+		"the register form must have a button that submits it")
+	assert_true(_has_button_containing("back"), "and a way back out")
+
+
+func test_the_sign_in_form_has_its_buttons() -> void:
+	_menu._show(AccountMenu.View.SIGN_IN)
+	assert_true(_has_button_containing("sign in"))
+	assert_true(_has_button_containing("forgot password"))
+	assert_true(_has_button_containing("back"))
+
+
+func test_the_reset_form_has_its_buttons() -> void:
+	_menu._show(AccountMenu.View.RESET)
+	assert_true(_has_button_containing("send reset email"))
+	assert_true(_has_button_containing("back"))
+
+
+func test_the_register_form_has_three_fields() -> void:
+	_menu._show(AccountMenu.View.REGISTER)
+	assert_eq(_menu.find_children("*", "LineEdit", true, false).size(), 3,
+		"email, password and confirm password")
+
+
+func test_every_form_control_is_focusable() -> void:
+	# A control the cursor cannot reach is as good as absent on a gamepad.
+	_menu._show(AccountMenu.View.REGISTER)
+	for node in _menu.find_children("*", "Button", true, false):
+		assert_ne((node as Button).focus_mode, Control.FOCUS_NONE,
+			"button '%s' must be reachable by keyboard/gamepad" % (node as Button).text)
+	for node in _menu.find_children("*", "LineEdit", true, false):
+		assert_ne((node as LineEdit).focus_mode, Control.FOCUS_NONE,
+			"text fields must be reachable by keyboard/gamepad")
+
+
+func test_back_returns_to_the_main_view() -> void:
+	_menu._show(AccountMenu.View.REGISTER)
+	assert_false(_menu.at_root())
+	assert_true(_menu.go_back(), "a form consumes Back")
+	assert_true(_menu.at_root())
+	assert_false(_menu.go_back(), "at the top level Back belongs to the host")

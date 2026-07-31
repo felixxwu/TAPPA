@@ -123,7 +123,7 @@ func pull() -> Dictionary:
 			"error": "Cloud save needs a newer version of the game."}
 
 	var remote_revision := int(remote.get("revision", 0))
-	var agreed_revision := int(Save.profile.get("cloud_revision", 0))
+	var agreed_revision := _agreed_revision()
 	var local_moved := Save.has_unsynced()
 
 	if remote_revision <= agreed_revision:
@@ -176,7 +176,7 @@ func _push_inner() -> Dictionary:
 	if not fresh.ok:
 		return _fail_from_auth(fresh)
 
-	var revision := int(Save.profile.get("cloud_revision", 0)) + 1
+	var revision := _agreed_revision() + 1
 	var stamp := Time.get_datetime_string_from_system(true)
 	# Upload a copy with the sync bookkeeping normalised: those two fields
 	# describe THIS device's relationship with the cloud, and shipping them as-is
@@ -185,6 +185,10 @@ func _push_inner() -> Dictionary:
 	var blob: Dictionary = Save.profile.duplicate(true)
 	blob["unsynced"] = false
 	blob["cloud_revision"] = revision
+	blob["cloud_uid"] = auth.uid
+	# Settings are device-local and deliberately NOT published: the frame cap and
+	# touch scheme that suit a phone are wrong for a desktop, and vice versa.
+	blob.erase("settings")
 	var payload := to_document(JSON.stringify(blob), Save.SCHEMA_VERSION,
 		revision, stamp, FirebaseConfig.device_tag())
 
@@ -196,6 +200,7 @@ func _push_inner() -> Dictionary:
 
 	# Only now is the local profile allowed to claim it agrees with this revision.
 	Save.profile["cloud_revision"] = revision
+	Save.profile["cloud_uid"] = auth.uid
 	Save.mark_synced()
 	pending = false
 	last_sync_utc = stamp
@@ -270,6 +275,7 @@ func apply_remote(remote: Dictionary, backup := false) -> Dictionary:
 	if not accepted:
 		return {"ok": false, "error": "Cloud save needs a newer version of the game."}
 	Save.profile["cloud_revision"] = int(remote.get("revision", 0))
+	Save.profile["cloud_uid"] = auth.uid
 	pending = false
 	last_sync_utc = String(remote.get("updated_utc", ""))
 	Save.mark_synced()
@@ -356,6 +362,20 @@ func _patch_url() -> String:
 	for field in ["profile", "schema_version", "revision", "updated_utc", "device"]:
 		mask += ("&" if mask != "" else "?") + "updateMask.fieldPaths=" + field
 	return FirebaseConfig.user_doc(auth.uid) + mask
+
+
+# The revision this device can legitimately claim to have agreed with.
+#
+# ZERO when the stored profile belongs to a DIFFERENT account. Without this,
+# signing out of account A (revision 7) and into account B (revision 3) reads as
+# "we are ahead of the cloud" and pushes A's career straight over B's document.
+# Resetting to 0 makes any existing remote document look newer, which routes the
+# situation into the normal matrix: adopt it if this device has nothing
+# unsynced, otherwise raise the divergence prompt and let the player choose.
+func _agreed_revision() -> int:
+	if String(Save.profile.get("cloud_uid", "")) != auth.uid:
+		return 0
+	return int(Save.profile.get("cloud_revision", 0))
 
 
 func _parse_profile(blob: String) -> Variant:

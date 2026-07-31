@@ -54,6 +54,13 @@ func go_back() -> bool:
 
 
 func focus_first() -> void:
+	# Only when actually on screen. This page is built once at boot and parked
+	# inside the Settings overlay, which the HQ hides via its CanvasLayer — and
+	# a hidden CanvasLayer does not make is_visible_in_tree() false, so without
+	# this guard a rebuild here yanks focus off whatever the player is looking
+	# at (it stole the HQ title screen's cursor).
+	if not MenuNav.is_on_screen(self):
+		return
 	UITheme.focus_grab(UITheme.first_focusable(self))
 
 
@@ -86,8 +93,12 @@ func rebuild() -> void:
 	page_changed.emit(at_root())
 
 	# A conflict raised while this page was closed still needs answering; show it
-	# on open rather than leaving the player staring at a warning they cannot act on.
-	if at_root() and Cloud.sync != null and Cloud.sync.blocked_by_conflict and not _conflict_open:
+	# on OPEN — but only when this page is genuinely on screen. The modal is a
+	# layer-101 CanvasLayer that seizes focus, so raising it from a page parked
+	# inside a hidden overlay would throw a dialog over the title screen (or, in
+	# a test run, over whatever the test was driving).
+	if at_root() and MenuNav.is_on_screen(self) \
+			and Cloud.sync != null and Cloud.sync.blocked_by_conflict and not _conflict_open:
 		_prompt_conflict.call_deferred(Cloud.sync.conflict_summary())
 
 
@@ -130,12 +141,17 @@ func _build_email_form(action_label: String, on_submit: Callable, confirm := fal
 		add_child(_confirm_field)
 		column.append(_confirm_field)
 
+	# NOTE the add_child on every row: _action() only BUILDS a button, it does not
+	# parent it. Forgetting that here once shipped a form with no buttons at all.
 	var submit := _action(action_label, on_submit)
+	add_child(submit)
 	column.append(submit)
 	if _view == View.SIGN_IN:
 		var forgot := _action("Forgot password?", func() -> void: _show(View.RESET))
+		add_child(forgot)
 		column.append(forgot)
 	var back := _action("< Back", func() -> void: _show(View.MAIN))
+	add_child(back)
 	column.append(back)
 
 	# Enter in any field submits the form — the ordinary expectation, and the only
@@ -154,7 +170,9 @@ func _build_reset_form() -> void:
 	_email_field = TextField.new("Email", "you@example.com")
 	add_child(_email_field)
 	var send := _action("Send reset email", _on_reset_pressed)
+	add_child(send)
 	var back := _action("< Back", func() -> void: _show(View.SIGN_IN))
+	add_child(back)
 	_email_field.submitted.connect(_on_reset_pressed)
 	TextField.wire_column([_email_field, send, back])
 
@@ -221,7 +239,11 @@ func _on_sign_out_pressed() -> void:
 # --- Conflict -----------------------------------------------------------------
 
 func _on_conflict_detected(summary: Dictionary) -> void:
-	if is_visible_in_tree():
+	# is_on_screen, NOT is_visible_in_tree: the latter ignores a hidden
+	# CanvasLayer ancestor, so a closed Settings page would still pop the modal.
+	# When it is not on screen the conflict is not lost — rebuild() re-raises it
+	# the next time the page is actually opened.
+	if MenuNav.is_on_screen(self):
 		_prompt_conflict(summary)
 
 

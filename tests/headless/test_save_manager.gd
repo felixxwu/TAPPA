@@ -666,3 +666,14 @@ func test_the_conflict_backup_is_separate_from_the_rolling_bak() -> void:
 	_save.save_now()
 	_save.save_now()
 	assert_true(FileAccess.file_exists(TEST_PATH + ".conflict.bak"))
+
+
+func test_adopting_a_profile_keeps_this_devices_settings() -> void:
+	# Settings describe the hardware in the player's hands (touch scheme, frame
+	# cap, key bindings), so a profile downloaded from another device must not
+	# bring its settings with it.
+	_save.set_setting("probe_setting", "this_device")
+	var incoming: Dictionary = _save._default_profile()
+	incoming["settings"] = {"probe_setting": "other_device"}
+	assert_true(_save.adopt_profile(incoming))
+	assert_eq(_save.get_setting("probe_setting", ""), "this_device")
