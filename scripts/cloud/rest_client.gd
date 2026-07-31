@@ -29,6 +29,19 @@ func _ready() -> void:
 	# Redirects: Google's endpoints do not use them, but following a couple is
 	# harmless and avoids a mysterious failure if that ever changes.
 	_http.max_redirects = 3
+	# WEB: do not let Godot handle gzip.
+	#
+	# The browser transparently decompresses a gzip response before Godot ever
+	# sees it, but HTTPRequest still reads `Content-Encoding: gzip` and tries to
+	# decompress the (already plain) body a second time. That fails with
+	# RESULT_BODY_DECOMPRESS_FAILED (8) on an otherwise perfect HTTP 200 —
+	# measured against identitytoolkit, which gzips its responses. Every cloud
+	# request on the web build failed this way, for both email and Google
+	# sign-in, and it surfaced to the player as "no connection".
+	#
+	# Native keeps gzip: there the engine owns the transfer and decompresses
+	# correctly, and these payloads are small but not free.
+	_http.accept_gzip = not Platform.is_web()
 	add_child(_http)
 
 

@@ -204,6 +204,22 @@ Failures back off exponentially (2 s → 60 s, jittered). The retry queue is a
 single "dirty" bit, not a list of operations — the payload is always the whole
 current profile, so a retry can never apply stale data.
 
+### Web: gzip must be left to the browser
+
+`RestClient` sets `accept_gzip = false` on the web build. The browser already
+decompresses a gzip response before Godot sees it, but `HTTPRequest` still reads
+`Content-Encoding: gzip` and decompresses a second time — which fails on the
+already-plain body with `RESULT_BODY_DECOMPRESS_FAILED` (transport code 8) on an
+HTTP **200**.
+
+Google's endpoints gzip their responses, so this broke EVERY cloud request on
+the web build — email and Google sign-in alike — and surfaced to the player as
+"No connection", which sent the investigation towards CORS for some time. If web
+requests ever start failing on a 200 again, check this first.
+
+Native keeps gzip enabled: there the engine owns the transfer and handles it
+correctly.
+
 ## Error handling
 
 | Failure | Behaviour |
