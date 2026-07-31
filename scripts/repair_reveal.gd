@@ -69,8 +69,21 @@ func _build_ui() -> void:
 	UITheme.enforce(self)
 
 
+# The rounded ABSOLUTE health a repair put back on the car, in HP — what the card
+# shows. Derived from hp_before/hp_after rather than read from the summary's own
+# `hp_gained`, so the number on screen is always the difference between the two
+# values the same summary reports, and cannot drift from them.
+static func health_gain_hp(summary: Dictionary) -> int:
+	var before := float(summary.get("hp_before", 0.0))
+	var after := float(summary.get("hp_after", 0.0))
+	return int(round(after)) - int(round(before))
+
+
 # The rounded health gain (percentage points of max_hp) a repair summary represents.
-# Pure — the popup gate and the card label both read it so they never disagree.
+# Still what the popup GATE reads: whether a repair is worth interrupting the player
+# for is a question about how much of the car it fixed, not how many points it moved
+# — 20 HP on a fragile car matters, the same 20 HP on a heavy one barely shows.
+# Pure — kept separate from the label for exactly that reason.
 static func health_gain_pct(summary: Dictionary) -> int:
 	var max_hp := float(summary.get("max_hp", 0.0))
 	if max_hp <= 0.0:
@@ -94,7 +107,7 @@ static func worth_showing(summary: Dictionary) -> bool:
 # ({repaired, hp_before, hp_after, max_hp, hp_gained}) and seat focus on Continue.
 func reveal(summary: Dictionary) -> void:
 	_summary = summary
-	_health_label.text = UITheme.caps("Health  +%d%%" % health_gain_pct(summary))
+	_health_label.text = UITheme.caps("Health  +%d HP" % health_gain_hp(summary))
 	UITheme.enforce(self)
 	# Framework: focus + WASD/arrow/gamepad nav (single button; no on_back — the host
 	# owns back). Seats the cursor on Continue so it's driveable without a pointer.

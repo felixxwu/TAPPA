@@ -220,6 +220,30 @@ func test_a_dnf_reports_no_time() -> void:
 	assert_eq(_patch_requests().size(), 0)
 
 
+func test_an_impossibly_fast_time_is_not_posted() -> void:
+	# A sub-floor time is a dev shortcut, a restart or a clipped finish line — never
+	# a driven stage. It must not reach the board, where it would sit at P1 forever.
+	# The board is still READ, so the player sees where they stand.
+	_queue_fetch([], null, 0, 0)
+	var result: Dictionary = await _board.submit_and_fetch(
+		STAGE, Leaderboard.MIN_POST_MS - 1, {"name": "K"})
+	assert_eq(String(result.post_state), Leaderboard.POST_TOO_FAST)
+	assert_eq(_patch_requests().size(), 0, "nothing is written")
+	assert_true(bool(result.ok), "the board still loads")
+
+
+func test_a_time_on_the_floor_is_posted() -> void:
+	# The boundary is inclusive: exactly MIN_POST_MS is a real time. Guards the
+	# comparison against an off-by-one that would silently drop legitimate runs.
+	_rest.queue_ok({})
+	_rest.queue_ok({})
+	_queue_fetch([], null, 0, 0)
+	var result: Dictionary = await _board.submit_and_fetch(
+		STAGE, Leaderboard.MIN_POST_MS, {"name": "K"})
+	assert_eq(String(result.post_state), Leaderboard.POST_POSTED)
+	assert_eq(_patch_requests().size(), 1, "the write happens")
+
+
 func test_not_faster_reports_not_faster() -> void:
 	_rest.queue_ok(_doc("uid123", "K", 50000))
 	_queue_fetch([], _doc("uid123", "K", 50000), 0, 1)

@@ -257,6 +257,15 @@ var _viewed_region_index := 0   # which region's map/pins the table shows
 # constructed with `self` in _ready so they can reach back into this controller.
 var _overlays: HqOverlays
 var _title_layer: CanvasLayer
+
+# How long the starter-pick gate will wait on the boot-time cloud pull before
+# giving up and letting the player through (see _await_cloud_restore). A seam:
+# tests shrink it so the bounded-wait path can be exercised without spending real
+# seconds. Not a tunable — it is a timeout budget, not a look or balance value.
+var cloud_restore_wait_sec: float = Cloud.INITIAL_SYNC_WAIT_SEC
+# True while _on_exterior_start is parked in that wait. Guards against a second
+# Start press spawning a second coroutine (see _on_exterior_start).
+var _awaiting_cloud := false
 var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once dismissed
 # Optional cloud save, reachable from the title screen as well as from Settings —
 # a player restoring a career on a new device shouldn't have to find it in a
@@ -1198,6 +1207,16 @@ func _on_cloud_profile_replaced() -> void:
 	if not is_inside_tree():
 		return
 	_car_cache.clear()  # cached nodes belong to cars that may no longer be owned
+	# A download that lands while the STARTER PICKER is open (the player got there
+	# before the gate was armed, or waited it out) has just given them a career.
+	# Leaving the picker up would let them "choose" a second free car on top of it
+	# and overwrite the restored selection, so back out to the title instead.
+	if _view == View.CARPARK and _carpark_mode == CarparkMode.STARTER \
+			and bool(Save.profile.get("starter_picked", false)):
+		_clear_lineup()
+		_carpark_mode = CarparkMode.RALLY
+		_go_to(View.EXTERIOR)
+		return
 	if _view == View.EXTERIOR:
 		_clear_lift_car()
 		_build_title_lineup()
@@ -1212,12 +1231,89 @@ func _on_exterior_exit() -> void:
 
 
 func _on_exterior_start() -> void:
+	# RE-ENTRANCY. This used to be synchronous, so pressing Start twice was
+	# impossible; the cloud-restore wait opens a window of up to
+	# cloud_restore_wait_sec in which it is not. The Start button keeps keyboard
+	# and gamepad focus behind the cover (LoadingScreen blocks the mouse, not
+	# ui_accept), and a player looking at an unexplained wait is exactly the one
+	# who presses Enter again — which would run two coroutines and, on release,
+	# open two starter pickers or race a picker against a garage transition.
+	if _awaiting_cloud:
+		return
 	# First-time players (no starter chosen yet) pick a starter car in the car park;
 	# returning players go straight to the garage.
 	if not bool(Save.profile.get("starter_picked", false)):
+		_awaiting_cloud = true
+		if _title_start_button != null:
+			_title_start_button.disabled = true
+		await _await_cloud_restore()
+		_awaiting_cloud = false
+		if is_instance_valid(_title_start_button):
+			_title_start_button.disabled = false
+		if not is_inside_tree():
+			return
+		# The pull may have landed a real career while we waited, in which case
+		# there is no starter to pick — this player already has cars.
+		if bool(Save.profile.get("starter_picked", false)):
+			_go_to(View.GARAGE)
+			return
 		_enter_starter_pick()
 	else:
 		_go_to(View.GARAGE)
+
+
+# Hold the FIRST-RUN STARTER PICK — and only that — until the boot-time cloud
+# pull has settled.
+#
+# THE RACE. Cloud._kick_off_initial_pull is deferred and costs a network round
+# trip; HQ boots and reveals the title in about a second. A returning player on a
+# new device can therefore press Start and be offered a starter car while their
+# real career is still in flight. Picking one grants a car and calls Save.save(),
+# which marks the profile UNSYNCED — so the arriving download stops being a clean
+# "cloud is ahead, take it" and becomes a divergence prompt about a career they
+# never actually lost, where one mis-tap discards it or overwrites the cloud copy
+# with a single starter car.
+#
+# WHY ONLY THE PICK IS GATED, not the title screen. The starter pick is the one
+# pre-career action that WRITES to the profile; everything else reachable from
+# the title is read-only or already rebuilt by _on_cloud_profile_replaced. Gating
+# the title itself would make an offline player, or one who has never signed in,
+# wait for something that is never coming — and signing in is never required.
+#
+# GUARANTEED EXIT. A player with no stored credential has
+# Cloud.initial_pull_pending false and is never gated at all. Everyone else waits
+# for the pull's own outcome (success, 4xx, 5xx, or transport failure), under a
+# hard cap inside Cloud.await_initial_sync. There is no path here that does not
+# return.
+#
+# TESTABILITY. The headless guard covers ONLY the cover — the visual work. The
+# decision (is a pull pending?) and the wait itself run identically headless, so
+# a test can prove that this path actually waits and actually releases. A guard
+# that skipped the wait too would leave the one behaviour that matters unproven;
+# that mistake shipped a blank page earlier in this same session, and
+# features/testing.md now records the rule: skip the animation, never the
+# decision or the final state.
+func _await_cloud_restore() -> void:
+	if Cloud == null or not Cloud.initial_pull_pending:
+		return
+	var loading := _show_restore_cover()
+	if loading != null:
+		# One frame so the cover is actually on screen before we start waiting.
+		await get_tree().process_frame
+	await Cloud.await_initial_sync(cloud_restore_wait_sec)
+	if loading != null and is_instance_valid(loading):
+		loading.finish()
+
+
+# The cover, and nothing else. Returns null when there is no screen to cover.
+func _show_restore_cover() -> LoadingScreen:
+	if Platform.is_headless():
+		return null
+	var loading := LoadingScreen.new()
+	loading.set_title("Restoring your career…")
+	loading.set_step("Checking your cloud save…")
+	add_child(loading)
+	return loading
 
 
 # Garage: open the car park to pick which owned car to work on. Parks the WHOLE owned

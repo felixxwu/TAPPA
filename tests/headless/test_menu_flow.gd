@@ -2140,9 +2140,10 @@ func test_standings_interstitial_renders_the_leaderboard() -> void:
 
 
 func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
-	# After a non-final event the combined page offers "Collect reward"; pressing it
-	# hides the leaderboard and reveals the won upgrade with a single "Next" (granted to
-	# the garage, installed later), then the button continues to the next event.
+	# ORDER: local standings -> world standings -> reward. Page 1 always leads to the
+	# global leaderboard; the reward is collected from PAGE 2, after the player has
+	# seen where they placed in the world, and the reveal is the last thing before
+	# the rally resumes.
 	RallyFixtures.install()
 	var driven: Dictionary = _save.grant_car("fx_awd")
 	RallySession.start_rally(RallyLibrary.by_id("fx_open"), driven, true)
@@ -2156,12 +2157,24 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	var sc: Control = load("res://standings.tscn").instantiate()
 	add_child_autofree(sc)
 	await get_tree().process_frame
-	assert_eq(sc._action_button.text, UITheme.caps("Collect reward >"),
-		"a non-final event with an award offers Collect reward")
+	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+		"page 1 leads to the world board, NOT straight to the reward")
 
+	# Step 1 -> page 2. The reveal must not exist yet: the reward comes after.
 	sc._action_button.pressed.emit()
 	await get_tree().process_frame
-	assert_true(is_instance_valid(sc._reveal), "collecting shows the reward reveal")
+	assert_not_null(sc._global_page, "page 1's button opens the global leaderboard")
+	assert_false(is_instance_valid(sc._reveal),
+		"and the reward reveal has NOT run yet — the world board comes first")
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Collect reward >"),
+		"page 2's button names what is next, which on a reward stage is the reward")
+
+	# Step 2 -> the reveal.
+	sc._global_page._on_continue()
+	await get_tree().process_frame
+	assert_true(is_instance_valid(sc._reveal), "page 2's button is what collects the reward")
+	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
+		"the rally has not resumed behind the reveal")
 	# A normal slottable part is now granted fitted-disabled with a single "Next" — no
 	# Apply/Keep choice (the player enables it later in the upgrades menu). Repair kit /
 	# drivetrain also auto-finish.
@@ -2174,19 +2187,17 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	# pressing Next resolves `finished`, which advances straight into the next event
 	# with a single press (no redundant second confirmation).
 	assert_true(sc._reveal._next_button.visible, "the reveal shows its own Next action")
+
+	# Step 3 -> the rally resumes. The reveal is now the LAST step, so its Next is
+	# what finally advances — and the upgrade was still granted on the way.
+	if not UpgradeLibrary.is_consumable(won) and UpgradeLibrary.slot_of(won) != "" \
+			and UpgradeLibrary.slot_of(won) != "drivetrain":
+		var car: Dictionary = _save.get_car(RallySession.car_instance_id())
+		assert_true(JSON.stringify(car).contains(won),
+			"the reward is still granted to the fielded car, wherever it sits in the order")
 	sc._reveal._next_button.pressed.emit()
-	# Next no longer drops STRAIGHT back into the rally: the global stage
-	# leaderboard is now interposed between the reward and the next stage, on this
-	# path exactly as on the plain-Continue one (see _advance). Its Continue is
-	# what resumes — so the same press count still gets the player moving, it just
-	# passes a page on the way.
-	await get_tree().process_frame
-	assert_not_null(sc._global_page, "Next hands off to the global leaderboard page")
-	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
-		"and the rally has NOT resumed behind it")
-	sc._global_page._on_continue()
 	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
-		"the global page's Continue resumes the next event")
+		"the reveal's Next resumes the next event — one exit, reached once")
 	RallySession.abandon()
 
 
@@ -2205,8 +2216,15 @@ func test_standings_final_event_has_no_collect_reward() -> void:
 	var sc: Control = load("res://standings.tscn").instantiate()
 	add_child_autofree(sc)
 	await get_tree().process_frame
-	assert_eq(sc._action_button.text, UITheme.caps("Continue to podium >"),
-		"the final event has no reward to collect")
+	# The final event draws no upgrade, so there is no reveal step: page 1 -> page 2
+	# -> podium.
+	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+		"page 1 leads to the world board on the final stage too")
+	sc._on_action()
+	await get_tree().process_frame
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Continue to podium >"),
+		"and page 2 goes straight to the podium — no empty reveal in between")
+	assert_false(is_instance_valid(sc._reveal), "the final stage has no reward to collect")
 	RallySession.abandon()
 
 
@@ -2821,8 +2839,8 @@ func test_final_event_shows_both_leaderboards_before_proceeding() -> void:
 		"the final event's own stage result is on the page")
 	assert_string_contains(text, UITheme.caps(Standings.overall_heading(3)),
 		"the cumulative standings are on the same page, naming all three stages")
-	assert_eq(s._action_button.text, UITheme.caps("Continue to podium >"),
-		"one press resolves to the podium — no second page in between")
+	assert_eq(s._action_button.text, UITheme.caps("Online leaderboard >"),
+		"page 1 leads to the world board; the podium is one page further on")
 
 
 # Drivetrain selector on the upgrades page's drivetrain slot row (todo/drivetrain-swap):
@@ -3106,31 +3124,72 @@ func test_standings_continue_shows_the_global_page_before_resuming() -> void:
 	RallySession.abandon()
 
 
-# EXIT 2 — the upgrade reveal, which used to connect STRAIGHT to
-# continue_to_next_event. A reward is drawn on every non-final stage, so this is
-# the path that actually runs in normal play; missing it would show the global
-# page after the final stage only.
-func test_upgrade_reveal_also_routes_through_the_global_page() -> void:
+# THE ORDER, asserted as a sequence rather than a press count: page 1 (local
+# standings) -> page 2 (world standings) -> the reward reveal -> the rally. The
+# reward is the payoff and goes last; the world board must not be buried behind a
+# reveal card the player has to dismiss first.
+#
+# continue_to_next_event() has exactly ONE call site (Standings._advance) and this
+# counts the phase transitions to prove it is reached exactly once, at the end.
+func test_reward_stage_order_is_local_then_global_then_reward() -> void:
 	var sc := _standings_after_stage_one()
 	await get_tree().process_frame
 	assert_ne(RallySession.current_event_upgrade(), "", "stage 1 awarded an upgrade")
-	assert_eq(sc._action_button.text, UITheme.caps("Collect reward >"),
-		"so the button collects the reward first")
 
+	var resumes := [0]
+	RallySession.phase_changed.connect(func(p: int) -> void:
+		if p == RallySession.Phase.RUNNING:
+			resumes[0] += 1)
+
+	# 1. Page 1 names page 2, not the reward.
+	assert_eq(sc._action_button.text, UITheme.caps("Online leaderboard >"),
+		"page 1 leads to the world board")
 	sc._action_button.pressed.emit()
 	await get_tree().process_frame
-	assert_true(is_instance_valid(sc._reveal), "collecting shows the reward reveal")
+	assert_not_null(sc._global_page, "which is what it opens")
+	assert_false(is_instance_valid(sc._reveal), "the reward has NOT been revealed yet")
 
+	# 2. Page 2 names the reward, and Back still works here — page 1 is intact
+	# behind it, which it was not when the reveal came first.
+	assert_true(sc._global_page.show_back,
+		"page 2 offers Back on a reward stage too, now that page 1 survives it")
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Collect reward >"),
+		"page 2 leads to the reward")
+	sc._global_page._on_continue()
+	await get_tree().process_frame
+	assert_true(is_instance_valid(sc._reveal), "which is what it opens")
+	assert_eq(resumes[0], 0, "and the rally has still not resumed")
+
+	# 3. The reveal is the last step.
 	sc._reveal.finished.emit()
 	await get_tree().process_frame
-	assert_not_null(sc._global_page,
-		"finishing the reveal lands on the global page, not straight back in the rally")
-	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
-		"the reveal path does not resume the rally either")
+	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING, "the reveal resumes the rally")
+	assert_eq(resumes[0], 1,
+		"continue_to_next_event() is reached exactly ONCE across the whole ladder")
+	RallySession.abandon()
+
+
+# The same ladder on a stage with no reward: page 1 -> page 2 -> resume, with no
+# empty reveal step, and still exactly one resume.
+func test_non_reward_stage_skips_the_reveal_and_resumes_once() -> void:
+	var sc := _standings_after_stage_one()
+	await get_tree().process_frame
+	sc._reward_collected = true  # stand in for a stage that drew nothing
+	var resumes := [0]
+	RallySession.phase_changed.connect(func(p: int) -> void:
+		if p == RallySession.Phase.RUNNING:
+			resumes[0] += 1)
+
+	sc._on_action()
+	await get_tree().process_frame
+	assert_not_null(sc._global_page, "page 1 still leads to the world board")
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Continue to next stage >"),
+		"and with no reward pending page 2 names the next stage")
 
 	sc._global_page._on_continue()
-	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
-		"page 2's Continue resumes from the reveal path too")
+	await get_tree().process_frame
+	assert_false(is_instance_valid(sc._reveal), "no empty reveal step is inserted")
+	assert_eq(resumes[0], 1, "and the rally resumes exactly once")
 	RallySession.abandon()
 
 

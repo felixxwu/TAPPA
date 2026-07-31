@@ -33,6 +33,23 @@ const POST_NO_TIME := "no_time"            # DNF, or no player row in the standi
 const POST_NO_KEY := "no_stage_key"        # the caller had no stage identity
 const POST_DENIED := "denied"              # the rules refused the write (401/403)
 const POST_FAILED := "failed"              # offline / 5xx / 429 / unreadable
+const POST_TOO_FAST := "too_fast"          # below MIN_POST_MS — not a real run
+
+# A stage time under ten seconds is not a driven lap. It is a dev shortcut
+# (`RallySession.dev_complete_rally` credits every event 0 ms), a restart, or a
+# finish line clipped by a spawn/teleport — and a board is worthless the moment
+# one of those sits at P1 where nobody can ever beat it.
+#
+# NOT a balance value, so it is not in game_config.tres: it is a floor on what
+# counts as a real attempt at all, and no reasonable authored stage approaches it
+# (the shortest events are tens of turns long). Raising it into the range of a
+# genuine time would be a bug, not a retune.
+#
+# This is a CLIENT-side guard on our own honest paths, not an anti-cheat measure.
+# firestore.rules only bounds time_ms > 0 and < 24h; someone determined to post a
+# fake time still can, which is the accepted trade recorded in
+# features/global-leaderboards.md.
+const MIN_POST_MS := 10000
 
 # Injected by Cloud.
 var rest = null
@@ -67,6 +84,14 @@ func submit_and_fetch(stage_key: String, time_ms: int, identity: Dictionary) -> 
 	if time_ms <= 0:
 		return _log(await fetch(stage_key), POST_NO_TIME, stage_key,
 			"time_ms=%d (a DNF has nothing to post)" % time_ms)
+	# Read the board, but write nothing: the player still sees where they stand,
+	# they just do not put an impossible time on it. Deliberately silent on the
+	# page — there is no honest way for a player to arrive here, so a message
+	# would only ever be read by a developer, and the log line says it.
+	if time_ms < MIN_POST_MS:
+		return _log(await fetch(stage_key), POST_TOO_FAST, stage_key,
+			"time_ms=%d is below the %d ms floor (not a driven stage)"
+				% [time_ms, MIN_POST_MS])
 
 	var fresh := await auth.ensure_fresh_token()
 	if not fresh.ok:

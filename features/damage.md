@@ -253,7 +253,7 @@ summary (`{repaired, hp_before, hp_after, max_hp, hp_gained}`) stashed on the se
 and read once via `take_pending_repair()`. It reports `repaired: false` — and writes
 nothing — for a pristine car (full HP, straight wheels) or a wrecked one (0 HP can't
 be fielded mid-rally). The summary drives a **`RepairReveal`** popup (`scripts/
-repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health +N%,
+repair_reveal.gd`): a dismissable modal ("Pit Repairs Complete", health **+N HP**,
 Continue) that `world.gd._show_repair_popup()` shows once the
 loading overlay is gone (staged runs keep it up until the start-line queue is laid
 out, so the popup is shown AFTER `_build_start_line()` / `loading.finish()`, sitting
@@ -261,7 +261,11 @@ over the ready start-line reveal rather than a frozen loading screen). The popup
 appears when the repair moved health by **at least `RepairReveal.MIN_SHOW_GAIN_PCT`
 percentage points** (2, via `RepairReveal.worth_showing`) — a smaller touch-up (e.g.
 wheels-only on a near-full car) still applies to the save but doesn't interrupt the
-player. Headless runs drain
+player. Note the two numbers are deliberately different: the **card** reports
+absolute HP (`health_gain_hp`, matching the HUD's `Health NN` readout, which is also
+absolute), while the **gate** stays proportional (`health_gain_pct`) — whether a
+repair is worth interrupting for is a question about how much of the car it fixed,
+and 20 HP means very different things on a fragile car and a heavy one. Headless runs drain
 the summary without building the popup.
 
 ## In-run HUD (see [hud.md](hud.md))

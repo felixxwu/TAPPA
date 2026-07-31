@@ -98,14 +98,21 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   handlers, and re-seats the cursor on the freshly-built button.
 
   **Page 2: the global stage leaderboard (`GlobalStandings`, see
-  [global-leaderboards.md](global-leaderboards.md)).** `Standings._advance()` is now
-  the **SOLE exit** from the whole standings screen — both the plain Continue path and
-  the reward-reveal's `finished` route through it, so intercepting only `_on_action`
-  would show the global page after stage 3 and nowhere else. First call shows page 2;
-  every call after that resumes the rally via `RallySession.continue_to_next_event()`.
-  Page 2 is a sibling `Control` added over page 1 that REPLACES its content rather than
-  sitting beside it: page 1's root VBox (or, on the reward path, the spent
-  `UpgradeReveal` card) is hidden — `visible = false` — which also makes page 1's
+  [global-leaderboards.md](global-leaderboards.md)).** `Standings._advance()` is
+  the **SOLE exit** from the whole standings screen and a strict three-step ladder:
+  page 1 → page 2 → reward reveal (if this stage drew one) → resume. This is a
+  reorder from an earlier version where the reward sat BETWEEN page 1 and page 2
+  — see [global-leaderboards.md](global-leaderboards.md) for why the user asked
+  for the swap and what it fixed about page 2's Back button (next paragraph). The
+  1st `_advance()` call shows page 2; the 2nd collects the reward if one is
+  pending, else resumes the rally via `RallySession.continue_to_next_event()` —
+  still the only call site for either. Page 1's action button is now
+  unconditionally **"Online leaderboard >"**, since that's the only thing it ever
+  does. Page 2 is a sibling `Control` added over page 1 that REPLACES its content
+  rather than sitting beside it: page 1's root VBox is hidden — `visible = false`
+  — which, because page 2 now always runs before any reward reveal, means page 1's
+  root VBox is ALWAYS still there to hide (no more "reveal already tore it down"
+  case) — which also makes page 1's
   `MenuNav` inert (`MenuNav._unhandled_input` is gated on its root being visible), so
   only page 2's own `MenuNav.attach(self, {first = cont, on_back = _on_back})` (inside
   `global_standings.gd`) is live and the two can never race on a Back press. **This
@@ -129,18 +136,20 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   overlay (`AccountMenu` in a `CanvasLayer`, or `UsernamePopup` — dismissable, does
   not reopen on decline) that re-runs the fetch on close so a just-set time can
   post without re-driving; the cursor seats on this button, not Continue, whenever
-  it's showing. Back only appears when there is a page 1 left to return to
-  (`show_back := is_instance_valid(_root_box)`) — after the reward path, page 1 is
-  already gone, so page 2 shows Continue alone; `_on_back` is a no-op guard for that
-  case rather than trusting every host to omit the button correctly.
+  it's showing. Back is offered on **every** stage now (`show_back :=
+  is_instance_valid(_root_box)`, which — with the reorder above — is always true
+  in practice, since page 1 is never torn down before page 2 runs); `_on_back`'s
+  `if not show_back: return` no-op guard is a defensive backstop for the case,
+  not something the current flow exercises.
   `Standings._on_global_back` frees page 2, un-hides page 1, and re-attaches page 1's
   `MenuNav` with focus back on the action button — deliberately NOT re-running page 1's
   row reveal, since replaying a board the player already read is noise.
 
   **Collect reward on the standings.** On the interstitial of a **non-final event**
-  that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`), the
-  action button reads **`Collect reward >`** instead of `Continue to next stage >`.
-  Pressing it clears the leaderboard and takes over the screen with the shared
+  that awarded a per-event upgrade (`RallySession.current_event_upgrade() != ""`),
+  **page 2's** action button (not page 1's, which is now always the unconditional
+  "Online leaderboard >") reads **`Collect reward >`** instead of `Continue to next
+  stage >`. Pressing it clears page 2 and takes over the screen with the shared
   `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
   as the podium** — which lands on the won part. A won repair kit offers **Repair now /
   Save it** when the driven car is damaged (else it auto-resolves; the drivetrain kit

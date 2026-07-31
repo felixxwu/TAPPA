@@ -321,6 +321,17 @@ acceleration terms so they are mass-independent), clamped to `parking_hold_grip 
 The anchor is taken on the first engaged tick and dropped the moment the hold
 disengages; when the clamp is reached (a very steep grade, or a shove) the car slides
 and the anchor follows `parking_hold_slack` behind it, so no unbounded slack builds up.
+The hold anchors **heading as well as position** (`_apply_heading_hold`): the yaw the
+car was facing on the first engaged tick, sprung back with a **critically damped**
+term whose damping is derived as `2·√k` from `parking_hold_stiffness` rather than
+authored, so the heading half can never be tuned into a wobble. Without it the
+positional anchor left rotation completely free, and anything that turned a held car
+— a kerb, a steering input during the countdown, an uneven surface — left it turned:
+measured at **16.6° of drift in two seconds** from one nudge, which is how a car could
+be pointing the wrong way by the time the 3·2·1 reached GO. Guarded by
+`tests/headless/test_countdown_hold.gd`, which asserts the behaviour (no ringing, no
+drift, still releases) rather than any tuned value.
+
 This is needed because the tire model's longitudinal force fades to zero as slip does
 (`_tire_force` caps it at `|slip|·m/h`), so at creep speed gravity's slope component
 would otherwise win and the car would dribble downhill. The hold behaves like real

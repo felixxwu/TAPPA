@@ -169,7 +169,7 @@ navigation contract. `for_current_stage()` gathers everything the page needs
 | `SIGNED_OUT` | Fetch ok, `signed_in == false` | The board + "Sign in to post time" button (opens `AccountMenu` as an in-page overlay; success re-runs the fetch in place, so the just-set time posts without re-driving) |
 | `NO_USERNAME` | Signed in, `UsernamePopup.current() == ""` | The board + "Choose a name to post" button (opens `UsernamePopup`) |
 | `POSTED` | Signed in, has a name, fetch ok | The board with the player's own row/rank |
-| `UNAVAILABLE` | `ok == false` from the fetch, OR no `stage_key`, OR headless with no test `fetcher` | One dim "Leaderboard unavailable" line — no popup, no retry |
+| `UNAVAILABLE` | `ok == false` from the fetch, OR no `stage_key`, OR headless with no test `fetcher` | One dim "Online leaderboard unavailable" line — no popup, no retry |
 
 An empty board (nobody has posted to this stage yet) renders **"No times
 posted yet"** in place of any rows, in every non-loading, non-unavailable
@@ -197,15 +197,41 @@ DNF stage — but the page still opens and still shows the world's board for
 that stage, just with no player row and nothing written on the player's
 behalf.
 
-### No Back button after the reward path (spec deviation / clarification)
+### Back is now unconditional, on every stage
 
-`show_back` is set by the host (`Standings._show_global_page`) to
-`is_instance_valid(_root_box)`. After the per-event reward reveal has run,
-page 1's root VBox has already been torn down and replaced by the (now spent)
-`UpgradeReveal` card — there is no page 1 left to return to — so page 2 shows
-**Continue only**, no Back. `GlobalStandings._on_back` is a no-op guard
-(`if not show_back: return`) rather than relying on the host to never wire the
-button in that case.
+**Superseded:** an earlier revision of this doc described page 2 dropping its
+Back button after the reward path, because the reward reveal ran BEFORE page
+2 and had already torn down page 1's root VBox by the time page 2 opened.
+That ordering is gone (see the post-stage flow reorder below): page 2 now
+always comes right after page 1, before any reward, so page 1's root VBox is
+always still intact behind it. `show_back` (`Standings._show_global_page`,
+still `is_instance_valid(_root_box)`) is therefore always true in practice,
+and page 2 shows Back on every stage, identically. `GlobalStandings._on_back`
+keeps its `if not show_back: return` no-op guard as a defensive backstop, but
+nothing in the current flow exercises it.
+
+## Post-stage flow order (changed, at the user's request)
+
+The between-event interstitial is now a strict three-step ladder, all through
+the SAME sole exit, `Standings._advance()`:
+
+```
+page 1 (STAGE n RESULT + OVERALL) -> page 2 (global leaderboard) -> reward reveal (if this stage drew one) -> resume
+```
+
+first `_advance()` call shows page 2; the second collects the reward if one is
+pending, else resumes the rally (`RallySession.continue_to_next_event()`) —
+still the only call site for either. This reordered a previous sequence where
+the reward reveal sat BETWEEN page 1 and page 2 (see the superseded note
+above for why that made page 2's Back button conditional).
+
+Button wording follows the new order: page 1's action is unconditionally
+**"Online leaderboard >"** (it only ever does one thing now — go to page 2).
+Page 2's action names whatever happens next: **"Collect reward >"** on a
+stage that drew one, **"Continue to podium >"** on the final stage, else
+**"Continue to next stage >"**. The final event awards no reward
+(`RallySession` only draws on non-final events), so on stage 3 the ladder is
+just page 1 → page 2 → podium, with no reveal step in between at all.
 
 ### No staggered reveal (spec deviation — a real bug, fixed)
 
@@ -371,7 +397,7 @@ Nothing network-facing here is exercisable headlessly.
 - [ ] Sign in from the page → the just-set time posts without re-driving.
 - [ ] First post prompts for a name; the name appears on the board.
 - [ ] Re-drive slower → no write, board unchanged. Faster → entry updates.
-- [ ] Airplane mode → "Leaderboard unavailable", Continue still advances.
+- [ ] Airplane mode → "Online leaderboard unavailable", Continue still advances.
 - [ ] Two accounts on one stage → both appear, ranked correctly.
 - [ ] Rules deployed: an unauthenticated read succeeds, a cross-uid write is
       denied.

@@ -133,7 +133,14 @@ levers, in order of payoff:
   could not have caught it. The fix deleted the reveal outright rather than
   patching the gate. When a gate like this is unavoidable, prefer asserting
   `is_visible_in_tree()`, not mere node existence — existence is exactly what
-  passed here while the screen was blank.
+  passed here while the screen was blank. For the fix *shape* rather than the
+  failure shape, see `hq.gd`'s cloud boot gate ([cloud-save.md](cloud-save.md)
+  → "Boot-time race"): `_await_cloud_restore` now decides and waits
+  unconditionally, with only the visual (`_show_restore_cover`) gated headless
+  — and a `cloud_restore_wait_sec` seam lets a test set the budget instead of
+  spending real seconds — so `test_cloud_boot_gate.gd` can actually prove HQ
+  waits for a pending pull and proceeds once it settles, on the same code path
+  the player runs.
 
 ### Test-catalogue seam — `CarFixtures`
 

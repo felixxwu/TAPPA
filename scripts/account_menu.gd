@@ -138,8 +138,9 @@ func _build_main() -> void:
 	# used on a posted time and only a signed-in player can post one. Captured on
 	# first post (the global standings page); this is the edit-it-afterwards path.
 	var username := UsernamePopup.current()
-	add_child(_sub("Leaderboard name: %s" % (username if username != "" else "not set")))
-	add_child(_action("Change leaderboard name" if username != "" else "Set a leaderboard name",
+	add_child(_sub("Online leaderboard name: %s" % (username if username != "" else "not set")))
+	add_child(_action("Change online leaderboard name" if username != "" \
+			else "Set an online leaderboard name",
 		_on_username_pressed))
 
 	add_child(_action("Sync now", _on_sync_now_pressed))

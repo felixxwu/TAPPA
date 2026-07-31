@@ -172,6 +172,12 @@ var _default_gravity := Platform.gravity()
 # anchors where the car actually ends up.
 var _hold_anchor := Vector3.ZERO
 var _hold_anchor_set := false
+# The heading the car was facing when the hold engaged. The positional anchor above
+# says nothing about rotation, so before this existed a held car could be turned by a
+# kerb, a steering input or an uneven surface and simply STAY turned — measured at
+# 16.6 degrees of drift in two seconds from a single nudge, which is how a car ended
+# up pointing the wrong way by the time the countdown reached GO.
+var _hold_anchor_yaw := 0.0
 
 func replay_cursor() -> float:
 	return _replay_t
@@ -999,10 +1005,13 @@ func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 		_hold_anchor_set = false
 		return
 	# First engaged tick: anchor on the spot the car is standing (horizontal only —
-	# vertical stays the suspension's / gravity's business).
+	# vertical stays the suspension's / gravity's business) AND the direction it is
+	# facing, so the hold can put back a heading as well as a position.
 	if not _hold_anchor_set:
 		_hold_anchor = global_position
+		_hold_anchor_yaw = _yaw()
 		_hold_anchor_set = true
+	_apply_heading_hold(delta)
 	var cfg: GameConfig = config
 	var offset := global_position - _hold_anchor
 	offset.y = 0.0
@@ -1021,6 +1030,33 @@ func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 		_hold_anchor = global_position - offset.normalized() * cfg.parking_hold_slack
 		_hold_anchor.y = global_position.y
 	apply_central_force(hold)
+
+
+# The car's heading as an angle about the world Y axis.
+func _yaw() -> float:
+	var fwd := global_transform.basis.z
+	return atan2(fwd.x, fwd.z)
+
+
+# Yaw half of the parking hold: spring the car back to the heading it was placed
+# with, and damp the yaw rate so it settles instead of ringing.
+#
+# CRITICALLY DAMPED BY CONSTRUCTION. The damping is derived from the stiffness
+# (2*sqrt(k) is the critical value for this acceleration-form spring) rather than
+# authored separately, so this cannot be tuned into an oscillation — a car that
+# wobbles on the start line is never what anyone wants, whatever the stiffness is
+# set to. Reuses parking_hold_stiffness so the two halves of the hold stay one knob.
+func _apply_heading_hold(delta: float) -> void:
+	var cfg: GameConfig = config
+	var k: float = cfg.parking_hold_stiffness
+	if k <= 0.0:
+		return
+	var error := wrapf(_hold_anchor_yaw - _yaw(), -PI, PI)
+	var rate := angular_velocity.y
+	# Torque = I * angular acceleration; inertia keeps it mass/size independent.
+	var accel := error * k - rate * 2.0 * sqrt(k)
+	var inertia := get_inverse_inertia_tensor().inverse() * Vector3.UP
+	apply_torque(inertia * accel)
 
 
 # True once the car is settled on its wheels (a solid majority in ground contact),

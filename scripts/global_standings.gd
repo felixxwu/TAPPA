@@ -96,7 +96,13 @@ func configure(opts: Dictionary) -> void:
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Sets anchors AND offsets explicitly rather than relying on a fresh Control's
+	# offsets already being zero. Equivalent here (set_anchors_preset defaults to
+	# keep_offsets = false, so the plain call was NOT the blank-page bug), but it
+	# states the intent instead of depending on a default, and it matches the idiom
+	# the rest of the codebase uses for a code-built full-rect Control
+	# (settings_menu.gd, upgrade_reveal.gd, start_line.gd).
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_ui()
 	_refresh()
 
@@ -110,12 +116,11 @@ func _refresh() -> void:
 	_state = State.LOADING
 	_build_ui()
 
-	var call_fetch := fetcher
-	if not call_fetch.is_valid():
-		if Platform.is_headless() or Cloud == null or Cloud.leaderboard == null:
-			_land(State.UNAVAILABLE, {})
-			return
-		call_fetch = Cloud.leaderboard.submit_and_fetch
+	var use_injected := fetcher.is_valid()
+	if not use_injected \
+			and (Platform.is_headless() or Cloud == null or Cloud.leaderboard == null):
+		_land(State.UNAVAILABLE, {})
+		return
 	if stage_key == "":
 		_land(State.UNAVAILABLE, {})
 		return
@@ -126,9 +131,32 @@ func _refresh() -> void:
 	var username := UsernamePopup.current()
 	var identity := {"name": username, "car_name": car_name, "car_id": car_id}
 
-	var result: Dictionary = await call_fetch.call(stage_key, time_ms, identity)
+	# THE LIVE CALL IS DIRECT, not through a Callable.
+	#
+	# `submit_and_fetch` is a coroutine. Awaiting it through `some_callable.call()`
+	# is not the same construct as awaiting the method: the compiler can only emit a
+	# proper suspend-and-resume when it can see it is calling a coroutine, and a
+	# Callable invocation is resolved at runtime. Routing the real path through the
+	# same Callable seam the tests inject was the one piece of this page that NO
+	# test exercised — the injected test fetchers are plain synchronous lambdas, for
+	# which `await callable.call()` behaves perfectly. So the tests could not have
+	# caught a difference in that machinery, and the live path is the only place it
+	# mattered. It is spelled out as two branches for exactly that reason.
+	var raw: Variant
+	if use_injected:
+		raw = await fetcher.call(stage_key, time_ms, identity)
+	else:
+		raw = await Cloud.leaderboard.submit_and_fetch(stage_key, time_ms, identity)
 	if not is_instance_valid(self) or not is_inside_tree():
 		return  # the page went away mid-flight (scene torn down / Back pressed)
+
+	# Deliberately NOT `var result: Dictionary = await ...`. A typed assignment of
+	# anything non-Dictionary raises and ABORTS this function mid-flight, which
+	# leaves the page parked in whatever state it was already showing with no error
+	# path and no repaint — the exact "stuck forever" shape being fixed here. Take
+	# it as a Variant and degrade to UNAVAILABLE instead, so every outcome, however
+	# malformed, still lands somewhere that repaints.
+	var result: Dictionary = raw if raw is Dictionary else {}
 	# ok == false IS the unavailable state: offline, timeout, 5xx, 429 and a parse
 	# failure all arrive the same way, and every other field is meaningless then.
 	if not bool(result.get("ok", false)):
@@ -187,7 +215,7 @@ func _build_ui() -> void:
 
 	var bg := ColorRect.new()
 	bg.name = "Background"
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.color = Color(UITheme.BLACK, 0.0) if overlay_mode else UITheme.BLACK
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
@@ -202,16 +230,30 @@ func _build_ui() -> void:
 	root.add_theme_constant_override("separation", 8)
 	add_child(root)
 
-	root.add_child(UITheme.label("GLOBAL — STAGE %d" % stage_number, "dim"))
+	root.add_child(UITheme.label("Online leaderboard — stage %d" % stage_number, "dim"))
 
+	# Only the RANKED ROWS go inside the scroll. The status line below goes straight
+	# onto `root`, outside it, on purpose: a ScrollContainer clips, so anything put
+	# inside one can be swallowed whole by a layout fault without a single node
+	# reporting itself hidden. Keeping one always-present line outside the clipping
+	# node is what makes "this page can never show an empty body" structural rather
+	# than a thing the tests have to keep catching.
 	var scroll := TouchScrollContainer.new()
+	scroll.name = "Rows"
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(content)
-	_build_body(content)
+	_build_rows(content)
+
+	# Unconditional, and built here at construction time before any async work: in
+	# EVERY state, including the very first frame before the fetch has been sent,
+	# this page says something about the board.
+	var status := UITheme.label(_status_line(), "dim")
+	status.name = "Status"
+	root.add_child(status)
 
 	# The prompt sits on its OWN full-width row above the actions: page 1 already
 	# established that three buttons don't fit one row.
@@ -264,49 +306,42 @@ func _build_ui() -> void:
 	MenuNav.attach(self, {first = seat, on_back = _on_back})
 
 
-# The body for the current state.
-#
-# EVERY node this adds is added VISIBLE, and it always adds at least one. That is
-# a hard rule, not an incidental: this page shipped with a staggered per-row
-# reveal that built the rows hidden and un-hid them on a timer, and when that
-# coroutine did not run to completion the player got a heading, a Continue button
-# and NOTHING in between — no rows, no total, not even the "unavailable" line.
-# There is no dramatic fill-in here now: the page is already gated behind a
-# multi-request network fetch (so it arrives progressively anyway), page 1 one
-# screen earlier already does the reveal, and no visual flourish is worth a state
-# in which the whole point of the screen can render blank.
-func _build_body(content: VBoxContainer) -> void:
+# The RANKED ROWS, and nothing else — every node added visible. Empty is a legal
+# outcome here (a brand-new board, a failed fetch); _status_line is what guarantees
+# the page still says something, and it lives outside the clipping scroll.
+func _build_rows(content: VBoxContainer) -> void:
+	if _state == State.LOADING or _state == State.UNAVAILABLE:
+		return
+	for entry in _rows:
+		if bool(entry.get("gap", false)):
+			content.add_child(UITheme.label("...", "dim"))
+		else:
+			content.add_child(UITheme.standings_row(entry))
+
+
+# The one line this page ALWAYS shows, in every state, outside the ScrollContainer.
+# Never returns "": a blank return here would put the page back in the state that
+# has now been reported twice.
+func _status_line() -> String:
 	match _state:
 		State.LOADING:
-			content.add_child(UITheme.label("Loading…", "dim"))
-			return
+			return "Loading…"
 		State.UNAVAILABLE:
-			# One dim line. No popup, no retry loop, nothing blocked — a lost board
-			# must never cost a player their rally.
-			content.add_child(UITheme.label("Leaderboard unavailable", "dim"))
-			return
+			# No popup, no retry loop, nothing blocked — a lost board must never cost
+			# a player their rally.
+			return "Online leaderboard unavailable"
 		_:
 			pass
-
-	for entry in _rows:
-		var node: Control
-		if bool(entry.get("gap", false)):
-			node = UITheme.label("...", "dim")
-		else:
-			node = UITheme.standings_row(entry)
-		content.add_child(node)
 	if _rows.is_empty():
-		content.add_child(UITheme.label("No times posted yet", "dim"))
-
-	# The total is shown in EVERY successful state, signed out included: it is the
-	# one number that tells a player whether an empty-looking board is genuinely
-	# empty or just a long way above them.
-	var tail := ""
+		# Say the total anyway: "no times posted yet" and "you are 300th of 312 but
+		# the rows failed to map" are very different things to a player.
+		return "No times posted yet — %d times posted" % _total if _total > 0 \
+			else "No times posted yet"
+	# The total shows in every successful state, signed out included: it is the one
+	# number that says whether an empty-looking board is empty or just above you.
 	if _state == State.POSTED and _rank >= 1:
-		tail = "P%d of %d times posted" % [_rank, _total]
-	else:
-		tail = "%d times posted" % _total
-	content.add_child(UITheme.label(tail, "dim"))
+		return "P%d of %d times posted" % [_rank, _total]
+	return "%d times posted" % _total
 
 
 func _wide_button(text: String, on_press: Callable) -> Button:
@@ -364,7 +399,7 @@ func _on_sign_in_pressed() -> void:
 	var account := AccountMenu.new()
 	account.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(account)
-	var close := _wide_button("< Back to leaderboard", _close_account_overlay)
+	var close := _wide_button("< Back to online leaderboard", _close_account_overlay)
 	column.add_child(close)
 	add_child(layer)
 	_account_overlay = layer

@@ -282,6 +282,70 @@ Signing out needs no confirm and **never touches the local profile**: nothing is
 destroyed, the career on the device carries on, and the cloud copy is reachable
 again by signing back in.
 
+## Boot-time race: the starter-pick gate
+
+**The race.** `Cloud._ready` calls `auth.restore()` then defers
+`_kick_off_initial_pull` — a network round trip. `hq.gd._ready` builds behind
+the loading cover and reveals the title in about a second, well before that
+pull can land. A returning player on a new device can press Start, get
+offered a starter car (their local `starter_picked` reads `false`, since the
+career hasn't arrived yet), and `_confirm_starter` grants a car and calls
+`Save.save()` — which marks the profile `unsynced`. The pull then lands with
+`remote_revision > agreed_revision` and `local_moved == true`, which
+`CloudSync.pull` reads as a genuine conflict: the player is asked to choose
+between their whole career and the one starter car they just picked, and
+either answer loses data.
+
+**The fix gates the starter pick, not the title screen — on purpose.**
+Gating the title itself would make an offline player, or one who has never
+signed in, wait for a pull that is never coming, which breaks "signing in is
+never required." The starter pick is the ONE pre-career action that writes to
+the profile before a career exists; everything else reachable from the title
+is either read-only or already gets rebuilt by `_on_cloud_profile_replaced`
+if a download lands under it. Anyone tempted to "simplify" this into a
+title-screen-level block later will break offline play — this is exactly the
+shape CLAUDE.md means by recording the reasoning, not just the mechanism.
+
+Mechanism, split across two files:
+
+- **`cloud_manager.gd`** — `initial_pull_pending: bool` (armed `true` in
+  `_ready`, right before the deferred kick-off, but only when there's a
+  stored credential to restore — no credential means it's never set and
+  nothing downstream waits at all), `initial_sync_settled` (signal),
+  `INITIAL_SYNC_WAIT_SEC := 8.0`, `await_initial_sync(timeout_sec)` (polls
+  the member `initial_pull_pending` — cleared by `_settle_initial_sync` — in
+  a loop and returns `not initial_pull_pending`, up to the hard cap; never
+  cancels the pull itself, just stops waiting on it), and `_settle_initial_sync()`
+  (clears `initial_pull_pending`, fires `initial_sync_settled`; called on every
+  pull outcome — success, 4xx, 5xx, transport failure — and on `sign_out`, so
+  nothing can leave the gate armed forever).
+  **A real bug lived here first:** `await_initial_sync` originally watched a
+  local `settled := false` flipped by a lambda connected to the signal.
+  GDScript lambdas capture outer locals BY VALUE, so the lambda's write never
+  reached the outer `settled` — every signed-in player sat through the full
+  8-second cap even when their pull finished in 200ms. The fix deletes the
+  closure rather than boxing it in a holder dict: polling the shared member
+  directly means there is nothing left to capture, so the class of bug can't
+  recur here. Worth remembering elsewhere in this codebase: a lambda closing
+  over a plain local to receive a signal's result is the shape to be
+  suspicious of; a member field or a one-element array/dict survives value
+  capture, a bare local does not.
+- **`hq.gd`** — `_on_exterior_start()` awaits `_await_cloud_restore()` BEFORE
+  checking `starter_picked`, then
+  **re-checks** `starter_picked` afterward: if the pull delivered a real
+  career while it waited, it routes straight to `View.GARAGE` instead of
+  opening the starter picker at all. `_on_cloud_profile_replaced` gained a
+  CARPARK/STARTER branch it didn't have before (it previously only handled
+  EXTERIOR/GARAGE/LIFT, and was purely reactive — it could repaint after a
+  conflict already happened, never prevent one): if a download lands while
+  the starter picker is open — the player got there before the gate armed,
+  or waited it out — it backs out of the picker to the title rather than
+  letting them grant a second free car on top of a career that just arrived.
+
+Tests: `tests/headless/test_cloud_boot_gate.gd` (8 tests) — the guaranteed
+zero-wait exit, the hard-cap timeout, settling on every pull outcome and on
+sign-out, and the re-check/back-out behaviour in `hq.gd`.
+
 ## Setup prerequisites (console work)
 
 1. Authentication → enable **Email/Password** and **Google**. (Anonymous is
