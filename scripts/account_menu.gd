@@ -188,7 +188,10 @@ func _build_reset_form() -> void:
 # about what the code does. Spelling each one out keeps that honest.
 
 func _on_google_pressed() -> void:
-	if not _begin("Opening Google sign-in…"):
+	# Platform-specific wording: on a phone the game is backgrounded while the
+	# browser has focus, and the player must come back for the sign-in to
+	# complete. See GoogleSignIn.waiting_message.
+	if not _begin(GoogleSignIn.waiting_message()):
 		return
 	_finish(await Cloud.sign_in_google())
 

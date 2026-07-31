@@ -45,6 +45,25 @@ var _cancelled := false
 var rest = null
 
 
+# What to tell the player while the browser has focus.
+#
+# The native flow hands off to the system browser, and on a PHONE that means the
+# game is backgrounded — where Godot stops running frames, so the loopback
+# listener cannot accept the browser's redirect until the player comes back.
+# The connection is queued by the OS and completes the moment the game resumes,
+# so nothing is lost; the player just has to know to return, otherwise the
+# browser appears to hang forever on Google's "Continue" screen.
+#
+# Fixing this properly means accepting the connection off the frame loop (a
+# Thread), which is a bigger change; saying so plainly is the honest interim.
+static func waiting_message() -> String:
+	if Platform.is_web():
+		return "Opening Google sign-in…"
+	if Platform.is_touch():
+		return "Approve in your browser, then RETURN TO THE GAME to finish."
+	return "Approve in your browser to finish signing in…"
+
+
 # Returns {ok: bool, id_token: String, error: String}.
 func sign_in() -> Dictionary:
 	if not FirebaseConfig.google_configured():
@@ -136,7 +155,7 @@ func _await_callback(expected_state: String) -> Dictionary:
 			var peer := _server.take_connection()
 			var request_line := await _read_request_line(peer)
 			var params := _query_params(request_line)
-			var body := "Signed in. You can close this tab and go back to the game."
+			var body := "Signed in. Return to TAPPA to finish."
 			var result := {"ok": false, "code": "", "error": "Sign-in failed."}
 			if params.get("state", "") != expected_state:
 				# Mismatched state means this response is not the one we started —

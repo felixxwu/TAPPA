@@ -67,6 +67,27 @@ design: the obvious alternative (a custom URL scheme / deep link) needs an
 `AndroidManifest` intent-filter, which needs a custom Godot Android build, which
 this project does not have. A loopback listener needs none of it.
 
+**Android caveat — the player must return to the game.** Handing off to the
+system browser BACKGROUNDS the game, and Godot stops running frames while
+backgrounded, so `_await_callback` (which polls the listener once per frame)
+cannot accept the browser's redirect. The connection is queued by the OS and
+completes the instant the player switches back — nothing is lost — but until
+they do, Google's "Continue" page spins forever, which reads as a hang.
+Confirmed by measurement on 2026-07-31: switching back to the game completes the
+sign-in immediately.
+
+The interim answer is to say so: `GoogleSignIn.waiting_message()` returns
+"Approve in your browser, then RETURN TO THE GAME to finish" on touch devices,
+and the loopback page's response text says "Return to TAPPA to finish". The
+proper fix is to accept the connection off the frame loop (a `Thread`), so the
+browser completes on its own; that is a contained change to `_await_callback`
+and is worth doing if this flow proves annoying in practice.
+
+The `permissions/internet=true` flag on BOTH Android presets in
+`export_presets.cfg` is required — without it Android blocks `HTTPRequest` *and*
+binding the loopback listener, which presents as "no connection" plus
+"couldn't start the sign-in listener".
+
 **Web: a top-level popup, landing on a GitHub Pages callback.** `window.open`
 to Google's auth endpoint with `response_type=id_token`, redirecting to
 `docs/oauth-callback.html` (served at `felixxwu.github.io/TAPPA/` by the
