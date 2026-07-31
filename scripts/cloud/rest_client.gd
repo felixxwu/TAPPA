@@ -67,6 +67,14 @@ func _perform(method: int, url: String, headers: PackedStringArray,
 	var raw: PackedByteArray = completed[3]
 
 	if transport != HTTPRequest.RESULT_SUCCESS:
+		# Log the raw transport code and URL. Callers deliberately show the player
+		# a single friendly "no connection" line, which means every distinct
+		# cause — CORS rejection, DNS failure, TLS problem, blocked request —
+		# arrives looking identical. On the web build this warning is the only
+		# thing that tells them apart, and it lands in the browser console next
+		# to whatever the browser itself reported.
+		push_warning("RestClient: transport failure %d for %s (status %d)"
+			% [transport, url, status])
 		return _failure(status, "transport_%d" % transport, true)
 
 	var parsed: Variant = {}

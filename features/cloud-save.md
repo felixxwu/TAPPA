@@ -67,14 +67,26 @@ design: the obvious alternative (a custom URL scheme / deep link) needs an
 `AndroidManifest` intent-filter, which needs a custom Godot Android build, which
 this project does not have. A loopback listener needs none of it.
 
-**Web: Google Identity Services.** Driven over `JavaScriptBridge` using the same
-`create_callback` + member-held-`JavaScriptObject` pattern as `save_manager.gd`'s
-web lifecycle hook (drop the handle and the listener silently detaches). GIS
-alone, **not** the Firebase JS SDK — GIS returns an ID token directly, and the
-Firebase SDK would mean a second copy of auth state we already own in GDScript.
-The prompt is invoked straight from the button's input event so the browser does
-not classify it as a blocked popup; a blocked or failed load produces a specific
-message rather than a hang.
+**Web: a top-level popup, landing on a GitHub Pages callback.** `window.open`
+to Google's auth endpoint with `response_type=id_token`, redirecting to
+`docs/oauth-callback.html` (served at `felixxwu.github.io/TAPPA/` by the
+`deploy-pages` job), which `postMessage`s the token back to the game window and
+closes. Driven over `JavaScriptBridge` with the same `create_callback` +
+member-held-handle pattern as `save_manager.gd`'s lifecycle hook.
+
+`response_type=id_token` rather than an authorization code, because a code has
+to be exchanged for tokens and Google requires a `client_secret` for **Web**
+clients — which a browser cannot hold. The implicit response returns a signed ID
+token directly, which is what `AuthService` needs; `nonce` guards replay and
+`state` is verified before the token is accepted.
+
+**Google Identity Services was tried first and does not work on itch.** One Tap
+renders inside the calling document, which there is itch's iframe, and FedCM
+refuses without an `allow="identity-credentials-get"` grant from the *embedding*
+page — itch's markup, not ours. Measured with the origin correctly authorised:
+`NotAllowedError: The 'identity-credentials-get' feature is not enabled in this
+document`. A popup is a top-level browsing context, so none of that applies.
+Do not "simplify" this back to GIS.
 
 ### Credential storage — the trap
 
@@ -210,8 +222,13 @@ again by signing back in.
    deliberately unused — see above.)
 2. Enabling Google auto-creates a **Web** OAuth client → `GOOGLE_WEB_CLIENT_ID`.
 3. Google Cloud → Credentials → **OAuth client ID → Desktop app** →
-   `GOOGLE_DESKTOP_CLIENT_ID`. (Only desktop-type clients may use loopback
-   redirects; the web client may not.)
+   `GOOGLE_DESKTOP_CLIENT_ID`, plus its **client secret** into
+   `GOOGLE_DESKTOP_CLIENT_SECRET`. Google requires the secret even with PKCE,
+   and the console no longer reveals an existing one — use "+ Add secret".
+   Only desktop-type clients may use loopback redirects; the web client may not.
+4. On the **Web** client: `https://html.itch.zone` under *Authorised JavaScript
+   origins*, and `https://felixxwu.github.io/TAPPA/oauth-callback.html` under
+   *Authorised redirect URIs*. Both are exact-match.
 4. Firestore → create the database (Native mode). The **rules deploy is
    automated** — see below.
 5. Auth → Settings → **Authorised domains** → add the itch.io origin.
@@ -296,11 +313,28 @@ Record results here as they land.
 - [ ] Genuine divergence: play offline on both, reconnect, confirm the prompt.
 - [ ] Airplane mode mid-session: no hang, no data loss, sync resumes.
 
-Still outstanding on the console side: the itch.io serving origin must be added
-to the **Web** OAuth client's *Authorised JavaScript origins* before web Google
-sign-in can work. Note that itch serves HTML games from a CDN subdomain rather
-than `itch.io`, and Google requires exact origins with no wildcards — check what
-`location.origin` actually reports from the running game before relying on it.
+### Google sign-in on the web build (itch) — known to be fragile
+
+The itch build serves the game from **`https://html.itch.zone`** (measured via
+`location.origin` inside the game iframe, 2026-07-31), which must be listed in
+the **Web** OAuth client's *Authorised JavaScript origins* — otherwise GIS
+answers `GET /gsi/status … 403` and the prompt never renders. Note that origin
+is shared by every HTML game on itch, so authorising it is a wider grant than a
+domain you own; that is inherent to the shared CDN, not something tightenable.
+
+**A second blocker is not fixable from this repo.** itch embeds the game in an
+iframe, and Google's FedCM requires the *embedding* page to grant
+`allow="identity-credentials-get"`. It does not, so FedCM fails with
+`NotAllowedError: The 'identity-credentials-get' feature is not enabled in this
+document`. The legacy non-FedCM path may still work, but Google's own console
+warnings say it is being retired — at which point web Google sign-in on itch
+stops working regardless of what we do.
+
+If that happens, the options are: hide the Google button on web (email/password
+works fine there), build a popup-based OAuth flow (a top-level popup escapes the
+iframe policy, but needs an exact registered redirect URI), or host the web
+build on a domain we control. Native (desktop/Android) is unaffected — the
+loopback flow has no iframe and no FedCM involvement.
 
 Related: the local web round-trip in `todo/web-save-persistence.md` is still
 unverified too. Do that one **first** — a broken local IndexedDB flush would make

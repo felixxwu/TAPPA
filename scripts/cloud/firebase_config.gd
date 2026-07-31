@@ -53,6 +53,13 @@ const IDENTITY_URL := "https://identitytoolkit.googleapis.com/v1"
 const TOKEN_URL := "https://securetoken.googleapis.com/v1/token"
 const FIRESTORE_URL := "https://firestore.googleapis.com/v1"
 const GOOGLE_AUTH_URL := "https://accounts.google.com/o/oauth2/v2/auth"
+
+# Where Google sends the WEB build's popup back to. It must be an origin we
+# control — the itch CDN is not — so it is served from /docs by GitHub Pages
+# (the deploy-pages job). Register this EXACT url under the Web client's
+# "Authorised redirect URIs". See docs/oauth-callback.html.
+const GOOGLE_WEB_REDIRECT_URI := "https://felixxwu.github.io/TAPPA/oauth-callback.html"
+const GOOGLE_WEB_CALLBACK_ORIGIN := "https://felixxwu.github.io"
 const GOOGLE_TOKEN_URL := "https://oauth2.googleapis.com/token"
 
 

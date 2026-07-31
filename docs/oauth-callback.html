@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>TAPPA — signing in…</title>
+<!--
+  Google OAuth redirect target for the WEB build of TAPPA.
+
+  Why this page exists: on itch.io the game runs inside itch's iframe, and
+  Google Identity Services (One Tap) cannot render there — FedCM requires the
+  EMBEDDING page to grant allow="identity-credentials-get", which itch does not.
+  A popup opened with window.open is a top-level browsing context, so none of
+  that applies; it just needs somewhere to land afterwards.
+
+  It has to be an origin we control, which the itch CDN is not — hence GitHub
+  Pages, published from /docs by the deploy-pages job in .github/workflows.
+
+  Flow: the game opens Google's auth endpoint with response_type=id_token and
+  redirect_uri pointing here. Google redirects back with the token in the URL
+  FRAGMENT (never the query string, so it is not sent to any server, including
+  GitHub's). This page hands it to the opener and closes.
+
+  The token is short-lived and is immediately exchanged for a Firebase session
+  by the game. Nothing is stored here.
+-->
+<style>
+  body {
+    margin: 0; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: #111; color: #eee;
+    font-family: system-ui, sans-serif; text-align: center;
+  }
+  p { max-width: 28rem; padding: 1.5rem; line-height: 1.5; }
+</style>
+</head>
+<body>
+<p id="status">Signing you in…</p>
+<script>
+(function () {
+  // The game window's origin. Google's redirect lands here, and the token is
+  // posted back to whoever opened us — targeted explicitly rather than '*' so
+  // the token cannot be read by an unrelated frame.
+  var GAME_ORIGINS = [
+    'https://html.itch.zone',   // itch.io HTML game CDN
+    'http://localhost',         // local test server
+    'http://127.0.0.1'
+  ];
+
+  var params = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  var token = params.get('id_token') || '';
+  var state = params.get('state') || '';
+  var error = params.get('error') || '';
+
+  // Remove the token from the address bar straight away: it should not sit in
+  // history, or be visible if the user pauses on this page.
+  history.replaceState(null, '', location.pathname);
+
+  var status = document.getElementById('status');
+
+  if (!window.opener) {
+    status.textContent = 'Open this from the game to sign in.';
+    return;
+  }
+
+  var message = {
+    source: 'tappa-oauth',
+    id_token: token,
+    state: state,
+    error: error
+  };
+
+  // The opener's exact origin is not knowable from here, so post to each
+  // candidate; a postMessage whose targetOrigin does not match the receiver is
+  // silently dropped by the browser, so only the real one is ever delivered.
+  GAME_ORIGINS.forEach(function (origin) {
+    try { window.opener.postMessage(message, origin); } catch (e) {}
+  });
+
+  status.textContent = error
+    ? 'Sign-in was cancelled. You can close this window.'
+    : 'Signed in. You can close this window.';
+
+  // Give the message a moment to land before the window disappears.
+  setTimeout(function () { window.close(); }, 400);
+})();
+</script>
+</body>
+</html>

@@ -14,11 +14,16 @@ extends Node
 #     does not have. A loopback listener needs none of that, so all three native
 #     platforms share one code path and one OAuth client.
 #
-#   WEB — Google Identity Services, driven over JavaScriptBridge, following the
-#     same create_callback + member-held-handle pattern as save_manager.gd's web
-#     lifecycle hook. GIS alone, NOT the Firebase JS SDK: GIS hands back an ID
-#     token directly, and pulling in the Firebase SDK would mean a second copy of
-#     the auth state we already own in GDScript.
+#   WEB — a top-level POPUP to Google's auth endpoint, redirecting to
+#     docs/oauth-callback.html on GitHub Pages, which posts the ID token back.
+#     Driven over JavaScriptBridge with the same create_callback +
+#     member-held-handle pattern as save_manager.gd's web lifecycle hook.
+#
+#     Google Identity Services was tried first and does NOT work on itch: One Tap
+#     renders in the calling document, which there is itch's iframe, and FedCM
+#     refuses without an allow="identity-credentials-get" grant from the
+#     embedding page. A popup sidesteps the iframe entirely. See the section
+#     comment above _sign_in_web.
 #
 # PKCE (RFC 7636) is what makes each exchange safe: the authorization code is
 # only redeemable by whoever knows the verifier, which never leaves the process.
@@ -206,12 +211,31 @@ func _close_server() -> void:
 		_server = null
 
 
-# --- Web: Google Identity Services --------------------------------------------
+# --- Web: popup + GitHub Pages callback ---------------------------------------
+#
+# NOT Google Identity Services. GIS One Tap renders inside the calling document,
+# and on itch.io that document is itch's IFRAME — where FedCM refuses to run
+# because the embedding page does not grant allow="identity-credentials-get".
+# That is itch's markup, not ours, so no amount of client-side work fixes it
+# (measured: `NotAllowedError: The 'identity-credentials-get' feature is not
+# enabled in this document`, with the origin correctly authorised).
+#
+# A popup opened with window.open is a TOP-LEVEL browsing context, so iframe
+# permission policy does not apply to it. It only needs somewhere to land
+# afterwards on an origin we control — docs/oauth-callback.html, published to
+# GitHub Pages by the deploy-pages job — which posts the token back to the game
+# window and closes.
+#
+# response_type=id_token (OpenID Connect implicit) rather than an authorization
+# code: a code would have to be exchanged for tokens, and Google requires a
+# client_secret for Web clients, which a browser cannot hold. The implicit
+# response hands back a signed ID token directly, which is exactly what
+# AuthService needs, and `nonce` is what protects it from replay.
 
 func _sign_in_web() -> Dictionary:
 	var window := JavaScriptBridge.get_interface("window")
 	if window == null:
-		return _error("Sign-in isn't available in this browser.")
+		return _error("Sign-in isn\'t available in this browser.")
 	_web_result = ""
 	_web_done = false
 	if _web_cb == null:
@@ -220,43 +244,46 @@ func _sign_in_web() -> Dictionary:
 		# would silently detach the handler (same rule as Save's lifecycle hook).
 		_web_cb = JavaScriptBridge.create_callback(_on_web_credential)
 	window.rallyGoogleAuth = _web_cb
-	# Load GIS on first use and trigger the account chooser. Must be invoked from
-	# the button's own input event or the browser treats the prompt as a popup
-	# and blocks it — hence no deferral anywhere on this path.
+
+	var state := _random_urlsafe(24)
+	var url := "%s?%s" % [FirebaseConfig.GOOGLE_AUTH_URL, RestClient.form_encode({
+		"client_id": FirebaseConfig.GOOGLE_WEB_CLIENT_ID,
+		"redirect_uri": FirebaseConfig.GOOGLE_WEB_REDIRECT_URI,
+		"response_type": "id_token",
+		"scope": SCOPES,
+		"nonce": _random_urlsafe(24),
+		"state": state,
+		"prompt": "select_account",
+	})]
+
+	# Opened synchronously from the button's own input event — a popup opened
+	# outside a user gesture is blocked, which is reported rather than hung.
 	JavaScriptBridge.eval("""
 		(function () {
 			window.rallyGoogleError = '';
-			function start() {
-				try {
-					google.accounts.id.initialize({
-						client_id: '%s',
-						callback: function (r) { window.rallyGoogleAuth(r.credential); },
-						auto_select: false,
-						cancel_on_tap_outside: true
-					});
-					google.accounts.id.prompt(function (n) {
-						if (n.isNotDisplayed() || n.isSkippedMoment()) {
-							window.rallyGoogleError = 'blocked';
-							window.rallyGoogleAuth('');
-						}
-					});
-				} catch (e) {
-					window.rallyGoogleError = String(e);
+			var expected = '%s';
+			function onMessage(e) {
+				if (e.origin !== '%s') { return; }
+				var d = e.data || {};
+				if (d.source !== 'tappa-oauth') { return; }
+				window.removeEventListener('message', onMessage);
+				if (d.state !== expected) {
+					window.rallyGoogleError = 'state';
 					window.rallyGoogleAuth('');
+					return;
 				}
+				if (d.error) { window.rallyGoogleError = d.error; }
+				window.rallyGoogleAuth(d.id_token || '');
 			}
-			if (window.google && window.google.accounts) { start(); return; }
-			var s = document.createElement('script');
-			s.src = 'https://accounts.google.com/gsi/client';
-			s.async = true;
-			s.onload = start;
-			s.onerror = function () {
-				window.rallyGoogleError = 'load_failed';
+			window.addEventListener('message', onMessage);
+			var popup = window.open('%s', 'tappa_signin', 'width=480,height=680');
+			if (!popup) {
+				window.removeEventListener('message', onMessage);
+				window.rallyGoogleError = 'blocked';
 				window.rallyGoogleAuth('');
-			};
-			document.head.appendChild(s);
+			}
 		})();
-	""" % FirebaseConfig.GOOGLE_WEB_CLIENT_ID, true)
+	""" % [state, FirebaseConfig.GOOGLE_WEB_CALLBACK_ORIGIN, url], true)
 
 	var deadline := Time.get_ticks_msec() + int(TIMEOUT_SEC * 1000.0)
 	while not _web_done and Time.get_ticks_msec() < deadline:
@@ -269,8 +296,8 @@ func _sign_in_web() -> Dictionary:
 		var reason := String(JavaScriptBridge.eval("window.rallyGoogleError || ''", true))
 		if reason == "blocked":
 			return _error("Your browser blocked the sign-in window. Allow pop-ups and try again.")
-		if reason == "load_failed":
-			return _error("Couldn't reach Google sign-in. Check your connection.")
+		if reason == "state":
+			return _error("Sign-in couldn\'t be verified. Please try again.")
 		return _error("Google sign-in was cancelled.")
 	return {"ok": true, "id_token": _web_result, "error": ""}
 
