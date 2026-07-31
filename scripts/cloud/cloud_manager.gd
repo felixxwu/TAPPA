@@ -52,6 +52,18 @@ func _ready() -> void:
 	if Save.has_signal("flushed"):
 		Save.flushed.connect(_on_flushed)
 
+	# HEADLESS (the test runner) stays signed out and never touches the network.
+	#
+	# Without this, a test run on a machine whose developer happens to be signed
+	# in restores that real session, pulls, finds the throwaway test profile
+	# disagrees with the live cloud document, and raises a conflict modal over
+	# whatever the test was driving — which is exactly what happened: an
+	# unrelated HQ navigation test started failing because a "Keep this device /
+	# Use cloud" dialog stole its focus. Test outcomes must not depend on who is
+	# logged in, and a headless run has no player to sync for.
+	if Platform.is_headless():
+		return
+
 	# Restore a previous session WITHOUT blocking startup on the network: restore()
 	# only reads the local credential file; the token refresh and the first pull
 	# happen lazily just after boot, and failing either leaves the player in their

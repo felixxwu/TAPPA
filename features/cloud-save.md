@@ -340,12 +340,16 @@ Record results here as they land.
       in the token exchange (its docs exempt only Android, iOS and Chrome
       clients), so a PKCE-only exchange failed with
       `invalid_request: client_secret is missing`.
+- [x] **Google + email sign-in on the itch web build** — both pass, 2026-07-31.
+      Took four separate fixes: the itch origin authorised, SharedArrayBuffer
+      (COOP) turned off so the popup could talk back, the game's origin carried
+      through OAuth `state`, and — the one that broke everything — `accept_gzip`
+      disabled on web.
+- [x] **Google sign-in on Android (loopback)** — passes, 2026-07-31, with the
+      INTERNET permission and the threaded callback listener.
 - [ ] Email register → sign out → sign in, on desktop.
-- [ ] Google sign-in on Android (loopback) and web (GIS).
-- [ ] **CORS from the itch.io origin** for `identitytoolkit`, `securetoken`,
-      `firestore.googleapis.com` and the GIS script. Godot web `HTTPRequest`
-      goes through `fetch`; these endpoints are documented as browser-usable,
-      but this is unverified from that origin and is the most plausible blocker.
+- [ ] Email sign-in on Android (retest — the INTERNET permission should have
+      fixed it, unverified).
 - [ ] Two-device round trip: progress on desktop → sign in on phone → it appears.
 - [ ] Genuine divergence: play offline on both, reconnect, confirm the prompt.
 - [ ] Airplane mode mid-session: no hang, no data loss, sync resumes.

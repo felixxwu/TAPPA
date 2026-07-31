@@ -88,8 +88,14 @@ func rebuild() -> void:
 		add_child(UITheme.label(_message, _message_role))
 
 	UITheme.enforce(self)
-	MenuNav.attach(self)
-	focus_first.call_deferred()
+	# Only claim the cursor when this page is genuinely on screen. rebuild() runs
+	# on every Cloud state change — including at boot, while parked inside the
+	# hidden Settings overlay — and a focus grab from here lands on whatever the
+	# player is actually looking at.
+	var on_screen := MenuNav.is_on_screen(self)
+	MenuNav.attach(self, {"grab": on_screen})
+	if on_screen:
+		focus_first.call_deferred()
 	page_changed.emit(at_root())
 
 	# A conflict raised while this page was closed still needs answering; show it

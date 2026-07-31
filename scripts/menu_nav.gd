@@ -65,7 +65,15 @@ static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 	if nav._first == null:
 		nav._first = UITheme.first_focusable(root)
 	# Grab focus after the host finishes showing/laying out the menu.
-	UITheme.focus_grab.bind(nav._first).call_deferred()
+	#
+	# `grab: false` opts out, for a menu that REBUILDS ITSELF while parked out of
+	# sight. UITheme.focus_grab only checks the Control chain, and a Control
+	# inside a hidden CanvasLayer still reports is_visible_in_tree() == true, so
+	# an unguarded re-attach yanks the cursor off whatever is actually on screen
+	# (the account page did this to the HQ title screen). Default stays true:
+	# most hosts attach once, while hidden, and show immediately after.
+	if bool(opts.get("grab", true)):
+		UITheme.focus_grab.bind(nav._first).call_deferred()
 	# Re-grab whenever the menu is shown again (guarded inside focus_grab).
 	if not root.visibility_changed.is_connected(nav._on_root_visibility):
 		root.visibility_changed.connect(nav._on_root_visibility)
