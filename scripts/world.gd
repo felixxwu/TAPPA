@@ -1824,12 +1824,32 @@ func _on_challenge_run_finished(result: Dictionary) -> void:
 		# gating the card on item_id would leave every Daily win silent.
 		var won_something := item_id != "" or int(grant.get("boxes", 0)) > 0
 		if won_something and not _headless:
+			# NOT open_committing. That helper's whole point is making a mutation
+			# unrepresentable without its reveal, by acquiring the modal slot BEFORE
+			# calling a commit callable and skipping the callable entirely when the
+			# slot is refused — the right shape for a mystery box, where "the box was
+			# never opened" is a true, harmless state to fall back to. This grant has
+			# no such fallback: try_grant_completion_reward already ran above (it has
+			# to — fetch_final_rank is judged against THIS run's own posted time, so
+			# it can't be deferred behind a modal check), and
+			# ChallengeSession._finish_locally recorded this period's outcome and
+			# cleared challenge_run before run_finished even fired. There is no
+			# "reward pending reveal" state and no way back into a finished period
+			# (period_outcome is terminal — start()/resume() both refuse once it's
+			# set), so skipping the reveal here would not defer the grant, it would
+			# silently keep it while making it undiscoverable — worse than today's
+			# bug, which never loses the boxes/car themselves, only their reveal.
+			# So: grant unconditionally (already done above), then GUARANTEE the
+			# reveal instead of letting it be dropped. `allow_stack` is the existing,
+			# sanctioned escape hatch for exactly this "must be seen even over
+			# another modal" class — CloudBusy.report_failure uses it for the same
+			# reason (a failed sync silently going invisible). A reward the player
+			# already earned deserves at least the same guarantee.
 			var popup := ConfirmPopup.open(self, "Challenge Complete!",
 				_completion_reward_body(item_id, grant),
-				[{"label": "Nice", "callback": Callable()}], 0)
-			# May be refused if another modal is up (ConfirmPopup.MODAL_GROUP) — the
-			# reward is already granted, so carry on to HQ rather than awaiting a
-			# `finished` that will never come.
+				[{"label": "Nice", "callback": Callable()}], 0, -1, true)
+			# Only null when `self` has left the tree (host torn down mid-await) —
+			# allow_stack means modal contention alone can never refuse it.
 			if popup != null:
 				await popup.finished
 	RallySession.return_to_garage = true

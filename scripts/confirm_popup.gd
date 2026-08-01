@@ -29,6 +29,7 @@ const MODAL_GROUP := "modal"
 var _actions: Array = []
 var _back_index: int = -1
 var _buttons: Array[Button] = []
+var _body_label: Label = null
 
 
 # The modal currently on screen anywhere in `tree`, or null when there is none.
@@ -75,6 +76,62 @@ static func open(host: Node, title: String, body: String, actions: Array,
 	popup._build(title, body, default_index)
 	return popup
 
+# RESERVE THE SCREEN, THEN COMMIT. For the "do an irreversible thing and tell the
+# player what happened" shape — open a mystery box, grant a challenge reward — where
+# doing it first and presenting second is a silent data loss: `open` REFUSES while
+# another modal is up (see MODAL_GROUP), so the transaction lands and its one and only
+# reveal is dropped. This inverts the order so that state is unrepresentable: the modal
+# slot is acquired FIRST, and `commit` runs only once the popup that will report it is
+# already on screen. If the slot cannot be had, `commit` IS NEVER CALLED and null comes
+# back — the caller has mutated nothing and can simply return.
+#
+# WHY A DEFERRED BODY RATHER THAN "commit returns the text". Because one real caller
+# (world.gd's challenge reward) must `await` its mutation, a synchronous
+# "Callable -> String" contract can't express it. So the popup is built with
+# `placeholder` and the body is filled in afterwards: `commit` may be a plain function
+# OR a coroutine, its return value is awaited either way, and if it hands back a
+# non-empty String that becomes the body. A commit that needs to compose the body from
+# several steps (or emit no string at all) can instead call `popup.set_body(...)` on
+# the popup it is passed. `open_committing` is therefore itself a coroutine — call it
+# as `await ConfirmPopup.open_committing(...)`.
+#
+# `commit` is called with the live popup as its single argument, so it can set the body,
+# read the popup, or ignore it (a zero-arg Callable is accepted too).
+#
+# Deliberately NO `allow_stack`: the whole point is the refusal, and a commit that is
+# allowed to stack over another modal has no reason to use this entry point.
+static func open_committing(host: Node, title: String, placeholder: String,
+		actions: Array, commit: Callable, default_index := 0,
+		back_index := -1) -> ConfirmPopup:
+	if not commit.is_valid():
+		push_warning("ConfirmPopup.open_committing('%s') needs a valid commit callable." % title)
+		return null
+	var popup := open(host, title, placeholder, actions, default_index, back_index)
+	if popup == null:
+		return null  # slot refused -> the mutation deliberately does not run
+	var produced: Variant = null
+	if commit.get_argument_count() > 0:
+		produced = await commit.call(popup)
+	else:
+		produced = await commit.call()
+	# An awaited commit gives the player time to dismiss the popup first, so it may be
+	# gone by now — the mutation still happened and was still reported, which is the
+	# guarantee; there is simply nothing left to write to.
+	if not is_instance_valid(popup) or popup.is_queued_for_deletion():
+		return null
+	if produced is String and not String(produced).is_empty():
+		popup.set_body(String(produced))
+	return popup
+
+
+# Replace the body text of a live popup. Used by open_committing to fill in the
+# placeholder once the mutation it reserved the screen for has completed; safe to call
+# on a popup the player has already dismissed (it simply does nothing).
+func set_body(text: String) -> void:
+	if is_instance_valid(_body_label):
+		_body_label.text = text
+
+
 func _build(title: String, body: String, default_index: int) -> void:
 	layer = 101  # above overlays
 	add_to_group(MODAL_GROUP)  # see MODAL_GROUP — one modal at a time, tree-wide
@@ -91,16 +148,43 @@ func _build(title: String, body: String, default_index: int) -> void:
 	add_child(center)
 	var panel := UITheme.panel(1.0, 20)
 	center.add_child(panel)
+
+	# ADAPTIVE WIDTH. 420 is the house default, but at the narrowest tiers (the
+	# 288-tall web-touch tier, or any portrait aspect — see DisplayStretch,
+	# width follows device aspect and can get much narrower than 420) a fixed
+	# 420 forces the panel wider than the screen. Clamp against the current
+	# logical viewport width, with a little breathing room on each side.
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size \
+		if get_viewport() != null else Vector2(480, 360)
+	const SIDE_MARGIN := 32.0
+	const MIN_PANEL_WIDTH := 200.0
+	var panel_width: float = clampf(420.0, MIN_PANEL_WIDTH,
+		maxf(viewport_size.x - SIDE_MARGIN, MIN_PANEL_WIDTH))
+
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", UITheme.GAP)
-	vbox.custom_minimum_size = Vector2(420, 0)
+	vbox.custom_minimum_size = Vector2(panel_width, 0)
 	panel.add_child(vbox)
 
 	vbox.add_child(UITheme.title(title))
+
 	var body_label := Label.new()
 	body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body_label.text = body
-	vbox.add_child(body_label)
+	_body_label = body_label
+
+	# SCROLLING BODY, BUTTONS PINNED. The buttons are the only way to dismiss a
+	# ConfirmPopup by touch (no touch back — trigger_back is reachable only from
+	# ui_cancel/menu_back), and its dim backdrop swallows taps, so a long body
+	# (server error text, a computed multi-line reward) must never be able to
+	# push them off the bottom of the screen. TouchScrollContainer is the house
+	# scroll widget (see hq_overlays.gd / pause_menu.gd / standings.gd); the
+	# buttons stay OUTSIDE it in `row` below so focus never has to enter the
+	# scroll at all.
+	var scroll := TouchScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.add_child(body_label)
+	vbox.add_child(scroll)
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", UITheme.GAP)
@@ -116,7 +200,36 @@ func _build(title: String, body: String, default_index: int) -> void:
 		row.add_child(b)
 		_buttons.append(b)
 
+	# UITheme.enforce must run BEFORE the height measurement below: it sets the
+	# real rendered font size on title/body/buttons, and the measurement needs
+	# that final size to be accurate.
 	UITheme.enforce(self)
+
+	# CAP THE SCROLL, NOT THE PANEL. A ScrollContainer does not report its
+	# child's minimum size on an axis it is allowed to scroll (vertical here,
+	# since vertical_scroll_mode defaults to AUTO) — that is precisely the
+	# clipping behaviour scrolling needs, but it also means an untouched scroll
+	# collapses to ~0 tall, and a plain SIZE_EXPAND_FILL only claims space the
+	# parent already has to spare (which a CenterContainer/PanelContainer never
+	# does — they both size to their natural minimum). So: measure the body's
+	# TRUE wrapped height ourselves at the known wrap width via
+	# Font.get_multiline_string_size (the same metric Label's own internal wrap
+	# uses), give the scroll exactly that, measure how tall the whole panel
+	# would then be, and re-clamp the scroll to whatever is actually left under
+	# the viewport height. A short body's true height is smaller than the cap,
+	# so it passes through untouched and the panel hugs it exactly as before —
+	# no forced tall panel, no scrollbar for two lines.
+	var font: Font = body_label.get_theme_font("font")
+	var font_size: int = body_label.get_theme_font_size("font_size")
+	var full_body_h: float = font.get_multiline_string_size(
+		body_label.text, HORIZONTAL_ALIGNMENT_LEFT, panel_width, font_size).y
+	scroll.custom_minimum_size = Vector2(0, full_body_h)
+	var panel_full_h: float = panel.get_combined_minimum_size().y
+	var reserved_h: float = panel_full_h - full_body_h  # title + buttons + gaps + padding
+	const VERTICAL_MARGIN := 32.0
+	var max_scroll_h: float = maxf(viewport_size.y - reserved_h - VERTICAL_MARGIN, 40.0)
+	scroll.custom_minimum_size = Vector2(0, minf(full_body_h, max_scroll_h))
+
 	# first may be null when every action is disabled — MenuNav simply seats no
 	# cursor, which is the intended behaviour (nothing to focus).
 	var first := _pick_first(default_index)

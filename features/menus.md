@@ -469,6 +469,29 @@ confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
 `ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause
 menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms**, and HQ **detune-to-enter confirm** (over-powered car).
 
+**Body scrolls, buttons stay pinned.** A ConfirmPopup has no touch dismissal other than its
+own action buttons (`trigger_back` is reachable only from `ui_cancel`/`menu_back` — Escape
+or gamepad B) and its dim backdrop swallows taps, so a long caller-supplied body (server
+error text via `cloud_busy.gd::report_failure`, a computed multi-line reward via
+`world.gd`) must never be able to push the buttons past reach. `_build` wraps the body
+`Label` in a `TouchScrollContainer` (`scripts/touch_scroll_container.gd`, `horizontal_scroll_mode
+= SCROLL_MODE_DISABLED`); the button row stays a sibling OUTSIDE the scroll so focus never
+has to enter it. Because a `ScrollContainer` doesn't report its child's minimum size on an
+axis it's allowed to scroll (that's what makes clipping work — vertical here defaults to
+`AUTO`), an untouched scroll would collapse to ~0 tall and never hug a short body either.
+`_build` measures the body's true wrapped height itself via `Font.get_multiline_string_size`
+at the known wrap width (after `UITheme.enforce` has set the real font size), sizes the
+scroll to exactly that, measures the whole panel's natural height, then re-clamps the scroll
+to whatever the current logical viewport (`get_viewport().get_visible_rect().size`) leaves
+after title/buttons/padding. A short body's true height is under the cap so it passes
+through untouched — the panel still hugs short content exactly as before, no forced tall
+panel and no scrollbar for two lines. The panel width is likewise adaptive: `clampf(420.0,
+200.0, viewport_width - 32.0)` instead of a bare `420` — at the 288-tall web-touch tier
+(`DisplayStretch`) or in portrait the logical width can be well under 420.
+`scripts/username_popup.gd` shares this exact shape (structurally identical layout, fixed
+today for consistency even though its body is an authored string, not caller-supplied) —
+keep the two in sync if this changes.
+
 ### One modal at a time (`ConfirmPopup.MODAL_GROUP`)
 
 Every modal in the game is a `ConfirmPopup` or a `UsernamePopup`, both on layer 101,
@@ -500,10 +523,120 @@ to "do nothing" except reveal a twin with the focus cursor reset. `hq.gd` and
 can be instantiated three times over (Settings, the HQ title overlay, the standings
 page), so a per-instance bool could never have answered the question.
 
+#### Commit AFTER you have the screen (`ConfirmPopup.open_committing`)
+
+Because `open` can be **refused**, *an irreversible mutation must never run before the
+presentation that reports it.* Doing it the other way round is a silent data loss:
+`hq.gd` called `Save.open_mystery_box()` (consumes the box, installs the part, saves)
+and *then* opened the reveal — so a player holding two boxes opened both and saw one
+reveal, the second popup having been refused behind the first.
+
+`ConfirmPopup.open_committing(host, title, placeholder, actions, commit, …)` inverts
+the order so that state is unrepresentable: it **acquires the modal slot first**, and
+runs `commit` only once the popup that will report the result is already on screen. If
+the slot cannot be had it returns `null` and **`commit` is never called** — the caller
+has mutated nothing and can just return.
+
+The body is **deferred**, not a return value, because `world.gd`'s challenge reward has
+to `await` its grant (`ChallengeSession.try_grant_completion_reward`) and a synchronous
+`Callable -> String` contract cannot express that. So the popup is built with
+`placeholder`; `commit` may be a plain function *or* a coroutine (its result is awaited
+either way), and either returns a non-empty `String` to become the body or writes one
+itself via `popup.set_body(...)` on the popup it is handed. `open_committing` is
+therefore itself a coroutine — call it as `await ConfirmPopup.open_committing(...)`.
+There is deliberately no `allow_stack` here: the refusal *is* the feature.
+
+Covered by `test_confirm_popup.gd` — the commit does not run when a modal is already
+up, does run (once) when the slot is free, a coroutine commit is awaited, `set_body`
+fills the placeholder, and the popup it returns behaves like any other (buttons, Back,
+dismissal).
+
+#### `MenuNav.input_blocked(node)` — the one "am I deaf right now?" question
+
+Every menu host needs to know whether to ignore menu input, for two reasons that used
+to be asked separately (or not at all): the player is **typing**
+(`MenuNav.is_text_editing`), and **a modal owns the screen** (`ConfirmPopup.any_open`).
+`MenuNav.input_blocked(node)` folds both into one shared predicate, the same convention
+`is_text_editing` established. `hq.gd`'s `_unhandled_input` had rolled its own version
+that allowlisted its two overlays but not `ConfirmPopup`, so HQ station rows still fired
+behind an open popup — which is exactly what made the double-open reachable.
+
+**The carve-out: a node inside the open modal is NOT blocked.** The popup builds a
+`MenuNav` of its own on its centring container (`ConfirmPopup._build`), and that nav has
+to keep answering Back and directional nav — block it and the player is trapped in a
+popup that no longer responds to anything. So the modal blocks everyone *except its own
+subtree* (`node == modal or modal.is_ancestor_of(node)`), and the carve-out is tested
+before the text-editing arm so a field inside a modal (`UsernamePopup`) keeps its own
+typing rules.
+
+`MenuNav._unhandled_input` applies the guard itself, so every MenuNav-driven page
+(settings, upgrades, standings, account, the HQ overlays) goes inert behind a modal
+rather than relying on tree ordering to mask it — tree ordering is not a rule, and it
+never covered `menu_select` at all.
+
+Covered by `test_menu_nav.gd` — blocked behind a modal, not blocked with nothing up,
+blocked while typing, **not** blocked inside the open modal, a MenuNav page neither
+moves its cursor nor fires Back behind a modal, and the modal's own nav still answers
+Back.
+
 Covered by `test_confirm_popup.gd` — joins the group, a second popup is refused, a
 *different host* is refused, a popup being freed does not block its replacement,
 `allow_stack` gets through, and the exclusivity holds in both directions between the
 two popup kinds.
+
+## Modal page shape — scrolled body, pinned exit (`hq.gd::_make_modal_overlay`)
+
+**Every modal menu page must scroll its content and pin its exit control outside the
+scroll.** `hq.gd::_make_modal_overlay(margin)` is the builder: it returns
+`[layer, body, footer, root]` — `body` is a `VBoxContainer` inside a
+`TouchScrollContainer` (`SIZE_EXPAND_FILL`), `footer` is an `HBoxContainer` pinned
+below it as a sibling, and `root` is the outer full-rect VBox you hand to
+`MenuNav.attach` / `UITheme.enforce`. Variable-height content goes in `body`; the
+control that LEAVES the page (Back / Done / Close / "Continue") goes in `footer`.
+`hq.gd::_make_carpark_modal(build_body, build_footer)` is the same contract for the
+car-park's centred house panel (it also caps the panel to the frame height instead of
+centring it at its full minimum size, which would push the footer off screen).
+
+**Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
+fixed — `DisplayStretch.DESIGN_HEIGHT`, 360 from `project.godot`'s
+`window/size/viewport_height` and only `GameConfig.viewport_height_web_touch` (288) on the
+web-touch tier — while the WIDTH follows the device aspect
+(`DisplayStretch.logical_size`) and gets narrow on a phone, which makes autowrapped
+labels wrap to more lines. So a fixed, unscrolled column whose Back button is laid out
+AFTER the content does not overflow by device roulette: on the short tier, with a long
+restriction string or a server error string spliced in, the exit is *deterministically*
+pushed off the bottom. And there is no second way out — `menu_back` binds Escape and
+gamepad B only (`project.godot`), so there is NO touch-reachable back and the player is
+simply trapped in the page. Pinning makes that unreachable-by-construction.
+
+**Focus still crosses into the footer.** Footer controls are `FOCUS_ALL`; `MenuNav` moves
+focus across container boundaries by geometry, so down-nav off the last body row lands on
+the footer, and `MenuNav._enable_scroll_follow` sets `follow_focus = true` on every
+`ScrollContainer` under the attached root so walking back up scrolls the body to reveal
+the row the cursor moved onto. `build_settings_overlay` (title → scroll → `< Back`
+sibling) and `build_lift_overlay` are the reference implementations.
+
+**The passthrough carve-out.** This is for MODAL pages only. The diegetic 3D stations —
+garage, map table, car park (`build_garage_overlay`, `build_table_overlay`,
+`build_car_overlay`) — call `hq.gd::_passthrough_overlay`, which sets
+`MOUSE_FILTER_IGNORE` on the overlay root and its non-button children so taps fall through
+to the `Area3D` pickers behind the HUD. A `ScrollContainer` defaults to
+`MOUSE_FILTER_STOP` and would eat those picks (and its drag gesture would fight the map
+pan). Plain `_make_overlay` stays as-is for those; **never** wrap a passthrough overlay in
+`_make_modal_overlay`.
+
+Pages on this shape: the rally detail card (`build_detail_overlay` — its `< Map` stays
+`FOCUS_NONE` because the panel has no MenuNav; `hq._unhandled_input` drives it from the
+TABLE view), the challenge entry screen (`build_challenge_overlay`), Settings
+(`build_settings_overlay`), the account overlay (`hq._open_account_overlay`), the Android
+app notice (`hq._show_android_app_notice`), and the car-park Change-Upgrades popup
+(`hq._show_upgrades_popup`, whose Done is additionally p/w-gated).
+
+**Widths, not just heights.** A centred modal column asking for a fixed pixel width can
+also exceed the frame: the 288 tier on a 16:9 phone is only ~445 logical units wide.
+`hq.gd::_modal_body_width(preferred, chrome)` clamps an authored desktop width to what the
+current canvas can actually show (`viewport width - chrome`, floored at 160); the upgrades
+popup and the account menu both go through it.
 
 ## HQ (`hq.gd`)
 

@@ -142,6 +142,43 @@ into a session-lived cache. (The one caveat: don't blindly move UNBOUNDED work b
 cover — if the cost scales with, say, a 300-car collection, warm only what's imminently
 needed and keep the rest lazy, so the loading screen itself doesn't grow without limit.)
 
+## `StaleGuard` — the "is this async result still wanted?" idiom
+
+Several scripts run async work (an `await`, a per-frame progressive spawn, a
+generated search) whose result must be discarded if the underlying state was
+rebuilt while it was in flight — a stale coroutine writing into freed rows, or
+an old preview request clobbering a newer one. `scripts/stale_guard.gd`
+(`class_name StaleGuard`) names and generalises this: `bump()` a counter when
+the state is rebuilt, `token()` to capture the current generation before the
+async work starts, `is_current(t)` to check after the `await` returns before
+acting on the result.
+
+It generalises five hand-rolled instances, each previously invented under its
+own private name with no shared vocabulary: `hq.gd::_settle_generation`
+(car-park prop spawning), `hq.gd::_challenge_refresh_generation` (challenge
+overlay board queries), `settings_menu.gd::_sl_gen` (seed-lab preview — this
+one also threads an `abort: Callable` closure into `TrackGenerator.generate`),
+`standings.gd::_reveal_gen`, and `podium.gd::_reveal_gen` (leaderboard reveal
+coroutines). None of these five have been migrated onto `StaleGuard` yet —
+the class exists as the shared home for the idiom; adopting it at each call
+site is separate follow-up work.
+
+**The rule that motivated it:** a Control's DISPLAYED TEXT is never a valid
+key for deciding whether an async result still applies. `UITheme.enforce`
+(`scripts/ui_theme.gd`) uppercases every Label's and Button's text after a
+page is built — a blanket styling pass that runs after the page's own code
+set that text. A bug traced to exactly this: an async handler guarded its
+write by comparing a Label's live text back to a literal like `"Top 50%"`,
+which `UITheme.enforce` had since rewritten to `"TOP 50%"`, so the comparison
+never matched and the answer was silently discarded every time. It reads as
+equivalent to a generation check — "compare something captured earlier to
+something read now" — but text is a presentation-layer value subject to
+later, unrelated rewrites (styling, localization, truncation) that a
+`StaleGuard` token is not: nothing else ever touches the token, so it stays a
+faithful stand-in for "was there a rebuild since I started". Use `StaleGuard`
+(or the existing per-file `_gen`/`_generation` counters) instead of ever
+keying a decision off a Control's text.
+
 ## Key conventions
 
 - **Config-first:** never hardcode tuning in scripts/scenes; add a `GameConfig`

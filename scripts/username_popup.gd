@@ -112,9 +112,23 @@ func _build() -> void:
 	add_child(center)
 	var panel := UITheme.panel(1.0, 20)
 	center.add_child(panel)
+
+	# ADAPTIVE WIDTH + SCROLLING BODY — same shape as ConfirmPopup, kept in sync
+	# for consistency. This popup's body is a fixed authored string today so it
+	# isn't broken the way a caller-supplied unbounded body is, but the layout
+	# is structurally identical (CenterContainer + 420-min VBox, autowrap body,
+	# buttons last) so it is fragile against the same causes (a narrow/short
+	# viewport tier) — see ConfirmPopup._build for the full rationale.
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size \
+		if get_viewport() != null else Vector2(480, 360)
+	const SIDE_MARGIN := 32.0
+	const MIN_PANEL_WIDTH := 200.0
+	var panel_width: float = clampf(420.0, MIN_PANEL_WIDTH,
+		maxf(viewport_size.x - SIDE_MARGIN, MIN_PANEL_WIDTH))
+
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", UITheme.GAP)
-	vbox.custom_minimum_size = Vector2(420, 0)
+	vbox.custom_minimum_size = Vector2(panel_width, 0)
 	panel.add_child(vbox)
 
 	vbox.add_child(UITheme.title("Choose a name"))
@@ -122,7 +136,14 @@ func _build() -> void:
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.text = "This is the name other players see next to your time. " \
 		+ "Letters, numbers and spaces, up to %d characters." % MAX_LEN
-	vbox.add_child(body)
+
+	# The body sits in a TouchScrollContainer so it can never push the field or
+	# buttons off screen; they stay outside it below so focus never has to
+	# enter the scroll.
+	var scroll := TouchScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.add_child(body)
+	vbox.add_child(scroll)
 
 	_field = TextField.new("Name", "KANGAROO")
 	_field.line.max_length = MAX_LEN
@@ -145,6 +166,22 @@ func _build() -> void:
 	TextField.wire_column([_field, save_btn])
 
 	UITheme.enforce(self)
+
+	# See ConfirmPopup._build for the full rationale: a ScrollContainer doesn't
+	# report its child's minimum size on the axis it scrolls, so measure the
+	# body's true wrapped height ourselves, cap it against whatever the
+	# viewport actually leaves once the title/field/buttons are accounted for,
+	# and let a short body hug exactly as before.
+	var font: Font = body.get_theme_font("font")
+	var font_size: int = body.get_theme_font_size("font_size")
+	var full_body_h: float = font.get_multiline_string_size(
+		body.text, HORIZONTAL_ALIGNMENT_LEFT, panel_width, font_size).y
+	scroll.custom_minimum_size = Vector2(0, full_body_h)
+	var panel_full_h: float = panel.get_combined_minimum_size().y
+	var reserved_h: float = panel_full_h - full_body_h
+	const VERTICAL_MARGIN := 32.0
+	var max_scroll_h: float = maxf(viewport_size.y - reserved_h - VERTICAL_MARGIN, 40.0)
+	scroll.custom_minimum_size = Vector2(0, minf(full_body_h, max_scroll_h))
 	# Keyboard + gamepad: the cursor lands in the field, up/down walk field ->
 	# Save -> Cancel, and Back (Esc / gamepad B) cancels. MenuNav.is_text_editing
 	# means the first Back press only releases the field, which is what a player

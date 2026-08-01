@@ -100,6 +100,39 @@ func _urls() -> String:
 	return out
 
 
+# --- Firestore response builders for a qualifying completion-reward fetch,
+# mirroring test_challenge_leaderboard.gd's _doc/_query_result/_count_result
+# (fetch_final_rank wraps fetch_standings_at, which issues exactly these five
+# calls when the player has posted an entry: top query, own-entry read,
+# faster-count, total-count, reached-count). -----------------------------------
+
+func _doc(uid: String, stages_completed: int, cum_ms: int) -> Dictionary:
+	var values := {
+		"name": "YOU", "car_name": "CAR", "car_id": "fx_light_rwd",
+		"stages_completed": stages_completed, "dnf": false,
+		"cum_ms_%d" % stages_completed: cum_ms,
+	}
+	var doc := FirestoreCodec.document(values)
+	doc["name"] = "projects/p/databases/(default)/documents/challenge_runs/x/entries/%s" % uid
+	return doc
+
+
+func _count_result(n: int) -> Array:
+	return [{"result": {"aggregateFields": {"count": {"integerValue": str(n)}}}}]
+
+
+# Queue the sequence of responses that makes a lone finisher rank #1 of 1 —
+# comfortably inside the top-50% placement gate (spec §6) regardless of how the
+# reward table itself is tuned, since only "did a reward get granted" and "was
+# it revealed" are asserted, never a specific reward.
+func _queue_qualifying_rank(stage_count: int) -> void:
+	_rest.queue_ok([])  # top query: nobody else has posted
+	_rest.queue_ok(_doc("uid123", stage_count, 50000))  # own entry
+	_rest.queue_ok(_count_result(0))   # faster
+	_rest.queue_ok(_count_result(1))   # total
+	_rest.queue_ok(_count_result(1))   # reached
+
+
 # --- Clean finish: the completion reward is actually attempted -------------------
 
 func test_a_clean_finish_resolves_the_completion_reward_before_handing_off() -> void:
@@ -118,6 +151,78 @@ func test_a_clean_finish_resolves_the_completion_reward_before_handing_off() -> 
 	assert_true(_urls().contains("runQuery"),
 		"a clean finish queries the challenge board for the player's placement")
 	assert_eq(_scenes, ["res://hq.tscn"], "and then hands off to HQ")
+
+
+func test_a_headless_clean_finish_grants_the_reward_with_no_popup_attempted() -> void:
+	# Headless play (server exports, and the test runner itself) must never try to
+	# put a ConfirmPopup on screen, but the grant is unconditional and must still
+	# land — a headless finish is not a lesser finish. _scene._headless mirrors
+	# real play here (Platform.is_headless() is true under the test runner).
+	assert_true(_scene._headless, "setup: this scene sees a headless runtime, same as real headless play")
+	var car := _start_run(ChallengeLibrary.DAILY)
+	var stage_count: int = int(ChallengeLibrary.STAGE_COUNTS[ChallengeLibrary.DAILY])
+	_queue_qualifying_rank(stage_count)
+
+	await _scene._on_challenge_run_finished({
+		"completed": true, "dnf": false, "kind": ChallengeLibrary.DAILY,
+		"period_key": ChallengeSession.period_key(),
+		"car_instance_id": int(car["instance_id"]),
+	})
+
+	assert_null(ConfirmPopup.any_open(get_tree()), "headless never opens a popup")
+	var boxes := int(_save.profile.get("inventory", {}).get(UpgradeLibrary.MYSTERY_BOX_ID, 0))
+	assert_gt(boxes, 0, "the placement-gated reward was still granted with nothing on screen to show it")
+	assert_eq(_scenes, ["res://hq.tscn"], "and the hand-off to HQ still happens")
+
+
+# --- The reward reveal must never be silently dropped ---------------------------
+#
+# try_grant_completion_reward is a ONE-SHOT, non-retryable call: by the time
+# run_finished fires, ChallengeSession._finish_locally has already recorded this
+# period's outcome and cleared challenge_run, so the period is terminal (see
+# ChallengeSession.start/resume, which both refuse once period_outcome is set) and
+# there is no "reward pending reveal" state to come back to. Gating the grant
+# itself on modal availability (the open_committing shape) would therefore not
+# defer the grant on refusal, it would silently keep a reward the player can never
+# be told about — worse than the original bug, which never lost the reward, only
+# its reveal. So world.gd grants unconditionally and instead GUARANTEES the reveal
+# via ConfirmPopup's allow_stack escape hatch. This proves that guarantee: with
+# another modal already occupying the one modal slot, the reward card still opens
+# (stacked on top) rather than being refused.
+func test_the_completion_reward_reveal_stacks_over_an_existing_modal_instead_of_being_dropped() -> void:
+	_scene._headless = false
+	var car := _start_run(ChallengeLibrary.DAILY)
+	var stage_count: int = int(ChallengeLibrary.STAGE_COUNTS[ChallengeLibrary.DAILY])
+	_queue_qualifying_rank(stage_count)
+
+	var earlier := ConfirmPopup.open(_scene, "Already on screen", "some other modal",
+		[{"label": "OK"}])
+	assert_not_null(earlier, "setup: a modal is on screen before the reward fires")
+
+	# Not awaited: _on_challenge_run_finished suspends on popup.finished, so it must
+	# be driven from outside like the DNF tests above.
+	_scene._on_challenge_run_finished({
+		"completed": true, "dnf": false, "kind": ChallengeLibrary.DAILY,
+		"period_key": ChallengeSession.period_key(),
+		"car_instance_id": int(car["instance_id"]),
+	})
+	for i in 10:
+		await get_tree().process_frame
+
+	var open_modals := get_tree().get_nodes_in_group(ConfirmPopup.MODAL_GROUP)
+	assert_eq(open_modals.size(), 2,
+		"the reward card opened ON TOP of the pre-existing modal rather than being refused")
+	assert_eq(_scenes, [], "the run hasn't handed off to HQ yet — still waiting on the reward card")
+
+	# Dismiss both so the coroutine can finish and hand off.
+	for m in open_modals.duplicate():
+		if is_instance_valid(m):
+			(m as ConfirmPopup).trigger_back()
+	for i in 10:
+		await get_tree().process_frame
+
+	assert_null(ConfirmPopup.any_open(get_tree()), "both modals are gone")
+	assert_eq(_scenes, ["res://hq.tscn"], "and the run now hands off to HQ")
 
 
 func test_a_clean_finish_still_reaches_hq_when_the_board_is_unavailable() -> void:

@@ -994,6 +994,77 @@ func _make_overlay(margin := 24.0) -> Array:
 	return [layer, root]
 
 
+# THE MODAL PAGE SHAPE: a scrolled body with the exit control PINNED below it.
+# Returns [layer, body, footer, root] — put variable-height content in `body`, put the
+# control that LEAVES the page (Back / Done / Close) in `footer`, and hand `root` to
+# MenuNav.attach / UITheme.enforce as before.
+#
+# WHY this exists, and why it isn't optional for a modal page. Every overlay here is laid
+# out against a LOGICAL canvas whose height is fixed by display_stretch.gd —
+# DisplayStretch.DESIGN_HEIGHT, 360 from project.godot and only 288 on the web-touch tier
+# (GameConfig.viewport_height_web_touch) — while the WIDTH follows the device aspect and
+# gets narrow on a phone, which makes autowrapped labels wrap to more lines. So a fixed,
+# unscrolled column whose Back button is laid out AFTER the content doesn't overflow by
+# device roulette: on the short tier, with a long restriction string or a server error
+# spliced in, the exit is deterministically pushed off the bottom of the frame. And there
+# is no second way out — `menu_back` binds Escape and gamepad B only (project.godot), so a
+# touch player with the exit off-screen is simply TRAPPED in the page. Scrolling the body
+# and pinning the exit outside the scroll makes that unreachable-by-construction: the
+# footer is always the bottom row of the frame no matter how tall the content grows.
+#
+# THE PASSTHROUGH CARVE-OUT: this is for MODAL overlays only. The diegetic stations
+# (garage, map table, car park) call _passthrough_overlay(), which sets
+# MOUSE_FILTER_IGNORE on the root and its non-button children so taps fall through to the
+# 3D Area3D pickers behind the HUD. A ScrollContainer defaults to MOUSE_FILTER_STOP and
+# would eat those picks (and its drag gesture would fight the map pan), so plain
+# _make_overlay stays exactly as it was — do NOT wrap a passthrough overlay in this.
+func _make_modal_overlay(margin := 24.0) -> Array:
+	var made := _make_overlay(margin)
+	var layer: CanvasLayer = made[0]
+	var root: VBoxContainer = made[1]
+
+	var scroll := TouchScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
+
+	# EXPAND_FILL vertically so short content still fills (and can centre itself via
+	# `alignment`) instead of collapsing to the top of the scroll viewport.
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 12)
+	scroll.add_child(body)
+
+	# The pinned exit row: a sibling BELOW the scroll, so it never moves. Controls put
+	# here must be FOCUS_ALL — MenuNav drives focus across container boundaries by
+	# geometry, so down-nav off the last body row lands here (the same arrangement
+	# build_settings_overlay and build_lift_overlay already rely on), and
+	# MenuNav._enable_scroll_follow sets follow_focus on the scroll so walking back UP
+	# into the body reveals the row the cursor moved onto.
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 8)
+	root.add_child(footer)
+
+	return [layer, body, footer, root]
+
+
+# The widest a centred modal column may ask for on the CURRENT logical canvas. The frame's
+# width is not a constant — it is DESIGN_HEIGHT * device_aspect / horizontal_stretch (see
+# display_stretch.gd), so on the 288-high web-touch tier a 16:9 phone gives roughly 445
+# logical units, and a hard-coded 460-wide column is already wider than the whole screen.
+# `chrome` is the horizontal space the surrounding container costs (overlay margins, panel
+# padding). Desktop keeps the authored `preferred` width; only the narrow tiers shrink.
+func _modal_body_width(preferred: float, chrome := 88.0) -> float:
+	var vp := get_viewport()
+	if vp == null:
+		return preferred
+	var w := float(vp.get_visible_rect().size.x)
+	if w <= 0.0:
+		return preferred
+	return maxf(160.0, minf(preferred, w - chrome))
+
+
 # Let taps fall THROUGH an overlay to the 3D scene behind it — only buttons keep
 # capturing input. Without this the full-rect container + its labels/spacer (all
 # default MOUSE_FILTER_STOP) eat every touch and the 3D map (table / lift / pins,
@@ -1079,31 +1150,39 @@ func _show_android_app_notice() -> void:
 	if _android_notice_layer != null:
 		return
 	_title_layer.visible = false
-	var made := _make_overlay()
+	# Scrolled body + pinned footer (_make_modal_overlay): this is the FIRST thing a
+	# mobile-web player sees, on the short 288-high canvas, and a dismissal they can't
+	# reach means they never get into the game at all.
+	var made := _make_modal_overlay()
 	_android_notice_layer = made[0]
-	var root: VBoxContainer = made[1]
-	root.alignment = BoxContainer.ALIGNMENT_CENTER
+	var root_box: VBoxContainer = made[1]
+	var footer: HBoxContainer = made[2]
+	var root: VBoxContainer = made[3]
+	root_box.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	var msg := Label.new()
 	msg.text = "Heads up: the browser version runs much slower on phones.\nFor smooth performance, install the free Android app from itch.io."
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	msg.add_theme_font_size_override("font_size", 22)
-	root.add_child(msg)
+	root_box.add_child(msg)
 
 	var get_app := Button.new()
 	get_app.text = "Get the Android app"
 	get_app.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	get_app.custom_minimum_size = Vector2(320, 52)
 	get_app.pressed.connect(func() -> void: OS.shell_open(ANDROID_APP_URL))
-	root.add_child(get_app)
+	root_box.add_child(get_app)
 
+	# "Continue in browser" is the way OUT of this notice, so it is pinned in the footer
+	# rather than laid out under a message that wraps to more lines on a narrow phone.
 	var stay := Button.new()
 	stay.text = "Continue in browser"
 	stay.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	stay.custom_minimum_size = Vector2(320, 44)
 	stay.pressed.connect(_dismiss_android_app_notice)
-	root.add_child(stay)
+	footer.alignment = BoxContainer.ALIGNMENT_CENTER
+	footer.add_child(stay)
 
 	MenuNav.attach(root, {first = get_app, on_back = _dismiss_android_app_notice})
 
@@ -1126,10 +1205,15 @@ func _open_account_overlay() -> void:
 	if _account_layer != null:
 		return
 	_title_layer.visible = false
-	var made := _make_overlay()
+	# Scrolled body + pinned Back (_make_modal_overlay). AccountMenu.rebuild splices
+	# arbitrary server error text into the page, so its height is not something this
+	# screen controls — the exit has to live outside the scrolling part.
+	var made := _make_modal_overlay()
 	_account_layer = made[0]
-	var root: VBoxContainer = made[1]
-	root.alignment = BoxContainer.ALIGNMENT_CENTER
+	var body: VBoxContainer = made[1]
+	var footer: HBoxContainer = made[2]
+	var root: VBoxContainer = made[3]
+	body.alignment = BoxContainer.ALIGNMENT_CENTER
 	# A dark backing so the account text reads over the busy 3D garage/car-park
 	# behind it — same UITheme.MODAL_DIM treatment build_detail_overlay/
 	# build_challenge_overlay use, just missing here until now.
@@ -1141,16 +1225,20 @@ func _open_account_overlay() -> void:
 
 	_account_menu = AccountMenu.new()
 	_account_menu.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_account_menu.custom_minimum_size = Vector2(420, 0)
-	root.add_child(_account_menu)
+	_account_menu.custom_minimum_size = Vector2(_modal_body_width(420.0), 0)
+	body.add_child(_account_menu)
 
+	# Focusable and pinned: down-nav off the last AccountMenu row crosses the container
+	# boundary into the footer by geometry, the same way build_settings_overlay's
+	# bottom button is reached.
 	var back := Button.new()
 	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_ALL
 	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	back.custom_minimum_size = Vector2(220, 44)
 	back.pressed.connect(_close_account_overlay)
-	root.add_child(back)
+	footer.alignment = BoxContainer.ALIGNMENT_CENTER
+	footer.add_child(back)
 
 	UITheme.enforce(root)
 
@@ -3949,22 +4037,57 @@ func _refresh_focus_damage(owned: Dictionary) -> void:
 # A full-screen dimmer + centred house panel on the car CanvasLayer, holding `body`
 # built by the caller. Used for the detune prompt and the Change-Upgrades popup so both
 # read as on-brand modals (black panel, sharp corners) instead of native grey dialogs.
-func _make_carpark_modal(build_body: Callable) -> Control:
+#
+# Same scrolled-body / pinned-footer contract as _make_modal_overlay (read its header for
+# WHY): the caller's `build_body` fills a VBox that lives inside a TouchScrollContainer,
+# and `build_footer` fills the row pinned underneath it, which is where the control that
+# closes the modal belongs. The panel is capped to the frame height (not just centred on
+# it) so the footer is on screen even when the body is taller than the canvas — which the
+# upgrades list, on the 288-high tier, routinely is.
+func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Control:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.color = UITheme.MODAL_DIM
 	root.add_child(dim)
-	var center := CenterContainer.new()
+	# A margined full-rect row rather than a CenterContainer: a CenterContainer hands its
+	# child the child's full MINIMUM size, so a panel taller than the frame would simply
+	# overhang the top and bottom of the screen — taking the pinned footer with it, which
+	# is the exact failure this shape exists to prevent. The panel instead gets the frame
+	# height (minus margins) as its budget and the scroll inside it absorbs the overflow.
+	# Horizontally it still hugs its content and centres (SIZE_SHRINK_CENTER).
+	var center := MarginContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "top", "right", "bottom"]:
+		center.add_theme_constant_override("margin_" + side, 16)
 	root.add_child(center)
+	var row := HBoxContainer.new()
+	# BoxContainer packs non-expanding children from the start, so centring is the row's
+	# alignment, not a size flag on the panel.
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	center.add_child(row)
 	var panel := UITheme.panel(1.0, 20)
-	center.add_child(panel)
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	row.add_child(panel)
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", UITheme.GAP)
+	panel.add_child(outer)
+	var scroll := TouchScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	outer.add_child(scroll)
 	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", UITheme.GAP)
-	panel.add_child(vbox)
+	scroll.add_child(vbox)
 	build_body.call(vbox)
+	if build_footer.is_valid():
+		var footer := VBoxContainer.new()
+		footer.add_theme_constant_override("separation", UITheme.GAP)
+		outer.add_child(footer)
+		build_footer.call(footer)
 	_car_layer.add_child(root)
 	return root
 
@@ -4006,16 +4129,27 @@ func _detune_change_upgrades() -> void:
 # navigable; Done / back closes it (see _close_upgrades_popup).
 func _show_upgrades_popup(owned: Dictionary) -> void:
 	if _upgrades_popup == null:
-		_upgrades_popup = _make_carpark_modal(func(vbox: VBoxContainer) -> void:
-			vbox.custom_minimum_size = Vector2(460, 0)
-			vbox.add_child(UITheme.title("Upgrades"))
-			_upgrades_popup_menu = UpgradesMenu.new()
-			vbox.add_child(_upgrades_popup_menu)
-			_upgrades_popup_done = Button.new()
-			_upgrades_popup_done.text = "Done"
-			_upgrades_popup_done.focus_mode = Control.FOCUS_ALL
-			# NOTE: press is wired by bind_close_button below (gated), not here.
-			vbox.add_child(_upgrades_popup_done))
+		_upgrades_popup = _make_carpark_modal(
+			func(vbox: VBoxContainer) -> void:
+				# 460 was wider than the whole logical canvas on the short web-touch tier
+				# (~445 units on a 16:9 phone), so it's now the DESKTOP preference and
+				# _modal_body_width clamps it to whatever the frame can actually show;
+				# chrome = the panel's 20-unit padding either side plus the modal margin.
+				vbox.custom_minimum_size = Vector2(_modal_body_width(460.0, 72.0), 0)
+				vbox.add_child(UITheme.title("Upgrades"))
+				_upgrades_popup_menu = UpgradesMenu.new()
+				vbox.add_child(_upgrades_popup_menu),
+			func(footer: VBoxContainer) -> void:
+				# Done is the gated exit (bind_close_button below blocks it, AND back,
+				# while the car is over the p/w cap). It is PINNED outside the scroll:
+				# the controls the player needs in order to get under the cap are the very
+				# ones that grow this list, so letting them push Done off the bottom would
+				# lock a touch player inside a modal they are not allowed to leave.
+				_upgrades_popup_done = Button.new()
+				_upgrades_popup_done.text = "Done"
+				_upgrades_popup_done.focus_mode = Control.FOCUS_ALL
+				# NOTE: press is wired by bind_close_button below (gated), not here.
+				footer.add_child(_upgrades_popup_done))
 	_upgrades_popup_dirty = false
 	_upgrades_popup.visible = true
 	var pw_limit := -1.0

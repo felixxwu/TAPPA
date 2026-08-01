@@ -323,15 +323,27 @@ cost four lines, not eight:
    label is reused across kind switches.
 
 **The kind picker is a visible Daily/Weekly/Monthly tab row in the header
-(`_challenge_kind_buttons`), restored as a real tab-styled row — but with NO
-mouse/touch interaction whatsoever.** Each tab is `Control.FOCUS_ALL` (so
-keyboard/gamepad focus can rest on it) but `mouse_filter =
-Control.MOUSE_FILTER_IGNORE` and has no click-driven selection — a pointer
-can't hover or click one. The only way onto a tab is native left/right
-focus-neighbour movement (`menu_nav.gd`, the same mechanism every other
-`MenuNav`-driven page uses), and arriving via focus IS the selection: each
-tab's `focus_entered` signal calls `_select_challenge_kind(kind_str)`
-directly — no separate confirm press. The current kind's tab is highlighted
+(`_challenge_kind_buttons`).** Each tab is `Control.FOCUS_ALL`, and arriving via
+focus IS the selection: `focus_entered` calls `_select_challenge_kind(kind_str)`
+directly — no separate confirm press. Keyboard/gamepad reach the tabs by native
+left/right focus-neighbour movement (`menu_nav.gd`, the same mechanism every other
+`MenuNav`-driven page uses).
+
+**Tabs are pointer-selectable, and a tap SELECTS ONLY.** They were originally
+built `mouse_filter = MOUSE_FILTER_IGNORE` — deliberately not pointer-interactive
+at all — which left a touch device with **no way whatsoever to change kind**: the
+tabs are the only control that picks one, and `menu_left`/`menu_right` are
+keyboard/gamepad-only actions. They are hit-testable now, but the naive fix is a
+trap: each tab's `pressed` is wired to **start** the challenge
+(`_on_challenge_tab_activated`), and a pointer press would both move focus onto the
+tab (selecting) and fire `pressed` in the same gesture — so tapping "Weekly" to
+look at it would launch the Weekly run. `hq_overlays.gd::_tab_pointer_select`
+handles the tab's `gui_input`, grabs focus itself (that is the selection) and calls
+`accept_event()`. This works because Godot's `Control::_call_gui_input` emits the
+`gui_input` SIGNAL first and then skips the `_gui_input` virtual entirely when the
+viewport reports the event handled — so `BaseButton`'s own press handling never
+runs, and the original invariant holds for touch too: **`pressed` only ever arrives
+from `ui_accept`.** The current kind's tab is highlighted
 with `UITheme.GOLD` (vs. `INK_DIM` for the others), refreshed every repaint.
 `_open_challenge_overlay` explicitly re-focuses the CURRENT kind's own tab
 on every open (`_challenge_kind_button`), not just tree-order-first, so
@@ -675,8 +687,29 @@ the driving scene**, before the hand-off to HQ.
   what was won + where it landed) over the world — the same shape `hq.gd`'s
   mystery box uses for a reward moment that isn't mid-interstitial. A full
   `UpgradeReveal` page belongs to `standings.gd`, which is not up at this point in
-  the flow. Skipped headless. A failed/unavailable placement fetch just grants
-  nothing and continues to HQ.
+  the flow. Skipped headless (the grant still runs headless — see below). A
+  failed/unavailable placement fetch just grants nothing and continues to HQ.
+
+  **The grant and its reveal cannot diverge, but not via `ConfirmPopup.
+  open_committing`.** That helper (added for the mystery-box shape) acquires the
+  modal slot FIRST and skips its `commit` callable entirely when the slot is
+  refused — the right contract when "never happened" is a true, harmless
+  fallback state. The challenge completion reward does not have that fallback:
+  by the time `run_finished` fires, `ChallengeSession._finish_locally` has
+  already recorded this period's outcome and cleared `challenge_run`
+  (`start`/`resume` both refuse once `period_outcome` is set), so the period is
+  terminal — there is no "reward pending reveal" state to retry later, and
+  `try_grant_completion_reward` itself can't be deferred behind a modal check
+  anyway (`fetch_final_rank` has to be judged against this run's own
+  just-posted final checkpoint). Making the grant conditional on modal
+  availability would therefore not defer it on refusal, it would silently keep
+  a reward the player could never be told about — worse than the original bug,
+  which dropped only the reveal, never the reward. So `world.gd` grants
+  unconditionally (as above) and instead **guarantees** the reveal: the
+  `ConfirmPopup.open(..., allow_stack = true)` call passes `allow_stack`, the
+  same escape hatch `CloudBusy.report_failure` uses for its "must be seen even
+  over another modal" failure notice, so modal contention can never refuse the
+  card — at worst it stacks on top of whatever else is on screen.
 - **DNF** → `Cloud.challenge_leaderboard.post_dnf(ChallengeSession.period_key())`,
   fired **without `await`**: the house posture is that no cloud call ever costs
   the player anything, so the return to HQ must not wait on (or surface) the
@@ -705,7 +738,12 @@ the driving scene**, before the hand-off to HQ.
   on a `FakeRestClient` swapped onto `Cloud`: a clean finish consults the board for
   placement (and still reaches HQ when the fetch fails), a DNF hands off to HQ
   IMMEDIATELY with `post_dnf` still in flight behind it, and a null board is
-  harmless.
+  harmless. Also covers the grant/reveal ordering guarantee: a headless finish
+  with a qualifying placement still grants the reward (inventory gains a
+  mystery box) with no popup attempted, and — with `_headless` forced false and
+  another `ConfirmPopup` already on screen — the reward card still opens
+  (stacked, via `allow_stack`) instead of being refused, and the hand-off to HQ
+  waits for it.
 - `tests/headless/test_challenge_leaderboard.gd` — reuses
   `test_cloud_leaderboard.gd`'s fake-REST-client seam: create-at-k=1,
   advance-at-k>1, out-of-order/post-DNF refusal (client-side, before ever

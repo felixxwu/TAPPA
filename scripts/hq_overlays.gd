@@ -136,9 +136,15 @@ func build_table_overlay() -> void:
 
 
 func build_detail_overlay() -> void:
-	var made := _hq._make_overlay()
+	# Scrolled body + pinned actions row (_hq._make_modal_overlay — read its header for
+	# why): the eligibility column is three autowrapped labels whose height depends on the
+	# rally's restriction text and the player's garage, and on a narrow phone frame they
+	# wrap to several lines each. Before this they could push "< Map" off the bottom of a
+	# 288-high canvas, and menu_back is Esc / gamepad B only — no way back by touch.
+	var made := _hq._make_modal_overlay()
 	_hq._detail_layer = made[0]
 	var root: VBoxContainer = made[1]
+	var footer: HBoxContainer = made[2]
 	# A solid backing so the detail reads as a panel over the map.
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -201,9 +207,13 @@ func build_detail_overlay() -> void:
 	_hq._detail_stars.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	record_row.add_child(_hq._detail_stars)
 
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 8)
-	root.add_child(actions)
+	# The actions row is the pinned footer, so both controls are always on screen.
+	# "< Map" stays FOCUS_NONE deliberately: this panel has no MenuNav and no button
+	# cursor — hq._unhandled_input drives it directly from the TABLE view (menu_select
+	# enters, menu_back hides it), so making one of the two buttons focusable would
+	# create a half-built focus graph with nothing to seed or move the cursor. Pinning is
+	# what makes it reachable by touch; keyboard/gamepad already have menu_back.
+	var actions := footer
 	var back := Button.new()
 	back.text = "< Map"
 	back.focus_mode = Control.FOCUS_NONE
@@ -491,10 +501,31 @@ func build_settings_overlay() -> void:
 # same MODAL_DIM backing, two-line header (kind + ceiling) with a non-mouse-interactive
 # tab row for the kind, HSeparator, then a status column of one-row-per-section
 # (_hq._challenge_info_row) so the two panels read as the same design system.
+# A pointer press on a kind tab selects that kind and nothing else. Grabbing focus is
+# what selects (focus_entered -> _select_challenge_kind), and accept_event() swallows the
+# press so the Button never emits `pressed` — which is wired to START the challenge. That
+# keeps the rule the tabs were originally written around ("`pressed` only ever comes from
+# ui_accept") true for touch as well, instead of buying touch support at the price of a
+# tap launching a run the player only meant to look at.
+func _tab_pointer_select(event: InputEvent, btn: Button) -> void:
+	var is_click := event is InputEventMouseButton and (event as InputEventMouseButton).pressed
+	var is_touch := event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed
+	if not (is_click or is_touch):
+		return
+	if not btn.has_focus():
+		btn.grab_focus()  # focus_entered is the selection
+	btn.accept_event()
+
+
 func build_challenge_overlay() -> void:
-	var made := _hq._make_overlay()
+	# Scrolled body + pinned Back/Start (_hq._make_modal_overlay): the four info rows each
+	# wrap, and the eligible-cars row appends a second "Needs tune: …" line, so on the
+	# short web-touch canvas the actions row was liable to be pushed off the bottom.
+	var made := _hq._make_modal_overlay()
 	_hq._challenge_layer = made[0]
 	var root: VBoxContainer = made[1]
+	var footer: HBoxContainer = made[2]
+	var nav_root: VBoxContainer = made[3]
 	# A solid backing so this reads as a panel over the garage, same as build_detail_overlay.
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -516,12 +547,21 @@ func build_challenge_overlay() -> void:
 	_hq._challenge_subtitle_label.add_theme_color_override("font_color", UITheme.MUTED)
 	titles.add_child(_hq._challenge_subtitle_label)
 
-	# --- Kind tabs: Daily / Weekly / Monthly, restored as a visible tab row (the current
-	# one highlighted — see _refresh_challenge_overlay). NOT mouse-interactive at all:
-	# FOCUS_ALL so keyboard/gamepad focus can rest on and move across them via native
-	# left/right focus-neighbour nav (menu_nav.gd), but mouse_filter = MOUSE_FILTER_IGNORE
-	# and no `pressed` wiring — a pointer can't hover or click one. Arriving via
-	# focus_entered IS the selection (no separate "confirm" press needed).
+	# --- Kind tabs: Daily / Weekly / Monthly, a visible tab row (the current one
+	# highlighted — see _refresh_challenge_overlay). FOCUS_ALL so keyboard/gamepad focus
+	# can rest on and move across them via native left/right focus-neighbour nav
+	# (menu_nav.gd); arriving via focus_entered IS the selection, with no separate
+	# "confirm" press needed.
+	#
+	# TOUCH. These used to be MOUSE_FILTER_IGNORE — deliberately not pointer-interactive
+	# at all — which left a phone with NO WAY WHATSOEVER to change kind: the tabs were
+	# the only control that picks one, and menu_left/menu_right are keyboard/gamepad-only
+	# actions. They are hit-testable now, but a tap must SELECT ONLY, never start: the
+	# `pressed` wiring below launches the challenge, and a pointer press would otherwise
+	# both move focus here (selecting) and fire `pressed` in the same gesture, so tapping
+	# "Weekly" would start the Weekly run instantly. _tab_pointer_select consumes the
+	# pointer press and grabs focus itself, preserving the original invariant that
+	# `pressed` can only ever arrive from ui_accept.
 	var kind_row := HBoxContainer.new()
 	kind_row.add_theme_constant_override("separation", 6)
 	header.add_child(kind_row)
@@ -530,9 +570,10 @@ func build_challenge_overlay() -> void:
 		var btn := Button.new()
 		btn.text = kind_str.capitalize()
 		btn.focus_mode = Control.FOCUS_ALL
-		btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP  # hit-testable; see _tab_pointer_select
 		btn.set_meta("challenge_kind", kind_str)
 		btn.focus_entered.connect(_hq._select_challenge_kind.bind(kind_str))
+		btn.gui_input.connect(_tab_pointer_select.bind(btn))
 		# mouse_filter IGNORE means `pressed` can only ever fire via keyboard/gamepad
 		# ui_accept while this tab has focus (never a stray click) — wiring it to Start
 		# means Enter starts the challenge straight from a focused tab, no need to tab
@@ -558,9 +599,11 @@ func build_challenge_overlay() -> void:
 	_hq._challenge_eligible_label = _hq._challenge_info_row(body, "Eligible cars")
 	_hq._challenge_progress_label = _hq._challenge_info_row(body, "Progress")
 
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 8)
-	root.add_child(actions)
+	# Back / Start live in the pinned footer. Both stay FOCUS_ALL: MenuNav moves focus
+	# across container boundaries by geometry, so down-nav off the last info row still
+	# reaches them (the arrangement build_settings_overlay already proves), and
+	# MenuNav._enable_scroll_follow makes the body scroll back into view on the way up.
+	var actions := footer
 	var back := Button.new()
 	back.text = "< Back"
 	back.focus_mode = Control.FOCUS_ALL
@@ -579,7 +622,7 @@ func build_challenge_overlay() -> void:
 	# the overlay back to the garage, same as _close_account_overlay's Back button does
 	# for the title. (_open_challenge_overlay re-grabs the CURRENT kind's tab explicitly
 	# on every open, so `first` here only matters as MenuNav's own fallback.)
-	MenuNav.attach(root, {first = _hq._challenge_kind_buttons[0], on_back = _hq._close_challenge_overlay})
+	MenuNav.attach(nav_root, {first = _hq._challenge_kind_buttons[0], on_back = _hq._close_challenge_overlay})
 
 	# Hidden until _open_challenge_overlay shows it — this overlay is built eagerly in
 	# _ready (like the per-view stations) but is a MODAL over the garage, not one of the

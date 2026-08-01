@@ -107,6 +107,118 @@ func test_a_confirm_popup_cannot_open_over_a_username_popup() -> void:
 	assert_null(ConfirmPopup.open(_host, "Second", "B", _actions_with_flag([""])),
 		"and the exclusivity holds in the other direction too")
 
+# --- open_committing: reserve the screen, THEN commit -------------------------
+# The bug: an irreversible save transaction ran BEFORE a presentation that can be
+# refused, so the transaction landed and its one and only reveal was dropped (two
+# mystery boxes opened, one reveal seen). open_committing acquires the modal slot
+# first, so "committed but unreportable" cannot happen.
+
+func test_open_committing_runs_the_mutation_and_shows_its_body() -> void:
+	var ran := [0]
+	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
+		[{"label": "OK", "callback": Callable()}],
+		func(_p: ConfirmPopup) -> String:
+			ran[0] += 1
+			return "the reward")
+	assert_not_null(popup, "with the slot free, the popup opens")
+	assert_eq(ran[0], 1, "and the mutation ran exactly once")
+	assert_eq(popup._body_label.text, "the reward",
+		"the body the commit produced replaced the placeholder")
+
+
+func test_open_committing_does_not_run_the_mutation_when_a_modal_is_up() -> void:
+	assert_not_null(ConfirmPopup.open(_host, "First", "B", _actions_with_flag([""])),
+		"setup: something else owns the screen")
+	var ran := [0]
+	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
+		[{"label": "OK", "callback": Callable()}],
+		func(_p: ConfirmPopup) -> String:
+			ran[0] += 1
+			return "spent")
+	assert_null(popup, "refused, like any other second modal")
+	assert_eq(ran[0], 0,
+		"and CRUCIALLY the irreversible mutation never ran — nothing was spent")
+
+
+func test_open_committing_awaits_a_coroutine_commit() -> void:
+	# world.gd's challenge reward must await its grant, so the commit contract has to
+	# accept a coroutine, not just a plain function.
+	var ran := [0]
+	var tree := get_tree()
+	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
+		[{"label": "OK", "callback": Callable()}],
+		func(_p: ConfirmPopup) -> String:
+			await tree.process_frame
+			ran[0] += 1
+			return "granted")
+	assert_eq(ran[0], 1, "the coroutine commit completed before the call returned")
+	assert_eq(popup._body_label.text, "granted", "and its body landed on the popup")
+
+
+func test_open_committing_lets_the_commit_fill_the_body_itself() -> void:
+	# A commit with nothing to return can still report, by writing to the popup it was
+	# handed — the same reason the body is deferred rather than a return value.
+	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "placeholder",
+		[{"label": "OK", "callback": Callable()}],
+		func(p: ConfirmPopup) -> void:
+			p.set_body("written by the commit"))
+	assert_eq(popup._body_label.text, "written by the commit",
+		"set_body fills the placeholder in")
+
+
+func test_open_committing_returns_an_ordinary_popup() -> void:
+	var flag := [""]
+	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
+		_actions_with_flag(flag), func(_p: ConfirmPopup) -> String: return "body")
+	assert_eq(ConfirmPopup.any_open(get_tree()), popup, "it holds the modal slot")
+	var buttons := popup.find_children("*", "Button", true, false)
+	assert_eq(buttons.size(), 2, "one button per action, as usual")
+	popup.trigger_back()
+	assert_eq(flag[0], "no", "Back routes to the last action, as usual")
+	await get_tree().process_frame
+	assert_false(is_instance_valid(popup), "and it dismisses itself")
+
+
+# --- Long body: scroll, don't push the buttons off screen ---------------------
+# A ConfirmPopup has no touch dismissal other than its own buttons (trigger_back
+# is reachable only from ui_cancel/menu_back — Escape or gamepad B, see
+# project.godot) and its dim backdrop swallows taps, so a long caller-supplied
+# body (server error text, a computed multi-line reward) must never be able to
+# push the buttons past reach.
+
+func test_a_very_long_body_still_leaves_every_button_present_and_focusable() -> void:
+	var long_body := "line of text that should wrap and repeat many times over. ".repeat(60)
+	var popup := ConfirmPopup.open(_host, "T", long_body, _actions_with_flag([""]))
+	var buttons := popup.find_children("*", "Button", true, false)
+	assert_eq(buttons.size(), 2, "both action buttons still exist")
+	for b in buttons:
+		assert_true((b as Button).focus_mode == Control.FOCUS_ALL,
+			"and each stays focusable — never removed to make room")
+
+func test_a_very_long_body_panel_does_not_exceed_the_viewport() -> void:
+	var long_body := "line of text that should wrap and repeat many times over. ".repeat(60)
+	var popup := ConfirmPopup.open(_host, "T", long_body, _actions_with_flag([""]))
+	var panel := popup.find_children("*", "PanelContainer", true, false)[0] as PanelContainer
+	var viewport_h: float = popup.get_viewport().get_visible_rect().size.y
+	assert_true(panel.get_combined_minimum_size().y <= viewport_h,
+		"a very long body must never grow the panel taller than the screen")
+
+func test_a_short_body_popup_is_not_made_needlessly_tall() -> void:
+	var popup := ConfirmPopup.open(_host, "T", "Short.", _actions_with_flag([""]))
+	var panel := popup.find_children("*", "PanelContainer", true, false)[0] as PanelContainer
+	var viewport_h: float = popup.get_viewport().get_visible_rect().size.y
+	assert_true(panel.get_combined_minimum_size().y < viewport_h,
+		"a short body should hug its content, nowhere near the full viewport height")
+
+func test_username_popup_panel_does_not_exceed_the_viewport() -> void:
+	# Same shape as ConfirmPopup, fixed for consistency even though its body is
+	# an authored (not caller-supplied) string.
+	var popup := UsernamePopup.open(_host)
+	var panel := popup.find_children("*", "PanelContainer", true, false)[0] as PanelContainer
+	var viewport_h: float = popup.get_viewport().get_visible_rect().size.y
+	assert_true(panel.get_combined_minimum_size().y <= viewport_h,
+		"the username popup panel must also never exceed the screen")
+
 func test_an_unparented_host_cannot_raise_a_modal() -> void:
 	# Exclusivity is answered from the scene tree, so a host outside it has no tree
 	# to ask — raise nothing rather than a popup nobody can see or dismiss.

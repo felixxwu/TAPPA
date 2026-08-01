@@ -125,6 +125,19 @@ func quit_to_hq() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _input_enabled:
 		return  # Esc / gamepad B do nothing while the world is loading
+	# A ConfirmPopup (the "Quit to HQ?" confirm) is MODAL and hosted on THIS node, as
+	# its own CanvasLayer (layer 101) above the pause overlay (layer 5). Its own
+	# MenuNav consumes ui_cancel/menu_back and directional input, but NOT `pause` —
+	# so without this guard, pressing gamepad Start while the confirm is up fell
+	# through to the case below and called resume(): get_tree().paused = false and
+	# _set_open(false) hide the pause overlay, but the popup is a SEPARATE CanvasLayer
+	# and stays on screen — now floating over LIVE, unpaused gameplay with its "Quit to
+	# HQ" button still armed. Bailing here leaves the confirm exactly as it was
+	# (Start does nothing) rather than silently resuming under an orphaned modal; the
+	# player still has ui_cancel/B (routed to the popup's own Cancel action) or a tap
+	# on one of the popup's own buttons to get out.
+	if ConfirmPopup.any_open(get_tree()) != null:
+		return
 	# The `pause` action (Esc / gamepad Start) TOGGLES the menu. ui_cancel (gamepad B)
 	# is NOT an opener — in gameplay B is the handbrake — it only acts as "back" once the
 	# menu is already open (step out of a sub-page, else resume). This keeps the pause

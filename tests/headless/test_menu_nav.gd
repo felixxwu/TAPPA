@@ -22,6 +22,11 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	# Modals are tree-wide and exclusive, so one left standing would silence the next
+	# test's menu (that is the whole point of input_blocked). Clear any before moving on.
+	for n in get_tree().get_nodes_in_group(ConfirmPopup.MODAL_GROUP):
+		if is_instance_valid(n) and not (n as Node).is_queued_for_deletion():
+			(n as Node).queue_free()
 	CarFixtures.restore()
 	RallyFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
@@ -166,6 +171,96 @@ func test_hidden_menu_does_not_consume_back() -> void:
 	menu.visible = false
 	nav._unhandled_input(_press("menu_back"))
 	assert_eq(hits[0], 0, "a hidden menu ignores back")
+
+
+# --- MenuNav.input_blocked ----------------------------------------------------
+# One shared predicate for "should this node ignore menu input right now?", folding
+# together the two reasons a host goes deaf: the player is typing, and a modal owns
+# the screen. Every host asking the same question is the point — hq.gd asked a
+# hand-rolled version that knew about its own overlays but not about ConfirmPopup, so
+# station rows kept firing behind an open popup.
+
+func _open_modal(host: Node) -> ConfirmPopup:
+	return ConfirmPopup.open(host, "T", "B", [{"label": "OK", "callback": Callable()}])
+
+
+func test_input_blocked_is_false_with_nothing_in_the_way() -> void:
+	var page := _make_flat_menu(2)
+	add_child_autofree(page)
+	assert_null(ConfirmPopup.any_open(get_tree()), "setup: no modal on screen")
+	assert_false(MenuNav.input_blocked(page),
+		"an ordinary page is not blocked when nothing is up and nobody is typing")
+
+
+func test_input_blocked_is_true_for_a_page_behind_a_modal() -> void:
+	var page := _make_flat_menu(2)
+	add_child_autofree(page)
+	var popup := _open_modal(page)
+	assert_not_null(popup, "setup: the modal opened")
+	assert_true(MenuNav.input_blocked(page),
+		"a page behind an open modal ignores menu input")
+
+
+func test_input_blocked_is_false_inside_the_open_modal() -> void:
+	# THE CARVE-OUT. The modal builds a MenuNav of its own on its centring container;
+	# if the modal blocked its own subtree the popup would stop answering Back and the
+	# player would be trapped in it.
+	var host := Control.new()
+	add_child_autofree(host)
+	var popup := _open_modal(host)
+	var inner := popup.find_children("*", "Button", true, false)[0] as Button
+	assert_false(MenuNav.input_blocked(inner),
+		"a widget inside the open modal keeps its input")
+	assert_false(MenuNav.input_blocked(popup),
+		"and so does the modal itself")
+
+
+func test_input_blocked_follows_text_editing() -> void:
+	var line := LineEdit.new()
+	add_child_autofree(line)
+	var page := _make_flat_menu(2)
+	add_child_autofree(page)
+	assert_false(MenuNav.input_blocked(page), "not blocked while nothing is focused")
+	line.grab_focus()
+	await get_tree().process_frame
+	assert_true(MenuNav.is_text_editing(), "setup: the field has the cursor")
+	assert_true(MenuNav.input_blocked(page), "blocked while the player is typing")
+	line.release_focus()
+	await get_tree().process_frame
+	assert_false(MenuNav.input_blocked(page), "and released again once typing stops")
+
+
+func test_a_page_does_not_move_or_act_while_a_modal_is_up() -> void:
+	var menu := _make_flat_menu(3)
+	add_child_autofree(menu)
+	var hits := [0]
+	var nav := MenuNav.attach(menu, {on_back = func() -> void: hits[0] += 1})
+	await get_tree().process_frame
+	var first := menu.get_child(0)
+	assert_eq(menu.get_viewport().gui_get_focus_owner(), first, "setup: cursor seated")
+
+	var popup := _open_modal(menu)
+	assert_not_null(popup, "setup: a modal is on screen")
+	nav._unhandled_input(_press("menu_down"))
+	nav._unhandled_input(_press("menu_back"))
+	assert_eq(menu.get_viewport().gui_get_focus_owner(), first,
+		"the page's cursor does not move behind the modal")
+	assert_eq(hits[0], 0, "and its Back does not fire either")
+
+
+func test_the_modals_own_nav_still_answers_back() -> void:
+	# The other half of the carve-out, end to end: the popup's own MenuNav is NOT
+	# blocked by the popup, so Back still dismisses it.
+	var host := Control.new()
+	add_child_autofree(host)
+	var flag := [0]
+	var popup := ConfirmPopup.open(host, "T", "B",
+		[{"label": "OK", "callback": func() -> void: flag[0] += 1}])
+	await get_tree().process_frame
+	var nav := _nav_of(popup.get_child(1))
+	assert_not_null(nav, "setup: the popup is MenuNav-wired")
+	nav._unhandled_input(_press("menu_back"))
+	assert_eq(flag[0], 1, "Back inside the modal still fires its action")
 
 
 # The shared SettingsMenu rows are focusable, drilling into a category lands the

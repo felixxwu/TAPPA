@@ -240,3 +240,65 @@ func test_picking_a_scheme_in_settings_applies_live() -> void:
 		MobileControls.SCHEME_BUTTONS_GAS_BRAKE, "the chosen scheme is saved")
 	# Restore the default so the shared scene starts the next test clean.
 	_pause.settings_menu.select_scheme(MobileControls.DEFAULT_SCHEME)
+
+
+# Regression (gamepad-only bug): `pause` and `menu_back`/`ui_cancel` share Escape on
+# keyboard, but on a gamepad `pause` is Start and `menu_back`/`ui_cancel` is B —
+# separate buttons. The confirm popup's own MenuNav only consumes B/menu_back, never
+# `pause`, so pressing Start while "Quit to HQ?" is up used to fall through to
+# PauseMenu._unhandled_input's `pause` case and call resume(): the pause OVERLAY
+# hides, but ConfirmPopup is its OWN CanvasLayer (layer 101) hosted on the pause menu
+# node, so it stayed on screen — floating over now-LIVE, unpaused gameplay with its
+# "Quit to HQ" button still armed. Reproduce by feeding a synthetic `pause`
+# InputEventAction straight to _unhandled_input (as the engine would from a gamepad
+# Start press) while the confirm is up, and assert NONE of the three things the old
+# code silently broke happened: the popup is still there, the tree is still paused,
+# and the pause menu itself is still open.
+func test_pause_action_while_quit_confirm_is_open_does_not_resume() -> void:
+	_pause.open()
+	_pause._on_quit_pressed()
+	await get_tree().process_frame
+	assert_true(get_tree().paused, "setup: opening the menu paused the tree")
+	assert_eq(_pause.find_children("*", "ConfirmPopup", true, false).size(), 1,
+		"setup: the quit confirm is up")
+
+	var ev := InputEventAction.new()
+	ev.action = "pause"
+	ev.pressed = true
+	_pause._unhandled_input(ev)
+
+	assert_eq(_pause.find_children("*", "ConfirmPopup", true, false).size(), 1,
+		"the confirm popup is still on screen — pause must not dismiss it")
+	assert_true(get_tree().paused,
+		"the game must stay paused while a modal is up over the pause menu")
+	assert_true(_pause.is_open(),
+		"the pause menu itself must not have resumed/closed under the modal")
+
+	# Clean up the still-open popup ourselves — after_each's resume() only unpauses/
+	# closes the pause overlay, it doesn't know about a stray ConfirmPopup.
+	var popup: ConfirmPopup = _pause.find_children("*", "ConfirmPopup", true, false)[0]
+	popup.trigger_back()
+	await get_tree().process_frame
+
+
+# ui_cancel (gamepad B) while the confirm is up must dismiss the CONFIRM (its own
+# Cancel action, via MenuNav's on_back -> trigger_back), not fall through and resume
+# the game underneath it. The engine delivers ui_cancel to the popup's own MenuNav
+# (a child of the popup) before it would ever reach PauseMenu's _unhandled_input, so
+# this drives that same path via ConfirmPopup's public trigger_back() — the popup
+# has no _unhandled_input of its own to feed an event to (MenuNav owns that) — and
+# checks the pause menu is left untouched underneath.
+func test_ui_cancel_while_quit_confirm_is_open_dismisses_the_confirm_not_the_game() -> void:
+	_pause.open()
+	_pause._on_quit_pressed()
+	await get_tree().process_frame
+	var popup: ConfirmPopup = _pause.find_children("*", "ConfirmPopup", true, false)[0]
+
+	popup.trigger_back()  # what the popup's MenuNav runs on ui_cancel/menu_back
+	await get_tree().process_frame
+
+	assert_eq(_pause.find_children("*", "ConfirmPopup", true, false).size(), 0,
+		"ui_cancel/Back dismisses the confirm popup (its own Cancel action)")
+	assert_true(get_tree().paused,
+		"cancelling the confirm returns to the (still paused) pause menu, not gameplay")
+	assert_true(_pause.is_open(), "the pause menu is still open after cancelling the confirm")

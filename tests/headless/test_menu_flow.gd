@@ -1167,11 +1167,16 @@ func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 	assert_true(hq._garage_layer.visible, "closing the overlay restores the garage")
 
 
-# The kind tabs are real FOCUS_ALL controls with NO mouse interaction (mouse_filter
-# IGNORE, no `pressed` wiring) — only native left/right focus-neighbour movement
-# (menu_nav.gd) reaches them, and arriving via focus IS the selection (focus_entered).
-# Opening the screen lands focus on the CURRENT kind's own tab.
-func test_hq_challenge_kind_tabs_are_focus_only_left_right_no_mouse() -> void:
+# The kind tabs are real FOCUS_ALL controls reachable by native left/right
+# focus-neighbour movement (menu_nav.gd), and arriving via focus IS the selection
+# (focus_entered). Opening the screen lands focus on the CURRENT kind's own tab.
+#
+# CHANGED DELIBERATELY: these used to assert `mouse_filter == MOUSE_FILTER_IGNORE`,
+# i.e. that a pointer could never touch a tab. That left a phone with no way at all to
+# change kind — the tabs are the only control that picks one, and menu_left/menu_right
+# are keyboard/gamepad-only actions. They are hit-testable now; what must still hold is
+# that a pointer press SELECTS ONLY and never starts the run (see the next test).
+func test_hq_challenge_kind_tabs_are_focusable_and_left_right_navigable() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
@@ -1180,9 +1185,10 @@ func test_hq_challenge_kind_tabs_are_focus_only_left_right_no_mouse() -> void:
 	assert_eq(hq._challenge_kind, ChallengeLibrary.DAILY, "opens on Daily by default")
 
 	for btn in hq._challenge_kind_buttons:
-		assert_eq(btn.mouse_filter, Control.MOUSE_FILTER_IGNORE,
-			"a kind tab is unreachable by mouse — hover/click can't touch it")
-		assert_false(btn.toggle_mode, "no press/pressed state — focus_entered is the only trigger")
+		assert_ne(btn.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+			"a kind tab must be hit-testable, or touch players cannot change kind at all")
+		assert_eq(btn.focus_mode, Control.FOCUS_ALL, "and still reachable by keyboard/gamepad")
+		assert_false(btn.toggle_mode, "no press/pressed state — focus_entered is the selection")
 
 	await get_tree().process_frame  # deferred focus grab from _open_challenge_overlay
 	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._challenge_kind_button(ChallengeLibrary.DAILY),
@@ -3405,6 +3411,63 @@ func test_a_second_mystery_box_is_not_spent_while_the_first_reveal_is_up() -> vo
 		"the second box is NOT consumed while a reveal it could not show is up")
 
 
+# THE OTHER HALF of the fix, from the real input path: _on_open_mystery_box() is only
+# the API side. The actual bug was a keypress falling through to _unhandled_input
+# while the reveal ConfirmPopup was on screen but NOT holding focus (a rebuild under
+# it released focus) — that let a stray menu_select reach the garage row and open a
+# SECOND box behind the first reveal. Reproduce the precondition (focus released) and
+# drive the real handler, not the direct call.
+func test_a_second_mystery_box_is_not_spent_via_unhandled_input_while_the_reveal_is_up() -> void:
+	UpgradeFixtures.restore()  # see comment on the button-driven variant above
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 2)
+	hq._refresh_garage_row()
+
+	_find_mystery_box_button(hq).pressed.emit()
+	await get_tree().process_frame
+	assert_eq(_save.mystery_boxes_owned(), 1, "the first box is spent and revealed")
+	assert_not_null(ConfirmPopup.any_open(get_tree()), "its reveal is on screen")
+
+	# The precondition that let the bug through: the popup is up, but nothing is
+	# holding focus (a rebuild under it released it), so a bare menu_select would fall
+	# through to whatever _unhandled_input dispatches to next.
+	get_viewport().gui_release_focus()
+	var press := InputEventAction.new()
+	press.action = "menu_select"
+	press.pressed = true
+	hq._unhandled_input(press)
+	await get_tree().process_frame
+
+	assert_eq(_save.mystery_boxes_owned(), 1,
+		"a menu_select through the real input path does not spend the second box either")
+
+
+# The same hole, generalised: ANY station row (not just the garage's action row) must
+# ignore navigation while a ConfirmPopup is modal over it — this asserts through
+# _garage_focus (the GARAGE view's own state), covering left/right as well as select.
+func test_garage_focus_is_unchanged_by_menu_nav_while_a_modal_is_open() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	var focus_before: int = hq._garage_focus
+
+	ConfirmPopup.open(hq, "Busy", "Something is on screen", [{"label": "OK", "callback": Callable()}], 0)
+	await get_tree().process_frame
+
+	for action in ["menu_left", "menu_right", "menu_select"]:
+		var ev := InputEventAction.new()
+		ev.action = action
+		ev.pressed = true
+		hq._unhandled_input(ev)
+
+	assert_eq(hq._garage_focus, focus_before,
+		"none of left/right/select reach the garage cursor while the modal is up")
+
+
 # The same hole from the input side: a station row must not act on a keypress while a
 # modal owns the screen. The popup's focused button normally consumes it first, but
 # that relies on the popup holding focus — when it doesn't, the press fell through to
@@ -4357,6 +4420,11 @@ class _StubBoard:
 	var gate: Array = []  # non-empty -> park here until the test clears it
 	var cutoff: Dictionary = {"ok": false}
 	var cutoff_calls := 0
+	# PERIOD KEYS parked in flight — a call whose own key is listed here waits until
+	# the test removes it. Per-key, NOT a global flag: a global one also parks the
+	# query the test switches TO, so the "other kind answered normally" half of a
+	# staleness test could never be set up.
+	var cutoff_gate: Array = []
 
 	# Yields at least one frame before answering, for the same reason fetch_cutoff
 	# does: a synchronous stub can't observe the in-flight state, and it would let
@@ -4368,14 +4436,25 @@ class _StubBoard:
 			await Engine.get_main_loop().process_frame
 		return answer
 
-	# Always yields at least one frame before answering. A synchronous stub let the
-	# label be written BEFORE _open_challenge_overlay's UITheme.enforce pass, which
-	# hid a real bug: in the game the answer lands AFTER enforce has uppercased the
-	# row, and the guard that compared against the mixed-case literal then bailed.
-	func fetch_cutoff(_period_key: String, _stage_count: int) -> Dictionary:
+	# Yields TWO frames before answering, not one — a fake must reproduce the real
+	# thing's async shape (see fake_rest_client.gd's own comment on the same point).
+	# In the game, the row is built, THEN UITheme.enforce uppercases it, and only
+	# THEN does this query resolve — collapsing that to a single await frame made the
+	# original bug pass by luck of where enforce happened to land relative to it.
+	# cutoff_gate lets a test hold the query in flight deliberately, mirroring `gate`
+	# on fetch_final_rank above.
+	func fetch_cutoff(period_key: String, _stage_count: int) -> Dictionary:
 		cutoff_calls += 1
+		# Snapshot the answer at call time, like a real query would capture whatever
+		# `cutoff_ms` the board held the instant it was asked — a test can then change
+		# `cutoff` for a LATER call without also rewriting the answer to a call already
+		# parked in flight.
+		var snapshot: Dictionary = cutoff
 		await Engine.get_main_loop().process_frame
-		return cutoff
+		await Engine.get_main_loop().process_frame
+		while cutoff_gate.has(period_key):
+			await Engine.get_main_loop().process_frame
+		return snapshot
 
 
 # The placing query needs a signed-in Cloud (fetch_final_rank can only find the
@@ -4645,7 +4724,8 @@ func test_the_win_condition_shows_the_live_time_to_beat() -> void:
 		await get_tree().process_frame
 
 	var text: String = hq._challenge_win_label.text
-	assert_string_contains(text.to_upper(), "TOP 50%", "the placing needed is still named")
+	assert_string_contains(text.to_upper(), UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+		"the placing needed is still named")
 	assert_string_contains(text, UITheme.format_time(112240),
 		"and the row gains the time on the cut line, formatted like every other time")
 	assert_true(board.cutoff_calls > 0, "the time came from a live query")
@@ -4666,7 +4746,8 @@ func test_the_win_condition_stays_bare_when_there_is_no_time_to_beat() -> void:
 	for _i in 5:
 		await get_tree().process_frame
 
-	assert_string_contains(hq._challenge_win_label.text.to_upper(), "TOP 50%")
+	assert_string_contains(hq._challenge_win_label.text.to_upper(),
+		UITheme.caps(hq._CHALLENGE_WIN_CONDITION))
 	assert_false(hq._challenge_win_label.text.contains("-"),
 		"no dash-and-time tail is appended when there is no line to beat")
 	_restore_after_placing()
@@ -4687,7 +4768,8 @@ func test_the_cut_line_survives_the_uppercase_enforce_pass_on_open() -> void:
 
 	var text: String = hq._challenge_win_label.text
 	assert_eq(text, text.to_upper(), "setup: the enforce pass really did uppercase the row")
-	assert_string_contains(text, "TOP 50%", "the condition is still named")
+	assert_string_contains(text, UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+		"the condition is still named")
 	assert_string_contains(text, UITheme.format_time(112240),
 		"and the time to beat landed despite the row having been uppercased under it")
 	_restore_after_placing()
@@ -4703,7 +4785,8 @@ func test_the_win_condition_says_loading_while_the_board_is_being_asked() -> voi
 
 	assert_string_contains(hq._challenge_win_label.text.to_upper(), "LOADING",
 		"the row says it is fetching instead of showing an empty space")
-	assert_string_contains(hq._challenge_win_label.text.to_upper(), "TOP 50%",
+	assert_string_contains(hq._challenge_win_label.text.to_upper(),
+		UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
 		"and still states the condition while it waits")
 
 	for _i in 5:
@@ -4727,7 +4810,8 @@ func test_the_loading_placeholder_is_cleared_when_the_board_cannot_answer() -> v
 
 	var text: String = hq._challenge_win_label.text
 	assert_false(text.to_upper().contains("LOADING"), "the placeholder is cleared")
-	assert_string_contains(text.to_upper(), "TOP 50%", "leaving the bare condition")
+	assert_string_contains(text.to_upper(), UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
+		"leaving the bare condition")
 	_restore_after_placing()
 
 
@@ -4747,6 +4831,83 @@ func test_a_signed_out_player_never_queries_the_board_for_the_cut_line() -> void
 		await get_tree().process_frame
 
 	assert_eq(board.cutoff_calls, 0, "no query is made at all when signed out")
-	assert_string_contains(hq._challenge_win_label.text.to_upper(), "TOP 50%",
+	assert_string_contains(hq._challenge_win_label.text.to_upper(),
+		UITheme.caps(hq._CHALLENGE_WIN_CONDITION),
 		"and the row still states the condition")
 	_restore_after_placing()
+
+
+# THE GENERATION COUNTER'S WHOLE JOB: a cutoff query parked in flight for one kind
+# must be DISCARDED, not written, once the screen has moved on to another kind. This
+# is the exact regression class the fix (_challenge_refresh_generation) exists for —
+# nothing above actually proves a stale answer gets thrown away rather than merely
+# not overwriting a DIFFERENT already-cached value.
+func test_a_stale_cut_line_is_discarded_when_the_kind_changes_before_it_answers() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 111111, "total_entries": 9}
+	# Park ONLY the Daily's query; the Weekly must be free to answer normally.
+	var now := int(Time.get_unix_time_from_system())
+	var daily_key := String(ChallengeLibrary.current_period(ChallengeLibrary.DAILY, now)["key"])
+	board.cutoff_gate = [daily_key]
+	var hq := await _hq_with_a_completed_daily(board)  # opens on Daily; its query is parked
+	await get_tree().process_frame
+	# Give the Weekly its own, distinguishable answer BEFORE asking for it — the stub
+	# snapshots at call time, same as a real query would capture whatever was live then.
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 222222, "total_entries": 9}
+	# Switch away before the Daily's parked query can answer.
+	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	for _i in 5:
+		await get_tree().process_frame
+	var weekly_time := UITheme.format_time(222222)
+	assert_string_contains(hq._challenge_win_label.text, weekly_time,
+		"setup: the Weekly's own query already answered")
+
+	# Now release the Daily's stale query and let it try to land.
+	board.cutoff_gate = []
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_false(hq._challenge_win_label.text.contains(UITheme.format_time(111111)),
+		"the Daily's stale cut line never overwrites the Weekly's row")
+	assert_string_contains(hq._challenge_win_label.text, weekly_time,
+		"the Weekly's row is exactly as it was")
+	_restore_after_placing()
+
+
+# A tap on a kind tab SELECTS that kind and does nothing else. The tabs' `pressed`
+# signal is wired to START the challenge, and a pointer press would otherwise both move
+# focus onto the tab (selecting) and fire `pressed` in the same gesture — so tapping
+# "Weekly" to look at it would launch the Weekly run. hq_overlays.gd::_tab_pointer_select
+# consumes the press and grabs focus itself, keeping "`pressed` only ever arrives from
+# ui_accept" true for touch too.
+func test_tapping_a_kind_tab_selects_it_without_starting_the_challenge() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+	await get_tree().process_frame
+	assert_eq(hq._challenge_kind, ChallengeLibrary.DAILY, "setup: opens on Daily")
+
+	var weekly: Button = hq._challenge_kind_button(ChallengeLibrary.WEEKLY)
+	var touch := InputEventScreenTouch.new()
+	touch.pressed = true
+	# Drive the `gui_input` SIGNAL, not the `_gui_input` virtual. Godot's
+	# Control::_call_gui_input emits the signal FIRST and then skips the virtual entirely
+	# if the viewport reports the event handled — which is exactly why accept_event() in
+	# our handler suppresses BaseButton's own press handling. Calling the virtual directly
+	# would bypass our handler and really launch a run (it did, and hung the suite).
+	weekly.gui_input.emit(touch)
+	await get_tree().process_frame
+
+	assert_eq(hq._challenge_kind, ChallengeLibrary.WEEKLY, "the tap selected the Weekly tab")
+	assert_true(hq._challenge_layer.visible,
+		"and did NOT start a run — the challenge screen is still up")
+	assert_false(ChallengeSession.is_active(),
+		"no challenge run was started by merely tapping a tab")
+	# The select-only guarantee rests on the handler being on the SIGNAL (which runs
+	# before, and can pre-empt, the button's own press handling). Assert that wiring
+	# directly — driving it through a real viewport is not available headless.
+	assert_true(weekly.gui_input.get_connections().size() > 0,
+		"the tab consumes pointer presses via gui_input, so `pressed` stays ui_accept-only")

@@ -161,6 +161,34 @@ static func is_text_editing() -> bool:
 	return false
 
 
+# SHOULD `node` IGNORE MENU INPUT RIGHT NOW? The one predicate every menu host asks,
+# extending the same convention as is_text_editing() above: two different reasons to go
+# deaf (the player is typing; a modal owns the screen) that every host would otherwise
+# re-invent, half of them forgetting the second one. hq.gd's station nav did exactly
+# that — it allowlisted its own two overlays but not ConfirmPopup, so HQ rows still
+# fired behind an open popup, which is how a second modal became reachable at all.
+#
+# THE CARVE-OUT: a node INSIDE the open modal is not blocked by it. The modal builds a
+# MenuNav of its own on its centring container (ConfirmPopup._build), and that nav has
+# to keep answering Back / directional nav — blocking it would trap the player in a
+# popup that no longer responds to anything. So the modal blocks everyone except its
+# own subtree.
+#
+# Order matters: the carve-out is tested BEFORE text editing, so a text field inside a
+# modal (UsernamePopup) is left to the caller's own typing rules rather than being
+# blanket-blocked here.
+static func input_blocked(node: Node) -> bool:
+	var loop := Engine.get_main_loop()
+	var tree := loop as SceneTree
+	if tree != null:
+		var modal := ConfirmPopup.any_open(tree)
+		if modal != null:
+			if is_instance_valid(node) and (node == modal or modal.is_ancestor_of(node)):
+				return false  # the modal's own widgets keep their input
+			return true
+	return is_text_editing()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Inert while the menu is hidden — otherwise a hidden overlay (e.g. an HQ panel
 	# layered over a diegetic station) would keep eating menu_* / ui_cancel and
@@ -176,6 +204,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if editing != null:
 			editing.release_focus()
 		get_viewport().set_input_as_handled()
+		return
+
+	# A modal owns the screen while it is up: every page behind it goes deaf, so a
+	# stacked press can't move a cursor or fire a Back on a page the player can't see.
+	# Until now that was masked only by tree ordering (the modal sits on layer 101), and
+	# tree ordering is not a rule. The modal's OWN nav is carved out by input_blocked,
+	# so it keeps its Back and its cursor. (Text editing is already handled above, which
+	# is why this only bites for the modal case here.)
+	if input_blocked(self):
 		return
 
 	# Back first: Esc / gamepad B. Only if the host handed us an on_back.
