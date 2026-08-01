@@ -110,25 +110,15 @@ jobs:
           ./build_web.sh
           ls -la build/web
 
+      # Cached + multi-host; see .github/actions/install-butler for why.
       - name: Install butler
-        run: |
-          set -euo pipefail
-          # itch serves butler from broth; the .ovh host has intermittent DNS
-          # issues on CI, so retry and fall back to the .zone mirror.
-          fetch() {
-            curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
-              -o butler.zip "$1/butler/linux-amd64/LATEST/archive/default"
-          }
-          fetch https://broth.itch.ovh || fetch https://broth.itch.zone
-          unzip -q butler.zip
-          chmod +x butler
-          ./butler -V
+        uses: ./.github/actions/install-butler
 
       - name: Push to itch.io
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          ./butler push "${EXPORT_DIR}" "${ITCH_USER}/${ITCH_GAME}:html5"
+          butler push "${EXPORT_DIR}" "${ITCH_USER}/${ITCH_GAME}:html5"
 
   export-android:
     name: Export & deploy Android APK
@@ -216,22 +206,13 @@ jobs:
           ls -la build/android
 
       - name: Install butler
-        run: |
-          set -euo pipefail
-          fetch() {
-            curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
-              -o butler.zip "$1/butler/linux-amd64/LATEST/archive/default"
-          }
-          fetch https://broth.itch.ovh || fetch https://broth.itch.zone
-          unzip -q butler.zip
-          chmod +x butler
-          ./butler -V
+        uses: ./.github/actions/install-butler
 
       - name: Push to itch.io
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          ./butler push build/android/tappa.apk "${ITCH_USER}/${ITCH_GAME}:android"
+          butler push build/android/tappa.apk "${ITCH_USER}/${ITCH_GAME}:android"
 
   export-windows:
     name: Export & deploy Windows .exe
@@ -271,22 +252,13 @@ jobs:
           ls -la build/windows
 
       - name: Install butler
-        run: |
-          set -euo pipefail
-          fetch() {
-            curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
-              -o butler.zip "$1/butler/linux-amd64/LATEST/archive/default"
-          }
-          fetch https://broth.itch.ovh || fetch https://broth.itch.zone
-          unzip -q butler.zip
-          chmod +x butler
-          ./butler -V
+        uses: ./.github/actions/install-butler
 
       - name: Push to itch.io
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          ./butler push build/windows/tappa.exe "${ITCH_USER}/${ITCH_GAME}:windows"
+          butler push build/windows/tappa.exe "${ITCH_USER}/${ITCH_GAME}:windows"
 
   publish-play:
     name: Build AAB & upload to Play

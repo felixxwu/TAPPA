@@ -72,6 +72,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven long stage at 50 km/h, perf overlay + end-of-run stats breakdown |
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |
+| [release-pipeline.md](release-pipeline.md) | The `Release` workflow — cache gate, itch/Play/Pages/Firestore jobs, the `install-butler` composite action, secrets |
 
 ## File-to-feature quick map
 
@@ -121,6 +122,7 @@ rolling terrain. There is no scoring or objective — it's a physics/feel sandbo
 | Perf benchmark | `benchmark/perf_benchmark.gd`, `run_benchmark.sh` |
 | In-game benchmark | `scripts/benchmark_mode.gd` (`Benchmark` autoload), `scripts/benchmark_runner.gd`, `scripts/benchmark_stats.gd`, `scripts/benchmark_results.gd` |
 | Tests | `tests/`, `run_tests.sh` |
+| Release / CI | `.github/workflows/deploy.yml`, `.github/actions/install-butler/action.yml`, `build_web.sh`, `build_android.sh`, `build_windows.sh`, `build_android_play.sh` |
 
 > **Keep this current:** when you add or change a feature, update the matching
 > file here in the same piece of work (see CLAUDE.md).
