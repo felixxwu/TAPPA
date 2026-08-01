@@ -17,16 +17,18 @@ enum View { MAIN, SIGN_IN, REGISTER, RESET }
 
 var _view: int = View.MAIN
 var _busy := false
+# The live shared busy state while a cloud call is in flight, else null.
+# See scripts/cloud/cloud_busy.gd and _begin/_finish below.
+var _busy_state: CloudBusy = null
 var _message := ""
 var _message_role := "dim"
 
 var _email_field: TextField
 var _password_field: TextField
 var _confirm_field: TextField
-var _conflict_open := false
-# One name prompt at a time, and no reopening it on the rebuild that follows a
-# player cancelling out of it (see _maybe_prompt_username).
-var _username_prompt_open := false
+# NO modal latches here. "Is a prompt already up?" is asked of the scene tree via
+# ConfirmPopup.MODAL_GROUP — this page can be instantiated three times over, so a
+# per-instance bool was never able to answer it.
 
 
 func _ready() -> void:
@@ -71,6 +73,12 @@ func focus_first() -> void:
 
 func rebuild() -> void:
 	for child in get_children():
+		# The in-flight cloud busy line survives a rebuild. It belongs to the call,
+		# not to the page, and every state change during a sign-in triggers one of
+		# these — freeing it here would take the "Signing in…" line away mid-request.
+		# See scripts/cloud/cloud_busy.gd.
+		if child.is_in_group(CloudBusy.GROUP):
+			continue
 		remove_child(child)
 		child.queue_free()
 	_email_field = null
@@ -90,6 +98,12 @@ func rebuild() -> void:
 	if _message != "":
 		add_child(UITheme.label(_message, _message_role))
 
+	# Keep the preserved busy line at the bottom, where the message it stands in
+	# for would have been.
+	for child in get_children():
+		if child.is_in_group(CloudBusy.GROUP):
+			move_child(child, get_child_count() - 1)
+
 	UITheme.enforce(self)
 	# Only claim the cursor when this page is genuinely on screen. rebuild() runs
 	# on every Cloud state change — including at boot, while parked inside the
@@ -107,7 +121,7 @@ func rebuild() -> void:
 	# inside a hidden overlay would throw a dialog over the title screen (or, in
 	# a test run, over whatever the test was driving).
 	if at_root() and MenuNav.is_on_screen(self) \
-			and Cloud.sync != null and Cloud.sync.blocked_by_conflict and not _conflict_open:
+			and Cloud.sync != null and Cloud.sync.blocked_by_conflict:
 		_prompt_conflict.call_deferred(Cloud.sync.conflict_summary())
 
 
@@ -272,7 +286,7 @@ func _on_sync_now_pressed() -> void:
 # `_finish`, which is also the exit for Sync now / password reset / conflict
 # resolution — none of which should raise a name prompt.
 func _maybe_prompt_username() -> void:
-	if _username_prompt_open or UsernamePopup.current() != "":
+	if UsernamePopup.current() != "":
 		return
 	# Same guard the conflict modal uses: the popup is a layer-101 CanvasLayer that
 	# seizes focus, so it must never be raised from a page parked inside a hidden
@@ -280,18 +294,20 @@ func _maybe_prompt_username() -> void:
 	# CanvasLayer ancestor.
 	if not MenuNav.is_on_screen(self):
 		return
-	_username_prompt_open = true
+	# Unconditional: UsernamePopup.open refuses tree-wide if any modal is up (it
+	# shares ConfirmPopup.MODAL_GROUP), so there is nothing left for a per-instance
+	# latch to add — and this page can exist three times over, so it never could.
 	var popup := UsernamePopup.open(self)
-	popup.finished.connect(func(_name: String) -> void:
-		_username_prompt_open = false
-		rebuild())
+	if popup != null:
+		popup.finished.connect(func(_name: String) -> void: rebuild())
 
 
 func _on_username_pressed() -> void:
 	# Nothing to await and nothing to fail: the name lives in the profile and rides
 	# the ordinary cloud sync, so there is no busy state and no error path here.
 	var popup := UsernamePopup.open(self)
-	popup.finished.connect(func(_name: String) -> void: rebuild())
+	if popup != null:
+		popup.finished.connect(func(_name: String) -> void: rebuild())
 
 
 func _on_sign_out_pressed() -> void:
@@ -313,39 +329,26 @@ func _on_conflict_detected(summary: Dictionary) -> void:
 		_prompt_conflict(summary)
 
 
-func _prompt_conflict(summary: Dictionary) -> void:
-	if _conflict_open or summary.is_empty():
+# Delegates to the SHARED prompt (scripts/cloud/conflict_prompt.gd) rather than
+# building its own. This page is no longer the only place a conflict can be raised —
+# hq.gd listens too, and the boot-time starter-pick gate raises it blockingly — so the
+# copy, the three choices and the resolution calls must come from one place. The
+# `summary` argument is kept for the existing call sites; ConflictPrompt re-reads the
+# live summary itself.
+#
+# NO PRIVATE "already open" LATCH. This page can exist up to three times over (the
+# Settings host, the HQ title overlay and the standings page each build one), so a
+# per-instance bool could never answer "is a prompt up?" — ConfirmPopup.MODAL_GROUP
+# answers it for the tree, and open() refuses rather than stacking.
+func _prompt_conflict(_summary: Dictionary) -> void:
+	if not ConflictPrompt.is_blocked():
 		return
-	_conflict_open = true
-	var body := "This device: %s\nCloud (from %s): %s\n\nWhich one should be kept?" % [
-		summary.get("local", ""), summary.get("cloud_device", "another device"),
-		summary.get("cloud", ""),
-	]
-	var popup := ConfirmPopup.open(self, "Your progress differs", body, [
-		{"label": "Keep this device", "callback": _resolve_keep_local},
-		{"label": "Use cloud", "callback": _resolve_use_cloud},
-		{"label": "Decide later", "callback": _resolve_later},
-	], 0, 2)
-	popup.finished.connect(func() -> void: _conflict_open = false)
+	ConflictPrompt.open(self, rebuild)
 
 
-func _resolve_keep_local() -> void:
-	if not _begin("Uploading this device's progress…"):
-		return
-	_finish(await Cloud.resolve_keep_local())
-
-
-func _resolve_use_cloud() -> void:
-	# Local-only: parse, migrate, write. No await, because there is nothing to
-	# wait for — the document was already downloaded when the conflict was raised.
-	if not _begin("Applying cloud progress…"):
-		return
-	_finish(Cloud.resolve_use_cloud())
-
-
-func _resolve_later() -> void:
-	Cloud.resolve_later()
-	rebuild()
+# NOTE: the three resolution handlers that used to live here are gone. They are the
+# shared prompt's business now (scripts/cloud/conflict_prompt.gd) — keeping a private
+# copy is what let this page's behaviour drift from every other host's.
 
 
 func _on_auth_lost(reason: String) -> void:
@@ -364,22 +367,39 @@ func _on_cloud_state_changed() -> void:
 
 # Put the page into its busy state. Returns false when a request is already in
 # flight, so a double-tap cannot fire two sign-ins.
+#
+# The busy line itself is the SHARED one (scripts/cloud/cloud_busy.gd), in its
+# AMBIENT shape: this page is already on screen, its buttons go disabled while
+# _busy, and a full-screen cover over a form the player is looking at would be
+# worse than the line. What used to be private here is now the same mechanism
+# every other cloud call site uses.
 func _begin(busy_text: String) -> bool:
 	if _busy:
 		return false
 	_busy = true
-	_set_message(busy_text, "dim")
+	_set_message("", "dim")
+	_busy_state = CloudBusy.ambient(self, busy_text, self)
 	rebuild()
 	return true
 
 
 # Leave the busy state and repaint with the result. Returns whether it succeeded,
 # so callers can branch on it inline.
+#
+# NOT a coroutine, deliberately: every caller reads it as `if _finish(await ...)`,
+# and the ambient state has no minimum-duration floor to hold (that is a cover's
+# problem — see CloudBusy.MIN_COVER_VISIBLE_SEC), so end() returns without
+# suspending here and there is nothing to await.
 func _finish(result: Dictionary) -> bool:
 	_busy = false
+	if _busy_state != null:
+		_busy_state.end()
+		_busy_state = null
 	var ok := bool(result.get("ok", false))
-	_set_message("" if ok else String(result.get("error", "Something went wrong.")),
-		"dim" if ok else "red")
+	# CloudBusy.failure_text is the ONE answer to "what does the player see when a
+	# cloud call fails" — this page renders it in its own red row rather than
+	# stacking a modal, but the words come from the same place as everywhere else.
+	_set_message(CloudBusy.failure_text(result), "dim" if ok else "red")
 	rebuild()
 	return ok
 

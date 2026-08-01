@@ -59,6 +59,28 @@ func test_no_detune_slider_on_the_tuning_panel() -> void:
 	var p = _panel(_owned())
 	assert_false(p._sliders.has("engine_detune"), "detune is no longer a tuning-panel axis")
 
+func test_wheels_button_hidden_without_an_on_wheels_callback() -> void:
+	# The start-line's copy of this panel passes no on_wheels — a button that fires
+	# nothing would be confusing, so it stays hidden there.
+	var p = TuningPanelScript.new()
+	add_child_autofree(p)
+	p.setup(_owned())
+	p.refresh()
+	assert_not_null(p._wheels_button, "the Wheels button always exists")
+	assert_false(p._wheels_button.visible, "Wheels is hidden when the host wires no on_wheels")
+
+func test_wheels_button_shown_and_fires_on_wheels() -> void:
+	var fired := [0]
+	var p = TuningPanelScript.new()
+	add_child_autofree(p)
+	p.setup(_owned(), Callable(), func(): fired[0] += 1)
+	p.refresh()
+	assert_true(p._wheels_button.visible, "Wheels is shown once the host wires on_wheels")
+	assert_eq(p._wheels_button.focus_mode, Control.FOCUS_ALL,
+		"Wheels is keyboard/gamepad focusable, matching the panel's sliders")
+	p._on_wheels_pressed()
+	assert_eq(fired[0], 1, "pressing Wheels fires the host's on_wheels callback")
+
 
 # --- Task 3: a start-line-style tune bakes into the live config via TuningLibrary. ---
 func test_grip_tuning_shifts_front_rear_grip_off_baseline() -> void:

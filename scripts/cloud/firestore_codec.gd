@@ -32,14 +32,20 @@ static func int_value(number: int) -> Dictionary:
 	return {"integerValue": str(number)}
 
 
-# Wrap a plain {key: String|int} dictionary as a Firestore document body.
+static func bool_value(flag: bool) -> Dictionary:
+	return {"booleanValue": flag}
+
+
+# Wrap a plain {key: String|int|bool} dictionary as a Firestore document body.
 # Insertion order is preserved, so the field order of the request matches the
 # order the caller wrote — which is also the order update_mask() should be given.
 static func document(values: Dictionary) -> Dictionary:
 	var fields: Dictionary = {}
 	for key in values:
 		var value: Variant = values[key]
-		if typeof(value) == TYPE_INT:
+		if typeof(value) == TYPE_BOOL:
+			fields[String(key)] = bool_value(bool(value))
+		elif typeof(value) == TYPE_INT:
 			fields[String(key)] = int_value(int(value))
 		else:
 			fields[String(key)] = string_value(String(value))
@@ -63,6 +69,13 @@ static func int_field(fields: Dictionary, key: String) -> int:
 	if typeof(wrapped) != TYPE_DICTIONARY:
 		return 0
 	return String((wrapped as Dictionary).get("integerValue", "0")).to_int()
+
+
+static func bool_field(fields: Dictionary, key: String) -> bool:
+	var wrapped: Variant = fields.get(key, {})
+	if typeof(wrapped) != TYPE_DICTIONARY:
+		return false
+	return bool((wrapped as Dictionary).get("booleanValue", false))
 
 
 # Pull the "fields" dictionary out of a document response, or {} if absent.

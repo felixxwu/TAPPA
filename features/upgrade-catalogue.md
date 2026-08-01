@@ -4,7 +4,7 @@
 the catalogue of upgrade **items** — authored content (like `CarLibrary` /
 `RallyLibrary`), not player state. The save profile holds the player side (each
 `OwnedCar.installed_upgrades` / `disabled_upgrades`, keyed by the stable `id`
-here, plus the consumable `inventory` — repair kits + engine swap tokens); this library defines
+here, plus the consumable `inventory` — repair kits, engine swap tokens, and mystery boxes); this library defines
 what those ids mean and what each does to a fielded car.
 
 **Upgrades are car-bound.** An upgrade belongs to the car it was won for and
@@ -73,9 +73,14 @@ The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the ge
 earn-gated option row — see below.
 Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
 tier 1 + prerequisite-gated on the same car having `turbo_small`, see above), an aero kit, the three **weight** parts above,
-the drivetrain swap kit, and the two consumables — the **repair kit** and the **engine
-swap token** (both `slot: ""`, held in the shared `inventory`; the token is spent
-by `Save.swap_engines`, see [engine-swap.md](engine-swap.md)). The concrete part
+the drivetrain swap kit, and three consumables — the **repair kit**, the **engine
+swap token**, and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; all
+three `slot: ""`, held in the shared `inventory`). The token is spent
+by `Save.swap_engines`, see [engine-swap.md](engine-swap.md). The mystery box
+is drawn instead of a normal upgrade once a car has nothing left to gain and
+the player is token-rich, and gifts a random upgrade to a *different* owned
+car when opened at the HQ Lift — see [reward-system.md](reward-system.md)
+→ "Mystery box" for the trigger, resolver, and reveal. The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults. The aero kit also **reveals the car's spoiler/splitter mesh** while enabled — see [aero-parts.md](aero-parts.md).
 
@@ -96,6 +101,11 @@ slider now sits at the **bottom** of the menu — below the part-slot selectors 
 lift-only engine-swap row — as the final power adjustment. Lateral G is no longer shown here.
 The engine-swap row is **lift-only** (the host passes `on_swap`); the popup
 leaves it unset and drops the row, since the swap flow would change the HQ view.
+The **mystery-box row** is likewise lift-only (the host passes a fifth
+`on_open_box` param to `setup`; the popup and the reward-reveal instance leave
+it unset and drop the row) — see [reward-system.md](reward-system.md) →
+"Mystery box" and [engine-swap.md](engine-swap.md) for how the Lift's button
+inventory is laid out.
 
 When a host passes a power-to-weight limit (`pw_limit >= 0` — the start-line pre-race
 overlay, the car-park over-powered Change-Upgrades popup, and the reward reveal's
@@ -260,4 +270,8 @@ picking enables, `Stock` parks), and the option-selector focus-retention regress
 consumable / drivetrain-kit skip are in `test_upgrade_reveal.gd`; the standings
 Collect-reward flow that hosts it is in `test_menu_flow.gd`.
 `test_rally_session.gd` covers per-event won parts binding to the driven car with no
-slottable part won twice per rally (the dedup'd draw).
+slottable part won twice per rally (the dedup'd draw). Mystery-box tests — the
+draw trigger, `pick_mystery_box_grant`, `Save.open_mystery_box`'s atomic
+install/fallback, and the Lift row's nav/gating — are covered in
+`test_reward_system.gd` / `test_save_manager.gd` / `test_menu_flow.gd`; see
+`features/reward-system.md` → "Mystery box" for the full breakdown.

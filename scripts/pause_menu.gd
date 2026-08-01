@@ -4,7 +4,8 @@ extends CanvasLayer
 # (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
 # controls). Quit to HQ abandons the current rally (no retry penalty, damage persisted,
-# no reward — RallySession.abandon) after a confirm and returns to HQ. The whole layer
+# no reward — RallySession.abandon) after a confirm and returns to HQ; a CHALLENGE run is
+# only PAUSED (ChallengeSession.pause_run) — only a wreck DNFs a challenge. The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu too.
@@ -83,22 +84,38 @@ func _on_reset_to_track_pressed() -> void:
 	resume()
 
 
-# Pop the "Abandon rally?" confirm; quit_to_hq() runs only if the player accepts.
+# Pop the quit confirm; quit_to_hq() runs only if the player accepts. The body
+# differs by session: a career rally really is abandoned (progress lost), while a
+# challenge is only PAUSED — challenge_run stays persisted and the entry screen
+# offers Resume — so it must not claim the run is lost (item 12).
 func _on_quit_pressed() -> void:
-	ConfirmPopup.open(self, "Quit to HQ?",
-		"Abandon this rally and return to HQ?\nYour progress in this run is lost.",
+	var body := "Abandon this rally and return to HQ?\nYour progress in this run is lost."
+	if ChallengeSession.is_active():
+		body = "Pause this challenge and return to HQ?\n" \
+			+ "Your run is saved — resume it any time.\nThe current stage starts over."
+	ConfirmPopup.open(self, "Quit to HQ?", body,
 		[ {"label": "Quit to HQ", "callback": quit_to_hq},
 		  {"label": "Cancel", "callback": Callable()} ])
 
 
-# Leave the run for HQ: unfreeze, then abandon the active rally. RallySession.abandon
-# emits rally_finished, which world.gd routes back to HQ (the garage view). A benchmark
-# run exits through Benchmark.exit_to_hq so its config overrides are restored. With no
-# session (a plain dev boot of main.tscn) there's nothing to abandon, so load HQ direct.
+# Leave the run for HQ: unfreeze, then leave the active rally/challenge.
+# RallySession.abandon really abandons (no retry penalty, damage persisted, no
+# reward) and emits rally_finished, which world.gd routes back to HQ (the garage
+# view). A CHALLENGE is only PAUSED (item 12) — only a wreck DNFs a challenge, so
+# quitting must not spend the period. pause_run() deliberately emits no
+# run_finished (world.gd's handler would post a DNF to the board on it), so this
+# owns the transition itself, matching the garage-view landing of the other paths.
+# A benchmark run exits through Benchmark.exit_to_hq so its config overrides are
+# restored. With no session (a plain dev boot of main.tscn) there's nothing to
+# leave, so load HQ direct.
 func quit_to_hq() -> void:
 	get_tree().paused = false
 	if Benchmark.active:
 		Benchmark.exit_to_hq()
+	elif ChallengeSession.is_active():
+		ChallengeSession.pause_run()
+		RallySession.return_to_garage = true
+		get_tree().change_scene_to_file("res://hq.tscn")
 	elif RallySession.is_active():
 		RallySession.abandon()
 	else:

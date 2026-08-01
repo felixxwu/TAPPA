@@ -145,11 +145,22 @@ and the focus highlight) is built by the shared `SliderRow.build` helper
 (`scripts/slider_row.gd`), which the upgrades menu's detune row uses too — so the
 two panels' rows can't drift apart. It owns the slider rows, the locked-axis greying/"needs X kit" notes,
 the **Reset to neutral** action, and the immediate `Save.set_tuning`
-persistence; a host binds it with `setup(owned_car, on_change)` and calls
-`refresh()`, and is notified via `on_change` after each edit so it can re-field
+persistence; a host binds it with `setup(owned_car, on_change, on_wheels := Callable())`
+and calls `refresh()`, and is notified via `on_change` after each edit so it can re-field
 the car. **Reset to neutral** clears only the three handling axes back to `0`
 and **preserves** `tuning.engine_detune` (detune is now owned by the upgrades
 menu, so tuning no longer resets it to full power).
+
+Below Reset to neutral sits a **Wheels** button (`_wheels_button`, native
+`FOCUS_ALL` like the sliders and Reset) that fires `on_wheels()` when pressed — the
+HQ lift wires it to `_enter_wheel_swap`, leaving the lift for the car park's solo
+wheel view (see [wheel-customization.md](wheel-customization.md)). It moved here
+from the lift hub row so Wheels is reached *through* Tuning rather than sitting
+alongside it. `on_wheels` defaults to an invalid `Callable`, and `TuningPanel`
+**hides** the button whenever the host didn't wire one (`_wheels_button.visible =
+_on_wheels.is_valid()`) — the start-line's copy of the panel (below) has nowhere
+sensible to send a mid-rally wheel swap, so it leaves `on_wheels` unset and the
+button stays hidden there.
 
 `TuningPanel` has a sibling for the **upgrades** half: `UpgradesMenu`
 (`scripts/upgrades_menu.gd`, also a reusable `VBoxContainer` with the same
@@ -162,7 +173,8 @@ gated close button, not the label) and its immediate `Save.set_engine_detune`
 persistence.
 
 - **Garage tuning lift** (`hq.gd`, `LiftPage.TUNE`) — embeds the panel with a
-  no-op `on_change` (the change lands on the car's next fielding).
+  no-op `on_change` (the change lands on the car's next fielding) and
+  `on_wheels = _enter_wheel_swap`, so the Wheels button is shown here.
 - **Pre-event start line** (`start_line.gd`) — a **Tune Car** button under
   **Start** opens a centered overlay hosting the same panel, bound to the car
   about to race (`Save.get_car(RallySession.car_instance_id())`). Its `on_change`

@@ -150,6 +150,34 @@ func test_pit_repair_fires_at_each_event_after_the_first() -> void:
 	assert_false(RallySession.take_pending_repair().get("repaired", false), "the repair summary is consumed once")
 
 
+# The final event's damage previously carried forward unrepaired (only events AFTER
+# the first got a courtesy repair, and there's no "next event" after the last one to
+# trigger it). _resolve_results now applies the same partial field repair the
+# between-event transitions get — but silently, with nothing left for the podium's
+# repair popup to pick up.
+func test_final_event_damage_is_repaired_on_resolve_silently() -> void:
+	var owned := _start("fx_open")
+	RallySession._opponent_field = _field([200000, 210000, 220000])
+	var id: int = owned["instance_id"]
+	var box := _capture_finish()
+	RallySession.report_event_result(60000, 300.0)   # event 0, undamaged repair path
+	RallySession.continue_to_next_event()             # -> event 1 (repaired, consumed below)
+	RallySession.take_pending_repair()
+	RallySession.report_event_result(60000, 300.0)   # event 1
+	RallySession.continue_to_next_event()             # -> event 2 (repaired, consumed below)
+	RallySession.take_pending_repair()
+	RallySession.report_event_result(60000, 300.0)   # event 2 (final): damage taken, never repaired pre-fix
+	var hp_after_damage := float(_save.get_car(id)["hp"])
+	var max_hp := float(CarLibrary.by_id(_save.get_car(id)["model_id"]).get("max_hp", hp_after_damage))
+	assert_lt(hp_after_damage, max_hp, "the final hit actually damaged the car")
+	RallySession.continue_to_next_event()             # -> _resolve_results: silent final repair
+	assert_not_null(box[0], "the rally finished")
+	var hp_after_finish := float(_save.get_car(id)["hp"])
+	assert_gt(hp_after_finish, hp_after_damage, "the final-event damage was partially repaired on finish")
+	assert_lt(hp_after_finish, max_hp, "the repair is partial, not a full heal, matching every other stage-to-stage repair")
+	assert_false(RallySession.take_pending_repair().get("repaired", false), "the final-event repair does not surface a repair popup")
+
+
 # current_event_wreck surfaces the rival who crashed out of the CURRENT event (with the
 # actual car they drove), tracking the event index, and is empty for an event nobody
 # wrecked in. Built from a synthetic field so it leans on the delegation, not on a roll.
@@ -633,3 +661,49 @@ func test_omitted_keys_fall_back_to_authored_baseline_not_prior_event() -> void:
 		"omitted terrain key resolves to the authored baseline, not event A's override")
 	assert_eq(cfg.track_water_level_m, base.track_water_level_m,
 		"omitted water_level resolves to the authored baseline, not event A's override")
+
+
+# --- Consume-time config resolution (DrivingContext.apply_stage_config) --------
+
+# The career arm of the one place a run's track parameters reach the live config.
+# The config the run scene will read must be FIELD-FOR-FIELD what the canonical
+# (lockfile / target-time) path builds for the same event — the two derivations are
+# compared to each other, so nothing tunable is pinned and a per-event field added
+# later is covered automatically.
+func test_an_active_events_resolved_config_equals_its_canonical_config() -> void:
+	_start("fx_open")
+	var event := RallySession.current_event()
+	assert_false(event.is_empty(), "setup: an active rally exposes its current event")
+
+	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
+	DrivingContext.apply_stage_config(cfg)
+	var canonical := RallySession.canonical_event_config(event)
+
+	var compared := 0
+	for prop in cfg.get_property_list():
+		if int(prop.get("usage", 0)) & PROPERTY_USAGE_SCRIPT_VARIABLE == 0:
+			continue
+		compared += 1
+		assert_eq(cfg.get(prop["name"]), canonical.get(prop["name"]),
+			"%s: the live config must equal the canonical event config" % prop["name"])
+	assert_gt(compared, 0, "setup: the GameConfig exposes script variables to diff")
+
+
+# Session-less entries (free roam, benchmark, dev boot) must be left ALONE: they
+# hand-write Config.data deliberately, and applying an empty event would reset every
+# field to the authored baseline and wipe those writes.
+func test_apply_stage_config_leaves_a_sessionless_config_untouched() -> void:
+	RallySession.abandon()
+	ChallengeSession.abandon()
+	assert_false(RallySession.is_active(), "setup: no career session")
+	assert_false(ChallengeSession.is_active(), "setup: no challenge session")
+
+	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
+	var authored_seed := cfg.track_seed + 7919  # any value the caller could pick
+	cfg.track_seed = authored_seed
+	cfg.track_forestiness = clampf(cfg.track_forestiness + 0.25, 0.0, 1.0)
+	var authored_forestiness := cfg.track_forestiness
+	DrivingContext.apply_stage_config(cfg)
+	assert_eq(cfg.track_seed, authored_seed, "a session-less caller's seed survives")
+	assert_eq(cfg.track_forestiness, authored_forestiness,
+		"a session-less caller's hand-written fields survive")

@@ -51,6 +51,10 @@ const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
 # Static access to base_design_height() for the post-process dither grid; the same
 # preload world.gd uses, since the autoload instance isn't needed for a static call.
 const DisplayStretchScript := preload("res://scripts/display_stretch.gd")
+# RallySession is an autoload with no class_name, so its STATIC canonical config
+# writer (apply_event_config) must be reached through the script resource — calling a
+# static via the instance warns. Same precedent as driving_context.gd.
+const RallySessionScript := preload("res://scripts/rally_session.gd")
 
 # The tuning-lift pages (todo/menus.md rig 4). HUB is the bay landing page (car
 # name/description + Upgrades/Tuning buttons + a Test Drive button); TUNE is
@@ -114,9 +118,17 @@ var _selected_instance_id := -1
 #            styles live on the car and Start fits the shown one. Uses the car park
 #            (not the tuning lift) precisely because the lift holds the car RAISED and
 #            wheels are judged by stance. See features/wheel-customization.md.
+#   CHALLENGE (_enter_challenge_car_screen) — the Rally Challenge entry point's car
+#            picker (spec §7 / §2): owned cars ChallengeSession.eligible_cars(kind, ...)
+#            reports for the currently-shown kind, same over-cap-but-detune-reachable
+#            treatment as RALLY via _detune_needed (judged with
+#            ChallengeSession.qualifying_detune_for instead of RallyLibrary.qualifying_detune,
+#            since a challenge has no authored rally dict — see _build_challenge_lineup).
+#            Start commits ChallengeSession.start + the scene hand-off instead of
+#            RallySession.start_rally (see _begin_challenge_start).
 # One enum instead of mutually-exclusive booleans: entering a job sets the mode
 # (which inherently clears the others), and every exit/commit/back returns to RALLY.
-enum CarparkMode { RALLY, GARAGE, FREEROAM, SWAP, STARTER, WHEELS }
+enum CarparkMode { RALLY, GARAGE, FREEROAM, SWAP, STARTER, WHEELS, CHALLENGE }
 var _carpark_mode := CarparkMode.RALLY
 
 # Cosmetic wheel-swap state, live only in CarparkMode.WHEELS. _wheel_options is the
@@ -180,6 +192,11 @@ var _active_carpark_popup: ConfirmPopup = null
 # engine swap token. Carries the token cost, or the "no tokens" block. Implemented via
 # ConfirmPopup. _pending_swap holds the two instance ids awaiting the OK press.
 var _pending_swap: Dictionary = {}
+# The start path the mobile control-scheme gate interrupted, resumed by
+# _on_settings_action once a scheme is saved. Set by _start_preflight, which every
+# start path (career, challenge, free roam) funnels through — so the gate exists once
+# and each path resumes into ITSELF rather than always into the career start.
+var _pending_start: Callable = Callable()
 var _cars: Array = []
 var _markers: Array = []
 # Reuse cache for parked lineup cars, shared by every lineup (rally car-select,
@@ -272,6 +289,33 @@ var _android_notice_layer: CanvasLayer  # web-on-Android boot notice; null once 
 # submenu. Null while closed. See features/cloud-save.md.
 var _account_layer: CanvasLayer
 var _account_menu: AccountMenu
+# Rally Challenge entry point (Daily/Weekly/Monthly, spec §7): a modal overlay over
+# the garage, opened from the garage row's Challenge button, built as a dark detail-
+# card sibling to the rally-detail panel (build_detail_overlay's MODAL_DIM + header +
+# HSeparator + _detail_heading/_detail_wrap_label shape) rather than a flat button
+# list. See hq_overlays.gd's build_challenge_overlay and the _open_challenge_overlay
+# family below.
+var _challenge_layer: CanvasLayer
+var _challenge_kind: String = ChallengeLibrary.DAILY
+# The Daily/Weekly/Monthly tab row: real FOCUS_ALL buttons (so keyboard/gamepad focus
+# can rest on and move across them via native left/right focus-neighbour nav — see
+# menu_nav.gd) but mouse_filter = MOUSE_FILTER_IGNORE and no `pressed` wiring at all, so
+# there is NO mouse hover/click interaction whatsoever — arriving via focus (each one's
+# focus_entered calls _select_challenge_kind) is the only way to pick a kind. See
+# build_challenge_overlay. Order matches [DAILY, WEEKLY, MONTHLY] — _challenge_kind_button.
+var _challenge_kind_buttons: Array[Button] = []
+# Header: title ("Daily Challenge") + subtitle (the rolled ceiling), mirroring
+# _detail_title/_detail_region's two-line shape.
+var _challenge_title_label: Label
+var _challenge_subtitle_label: Label
+# Four concise sections, each one _detail_heading + one/two _detail_wrap_label rows:
+# win condition, win reward, eligible cars, current progress. (The ceiling already
+# rides on the header subtitle, so it doesn't get its own "entry requirement" row.)
+var _challenge_win_label: Label
+var _challenge_reward_label: Label
+var _challenge_eligible_label: Label
+var _challenge_progress_label: Label
+var _challenge_start_button: Button
 var _garage_layer: CanvasLayer
 var _table_layer: CanvasLayer
 var _detail_layer: CanvasLayer
@@ -302,14 +346,16 @@ var _car_name_label: Label
 var _car_stats_label: Label
 var _swap_preview_label: RichTextLabel
 var _start_button: Button
-var _title_start_button: Button  # EXTERIOR title Start — default keyboard/gamepad focus
+var _title_start_button: Button  # EXTERIOR title Start — first cursor stop
 # These three are populated by HqOverlays.build_title_overlay (the assignment lives in
 # another class now) and read by tests, so GDScript's in-class "unused" check can't see
 # their use — silence it rather than reintroduce a dead in-class reference.
 @warning_ignore("unused_private_class_variable")
 var _title_account_button: Button  # EXTERIOR title Account (optional cloud save)
 @warning_ignore("unused_private_class_variable")
-var _title_exit_button: Button  # EXTERIOR title Exit Game (bottom of the list)
+var _title_settings_button: Button  # EXTERIOR title Settings
+@warning_ignore("unused_private_class_variable")
+var _title_exit_button: Button  # EXTERIOR title Exit Game (last in the row)
 @warning_ignore("unused_private_class_variable")
 var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
 var _no_eligible_label: Label
@@ -317,13 +363,29 @@ var _no_eligible_label: Label
 var _car_warning_label: Label
 var _car_repair_button: Button
 
-# Garage overlay cursor: a single left/right cursor over the bottom action row
-# (Back / Career / Garage / Free Roam / Settings). Buttons are FOCUS_NONE and highlighted by hand
-# (a ButtonCursor, like the tuning hub) since the garage is a spatially-navigated 3D
-# station, not a focus graph. hq keeps the index (_garage_focus, read by tests); the
-# ButtonCursor owns the shared wrap/paint/fire behaviour (scripts/button_cursor.gd).
+# Title screen cursor: a single left/right cursor over Start / Account / Settings /
+# (Exit Game). Same diegetic-station idiom as the garage row and lift hub — FOCUS_NONE
+# buttons highlighted by hand — now that EXTERIOR is a horizontal action row rather
+# than a native-focus vertical list. hq keeps the index (_title_focus, read by tests);
+# the ButtonCursor owns the shared wrap/paint/fire behaviour.
+var _title_cursor := ButtonCursor.new()
+var _title_focus := 0           # which title button the cursor sits on (starts on Start)
+
+# Garage overlay cursor: a single left/right cursor over the bottom action row.
+# Buttons are FOCUS_NONE and highlighted by hand (a ButtonCursor, like the tuning hub)
+# since the garage is a spatially-navigated 3D station, not a focus graph. hq keeps
+# the index (_garage_focus, read by tests); the ButtonCursor owns the shared
+# wrap/paint/fire behaviour (scripts/button_cursor.gd).
+#
+# TWO LEVELS share this one row/cursor (rebuilt in place by _refresh_garage_row —
+# same camera position, no view/scene change): the TOP level (Back / Drive /
+# Garage / Mystery Box (N)) and, after pressing Drive, the DRIVE level (Back /
+# Career / Free Roam / Online). _garage_showing_drive tracks which is current;
+# entering the GARAGE view always resets to the top level (_go_to's View.GARAGE case).
 var _garage_cursor := ButtonCursor.new()
-var _garage_focus := 1          # which garage action the cursor sits on (defaults to Map)
+var _garage_focus := 1          # which garage action the cursor sits on (defaults to Drive)
+var _garage_showing_drive := false
+var _garage_actions_row: HBoxContainer  # the row _refresh_garage_row rebuilds in place
 
 # Tuning-lift overlay widgets.
 var _lift_info_panel: PanelContainer  # bottom-left car description panel (hidden when a sub-menu is open)
@@ -347,6 +409,9 @@ func _ready() -> void:
 	# first sign-in that restores a career, or "Use cloud" on a conflict), so the
 	# car park has to rebuild rather than keep showing the old collection.
 	Cloud.profile_replaced.connect(_on_cloud_profile_replaced)
+	# A sync conflict must reach the player wherever they are, not only if they
+	# happen to open the account page — see _on_cloud_conflict_detected.
+	Cloud.conflict_detected.connect(_on_cloud_conflict_detected)
 	# Dev profiling loop: with ?bench=1 in the web URL, boot straight into the
 	# benchmark (skip building HQ we'd immediately discard). Paired with the page's
 	# reload-listener (export_presets head_include) + the LAN collector, this lets a
@@ -358,7 +423,12 @@ func _ready() -> void:
 		return
 	# Headless (the test runner): build synchronously so tests see a ready HQ after one
 	# frame, with no loading cover. A real display gets the covered build below.
+	# The COVER is what headless skips — not the decision: _await_boot_pull runs here
+	# too, and with no pull pending (the default in tests) it does not await at all, so
+	# a ready HQ is still one frame away. See features/testing.md: skip the animation,
+	# never the decision.
 	if Platform.is_headless():
+		await _await_boot_pull(null)
 		_build_hq()
 		return
 	# Godot's boot bar only covers the engine + .pck download + script compile. Building
@@ -374,6 +444,12 @@ func _ready() -> void:
 	# draws it, so the build doesn't run before the cover is actually on screen.
 	await get_tree().process_frame
 	await get_tree().process_frame
+	# Let a boot-time cloud pull land BEFORE anything reads the profile, so the title
+	# screen is built once from the settled career instead of being built from the
+	# local one and then visibly rebuilt a second later. See _await_boot_pull.
+	await _await_boot_pull(loading)
+	if not is_inside_tree():
+		return
 	var boot_t0 := Time.get_ticks_msec()
 	_build_hq()
 	# _build_hq (View.EXTERIOR) kicks off _build_title_lineup, which parks the
@@ -474,6 +550,7 @@ func _build_hq() -> void:
 	_overlays.build_lift_overlay()
 	_overlays.build_car_overlay()
 	_overlays.build_settings_overlay()
+	_overlays.build_challenge_overlay()
 	# Enable 3D mouse/touch picking so the table / lift / pins receive input_event.
 	get_viewport().physics_object_picking = true
 	_refresh_map_pins()
@@ -917,19 +994,6 @@ func _station_button(text: String, cb: Callable) -> Button:
 	return b
 
 
-# One title-screen button: FOCUS_ALL (keyboard/gamepad nav), centred, the shared 220-wide
-# pill at `height`, wired to `cb` and parented to `root`. Returns the button.
-func _title_button(root: Control, text: String, height: float, cb: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.focus_mode = Control.FOCUS_ALL
-	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	b.custom_minimum_size = Vector2(220, height)
-	b.pressed.connect(cb)
-	root.add_child(b)
-	return b
-
-
 # A plain Label with `text` and a `font_size` override — the Label.new() + font-size +
 # add-child idiom repeated across the station overlays. Deliberately NOT UITheme.label,
 # which forces a role colour + uppercase (a different look). Any further overrides
@@ -957,6 +1021,24 @@ func _detail_wrap_label() -> Label:
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl.custom_minimum_size = Vector2(1, 0)  # don't let the longest word dictate column width
 	return lbl
+
+
+# A single-row "heading: value" pair — a fixed-width dim heading (_detail_heading)
+# beside the value (_detail_wrap_label), added to `parent` as one HBoxContainer row.
+# Used where the rally detail panel's heading-above-value-below shape (_detail_heading
+# + _detail_wrap_label stacked) would cost more vertical space than the info is worth —
+# the challenge screen's four sections, one line each instead of two. Returns the value
+# Label for the caller to keep populating.
+func _challenge_info_row(parent: VBoxContainer, heading_text: String) -> Label:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	var heading := _detail_heading(heading_text)
+	heading.custom_minimum_size = Vector2(140, 0)
+	row.add_child(heading)
+	var value := _detail_wrap_label()
+	row.add_child(value)
+	return value
 
 
 # True when the WEB build is running in an Android browser — the one case where the
@@ -1009,6 +1091,7 @@ func _dismiss_android_app_notice() -> void:
 	_android_notice_layer.queue_free()
 	_android_notice_layer = null
 	_title_layer.visible = _view == View.EXTERIOR
+	_refresh_title_focus()
 
 
 # --- Account overlay ---------------------------------------------------------
@@ -1024,6 +1107,14 @@ func _open_account_overlay() -> void:
 	_account_layer = made[0]
 	var root: VBoxContainer = made[1]
 	root.alignment = BoxContainer.ALIGNMENT_CENTER
+	# A dark backing so the account text reads over the busy 3D garage/car-park
+	# behind it — same UITheme.MODAL_DIM treatment build_detail_overlay/
+	# build_challenge_overlay use, just missing here until now.
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = UITheme.MODAL_DIM
+	_account_layer.add_child(bg)
+	_account_layer.move_child(bg, 0)
 
 	_account_menu = AccountMenu.new()
 	_account_menu.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -1048,7 +1139,353 @@ func _close_account_overlay() -> void:
 	_account_layer = null
 	_account_menu = null
 	_title_layer.visible = _view == View.EXTERIOR
-	UITheme.focus_grab.bind(_title_start_button).call_deferred()
+	_refresh_title_focus()
+
+
+# --- Rally Challenge overlay (Daily/Weekly/Monthly, spec §7) -----------------
+# A modal over the GARAGE, mirroring _open_account_overlay's modal-over-title shape:
+# _challenge_layer built once in _ready (build_challenge_overlay), shown/hidden here
+# rather than folded into the View enum / _update_overlays switch.
+
+func _open_challenge_overlay() -> void:
+	var unix_time := int(Time.get_unix_time_from_system())
+	# A stale run (period rolled over since it was stored) is discarded here, before the
+	# entry screen is built, so a rolled-over period shows a fresh entry rather than a
+	# dead Resume button (spec §3). ChallengeSession.has_stale_run/resumable_run/
+	# eligible_cars are pure static helpers (no Save dependency, testable with a
+	# synthetic profile per challenge_session.gd) called through the autoload the same
+	# way every other ChallengeSession call in this file is — the analyzer's "static
+	# called on instance" warning is expected here, same as it would be for
+	# RallySession.apply_event_config called via the RallySession autoload.
+	@warning_ignore("static_called_on_instance")
+	if ChallengeSession.has_stale_run(Save.profile, unix_time):
+		ChallengeSession.discard_stale_run(unix_time)
+	_garage_layer.visible = false
+	_challenge_layer.visible = true
+	_refresh_challenge_overlay()
+	UITheme.enforce(_challenge_layer)
+	# Land on the CURRENT kind's own tab, not just tree-order-first (which would always
+	# be Daily) — re-opening after switching kind keeps the cursor on the kind you left.
+	UITheme.focus_grab(_challenge_kind_button(_challenge_kind))
+
+
+func _close_challenge_overlay() -> void:
+	if _challenge_layer == null:
+		return
+	_challenge_layer.visible = false
+	_garage_layer.visible = _view == View.GARAGE
+
+
+# Switching kind resets any prior car-picker context and instantly re-derives the whole
+# screen for the new kind — Resume is only offered when the freshly-shown kind matches
+# the stored run's kind (see _refresh_challenge_overlay). Called both by a tab's
+# focus_entered (keyboard/gamepad arriving on it) and directly wherever the kind needs
+# setting programmatically (e.g. focusing the right tab on open).
+func _select_challenge_kind(kind_str: String) -> void:
+	_challenge_kind = kind_str
+	_refresh_challenge_overlay()
+
+
+# Ask the board where the player finished and append it to the COMPLETED row.
+#
+# ALWAYS LIVE, NEVER STORED. A completed record only ever refers to a period that is
+# still open (the outcome map is pruned to live periods), so the field keeps growing
+# and the player's position keeps moving underneath them. Caching the rank at finish
+# time would show a placing that was true once and is quietly wrong now.
+#
+# Non-blocking on purpose: the row reads COMPLETED the instant the page opens and
+# gains "- 3 of 42" when the answer arrives. This is decoration on an already-correct
+# label, so it gets no CloudBusy cover — there is nothing to wait for and nothing the
+# player is prevented from doing — and a failure is simply not rendered.
+func _fetch_challenge_placing(period_key_str: String, stage_count: int, for_kind: String) -> void:
+	if period_key_str == "" or stage_count <= 0:
+		return
+	if Cloud == null or Cloud.challenge_leaderboard == null:
+		return
+	# SIGNED OUT: don't ask. fetch_final_rank needs a token to find the player's own
+	# row, so it can only ever answer "not ok" here — but fetch_standings_at issues
+	# the board query BEFORE it discovers that, which would mean a real network round
+	# trip on every visit to the page, for an answer that cannot exist.
+	if not Cloud.is_signed_in():
+		return
+	var info := await Cloud.challenge_leaderboard.fetch_final_rank(period_key_str, stage_count)
+	# The player can switch tabs (or leave HQ entirely) while this is in flight, so
+	# re-check that the label still belongs to the kind that asked before writing to
+	# it — otherwise the Daily's placing lands on the Weekly's row.
+	if not is_inside_tree() or _challenge_kind != for_kind:
+		return
+	if not is_instance_valid(_challenge_progress_label):
+		return
+	if _challenge_progress_label.text != "COMPLETED":
+		return  # the row moved on (kind switch, a new run started) — leave it alone
+	if not bool(info.get("ok", false)):
+		return  # signed out, no username, or the board is unreachable: stay at COMPLETED
+	_challenge_progress_label.text = "COMPLETED - %d of %d" % [
+		int(info.get("rank", 0)), int(info.get("total_entries", 0))]
+
+
+# The tab button for `kind_str` (Daily/Weekly/Monthly), matched by list position —
+# _challenge_kind_buttons is built in the same [DAILY, WEEKLY, MONTHLY] order every time.
+func _challenge_kind_button(kind_str: String) -> Button:
+	var kinds := [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]
+	var idx := kinds.find(kind_str)
+	if idx < 0 or idx >= _challenge_kind_buttons.size():
+		return null
+	return _challenge_kind_buttons[idx]
+
+
+# Player-facing summary of ChallengeSession._COMPLETION_REWARD — keep the two in
+# step when the reward table is retuned.
+const _CHALLENGE_REWARD_TEXT := {
+	"daily": "2 mystery boxes",
+	"weekly": "3 mystery boxes + 1 low-tier car",
+	"monthly": "4 mystery boxes + 1 high-tier car",
+}
+const _CHALLENGE_WIN_CONDITION := "Finish clean, place top 50%"
+
+
+# Rebuild the whole entry screen from ChallengeSession/ChallengeLibrary's current state:
+# header (kind + ceiling) and the four sections (win condition, win reward, eligible
+# cars, current progress), then the Start/Resume button. Every row is a short phrase,
+# not a sentence — this is a HUD readout, not prose.
+func _refresh_challenge_overlay() -> void:
+	if _challenge_layer == null:
+		return
+	_challenge_title_label.text = "%s Challenge" % _challenge_kind.capitalize()
+	# Highlight the current kind's tab — a font-colour swap (GOLD vs. the house default)
+	# rather than a toggled "pressed" look, since these buttons have no toggle_mode/press
+	# state at all (no mouse interaction reaches them; see _challenge_kind_buttons).
+	for btn in _challenge_kind_buttons:
+		var is_current := String(btn.get_meta("challenge_kind", "")) == _challenge_kind
+		btn.add_theme_color_override("font_color", UITheme.GOLD if is_current else UITheme.INK_DIM)
+
+	var unix_time := int(Time.get_unix_time_from_system())
+	var period := ChallengeLibrary.current_period(_challenge_kind, unix_time)
+	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
+	_challenge_subtitle_label.text = "%d hp/t max" % int(round(ceiling))
+
+	_challenge_win_label.text = _CHALLENGE_WIN_CONDITION
+	_challenge_reward_label.text = str(_CHALLENGE_REWARD_TEXT.get(_challenge_kind, ""))
+
+	@warning_ignore("static_called_on_instance")
+	var resumable := ChallengeSession.resumable_run(Save.profile, unix_time)
+	# Resume is only offered for the SAME kind the resumable run belongs to — switching
+	# the kind while a different kind's run is stored still shows that other kind's fresh
+	# Start (its own eligible cars/ceiling), not a mismatched Resume button.
+	var resuming := not resumable.is_empty() and String(resumable.get("kind", "")) == _challenge_kind
+
+	# Eligible cars — NAME them (capped + "+N more"), same as the rally pin detail
+	# panel's own eligibility read-out (_eligibility_summary/_qualifying_cars_text),
+	# not just a count. ChallengeSession.eligible_cars already includes the
+	# detune-reachable ones, split here into ready-now vs. needs-a-tune like
+	# _eligibility_summary's own "adjust" bucket.
+	@warning_ignore("static_called_on_instance")
+	var eligible := ChallengeSession.eligible_cars(_challenge_kind, Save.profile, unix_time)
+	var ready_names: Array[String] = []
+	var tune_names: Array[String] = []
+	for car in eligible:
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		if entry.is_empty():
+			continue
+		var meta := UpgradeLibrary.effective_meta(car, entry)
+		var display_name := EngineSwap.display_name(entry, car)
+		if CarLibrary.power_to_weight_hp_tonne(meta) <= ceiling:
+			ready_names.append(display_name)
+		else:
+			tune_names.append(display_name)
+	if resuming:
+		# A run in progress has no choice left to make — the car was committed when it
+		# started and is locked to it for the rest of the period. Listing the whole
+		# eligible set here would imply you could still switch; name the ONE car you
+		# actually picked instead, which also explains why it has disappeared from the
+		# garage/career pickers.
+		var locked := Save.get_car(int(resumable.get("car_instance_id", -1)))
+		var locked_entry := CarLibrary.by_id(String(locked.get("model_id", "")))
+		_challenge_eligible_label.text = EngineSwap.display_name(locked_entry, locked) \
+			if not locked_entry.is_empty() else "Your locked car"
+		_challenge_eligible_label.add_theme_color_override("font_color", UITheme.GOLD)
+	elif eligible.is_empty():
+		_challenge_eligible_label.text = "No eligible car"
+		_challenge_eligible_label.add_theme_color_override("font_color", UITheme.RED)
+	else:
+		var text := _qualifying_cars_text(ready_names) if not ready_names.is_empty() else "None ready"
+		if not tune_names.is_empty():
+			text += "\nNeeds tune: %s" % _qualifying_cars_text(tune_names)
+		_challenge_eligible_label.text = text
+		_challenge_eligible_label.add_theme_color_override(
+			"font_color", UITheme.GREEN if not ready_names.is_empty() else UITheme.GOLD)
+
+	# Current progress — the stored run for THIS kind, if any, else this period's
+	# terminal outcome. A finished period is one attempt spent: completed or DNF'd,
+	# both terminal until the period rolls over, so Start stays disabled.
+	@warning_ignore("static_called_on_instance")
+	var outcome := ChallengeSession.period_outcome(Save.profile, String(period.get("key", "")))
+	var finished := not outcome.is_empty()
+	if resuming:
+		var done := int(resumable.get("stage_index", 0))
+		var total := int(period.get("stage_count", 0))
+		# Say the run is LIVE, not just how far it got — a bare "0 / 2 stages" reads
+		# identically to "not started" and gives no hint that this kind is holding a
+		# car locked (which is why that car has vanished from the other pickers).
+		_challenge_progress_label.text = "IN PROGRESS - %d/%d stages" % [done, total]
+		_challenge_progress_label.add_theme_color_override("font_color", UITheme.GOLD)
+	elif finished and bool(outcome.get("dnf", false)):
+		_challenge_progress_label.text = "DNF"
+		_challenge_progress_label.add_theme_color_override("font_color", UITheme.RED)
+	elif finished:
+		# Show COMPLETED immediately and fetch the placing LIVE — never a stored one.
+		# Only live periods survive the outcome prune, so every completed record on
+		# screen belongs to a board that is still open: more entrants keep arriving
+		# and faster times keep pushing the player down, so a rank saved at finish
+		# time is stale by construction.
+		_challenge_progress_label.text = "COMPLETED"
+		_challenge_progress_label.add_theme_color_override("font_color", UITheme.GREEN)
+		_fetch_challenge_placing(String(period.get("key", "")),
+			int(period.get("stage_count", 0)), _challenge_kind)
+	else:
+		_challenge_progress_label.text = "Not started"
+		# Cleared explicitly: the label is reused across kind switches, so a colour
+		# left over from a previous kind's IN PROGRESS/DNF would stick.
+		_challenge_progress_label.remove_theme_color_override("font_color")
+
+	_challenge_start_button.text = "Resume" if resuming else "Start"
+	# A spent period can't be re-entered, however many eligible cars are sitting there.
+	_challenge_start_button.disabled = not resuming and (finished or eligible.is_empty())
+	UITheme.enforce(_challenge_layer)
+
+
+# Start/Resume. Resume (spec §3: same kind as the stored run) calls ChallengeSession.resume
+# directly — no car to pick, the locked car is already fixed. Otherwise this now OPENS the
+# real 3D car park (spec §7 point 4) restricted to this kind's eligible cars, instead of
+# committing straight from a focused button-list item; the car park's own Start
+# (_begin_challenge_start) does the actual ChallengeSession.start + scene hand-off.
+# Enter/gamepad-accept on a focused kind tab acts as Start, exactly as if the Start
+# button itself had focus — the player shouldn't have to tab down to Start first once
+# they've settled on a kind. Respects the SAME disabled gate Start does (no eligible
+# car): a Button's `pressed` signal fires on activate regardless of a DIFFERENT
+# button's disabled state, so that has to be checked here explicitly rather than
+# relying on Godot to block it.
+func _on_challenge_tab_activated() -> void:
+	if not _challenge_start_button.disabled:
+		_on_challenge_start_pressed()
+
+
+func _on_challenge_start_pressed() -> void:
+	var unix_time := int(Time.get_unix_time_from_system())
+	@warning_ignore("static_called_on_instance")
+	var resumable := ChallengeSession.resumable_run(Save.profile, unix_time)
+	if not resumable.is_empty() and String(resumable.get("kind", "")) == _challenge_kind:
+		# Resume runs the same pre-flight a fresh start does — the mobile control-scheme
+		# gate applies whether or not there's a car left to pick (the car is already
+		# committed, hence no select id here).
+		_close_challenge_overlay()  # before the gate, so the picker isn't drawn over
+		if not _start_preflight(_on_challenge_start_pressed):
+			return
+		if not ChallengeSession.resume(unix_time):
+			return
+		await _hand_off_to_challenge_scene()
+		return
+	_close_challenge_overlay()
+	_enter_challenge_car_screen(_challenge_kind)
+
+
+# Hand off to the driving scene the same way a normal rally does (_begin_rally_start): a
+# loading screen, two frames for it to paint, then the scene load — gated on
+# ChallengeSession.auto_load_scenes (mirrors RallySession.auto_load_scenes) so tests can
+# drive start()/resume() with no scene load.
+#
+# world.gd already branches on ChallengeSession.is_active() when it boots (building the
+# current stage's TrackGenParams from ChallengeSession.current_stage_params() and routing
+# StageManager.stage_completed to ChallengeSession.report_event_result / take_pending_repair
+# instead of RallySession's — spec §3's single-call-site mode branch), so this plain scene
+# load is enough to hand off — no RallySession needs to be active for a challenge run.
+func _hand_off_to_challenge_scene() -> void:
+	# No config seating here: world.gd._ready pulls the first stage's track
+	# parameters itself via DrivingContext.apply_stage_config, so this hand-off is
+	# a plain scene load with no ordering dependency to forget.
+	if ChallengeSession.auto_load_scenes:
+		var loading := LoadingScreen.new()
+		loading.set_step("Preparing challenge…")
+		add_child(loading)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		get_tree().change_scene_to_file("res://main.tscn")
+
+
+# Open the car park for the currently-shown challenge kind: park the eligible owned cars
+# (plus any over-ceiling car a detune would fit under, tracked via _detune_needed — see
+# _build_challenge_lineup) and frame the first. With none, show a hint + disable Start.
+# Mirrors _enter_car_screen's shape for CarparkMode.RALLY.
+func _enter_challenge_car_screen(kind_str: String) -> void:
+	_carpark_mode = CarparkMode.CHALLENGE
+	_challenge_kind = kind_str
+	_start_button.text = "Start Challenge"
+	_build_challenge_lineup(kind_str)
+	var unix_time := int(Time.get_unix_time_from_system())
+	var period := ChallengeLibrary.current_period(kind_str, unix_time)
+	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
+	_rally_banner.text = "%s Challenge — needs <= %d hp/tonne" % [kind_str.capitalize(), int(round(ceiling))]
+	_view = View.CARPARK
+	_detail_open = false
+	_update_overlays()
+	if _eligible.is_empty():
+		_show_empty_carpark("No eligible car for this challenge — none of your cars meet the ceiling.")
+		return
+	_no_eligible_label.visible = false
+	_focus = 0
+	_focus_changed(true)
+
+
+# Park the owned cars ChallengeSession.eligible_cars(kind, ...) reports for `kind_str` (already
+# challenge-lock-excluded per §2), tracking which of them are over the ceiling STOCK but
+# reachable by lowering detune — those park looking eligible, and pressing Start pops the
+# same over-limit prompt _build_eligible_lineup's rally cars use, judged with
+# ChallengeSession.qualifying_detune_for (a challenge has no authored rally dict) against the
+# synthetic `{"restriction": {"pw_max": ceiling}}` shape ChallengeSession itself uses
+# internally.
+func _build_challenge_lineup(kind_str: String) -> void:
+	var unix_time := int(Time.get_unix_time_from_system())
+	@warning_ignore("static_called_on_instance")
+	var eligible := ChallengeSession.eligible_cars(kind_str, Save.profile, unix_time)
+	var period := ChallengeLibrary.current_period(kind_str, unix_time)
+	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
+	var synthetic_rally := {"restriction": {"pw_max": ceiling}}
+	var filtered: Array = []
+	var needs_detune := {}
+	for car in eligible:
+		var id := int(car.get("instance_id", -1))
+		filtered.append(car)
+		var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+		if entry.is_empty():
+			continue
+		var meta := UpgradeLibrary.effective_meta(car, entry)
+		if CarLibrary.power_to_weight_hp_tonne(meta) > ceiling:
+			@warning_ignore("static_called_on_instance")
+			var frac := ChallengeSession.qualifying_detune_for(synthetic_rally, car, entry)
+			if frac > 0.0:
+				needs_detune[id] = frac
+	_build_lineup(filtered)  # clears _detune_needed / _drivetrain_needed, repopulated below
+	_detune_needed = needs_detune
+	_drivetrain_needed = {}
+
+
+# Commit the focused car park selection: ChallengeSession.start, then the same scene
+# hand-off Resume uses. Mirrors _begin_rally_start's shape for CarparkMode.CHALLENGE.
+func _begin_challenge_start() -> void:
+	var owned := Save.get_car(_selected_instance_id)
+	if owned.is_empty():
+		return
+	# The same pre-flight the career start runs (mobile control-scheme gate + select the
+	# fielded car) — a challenge used to skip both.
+	if not _start_preflight(_begin_challenge_start, _selected_instance_id):
+		return
+	var unix_time := int(Time.get_unix_time_from_system())
+	if not ChallengeSession.start(_challenge_kind, owned, unix_time):
+		return
+	_clear_lineup()
+	_selected_instance_id = -1
+	_carpark_mode = CarparkMode.RALLY
+	await _hand_off_to_challenge_scene()
 
 
 
@@ -1080,8 +1517,8 @@ func _build_carpark_nav_row() -> Array:
 
 
 # Open the Settings page. `gate` = the mandatory pre-rally pick (bottom button starts
-# the rally); otherwise it's the garage-row settings (bottom button goes back to the
-# garage). Always reset to the category list so each open starts at the top level.
+# the rally); otherwise it's the title-screen Settings (bottom button returns to the
+# title). Always reset to the category list so each open starts at the top level.
 func _open_settings(gate: bool) -> void:
 	_settings_gate = gate
 	_settings_sub.text = ("Choose your touch controls to start:" if gate
@@ -1108,8 +1545,8 @@ func _on_settings_page_changed(_is_root: bool) -> void:
 
 # The settings bottom button. On a sub-page it returns to the category list. On the
 # list, in the pre-rally gate, make sure a scheme is saved (the highlighted default
-# if the player didn't tap one) so we never ask again, then start the rally; from the
-# title screen it just returns to the exterior.
+# if the player didn't tap one) so we never ask again, then start the rally; otherwise
+# Settings only ever opens from the title screen now, so it just returns to EXTERIOR.
 func _on_settings_action() -> void:
 	# Gate: the button starts the rally straight from the mobile-controls page. Make
 	# sure a scheme is saved (the highlighted default if the player didn't tap one) so
@@ -1118,12 +1555,20 @@ func _on_settings_action() -> void:
 		if Save.get_setting(MobileControls.SETTING_KEY, null) == null:
 			Save.set_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
 		_settings_gate = false
-		_begin_rally_start()
+		# Resume whichever start path the gate interrupted (career, challenge, free
+		# roam — see _start_preflight), falling back to the career start for a gate
+		# opened without one.
+		var resume := _pending_start
+		_pending_start = Callable()
+		if resume.is_valid():
+			resume.call()
+		else:
+			_proceed_with_start()
 		return
 	if not _settings_menu.at_root():
 		_settings_menu.show_list()
 		return
-	_go_to(View.GARAGE)
+	_go_to(View.EXTERIOR)
 
 
 # --- Confirmation dialog -----------------------------------------------------
@@ -1177,8 +1622,9 @@ func _go_to(view: int, snap := false) -> void:
 	if view == View.GARAGE:
 		_ensure_lift_car()
 		_lower_lift_car()
-		_garage_focus = 1  # seat the cursor on Open map table each time we enter the garage
-		_refresh_garage_focus()
+		_garage_showing_drive = false  # always land on the TOP level entering fresh
+		_garage_focus = 1  # seat the cursor on Drive each time we enter the garage
+		_refresh_garage_row()
 	elif view == View.LIFT:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	else:
@@ -1186,10 +1632,8 @@ func _go_to(view: int, snap := false) -> void:
 	# The title screen shows the player's whole collection parked in the car park.
 	if view == View.EXTERIOR:
 		_build_title_lineup()
-	# Land the keyboard/gamepad cursor on the title's Start button (the title is the one
-	# HQ overlay driven by native focus; the rest use spatial menu_* nav).
-	if view == View.EXTERIOR:
-		UITheme.focus_grab.bind(_title_start_button).call_deferred()
+		_title_focus = 0  # seat the cursor on Start each time we enter the title
+		_refresh_title_focus()
 	_update_overlays()
 	if view == View.CARPARK:
 		return  # camera handled by _focus_changed once the lineup exists
@@ -1219,6 +1663,11 @@ func _on_cloud_profile_replaced() -> void:
 		_go_to(View.EXTERIOR)
 		return
 	if _view == View.EXTERIOR:
+		# NOT the boot path any more — _await_boot_pull holds the build until the
+		# initial pull has settled, so a title built at boot is already built from the
+		# downloaded career. What reaches here is a profile landing MID-SESSION: a
+		# first sign-in from the account page, or "Use cloud" on a conflict, both of
+		# which return the player to a title showing the old collection.
 		_clear_lift_car()
 		_build_title_lineup()
 	elif _view == View.GARAGE or _view == View.LIFT:
@@ -1258,9 +1707,93 @@ func _on_exterior_start() -> void:
 		if bool(Save.profile.get("starter_picked", false)):
 			_go_to(View.GARAGE)
 			return
+		# The pull may instead have settled as a CONFLICT: this device and the cloud
+		# both moved on, so the download was NOT applied and a real career may be
+		# sitting in the cloud right now. Waiting for the pull is not enough on its
+		# own — releasing the gate here would offer a starter pick anyway, and picking
+		# one writes to the profile, so "keep this device" stops meaning "keep what I
+		# had" and starts meaning "keep the fresh save I was just handed". Put the
+		# conflict to the player instead, and only continue once it is settled.
+		if ConflictPrompt.is_blocked():
+			await _resolve_conflict_before_starting()
+			if not is_inside_tree() or ConflictPrompt.is_blocked():
+				return  # still unresolved ("Decide later") — no new career is begun
+			if bool(Save.profile.get("starter_picked", false)):
+				_go_to(View.GARAGE)  # "Use cloud" restored a real career
+				return
 		_enter_starter_pick()
 	else:
 		_go_to(View.GARAGE)
+
+
+# Put an unresolved sync conflict to the player and WAIT for their answer, so the
+# starter pick can only proceed once it is settled. Headless has no popup to show,
+# so it returns immediately and the caller's is_blocked() re-check keeps the gate
+# shut — the decision stays proven in tests even though the UI is skipped (the same
+# rule _await_cloud_restore records: skip the animation, never the decision).
+func _resolve_conflict_before_starting() -> void:
+	if Platform.is_headless():
+		return
+	# A one-element Array, not a bool: GDScript lambdas capture by VALUE, so
+	# `done = true` inside the callback would leave the outer local false and spin
+	# this loop forever. An Array is a reference, so the write is visible here.
+	var done := [false]
+	var popup := ConflictPrompt.open(self, func() -> void: done[0] = true)
+	if popup == null:
+		return
+	while not done[0] and is_inside_tree():
+		await get_tree().process_frame
+
+
+# A conflict can be raised at ANY time — at sign-in on boot, or by a background
+# sync — not only while the account page happens to be open. The HQ is always in
+# the tree, so it listens too and raises the same shared prompt. Without this the
+# only subscriber was account_menu.gd, and a conflict detected anywhere else
+# silently blocked every later push with no way for the player to find out.
+func _on_cloud_conflict_detected(_summary: Dictionary) -> void:
+	if not is_inside_tree() or Platform.is_headless():
+		return
+	# The starter-pick gate raises its own blocking prompt and owns the flow there;
+	# a second one on top of it would stack two popups over the same decision.
+	if _awaiting_cloud:
+		return
+	# NO "is my prompt already up?" LATCH HERE. That bool used to live in this file
+	# and another in account_menu.gd, and neither could see the other — which is how
+	# one broadcast opened two popups. ConfirmPopup.MODAL_GROUP now answers that
+	# question for the whole tree, so raising unconditionally is safe: a second
+	# attempt is refused at the door and returns null.
+	ConflictPrompt.open(self)
+
+
+# Hold the BOOT BUILD until the boot-time cloud pull has settled, so the title
+# screen is built exactly once — from the career the player actually has.
+#
+# THE SYMPTOM. HQ boots and reveals the title in about a second; the initial pull
+# is a network round trip. The title was therefore built from the LOCAL profile,
+# and _on_cloud_profile_replaced rebuilt it a second or two later when the download
+# landed — the player watched their garage pop in in front of them.
+#
+# WHO WAITS. Only a player with a stored credential: Cloud.initial_pull_pending is
+# false for anyone signed out or never signed in, so they reveal immediately and
+# wait for nothing. Everyone else waits for the pull's own outcome under the hard
+# cap inside Cloud.await_initial_sync — success, 4xx, 5xx and a hung socket all
+# settle it, so there is no path here that does not return.
+#
+# NO SECOND COVER. The boot LoadingScreen is already on screen when this runs, so
+# this re-labels it rather than stacking a CloudBusy over it (`loading` is null
+# headless, and on the mid-session paths that have no cover of their own).
+#
+# A CONFLICT IS NOT A RESTORE. A pull that settles as a conflict deliberately does
+# not apply the download, so the title reveals against the LOCAL profile — which is
+# correct, and the conflict still reaches the player: conflict_detected is connected
+# in _ready above this wait, and _on_exterior_start re-checks ConflictPrompt.is_blocked
+# before letting anyone start. Gating the title must not swallow the prompt.
+func _await_boot_pull(loading: LoadingScreen) -> void:
+	if Cloud == null or not Cloud.initial_pull_pending:
+		return
+	if loading != null and is_instance_valid(loading):
+		loading.set_step("Restoring your cloud save…")
+	await Cloud.await_initial_sync(cloud_restore_wait_sec)
 
 
 # Hold the FIRST-RUN STARTER PICK — and only that — until the boot-time cloud
@@ -1275,11 +1808,12 @@ func _on_exterior_start() -> void:
 # never actually lost, where one mis-tap discards it or overwrites the cloud copy
 # with a single starter car.
 #
-# WHY ONLY THE PICK IS GATED, not the title screen. The starter pick is the one
-# pre-career action that WRITES to the profile; everything else reachable from
-# the title is read-only or already rebuilt by _on_cloud_profile_replaced. Gating
-# the title itself would make an offline player, or one who has never signed in,
-# wait for something that is never coming — and signing in is never required.
+# THE TITLE IS GATED TOO, at boot — see _await_boot_pull. This used to say that
+# gating the title "would make an offline player wait for something that is never
+# coming". The concern was real, the conclusion was too broad: initial_pull_pending
+# is already false for anyone without a stored credential, so the narrow gate was
+# available all along. This one survives because a pull can also land mid-session
+# (a first sign-in from the account page), where boot is long past.
 #
 # GUARANTEED EXIT. A player with no stored credential has
 # Cloud.initial_pull_pending false and is never gated at all. Everyone else waits
@@ -1297,24 +1831,18 @@ func _on_exterior_start() -> void:
 func _await_cloud_restore() -> void:
 	if Cloud == null or not Cloud.initial_pull_pending:
 		return
-	var loading := _show_restore_cover()
-	if loading != null:
-		# One frame so the cover is actually on screen before we start waiting.
-		await get_tree().process_frame
+	# The SHARED busy cover (scripts/cloud/cloud_busy.gd), not a private one: this
+	# gates progression, so it blocks, and it must look and behave like every other
+	# cloud wait in the game. CloudBusy owns the headless rule (skip the visual,
+	# never the await or the decision) and the minimum visible duration.
+	#
+	# The await stays DIRECT rather than going through CloudBusy.run_covered: this
+	# call answers with a bare bool, not the {"ok", "error"} shape, and there is
+	# nothing here to report — a timed-out restore is a legitimate outcome that
+	# simply lets the player through.
+	var busy := CloudBusy.cover(self, "Restoring your career…", "Checking your cloud save…")
 	await Cloud.await_initial_sync(cloud_restore_wait_sec)
-	if loading != null and is_instance_valid(loading):
-		loading.finish()
-
-
-# The cover, and nothing else. Returns null when there is no screen to cover.
-func _show_restore_cover() -> LoadingScreen:
-	if Platform.is_headless():
-		return null
-	var loading := LoadingScreen.new()
-	loading.set_title("Restoring your career…")
-	loading.set_step("Checking your cloud save…")
-	add_child(loading)
-	return loading
+	await busy.end()
 
 
 # Garage: open the car park to pick which owned car to work on. Parks the WHOLE owned
@@ -1323,7 +1851,14 @@ func _show_restore_cover() -> LoadingScreen:
 # Entered from the GARAGE action row's Garage button (see _build_garage_overlay).
 func _open_garage_picker() -> void:
 	_carpark_mode = CarparkMode.GARAGE
-	var cars: Array = Save.profile.get("cars", []).duplicate()
+	var cars: Array = []
+	for car in Save.profile.get("cars", []):
+		# NO challenge-lock exclusion here. A challenge locks the RUN to the car it
+		# started with; it does not reserve the car. It stays fully usable in the
+		# garage, career and free roam between stages — including repairs and
+		# upgrades, which the design deliberately accepts (a challenge is a time
+		# competition, not a survival one).
+		cars.append(car)
 	# Open framed on the currently-selected car (on whatever page it lands), defaulting
 	# to the first parked car.
 	_build_lineup(cars, _index_of_instance(cars, Save.selected_instance_id()))
@@ -1368,6 +1903,11 @@ func _start_free_roam() -> void:
 # (pause_menu.gd loads hq.tscn when no session is active). A random seed each time means a
 # different track on every entry.
 func _launch_free_roam(instance_id: int, model_id: String) -> void:
+	# The same pre-flight the career and challenge starts run — free roam used to skip
+	# the mobile control-scheme gate entirely. It also owns "select the fielded car",
+	# which only applies to an OWNED instance here (a bare catalogue preview has none).
+	if not _start_preflight(_launch_free_roam.bind(instance_id, model_id), instance_id):
+		return
 	_carpark_mode = CarparkMode.RALLY
 	_clear_lineup()
 	_selected_instance_id = -1
@@ -1377,8 +1917,6 @@ func _launch_free_roam(instance_id: int, model_id: String) -> void:
 	# contract: -1 / "" = no pick). Owned Test Drive passes a real id and no model.
 	RallySession.free_roam_instance_id = instance_id if model_id == "" else -1
 	RallySession.free_roam_model_id = model_id
-	if instance_id >= 0:
-		Save.set_selected_car(instance_id)  # so the lift shows it on return
 	var loading := LoadingScreen.new()
 	loading.set_step("Loading free roam…")
 	add_child(loading)
@@ -1389,24 +1927,45 @@ func _launch_free_roam(instance_id: int, model_id: String) -> void:
 
 
 # Config setup for free roam, split out so it's testable without a scene change: clear
-# any active session, then write a fresh random seed + neutral terrain settings into the
-# live Config. A random seed means a new track every entry.
+# any active session, then seat a fresh random seed + the neutral free-roam landscape
+# into the live Config. A random seed means a new track every entry.
+#
+# Free roam is SESSION-LESS, so DrivingContext.apply_stage_config (world.gd._ready)
+# deliberately no-ops for it and these writes are what generation actually consumes.
+# They go through the CANONICAL writer (RallySession.apply_event_config) with the rolled
+# values shaped as an event dict, rather than hand-writing the handful of fields free
+# roam cares about: Config.data is never reset between scenes, so every field a
+# hand-written subset omitted (turn count, width, cliffiness, the terrain layers) used to
+# survive from the last rally — enter free roam after a 40-turn max-cliff event and you
+# got a 40-turn max-cliff free roam. Routing through the writer pins every omitted field
+# to the authored baseline, so "fields the writer resets" can no longer drift from
+# "fields free roam remembers to set".
 func _prepare_free_roam() -> void:
 	# Ensure no stale session steers world.gd down the rally path.
 	if RallySession.is_active():
 		RallySession.abandon()
 	var cfg: GameConfig = Config.data
-	cfg.track_seed = randi()
-	cfg.track_straightness = cfg.free_roam_straightness
-	cfg.track_forestiness = cfg.free_roam_forestiness
-	cfg.track_tarmac_fraction = cfg.free_roam_tarmac_fraction
+	# The authored baseline, for the fields free roam wants at their GLOBAL default
+	# rather than at an event's default. The event_* helpers fall back to RallyLibrary
+	# constants, NOT to cfg: an omitted "cliffiness" means flat and an omitted "width"
+	# means RallyLibrary.DEFAULT_WIDTH, neither of which is what free roam wants — it
+	# wants the game's normal cliffs and the authored road width. Pass both explicitly.
+	var base: GameConfig = load(Config.CONFIG_PATH)
 	# Free roam rolls a fresh landscape each entry: a random lake depth, a random
 	# large-scale relief (layer-1 amplitude), and a random region. The region is drawn
 	# from the whole RegionLibrary roster (not the unlocked subset — free roam is a
 	# sandbox, and Greece was always reachable here), so a newly authored region shows
 	# up in free roam automatically.
-	cfg.track_water_level_m = randf_range(cfg.free_roam_water_level_min_m, cfg.free_roam_water_level_max_m)
-	cfg.terrain_layer1_amplitude = randf_range(cfg.free_roam_relief_min, cfg.free_roam_relief_max)
+	RallySessionScript.apply_event_config(cfg, {
+		"seed": randi(),
+		"straightness": base.free_roam_straightness,
+		"forestiness": base.free_roam_forestiness,
+		"surface_mix": base.free_roam_tarmac_fraction,
+		"cliffiness": base.cliff_amount,
+		"width": base.track_width,
+		"water_level": randf_range(base.free_roam_water_level_min_m, base.free_roam_water_level_max_m),
+		"terrain_layer1_amplitude": randf_range(base.free_roam_relief_min, base.free_roam_relief_max),
+	})
 	var regions := RegionLibrary.all()
 	RallySession.free_roam_region_id = "" if regions.is_empty() \
 		else String(regions[randi() % regions.size()].get("id", ""))
@@ -1899,24 +2458,132 @@ func _lift_hub() -> void:
 	_refresh_lift_ui()
 
 
-# Move the garage's left/right cursor between Back (0), Career (1), Garage (2),
-# Free Roam (3) and Settings (4), wrapping at the ends, and repaint it.
+# Move the title's left/right cursor between Start (0), Account (1), Settings (2)
+# and Exit Game (3, non-web only), wrapping at the ends, and repaint it.
+func _move_title_focus(step: int) -> void:
+	_title_focus = _title_cursor.wrapped(_title_focus, step)
+	_refresh_title_focus()
+
+
+# Fire the title action the cursor sits on: 0 starts the run, 1 opens the Account
+# overlay, 2 opens Settings, 3 (non-web) quits the game.
+func _activate_title_focus() -> void:
+	_title_cursor.activate(_title_focus)
+
+
+# Paint the manual title cursor (EXTERIOR is a spatially-navigated 3D station like the
+# garage, so Start / Account / Settings / Exit Game are highlighted by hand).
+func _refresh_title_focus() -> void:
+	_title_cursor.refresh(_title_focus)
+
+
+# Move the garage's left/right cursor across whichever level's row is currently
+# showing (see _refresh_garage_row), wrapping at the ends, and repaint it.
 func _move_garage_focus(step: int) -> void:
 	_garage_focus = _garage_cursor.wrapped(_garage_focus, step)
 	_refresh_garage_focus()
 
 
-# Fire the garage action the cursor sits on: 0 backs out to the exterior, 1 opens the
-# career map table, 2 opens the garage car picker (car park → tuning lift), 3 opens the
-# Free Roam picker (car park → session-less drive), 4 opens Settings.
+# Fire the garage action the cursor sits on.
 func _activate_garage_focus() -> void:
 	_garage_cursor.activate(_garage_focus)
 
 
-# Paint the manual garage cursor (a spatially-navigated 3D station, so the Back / Career /
-# Garage / Free Roam / Settings buttons are highlighted by hand rather than via native focus).
+# Paint the manual garage cursor (a spatially-navigated 3D station, so the row is
+# highlighted by hand rather than via native focus).
 func _refresh_garage_focus() -> void:
 	_garage_cursor.refresh(_garage_focus)
+
+
+# Back out of the DRIVE level to the TOP level (Back/Drive/Garage/Mystery Box), same
+# camera position — the garage row's own "go up a level" action, distinct from the
+# TOP level's Back (which leaves the garage station for the exterior).
+func _garage_back_to_top() -> void:
+	_garage_showing_drive = false
+	_garage_focus = 1  # seat back on Drive
+	_refresh_garage_row()
+
+
+# Enter the DRIVE level (Career/Free Roam/Online), same camera position as the top
+# level — pressing Drive doesn't change the view/scene, only this row's contents.
+# Seats the cursor on Career (1), the primary action, not Back (0).
+func _enter_garage_drive_level() -> void:
+	_garage_showing_drive = true
+	_garage_focus = 1
+	_refresh_garage_row()
+
+
+# Rebuild the garage action row's buttons + ButtonCursor for whichever level is
+# current (_garage_showing_drive) — TOP: Back / Drive / Garage / Mystery Box (N);
+# DRIVE: Back / Career / Free Roam / Online. Called on every level switch and
+# whenever the Mystery Box button's count/enabled-state needs a repaint (e.g. after
+# opening one). Frees the row's previous children each time (a plain HBoxContainer,
+# not a MenuNav host, so nothing analogous to UpgradesMenu.rebuild()'s "preserve the
+# MenuNav child" carve-out is needed here).
+func _refresh_garage_row() -> void:
+	for c in _garage_actions_row.get_children():
+		c.queue_free()
+	var buttons: Array[Button] = []
+	var actions: Array[Callable] = []
+	if _garage_showing_drive:
+		var on_back := _garage_back_to_top
+		var back := _station_button("< Back", on_back)
+		_garage_actions_row.add_child(back)
+		buttons.append(back); actions.append(on_back)
+		# Convenience button mirroring the clickable 3D table.
+		var to_table := _station_button("Career", _enter_table)
+		_garage_actions_row.add_child(to_table)
+		buttons.append(to_table); actions.append(_enter_table)
+		# Free Roam: open the car park across the WHOLE catalogue (owned or not) and
+		# drop into a session-less drive in the picked car.
+		var to_free := _station_button("Free Roam", _enter_free_roam)
+		_garage_actions_row.add_child(to_free)
+		buttons.append(to_free); actions.append(_enter_free_roam)
+		# Online: the Daily/Weekly/Monthly seeded Rally Challenge entry point (renamed
+		# from "Challenge" — a modal overlay over the garage, see build_challenge_overlay
+		# / _open_challenge_overlay).
+		var to_online := _station_button("Online", _open_challenge_overlay)
+		_garage_actions_row.add_child(to_online)
+		buttons.append(to_online); actions.append(_open_challenge_overlay)
+	else:
+		var on_back := func() -> void: _go_to(View.EXTERIOR)
+		var back := _station_button("< Back", on_back)
+		_garage_actions_row.add_child(back)
+		buttons.append(back); actions.append(on_back)
+		# Drive: switches this SAME row to Career/Free Roam/Online (_enter_garage_drive_level)
+		# — no camera move, no view change.
+		var to_drive := _station_button("Drive", _enter_garage_drive_level)
+		_garage_actions_row.add_child(to_drive)
+		buttons.append(to_drive); actions.append(_enter_garage_drive_level)
+		# Garage: open the car park to pick which owned car to work on, then drop
+		# straight into the tuning lift bay for that car (_open_garage_picker).
+		var to_garage := _station_button("Garage", _open_garage_picker)
+		_garage_actions_row.add_child(to_garage)
+		buttons.append(to_garage); actions.append(_open_garage_picker)
+		# Mystery Box: a garage-wide reward action, not per-car — moved here from the
+		# Lift's Upgrades page (see _on_open_mystery_box). OMITTED entirely with none
+		# held (not shown disabled) — same "hide, don't grey out" convention the row
+		# used at the Lift before it moved. Disabled + explains why only when a box
+		# IS held but there's nowhere for the gift to land.
+		var boxes := Save.mystery_boxes_owned()
+		if boxes > 0:
+			var to_box := _station_button("Mystery Box (%d)" % boxes, _on_open_mystery_box)
+			var current_id := int(Save.selected_car().get("instance_id", -1))
+			if not RewardSystem.any_other_car_has_room(Save.profile, current_id):
+				to_box.disabled = true
+				to_box.tooltip_text = "Needs another car in the garage with room for an upgrade"
+			else:
+				to_box.tooltip_text = "Open a mystery box — gifts a random upgrade to another car"
+			_garage_actions_row.add_child(to_box)
+			buttons.append(to_box); actions.append(_on_open_mystery_box)
+	_garage_cursor.setup(buttons, actions)
+	_garage_focus = _garage_cursor.settled(_garage_focus)
+	_refresh_garage_focus()
+	# Freshly-built buttons start life with raw (non-uppercase) text — _normalize_menus
+	# (UITheme.enforce) is what applies the house rules, and it only runs on a view
+	# change/dynamic-text refresh elsewhere; a level switch (Drive <-> top) doesn't go
+	# through _go_to, so it has to re-apply the rules itself here.
+	_normalize_menus()
 
 
 # Set the lift HUB Repair button's label + enabled state to reflect the SELECTED car's
@@ -2111,9 +2778,14 @@ func _refresh_lift_ui() -> void:
 	# Re-bind the TUNE panel to the current owned car and reflect its stored tuning.
 	# on_change is a no-op: the HQ lift did not re-field the display car on a tune edit
 	# (the change lands on next fielding), so preserve that behaviour.
-	_tune_panel.setup(_lift_owned, Callable())
+	_tune_panel.setup(_lift_owned, Callable(), _enter_wheel_swap)
 	_tune_panel.refresh()
-	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap)
+	# NO_LIMIT is deliberate and explicit, not an omitted argument: the garage isn't a
+	# commitment point (nothing launches from the lift), so no p/w ceiling gate belongs
+	# here — the gate lives at the start line / car park where a car is actually
+	# committed to an event.
+	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap,
+		UpgradesMenu.NO_LIMIT)
 	_refresh_lift_repair_button()  # reflect the selected car's health / kit count
 	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
@@ -2154,7 +2826,12 @@ func _swap_targets(current_id: int) -> Array:
 	# No partners if the current car itself doesn't exist (nothing to swap into).
 	if Save.get_car(current_id).is_empty():
 		return []
-	return _other_owned_cars(current_id)
+	var out: Array = []
+	for car in _other_owned_cars(current_id):
+		# NO challenge-lock exclusion — see _open_garage_picker. A car fielded by an
+		# active run is still a valid swap partner.
+		out.append(car)
+	return out
 
 
 # Repair Kits currently held in the shared inventory.
@@ -2267,6 +2944,9 @@ func _car_back() -> void:
 			_go_to(View.GARAGE)
 		CarparkMode.SWAP, CarparkMode.WHEELS:
 			_enter_lift()
+		CarparkMode.CHALLENGE:
+			_go_to(View.GARAGE)
+			_open_challenge_overlay()
 		_:
 			_go_to(View.TABLE)
 
@@ -2293,6 +2973,37 @@ func _enter_engine_swap() -> void:
 	_no_eligible_label.visible = false
 	_focus = 0
 	_focus_changed(true)
+
+
+# Open a held mystery box: resolves + spends it as one atomic save transaction
+# (Save.open_mystery_box), then shows a plain reveal card naming the winning car
+# and item (or the repair-kit fallback). Deliberately NOT the race-context
+# UpgradeReveal (its repair-now/drive-mode/choice branches all assume the
+# revealed item belongs to the car the player just drove, which a gift to a
+# DIFFERENT car would misfire) — a simple ConfirmPopup suffices here.
+#
+# A garage-row action now (not a per-car Lift row — a mystery box isn't about
+# the car on the lift, it's a garage-wide reward), so "the car it came from"
+# is Save.selected_car() (the general notion of "the" car outside the lift),
+# not any lift-specific context.
+func _on_open_mystery_box() -> void:
+	var current_id := int(Save.selected_car().get("instance_id", -1))
+	var result := Save.open_mystery_box(current_id)
+	if result.is_empty():
+		return  # no box held; button should have been disabled
+	# Label/value, one per line — scannable at a glance rather than a sentence.
+	var body: String
+	if bool(result.get("fallback", false)):
+		body = "Reward: Repair Kit\nFor: no car had room for the gift"
+	else:
+		var recipient := Save.get_car(int(result["recipient_instance_id"]))
+		var entry := CarLibrary.by_id(String(recipient.get("model_id", "")))
+		var recipient_name := EngineSwap.display_name(entry, recipient)
+		var item_name := String(UpgradeLibrary.by_id(String(result["item_id"])).get("name", result["item_id"]))
+		body = "Reward: %s\nFor: %s\n\nInstalled disabled — enable it from that car's upgrades menu." \
+			% [item_name, recipient_name]
+	_refresh_garage_row()
+	ConfirmPopup.open(self, "Mystery Box!", body, [{"label": "Nice", "callback": Callable()}], 0)
 
 
 # Open the COSMETIC WHEEL view: the selected car ALONE in the lot (a one-element
@@ -2552,6 +3263,8 @@ func _build_eligible_lineup() -> void:
 	var needs_detune := {}
 	var needs_drivetrain := {}
 	for car in Save.profile.get("cars", []):
+		# NO challenge-lock exclusion — see _open_garage_picker. A car fielded by an
+		# active challenge run can still be entered into a career rally.
 		var plan := _entry_plan(rally, car)
 		if not bool(plan["eligible"]):
 			continue
@@ -3148,9 +3861,15 @@ func _show_upgrades_popup(owned: Dictionary) -> void:
 			vbox.add_child(_upgrades_popup_done))
 	_upgrades_popup_dirty = false
 	_upgrades_popup.visible = true
-	var rally := RallyLibrary.by_id(_selected_rally_id)
-	var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
-	var pw_limit := float(restriction.get("pw_max", -1.0))
+	var pw_limit := -1.0
+	if _carpark_mode == CarparkMode.CHALLENGE:
+		var unix_time := int(Time.get_unix_time_from_system())
+		var period := ChallengeLibrary.current_period(_challenge_kind, unix_time)
+		pw_limit = ChallengeLibrary.ceiling_for(String(period.get("key", "")))
+	else:
+		var rally := RallyLibrary.by_id(_selected_rally_id)
+		var restriction: Dictionary = rally.get("restriction", {}) if not rally.is_empty() else {}
+		pw_limit = float(restriction.get("pw_max", -1.0))
 	_upgrades_popup_menu.setup(owned, _on_popup_upgrade_changed, Callable(), pw_limit)
 	# Gate Done + Esc/back on the rally's p/w cap: over the cap, the button goes red and
 	# neither it nor MenuNav's on_back closes the popup until the player detunes under it.
@@ -3176,7 +3895,10 @@ func _close_upgrades_popup() -> void:
 	if _upgrades_popup != null:
 		_upgrades_popup.visible = false
 	if _upgrades_popup_dirty:
-		_build_eligible_lineup()
+		if _carpark_mode == CarparkMode.CHALLENGE:
+			_build_challenge_lineup(_challenge_kind)
+		else:
+			_build_eligible_lineup()
 		_upgrades_popup_dirty = false
 	_focus_changed()
 
@@ -3349,6 +4071,12 @@ func _on_start_pressed() -> void:
 		CarparkMode.FREEROAM:  # launch a session-less drive in the focused car
 			await _start_free_roam()
 			return
+		CarparkMode.CHALLENGE:  # commit the focused eligible car to a fresh challenge run
+			if _detune_needed.get(_selected_instance_id, -1.0) > 0.0:
+				_show_over_limit_prompt(Save.get_car(_selected_instance_id))
+				return
+			await _begin_challenge_start()
+			return
 	var owned := Save.get_car(_selected_instance_id)
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
@@ -3373,14 +4101,31 @@ func _on_start_pressed() -> void:
 	await _proceed_with_start()
 
 
-# The start flow once the car is eligible (any drivetrain switch applied): the mobile control-scheme
-# gate, then the actual handoff.
-func _proceed_with_start() -> void:
-	# On mobile, the player must choose a touch control scheme before their first
-	# event. If they haven't picked one yet, show the picker as a gate now; once they
-	# confirm it's saved and we never ask again (see _on_settings_action).
+# The pre-flight EVERY start path shares — career, challenge (fresh and Resume) and free
+# roam. Two steps that used to live only on the career path, so a touch player whose first
+# drive was a challenge got no control-scheme picker, and the garage lift didn't show the
+# car they'd just raced:
+#
+#   1. the mobile control-scheme gate — on a touch device with no scheme chosen yet, open
+#      the picker instead of starting. `resume` is stashed so _on_settings_action can
+#      continue THIS path once a scheme is saved.
+#   2. select the fielded car, so the tuning lift shows what the player last drove.
+#
+# Returns false when the caller must abort (the gate took over).
+func _start_preflight(resume: Callable, select_instance_id: int = -1) -> bool:
 	if _is_mobile() and Save.get_setting(MobileControls.SETTING_KEY, null) == null:
+		_pending_start = resume
 		_open_settings(true)
+		return false
+	if select_instance_id >= 0:
+		Save.set_selected_car(select_instance_id)
+	return true
+
+
+# The career start flow once the car is eligible (any drivetrain switch applied): the
+# shared pre-flight, then the actual handoff.
+func _proceed_with_start() -> void:
+	if not _start_preflight(_proceed_with_start, _selected_instance_id):
 		return
 	await _begin_rally_start()
 
@@ -3458,9 +4203,9 @@ func _begin_rally_start() -> void:
 	var rally := RallyLibrary.by_id(_selected_rally_id)
 	if owned.is_empty() or rally.is_empty():
 		return
-	# Fielding a car also selects it, so the tuning lift shows the car the player
-	# last raced when they return to the garage.
-	Save.set_selected_car(_selected_instance_id)
+	# Fielding a car also selects it (so the tuning lift shows the car the player last
+	# raced) — done by the shared _start_preflight, which every start path runs before
+	# reaching its own handoff, rather than once per path.
 	var loading := LoadingScreen.new()
 	loading.set_step("Preparing rally…")
 	add_child(loading)
@@ -3493,14 +4238,25 @@ func _unhandled_input(event: InputEvent) -> void:
 				_close_account_overlay()
 			get_viewport().set_input_as_handled()
 		return
+	# The challenge overlay is modal over the garage: it owns focus nav entirely via its
+	# own MenuNav (attached in build_challenge_overlay), including left/right — the kind
+	# tabs are real FOCUS_ALL controls now, so native ui_left/ui_right focus-neighbour
+	# movement (menu_nav.gd) does the job; hq must still bail out here (its
+	# _unhandled_input runs BEFORE the overlay's own MenuNav node, an HQ descendant) so
+	# the GARAGE view below doesn't also react to the same key.
+	if _challenge_layer != null and _challenge_layer.visible:
+		return
 	match _view:
 		View.EXTERIOR:
-			# The title is a flat button menu (Start / Exit Game) driven by
-			# native focus — ui_accept fires whichever button is focused (see
-			# _build_title_overlay).
-			# Don't hard-route menu_select to Start here, or pressing accept on Settings
-			# would fire Start instead.
-			pass
+			# The title row (Start / Account / Settings / Exit Game) is a single
+			# left/right cursor; select fires it. Same idiom as the garage row / lift
+			# hub — see build_title_overlay. No menu_back: EXTERIOR is the root station.
+			if event.is_action_pressed("menu_left"):
+				_move_title_focus(-1)
+			elif event.is_action_pressed("menu_right"):
+				_move_title_focus(1)
+			elif event.is_action_pressed("menu_select"):
+				_activate_title_focus()
 		View.SETTINGS:
 			if event.is_action_pressed("menu_back"):
 				# In the pre-rally gate we show only the mobile-controls page (no category
@@ -3510,10 +4266,13 @@ func _unhandled_input(event: InputEvent) -> void:
 					_go_to(View.CARPARK)
 					_settings_gate = false
 				elif not _settings_menu.go_back():
-					_go_to(View.GARAGE)
+					_go_to(View.EXTERIOR)
 		View.GARAGE:
-			# The bottom action row (Back / Career / Garage / Free Roam / Settings) is a single
-			# left/right cursor; select fires it. menu_back shortcuts to the exterior.
+			# The bottom action row is a single left/right cursor (two levels share it —
+			# see _refresh_garage_row); select fires it. menu_back on the TOP level
+			# shortcuts to the exterior; on the DRIVE level it goes up one level instead
+			# (mirroring the Back button's own action at each level), same as any other
+			# nested menu's Back convention.
 			if event.is_action_pressed("menu_left"):
 				_move_garage_focus(-1)
 			elif event.is_action_pressed("menu_right"):
@@ -3521,7 +4280,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.is_action_pressed("menu_select"):
 				_activate_garage_focus()
 			elif event.is_action_pressed("menu_back"):
-				_go_to(View.EXTERIOR)
+				if _garage_showing_drive:
+					_garage_back_to_top()
+				else:
+					_go_to(View.EXTERIOR)
 		View.LIFT:
 			if _lift_page == LiftPage.HUB:
 				# Hub: left/right move the cursor between Back / Upgrades / Tuning /

@@ -427,3 +427,269 @@ func test_an_ordinary_push_does_not_announce_a_replacement() -> void:
 	_rest.queue_ok({})
 	await _sync.push()
 	assert_signal_not_emitted(_sync, "profile_replaced")
+
+
+# --- CloudBusy: the shared "a cloud call is in flight" state -------------------
+# (scripts/cloud/cloud_busy.gd, todo/challenge-career-reuse-drift.md item 11.)
+#
+# These assert the RELATIONSHIP — busy during the call, gone after — and the
+# coercion/failure rules. Never the copy, and never the minimum-duration value:
+# that is a look, tuned in one named constant.
+#
+# "During" is observed FROM INSIDE the call: a coroutine's return value cannot be
+# held without awaiting it (the compiler refuses), so the action itself records
+# what the world looked like while it was running. Members rather than captured
+# locals — GDScript lambdas capture by value, and an Array is the shared thing.
+
+var _busy_host: Control
+var _busy_seen: Array = []
+
+
+# A cloud-shaped call that really suspends, so the busy state is observed across a
+# genuine await rather than a same-frame round trip.
+func _slow_ok() -> Dictionary:
+	_busy_seen.append(CloudBusy.showing(_busy_host))
+	await get_tree().process_frame
+	_busy_seen.append(CloudBusy.showing(_busy_host))
+	return {"ok": true, "error": ""}
+
+
+func _slow_failure() -> Dictionary:
+	_busy_seen.append(CloudBusy.showing(_busy_host))
+	# Headless skips the VISUAL and nothing else: no cover is built, but the call
+	# still runs and the state is still observable.
+	for child in _busy_host.get_children():
+		if child.is_in_group("loading_screen"):
+			_busy_seen.append("cover")
+	await get_tree().process_frame
+	return {"ok": false, "error": "the server said no"}
+
+
+func _new_busy_host() -> Control:
+	_busy_seen = []
+	_busy_host = Control.new()
+	add_child_autofree(_busy_host)
+	return _busy_host
+
+
+func test_cloud_busy_is_shown_while_the_call_runs_and_gone_after() -> void:
+	var host := _new_busy_host()
+	assert_false(CloudBusy.showing(host), "nothing in flight to begin with")
+	var result: Dictionary = await CloudBusy.run_ambient(host, "Loading…", _slow_ok)
+	assert_eq(_busy_seen, [true, true],
+		"the busy state is up for the whole call, across the suspend")
+	assert_true(bool(result.get("ok", false)), "and the call's own answer comes back")
+	assert_false(CloudBusy.showing(host), "and the busy state is gone afterwards")
+
+
+func test_cloud_busy_covers_headless_without_a_visual_but_still_awaits() -> void:
+	var host := _new_busy_host()
+	var result: Dictionary = await CloudBusy.run_covered(host, "Syncing…", "Uploading…",
+		_slow_failure)
+	assert_true(_busy_seen.has(true), "a cover is in flight while the call runs")
+	assert_false(_busy_seen.has("cover"), "headless has no screen to cover")
+	assert_false(bool(result.get("ok", true)), "the failure is not swallowed")
+	assert_false(CloudBusy.showing(host), "and the cover is taken down")
+
+
+func test_cloud_busy_begin_and_end_bracket_a_direct_await() -> void:
+	# The shape call sites use when their await must stay literally direct
+	# (global_standings, hq.gd): the same state, without the Callable hop.
+	var host := _new_busy_host()
+	var busy := CloudBusy.ambient(host, "Loading…")
+	assert_true(CloudBusy.showing(host), "busy from the moment the call starts")
+	await get_tree().process_frame
+	assert_true(CloudBusy.showing(host), "and for as long as it takes")
+	await busy.end()
+	assert_false(CloudBusy.showing(host), "and not one moment longer")
+
+
+func test_cloud_busy_gives_one_answer_for_failure() -> void:
+	assert_eq(CloudBusy.failure_text({"ok": true, "error": ""}), "",
+		"a call that worked has nothing to say")
+	assert_eq(CloudBusy.failure_text({"ok": false, "error": "offline"}), "offline",
+		"the server's own words are used when it gave any")
+	assert_eq(CloudBusy.failure_text({"ok": false, "error": ""}), CloudBusy.GENERIC_FAILURE,
+		"and a failure with no words still says something, from one place")
+	assert_eq(CloudBusy.failure_text({"ok": false, "error": "   "}), CloudBusy.GENERIC_FAILURE,
+		"blank counts as no words")
+
+
+func test_cloud_busy_coerces_every_reply_shape() -> void:
+	assert_true(bool(CloudBusy.result_of({"ok": true}).get("ok", false)))
+	assert_false(bool(CloudBusy.result_of({}).get("ok", true)),
+		"a dict with no ok field did not succeed")
+	assert_true(bool(CloudBusy.result_of(true).get("ok", false)),
+		"a bare bool (await_initial_sync) is an ok flag")
+	assert_true(bool(CloudBusy.result_of(null).get("ok", false)),
+		"a call that reports nothing is not a failure — inventing one is worse")
+	assert_eq(CloudBusy.failure_text(null), "", "so it has nothing to tell the player")
+
+
+func test_cloud_busy_survives_a_host_rebuilding_its_children() -> void:
+	# The regression this guards: hosts that rebuild wholesale (the account page on
+	# every cloud state change) would free the busy state mid-call.
+	var host := _new_busy_host()
+	var busy := CloudBusy.ambient(host, "Loading…", host)
+	for child in host.get_children():
+		if child.is_in_group(CloudBusy.GROUP):
+			continue
+		host.remove_child(child)
+		child.queue_free()
+	assert_true(CloudBusy.showing(host), "a rebuild that preserves the group keeps it")
+	await busy.end()
+	assert_false(CloudBusy.showing(host))
+
+
+# --- Only ONE conflict prompt, tree-wide -----------------------------------------
+
+# Three hosts raise this prompt (the account page, the HQ, and the boot gate) and each
+# used to keep its OWN "already open" latch, which could not see the others. A conflict
+# arriving while the account page was open therefore opened TWO identical popups;
+# dismissing the top one revealed the second with focus reset to its first button,
+# which read to the player as "Use cloud did nothing and moved my focus".
+#
+# ConflictPrompt reads the LIVE Cloud.sync autoload (not this file's own _sync
+# instance), so these seat a conflict there directly and put it back afterwards.
+func _raise_live_conflict() -> void:
+	Cloud.sync._conflict = {"profile": "{}", "device": "test-device", "updated_utc": ""}
+	Cloud.sync.blocked_by_conflict = true
+
+
+func _clear_live_conflict() -> void:
+	Cloud.sync._conflict = {}
+	Cloud.sync.blocked_by_conflict = false
+
+
+func test_only_one_conflict_prompt_can_be_open_at_a_time() -> void:
+	_raise_live_conflict()
+	var host := Node.new()
+	add_child_autofree(host)
+	var other := Node.new()
+	add_child_autofree(other)
+
+	var first := ConflictPrompt.open(host)
+	assert_not_null(first, "the first host raises the prompt")
+	assert_not_null(ConfirmPopup.any_open(get_tree()), "and it is visible tree-wide")
+
+	assert_null(ConflictPrompt.open(other),
+		"a DIFFERENT host cannot stack a second prompt over the same conflict")
+
+	first.queue_free()
+	await get_tree().process_frame
+	assert_null(ConfirmPopup.any_open(get_tree()),
+		"once it closes, the tree reports no prompt again")
+	_clear_live_conflict()
+
+
+func test_no_prompt_is_raised_when_there_is_no_conflict() -> void:
+	_clear_live_conflict()
+	var host := Node.new()
+	add_child_autofree(host)
+	assert_null(ConflictPrompt.open(host), "nothing to ask about, so nothing is shown")
+	assert_null(ConfirmPopup.any_open(get_tree()))
+
+
+# --- The wiped-local auto-restore ------------------------------------------------
+# A conflict where this device has NO CARS is not a real dilemma: the local side is
+# a blank save, so the only thing "keep this device" could preserve is an empty
+# garage — and one mis-tap there uploads the blank over a real career. Reported by a
+# player: signed in, progress gone, offered a starter car while the career sat in
+# the cloud. Keyed on cars because a career cannot exist without one.
+
+func test_a_wiped_local_takes_the_cloud_without_asking() -> void:
+	_save.profile["cloud_revision"] = 1
+	_save.profile["cars"] = []
+	_save.save()  # local "moved on" — but it moved on to nothing
+	watch_signals(_sync)
+	_rest.queue_ok(_remote_doc(9, _remote_profile(3)))
+
+	var result: Dictionary = await _sync.pull()
+
+	assert_eq(result.state, "applied", "the cloud career is restored, not queried")
+	assert_false(_sync.blocked_by_conflict, "and no conflict is left blocking sync")
+	assert_signal_not_emitted(_sync, "conflict_detected",
+		"the player is never asked to choose between a career and a blank save")
+	assert_eq(Array(_save.profile["cars"]).size(), 3, "the cars come back")
+
+
+func test_the_auto_restore_still_writes_the_conflict_backup() -> void:
+	# It is an automatic decision, so the escape hatch matters more, not less.
+	_save.profile["cloud_revision"] = 1
+	_save.profile["cars"] = []
+	_save.save()
+	_rest.queue_ok(_remote_doc(9, _remote_profile(2)))
+
+	await _sync.pull()
+
+	assert_true(FileAccess.file_exists(TEST_PATH + ".conflict.bak"),
+		"what was replaced is still recoverable")
+
+
+func test_two_empty_sides_are_still_a_real_conflict() -> void:
+	# Nothing to recover, so there is nothing to decide automatically — taking the
+	# cloud here would be a fake success rather than a restore.
+	_save.profile["cloud_revision"] = 1
+	_save.profile["cars"] = []
+	_save.save()
+	watch_signals(_sync)
+	_rest.queue_ok(_remote_doc(9, _remote_profile(0)))
+
+	var result: Dictionary = await _sync.pull()
+
+	assert_eq(result.state, "conflict", "an empty cloud is not a career to restore")
+	assert_signal_emitted(_sync, "conflict_detected")
+
+
+func test_a_local_career_still_gets_the_prompt() -> void:
+	# The guard must not swallow ordinary conflicts — this is the case where the
+	# player genuinely has something to lose on both sides.
+	_save.profile["cloud_revision"] = 1
+	_save.profile["cars"] = _remote_profile(1)["cars"]
+	_save.save()
+	watch_signals(_sync)
+	_rest.queue_ok(_remote_doc(9, _remote_profile(3)))
+
+	var result: Dictionary = await _sync.pull()
+
+	assert_eq(result.state, "conflict", "two real careers are still put to the player")
+	assert_signal_emitted(_sync, "conflict_detected")
+
+
+# --- Dev wipe reaches the cloud --------------------------------------------------
+# Save.reset_new_game only clears this device. Leave the remote copy alone and the
+# next pull restores everything — and with the auto-restore above it does so without
+# even asking, so the wipe would silently undo itself.
+
+func test_publishing_a_wipe_uploads_the_blank_profile() -> void:
+	_save.profile["cloud_revision"] = 4
+	_save.mark_synced()
+	_save.profile["cars"] = []
+	_rest.queue_ok({})
+
+	var result: Dictionary = await _sync.push_wipe()
+
+	assert_true(bool(result.get("ok", false)), "the wipe is published")
+	assert_false(_save.has_unsynced(), "and the device agrees with the cloud again")
+	var sent := JSON.parse_string(String(_rest.requests[0].get("body", "{}")))
+	var uploaded: Dictionary = JSON.parse_string(
+		String(sent["fields"]["profile"]["stringValue"]))
+	assert_true(Array(uploaded.get("cars", [])).is_empty(),
+		"what reached the cloud is the wiped profile, not the old career")
+
+
+func test_publishing_a_wipe_discards_a_pending_conflict() -> void:
+	# The local side of that decision no longer exists, so keeping the prompt alive
+	# would offer a choice between the cloud and a save just deleted on purpose.
+	_save.profile["cloud_revision"] = 1
+	_save.profile["cars"] = _remote_profile(1)["cars"]
+	_save.save()
+	_rest.queue_ok(_remote_doc(9, _remote_profile(3)))
+	await _sync.pull()
+	assert_true(_sync.blocked_by_conflict, "setup: a conflict is standing")
+
+	_save.profile["cars"] = []
+	_rest.queue_ok({})
+	await _sync.push_wipe()
+
+	assert_false(_sync.blocked_by_conflict, "the wipe clears the conflict it invalidated")

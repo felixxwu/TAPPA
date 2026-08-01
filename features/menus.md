@@ -77,7 +77,7 @@ everywhere). `MenuNav` goes inert
   `UITheme.focus_grab(ctrl)` is the guarded, call-deferred grab helper (grab a specific
   control); `UITheme.focus_grab_first(root)` / `UITheme.first_focusable(root)` seat the
   cursor on the first focusable control under a root (shared by `MenuNav` and HQ's
-  native-focus pages). `MenuNav` covers: the **title** (Start, + Exit Game on desktop),
+  native-focus pages). `MenuNav` covers:
   the shared **`SettingsMenu`** (rows + bottom action button — used by both the HQ
   settings overlay and the pause menu), the **pause** menu (Resume/Settings/Quit),
   the HUD **finish panel**'s single `NEXT` button (`StageCompletePanel`, attached in
@@ -153,7 +153,11 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
   as the podium** — which lands on the won part. A won repair kit offers **Repair now /
   Save it** when the driven car is damaged (else it auto-resolves; the drivetrain kit
-  auto-resolves too); every other landing shows an **Upgrades / Next** action row
+  auto-resolves too) — but NOT when the driven car is locked by an active Rally
+  Challenge run (`DrivingContext.is_car_locked`): repairing it would heal the damage
+  that run is contracted to carry across stages, so the reveal takes the plain
+  Save-it/inventory path and the kit becomes spendable once the run ends (see
+  [rally-challenge.md](rally-challenge.md) → "Car lock"). Every other landing shows an **Upgrades / Next** action row
   (`UpgradeReveal._show_actions`) instead of finishing on its own. **Next**
   (`_on_next_pressed`) is the plain continue — exactly the old immediate
   `finished.emit()`. **Upgrades** (`_on_upgrades_pressed`) builds and opens the SAME
@@ -297,7 +301,7 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   exits to the garage. Clicking a pin or arrow with the pointer still works (`_on_rally_pin` /
   `_on_arrow_input`), and mouse drag still pans the map (selection re-tracks the centre as it
   slides); the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
-  `UITheme.mark_focused`) over **Back / Upgrades / Tuning / Wheels / Test Drive** (its buttons
+  `UITheme.mark_focused`) over **Back / Upgrades / Tuning / Test Drive** (its buttons
   sit side by side in one row), fired with select (`_activate_hub_focus`); the cursor
   seats on Tuning on entry (`menu_back` is also a shortcut back to the garage). **Test
   Drive** (`_test_drive`) launches free roam with the car already on the lift — no car
@@ -308,10 +312,15 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   this hub row — spend a Repair Kit to fully restore the selected car
   (`_repair_selected_car` / `_refresh_lift_repair_button`) — but it is currently
   **hidden** and left out of the hub cursor while earning Repair Kits is disabled; see
-  `todo/remove-repair-kits.md`.) The **garage** is likewise a
+  `todo/remove-repair-kits.md`.) **Wheels** no longer lives on this hub row — it's a
+  button inside the **Tuning** page itself (`tuning_panel.gd`, `TuningPanel._wheels_button`,
+  native `FOCUS_ALL` matching the panel's sliders), wired via a `setup(owned_car,
+  on_change, on_wheels)` callback the lift passes as `_enter_wheel_swap`; the start-line's
+  copy of the same panel (`start_line.gd`) passes no `on_wheels`, so `TuningPanel` hides
+  the button there (a no-op button would be confusing pre-rally). The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
   `_activate_garage_focus`) over its side-by-side **Back / Career / Garage / Free Roam /
-  Settings** row, seated on Career on entry (`menu_back` shortcuts to the exterior).
+  Challenge** row, seated on Career on entry (`menu_back` shortcuts to the exterior).
   **Garage** (`_open_garage_picker`) opens the car park in GARAGE mode (`CarparkMode.GARAGE`,
   parking the whole owned collection); Select (`_on_start_pressed` → `_select_garage_car`)
   commits the focused car as the selected car and drops straight into the tuning lift bay
@@ -320,11 +329,13 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   owned or not); Start (`_start_free_roam` → `_launch_free_roam`) drops into a session-less
   drive in the picked car — an owned car fields its tuned instance, a not-yet-owned preview
   fields the base model via `RallySession.free_roam_model_id` (see the free-roam machinery
-  below and `world.gd`) — Back returns to the garage. **Settings** (`_open_settings(false)`) opens
-  the shared camera/controls page; backing out of it returns to the garage (the title
-  screen no longer carries a Settings button). Both of these
-  manual rows share a small **`ButtonCursor`** helper (`scripts/button_cursor.gd`):
-  `hq.gd` keeps the index (`_garage_focus` / `_hub_focus`), the cursor owns the shared
+  below and `world.gd`) — Back returns to the garage. **Settings no longer lives on this
+  row** — it moved to the title screen (see the EXTERIOR section below), since Settings
+  from the garage and Settings from the title now always return to the same place
+  (EXTERIOR), so there's no reason to offer it twice. Both of these
+  manual rows, plus the title row (see below), share a small **`ButtonCursor`** helper
+  (`scripts/button_cursor.gd`): `hq.gd` keeps the index (`_title_focus` / `_garage_focus` /
+  `_hub_focus`), the cursor owns the shared
   wrap / repaint / fire behaviour, and each button's `pressed` callable is also the
   cursor's action for that index, so a mouse click and a keyboard/gamepad select can
   never fall out of step. The cursor **skips `disabled` buttons** (like native focus):
@@ -427,7 +438,7 @@ a dict `{ "label": String, "callback": Callable, "disabled": bool (optional) }`.
 action's button is pressed, the popup dismisses and runs its callback; Back routes to the
 configured action (default: the last one — the dismiss convention).
 
-**Contract:** `ConfirmPopup.open(host, title, body, actions, default_index := 0, back_index := -1) -> ConfirmPopup`
+**Contract:** `ConfirmPopup.open(host, title, body, actions, default_index := 0, back_index := -1, allow_stack := false) -> ConfirmPopup` — **returns `null` when refused; callers must not assume a popup came back.**
 
 - `host` — parent Node to attach under (its process mode is inherited — a paused host's
   popup still processes).
@@ -445,6 +456,42 @@ emits `finished`, and **`queue_free`s on dismiss** — the host doesn't track it
 confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
 `ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause
 menu quit-to-HQ confirm** (`PauseMenu`), HQ **engine-swap confirms**, and HQ **detune-to-enter confirm** (over-powered car).
+
+### One modal at a time (`ConfirmPopup.MODAL_GROUP`)
+
+Every modal in the game is a `ConfirmPopup` or a `UsernamePopup`, both on layer 101,
+and both join the scene-tree group **`"modal"`** when built. `ConfirmPopup.open` and
+`UsernamePopup.open` refuse (return `null`, with a `push_warning`) when
+`ConfirmPopup.any_open(tree)` reports one already on screen. `allow_stack := true`
+opts out — used only by `CloudBusy.report_failure`, because a silently dropped
+"couldn't sync" is how a failed resolution becomes invisible. There is deliberately
+**no queue**: re-showing a modal the player has moved past invents an ordering nobody
+asked for.
+
+`any_open` skips nodes that are `is_queued_for_deletion()`. A dismissed popup emits
+`finished` and *then* `queue_free`s, and a freed node stays in its groups until the
+end of the frame — without the skip, a host that re-checks from its own `finished`
+handler (`account_menu.rebuild` does exactly this) would be refused by the very popup
+that just closed.
+
+**The rule this encodes, worth generalising:** *a shared helper whose correctness
+depends on "how many of these exist right now" must answer that from a scene-tree
+group it owns — never from a per-host bool.* Centralising **what** a helper does while
+leaving each caller to track **whether** it is already doing it is only half a
+consolidation, and the half that is left behind is the half that drifts. This has now
+been arrived at independently three times: `"loading_screen"` (queried by
+`music_director.gd`), `CloudBusy.GROUP`, and this group. The bug that forced it: one
+`Cloud.conflict_detected` broadcast reached two subscribers, each checking its own
+private latch, so **both** opened a conflict prompt — dismissing the top one appeared
+to "do nothing" except reveal a twin with the focus cursor reset. `hq.gd` and
+`account_menu.gd` no longer keep modal latches at all; `account_menu` in particular
+can be instantiated three times over (Settings, the HQ title overlay, the standings
+page), so a per-instance bool could never have answered the question.
+
+Covered by `test_confirm_popup.gd` — joins the group, a second popup is refused, a
+*different host* is refused, a popup being freed does not block its replacement,
+`allow_stack` gets through, and the exclusivity holds in both directions between the
+two popup kinds.
 
 ## HQ (`hq.gd`)
 
@@ -499,10 +546,10 @@ white bay dividers (one bay per `carpark_page_size`, `menu_car_spacing` wide) ge
 procedurally as an `ImageTexture` (`_carpark_bay_texture`), so each parked car sits in
 its own marked bay.
 
-**EXTERIOR (boot/title).** A **Start** button and — on non-web
-builds only — an **Exit Game** button
-(`_on_exterior_exit` → `get_tree().quit()`; skipped on web, where the tab owns the
-process lifecycle) at the bottom (in that top-to-bottom order) over an establishing shot of the
+**EXTERIOR (boot/title).** A side-by-side row of **Start / Account / Settings** and —
+on non-web builds only — **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`;
+skipped on web, where the tab owns the process lifecycle), sitting at the bottom (in
+that left-to-right order) over an establishing shot of the
 outdoor car park, with a block skyline **behind the garage** and trees framing the
 lot. The player's **whole owned collection** is parked in the car park here
 (`_build_title_lineup`, rebuilt on entering EXTERIOR) so the title shows off every
@@ -545,15 +592,22 @@ to reveal the rest of the lineup. Its `hq_exterior_cam_eye`/`_look` (GameConfig)
 **offsets from that lead car** (`_station_xform` → `_first_car_anchor`), so the framing
 **tracks the first car** as the centred lineup grows and its leftmost car slides toward
 −X with more cars owned — it's not a fixed world pose. The **build version** (`v0.<n> (<sha>)`) is shown in the bottom-right corner
-here only — not on the in-run HUD (see [hud.md](hud.md) → Build version). This is a
-flat button menu driven by **native focus** — `menu_select`/`ui_accept` fires
-whichever button is focused (Start grabs focus on entry; `menu_up`/`menu_down` move
-between them). Start flies the camera into the garage; Settings opens the SETTINGS
-overlay; **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`) quits the app — it's
-built only on non-web builds, since a browser tab owns its own lifecycle. (Free roam is
-reached via the tuning bay's Test Drive button now, not here.) (The EXTERIOR branch in `_unhandled_input`
-deliberately does *not* route `menu_select` to Start, or accepting on Settings/Exit Game
-would start the run instead.)
+here only — not on the in-run HUD (see [hud.md](hud.md) → Build version). The title row
+is **no longer a native-focus list** — it's the same diegetic **`ButtonCursor`** idiom
+the garage row and lift hub use: `FOCUS_NONE` buttons (`_station_button`) over a single
+left/right cursor (`_title_cursor`/`_title_focus`), painted by `UITheme.mark_focused`
+and driven by `menu_left`/`menu_right`/`menu_select` in the EXTERIOR branch of
+`_unhandled_input` (mirroring the GARAGE branch exactly). The cursor re-seats on **Start**
+(index 0) every time `_go_to(View.EXTERIOR)` runs. Start (`_on_exterior_start`) flies the
+camera into the garage; **Account** (`_open_account_overlay`) opens the optional-cloud-save
+modal — it sits right after Start (a player reinstalling or moving devices needs it
+*before* starting a fresh career, so burying it in Settings would be the wrong place);
+**Settings** (`_open_settings(false)`) opens the shared camera/controls page — it moved
+here from the garage action row (see the GARAGE section above), and because it now only
+ever opens from the title, backing out of it (`_on_settings_action`) always returns to
+EXTERIOR, never the garage; **Exit Game** (`_on_exterior_exit` → `get_tree().quit()`)
+quits the app — it's built only on non-web builds, since a browser tab owns its own
+lifecycle. (Free roam is reached via the tuning bay's Test Drive button, not here.)
 
 **SETTINGS.** A flat overlay over the exterior shot (no dedicated camera pose)
 hosting the **shared `SettingsMenu`** (`scripts/settings_menu.gd`, `class_name
@@ -592,7 +646,9 @@ and each button drills into **its own sub-page**:
   row that hands off to the `Benchmark` autoload (config overrides + run-scene
   load). Toggle states are session-scoped, not saved.
 - **Dev** — a debug page: **Wipe all progress** (`Save.reset_new_game`, back to a
-  fresh new game), **3-star all rallies** (`Save.dev_three_star_all_rallies`, unlocks
+  fresh new game — and, when signed in, `Cloud.publish_local_wipe()` so the cloud
+  copy is cleared too, otherwise the next pull restores everything and the wipe
+  undoes itself; see `features/cloud-save.md`), **3-star all rallies** (`Save.dev_three_star_all_rallies`, unlocks
   every region), plus one button per car (`Save.grant_car`, from `CarLibrary.CARS`)
   and per upgrade (from `UpgradeLibrary.UPGRADES`) to unlock anything in the game.
   **Complete rally (win now)** appears ONLY while a rally is active (i.e. from the
@@ -661,7 +717,7 @@ garage the car rests **lowered on the ground** at its calculated settled ride he
 Tapping the table drops to the map view; tapping the lift flies to the **tuning bay**
 (LIFT view) for the currently-selected car. A HUD hint + Back (to the exterior) +
 convenience buttons sit on top: the garage station row is **Back / Career / Garage /
-Free Roam / Settings**. **Garage** (`_open_garage_picker`) opens the **car park** to pick
+Free Roam / Challenge**. **Garage** (`_open_garage_picker`) opens the **car park** to pick
 which owned car to work on, then drops into the tuning bay for it (see below); **Free
 Roam** (`_enter_free_roam`) opens the car park across the WHOLE catalogue for a
 session-less drive in any car (owned or not). Because `car.tscn` embeds **all** the
@@ -683,8 +739,8 @@ lost: `_obtain_parked_car` reuses whatever is warm and builds the remainder on t
 (the old first-entry cost, for that remainder only), and the deferred loop skips those on
 its next frame. (The underlying cost is that each car still *instantiates* all
 embedded bodies before pruning; a deeper fix — lazy per-model body loading in `car.tscn` —
-is noted but not yet done.) **Settings** (`_open_settings(false)`)
-opens the shared camera/controls page (Back returns to the garage). (A **Repair** button lives on the
+is noted but not yet done.) Settings no longer lives on this row — it's on the title
+screen now (see the EXTERIOR section above). (A **Repair** button lives on the
 tuning-lift hub row, spending a **Repair Kit** for a full restore via
 `_repair_selected_car` / `_refresh_lift_repair_button`, but is **hidden** for now while
 earning kits is disabled — see `todo/remove-repair-kits.md`.)
@@ -694,10 +750,9 @@ tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
 The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
 (`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
-full page width, and UNDER it **Upgrades**, **Tuning** and **Wheels** buttons plus a
-**Test Drive** button. **Wheels** (`_enter_wheel_swap`) LEAVES the lift for the car park's
-solo wheel view — cosmetic wheel styles are judged by stance, and the lift holds the car
-raised off its suspension (see [wheel-customization.md](wheel-customization.md)). To put a **different** car on the lift, go **Back** to the garage and reopen the
+full page width, and UNDER it **Upgrades** and **Tuning** buttons plus a
+**Test Drive** button (the hub's left/right `ButtonCursor` — `_hub_focus` — no longer
+carries Wheels; see below). To put a **different** car on the lift, go **Back** to the garage and reopen the
 **Garage** picker (`_open_garage_picker`, GARAGE mode): the whole owned collection is
 parked, and **Select Car** (`_on_start_pressed` → `_select_garage_car`) sets the
 **selected car** (`Save.set_selected_car`) and enters the bay for it, spawning it on the
@@ -775,8 +830,8 @@ skips either one will look fine in a throwaway test and still wrap in the real g
   the rally's `pw_max` limit) and the HQ car-park Change-Upgrades / detune modal (with
   the rally's limit); the HQ garage lift omits it so the button stays a plain **Back** and
   the player upgrades freely.
-  (Repair is **not** here — it moved to the **garage station row** as a
-  `Repair` button, `_repair_selected_car`; see GARAGE above.) Below the slot rows sits an
+  (Repair is **not** here — it lives on the **tuning-lift hub row** as a
+  `Repair` button, `_repair_selected_car`.) Below the slot rows sits an
   **engine-swap row** (`UpgradesMenu._make_engine_swap_row`, `upgrades_menu.gd:215`): the
   car's current engine name and a **Swap Engine** button gated on engine-swap **tokens**
   (NOT on HP). The swap lineup (`_swap_targets`) is **every other owned car regardless of

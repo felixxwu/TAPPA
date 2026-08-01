@@ -21,6 +21,12 @@ const REPAIR_KIT_ID := "repair_kit"
 # repair kit (a low-weight reward-pool drop) and held in the shared inventory.
 const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
 
+# The mystery-box consumable's id. Granted instead of a normal reward draw when
+# the driven car has nothing left to gain and the player is swap-token-rich
+# (see RewardSystem.draw_upgrade). Opened from the HQ Lift overlay to gift a
+# random upgrade to a different owned car.
+const MYSTERY_BOX_ID := "mystery_box"
+
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
 # installing into an occupied slot replaces the incumbent (Save.install_upgrade).
 const SLOTS := ["turbo", "aero", "weight", "drivetrain"]
@@ -87,6 +93,10 @@ const UPGRADES: Array[Dictionary] = [
 	},
 	{
 		"id": ENGINE_SWAP_TOKEN_ID, "name": "Engine Swap Token", "slot": "",
+		"tier": 1, "consumable": true, "effect": {},
+	},
+	{
+		"id": MYSTERY_BOX_ID, "name": "Mystery Box", "slot": "",
 		"tier": 1, "consumable": true, "effect": {},
 	},
 ]

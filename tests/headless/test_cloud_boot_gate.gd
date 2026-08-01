@@ -237,3 +237,153 @@ func test_a_download_closes_an_open_starter_picker() -> void:
 
 	assert_ne(hq._carpark_mode, hq.CarparkMode.STARTER,
 		"the picker backs out rather than granting a duplicate starter")
+
+
+# --- An UNRESOLVED CONFLICT must not let a new career begin ----------------------
+#
+# todo/challenge-career-reuse-drift.md item 10. Waiting for the pull is not enough on
+# its own: the pull can settle as a CONFLICT (both sides moved on), in which case the
+# download was NOT applied and a real career may be sitting in the cloud. Releasing
+# the gate there offers a starter pick anyway, and picking one WRITES to the profile
+# — so "keep this device" stops meaning "keep what I had" and starts meaning "keep
+# the fresh save I was just handed". Reported by a player: signed in, progress
+# apparently lost, happily allowed to pick a starter, conflict popup never shown.
+
+# Put the sync layer into the blocked-by-conflict state the real pull would leave.
+func _raise_conflict() -> void:
+	Cloud.sync.blocked_by_conflict = true
+
+
+func _clear_conflict() -> void:
+	Cloud.sync.blocked_by_conflict = false
+
+
+func test_an_unresolved_conflict_blocks_the_starter_pick() -> void:
+	var hq := await _boot_hq()
+	_save.profile["starter_picked"] = false
+	_raise_conflict()
+
+	await hq._on_exterior_start()
+
+	assert_ne(hq._carpark_mode, hq.CarparkMode.STARTER,
+		"no new career may begin on top of an unresolved conflict")
+	assert_false(bool(_save.profile.get("starter_picked", false)),
+		"and nothing was written to the profile, so the local side of the conflict is intact")
+	_clear_conflict()
+
+
+func test_the_starter_pick_proceeds_once_the_conflict_is_settled() -> void:
+	# The gate must RELEASE, not merely block — a player who resolves in favour of this
+	# device still has no career, so they must reach the picker.
+	var hq := await _boot_hq()
+	_save.profile["starter_picked"] = false
+	_raise_conflict()
+	await hq._on_exterior_start()
+	assert_ne(hq._carpark_mode, hq.CarparkMode.STARTER, "setup: blocked while unresolved")
+
+	_clear_conflict()
+	await hq._on_exterior_start()
+	assert_eq(hq._carpark_mode, hq.CarparkMode.STARTER,
+		"once settled, a player with no career reaches the picker as normal")
+
+
+func test_no_conflict_leaves_the_first_run_path_untouched() -> void:
+	# The guard must not gate the ordinary offline/never-signed-in first run.
+	var hq := await _boot_hq()
+	_save.profile["starter_picked"] = false
+	_clear_conflict()
+
+	await hq._on_exterior_start()
+
+	assert_eq(hq._carpark_mode, hq.CarparkMode.STARTER,
+		"a player with no conflict is unaffected by the conflict guard")
+
+
+# --- The title reveal ---------------------------------------------------------
+# Same gate, wider scope. HQ used to build the title from the LOCAL profile and let
+# _on_cloud_profile_replaced rebuild it when the download landed a second later, so
+# the player watched their garage pop in. _await_boot_pull holds the whole build
+# until the pull settles; what is pinned here is the RELATIONSHIP (built once, after
+# the pull) and the two escapes — no credential, and a pull that never lands.
+# See todo/challenge-career-reuse-drift.md item 13.
+
+# Instantiate WITHOUT waiting: _ready runs synchronously up to its first await, so a
+# caller can still connect to lineup_built before any title has been built. The wait
+# budget has to be set BEFORE the node enters the tree — _ready reads it on the way
+# into the wait, so a later assignment arrives after the deadline is already fixed.
+func _boot_hq_unawaited(wait_sec := -1.0) -> Node3D:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	if wait_sec >= 0.0:
+		hq.cloud_restore_wait_sec = wait_sec
+	add_child_autofree(hq)
+	return hq
+
+
+# lineup_built fires once per title-lineup build, so counting it counts rebuilds.
+func _count_title_builds(hq: Node3D) -> Array:
+	var built := [0]
+	hq.lineup_built.connect(func() -> void: built[0] += 1)
+	return built
+
+
+func test_the_title_is_not_built_until_a_pending_pull_settles() -> void:
+	Cloud.initial_pull_pending = true
+	var hq := _boot_hq_unawaited()
+	var built := _count_title_builds(hq)
+
+	for _i in 5:
+		await get_tree().process_frame
+	assert_eq(built[0], 0,
+		"the title must not be built from the local profile while the career is arriving")
+
+	Cloud._settle_initial_sync()
+	for _i in 5:
+		await get_tree().process_frame
+	assert_eq(built[0], 1,
+		"once the pull settles the title is built exactly once, from the settled profile")
+
+
+func test_a_signed_out_player_reveals_the_title_without_waiting() -> void:
+	# The escape that made the old code refuse to gate the title at all: someone who
+	# never signed in must not wait for something that is never coming.
+	Cloud.initial_pull_pending = false
+	var hq := _boot_hq_unawaited()
+	var built := _count_title_builds(hq)
+
+	for _i in 5:
+		await get_tree().process_frame
+	assert_eq(built[0], 1, "no credential means no wait — the title builds straight away")
+
+
+func test_a_pull_that_never_lands_still_reveals_the_title() -> void:
+	# GUARANTEED EXIT: a hung pull degrades to "you keep playing locally", so the
+	# player must still reach a title rather than sitting on the loading cover.
+	Cloud.initial_pull_pending = true
+	var hq := _boot_hq_unawaited(0.0)  # the timeout path, with no real elapsed time
+	var built := _count_title_builds(hq)
+
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(built[0], 1, "the wait is capped — a pull that never lands cannot strand the player")
+	assert_true(Cloud.initial_pull_pending,
+		"and giving up on the WAIT does not cancel the pull itself")
+
+
+func test_a_pull_that_settles_as_a_conflict_still_reveals_the_title() -> void:
+	# A conflict does NOT apply the download, so the title reveals against the local
+	# profile — and the conflict must survive the reveal rather than being swallowed
+	# by the gate that now sits in front of it (item 10).
+	Cloud.initial_pull_pending = true
+	var hq := _boot_hq_unawaited()
+	var built := _count_title_builds(hq)
+	_raise_conflict()
+
+	Cloud._settle_initial_sync()
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(built[0], 1, "a conflicted pull still lets the player reach the title")
+	assert_true(ConflictPrompt.is_blocked(),
+		"and the conflict is still live for the start gate to catch")
+	_clear_conflict()

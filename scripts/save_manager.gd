@@ -382,6 +382,22 @@ func _default_profile() -> Dictionary:
 		# unsynced above, so no SCHEMA_VERSION bump — and it rides the existing
 		# cloud-save sync to the player's other devices for free.
 		"username": "",
+		# The in-progress Daily/Weekly/Monthly challenge run, if any (see
+		# features/rally-challenge.md). {} means no run active. When non-empty:
+		# {period_key, kind, car_instance_id, stage_index, stage_times_ms: [...],
+		# dnf: bool}. Backfilled by _migrate's key backfill like cloud_revision/
+		# unsynced/username above, so no SCHEMA_VERSION bump.
+		"challenge_run": {},
+		# Terminal outcomes per challenge period, keyed by period_key:
+		# {kind, dnf: bool, cumulative_ms: int}. A period present here is FINISHED —
+		# completed or DNF'd — and cannot be started again for the rest of that
+		# period (a challenge is one attempt; a wreck ends the run with no retry).
+		# Separate from challenge_run rather than folded into it because
+		# ChallengeSession.resumable_run keys on challenge_run being non-empty, so a
+		# terminal record stored there would make the game try to RESUME a finished
+		# run. Pruned to live periods on every write, so it can't grow without bound.
+		# Backfilled by _migrate's key backfill, so no SCHEMA_VERSION bump.
+		"challenge_results": {},
 	}
 
 
@@ -579,6 +595,32 @@ func engine_swap_tokens_owned() -> int:
 	return int(profile.get("inventory", {}).get(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 0))
 
 
+# Mystery boxes currently held in the shared inventory.
+func mystery_boxes_owned() -> int:
+	return int(profile.get("inventory", {}).get(UpgradeLibrary.MYSTERY_BOX_ID, 0))
+
+
+# --- Challenge run car lock ---------------------------------------------------
+# Whether an active challenge run is COMMITTED to `instance_id`. The STORAGE-LEVEL
+# predicate; UI asks it through DrivingContext.is_car_locked.
+#
+# Scope is deliberately narrow: a challenge locks the RUN to a car, it does NOT
+# reserve the car. The car stays fully usable in career rallies, free roam, the
+# garage, engine swaps and upgrades while the run is in progress. An earlier
+# design did use this to exclude the car from the rally picker, the garage/lift
+# picker, the engine-swap partner list and the reward reveal's "Repair now"
+# offer; all four were REMOVED — they made an owned car unusable across the whole
+# game, which was never the intent. Repairing between stages is an accepted
+# consequence (a challenge is a time competition, not a survival one).
+#
+# It has never disabled the detune slider either — the p/w ceiling is enforced by
+# the close-button gate, exactly like a career rally's pw_max.
+# See features/rally-challenge.md → "Car lock".
+func is_challenge_locked(instance_id: int) -> bool:
+	var run: Dictionary = profile.get("challenge_run", {})
+	return not run.is_empty() and int(run.get("car_instance_id", -1)) == instance_id
+
+
 # Set a car's engine to engine_id, clearing the swap field when it matches stock.
 func _set_engine(car: Dictionary, stock_id: String, engine_id: String) -> void:
 	if engine_id == stock_id or engine_id.is_empty():
@@ -682,7 +724,7 @@ func add_item(item_id: String, n := 1, do_save := true) -> void:
 
 
 # Remove n of an item from inventory if available. Returns true on success.
-func consume_item(item_id: String, n := 1) -> bool:
+func consume_item(item_id: String, n := 1, do_save := true) -> bool:
 	var inv: Dictionary = profile["inventory"]
 	var have := int(inv.get(item_id, 0))
 	if have < n:
@@ -691,8 +733,31 @@ func consume_item(item_id: String, n := 1) -> bool:
 		inv.erase(item_id)
 	else:
 		inv[item_id] = have - n
-	save()
+	if do_save:
+		save()
 	return true
+
+
+# Open one mystery box: consume it and grant whatever RewardSystem.pick_mystery_box_grant
+# resolves as a SINGLE saved transaction (the resolve happens before any mutation,
+# so consume_item is called with do_save=false and the grant's own save covers
+# both). Falls back to a repair kit if no other car has room, or if the resolved
+# install unexpectedly fails (e.g. the garage changed between grant and open).
+# Returns {} if no box was held; otherwise {"fallback": bool, "item_id": String,
+# "recipient_instance_id": int (only when not fallback)} for the caller to reveal.
+func open_mystery_box(current_instance_id: int, rng: RandomNumberGenerator = null) -> Dictionary:
+	if not consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false):
+		return {}
+	var grant := RewardSystem.pick_mystery_box_grant(profile, current_instance_id, rng)
+	if grant.is_empty():
+		add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)  # saves; covers the consume above too
+		return {"fallback": true, "item_id": UpgradeLibrary.REPAIR_KIT_ID}
+	var recipient_id := int(grant["instance_id"])
+	var item_id := String(grant["item_id"])
+	if not install_upgrade(recipient_id, item_id, false):
+		add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)  # saves; covers the consume above too
+		return {"fallback": true, "item_id": UpgradeLibrary.REPAIR_KIT_ID}
+	return {"fallback": false, "item_id": item_id, "recipient_instance_id": recipient_id}
 
 
 # Fit a won part to a car. Upgrades are CAR-BOUND: a part belongs to the car it

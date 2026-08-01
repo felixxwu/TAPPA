@@ -7,9 +7,13 @@ reveal. Uses the scripted-control hook on [`car.gd`](car-physics.md) for the gri
 
 The diegetic sequence between picking a car in HQ and the `3·2·1·GO` countdown
 (`todo/menus.md` location 2). It runs **inside the live run scene** (`main.tscn`) once
-the world is built and a [`RallySession`](rally-session.md) is active, while the car is
+the world is built and a session is active — a [`RallySession`](rally-session.md) event
+or a [`ChallengeSession`](rally-challenge.md) stage — while the car is
 held locked. It lines up the **real top-three rivals** ahead of the player and walks the
-player up to the line one opponent at a time.
+player up to the line one opponent at a time. A **challenge stage** runs this same
+screen (same menus, same shared car — resolved once via `_driven_car()`) but passes no
+leaders, since it has no rival field: the empty-leaders path skips the reveal entirely.
+See [rally-challenge.md](rally-challenge.md) -> "Start-line staging" for what differs.
 
 Phases (`StartLine.Seq`), driven in `_process`:
 

@@ -94,6 +94,19 @@ repairs*). Because the OwnedCar is mutated before the reload, `world.gd` fields 
 already-repaired car. The repair summary is stashed on the session and read once via
 `take_pending_repair()` (cleared on read + on `start_rally`, so a pause→reset can't
 replay it); `world.gd` renders it as a `RepairReveal` popup before the start line.
+Both `_enter_event()` and `_resolve_results()` apply the repair through the same
+private `_apply_field_repair()` helper, so the two call sites can't drift on which
+fractions they use.
+
+**Final-event repair.** The between-event repair above only ever fires going INTO
+an event, so damage from the LAST event of a rally previously got no repair at all —
+`_resolve_results()` (reached from `continue_to_next_event()` after the final event,
+`report_wreck()`, or `dev_complete_rally()`) now also calls `_apply_field_repair()`
+for the just-raced car, with the same `field_repair_hp_fraction`/
+`field_repair_toe_fraction` fractions. Unlike the between-event case, this repair is
+applied silently — its summary is discarded rather than stashed for
+`take_pending_repair()`, so it doesn't compete with the podium/reward-reveal flow's
+own UI.
 
 The config write is `apply_event_config(cfg, event)` — a static, scene-free seam
 (extracted from `_load_event_scene` so its fallback semantics are directly

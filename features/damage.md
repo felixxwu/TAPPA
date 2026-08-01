@@ -268,6 +268,18 @@ repair is worth interrupting for is a question about how much of the car it fixe
 and 20 HP means very different things on a fragile car and a heavy one. Headless runs drain
 the summary without building the popup.
 
+Without a stage AFTER it, the final event of a rally would never get this courtesy
+repair — `_enter_event()` only ever runs again for a NEXT event, and there is no
+next event after the last one, so damage taken on the final stage would otherwise
+carry forward untouched into whatever the player drives next (the next rally, free
+roam, etc.). `RallySession._resolve_results()` closes that gap: it also calls the
+same repair (`RallySession._apply_field_repair()`, the shared helper both call sites
+now use) for the just-finished car, with the identical `field_repair_hp_fraction`/
+`field_repair_toe_fraction` fractions. Unlike the between-event repair, this one is
+applied **silently** — the summary is discarded rather than stashed for
+`take_pending_repair()`, so it never fights with the podium/reward-reveal flow's own
+UI for the player's attention.
+
 ## In-run HUD (see [hud.md](hud.md))
 
 `hud.gd` reads `car.damage` each frame: a colour-graded **health bar** (`HPBar`,

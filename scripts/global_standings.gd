@@ -37,17 +37,32 @@ var show_back := true
 var continue_text := "Continue to next stage >"
 var overlay_mode := false
 
+# Challenge-mode fields (spec §5/§7) — only meaningful when is_challenge is true.
+# See for_current_stage()/_for_current_challenge_stage() above for how they're
+# populated: there is no stage_key for a challenge stage, so this page routes to
+# Cloud.challenge_leaderboard instead of Cloud.leaderboard when set.
+var is_challenge := false
+var period_key := ""
+var stage_index := 1
+
 # Test / host seam. When set, this Callable is used in place of
 # Cloud.leaderboard.submit_and_fetch — it takes (stage_key, time_ms, row) and
 # returns the same result dict. Headless runs with no fetcher go straight to
 # UNAVAILABLE rather than reaching for the network.
 var fetcher: Callable = Callable()
 
+# Same seam as `fetcher`, for the challenge board. Takes (period_key, stage_index,
+# time_ms, identity) and returns the same shape ChallengeLeaderboard.post_checkpoint
+# + fetch_standings_at together produce (post fails -> straight to UNAVAILABLE, per
+# spec §5's "never cost a player their run", then fetch is skipped entirely).
+var challenge_fetcher: Callable = Callable()
+
 var _state: int = State.LOADING
 var _rows: Array = []      # the assembled display list (standings_row dicts + gap markers)
 var _total := 0            # how many times are posted on this board at all
 var _rank := 0             # the player's world rank, 0 when they have not posted
 var _signed_in := false    # as of the last fetch (or Cloud, when there wasn't one)
+var _not_yet_complete := 0 # challenge-mode only: players who haven't reached this checkpoint
 var _continue_button: Button = null
 var _action_button: Button = null   # the state's extra affordance (sign in / choose a name)
 var _account_overlay: CanvasLayer = null
@@ -56,7 +71,25 @@ var _account_overlay: CanvasLayer = null
 # Build the opts for the stage that just finished. Kept here (rather than in
 # standings.gd) so everything the page needs to know about the rally is gathered
 # in one place, and the host stays a two-line hand-off.
-static func for_current_stage() -> Dictionary:
+#
+# When a challenge run is active (docs/superpowers/specs/2026-07-31-rally-challenge-design.md
+# §3/§5/§7), this reads ChallengeSession instead: a challenge stage has no
+# `stage_key` at all (its seed comes from the period hash, not a RallyLibrary
+# event, and its results live exclusively in `challenge_runs`, never
+# `stage_times` — spec §5), so the returned dict instead carries
+# `is_challenge`/`period_key`/`stage_index` for the caller to route to
+# Cloud.challenge_leaderboard, and `time_ms` is the CUMULATIVE time so far
+# (sum of stage_times_ms), not a single stage's time.
+#
+# `force_challenge` lets a host that LATCHED the session (standings.gd, which
+# pins the mode when the interstitial is built) say so explicitly. A challenge's
+# final stage ends the run before its interstitial reaches page 2, so re-asking
+# is_active() here routed the last checkpoint to the CAREER board with a blank
+# stage_key — and since a Daily has exactly one stage, its time never reached the
+# challenge board at all. See todo/challenge-career-reuse-drift.md item 2.
+static func for_current_stage(force_challenge := false) -> Dictionary:
+	if force_challenge or ChallengeSession.is_active():
+		return _for_current_challenge_stage()
 	var done: int = RallySession.events_completed()
 	var event_index := done - 1
 	var rally: Dictionary = RallyLibrary.by_id(RallySession.rally_id())
@@ -71,12 +104,35 @@ static func for_current_stage() -> Dictionary:
 		if bool(entry.get("is_player", false)):
 			mine = entry
 	return {
+		"is_challenge": false,
 		"stage_key": key,
 		"stage_number": maxi(done, 1),
 		"time_ms": int(mine.get("combined_ms", -1)),
 		"car_name": String(mine.get("car_name", "")),
 		"car_id": String(mine.get("car_id", "")),
 		"dnf": bool(mine.get("dnf", false)),
+	}
+
+
+# ChallengeSession-backed equivalent of the opts above. `stage_index` is the
+# 1-based checkpoint number of the JUST-completed stage (matches the `k` the
+# checkpoint post/fetch use — see ChallengeLeaderboard.post_checkpoint/
+# fetch_standings_at). `dnf` mirrors ChallengeSession.dnf() (only ever true once
+# the run has ended, e.g. a wreck reported mid-run).
+static func _for_current_challenge_stage() -> Dictionary:
+	var done: int = ChallengeSession.events_completed()
+	var owned: Dictionary = Save.get_car(ChallengeSession.car_instance_id())
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var driven_name := EngineSwap.display_name(entry, owned) if not entry.is_empty() else ""
+	return {
+		"is_challenge": true,
+		"period_key": ChallengeSession.period_key(),
+		"stage_index": maxi(done, 1),
+		"stage_number": maxi(done, 1),
+		"time_ms": ChallengeSession.cumulative_ms(),
+		"car_name": driven_name,
+		"car_id": String(owned.get("model_id", "")),
+		"dnf": ChallengeSession.dnf(),
 	}
 
 
@@ -89,6 +145,9 @@ func configure(opts: Dictionary) -> void:
 	show_back = bool(opts.get("show_back", show_back))
 	continue_text = String(opts.get("continue_text", continue_text))
 	overlay_mode = bool(opts.get("overlay_mode", overlay_mode))
+	is_challenge = bool(opts.get("is_challenge", is_challenge))
+	period_key = String(opts.get("period_key", period_key))
+	stage_index = int(opts.get("stage_index", stage_index))
 	# A DNF has no time to rank, so there is nothing to post and no board row of
 	# the player's own — the page still shows the world's top times.
 	if bool(opts.get("dnf", false)):
@@ -116,6 +175,10 @@ func _refresh() -> void:
 	_state = State.LOADING
 	_build_ui()
 
+	if is_challenge:
+		await _refresh_challenge()
+		return
+
 	var use_injected := fetcher.is_valid()
 	if not use_injected \
 			and (Platform.is_headless() or Cloud == null or Cloud.leaderboard == null):
@@ -142,11 +205,19 @@ func _refresh() -> void:
 	# which `await callable.call()` behaves perfectly. So the tests could not have
 	# caught a difference in that machinery, and the live path is the only place it
 	# mattered. It is spelled out as two branches for exactly that reason.
+	# The shared busy state (scripts/cloud/cloud_busy.gd), in its AMBIENT shape and
+	# with no line of its own: this page is already on screen and already says
+	# "Loading…" through _status_line, and a cover over a leaderboard would be
+	# worse than what it replaces — NOTHING HERE MAY BLOCK A RALLY. The marker is
+	# still added (headless included), so "a fetch is in flight" is one observable
+	# fact here and everywhere else rather than a per-page invention.
+	var busy := CloudBusy.ambient(self, "Loading…")
 	var raw: Variant
 	if use_injected:
 		raw = await fetcher.call(stage_key, time_ms, identity)
 	else:
 		raw = await Cloud.leaderboard.submit_and_fetch(stage_key, time_ms, identity)
+	await busy.end()
 	if not is_instance_valid(self) or not is_inside_tree():
 		return  # the page went away mid-flight (scene torn down / Back pressed)
 
@@ -170,8 +241,8 @@ func _refresh() -> void:
 		_land(State.POSTED, result)
 
 
-func _land(state: int, result: Dictionary) -> void:
-	_state = state
+func _land(new_state: int, result: Dictionary) -> void:
+	_state = new_state
 	# On UNAVAILABLE there is no result to read this from, and the answer still
 	# matters: it decides which of the two prompts to offer (see _prompt_kind).
 	_signed_in = bool(result.get("signed_in", Cloud != null and Cloud.is_signed_in()))
@@ -183,6 +254,90 @@ func _land(state: int, result: Dictionary) -> void:
 	# COMPLETE ranked field the top-3-plus-aggregate fetch never has.
 	_rows = Leaderboard.display_rows(result.get("rows", []), result.get("player_row", {}))
 	_build_ui()
+
+
+# Post-then-fetch for the challenge board (spec §5/§7): post_checkpoint then
+# fetch_standings_at, instead of Leaderboard.submit_and_fetch. A failed post is
+# NOT fatal — per spec §5 ("never cost a player their run") it just means this
+# run's board entry stops advancing; the fetch below still runs and paints
+# whatever the board's current state is. See `challenge_fetcher` for the test
+# seam (stands in for the whole post+fetch round trip, same convention as
+# `fetcher` above).
+func _refresh_challenge() -> void:
+	var use_injected := challenge_fetcher.is_valid()
+	if not use_injected \
+			and (Platform.is_headless() or Cloud == null or Cloud.challenge_leaderboard == null):
+		_land_challenge(State.UNAVAILABLE, {})
+		return
+	if period_key == "":
+		_land_challenge(State.UNAVAILABLE, {})
+		return
+
+	var username := UsernamePopup.current()
+	var identity := {"name": username, "car_name": car_name, "car_id": car_id}
+
+	# Same ambient busy state as the career board above — see _refresh.
+	var busy := CloudBusy.ambient(self, "Loading…")
+	var raw: Variant
+	if use_injected:
+		raw = await challenge_fetcher.call(period_key, stage_index, time_ms, identity)
+	else:
+		# A DNF has no time to checkpoint (mirrors submit_and_fetch's own
+		# time_ms <= 0 skip) — go straight to a read-only fetch.
+		if time_ms > 0:
+			await Cloud.challenge_leaderboard.post_checkpoint(period_key, stage_index, time_ms, identity)
+		raw = await Cloud.challenge_leaderboard.fetch_standings_at(period_key, stage_index)
+	await busy.end()
+	if not is_instance_valid(self) or not is_inside_tree():
+		return  # the page went away mid-flight (scene torn down / Back pressed)
+
+	var result: Dictionary = raw if raw is Dictionary else {}
+	if not bool(result.get("ok", false)):
+		_land_challenge(State.UNAVAILABLE, {})
+		return
+	if not bool(result.get("signed_in", false)):
+		_land_challenge(State.SIGNED_OUT, result)
+	elif username == "":
+		_land_challenge(State.NO_USERNAME, result)
+	else:
+		_land_challenge(State.POSTED, result)
+
+
+func _land_challenge(new_state: int, result: Dictionary) -> void:
+	_state = new_state
+	_signed_in = bool(result.get("signed_in", Cloud != null and Cloud.is_signed_in()))
+	_total = int(result.get("total_entries", 0))
+	_rank = int(result.get("player_rank", 0))
+	_not_yet_complete = int(result.get("not_yet_complete", 0))
+	# ChallengeLeaderboard's rows carry a real per-checkpoint combined_ms and a
+	# player_row (same shape/convention as Leaderboard.fetch), so this reuses the
+	# identical assembly the per-stage board uses — a real time renders for every
+	# row, not a dash, and the player's own line appears via the same gap/append
+	# logic Leaderboard.display_rows already implements.
+	_rows = Leaderboard.display_rows(_challenge_rows(result.get("rows", [])),
+		_challenge_row(result.get("player_row", {})))
+	_build_ui()
+
+
+# Map ChallengeLeaderboard's row shape ({placed, name, car_name, car_id,
+# stages_completed, combined_ms, uid, is_player}) onto the UITheme.standings_row
+# shape this page's _build_rows already renders — just adding the `dnf` key
+# every row/UITheme.standings_row expects (a challenge checkpoint, once posted,
+# is never a DNF row by construction: a DNF'd run stops posting further
+# checkpoints, per spec §5).
+func _challenge_rows(raw_rows: Array) -> Array:
+	var out: Array = []
+	for entry in raw_rows:
+		out.append(_challenge_row(entry))
+	return out
+
+
+func _challenge_row(entry: Dictionary) -> Dictionary:
+	if entry.is_empty():
+		return {}
+	var row := entry.duplicate()
+	row["dnf"] = false
+	return row
 
 
 # --- Building -----------------------------------------------------------------
@@ -207,6 +362,10 @@ func _prompt_kind() -> String:
 func _build_ui() -> void:
 	for c in get_children():
 		if c == _account_overlay:
+			continue
+		# The in-flight cloud busy marker belongs to the call, not to the page —
+		# a rebuild mid-fetch must not free it. See scripts/cloud/cloud_busy.gd.
+		if c.is_in_group(CloudBusy.GROUP):
 			continue
 		remove_child(c)
 		c.queue_free()
@@ -332,6 +491,8 @@ func _status_line() -> String:
 			return "Online leaderboard unavailable"
 		_:
 			pass
+	if is_challenge:
+		return _challenge_status_line()
 	if _rows.is_empty():
 		# Say the total anyway: "no times posted yet" and "you are 300th of 312 but
 		# the rows failed to map" are very different things to a player.
@@ -342,6 +503,20 @@ func _status_line() -> String:
 	if _state == State.POSTED and _rank >= 1:
 		return "P%d of %d times posted" % [_rank, _total]
 	return "%d times posted" % _total
+
+
+# Challenge-mode status line: total entries + how many are still mid-run, per
+# spec §5's "single count line" convention for players who haven't reached this
+# checkpoint yet (never individual placeholder rows).
+func _challenge_status_line() -> String:
+	if _total <= 0:
+		return "No entries yet this period"
+	var line := "%d entries this period" % _total
+	if _state == State.POSTED and _rank >= 1:
+		line = "P%d of %d entries" % [_rank, _total]
+	if _not_yet_complete > 0:
+		line += " (%d not yet complete)" % _not_yet_complete
+	return line
 
 
 func _wide_button(text: String, on_press: Callable) -> Button:
@@ -368,8 +543,10 @@ func _on_back() -> void:
 
 func _on_choose_name_pressed() -> void:
 	var popup := UsernamePopup.open(self)
-	popup.finished.connect(func(name: String) -> void:
-		if name != "":
+	if popup == null:
+		return  # refused: a modal is already on screen
+	popup.finished.connect(func(chosen: String) -> void:
+		if chosen != "":
 			_refresh()
 		else:
 			UITheme.focus_grab(_continue_button))

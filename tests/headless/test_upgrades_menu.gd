@@ -142,6 +142,37 @@ func test_editing_detune_writes_fraction_and_fires_callback() -> void:
 	assert_almost_eq(float(owned["tuning"]["engine_detune"]), 0.5, 0.001, "50% slider stores 0.5")
 	assert_gt(fired[0], 0, "on_change fired")
 
+# A challenge-locked car is NOT special-cased here: UpgradesMenu is per-car and knows
+# nothing about sessions. The ceiling is enforced by the pw_limit-bound close button,
+# exactly like a career rally's pw_max — never by freezing the slider (a hard
+# editable=false lock here was a real past bug). Same behaviour, locked or not.
+func test_detune_slider_and_pw_gate_behave_identically_when_challenge_locked() -> void:
+	var prior: Variant = Save.profile.get("challenge_run", {})
+	for locked in [false, true]:
+		var owned := _owned_fixture_car()
+		owned["tuning"] = {"engine_detune": 1.0}
+		var iid := int(owned["instance_id"])
+		Save.profile["challenge_run"] = {"car_instance_id": iid} if locked else {}
+		assert_eq(Save.is_challenge_locked(iid), locked, "setup: the lock state is what we asked for")
+		# A ceiling at HALF this car's full-power ratio — derived from the same helper
+		# under test, so no tuned value is pinned.
+		var limit := _full_power_pw(owned) * 0.5
+		var m = _menu_with_limit(owned, limit)
+		var label := "locked" if locked else "unlocked"
+		assert_true(m._detune_slider.editable, "%s: the detune slider stays editable" % label)
+		assert_true(m.over_pw_limit(), "%s: full power reads as over a half-ratio ceiling" % label)
+		assert_false(m.can_close(), "%s: cannot proceed while over the ceiling" % label)
+		m._detune_slider.value = 25.0  # a quarter power — comfortably under half
+		assert_false(m.over_pw_limit(), "%s: detuning under the ceiling clears the over-limit flag" % label)
+		assert_true(m.can_close(), "%s: proceeding is allowed once under the ceiling" % label)
+	Save.profile["challenge_run"] = prior
+
+func _full_power_pw(owned: Dictionary) -> float:
+	var full := owned.duplicate(true)
+	full["tuning"] = {"engine_detune": 1.0}
+	var entry := CarLibrary.by_id(String(full.get("model_id", "")))
+	return CarLibrary.power_to_weight_hp_tonne(UpgradeLibrary.effective_meta(full, entry))
+
 func test_detune_label_shows_pw_but_not_the_cap() -> void:
 	# The detune label carries the live p/w readout; the max-p/w cap moved to the close
 	# button, so the label never mentions the limit even when one is set.

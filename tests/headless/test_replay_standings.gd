@@ -68,3 +68,33 @@ func _first_focusable(n: Node) -> Control:
 		if r != null:
 			return r
 	return null
+
+
+# --- A challenge skips page 1 (there are no AI opponents to rank against) ---------
+
+# A challenge run has no rival field — ChallengeSession feeds build_standings an
+# empty one — so page 1 (the local event standings) would be a table containing
+# nothing but the player's own row. The interstitial goes straight to the world
+# board instead. Keyed off the LATCHED mode, so it holds on the FINAL stage too,
+# where the session has already gone inactive by the time this screen builds.
+func test_a_challenge_skips_straight_to_the_world_board() -> void:
+	var s: Control = load("res://standings.tscn").instantiate()
+	s.overlay_mode = true
+	s.set_challenge_mode(true)
+	add_child_autofree(s)
+	await get_tree().process_frame
+	assert_true(s._global_shown, "the challenge interstitial opens on the world board")
+	assert_false(is_instance_valid(s._root_box),
+		"page 1 is not left behind it — a one-row local table is nothing to show")
+
+
+# A CAREER rally still gets page 1: it has a real AI field to rank against, so the
+# skip must not leak into the mode that needs both pages.
+func test_a_career_rally_still_opens_on_the_local_standings() -> void:
+	var s: Control = load("res://standings.tscn").instantiate()
+	s.overlay_mode = true
+	s.set_challenge_mode(false)
+	add_child_autofree(s)
+	await get_tree().process_frame
+	assert_false(s._global_shown, "a career rally still opens on page 1")
+	assert_true(is_instance_valid(s._root_box), "page 1's content is built and live")

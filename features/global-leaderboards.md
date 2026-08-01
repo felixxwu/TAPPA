@@ -19,6 +19,15 @@ untouched. Design: `docs/superpowers/specs/2026-07-31-global-leaderboards-design
 | `scripts/track_cache.gd` › `BOARD_EPOCH` | The manual version stamp folded into every `stage_key` — see [track.md](track.md) → *Turn cache*. |
 | `firestore.rules` › `stage_times/{stage}/times/{uid}` | The one world-readable collection in the whole database. |
 
+`global_standings.gd` also grows a parallel `is_challenge` path talking to
+`scripts/cloud/challenge_leaderboard.gd` (`ChallengeLeaderboard`,
+`Cloud.challenge_leaderboard`) and a SECOND world-readable collection,
+`challenge_runs/{period_key}/entries/{uid}` — one level deeper than
+`stage_times` (write-once checkpoints instead of a single best time). See
+[rally-challenge.md](rally-challenge.md) → "Cloud leaderboard" for that
+board's full data model and rules; everything below this line is about the
+per-stage `stage_times` board only.
+
 ## The data model
 
 One document per player per stage, at `stage_times/{stage_key}/times/{uid}`.

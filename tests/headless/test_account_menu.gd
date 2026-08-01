@@ -108,3 +108,67 @@ func test_back_returns_to_the_main_view() -> void:
 	assert_true(_menu.go_back(), "a form consumes Back")
 	assert_true(_menu.at_root())
 	assert_false(_menu.go_back(), "at the top level Back belongs to the host")
+
+
+# --- The busy state (scripts/cloud/cloud_busy.gd) ------------------------------
+# This page used to own a private copy of "a cloud call is in flight". It now uses
+# the shared one, in its ambient shape. Assert the RELATIONSHIP and the controls,
+# never the copy — the wording is content.
+
+func test_a_cloud_call_in_flight_shows_the_shared_busy_state() -> void:
+	assert_false(CloudBusy.showing(_menu), "nothing in flight on a freshly built page")
+	assert_true(_menu._begin("Signing in…"), "a first request is accepted")
+	assert_true(CloudBusy.showing(_menu), "and it shows the shared busy state")
+	_menu._finish({"ok": true, "error": ""})
+	assert_false(CloudBusy.showing(_menu), "which is gone once the call lands")
+
+
+func test_a_second_request_cannot_start_while_one_is_in_flight() -> void:
+	assert_true(_menu._begin("Signing in…"))
+	assert_false(_menu._begin("Signing in again…"),
+		"a double-tap must not fire two sign-ins")
+	_menu._finish({"ok": true, "error": ""})
+	assert_true(_menu._begin("Signing in…"), "and the page is usable again after")
+	_menu._finish({"ok": true, "error": ""})
+
+
+func test_the_busy_state_survives_the_rebuild_a_cloud_event_triggers() -> void:
+	# Cloud.state_changed fires during a sign-in and rebuilds this page wholesale.
+	# The busy line belongs to the call, not to the page.
+	_menu._begin("Signing in…")
+	_menu.rebuild()
+	assert_true(CloudBusy.showing(_menu), "the rebuild must not take the busy line away")
+	_menu._finish({"ok": true, "error": ""})
+
+
+func test_a_failed_cloud_call_tells_the_player_why() -> void:
+	_menu._begin("Signing in…")
+	_menu._finish({"ok": false, "error": "that password is wrong"})
+	assert_string_contains(_menu._message, "that password is wrong",
+		"the server's own words reach the player")
+	assert_eq(_menu._message_role, "red", "and read as a failure")
+
+	# A failure with nothing to say still says something — one answer, from
+	# CloudBusy, not a per-page invention.
+	_menu._begin("Signing in…")
+	_menu._finish({"ok": false, "error": ""})
+	assert_eq(_menu._message, CloudBusy.GENERIC_FAILURE)
+
+	_menu._begin("Signing in…")
+	_menu._finish({"ok": true, "error": ""})
+	assert_eq(_menu._message, "", "and a call that worked leaves no error behind")
+
+
+func test_controls_come_back_after_a_cloud_call() -> void:
+	# The busy state disables the page's buttons, so it must hand them back —
+	# a menu left inert is unreachable by keyboard and gamepad alike.
+	_menu._begin("Signing in…")
+	for node in _menu.find_children("*", "Button", true, false):
+		assert_true((node as Button).disabled, "buttons go inert while a call is in flight")
+	_menu._finish({"ok": true, "error": ""})
+	var buttons := _menu.find_children("*", "Button", true, false)
+	assert_gt(buttons.size(), 0, "the page still has its controls")
+	for node in buttons:
+		assert_false((node as Button).disabled, "and they are live again afterwards")
+		assert_ne((node as Button).focus_mode, Control.FOCUS_NONE,
+			"and still reachable by keyboard/gamepad")

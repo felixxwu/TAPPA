@@ -66,6 +66,12 @@ func _ready() -> void:
 	var loading := LoadingScreen.new()
 	add_child(loading)
 
+	# Seat the active session's stage/event track parameters into the live config
+	# BEFORE anything reads it. Pulling here (instead of every producer pushing
+	# before its scene load) is the single point where a stage's config reaches
+	# the run — session-less entries (free roam, benchmark, dev boot) no-op and
+	# keep whatever the caller wrote. See DrivingContext.apply_stage_config.
+	DrivingContext.apply_stage_config(Config.data)
 	var cfg: GameConfig = Config.data
 	# Resolve the per-target render quality ONCE, before apply_terrain_lod() and any
 	# scatter run: a web TOUCH device (the low-end / 30fps target) gets the shorter
@@ -175,7 +181,9 @@ func _ready() -> void:
 	# OwnedCar (baseline + upgrades + saved HP, features/rally-session.md); a plain
 	# dev boot keeps the first library car (the Mazda MX-5).
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
-	if RallySession.is_active():
+	if ChallengeSession.is_active():
+		_field_challenge_car()
+	elif RallySession.is_active():
 		_field_session_car()
 	elif RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "":
 		# Free roam (session-less): field the car the player picked in the car park.
@@ -215,11 +223,17 @@ func _ready() -> void:
 		_stage_manager.stage_completed.connect(_on_session_event_completed)
 	# A session run additionally wires the wreck back to the orchestrator, and
 	# routes the rally's finish to the podium.
-	if RallySession.is_active():
+	# A rally event and a challenge stage take the SAME path here (they're mutually
+	# exclusive — only one session is ever active): wire the signals, stage the
+	# start line, then drain that session's pending pit repair. The only thing that
+	# differs between the two is WHICH orchestrator the repair summary comes from,
+	# so this is one block with one branch rather than two near-identical ones.
+	if RallySession.is_active() or ChallengeSession.is_active():
 		_wire_session_signals()
 		# Pre-event start-line scene: briefing + presence cars before the countdown
 		# (todo/menus.md location 2). Only when staged (start_line_enabled + a real
-		# rally); the StageManager is already waiting in STAGING for its launch.
+		# rally / challenge stage); the StageManager is already waiting in STAGING for
+		# its launch.
 		if _should_stage():
 			# Let the freshly-built terrain render one frame before laying out the
 			# start-line queue, so the cars are placed against the settled ground (and
@@ -242,7 +256,8 @@ func _ready() -> void:
 		# Only pop up for a repair that moved health by at least the min threshold — a
 		# smaller touch-up (e.g. wheels-only on a near-full car) still applied to the
 		# save, it just doesn't interrupt the player (RepairReveal.worth_showing).
-		var repair: Dictionary = RallySession.take_pending_repair()
+		var repair: Dictionary = ChallengeSession.take_pending_repair() if ChallengeSession.is_active() \
+			else RallySession.take_pending_repair()
 		if RepairReveal.worth_showing(repair) and not _headless:
 			await _show_repair_popup(repair)
 
@@ -459,11 +474,15 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	if loading != null and not _headless:
 		on_progress = loading.update_track_preview
 	# Build the shape contract. In a rally, use the current event so the shape (and
-	# its water avoidance) matches the times RallySession derived; free-roam uses the
-	# live cfg. The factory seats the staged origin from cfg and relocates it onto dry
-	# ground if the start would be underwater — identical logic to the target
-	# derivation, so the shapes stay in sync.
-	var event := RallySession.current_event()
+	# its water avoidance) matches the times RallySession derived; a challenge stage
+	# uses ChallengeSession's rolled TrackGenParams-shaped stage dict the same way
+	# (spec §1/§4 — the seed comes from the period hash, not a RallyLibrary event,
+	# but the dict shape TrackGenParams.for_event reads is identical); free-roam
+	# uses the live cfg. The factory seats the staged origin from cfg and relocates
+	# it onto dry ground if the start would be underwater — identical logic to the
+	# target derivation, so the shapes stay in sync.
+	var event := ChallengeSession.current_stage_params() if ChallengeSession.is_active() \
+		else RallySession.current_event()
 	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
 		else TrackGenParams.for_config(cfg)
 	# The dry-start search may relocate the generation origin onto dry ground. Derive
@@ -499,6 +518,33 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		result = await TrackGenerator.generate_cached(params, cfg, on_progress)
 	else:
 		result = await TrackGenerator.generate_optional_cached(params, cfg, on_progress)
+	# A challenge stage's seed is rolled blind (ChallengeLibrary.stages_for), unlike a
+	# rally's — every authored RALLIES seed is hand-verified to route before it ships,
+	# via the committed lockfile. TrackGenerator.generate already retries MAX_RESTARTS
+	# times internally with strided seeds, but a genuinely hard (turn_count, reserved-
+	# corridor) combination can still exhaust all of them and return an INCOMPLETE
+	# (near-empty) result — the empty-terrain bug this guards against. Deterministically
+	# bump the seed and regenerate a few more times: every client hits the exact same
+	# failure on the exact same period key, so retrying with the SAME bumped-seed
+	# sequence keeps the "identical stage for every player" contract intact — it just
+	# means the odd unlucky roll silently becomes a different (still period-deterministic)
+	# seed instead of an unplayable stage. Rally events are excluded (their seeds are
+	# already lockfile-verified; a genuine live miss/incomplete there is a data bug worth
+	# surfacing loudly, not silently routing around).
+	if ChallengeSession.is_active() and not bool(result.get("complete", false)):
+		var retry_event := event.duplicate()
+		var base_seed := int(event.get("seed", params.seed))
+		for attempt in range(1, 4):
+			retry_event["seed"] = base_seed + attempt * 104729  # a large prime stride
+			var retry_params := TrackGenParams.for_event(retry_event, cfg)
+			var retry_result: Dictionary = await TrackGenerator.generate(retry_params, on_progress)
+			if bool(retry_result.get("complete", false)):
+				result = retry_result
+				params = retry_params
+				break
+		if not bool(result.get("complete", false)):
+			push_error("ChallengeSession stage generation failed after retries (period=%s stage seed=%d turn_count=%d) — falling back to whatever partial track was found" \
+				% [ChallengeSession.period_key(), base_seed, params.turn_count])
 	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
 	# it stays drawn through the remaining stages until finish().
 	if loading != null and not _headless:
@@ -1196,14 +1242,23 @@ func _spawn_wreck_crowd(parent: Node, center: Vector3, outward: Vector2,
 		parent.add_child(crowd)
 
 
-# The live event data the arch banners display (rally name, which stage and the
-# time-to-beat), read off RallySession. The rally's difficulty tier is a hidden
-# value, so it's deliberately not surfaced here. When no rally is active (a dev boot
-# / direct play) the fields stay empty/zero and the gate shows just its START /
-# FINISH wordmark.
+# The live event framing — the event's name, which stage of how many, and the
+# time-to-beat. Single source for BOTH the arch banners and the start-line header
+# (_build_start_line), so a challenge stage reads its framing in exactly one place.
+# The rally's difficulty tier is a hidden value, so it's deliberately not surfaced
+# here. When no session is active (a dev boot / direct play) the fields stay
+# empty/zero and the gate shows just its START / FINISH wordmark.
+#
+# A challenge has no rival field at all (spec §3), so `target_ms` stays -1 for it —
+# FinishArch already omits the time row for a non-positive target, the same graceful
+# empty state a session-less boot gets.
 func _arch_event_info() -> Dictionary:
 	var info := {"rally_name": "", "stage_index": 0, "stage_count": 0, "target_ms": -1}
-	if RallySession.is_active():
+	if ChallengeSession.is_active():
+		info["rally_name"] = "%s Challenge" % ChallengeSession.kind().capitalize()
+		info["stage_index"] = ChallengeSession.events_completed()
+		info["stage_count"] = ChallengeSession.stage_count()
+	elif RallySession.is_active():
 		var rally := RallyLibrary.by_id(RallySession.rally_id())
 		info["rally_name"] = String(rally.get("name", ""))
 		info["stage_index"] = RallySession.event_index()
@@ -1274,6 +1329,11 @@ var _engine_smoke: EngineSmoke
 var _replay_recorder: ReplayRecorder
 var _replay_camera: ReplayCamera
 var _standings_overlay: CanvasLayer
+# The live challenge interstitial, when one is up. Non-null only for a challenge
+# stage; _on_challenge_run_finished waits on its run_completed signal so the
+# player dismisses the final standings themselves. Null headless (no overlay is
+# built), where the run end stays immediate.
+var _challenge_standings_panel: Node = null
 
 # Coarse far-terrain backdrop that gives the sky a horizon (distant_terrain.gd).
 var _distant_terrain: DistantTerrain
@@ -1355,14 +1415,18 @@ func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -
 # --- RallySession run-scene integration (features/rally-session.md) ------------
 
 # Dev cheat (F key, features/debug-tools.md): skip straight to the finish of the
-# current event. Debug-build only (release/web ignore it) and only inside an active
-# rally event with a live StageManager. Teleports the car onto the finish line and
-# force-completes the stage, so the whole completion → reward → progression flow
-# fires exactly as it would on a real finish.
+# current stage. Debug-build only (release/web ignore it) and only inside an active
+# run — career rally OR Rally Challenge — with a live StageManager. Teleports the car
+# onto the finish line and force-completes the stage, so the whole completion →
+# reward → progression flow fires exactly as it would on a real finish.
+#
+# Gated on DrivingContext.session_active(), NOT RallySession.is_active(): the latter
+# silently excluded challenge runs, leaving the cheat dead in exactly the mode whose
+# multi-stage flow is slowest to exercise by hand.
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("skip_to_finish"):
 		return
-	if not OS.is_debug_build() or not RallySession.is_active():
+	if not OS.is_debug_build() or not DrivingContext.session_active():
 		return
 	if _stage_manager == null or _track_progress == null:
 		return
@@ -1391,10 +1455,17 @@ func _on_reset_to_track_requested() -> void:
 
 
 # Whether this run should open with the pre-event start-line scene: a session run
-# with the feature enabled AND a resolvable rally (so a missing rally never strands
-# the car in STAGING with no StartLine to launch it).
+# with the feature enabled AND a resolvable event (so a missing rally / a run that
+# has no stage left never strands the car in STAGING with no StartLine to launch
+# it). A challenge stage stages exactly like a rally event — same countdown screen,
+# same pre-race Upgrades/Tuning menus — it just has no rival field to reveal (the
+# StartLine's existing empty-leaders path covers that; see _build_start_line).
 func _should_stage() -> bool:
-	return RallySession.is_active() and Config.data.start_line_enabled \
+	if not Config.data.start_line_enabled:
+		return false
+	if ChallengeSession.is_active():
+		return not ChallengeSession.current_stage_params().is_empty()
+	return RallySession.is_active() \
 		and not RallyLibrary.by_id(RallySession.rally_id()).is_empty()
 
 
@@ -1428,12 +1499,33 @@ func _show_repair_popup(summary: Dictionary) -> void:
 # reveal + orbit camera + start queue). The StageManager is already in STAGING;
 # StartLine hands the camera/UI back and launches it after its fade.
 func _build_start_line() -> void:
+	# The framing (name / stage index) comes from the same _arch_event_info() the
+	# arch banners read, so the header and the gate can never disagree.
+	var info := _arch_event_info()
 	var rally := RallyLibrary.by_id(RallySession.rally_id())
+	var leaders: Array = RallySession.current_event_leaders(3) if RallySession.is_active() else []
+	if ChallengeSession.is_active():
+		# A challenge has no authored rally. StartLine reads a display name and the
+		# power-to-weight restriction off this dict, so hand it the SAME synthetic
+		# {"restriction": {"pw_max": ceiling}} shape hq.gd's challenge car park and
+		# ChallengeSession.eligible_cars already judge the car against — the gate is
+		# then literally the same code path a rally's p/w-capped class takes.
+		# The `restriction` key is NOT redundant with DrivingContext.pw_limit(): the
+		# Upgrades cap now goes through DrivingContext, but start_line.gd's launch
+		# eligibility gate (RallyLibrary.ineligibility_reason) and its Tune Car
+		# detune cap (_rally_qualifying_detune -> RallyLibrary.qualifying_detune)
+		# both take the whole rally dict and read `restriction` themselves.
+		# `leaders` stays empty: no rival field (spec §3), so StartLine's existing
+		# empty-leaders path skips the reveal and fades straight to the countdown.
+		rally = {
+			"name": String(info["rally_name"]),
+			"restriction": {"pw_max": ChallengeLibrary.ceiling_for(ChallengeSession.period_key())},
+		}
 	_start_line = StartLine.new()
 	_start_line.name = "StartLine"
 	add_child(_start_line)
-	_start_line.setup($Car, $Floor, _stage_manager, rally, RallySession.event_index(),
-		RallySession.current_event_leaders(3), $CameraManager as CameraManager,
+	_start_line.setup($Car, $Floor, _stage_manager, rally, int(info["stage_index"]),
+		leaders, $CameraManager as CameraManager,
 		$HUD as CanvasLayer, $MobileControls as CanvasLayer)
 
 
@@ -1477,27 +1569,51 @@ func _field_session_car() -> void:
 	_event_toe_at_finish = $Car.damage.toe_array()
 
 
+# Same as _field_session_car but for the locked challenge car (spec §2/§3) — the
+# only difference is which session owns the fielded instance id.
+func _field_challenge_car() -> void:
+	var owned: Dictionary = Save.get_car(ChallengeSession.car_instance_id())
+	if owned.is_empty():
+		$Car.apply_car(0)
+		return
+	$Car.apply_owned(owned)
+	_event_start_hp = $Car.damage.hp
+	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
+	_event_hp_at_finish = _event_start_hp
+	_event_toe_at_finish = $Car.damage.toe_array()
+
+
 # Route this event's StageManager / damage signals to the session, and the rally's
 # finish to the podium. Connections on the per-event scene's nodes are dropped
-# automatically when the scene reloads for the next event.
+# automatically when the scene reloads for the next event. Called for BOTH a
+# RallySession run and a ChallengeSession run (mutually exclusive — only one is
+# ever active at a time), branching only where the two sessions' APIs differ.
 func _wire_session_signals() -> void:
 	# stage_completed is already connected in _ready() (every mode wires it before
 	# this session-only pass runs), so it's intentionally not re-connected here.
 	if not ($Car as Node).wrecked.is_connected(_on_session_car_wrecked):
 		($Car as Node).wrecked.connect(_on_session_car_wrecked)
-	if not RallySession.rally_finished.is_connected(_on_session_rally_finished):
-		RallySession.rally_finished.connect(_on_session_rally_finished)
+	if RallySession.is_active():
+		if not RallySession.rally_finished.is_connected(_on_session_rally_finished):
+			RallySession.rally_finished.connect(_on_session_rally_finished)
+		# Live (non-headless) runs own the standings presentation as an in-world
+		# overlay, keeping this run world alive behind it for the cinematic replay;
+		# RallySession then skips its own scene-change path (see rally_session.gd).
+		RallySession.standings_overlay_host = not _headless
+		if not RallySession.standings_ready.is_connected(_present_standings_overlay):
+			RallySession.standings_ready.connect(_present_standings_overlay)
+	elif ChallengeSession.is_active():
+		if not ChallengeSession.run_finished.is_connected(_on_challenge_run_finished):
+			ChallengeSession.run_finished.connect(_on_challenge_run_finished)
+		# _present_standings_overlay reads nothing session-specific (just $Car / $HUD /
+		# the replay recorder), so it's reused verbatim for a challenge stage.
+		if not ChallengeSession.standings_ready.is_connected(_present_standings_overlay):
+			ChallengeSession.standings_ready.connect(_present_standings_overlay)
 
-	# Live (non-headless) runs own the standings presentation as an in-world
-	# overlay, keeping this run world alive behind it for the cinematic replay;
-	# RallySession then skips its own scene-change path (see rally_session.gd).
-	RallySession.standings_overlay_host = not _headless
 	if _stage_manager != null and not _stage_manager.stage_started.is_connected(_on_stage_started):
 		_stage_manager.stage_started.connect(_on_stage_started)
 	if _stage_manager != null and not _stage_manager.finish_reached.is_connected(_on_finish_reached):
 		_stage_manager.finish_reached.connect(_on_finish_reached)
-	if not RallySession.standings_ready.is_connected(_present_standings_overlay):
-		RallySession.standings_ready.connect(_present_standings_overlay)
 
 
 # Test seam: headless tests can't survive a real change_scene_to_file (it would
@@ -1514,11 +1630,11 @@ func _change_scene(path: String) -> void:
 
 
 func _on_session_event_completed(elapsed_seconds: float) -> void:
-	# No active rally — free roam (or a plain dev boot) reached the finish. There is
+	# No active session — free roam (or a plain dev boot) reached the finish. There is
 	# no session to report to (report_event_result would silently no-op, leaving the
 	# finish panel's Next doing nothing), so Next returns to HQ instead — the same
 	# destination as the pause menu's Quit with no session.
-	if not RallySession.is_active():
+	if not RallySession.is_active() and not ChallengeSession.is_active():
 		_change_scene("res://hq.tscn")
 		return
 	# HP lost + persisted wheel-toe are snapshotted at the FINISH CROSSING (see
@@ -1526,12 +1642,20 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# the car has skidded to a stop / idled in the runoff, and any barrier clip during
 	# that post-finish coast would be wrongly charged to the event's damage.
 	var hp_lost: float = maxf(0.0, _event_start_hp - _event_hp_at_finish)
-	var iid: int = RallySession.car_instance_id()
+	# A challenge run routes to ChallengeSession instead of RallySession — the two
+	# sessions are mutually exclusive, and this is the single call site the spec
+	# (§3) calls out for the mode branch.
+	var challenge_active := ChallengeSession.is_active()
+	var iid: int = ChallengeSession.car_instance_id() if challenge_active else RallySession.car_instance_id()
 	if iid >= 0:
 		Save.set_wheel_toe(iid, _event_toe_at_finish)
 	if _replay_recorder != null:
 		_replay_recorder.stop()
-	RallySession.report_event_result(int(round(elapsed_seconds * 1000.0)), hp_lost)
+	var elapsed_ms := int(round(elapsed_seconds * 1000.0))
+	if challenge_active:
+		ChallengeSession.report_event_result(elapsed_ms, hp_lost)
+	else:
+		RallySession.report_event_result(elapsed_ms, hp_lost)
 
 
 func _on_stage_started() -> void:
@@ -1580,7 +1704,17 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_standings_overlay.name = "StandingsOverlay"
 	var panel: Control = load("res://standings.tscn").instantiate()
 	panel.overlay_mode = true
+	# Pin the session BEFORE the panel enters the tree. On a challenge's final stage
+	# ChallengeSession clears itself between this signal and the panel's own _ready
+	# latch running would still be fine (standings_ready is emitted while the run is
+	# active), but stating it here removes the ordering dependency entirely.
+	panel.set_challenge_mode(ChallengeSession.is_active())
 	panel.leaderboard_hidden_changed.connect(_on_leaderboard_hidden_changed)
+	if ChallengeSession.is_active():
+		# THIS panel owns the end of a challenge run: _on_challenge_run_finished
+		# waits on its run_completed rather than ejecting the player to the HQ while
+		# they are still reading the final standings.
+		_challenge_standings_panel = panel
 	_standings_overlay.add_child(panel)
 	add_child(_standings_overlay)
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
@@ -1614,13 +1748,18 @@ func _on_session_car_wrecked() -> void:
 	# then show the wreck menu (orbit camera + Return to HQ); reporting the wreck
 	# (the DNF) is deferred until the player chooses to leave. Headless runs (no
 	# display, e.g. tests) skip the cinematic and report immediately.
+	# A challenge run has no rival field / podium, but a wreck ends it the same
+	# way — no-retry DNF (spec §3) — so it routes to ChallengeSession instead of
+	# RallySession whenever a challenge is the active session.
+	var report_wreck: Callable = ChallengeSession.report_wreck if ChallengeSession.is_active() \
+		else RallySession.report_wreck
 	if _headless or _wreck_screen != null:
-		RallySession.report_wreck()
+		report_wreck.call()
 		return
 	_wreck_screen = WreckScreen.new()
 	_wreck_screen.name = "WreckScreen"
 	add_child(_wreck_screen)
-	_wreck_screen.return_requested.connect(RallySession.report_wreck)
+	_wreck_screen.return_requested.connect(report_wreck)
 	_wreck_screen.setup($Car, $ChaseCamera as Camera3D, $HUD as CanvasLayer,
 		$MobileControls as CanvasLayer)
 
@@ -1634,6 +1773,89 @@ func _on_session_rally_finished(result: Dictionary) -> void:
 		_change_scene("res://hq.tscn")
 	else:
 		_change_scene("res://podium.tscn")
+
+
+# A challenge run has no podium (no rival field to place against, no per-rally
+# car reward). Both a clean finish and a DNF return straight to HQ — but the
+# run's END is resolved here first, the challenge's counterpart to
+# RallySession._resolve_results:
+#
+#   CLEAN FINISH — spec §6's placement-gated completion reward. This fires while
+#   the player is still IN the driving scene (ChallengeSession._finish_locally
+#   emits run_finished from report_event_result, before the hand-off to HQ), and
+#   the scene change below is what ends the run, so the grant is awaited here and
+#   shown on a plain ConfirmPopup card over the world — the same shape hq.gd's
+#   mystery box uses for a "reward, but not mid-interstitial" moment. A full
+#   UpgradeReveal page belongs to the per-stage interstitial (standings.gd),
+#   which is not up at this point.
+#
+#   DNF — flip the board's `dnf` field (spec §6). Best-effort and deliberately
+#   NOT awaited: the house posture is that no cloud call ever costs the player
+#   anything, so the return to HQ must not wait on (or surface) the network. The
+#   coroutine resolves against Cloud.challenge_leaderboard, an autoload that
+#   outlives this scene.
+func _on_challenge_run_finished(result: Dictionary) -> void:
+	if bool(result.get("dnf", false)):
+		if Cloud != null and Cloud.challenge_leaderboard != null:
+			@warning_ignore("return_value_discarded")
+			Cloud.challenge_leaderboard.post_dnf(ChallengeSession.period_key())
+	else:
+		# ONE owner of "what happens after the last stage". The final stage's
+		# interstitial is already on screen (report_event_result emits
+		# standings_ready before finishing the run), so wait for the player to press
+		# through it instead of racing it with a network round-trip and then ejecting
+		# them mid-read. Waiting also means the final checkpoint has POSTED by the
+		# time try_grant_completion_reward fetches the rank it gates on — previously
+		# the grant was judged against a board this run had never been written to.
+		# Headless (no overlay) keeps the old immediate path.
+		if is_instance_valid(_challenge_standings_panel):
+			await _challenge_standings_panel.run_completed
+		# try_grant_completion_reward fetches the run's final rank from Firestore — a
+		# real round-trip with nothing on screen, which read as the game hanging right
+		# at the moment the player is waiting to hear how they did. Cover it with the
+		# shared cloud-busy state (todo/challenge-career-reuse-drift.md item 11); this
+		# was the last unmigrated `await Cloud.*` site. ChallengeSession is an autoload
+		# with no screen of its own, so the covering host is this scene.
+		var busy := CloudBusy.cover(self, "Scoring your run…", "Checking the leaderboard…")
+		var grant: Dictionary = await ChallengeSession.try_grant_completion_reward(result)
+		await busy.end()
+		var item_id := String(grant.get("item_id", ""))
+		# Boxes alone are a reward worth showing — a Daily grants no car at all, so
+		# gating the card on item_id would leave every Daily win silent.
+		var won_something := item_id != "" or int(grant.get("boxes", 0)) > 0
+		if won_something and not _headless:
+			var popup := ConfirmPopup.open(self, "Challenge Complete!",
+				_completion_reward_body(item_id, grant),
+				[{"label": "Nice", "callback": Callable()}], 0)
+			# May be refused if another modal is up (ConfirmPopup.MODAL_GROUP) — the
+			# reward is already granted, so carry on to HQ rather than awaiting a
+			# `finished` that will never come.
+			if popup != null:
+				await popup.finished
+	RallySession.return_to_garage = true
+	_change_scene("res://hq.tscn")
+
+
+# Body text for the completion-reward card: what was won and where it landed.
+# Every kind grants mystery boxes; Weekly and Monthly add a car on top, which may
+# be absent if the draw found nothing left to unlock — so both parts are optional
+# and the card lists whatever actually landed.
+func _completion_reward_body(item_id: String, grant: Dictionary) -> String:
+	var rank := int(grant.get("rank", 0))
+	var total := int(grant.get("total_entries", 0))
+	var placing := "Finished %d of %d" % [rank, total] if total > 0 else "Finished"
+	var lines: Array[String] = []
+	var boxes := int(grant.get("boxes", 0))
+	if boxes > 0:
+		lines.append("%d Mystery %s" % [boxes, "Box" if boxes == 1 else "Boxes"])
+	var car_entry := CarLibrary.by_id(item_id)
+	if not car_entry.is_empty():
+		lines.append(String(car_entry.get("name", item_id)))
+	if lines.is_empty():
+		return placing
+	var where := "They're waiting in your garage." if car_entry.is_empty() \
+		else "Your new car is waiting in the car park."
+	return "%s\nReward: %s\n\n%s" % [placing, ", ".join(lines), where]
 
 
 # Swap to the next car in the library: re-instantiate a fresh car (see
@@ -1696,7 +1918,16 @@ func _current_region_look() -> Dictionary:
 	if _region_look_ready:
 		return _region_look_cache
 	var region_id := "home"
-	if RallySession.is_active():
+	if ChallengeSession.is_active():
+		# A challenge stage is rolled from the period hash and authors no region, so
+		# it wears the plain home look — explicitly, so a leftover free-roam pick
+		# can't drop through to the branch below and dress the stage in the last
+		# free-roam drive's sky/ground/tree mix. (ChallengeSession.start/resume also
+		# clear the handoff now; this arm is the belt to that's braces, and it is
+		# what makes "a challenge has no region" a stated rule rather than an
+		# accident of ordering.) See todo/challenge-career-reuse-drift.md item 9.
+		region_id = "home"
+	elif RallySession.is_active():
 		region_id = String(RegionLibrary.region_for_rally(RallySession.rally_id()).get("id", "home"))
 	elif (RallySession.free_roam_instance_id >= 0 or RallySession.free_roam_model_id != "") \
 			and RallySession.free_roam_region_id != "":

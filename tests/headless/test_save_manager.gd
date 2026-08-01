@@ -351,6 +351,72 @@ func test_consume_item_respects_counts() -> void:
 	assert_eq(int(_save.profile["inventory"]["repair_kit"]), 1, "failed consume leaves count untouched")
 
 
+# Every non-consumable, non-free part in the real catalogue, up to MAX_TIER —
+# derived from the live catalogue so a retune doesn't break the test. Mirrors
+# test_reward_system.gd's _maxed_car (open_mystery_box's grant resolution goes
+# through RewardSystem, which iterates the raw catalogue const, per that file's
+# note — so this test stays against the real shipped UPGRADES table).
+func _all_real_parts() -> Array:
+	var parts := []
+	for item in UpgradeLibrary.UPGRADES:
+		if not item["consumable"] and not bool(item.get("free", false)):
+			parts.append(String(item["id"]))
+	return parts
+
+
+func test_open_mystery_box_installs_a_disabled_part_on_a_different_car() -> void:
+	# Install_upgrade's slot_of()/is_consumable() lookups ARE override-aware, but
+	# RewardSystem.pick_mystery_box_grant iterates the raw UpgradeLibrary.UPGRADES
+	# const (same caveat test_reward_system.gd documents for draw_upgrade) — so
+	# with UpgradeFixtures installed (this file's shared before_each), the grant
+	# resolves to a REAL id that the overridden slot_of() doesn't recognise,
+	# spuriously falling back. Use the real catalogue for this test.
+	UpgradeFixtures.restore()
+	var maxed: Dictionary = _save.grant_car("fx_light_rwd")
+	maxed["installed_upgrades"] = _all_real_parts()
+	var other: Dictionary = _save.grant_car("fx_awd")
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	var result: Dictionary = _save.open_mystery_box(int(maxed["instance_id"]), _rng(1))
+	assert_false(bool(result.get("fallback", false)), "a roomy other car exists — no fallback needed")
+	assert_eq(int(result["recipient_instance_id"]), int(other["instance_id"]),
+		"the gift lands on the other car, not the maxed one")
+	var recipient: Dictionary = _save.get_car(int(other["instance_id"]))
+	assert_true((recipient["installed_upgrades"] as Array).has(result["item_id"]),
+		"the resolved item is fitted to the recipient")
+	assert_false((recipient["disabled_upgrades"] as Array).is_empty(),
+		"the gifted part installs DISABLED, same as any other per-event reward")
+	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
+
+
+func test_open_mystery_box_falls_back_to_repair_kit_when_no_car_has_room() -> void:
+	UpgradeFixtures.restore()  # see comment in the test above
+	var maxed: Dictionary = _save.grant_car("fx_light_rwd")
+	maxed["installed_upgrades"] = _all_real_parts()
+	var also_maxed: Dictionary = _save.grant_car("fx_awd")
+	also_maxed["installed_upgrades"] = _all_real_parts()
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	var kits_before := int(_save.profile.get("inventory", {}).get("repair_kit", 0))
+	var result: Dictionary = _save.open_mystery_box(int(maxed["instance_id"]), _rng(1))
+	assert_true(bool(result["fallback"]), "no other car has room — falls back")
+	assert_eq(String(result["item_id"]), "repair_kit")
+	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), kits_before + 1,
+		"the fallback repair kit lands in inventory")
+	assert_eq(_save.mystery_boxes_owned(), 0, "the box is still consumed even on fallback")
+
+
+func test_open_mystery_box_returns_empty_when_none_held() -> void:
+	_save.grant_car("fx_light_rwd")
+	assert_eq(_save.mystery_boxes_owned(), 0, "setup: no box held")
+	var result: Dictionary = _save.open_mystery_box(int(_save.profile["cars"][0]["instance_id"]))
+	assert_true(result.is_empty(), "opening with none held is a no-op")
+
+
+func _rng(seed_value: int) -> RandomNumberGenerator:
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_value
+	return r
+
+
 func test_migration_refuses_newer_version() -> void:
 	var future: Dictionary = _save._default_profile()
 	future["schema_version"] = _save.SCHEMA_VERSION + 1

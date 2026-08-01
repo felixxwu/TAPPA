@@ -27,6 +27,12 @@ const REPAIR_KIT_DROP_WEIGHT := 0
 # treat, not a staple. Placeholder; becomes a GameConfig tunable in the balance pass.
 const ENGINE_SWAP_TOKEN_DROP_WEIGHT := 0.2
 
+# Engine swap tokens the player must hold, on top of driving a fully-maxed car,
+# before a mystery box is granted instead of a normal draw (see draw_upgrade).
+# A proxy for "has been driving maxed cars for a while". Placeholder; becomes a
+# GameConfig tunable in the balance pass, same treatment as the weights above.
+const MYSTERY_BOX_TOKEN_THRESHOLD := 3
+
 
 # --- Tier model & clamp ------------------------------------------------------
 
@@ -60,6 +66,9 @@ static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
 # remains. Returns an item_id; the caller grants it via Save.add_item.
 static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: RandomNumberGenerator = null, owned_car: Dictionary = {}) -> String:
 	rng = _ensure_rng(rng)
+	if _car_has_nothing_left(owned_car) and _tokens_owned(profile) >= MYSTERY_BOX_TOKEN_THRESHOLD \
+			and _other_car_has_room(profile, owned_car):
+		return UpgradeLibrary.MYSTERY_BOX_ID
 	var tier := target_tier(rally_difficulty, profile)
 	var parts := _parts_at_or_below(tier, owned_car.get("installed_upgrades", []), owned_car)
 	# Weighted pool: each part weight 1.0, plus the repair kit at its low weight.
@@ -91,6 +100,64 @@ static func _parts_at_or_below(tier: int, exclude: Array = [], owned_car: Dictio
 		if not parts.is_empty():
 			return parts
 	return []
+
+
+# --- Mystery box gating (see draw_upgrade) -----------------------------------
+
+# True when `owned_car` has nothing left to gain, ever — every non-consumable,
+# non-free item it's eligible for (prerequisites met) at every tier up to the
+# absolute ceiling (MAX_TIER) is already installed. Checked against MAX_TIER,
+# not the progress-clamped target_tier, so a car isn't "maxed" just because the
+# player's progress hasn't raised the tier ceiling yet.
+static func _car_has_nothing_left(owned_car: Dictionary) -> bool:
+	return _parts_at_or_below(MAX_TIER, owned_car.get("installed_upgrades", []), owned_car).is_empty()
+
+
+# Engine swap tokens held, read straight off `profile` (this module never
+# touches the Save autoload) the same way Save.engine_swap_tokens_owned() does,
+# tolerating a missing inventory key.
+static func _tokens_owned(profile: Dictionary) -> int:
+	return int(profile.get("inventory", {}).get(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 0))
+
+
+# True if some OTHER owned car (not `owned_car`) still has room for an upgrade —
+# i.e. there's actually somewhere for a mystery box to land.
+static func _other_car_has_room(profile: Dictionary, owned_car: Dictionary) -> bool:
+	return any_other_car_has_room(profile, int(owned_car.get("instance_id", -1)))
+
+
+# Whether some OTHER owned car (not `current_instance_id`) still has room for an
+# upgrade — used by the HQ Lift's "Open Mystery Box" button to re-check gating at
+# open-time (the garage can change between grant and open, e.g. a car sold).
+static func any_other_car_has_room(profile: Dictionary, current_instance_id: int) -> bool:
+	for car in profile.get("cars", []):
+		if int(car.get("instance_id", -1)) == current_instance_id:
+			continue
+		if not _car_has_nothing_left(car):
+			return true
+	return false
+
+
+# Resolve what a mystery box grants: a uniformly random OTHER owned car (not
+# `current_instance_id`, the car the box came from) among those with a
+# non-empty MAX_TIER-eligible pool, then a uniformly random item from that
+# car's pool. Returns {} when no other car has room (the opener falls back to
+# a repair kit) — a pure resolve, no Save mutation; the caller (Save) performs
+# the actual consume/install.
+static func pick_mystery_box_grant(profile: Dictionary, current_instance_id: int, rng: RandomNumberGenerator = null) -> Dictionary:
+	rng = _ensure_rng(rng)
+	var candidates: Array = []
+	for car in profile.get("cars", []):
+		if int(car.get("instance_id", -1)) == current_instance_id:
+			continue
+		if not _parts_at_or_below(MAX_TIER, car.get("installed_upgrades", []), car).is_empty():
+			candidates.append(car)
+	if candidates.is_empty():
+		return {}
+	var recipient: Dictionary = candidates[rng.randi_range(0, candidates.size() - 1)]
+	var parts := _parts_at_or_below(MAX_TIER, recipient.get("installed_upgrades", []), recipient)
+	var item_id: String = parts[rng.randi_range(0, parts.size() - 1)]
+	return {"instance_id": int(recipient.get("instance_id", -1)), "item_id": item_id}
 
 
 # --- Car draw (per rally finished top-3, including re-wins / farming) ---------

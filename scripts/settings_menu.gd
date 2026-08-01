@@ -648,11 +648,25 @@ func _start_benchmark() -> void:
 
 # Wipe the entire save profile back to a fresh new-game state. Camera / control
 # settings are part of the profile, so refresh their highlights afterwards.
+# The cloud copy is wiped too when signed in — otherwise the next pull sees a
+# clean local against an ahead cloud and restores everything, so the wipe would
+# silently undo itself (see Cloud.publish_local_wipe). Behind the shared busy
+# cover, since it is a real network round-trip.
 func _wipe_progress() -> void:
 	Save.reset_new_game()
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
 	_dev_status.text = "Wiped all progress."
+	if Cloud == null or not Cloud.is_signed_in():
+		return
+	var result: Dictionary = await CloudBusy.run_covered(
+		self, "Wiping your progress…", "Clearing your cloud save…",
+		func() -> Dictionary: return await Cloud.publish_local_wipe())
+	if not is_instance_valid(_dev_status):
+		return
+	_dev_status.text = "Wiped all progress (local and cloud)." \
+		if bool(result.get("ok", false)) \
+		else "Wiped locally — the cloud copy could not be cleared, so it may come back."
 
 
 # Dev: instantly win the active rally. Unfreeze first (this page is reached from the

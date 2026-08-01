@@ -654,21 +654,28 @@ func test_wheel_view_back_action_leaves_the_view() -> void:
 	assert_eq(hq._view, hq.View.LIFT, "menu_back leaves the wheel view for the lift")
 
 
-# The lift's HUB row offers Wheels, and it's in the row's keyboard/gamepad cursor —
-# a menu reachable only by pointer would violate the project's navigation rule.
-func test_the_lift_hub_offers_wheels_in_its_cursor() -> void:
+# Wheels now lives inside the Tuning panel (see scripts/tuning_panel.gd), reached from
+# the lift hub via the Tuning button — not on the hub row itself. It must still be
+# reachable by keyboard/gamepad, via the MenuNav attached to the tune panel (see
+# hq_overlays.gd build_lift_overlay: MenuNav.attach(_hq._tune_panel)) — a menu reachable
+# only by pointer would violate the project's navigation rule.
+func test_the_tuning_panel_offers_wheels_and_its_menu_nav() -> void:
 	var hq: Node3D = await _hq()
 	hq._enter_lift()
+	hq._open_lift_page(hq.LiftPage.TUNE)
 	await get_tree().process_frame
 	var found: Button = null
-	for child in hq._lift_hub_controls.get_children():
+	for child in hq._tune_panel.get_children():
 		if child is Button and String((child as Button).text).to_lower().contains("wheel"):
 			found = child
-	assert_not_null(found, "the lift hub row has a Wheels button")
-	assert_true(hq._hub_cursor.buttons.has(found),
-		"the Wheels button is in the hub's keyboard/gamepad cursor")
-	assert_eq(hq._hub_cursor.buttons.size(), hq._hub_cursor.actions.size(),
-		"the cursor's buttons and actions stay in step")
+	assert_not_null(found, "the tuning panel has a Wheels button")
+	assert_eq(found.focus_mode, Control.FOCUS_ALL,
+		"the Wheels button is keyboard/gamepad focusable")
+	var nav: MenuNav = null
+	for child in hq._tune_panel.get_children():
+		if child is MenuNav and not child.is_queued_for_deletion():
+			nav = child
+	assert_not_null(nav, "the tuning panel has MenuNav attached, so Wheels is reachable without a pointer")
 
 
 func _action(action: StringName) -> InputEventAction:

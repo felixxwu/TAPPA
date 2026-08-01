@@ -213,6 +213,20 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   NOT pop an info dialog — the old `_no_tokens_dialog` / `_show_no_tokens_info` path
   was removed); plain **"Swap Engine"** and disabled only when there's no other owned
   car to swap with. Health never affects it.
+- **Upgrades page, mystery-box row** (`UpgradesMenu._make_mystery_box_row`,
+  `scripts/upgrades_menu.gd`) — unlike the swap row (always shown, sometimes
+  disabled), this row is **omitted entirely** at 0 boxes held
+  (`Save.mystery_boxes_owned() > 0` gates whether `rebuild()` even builds it),
+  lift-only (the host passes a fifth `on_open_box` param to `setup()`; the
+  car-park popup and the reward-reveal instance leave it unset and drop the row
+  too). When a box is held: a label reading **"Mystery Box: N"** plus an
+  **Open** button, disabled with tooltip "Needs another car in the garage with
+  room for an upgrade" when `RewardSystem.any_other_car_has_room(Save.profile,
+  instance_id)` is false, otherwise enabled with a plain explanatory tooltip.
+  Pressing it runs the host's `on_open_box` callback — at the HQ lift,
+  `hq.gd._on_open_mystery_box`, which calls `Save.open_mystery_box` and shows a plain
+  `ConfirmPopup` reveal card. See [reward-system.md](reward-system.md) → "Mystery box"
+  for the trigger, resolver, and full opening sequence.
 - **Car-park swap mode** (`hq._enter_engine_swap` / `_carpark_swap_mode`) —
   pressing Swap Engine opens the car park listing **every** OTHER owned car (the
   current car itself is excluded — no self-swap); no car is filtered out on
@@ -285,7 +299,11 @@ that changes what `_on_start_pressed`/`_car_back` do at the existing
 confirm/back actions. The detune slider is a row in the `UpgradesMenu`
 (upgrades page / start-line Upgrades overlay / car-park Change-Upgrades popup),
 using the same left/right-nudges-the-focused-slider handling as every other
-upgrades-menu slider (see [menus.md](menus.md) → "Menu navigation").
+upgrades-menu slider (see [menus.md](menus.md) → "Menu navigation"). The
+mystery-box row's **Open** button is likewise an ordinary `Control.FOCUS_ALL`
+button (`set_meta("upgrade_focus_key", "open_box")` keeps the cursor on it
+across a rebuild, same trick the other rows use), so it needs no extra nav
+wiring either.
 
 ## Tests
 
@@ -306,4 +324,8 @@ swap row, car-park swap mode, the detune slider's navigation/persistence, and
 the car-park detune-to-enter prompt (over-cap car parks looking eligible; Start
 pops the "Too powerful" confirm; Change Upgrades opens the gated upgrades popup).
 `test_rally_library.gd`
-covers `RallyLibrary.qualifying_detune` itself.
+covers `RallyLibrary.qualifying_detune` itself. The mystery-box row (Lift-only,
+disabled states, opening installs onto another car) is covered in
+`test_menu_flow.gd`; the box's draw/resolve logic is covered in
+`test_reward_system.gd` / `test_save_manager.gd` — see
+`features/reward-system.md` → "Mystery box".

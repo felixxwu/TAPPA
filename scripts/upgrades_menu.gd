@@ -6,12 +6,20 @@ extends VBoxContainer
 # (only when the host wires on_swap). Owns its Save persistence; reports edits via
 # on_change so the host can re-field the car / refresh its own UI. Used by the HQ
 # lift (hq.gd) and the car-park detune popup. Mirrors TuningPanel. See
-# features/upgrade-catalogue.md.
+# features/upgrade-catalogue.md. (Mystery Box moved OUT of this menu onto the
+# garage row's own top-level button — see hq.gd/hq_overlays.gd — since it isn't
+# a per-car upgrade, it's a garage-wide action.)
+
+# "No power-to-weight cap applies". A local mirror of DrivingContext.NO_LIMIT's
+# value — this component is per-car and knows nothing about sessions, it just
+# takes a limit — so callers computing "no limit" have a self-documenting way to
+# say so instead of passing a bare -1.0.
+const NO_LIMIT := -1.0
 
 var _owned: Dictionary = {}
 var _on_change: Callable = Callable()
 var _on_swap: Callable = Callable()   # valid → show swap row; invalid → omit it
-var _pw_limit: float = -1.0   # power-to-weight cap (hp/tonne); -1 = no limit (free)
+var _pw_limit: float = NO_LIMIT   # power-to-weight cap (hp/tonne); NO_LIMIT = free
 var _detune_slider: HSlider
 var _detune_value: Label
 # The host's overlay close button, gated by the p/w limit (bind_close_button). When a
@@ -30,7 +38,7 @@ const _KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE
 # (optional) is a power-to-weight cap (hp/tonne); when >= 0 the bound close button
 # (bind_close_button) blocks proceeding while the live build exceeds it.
 func setup(owned_car: Dictionary, on_change := Callable(), on_swap := Callable(),
-		pw_limit := -1.0) -> void:
+		pw_limit := NO_LIMIT) -> void:
 	_owned = owned_car
 	_on_change = on_change
 	_on_swap = on_swap
@@ -107,6 +115,12 @@ func _make_detune_row(instance_id: int) -> Control:
 	_detune_slider.set_value_no_signal(frac * 100.0)
 	_detune_slider.value_changed.connect(_on_detune_changed.bind(instance_id))
 	_detune_value.text = _detune_label_text()
+	# NOT locked by challenge_run — same as a career rally, the ceiling is enforced
+	# by the pw_limit-bound close button (bind_close_button), not by freezing the
+	# slider. A hard editable=false lock here used to double-enforce it and made the
+	# slider look broken with no explanation; the shared pw_limit path (already reused
+	# for a challenge via world.gd._build_start_line's synthetic restriction dict) is
+	# the one mechanism, exactly like career.
 	return handles["panel"]
 
 

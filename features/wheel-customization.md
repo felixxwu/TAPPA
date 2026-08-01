@@ -44,7 +44,7 @@ already works on any body.
 | Persistence | `scripts/save_manager.gd` → `set_wheels()` |
 | Applied to the car | `scripts/car.gd` → `_owned_wheel_texture`, `_wheel_texture_for`, `reskin_wheels` |
 | The wheel view | `scripts/hq.gd` → `CarparkMode.WHEELS`, `_enter_wheel_swap`, `_cycle_wheel`, `_apply_wheel_preview`, `_revert_wheel_preview`, `_commit_wheels` |
-| Entry button | `scripts/hq_overlays.gd` → `build_lift_overlay` (the lift HUB row's **Wheels**) |
+| Entry button | `scripts/tuning_panel.gd` → `TuningPanel._wheels_button` (inside the Tuning menu; wired via `setup(owned, on_change, on_wheels)`) |
 | Camera framing | `scripts/hq.gd` → `_camera_target_xform`; `hq_wheel_cam_offset` / `hq_wheel_cam_look_height` in `GameConfig` |
 | Tests | `tests/headless/test_wheel_customization.gd` |
 
@@ -92,7 +92,7 @@ wheels are judged by *stance*. So wheel-swapping happens in the **car park**, wh
 height and then droops its wheels onto the lot floor with a real raycast
 (`settle_wheels_to_ground`). The car is genuinely sitting on its springs.
 
-`_enter_wheel_swap` (from the lift HUB's **Wheels** button) parks `_lift_owned`
+`_enter_wheel_swap` (from the Tuning menu's **Wheels** button) parks `_lift_owned`
 **alone**: a one-element lineup, which `_render_lineup_page` centres in the bays, so
 no neighbour competes for the frame. `_camera_target_xform` swaps in the low side-on
 `hq_wheel_cam_offset` framing while the mode is live.
@@ -126,5 +126,6 @@ The car park is a spatially-navigated 3D view, so this follows the
 - `menu_select` fits; `menu_back` discards and returns to the lift.
 - The ◄ ► nav-row buttons and the swipe gesture route through `_cycle_focus`, so
   they cycle styles for free. Tap-to-focus (`_focus_car_at`) is a no-op here.
-- The lift HUB's **Wheels** button is in that row's `ButtonCursor`, so it's
-  reachable by keyboard/gamepad and not only by pointer.
+- The Tuning menu's **Wheels** button is a native `FOCUS_ALL` button (like the
+  handling sliders and Reset to neutral), so it's reachable by keyboard/gamepad and
+  not only by pointer.

@@ -30,6 +30,11 @@ const TRACK_TURN_COUNT := 30   # a long stage — more varied content to stress;
                                # time-boxed by BenchmarkRunner.MAX_RUN_SECONDS, not by finishing it
 const NEUTRAL_FRACTION := 0.5  # straightness / forestiness / tarmac mid-point
 
+# RallySession is an autoload with no class_name, so its STATIC canonical config
+# writer must be reached through the script resource (calling a static via the
+# instance warns). Same precedent as driving_context.gd.
+const RallySessionScript = preload("res://scripts/rally_session.gd")
+
 # The pre-run feature toggles, in the order the Settings page lists them. Each is
 # ON by default (the full game as shipped); turning one OFF removes that cost
 # from the run so its share of the frame can be measured by comparison.
@@ -91,6 +96,12 @@ func set_option(key: String, on: bool) -> void:
 # frame rate, and load the run scene. world.gd sees `active` and wires the rest.
 func start() -> void:
 	get_tree().paused = false  # reachable from the pause menu's Settings
+	if ChallengeSession.is_active():
+		# A challenge run is a session too — leaving it live would have world.gd boot the
+		# benchmark scene down the challenge path (its stage config, its result routing).
+		# PAUSED, never DNF'd (item 12): starting a dev benchmark must not spend the
+		# player's one attempt at this period — the run stays resumable from the HQ.
+		ChallengeSession.pause_run()
 	if RallySession.is_active():
 		RallySession.abandon()  # its scene change is superseded by ours below
 	RallySession.free_roam_instance_id = -1
@@ -138,11 +149,12 @@ func exit_to_hq() -> void:
 
 # --- Config overrides (pure, testable) -----------------------------------------
 
-# Every GameConfig field the benchmark may rewrite. One list so the snapshot and
-# the restore can never drift apart.
+# The fields apply_overrides writes DIRECTLY (the toggles and frame pacing). The
+# benchmark STAGE itself is no longer written field-by-field here: it goes through
+# RallySession.apply_event_config, whose field set is free to grow, so the snapshot
+# can't be a hand-maintained list of it — see _snapshot_fields.
 const _OVERRIDDEN_FIELDS: Array[String] = [
-	"track_seed", "track_turn_count", "track_straightness", "track_forestiness",
-	"track_tarmac_fraction", "target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
+	"target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
 	"vegetation_enabled", "spectators_enabled", "signs_enabled",
 	"distant_terrain_enabled", "road_markings_enabled",
 	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled",
@@ -158,14 +170,28 @@ const _OVERRIDDEN_FIELDS: Array[String] = [
 # render-distance halving) can't compound.
 func apply_overrides(cfg: GameConfig) -> void:
 	restore(cfg)  # no-op when no snapshot is held
-	for field in _OVERRIDDEN_FIELDS:
+	for field in _snapshot_fields(cfg):
 		_saved[field] = cfg.get(field)
 
-	cfg.track_seed = TRACK_SEED
-	cfg.track_turn_count = TRACK_TURN_COUNT
-	cfg.track_straightness = NEUTRAL_FRACTION
-	cfg.track_forestiness = NEUTRAL_FRACTION
-	cfg.track_tarmac_fraction = NEUTRAL_FRACTION
+	# The benchmark stage as an EVENT dict, seated by the canonical writer
+	# (RallySession.apply_event_config) rather than field-by-field here. Config.data is
+	# never reset between scenes, so hand-writing a subset left every field the subset
+	# omitted — cliffiness, the waterline, the three terrain layers — at whatever the
+	# last rally happened to leave behind, and a benchmark run after a rally then wasn't
+	# comparable with one from a fresh boot. The writer pins every omitted field to the
+	# authored baseline, which is exactly the "fresh boot" state we want.
+	#
+	# Cliffiness is passed explicitly from that baseline: an event that omits it means
+	# "flat", and a flat benchmark would drop the cliff geometry out of the measurement.
+	var base: GameConfig = load(Config.CONFIG_PATH)
+	RallySessionScript.apply_event_config(cfg, {
+		"seed": TRACK_SEED,
+		"turn_count": TRACK_TURN_COUNT,
+		"straightness": NEUTRAL_FRACTION,
+		"forestiness": NEUTRAL_FRACTION,
+		"surface_mix": NEUTRAL_FRACTION,
+		"cliffiness": base.cliff_amount,
+	})
 	cfg.hud_enabled = false
 
 	cfg.vegetation_enabled = get_option("vegetation")
@@ -184,6 +210,19 @@ func apply_overrides(cfg: GameConfig) -> void:
 		cfg.target_fps = 0  # world.gd otherwise re-applies the cap at _ready
 		cfg.target_fps_mobile = 0
 		cfg.target_fps_web = 0
+
+
+# Which fields to snapshot before overriding: EVERY scripted GameConfig property,
+# not a hand-maintained list. apply_overrides delegates the stage to the canonical
+# event writer, so the set of fields it touches is that writer's to decide (and to
+# grow); snapshotting the whole resource makes "the snapshot missed a field the
+# override wrote" — the drift this used to have — impossible to express.
+static func _snapshot_fields(cfg: GameConfig) -> Array[String]:
+	var out: Array[String] = []
+	for prop in cfg.get_property_list():
+		if int(prop.get("usage", 0)) & PROPERTY_USAGE_SCRIPT_VARIABLE:
+			out.append(String(prop["name"]))
+	return out
 
 
 # Write the snapshot back, undoing apply_overrides. Safe to call when no

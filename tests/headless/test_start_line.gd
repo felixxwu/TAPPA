@@ -90,6 +90,8 @@ func before_each() -> void:
 func after_each() -> void:
 	if RallySession.is_active():
 		RallySession.abandon()
+	if ChallengeSession.is_active():
+		ChallengeSession.abandon()
 	Config.reset()
 	CarFixtures.restore()
 	RallyFixtures.restore()
@@ -569,3 +571,139 @@ func test_prune_silences_before_free() -> void:
 	sl._prune_departed()
 	# queue_free is deferred, so the node still exists this frame but is silenced.
 	assert_eq(ea.process_mode, Node.PROCESS_MODE_DISABLED, "silenced before free")
+
+
+# --- Challenge runs stage exactly like a rally event (features/rally-challenge.md) ---
+#
+# A Daily/Weekly/Monthly challenge stage gets the SAME pre-countdown screen a career
+# rally event gets — the same Upgrades / Tune Car overlays on the same shared
+# components — with one difference: a challenge has no rival field (spec §3), so it
+# passes no leaders and takes the existing empty-leaders path (no reveal card) rather
+# than fabricating rivals to stage against.
+
+# The synthetic event dict world.gd._build_start_line hands StartLine for a challenge:
+# a display name plus the period's power-to-weight ceiling as an ordinary rally-shaped
+# restriction, so the launch gate and the Upgrades cap are the same code as a rally's.
+func _challenge_rally() -> Dictionary:
+	var ceiling := ChallengeLibrary.ceiling_for(ChallengeSession.period_key())
+	return {"name": "Daily Challenge", "restriction": {"pw_max": ceiling}}
+
+
+# Start a real Daily challenge run on a freshly granted fixture car and return it.
+func _start_challenge() -> Dictionary:
+	var owned: Dictionary = _save.grant_car("fx_light_rwd")
+	ChallengeSession.auto_load_scenes = false
+	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, owned,
+		int(Time.get_unix_time_from_system())), "setup: the challenge run starts")
+	return owned
+
+
+func _make_challenge() -> StartLine:
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, null, _stage, _challenge_rally(), ChallengeSession.events_completed(), [],
+		_cam_mgr, _hud)
+	return sl
+
+
+func test_challenge_menus_bind_to_the_challenge_car_not_the_rally_one() -> void:
+	# RallySession is inactive during a challenge, so a start line that asked IT for the
+	# driven car would get -1 and bind the panels to nothing. Both pre-race menus must
+	# resolve the run's own locked car instead.
+	var owned := _start_challenge()
+	assert_false(RallySession.is_active(), "setup: no rally is running alongside the challenge")
+	var sl := _make_challenge()
+	sl._open_tune()
+	sl._open_upgrades()
+	var want := int(owned["instance_id"])
+	assert_eq(int(sl._tune_panel._owned.get("instance_id", -1)), want,
+		"the Tune Car panel is bound to the challenge's locked car")
+	assert_eq(int(sl._upgrades_menu._owned.get("instance_id", -1)), want,
+		"the Upgrades menu is bound to the challenge's locked car")
+	assert_eq(int(sl._driven_car().get("instance_id", -1)), want,
+		"the shared driven-car resolver answers with the challenge car")
+
+
+func test_challenge_upgrade_edit_refits_the_live_challenge_car() -> void:
+	_start_challenge()
+	var sl := _make_challenge()
+	sl._on_upgrade_changed()
+	assert_gt(_player.refit_calls, 0, "an upgrade edit refits the live car during a challenge too")
+
+
+func test_challenge_shows_no_rival_panel_and_fades_straight_to_the_countdown() -> void:
+	# No rival field to stage against: no grid cars, no reveal card shown, and Start
+	# goes straight to the fade + countdown — the existing empty-leaders path, not a
+	# fabricated rival list.
+	var owned := _start_challenge()
+	var sl := _make_challenge()
+	# The car park never commits an over-ceiling car (hq.gd's CHALLENGE branch makes the
+	# player tune down first), so judge the gate against a ceiling this car clears —
+	# whether the period's ROLLED ceiling happens to suit the fixture car is a tunable
+	# roll, not the behaviour under test.
+	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
+	var pw := CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(owned, entry)) * CarLibrary.KW_KG_TO_HP_TONNE
+	sl._rally = {"name": "Daily Challenge", "restriction": {"pw_max": pw * 1.5}}
+	assert_eq(sl.queue_count(), 0, "a challenge lines up no rival cars")
+	assert_false(sl._reveal_overlay.visible, "the rival-times card is not shown")
+	sl.launch()
+	assert_true(sl.has_launched(), "Start launches (the eligible locked car passes the gate)")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "with no rivals, Start fades straight out")
+	assert_false(sl._reveal_overlay.visible, "still no rival card after launching")
+	sl._process(Config.data.start_fade_seconds + 0.01)
+	assert_eq(_stage.begin_calls, 1, "the countdown starts")
+
+
+func test_challenge_header_counts_the_runs_own_stages() -> void:
+	# A challenge has no authored event list, so the "Stage N of M" header falls back to
+	# the active run's stage count rather than a rally's fixed events-per-rally.
+	_start_challenge()
+	var sl := _make_challenge()
+	assert_eq(sl._stage_total(_challenge_rally()), ChallengeSession.stage_count(),
+		"the stage total comes from the challenge run")
+	assert_string_contains(sl._subtitle_label.text.to_upper(), "STAGE 1 OF %d" % ChallengeSession.stage_count())
+
+
+# --- The pre-race p/w ceiling goes through DrivingContext -----------------------
+#
+# _pw_limit() no longer digs the restriction out of the event dict itself — it asks
+# DrivingContext, which answers for whichever session is fielding the car. These
+# tests cover the CHALLENGE branch (the career branch is covered by the pw_max
+# tests above); both must reach the same close-button gate.
+
+func test_challenge_pw_limit_comes_from_the_periods_ceiling() -> void:
+	_start_challenge()
+	var sl := _make_challenge()
+	# Derived from the same accessor chain the code under test uses — no band value
+	# is pinned (CEILING_BAND_HP_TONNE is authored/tunable).
+	assert_eq(sl._pw_limit(), ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
+		"a challenge's pre-race ceiling is its period's rolled cap")
+	assert_ne(sl._pw_limit(), DrivingContext.NO_LIMIT,
+		"a real ceiling applies during a challenge — not the silent 'no limit' fallback")
+
+
+func test_challenge_upgrades_close_button_gates_on_the_ceiling() -> void:
+	var owned := _start_challenge()
+	var id := int(owned["instance_id"])
+	var sl := _make_challenge()
+	# Force the car OVER the period's ceiling by running it at full power against a
+	# stand-in ceiling of half its own ratio — the same "derive the expectation from
+	# the car under test" trick test_upgrades_menu.gd uses, so nothing is pinned.
+	_save.set_engine_detune(id, 1.0)
+	var full_meta := UpgradeLibrary.effective_meta(_save.get_car(id), CarLibrary.by_id(String(owned["model_id"])))
+	var full_pw := CarLibrary.power_to_weight_hp_tonne(full_meta)
+	sl._open_upgrades()
+	# Re-bind the live menu to a ceiling this car provably busts at full power.
+	sl._upgrades_menu.setup(_save.get_car(id), Callable(), Callable(), full_pw * 0.5)
+	sl._upgrades_menu.bind_close_button(sl._upgrades_back, sl._close_upgrades)
+	assert_true(sl._upgrades_menu.over_pw_limit(), "setup: full power busts the stand-in ceiling")
+	assert_false(sl._upgrades_menu.can_close(), "the close button blocks while over the ceiling")
+	assert_true(String(sl._upgrades_back.text).begins_with("Over limit"),
+		"the close button paints as blocked, exactly like a career rally's pw_max gate")
+	# Detune under the cap: the gate clears with no challenge-specific mechanism.
+	sl._upgrades_menu._detune_slider.value = 25.0
+	assert_false(sl._upgrades_menu.over_pw_limit(), "detuning under the ceiling clears the gate")
+	assert_true(sl._upgrades_menu.can_close(), "proceeding is allowed once under the ceiling")
+	assert_false(String(sl._upgrades_back.text).begins_with("Over limit"),
+		"the close button returns to its plain label")

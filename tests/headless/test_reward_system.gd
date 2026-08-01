@@ -167,6 +167,105 @@ func test_engine_swap_token_is_a_real_consumable() -> void:
 		"the token occupies no slot")
 
 
+# --- Mystery box ---------------------------------------------------------------
+
+# Build a synthetic "maxed" owned_car (every non-consumable, non-free part in the
+# real catalogue up to MAX_TIER installed) — derived from the live catalogue so a
+# retune of parts/tiers doesn't break the test.
+func _maxed_car(instance_id: int) -> Dictionary:
+	var all_parts := []
+	for item in UpgradeLibrary.UPGRADES:
+		if not item["consumable"] and not bool(item.get("free", false)):
+			all_parts.append(String(item["id"]))
+	return {"instance_id": instance_id, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": all_parts, "tuning": {}}
+
+
+func _profile_with_inventory(cars: Array, inventory: Dictionary) -> Dictionary:
+	var p := _profile([], [])
+	p["cars"] = cars
+	p["inventory"] = inventory
+	return p
+
+
+func test_draw_upgrade_awards_mystery_box_when_maxed_token_rich_and_room_exists() -> void:
+	var maxed := _maxed_car(1)
+	var roomy := {"instance_id": 2, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	var profile := _profile_with_inventory([maxed, roomy],
+		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD})
+	for i in 10:
+		assert_eq(RewardSystem.draw_upgrade(4, profile, _rng(i), maxed), UpgradeLibrary.MYSTERY_BOX_ID,
+			"a maxed, token-rich car with somewhere for the box to land always draws a mystery box")
+
+
+func test_draw_upgrade_skips_mystery_box_below_token_threshold() -> void:
+	var maxed := _maxed_car(1)
+	var roomy := {"instance_id": 2, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	var profile := _profile_with_inventory([maxed, roomy],
+		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD - 1})
+	for i in 20:
+		var id: String = RewardSystem.draw_upgrade(4, profile, _rng(i), maxed)
+		assert_ne(id, UpgradeLibrary.MYSTERY_BOX_ID,
+			"below the token threshold, the normal draw pool still applies")
+
+
+func test_draw_upgrade_skips_mystery_box_when_no_other_car_has_room() -> void:
+	var maxed := _maxed_car(1)
+	var also_maxed := _maxed_car(2)
+	var profile := _profile_with_inventory([maxed, also_maxed],
+		{UpgradeLibrary.ENGINE_SWAP_TOKEN_ID: RewardSystem.MYSTERY_BOX_TOKEN_THRESHOLD})
+	for i in 20:
+		var id: String = RewardSystem.draw_upgrade(4, profile, _rng(i), maxed)
+		assert_ne(id, UpgradeLibrary.MYSTERY_BOX_ID,
+			"with every other car also maxed, there's nowhere for a box to land — falls through")
+
+
+func test_car_has_nothing_left_checks_max_tier_not_target_tier() -> void:
+	# A car maxed against the catalogue ceiling reads as "nothing left" even with a
+	# LOW progress ceiling (fresh profile, 0 completed) — MAX_TIER, not target_tier.
+	var maxed := _maxed_car(1)
+	assert_true(RewardSystem._car_has_nothing_left(maxed),
+		"a car with every part up to MAX_TIER installed has nothing left, regardless of progress")
+	var not_maxed := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	assert_false(RewardSystem._car_has_nothing_left(not_maxed),
+		"a bone-stock car still has plenty left to gain")
+
+
+func test_any_other_car_has_room() -> void:
+	var maxed := _maxed_car(1)
+	var roomy := {"instance_id": 2, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	var profile := _profile_with_inventory([maxed, roomy], {})
+	assert_true(RewardSystem.any_other_car_has_room(profile, 1),
+		"the other, non-maxed car has room")
+	assert_false(RewardSystem.any_other_car_has_room(profile, 2),
+		"from the roomy car's perspective, the only other car (maxed) has no room")
+
+
+func test_pick_mystery_box_grant_never_targets_the_current_car() -> void:
+	var maxed := _maxed_car(1)
+	var roomy := {"instance_id": 2, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	var profile := _profile_with_inventory([maxed, roomy], {})
+	for i in 30:
+		var grant := RewardSystem.pick_mystery_box_grant(profile, 1, _rng(i))
+		assert_false(grant.is_empty(), "a candidate with room exists")
+		assert_eq(int(grant["instance_id"]), 2, "the grant only ever targets the OTHER car")
+		assert_false(UpgradeLibrary.by_id(String(grant["item_id"])).is_empty(),
+			"the granted item is a real catalogue item")
+
+
+func test_pick_mystery_box_grant_empty_when_every_other_car_is_maxed() -> void:
+	var maxed := _maxed_car(1)
+	var also_maxed := _maxed_car(2)
+	var profile := _profile_with_inventory([maxed, also_maxed], {})
+	var grant := RewardSystem.pick_mystery_box_grant(profile, 1, _rng(1))
+	assert_true(grant.is_empty(), "no candidate has room — the opener must fall back to a repair kit")
+
+
 # --- Car draw ----------------------------------------------------------------
 
 # The lowest reward_tier in the roster, and one model id at it — derived from

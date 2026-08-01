@@ -10,14 +10,64 @@ extends CanvasLayer
 
 signal finished()
 
+# ONE MODAL AT A TIME, TREE-WIDE. Every modal in the game is either a ConfirmPopup
+# or a UsernamePopup (which joins this same group), and they all sit on layer 101 —
+# so two of them on screen at once is never a design, always a bug: the top one
+# hides the other, dismissing it "does nothing" except reveal a twin with the focus
+# cursor reset.
+#
+# WHY A GROUP RATHER THAN A FLAG ON THE RAISER. The bug this exists to kill was a
+# single Cloud.conflict_detected broadcast reaching two subscribers, each of which
+# checked its OWN private "is my prompt up?" bool. Neither latch could see the
+# other, so both opened. The question "is a modal already on screen?" has exactly
+# one true answer and it belongs to the scene tree, not to any one host — a helper
+# that centralises WHAT a modal does while leaving each caller to track WHETHER one
+# is up has only half-consolidated the rule. See features/menus.md → "One modal at
+# a time" and todo/challenge-career-reuse-drift.md item 10.
+const MODAL_GROUP := "modal"
+
 var _actions: Array = []
 var _back_index: int = -1
 var _buttons: Array[Button] = []
 
+
+# The modal currently on screen anywhere in `tree`, or null when there is none.
+#
+# SKIPS NODES BEING FREED. ConfirmPopup._dismiss emits `finished` and THEN
+# queue_free()s, and a freed node stays in its groups until the end of the frame —
+# so a host that re-checks from its own `finished` handler (account_menu.rebuild
+# does exactly this) would otherwise be told a modal is still up by the very popup
+# that just closed, and be silently refused.
+static func any_open(tree: SceneTree) -> Node:
+	if tree == null:
+		return null
+	for n in tree.get_nodes_in_group(MODAL_GROUP):
+		var node := n as Node
+		if is_instance_valid(node) and not node.is_queued_for_deletion():
+			return node
+	return null
+
+
 # host: parent to attach under (its process mode is inherited — a paused host's
-# popup still processes). Returns the live popup (owns its own CanvasLayer).
+# popup still processes). Returns the live popup, or NULL when one is refused —
+# callers must not assume a popup came back.
+#
+# `allow_stack` opts out of the exclusivity rule for the rare modal that must be
+# seen even over another one (CloudBusy's failure notice: dropping it silently is
+# how a failed sync becomes invisible). Refusals are pushed as warnings rather than
+# swallowed — a modal that never appeared is a bug worth hearing about, and there
+# is deliberately NO queue: re-showing a modal the player has moved past invents an
+# ordering nobody asked for.
 static func open(host: Node, title: String, body: String, actions: Array,
-		default_index := 0, back_index := -1) -> ConfirmPopup:
+		default_index := 0, back_index := -1, allow_stack := false) -> ConfirmPopup:
+	if not is_instance_valid(host) or not host.is_inside_tree():
+		return null
+	if not allow_stack:
+		var live := any_open(host.get_tree())
+		if live != null:
+			push_warning("ConfirmPopup '%s' refused: '%s' is already on screen." % [
+				title, live.get_meta("modal_title", "another modal")])
+			return null
 	var popup := ConfirmPopup.new()
 	popup._actions = actions
 	popup._back_index = back_index if back_index >= 0 else actions.size() - 1
@@ -27,6 +77,8 @@ static func open(host: Node, title: String, body: String, actions: Array,
 
 func _build(title: String, body: String, default_index: int) -> void:
 	layer = 101  # above overlays
+	add_to_group(MODAL_GROUP)  # see MODAL_GROUP — one modal at a time, tree-wide
+	set_meta("modal_title", title)  # named in the refusal warning above
 
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)

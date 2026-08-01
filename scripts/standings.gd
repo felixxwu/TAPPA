@@ -12,6 +12,11 @@ extends Control
 # after the final event that resolves to the podium (which carries the combined view).
 
 signal leaderboard_hidden_changed(hidden: bool)
+# A CHALLENGE run's final interstitial has been dismissed by the player. There is
+# no next stage and no podium, so this is the run's real end — world.gd's
+# run_finished handler waits for it before granting the completion reward and
+# returning to the HQ (see _advance).
+signal run_completed()
 
 var _reward_collected := false
 var _reveal: UpgradeReveal = null
@@ -42,16 +47,90 @@ const PODIUM_ROWS := 3
 
 
 func _ready() -> void:
+	# LATCH the session this interstitial belongs to, once, before anything reads it.
+	# See the block comment below for why re-asking ChallengeSession.is_active() is
+	# not safe here.
+	if not _challenge_pinned:
+		_challenge = ChallengeSession.is_active()
+		_challenge_pinned = true
 	# The final event resolves to the podium; load it when the rally finishes so the
 	# transition happens from here (the run scene is gone by now). In overlay mode the
 	# live host owns this transition instead.
 	if not overlay_mode and not RallySession.rally_finished.is_connected(_on_rally_finished):
 		RallySession.rally_finished.connect(_on_rally_finished)
 	_build_ui()
+	# A challenge has NO AI opponents — only real people on the online board — so
+	# page 1 (the local event standings) would be a table containing nothing but the
+	# player's own row. Skip straight to the world board. Keyed off the LATCHED
+	# _challenge, never ChallengeSession.is_active(): on the final stage the run has
+	# already ended by now, and re-asking would skip page 1 for every stage EXCEPT
+	# the last one. _show_global_page reads _root_box to decide whether Back is
+	# offered, so tearing it down here also stops Back offering a page never shown.
+	if _challenge:
+		_global_shown = true
+		if is_instance_valid(_root_box):
+			_root_box.queue_free()
+			_root_box = null
+		_show_global_page()
+
+
+# --- Which session is this interstitial for -------------------------------------
+#
+# The screen is shown after EVERY stage of a career rally AND of a Rally Challenge
+# run (world.gd drives both through the same StageManager).
+#
+# THE SESSION IS LATCHED ONCE, IN _ready, AND NEVER RE-ASKED. Every read below
+# used to be its own `if ChallengeSession.is_active():` — and a challenge's FINAL
+# stage ends the run (ChallengeSession._finish_locally clears _active) while this
+# screen is still up, so all six reads silently fell through to the IDLE career
+# session: the header said "stage 0 of N", both boards rendered RallySession's
+# empty field, Continue was a dead button, and — worst — GlobalStandings posted to
+# the career `stage_times` board with a blank stage_key instead of the challenge
+# board, so a Daily (whose only stage IS its final stage) never reached Firestore
+# at all. Pinning the mode at construction makes the whole page resolve against
+# ONE session for its whole life. See todo/challenge-career-reuse-drift.md item 2.
+#
+# A challenge has no rival field, so its two leaderboards are the player's own row
+# alone (ChallengeSession.current_event_standings / current_standings feed
+# RallyLibrary.build_standings an empty field — the identical rendering a rally
+# with zero rivals produces). Every ChallengeSession getter below stays valid
+# after the run ends: _finish_locally clears only `_active`, not the stage times,
+# period key or fielded car. See features/rally-challenge.md.
+var _challenge := false
+
+
+var _challenge_pinned := false
+
+
+# Test/host seam: pin the mode explicitly before the node enters the tree, in
+# place of _ready's latch.
+func set_challenge_mode(on: bool) -> void:
+	_challenge = on
+	_challenge_pinned = true
+
+
+func _stages_done() -> int:
+	return ChallengeSession.events_completed() if _challenge \
+		else RallySession.events_completed()
+
+
+func _stage_total() -> int:
+	return ChallengeSession.stage_count() if _challenge \
+		else RallySession.EVENTS_PER_RALLY
+
+
+func _stage_upgrade() -> String:
+	return ChallengeSession.stage_upgrade() if _challenge \
+		else RallySession.current_event_upgrade()
+
+
+func _driven_instance_id() -> int:
+	return ChallengeSession.car_instance_id() if _challenge \
+		else RallySession.car_instance_id()
 
 
 func is_final_event() -> bool:
-	return RallySession.events_completed() >= RallySession.EVENTS_PER_RALLY
+	return _stages_done() >= _stage_total()
 
 
 # True when this event awarded an upgrade still to be collected — PAGE 2's button
@@ -59,8 +138,8 @@ func is_final_event() -> bool:
 # final event, which draws no upgrade.
 func _reward_pending() -> bool:
 	return not _reward_collected \
-		and RallySession.events_completed() < RallySession.EVENTS_PER_RALLY \
-		and RallySession.current_event_upgrade() != ""
+		and _stages_done() < _stage_total() \
+		and _stage_upgrade() != ""
 
 
 # Which entries of a ranked leaderboard a section actually shows: the top `top`,
@@ -144,7 +223,7 @@ func _build_ui() -> void:
 	add_child(root)
 	_root_box = root
 
-	var done := RallySession.events_completed()
+	var done := _stages_done()
 
 	# No screen title / rally-name subtitle: the two section headings ("STAGE n
 	# RESULT" and "OVERALL") already say what each list is, and the player knows
@@ -173,10 +252,12 @@ func _build_ui() -> void:
 	# is deliberate: the screen keeps the same shape from stage 1 to stage 3, so the
 	# player learns where to look once instead of having the layout change under them.
 	var row_nodes: Array[Control] = []
+	var challenge := _challenge
 	row_nodes.append_array(_add_section(content, "STAGE %d RESULT" % done,
-		RallySession.current_event_standings()))
+		ChallengeSession.current_event_standings() if challenge \
+			else RallySession.current_event_standings()))
 	row_nodes.append_array(_add_section(content, overall_heading(done),
-		RallySession.current_standings()))
+		ChallengeSession.current_standings() if challenge else RallySession.current_standings()))
 
 	# The action row sits side by side rather than stacked: two full-width buttons
 	# eat a leaderboard row's worth of height each, and this screen is tight enough
@@ -292,14 +373,30 @@ func _advance() -> void:
 	if _reward_pending():
 		_collect_reward()
 		return
-	RallySession.continue_to_next_event()
+	if not _challenge:
+		RallySession.continue_to_next_event()
+		return
+	if ChallengeSession.is_active():
+		ChallengeSession.continue_to_next_stage()
+		return
+	# The run already ended (the final stage's report_event_result emitted
+	# standings_ready and then finished the run), so there is no next stage and no
+	# podium: THIS press is the run's end. world.gd's run_finished handler is
+	# parked on this signal — it owns the completion reward and the HQ transition,
+	# so the player dismisses the final standings themselves instead of being
+	# ejected mid-read. Exactly one owner of "what happens after the last stage".
+	run_completed.emit()
 
 
 # Page 2 REPLACES page 1's content: hiding the root VBox takes the parent's
 # MenuNav inert along with it (MenuNav._unhandled_input is gated on its root being
 # visible), so the child's is the only live nav and the two cannot race on Back.
 func _show_global_page() -> void:
-	var opts := GlobalStandings.for_current_stage()
+	# The LATCHED mode is passed in, not re-derived: on a challenge's final stage
+	# ChallengeSession.is_active() is already false by now, and letting
+	# for_current_stage() re-ask is what routed the final checkpoint to the career
+	# board (and, for a Daily, meant no challenge time was ever posted at all).
+	var opts := GlobalStandings.for_current_stage(_challenge)
 	# Back is now offered on EVERY stage. Page 2 comes BEFORE the reward, so page 1
 	# is always still intact behind it — the old "no Back after a reward, because
 	# page 1 was torn down for the reveal card" special case is gone with the
@@ -311,8 +408,9 @@ func _show_global_page() -> void:
 	# stage drew one — the reveal sits between page 2 and resuming.
 	if _reward_pending():
 		opts["continue_text"] = "Collect reward >"
-	elif RallySession.events_completed() >= RallySession.EVENTS_PER_RALLY:
-		opts["continue_text"] = "Continue to podium >"
+	elif is_final_event():
+		# A challenge has no podium — its final Continue ends the run (see _advance).
+		opts["continue_text"] = "Finish challenge >" if _challenge else "Continue to podium >"
 	else:
 		opts["continue_text"] = "Continue to next stage >"
 
@@ -388,7 +486,9 @@ func _collect_reward() -> void:
 	# resuming the rally; by the time this fires, page 2 has been seen and the
 	# reward collected, so _advance() falls through to that single call.
 	_reveal.finished.connect(_advance, CONNECT_ONE_SHOT)
-	_reveal.reveal(RallySession.current_event_upgrade(), RallySession.car_instance_id())
+	# Same card for a challenge stage's per-stage reward as for a rally event's —
+	# only the session the item id / fielded car come from differs.
+	_reveal.reveal(_stage_upgrade(), _driven_instance_id())
 
 
 # Back (keyboard/gamepad, via MenuNav on_back): the interstitial is a single page

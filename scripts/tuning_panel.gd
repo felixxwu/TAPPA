@@ -9,20 +9,29 @@ extends VBoxContainer
 
 var _owned: Dictionary = {}
 var _on_change: Callable = Callable()
+var _on_wheels: Callable = Callable()
 var _sliders: Dictionary = {}        # axis -> HSlider
 var _slider_rows: Dictionary = {}    # axis -> row PanelContainer (greyed when locked)
 var _slider_values: Dictionary = {}  # axis -> value Label
 var _built := false
+var _wheels_button: Button  # cosmetic wheel styles — see _on_wheels_pressed
 
 
 # Build the rows once, then bind the owned car. on_change() is called (no args) after
-# each edit / reset so the host can re-apply tuning to the live car.
-func setup(owned_car: Dictionary, on_change := Callable()) -> void:
+# each edit / reset so the host can re-apply tuning to the live car. on_wheels() (no
+# args) fires when the Wheels button is pressed — the host owns leaving the lift for
+# the wheel-swap flow (e.g. HqController._enter_wheel_swap).
+func setup(owned_car: Dictionary, on_change := Callable(), on_wheels := Callable()) -> void:
 	_owned = owned_car
 	_on_change = on_change
+	_on_wheels = on_wheels
 	if not _built:
 		_build()
 		_built = true
+	# Wheels only makes sense where the host actually wired somewhere to send it (the
+	# HQ lift); the start-line's pre-event grid passes no on_wheels, so hide it there
+	# rather than show a button that does nothing.
+	_wheels_button.visible = _on_wheels.is_valid()
 
 
 func first_slider() -> Control:
@@ -50,6 +59,21 @@ func _build() -> void:
 	reset.focus_mode = Control.FOCUS_ALL
 	reset.pressed.connect(_reset)
 	add_child(reset)
+
+	# Wheels: cosmetic wheel styles. Leaves the lift for the solo car-park view, where
+	# the car sits SETTLED on its suspension under a side-on camera (the lift holds it
+	# raised, and wheels are judged by stance). See features/wheel-customization.md.
+	# Lives here (not the lift hub row) so it's reached from inside the Tuning menu.
+	_wheels_button = Button.new()
+	_wheels_button.text = "Wheels"
+	_wheels_button.focus_mode = Control.FOCUS_ALL
+	_wheels_button.pressed.connect(_on_wheels_pressed)
+	add_child(_wheels_button)
+
+
+func _on_wheels_pressed() -> void:
+	if _on_wheels.is_valid():
+		_on_wheels.call()
 
 
 # Build one handling-axis row via the shared SliderRow builder, then bind the axis-

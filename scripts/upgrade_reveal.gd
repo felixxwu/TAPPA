@@ -241,6 +241,11 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 	var driven_entry := CarLibrary.by_id(String(driven.get("model_id", "")))
 	var driven_below_full := not driven_entry.is_empty() \
 			and float(driven.get("hp", 0.0)) < float(driven_entry.get("max_hp", 0.0))
+	# A challenge run does NOT block this. The lock commits a run to the car it
+	# started with; it does not reserve the car or freeze its condition. The player
+	# can already repair between stages via the garage, so refusing the kit here
+	# only made the reveal inconsistent with the rest of the game — the weakened
+	# damage carry-over is a deliberate, accepted consequence of that rule.
 	if item_id == UpgradeLibrary.REPAIR_KIT_ID and not driven.is_empty() and driven_below_full:
 		var repair_car := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
 		_choice_mode = "repair"
@@ -336,8 +341,11 @@ func _on_upgrades_pressed() -> void:
 	if _upgrades_overlay == null:
 		_build_upgrades_overlay()
 	var owned: Dictionary = Save.get_car(_car_instance_id)
-	var restriction: Dictionary = RallyLibrary.by_id(RallySession.rally_id()).get("restriction", {})
-	var pw_limit := float(restriction.get("pw_max", -1.0))
+	# One accessor for the ceiling, so a CHALLENGE run's cap applies here too. This
+	# used to read RallySession.rally_id()'s restriction directly, which resolves to
+	# "no limit" mid-challenge (rally_id() is "") — the reveal's Upgrades overlay had
+	# no p/w gate at all for a challenge car.
+	var pw_limit := DrivingContext.pw_limit_for_car(_car_instance_id)
 	_upgrades_menu.setup(owned, Callable(), Callable(), pw_limit)
 	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
 	_upgrades_overlay.visible = true

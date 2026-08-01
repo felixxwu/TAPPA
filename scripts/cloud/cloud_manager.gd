@@ -32,6 +32,9 @@ var google: GoogleSignIn = null
 # Global per-stage boards. Entirely passive — it makes no request until the UI
 # asks, so a player who never finishes a stage never touches it.
 var leaderboard: Leaderboard = null
+# The Rally Challenge world board (challenge_runs/{period_key}/entries). Same
+# passive posture as leaderboard above.
+var challenge_leaderboard: ChallengeLeaderboard = null
 
 # True from boot until the FIRST automatic pull settles. Only ever set when a
 # stored credential was found, so a player who has never signed in — or who
@@ -65,6 +68,12 @@ func _ready() -> void:
 	leaderboard.rest = rest
 	leaderboard.auth = auth
 	add_child(leaderboard)
+
+	challenge_leaderboard = ChallengeLeaderboard.new()
+	challenge_leaderboard.name = "ChallengeLeaderboard"
+	challenge_leaderboard.rest = rest
+	challenge_leaderboard.auth = auth
+	add_child(challenge_leaderboard)
 
 	google = GoogleSignIn.new()
 	google.name = "GoogleSignIn"
@@ -188,6 +197,16 @@ func sync_now() -> Dictionary:
 	if not is_signed_in():
 		return {"ok": false, "error": "Not signed in."}
 	return await sync.pull()
+
+
+# DEV "wipe all progress": publish the wiped profile so the cloud copy is cleared
+# too. Without this the next pull restores everything the player just deleted —
+# see CloudSync.push_wipe. A no-op when signed out, where there is no cloud copy
+# to clear and the local wipe is already the whole story.
+func publish_local_wipe() -> Dictionary:
+	if not is_signed_in():
+		return {"ok": true, "error": ""}
+	return await sync.push_wipe()
 
 
 func resolve_keep_local() -> Dictionary:

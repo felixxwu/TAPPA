@@ -36,12 +36,24 @@ func before_each() -> void:
 	RallySession.auto_load_scenes = false
 	if RallySession.is_active():
 		RallySession.abandon()
+	ChallengeSession.auto_load_scenes = false
+	if ChallengeSession.is_active():
+		ChallengeSession.abandon()
 
 
 func after_each() -> void:
 	if RallySession.is_active():
 		RallySession.abandon()
 	RallySession.auto_load_scenes = true
+	if ChallengeSession.is_active():
+		ChallengeSession.abandon()
+	ChallengeSession.auto_load_scenes = true
+	# ChallengeSession.abandon() clears profile["challenge_run"] on the LIVE Save
+	# autoload — but Save.profile itself gets swapped out from under it per-test
+	# (_save.load_or_new() below), so also clear any run a previous test left in the
+	# throwaway profile file directly, the same belt-and-braces reset RallySession
+	# gets via .abandon() above.
+	Save.profile["challenge_run"] = {}
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
@@ -162,10 +174,10 @@ func test_hq_boots_to_the_exterior_title() -> void:
 		"one map pin per rally in the viewed region")
 
 
-func test_title_has_focusable_exit_game_button_on_desktop() -> void:
-	# The exterior title carries an Exit Game button at the bottom of the list on
-	# non-web builds (the headless test host is one). It's a real, focusable widget
-	# wired to quit — reachable by keyboard/gamepad, not just the pointer.
+func test_title_has_a_reachable_exit_game_button_on_desktop() -> void:
+	# The exterior title carries an Exit Game button at the end of the row on
+	# non-web builds (the headless test host is one). It's a real widget wired to
+	# quit — reachable by keyboard/gamepad via the title cursor, not just the pointer.
 	if OS.has_feature("web"):
 		pass_test("web build omits Exit Game (the tab owns the process lifecycle)")
 		return
@@ -173,14 +185,14 @@ func test_title_has_focusable_exit_game_button_on_desktop() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_not_null(hq._title_exit_button, "the title screen has an Exit Game button")
-	assert_eq(hq._title_exit_button.focus_mode, Control.FOCUS_ALL,
-		"the Exit Game button is keyboard/gamepad focusable")
-	# It sits below Start — the bottom of the title button list.
+	assert_true(hq._title_cursor.buttons.has(hq._title_exit_button),
+		"Exit Game is a stop on the title's left/right cursor")
+	# It sits after Start — the end of the title row.
 	var parent: Node = hq._title_start_button.get_parent()
 	assert_gt(hq._title_exit_button.get_index(), hq._title_start_button.get_index(),
-		"Exit Game sits after Start in the title list")
+		"Exit Game sits after Start in the title row")
 	assert_eq(hq._title_exit_button.get_parent(), parent,
-		"Exit Game lives in the same title button list")
+		"Exit Game lives in the same title button row")
 
 
 func test_hq_frames_the_lot_with_config_matched_trees() -> void:
@@ -223,11 +235,10 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._on_exterior_start()  # -> GARAGE, where the Settings button now lives
-	# Open Settings from the garage — it lands on the category list.
+	# Settings now lives on the title screen (moved off the garage row).
 	hq._open_settings(false)
 	assert_true(hq._settings_layer.visible, "the settings overlay is shown")
-	assert_false(hq._garage_layer.visible, "the garage overlay is hidden in settings")
+	assert_false(hq._title_layer.visible, "the title overlay is hidden in settings")
 	assert_true(hq._settings_menu.at_root(), "Settings opens on the category list")
 	# The shared SettingsMenu: a camera-angle row per mode and a row per control scheme.
 	assert_eq(hq._settings_menu.camera_rows.size(), CameraManager.MODES.size(),
@@ -247,54 +258,85 @@ func test_hq_settings_page_selects_and_persists_control_scheme() -> void:
 	hq._settings_menu.select_scheme(MobileControls.SCHEME_TILT_GAS_BRAKE)
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)),
 		MobileControls.SCHEME_TILT_GAS_BRAKE, "the chosen scheme is saved")
-	# The bottom button backs out a level at a time: sub-page → list → garage.
+	# The bottom button backs out a level at a time: sub-page then list then title.
 	hq._on_settings_action()
 	assert_true(hq._settings_menu.at_root(), "Back from a sub-page returns to the list")
 	assert_true(hq._settings_layer.visible, "still in Settings after backing to the list")
 	hq._on_settings_action()
-	assert_true(hq._garage_layer.visible, "Back from the list returns to the garage")
+	assert_true(hq._title_layer.visible, "Back from the list returns to the title")
 	assert_false(hq._settings_layer.visible, "the settings overlay is hidden again")
 
 
 # --- Keyboard / gamepad navigation -------------------------------------------
 
-# The title is a flat menu (Start, plus Exit Game on desktop) driven by native
-# focus: Start is focused on entry so ui_up/ui_down + ui_accept work the menu with no
-# pointer. (Settings moved to the garage action row; free roam is the tuning bay's
-# Test Drive button.)
-func test_hq_title_focuses_start_for_keyboard_nav() -> void:
+# The title row (Start / Account / Settings, plus Exit Game on desktop) is a single
+# left/right ButtonCursor, same diegetic idiom as the garage row and lift hub —
+# menu_left/menu_right move the cursor, menu_select fires the item under it.
+func test_hq_title_is_a_left_right_cursor() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	await get_tree().process_frame  # let the deferred grab_focus run
 	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
-	assert_eq(hq._title_start_button.focus_mode, Control.FOCUS_ALL, "Start is focusable")
-	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
-		"the title focuses Start for keyboard / gamepad")
+	assert_eq(hq._title_focus, 0, "the title cursor starts on Start")
+	assert_eq(hq._title_cursor.buttons[0], hq._title_start_button, "index 0 is Start")
+	hq._move_title_focus(1)
+	assert_eq(hq._title_focus, 1, "right moves the cursor to Account")
+	assert_eq(hq._title_cursor.buttons[1], hq._title_account_button, "index 1 is Account")
+	hq._move_title_focus(1)
+	assert_eq(hq._title_focus, 2, "right moves the cursor to Settings")
+	assert_eq(hq._title_cursor.buttons[2], hq._title_settings_button, "index 2 is Settings")
+	if hq._title_exit_button == null:
+		pass_test("web build has no Exit Game stop; left/right/select over Start/Account/Settings confirmed")
+		return
+	hq._move_title_focus(1)
+	assert_eq(hq._title_focus, 3, "right again moves the cursor to Exit Game")
+	assert_eq(hq._title_cursor.buttons[3], hq._title_exit_button, "index 3 is Exit Game")
+	hq._move_title_focus(1)
+	assert_eq(hq._title_focus, 0, "right from the end wraps to Start")
+	hq._move_title_focus(-1)
+	assert_eq(hq._title_focus, 3, "left from Start wraps onto Exit Game")
+
+	# Select on Settings opens the settings page.
+	hq._title_focus = 2
+	hq._activate_title_focus()
+	assert_eq(hq._view, hq.View.SETTINGS, "select on Settings opens the settings page")
 
 
-# Regression: menu_select on the title must fire the FOCUSED button (native focus),
-# not hard-route to Start. menu_select shares Enter with ui_accept, so a stray
-# EXTERIOR menu_select handler used to start the run even when Settings was focused.
+# Settings opened from the title screen must return to the title on back — it no
+# longer lives on the garage row, so there is nothing else to route back to.
+func test_hq_title_settings_returns_to_title_on_back() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._open_settings(false)
+	assert_eq(hq._view, hq.View.SETTINGS, "Settings is open")
+	assert_true(hq._settings_menu.at_root(), "Settings opens on the category list")
+	hq._on_settings_action()
+	assert_eq(hq._view, hq.View.EXTERIOR, "Back from the settings list returns to the title")
+	assert_true(hq._title_layer.visible, "the title overlay is shown again")
+	assert_eq(hq._title_focus, 0, "re-entering the title re-seats the cursor on Start")
+
+
+# Regression: menu_select on the title must fire the item the CURSOR sits on, not
+# hard-route to Start. menu_select shares Enter with ui_accept, so a stray EXTERIOR
+# menu_select handler used to start the run even when Settings was the cursor stop.
 func test_hq_title_accept_does_not_force_start() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	await get_tree().process_frame  # let the deferred grab_focus run
 	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
-	if hq._title_exit_button == null:
-		pass_test("web build has only Start on the title; no second button to focus")
-		return
-	# Focus a NON-Start button (Exit Game), then feed a menu_select action as the engine
-	# would. The title's input handler must NOT start the run (which would leave EXTERIOR
-	# for GARAGE); native focus drives accept instead.
-	hq._title_exit_button.grab_focus()
+	# Move the cursor onto Settings (not Start), then feed a menu_select action as the
+	# engine would. The title's input handler must NOT start the run (which would leave
+	# EXTERIOR for GARAGE); the cursor's current stop drives select.
+	hq._title_focus = 2
+	hq._refresh_title_focus()
 	var ev := InputEventAction.new()
 	ev.action = "menu_select"
 	ev.pressed = true
 	hq._unhandled_input(ev)
-	assert_eq(hq._view, hq.View.EXTERIOR,
-		"menu_select on the title doesn't force Start; the focused button drives accept")
+	assert_eq(hq._view, hq.View.SETTINGS,
+		"menu_select on the title fires whatever the cursor sits on, not Start")
+
 
 
 # The build version is shown on the title screen only (it was removed from the
@@ -554,18 +596,17 @@ func test_hq_lift_hub_has_an_up_down_cursor() -> void:
 	assert_eq(hq._view, hq.View.LIFT, "the tuning bay is open")
 	assert_eq(hq._lift_page, hq.LiftPage.HUB, "it opens on the hub")
 	# The hub is a left/right cursor over Back (0) / Upgrades (1) / Tuning (2) /
-	# Wheels (3) / Test Drive (4), wrapping at both ends.
+	# Test Drive (3), wrapping at both ends. (Wheels moved into the Tuning panel
+	# itself, so it's no longer a hub cursor stop.)
 	assert_eq(hq._hub_focus, 1, "the hub cursor starts on Upgrades")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 2, "right moves the cursor to Tuning")
 	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Wheels")
-	hq._move_hub_focus(1)
-	assert_eq(hq._hub_focus, 4, "right again moves the cursor to Test Drive")
+	assert_eq(hq._hub_focus, 3, "right again moves the cursor to Test Drive")
 	hq._move_hub_focus(1)
 	assert_eq(hq._hub_focus, 0, "right from the end wraps to Back")
 	hq._move_hub_focus(-1)
-	assert_eq(hq._hub_focus, 4, "left from Back wraps onto Test Drive")
+	assert_eq(hq._hub_focus, 3, "left from Back wraps onto Test Drive")
 
 	# Select on the Tuning item opens the Tune page (stays in the bay).
 	hq._hub_focus = 2
@@ -936,46 +977,390 @@ func test_hq_start_flies_into_the_garage() -> void:
 	assert_false(hq._title_layer.visible, "the title overlay is hidden in the garage")
 
 
-# The garage overlay is a left/right cursor over Back (0) / Career (1) / Garage (2) /
-# Free Roam (3) / Settings (4), wrapping at both ends, with select firing the item under
-# the cursor. (Repair lives on the tuning-lift HUB row now, not the garage.)
+# The garage overlay's TOP level is a left/right cursor over Back (0) / Drive (1) /
+# Garage (2) / Mystery Box (3), wrapping at both ends, with select firing the item
+# under the cursor. (Repair lives on the tuning-lift HUB row; Settings moved to the
+# title screen — neither is on the garage row anymore. Career/Free Roam/Online now
+# live one level down, behind Drive — see test_hq_garage_drive_level_is_a_left_right_cursor.)
 func test_hq_garage_is_a_left_right_cursor() -> void:
+	# A held box + a second, non-maxed car keeps Mystery Box ENABLED, so the cursor
+	# can actually land on it (ButtonCursor skips disabled stops, same as it would
+	# skip any other unavailable action) — a fresh, box-less profile would otherwise
+	# jump straight over it from Garage to Back.
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	_save.grant_car("fx_rwd_coupe")
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._on_exterior_start()
 	assert_eq(hq._view, hq.View.GARAGE, "start lands in the garage")
-	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Career")
+	assert_false(hq._garage_showing_drive, "opening the garage always starts on the TOP level")
+	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Drive")
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 2, "right moves the cursor to Garage")
 	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 3, "right moves the cursor to Free Roam")
-	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 4, "right moves the cursor to Settings")
+	assert_eq(hq._garage_focus, 3, "right moves the cursor to Mystery Box")
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
 	hq._move_garage_focus(-1)
-	assert_eq(hq._garage_focus, 4, "left from Back wraps to Settings")
+	assert_eq(hq._garage_focus, 3, "left from Back wraps to Mystery Box")
 
-	# Select on the Settings item opens the settings page.
-	hq._garage_focus = 4
+	# Select on Garage opens the car park -> tuning lift.
+	hq._garage_focus = 2
 	hq._activate_garage_focus()
 	await get_tree().process_frame
-	assert_eq(hq._view, hq.View.SETTINGS, "select on Settings opens the settings page")
-	hq._go_to(hq.View.GARAGE)
+	assert_eq(hq._view, hq.View.CARPARK, "select on Garage opens the car park")
 
-	# Select on the Career item opens the map.
+	# Back-to-garage, then select on the Back item leaves for the exterior.
+	hq._go_to(hq.View.GARAGE)
+	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Drive")
+	hq._garage_focus = 0
+	hq._activate_garage_focus()
+	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
+
+
+# Pressing Drive swaps the SAME row (no camera/view change) to Back (0) / Career (1) /
+# Free Roam (2) / Online (3) — also a left/right cursor, wrapping. Back on THIS level
+# goes back up to the TOP level, not out to the exterior.
+func test_hq_garage_drive_level_is_a_left_right_cursor() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+
+	hq._garage_focus = 1  # Drive
+	hq._activate_garage_focus()
+	assert_true(hq._garage_showing_drive, "Drive switches to the DRIVE level")
+	assert_eq(hq._view, hq.View.GARAGE, "Drive does NOT change the view/camera")
+	assert_eq(hq._garage_focus, 1, "the DRIVE level starts on Career, its primary action")
+
+	hq._move_garage_focus(1)
+	assert_eq(hq._garage_focus, 2, "right moves to Free Roam")
+	hq._move_garage_focus(1)
+	assert_eq(hq._garage_focus, 3, "right moves to Online")
+	hq._move_garage_focus(1)
+	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
+
+	# Select on Career opens the map.
 	hq._garage_focus = 1
 	hq._activate_garage_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.TABLE, "select on Career opens the map")
 
-	# Back-to-garage, then select on the Back item leaves for the exterior.
+	# Back up to the TOP level from the DRIVE level's own Back (0), not out to the exterior.
 	hq._go_to(hq.View.GARAGE)
-	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Career")
+	hq._garage_focus = 1
+	hq._activate_garage_focus()  # Drive -> DRIVE level
 	hq._garage_focus = 0
-	hq._activate_garage_focus()
-	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
+	hq._activate_garage_focus()  # DRIVE level's Back
+	assert_false(hq._garage_showing_drive, "Back on the DRIVE level returns to the TOP level")
+	assert_eq(hq._view, hq.View.GARAGE, "still in the garage, not the exterior")
+	assert_eq(hq._garage_focus, 1, "the cursor re-seats on Drive")
+
+
+# --- Rally Challenge entry point (spec §7) -----------------------------------
+
+# The DRIVE level's Online button (renamed from Challenge) opens a modal,
+# keyboard/gamepad-navigable entry screen over the garage, and Back closes it back
+# to the garage (at the DRIVE level, where it was opened from).
+func test_hq_challenge_entry_opens_and_is_navigable() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	assert_false(hq._challenge_layer.visible, "the challenge overlay starts hidden")
+
+	hq._garage_focus = 1
+	hq._activate_garage_focus()  # Drive -> DRIVE level
+	hq._garage_focus = 3
+	hq._activate_garage_focus()  # Online
+	assert_true(hq._challenge_layer.visible, "Online on the DRIVE level opens the entry screen")
+	assert_false(hq._garage_layer.visible, "the garage hides behind the modal challenge overlay")
+
+	await get_tree().process_frame  # deferred MenuNav focus grab
+	var focused := hq.get_viewport().gui_get_focus_owner()
+	assert_true(focused is Button and hq._challenge_layer.is_ancestor_of(focused),
+		"the cursor lands on one of the challenge screen's own buttons")
+
+	# Back (via the screen's own MenuNav, wired with on_back = _close_challenge_overlay)
+	# closes the modal and returns to the garage.
+	var nav: MenuNav = null
+	# The dark MODAL_DIM backing is child 0 (build_challenge_overlay, mirroring
+	# build_detail_overlay); the actual root VBoxContainer MenuNav.attach() adds itself to
+	# is child 1.
+	for child in hq._challenge_layer.get_child(1).get_children():
+		if child is MenuNav:
+			nav = child
+	assert_not_null(nav, "the challenge screen has MenuNav attached")
+	nav._unhandled_input(_press("menu_back"))
+	assert_false(hq._challenge_layer.visible, "menu_back closes the challenge overlay")
+	assert_true(hq._garage_layer.visible, "closing the overlay restores the garage")
+
+
+# The kind tabs are real FOCUS_ALL controls with NO mouse interaction (mouse_filter
+# IGNORE, no `pressed` wiring) — only native left/right focus-neighbour movement
+# (menu_nav.gd) reaches them, and arriving via focus IS the selection (focus_entered).
+# Opening the screen lands focus on the CURRENT kind's own tab.
+func test_hq_challenge_kind_tabs_are_focus_only_left_right_no_mouse() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+	assert_eq(hq._challenge_kind, ChallengeLibrary.DAILY, "opens on Daily by default")
+
+	for btn in hq._challenge_kind_buttons:
+		assert_eq(btn.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+			"a kind tab is unreachable by mouse — hover/click can't touch it")
+		assert_false(btn.toggle_mode, "no press/pressed state — focus_entered is the only trigger")
+
+	await get_tree().process_frame  # deferred focus grab from _open_challenge_overlay
+	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._challenge_kind_button(ChallengeLibrary.DAILY),
+		"opening the screen focuses the current kind's own tab")
+
+	# Drive REAL focus-neighbour navigation through MenuNav's own _unhandled_input (the
+	# same path a keyboard/gamepad press takes in the real game), not a direct call into
+	# hq — there is no hq-level interception of menu_left/menu_right anymore.
+	var nav: MenuNav = null
+	for child in hq._challenge_layer.get_child(1).get_children():
+		if child is MenuNav:
+			nav = child
+	assert_not_null(nav, "the challenge screen has MenuNav attached")
+
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(hq._challenge_kind, ChallengeLibrary.WEEKLY, "menu_right moves focus onto the Weekly tab")
+	assert_string_contains(hq._challenge_title_label.text.to_upper(), "WEEKLY",
+		"the header title tracks the switch")
+
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(hq._challenge_kind, ChallengeLibrary.MONTHLY, "menu_right again reaches Monthly")
+
+	nav._unhandled_input(_press("menu_left"))
+	assert_eq(hq._challenge_kind, ChallengeLibrary.WEEKLY, "menu_left moves back to Weekly")
+
+
+# Enter/gamepad-accept on a focused kind TAB acts as Start (not just on the Start
+# button itself) — the player shouldn't have to tab down once they've picked a kind.
+func test_hq_challenge_tab_activate_starts_like_the_start_button() -> void:
+	_reset_to_first_run()
+	_install_guaranteed_eligible_car()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	assert_false(hq._challenge_start_button.disabled, "setup: Start is enabled with an eligible car")
+
+	hq._challenge_kind_button(ChallengeLibrary.DAILY).grab_focus()
+	hq._challenge_kind_button(ChallengeLibrary.DAILY).pressed.emit()
+	await get_tree().process_frame
+	assert_false(hq._challenge_layer.visible,
+		"activating the focused tab committed Start, same as pressing the Start button")
+
+
+# The SAME activation must respect Start's disabled gate — no eligible car means
+# Enter-on-a-tab must not silently start anyway.
+func test_hq_challenge_tab_activate_respects_disabled_start() -> void:
+	_reset_to_first_run()  # empty garage: no owned car can possibly be eligible
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+	assert_true(hq._challenge_start_button.disabled, "setup: Start is disabled with no eligible car")
+
+	hq._challenge_kind_button(ChallengeLibrary.DAILY).pressed.emit()
+	await get_tree().process_frame
+	assert_true(hq._challenge_layer.visible,
+		"activating a tab while Start is disabled must not start anything")
+
+
+# The four concise sections all repaint from ChallengeSession/ChallengeLibrary's
+# current state for whichever kind is selected: the subtitle (ceiling)/win
+# condition/win reward always show SOME text, and the eligible-cars section responds
+# to the period's rolled ceiling — not a fixed list — for every kind.
+func test_hq_challenge_sections_reflect_the_current_kind_and_ceiling() -> void:
+	_save.grant_car("fx_fwd_hatch")
+	_save.grant_car("fx_rwd_coupe")
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+
+	var unix_time := int(Time.get_unix_time_from_system())
+	for kind_str in [ChallengeLibrary.DAILY, ChallengeLibrary.WEEKLY, ChallengeLibrary.MONTHLY]:
+		hq._select_challenge_kind(kind_str)
+		# UITheme.enforce upper-cases every label (house style), so compare case-insensitively.
+		assert_string_contains(hq._challenge_title_label.text.to_upper(), kind_str.to_upper(),
+			"the header title names the current kind")
+		assert_false(hq._challenge_subtitle_label.text.is_empty(),
+			"the subtitle always shows the rolled ceiling")
+		assert_false(hq._challenge_win_label.text.is_empty(), "win condition is always shown")
+		assert_false(hq._challenge_reward_label.text.is_empty(), "win reward is always shown")
+		@warning_ignore("static_called_on_instance")
+		var expected := ChallengeSession.eligible_cars(kind_str, Save.profile, unix_time)
+		if expected.is_empty():
+			assert_string_contains(hq._challenge_eligible_label.text.to_lower(), "no eligible car",
+				"the %s tab explains why Start is blocked" % kind_str)
+		else:
+			assert_false(hq._challenge_eligible_label.text.is_empty(),
+				"the %s tab names the eligible car(s)" % kind_str)
+
+
+# Zero eligible owned cars blocks starting outright: no loaner car, no forced
+# auto-detune (spec §2) — the eligible-cars section explains why and Start is disabled.
+func test_hq_challenge_blocks_start_with_no_eligible_car() -> void:
+	_reset_to_first_run()  # empty garage: no owned car can possibly be eligible
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+
+	assert_string_contains(hq._challenge_eligible_label.text.to_lower(), "no eligible car",
+		"the eligible-cars section explains why Start is blocked")
+	assert_true(hq._challenge_start_button.disabled, "Start is blocked with no eligible car")
+
+
+# A car so far below every entry of ChallengeLibrary.CEILING_BAND_HP_TONNE (the lowest
+# is 120 hp/tonne) that it qualifies for every kind no matter which band value that
+# day's roll happens to land on — CarFixtures' own cars sit close enough to the band
+# that whether they qualify depends on the roll, which would make this test flaky by
+# the calendar date it runs on. Appends onto the already-installed CarFixtures roster
+# (restored the same way in after_each) rather than replacing it.
+func _install_guaranteed_eligible_car() -> Dictionary:
+	var cars := CarFixtures.cars()
+	var heavy := CarFixtures.cars()[0].duplicate(true)
+	heavy["id"] = "fx_challenge_eligible"
+	heavy["name"] = "Fixture Challenge Eligible"
+	heavy["mass"] = 6000.0  # crushes power-to-weight far under the lowest band value
+	cars.append(heavy)
+	CarLibrary.override_for_test(cars)
+	return _save.grant_car("fx_challenge_eligible")
+
+
+# The flip side: a car so far ABOVE every band value (the highest is 220 hp/tonne) that
+# it's over the ceiling no matter which value rolls, but light enough on mass that a
+# detune always finds a fraction that ducks it under — the over-cap-but-detune-reachable
+# car ChallengeSession.eligible_cars now includes (spec §2 / the recent eligible_cars
+# change) and _build_challenge_lineup tracks via ChallengeSession.qualifying_detune_for.
+func _install_guaranteed_over_ceiling_car() -> Dictionary:
+	var cars := CarFixtures.cars()
+	var hot := CarFixtures.cars()[2].duplicate(true)  # fx_rwd_coupe (the fx_v8 engine)
+	hot["id"] = "fx_challenge_over_ceiling"
+	hot["name"] = "Fixture Challenge Over Ceiling"
+	hot["mass"] = 300.0  # crushes power-to-weight far OVER the highest band value
+	cars.append(hot)
+	CarLibrary.override_for_test(cars)
+	return _save.grant_car("fx_challenge_over_ceiling")
+
+
+# Start/Resume switches on ChallengeSession.resumable_run: a fresh entry shows "Start" and
+# OPENS THE REAL CAR PARK restricted to this kind's eligible cars (spec §7 point 4) rather
+# than committing straight from a focused list item; committing the car park's own Start
+# begins the run. Once that run is persisted, reopening the same kind's entry screen shows
+# "Resume" instead, and pressing it resumes directly (no car to pick) rather than restarting.
+func test_hq_challenge_start_opens_carpark_then_resume() -> void:
+	# _reset_to_first_run + the guaranteed-eligible fixture: the default starter car
+	# (before_each's _pick_starter) sits ABOVE today's lowest ceiling band and would
+	# also show up eligible-with-a-note (spec §2/§7 point 4) — sidestep that here by
+	# starting from an empty garage so the fixture is the ONLY eligible car, and Start
+	# in the car park commits it cleanly with no over-ceiling agreement in the way.
+	_reset_to_first_run()
+	var owned := _install_guaranteed_eligible_car()
+	var id := int(owned["instance_id"])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	assert_eq(hq._challenge_start_button.text.to_upper(), "START", "no stored run yet: the button reads Start")
+	assert_false(hq._challenge_start_button.disabled, "Start is enabled with an eligible car")
+	assert_string_contains(hq._challenge_progress_label.text.to_lower(), "not started",
+		"with no stored run the progress row reads Not started")
+
+	hq._on_challenge_start_pressed()
+	await get_tree().process_frame
+	assert_eq(hq._carpark_mode, hq.CarparkMode.CHALLENGE, "Start opens the challenge car park, not a direct commit")
+	assert_false(hq._challenge_layer.visible, "opening the car park closes the entry overlay")
+	assert_eq(hq._eligible.size(), 1, "the fixture car is the ONLY one parked in the REAL car-park lineup")
+	assert_eq(int(hq._eligible[0].get("instance_id", -1)), id, "it's the fixture car that's focused/parked")
+	assert_false(ChallengeSession.is_active(), "no run has begun yet — only the picker opened")
+
+	# Committing the focused car in the car park is what actually begins the run.
+	hq._on_start_pressed()
+	assert_true(ChallengeSession.is_active(), "committing the car park begins a ChallengeSession run")
+	assert_eq(ChallengeSession.kind(), ChallengeLibrary.DAILY, "the run is for the selected kind")
+
+	# Reopening the same kind's entry now offers Resume, since a run is stored for it.
+	hq._go_to(hq.View.GARAGE)
+	hq._open_challenge_overlay()
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	assert_eq(hq._challenge_start_button.text.to_upper(), "RESUME",
+		"a stored run for the current kind shows Resume instead of Start")
+	# A live run must SAY it's live — a bare "0 / N stages" reads the same as not
+	# started, and gives no hint that this kind is holding a car locked out of the
+	# other pickers. Stage counts come from the session (a tunable per kind), never
+	# pinned to a literal here.
+	var progress: String = hq._challenge_progress_label.text.to_upper()
+	assert_string_contains(progress, "IN PROGRESS",
+		"a resumable run marks the progress row as in progress")
+	assert_string_contains(progress, "%d/%d STAGES" % [
+		ChallengeSession.events_completed(), ChallengeSession.stage_count()],
+		"the progress row reports completed/total stages for the active run")
+	# The car is already committed and locked, so the eligible row must name THAT car
+	# alone — not the wider eligible set, which would imply a choice that no longer
+	# exists. Derived from the committed instance, never a hardcoded model name.
+	var locked_car: Dictionary = Save.get_car(ChallengeSession.car_instance_id())
+	var locked_name: String = EngineSwap.display_name(
+		CarLibrary.by_id(String(locked_car.get("model_id", ""))), locked_car)
+	# Compared upper-cased: UITheme.enforce applies the house uppercase styling to
+	# the rendered label, so the raw text is not the raw display name.
+	assert_eq(hq._challenge_eligible_label.text.to_upper(), locked_name.to_upper(),
+		"a run in progress shows only the locked car it was started with")
+
+	hq._on_challenge_start_pressed()
+	assert_true(ChallengeSession.is_active(), "Resume keeps the same run active — no car park involved")
+
+
+# An over-ceiling-but-detune-reachable car parks looking eligible in the challenge car
+# park (mirrors test_hq_carpark_routes_over_powered_car_to_change_upgrades for a normal
+# rally) — the detune is tracked via ChallengeSession.qualifying_detune_for against the
+# synthetic {"restriction": {"pw_max": ceiling}} shape, and pressing Start pops the same
+# "Too powerful" agreement instead of launching.
+func test_hq_challenge_carpark_routes_over_ceiling_car_to_change_upgrades() -> void:
+	# Start from an empty garage: the default starter car (before_each's _pick_starter)
+	# also sits over today's lowest ceiling band, which would make it a SECOND
+	# over-ceiling-but-reachable park entry and break the "exactly one" assertion below
+	# for reasons that have nothing to do with what this test is checking.
+	_reset_to_first_run()
+	var owned := _install_guaranteed_over_ceiling_car()
+	var id := int(owned["instance_id"])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._enter_challenge_car_screen(ChallengeLibrary.DAILY)
+	await get_tree().process_frame
+
+	assert_eq(hq._eligible.size(), 1, "the over-ceiling car still parks, looking eligible")
+	assert_true(hq._detune_needed.has(id),
+		"it carries its qualifying detune, via ChallengeSession.qualifying_detune_for")
+	var frac: float = hq._detune_needed.get(id, -1.0)
+	assert_between(frac, 0.01, 0.99, "the qualifying detune is a real down-tune")
+
+	hq._focus = 0
+	hq._focus_changed()
+	assert_false(hq._car_warning_label.visible, "no warning label — the car looks eligible in the park")
+	assert_false(hq._start_button.disabled, "Start stays enabled — pressing it opens the agreement")
+
+	await hq._on_start_pressed()
+	assert_true(is_instance_valid(hq._active_carpark_popup),
+		"pressing Start on an over-ceiling car pops the over-limit prompt instead of launching")
+	assert_false(ChallengeSession.is_active(), "no run began — the prompt intercepted Start")
 
 
 # Free roam (Test Drive) launches a plain drive: no rally session, and a fresh random seed each
@@ -1884,6 +2269,29 @@ func test_hq_lift_tune_sliders_save_tuning_per_car() -> void:
 	assert_true(_save.selected_car().get("tuning", {}).is_empty(), "Reset clears the tuning deltas")
 
 
+
+# Wheels moved off the lift hub row and into the Tuning menu itself. It's a real,
+# focusable button wired to the same _enter_wheel_swap the hub row used to call.
+func test_hq_lift_tuning_panel_has_a_wheels_button() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._enter_lift()
+	await get_tree().process_frame
+	hq._open_lift_page(hq.LiftPage.TUNE)
+	await get_tree().process_frame
+	assert_not_null(hq._tune_panel._wheels_button, "the Tuning panel has a Wheels button")
+	assert_true(hq._tune_panel._wheels_button.visible, "Wheels is shown when the host wires on_wheels")
+	assert_eq(hq._tune_panel._wheels_button.focus_mode, Control.FOCUS_ALL,
+		"Wheels is keyboard/gamepad focusable, matching the panel's native-focus sliders")
+	assert_false(hq._tune_panel._wheels_button.disabled, "Wheels is enabled")
+	# Firing it enters the wheel-swap flow (the solo car-park view), the same handoff
+	# the old hub-row Wheels button used.
+	hq._tune_panel._on_wheels_pressed()
+	assert_eq(hq._view, hq.View.CARPARK, "Wheels leaves the lift for the car park")
+	assert_eq(hq._carpark_mode, hq.CarparkMode.WHEELS, "Wheels opens the wheel-swap car park mode")
+
+
 func test_hq_lift_gates_locked_sliders_by_upgrade() -> void:
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -2199,6 +2607,83 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	assert_eq(RallySession.phase(), RallySession.Phase.RUNNING,
 		"the reveal's Next resumes the next event — one exit, reached once")
 	RallySession.abandon()
+
+
+# The SAME interstitial, after a Rally Challenge stage. world.gd loads
+# standings.tscn after every stage of both session types, so every RallySession
+# read in standings.gd branches on ChallengeSession.is_active() — before that it
+# rendered a blank board and its Continue was a dead no-op (the run could never
+# get past stage 1). See features/rally-challenge.md.
+func _challenge_after_stage_one() -> Control:
+	var car: Dictionary = _save.grant_car("fx_light_rwd")
+	var longest := ChallengeLibrary.WEEKLY
+	for kind_str in ChallengeLibrary.STAGE_COUNTS:
+		if int(ChallengeLibrary.STAGE_COUNTS[kind_str]) \
+				> int(ChallengeLibrary.STAGE_COUNTS.get(longest, 0)):
+			longest = String(kind_str)
+	assert_true(ChallengeSession.start(longest, car, int(Time.get_unix_time_from_system())))
+	ChallengeSession.report_event_result(50000)
+	var sc: Control = load("res://standings.tscn").instantiate()
+	add_child_autofree(sc)
+	return sc
+
+
+func test_standings_opens_a_challenge_stage_straight_on_the_world_board() -> void:
+	# A challenge has no AI opponents — only real people online — so page 1 (the local
+	# event standings) would be a table holding nothing but the player's own row. The
+	# interstitial skips it entirely and opens on the world board.
+	var sc := _challenge_after_stage_one()
+	await get_tree().process_frame
+	assert_true(sc._global_shown, "the challenge interstitial opens on the world board")
+	assert_false(is_instance_valid(sc._root_box), "page 1 is not left behind it")
+	assert_string_contains(_label_texts(sc), "ONLINE LEADERBOARD",
+		"what is shown is the online board, not a one-row local table")
+
+
+func test_standings_non_final_challenge_stage_collects_an_upgrade_reward() -> void:
+	var sc := _challenge_after_stage_one()
+	var won := ChallengeSession.stage_upgrade()
+	assert_ne(won, "", "a non-final challenge stage awarded an upgrade to collect")
+	await get_tree().process_frame
+
+	# A challenge skips page 1, so the ladder is two steps: the world board -> the
+	# reward. (A career rally still gets all three — see the rally test above.)
+	assert_true(sc._global_shown, "it opened straight on the world board")
+	assert_not_null(sc._global_page, "the world board is live")
+	assert_eq(sc._global_page._continue_button.text, UITheme.caps("Collect reward >"),
+		"the board names the challenge stage's reward — it is no longer granted silently")
+
+	sc._global_page._on_continue()
+	await get_tree().process_frame
+	assert_true(is_instance_valid(sc._reveal),
+		"the SAME UpgradeReveal card a rally event's reward uses")
+	assert_true(ChallengeSession.is_active(), "the run has not resumed behind the reveal")
+
+	# The reveal's Next is the single exit, and for a challenge it now resolves to
+	# ChallengeSession.continue_to_next_stage() rather than a dead RallySession call.
+	var entered: Array = []
+	ChallengeSession.stage_started.connect(func(idx: int) -> void: entered.append(idx))
+	sc._reveal.finished.emit()
+	await get_tree().process_frame
+	assert_eq(entered.size(), 1, "Continue actually advances the challenge to stage 2")
+	assert_true(ChallengeSession.is_active())
+	assert_eq(ChallengeSession.events_completed(), 1,
+		"and stage 2 is now the one to drive")
+
+
+func test_standings_final_challenge_stage_has_no_collect_reward() -> void:
+	var sc := _challenge_after_stage_one()
+	await get_tree().process_frame
+	# Drive out the rest of the run. The final stage draws no per-stage upgrade, and
+	# ends the run outright (world.gd routes it to HQ, not to another interstitial).
+	while ChallengeSession.is_active():
+		ChallengeSession.continue_to_next_stage()
+		ChallengeSession.report_event_result(50000)
+	assert_eq(ChallengeSession.stage_upgrade(), "",
+		"the final stage draws no per-stage reward to collect")
+	assert_false(ChallengeSession.is_active(), "and the run is over")
+	sc._reward_collected = false
+	assert_false(sc._reward_pending(), "so the interstitial offers no collect step")
 
 
 func test_standings_final_event_has_no_collect_reward() -> void:
@@ -2728,6 +3213,77 @@ func test_swap_button_without_a_token_is_disabled_until_one_is_owned() -> void:
 	assert_false(_find_swap_button(hq).disabled, "a token enables the swap")
 
 
+# The Mystery Box button lives on the garage row's TOP level now (see
+# _refresh_garage_row), not the Lift Upgrades page — find it by its label text
+# ("Mystery Box (N)"), same convention as _find_swap_button. Skips queue_free'd
+# buttons still lingering in the tree from a rebuild (queue_free is deferred, so
+# the OLD button can coexist with the NEW one for the rest of this frame).
+func _find_mystery_box_button(hq: Node3D) -> Button:
+	for child in hq._garage_actions_row.get_children():
+		if child.is_queued_for_deletion():
+			continue
+		if child is Button and String(child.text).to_lower().begins_with("mystery box"):
+			return child
+	return null
+
+
+func test_mystery_box_button_disabled_without_a_box_or_room() -> void:
+	# No box held -> the button is OMITTED entirely (not shown disabled). A box held
+	# but every other owned car maxed -> shown, but disabled (nowhere for the gift to
+	# land). A second, non-maxed car -> enabled and reachable via keyboard/gamepad nav
+	# (the garage row's ButtonCursor). Real catalogue needed: RewardSystem's
+	# mystery-box logic iterates the raw UpgradeLibrary.UPGRADES const regardless of
+	# this file's UpgradeFixtures override (same caveat test_reward_system.gd
+	# documents for draw_upgrade).
+	UpgradeFixtures.restore()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	assert_null(_find_mystery_box_button(hq), "no box held -> the button is omitted")
+
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	var maxed: Dictionary = _save.selected_car()
+	var all_parts := []
+	for item in UpgradeLibrary.UPGRADES:
+		if not item["consumable"] and not bool(item.get("free", false)):
+			all_parts.append(String(item["id"]))
+	maxed["installed_upgrades"] = all_parts
+	hq._refresh_garage_row()
+	var btn := _find_mystery_box_button(hq)
+	assert_not_null(btn, "a box is held -> the button appears")
+	assert_true(btn.disabled, "no other car has room -> still disabled")
+	assert_string_contains(btn.text, "(1)", "the button tracks the held count")
+
+	_save.grant_car("fx_rwd_coupe")
+	hq._refresh_garage_row()
+	btn = _find_mystery_box_button(hq)
+	assert_false(btn.disabled, "a second, non-maxed car gives the box somewhere to land")
+
+
+func test_opening_mystery_box_installs_it_on_the_other_car_and_shows_a_reveal() -> void:
+	UpgradeFixtures.restore()  # see comment in the test above
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	var maxed: Dictionary = _save.selected_car()
+	var all_parts := []
+	for item in UpgradeLibrary.UPGRADES:
+		if not item["consumable"] and not bool(item.get("free", false)):
+			all_parts.append(String(item["id"]))
+	maxed["installed_upgrades"] = all_parts
+	var other: Dictionary = _save.grant_car("fx_rwd_coupe")
+	hq._refresh_garage_row()
+	_find_mystery_box_button(hq).pressed.emit()
+	await get_tree().process_frame
+	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
+	var recipient: Dictionary = _save.get_car(int(other["instance_id"]))
+	assert_false((recipient["installed_upgrades"] as Array).is_empty(),
+		"the gift landed on the other car")
+
+
 func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> void:
 	# The detune-to-enter prompt offers "Change Upgrades…" as an alternative to detuning:
 	# it opens a popup hosting the UpgradesMenu for the focused car, keyboard/gamepad
@@ -2816,9 +3372,7 @@ func test_android_notice_is_navigable_and_back_dismisses() -> void:
 	nav._unhandled_input(_press("menu_back"))
 	assert_null(hq._android_notice_layer, "back dismisses the notice")
 	assert_true(hq._title_layer.visible, "dismissing restores the title overlay")
-	await get_tree().process_frame  # title MenuNav re-grabs on visibility
-	assert_eq(hq.get_viewport().gui_get_focus_owner(), hq._title_start_button,
-		"focus returns to the title Start button")
+	assert_eq(hq._title_focus, 0, "the title cursor is back on Start")
 
 
 # The final event used to skip straight to the podium. It now pauses on the SAME
@@ -3444,3 +3998,345 @@ func test_declining_the_name_prompt_writes_nothing_and_does_not_reopen() -> void
 	await get_tree().process_frame
 	assert_eq(UsernamePopup.current(), "", "cancelling writes no name")
 	assert_null(_popup_under(menu), "and the prompt does not immediately come back")
+
+
+# --- A challenge-committed car stays usable EVERYWHERE else ---------------------------
+#
+# A challenge locks the RUN to the car it started with; it does NOT reserve the car.
+# It stays fully usable in the garage, career rallies, engine swaps and free roam while
+# a run is in progress. An earlier design excluded it from all of those, which made an
+# owned car unusable across the whole game — these tests pin the corrected rule so that
+# exclusion can't come back.
+
+# Lock `id` by starting a real Daily challenge run on it.
+func _lock_car_in_a_challenge(id: int) -> void:
+	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _save.get_car(id),
+		int(Time.get_unix_time_from_system())), "setup: the challenge run starts")
+	assert_true(DrivingContext.is_car_locked(id), "setup: the run is committed to that car")
+
+
+func test_challenge_committed_car_is_still_offered_in_the_garage_picker() -> void:
+	var locked: Dictionary = _save.grant_car("fx_fwd_hatch")
+	var locked_id := int(locked["instance_id"])
+	_lock_car_in_a_challenge(locked_id)
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	hq._open_garage_picker()
+	await _await_lineup(hq)
+	var parked_ids: Array = []
+	for car in hq._eligible:
+		parked_ids.append(int(car.get("instance_id", -1)))
+	assert_true(parked_ids.has(locked_id),
+		"the car an active run is committed to is STILL parked in the garage — the run is locked to it, the car is not reserved")
+	assert_eq(hq._eligible.size(), _save.profile["cars"].size(),
+		"every owned car is parked; a live run excludes none of them")
+
+	# And the challenge still resumes on it — commitment and availability coexist.
+	var run := ChallengeSession.resumable_run(Save.profile, int(Time.get_unix_time_from_system()))
+	assert_eq(int(run.get("car_instance_id", -1)), locked_id,
+		"the run is still fixed to that car")
+
+
+func test_challenge_committed_car_is_still_an_engine_swap_partner() -> void:
+	var current: Dictionary = _save.grant_car("fx_awd")
+	var current_id := int(current["instance_id"])
+	var locked: Dictionary = _save.grant_car("fx_fwd_hatch")
+	var locked_id := int(locked["instance_id"])
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+
+	var before: Array = []
+	for car in hq._swap_targets(current_id):
+		before.append(int(car.get("instance_id", -1)))
+	assert_true(before.has(locked_id), "precondition: it IS an ordinary swap partner while unlocked")
+
+	_lock_car_in_a_challenge(locked_id)
+	var after: Array = []
+	for car in hq._swap_targets(current_id):
+		after.append(int(car.get("instance_id", -1)))
+	assert_true(after.has(locked_id),
+		"a car an active run is committed to is STILL a valid swap partner — the run is locked to it, the car is not reserved")
+	assert_eq(after.size(), before.size(), "starting a run removes no swap partner")
+
+
+# --- Free roam seats the WHOLE track config, not a subset (spec item 3) ---------
+#
+# Config.data is never reset between scenes, so any field free roam doesn't write
+# survives from the last event that did. Free roam therefore goes through the same
+# canonical writer a rally does (RallySession.apply_event_config), which pins every
+# field the caller omits back to the authored baseline.
+func test_hq_free_roam_clears_a_previous_events_track_shape() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+
+	# Poison the live config the way a just-finished rally would: every field the old
+	# hand-written free-roam setup did NOT touch. Values are deliberately absurd (not
+	# tunings) — the point is only that they must not survive into free roam.
+	var base: GameConfig = load(Config.CONFIG_PATH)
+	Config.data.track_turn_count = base.track_turn_count + 37
+	Config.data.track_width = base.track_width + 11.0
+	Config.data.terrain_layer2_amplitude = base.terrain_layer2_amplitude + 123.0
+	Config.data.terrain_layer3_wavelength = base.terrain_layer3_wavelength + 456.0
+
+	hq._prepare_free_roam()
+
+	assert_eq(Config.data.track_turn_count, base.track_turn_count,
+		"free roam resets the turn count to the authored baseline, not the last event's")
+	assert_almost_eq(Config.data.track_width, base.track_width, 0.001,
+		"free roam resets the track width to the authored baseline")
+	assert_almost_eq(Config.data.terrain_layer2_amplitude, base.terrain_layer2_amplitude, 0.001,
+		"a previous event's terrain layer-2 amplitude can't leak into free roam")
+	assert_almost_eq(Config.data.terrain_layer3_wavelength, base.terrain_layer3_wavelength, 0.001,
+		"nor its layer-3 wavelength")
+	assert_almost_eq(Config.data.cliff_amount, base.cliff_amount, 0.001,
+		"free roam runs the game's normal cliffs — the authored baseline, not the last event's")
+
+
+# --- Every start path runs the same pre-flight (spec item 6) -------------------
+
+# Committing a car to a challenge run also SELECTS it, so the tuning lift shows the car
+# the player last raced — the career start always did this; the challenge start skipped it.
+func test_hq_challenge_start_selects_the_fielded_car() -> void:
+	_reset_to_first_run()
+	var owned := _install_guaranteed_eligible_car()
+	var id := int(owned["instance_id"])
+	_save.profile["selected_instance_id"] = -1  # nothing selected going in
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._on_challenge_start_pressed()
+	await get_tree().process_frame
+	assert_eq(hq._carpark_mode, hq.CarparkMode.CHALLENGE, "setup: the challenge car park is open")
+
+	await hq._on_start_pressed()
+	assert_true(ChallengeSession.is_active(), "the run started")
+	assert_eq(_save.selected_instance_id(), id,
+		"fielding a car for a challenge selects it too, same as a career start")
+
+
+# The mobile control-scheme gate belongs to EVERY start path, not just the career one:
+# a touch player whose first-ever drive is a challenge must still be asked to pick a
+# scheme, and confirming the gate resumes the CHALLENGE start (not the career one).
+func test_hq_mobile_challenge_start_gates_on_control_scheme_pick() -> void:
+	Config.data.mobile_controls_force = true  # simulate a touch device
+	_reset_to_first_run()
+	_install_guaranteed_eligible_car()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	hq._open_challenge_overlay()
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	hq._on_challenge_start_pressed()
+	await get_tree().process_frame
+	assert_eq(hq._carpark_mode, hq.CarparkMode.CHALLENGE, "setup: the challenge car park is open")
+	assert_null(_save.get_setting(MobileControls.SETTING_KEY, null), "setup: no control preference yet")
+
+	await hq._on_start_pressed()
+	assert_eq(hq._view, hq.View.SETTINGS, "a first mobile challenge start shows the control picker")
+	assert_true(hq._settings_gate, "the picker is in pre-start gate mode")
+	assert_false(ChallengeSession.is_active(), "the run hasn't started — it's gated on the pick")
+
+	hq._on_settings_action()
+	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)), MobileControls.DEFAULT_SCHEME,
+		"confirming the gate persists the chosen scheme")
+	await get_tree().process_frame
+	assert_true(ChallengeSession.is_active(),
+		"confirming resumes the CHALLENGE start it interrupted, not the career one")
+	assert_false(RallySession.is_active(), "and it is not a career rally that started")
+
+
+# Same gate on the free-roam path, which also used to skip it.
+func test_hq_mobile_free_roam_gates_on_control_scheme_pick() -> void:
+	Config.data.mobile_controls_force = true
+	RallySession.free_roam_instance_id = -1
+	RallySession.free_roam_model_id = ""
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	assert_null(_save.get_setting(MobileControls.SETTING_KEY, null), "setup: no control preference yet")
+
+	await hq._launch_free_roam(_save.selected_instance_id(), "")
+	assert_eq(hq._view, hq.View.SETTINGS, "a first mobile free-roam drive shows the control picker")
+	assert_true(hq._settings_gate, "the picker is in pre-start gate mode")
+	assert_eq(RallySession.free_roam_instance_id, -1,
+		"no car was handed to free roam — the launch is gated on the pick")
+
+
+# A board fetch that really suspends, so "in flight" is observable.
+func _slow_board(_key: String, _time_ms: int, _identity: Dictionary) -> Dictionary:
+	await get_tree().process_frame
+	return {"ok": true, "error": "", "rows": [], "total": 0, "signed_in": false,
+		"player_rank": 0, "player_row": {}, "posted": false}
+
+
+# The global page's wait is the SHARED one (scripts/cloud/cloud_busy.gd), in its
+# ambient shape — no cover, because nothing here may block a rally. Assert the
+# relationship (busy during, gone after), never the copy.
+func test_global_page_shows_the_shared_busy_state_while_fetching() -> void:
+	var page := _global_page(_slow_board)
+	assert_true(CloudBusy.showing(page), "a fetch in flight says so")
+	assert_eq(page.state(), GlobalStandings.State.LOADING, "and the page reads as loading")
+	var covers := 0
+	for child in page.get_children():
+		if child.is_in_group("loading_screen"):
+			covers += 1
+	assert_eq(covers, 0, "a leaderboard read is ambient — it must not throw up a cover")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_false(CloudBusy.showing(page), "and the busy state is gone once it lands")
+	assert_ne(page.state(), GlobalStandings.State.LOADING, "with the page repainted")
+	assert_false(page._continue_button.disabled, "Continue was never blocked by the wait")
+
+
+# --- Challenge placing on the entry screen -------------------------------------
+# A finished period shows COMPLETED, then gains "- 3 of 42" from a LIVE board query.
+# Never a stored rank: only live periods survive the outcome prune, so every
+# completed record on screen belongs to a board that is still taking entries — the
+# field grows and faster times push the player down after they finish.
+
+class _StubBoard:
+	extends Node
+	var answer: Dictionary = {"ok": false}
+	var calls := 0
+	var gate: Array = []  # non-empty -> park here until the test clears it
+
+	func fetch_final_rank(_period_key: String, _stage_count: int) -> Dictionary:
+		calls += 1
+		while not gate.is_empty():
+			await Engine.get_main_loop().process_frame
+		return answer
+
+
+# The placing query needs a signed-in Cloud (fetch_final_rank can only find the
+# player's own row with a token), so these swap in a fake auth and put the real one
+# back afterwards.
+var _real_auth = null
+var _real_board = null
+
+
+func _sign_in_for_placing() -> void:
+	_real_auth = Cloud.auth
+	var auth := AuthService.new()
+	auth.uid = "uid123"
+	auth.refresh_token = "refresh"
+	auth.id_token = "id"
+	auth.expires_at = Time.get_unix_time_from_system() + 3600.0
+	Cloud.auth = auth
+
+
+func _restore_after_placing() -> void:
+	Cloud.auth = _real_auth
+	Cloud.challenge_leaderboard = _real_board
+	# MUST be cleared. A leaked completed period makes every LATER test in this file
+	# render the COMPLETED row, which fires a placing query against whatever board is
+	# installed by then — the real one, i.e. a live network request per test.
+	Save.profile["challenge_results"] = {}
+
+
+func _hq_with_a_completed_daily(board: Node) -> Node3D:
+	_reset_to_first_run()
+	_install_guaranteed_eligible_car()
+	var t := int(Time.get_unix_time_from_system())
+	var key := String(ChallengeLibrary.current_period(ChallengeLibrary.DAILY, t)["key"])
+	# Seat a finished (non-DNF) outcome directly — this is about how the row RENDERS,
+	# not about driving a run to its end.
+	Save.profile["challenge_results"] = {
+		key: {"kind": ChallengeLibrary.DAILY, "dnf": false, "cumulative_ms": 1},
+	}
+	_real_board = Cloud.challenge_leaderboard
+	Cloud.challenge_leaderboard = board
+	_sign_in_for_placing()
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._open_challenge_overlay()
+	return hq
+
+
+func test_a_completed_period_shows_the_live_placing() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": true, "rank": 3, "total_entries": 42}
+	var hq := await _hq_with_a_completed_daily(board)
+
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	assert_eq(hq._challenge_progress_label.text.to_upper(), "COMPLETED",
+		"the row is correct immediately, before the board answers")
+	for _i in 5:
+		await get_tree().process_frame
+
+	var text: String = hq._challenge_progress_label.text.to_upper()
+	assert_string_contains(text, "COMPLETED", "it still says the period is done")
+	assert_string_contains(text, "3 OF 42", "and gains the placing the board reported")
+	assert_true(board.calls > 0, "the placing came from a live query, not a stored value")
+	_restore_after_placing()
+
+
+func test_a_completed_period_stays_at_completed_when_the_board_cannot_answer() -> void:
+	# Signed out, no username, or the board is unreachable — all read the same way.
+	# The row must degrade to a bare COMPLETED, never to "0 of 0" or an error.
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": false}
+	var hq := await _hq_with_a_completed_daily(board)
+
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(hq._challenge_progress_label.text.to_upper(), "COMPLETED",
+		"an unanswerable board leaves the row exactly as it was")
+	_restore_after_placing()
+
+
+func test_a_placing_never_lands_on_a_different_kinds_row() -> void:
+	# The player can switch tabs while the query is in flight. Without the re-check
+	# the Daily's placing would be written onto whatever row is showing now.
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": true, "rank": 3, "total_entries": 42}
+	board.gate = [true]  # hold the answer until we have switched away
+	var hq := await _hq_with_a_completed_daily(board)
+
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	await get_tree().process_frame
+	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	var weekly_text: String = hq._challenge_progress_label.text
+	board.gate = []  # let the daily's query answer, now that the row belongs to weekly
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(hq._challenge_progress_label.text, weekly_text,
+		"the daily's placing does not overwrite the weekly's row")
+	_restore_after_placing()
+
+
+func test_a_signed_out_player_never_queries_the_board_for_a_placing() -> void:
+	# fetch_final_rank needs a token to find the player's own row, so signed out it
+	# can only answer "not ok" — but it issues the board query before discovering
+	# that. Asking anyway would be a real network round trip on every visit to the
+	# page, for an answer that cannot exist.
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": true, "rank": 3, "total_entries": 42}
+	var hq := await _hq_with_a_completed_daily(board)
+	Cloud.auth = _real_auth  # undo the fake sign-in: this test is the signed-out case
+
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(board.calls, 0, "no query is made at all when signed out")
+	assert_eq(hq._challenge_progress_label.text.to_upper(), "COMPLETED",
+		"and the row still reads correctly")
+	_restore_after_placing()

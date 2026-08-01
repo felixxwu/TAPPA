@@ -148,6 +148,23 @@ func pull() -> Dictionary:
 		_set_status(Status.SYNCED, "Up to date")
 		return {"ok": true, "state": "applied", "error": ""}
 
+	# Both sides moved on — but ONE case is not a real dilemma. If this device has no
+	# cars at all, the local "progress" is a wiped save: something was reset, cleared
+	# or reinstalled, and the only thing that would be lost by taking the cloud is an
+	# empty garage. Asking there is worse than useless — it presents a fresh blank
+	# profile as an equal alternative to the player's real career, and one mis-tap on
+	# "keep this device" uploads the blank over it. So take the cloud, provided the
+	# cloud actually HAS something (a wiped local against a wiped cloud is a genuine
+	# nothing-to-choose-between, and apply_remote's backup still covers the player if
+	# this ever fires when they did not expect it).
+	if _local_is_wiped() and _remote_has_progress(remote):
+		var recovered := apply_remote(remote, true)
+		if recovered.ok:
+			_set_status(Status.SYNCED, "Up to date")
+			return {"ok": true, "state": "applied", "error": ""}
+		# Fall through to the prompt: if the restore failed, the player still needs
+		# to be told their progress differs rather than left silently blocked.
+
 	# Both sides moved on. Ask; do not guess.
 	_conflict = remote
 	blocked_by_conflict = true
@@ -214,9 +231,49 @@ func _push_inner() -> Dictionary:
 	return {"ok": true, "error": ""}
 
 
+# Publish the CURRENT (just-wiped) local profile over the cloud copy.
+#
+# WHY A DEV WIPE HAS TO REACH THE CLOUD. `Save.reset_new_game()` only clears this
+# device. Leave the remote copy alone and the very next pull sees "cloud is ahead,
+# local is clean" and restores everything — and with the wiped-local auto-restore
+# above it does so without even asking. The wipe would appear to work and then
+# silently undo itself, which is worse than not offering it. So the wipe is pushed:
+# after this, the cloud holds the blank profile too.
+#
+# Also DISCARDS any pending conflict: the local side of that decision no longer
+# exists, so keeping the prompt alive would offer the player a choice between the
+# cloud and a save they just deleted on purpose.
+func push_wipe() -> Dictionary:
+	_conflict = {}
+	blocked_by_conflict = false
+	pending = true
+	return await push(true)
+
+
 # --- Conflict resolution -----------------------------------------------------
 
 # A player-legible description of both sides, for the prompt.
+# "This device has nothing to lose." CARS, not any other counter: a car is the one
+# thing a career cannot exist without (the starter pick grants one before anything
+# else can happen), so an empty garage means the save is blank no matter what else
+# is set. Deliberately NOT keyed on `starter_picked` — a wiped profile that somehow
+# kept that flag would still be empty, and a player mid-starter-pick has no cars
+# either, which is exactly the case reported: signed in, progress gone, happily
+# offered a starter car while a real career sat in the cloud.
+func _local_is_wiped() -> bool:
+	return Array(Save.profile.get("cars", [])).is_empty()
+
+
+# The cloud copy has a career worth restoring. Guards the auto-take: replacing an
+# empty local with an equally empty remote is not a recovery, and doing it silently
+# would hide a genuine "both sides are blank" state behind a fake success.
+func _remote_has_progress(remote: Dictionary) -> bool:
+	var parsed: Variant = _parse_profile(String(remote.get("profile", "")))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return false
+	return not Array((parsed as Dictionary).get("cars", [])).is_empty()
+
+
 func conflict_summary() -> Dictionary:
 	if _conflict.is_empty():
 		return {}

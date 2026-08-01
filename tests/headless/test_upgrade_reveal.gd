@@ -29,6 +29,9 @@ func after_each() -> void:
 	CarFixtures.restore()
 	if RallySession.is_active():
 		RallySession.abandon()
+	if ChallengeSession.is_active():
+		ChallengeSession.abandon()
+	Save.profile["challenge_run"] = {}
 	RallySession.auto_load_scenes = true
 	RallyLibrary.reset()
 
@@ -213,3 +216,54 @@ func test_finishing_the_upgrades_menu_continues_the_flow_like_next() -> void:
 	w._upgrades_back.pressed.emit()  # no rally limit set → Done closes freely
 	assert_false(w._upgrades_overlay.visible, "Done closes the overlay")
 	assert_true(done[0], "finishing Upgrades continues the flow exactly like Next")
+
+
+# --- Challenge run: the ceiling applies, and the repair kit can't be spent -----------
+#
+# The reveal's Upgrades overlay used to read RallySession.rally_id()'s restriction
+# directly, which resolves to "no limit" mid-challenge (rally_id() is "") — so a
+# challenge car had NO p/w gate here at all. It now goes through DrivingContext.
+# Separately, spending a won repair kit on the locked car would heal the very damage
+# the run's damage-carries-over contract says must persist (spec §6).
+
+func _start_challenge_on(id: int) -> void:
+	ChallengeSession.auto_load_scenes = false
+	assert_true(ChallengeSession.start(ChallengeLibrary.DAILY, _save.get_car(id),
+		int(Time.get_unix_time_from_system())), "setup: the challenge run starts")
+
+func test_upgrades_overlay_gets_the_challenges_ceiling_not_no_limit() -> void:
+	var car: Dictionary = _save.grant_car("fx_awd")
+	var id := int(car["instance_id"])
+	_start_challenge_on(id)
+	assert_false(RallySession.is_active(), "setup: no rally is running alongside the challenge")
+	_save.install_upgrade(id, "fx_aero", false)
+	var w := _make()
+	w.reveal("fx_aero", id)
+	await get_tree().process_frame
+	w._upgrades_button.pressed.emit()
+	# Derived from the same accessor the code uses — the authored ceiling BAND is
+	# tunable, so nothing pins a number; what matters is that a real cap arrived.
+	assert_ne(w._upgrades_menu._pw_limit, DrivingContext.NO_LIMIT,
+		"a challenge run's mid-run Upgrades overlay carries a real p/w ceiling")
+	assert_eq(w._upgrades_menu._pw_limit, ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
+		"and it's the period's own rolled ceiling")
+
+func test_repair_now_is_still_offered_during_a_challenge_run() -> void:
+	# A challenge locks the RUN to its car; it does not freeze the car's condition.
+	# The player can already repair between stages via the garage, so refusing the kit
+	# here only made the reveal inconsistent with the rest of the game. The weakened
+	# damage carry-over is a deliberate, accepted consequence of that rule.
+	var car: Dictionary = _save.grant_car("fx_awd")
+	var id := int(car["instance_id"])
+	_start_challenge_on(id)
+	_save.apply_damage(id, 200.0)
+	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1, false)
+	var damaged_hp := float(_save.get_car(id)["hp"])
+	assert_lt(damaged_hp, float(CarLibrary.by_id("fx_awd").get("max_hp", 0.0)),
+		"precondition: the driven car is damaged, so Repair now is the relevant branch")
+	assert_true(DrivingContext.is_car_locked(id), "precondition: a run is committed to this car")
+	var w := _make()
+	w.reveal(UpgradeLibrary.REPAIR_KIT_ID, id)
+	await get_tree().process_frame
+	assert_true(w._choice_pending, "an active run no longer suppresses the Repair-now prompt")
+	assert_true(w._choice_box.visible, "the Repair now / Save it buttons are shown")

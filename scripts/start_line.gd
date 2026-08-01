@@ -2,7 +2,8 @@ class_name StartLine
 extends Node3D
 # The pre-event start-line sequence (todo/menus.md location 2) — the cinematic
 # moment between picking a car in HQ and the 3·2·1·GO countdown. It runs inside the
-# live run scene (main.tscn) once the world is built and a RallySession is active,
+# live run scene (main.tscn) once the world is built and a session is active — a
+# RallySession event OR a ChallengeSession stage (features/rally-challenge.md) —
 # while the car is held locked by the StageManager's STAGING phase:
 #
 #   1. MENU     — black house-style panels offer Start / Upgrades / Tune Car under a
@@ -10,6 +11,9 @@ extends Node3D
 #      launches with the Start button, menu_select or a tap (eligibility gates first).
 #   2. FLY_IN   — the camera flies from the orbit pose to a fixed low 3/4 shot in front
 #      of the start line, facing the car on the line, and holds there.
+#      A challenge stage runs this identical MENU — the same Upgrades / Tune Car
+#      overlays on the same locked car — and then skips straight to the fade, since
+#      it has no rival field to reveal (the empty-leaders path below).
 #   3. REVEAL   — the three cars ahead of the player are the REAL top-three rivals for
 #      this event (their actual cars). A card shows the front car's driver, the car and
 #      the time to beat, with a Next button. Next sends that car off the line and REVEALS
@@ -113,6 +117,32 @@ static var active_instance: StartLine = null
 
 func _cfg() -> GameConfig:
 	return Config.data
+
+
+# The OwnedCar being driven this stage — the ONE place this scene resolves "whose
+# car is on the line". A challenge run fields ChallengeSession's locked car
+# (spec §2); a rally event fields RallySession's. Every consumer (the launch
+# eligibility gate, the Tune Car panel, the Upgrades menu and its live refit) goes
+# through this rather than branching for itself, so there is a single answer.
+#
+# Free roam is deliberately NOT folded in here: it is session-less, never stages
+# (world.gd._should_stage() requires an active session, so no StartLine is ever
+# built for it), and its car may be a bare catalogue MODEL that isn't an OwnedCar
+# at all (RallySession.free_roam_model_id) — a different question with a different
+# answer, resolved once in world.gd's fielding chain.
+func _driven_car() -> Dictionary:
+	return DrivingContext.driven_car()
+
+
+# Total stages in this event set: the rally's own authored event list, or — for a
+# challenge, which has no authored events — the active run's stage count.
+func _stage_total(rally: Dictionary) -> int:
+	var total: int = rally.get("events", []).size()
+	if total > 0:
+		return total
+	if ChallengeSession.is_active():
+		return ChallengeSession.stage_count()
+	return RallySession.EVENTS_PER_RALLY
 
 
 # Build the start-line sequence around the fielded car. `leaders` is the top-three
@@ -270,9 +300,7 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	top_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 	top_panel.add_child(top_box)
 
-	var total: int = rally.get("events", []).size()
-	if total <= 0:
-		total = RallySession.EVENTS_PER_RALLY
+	var total := _stage_total(rally)
 	_subtitle_label = UITheme.title("%s — Stage %d of %d" % [String(rally.get("name", "Rally")), event_index + 1, total])
 	top_box.add_child(_subtitle_label)
 
@@ -445,8 +473,9 @@ func _ordinal(n: int) -> String:
 
 # Map driver name → overall championship position from the standings so far, for the
 # reveal card's OVERALL stat. Empty on event 1 (nothing raced yet → everyone tied, so the
-# ranking is meaningless) or when no session is active (dev/test) — the card hides the row
-# rather than showing a bogus "1ST" for everyone.
+# ranking is meaningless) or when no rally is active (dev/test, or a challenge run — which
+# has no rival field at all, spec §3, so it passes no leaders and never reveals a card) —
+# the card hides the row rather than showing a bogus "1ST" for everyone.
 func _build_overall_ranks() -> void:
 	_overall_rank = {}
 	if _event_index <= 0 or not RallySession.is_active():
@@ -679,7 +708,7 @@ func launch() -> void:
 	if _launched or _seq != Seq.MENU:
 		return
 	if not _rally.is_empty():
-		var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+		var owned := _driven_car()
 		if not owned.is_empty():
 			var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
 			var meta := UpgradeLibrary.effective_meta(owned, entry)
@@ -792,11 +821,12 @@ func _despawn_grid() -> void:
 
 # --- Pre-race menus (Upgrades / Tune Car) ------------------------------------
 
-# The rally's power-to-weight ceiling for the pre-race tune / upgrades menus (-1 = no
-# cap): the restriction's pw_max, or -1 when there's no active rally restriction.
+# The power-to-weight ceiling for the pre-race tune / upgrades menus (-1 = no cap).
+# A thin wrapper over DrivingContext.pw_limit(), which answers for whichever
+# session is fielding the car — a career rally's authored `restriction.pw_max`
+# or a challenge period's rolled ceiling — so this screen never has to branch.
 func _pw_limit() -> float:
-	var restriction: Dictionary = _rally.get("restriction", {}) if not _rally.is_empty() else {}
-	return float(restriction.get("pw_max", -1.0))
+	return DrivingContext.pw_limit()
 
 
 # Build a pre-race menu overlay: a CanvasLayer (layer 6, above the start overlay) with a
@@ -853,7 +883,7 @@ func _open_tune() -> void:
 		return
 	if _tune_layer == null:
 		_build_tune_overlay()
-	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+	var owned := _driven_car()
 	_tune_panel.setup(owned, _on_tune_changed.bind(owned))
 	_tune_panel.refresh()
 	_open_menu(_tune_layer, _tune_panel.first_slider(), _close_tune)
@@ -883,7 +913,7 @@ func _open_upgrades() -> void:
 		return
 	if _upgrades_layer == null:
 		_build_upgrades_overlay()
-	var owned: Dictionary = Save.get_car(RallySession.car_instance_id())
+	var owned := _driven_car()
 	_upgrades_menu.setup(owned, _on_upgrade_changed, Callable(), _pw_limit())
 	_upgrades_menu.bind_close_button(_upgrades_back, _close_upgrades)
 	_open_menu(_upgrades_layer, _upgrades_menu.first_control(), _upgrades_menu.request_close)
@@ -907,7 +937,7 @@ func _build_upgrades_overlay() -> void:
 # body (refit_upgrades, NOT apply_owned).
 func _on_upgrade_changed() -> void:
 	if _player != null and _player.has_method("refit_upgrades"):
-		_player.refit_upgrades(Save.get_car(RallySession.car_instance_id()))
+		_player.refit_upgrades(_driven_car())
 
 
 # The engine-detune fraction at which the car passes the rally's power-to-weight ceiling.

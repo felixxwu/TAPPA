@@ -83,6 +83,21 @@ var free_roam_model_id := ""
 # Only consulted while a free-roam car is set (see world.gd _current_region_look).
 var free_roam_region_id := ""
 
+
+# THE one place "a real session supersedes a pending free-roam pick" is spelled
+# out. Called by start_rally, ChallengeSession.start/resume and Benchmark.start —
+# all three field their own car and author their own region, so a leftover
+# free-roam pick must never survive into them. Clearing the REGION too (which the
+# old inline copy in start_rally forgot) is what stops a free-roam drive's random
+# sky/ground/tree mix leaking into the next session's stage: world.gd
+# _current_region_look only consults free_roam_region_id while a free-roam car is
+# set, but a Pause -> Quit from free roam leaves BOTH set. See
+# todo/challenge-career-reuse-drift.md item 9.
+func clear_free_roam_handoff() -> void:
+	free_roam_instance_id = -1
+	free_roam_model_id = ""
+	free_roam_region_id = ""
+
 # When true (the default for real play) RallySession performs the per-event scene
 # loads itself. Headless tests set it false and drive report_* directly with
 # precomputed target times, so no track generation or scene reload happens.
@@ -106,8 +121,7 @@ var standings_overlay_host := false
 func start_rally(rally: Dictionary, owned_car: Dictionary, skip_track_gen := false) -> void:
 	_rally = rally
 	# A real rally supersedes any pending free-roam pick (world fields the session car).
-	free_roam_instance_id = -1
-	free_roam_model_id = ""
+	clear_free_roam_handoff()
 	_car_instance_id = int(owned_car.get("instance_id", -1))
 	_car_model_id = String(owned_car.get("model_id", ""))
 	# Keep only the fielded car's pending detune revert. An agreement whose start
@@ -414,9 +428,7 @@ func _enter_event() -> void:
 	# scene reloads, so world.gd fields the already-repaired car (and shows the popup
 	# from take_pending_repair). See features/damage.md.
 	if _event_index >= 1 and _car_instance_id >= 0:
-		var cfg := Config.data
-		_pending_repair = Save.field_repair(_car_instance_id,
-			cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
+		_pending_repair = _apply_field_repair()
 	_set_phase(Phase.RUNNING)
 	var event := current_event()
 	event_started.emit(_event_index, event)
@@ -434,9 +446,40 @@ func take_pending_repair() -> Dictionary:
 	return r
 
 
+# Shared repair-application: patch the fielded car up by the same partial fraction
+# used at every stage-to-stage transition (Save.field_repair with cfg's
+# field_repair_hp_fraction / field_repair_toe_fraction). Extracted so the
+# between-event repair (_enter_event) and the final-event repair (_resolve_results)
+# can't drift apart on which fractions they apply. Caller decides what (if
+# anything) to do with the returned summary.
+#
+# STATIC, and public, because ChallengeSession's stage-to-stage and final-stage
+# repairs go through it too (todo/challenge-career-reuse-drift.md item 5) — it
+# used to hand-roll the same two config reads as _field_repair_for_next_stage,
+# which is exactly the one-rule-two-places drift this fold removes.
+static func apply_field_repair_to(instance_id: int) -> Dictionary:
+	if instance_id < 0:
+		return {"repaired": false}
+	var cfg := Config.data
+	return Save.field_repair(instance_id,
+		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
+
+
+func _apply_field_repair() -> Dictionary:
+	return apply_field_repair_to(_car_instance_id)
+
+
 # Total the events, place against the field, record completion + grant rewards on
 # a top-3 finish (showdown wins instead of a car draw), then finish back to IDLE.
 func _resolve_results() -> void:
+	# The same partial pit repair every other stage-to-stage transition gets — applied
+	# here too, since the final event's damage would otherwise never be repaired (it
+	# has no "next event" for _enter_event to patch it up before). Applied SILENTLY:
+	# the result is discarded rather than stashed in _pending_repair, so it never
+	# surfaces the between-event repair popup during the podium/results flow, which
+	# has its own reveal UI. See features/damage.md.
+	if _car_instance_id >= 0:
+		_apply_field_repair()
 	_set_phase(Phase.RESULTS)
 	var combined := -1
 	var placed := -1
@@ -575,11 +618,11 @@ func _generate_event_tracks(rally: Dictionary) -> Array:
 	return results
 
 
-# Write the event's track parameters into the live config and reload the run
-# scene. The load hides under the menus fly-through/fade (todo/menus.md). Mirrors
-# apply_car's runtime Config.data mutation.
-func _load_event_scene(event: Dictionary) -> void:
-	apply_event_config(Config.data, event)
+# Reload the run scene for `event`. The load hides under the menus fly-through/fade
+# (todo/menus.md). The event's track parameters are NOT written here: world.gd._ready
+# pulls them via DrivingContext.apply_stage_config from whichever session is active,
+# so scene entry has no ordering dependency on a producer remembering to seat them.
+func _load_event_scene(_event: Dictionary) -> void:
 	get_tree().change_scene_to_file("res://main.tscn")
 
 

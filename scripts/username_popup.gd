@@ -73,8 +73,23 @@ static func sanitize(raw: String) -> String:
 # --- Building -----------------------------------------------------------------
 
 # host: parent to attach under (its process mode is inherited, as ConfirmPopup's
-# is). Returns the live popup so the caller can await/connect `finished`.
+# is). Returns the live popup so the caller can await/connect `finished` — or NULL
+# when another modal is already on screen.
+#
+# SAME EXCLUSIVITY RULE AS ConfirmPopup, deliberately sharing its group rather than
+# owning a second one: this popup is on the same layer 101, so "a modal is up" has
+# to mean the same thing to both or they stack. Up to three AccountMenu instances
+# can be alive at once and each used to keep its own `_username_prompt_open` bool
+# (two of the three call sites checked nothing at all) — the exact topology that
+# produced the double conflict prompt.
 static func open(host: Node) -> UsernamePopup:
+	if not is_instance_valid(host) or not host.is_inside_tree():
+		return null
+	var live := ConfirmPopup.any_open(host.get_tree())
+	if live != null:
+		push_warning("UsernamePopup refused: '%s' is already on screen." % [
+			live.get_meta("modal_title", "another modal")])
+		return null
 	var popup := UsernamePopup.new()
 	host.add_child(popup)
 	popup._build()
@@ -83,6 +98,8 @@ static func open(host: Node) -> UsernamePopup:
 
 func _build() -> void:
 	layer = 101  # above overlays, same as ConfirmPopup
+	add_to_group(ConfirmPopup.MODAL_GROUP)  # one modal at a time — see ConfirmPopup
+	set_meta("modal_title", "Choose a name")
 
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)

@@ -183,9 +183,44 @@ immediately.
 | `revision <= cloud_revision` | clean | Nothing |
 | `revision <= cloud_revision` | unsynced | Push |
 | `revision > cloud_revision` | clean | Download and apply |
+| `revision > cloud_revision` | unsynced, **no cars** | **Auto-restore the cloud** (see below) |
 | `revision > cloud_revision` | unsynced | **Conflict → ask the player** |
 | `schema_version > SCHEMA_VERSION` | any | Refuse; do not push either |
 | blob unparseable | any | Report; never overwrite the remote copy |
+
+### The one case that is resolved automatically: a wiped local save
+
+If both sides moved on but **this device has no cars at all**, there is no dilemma
+to put to the player — the local "progress" is a blank save (a reset, a clear, a
+reinstall), and the only thing taking the cloud can cost them is an empty garage.
+Asking there is actively harmful: it presents a fresh blank profile as an equal
+alternative to a real career, and one mis-tap on "keep this device" uploads the
+blank straight over it. So `CloudSync.pull` takes the cloud copy itself
+(`_local_is_wiped() and _remote_has_progress(remote)` → `apply_remote(remote, true)`),
+still writing the `profile.json.conflict.bak` backup.
+
+**Keyed on CARS, not on `starter_picked`.** A car is the one thing a career cannot
+exist without — the starter pick grants one before anything else can happen — so an
+empty garage means the save is blank regardless of what other flags survived. It also
+covers the reported case exactly: signed in, progress gone, and the game happily
+offering a starter car while the real career sat in the cloud.
+
+Both guards matter. A wiped local against a wiped **cloud** is a genuine
+nothing-to-choose-between and still prompts, and if `apply_remote` fails the code
+falls through to the normal prompt rather than leaving sync silently blocked.
+
+### The dev wipe must clear the cloud too
+
+`Settings -> Dev -> Wipe all progress` calls `Save.reset_new_game()`, which only
+clears THIS device. On its own that wipe silently undoes itself: the next pull sees
+a clean local against an ahead cloud and downloads everything back — and with the
+wiped-local auto-restore above it does so without even asking. So `_wipe_progress`
+follows the local reset with `Cloud.publish_local_wipe()` →
+`CloudSync.push_wipe()`, which force-pushes the blank profile over the remote copy
+and discards any pending conflict (the local side of that decision no longer
+exists). It runs behind the shared `CloudBusy` cover and says so in the dev status
+line, including when the cloud clear FAILED — "it may come back" is the honest
+report, because it will. Signed out it is a no-op: there is no cloud copy to clear.
 
 The conflict prompt is a `ConfirmPopup` with legible summaries produced by
 `CloudSync.describe_profile` ("5 cars, 12 rallies completed") rather than raw
@@ -244,6 +279,10 @@ emits **`profile_replaced`**, re-emitted by `Cloud`, and `hq.gd` rebuilds on it
 lineup or the lift car depending on the current view, and refreshes the map pins
 and progress meter.
 
+This is a MID-SESSION path, not the boot one. A profile landing at boot is now
+waited for before anything is built (`_await_boot_pull`, below), so what reaches
+this handler is a first sign-in from the account page or "Use cloud" on a conflict.
+
 Without it the player signs in, their cars are restored *on disk*, and the car
 park still shows the empty lot they started with until they relaunch — the save
 worked but nothing on screen said so. Distinct from `state_changed`, which is
@@ -296,15 +335,40 @@ career hasn't arrived yet), and `_confirm_starter` grants a car and calls
 between their whole career and the one starter car they just picked, and
 either answer loses data.
 
-**The fix gates the starter pick, not the title screen — on purpose.**
-Gating the title itself would make an offline player, or one who has never
-signed in, wait for a pull that is never coming, which breaks "signing in is
-never required." The starter pick is the ONE pre-career action that writes to
-the profile before a career exists; everything else reachable from the title
-is either read-only or already gets rebuilt by `_on_cloud_profile_replaced`
-if a download lands under it. Anyone tempted to "simplify" this into a
-title-screen-level block later will break offline play — this is exactly the
-shape CLAUDE.md means by recording the reasoning, not just the mechanism.
+**Waiting for the pull is not sufficient on its own.** The pull can settle as a
+CONFLICT (both sides moved on), in which case the download was NOT applied and a real
+career may be sitting in the cloud right now. The gate used to release anyway and
+offer the starter pick — and picking one WRITES to the profile, so "keep this device"
+stopped meaning "keep what I had" and started meaning "keep the fresh save I was just
+handed". A player hit exactly this: signed in, progress apparently lost, happily
+allowed to pick a starter, conflict popup never shown.
+
+So after the wait, `hq.gd` also checks `ConflictPrompt.is_blocked()`. If a conflict is
+unsettled it raises the shared prompt and BLOCKS: "decide later" means no new career
+begins, "use cloud" restores the real career and goes to the garage, and only a
+resolved state lets the picker open. Covered by `test_cloud_boot_gate.gd` — blocked
+while unresolved, releases once settled, and untouched when there is no conflict.
+
+**The boot build waits too — `hq.gd::_await_boot_pull`.** This doc used to say the
+title was deliberately NOT gated, because "gating it would make an offline player
+wait for a pull that is never coming." The concern is real; the conclusion was too
+broad. `initial_pull_pending` is *already* false for anyone without a stored
+credential, so gating on it costs the offline player nothing — the narrow gate was
+available all along. Without it the title was built from the LOCAL profile and then
+visibly rebuilt by `_on_cloud_profile_replaced` a second or two later, and the player
+watched their garage pop in.
+
+So `_ready` awaits `_await_boot_pull` before `_build_hq()`: no credential → build
+immediately; credential → wait for the pull under the same hard cap, then build once
+from the settled profile. It re-labels the boot `LoadingScreen` that is already on
+screen rather than stacking a second cover. Two things it must not break, both pinned
+in `test_cloud_boot_gate.gd`: a pull that never lands still reveals the title (the cap
+is the backstop), and a pull that settles as a CONFLICT reveals the title against the
+local profile with the conflict still live for `_on_exterior_start` to catch — gating
+the title must not swallow the prompt that item 10 exists to surface.
+
+`_await_cloud_restore` survives alongside it for the starter pick, because a pull can
+also land mid-session (a first sign-in from the account page), long after boot.
 
 Mechanism, split across two files:
 
@@ -345,6 +409,78 @@ Mechanism, split across two files:
 Tests: `tests/headless/test_cloud_boot_gate.gd` (8 tests) — the guaranteed
 zero-wait exit, the hard-cap timeout, settling on every pull outcome and on
 sign-out, and the re-check/back-out behaviour in `hq.gd`.
+
+## Waiting on the network: `CloudBusy`
+
+Every `await Cloud.*` call site is bracketed by a shared busy state
+(`scripts/cloud/cloud_busy.gd`, `class_name CloudBusy`, static — no autoload). Before
+it existed each screen invented its own waiting UI or none: a player resolving a sync
+conflict tapped a button and got silence for the length of a full profile upload, and
+the completion-reward fetch at the end of a challenge run showed nothing at all.
+
+Two shapes, chosen by what the call does:
+
+- **`CloudBusy.cover(host, title, step)`** — a blocking full-screen `LoadingScreen`,
+  for calls that rewrite the profile or gate progression: conflict resolution, the
+  boot restore, the challenge completion-reward fetch.
+- **`CloudBusy.ambient(host, text, container = null)`** — non-blocking, for reads
+  behind already-rendered UI (the account page's message row, the leaderboard fetches).
+  With no `container` the host already draws its own waiting line and only the marker
+  is added, so two lines never say the same thing.
+
+`await busy.end()` takes it down. `run_covered(...)` / `run_ambient(...)` wrap a
+`Callable` for sites that want a one-liner; sites whose `await` must stay literally
+direct use `cover`/`ambient` + `end`.
+
+Mechanics worth knowing:
+
+- **Minimum visible duration** — `MIN_COVER_VISIBLE_SEC` stops a fast call flashing a
+  cover for one frame. Applied to COVERS only (a dim ambient line blinking isn't the
+  glitch being fixed, and holding a leaderboard fetch open would just slow the game),
+  and never headless.
+- **One answer for failure** — `failure_text()` returns the server's own words, or a
+  generic message when it gave none, or `""` on success. Hosts with a message row
+  render it there; hosts without one call `report_failure()`, which raises a
+  dismissible popup. A call that reports nothing is NOT treated as a failure —
+  inventing an error the player sees is worse than silence.
+- **Headless** — the marker node is created in every environment, so
+  `CloudBusy.showing(host)` is provable in tests; only the visuals are skipped. The
+  rule throughout this repo: skip the animation, never the decision or the final state.
+- **Rebuild survival** — everything joins group `CloudBusy.GROUP`, and hosts that
+  rebuild their children wholesale (`account_menu.rebuild`,
+  `global_standings._build_ui`) skip that group. Otherwise a `Cloud.state_changed`
+  arriving mid-sign-in frees the busy line.
+
+`Cloud.resolve_use_cloud()` is deliberately NOT wrapped: applying an
+already-downloaded profile is local (parse, migrate, write) and never touches the
+network.
+
+## The sync-conflict prompt: `ConflictPrompt`
+
+`scripts/cloud/conflict_prompt.gd` is the ONE place the "your progress differs"
+conflict is put to the player — the copy, the three choices, and the resolution calls.
+
+It exists because `Cloud.conflict_detected` used to have exactly one subscriber:
+`account_menu.gd`, a node that only exists while the account page is open. A conflict
+raised anywhere else — at sign-in on boot, or on a background sync — emitted into
+nothing, and `cloud_sync` then refused every later push with "Resolve the sync conflict
+first." Cloud saving silently stopped, with the only thing that could clear it hidden
+behind a page the player had no reason to visit.
+
+Now three hosts raise the same prompt: `account_menu.gd`, `hq.gd` (always in the tree,
+so a conflict reaches the player wherever they are), and the boot gate below. The
+account page's private copy of the resolution handlers was DELETED rather than kept in
+parallel — keeping it is what let the behaviour drift in the first place.
+
+`ConflictPrompt.is_blocked()` is the single predicate for "is there an unsettled
+conflict". Reaching into `Cloud.sync.blocked_by_conflict` directly is how a second,
+drifting copy of that question starts.
+
+Note the three resolutions are NOT symmetric: "keep this device" uploads the whole
+profile (a real round-trip, so it gets a cover), "use cloud" is local-only (the
+document was already downloaded when the conflict was raised), and "decide later" must
+call `Cloud.resolve_later()` — sync stays paused and the account page keeps warning,
+deliberately not a silent pick of either side.
 
 ## Setup prerequisites (console work)
 

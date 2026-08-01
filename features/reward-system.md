@@ -31,8 +31,25 @@ target_tier = clamp( f(rally.difficulty), 1, tier_ceiling(completed_count) )
 
 ## Upgrade draw (per event)
 
-`draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`:
-pool = parts at the target tier (stepping down to the nearest lower tier that has
+`draw_upgrade(rally_difficulty, profile, rng=null, owned_car={}) -> item_id`
+checks the **mystery-box branch** first, before building the normal pool: if
+`_car_has_nothing_left(owned_car)` (every non-consumable, non-`free` part this
+car is eligible for at every tier up to `MAX_TIER` is already in
+`installed_upgrades` — checked against the absolute ceiling, not the
+progress-clamped `target_tier`, so a car isn't "maxed" just because progress
+hasn't raised the tier ceiling yet) AND the player holds at least
+`MYSTERY_BOX_TOKEN_THRESHOLD` engine swap tokens (`_tokens_owned(profile)`,
+read straight off `profile.get("inventory", {})` the same tolerant way
+`Save.engine_swap_tokens_owned()` does — `RewardSystem` never touches the
+`Save` autoload) AND `_other_car_has_room(profile, owned_car)` (some other
+owned car in `profile.cars` is NOT itself maxed — otherwise the box would have
+nowhere to land), the draw returns `UpgradeLibrary.MYSTERY_BOX_ID` instead of
+picking from the usual pool. Any one condition failing falls through to the
+unchanged normal draw. `any_other_car_has_room(profile, current_instance_id)`
+is the same room-check exposed publicly, so the HQ Lift's Open button can
+re-verify it at open-time (the garage can change between grant and open).
+
+Otherwise: pool = parts at the target tier (stepping down to the nearest lower tier that has
 an eligible part, since not every tier has one; `_parts_at_or_below` also skips
 **`free` parts** — the ballast is always available, so it's never a reward —
 and any part whose `requires_upgrade_id` **prerequisite isn't yet fitted to the
@@ -83,9 +100,58 @@ in inventory, but if the car you just drove is below full health
 (`EngineSwap.at_full_health`) the reveal first offers a **Repair now / Save it**
 choice: *Repair now* spends the just-won kit on the driven car immediately
 (`Save.use_repair_kit`), *Save it* banks it for the garage. A full-health car
-skips the choice and the kit just lands in inventory. The **Drivetrain Swap** kit also skips the choice — it has no
+skips the choice and the kit just lands in inventory — as does a car locked by an
+active Rally Challenge run (`DrivingContext.is_car_locked`), whose damage must
+carry across the run's stages (see `features/rally-challenge.md` → "Car lock"). The **Drivetrain Swap** kit also skips the choice — it has no
 enable/disable, so the reveal always installs it enabled and the player picks a
 drive mode later in the garage (see `features/upgrade-catalogue.md`).
+
+## Mystery box (drawn instead of a normal upgrade)
+
+`UpgradeLibrary.MYSTERY_BOX_ID` (`"mystery_box"`) is a consumable, delivered
+and stored exactly like the repair kit / engine swap token —
+`Save.add_item(MYSTERY_BOX_ID, 1)` into `profile.inventory`, stacks freely.
+`Save.mystery_boxes_owned()` mirrors `engine_swap_tokens_owned()`. It's the
+payoff for a fully-upgraded car: once nothing is left to gain, event rewards
+stop being wasted on more swap tokens and instead occasionally gift an
+upgrade to a *different* owned car.
+
+**Resolving what it grants** — `RewardSystem.pick_mystery_box_grant(profile,
+current_instance_id, rng=null) -> Dictionary`: a pure resolver (no `Save`
+mutation) that picks a uniformly random OTHER owned car (excluding
+`current_instance_id`, the maxed car the box came from) among those with a
+non-empty `MAX_TIER`-eligible pool (`_parts_at_or_below(MAX_TIER, ...)` on the
+candidate, so the recipient's own tier/prerequisite gating is respected —
+e.g. it won't hand out Big Turbo before Small Turbo), then a uniformly random
+item from that pool. Returns `{"instance_id": ..., "item_id": ...}`, or `{}`
+if no other car has room.
+
+**Opening it** — `Save.open_mystery_box(current_instance_id, rng=null) ->
+Dictionary` (`save_manager.gd`) is the atomic transaction: it consumes the box
+(`consume_item(MYSTERY_BOX_ID, 1, false)`, no save yet — `consume_item` gained
+the same trailing `do_save := true` param `add_item` already had, precisely so
+this call can defer the save), then calls `pick_mystery_box_grant`, then
+either `install_upgrade(recipient, item, false)` (fitted **disabled**, same
+delivery model as any other per-event reward) or, if no candidate had room or
+the install unexpectedly fails, falls back to `add_item(REPAIR_KIT_ID, 1)` —
+either branch's call is the one save covering both the consume and the grant,
+so a crash mid-sequence can't spend the box without granting anything (before
+that save: nothing persisted; after: both persisted). Returns `{}` if no box
+was held, else `{"fallback": bool, "item_id": String,
+"recipient_instance_id": int (only when not fallback)}`.
+
+**Reveal (HQ Lift only)** — the Lift's Upgrades page gets a "Mystery Box: N /
+Open" row (`UpgradesMenu._make_mystery_box_row`, wired via `hq.gd`'s
+`_on_open_mystery_box`) disabled when no box is held or no other car has room
+(`RewardSystem.any_other_car_has_room`, re-checked at open-time since the
+garage can change after the grant). Pressing it calls `Save.open_mystery_box`
+and shows a plain `ConfirmPopup` card ("You won a *item* for your *car*!" or
+the repair-kit fallback message) — deliberately **not** the race-context
+`UpgradeReveal`, whose repair-now/drive-mode branches assume the revealed item
+belongs to the car the player just drove, which would misfire for a gift to a
+different car. See `features/upgrade-catalogue.md` for the catalogue entry and
+`features/menus.md` → "Menu navigation" for the Lift's native-focus button
+regime the row reuses.
 
 ## Car draw (per top-3 finish, including re-wins)
 
@@ -140,3 +206,13 @@ rally, and a low-difficulty rally caps the draw at its difficulty tier even when
 progress ceiling is high; car draws prefer un-owned before falling back to a duplicate; a stuck
 player's grant opens a locked rally with a car eligible for it; and `draw_car` still
 pays a real car even with everything completed (the guaranteed-reward property).
+Mystery-box coverage (synthetic cars/upgrades, per CLAUDE.md — never the real
+catalogue): a maxed owned car with tokens at/above `MYSTERY_BOX_TOKEN_THRESHOLD`
+and a non-maxed second car draws the box; the same maxed car draws normally
+when tokens are below threshold or no other car has room (regression on the
+existing fallback); `pick_mystery_box_grant` installs onto a different car than
+the one passed in, respecting that recipient's own prerequisite gating.
+`tests/headless/test_save_manager.gd` covers `Save.open_mystery_box`'s atomic
+install, its repair-kit fallback (no other car has room, or install fails),
+and the no-box no-op. `tests/headless/test_menu_flow.gd` covers the Lift row's
+disabled states and that pressing it installs onto the other car (nav test).
