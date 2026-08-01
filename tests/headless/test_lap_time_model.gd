@@ -66,5 +66,8 @@ func test_corner_speed_near_friction_limit():
 	var v: PackedFloat32Array = prof["v"]
 	var mid := v[int(v.size() / 2)]
 	var mu := 1.1   # avg grip, gravel default (gravel_grip 1.0)
-	var v_limit := sqrt(mu * 9.81 * radius)
+	# Gravity comes from the model, not a hand-copied literal — LapTimeModel.G reads
+	# physics/3d/default_gravity via Platform.gravity(), so retuning the project
+	# setting moves the expectation with the code instead of silently diverging.
+	var v_limit := sqrt(mu * LapTimeModel.G * radius)
 	assert_almost_eq(mid, v_limit, v_limit * 0.25, "mid-corner speed near friction limit")

@@ -119,8 +119,13 @@ func _build() -> void:
 	# is structurally identical (CenterContainer + 420-min VBox, autowrap body,
 	# buttons last) so it is fragile against the same causes (a narrow/short
 	# viewport tier) — see ConfirmPopup._build for the full rationale.
+	# Fallback mirrors GameConfig.virtual_resolution (scripts/game_config.gd), the real
+	# source of truth for the design resolution. Config.data is populated by the Config
+	# autoload before any runtime scene (this popup included) can be built, so it's safe
+	# to read here; the literal only remains as a last-resort guard in case Config.data
+	# is ever null (e.g. a stripped-down test harness with no autoloads).
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size \
-		if get_viewport() != null else Vector2(480, 360)
+		if get_viewport() != null else (Config.data.virtual_resolution if Config.data != null else Vector2(480, 360))
 	const SIDE_MARGIN := 32.0
 	const MIN_PANEL_WIDTH := 200.0
 	var panel_width: float = clampf(420.0, MIN_PANEL_WIDTH,
@@ -198,11 +203,15 @@ func _build() -> void:
 	MenuNav.attach(center, {"first": _field.line, "on_back": _on_cancel})
 
 
+# Built on the shared UITheme.row_button factory. `on_press` is left invalid
+# here — Cancel/Save wire their own `pressed` connection at the call site,
+# same as before — and SIZE_EXPAND_FILL is added on top so the two buttons
+# share the row evenly.
+# (focus_mode starts FOCUS_NONE per row_button, but MenuNav.attach promotes any
+# button under its root back to FOCUS_ALL, so keyboard/gamepad nav is unaffected —
+# see MenuNav._make_focusable.)
 func _button(text: String) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.focus_mode = Control.FOCUS_ALL
-	b.custom_minimum_size = Vector2(0, UITheme.MENU_ROW_H)
+	var b := UITheme.row_button(text, Callable())
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return b
 

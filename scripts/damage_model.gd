@@ -38,7 +38,9 @@ const MPS_TO_KMH := 3.6
 
 # Gravity magnitude used to turn the config's braking-proof threshold (in g) into a
 # per-tick velocity floor (impact_threshold_g · g · dt). See register_deceleration.
-const GRAVITY_MPS2 := 9.81
+# Sourced from Platform.gravity() (physics/3d/default_gravity) so this tracks the
+# actual simulated gravity; a static var, not a const, because const can't call a func.
+static var GRAVITY_MPS2: float = Platform.gravity()
 
 # The four wheel nodes, in a STABLE order — the index used to persist wheel_toe on
 # the OwnedCar (features/damage.md). Matches the VehicleWheel3D node names in

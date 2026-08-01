@@ -478,13 +478,14 @@ func _sub(text: String) -> Label:
 	return l
 
 
+# Built on the shared UITheme.row_button factory, with this page's one real
+# extra behaviour layered on top: a button goes disabled while a cloud call is
+# in flight, so a double-tap during sign-in/sync can't fire the request twice.
+# (focus_mode starts FOCUS_NONE per row_button, but MenuNav.attach promotes any
+# button under its root back to FOCUS_ALL, so keyboard/gamepad nav is unaffected —
+# see MenuNav._make_focusable.)
 func _action(text: String, on_press: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.focus_mode = Control.FOCUS_ALL
-	b.custom_minimum_size = Vector2(0, UITheme.MENU_ROW_H)  # what UITheme.enforce sets too
+	var b := UITheme.row_button(text, on_press)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.disabled = _busy
-	if on_press.is_valid():
-		b.pressed.connect(on_press)
 	return b

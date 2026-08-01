@@ -166,6 +166,11 @@ func test_world_values_applied() -> void:
 		assert_eq(post_mat.get_shader_parameter(param), cfg.get(param), "%s from config" % param)
 	var tire_mat: ShaderMaterial = _scene.get_node("Car/WheelFL/Visual/Tire").get_surface_override_material(0)
 	assert_eq(tire_mat.get_shader_parameter("albedo_color"), cfg.wheel_color, "tire color from config")
+	# Tarmac fill colour: world.gd falls back to cfg.tarmac_color when the active
+	# region (here "home", the default with no rally/challenge active) authors no
+	# override, so this is a genuine config->shader pass-through, not a region look.
+	var floor_mat: ShaderMaterial = _scene.get_node("Floor").chunk_material
+	assert_eq(floor_mat.get_shader_parameter("tarmac_color"), cfg.tarmac_color, "tarmac color from config")
 
 
 func test_speed_lines_config_defaults_present() -> void:

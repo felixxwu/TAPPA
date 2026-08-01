@@ -519,13 +519,16 @@ func _challenge_status_line() -> String:
 	return line
 
 
+# Built on the shared UITheme.row_button factory. The only thing this page adds
+# on top is SIZE_EXPAND_FILL, so the button hugs the full row width instead of
+# row_button's "hug the label" default (right for hq.gd's horizontal action
+# row, wrong for this page's single-column layout).
+# (focus_mode starts FOCUS_NONE per row_button, but MenuNav.attach promotes any
+# button under its root back to FOCUS_ALL, so keyboard/gamepad nav is unaffected —
+# see MenuNav._make_focusable.)
 func _wide_button(text: String, on_press: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.focus_mode = Control.FOCUS_ALL
-	b.custom_minimum_size = Vector2(0, UITheme.MENU_ROW_H)
+	var b := UITheme.row_button(text, on_press)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.pressed.connect(on_press)
 	return b
 
 

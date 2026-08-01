@@ -161,8 +161,13 @@ func _build(title: String, body: String, default_index: int) -> void:
 	# width follows device aspect and can get much narrower than 420) a fixed
 	# 420 forces the panel wider than the screen. Clamp against the current
 	# logical viewport width, with a little breathing room on each side.
+	# Fallback mirrors GameConfig.virtual_resolution (scripts/game_config.gd), the real
+	# source of truth for the design resolution. Config.data is populated by the Config
+	# autoload before any runtime scene (this popup included) can be built, so it's safe
+	# to read here; the literal only remains as a last-resort guard in case Config.data
+	# is ever null (e.g. a stripped-down test harness with no autoloads).
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size \
-		if get_viewport() != null else Vector2(480, 360)
+		if get_viewport() != null else (Config.data.virtual_resolution if Config.data != null else Vector2(480, 360))
 	const SIDE_MARGIN := 32.0
 	const MIN_PANEL_WIDTH := 200.0
 	var panel_width: float = clampf(420.0, MIN_PANEL_WIDTH,

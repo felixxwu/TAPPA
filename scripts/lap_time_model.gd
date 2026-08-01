@@ -11,7 +11,7 @@ class_name LapTimeModel
 # cornering (a_lat = v^2 * kappa) is unavailable for accel/braking. See
 # docs/superpowers/specs/2026-06-30-physics-lap-time-design.md.
 
-const G := 9.81                 # m/s^2
+static var G: float = Platform.gravity()  # m/s^2, single source of truth: physics/3d/default_gravity (const can't call into Platform)
 const ROLLING_G := 0.2          # baseline rolling-resistance decel (fraction of g)
 const SAMPLE_STEP_M := 2.0      # curvature/profile sample spacing
 const KAPPA_MIN := 1.0e-5       # below this, treat as straight (no cornering cap)
