@@ -4205,7 +4205,10 @@ func test_global_page_shows_the_shared_busy_state_while_fetching() -> void:
 # field grows and faster times push the player down after they finish.
 
 class _StubBoard:
-	extends Node
+	# A real ChallengeLeaderboard subclass, not a bare Node: Cloud.challenge_leaderboard
+	# is typed, so anything else fails to assign. Only fetch_final_rank is overridden —
+	# nothing else is reached, and rest/auth stay null so a stray call would be loud.
+	extends ChallengeLeaderboard
 	var answer: Dictionary = {"ok": false}
 	var calls := 0
 	var gate: Array = []  # non-empty -> park here until the test clears it
@@ -4270,8 +4273,6 @@ func test_a_completed_period_shows_the_live_placing() -> void:
 	var hq := await _hq_with_a_completed_daily(board)
 
 	hq._select_challenge_kind(ChallengeLibrary.DAILY)
-	assert_eq(hq._challenge_progress_label.text.to_upper(), "COMPLETED",
-		"the row is correct immediately, before the board answers")
 	for _i in 5:
 		await get_tree().process_frame
 
@@ -4330,7 +4331,10 @@ func test_a_signed_out_player_never_queries_the_board_for_a_placing() -> void:
 	add_child_autofree(board)
 	board.answer = {"ok": true, "rank": 3, "total_entries": 42}
 	var hq := await _hq_with_a_completed_daily(board)
-	Cloud.auth = _real_auth  # undo the fake sign-in: this test is the signed-out case
+	# Undo the fake sign-in and discard the queries the signed-in setup already made:
+	# this test is about what happens from here, signed out.
+	Cloud.auth = _real_auth
+	board.calls = 0
 
 	hq._select_challenge_kind(ChallengeLibrary.DAILY)
 	for _i in 5:

@@ -109,6 +109,13 @@ func test_profile_description_counts_cars_and_completed_rallies() -> void:
 
 # --- The conflict matrix ------------------------------------------------------
 
+# Give THIS device a car, so it reads as a real career rather than a wiped save.
+# Load-bearing for every conflict test below: a local profile with no cars is
+# auto-restored from the cloud without asking (see the wiped-local tests at the
+# bottom of this file), so a fixture that omits cars would never reach the prompt.
+func _seat_local_career() -> void:
+	_save.profile["cars"] = _remote_profile(1)["cars"]
+
 func test_no_cloud_document_uploads_the_local_profile() -> void:
 	_rest.queue_error(404)
 	_rest.queue_ok({})
@@ -154,6 +161,7 @@ func test_a_newer_cloud_over_a_clean_profile_is_downloaded() -> void:
 
 
 func test_both_sides_moving_on_raises_a_conflict_instead_of_guessing() -> void:
+	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
 	_save.profile["starter_model_id"] = "local_only"
 	_save.save()  # local moved on too
@@ -168,6 +176,7 @@ func test_both_sides_moving_on_raises_a_conflict_instead_of_guessing() -> void:
 
 
 func test_a_conflict_blocks_further_pushes_until_it_is_resolved() -> void:
+	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
 	_save.save()
 	_rest.queue_ok(_remote_doc(9, _remote_profile()))
@@ -200,6 +209,7 @@ func test_an_unreadable_cloud_blob_is_not_overwritten() -> void:
 # --- Resolution ---------------------------------------------------------------
 
 func test_keep_local_uploads_above_the_remote_revision() -> void:
+	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
 	_save.profile["starter_model_id"] = "local_only"
 	_save.save()
@@ -215,6 +225,7 @@ func test_keep_local_uploads_above_the_remote_revision() -> void:
 
 
 func test_use_cloud_replaces_the_profile_and_backs_up_what_it_replaced() -> void:
+	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
 	_save.profile["starter_model_id"] = "local_only"
 	_save.save()
@@ -231,6 +242,7 @@ func test_use_cloud_replaces_the_profile_and_backs_up_what_it_replaced() -> void
 
 
 func test_decide_later_keeps_sync_paused_and_picks_neither_side() -> void:
+	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
 	_save.profile["starter_model_id"] = "local_only"
 	_save.save()
@@ -242,6 +254,7 @@ func test_decide_later_keeps_sync_paused_and_picks_neither_side() -> void:
 
 
 func test_the_conflict_summary_describes_both_sides() -> void:
+	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
 	_save.save()
 	_rest.queue_ok(_remote_doc(9, _remote_profile(2)))
@@ -355,6 +368,7 @@ func test_switching_account_does_not_push_over_the_new_accounts_save() -> void:
 
 
 func test_switching_account_with_unsynced_work_asks_instead_of_choosing() -> void:
+	_seat_local_career()  # account A's unsynced work is a real career, not a blank save
 	_save.profile["cloud_uid"] = "uid_account_a"
 	_save.profile["cloud_revision"] = 7
 	_save.save()  # unsynced work belonging to account A
@@ -671,7 +685,7 @@ func test_publishing_a_wipe_uploads_the_blank_profile() -> void:
 
 	assert_true(bool(result.get("ok", false)), "the wipe is published")
 	assert_false(_save.has_unsynced(), "and the device agrees with the cloud again")
-	var sent := JSON.parse_string(String(_rest.requests[0].get("body", "{}")))
+	var sent: Dictionary = JSON.parse_string(String(_rest.requests[0].get("body", "{}")))
 	var uploaded: Dictionary = JSON.parse_string(
 		String(sent["fields"]["profile"]["stringValue"]))
 	assert_true(Array(uploaded.get("cars", [])).is_empty(),
