@@ -48,8 +48,14 @@ var _terrain: Node = null
 
 # Lake water surface height — the ground the camera seats above is never taken below
 # this, so over a submerged basin the camera stays above the water instead of dunking
-# under it (matches the roadside replay cam). Read from config on ready.
-var _water_level := -INF
+# under it (matches the roadside replay cam).
+#
+# Deliberately NOT cached in _ready(): this camera is a child of main.tscn's root, so
+# its _ready runs BEFORE world.gd._ready, which is where the event's/stage's track
+# params (including track_water_level_m) reach the live config via
+# DrivingContext.apply_stage_config. Caching here would pin the PREVIOUS run's
+# waterline and float the camera above the car over any basin whose real water sits
+# lower. Read live in _ground_height_at instead — it's one property read per frame.
 
 
 func _ready() -> void:
@@ -57,7 +63,6 @@ func _ready() -> void:
 	_distance = cfg.follow_distance
 	_height = cfg.follow_distance * cfg.follow_height_ratio
 	_smoothing = cfg.smoothing
-	_water_level = cfg.track_water_level_m
 	_base_fov = cfg.chase_fov
 	_fov_speed_boost = cfg.chase_fov_speed_boost
 	_fov_speed = cfg.chase_fov_speed
@@ -226,4 +231,4 @@ func _ground_height_at(x: float, z: float) -> float:
 					_terrain = sibling
 					break
 	var ground: float = _terrain.height_at(x, z) if _terrain != null else 0.0
-	return maxf(ground, _water_level)
+	return maxf(ground, Config.data.track_water_level_m)

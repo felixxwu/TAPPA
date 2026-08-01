@@ -52,6 +52,15 @@ track_water_level_m)` in `_ground_height_at`), so over a submerged basin the cam
 stays above the water instead of dunking under the lake plane (the roadside replay cam
 does the same).
 
+> The waterline is read **live from the config on every frame**, deliberately not
+> cached in `_ready()`. `ChaseCamera` is a child of `main.tscn`'s root, so its
+> `_ready` runs *before* `world.gd::_ready`, which is where the event's/stage's
+> track params reach the live config (`DrivingContext.apply_stage_config`) — and
+> where the generated waterline is reconciled back onto it (see
+> [lakes.md](lakes.md) → "Dry start"). A cached copy is the *previous* run's
+> waterline, which floats the camera above the car over any basin whose real water
+> sits lower. Guarded by `test_chase_camera_ground`.
+
 ### Behavior (`_physics_process`)
 
 ```

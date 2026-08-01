@@ -105,6 +105,19 @@ pose-independent). Rules that keep opponent times correct:
   `TrackProgress`) by the same delta (`origin − base_origin`) — heading is
   preserved, so it's a pure translation. If no dry origin is found in budget, it
   clamps the water level below the start (then disables water) as a fallback.
+- **`params` is the source of truth for water, and `world.gd` reconciles the config
+  to it.** Because that fallback can lower `water_level` (or clear `water_enabled`)
+  *after* the config was seated, `world.gd::_generate_track` copies
+  `params.water_enabled` / `params.water_level` back onto `cfg` once the shape is
+  final (after the challenge-retry branch, which can swap in differently-clamped
+  params). Everything downstream reads the config rather than `params` — the
+  rendered/collided lake (`_build_lakes`), the chase camera's ground seat
+  (`chase_camera.gd::_ground_height_at`), the submersion reset
+  (`track_progress.gd`) — so skipping this makes them all use a waterline the
+  terrain doesn't have: the lake disagrees with the loading preview (which reads
+  `params` directly, via `LakeField.preview_cells`), and the camera lifts off the
+  chase view over a basin it wrongly believes is flooded. Guarded by
+  `test_world_water_reconcile`.
 
 ## LakeField (build + render + hazard)
 
@@ -154,6 +167,27 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
 - The **loading screen** (`loading_screen.gd.update_water`) paints the waterline
   up-front (before generation) over the track bounds, so the road animates over it —
   eye-candy + authoring/debug aid.
+- **Three water passes, and only the last one is accurate.** `world.gd::_generate_track`
+  calls `update_water` three times: a rough origin box before generation, a refine to
+  the real track bounds once the centerline exists, and a **final repaint immediately
+  after the carve** (`set_track`) — deliberately placed *before* the chunk precompute,
+  the longest stage, so the true waterline is on screen for most of the load instead of
+  flashing up at the end. The first two sample `params.water_sampler` — pure noise,
+  which is all that exists at that point, since the road flatten and the **cliff
+  offsets** are baked later by `set_track` → `bake_track`. Cliff offsets are *signed*,
+  so a stage with real `cliffiness` drops substantially more ground below the waterline
+  than the noise predicts, and the preview read far drier than the driven world (worst
+  where a high coastal waterline meets high cliffiness — the Sh*tbox Cup, `cliffiness`
+  0.5–0.7 against `water_level` -5.0, is the clearest repro). The final pass samples
+  **`TerrainManager.baked_height_at`** via `LakeField.preview_cells_for(sampler, level,
+  bounds)`, reusing the refine pass's bounds so the water doesn't jump frames.
+  `baked_height_at` — not `height_at` — because at that point the chunk cache is still
+  empty, so `height_at` would fall back to pure noise and repaint the same wrong
+  picture; `baked_height_at` reads the bake fields (`cliff_offsets`, `road_heights` /
+  `road_blend`) directly at the nearest L0 vertex, reproducing
+  `TerrainChunkBuilder._sampled_height`, and is the same height the real lake is built
+  against in `_build_lakes`. It falls back to `height_at` once
+  `free_load_only_data()` drops those fields at the end of loading.
 - **Water fills the panel edge-to-edge.** The 2D fit preserves aspect ratio, so
   sampling water over just the track's bounding box left dry letterbox bands wherever
   the track's aspect differed from the panel's — the water looked "cut off" at a fixed
@@ -177,6 +211,18 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
   terrain from the canonical config, so the preview equals the real stage (verified by
   `test_seedlab.gd` → `test_loaded_event_matches_career_cache_key`, which compares the
   lab's and career's `TrackCache.key_for`).
+- **Faithful WATER, too — the lab bakes before it paints.** The refined water pass in
+  `_regen_seedlab` samples `TerrainManager.baked_preview(cfg, centerline).baked_height_at`
+  via `LakeField.preview_cells_for`, not `params.water_sampler`. The lab is where water
+  level and `cliffiness` get tuned against each other, so a noise-sampled preview (which
+  reads far drier than the shipped stage — see "Three water passes") would mislead
+  exactly the decision the lab exists to support. `baked_preview` is a throwaway,
+  off-tree `TerrainManager`: no chunks, no meshes, just `bake_track` so
+  `baked_height_at` answers, freed immediately after. Both it and `world.gd` take their
+  road band / surface split from `TerrainManager.bake_args(cfg)`, so the two bakers
+  cannot drift into carving different roads for the same config. The rough pre-generation
+  box is still noise-sampled — nothing else exists that early — and `params`, not `cfg`,
+  remains the authority on `water_enabled` / `water_level`.
 - **Load stage…** (`_open_event_picker` → `_build_event_picker`) opens a keyboard/
   gamepad-navigable popup listing every rally (`RallyLibrary.all()`) and its 3 events.
   Picking one (`_load_event`) copies the event's fields — the four core inputs + the

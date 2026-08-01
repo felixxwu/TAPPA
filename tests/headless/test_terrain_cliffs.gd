@@ -241,3 +241,33 @@ func test_cliff_seam_agrees_across_adjacent_chunks() -> void:
 		var right_edge: float = h0[zi * samples + (samples - 1)]
 		var left_edge: float = h1[zi * samples + 0]
 		assert_almost_eq(left_edge, right_edge, 1e-4, "cliff seam agrees at row %d" % zi)
+
+
+# baked_height_at is what the loading screen's final water preview samples. It has to
+# see the cliff drop, because that drop is exactly why the preview disagreed with the
+# driven world; and it has to work with an EMPTY chunk cache, since it runs right
+# after the carve and before the precompute.
+func test_baked_height_at_includes_the_cliff_offset_without_a_chunk_cache() -> void:
+	var m := _make_manager()
+	add_child(m)
+	var gv := Vector2i(3, -2)
+	var x := float(gv.x) * ManagerScript.CELL_M
+	var z := float(gv.y) * ManagerScript.CELL_M
+	var noise_h: float = m._noise_height_at(x, z)
+	m.cliff_offsets = {gv: -6.0}
+	assert_almost_eq(m.baked_height_at(x, z), noise_h - 6.0, 0.001,
+		"the signed cliff offset is applied on top of the noise height")
+	assert_almost_eq(m.height_at(x, z), noise_h, 0.001,
+		"height_at still reads pure noise here — an empty chunk cache is why baked_height_at exists")
+
+
+func test_baked_height_at_flattens_toward_the_road_height() -> void:
+	var m := _make_manager()
+	add_child(m)
+	var gv := Vector2i(1, 1)
+	var x := float(gv.x) * ManagerScript.CELL_M
+	var z := float(gv.y) * ManagerScript.CELL_M
+	m.road_heights = {gv: 50.0}
+	m.road_blend = {gv: 1.0}  # fully on the road
+	assert_almost_eq(m.baked_height_at(x, z), 50.0, 0.001,
+		"a fully-blended road vertex is pulled to the baked road height")

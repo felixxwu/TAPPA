@@ -1184,11 +1184,29 @@ func _regen_seedlab() -> void:
 		return  # a newer request superseded this one
 	var poly := (res["centerline"] as Curve2D).tessellate()
 	_seedlab_preview.set_points(poly)
-	# Refine water to the actual track bounds.
+	# Refine water to the actual track bounds — and sample it from the BAKED terrain,
+	# not the noise sampler. The lab is where water level and cliffiness get tuned
+	# against each other, so it has to show the flooding the stage really ships with:
+	# cliff offsets are signed and metres deep, and a noise-sampled preview reads far
+	# drier than the driven world (the loading screen had exactly this bug). The throwaway
+	# TerrainManager builds no chunks or meshes and is freed straight after — it exists
+	# only to answer baked_height_at. Same reason world.gd repaints its final water pass
+	# after the carve; see features/lakes.md -> "Three water passes".
 	var tb := LoadingScreen.bounds_of(poly).grow(60.0)
 	tb = LoadingScreen.expand_to_aspect(tb, LoadingScreen.aspect_of(_seedlab_preview.size))
-	var wp2: Array = LakeField.preview_cells(params, tb)
+	# water_enabled is checked here because preview_cells_for takes a bare sampler and
+	# can't know; params (not cfg) is the authority on both fields, since the dry-start
+	# search may have clamped the level or switched water off entirely.
+	if not params.water_enabled:
+		_seedlab_preview.set_water(PackedVector2Array(), TerrainManager.CELL_M, tb)
+		return
+	var tm: TerrainManager = await TerrainManager.baked_preview(cfg, res["centerline"] as Curve2D)
+	if gen != _sl_gen:
+		tm.free()
+		return  # a newer request superseded this one during the bake
+	var wp2: Array = LakeField.preview_cells_for(tm.baked_height_at, params.water_level, tb)
 	_seedlab_preview.set_water(wp2[0], wp2[1], tb)
+	tm.free()
 
 
 func _make_row_button(min_height: float) -> Button:

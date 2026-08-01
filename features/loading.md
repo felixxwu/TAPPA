@@ -15,7 +15,7 @@ runs the whole build behind it. The stages, in order:
 |---|---|---|
 | Building terrain | `TerrainManager.build_initial()` — the 7x7 ring, pulled from the cache | `terrain_manager.gd` |
 | Generating track | DFS corner search — **skipped when a cached stage exists** | `track_generator.gd::generate` / `TrackCache` |
-| Carving road into terrain | unified cliff/road distance-field pass | `terrain_manager.gd::bake_track` |
+| Carving road into terrain | unified cliff/road distance-field pass, then the **final preview water repaint** — the first one sampled from the baked (cliff-dropped) terrain rather than pure noise, placed here so it shows through the precompute below (see [lakes.md](lakes.md) → "Three water passes") | `terrain_manager.gd::bake_track` |
 | Precomputing chunks | per-chunk grid + LOD prebake over the corridor | `terrain_manager.gd::cache_chunk` |
 | Scattering trees / bushes | foliage scatter + road-footprint rasterisation | `world.gd::_build_foliage` |
 | Filling lakes | basin flood + water texture bake | `world.gd::_build_lakes` |

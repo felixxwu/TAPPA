@@ -65,6 +65,24 @@ Key methods:
   from* it, so it must never read the cache itself). Uses a main-thread noise
   cache (`_ensure_noise_cache`, invalidated by `_rebuild_loaded`) so repeated
   spot samples don't rebuild the noises each call.
+- `baked_height_at(x, z)` — **bake-field-first**, for the window `height_at` can't
+  serve: after `bake_track` has run but before the chunk precompute has populated the
+  cache. There, `height_at` silently falls back to pure noise — which is a trap, since
+  the caller usually wants the *carved* ground. This reads `cliff_offsets` +
+  `road_heights`/`road_blend` directly at the nearest L0 vertex, reproducing
+  `TerrainChunkBuilder._sampled_height`. Vertex-nearest, not bilinear (its callers
+  sample a coarse lattice anyway). Falls back to `height_at` once
+  `free_load_only_data()` drops the bake fields. Used by the loading screen's and Seed
+  Lab's water previews — see [lakes.md](lakes.md) → "Three water passes".
+- `bake_args(cfg)` (static) — the `[width, transition_m, tarmac_fraction, tarmac_first,
+  surface_feather_m]` tuple `bake_track`/`set_track` take, derived from a `GameConfig`
+  in ONE place so every baker agrees. Both `world.gd`'s real carve and
+  `baked_preview` go through it.
+- `baked_preview(cfg, centerline)` (static) — a bare, off-tree `TerrainManager` baked
+  for a centerline: layers/seed/cliff params seated from `cfg`, then `bake_track`. No
+  chunks, no meshes, never added to the tree, so it costs the distance-field pass and
+  nothing else. Exists so a preview with no run scene (the Seed Lab) can still sample
+  cliff-accurate ground. Free it when done.
 - `build_heights(center)` — a `SAMPLES²` height array centred on a chunk centre,
   sampling absolute world coords with the noises built once (fast path for the
   ~10k samples per chunk).

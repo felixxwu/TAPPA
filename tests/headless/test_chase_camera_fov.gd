@@ -5,9 +5,11 @@ extends GutTest
 
 var _cam: Camera3D
 var _target: RigidBody3D
+var _saved_water := 0.0
 
 
 func before_each() -> void:
+	_saved_water = Config.data.track_water_level_m
 	_target = RigidBody3D.new()
 	_target.gravity_scale = 0.0
 	add_child(_target)
@@ -28,6 +30,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	Config.data.track_water_level_m = _saved_water
 	_cam.free()
 	_target.free()
 
@@ -58,7 +61,8 @@ func test_camera_stays_above_the_water_surface() -> void:
 	# No terrain sibling here, so the ground reads 0. A water level well above that must
 	# lift the camera so it never seats below the lake surface (over a submerged basin).
 	_cam._height = 2.0
-	_cam._water_level = 50.0
+	# The waterline is read live from the config, not cached on the camera.
+	Config.data.track_water_level_m = 50.0
 	_settle(10.0)
 	assert_gt(_cam.global_position.y, 50.0,
 		"chase camera is lifted above the water surface, not seated under the lake")

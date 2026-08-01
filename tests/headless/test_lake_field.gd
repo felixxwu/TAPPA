@@ -48,3 +48,26 @@ func test_submerged_cells_marks_below_water_ground() -> void:
 func test_submerged_cells_empty_for_invalid_sampler() -> void:
 	var cells := LakeField.submerged_cells(Callable(), 0.0, Rect2(0, 0, 10, 10), 1.0)
 	assert_eq(cells.size(), 0, "no cells without a sampler")
+
+func test_preview_cells_for_reflects_the_sampler_it_is_given() -> void:
+	# Why this entry point exists: the loading preview's first passes sample pure
+	# noise (all that exists before the road bake), but the terrain the player gets
+	# has signed cliff offsets baked in, which push extra ground under water. So the
+	# preview must be repaintable against a DIFFERENT, lower sampler and show more
+	# water for it — that's the whole mismatch this fixes.
+	var bounds := Rect2(-100, -100, 200, 200)
+	var noise_like := func(_x: float, z: float) -> float:
+		return 4.0 if z > 0.0 else 12.0
+	# The same ground after a cliff drop: everything sits 8 m lower.
+	var baked := func(x: float, z: float) -> float:
+		return noise_like.call(x, z) - 8.0
+	var before: Array = LakeField.preview_cells_for(noise_like, 0.0, bounds)
+	var after: Array = LakeField.preview_cells_for(baked, 0.0, bounds)
+	assert_eq(before[1], after[1], "same bounds -> same step, so the repaint lands on the same lattice")
+	assert_gt((after[0] as PackedVector2Array).size(), (before[0] as PackedVector2Array).size(),
+		"dropping the ground below the waterline floods more of the preview")
+
+func test_preview_cells_for_empty_for_invalid_sampler() -> void:
+	var out: Array = LakeField.preview_cells_for(Callable(), 0.0, Rect2(0, 0, 10, 10))
+	assert_eq((out[0] as PackedVector2Array).size(), 0, "no cells without a sampler")
+	assert_gt(float(out[1]), 0.0, "still returns a usable step")

@@ -552,6 +552,18 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 		if not bool(result.get("complete", false)):
 			push_error("ChallengeSession stage generation failed after retries (period=%s stage seed=%d turn_count=%d) — falling back to whatever partial track was found" \
 				% [ChallengeSession.period_key(), base_seed, params.turn_count])
+	# Reconcile the live config to the waterline generation ACTUALLY used. `params` is
+	# the single source of truth for water: TrackGenParams.recompute_origin can clamp
+	# water_level down (or switch water_enabled off entirely) when no dry start exists
+	# within budget, and that adjustment never reaches cfg on its own. Everything
+	# downstream reads cfg — the rendered/collided lake (_build_lakes), the chase
+	# camera's ground seat, the submersion reset in track_progress.gd — so without this
+	# they'd all use a waterline the terrain doesn't have: the lake and the loading
+	# preview disagree, and the camera detaches from the chase view over a basin it
+	# wrongly believes is flooded. Must sit after the challenge retry above, which can
+	# swap in a differently-clamped `params`.
+	cfg.water_enabled = params.water_enabled
+	cfg.track_water_level_m = params.water_level
 	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
 	# it stays drawn through the remaining stages until finish().
 	if loading != null and not _headless:
@@ -562,9 +574,13 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var road_centerline := result["centerline"] as Curve2D
 	# Refine the preview water to the ACTUAL track bounds now they're known, so it
 	# spans the whole stage instead of the rough origin box (no more box-edge clip).
+	# Held for the FINAL water pass after the bake (below) so it reuses the exact same
+	# frame — repainting into a different rect would make the water jump.
+	var water_bounds := Rect2()
 	if cfg.water_enabled and loading != null and not _headless:
 		var tb := LoadingScreen.bounds_of((result["centerline"] as Curve2D).tessellate()).grow(80.0)
 		tb = LoadingScreen.expand_to_aspect(tb, LoadingScreen.aspect_of(loading.preview_size()))
+		water_bounds = tb
 		var wp2: Array = LakeField.preview_cells(params, tb)
 		loading.update_water(wp2[0], wp2[1], tb)
 	if staged:
@@ -576,11 +592,12 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# the car has room to skid to a stop past the arch. It's baked into the terrain +
 	# road-marked like the rest; the finish stays at finish_len (see below).
 	road_centerline = _with_finish_runoff(road_centerline, result["runoff"])
-	var transition_m := cfg.track_transition_cells * TerrainManager.CELL_M
-	# Surface split: the track runs gravel + tarmac with one switch, the tarmac
+	# Road band + surface split, derived in the one place every baker shares
+	# (TerrainManager.bake_args) so the Seed Lab's preview bake can't drift from this
+	# one. Surface split: the track runs gravel + tarmac with one switch, the tarmac
 	# share = track_tarmac_fraction (set per rally event). Which surface it opens on
 	# is seeded off track_seed so it's deterministic but varied across events.
-	var tarmac_first := TrackSurface.orientation_tarmac_first(cfg.track_seed)
+	var bake_args := TerrainManager.bake_args(cfg)
 	# Cliff params onto the terrain before the bake reads them (mirrors the Lighting
 	# group applied earlier); the cliff pass runs inside set_track → bake_track.
 	cfg.apply_cliffs($Floor as TerrainManager)
@@ -592,11 +609,30 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	# centerline (carve progress); headless passes empty callbacks and stays synchronous.
 	var carve_interactive := loading != null and not _headless
 	var carve_progress := loading.set_carve_progress if carve_interactive else Callable()
-	await $Floor.set_track(road_centerline, cfg.track_width, transition_m,
-		cfg.track_tarmac_fraction, tarmac_first, cfg.track_surface_transition_m,
+	await $Floor.set_track(road_centerline, bake_args[0], bake_args[1],
+		bake_args[2], bake_args[3], bake_args[4],
 		carve_interactive, carve_progress)
 	if carve_interactive:
 		loading.set_carve_progress(1.0)  # snap to fully-white once carving is done
+	# FINAL water pass — the only one that can be right, and it lands HERE, straight
+	# after the carve and before the long chunk precompute, so the true waterline is
+	# on screen for most of the load rather than flashing up at the end.
+	#
+	# The two passes above sample params.water_sampler (pure noise), because that is
+	# all that exists before set_track → bake_track: the road flatten and the CLIFF
+	# offsets are baked by it. Cliff offsets are signed, so a stage with real
+	# cliffiness drops far more ground below the waterline than the noise predicts
+	# (worst where a high coastal waterline meets high cliffiness — the Sh*tbox Cup
+	# shows it plainly), and the preview read far drier than the driven world.
+	#
+	# Samples baked_height_at, NOT height_at: the chunk cache is still empty at this
+	# point, so height_at would fall back to pure noise and repaint the same wrong
+	# picture. baked_height_at reads the bake fields directly and is the same height
+	# the real lake is built against in _build_lakes.
+	if cfg.water_enabled and loading != null and not _headless and water_bounds.has_area():
+		var baked: Array = LakeField.preview_cells_for(
+			($Floor as TerrainManager).baked_height_at, cfg.track_water_level_m, water_bounds)
+		loading.update_water(baked[0], baked[1], water_bounds)
 	# Retained for post-build consumers outside this call (the benchmark runner
 	# follows the same road the progress manager measures).
 	_road_centerline = road_centerline

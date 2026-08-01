@@ -62,8 +62,22 @@ static func submerged_cells(sampler: Callable, water_level: float,
 # screen (world.gd) and the dev seed lab (settings_menu). Caps the scan at ~grid^2
 # samples so big stages don't stall. Returns [cells: PackedVector2Array, step: float].
 static func preview_cells(params: TrackGenParams, bounds: Rect2) -> Array:
-	if not params.water_enabled or not params.water_sampler.is_valid():
+	if not params.water_enabled:
+		return [PackedVector2Array(), TerrainManager.CELL_M]
+	return preview_cells_for(params.water_sampler, params.water_level, bounds)
+
+
+# preview_cells against an ARBITRARY height sampler. The params-based entry point
+# above samples pure noise, which is all that exists before the road is baked — but
+# the terrain the player actually gets is the BAKED one (road flatten + cliff
+# offsets, TerrainManager.height_at), and cliff drops are signed, so a stage with
+# real cliffiness ends up with substantially more ground under water than the noise
+# predicts. world.gd repaints the preview through this once the bake has run, so the
+# loading screen ends up showing the water that's really there. Same grid/step rule
+# as preview_cells, so the repaint lands on the identical lattice.
+static func preview_cells_for(sampler: Callable, water_level: float, bounds: Rect2) -> Array:
+	if not sampler.is_valid():
 		return [PackedVector2Array(), TerrainManager.CELL_M]
 	var grid := 220.0
 	var step: float = maxf(TerrainManager.CELL_M, maxf(bounds.size.x, bounds.size.y) / grid)
-	return [submerged_cells(params.water_sampler, params.water_level, bounds, step), step]
+	return [submerged_cells(sampler, water_level, bounds, step), step]
