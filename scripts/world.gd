@@ -281,7 +281,14 @@ func _ready() -> void:
 		# player quit/resume into a half-built world. This block runs after
 		# _generate_track in every mode (staged / free-roam / session; a regeneration
 		# re-runs _ready), so it's the single "world is ready" chokepoint for pause.
-		pause_menu.set_input_enabled(true)
+		#
+		# EXCEPT while the pre-countdown start line owns the screen. It is built ABOVE
+		# (_build_start_line), so arming unconditionally here re-enabled the Pause button
+		# it had just switched off — which is how a pause overlay ended up stacked over
+		# the start line's own menu, the two fighting for the same taps. The start line's
+		# own Exit is the way out until StartLine.sequence_finished re-arms pause at the
+		# hand-off (_on_start_line_finished).
+		pause_menu.set_input_enabled(not is_instance_valid(_start_line))
 
 	# Benchmark mode (features/benchmark.md): force the profiler on, hide the
 	# touch controls (the HUD is already off via cfg.hud_enabled), and hand the
@@ -1524,9 +1531,27 @@ func _build_start_line() -> void:
 	_start_line = StartLine.new()
 	_start_line.name = "StartLine"
 	add_child(_start_line)
+	# PAUSE IS OFF FOR THE WHOLE STAGED WINDOW. The start line owns the screen with its
+	# own full-width action row (Exit / Upgrades / Tune Car / Start), and a pause overlay
+	# stacked on top of it just fights for the same taps — the two menus overlapped and
+	# neither reliably took a press. The start line's own Exit is the way out until the
+	# countdown starts; sequence_finished re-arms pause at the hand-off.
+	var pause_menu := get_node_or_null("PauseMenu") as PauseMenu
+	if pause_menu != null:
+		pause_menu.set_input_enabled(false)
+		if not _start_line.sequence_finished.is_connected(_on_start_line_finished):
+			_start_line.sequence_finished.connect(_on_start_line_finished)
 	_start_line.setup($Car, $Floor, _stage_manager, rally, int(info["stage_index"]),
 		leaders, $CameraManager as CameraManager,
-		$HUD as CanvasLayer, $MobileControls as CanvasLayer)
+		$HUD as CanvasLayer, $MobileControls as CanvasLayer, pause_menu)
+
+
+# The staged window is over (camera, HUD and player control all handed back): pause is
+# meaningful again now that the start line's menu is gone. See _build_start_line.
+func _on_start_line_finished() -> void:
+	var pause_menu := get_node_or_null("PauseMenu") as PauseMenu
+	if pause_menu != null:
+		pause_menu.set_input_enabled(true)
 
 
 # Prepend a straight lead-in to a generated centerline: a stub BEHIND the start line

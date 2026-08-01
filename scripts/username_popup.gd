@@ -134,6 +134,11 @@ func _build() -> void:
 	vbox.add_child(UITheme.title("Choose a name"))
 	var body := Label.new()
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Pin the wrap width — see ConfirmPopup._build: an autowrapped Label's minimum width
+	# is one character, and a ScrollContainer hands its child that minimum instead of
+	# stretching it, so the body wrapped after every letter.
+	body.custom_minimum_size = Vector2(panel_width, 0)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.text = "This is the name other players see next to your time. " \
 		+ "Letters, numbers and spaces, up to %d characters." % MAX_LEN
 
@@ -142,6 +147,7 @@ func _build() -> void:
 	# enter the scroll.
 	var scroll := TouchScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(body)
 	vbox.add_child(scroll)
 
@@ -153,12 +159,15 @@ func _build() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", UITheme.GAP)
 	vbox.add_child(row)
-	var save_btn := _button("Save")
-	save_btn.pressed.connect(_on_save)
-	row.add_child(save_btn)
+	# Cancel FIRST, Save LAST: leaving is leftmost, proceeding is rightmost
+	# (features/menus.md → "Button order"). Only Save is wired into the field's column
+	# below, so Enter from the field still submits rather than cancelling.
 	var cancel := _button("Cancel")
 	cancel.pressed.connect(_on_cancel)
 	row.add_child(cancel)
+	var save_btn := _button("Save")
+	save_btn.pressed.connect(_on_save)
+	row.add_child(save_btn)
 
 	# Enter in the field submits — the ordinary expectation, and the only way to
 	# submit on a phone where the on-screen keyboard covers the button.

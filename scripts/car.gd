@@ -1055,7 +1055,29 @@ func _apply_heading_hold(_delta: float) -> void:
 	var rate := angular_velocity.y
 	# Torque = I * angular acceleration; yaw_inertia keeps it mass/size independent.
 	var accel := error * k - rate * 2.0 * sqrt(k)
-	var yaw_inertia := get_inverse_inertia_tensor().inverse() * Vector3.UP
+	# The inverse inertia tensor is SINGULAR whenever the body has no yaw freedom —
+	# `axis_lock_angular_y` zeroes that axis, and a frozen body zeroes the lot. Inverting
+	# it then trips Godot's `Condition "det == 0" is true` in Basis::invert and hands back
+	# a garbage basis, which `apply_torque` feeds straight into the physics state.
+	#
+	# That is not theoretical: the start line axis-locks the staged player
+	# (start_line.gd::_stage_player sets axis_lock_angular_y while the grid rolls up), so
+	# EVERY career start ran this every physics frame. The corrupted transform left the car
+	# pinned at the world origin for the whole stage, and the chase camera — which follows
+	# it — sat underground rendering a flat grey screen.
+	#
+	# No yaw freedom means there is no heading to hold, so skipping is also the correct
+	# behaviour, not merely the safe one.
+	var inv_tensor := get_inverse_inertia_tensor()
+	# EXACT zero, deliberately — this mirrors the engine's own `det == 0` condition in
+	# Basis::invert, so it fires precisely when inverting would fail and never otherwise.
+	# is_zero_approx() is WRONG here and was tried first: its 1e-6 epsilon swallows the
+	# legitimately tiny determinant of a real car's INVERSE inertia tensor (entries ~1e-3
+	# for a ~1000 kg car, so det ~1e-9), which silently disabled the heading hold for
+	# every car — caught by test_countdown_hold.gd's 16.6-degree drift assertion.
+	if inv_tensor.determinant() == 0.0:
+		return
+	var yaw_inertia := inv_tensor.inverse() * Vector3.UP
 	apply_torque(yaw_inertia * accel)
 
 

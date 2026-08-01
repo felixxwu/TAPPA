@@ -71,7 +71,14 @@ static func open(host: Node, title: String, body: String, actions: Array,
 			return null
 	var popup := ConfirmPopup.new()
 	popup._actions = actions
-	popup._back_index = back_index if back_index >= 0 else actions.size() - 1
+	# Back defaults to the FIRST action, because the house button order puts the
+	# exit/cancel action leftmost and the proceeding action rightmost (see
+	# features/menus.md "Button order"). This default USED to be the last action, which
+	# was correct only while dismiss sat on the right — leaving it there after the
+	# reorder would route Esc / gamepad-B to the CONFIRMING button, i.e. Escape would
+	# abandon a rally or overwrite a career. Single-action popups are unaffected (first
+	# and last are the same button).
+	popup._back_index = back_index if back_index >= 0 else 0
 	host.add_child(popup)
 	popup._build(title, body, default_index)
 	return popup
@@ -171,6 +178,14 @@ func _build(title: String, body: String, default_index: int) -> void:
 	var body_label := Label.new()
 	body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body_label.text = body
+	body_label.custom_minimum_size = Vector2(panel_width, 0)
+	body_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# PIN THE WRAP WIDTH. An autowrapped Label's minimum width is a single character, and
+	# a ScrollContainer hands its child that minimum rather than stretching it — so
+	# without this the body collapsed to one column and wrapped after EVERY LETTER
+	# ("A" / "B" / "A" …) with a scrollbar beside it. It must be the same width the
+	# height measurement below wraps at, or the measured height describes a different
+	# layout than the one on screen.
 	_body_label = body_label
 
 	# SCROLLING BODY, BUTTONS PINNED. The buttons are the only way to dismiss a
@@ -183,6 +198,7 @@ func _build(title: String, body: String, default_index: int) -> void:
 	# scroll at all.
 	var scroll := TouchScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(body_label)
 	vbox.add_child(scroll)
 

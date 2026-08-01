@@ -408,6 +408,8 @@ var _title_focus := 0           # which title button the cursor sits on (starts 
 var _garage_cursor := ButtonCursor.new()
 var _garage_focus := 1          # which garage action the cursor sits on (defaults to Drive)
 var _garage_showing_drive := false
+# Drive's index in the TOP-level row, recomputed on every rebuild (see _refresh_garage_row).
+var _garage_drive_index := 1
 var _garage_actions_row: HBoxContainer  # the row _refresh_garage_row rebuilds in place
 
 # Tuning-lift overlay widgets.
@@ -1851,8 +1853,9 @@ func _go_to(view: int, snap := false) -> void:
 		_ensure_lift_car()
 		_lower_lift_car()
 		_garage_showing_drive = false  # always land on the TOP level entering fresh
-		_garage_focus = 1  # seat the cursor on Drive each time we enter the garage
 		_refresh_garage_row()
+		_garage_focus = _garage_drive_index  # seat on Drive each time we enter
+		_refresh_garage_focus()
 	elif view == View.LIFT:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	elif view == View.TABLE:
@@ -1869,7 +1872,7 @@ func _go_to(view: int, snap := false) -> void:
 	# The title screen shows the player's whole collection parked in the car park.
 	if view == View.EXTERIOR:
 		_build_title_lineup()
-		_title_focus = 0  # seat the cursor on Start each time we enter the title
+		_title_focus = _title_start_index()  # seat the cursor on Start each time
 		_refresh_title_focus()
 	_update_overlays()
 	if view == View.CARPARK:
@@ -2710,6 +2713,16 @@ func _activate_title_focus() -> void:
 
 # Paint the manual title cursor (EXTERIOR is a spatially-navigated 3D station like the
 # garage, so Start / Account / Settings / Exit Game are highlighted by hand).
+# Start's position in the title row. COMPUTED, not a literal: the row is ordered
+# exit-left / proceed-right (features/menus.md → "Button order") so Start is last — but
+# "Exit Game" is skipped entirely on web, so "last" is a different index per platform.
+# The button's index within its own row is the cursor index; they are built in step.
+func _title_start_index() -> int:
+	if is_instance_valid(_title_start_button):
+		return _title_start_button.get_index()
+	return 0
+
+
 func _refresh_title_focus() -> void:
 	_title_cursor.refresh(_title_focus)
 
@@ -2738,8 +2751,9 @@ func _refresh_garage_focus() -> void:
 # garage framing it came from (still the same station; see _station_xform).
 func _garage_back_to_top() -> void:
 	_garage_showing_drive = false
-	_garage_focus = 1  # seat back on Drive
 	_refresh_garage_row()
+	_garage_focus = _garage_drive_index  # seat back on Drive
+	_refresh_garage_focus()
 	_move_camera_to(_station_xform(View.GARAGE), false)
 
 
@@ -2791,11 +2805,6 @@ func _refresh_garage_row() -> void:
 		var back := _station_button("< Back", on_back)
 		_garage_actions_row.add_child(back)
 		buttons.append(back); actions.append(on_back)
-		# Drive: switches this SAME row to Career/Free Roam/Online (_enter_garage_drive_level)
-		# — no camera move, no view change.
-		var to_drive := _station_button("Drive", _enter_garage_drive_level)
-		_garage_actions_row.add_child(to_drive)
-		buttons.append(to_drive); actions.append(_enter_garage_drive_level)
 		# Garage: open the car park to pick which owned car to work on, then drop
 		# straight into the tuning lift bay for that car (_open_garage_picker).
 		var to_garage := _station_button("Garage", _open_garage_picker)
@@ -2816,7 +2825,17 @@ func _refresh_garage_row() -> void:
 				to_box.tooltip_text = "Open a mystery box — fits a random upgrade to one of your cars"
 			_garage_actions_row.add_child(to_box)
 			buttons.append(to_box); actions.append(_on_open_mystery_box)
+		# Drive LAST: it is the proceeding action, and the house order puts those on the
+		# right (features/menus.md → "Button order"). It switches this SAME row to
+		# Career/Free Roam/Online (_enter_garage_drive_level) — no camera move beyond the
+		# level's own re-framing, no view change.
+		var to_drive := _station_button("Drive", _enter_garage_drive_level)
+		_garage_actions_row.add_child(to_drive)
+		buttons.append(to_drive); actions.append(_enter_garage_drive_level)
 	_garage_cursor.setup(buttons, actions)
+	# Where Drive ended up. Mystery Box is omitted entirely when none is held, so this is
+	# NOT a constant — the seat-on-Drive callers below must ask rather than assume.
+	_garage_drive_index = (buttons.size() - 1) if not _garage_showing_drive else 1
 	_garage_focus = _garage_cursor.settled(_garage_focus)
 	_refresh_garage_focus()
 	# Freshly-built buttons start life with raw (non-uppercase) text — _normalize_menus
@@ -4102,8 +4121,8 @@ func _make_carpark_modal(build_body: Callable, build_footer := Callable()) -> Co
 func _show_over_limit_prompt(_owned: Dictionary) -> void:
 	_active_carpark_popup = ConfirmPopup.open(self, "Too powerful",
 		"Change your upgrades to get under the power-to-weight limit.",
-		[ {"label": "Change Upgrades", "callback": _detune_change_upgrades},
-		  {"label": "Cancel", "callback": _close_detune_panel} ], 0)
+		[ {"label": "Cancel", "callback": _close_detune_panel},
+		  {"label": "Change Upgrades", "callback": _detune_change_upgrades} ], 1, 0)
 
 
 # Whether a car-park modal overlay (detune prompt / Change-Upgrades popup) is showing,
@@ -4485,8 +4504,8 @@ func _show_swap_confirm(current_id: int, partner_id: int) -> void:
 		_pending_swap = {}
 		body = "You have no engine swap tokens. Win one from a rally reward, then swap."
 	ConfirmPopup.open(self, "Swap engines?", body,
-		[ {"label": "Swap", "callback": _on_swap_confirmed, "disabled": tokens <= 0},
-		  {"label": "Cancel", "callback": Callable()} ], 0)
+		[ {"label": "Cancel", "callback": Callable()},
+		  {"label": "Swap", "callback": _on_swap_confirmed, "disabled": tokens <= 0} ], 1, 0)
 
 
 # OK on the swap-confirm popup: perform the swap (spends the token).

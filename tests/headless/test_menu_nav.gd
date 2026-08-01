@@ -637,8 +637,16 @@ func test_username_popup_is_keyboard_and_gamepad_navigable() -> void:
 			"%s is keyboard / gamepad focusable" % (b as Button).text)
 	# TextField.wire_column chains the field to Save explicitly, because the
 	# automatic neighbour search can't be trusted once a LineEdit is in the column.
-	assert_eq(popup._field.line.focus_neighbor_bottom, buttons[0].get_path(),
-		"down out of the field lands on Save")
+	# Found by LABEL, not by index: the row is ordered Cancel-then-Save now (leaving is
+	# leftmost — features/menus.md → "Button order"), and down out of the field must
+	# still reach the PRIMARY action rather than whatever happens to sit first.
+	var save_btn: Button = null
+	for b in buttons:
+		if String((b as Button).text).to_upper() == "SAVE":
+			save_btn = b
+	assert_not_null(save_btn, "the popup offers a Save button")
+	assert_eq(popup._field.line.focus_neighbor_bottom, save_btn.get_path(),
+		"down out of the field lands on Save, not on Cancel")
 
 
 # Back closes the popup having written nothing — it is deliberately dismissable

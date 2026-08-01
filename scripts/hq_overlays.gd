@@ -31,15 +31,28 @@ func build_title_overlay() -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	root.add_child(actions)
-	var start := _hq._station_button("Start", _hq._on_exterior_start)
-	actions.add_child(start)
-	_hq._title_start_button = start
-	# Account (optional cloud save) sits directly after Start: a player reinstalling
-	# or moving to a new device needs it BEFORE they start a fresh career, so burying
-	# it in Settings would be the wrong place. Also mirrored as a Settings page.
+	# BUTTON ORDER: leaving is leftmost, proceeding is rightmost (features/menus.md →
+	# "Button order"). So Exit Game leads and Start closes the row — this used to be
+	# exactly inverted, the one screen every player sees first.
+	var buttons: Array = []
+	var acts: Array = []
+	# Exit Game: quit the application. Skipped on the web build, where there's no OS
+	# process to quit (the tab owns the lifecycle) — which is why Start's index is
+	# COMPUTED below rather than hardcoded: on web this button isn't there at all.
+	if not Platform.is_web():
+		var exit_btn := _hq._station_button("Exit Game", _hq._on_exterior_exit)
+		actions.add_child(exit_btn)
+		_hq._title_exit_button = exit_btn
+		buttons.append(exit_btn)
+		acts.append(_hq._on_exterior_exit)
+	# Account (optional cloud save) sits next to Start: a player reinstalling or moving
+	# to a new device needs it BEFORE they start a fresh career, so burying it in
+	# Settings would be the wrong place. Also mirrored as a Settings page.
 	var account := _hq._station_button("Account", _hq._open_account_overlay)
 	actions.add_child(account)
 	_hq._title_account_button = account
+	buttons.append(account)
+	acts.append(_hq._open_account_overlay)
 	# Settings: the shared camera/controls page. Moved here from the garage action row —
 	# Back from it now always returns to the title (see _on_settings_action / the
 	# SETTINGS branch in _unhandled_input).
@@ -47,16 +60,13 @@ func build_title_overlay() -> void:
 	var settings := _hq._station_button("Settings", to_settings_cb)
 	actions.add_child(settings)
 	_hq._title_settings_button = settings
-	var buttons: Array = [start, account, settings]
-	var acts: Array = [_hq._on_exterior_start, _hq._open_account_overlay, to_settings_cb]
-	# Exit Game: quit the application. Sits at the end of the row. Skipped on the web
-	# build, where there's no OS process to quit (the tab owns the lifecycle).
-	if not Platform.is_web():
-		var exit_btn := _hq._station_button("Exit Game", _hq._on_exterior_exit)
-		actions.add_child(exit_btn)
-		_hq._title_exit_button = exit_btn
-		buttons.append(exit_btn)
-		acts.append(_hq._on_exterior_exit)
+	buttons.append(settings)
+	acts.append(to_settings_cb)
+	var start := _hq._station_button("Start", _hq._on_exterior_start)
+	actions.add_child(start)
+	_hq._title_start_button = start
+	buttons.append(start)
+	acts.append(_hq._on_exterior_start)
 	_hq._title_cursor.setup(buttons, acts)
 
 	# Build version, shown only on the title screen (bottom-right corner). It is

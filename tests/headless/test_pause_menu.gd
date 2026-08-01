@@ -222,7 +222,7 @@ func test_picking_a_camera_in_settings_applies_live() -> void:
 
 func test_quit_pressed_opens_confirm_popup() -> void:
 	_pause.open()
-	_pause._on_quit_pressed()
+	_pause.confirm_quit_to_hq()
 	await get_tree().process_frame
 	var popups := _pause.find_children("*", "ConfirmPopup", true, false)
 	assert_eq(popups.size(), 1, "quit shows a ConfirmPopup")
@@ -256,7 +256,7 @@ func test_picking_a_scheme_in_settings_applies_live() -> void:
 # and the pause menu itself is still open.
 func test_pause_action_while_quit_confirm_is_open_does_not_resume() -> void:
 	_pause.open()
-	_pause._on_quit_pressed()
+	_pause.confirm_quit_to_hq()
 	await get_tree().process_frame
 	assert_true(get_tree().paused, "setup: opening the menu paused the tree")
 	assert_eq(_pause.find_children("*", "ConfirmPopup", true, false).size(), 1,
@@ -290,7 +290,7 @@ func test_pause_action_while_quit_confirm_is_open_does_not_resume() -> void:
 # checks the pause menu is left untouched underneath.
 func test_ui_cancel_while_quit_confirm_is_open_dismisses_the_confirm_not_the_game() -> void:
 	_pause.open()
-	_pause._on_quit_pressed()
+	_pause.confirm_quit_to_hq()
 	await get_tree().process_frame
 	var popup: ConfirmPopup = _pause.find_children("*", "ConfirmPopup", true, false)[0]
 
@@ -302,3 +302,18 @@ func test_ui_cancel_while_quit_confirm_is_open_dismisses_the_confirm_not_the_gam
 	assert_true(get_tree().paused,
 		"cancelling the confirm returns to the (still paused) pause menu, not gameplay")
 	assert_true(_pause.is_open(), "the pause menu is still open after cancelling the confirm")
+
+
+# The pause BUTTON must follow the armed state, not just the open state. A live-looking
+# Pause button on screen while the menu is inert is how the pre-countdown start line
+# ended up with a pause overlay stacked over its own menu, both fighting for the taps.
+func test_the_pause_button_hides_while_the_menu_is_disarmed() -> void:
+	_pause.set_input_enabled(true)
+	assert_true(_pause._pause_button.visible, "armed and closed: the button is offered")
+	_pause.set_input_enabled(false)
+	assert_false(_pause._pause_button.visible,
+		"disarmed: no button, so it can't be pressed or overlap another menu")
+	_pause.open()
+	assert_false(_pause.is_open(), "and open() is refused while disarmed")
+	_pause.set_input_enabled(true)
+	assert_true(_pause._pause_button.visible, "re-arming brings it back")

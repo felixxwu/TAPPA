@@ -966,3 +966,35 @@ func test_stock_car_is_unaffected_by_the_swap_step() -> void:
 		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
 	assert_almost_eq(_car.config.mass, float(CarLibrary.by_id("fx_light_rwd")["mass"]), 0.5,
 		"no swap -> stock mass unchanged")
+
+
+# REGRESSION (career start line, Android grey screen). The parking hold's yaw half
+# inverts get_inverse_inertia_tensor(). That tensor is SINGULAR whenever the body has no
+# yaw freedom — axis_lock_angular_y zeroes that axis — so inverting it tripped Godot's
+# `Condition "det == 0" is true` in Basis::invert and handed a garbage basis straight to
+# apply_torque, corrupting the physics state.
+#
+# This is exactly what the start line does while the grid rolls up
+# (start_line.gd::_stage_player sets axis_lock_angular_y), so every career start ran it
+# every physics frame: the car stayed pinned at the world origin for the whole stage and
+# the chase camera, following it, sat underground rendering flat grey.
+#
+# Asserts the invariant, not the fix's shape: with yaw locked, the car's transform and
+# velocities stay FINITE. A garbage basis shows up here as NaN/INF.
+func test_heading_hold_survives_a_locked_yaw_axis() -> void:
+	_car.controls_locked = false
+	_car.handbrake_locked = true          # engage the parking hold
+	_car.axis_lock_angular_y = true       # what the start line does while staging
+	await _wait_physics(30)
+
+	var origin := _car.global_transform.origin
+	var basis_x := _car.global_transform.basis.x
+	assert_true(is_finite(origin.x) and is_finite(origin.y) and is_finite(origin.z),
+		"a yaw-locked held car keeps a finite position (got %s)" % origin)
+	assert_true(is_finite(basis_x.x) and is_finite(basis_x.y) and is_finite(basis_x.z),
+		"and a finite orientation — a singular inertia tensor must never reach apply_torque")
+	assert_true(is_finite(_car.linear_velocity.length()),
+		"and finite linear velocity")
+	assert_true(is_finite(_car.angular_velocity.length()),
+		"and finite angular velocity")
+	_car.axis_lock_angular_y = false

@@ -27,6 +27,40 @@ exterior title ─Start─▶ garage ─tap table─▶ map table (pick rally pi
    (DNF / abandon) ─rally_finished─▶ podium.tscn or HQ
 ```
 
+## Button order — leaving is left, proceeding is right
+
+**In any row of buttons: the action that LEAVES (Back / Exit / Cancel / Quit / Decide
+later) is leftmost, and the action that PROCEEDS (Start / Enter / Confirm / Drive) is
+rightmost.** Everything else sits between them. This is a house rule, not a per-screen
+choice — apply it to every new row without asking.
+
+Reference rows: `start_line.gd::_build_overlay` (`< Exit | Upgrades | Tune Car | Start`),
+`hq_overlays.gd::build_title_overlay` (`Exit Game | Account | Settings | Start`),
+`hq.gd::_refresh_garage_row` TOP level (`< Back | Garage | Mystery Box | Drive`),
+`build_detail_overlay` (`< Map | Enter Rally >`), `build_challenge_overlay`
+(`< Back | Start`).
+
+**Two traps when reordering an existing row:**
+
+1. **`ConfirmPopup.open`'s `default_index` and `back_index` are POSITIONAL.** Reversing
+   the `actions` array without updating them silently changes which button is focused
+   and which one Esc / gamepad-B fires. `back_index` now defaults to the **first**
+   action (it used to be the last, correct only while dismiss sat on the right) — get
+   this wrong and Escape abandons a rally or overwrites a career. Single-action popups
+   are unaffected: first and last are the same button.
+2. **Cursor seat indices are not constants.** `ButtonCursor` rows seat the cursor by
+   index, and several rows have CONDITIONAL members — "Exit Game" is skipped on web,
+   "Mystery Box" is omitted when none is held. So "the proceeding action is last" is a
+   different index per platform and per save state. Compute it
+   (`hq.gd::_title_start_index`, `hq.gd::_garage_drive_index`) rather than hardcoding,
+   and have tests assert by button IDENTITY rather than by literal index.
+
+**Vertical columns are a separate convention and are deliberately NOT changed by this
+rule:** they put the exit at the BOTTOM (last) — see `pause_menu.gd::_build_menu_panel`
+(`Resume / Reset to track / Settings / Quit to HQ`), `account_menu.gd::_build_email_form`
+and the `< Back` at the foot of every scrolled modal page. That is consistent across the
+game; treat any change to it as its own decision.
+
 ## Menu navigation (keyboard / gamepad)
 
 Every menu is fully navigable with **up / down / left / right / enter / back**, on
@@ -209,9 +243,29 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   key afterward (using the same dying-subtree guard so it doesn't grab the about-to-be-
   freed old one).
 
-  The **`start line`** pre-event overlay has three buttons — **Start**, **Upgrades**,
-  and **Tune Car** — so it uses `MenuNav.attach(root, {first = _start_button})`
-  for keyboard/gamepad focus; a pointer tap on the clear band still launches.
+  The **`start line`** pre-event overlay carries ONE horizontal action row across the
+  bottom — **`< Exit | Upgrades | Tune Car | Start`** (`start_line.gd::_build_overlay`,
+  built via `_row_button`) — the same shape the garage row and lift hub use. It uses
+  `MenuNav.attach(root, {first = _start_button})` for keyboard/gamepad focus; a pointer
+  tap on the clear band still launches. Two things about it are load-bearing:
+
+  * **The pause menu is SUPPRESSED for the whole staged window.** `world.gd` calls
+    `pause_menu.set_input_enabled(false)` when it builds the start line and re-arms on
+    `StartLine.sequence_finished` (`_on_start_line_finished`), which fires at the
+    hand-off. Note the "world is ready" arming chokepoint runs AFTER `_build_start_line`,
+    so it arms with `not is_instance_valid(_start_line)` — arming unconditionally there
+    re-enabled the Pause button the start line had just switched off, which is how a
+    pause overlay ended up stacked over the start line's own menu with the two fighting
+    for the same taps. `PauseMenu._pause_button.visible` follows `_input_enabled` for
+    the same reason: an inert-but-visible button is a trap. **Exit** exists precisely
+    because pause is gone — it routes to `PauseMenu.confirm_quit_to_hq()` so the
+    "abandon a rally vs. pause a challenge" wording and the benchmark/challenge/rally
+    branching live in one place.
+  * **The buttons drop `UITheme.BUTTON_MIN_W`.** That 180-unit floor is right for a
+    stacked column, but four of them side by side need ~750 logical units against a
+    canvas only ~556 wide at the 360 tier (~445 on the 288 web-touch tier), so the row
+    ran off both edges. `_row_button` keeps the house row HEIGHT and lets each button
+    hug its own label.
   `world.gd._show_repair_popup` builds the between-event **pit-repair popup**
   (`repair_reveal.gd`, its own `MenuNav.attach(self, {first = _continue_button})`)
   in a CanvasLayer stacked ON TOP of an already-built, already-attached start-line

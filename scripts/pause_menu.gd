@@ -53,6 +53,11 @@ func _ready() -> void:
 # disable would strand get_tree().paused, so callers only disable at boot (closed).
 func set_input_enabled(on: bool) -> void:
 	_input_enabled = on
+	# The button follows the armed state too. Leaving a live-looking Pause button on
+	# screen while the menu is inert is how the pre-countdown start line ended up with a
+	# pause overlay stacked on top of its own menu, both fighting for the same taps.
+	if is_instance_valid(_pause_button):
+		_pause_button.visible = on and not is_open()
 
 
 func is_open() -> bool:
@@ -88,14 +93,18 @@ func _on_reset_to_track_pressed() -> void:
 # differs by session: a career rally really is abandoned (progress lost), while a
 # challenge is only PAUSED — challenge_run stays persisted and the entry screen
 # offers Resume — so it must not claim the run is lost (item 12).
-func _on_quit_pressed() -> void:
+# Ask to quit, then quit. PUBLIC because the pre-countdown start line's Exit button
+# raises the same prompt — the wording branches on challenge-vs-rally and the quit
+# branches on benchmark/challenge/rally, and neither belongs in two places.
+func confirm_quit_to_hq() -> void:
 	var body := "Abandon this rally and return to HQ?\nYour progress in this run is lost."
 	if ChallengeSession.is_active():
 		body = "Pause this challenge and return to HQ?\n" \
 			+ "Your run is saved — resume it any time.\nThe current stage starts over."
 	ConfirmPopup.open(self, "Quit to HQ?", body,
-		[ {"label": "Quit to HQ", "callback": quit_to_hq},
-		  {"label": "Cancel", "callback": Callable()} ])
+		[ {"label": "Cancel", "callback": Callable()},
+		  {"label": "Quit to HQ", "callback": quit_to_hq} ],
+		1, 0)  # focus stays on Quit as before; Back/Esc = Cancel (index 0)
 
 
 # Leave the run for HQ: unfreeze, then leave the active rally/challenge.
@@ -239,7 +248,7 @@ func _build_menu_panel() -> Control:
 	# Quit to HQ — abandons the rally (after a confirm). No retry penalty: a non-top-3
 	# rally is simply re-entered later from the map.
 	_quit_button = _make_menu_button("Quit to HQ")
-	_quit_button.pressed.connect(_on_quit_pressed)
+	_quit_button.pressed.connect(confirm_quit_to_hq)
 	col.add_child(_quit_button)
 	return center
 
@@ -300,7 +309,7 @@ func _make_menu_button(text: String) -> Button:
 
 func _set_open(opened: bool) -> void:
 	_overlay.visible = opened
-	_pause_button.visible = not opened
+	_pause_button.visible = not opened and _input_enabled
 
 
 func _show_settings(on: bool) -> void:

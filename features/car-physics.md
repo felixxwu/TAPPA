@@ -332,6 +332,29 @@ be pointing the wrong way by the time the 3·2·1 reached GO. Guarded by
 `tests/headless/test_countdown_hold.gd`, which asserts the behaviour (no ringing, no
 drift, still releases) rather than any tuned value.
 
+**A body with no yaw freedom is skipped, and this is load-bearing.** The heading term
+needs the yaw inertia, which it gets by inverting `get_inverse_inertia_tensor()` — and
+that tensor is SINGULAR whenever the body cannot yaw: `axis_lock_angular_y` zeroes that
+axis, and a frozen body zeroes all three. Inverting it trips Godot's
+`Condition "det == 0" is true` in `Basis::invert`, which returns a garbage basis that
+then goes straight into `apply_torque` and corrupts the physics state. So
+`_apply_heading_hold` bails when the tensor's determinant is EXACTLY zero — mirroring
+the engine's own condition, so it fires precisely when inverting would fail. Which is
+also the correct behaviour, since a car that cannot yaw has no heading to hold.
+(`is_zero_approx` is wrong here: its 1e-6 epsilon swallows the legitimately tiny
+determinant of a real car's inverse inertia tensor — entries ~1e-3 for a ~1000 kg car,
+so det ~1e-9 — which disables the hold for every car.)
+
+That was not hypothetical. `start_line.gd::_stage_player` sets `axis_lock_angular_y`
+while the grid rolls up, so **every career start** hit it on every physics frame. The
+corrupted transform left the car pinned at the world origin for the entire stage, and
+the chase camera — which follows the car — sat below the terrain rendering a flat grey
+screen; the symptom reported from an Android build was "the cars on the start line are
+all inside each other and pressing play shows pure grey". Regression:
+`test_car.gd::test_heading_hold_survives_a_locked_yaw_axis`, which asserts the car's
+transform and velocities stay FINITE with yaw locked (a garbage basis shows up as
+NaN/INF) — it fails without the guard.
+
 This is needed because the tire model's longitudinal force fades to zero as slip does
 (`_tire_force` caps it at `|slip|·m/h`), so at creep speed gravity's slope component
 would otherwise win and the car would dribble downhill. The hold behaves like real

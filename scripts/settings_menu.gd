@@ -367,6 +367,12 @@ func _build_seedlab_page() -> void:
 	sl_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_theme_constant_override("separation", 24)
 	sl_panel.add_child(sl_actions)
+	# Back FIRST: leaving is leftmost (features/menus.md → "Button order"). The nav array
+	# below must stay in the same order as the children, or left/right desyncs from what
+	# is on screen.
+	var sl_back := _make_action_button("Back", go_back)
+	sl_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl_actions.add_child(sl_back)
 	var sl_load := _make_action_button("Load stage…", _open_event_picker)
 	sl_load.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_child(sl_load)
@@ -376,11 +382,8 @@ func _build_seedlab_page() -> void:
 	var sl_random := _make_action_button("Randomize seed", _randomize_seed)
 	sl_random.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sl_actions.add_child(sl_random)
-	var sl_back := _make_action_button("Back", go_back)
-	sl_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_actions.add_child(sl_back)
 	_wire_seedlab_nav([[_seed_spin, _level_spin], [_turns_spin, _straight_spin]],
-		[sl_load, sl_terrain, sl_random, sl_back])
+		[sl_back, sl_load, sl_terrain, sl_random])
 	_build_event_picker()
 	_build_terrain_editor()
 	_seedlab_page.visible = false  # shown only via show_seedlab()

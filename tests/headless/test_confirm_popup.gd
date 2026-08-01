@@ -38,11 +38,25 @@ func test_disabled_action_button_is_disabled() -> void:
 	var buttons := popup.find_children("*", "Button", true, false)
 	assert_true((buttons[0] as Button).disabled, "disabled flag honoured")
 
-func test_back_index_defaults_to_last_action() -> void:
+# CHANGED DELIBERATELY: back used to default to the LAST action, which was right only
+# while the dismiss button sat on the right. The house order now puts exit/cancel LEFT
+# and the proceeding action RIGHT (features/menus.md "Button order"), so the default had
+# to move with it — leaving it on the last action would route Esc / gamepad-B to the
+# CONFIRMING button, i.e. Escape would abandon a rally or overwrite a career.
+func test_back_index_defaults_to_the_first_action() -> void:
 	var flag := [""]
 	var popup := ConfirmPopup.open(_host, "T", "B", _actions_with_flag(flag))
 	popup.trigger_back()
-	assert_eq(flag[0], "no", "Back fires the last action by default")
+	assert_eq(flag[0], "yes", "Back fires the FIRST (leftmost = cancel) action by default")
+
+
+# A single-action popup is unaffected by that change — first and last are one button.
+func test_back_on_a_single_action_popup_fires_that_action() -> void:
+	var flag := [""]
+	var popup := ConfirmPopup.open(_host, "T", "B",
+		[{"label": "OK", "callback": func() -> void: flag[0] = "ok"}])
+	popup.trigger_back()
+	assert_eq(flag[0], "ok", "the only action is both the default and the back action")
 
 # --- One modal at a time ------------------------------------------------------
 # Every modal in the game is a ConfirmPopup or a UsernamePopup, both on layer 101,
@@ -174,7 +188,7 @@ func test_open_committing_returns_an_ordinary_popup() -> void:
 	var buttons := popup.find_children("*", "Button", true, false)
 	assert_eq(buttons.size(), 2, "one button per action, as usual")
 	popup.trigger_back()
-	assert_eq(flag[0], "no", "Back routes to the last action, as usual")
+	assert_eq(flag[0], "yes", "Back routes to the first (leftmost) action, as usual")
 	await get_tree().process_frame
 	assert_false(is_instance_valid(popup), "and it dismisses itself")
 
@@ -226,3 +240,30 @@ func test_an_unparented_host_cannot_raise_a_modal() -> void:
 	assert_null(ConfirmPopup.open(orphan, "T", "B", _actions_with_flag([""])))
 	assert_null(UsernamePopup.open(orphan))
 	orphan.free()
+
+
+# REGRESSION. The body Label lives in a TouchScrollContainer so a long body can't push
+# the buttons off screen. But an autowrapped Label's MINIMUM width is a single character,
+# and a ScrollContainer hands its child that minimum rather than stretching it — so the
+# body collapsed to one column and wrapped after every letter ("A" / "B" / "A" …) with a
+# scrollbar beside it. Reported from the phone on the "Quit to HQ?" confirm.
+#
+# Asserts the relationship, not a pixel width: a wrapped body must produce far fewer
+# lines than it has characters. One-character-per-line makes lines ≈ characters.
+func test_the_body_wraps_at_the_panel_width_not_one_character_per_line() -> void:
+	var body := "Abandon this rally and return to HQ? Your progress in this run is lost."
+	var popup := ConfirmPopup.open(self, "Quit to HQ?", body,
+		[{"label": "Quit", "callback": Callable()}, {"label": "Cancel", "callback": Callable()}], 0)
+	assert_not_null(popup, "setup: the popup opened")
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var label: Label = popup._body_label
+	assert_not_null(label, "the popup keeps a handle on its body label")
+	assert_lt(label.get_line_count(), int(body.length() / 4.0),
+		"the body wraps at the panel width, not one character per line (got %d lines for %d chars)"
+			% [label.get_line_count(), body.length()])
+	assert_gt(label.size.x, 100.0,
+		"and the label is actually given a sane width to wrap within (got %.1f)" % label.size.x)
+	popup.trigger_back()
+	await get_tree().process_frame

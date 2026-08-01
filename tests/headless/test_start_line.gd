@@ -707,3 +707,50 @@ func test_challenge_upgrades_close_button_gates_on_the_ceiling() -> void:
 	assert_true(sl._upgrades_menu.can_close(), "proceeding is allowed once under the ceiling")
 	assert_false(String(sl._upgrades_back.text).begins_with("Over limit"),
 		"the close button returns to its plain label")
+
+
+# The pre-countdown menu lays its actions out in ONE horizontal row across the bottom,
+# the same shape the garage row and lift hub use — stacked vertically these four ate most
+# of a phone screen and covered the car the staging shot exists to show.
+func test_the_action_row_is_horizontal_and_offers_a_way_out() -> void:
+	var sl := _make(_leaders())
+	var row: HBoxContainer = null
+	for node in sl.find_children("*", "HBoxContainer", true, false):
+		if (node as HBoxContainer).get_child_count() >= 4:
+			row = node
+			break
+	assert_not_null(row, "the actions live in a single horizontal row")
+
+	var labels: Array[String] = []
+	for child in row.get_children():
+		if child is Button:
+			labels.append(String((child as Button).text).to_upper())
+			assert_ne((child as Button).focus_mode, Control.FOCUS_NONE,
+				"every action stays reachable by keyboard/gamepad")
+	# EXIT is the only way off the start line now that pause is suppressed here.
+	var joined := " | ".join(labels)
+	assert_true(joined.contains("EXIT"),
+		"an Exit action is offered (pause is disabled while staged) — got %s" % joined)
+	assert_true(joined.contains("START"), "and Start — got %s" % joined)
+
+
+# The row must FIT. UITheme.button pins a 180-unit width floor, which is right for a
+# stacked column but not for four buttons side by side — 4 x 180 plus gaps needs ~750
+# logical units against a canvas ~556 wide (~445 on the web-touch tier), so the row ran
+# off both edges and the outer buttons were unreachable. Asserts the relationship (the
+# row's minimum fits the canvas), never a pixel width.
+func test_the_action_row_fits_across_the_screen() -> void:
+	var sl := _make(_leaders())
+	var row: HBoxContainer = null
+	for node in sl.find_children("*", "HBoxContainer", true, false):
+		if (node as HBoxContainer).get_child_count() >= 4:
+			row = node
+			break
+	assert_not_null(row, "setup: found the action row")
+	for child in row.get_children():
+		if child is Button:
+			assert_lt((child as Button).custom_minimum_size.x, float(UITheme.BUTTON_MIN_W),
+				"button '%s' must not carry the stacked-column width floor" % (child as Button).text)
+	var needed := row.get_combined_minimum_size().x
+	assert_lt(needed, float(DisplayStretch.DESIGN_HEIGHT) * 16.0 / 9.0,
+		"the whole row fits a 16:9 canvas at the design height (needs %.0f)" % needed)

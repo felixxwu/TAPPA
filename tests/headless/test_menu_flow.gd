@@ -187,10 +187,12 @@ func test_title_has_a_reachable_exit_game_button_on_desktop() -> void:
 	assert_not_null(hq._title_exit_button, "the title screen has an Exit Game button")
 	assert_true(hq._title_cursor.buttons.has(hq._title_exit_button),
 		"Exit Game is a stop on the title's left/right cursor")
-	# It sits after Start — the end of the title row.
+	# CHANGED DELIBERATELY: Exit Game used to sit AFTER Start. The house order is
+	# exit-left / proceed-right (features/menus.md → "Button order"), so it now leads
+	# the row and Start closes it.
 	var parent: Node = hq._title_start_button.get_parent()
-	assert_gt(hq._title_exit_button.get_index(), hq._title_start_button.get_index(),
-		"Exit Game sits after Start in the title row")
+	assert_lt(hq._title_exit_button.get_index(), hq._title_start_button.get_index(),
+		"Exit Game sits BEFORE Start — leaving is leftmost, proceeding is rightmost")
 	assert_eq(hq._title_exit_button.get_parent(), parent,
 		"Exit Game lives in the same title button row")
 
@@ -277,27 +279,29 @@ func test_hq_title_is_a_left_right_cursor() -> void:
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.EXTERIOR, "boots to the title")
-	assert_eq(hq._title_focus, 0, "the title cursor starts on Start")
-	assert_eq(hq._title_cursor.buttons[0], hq._title_start_button, "index 0 is Start")
+	# Order is exit-left / proceed-right: [Exit Game] Account Settings [Start], with
+	# Exit Game absent on web. Asserted by BUTTON IDENTITY at each step rather than by
+	# literal index, so the web build (one fewer stop) walks the same path.
+	var cursor: Array = hq._title_cursor.buttons
+	assert_eq(cursor[cursor.size() - 1], hq._title_start_button,
+		"Start is LAST — it is the proceeding action")
+	assert_eq(hq._title_focus, cursor.size() - 1, "the title cursor starts on Start")
+	if hq._title_exit_button != null:
+		assert_eq(cursor[0], hq._title_exit_button, "Exit Game is FIRST — it is the way out")
 	hq._move_title_focus(1)
-	assert_eq(hq._title_focus, 1, "right moves the cursor to Account")
-	assert_eq(hq._title_cursor.buttons[1], hq._title_account_button, "index 1 is Account")
-	hq._move_title_focus(1)
-	assert_eq(hq._title_focus, 2, "right moves the cursor to Settings")
-	assert_eq(hq._title_cursor.buttons[2], hq._title_settings_button, "index 2 is Settings")
-	if hq._title_exit_button == null:
-		pass_test("web build has no Exit Game stop; left/right/select over Start/Account/Settings confirmed")
-		return
-	hq._move_title_focus(1)
-	assert_eq(hq._title_focus, 3, "right again moves the cursor to Exit Game")
-	assert_eq(hq._title_cursor.buttons[3], hq._title_exit_button, "index 3 is Exit Game")
-	hq._move_title_focus(1)
-	assert_eq(hq._title_focus, 0, "right from the end wraps to Start")
+	assert_eq(hq._title_focus, 0, "right from the end wraps to the first stop")
 	hq._move_title_focus(-1)
-	assert_eq(hq._title_focus, 3, "left from Start wraps onto Exit Game")
+	assert_eq(hq._title_focus, cursor.size() - 1, "and left from there wraps back onto Start")
+	# Walk the whole row and confirm every stop is reachable and distinct.
+	var seen: Array = []
+	for _i in cursor.size():
+		assert_false(seen.has(hq._title_focus), "each left/right step lands on a new stop")
+		seen.append(hq._title_focus)
+		hq._move_title_focus(1)
+	assert_eq(seen.size(), cursor.size(), "every button in the row is reachable")
 
 	# Select on Settings opens the settings page.
-	hq._title_focus = 2
+	hq._title_focus = cursor.find(hq._title_settings_button)
 	hq._activate_title_focus()
 	assert_eq(hq._view, hq.View.SETTINGS, "select on Settings opens the settings page")
 
@@ -314,7 +318,8 @@ func test_hq_title_settings_returns_to_title_on_back() -> void:
 	hq._on_settings_action()
 	assert_eq(hq._view, hq.View.EXTERIOR, "Back from the settings list returns to the title")
 	assert_true(hq._title_layer.visible, "the title overlay is shown again")
-	assert_eq(hq._title_focus, 0, "re-entering the title re-seats the cursor on Start")
+	assert_eq(hq._title_focus, hq._title_start_index(),
+		"re-entering the title re-seats the cursor on Start")
 
 
 # Regression: menu_select on the title must fire the item the CURSOR sits on, not
@@ -995,25 +1000,34 @@ func test_hq_garage_is_a_left_right_cursor() -> void:
 	hq._on_exterior_start()
 	assert_eq(hq._view, hq.View.GARAGE, "start lands in the garage")
 	assert_false(hq._garage_showing_drive, "opening the garage always starts on the TOP level")
-	assert_eq(hq._garage_focus, 1, "the garage cursor starts on Drive")
-	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 2, "right moves the cursor to Garage")
-	hq._move_garage_focus(1)
-	assert_eq(hq._garage_focus, 3, "right moves the cursor to Mystery Box")
+	# ORDER CHANGED DELIBERATELY: was `< Back | Drive | Garage | Mystery Box`. The house
+	# rule is exit-left / proceed-right (features/menus.md → "Button order"), so Drive —
+	# the proceeding action — moved to the END. Mystery Box is omitted when none is held,
+	# so Drive's index is not a constant; ask _garage_drive_index rather than assume.
+	var last: int = hq._garage_cursor.buttons.size() - 1
+	assert_eq(hq._garage_drive_index, last, "Drive is the LAST stop on the row")
+	assert_eq(hq._garage_focus, hq._garage_drive_index, "the garage cursor starts on Drive")
 	hq._move_garage_focus(1)
 	assert_eq(hq._garage_focus, 0, "right from the end wraps to Back")
 	hq._move_garage_focus(-1)
-	assert_eq(hq._garage_focus, 3, "left from Back wraps to Mystery Box")
+	assert_eq(hq._garage_focus, last, "left from Back wraps back onto Drive")
+	# Every stop is reachable and distinct.
+	var seen: Array = []
+	for _i in hq._garage_cursor.buttons.size():
+		assert_false(seen.has(hq._garage_focus), "each step lands on a new stop")
+		seen.append(hq._garage_focus)
+		hq._move_garage_focus(1)
 
 	# Select on Garage opens the car park -> tuning lift.
-	hq._garage_focus = 2
+	hq._garage_focus = 1  # Back(0) | Garage(1) | ...
 	hq._activate_garage_focus()
 	await get_tree().process_frame
 	assert_eq(hq._view, hq.View.CARPARK, "select on Garage opens the car park")
 
 	# Back-to-garage, then select on the Back item leaves for the exterior.
 	hq._go_to(hq.View.GARAGE)
-	assert_eq(hq._garage_focus, 1, "re-entering the garage re-seats the cursor on Drive")
+	assert_eq(hq._garage_focus, hq._garage_drive_index,
+		"re-entering the garage re-seats the cursor on Drive")
 	hq._garage_focus = 0
 	hq._activate_garage_focus()
 	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
@@ -1028,7 +1042,7 @@ func test_hq_garage_drive_level_is_a_left_right_cursor() -> void:
 	await get_tree().process_frame
 	hq._on_exterior_start()
 
-	hq._garage_focus = 1  # Drive
+	hq._garage_focus = hq._garage_drive_index
 	hq._activate_garage_focus()
 	assert_true(hq._garage_showing_drive, "Drive switches to the DRIVE level")
 	assert_eq(hq._view, hq.View.GARAGE, "Drive does NOT change the view/station")
@@ -1049,13 +1063,13 @@ func test_hq_garage_drive_level_is_a_left_right_cursor() -> void:
 
 	# Back up to the TOP level from the DRIVE level's own Back (0), not out to the exterior.
 	hq._go_to(hq.View.GARAGE)
-	hq._garage_focus = 1
+	hq._garage_focus = hq._garage_drive_index
 	hq._activate_garage_focus()  # Drive -> DRIVE level
 	hq._garage_focus = 0
 	hq._activate_garage_focus()  # DRIVE level's Back
 	assert_false(hq._garage_showing_drive, "Back on the DRIVE level returns to the TOP level")
 	assert_eq(hq._view, hq.View.GARAGE, "still in the garage, not the exterior")
-	assert_eq(hq._garage_focus, 1, "the cursor re-seats on Drive")
+	assert_eq(hq._garage_focus, hq._garage_drive_index, "the cursor re-seats on Drive")
 
 
 # Drive keeps the garage STATION but re-frames it: the camera eases in to a low
@@ -1071,7 +1085,7 @@ func test_hq_drive_level_frames_the_lift_car_from_a_low_front_three_quarter() ->
 	hq._on_exterior_start()
 	var wide: Transform3D = hq._station_xform(hq.View.GARAGE)
 
-	hq._garage_focus = 1  # Drive
+	hq._garage_focus = hq._garage_drive_index  # Drive is last in the row now
 	hq._activate_garage_focus()
 	assert_true(is_instance_valid(hq._lift_car), "the garage station has a car on the lift to frame")
 	var drive: Transform3D = hq._station_xform(hq.View.GARAGE)
@@ -1140,7 +1154,7 @@ func test_hq_challenge_entry_opens_and_is_navigable() -> void:
 	hq._on_exterior_start()
 	assert_false(hq._challenge_layer.visible, "the challenge overlay starts hidden")
 
-	hq._garage_focus = 1
+	hq._garage_focus = hq._garage_drive_index
 	hq._activate_garage_focus()  # Drive -> DRIVE level
 	hq._garage_focus = 3
 	hq._activate_garage_focus()  # Online
@@ -2154,8 +2168,14 @@ func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
 	assert_true(is_instance_valid(hq._active_carpark_popup),
 		"pressing Start on an over-powered car pops the over-limit prompt")
 	var popup: ConfirmPopup = hq._active_carpark_popup
-	assert_string_contains(popup._buttons[0].text.to_upper(), "CHANGE UPGRADES",
-		"the first choice routes to the upgrades menu")
+	# Exit-left / proceed-right (features/menus.md → "Button order"): Cancel leads, the
+	# action that gets you moving is last. Asserted by identity, not by index 0.
+	var choices: Array = []
+	for b in popup._buttons:
+		choices.append(String((b as Button).text).to_upper())
+	assert_eq(choices[0], "CANCEL", "Cancel is leftmost")
+	assert_string_contains(choices[choices.size() - 1], "CHANGE UPGRADES",
+		"and the proceeding choice — routing to the upgrades menu — is rightmost")
 	for b in popup._buttons:
 		assert_false("detune" in (b as Button).text.to_lower(),
 			"there is no one-press auto-detune button anymore")
@@ -3578,7 +3598,7 @@ func test_android_notice_is_navigable_and_back_dismisses() -> void:
 	nav._unhandled_input(_press("menu_back"))
 	assert_null(hq._android_notice_layer, "back dismisses the notice")
 	assert_true(hq._title_layer.visible, "dismissing restores the title overlay")
-	assert_eq(hq._title_focus, 0, "the title cursor is back on Start")
+	assert_eq(hq._title_focus, hq._title_start_index(), "the title cursor is back on Start")
 
 
 # The final event used to skip straight to the podium. It now pauses on the SAME

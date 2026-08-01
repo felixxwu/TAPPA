@@ -65,6 +65,8 @@ var _upgrades_layer: CanvasLayer     # the pre-race upgrades overlay (built lazi
 var _upgrades_menu: UpgradesMenu     # the shared upgrades menu (same as the HQ garage)
 var _upgrades_back: Button           # the upgrades overlay's Back/Done button (p/w-gated)
 var _menu_last_back: Button          # back button _build_menu_overlay just created
+var _pause_menu: PauseMenu           # for the Exit button; pause itself is off while staged
+var _exit_button: Button
 var _rally: Dictionary = {}          # this event's rally (for the Tune Car detune cap)
 var _subtitle_label: Label
 var _fade: CanvasLayer
@@ -112,6 +114,12 @@ var _player_auto_was := false # the player's gearbox auto flag, restored at hand
 # (as opposed to already racing), so it can tighten the proximity radius for the
 # cars waiting behind the one currently on the reveal card. A plain dev boot never
 # calls setup(), so this stays null and engine_audio falls back to its normal radius.
+# Emitted when the pre-countdown sequence has fully handed back (camera, HUD, player
+# control) and the countdown is about to run. world.gd re-arms the pause menu on this —
+# pause is suppressed for the whole staged window, because the start line has its own
+# full-screen menu and a second one stacked over it just fights for the same taps.
+signal sequence_finished
+
 static var active_instance: StartLine = null
 
 
@@ -152,8 +160,10 @@ func _stage_total(rally: Dictionary) -> int:
 # camera via the manager, so the player's chosen mode — not always chase — resumes).
 func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary,
 		event_index: int, leaders: Array, camera_manager: CameraManager = null,
-		hud: CanvasLayer = null, mobile: CanvasLayer = null) -> void:
+		hud: CanvasLayer = null, mobile: CanvasLayer = null,
+		pause_menu: PauseMenu = null) -> void:
 	active_instance = self
+	_pause_menu = pause_menu
 	_player = player
 	_terrain = terrain
 	_rally = rally  # kept so Tune Car can cap detune at the rally's qualifying power
@@ -310,24 +320,56 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(spacer)
 
-	# --- BOTTOM: the launch button + pre-race menus --------------------------
-	_start_button = UITheme.button("Start")
-	_start_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_start_button.pressed.connect(launch)
-	root.add_child(_start_button)
+	# --- BOTTOM: one horizontal action row -----------------------------------
+	# Laid out across the bottom, exit-first-primary-last, the same shape the garage row
+	# (< Back / Drive / Garage / Mystery Box) and the lift hub (< Back / Upgrades /
+	# Tuning / Test Drive) use. Stacked vertically these four would eat most of a phone
+	# screen and cover the very car the staging shot exists to show.
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("separation", UITheme.GAP)
+	root.add_child(actions)
 
-	_upgrades_button = UITheme.button("Upgrades")
-	_upgrades_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_upgrades_button.pressed.connect(_open_upgrades)
-	root.add_child(_upgrades_button)
+	# EXIT lives here because the pause menu is suppressed while staged (see
+	# sequence_finished) — without it the player would be stuck on the start line with no
+	# way out but finishing the stage. Routed through the pause menu's own
+	# confirm_quit_to_hq so the "abandon vs. pause a challenge" wording and the
+	# benchmark/challenge/rally branching stay in exactly one place.
+	_exit_button = _row_button("< Exit", _on_exit_pressed)
+	actions.add_child(_exit_button)
 
-	_tune_button = UITheme.button("Tune Car")
-	_tune_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_tune_button.pressed.connect(_open_tune)
-	root.add_child(_tune_button)
+	_upgrades_button = _row_button("Upgrades", _open_upgrades)
+	actions.add_child(_upgrades_button)
+
+	_tune_button = _row_button("Tune Car", _open_tune)
+	actions.add_child(_tune_button)
+
+	_start_button = _row_button("Start", launch)
+	actions.add_child(_start_button)
 
 	UITheme.enforce(_overlay)  # house rules: uppercase + one font size + fixed button height
 	MenuNav.attach(root, {"first": _start_button})
+
+
+# One button in the bottom action row. UITheme.button pins a BUTTON_MIN_W (180) floor,
+# which is right for a stacked column but not for four buttons side by side: 4 x 180 plus
+# the gaps needs ~750 logical units against a canvas only ~556 wide at the 360 tier (and
+# ~445 on the 288 web-touch tier), so the row ran off both edges. Collapsing the width
+# floor lets each button hug its own label; the house row HEIGHT is kept, and
+# UITheme.enforce re-applies it anyway.
+func _row_button(text: String, on_press: Callable) -> Button:
+	var b := UITheme.button(text)
+	b.custom_minimum_size = Vector2(0, UITheme.MENU_ROW_H)
+	b.pressed.connect(on_press)
+	return b
+
+
+# Leave the stage before it starts. Delegates to the pause menu's confirm-then-quit so
+# there is one implementation of "what does abandoning mean here". With no pause menu
+# (tests, bare harness) this is a no-op rather than a half-quit.
+func _on_exit_pressed() -> void:
+	if _pause_menu != null:
+		_pause_menu.confirm_quit_to_hq()
 
 
 # --- Reveal card (shown per opponent during REVEAL) --------------------------
@@ -723,12 +765,12 @@ func launch() -> void:
 				if over_power:
 					ConfirmPopup.open(self, "Too powerful",
 						"Change your upgrades to get under the power-to-weight limit.",
-						[ {"label": "Change Upgrades", "callback": _open_upgrades},
-						  {"label": "Cancel", "callback": Callable()} ], 0)
+						[ {"label": "Cancel", "callback": Callable()},
+						  {"label": "Change Upgrades", "callback": _open_upgrades} ], 1, 0)
 				else:
 					ConfirmPopup.open(self, "Can't start", reason,
-						[ {"label": "Change Upgrades", "callback": _open_upgrades},
-						  {"label": "Cancel", "callback": Callable()} ])
+						[ {"label": "Cancel", "callback": Callable()},
+						  {"label": "Change Upgrades", "callback": _open_upgrades} ], 1, 0)
 				return
 	_launched = true
 	if _overlay != null:
@@ -787,6 +829,7 @@ func _handoff() -> void:
 	if _mobile != null:
 		_mobile.visible = true
 	_release_player()  # hand the player back to normal driving for the run
+	sequence_finished.emit()  # world.gd re-arms the pause menu here
 	_despawn_grid()    # gone under cover of the black, so they cost nothing during the run
 	if _stage_manager != null and _stage_manager.has_method("begin_countdown"):
 		_stage_manager.begin_countdown()
