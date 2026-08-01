@@ -307,7 +307,9 @@ its own corner. Re-run then `godot --headless --import`. There is deliberately
 `DEFAULT_MAP_IMAGE` (`map_table.jpg`). Adopting it means dropping
 `_viewed_region_index` / `_swap_region` / the `hq_environment.gd` arrows,
 re-siting every rally's `map_pos` into its region's corner, and collapsing the
-per-region showdown chain to a single finale — none of which is done.
+per-region showdown chain to a single finale — none of which is done. The full
+plan, with the open design questions and every code touchpoint, is
+[todo/one-map-four-corners.md](../todo/one-map-four-corners.md).
 
 ## Tests
 
