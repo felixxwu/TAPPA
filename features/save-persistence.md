@@ -63,11 +63,13 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   completed rallies present. Completion count is the single progression metric;
   `best_placed` is the best (lowest) finishing position ever achieved there (drives
   the world-map star rating).
-- `showdown_unlocked` / `showdown_completed` — the end-game beat.
-  **Region unlock is not stored here or anywhere else** — `RegionLibrary.unlocked`
+- **Showdown/region unlock is not stored here at all** — `RegionLibrary.unlocked`
   (see [regions.md](regions.md)) derives it on every call from the previous
-  region's showdown-rally `completed` flag in `rallies`, so no new profile
-  field/schema bump was needed for the region system.
+  region's showdown-rally `completed` flag in `rallies`, so no dedicated profile
+  field/schema bump is needed for the region system. (An earlier
+  `showdown_unlocked`/`showdown_completed` pair of persisted, never-read flags was
+  removed — see `todo/one-map-four-corners.md`, "Resolved: the last six
+  decisions" item 7.)
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
   `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old
@@ -193,11 +195,11 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
 
 ## Not yet wired
 
-`complete_rally` calls `_recompute_showdown()`, a deliberate no-op: the
-showdown unlock and per-region reveal gates are derived LIVE from the profile's
-completion records by `RallyLibrary` (`showdown_unlocked()` / `rally_revealed()`,
-see `rally-roster.md`), rather than being precomputed and stored on the save, so
-there is nothing to recompute here. `item_id`s come from the upgrade catalogue
+The showdown unlock and per-region reveal gates are derived LIVE from the
+profile's completion records by `RallyLibrary`/`RegionLibrary`
+(`showdown_unlocked()` / `rally_revealed()`, see `rally-roster.md`), rather
+than being precomputed and stored on the save — `save_manager.gd` has nothing
+to recompute on `complete_rally`. `item_id`s come from the upgrade catalogue
 (`upgrade-catalogue.md`); `Save` only consumes them as opaque strings.
 
 ## Tests

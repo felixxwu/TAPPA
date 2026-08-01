@@ -1,18 +1,21 @@
 class_name RegionLibrary
 extends RefCounted
-# Authored catalogue of REGIONS (parallel to RallyLibrary.RALLIES). A region groups
-# rallies by their `region` tag and carries optional look overrides for the driven
-# world (grass/gravel/sky/fog/tints/layers) — a missing key inherits the scene /
-# GameConfig baseline. Regions unlock in sequence (derived from showdown completion),
-# and each region has exactly one showdown. See features/regions.md.
+# Authored catalogue of REGIONS (parallel to RallyLibrary.RALLIES). A region is one
+# CORNER of the single world map: it groups rallies by their `region` tag and carries
+# optional look overrides for the driven world (grass/gravel/sky/fog/tints/layers) — a
+# missing key inherits the scene / GameConfig baseline — plus its own waterline.
+# Regions do NOT unlock in sequence; every corner is open from the start and each
+# authored corner has at most one showdown. See features/regions.md.
 
-# The home region's satellite map, used when a region authors no `map_image` of
-# its own (the home region ships override-free — see REGIONS below).
-const DEFAULT_MAP_IMAGE := "res://textures/map_table.jpg"
+# The one world map. Every region is a corner of this single satellite image, so a
+# region no longer owns a map image of its own — `map_image` is not a look key.
+const DEFAULT_MAP_IMAGE := "res://textures/map_world.jpg"
 
-# Whitelisted look-override keys (used by look_of + world.gd).
+# Whitelisted look-override keys (used by look_of + world.gd). Deliberately NOT here:
+# `map_image` (there is one world map now), `look_from` (plumbing — see look_of) and
+# `water_level` (needed by track generation, before the look is applied).
 const LOOK_KEYS := [
-	"map_image", "sky_panorama", "grass_texture", "gravel_texture",
+	"sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
 	"terrain_tint", "terrain_layers", "tarmac_color", "road_marking_color",
 	"grass_particle_color",
@@ -27,19 +30,34 @@ const DEFAULT_TREE_MIX: Array = [
 	{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
 ]
 
+# The four authored corners of the world map. ORDER CARRIES NO MEANING — regions no
+# longer unlock in sequence and there is no "final" region (credits fire once every
+# corner's showdown is done, see all_showdowns_completed), so do NOT re-introduce any
+# ordering dependency here. Ids are load-bearing: "home" in particular is hardcoded in
+# world.gd._current_region_look() as the default/challenge/fallback region, so never
+# rename it. The coastal corners carry no look block of their own — they resolve their
+# parent's via `look_from` — but each corner authors its OWN `water_level`, which is
+# the whole point of the split (see water_level_of).
 const REGIONS: Array[Dictionary] = [
-	# Region 0 — the existing world. It authors its foliage split explicitly so the
-	# split is config-driven everywhere (100% home tree.png, 3D ground-cover bushes
-	# on); every other look field inherits the scene (main.tscn / hq_environment) +
-	# GameConfig baseline unchanged, so the home world still looks byte-identical.
+	# The existing world. It authors its foliage split explicitly so the split is
+	# config-driven everywhere (100% home tree.png, 3D ground-cover bushes on); every
+	# other look field inherits the scene (main.tscn / hq_environment) + GameConfig
+	# baseline unchanged, so the home world still looks byte-identical.
 	{
 		"id": "home", "name": "Rally Country",
+		"water_level": -12.0,
 		"tree_mix": [
 			{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0},
 		],
 		"spawn_bush_mesh": true,
 	},
-	# Region 1 — Greece. Ships the three swapped textures + sky, plus a Greek tree
+	# The same forest look with the sea raised — a lakeland / forested shore.
+	{
+		"id": "home_coast", "name": "The Lakes",
+		"look_from": "home",
+		"water_level": -5.0,
+	},
+	# Greece. Ships the three swapped textures + sky, plus a Greek tree
 	# split: 70% the star-shaped Greek billboard (tree-greece.webp, a large low, dry
 	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
 	# (the smaller "home" profile), so the arid stands read as mostly-olive with a few
@@ -52,7 +70,7 @@ const REGIONS: Array[Dictionary] = [
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
 		"id": "greece", "name": "Greece",
-		"map_image": "res://textures/greece.png",
+		"water_level": -12.0,
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
 		"tree_mix": [
@@ -64,6 +82,12 @@ const REGIONS: Array[Dictionary] = [
 		"tarmac_color": Color(0.52, 0.50, 0.46),
 		"road_marking_color": Color(0.85, 0.70, 0.16),
 		"grass_particle_color": Color(0.52, 0.49, 0.38),
+	},
+	# The same arid look with the sea raised — the Mediterranean shoreline.
+	{
+		"id": "greece_coast", "name": "The Coast",
+		"look_from": "greece",
+		"water_level": -5.0,
 	},
 ]
 
@@ -90,9 +114,34 @@ static func index_of(id: String) -> int:
 static func id_at(i: int) -> String:
 	return String(all()[i].get("id", ""))
 
-static func is_final(region_id: String) -> bool:
-	var i := index_of(region_id)
-	return i >= 0 and i == count() - 1
+# The win/credits beat: every region's showdown is recorded completed in the profile.
+# Regions that author NO showdown are skipped, not counted as outstanding — an empty
+# corner (the snow corner ships pin-less) must never make the credits unreachable.
+# A roster where no region authors a showdown at all therefore reads as completed;
+# that's a degenerate catalogue, not a progression state to defend against.
+static func all_showdowns_completed(profile: Dictionary) -> bool:
+	var rallies: Dictionary = profile.get("rallies", {})
+	for region in all():
+		var sd := showdown_of(String(region.get("id", "")))
+		if sd.is_empty():
+			continue
+		if not rallies.get(sd.get("id", ""), {}).get("completed", false):
+			return false
+	return true
+
+# The region's authored waterline in metres, or 0.0 when it authors none — ALWAYS
+# pair a call with has_water_level(), because callers resolve
+# `event override → region → GameConfig baseline` and a region that authors nothing
+# must fall through to the GameConfig baseline rather than to any number here.
+# Deliberately NOT inherited through `look_from`: "home_coast is home, but the water
+# is higher" only works if each corner authors its own waterline.
+static func water_level_of(region_id: String) -> float:
+	return float(by_id(region_id).get("water_level", 0.0))
+
+# Whether this region authors a waterline at all (see water_level_of). False for an
+# unknown id.
+static func has_water_level(region_id: String) -> bool:
+	return by_id(region_id).has("water_level")
 
 static func region_for_rally(rally_id: String) -> Dictionary:
 	return by_id(String(RallyLibrary.by_id(rally_id).get("region", "")))
@@ -110,21 +159,20 @@ static func showdown_of(region_id: String) -> Dictionary:
 			return rally
 	return {}
 
-static func unlocked(region_id: String, profile: Dictionary) -> bool:
-	var i := index_of(region_id)
-	if i <= 0:
-		return i == 0  # first region always open; unknown id → false
-	var prev := all()[i - 1]
-	var prev_sd := showdown_of(String(prev.get("id", "")))
-	var rallies: Dictionary = profile.get("rallies", {})
-	return rallies.get(prev_sd.get("id", ""), {}).get("completed", false)
-
 static func showdown_unlocked(region_id: String, profile: Dictionary) -> bool:
-	# A region's showdown can't be "unlocked" if the region itself isn't reachable
-	# yet (guards a region whose non-showdown rallies happen to be vacuously all
-	# "done" only because it has none authored, or none completed via direct
-	# profile manipulation in a test — the region gate must hold first).
-	if not unlocked(region_id, profile):
+	# Guard: the loop below is "every non-showdown rally here is completed", which a
+	# region with NO authored non-showdown rallies would pass vacuously. That's live,
+	# not hypothetical — an empty corner ships with no rallies at all, and its
+	# showdown must not read as unlocked from the start. So require the region to
+	# exist and to author at least one non-showdown rally before the gate can open.
+	if by_id(region_id).is_empty():
+		return false
+	var has_regular := false
+	for rally in rallies_in(region_id):
+		if not bool(rally.get("showdown", false)):
+			has_regular = true
+			break
+	if not has_regular:
 		return false
 	var rallies: Dictionary = profile.get("rallies", {})
 	for rally in rallies_in(region_id):
@@ -156,10 +204,22 @@ static func tree_mix(look: Dictionary) -> Array:
 static func spawns_bush_mesh(look: Dictionary) -> bool:
 	return bool(look.get("spawn_bush_mesh", true))
 
+# The region's look overrides, filtered through the LOOK_KEYS whitelist. A region may
+# author `"look_from": "<other_region_id>"` to inherit that region's look block (the
+# coastal corners share their inland parent's look); the parent's whitelisted keys are
+# resolved first and the region's own overlaid on top, so own keys win. ONE level only
+# — a parent's own `look_from` is not followed, so chains/cycles are impossible.
+# `look_from` is not a LOOK_KEY, so it never leaks into the returned dict.
 static func look_of(region_id: String) -> Dictionary:
 	var region := by_id(region_id)
 	var look: Dictionary = {}
+	var parent_id := String(region.get("look_from", ""))
+	if parent_id != "" and parent_id != region_id:
+		_collect_look(by_id(parent_id), look)
+	_collect_look(region, look)
+	return look
+
+static func _collect_look(region: Dictionary, into: Dictionary) -> void:
 	for key in LOOK_KEYS:
 		if region.has(key):
-			look[key] = region[key]
-	return look
+			into[key] = region[key]

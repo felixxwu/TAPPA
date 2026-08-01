@@ -23,6 +23,32 @@ seed-lab.
   world-Y flood height poured into whatever basins the seed produced. Independent
   of the seed. Higher = more/bigger lakes in the same valleys.
 
+  **Resolution order: event → region → `GameConfig` baseline**
+  (`TrackGenParams.resolve_water_level(event, base)` in `track_gen_params.gd`). An
+  event that authors `water_level` wins outright. One that doesn't falls back to
+  its owning region's waterline (`RegionLibrary.water_level_of`/`has_water_level`,
+  since regions now own the inland/coastal waterline split — see
+  `features/regions.md`) — but only if the `event` dict carries a `"region"` tag.
+  `RallySession.current_event()` and `RallySession._generate_event_tracks` are the
+  two places that seat it, duplicating the per-stage event dict and copying in the
+  owning rally's `region` field so it survives into `TrackGenParams.for_event` and
+  `RallySession.apply_event_config` (both call the shared resolver — the "exactly
+  two consumers" of an event's `water_level`). A dict with no `"region"` key at all
+  — `challenge_library.gd`'s rolled challenge stages, `hq.gd`'s free-roam draw,
+  `settings_menu.gd`'s dev track page — falls straight through to the `GameConfig`
+  baseline, exactly as before; none of those have a region to inherit, and free
+  roam in particular keeps its own randomised `water_level` only because the event
+  key still overrides everything else.
+
+  **Cache-key consequence:** `track_gen_params.gd:214` folds the resolved
+  `key_water_level` into the track-cache key. Events that already author
+  `water_level` are unaffected (event always wins, same key as before). Events that
+  author none now resolve to their region's waterline instead of the `GameConfig`
+  baseline — a real, intended terrain change for those events — so their cache key
+  changes and the committed `data/track_cache.json` entry misses until a rebake
+  (`./cache_all.sh`). Deliberately not rebaked as part of adding this mechanism; see
+  `todo/one-map-four-corners.md`.
+
 Both are applied per event in `RallySession._load_event_scene` (real run) and read
 by `TrackGenParams.for_event` (both the run scene and target derivation).
 

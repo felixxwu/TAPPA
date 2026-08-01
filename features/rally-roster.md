@@ -16,11 +16,16 @@ Each `RALLIES` entry:
   sort order. It is **never shown to the player** (no "Difficulty: N" / "TIER N" in
   the detail panel, car-park banner, or finish arch) — the power-to-weight gate is
   the only visible requirement.
-- `showdown` — exactly one rally has this `true`: the locked finale.
+- `showdown` — the region's locked finale. **At most one per region**, and exactly
+  one in any region that holds rallies at all; a region authored with no rallies (the
+  snow corner ships as terrain with no pins) has none, which
+  `RegionLibrary.showdown_unlocked` explicitly supports via its empty-corner guard.
 - `restriction` — a `Dictionary`; **empty = open-class** (every car eligible).
   Otherwise every present field must match the car's CarLibrary metadata:
-  `drive_mode`, `country`, `car_type`, `engine_min_l`/`engine_max_l` (vs
-  `engine_displacement_l`), and a **power-to-weight band** `pw_min`..`pw_max` (vs
+  `drive_mode`, `country`, `car_type`, `doors_min`/`doors_max` (vs the car's `doors`),
+  `engine_min_l`/`engine_max_l` and `cylinders_min`/`cylinders_max` (both **resolved
+  through the car's CURRENT engine** — see "Engine-derived restrictions" below), and a
+  **power-to-weight band** `pw_min`..`pw_max` (vs
   `CarLibrary.power_to_weight`, derived from the referenced `EngineLibrary` engine's
   torque + redline (× the global `TORQUE_POWER_FALLOFF` calibration, boosted torque
   for turbos via `effective_meta`), so the gate compares against the same hp/tonne
@@ -40,17 +45,40 @@ Each `RALLIES` entry:
   rally isn't ruled too weak for a *higher* one it could reach by tuning up (the player
   always can, for free — the mirror of ducking the ceiling). `floor_meta` defaults to the
   passed meta (a plain point check) for stock catalogue cars / rivals / synthetic tests.
-  A rally may layer a secondary theme on top of its band (e.g. RWD Masters also wants
-  `drive_mode` RWD, and **Front Runners** — the home of the FWD starters (Focus,
-  Twingo) — wants `drive_mode` FWD, an intro-tier FWD rally parallel to the Shakedown
-  for the MX-5), and **American Muscle** wants `country` US on top of its band — the home
-  of the American V8/V10s (Charger, Viper). **Sh*tbox Cup** sits below even Shakedown: a
-  low band the true shitboxes (Acty, Twingo) fit. The single open-class rally is the showdown.
-- `reveal_after` — an `int` (default 0): the **intra-region reveal gate**. A non-showdown
+  **The band is usually WIDE, and the CLASS FIELD is what defines the rally.** Most
+  rallies pair a wide band with a class field — `car_type` (Hatchback Cup, Forest GT,
+  Headland Dash, The Hot Gates), `country` (American Muscle, Lakeside Cup, Island Grand
+  Prix), `doors_max` (Olive Coast), `cylinders_min`/`cylinders_max` (Marble Quarry,
+  Twelve-Cylinder Promenade, Timber Trophy), `engine_min_l`/`engine_max_l` (Dust Devils,
+  Salt Flats, Island Hop) or `drive_mode` (Front Runners, RWD Masters) — with the band
+  only trimming the extremes. A *narrow* band picks 2-3 cars arbitrarily and silently
+  re-picks them the moment a car is retuned; "four-cylinder, two-door" or "British cars"
+  picks a group that reads as a real class and survives retuning. The open-class rallies
+  are the showdowns.
+
+  > **Standing rule — author the data, don't approximate it.** When a rally wants to
+  > group cars by a property the catalogue does not record, ADD that property to the
+  > car/engine definitions (a body property on `CARS`, an engine property on `ENGINES`,
+  > or derive it where it's already implied — cylinders come from `layout`). Never
+  > approximate it with a proxy field that happens to correlate: a proxy stops meaning
+  > what it meant the moment someone retunes a car or adds a roster entry, and the rally
+  > it gates quietly changes who can enter without anyone editing the rally. Each new
+  > field needs BOTH an `ineligibility_reason` branch and an `hq.gd._restriction_text`
+  > entry, or it is silently absent from the rally's description.
+
+  `./report_eligibility.sh` (`tools/report_eligibility.gd`) reports, for every rally,
+  which cars can enter stock and at max potential, using the real `is_eligible`
+  predicate — run it after touching any restriction. The target is 2-3 eligible cars
+  per rally (~2 is fine on today's nine-car roster and widens on its own as cars are
+  added); the hard floor is **≥1**, since an unenterable rally is a logic bug.
+- `reveal_after` — an `int` (default 0): the **global reveal gate**. A non-showdown
   rally's map pin stays locked (grey, non-pickable — a "coming up" hint) until the player
-  has completed that many rallies **in the same region**, so a region reveals ~1–2 fresh
-  rallies at a time instead of dumping them all at once when it unlocks (see
-  `RallyLibrary.rally_revealed` / `_completed_in_region`). Wave-0 rallies (`reveal_after`
+  has completed that many non-showdown rallies **anywhere on the roster**, so the world
+  map reveals a couple of fresh rallies at a time instead of dumping them all at once — and
+  a win in one corner of the map can open a rally in another (see
+  `RallyLibrary.rally_revealed` / `_completed_count`). The count is deliberately global,
+  not per-region: every corner's pins share one world map, and a per-region count would
+  draw from a much smaller pool now that the world is split into four corners. Wave-0 rallies (`reveal_after`
   omitted / 0) are visible from the start. Completed rallies stay farmable — this gates
   first *reveal* only, never re-entry.
 - `events` — exactly **3** EventDefs, each `{ seed, turn_count, width?,
@@ -72,11 +100,46 @@ Each `RALLIES` entry:
   change the centerline or the flat lengthwise road profile, so it does **not** feed
   opponent target-time derivation. See [terrain.md](terrain.md) → *Cliffs & drops*.
 - `map_pos` — a normalised `Vector2` (0..1) placing the rally's pin on the HQ
-  world map (`hq.gd`). Pure UI data; no effect on the sim.
-- `region` — the `RegionLibrary` region id this rally belongs to (`"home"` or
-  `"greece"`). Groups rallies for the HQ table's per-region map/pins and scopes
-  the showdown-unlock gate: the roster invariant is **exactly one `showdown`
-  rally per region**, not one globally. See [regions.md](regions.md).
+  world map (`hq.gd`). `(0,0)` is the map image's top-left, `(1,1)` its bottom-right
+  (`hq.gd._make_pin` maps `x`→world X and `y`→world Z across the centred map plane).
+  Pure UI data; no effect on the sim. Placement rules, all verified against the actual
+  `textures/map_world.jpg` pixels rather than guessed: a pin must sit **on land**, on
+  the **palette that matches its region** (green for `home`/`home_coast`, tan for
+  `greece`/`greece_coast`, and the NE snow corner deliberately holds no pins), inside
+  its corner, and no closer than ~0.05 to another pin (the test floor is 0.03; the
+  authored roster keeps a wider budget). Keep pins inside roughly **[0.045, 0.955]**
+  on both axes — the map plane is only 4.2 m across, so a pin at 0.99 sits centimetres
+  from the table rim and its label can overhang the plane. A `home_coast` pin must sit
+  on the green ground around the **bay** (the big SE water body, roughly x 0.60–0.95 /
+  y 0.58–1.0) — its northern/north-eastern shore, peninsula and islands — not on the
+  green strip at the map's right rim, which touches only a sliver of sea and so does
+  not read as coastal at all. Coastal pins are deliberately at **varied**
+  distances from the waterline — islands and headlands on the water, others set back
+  to differing depths — so a coastal corner reads as a region, not a line of pins
+  tracing the shore. Re-generating the map texture from a new seed moves the terrain
+  and invalidates every pin: re-verify them all (sample the image, classify sea /
+  sandy / green / snow / rock from the palette constants at the top of
+  `tools/gen_map_texture.py`) rather than nudging a few by eye.
+- `region` — the `RegionLibrary` region id this rally belongs to: one of the four
+  corners of the single world map, `home` (NW forest inland), `home_coast` (SE green
+  shore / peninsula), `greece` (SW arid inland) or `greece_coast` (SE sandy shore).
+  The corner owns the LOOK and the WATERLINE, so a rally's corner must match how its
+  stages look — a forest rally cannot sit in the arid corner. The tag is explicit and
+  is never derived from `map_pos`, which would couple look selection to pin geometry.
+  **Each corner holds a SPREAD of difficulties** (roughly tiers 1→4 plus its showdown),
+  not a difficulty band: the player hops between corners throughout the game and unlocks
+  across them, so a uniformly-early or uniformly-late corner would re-create the
+  sequential progression the one-map change removed. See [regions.md](regions.md).
+- `water_level` (per event) — **authored on every event**, even though the region now
+  supplies one. Resolution is `event → region → GameConfig baseline`
+  (`TrackGenParams.resolve_water_level`), so pinning it per event keeps a corner's
+  authored waterline from silently reshaping a shipped track, and lets the waterline
+  vary WITHIN a corner **by distance from the shore** — nearer the coast sits higher,
+  further inland lower. Author the value; never derive it from `map_pos`. **Pairing
+  constraint:** an event at a coastal waterline (-5) must pair it with
+  `terrain_layer1_amplitude >= 16.0` (see `challenge_library.gd`) or a high sea over low
+  relief floods the track. An event authoring no amplitude runs the `GameConfig`
+  baseline, which clears that bar comfortably.
 
 A rally's result is the **combined time across its 3 events**.
 
@@ -121,6 +184,16 @@ generator also uses it per-rival.
   (the car's `UpgradeLibrary.max_potential_meta`) so an owned car's floor is checked at
   its max potential, not its current detuned/ballasted tune (defaults to `car_meta`). The
   menus' field-a-car rig and map pins filter on this.
+- **Authoring check**: `tools/report_eligibility.gd`/`.tscn` + `./report_eligibility.sh`
+  (repo root, follows the `verify_track_cache`/`cache_opponents.sh` pattern) reports, for
+  every rally x every `CarLibrary.CARS` entry, whether it's eligible stock (raw `CARS`
+  entry, no `floor_meta`) and whether it could enter fully tuned (`floor_meta` from
+  `UpgradeLibrary.max_potential_meta`) — always via the real `is_eligible` /
+  `ineligibility_reason`, never a re-implementation. Flags rallies with < 2 or > 4 stock-
+  eligible cars and cars that can enter almost nothing (report signal, not a gate — the
+  authoring target is 2-3 per rally); exits non-zero only if a rally has zero eligible
+  cars even at max potential (genuinely unenterable). See
+  `todo/one-map-four-corners.md` > "New task: an eligibility-report tool".
 - `qualifying_detune(rally, full_meta)` — the largest whole-percent
   `engine_detune` fraction at which a car passes the restriction: `1.0` when it's
   already eligible at full tune, `-1.0` when no detune can qualify it (a non-power
@@ -194,8 +267,9 @@ generator also uses it per-rival.
   completed. Superseded for region-scoped gating by
   `RegionLibrary.showdown_unlocked(region_id, profile)` (per-region form used
   by `hq.gd` and `reward_system.gd`); see [regions.md](regions.md).
-- `rally_revealed(rally, profile)` / `_completed_in_region(region_id, profile)` — the
-  intra-region reveal gate (`reveal_after` met, and for a showdown its region unlocked).
+- `rally_revealed(rally, profile)` / `_completed_count(profile)` — the global reveal gate
+  (`reveal_after` met against the roster-wide completed non-showdown count, and for a
+  showdown its own region's showdown gate — that one stays per-corner).
   Shared by the map pins, the enterable query, and the reward-draw walk.
 - `incomplete_rallies_enterable_by(car_meta, profile, floor_meta := {})` — the
   anti-soft-lock query the reward system uses (incomplete ∧ revealed ∧ eligible in-band).
@@ -231,12 +305,17 @@ should call `RallyLibrary.showdown_unlocked(Save.profile)`.
 ## Tests
 
 `tests/headless/test_rally_library.gd` — roster validity (unique ids, 3 events
-each, single showdown, the **starter floor**), eligibility (open-class + drive_mode +
+each, at-most-one showdown per region — exactly one wherever a region holds rallies,
+since an empty corner legitimately has none — the **starter floor**), eligibility (open-class + drive_mode +
 country + power-to-weight **band** filters — floor + ceiling + ceiling-only + floor-only,
 the floor judged at a supplied `floor_meta` (max potential), and `qualifying_detune`'s
 duck-under-the-cap / already-eligible / unfixable cases), the **reveal-order** gate
-(`reveal_after` on region-local completion; the enterable query excludes unrevealed),
-track-gen
+(`reveal_after` on GLOBAL completion — a completion in another region counts; the
+enterable query excludes unrevealed), the **engine-derived restrictions**
+(displacement / cylinders resolved through the fitted engine, so an engine swap flips
+eligibility; an unresolvable engine is rejected) and `doors_min`/`doors_max`, plus a
+guard that **every shipped rally has at least one eligible car**,
+a check that the roster's `map_pos` values are well formed, track-gen
 determinism, target-time positivity + override, opponent-field
 shape/bounds/determinism + DNF semantics + names drawn uniquely from the pool,
 placement/top-3, progress count, and

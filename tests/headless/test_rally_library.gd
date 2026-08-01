@@ -53,14 +53,50 @@ func test_every_rally_has_a_known_region() -> void:
 			"rally %s region %s is not in RegionLibrary" % [rally.get("id", "?"), region_id])
 
 
-func test_exactly_one_showdown_per_region() -> void:
+func test_at_most_one_showdown_per_region_and_exactly_one_where_rallies_exist() -> void:
+	# The durable invariant is NOT "exactly one showdown per region": a region may be
+	# authored with no rallies at all (the snow corner ships as terrain that holds no
+	# pins), and RegionLibrary.showdown_unlocked explicitly supports that — it refuses
+	# to open the gate for a corner with no non-showdown rallies. So an empty corner
+	# legitimately has ZERO showdowns. What must always hold is:
+	#   * no region ever carries TWO showdowns (the gate is per-corner, so a second one
+	#     would be ungated by anything meaningful), and
+	#   * any region that holds non-showdown rallies has exactly one, or those rallies
+	#     ladder up to no finale at all.
 	for region in RegionLibrary.all():
 		var region_id := String(region["id"])
 		var showdowns := 0
+		var regulars := 0
 		for rally in RallyLibrary.all():
-			if String(rally.get("region", "")) == region_id and bool(rally.get("showdown", false)):
+			if String(rally.get("region", "")) != region_id:
+				continue
+			if bool(rally.get("showdown", false)):
 				showdowns += 1
-		assert_eq(showdowns, 1, "region %s must have exactly one showdown" % region_id)
+			else:
+				regulars += 1
+		assert_lte(showdowns, 1, "region %s must have at most one showdown" % region_id)
+		if regulars > 0:
+			assert_eq(showdowns, 1, "region %s holds rallies, so it needs exactly one showdown" % region_id)
+		else:
+			assert_eq(showdowns, 0, "region %s holds no rallies, so it must have no showdown" % region_id)
+
+
+func test_map_pins_are_well_formed_and_never_stack() -> void:
+	# Well-formedness only — never specific coordinates, which are authored data a
+	# designer nudges freely. A pin outside [0,1]^2 lands off the map plane, and two
+	# pins on top of each other are unpickable, so both are structural bugs a corner
+	# re-site can introduce silently.
+	const MIN_SEPARATION := 0.03
+	var seen: Array[Vector2] = []
+	for rally in RallyLibrary.all():
+		var pos: Vector2 = rally.get("map_pos", Vector2(-1, -1))
+		var rid := String(rally.get("id", "?"))
+		assert_between(pos.x, 0.0, 1.0, "rally %s map_pos.x is in [0, 1]" % rid)
+		assert_between(pos.y, 0.0, 1.0, "rally %s map_pos.y is in [0, 1]" % rid)
+		for other in seen:
+			assert_gt(pos.distance_to(other), MIN_SEPARATION,
+				"rally %s pin is not stacked on another pin" % rid)
+		seen.append(pos)
 
 
 func test_event_forestiness_defaults_to_fully_wooded() -> void:
@@ -155,6 +191,107 @@ func test_country_restriction_filters() -> void:
 	var jp_only := {"restriction": {"country": "JP"}}
 	assert_true(RallyLibrary.is_eligible(jp_only, {"country": "JP"}), "JP car eligible")
 	assert_false(RallyLibrary.is_eligible(jp_only, {"country": "US"}), "US car excluded")
+
+
+func test_doors_restriction_filters() -> void:
+	# `doors` is a BODY property, read flat off the car meta (no engine involved).
+	var coupes_only := {"restriction": {"doors_max": 2}}
+	assert_true(RallyLibrary.is_eligible(coupes_only, {"doors": 2}), "a 2-door is eligible")
+	assert_false(RallyLibrary.is_eligible(coupes_only, {"doors": 4}), "a 4-door is excluded")
+	var family_only := {"restriction": {"doors_min": 4}}
+	assert_true(RallyLibrary.is_eligible(family_only, {"doors": 5}), "a 5-door clears the floor")
+	assert_false(RallyLibrary.is_eligible(family_only, {"doors": 2}), "a 2-door is below the floor")
+
+
+func test_displacement_restriction_resolves_through_the_fitted_engine() -> void:
+	# engine_min_l / engine_max_l are judged against the CURRENT engine's displacement_l,
+	# not a flat key on the car dict. before_each installed the synthetic fixture engines
+	# (fx_i4 small / fx_v8 large), so the band edges below are derived from those, never
+	# from a shipped engine. Pick a band strictly between the two fixture displacements.
+	var small := float(EngineLibrary.by_id("fx_i4")["displacement_l"])
+	var large := float(EngineLibrary.by_id("fx_v8")["displacement_l"])
+	assert_lt(small, large, "the fixture roster has a small and a large engine")
+	var mid := (small + large) * 0.5
+	var big_bore := {"restriction": {"engine_min_l": mid}}
+	assert_true(RallyLibrary.is_eligible(big_bore, {"engine": "fx_v8"}), "the large engine clears the floor")
+	assert_false(RallyLibrary.is_eligible(big_bore, {"engine": "fx_i4"}), "the small engine is below the floor")
+	var small_bore := {"restriction": {"engine_max_l": mid}}
+	assert_true(RallyLibrary.is_eligible(small_bore, {"engine": "fx_i4"}), "the small engine is under the cap")
+	assert_false(RallyLibrary.is_eligible(small_bore, {"engine": "fx_v8"}), "the large engine is over the cap")
+
+
+func test_cylinder_restriction_derives_from_the_engine_layout() -> void:
+	# Cylinder count is NOT an authored field — it's FIRING[layout].size(). A fixture i4
+	# passes a 4-cylinder ceiling; the fixture V8 doesn't, and clears a V8-and-up floor.
+	assert_eq(EngineLibrary.cylinders(EngineLibrary.by_id("fx_i4")), 4, "i4 layout derives 4 cylinders")
+	assert_eq(EngineLibrary.cylinders(EngineLibrary.by_id("fx_v8")), 8, "v8 layout derives 8 cylinders")
+	var four_pot_max := {"restriction": {"cylinders_max": 4}}
+	assert_true(RallyLibrary.is_eligible(four_pot_max, {"engine": "fx_i4"}), "the i4 is under the cap")
+	assert_false(RallyLibrary.is_eligible(four_pot_max, {"engine": "fx_v8"}), "the V8 is over the cap")
+	var eight_pot_min := {"restriction": {"cylinders_min": 8}}
+	assert_true(RallyLibrary.is_eligible(eight_pot_min, {"engine": "fx_v8"}), "the V8 clears the floor")
+	assert_false(RallyLibrary.is_eligible(eight_pot_min, {"engine": "fx_i4"}), "the i4 is below the floor")
+
+
+func test_cylinders_is_zero_for_an_unknown_layout() -> void:
+	assert_eq(EngineLibrary.cylinders({}), 0, "an empty engine dict has no cylinder data")
+	assert_eq(EngineLibrary.cylinders({"layout": "not_a_layout"}), 0, "an unknown layout has no cylinder data")
+
+
+func test_an_unresolvable_engine_fails_an_engine_derived_restriction() -> void:
+	# The old bug: engine data was read off a key nothing ever wrote, so an engine_max_l
+	# gate silently accepted EVERY car. When the engine can't be resolved the car must be
+	# REJECTED, not waved through — for both edges of both engine-derived fields.
+	for restriction in [{"engine_max_l": 99.0}, {"engine_min_l": 0.0},
+			{"cylinders_max": 99}, {"cylinders_min": 0}]:
+		var rally := {"restriction": restriction}
+		assert_false(RallyLibrary.is_eligible(rally, {"engine": "no_such_engine"}),
+			"an unknown engine id is rejected by %s" % [restriction])
+		assert_false(RallyLibrary.is_eligible(rally, {}),
+			"a meta with no engine at all is rejected by %s" % [restriction])
+	# ...but a restriction that names NO engine-derived field never consults the engine,
+	# so an engine-less synthetic meta still passes it.
+	assert_true(RallyLibrary.is_eligible({"restriction": {"doors_max": 2}}, {"doors": 2}),
+		"a non-engine restriction doesn't require a resolvable engine")
+
+
+func test_an_engine_swap_flips_engine_derived_eligibility() -> void:
+	# THE point of resolving through the engine: UpgradeLibrary.effective_meta re-points
+	# meta["engine"] at the fitted engine, so swapping one in changes which rallies the
+	# car can enter. Same car body, two engines, one displacement band.
+	var stock: Dictionary = CarLibrary.by_id("fx_light_rwd")
+	assert_false(stock.is_empty(), "the fixture car resolves")
+	var small := float(EngineLibrary.by_id("fx_i4")["displacement_l"])
+	var large := float(EngineLibrary.by_id("fx_v8")["displacement_l"])
+	var mid := (small + large) * 0.5
+	var big_bore := {"restriction": {"engine_min_l": mid}}
+	var v8_only := {"restriction": {"cylinders_min": 8}}
+	var as_stock := UpgradeLibrary.effective_meta({}, stock)
+	assert_false(RallyLibrary.is_eligible(big_bore, as_stock), "stock-engined car misses the displacement floor")
+	assert_false(RallyLibrary.is_eligible(v8_only, as_stock), "stock-engined car misses the cylinder floor")
+	var swapped := UpgradeLibrary.effective_meta({"swapped_engine": "fx_v8"}, stock)
+	assert_true(RallyLibrary.is_eligible(big_bore, swapped), "the swapped-in big engine clears the displacement floor")
+	assert_true(RallyLibrary.is_eligible(v8_only, swapped), "the swapped-in big engine clears the cylinder floor")
+	# The body property is untouched by the swap.
+	assert_eq(int(swapped.get("doors", -1)), int(stock.get("doors", -2)), "a swap doesn't change the door count")
+
+
+func test_every_shipped_rally_has_at_least_one_car_that_can_enter_it() -> void:
+	# SHIPPED-CONTENT guarantee (like the starter-floor test): an "unenterable rally" is a
+	# LOGIC failure, not a tuning choice, so this asserts existence only — never which car,
+	# never how many. Restore the fixtures so both catalogues are the real ones.
+	CarFixtures.restore()
+	for rally in RallyLibrary.all():
+		var found := ""
+		for spec in CarLibrary.all():
+			var meta := UpgradeLibrary.effective_meta({}, spec)
+			var maxed := UpgradeLibrary.max_potential_meta({}, spec)
+			# "Can enter" includes ducking under a pw_max ceiling by detuning, which the
+			# player is always free to do (qualifying_detune returns 1.0 when already in).
+			if RallyLibrary.is_eligible(rally, meta, maxed) or RallyLibrary.qualifying_detune(rally, meta) > 0.0:
+				found = String(spec.get("id", ""))
+				break
+		assert_ne(found, "", "some car in the roster can enter rally '%s'" % rally.get("id", "?"))
 
 
 func test_power_to_weight_restriction_filters() -> void:
@@ -759,6 +896,59 @@ func test_showdown_unlocks_only_when_all_others_complete() -> void:
 	assert_true(RallyLibrary.showdown_unlocked(profile), "unlocks once all non-showdown rallies done")
 
 
+# --- reveal_after (the GLOBAL wave gate) -------------------------------------
+
+# A minimal two-corner roster: one wave-0 rally in each region plus a gated rally in
+# "greece" that needs 2 completions. Synthetic, so no authored reveal_after is pinned.
+func _install_two_region_reveal_roster() -> void:
+	var roster: Array[Dictionary] = [
+		{"id": "r_home_a", "name": "Home A", "region": "home", "showdown": false,
+			"difficulty": 1, "restriction": {}, "reveal_after": 0, "events": []},
+		{"id": "r_home_b", "name": "Home B", "region": "home", "showdown": false,
+			"difficulty": 1, "restriction": {}, "reveal_after": 0, "events": []},
+		{"id": "r_greece_gated", "name": "Greece Gated", "region": "greece", "showdown": false,
+			"difficulty": 2, "restriction": {}, "reveal_after": 2, "events": []},
+	]
+	RallyLibrary.override_for_test(roster)
+
+
+func test_reveal_count_is_global_so_other_regions_count_toward_the_gate() -> void:
+	# The world map pins every corner at once, so reveal_after counts completed
+	# non-showdown rallies ACROSS THE WHOLE ROSTER — a win in one corner opens a rally in
+	# another. (after_each restores RallyLibrary.)
+	_install_two_region_reveal_roster()
+	var gated := RallyLibrary.by_id("r_greece_gated")
+	var profile := {"rallies": {}}
+	assert_false(RallyLibrary.rally_revealed(gated, profile), "hidden with nothing completed")
+	profile["rallies"]["r_home_a"] = {"completed": true}
+	assert_false(RallyLibrary.rally_revealed(gated, profile), "one completion is short of the gate")
+	# Both completions are in a DIFFERENT region than the gated rally — they still count.
+	profile["rallies"]["r_home_b"] = {"completed": true}
+	assert_true(RallyLibrary.rally_revealed(gated, profile),
+		"completions in another region count toward the gate")
+
+
+func test_a_completed_showdown_does_not_count_toward_the_reveal_gate() -> void:
+	# The showdown is the finale, gated separately by its region — it must not also pay
+	# into the wave count.
+	var roster: Array[Dictionary] = [
+		{"id": "r_gated", "name": "Gated", "region": "home", "showdown": false,
+			"difficulty": 2, "restriction": {}, "reveal_after": 1, "events": []},
+		{"id": "r_showdown", "name": "Showdown", "region": "home", "showdown": true,
+			"difficulty": 4, "restriction": {}, "events": []},
+	]
+	RallyLibrary.override_for_test(roster)
+	var profile := {"rallies": {"r_showdown": {"completed": true}}}
+	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_gated"), profile),
+		"a completed showdown doesn't advance the wave count")
+
+
+func test_a_wave_zero_rally_is_revealed_from_the_start() -> void:
+	_install_two_region_reveal_roster()
+	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_home_a"), {"rallies": {}}),
+		"reveal_after 0 is visible immediately")
+
+
 func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 	# The query integrates is_eligible + the showdown lock over the real roster. Assert
 	# the invariants that hold for ANY roster rather than pinning specific authored
@@ -766,9 +956,17 @@ func test_incomplete_enterable_query_respects_eligibility_and_lock() -> void:
 	# and the showdown never appears while it is still locked. A synthetic AWD car with
 	# a mid p/w keeps the input off the catalogue.
 	var profile := {"rallies": {}}
+	# The car carries an ENGINE (a before_each fixture, not a shipped entry) and a
+	# door count, because engine-derived restrictions (displacement / cylinders) and
+	# doors_* resolve through those fields and REJECT a car that can't supply them.
+	# Without them this car qualifies for nothing, the loop below never runs, and the
+	# test silently asserts nothing while still reporting green.
 	var car := {"mass": 1500.0, "peak_torque": 400.0, "redline": 6500.0,
-		"tire_compound": 1.0, "drive_mode": CarLibrary.AWD, "country": "DE"}
+		"tire_compound": 1.0, "drive_mode": CarLibrary.AWD, "country": "DE",
+		"engine": "fx_i4", "doors": 2}
 	var enterable := RallyLibrary.incomplete_rallies_enterable_by(car, profile)
+	# Guards the above: an empty result would make every assertion below vacuous.
+	assert_gt(enterable.size(), 0, "a mid-range car with a fresh profile can enter something")
 	for r in enterable:
 		assert_true(RallyLibrary.is_eligible(r, car), "%s is eligible for the car" % r["id"])
 		assert_false(bool(r.get("showdown", false)), "the locked showdown is not offered")

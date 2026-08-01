@@ -68,11 +68,15 @@ RallyLibrary.placement(field, combined)`. A **top-3, non-DNF** finish records
 completion + best placement (`Save.complete_rally(id, combined, placed)`,
 idempotent; the placement drives the world-map stars) and grants a reward — a **car** for
 a normal rally (`RewardSystem.draw_car`, fires on **every** top-3 including
-re-wins → renewable supply), or the **win beat** (`showdown_won`) for the
-showdown **of the final region only** (`RegionLibrary.is_final`) — a non-final
-region's showdown (e.g. home's `the_showdown`) completes and pays a normal car
-reward like any other rally; its completion is what unlocks the next region
-(derived, see [regions.md](regions.md)). Non-top-3 / DNF grants **no car** and leaves the rally incomplete (**no
+re-wins → renewable supply), or the **win beat** (`showdown_won`) once this
+showdown was the LAST one outstanding across every authored region
+(`RegionLibrary.all_showdowns_completed(Save.profile)`, checked after this
+rally's completion is recorded) — a showdown win that still leaves another
+region's showdown outstanding (e.g. winning home's `the_showdown` while
+Greece's `gr_showdown` isn't done yet) instead completes and pays a normal car
+reward like any other rally; regions no longer unlock in sequence, so this
+completion doesn't "unlock" anything, it just moves the credits gate one
+region closer to satisfied (see [regions.md](regions.md)). Non-top-3 / DNF grants **no car** and leaves the rally incomplete (**no
 retry** — re-enter from the map later; damage and the opponent field persist).
 Upgrades are **not** granted here — they're awarded per non-final event in
 `report_event_result` (above) and kept regardless of the final result.

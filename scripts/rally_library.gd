@@ -84,24 +84,48 @@ static func _pace_band(tier: int) -> Vector2:
 
 # Each entry: a RallyDef. `restriction` is an empty Dictionary for open-class
 # (every car eligible); otherwise every present field must match the car's
-# CarLibrary metadata. Progression is PRIMARILY gated on power-to-weight: every
-# non-showdown rally is a `pw_min`..`pw_max` BAND (both in hp/tonne), so a car must
-# sit inside the band to enter — an over-powered car is capped out (it can duck under
-# `pw_max` via detune, see `qualifying_detune`) and an under-powered one is simply
-# ineligible (the band floor IS the power floor — there is no separate soft warning).
-# A rally may layer a secondary theme on top of its band (e.g. RWD Masters also wants
-# `drive_mode` RWD). `difficulty` is a HIDDEN tier (never shown to the player) that
+# CarLibrary metadata. Every non-showdown rally carries a `pw_min`..`pw_max` BAND
+# (both in hp/tonne), so a car must sit inside the band to enter — an over-powered
+# car is capped out (it can duck under `pw_max` via detune, see `qualifying_detune`)
+# and an under-powered one is simply ineligible (the band floor IS the power floor —
+# there is no separate soft warning).
+#
+# The band is deliberately WIDE on most rallies, because the band is not what defines
+# the class — the CLASS FIELD is (`car_type`, `country`, `doors_min`/`doors_max`,
+# `cylinders_min`/`cylinders_max`, `engine_min_l`/`engine_max_l`, `drive_mode`), with
+# the band only trimming the extremes off it. A narrow band picks 2-3 cars
+# ARBITRARILY and silently re-picks them the moment a car is retuned; "four-cylinder,
+# two-door" or "British cars" picks a group that reads as a real class and survives
+# retuning. When a rally wants to group by a property the catalogue does not record,
+# ADD that property to the car/engine definitions — never approximate it with a proxy
+# field that happens to correlate today. `difficulty` is a HIDDEN tier (never shown to the player) that
 # drives the reward tier (clamped by progress) and sort order — the p/w band is the
-# visible requirement. `reveal_after` (int, default 0) is the intra-region reveal gate:
-# the rally's pin stays hidden until the player has completed that many rallies in the
-# SAME region, so a region reveals ~1-2 fresh rallies at a time instead of dumping them
-# all at once (see `rally_revealed`). `events` is exactly 3 EventDefs (the showdown's are
-# longer). Each region (see RegionLibrary, `region` tag) has exactly one entry with
-# `showdown = true`, kept open-class so the low-power starter can always finish it.
+# visible requirement. `reveal_after` (int, default 0) is the GLOBAL reveal gate: the
+# rally's pin stays hidden until the player has completed that many non-showdown rallies
+# ANYWHERE on the roster, so the world map reveals ~1-2 fresh rallies at a time instead of
+# dumping them all at once — and a win in one corner can open a rally in another (see
+# `rally_revealed`). `events` is exactly 3 EventDefs (the showdown's are
+# longer). Each region (see RegionLibrary, `region` tag) that holds any rally at all has
+# exactly one entry with `showdown = true`, kept open-class so the low-power starter can
+# always finish it; a region authored with NO rallies (the snow corner ships pin-less)
+# simply has none — the invariant is "at most one per region, and exactly one wherever
+# there are rallies to gate".
+#
+# `water_level` is authored on EVERY event, even though the region now supplies one
+# (RegionLibrary.water_level_of): the resolution chain is event → region → GameConfig
+# baseline, and pinning it per event keeps a corner's authored waterline from silently
+# reshaping a shipped track, and lets the waterline vary WITHIN a corner by distance
+# from the shore (nearer the coast = higher). Author it — never derive it from
+# `map_pos`, which would couple terrain generation to pin geometry so nudging a pin for
+# spacing would reshape a stage. Any event at a coastal waterline (-5) must pair it with
+# `terrain_layer1_amplitude` >= 16.0 (see challenge_library.gd) or a high sea over low
+# relief floods the track; an event authoring no amplitude runs the GameConfig baseline,
+# which clears that bar comfortably.
 const RALLIES: Array[Dictionary] = [
+	# --- Rally Country: NW forest inland (region "home", waterline -12) ---------
 	{
 		"id": "shakedown", "name": "Shakedown", "region": "home", "difficulty": 1, "showdown": false,
-		"map_pos": Vector2(0.18, 0.72),  # normalised pin position on the world map (hq.gd)
+		"map_pos": Vector2(0.450, 0.450),  # normalised pin position on the world map (hq.gd)
 		"restriction": {"pw_min": 100.0, "pw_max": 180.0},  # band: the starter's home (Focus ~114 / MX-5 ~159 / XJS ~175 hp/t)
 		"events": [
 			{"seed": 1007, "turn_count": 17, "forestiness": 0.2, "surface_mix": 1, "straightness": 1, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 12.0, "terrain_layer2_amplitude": 3.0},
@@ -111,7 +135,7 @@ const RALLIES: Array[Dictionary] = [
 	},
 	{
 		"id": "front_runners", "name": "Front Runners", "region": "home", "difficulty": 1, "showdown": false,
-		"map_pos": Vector2(0.26, 0.6),
+		"map_pos": Vector2(0.220, 0.160),
 		# FWD intro rally: a band for the FWD starters (Twingo ~82, Focus ~114 hp/t) — the
 		# FWD home (parallels Shakedown for the MX-5).
 		"restriction": {"drive_mode": CarLibrary.FWD, "pw_min": 80.0, "pw_max": 140.0},
@@ -122,48 +146,48 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "coastal_sprint", "name": "Coastal Sprint", "region": "home", "difficulty": 2, "showdown": false,
-		"reveal_after": 2,
-		"map_pos": Vector2(0.34, 0.5),
-		"restriction": {"pw_min": 150.0, "pw_max": 230.0},  # band above Shakedown: MX-5/XJS + Charger/911
+		# A hot-hatch cup: the class is the BODY, not a narrow power slice, so it keeps
+		# meaning if a hatch is retuned or a new one joins the roster.
+		"id": "hm_hatch_cup", "name": "Hatchback Cup", "region": "home", "difficulty": 2, "showdown": false,
+		"map_pos": Vector2(0.360, 0.400),
+		"restriction": {"car_type": "hatch", "pw_min": 60.0, "pw_max": 200.0},
 		"events": [
-			{"seed": 2204, "turn_count": 21, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.0},
-			{"seed": 2105, "turn_count": 21, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65, "water_level": -5.0, "terrain_layer1_amplitude": 18.0},
-			{"seed": 2207, "turn_count": 21, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3, "cliffiness": 0.5, "water_level": -5.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 31001, "turn_count": 19, "forestiness": 0.7, "surface_mix": 0.6, "straightness": 0.6, "cliffiness": 0.35, "water_level": -12.0, "terrain_layer1_amplitude": 14.0},
+			{"seed": 31002, "turn_count": 19, "forestiness": 0.55, "surface_mix": 0.9, "straightness": 0.55, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 13.0},
+			{"seed": 31003, "turn_count": 20, "forestiness": 0.8, "surface_mix": 0.35, "straightness": 0.5, "cliffiness": 0.45, "water_level": -12.0, "terrain_layer1_amplitude": 15.0},
 		],
 	},
 	{
-		"id": "rwd_masters", "name": "RWD Masters", "region": "home", "difficulty": 3, "showdown": false,
-		"reveal_after": 3,
-		"map_pos": Vector2(0.52, 0.64),
-		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
-		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 170.0, "pw_max": 270.0},  # XJS/Charger/911/Viper
+		# Small-bore two-doors: four cylinders or fewer AND two doors — a class that
+		# reads honestly ("light, simple, two seats") and survives a retune, unlike a
+		# narrow power slice picking the same cars by accident.
+		"id": "hm_timber_trophy", "name": "Timber Trophy", "region": "home", "difficulty": 2, "showdown": false,
+		"reveal_after": 1,
+		"map_pos": Vector2(0.130, 0.260),
+		"restriction": {"cylinders_max": 4, "doors_max": 2, "pw_min": 40.0, "pw_max": 220.0},
 		"events": [
-			{"seed": 3001, "turn_count": 25, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 21.0},
-			{"seed": 3012, "turn_count": 25, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 22.0},
-			{"seed": 3004, "turn_count": 25, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 22.0},
+			{"seed": 32001, "turn_count": 18, "forestiness": 0.85, "surface_mix": 0.1, "straightness": 0.5, "cliffiness": 0.45, "water_level": -13.0, "terrain_layer1_amplitude": 15.0},
+			{"seed": 32002, "turn_count": 18, "forestiness": 0.9, "surface_mix": 0.0, "straightness": 0.45, "cliffiness": 0.55, "water_level": -13.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 32003, "turn_count": 19, "forestiness": 0.75, "surface_mix": 0.25, "straightness": 0.4, "cliffiness": 0.5, "water_level": -13.0, "terrain_layer1_amplitude": 15.0},
 		],
 	},
 	{
-		# id kept as "rising_sun" (saves key rally progress on the stable id) even though
-		# the event was reworked from a JP-only rally into an open power-band one: with
-		# the real-derived p/w figures no stock JP car came near this band, so the
-		# country gate went and the band alone now hosts the stock heavy hitters
-		# (Charger ~216, 911 ~220, Viper ~264 hp/tonne — the Viper's only stock rally).
-		"id": "rising_sun", "name": "Heavy Hitters", "region": "home", "difficulty": 3, "showdown": false,
+		# A closed-roof GT class: coupes only, over a wide band so the grouping is the
+		# body style rather than the exact power figure.
+		"id": "hm_forest_gt", "name": "Forest GT", "region": "home", "difficulty": 3, "showdown": false,
 		"reveal_after": 4,
-		"map_pos": Vector2(0.82, 0.34),
-		"restriction": {"pw_min": 210.0, "pw_max": 320.0},  # Charger/911/Viper
+		"map_pos": Vector2(0.290, 0.290),
+		"restriction": {"car_type": "coupe", "pw_min": 100.0, "pw_max": 260.0},
 		"events": [
-			{"seed": 4001, "turn_count": 29, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 16.0},
-			{"seed": 4004, "turn_count": 29, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7, "water_level": -5.0, "terrain_layer1_amplitude": 16.0},
-			{"seed": 3734559043, "turn_count": 29, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6, "water_level": -5.0, "terrain_layer1_amplitude": 17.0},
+			{"seed": 33001, "turn_count": 26, "forestiness": 0.65, "surface_mix": 0.7, "straightness": 0.3, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 20.0},
+			{"seed": 33002, "turn_count": 26, "forestiness": 0.5, "surface_mix": 0.9, "straightness": 0.25, "cliffiness": 0.65, "water_level": -12.0, "terrain_layer1_amplitude": 21.0},
+			{"seed": 33003, "turn_count": 27, "forestiness": 0.8, "surface_mix": 0.4, "straightness": 0.3, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 20.0},
 		],
 	},
 	{
 		"id": "grand_tour", "name": "Grand Tour", "region": "home", "difficulty": 4, "showdown": false,
-		"reveal_after": 5,
-		"map_pos": Vector2(0.66, 0.28),
+		"reveal_after": 8,
+		"map_pos": Vector2(0.420, 0.220),
 		"restriction": {"pw_min": 260.0, "pw_max": 400.0},  # the top non-showdown band: Viper ~264 / The Beast ~350
 		"events": [
 			{"seed": 5001, "turn_count": 35, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.5, "cliffiness": 0.75, "water_level": -12.0, "terrain_layer1_amplitude": 23.0},
@@ -172,9 +196,127 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "american_muscle", "name": "American Muscle", "region": "home", "difficulty": 2, "showdown": false,
+		"id": "the_showdown", "name": "The Showdown", "region": "home", "difficulty": 4, "showdown": true,
+		"map_pos": Vector2(0.182, 0.374),
+		"restriction": {},  # open so the low-power starter can always finish the game
+		"events": [
+			{"seed": 9101, "turn_count": 40, "forestiness": 0.8, "surface_mix": 0.5, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
+			{"seed": 9102, "turn_count": 40, "forestiness": 0.5, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
+			{"seed": 9003, "turn_count": 40, "forestiness": 0.65, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 25.0},
+		],
+	},
+	# --- The Lakes: SE green shore / peninsula (region "home_coast", waterline -5) ---
+	# Placement is the only signal that a rally is coastal (the pin itself carries no
+	# marking), so every pin stays on the GREEN shore/peninsula palette — but at a
+	# DELIBERATELY VARIED distance from the waterline (an island and a headland right
+	# on the water, others set back into the peninsula), so the group reads as a
+	# coastal region rather than a row of pins tracing the coast. The per-event
+	# water_level follows that distance (nearer the sea sits higher, toward -5; set
+	# back sits lower) and is AUTHORED, never derived from map_pos. Every event pairs
+	# its high waterline with terrain_layer1_amplitude >= 16 (challenge_library.gd) —
+	# a high sea over low relief floods the track.
+	{
+		"id": "shitbox_cup", "name": "Sh*tbox Cup", "region": "home_coast", "difficulty": 1, "showdown": false,
+		"map_pos": Vector2(0.791, 0.812),
+		# The bottom band, below even Shakedown: a sub-100 hp/tonne class the true
+		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
+		"restriction": {"pw_min": 40.0, "pw_max": 100.0},
+		"events": [
+			{"seed": 7031, "turn_count": 10, "forestiness": 0.3, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.5, "water_level": -5.0, "terrain_layer1_amplitude": 17.0, "terrain_layer2_amplitude": 3.0},
+			{"seed": 7102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.6, "water_level": -5.0, "terrain_layer1_amplitude": 17.0, "terrain_layer2_amplitude": 3.0},
+			{"seed": 7233, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.7, "water_level": -5.0, "terrain_layer1_amplitude": 17.0, "terrain_layer2_amplitude": 3.0},
+		],
+	},
+	{
+		# A national class: Japanese cars, over a deliberately wide band so it's the
+		# country that picks the field rather than a power slice.
+		"id": "hc_lakeside_kei", "name": "Lakeside Cup", "region": "home_coast", "difficulty": 1, "showdown": false,
+		"map_pos": Vector2(0.653, 0.610),
+		"restriction": {"country": "JP", "pw_min": 40.0, "pw_max": 200.0},
+		"events": [
+			{"seed": 34001, "turn_count": 14, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.7, "cliffiness": 0.35, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 34002, "turn_count": 14, "forestiness": 0.7, "surface_mix": 0.1, "straightness": 0.65, "cliffiness": 0.4, "water_level": -7.0, "terrain_layer1_amplitude": 17.0},
+			{"seed": 34003, "turn_count": 15, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.45, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
+		],
+	},
+	{
+		"id": "coastal_sprint", "name": "Coastal Sprint", "region": "home_coast", "difficulty": 2, "showdown": false,
 		"reveal_after": 2,
-		"map_pos": Vector2(0.42, 0.38),
+		"map_pos": Vector2(0.941, 0.606),
+		"restriction": {"pw_min": 150.0, "pw_max": 230.0},  # band above Shakedown: MX-5/XJS + Charger/911
+		"events": [
+			{"seed": 2204, "turn_count": 21, "forestiness": 0.6, "surface_mix": 1.0, "straightness": 0, "cliffiness": 0.55, "water_level": -5.0, "terrain_layer1_amplitude": 18.0},
+			{"seed": 2105, "turn_count": 21, "forestiness": 0.6, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.65, "water_level": -5.0, "terrain_layer1_amplitude": 18.0},
+			{"seed": 2207, "turn_count": 21, "forestiness": 0.45, "surface_mix": 1.0, "straightness": 0.3, "cliffiness": 0.5, "water_level": -5.0, "terrain_layer1_amplitude": 19.0},
+		],
+	},
+	{
+		"id": "rwd_masters", "name": "RWD Masters", "region": "home_coast", "difficulty": 3, "showdown": false,
+		"reveal_after": 3,
+		"map_pos": Vector2(0.732, 0.571),
+		# p/w band (primary gate) + an RWD theme: a mid/high-power rear-driven field.
+		"restriction": {"drive_mode": CarLibrary.RWD, "pw_min": 170.0, "pw_max": 270.0},  # XJS/Charger/911/Viper
+		"events": [
+			{"seed": 3001, "turn_count": 25, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.4, "water_level": -5.0, "terrain_layer1_amplitude": 21.0},
+			{"seed": 3012, "turn_count": 25, "forestiness": 0.8, "surface_mix": 1.0, "straightness": 0.45, "cliffiness": 0.5, "water_level": -5.0, "terrain_layer1_amplitude": 22.0},
+			{"seed": 3004, "turn_count": 25, "forestiness": 0.35, "surface_mix": 0.0, "straightness": 0.5, "cliffiness": 0.6, "water_level": -5.0, "terrain_layer1_amplitude": 22.0},
+		],
+	},
+	{
+		# Open-top cars only — a body class, wide on power.
+		"id": "hc_headland_dash", "name": "Headland Dash", "region": "home_coast", "difficulty": 3, "showdown": false,
+		"reveal_after": 3,
+		"map_pos": Vector2(0.756, 0.685),
+		"restriction": {"car_type": "roadster", "pw_min": 100.0, "pw_max": 300.0},
+		"events": [
+			{"seed": 35001, "turn_count": 24, "forestiness": 0.45, "surface_mix": 0.8, "straightness": 0.3, "cliffiness": 0.7, "water_level": -5.0, "terrain_layer1_amplitude": 19.0},
+			{"seed": 35002, "turn_count": 24, "forestiness": 0.35, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.8, "water_level": -5.0, "terrain_layer1_amplitude": 20.0},
+			{"seed": 35003, "turn_count": 25, "forestiness": 0.6, "surface_mix": 0.5, "straightness": 0.2, "cliffiness": 0.75, "water_level": -5.0, "terrain_layer1_amplitude": 19.0},
+		],
+	},
+	{
+		# Twelve cylinders or more: the grand-touring exotica class, derived from the
+		# fitted engine's layout, so an engine swap moves a car in or out of it.
+		"id": "hc_v12_promenade", "name": "12 Cylinder Promenade", "region": "home_coast", "difficulty": 4, "showdown": false,
+		"reveal_after": 6,
+		"map_pos": Vector2(0.831, 0.593),
+		"restriction": {"cylinders_min": 12, "pw_min": 100.0, "pw_max": 400.0},
+		"events": [
+			{"seed": 36001, "turn_count": 30, "forestiness": 0.5, "surface_mix": 1.0, "straightness": 0.2, "cliffiness": 0.75, "water_level": -7.0, "terrain_layer1_amplitude": 22.0},
+			{"seed": 36002, "turn_count": 30, "forestiness": 0.65, "surface_mix": 0.8, "straightness": 0.15, "cliffiness": 0.85, "water_level": -7.0, "terrain_layer1_amplitude": 23.0},
+			{"seed": 36003, "turn_count": 31, "forestiness": 0.4, "surface_mix": 0.6, "straightness": 0.15, "cliffiness": 0.8, "water_level": -7.0, "terrain_layer1_amplitude": 22.0},
+		],
+	},
+	{
+		"id": "hc_showdown", "name": "The Lakeland Crown", "region": "home_coast", "difficulty": 4, "showdown": true,
+		"map_pos": Vector2(0.894, 0.691),
+		"restriction": {},  # open-class finale
+		"events": [
+			{"seed": 39001, "turn_count": 34, "forestiness": 0.7, "surface_mix": 0.6, "cliffiness": 0.85, "water_level": -7.0, "terrain_layer1_amplitude": 23.0},
+			{"seed": 39002, "turn_count": 36, "forestiness": 0.55, "surface_mix": 0.9, "cliffiness": 0.9, "water_level": -7.0, "terrain_layer1_amplitude": 24.0},
+			{"seed": 39003, "turn_count": 34, "forestiness": 0.8, "surface_mix": 0.4, "cliffiness": 1.0, "water_level": -7.0, "terrain_layer1_amplitude": 24.0},
+		],
+	},
+	# --- Greece: SW arid inland (region "greece", waterline -12) -----------------
+	# These stages' waterlines are pinned per-event at the -10 they have always
+	# resolved to (the GameConfig baseline), so the region gaining its own -12 does
+	# not silently reshape a shipped track.
+	{
+		# Small-capacity class: 2.0 L or less, resolved through the car's CURRENT
+		# engine — an engine swap moves a car in or out of it.
+		"id": "gr_dust_devils", "name": "Dust Devils", "region": "greece", "difficulty": 1, "showdown": false,
+		"map_pos": Vector2(0.100, 0.660),
+		"restriction": {"engine_max_l": 2.0, "pw_min": 40.0, "pw_max": 200.0},
+		"events": [
+			{"seed": 41001, "turn_count": 14, "forestiness": 0.5, "surface_mix": 0.2, "straightness": 0.7, "cliffiness": 0.35, "water_level": -10.0},
+			{"seed": 41002, "turn_count": 14, "forestiness": 0.4, "surface_mix": 0.1, "straightness": 0.65, "cliffiness": 0.4, "water_level": -10.0},
+			{"seed": 41003, "turn_count": 15, "forestiness": 0.6, "surface_mix": 0.3, "straightness": 0.6, "cliffiness": 0.45, "water_level": -10.0},
+		],
+	},
+	{
+		"id": "american_muscle", "name": "American Muscle", "region": "greece", "difficulty": 2, "showdown": false,
+		"reveal_after": 2,
+		"map_pos": Vector2(0.230, 0.630),
 		# US-built performance, in a mid/high-power band — the home of the American V8/V10s
 		# (Charger ~216, Viper ~264). Country-gated, not car_type-gated, so it fields more
 		# than a single car.
@@ -186,68 +328,153 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		"id": "shitbox_cup", "name": "Sh*tbox Cup", "region": "home", "difficulty": 1, "showdown": false,
-		"map_pos": Vector2(0.12, 0.48),
-		# The bottom band, below even Shakedown: a sub-100 hp/tonne class the true
-		# shitboxes (Acty ~59, Twingo ~82) fit — a low floor keeps the Acty in-band.
-		"restriction": {"pw_min": 40.0, "pw_max": 100.0},
+		# Big-bore two-doors: eight cylinders or more AND two doors.
+		"id": "gr_marble_quarry", "name": "Marble Quarry", "region": "greece", "difficulty": 2, "showdown": false,
+		"reveal_after": 3,
+		"map_pos": Vector2(0.360, 0.690),
+		"restriction": {"cylinders_min": 8, "doors_max": 2, "pw_min": 200.0, "pw_max": 400.0},
 		"events": [
-			{"seed": 7031, "turn_count": 10, "forestiness": 0.3, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.5, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 3.0},
-			{"seed": 7102, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.5, "straightness": 0, "cliffiness": 0.6, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 3.0},
-			{"seed": 7233, "turn_count": 10, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0, "cliffiness": 0.7, "water_level": -12.0, "terrain_layer1_amplitude": 11.0, "terrain_layer2_amplitude": 3.0},
-		],
-	},
-	{
-		"id": "the_showdown", "name": "The Showdown", "region": "home", "difficulty": 4, "showdown": true,
-		"map_pos": Vector2(0.5, 0.12),
-		"restriction": {},  # open so the low-power starter can always finish the game
-		"events": [
-			{"seed": 9101, "turn_count": 40, "forestiness": 0.8, "surface_mix": 0.5, "cliffiness": 0.8, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
-			{"seed": 9102, "turn_count": 40, "forestiness": 0.5, "surface_mix": 0.8, "cliffiness": 0.9, "water_level": -12.0, "terrain_layer1_amplitude": 24.0},
-			{"seed": 9003, "turn_count": 40, "forestiness": 0.65, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -12.0, "terrain_layer1_amplitude": 25.0},
-		],
-	},
-	# --- Greece (region "greece") --------------------------------------------
-	{
-		"id": "gr_olive_coast", "name": "Olive Coast", "region": "greece", "difficulty": 2, "showdown": false,
-		"map_pos": Vector2(0.30, 0.62),
-		"restriction": {"pw_min": 150.0, "pw_max": 230.0},
-		"events": [
-			{"seed": 21001, "turn_count": 15, "forestiness": 0.75, "surface_mix": 0.25, "straightness": 0.4, "cliffiness": 0.5},
-			{"seed": 21002, "turn_count": 16, "forestiness": 0.65, "surface_mix": 0.15, "straightness": 0.3, "cliffiness": 0.6},
-			{"seed": 21003, "turn_count": 15, "forestiness": 0.85, "surface_mix": 0.3, "straightness": 0.35, "cliffiness": 0.55},
+			{"seed": 42001, "turn_count": 20, "forestiness": 0.45, "surface_mix": 0.15, "straightness": 0.45, "cliffiness": 0.6, "water_level": -11.0},
+			{"seed": 42002, "turn_count": 20, "forestiness": 0.35, "surface_mix": 0.05, "straightness": 0.4, "cliffiness": 0.7, "water_level": -11.0},
+			{"seed": 42003, "turn_count": 21, "forestiness": 0.55, "surface_mix": 0.25, "straightness": 0.35, "cliffiness": 0.65, "water_level": -11.0},
 		],
 	},
 	{
 		"id": "gr_mountain_pass", "name": "Mountain Pass", "region": "greece", "difficulty": 3, "showdown": false,
-		"reveal_after": 1,
-		"map_pos": Vector2(0.52, 0.44),
+		"reveal_after": 4,
+		"map_pos": Vector2(0.140, 0.790),
 		"restriction": {"pw_min": 210.0, "pw_max": 320.0},
 		"events": [
-			{"seed": 22001, "turn_count": 17, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.8},
-			{"seed": 22102, "turn_count": 18, "forestiness": 0.75, "surface_mix": 0.05, "straightness": 0.15, "cliffiness": 0.9},
-			{"seed": 22203, "turn_count": 17, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.85},
+			{"seed": 22001, "turn_count": 17, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.8, "water_level": -10.0},
+			{"seed": 22102, "turn_count": 18, "forestiness": 0.75, "surface_mix": 0.05, "straightness": 0.15, "cliffiness": 0.9, "water_level": -10.0},
+			{"seed": 22203, "turn_count": 17, "forestiness": 0.7, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.85, "water_level": -10.0},
 		],
 	},
 	{
 		"id": "gr_ancient_ruins", "name": "Ancient Ruins", "region": "greece", "difficulty": 3, "showdown": false,
-		"reveal_after": 2,
-		"map_pos": Vector2(0.70, 0.58),
+		"reveal_after": 6,
+		"map_pos": Vector2(0.290, 0.830),
 		"restriction": {"pw_min": 260.0, "pw_max": 400.0},
 		"events": [
-			{"seed": 23201, "turn_count": 18, "forestiness": 0.6, "surface_mix": 0.2, "straightness": 0.3, "cliffiness": 0.7},
-			{"seed": 23202, "turn_count": 20, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.85},
-			{"seed": 23103, "turn_count": 18, "forestiness": 0.75, "surface_mix": 0.35, "straightness": 0.25, "cliffiness": 0.75},
+			{"seed": 23201, "turn_count": 18, "forestiness": 0.6, "surface_mix": 0.2, "straightness": 0.3, "cliffiness": 0.7, "water_level": -10.0},
+			{"seed": 23202, "turn_count": 20, "forestiness": 0.65, "surface_mix": 0.1, "straightness": 0.2, "cliffiness": 0.85, "water_level": -10.0},
+			{"seed": 23103, "turn_count": 18, "forestiness": 0.75, "surface_mix": 0.35, "straightness": 0.25, "cliffiness": 0.75, "water_level": -10.0},
+		],
+	},
+	{
+		# Muscle bodies only — the class is the body style, wide open on power.
+		"id": "gr_thermopylae", "name": "The Hot Gates", "region": "greece", "difficulty": 4, "showdown": false,
+		"reveal_after": 8,
+		"map_pos": Vector2(0.410, 0.760),
+		"restriction": {"car_type": "muscle", "pw_min": 100.0, "pw_max": 400.0},
+		"events": [
+			{"seed": 43001, "turn_count": 28, "forestiness": 0.4, "surface_mix": 0.3, "straightness": 0.2, "cliffiness": 0.9, "water_level": -11.0},
+			{"seed": 43002, "turn_count": 30, "forestiness": 0.3, "surface_mix": 0.1, "straightness": 0.15, "cliffiness": 0.95, "water_level": -11.0},
+			{"seed": 43003, "turn_count": 28, "forestiness": 0.5, "surface_mix": 0.2, "straightness": 0.15, "cliffiness": 1.0, "water_level": -11.0},
 		],
 	},
 	{
 		"id": "gr_showdown", "name": "The Aegean Crown", "region": "greece", "difficulty": 4, "showdown": true,
-		"map_pos": Vector2(0.50, 0.24),
+		"map_pos": Vector2(0.138, 0.501),
 		"restriction": {},  # open-class finale
 		"events": [
-			{"seed": 29001, "turn_count": 25, "forestiness": 0.75, "surface_mix": 0.15, "cliffiness": 0.85},
-			{"seed": 29102, "turn_count": 28, "forestiness": 0.65, "surface_mix": 0.25, "cliffiness": 0.95},
-			{"seed": 29103, "turn_count": 25, "forestiness": 0.85, "surface_mix": 0.1, "cliffiness": 1.0},
+			{"seed": 29001, "turn_count": 25, "forestiness": 0.75, "surface_mix": 0.15, "cliffiness": 0.85, "water_level": -10.0},
+			{"seed": 29102, "turn_count": 28, "forestiness": 0.65, "surface_mix": 0.25, "cliffiness": 0.95, "water_level": -10.0},
+			{"seed": 29103, "turn_count": 25, "forestiness": 0.85, "surface_mix": 0.1, "cliffiness": 1.0, "water_level": -10.0},
+		],
+	},
+	# --- The Coast: SE sandy shore (region "greece_coast", waterline -5) ---------
+	# Sited down the western shore of the bay, on the sandy palette that matches the
+	# arid look — placement is the only coastal signal, so these stay on the sandy
+	# shore, but at VARIED distances from the water: two on outlying islands and one
+	# on the beach, the rest set back to different depths so the corner reads as a
+	# region rather than a line. The per-event water_level tracks that distance
+	# (shore -5, set back -7) and is AUTHORED, never derived from map_pos.
+	# Events author no terrain_layer1_amplitude, so they run the GameConfig baseline
+	# (30 m), comfortably clear of the >= 16 pairing the -5 waterline needs.
+	{
+		"id": "gc_fishermens_run", "name": "Fishermen's Run", "region": "greece_coast", "difficulty": 1, "showdown": false,
+		"map_pos": Vector2(0.978, 0.788),
+		"restriction": {"pw_min": 40.0, "pw_max": 130.0},
+		"events": [
+			{"seed": 51001, "turn_count": 12, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.75, "cliffiness": 0.3, "water_level": -5.0},
+			{"seed": 51002, "turn_count": 12, "forestiness": 0.4, "surface_mix": 0.6, "straightness": 0.7, "cliffiness": 0.35, "water_level": -5.0},
+			{"seed": 51003, "turn_count": 13, "forestiness": 0.6, "surface_mix": 0.25, "straightness": 0.7, "cliffiness": 0.4, "water_level": -5.0},
+		],
+	},
+	{
+		# A two-door class: doors are a body property (a swap can't change them), so
+		# this grouping is stable under retuning.
+		"id": "gr_olive_coast", "name": "Olive Coast", "region": "greece_coast", "difficulty": 2, "showdown": false,
+		"reveal_after": 1,
+		"map_pos": Vector2(0.508, 0.984),
+		"restriction": {"doors_max": 2, "pw_min": 120.0, "pw_max": 200.0},
+		"events": [
+			{"seed": 21001, "turn_count": 15, "forestiness": 0.75, "surface_mix": 0.25, "straightness": 0.4, "cliffiness": 0.5, "water_level": -7.0},
+			{"seed": 21002, "turn_count": 16, "forestiness": 0.65, "surface_mix": 0.15, "straightness": 0.3, "cliffiness": 0.6, "water_level": -7.0},
+			{"seed": 21003, "turn_count": 15, "forestiness": 0.85, "surface_mix": 0.3, "straightness": 0.35, "cliffiness": 0.55, "water_level": -7.0},
+		],
+	},
+	{
+		# Small-engined two-doors — displacement resolved through the fitted engine.
+		"id": "gc_island_hop", "name": "Island Hop", "region": "greece_coast", "difficulty": 2, "showdown": false,
+		"reveal_after": 2,
+		"map_pos": Vector2(0.677, 0.938),
+		"restriction": {"engine_max_l": 3.0, "doors_max": 2, "pw_min": 100.0, "pw_max": 260.0},
+		"events": [
+			{"seed": 52001, "turn_count": 17, "forestiness": 0.6, "surface_mix": 0.5, "straightness": 0.5, "cliffiness": 0.5, "water_level": -5.0},
+			{"seed": 52002, "turn_count": 17, "forestiness": 0.5, "surface_mix": 0.7, "straightness": 0.45, "cliffiness": 0.55, "water_level": -5.0},
+			{"seed": 52003, "turn_count": 18, "forestiness": 0.7, "surface_mix": 0.35, "straightness": 0.4, "cliffiness": 0.6, "water_level": -5.0},
+		],
+	},
+	{
+		# id kept as "rising_sun" (saves key rally progress on the stable id) even though
+		# the event was reworked from a JP-only rally into an open power-band one: with
+		# the real-derived p/w figures no stock JP car came near this band, so the
+		# country gate went and the band alone now hosts the stock heavy hitters
+		# (Charger ~216, Viper ~264 hp/tonne — the Viper's only stock rally).
+		"id": "rising_sun", "name": "Heavy Hitters", "region": "greece_coast", "difficulty": 3, "showdown": false,
+		"reveal_after": 4,
+		"map_pos": Vector2(0.552, 0.715),
+		"restriction": {"pw_min": 210.0, "pw_max": 320.0},  # Charger/Viper
+		"events": [
+			{"seed": 4001, "turn_count": 29, "forestiness": 0.6, "surface_mix": 0.6, "straightness": 0.25, "cliffiness": 0.55, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 4004, "turn_count": 29, "forestiness": 0.4, "surface_mix": 0.0, "straightness": 0.2, "cliffiness": 0.7, "water_level": -7.0, "terrain_layer1_amplitude": 16.0},
+			{"seed": 3734559043, "turn_count": 29, "forestiness": 0.75, "surface_mix": 1.0, "straightness": 0.25, "cliffiness": 0.6, "water_level": -7.0, "terrain_layer1_amplitude": 17.0},
+		],
+	},
+	{
+		# Big-block class: 5.0 L or more, resolved through the fitted engine.
+		"id": "gc_salt_flats", "name": "Salt Flats", "region": "greece_coast", "difficulty": 3, "showdown": false,
+		"reveal_after": 6,
+		"map_pos": Vector2(0.532, 0.874),
+		"restriction": {"engine_min_l": 5.0, "pw_min": 150.0, "pw_max": 400.0},
+		"events": [
+			{"seed": 53001, "turn_count": 26, "forestiness": 0.3, "surface_mix": 0.8, "straightness": 0.55, "cliffiness": 0.4, "water_level": -5.0},
+			{"seed": 53002, "turn_count": 26, "forestiness": 0.25, "surface_mix": 1.0, "straightness": 0.6, "cliffiness": 0.35, "water_level": -5.0},
+			{"seed": 53003, "turn_count": 27, "forestiness": 0.4, "surface_mix": 0.6, "straightness": 0.5, "cliffiness": 0.45, "water_level": -5.0},
+		],
+	},
+	{
+		# A national class: British cars, wide on power.
+		"id": "gc_island_gp", "name": "Island Grand Prix", "region": "greece_coast", "difficulty": 4, "showdown": false,
+		"reveal_after": 8,
+		"map_pos": Vector2(0.615, 0.864),
+		"restriction": {"country": "GB", "pw_min": 100.0, "pw_max": 400.0},
+		"events": [
+			{"seed": 54001, "turn_count": 30, "forestiness": 0.35, "surface_mix": 1.0, "straightness": 0.3, "cliffiness": 0.7, "water_level": -5.0},
+			{"seed": 54002, "turn_count": 30, "forestiness": 0.5, "surface_mix": 0.9, "straightness": 0.2, "cliffiness": 0.8, "water_level": -5.0},
+			{"seed": 54003, "turn_count": 31, "forestiness": 0.3, "surface_mix": 0.7, "straightness": 0.2, "cliffiness": 0.85, "water_level": -5.0},
+		],
+	},
+	{
+		"id": "gc_showdown", "name": "The Island Crown", "region": "greece_coast", "difficulty": 4, "showdown": true,
+		"map_pos": Vector2(0.668, 0.755),
+		"restriction": {},  # open-class finale
+		"events": [
+			{"seed": 59001, "turn_count": 33, "forestiness": 0.6, "surface_mix": 0.5, "cliffiness": 0.9, "water_level": -7.0},
+			{"seed": 59002, "turn_count": 35, "forestiness": 0.45, "surface_mix": 0.7, "cliffiness": 0.95, "water_level": -7.0},
+			{"seed": 59003, "turn_count": 33, "forestiness": 0.7, "surface_mix": 0.3, "cliffiness": 1.0, "water_level": -7.0},
 		],
 	},
 ]
@@ -367,11 +594,34 @@ static func ineligibility_reason(rally: Dictionary, car_meta: Dictionary, floor_
 		return "Wrong country of origin for this class"
 	if r.has("car_type") and String(car_meta.get("car_type", "")) != String(r["car_type"]):
 		return "Wrong car type for this class"
-	var disp := float(car_meta.get("engine_displacement_l", 0.0))
-	if r.has("engine_min_l") and disp < float(r["engine_min_l"]):
-		return "Engine too small for this class"
-	if r.has("engine_max_l") and disp > float(r["engine_max_l"]):
-		return "Engine too large for this class"
+	if r.has("doors_min") and int(car_meta.get("doors", 0)) < int(r["doors_min"]):
+		return "Too few doors for this class"
+	if r.has("doors_max") and int(car_meta.get("doors", 0)) > int(r["doors_max"]):
+		return "Too many doors for this class"
+	# Engine-derived fields (displacement, cylinder count) are resolved through the car's
+	# CURRENT engine, not off a flat key on the car dict — so an ENGINE SWAP moves them
+	# with the engine and automatically changes which rallies the car can enter
+	# (UpgradeLibrary.effective_meta re-points meta["engine"] at the fitted engine; see
+	# features/engine-swap.md). If the restriction names an engine-derived field but the
+	# engine id doesn't resolve (a synthetic/hand-built meta in a test or tool), the car is
+	# REJECTED rather than waved through — silently accepting everything is exactly the
+	# failure mode of the old dead `engine_displacement_l` lookup.
+	var wants_engine := (r.has("engine_min_l") or r.has("engine_max_l")
+		or r.has("cylinders_min") or r.has("cylinders_max"))
+	if wants_engine:
+		var eng := EngineLibrary.by_id(String(car_meta.get("engine", "")))
+		if eng.is_empty():
+			return "Unknown engine for this class"
+		var disp := float(eng.get("displacement_l", 0.0))
+		if r.has("engine_min_l") and disp < float(r["engine_min_l"]):
+			return "Engine too small for this class"
+		if r.has("engine_max_l") and disp > float(r["engine_max_l"]):
+			return "Engine too large for this class"
+		var cyl := EngineLibrary.cylinders(eng)
+		if r.has("cylinders_min") and cyl < int(r["cylinders_min"]):
+			return "Too few cylinders for this class"
+		if r.has("cylinders_max") and cyl > int(r["cylinders_max"]):
+			return "Too many cylinders for this class"
 	# power_to_weight is kW/kg; the authored band edges are hp/tonne — convert before comparing.
 	# Compare the ROUNDED hp/tonne figure (CarLibrary.power_to_weight_hp_tonne) — the exact
 	# number the player sees on screen — not the raw float, so a car displaying e.g. "100 hp/t"
@@ -731,14 +981,20 @@ static func completed_count(profile: Dictionary) -> int:
 	return n
 
 
-# Count of completed NON-SHOWDOWN rallies in a region — the wave metric that drives
-# reveal_after (intra-region reveal order). A completed showdown doesn't count (it's the
-# finale, gated separately).
-static func _completed_in_region(region_id: String, profile: Dictionary) -> int:
+# Count of completed NON-SHOWDOWN rallies across the WHOLE roster — the wave metric that
+# drives reveal_after. A completed showdown doesn't count (it's the finale, gated
+# separately by its region's showdown gate).
+#
+# Deliberately GLOBAL, not per-region: the world map pins every region's rallies at once,
+# so "complete a rally in one corner to reveal one in another corner" is the intended
+# drip-feed and is only expressible with a global count. (A per-region count would also
+# have silently tightened gating when the two old regions were split into four corners —
+# the same authored reveal_after drawing from a smaller pool.)
+static func _completed_count(profile: Dictionary) -> int:
 	var rallies: Dictionary = profile.get("rallies", {})
 	var n := 0
 	for rally in all():
-		if String(rally.get("region", "")) != region_id or bool(rally.get("showdown", false)):
+		if bool(rally.get("showdown", false)):
 			continue
 		if rallies.get(rally["id"], {}).get("completed", false):
 			n += 1
@@ -746,10 +1002,10 @@ static func _completed_in_region(region_id: String, profile: Dictionary) -> int:
 
 
 # Whether a rally's pin is REVEALED (enterable) yet. A non-showdown rally reveals once
-# the player has completed `reveal_after` rallies in its own region (intra-region reveal
-# order — keeps ~1-2 fresh rallies enterable at a time even when the garage is broad, so a
-# newly-unlocked region doesn't dump all its rallies at once); a showdown reveals on its
-# region's showdown gate. The single reveal predicate shared by the map pins (hq.gd), the
+# the player has completed `reveal_after` non-showdown rallies ANYWHERE on the roster
+# (a GLOBAL wave count — keeps ~1-2 fresh rallies enterable at a time even when the garage
+# is broad, and lets a win in one corner of the world map open a rally in another); a
+# showdown reveals on its region's showdown gate (that one stays per-corner). The single reveal predicate shared by the map pins (hq.gd), the
 # anti-soft-lock eligibility query, and the reward-draw walk. (Completion is a separate
 # check the callers do — a revealed rally may still be incomplete or already done.)
 static func rally_revealed(rally: Dictionary, profile: Dictionary) -> bool:
@@ -758,7 +1014,7 @@ static func rally_revealed(rally: Dictionary, profile: Dictionary) -> bool:
 	var need := int(rally.get("reveal_after", 0))
 	if need <= 0:
 		return true
-	return _completed_in_region(String(rally.get("region", "")), profile) >= need
+	return _completed_count(profile) >= need
 
 
 # The showdown is enterable only when every non-showdown rally is completed.

@@ -116,7 +116,7 @@ func _pin_for(hq: Node3D, rally_id: String) -> Node3D:
 	return null
 
 
-# The table target (pin/arrow node) whose position is nearest `center` in the map (XZ)
+# The table target (pin node) whose position is nearest `center` in the map (XZ)
 # plane — the same "reticle over the map" rule the table selection uses.
 func _nearest_target_to(hq: Node3D, center: Vector3) -> Node3D:
 	var best: Node3D = null
@@ -148,12 +148,6 @@ func _pin_label_sprite(pin: Node3D) -> Sprite3D:
 	return pin.find_children("*", "Sprite3D", true, false)[0]
 
 
-# The text on an arrow's floating label (read via the arrow's label_panel meta).
-func _arrow_label_text(arrow: Area3D) -> String:
-	var panel: PanelContainer = arrow.get_meta("label_panel")
-	return (panel.find_children("*", "Label", true, false)[0] as Label).text
-
-
 func test_hq_boots_to_the_exterior_title() -> void:
 	_reset_to_first_run()
 	var hq: Node3D = load("res://hq.tscn").instantiate()
@@ -170,8 +164,8 @@ func test_hq_boots_to_the_exterior_title() -> void:
 	await _await_lineup(hq)
 	assert_eq(hq._cars.size(), 0, "an empty garage parks no cars on the title")
 	# The 3D map table is populated with one pin per rally.
-	assert_eq(hq._pins.size(), RegionLibrary.rallies_in(hq._viewed_region_id()).size(),
-		"one map pin per rally in the viewed region")
+	assert_eq(hq._pins.size(), RallyLibrary.all().size(),
+		"one map pin per rally — the single world map shows the whole roster")
 
 
 func test_title_has_a_reachable_exit_game_button_on_desktop() -> void:
@@ -363,7 +357,7 @@ func test_hq_title_shows_build_version() -> void:
 
 
 # The map table pans the camera directly: pressing a direction slides the view centre
-# that way, and selection snaps to whichever pin/arrow now sits nearest the centre (a
+# that way, and selection snaps to whichever pin now sits nearest the centre (a
 # reticle over the map, not discrete jumps). Select opens the selected rally.
 func test_hq_map_table_pans_camera_and_tracks_centre() -> void:
 	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
@@ -464,127 +458,56 @@ func test_hq_table_entry_focuses_hardest_incomplete_rally() -> void:
 	RallyLibrary.reset()
 
 
-# The two regions sit left/right of the map; navigating right from the right-most pin
-# lands focus on the RIGHT ARROW (a focus target, highlighted), and select on it swaps
-# the region and re-seats focus onto a pin. Left/right no longer swap directly.
-func test_table_arrow_is_a_focus_target_that_swaps_on_select() -> void:
-	RegionLibrary.override_for_test([
-		{"id": "home", "name": "Home"},
-		{"id": "greece", "name": "Greece", "map_image": "res://textures/greece.png"},
-	])
+# There is ONE world map with every rally pinned on it, so an unrevealed rally still
+# gets a pin — it just renders locked: greyed, no pickable hit area, and excluded from
+# the keyboard/gamepad focus ring. That's the invariant the single-map change most
+# easily breaks (the old per-region map simply never drew the rally at all).
+func test_unrevealed_rallies_still_get_a_disabled_pin() -> void:
+	RegionLibrary.override_for_test([{"id": "home", "name": "Home"}])
 	RallyLibrary.override_for_test([
-		{"id": "h1", "name": "H1", "region": "home", "showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "h_sd", "name": "HSD", "region": "home", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
-		{"id": "g1", "name": "G1", "region": "greece", "showdown": false, "map_pos": Vector2(0.4, 0.5), "restriction": {}, "events": []},
-		{"id": "g_sd", "name": "GSD", "region": "greece", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
+		{"id": "open", "name": "Open", "region": "home", "showdown": false, "reveal_after": 0,
+			"map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
+		{"id": "later", "name": "Later", "region": "home", "showdown": false, "reveal_after": 99,
+			"map_pos": Vector2(0.7, 0.5), "restriction": {}, "events": []},
+		{"id": "sd", "name": "SD", "region": "home", "showdown": true,
+			"map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
 	])
-	_save.profile["rallies"] = {"h1": {"completed": true}, "h_sd": {"completed": true}}
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	hq._go_to(hq.View.TABLE)
-	hq._set_viewed_region_for_test(0)  # home
+	hq._enter_table()
 	await get_tree().process_frame
 
-	# The right arrow is in the focus set (a further region exists); the left arrow is not.
-	var kinds: Array = []
-	for t in hq._table_targets():
-		kinds.append(t["kind"])
-	assert_true(kinds.has("arrow_right"), "the right arrow is a focus target when a next region exists")
-	assert_false(kinds.has("arrow_left"), "no left arrow target at the first region")
-
-	# Glide right until the right arrow (near the map's right edge) is nearest the centre.
-	var guard := 0
-	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 20:
-		hq._pan_table_step(Vector2.RIGHT, 0.4)
-		guard += 1
-	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right",
-		"gliding right eventually selects the right arrow")
-	assert_eq(_arrow_label_text(hq._env.arrow_right).to_lower(), "change map",
-		"an unlocked forward arrow reads 'change map'")
-
-	# Select on the arrow swaps the region and re-seats focus on a pin.
-	hq._activate_table_focus()
-	assert_eq(hq._viewed_region_index, 1, "select on the right arrow advances the viewed region")
+	# Every rally in the roster is pinned, revealed or not.
+	assert_eq(hq._pins.size(), RallyLibrary.all().size(), "every rally gets a pin")
+	var by_id: Dictionary = {}
 	for pin in hq._pins:
-		assert_eq(RegionLibrary.region_for_rally(String(pin.get_meta("rally_id"))).get("id", ""),
-			"greece", "every pin now belongs to the newly-viewed region")
-	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "pin",
-		"focus re-seats on a pin after the swap")
-	RegionLibrary.reset()
-	RallyLibrary.reset()
+		by_id[String(pin.get_meta("rally_id"))] = pin
+	assert_true(by_id.has("later"), "an unrevealed rally is still pinned on the world map")
+	assert_true(by_id.has("sd"), "a gated showdown is still pinned on the world map")
 
+	# ...but the unrevealed ones are disabled: flagged locked, with no pickable hit area.
+	for id in ["later", "sd"]:
+		var pin: Node3D = by_id[id]
+		assert_true(bool(pin.get_meta("locked")), "%s's pin is marked locked" % id)
+		assert_eq(pin.find_children("*", "Area3D", true, false).size(), 0,
+			"%s's locked pin has no pickable hit area" % id)
+	assert_false(bool(by_id["open"].get_meta("locked")), "a revealed rally's pin is not locked")
+	assert_gt(by_id["open"].find_children("*", "Area3D", true, false).size(), 0,
+		"a revealed rally's pin IS clickable")
 
-func test_table_arrows_hide_at_the_ends_of_the_region_list() -> void:
-	# A swap arrow is only shown when a region exists that way: no left arrow at the
-	# first region, no right arrow at the furthest unlocked one. Two unlocked regions
-	# (home's showdown completed unlocks greece) → each end hides one arrow.
-	RegionLibrary.override_for_test([
-		{"id": "home", "name": "Home"},
-		{"id": "greece", "name": "Greece"},
-	])
-	RallyLibrary.override_for_test([
-		{"id": "h_sd", "name": "HSD", "region": "home", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
-		{"id": "g_sd", "name": "GSD", "region": "greece", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
-	])
-	_save.profile["rallies"] = {"h_sd": {"completed": true}}  # unlocks greece
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.TABLE)
-	hq._set_viewed_region_for_test(0)  # first region
-	assert_false(hq._env.arrow_left.visible, "no left arrow at the first region")
-	assert_false(hq._env.arrow_left.input_ray_pickable, "hidden left arrow is not clickable")
-	assert_true(hq._env.arrow_right.visible, "right arrow shown when a next region exists")
-	hq._set_viewed_region_for_test(1)  # furthest unlocked
-	assert_true(hq._env.arrow_left.visible, "left arrow shown when a prev region exists")
-	assert_false(hq._env.arrow_right.visible, "no right arrow at the furthest unlocked region")
-	assert_false(hq._env.arrow_right.input_ray_pickable, "hidden right arrow is not clickable")
-	RegionLibrary.reset()
-	RallyLibrary.reset()
-
-
-# The forward arrow is shown even when the next region is LOCKED, floating a dimmed
-# "Complete showdown to unlock" label; it is a landable focus target but select on it
-# is inert (no swap). An unlocked/back arrow instead reads "Change map".
-func test_table_arrow_labels_reflect_lock_state() -> void:
-	RegionLibrary.override_for_test([
-		{"id": "home", "name": "Home"},
-		{"id": "greece", "name": "Greece"},
-		{"id": "alps", "name": "Alps"},
-	])
-	RallyLibrary.override_for_test([
-		{"id": "h1", "name": "H1", "region": "home", "showdown": false, "map_pos": Vector2(0.3, 0.5), "restriction": {}, "events": []},
-		{"id": "h_sd", "name": "HSD", "region": "home", "showdown": true, "map_pos": Vector2(0.5, 0.2), "restriction": {}, "events": []},
-		{"id": "g1", "name": "G1", "region": "greece", "showdown": false, "map_pos": Vector2(0.4, 0.5), "restriction": {}, "events": []},
-	])
-	# No rallies completed → greece and alps stay locked.
-	var hq: Node3D = load("res://hq.tscn").instantiate()
-	add_child_autofree(hq)
-	await get_tree().process_frame
-	hq._go_to(hq.View.TABLE)
-	hq._set_viewed_region_for_test(0)  # home (first region)
-	await get_tree().process_frame
-
-	assert_true(hq._env.arrow_right.visible, "forward arrow is shown even when the next region is locked")
-	assert_eq(_arrow_label_text(hq._env.arrow_right).to_lower(), "complete showdown to unlock",
-		"a locked forward arrow prompts to complete the showdown")
-
-	# The locked arrow is a landable focus target.
-	var kinds: Array = []
+	# ...and the keyboard/gamepad focus ring only contains the enterable pins, so no
+	# amount of panning can land the cursor on a locked one.
+	var focusable: Array = []
 	for t in hq._table_targets():
-		kinds.append(t["kind"])
-	assert_true(kinds.has("arrow_right"), "the locked forward arrow is a focus target")
-
-	# Glide onto it and select: inert — the region does not change and focus stays.
-	var guard := 0
-	while hq._table_targets()[hq._table_focus_index]["kind"] != "arrow_right" and guard < 20:
+		assert_eq(String(t["kind"]), "pin", "every table focus target is a pin now")
+		focusable.append(String((t["node"] as Node3D).get_meta("rally_id")))
+	assert_eq(focusable, ["open"], "only the revealed rally is a focus target")
+	for _i in 12:
 		hq._pan_table_step(Vector2.RIGHT, 0.4)
-		guard += 1
-	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right", "cursor reached the locked arrow")
-	hq._activate_table_focus()
-	assert_eq(hq._viewed_region_index, 0, "select on a locked forward arrow does not swap the region")
-	assert_eq(hq._table_targets()[hq._table_focus_index]["kind"], "arrow_right", "focus stays on the locked arrow")
+	assert_eq(String(hq._table_targets()[hq._table_focus_index]["node"].get_meta("rally_id")), "open",
+		"panning across the map keeps the cursor on an enterable pin")
+
 	RegionLibrary.reset()
 	RallyLibrary.reset()
 
@@ -1656,7 +1579,10 @@ func test_hq_opening_the_table_shows_the_map() -> void:
 	hq._enter_table()
 	assert_eq(hq._view, hq.View.TABLE, "tapping the table drops the camera to the map view")
 	assert_true(hq._table_layer.visible, "the map HUD is shown")
-	assert_string_contains(hq._map_meter.text, "PROGRESS TO THE SHOWDOWN", "the progress meter is shown")
+	# CHANGED DELIBERATELY: the meter used to read "Progress to the Showdown" and count
+	# only the viewed region's rallies. There is one world map now, so it counts the
+	# whole roster and no longer names a single showdown.
+	assert_string_contains(hq._map_meter.text, "RALLIES COMPLETED", "the progress meter is shown")
 
 
 func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:

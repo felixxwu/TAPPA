@@ -684,11 +684,12 @@ func _complete_rally() -> void:
 	RallySession.dev_complete_rally()
 
 
-# Dev: 3-star every rally so all regions unlock (regions gate on each region's
-# showdown being completed — see RegionLibrary.unlocked / features/regions.md).
+# Dev: 3-star every rally, which also completes every region's showdown and so
+# finishes the game (regions no longer unlock in sequence — see
+# RegionLibrary.all_showdowns_completed / features/regions.md).
 func _three_star_all_rallies() -> void:
 	Save.dev_three_star_all_rallies()
-	_dev_status.text = "3-starred all rallies — all regions unlocked."
+	_dev_status.text = "3-starred all rallies — every showdown completed."
 
 
 # Grant a fresh owned instance of any car in the library (no rally required).

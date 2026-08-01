@@ -195,7 +195,9 @@ re-grants a car). It is **guaranteed** — a car is always granted. Two paths:
    pw_min floor is judged at the car's max potential, against
    `RallyLibrary.incomplete_rallies_enterable_by`, which is reveal-aware — a rally
    counts as enterable only once **revealed** (`rally_revealed`: its `reveal_after`
-   met, and for a showdown its region unlocked), see [regions.md](regions.md)).
+   met, and for a showdown its own region's showdown gate open — `RegionLibrary.
+   showdown_unlocked`, not a "region unlocked" concept, which no longer exists),
+   see [regions.md](regions.md)).
    Candidates then become the models eligible for the still-locked, **revealed**
    rallies at the **lowest difficulty any catalogue car can actually enter** — e.g.
    all tier-1/2 rallies beaten with nothing new enterable ⇒ a car for a difficulty-3

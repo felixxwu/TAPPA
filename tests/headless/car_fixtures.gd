@@ -8,6 +8,10 @@ extends RefCounted
 #
 # The four cars span the axes tests exercise: drivetrain (RWD/FWD/AWD), weight
 # bias (nose-heavy / tail-heavy / ~50-50), body size, and power-to-weight band.
+# They also carry the rally-restriction metadata the real catalogue authors:
+# `doors` on the car (a body property) and `displacement_l` on the engine (an
+# engine property that follows an engine swap) — see
+# RallyLibrary.ineligibility_reason.
 
 const RWD := 0
 const AWD := 1
@@ -17,13 +21,13 @@ const FWD := 2
 static func engines() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
-			"id": "fx_i4", "name": "Fixture i4", "layout": "i4", "mass": 120.0,
+			"id": "fx_i4", "name": "Fixture i4", "layout": "i4", "displacement_l": 2.0, "mass": 120.0,
 			"redline_rpm": 7000.0, "peak_torque": 200.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
 			"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 			"gear_ratios": [3.5, 2.0, 1.4, 1.0, 0.8], "final_drive": 4.0, "shift_time": 0.30,
 		},
 		{
-			"id": "fx_v8", "name": "Fixture V8", "layout": "v8", "mass": 220.0,
+			"id": "fx_v8", "name": "Fixture V8", "layout": "v8", "displacement_l": 5.0, "mass": 220.0,
 			"redline_rpm": 6500.0, "peak_torque": 500.0, "peak_torque_rpm": 4000.0, "engine_inertia": 0.35,
 			"low_octave_mix": 0.6, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 			"gear_ratios": [3.0, 1.8, 1.3, 1.0, 0.75], "final_drive": 3.5, "shift_time": 0.25,
@@ -35,7 +39,7 @@ static func engines() -> Array[Dictionary]:
 static func cars() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
-			"name": "Fixture Roadster", "id": "fx_light_rwd", "country": "JP", "car_type": "roadster",
+			"name": "Fixture Roadster", "id": "fx_light_rwd", "country": "JP", "car_type": "roadster", "doors": 2,
 			"max_hp": 800.0, "reward_tier": 1, "mass": 1050.0, "engine": "fx_i4",
 			"weight_front": 0.50, "engine_pos": 0.85, "tire_compound": 1.0,
 			"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
@@ -45,7 +49,7 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.42, "suspension_stiffness": 10.0,
 		},
 		{
-			"name": "Fixture Hatch", "id": "fx_fwd_hatch", "country": "US", "car_type": "hatch",
+			"name": "Fixture Hatch", "id": "fx_fwd_hatch", "country": "US", "car_type": "hatch", "doors": 5,
 			"max_hp": 950.0, "reward_tier": 1, "mass": 900.0, "engine": "fx_i4",
 			"weight_front": 0.62, "engine_pos": 0.85, "tire_compound": 1.05,
 			"brake_bias": 0.62,  # the only fixture car that authors a default brake bias
@@ -56,7 +60,7 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.40, "suspension_stiffness": 11.0,
 		},
 		{
-			"name": "Fixture Coupe", "id": "fx_rwd_coupe", "country": "GB", "car_type": "coupe",
+			"name": "Fixture Coupe", "id": "fx_rwd_coupe", "country": "GB", "car_type": "coupe", "doors": 2,
 			"max_hp": 1100.0, "reward_tier": 3, "mass": 1600.0, "engine": "fx_v8",
 			"weight_front": 0.45, "engine_pos": 0.40, "tire_compound": 1.20,
 			"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
@@ -66,7 +70,7 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.38, "suspension_stiffness": 16.0,
 		},
 		{
-			"name": "Fixture AWD", "id": "fx_awd", "country": "IT", "car_type": "coupe",
+			"name": "Fixture AWD", "id": "fx_awd", "country": "IT", "car_type": "coupe", "doors": 2,
 			"max_hp": 1000.0, "reward_tier": 2, "mass": 1500.0, "engine": "fx_v8",
 			"weight_front": 0.55, "engine_pos": 0.60, "tire_compound": 1.15,
 			"drive_mode": AWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,

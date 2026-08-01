@@ -57,3 +57,49 @@ func test_dry_start_deterministic() -> void:
 	var a := TrackGenParams.for_event({"seed": 5, "water_level": 0.0}, cfg)
 	var b := TrackGenParams.for_event({"seed": 5, "water_level": 0.0}, cfg)
 	assert_eq(a.origin, b.origin, "same (seed, water_level) -> same origin")
+
+
+# --- resolve_water_level: event -> region -> GameConfig baseline ---------------
+# Resolution ORDER is the whole contract (CLAUDE.md: never pin the shipped
+# -12/-5/-10 values). Synthetic regions via the Registry.Seam only.
+
+func after_each() -> void:
+	RegionLibrary.reset()
+
+func test_event_water_level_beats_its_region() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "fx_region", "water_level": -99.0},
+	])
+	var level := TrackGenParams.resolve_water_level(
+		{"water_level": -1.0, "region": "fx_region"}, -50.0)
+	assert_almost_eq(level, -1.0, 0.0001, "event's own water_level wins over its region")
+
+func test_event_with_no_water_level_inherits_its_region() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "fx_region", "water_level": -99.0},
+	])
+	var level := TrackGenParams.resolve_water_level({"region": "fx_region"}, -50.0)
+	assert_almost_eq(level, -99.0, 0.0001, "no event override -> region's waterline")
+
+func test_region_with_no_water_level_falls_back_to_baseline() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "fx_region"},  # authors no waterline at all
+	])
+	var level := TrackGenParams.resolve_water_level({"region": "fx_region"}, -50.0)
+	assert_almost_eq(level, -50.0, 0.0001,
+		"a region authoring nothing falls back to the GameConfig baseline")
+
+func test_no_region_context_falls_back_to_baseline() -> void:
+	# The challenge / free-roam / dev-page shape: an event dict with no region tag
+	# at all (and no water_level) — must fall straight through to the baseline.
+	var level := TrackGenParams.resolve_water_level({}, -50.0)
+	assert_almost_eq(level, -50.0, 0.0001, "no region tag -> GameConfig baseline")
+
+func test_for_event_resolves_water_level_through_its_region() -> void:
+	RegionLibrary.override_for_test([
+		{"id": "fx_region", "water_level": -33.0},
+	])
+	var cfg := _cfg()
+	var p := TrackGenParams.for_event({"seed": 7, "region": "fx_region"}, cfg)
+	assert_almost_eq(p.water_level, -33.0, 0.0001,
+		"for_event resolves an unauthored event's water_level via its region")

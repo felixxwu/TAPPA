@@ -20,7 +20,7 @@ Re-run after tweaking, then `godot --headless --import` to (re)import.
 
 Usage:
     tools/gen_map_texture.py                      # -> textures/map_world.jpg
-    tools/gen_map_texture.py --seed 5             # re-roll the terrain
+    tools/gen_map_texture.py --seed 9             # re-roll the terrain
     tools/gen_map_texture.py --out /tmp/try.jpg   # preview somewhere else
 """
 import argparse
@@ -41,13 +41,32 @@ CORNERS = {                    # (u, v) centre of each region's influence
     "arid":   (0.14, 0.85),    # SW
     "coast":  (0.87, 0.87),    # SE
 }
+# Per-region influence radius. Snow runs WIDER than the rest so the alpine corner
+# reads as a substantial region rather than a cap in the extreme corner — it is the
+# one region whose look can't be produced by re-mixing the others, so it needs room
+# to hold its own rallies later (todo/one-map-four-corners.md, snow follow-up).
+# A single shared SIGMA can't do that: raising it inflates every corner at once and
+# the four just blur into each other.
+# The seed the SHIPPED textures/map_world.jpg was generated from. Kept as the
+# default so re-running the tool reproduces the map that the rally map_pos values
+# were authored against — changing it silently invalidates every coastal pin.
+SHIPPED_SEED = 5
+
 SIGMA = 0.36
+SIGMA_BY_REGION = {"snow": 0.46}
 SEA = 0.30
 
 # Islands seeded in the SE so the coastal region has land to actually race on.
-ISLANDS = [(0.74, 0.93, 0.055), (0.88, 0.74, 0.048), (0.955, 0.90, 0.040),
-           (0.80, 0.83, 0.032), (0.66, 0.99, 0.036), (0.93, 0.99, 0.030),
-           (0.995, 0.66, 0.045)]
+# Deliberately VARIED in size and spacing: a few big enough to carry a stage, a
+# scatter of small ones for silhouette, and two set well off the main shore so the
+# archipelago reads as an archipelago rather than a fringe of the mainland.
+ISLANDS = [(0.74, 0.93, 0.058), (0.88, 0.74, 0.050), (0.955, 0.90, 0.040),
+           (0.80, 0.83, 0.034), (0.66, 0.99, 0.036), (0.93, 0.99, 0.030),
+           (0.995, 0.66, 0.045),
+           (0.62, 0.80, 0.030),   # inner islet, breaks up the open bay
+           (0.86, 0.62, 0.034),   # north of the peninsula, extends the shoreline
+           (0.71, 0.71, 0.026),   # mid-bay speck
+           (0.98, 0.79, 0.028)]   # outer, detaches the eastern edge
 
 
 def rgb(*c):
@@ -145,7 +164,8 @@ def generate(seed):
     wv = (fbm(rng, n, 3, 4) - 0.5) * 0.10
     w = {}
     for k, (cu, cv) in CORNERS.items():
-        w[k] = np.exp(-((u + wu - cu) ** 2 + (v + wv - cv) ** 2) / (2 * SIGMA ** 2))
+        sig = SIGMA_BY_REGION.get(k, SIGMA)
+        w[k] = np.exp(-((u + wu - cu) ** 2 + (v + wv - cv) ** 2) / (2 * sig ** 2))
     tot = sum(w.values())
     for k in w:
         w[k] /= tot
@@ -156,15 +176,35 @@ def generate(seed):
     ridged = warp(1 - np.abs(fbm(rng, n, 7, 8, 0.55) * 2 - 1), wx, wy, 40)
     hills = warp(fbm(rng, n, 12, 6, 0.5), wx, wy, 25)
 
+    # ALPINE MASSING — real mountain relief in the snow corner.
+    # Its own RNG stream, seeded off `seed`: the main `rng` is consumed sequentially, so
+    # drawing from it here would shift every later call and re-roll the entire map.
+    rng_alp = np.random.default_rng(seed * 7919 + 17)
+    # base_res 3 (vs `ridged`'s 7) is the whole point — FEW, LARGE ridges read as a
+    # mountain range, where high-frequency noise just reads as static.
+    ridged_big = warp(1 - np.abs(fbm(rng_alp, n, 3, 5, 0.58) * 2 - 1), wx, wy, 40)
+    # HARD-GATED to the snow corner. w["snow"] is a normalised gaussian and so is never
+    # exactly zero — ungated, even a faint tail reaches the coast a thousand pixels away.
+    # The smoothstep floors it to zero outside the massif, which is what makes it safe to
+    # feed into `elev` at all: the NE holds no sea and (deliberately) no rally pins, so
+    # reshaping terrain there cannot move a coastline or re-site a pin.
+    alpine_gate = smoothstep(0.46, 0.72, w["snow"])
+
     elev = (0.50 * base
             + 0.14 * hills
-            + 0.60 * w["snow"] * (0.30 + 0.90 * ridged)
+            + 0.72 * w["snow"] * (0.30 + 0.90 * ridged)
             + 0.08 * w["forest"] * base
-            - 0.62 * smoothstep(0.30, 0.66, w["coast"])
+            - 0.68 * smoothstep(0.28, 0.68, w["coast"])
             - 0.04 * w["arid"])
     for cu, cv, rad in ISLANDS:
         elev += 0.30 * np.exp(-((u - cu) ** 2 + (v - cv) ** 2) / (2 * rad ** 2))
     elev = norm(elev)
+    # Applied post-norm and clipped (not re-normalised) so the rest of the map's
+    # elevation range — and therefore every threshold derived from it — is unchanged.
+    # Kept for the shared relief blur below — see the note there for why the ALPINE-
+    # modified elev must not go into it.
+    elev_base = elev
+    elev = np.clip(elev + 0.20 * alpine_gate * (ridged_big - 0.42), 0, 1)
 
     land = elev > SEA
     depth = np.clip((SEA - elev) / SEA, 0, 1)
@@ -175,14 +215,32 @@ def generate(seed):
                    - 0.12 * w["snow"] + (fbm(rng, n, 5, 6) - 0.5) * 0.62, 0, 1)
 
     # Snow: high ground only, and scoured off the steep faces so rock shows through.
-    snowline = 0.70 - 0.16 * w["snow"] + (fbm(rng, n, 7, 5) - 0.5) * 0.11
+    snowline = 0.70 - 0.24 * w["snow"] + (fbm(rng, n, 7, 5) - 0.5) * 0.11
     snow = np.clip(smoothstep(0.0, 0.13, alt - snowline)
-                   * smoothstep(0.24, 0.52, w["snow"])
+                   * smoothstep(0.16, 0.42, w["snow"])
                    * (1 - 0.70 * smoothstep(1.3, 3.2, slope)), 0, 1)
 
-    relief = blur(elev + 0.22 * w["snow"] * ridged, 0.8)
+    # Bare rock on the flanks of the big ridges — snowy crests over exposed faces is
+    # what separates "mountains" from a flat white field. `slope` here is the REAL
+    # terrain slope, which now includes the alpine massing folded into elev above.
+    alpine = alpine_gate * smoothstep(0.20, 0.55, alt)
+    snow = np.clip(snow * (1 - 0.30 * smoothstep(1.6, 4.0, slope) * alpine), 0, 1)
+
+    # The alpine term is added AFTER the blur, not inside it. blur() normalises by its
+    # argument's own min/max, so folding a raised massif into the same call widens that
+    # range and silently shifts the quantisation — and therefore the shading — across the
+    # ENTIRE map. Blurring it separately keeps the rest of the world bit-identical.
+    # blur() quantises against its argument's own min/max, so ANY term that raises the
+    # massif inside this call widens that range and shifts the shading across the ENTIRE
+    # map — including the far corners, which is exactly what "don't change the shapes"
+    # rules out. So this blurs the UNMODIFIED elevation (identical range to before the
+    # alpine work) and the massing is layered on afterwards, pre-blurred separately.
+    relief = blur(elev_base + 0.22 * w["snow"] * ridged, 0.8) \
+        + 1.05 * alpine * blur(ridged_big, 0.8)
     gy, gx = np.gradient(relief * 620.0)
     shade = np.clip(1.0 + 0.42 * (-gx - gy) / np.sqrt(2), 0.64, 1.42)   # lit from the NW
+    # Deepen the shading contrast on the massif so the big ridges cast readable relief.
+    shade = np.clip(shade * (1.0 + 0.45 * alpine * (shade - 1.0) * 2.4), 0.46, 1.70)
 
     # -- ground cover -------------------------------------------------------
     pxw = (fbm(rng, n, 6, 5) - 0.5) * 2
@@ -273,7 +331,7 @@ def generate(seed):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--seed", type=int, default=7, help="re-roll the terrain")
+    ap.add_argument("--seed", type=int, default=SHIPPED_SEED, help="re-roll the terrain")
     ap.add_argument("--out", default=os.path.join(TEXTURES, "map_world.jpg"))
     args = ap.parse_args()
 

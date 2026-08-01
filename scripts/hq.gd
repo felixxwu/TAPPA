@@ -81,7 +81,6 @@ const KW_KG_TO_HP_TONNE := CarLibrary.KW_KG_TO_HP_TONNE  # single source of trut
 const PIN_LABEL_PX := Vector2i(320, 120)
 const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
 const PIN_LABEL_RISE := 0.16
-const ARROW_LABEL_RISE := 0.5  # how high a swap arrow's floating readout sits above the map
 # Sprite modulate for a readout box whose rally isn't available yet (greyed out).
 const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.4)
 
@@ -260,14 +259,13 @@ var _map_table: MapTable        # the wooden table model the map plane sits on
 var _map_plane: MeshInstance3D   # the flat map laid on the table top
 var _pins_root: Node3D          # parent of the rally pins
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
-# Focus cursor into _table_targets() (pins + eligible map-swap arrows); -1 = none.
+# Focus cursor into _table_targets() (the unlocked rally pins); -1 = none.
 var _table_focus_index := -1
 # Cached _table_targets() result. The target set only changes on pin rebuild
-# (_refresh_map_pins) or region-arrow change (_update_region_arrows), which set this back
+# (_refresh_map_pins), which sets this back
 # to null; every access rebuilds lazily. Per-frame table panning (_process ->
 # _pan_table_step) reuses it instead of rebuilding a Dictionary-per-target array each frame.
 var _table_targets_cache = null
-var _viewed_region_index := 0   # which region's map/pins the table shows
 
 # Overlays (one CanvasLayer per station; only the active one is visible).
 # The overlay/menu-layer builders live in HqOverlays (scripts/hq_overlays.gd),
@@ -561,12 +559,11 @@ func _build_hq() -> void:
 	_apply_post_process()
 	_env = HQEnvironment.new()
 	# The pickable table / lift areas route their clicks back to hq's own handlers.
-	_env.build(self, _on_table_input, _on_lift_input, _on_arrow_input)
+	_env.build(self, _on_table_input, _on_lift_input)
 	_camera = _env.camera
 	_map_table = _env.map_table
 	_map_plane = _env.map_plane
 	_pins_root = _env.pins_root
-	_viewed_region_index = _furthest_unlocked_index()
 	_overlays = HqOverlays.new(self)
 	_overlays.build_title_overlay()
 	_overlays.build_garage_overlay()
@@ -626,7 +623,7 @@ func _bay_center_x(i: int, bays: int) -> float:
 # box above it holding the rally name and a row of five-pointed stars (1st-place best →
 # 3 gold, 2nd → 2, 3rd → 1, else dim). The flag colour encodes the medal tier; the
 # showdown pin is locked (grey/disabled, non-pickable) until every other rally is done,
-# and any rally whose reveal_after (intra-region reveal order) isn't met yet is locked
+# and any rally whose reveal_after (global reveal order) isn't met yet is locked
 # the same way — a "coming up" hint (see RallyLibrary.rally_revealed).
 func _refresh_map_pins() -> void:
 	_table_targets_cache = null  # pins are being rebuilt — force a fresh target set
@@ -634,90 +631,26 @@ func _refresh_map_pins() -> void:
 		c.queue_free()
 	_pins = []
 	var cfg: GameConfig = Config.data
-	var region_id := _viewed_region_id()
-	# Retexture the map plane to the viewed region's image (default = home map).
-	var img_path := String(RegionLibrary.look_of(region_id).get("map_image", RegionLibrary.DEFAULT_MAP_IMAGE))
-	_map_plane.material_override = PS1Material.unshaded(load(img_path))
+	# One world map, loaded once — there is no per-region map any more.
+	_map_plane.material_override = PS1Material.unshaded(load(RegionLibrary.DEFAULT_MAP_IMAGE))
 	var p: Vector3 = cfg.hq_table_pos
 	var size: Vector2 = cfg.hq_map_plane_size
 	var top_y := p.y + cfg.hq_table_size.y + 0.02
-	for rally in RegionLibrary.rallies_in(region_id):
+	for rally in RallyLibrary.all():
 		var pin := _make_pin(rally, p, size, top_y)
 		_pins_root.add_child(pin)
 		_pins.append(pin)
-	_update_region_arrows()
-	# Re-seat the cursor on whatever target sits nearest the view centre (no camera
-	# pan) so it never sits at -1 while the table actually has pins/arrows to focus —
-	# every entry point into the table (fresh open, region swap, test harness) goes
-	# through here.
+	# Re-seat the cursor on whatever pin sits nearest the view centre (no camera
+	# pan) so it never sits at -1 while the table actually has pins to focus —
+	# every entry point into the table (fresh open, test harness) goes through here.
 	_select_target_under_center()
 	_refresh_meter()
-
-
-# Furthest region the player has unlocked (derived from prior-region showdown
-# completion — see RegionLibrary.unlocked). Arrows / the default viewed region clamp
-# to this so a locked region can never be previewed.
-func _furthest_unlocked_index() -> int:
-	var last := 0
-	for i in RegionLibrary.count():
-		if RegionLibrary.unlocked(RegionLibrary.id_at(i), Save.profile):
-			last = i
-	return last
-
-
-func _viewed_region_id() -> String:
-	return RegionLibrary.id_at(_viewed_region_index)
-
-
-# Show a table arrow whenever a region exists that way. The BACK arrow always leads to
-# an already-unlocked region ("Change map"). The FORWARD arrow is shown even when its
-# region is still locked — then it reads "Complete showdown to unlock" (dimmed) and its
-# swap is inert (see _swap_region's clamp). Absent only when there is no region that way.
-func _update_region_arrows() -> void:
-	_table_targets_cache = null  # arrow visibility/existence may change the target set
-	var has_prev := _viewed_region_index > 0
-	var has_next := _viewed_region_index < RegionLibrary.count() - 1
-	var next_unlocked := has_next and RegionLibrary.unlocked(
-		RegionLibrary.id_at(_viewed_region_index + 1), Save.profile)
-	var right_text := "Change map" if next_unlocked else "Complete showdown to unlock"
-	var specs := [
-		[_env.arrow_left, has_prev, "Change map", false],
-		[_env.arrow_right, has_next, right_text, has_next and not next_unlocked],
-	]
-	for spec in specs:
-		var arrow: Area3D = spec[0]
-		if arrow == null:
-			continue
-		var shown: bool = spec[1]
-		arrow.visible = shown
-		arrow.input_ray_pickable = shown
-		_set_arrow_label(arrow, shown, String(spec[2]), bool(spec[3]))
-
-
-func _swap_region(step: int) -> void:
-	var target := clampi(_viewed_region_index + step, 0, _furthest_unlocked_index())
-	if target == _viewed_region_index:
-		return
-	_viewed_region_index = target
-	_refresh_map_pins()
-
-
-func _on_arrow_input(event: InputEvent, dir: int) -> void:
-	if _view == View.TABLE and not _detail_open and _is_release(event):
-		_swap_region(dir)
-
-
-# Test hook: jump the table straight to a region index (bypassing the arrow clamp)
-# and refresh its pins, matching what _swap_region does on a real swap.
-func _set_viewed_region_for_test(i: int) -> void:
-	_viewed_region_index = i
-	_refresh_map_pins()
 
 
 func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y: float) -> Node3D:
 	var rally_id := String(rally["id"])
 	# Locked = not revealed yet: a showdown before its region's gate opens, OR a
-	# non-showdown rally whose reveal_after (intra-region reveal order) isn't met. A
+	# non-showdown rally whose reveal_after (global reveal order) isn't met. A
 	# locked pin renders grey + non-pickable — a "coming up" hint, not enterable.
 	var locked: bool = not RallyLibrary.rally_revealed(rally, Save.profile)
 	var mp: Vector2 = rally.get("map_pos", Vector2(0.5, 0.5))
@@ -786,7 +719,7 @@ func _add_pin_hit(pin: Node3D, rally_id: String, pos: Vector3, r: float) -> void
 # Build a billboarded floating readout sprite: a content-hugging house panel centred in
 # a transparent SubViewport (so only the black box shows), with `build_body` filling the
 # VBox. Dimmed when `dim` (reads as disabled), and hands its panel back via the "panel"
-# meta so the focus cursor / selection can repaint it. Shared by pin and arrow labels.
+# meta so the focus cursor / selection can repaint it.
 func _build_readout_sprite(dim: bool, build_body: Callable) -> Sprite3D:
 	var vp := SubViewport.new()
 	vp.size = PIN_LABEL_PX
@@ -832,34 +765,6 @@ func _build_pin_label(rally_name: String, earned: int, available := true) -> Spr
 		stars.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		box.add_child(stars)
 		stars.setup(earned, MAX_STARS))
-
-
-# A house-style floating label for a map-swap arrow — the pin readout box without the
-# star row. Billboarded, dimmed when `dim`, and hands its panel back via the "panel"
-# meta so the focus cursor can repaint it exactly like a pin.
-func _build_arrow_label(text: String, dim: bool) -> Sprite3D:
-	return _build_readout_sprite(dim, func(box: VBoxContainer) -> void:
-		box.add_child(UITheme.title(text)))
-
-
-# Rebuild an arrow's floating readout: free any prior label, and (when shown) attach a
-# fresh box with `text`, dimmed when `dim`. The panel is stored on the arrow under the
-# same "label_panel" meta key the pins use, so focus highlighting is uniform.
-func _set_arrow_label(arrow: Area3D, shown: bool, text: String, dim: bool) -> void:
-	if arrow.has_meta("label_node"):
-		var old: Node = arrow.get_meta("label_node")
-		if is_instance_valid(old):
-			old.queue_free()
-		arrow.remove_meta("label_node")
-	if arrow.has_meta("label_panel"):
-		arrow.remove_meta("label_panel")
-	if not shown:
-		return
-	var label := _build_arrow_label(text, dim)
-	label.position = Vector3(0.0, ARROW_LABEL_RISE, 0.0)
-	arrow.add_child(label)
-	arrow.set_meta("label_node", label)
-	arrow.set_meta("label_panel", label.get_meta("panel"))
 
 
 # Stars earned in a rally from the player's best finish: 1st → 3, 2nd → 2, 3rd → 1,
@@ -940,16 +845,15 @@ func _has_eligible_car(rally: Dictionary) -> bool:
 func _refresh_meter() -> void:
 	if _map_meter == null:
 		return
-	var region_id := _viewed_region_id()
 	var total := 0
 	var done := 0
-	for rally in RegionLibrary.rallies_in(region_id):
+	for rally in RallyLibrary.all():
 		if rally["showdown"]:
 			continue
 		total += 1
 		if Save.rally_completed(rally["id"]):
 			done += 1
-	_map_meter.text = "Progress to the Showdown: %d / %d rallies completed" % [done, total]
+	_map_meter.text = "Progress: %d / %d rallies completed" % [done, total]
 
 
 # --- 3D picking handlers (real play; tests call the targets directly) --------
@@ -2230,12 +2134,11 @@ func _unlocked_pins() -> Array:
 	return out
 
 
-# Every focus target on the table right now: the unlocked pins, plus each map-swap
-# arrow for which a region exists that way (left past region 0; right whenever a next
-# region exists — locked ones included, so their "complete showdown" prompt is landable).
-# Each entry: {node, kind, pos}; kind ∈ pin/arrow_left/arrow_right.
+# Every focus target on the table right now: the unlocked pins. There is one world map
+# with every rally on it, so pins are the only kind of target.
+# Each entry: {node, kind, pos}; kind is always "pin".
 # Cached (see _table_targets_cache): rebuilt only when the cache is invalidated by a pin
-# rebuild / region-arrow change, so the per-frame pan glide doesn't re-allocate it.
+# rebuild, so the per-frame pan glide doesn't re-allocate it.
 func _table_targets() -> Array:
 	if _table_targets_cache == null:
 		_table_targets_cache = _build_table_targets()
@@ -2246,10 +2149,6 @@ func _build_table_targets() -> Array:
 	var out: Array = []
 	for pin in _unlocked_pins():
 		out.append({"node": pin, "kind": "pin", "pos": (pin as Node3D).position})
-	if _viewed_region_index > 0 and _env.arrow_left != null:
-		out.append({"node": _env.arrow_left, "kind": "arrow_left", "pos": _env.arrow_left.position})
-	if _viewed_region_index < RegionLibrary.count() - 1 and _env.arrow_right != null:
-		out.append({"node": _env.arrow_right, "kind": "arrow_right", "pos": _env.arrow_right.position})
 	return out
 
 
@@ -2320,9 +2219,9 @@ func _table_center_pos() -> Vector3:
 
 # Seat the cursor on the highest-difficulty rally pin the player hasn't completed yet,
 # panning the camera to it. Difficulty is the hidden authored tier; ties break toward
-# the first such pin in rally order (targets are built in that order). Region-swap arrows
-# and completed pins are skipped. Returns false when there's no incomplete pin here (all
-# done, or the region has no pins), leaving the caller to seat focus some other way.
+# the first such pin in rally order (targets are built in that order). Completed pins are
+# skipped. Returns false when there's no incomplete pin (all done, or no pins at all),
+# leaving the caller to seat focus some other way.
 func _focus_hardest_incomplete() -> bool:
 	var targets := _table_targets()
 	var best := -1
@@ -2345,7 +2244,7 @@ func _focus_hardest_incomplete() -> bool:
 	return true
 
 
-# Seat the cursor on whichever target (pin or map-swap arrow) sits nearest the view
+# Seat the cursor on whichever pin sits nearest the view
 # centre, without moving the camera (the player already put it there). This is the
 # raycast-to-centre selection that keyboard pan, drag pan, and table entry all share.
 func _select_target_under_center() -> void:
@@ -2367,9 +2266,9 @@ func _select_target_under_center() -> void:
 		_focus_table_target(best, false)
 
 
-# Seat the cursor on target `i`, paint the focus highlight (pins: the hover-style
-# readout underline; arrows: an emissive glow + slight scale), and (when `pan`) slide
-# the map so the focused target centres under the table camera.
+# Seat the cursor on target `i`, paint the focus highlight (the hover-style readout
+# underline), and (when `pan`) slide the map so the focused pin centres under the
+# table camera.
 func _focus_table_target(i: int, pan := true) -> void:
 	var targets := _table_targets()
 	if targets.is_empty():
@@ -2382,31 +2281,11 @@ func _focus_table_target(i: int, pan := true) -> void:
 		var node: Node3D = t["node"]
 		if node.has_meta("label_panel"):
 			UITheme.mark_panel_focused(node.get_meta("label_panel"), on)
-		if String(t["kind"]) != "pin":
-			_highlight_arrow(node, on)
 	if pan:
 		_pan_table_to(Vector3(sel["pos"]))
 
 
-# Seat the cursor on whichever pin is closest to `from_pos` (used to re-seat focus
-# after a region swap so the cursor lands near the arrow the player came from).
-func _focus_nearest_pin(from_pos: Vector3) -> void:
-	var targets := _table_targets()
-	var best := -1
-	var best_d := INF
-	for i in targets.size():
-		if String(targets[i]["kind"]) != "pin":
-			continue
-		var d: float = (Vector3(targets[i]["pos"]) - from_pos).length()
-		if d < best_d:
-			best_d = d
-			best = i
-	if best >= 0:
-		_focus_table_target(best)
-
-
-# Fire the focused target: open a pin's rally detail, or (for an arrow) swap the
-# region and re-seat focus on the pin nearest that edge.
+# Fire the focused target: open the pin's rally detail.
 func _activate_table_focus() -> void:
 	var targets := _table_targets()
 	if _table_focus_index < 0 or _table_focus_index >= targets.size():
@@ -2415,45 +2294,10 @@ func _activate_table_focus() -> void:
 	match String(t["kind"]):
 		"pin":
 			_on_rally_pin(String((t["node"] as Node3D).get_meta("rally_id")))
-		"arrow_left":
-			_activate_arrow(-1)
-		"arrow_right":
-			_activate_arrow(1)
-
-
-func _activate_arrow(dir: int) -> void:
-	var arrow: Area3D = _env.arrow_left if dir < 0 else _env.arrow_right
-	var edge_pos: Vector3 = arrow.position if arrow != null else Vector3.ZERO
-	var before := _viewed_region_index
-	_swap_region(dir)  # clamps to the furthest unlocked; a locked forward arrow no-ops
-	if _viewed_region_index != before:
-		_focus_nearest_pin(edge_pos)  # region changed → re-seat on a pin in the new map
-	# else: inert (locked, or no region that way) — focus stays on the arrow
-
-
-# Toggle the emissive glow on a map-swap arrow's mesh so the focused arrow reads as
-# selected (its floating label also gets the pin-style underline, in _focus_table_target).
-# No scale-up: the label is a child, and scaling it would blow up the readout text.
-func _highlight_arrow(arrow: Area3D, focused: bool) -> void:
-	if arrow == null:
-		return
-	var mi: MeshInstance3D = null
-	for c in arrow.get_children():
-		if c is MeshInstance3D:
-			mi = c
-			break
-	if mi == null:
-		return
-	var mat := mi.material_override as StandardMaterial3D
-	if mat != null:
-		mat.emission_enabled = focused
-		mat.emission = Color(0.95, 0.88, 0.35)
-		mat.emission_energy_multiplier = 1.5 if focused else 0.0
 
 
 # Slide the map so `target` (a table-plane world position) centres under the table
-# camera's look point, clamped to the map extents (as a finger-drag would). Extracted
-# from the old _select_table_pin so both pins and arrows re-use it.
+# camera's look point, clamped to the map extents (as a finger-drag would).
 func _pan_table_to(target: Vector3) -> void:
 	var cfg: GameConfig = Config.data
 	var half: Vector2 = cfg.hq_map_plane_size
@@ -4258,10 +4102,20 @@ func _restriction_text(restriction: Dictionary) -> String:
 		parts.append("%s cars" % String(restriction["country"]))
 	if restriction.has("car_type"):
 		parts.append("%s body" % String(restriction["car_type"]))
+	if restriction.has("doors_min"):
+		parts.append(">= %d doors" % int(restriction["doors_min"]))
+	if restriction.has("doors_max"):
+		parts.append("<= %d doors" % int(restriction["doors_max"]))
+	# Engine-derived gates (displacement / cylinder count) are judged against the car's
+	# CURRENT engine, so a swap changes them (RallyLibrary.ineligibility_reason).
 	if restriction.has("engine_min_l"):
 		parts.append("engine >= %.1f L" % float(restriction["engine_min_l"]))
 	if restriction.has("engine_max_l"):
 		parts.append("engine <= %.1f L" % float(restriction["engine_max_l"]))
+	if restriction.has("cylinders_min"):
+		parts.append(">= %d cylinders" % int(restriction["cylinders_min"]))
+	if restriction.has("cylinders_max"):
+		parts.append("<= %d cylinders" % int(restriction["cylinders_max"]))
 	# The p/w gate is a band: pw_min..pw_max (either edge may be absent). A car must sit
 	# inside it — over pw_max is capped out (detune to duck under), under pw_min is
 	# ineligible. Both edges are authored in hp/tonne (RallyLibrary converts a car's kW/kg

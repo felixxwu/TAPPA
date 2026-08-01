@@ -35,19 +35,19 @@ func _clean() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-func test_dev_three_star_all_rallies_completes_everything_and_unlocks_regions() -> void:
-	# Dev cheat: every rally becomes completed + 3-starred (1st place), and — since
-	# region unlock is derived from each region's showdown completion — every region
-	# ends up unlocked. Treats the catalogues as opaque (no dependency on any entry).
+func test_dev_three_star_all_rallies_completes_everything_and_finishes_the_game() -> void:
+	# Dev cheat: every rally becomes completed + 3-starred (1st place). Regions no
+	# longer unlock in sequence (todo/one-map-four-corners.md), so the end state to
+	# assert is the one that now ends the game: every region's showdown completed,
+	# which is what fires the credits. Treats the catalogues as opaque (no dependency
+	# on any entry).
 	_save.dev_three_star_all_rallies()
 	for rally in RallyLibrary.all():
 		var rid := String(rally["id"])
 		assert_true(_save.rally_completed(rid), "rally %s marked completed" % rid)
 		assert_eq(_save.best_placement(rid), 1, "rally %s is 3-starred (1st place)" % rid)
-	for region in RegionLibrary.all():
-		var region_id := String(region["id"])
-		assert_true(RegionLibrary.unlocked(region_id, _save.profile),
-			"region %s unlocked after 3-starring all rallies" % region_id)
+	assert_true(RegionLibrary.all_showdowns_completed(_save.profile),
+		"every region's showdown completed after 3-starring all rallies")
 
 
 func test_default_profile_is_empty_and_valid() -> void:

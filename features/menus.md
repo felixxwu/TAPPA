@@ -333,10 +333,12 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   `menu_up/down/left/right` slides the camera smoothly over the map (polled in
   `hq.gd._process`, glide speed `hq_table_pan_glide`), and selection tracks whichever
   target sits nearest the view centre — a reticle over the map, not a jump between pins.
-  The unified target set is every unlocked rally pin plus the two map-swap arrows (each
-  arrow present whenever a region exists that way, floating a house-style label like the
-  rally-pin readout boxes); the arrows are selected the same way, so gliding to the map's
-  edge selects one. `_select_target_under_center()` seats `_table_focus_index` on the
+  The target set is every unlocked rally pin. There is **one world map**
+  (`RegionLibrary.DEFAULT_MAP_IMAGE`) carrying the WHOLE roster
+  (`_refresh_map_pins` builds a pin per `RallyLibrary.all()` entry), so there are no
+  map-swap arrows and no viewed region — an unrevealed rally is still pinned, just
+  locked (grey, non-pickable, absent from the focus ring).
+  `_select_target_under_center()` seats `_table_focus_index` on the
   target nearest `_table_center_pos()` (the fixed table camera's look point offset by the
   live `_table_pan` — `_table_plane_axes` derives on-screen up/right from the camera pose).
   **On entry (`_enter_table`) the map doesn't open dead-centre: it steers straight to the
@@ -346,14 +348,11 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   sticks there. Only when every pin is done (or there are none) does it fall back to
   `_select_target_under_center()`.
   Pan is clamped to the map extents, so at an edge the camera simply stops. The selected
-  pin gets the hover-style readout underline; a selected arrow glows. `menu_select` fires
-  the selected target — a pin opens its rally detail; an unlocked arrow (back arrow, or a
-  forward arrow whose region is now reachable) swaps the region and re-seats onto the pin
-  nearest that edge; a locked forward arrow (whose region exists but the showdown is not
-  yet completed) shows **"Complete showdown to unlock"** on its label and is inert
-  (select/click does nothing). `menu_back`
-  exits to the garage. Clicking a pin or arrow with the pointer still works (`_on_rally_pin` /
-  `_on_arrow_input`), and mouse drag still pans the map (selection re-tracks the centre as it
+  pin gets the hover-style readout underline. `menu_select` fires the selected target,
+  opening that pin's rally detail (`_activate_table_focus` — pins are the only kind of
+  target). `menu_back`
+  exits to the garage. Clicking a pin with the pointer still works (`_on_rally_pin`),
+  and mouse drag still pans the map (selection re-tracks the centre as it
   slides); the **tuning hub** is a left/right cursor (`_hub_focus`, painted by
   `UITheme.mark_focused`) over **Back / Upgrades / Tuning / Test Drive** (its buttons
   sit side by side in one row), fired with select (`_activate_hub_focus`); the cursor
@@ -1066,22 +1065,14 @@ See [tuning.md](tuning.md) for the underlying config pipeline.
 
 **TABLE (the 3D world map).** A zoomed-in, near-top-down look at the table's flat map
 plane — a **square** table top (`hq_table_size`/`hq_map_plane_size` are equal in
-X/Z) surfaced with a **satellite map photo** (`textures/map_table.jpg`, an unshaded
-albedo texture so the aerial colours read true under the garage lighting). The table
-now shows one **region** at a time: two diegetic **left/right arrows**
-(`HQEnvironment.arrow_left`/`arrow_right`) on the table's side edges. Each arrow floats
-a house-style label (like the rally-pin readout boxes): **"Change map"** on the back arrow
-and on an unlocked forward arrow (whose region the player has reached), and
-**"Complete showdown to unlock"** (dimmed) on a forward arrow whose region exists but the
-showdown is not yet completed. An arrow is absent only when no region exists that way.
-Unlocked arrows swap the **viewed** region — clicked/tapped (`_on_arrow_input`), or landed
-on by the spatial cursor and fired with `menu_select` (the arrows are focus targets in the
-same nav set as the pins; see the map-table nav description above), clamped to the
-furthest region the player has unlocked (`hq.gd._swap_region`/`_furthest_unlocked_index`).
-Locked arrows are shown but inert (select/click does nothing). Swapping re-textures the
-map plane to the region's `map_image` and rebuilds pins from only that region's rallies.
-See [regions.md](regions.md) for the full region-swap + unlock model. Every
-rally in the viewed region is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
+X/Z) surfaced with a **satellite map photo** (`RegionLibrary.DEFAULT_MAP_IMAGE` —
+`textures/map_world.jpg`, an unshaded albedo texture so the aerial colours read true
+under the garage lighting). There is **ONE world map**: no swap arrows, no viewed
+region, no way to change maps. `_refresh_map_pins` loads that one texture and pins
+**every** rally in `RallyLibrary.all()` at once, so a corner the player hasn't earned
+is visible from the first minute — its rallies simply render locked.
+See [regions.md](regions.md) for the region look/showdown model. Every
+rally in the roster is a 3D **pin** (`_make_pin`) at its normalised `map_pos`: a
 **state-driven flag marker** (`RallyFlag` — a small **base disk** the pin
 stands on + a pole + waving pennant + finial bead) topped by a **billboarded design-system black box** (`_build_pin_label`) that
 holds the rally name and a row of proper **five-pointed stars** — 1st-place best = 3
@@ -1105,7 +1096,7 @@ unlocked pin carries **two** pickable `Area3D` hit spheres bound to the same han
 the flag — plus its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
 whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`): the **showdown** until
 every other rally in its region is completed, and any rally whose **`reveal_after`**
-(intra-region reveal order) hasn't been met — a "coming up" hint so a region reveals
+(a GLOBAL count of completed non-showdown rallies) hasn't been met — a "coming up" hint so a region reveals
 ~1–2 fresh rallies at a time rather than all at once. A progress meter sits on the HUD. **Drag to pan** the map (mouse, or
 finger via `emulate_mouse_from_touch`): `_pan_table` shifts the camera in the table
 plane, clamped to the map extents (`hq_table_pan_speed`). Pin selection fires on

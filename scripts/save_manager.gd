@@ -358,8 +358,6 @@ func _default_profile() -> Dictionary:
 		"selected_instance_id": -1,
 		"inventory": {},
 		"rallies": {},
-		"showdown_unlocked": false,
-		"showdown_completed": false,
 		"reward_history": [],
 		"settings": {},
 		# --- Optional cloud save (see features/cloud-save.md) ---
@@ -890,8 +888,7 @@ func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> 
 
 # Record a top-3 rally finish. Idempotent for the `completed` flag; updates the
 # best combined time when a faster one comes in. The CAR reward is NOT granted
-# here (re-wins are farmable — see reward-system.md); this only records progress
-# and re-derives the showdown unlock.
+# here (re-wins are farmable — see reward-system.md); this only records progress.
 func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> void:
 	var rallies: Dictionary = profile["rallies"]
 	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
@@ -903,7 +900,6 @@ func complete_rally(rally_id: String, combined_ms: int, placed: int = 0) -> void
 	if placed > 0 and (int(rec.get("best_placed", 0)) <= 0 or placed < int(rec["best_placed"])):
 		rec["best_placed"] = placed
 	rallies[rally_id] = rec
-	_recompute_showdown()
 	save()
 
 
@@ -912,8 +908,8 @@ func rally_completed(rally_id: String) -> bool:
 
 
 # Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so region
-# unlocks — which are derived from each region's showdown being completed
-# (RegionLibrary.unlocked) — can be exercised without grinding the whole ladder.
+# unlocks — which are derived per-region from RegionLibrary.showdown_unlocked —
+# can be exercised without grinding the whole ladder.
 func dev_three_star_all_rallies() -> void:
 	var rallies: Dictionary = profile["rallies"]
 	for rally in RallyLibrary.all():
@@ -922,7 +918,6 @@ func dev_three_star_all_rallies() -> void:
 		rec["completed"] = true
 		rec["best_placed"] = 1  # 1st place → 3 stars (best_placement)
 		rallies[rid] = rec
-	_recompute_showdown()
 	save()
 
 
@@ -937,11 +932,3 @@ func best_placement(rally_id: String) -> int:
 # metric has one definition.
 func completed_rally_count() -> int:
 	return RallyLibrary.completed_count(profile)
-
-
-# Showdown unlock is gated on rally completion. The exact threshold belongs to
-# the rally roster (todo/rally-roster.md), which isn't implemented yet — when it
-# lands, wire its "all rallies complete" query in here. Until then this is a
-# conservative no-op so the flag is only ever set deliberately.
-func _recompute_showdown() -> void:
-	pass

@@ -113,6 +113,32 @@ every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its rea
 `v6`/`v8`/`v10`/`v12`) fixes both the cylinder count and the firing table
 (`EngineLibrary.FIRING`) together.
 
+### Displacement, cylinders and doors (rally-restriction metadata)
+
+Three catalogue fields exist purely so rally restrictions can theme a class by
+body/engine shape ([rally-roster.md](rally-roster.md)). Which catalogue owns each
+is decided by **what an engine swap must change**:
+
+- **`displacement_l`** (float, litres) lives on the **engine** (`ENGINES`). It is an
+  engine property, so a swap carries it — a car dict field would go stale the moment
+  the car was re-powered.
+- **cylinder count is NOT authored at all.** `EngineLibrary.cylinders(engine)` derives
+  it from `FIRING[layout].size()`, the same table that drives the audio, so the two
+  can never disagree. Returns `0` for an unknown/absent layout.
+- **`doors`** (int) lives on the **car** (`CARS`) — a body property no engine can
+  change. It uses the conventional body designation (a hatchback's tailgate counts:
+  3-door hatch = 3, coupe/roadster/kei van = 2, 5-door hatch = 5).
+
+`RallyLibrary.ineligibility_reason` reads `doors` flat off the car meta but resolves
+the engine-derived pair through `EngineLibrary.by_id(car_meta["engine"])` — and
+`UpgradeLibrary.effective_meta` re-points that key at the **fitted** engine, so
+**swapping an engine changes which rallies a car can enter**. If a restriction names
+an engine-derived field and the engine id doesn't resolve (a synthetic dict in a test
+or tool), the car is **rejected** ("Unknown engine for this class") rather than waved
+through — the failure mode of the old dead `engine_displacement_l` key, which nothing
+ever wrote, so every `engine_min_l` gate rejected everything and every `engine_max_l`
+gate accepted everything.
+
 ## Transmission
 
 - Forward gears (`gear_ratios`), one reverse (`reverse_ratio`), and a

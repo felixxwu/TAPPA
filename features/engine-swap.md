@@ -189,6 +189,14 @@ It resolves the CURRENT engine the same way `car.gd` does:
    the live physics mass.
 3. Applies enabled upgrade multipliers (engine kits, weight reduction) on top
    of the swapped baseline.
+3b. Because step 1 re-points `meta["engine"]` at the fitted engine, every
+   **engine-derived rally restriction** follows the swap too:
+   `RallyLibrary.ineligibility_reason` resolves `engine_min_l`/`engine_max_l`
+   (from the engine's `displacement_l`) and `cylinders_min`/`cylinders_max`
+   (from `EngineLibrary.cylinders`, derived from `layout`) through that id. So
+   dropping a V8 into a small car can both qualify it for a big-bore class and
+   disqualify it from a small-displacement one. The car's own `doors` is a body
+   property and is unaffected by a swap, by design.
 4. **Applies `engine_detune` last**, scaling the resulting `peak_torque` by
    the clamped `[0, 1]` fraction from `owned_car.tuning.engine_detune` (default
    `1.0`) — so a detuned car's reduced torque feeds `power_to_weight` and can

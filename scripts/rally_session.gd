@@ -405,9 +405,17 @@ func last_result() -> Dictionary:
 	return _last_result
 
 
+# Seats the owning rally's "region" tag onto the returned dict (a shallow copy,
+# never mutating the authored event) so downstream water-level resolution
+# (TrackGenParams.resolve_water_level, via apply_event_config) can fall back to the
+# region's waterline for an event that authors none — see features/lakes.md.
 func current_event() -> Dictionary:
 	var events: Array = _rally.get("events", [])
-	return events[_event_index] if _event_index >= 0 and _event_index < events.size() else {}
+	if _event_index < 0 or _event_index >= events.size():
+		return {}
+	var event: Dictionary = (events[_event_index] as Dictionary).duplicate()
+	event["region"] = _rally.get("region", "")
+	return event
 
 
 # The upgrade id won for the just-completed non-final event, read by the standings
@@ -501,17 +509,21 @@ func _resolve_results() -> void:
 		# complete_rally records the FIRST completion (idempotent); the car reward
 		# fires on EVERY top-3 finish, including re-wins (renewable supply).
 		Save.complete_rally(String(_rally.get("id", "")), combined, placed)
-		var region_id := String(_rally.get("region", ""))
-		var is_final_showdown := bool(_rally.get("showdown", false)) and RegionLibrary.is_final(region_id)
+		# The endgame is completing EVERY region's showdown, not one designated final
+		# region (todo/one-map-four-corners.md). complete_rally() above has already
+		# recorded THIS showdown, so the last one to be won sees itself counted here
+		# and fires the credits; ordering matters and is why the check sits after it.
+		var is_final_showdown := bool(_rally.get("showdown", false)) \
+			and RegionLibrary.all_showdowns_completed(Save.profile)
 		if is_final_showdown:
-			# The LAST region's showdown is the endgame: fire the win/credits beat,
-			# no car draw (the finale rewards completion, not a car).
+			# Every showdown is now done: fire the win/credits beat, no car draw
+			# (the finale rewards completion, not a car).
 			showdown_done = true
 			showdown_won.emit()
 		else:
-			# Every other top-3 finish - including a NON-FINAL region's showdown, which
-			# just unlocks the next region (RegionLibrary.unlocked is derived) - is a
-			# normal rally win: draw a car (renewable supply).
+			# Every other top-3 finish - including a showdown won while other regions'
+			# showdowns are still outstanding - is a normal rally win: draw a car
+			# (renewable supply).
 			var model: Variant = RewardSystem.draw_car(Save.profile, int(_rally.get("difficulty", 1)))
 			if model != null:
 				car_reward = String(model)
@@ -606,11 +618,16 @@ func _set_phase(p: int) -> void:
 # skip_track_gen=true to start_rally so no track generation happens.
 func _generate_event_tracks(rally: Dictionary) -> Array:
 	var results: Array = []
-	for event in rally.get("events", []):
+	for stage_event in rally.get("events", []):
 		# Resolve each event's own canonical config (previously this used the shared
 		# Config.data WITHOUT per-event overrides, so terrain-override events desynced
 		# from the run scene). Now it matches world.gd + the lockfile exactly, and the
 		# rival times come from the committed cache (falling back to live on a miss).
+		# Seat the rally's region the same way current_event() does, so an event that
+		# authors no water_level resolves against the SAME region here as it does in
+		# the run scene (see TrackGenParams.resolve_water_level).
+		var event: Dictionary = stage_event.duplicate()
+		event["region"] = rally.get("region", "")
 		var cfg := canonical_event_config(event)
 		var params := TrackGenParams.for_event(event, cfg)
 		var result := await TrackGenerator.generate_cached(params, cfg)
@@ -644,7 +661,9 @@ static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
 	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
 	cfg.water_enabled = bool(event.get("water_enabled", base.water_enabled))
-	cfg.track_water_level_m = float(event.get("water_level", base.track_water_level_m))
+	# event -> event's region (if the caller seated one, see current_event() /
+	# _generate_event_tracks) -> the authored baseline. See TrackGenParams.resolve_water_level.
+	cfg.track_water_level_m = TrackGenParams.resolve_water_level(event, base.track_water_level_m)
 	# Per-event terrain hill shape: any of the 3 Perlin layers' wavelength/amplitude
 	# may be overridden; omitted ones use the authored global default (features/terrain.md).
 	cfg.terrain_layer1_wavelength = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))

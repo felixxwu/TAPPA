@@ -73,6 +73,22 @@ static func _sampler_for(seed_value: int, cfg: GameConfig) -> Callable:
 	return TerrainNoise.make_sampler(seed_value, cfg.terrain_layers())
 
 
+# Resolve an event's flood height: the event's own override wins; otherwise, if
+# the event carries a "region" tag (RallySession seats this from the owning
+# rally — see current_event() / _generate_event_tracks) and that region authors a
+# waterline (RegionLibrary.has_water_level), inherit it; otherwise fall back to
+# `base` (the GameConfig baseline). Shared by RallySession.apply_event_config and
+# for_event below, so the run scene, target-time derivation and the track cache all
+# agree on the same water level for the same event — see features/lakes.md.
+static func resolve_water_level(event: Dictionary, base: float) -> float:
+	if event.has("water_level"):
+		return float(event["water_level"])
+	var region_id := String(event.get("region", ""))
+	if region_id != "" and RegionLibrary.has_water_level(region_id):
+		return RegionLibrary.water_level_of(region_id)
+	return base
+
+
 # Params for a rally event. Uses the RallyLibrary event_* helpers (clean constant
 # defaults) so the shape — and thus opponent target times — matches what
 # RallySession derives and what the run scene generates. An empty event {} falls
@@ -84,7 +100,7 @@ static func for_event(event: Dictionary, cfg: GameConfig) -> TrackGenParams:
 	p.width = RallyLibrary.event_width(event)
 	p.straightness = RallyLibrary.event_straightness(event)
 	p.water_enabled = bool(event.get("water_enabled", cfg.water_enabled))
-	p.water_level = float(event.get("water_level", cfg.track_water_level_m))
+	p.water_level = resolve_water_level(event, cfg.track_water_level_m)
 	p.water_sampler = _sampler_for(p.seed, cfg)
 	p.key_water_enabled = p.water_enabled
 	p.key_water_level = p.water_level

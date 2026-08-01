@@ -457,37 +457,59 @@ func test_no_retry_reenter_resets_and_field_is_fixed() -> void:
 	assert_eq(RallySession.opponent_field(), field1, "the opponent field is identical across re-attempts")
 
 
-func test_showdown_win_beat_instead_of_car_draw() -> void:
-	# The win/credits beat fires only for the FINAL region's showdown — "the_showdown"
-	# (region "home") no longer triggers it now that "greece" is a later region;
-	# use the actual final region's showdown ("gr_showdown") to exercise it.
-	RallyFixtures.restore()  # this test needs the REAL region-ordered showdown roster
+# Every region's showdown that isn't `keep_id`, marked completed in the profile.
+# Derived from the catalogue rather than hardcoding ids, so re-siting a rally into
+# a different corner can't silently stop these tests exercising what they claim to.
+func _complete_other_showdowns(keep_id: String) -> void:
+	for region in RegionLibrary.all():
+		var sd: Dictionary = RegionLibrary.showdown_of(String(region.get("id", "")))
+		var sd_id := String(sd.get("id", ""))
+		if sd_id != "" and sd_id != keep_id:
+			_save.complete_rally(sd_id, 1000)
+
+
+func test_showdown_win_beat_fires_once_every_showdown_is_done() -> void:
+	# Credits now require EVERY region's showdown completed, not one designated final
+	# region (todo/one-map-four-corners.md decision 1). So win the LAST outstanding
+	# showdown: with all the others already recorded, this finish completes the set
+	# and must fire the win beat.
+	RallyFixtures.restore()  # this test needs the REAL showdown roster
+	var last := ""
+	for region in RegionLibrary.all():
+		var sd: Dictionary = RegionLibrary.showdown_of(String(region.get("id", "")))
+		if not sd.is_empty():
+			last = String(sd.get("id", ""))
+			break
+	assert_ne(last, "", "the shipped roster authors at least one showdown")
+	_complete_other_showdowns(last)
 	var won: Array = [false]
 	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
-	_start("gr_showdown")
+	_start(last)
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	var cars_before: int = _save.profile["cars"].size()
 	_report_events([10000, 10000, 10000])
-	assert_true(won[0], "a top-3 final-region showdown finish fires the win beat")
+	assert_true(won[0], "completing the final outstanding showdown fires the win beat")
 	assert_eq(_save.profile["cars"].size(), cars_before, "the showdown grants no car reward")
-	assert_true(_save.rally_completed("gr_showdown"), "the showdown records completion")
+	assert_true(_save.rally_completed(last), "the showdown records completion")
 
 
-func test_non_final_region_showdown_completes_without_win_beat() -> void:
-	# "the_showdown" (region "home") is not the final region's showdown (greece
-	# comes after) — a top-3 finish should complete it like any normal rally win
-	# (including a car draw), but must NOT fire the win/credits beat or flag the
-	# endgame podium.
-	RallyFixtures.restore()  # this test needs the REAL region-ordered showdown roster
+func test_showdown_with_others_outstanding_completes_without_win_beat() -> void:
+	# A showdown won while ANOTHER region's showdown is still outstanding is just a
+	# normal rally win (including a car draw) — it must NOT fire the win/credits beat
+	# or flag the endgame podium. This is the counterpart to the test above: together
+	# they pin the rule "credits fire on the last showdown, whichever one that is",
+	# with no region designated as the finale.
+	RallyFixtures.restore()  # this test needs the REAL showdown roster
 	var won: Array = [false]
 	RallySession.showdown_won.connect(func() -> void: won[0] = true, CONNECT_ONE_SHOT)
 	var result_box := _capture_finish()
 	_start("the_showdown")
 	RallySession._opponent_field = _field([90000])  # player will be top-3
 	_report_events([10000, 10000, 10000])
-	assert_false(won[0], "a non-final region's showdown does not fire the win beat")
+	assert_false(won[0], "a showdown with others outstanding does not fire the win beat")
 	var result: Dictionary = result_box[0]
-	assert_false(result["showdown_won"], "non-final showdown must not flag the endgame/credits podium")
+	assert_false(result["showdown_won"],
+		"a showdown with others outstanding must not flag the endgame/credits podium")
 	assert_true(_save.rally_completed("the_showdown"), "the showdown still records completion")
 
 
@@ -661,6 +683,41 @@ func test_omitted_keys_fall_back_to_authored_baseline_not_prior_event() -> void:
 		"omitted terrain key resolves to the authored baseline, not event A's override")
 	assert_eq(cfg.track_water_level_m, base.track_water_level_m,
 		"omitted water_level resolves to the authored baseline, not event A's override")
+
+
+# --- Waterline resolution: event -> region -> GameConfig baseline --------------
+# Order is the whole contract (CLAUDE.md: never pin the shipped -12/-5/-10
+# values). Synthetic regions via the Registry.Seam only.
+
+func test_apply_event_config_event_water_level_beats_its_region() -> void:
+	RegionLibrary.override_for_test([{"id": "fx_region", "water_level": -99.0}])
+	var cfg := GameConfig.new()
+	RallySession.apply_event_config(cfg, {"water_level": -1.0, "region": "fx_region"})
+	assert_almost_eq(cfg.track_water_level_m, -1.0, 0.0001,
+		"event's own water_level wins over its region")
+	RegionLibrary.reset()
+
+func test_apply_event_config_inherits_region_when_event_authors_none() -> void:
+	RegionLibrary.override_for_test([{"id": "fx_region", "water_level": -99.0}])
+	var cfg := GameConfig.new()
+	RallySession.apply_event_config(cfg, {"region": "fx_region"})
+	assert_almost_eq(cfg.track_water_level_m, -99.0, 0.0001,
+		"an event that authors no water_level inherits its region's")
+	RegionLibrary.reset()
+
+func test_apply_event_config_falls_back_to_baseline_with_no_region_context() -> void:
+	var base: GameConfig = load(Config.CONFIG_PATH)
+	var cfg := GameConfig.new()
+	# The challenge / free-roam / dev-page shape: no "region" key at all.
+	RallySession.apply_event_config(cfg, {})
+	assert_eq(cfg.track_water_level_m, base.track_water_level_m,
+		"no region tag and no event override -> GameConfig baseline")
+
+func test_current_event_seats_the_rallys_region_tag() -> void:
+	_start("fx_open")
+	var event := RallySession.current_event()
+	assert_eq(String(event.get("region", "")), "home",
+		"current_event() carries the owning rally's region so water resolution can use it")
 
 
 # --- Consume-time config resolution (DrivingContext.apply_stage_config) --------
