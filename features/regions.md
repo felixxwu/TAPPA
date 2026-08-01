@@ -282,6 +282,33 @@ and pin-detail flow.
   profile)` flip true on the next check. See [rally-session.md](rally-session.md)
   and [reward-system.md](reward-system.md).
 
+## Single-world map asset (`tools/gen_map_texture.py`) — not yet wired up
+
+`textures/map_world.jpg` (848x848, matching `map_table.jpg`) is a **generated**
+satellite-style map holding all four region looks as **corners of one map**,
+authored against a proposed change: drop the per-region map swap so the variety
+is visible from the first minute instead of hidden behind the arrows.
+
+    NW  forest   temperate woodland / pasture mosaic, rivers, tarns
+    NE  snow     alpine ridges above the snowline, rock on the steep faces
+    SW  arid     dry tan desert, sparse drainage
+    SE  coast    sea, a bay, and a scatter of small islands
+
+It is produced by `tools/gen_map_texture.py` (numpy + PIL, alongside
+`tools/gen_garage_textures.py` — see [garage.md](garage.md) for that convention).
+Everything derives from seeded value noise: `CORNERS` fixes each region's
+influence centre, `ISLANDS` seeds the SE archipelago so the coastal region has
+land to race on, and `--seed` re-rolls the terrain while keeping each region in
+its own corner. Re-run then `godot --headless --import`. There is deliberately
+**no** drawn border overlay — the terrain alone delineates the regions.
+
+**Nothing references this texture yet.** `hq.gd._refresh_map_pins` still loads
+`RegionLibrary.look_of(...)["map_image"]` per viewed region, falling back to
+`DEFAULT_MAP_IMAGE` (`map_table.jpg`). Adopting it means dropping
+`_viewed_region_index` / `_swap_region` / the `hq_environment.gd` arrows,
+re-siting every rally's `map_pos` into its region's corner, and collapsing the
+per-region showdown chain to a single finale — none of which is done.
+
 ## Tests
 
 `tests/headless/test_region_library.gd` — grouping/derivation logic against a
