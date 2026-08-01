@@ -1083,11 +1083,7 @@ func _passthrough_overlay(root: Control) -> void:
 # it on the next _normalize_menus), with `cb` wired to `pressed`. The repeated
 # new + FOCUS_NONE + connect idiom the garage row / tuning hub used inline.
 func _station_button(text: String, cb: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.focus_mode = Control.FOCUS_NONE
-	b.pressed.connect(cb)
-	return b
+	return UITheme.row_button(text, cb)
 
 
 # A plain Label with `text` and a `font_size` override — the Label.new() + font-size +
@@ -1853,9 +1849,7 @@ func _go_to(view: int, snap := false) -> void:
 		_ensure_lift_car()
 		_lower_lift_car()
 		_garage_showing_drive = false  # always land on the TOP level entering fresh
-		_refresh_garage_row()
-		_garage_focus = _garage_drive_index  # seat on Drive each time we enter
-		_refresh_garage_focus()
+		_refresh_garage_row(true)  # seat the cursor on Drive each time we enter
 	elif view == View.LIFT:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
 	elif view == View.TABLE:
@@ -2716,11 +2710,11 @@ func _activate_title_focus() -> void:
 # Start's position in the title row. COMPUTED, not a literal: the row is ordered
 # exit-left / proceed-right (features/menus.md → "Button order") so Start is last — but
 # "Exit Game" is skipped entirely on web, so "last" is a different index per platform.
-# The button's index within its own row is the cursor index; they are built in step.
+# Asked of the cursor itself (ButtonCursor.index_of), which owns the array the index
+# indexes into — not the button's scene-tree child position, which only happens to agree
+# today because nothing else is parented into that row.
 func _title_start_index() -> int:
-	if is_instance_valid(_title_start_button):
-		return _title_start_button.get_index()
-	return 0
+	return _title_cursor.index_of(_title_start_button)
 
 
 func _refresh_title_focus() -> void:
@@ -2751,9 +2745,7 @@ func _refresh_garage_focus() -> void:
 # garage framing it came from (still the same station; see _station_xform).
 func _garage_back_to_top() -> void:
 	_garage_showing_drive = false
-	_refresh_garage_row()
-	_garage_focus = _garage_drive_index  # seat back on Drive
-	_refresh_garage_focus()
+	_refresh_garage_row(true)  # seat back on Drive
 	_move_camera_to(_station_xform(View.GARAGE), false)
 
 
@@ -2775,7 +2767,7 @@ func _enter_garage_drive_level() -> void:
 # opening one). Frees the row's previous children each time (a plain HBoxContainer,
 # not a MenuNav host, so nothing analogous to UpgradesMenu.rebuild()'s "preserve the
 # MenuNav child" carve-out is needed here).
-func _refresh_garage_row() -> void:
+func _refresh_garage_row(seat_on_drive := false) -> void:
 	for c in _garage_actions_row.get_children():
 		c.queue_free()
 	var buttons: Array[Button] = []
@@ -2832,10 +2824,17 @@ func _refresh_garage_row() -> void:
 		var to_drive := _station_button("Drive", _enter_garage_drive_level)
 		_garage_actions_row.add_child(to_drive)
 		buttons.append(to_drive); actions.append(_enter_garage_drive_level)
+		# Where Drive ended up. Mystery Box is omitted entirely when none is held, so this
+		# is NOT a constant — asked of the array the cursor actually indexes into rather
+		# than re-derived from the row's construction order, so adding or moving a button
+		# can't silently desync it.
+		_garage_drive_index = buttons.find(to_drive)
 	_garage_cursor.setup(buttons, actions)
-	# Where Drive ended up. Mystery Box is omitted entirely when none is held, so this is
-	# NOT a constant — the seat-on-Drive callers below must ask rather than assume.
-	_garage_drive_index = (buttons.size() - 1) if not _garage_showing_drive else 1
+	# Seat BEFORE the settle so the row is painted once, with the right cursor. Doing this
+	# in the caller instead meant this function painted a stale focus that was immediately
+	# overwritten and repainted (ButtonCursor.refresh walks every button each time).
+	if seat_on_drive:
+		_garage_focus = _garage_drive_index
 	_garage_focus = _garage_cursor.settled(_garage_focus)
 	_refresh_garage_focus()
 	# Freshly-built buttons start life with raw (non-uppercase) text — _normalize_menus

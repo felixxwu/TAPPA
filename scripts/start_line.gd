@@ -351,17 +351,12 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	MenuNav.attach(root, {"first": _start_button})
 
 
-# One button in the bottom action row. UITheme.button pins a BUTTON_MIN_W (180) floor,
-# which is right for a stacked column but not for four buttons side by side: 4 x 180 plus
-# the gaps needs ~750 logical units against a canvas only ~556 wide at the 360 tier (and
-# ~445 on the 288 web-touch tier), so the row ran off both edges. Collapsing the width
-# floor lets each button hug its own label; the house row HEIGHT is kept, and
-# UITheme.enforce re-applies it anyway.
+# One button in the bottom action row — see UITheme.row_button for why a horizontal row
+# must not carry BUTTON_MIN_W. This used to build via UITheme.button and then strip the
+# width floor back off, which is the same idiom hq.gd::_station_button had open-coded;
+# both now go through the shared helper.
 func _row_button(text: String, on_press: Callable) -> Button:
-	var b := UITheme.button(text)
-	b.custom_minimum_size = Vector2(0, UITheme.MENU_ROW_H)
-	b.pressed.connect(on_press)
-	return b
+	return UITheme.row_button(text, on_press)
 
 
 # Leave the stage before it starts. Delegates to the pause menu's confirm-then-quit so
@@ -370,6 +365,14 @@ func _row_button(text: String, on_press: Callable) -> Button:
 func _on_exit_pressed() -> void:
 	if _pause_menu != null:
 		_pause_menu.confirm_quit_to_hq()
+
+
+# Is the pre-countdown sequence still running? The node is NOT freed when it finishes —
+# it keeps hosting the overlay — so `is_instance_valid(start_line)` only ever means "one
+# was built at some point", never "one owns the screen right now". Callers gating on the
+# staged window (world.gd suppressing pause) must ask this instead.
+func is_staging() -> bool:
+	return _seq != Seq.DONE
 
 
 # --- Reveal card (shown per opponent during REVEAL) --------------------------

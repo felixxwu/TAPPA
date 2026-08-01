@@ -48,16 +48,18 @@ func _ready() -> void:
 	_set_open(false)
 
 
-# Arm (or disarm) the menu. world.gd enables it once the world is generated, so
-# pause can't fire while the loading overlay is still up. Closing an open menu on
-# disable would strand get_tree().paused, so callers only disable at boot (closed).
+# Arm (or disarm) the menu. world.gd enables it once the world is generated, so pause
+# can't fire while the loading overlay is still up, and disarms it again for the
+# pre-countdown start-line window (which owns the screen with its own menu, and offers
+# its own Exit).
+#
+# DISARMING NEVER CLOSES AN OPEN MENU — that would strand get_tree().paused. Both
+# disable sites call this while the menu is closed (boot, and start-line build, which
+# happens during world generation), so nothing is stranded. A caller that ever needs to
+# disarm a menu that might be OPEN must resume() first.
 func set_input_enabled(on: bool) -> void:
 	_input_enabled = on
-	# The button follows the armed state too. Leaving a live-looking Pause button on
-	# screen while the menu is inert is how the pre-countdown start line ended up with a
-	# pause overlay stacked on top of its own menu, both fighting for the same taps.
-	if is_instance_valid(_pause_button):
-		_pause_button.visible = on and not is_open()
+	_refresh_pause_button()
 
 
 func is_open() -> bool:
@@ -309,7 +311,15 @@ func _make_menu_button(text: String) -> Button:
 
 func _set_open(opened: bool) -> void:
 	_overlay.visible = opened
-	_pause_button.visible = not opened and _input_enabled
+	_refresh_pause_button()
+
+
+# The Pause button is offered only when the menu is BOTH armed and closed. One writer, so
+# the open-state and armed-state halves of that rule can't drift apart — a live-looking
+# button over a disarmed menu is what let a pause overlay stack on the start line's own.
+func _refresh_pause_button() -> void:
+	if is_instance_valid(_pause_button):
+		_pause_button.visible = _input_enabled and not is_open()
 
 
 func _show_settings(on: bool) -> void:

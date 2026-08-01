@@ -225,6 +225,20 @@ static func button(text: String) -> Button:
 	return b
 
 
+# A button for a HORIZONTAL action row: no width floor, so it hugs its own label.
+# `button()` above pins BUTTON_MIN_W, which is right for a stacked column but wrong
+# side by side — four of them need ~750 logical units against a canvas ~556 wide at
+# the design height (~445 on the 288 web-touch tier), so the row runs off both edges.
+# Height and uppercasing are left to `enforce()`, which every menu runs after building.
+static func row_button(text: String, on_press: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE  # MenuNav/ButtonCursor decide focusability
+	if on_press.is_valid():
+		b.pressed.connect(on_press)
+	return b
+
+
 # Show/clear the "this option is selected" treatment used by the web build:
 # the label is underlined and tinted green while selected. Pair with `flank()`
 # for the ▶◀ triangles around the active row.

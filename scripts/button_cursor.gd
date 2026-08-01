@@ -46,6 +46,17 @@ func wrapped(index: int, step: int) -> int:
 # The nearest enabled index at or after `index` (searching forward, wrapping) — used to
 # re-seat the cursor off a button that just became disabled. Returns `index` unchanged if
 # the row is empty or every button is disabled.
+# Where `b` sits in this cursor, or 0 if it isn't a stop. Callers think in BUTTONS
+# ("seat on Drive", "seat on Start") but every API here is index-based, and those indices
+# are not constants — rows drop conditional members (Exit Game on web, Mystery Box when
+# none is held), so "the last one" differs per platform and per save. Asking the cursor
+# beats re-deriving from construction order or from scene-tree child position, either of
+# which silently desyncs the moment the row changes shape.
+func index_of(b: Button) -> int:
+	var i := buttons.find(b)
+	return i if i >= 0 else 0
+
+
 func settled(index: int) -> int:
 	if buttons.is_empty():
 		return index

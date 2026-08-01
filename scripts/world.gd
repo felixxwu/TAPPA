@@ -288,7 +288,7 @@ func _ready() -> void:
 		# the start line's own menu, the two fighting for the same taps. The start line's
 		# own Exit is the way out until StartLine.sequence_finished re-arms pause at the
 		# hand-off (_on_start_line_finished).
-		pause_menu.set_input_enabled(not is_instance_valid(_start_line))
+		pause_menu.set_input_enabled(not _start_line_is_staging())
 
 	# Benchmark mode (features/benchmark.md): force the profiler on, hide the
 	# touch controls (the HUD is already off via cfg.hud_enabled), and hand the
@@ -1549,9 +1549,21 @@ func _build_start_line() -> void:
 # The staged window is over (camera, HUD and player control all handed back): pause is
 # meaningful again now that the start line's menu is gone. See _build_start_line.
 func _on_start_line_finished() -> void:
-	var pause_menu := get_node_or_null("PauseMenu") as PauseMenu
+	var pause_menu := _pause_menu()
 	if pause_menu != null:
 		pause_menu.set_input_enabled(true)
+
+
+# The pause menu, or null in the harnesses that don't mount one. One accessor because
+# three separate get_node_or_null("PauseMenu") lookups had already accumulated.
+func _pause_menu() -> PauseMenu:
+	return get_node_or_null("PauseMenu") as PauseMenu
+
+
+# Is the pre-countdown start line still running? NOT `is_instance_valid(_start_line)` —
+# the node is never freed once built, so that only ever answers "was one ever built".
+func _start_line_is_staging() -> bool:
+	return is_instance_valid(_start_line) and _start_line.is_staging()
 
 
 # Prepend a straight lead-in to a generated centerline: a stub BEHIND the start line
