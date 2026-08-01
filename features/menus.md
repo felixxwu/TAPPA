@@ -319,8 +319,20 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   copy of the same panel (`start_line.gd`) passes no `on_wheels`, so `TuningPanel` hides
   the button there (a no-op button would be confusing pre-rally). The **garage** is likewise a
   left/right cursor (`_garage_focus`, painted by `UITheme.mark_focused`,
-  `_activate_garage_focus`) over its side-by-side **Back / Career / Garage / Free Roam /
-  Challenge** row, seated on Career on entry (`menu_back` shortcuts to the exterior).
+  `_activate_garage_focus`) over a side-by-side row with TWO levels
+  (`_garage_showing_drive`, `_refresh_garage_row`), seated on the primary action on
+  entry (`menu_back` shortcuts to the exterior). The TOP level is
+  **Back / Drive / Garage / Mystery Box (N)**; **Drive** (`_enter_garage_drive_level`)
+  swaps the SAME row to **Back / Career / Free Roam / Online**, whose Back
+  (`_garage_back_to_top`) goes back up a level rather than out to the exterior.
+  Pressing Drive does not change the station (still `View.GARAGE`) but it DOES
+  re-frame it: the camera eases from the wide shell view to a low three-quarter
+  FRONT hero shot of the selected car on the lowered lift, and backing out restores
+  the wide framing. Both framings come from the one `_station_xform(View.GARAGE)`
+  branch (the drive pose via `_drive_cam_xform`, posed off `hq_lift_pos` +
+  `hq_drive_cam_offset` / `hq_drive_cam_look_height` so it's stable while the lower
+  tween is still settling the car); with an empty garage there's no lift car to
+  frame and it falls back to the wide view.
   **Garage** (`_open_garage_picker`) opens the car park in GARAGE mode (`CarparkMode.GARAGE`,
   parking the whole owned collection); Select (`_on_start_pressed` → `_select_garage_car`)
   commits the focused car as the selected car and drops straight into the tuning lift bay
@@ -687,7 +699,15 @@ the same path the map-table pan uses).
 
 **GARAGE.** A block garage interior holding the **map table** and the **tuning
 lift**, with the player's **selected car sitting on the lift** (`_ensure_lift_car`,
-spawned whenever the camera is inside — garage/lift — and dropped otherwise). Like the
+spawned whenever the camera is inside — garage/lift — and dropped otherwise). The
+**map table is the one exception**: `_go_to(View.TABLE)` deliberately KEEPS the lift
+car rather than clearing it. The table never shows the lift, but tearing the prop
+down landed in the very frame the camera starts its flight to the table, which is
+exactly where a hitch is most visible; the car is frozen with process disabled, so
+leaving it standing costs nothing and the player is one Back away from wanting it
+again. Every other station still clears it, which is what matters — the car park and
+title lineup BORROW that node out of `_car_cache` (below), so the lift has to hand it
+back before those build. Like the
 car park, the lift prop is **reused only while both its instance id and a deep
 `owned.hash()` match** — so any in-place data change to the selected car (repair, upgrade
 toggle, engine swap, tuning) auto-respawns the prop; no mutator has to force a rebuild.
@@ -748,7 +768,10 @@ earning kits is disabled — see `todo/remove-repair-kits.md`.)
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
 `hq_lift_raise_time` (`_apply_lift_height`); returning to the garage lowers it again.
-The car is framed to one side (`hq_lift_cam_*`). The bay opens on a **HUB page**
+The car is framed to one side (`hq_lift_cam_*`) as a **rear three-quarter** shot —
+the eye sits ~30° off the car's rear axis (it noses −Z, so +Z is behind it) and close
+enough to show flank and back together, on the −X side because +X runs into the garage
+wall. The bay opens on a **HUB page**
 (`LiftPage.HUB`): a **bottom** panel with the **car's name/description** spanning the
 full page width, and UNDER it **Upgrades** and **Tuning** buttons plus a
 **Test Drive** button (the hub's left/right `ButtonCursor` — `_hub_focus` — no longer

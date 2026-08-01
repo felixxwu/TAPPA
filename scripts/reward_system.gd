@@ -120,16 +120,13 @@ static func _tokens_owned(profile: Dictionary) -> int:
 	return int(profile.get("inventory", {}).get(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, 0))
 
 
-# True if some OTHER owned car (not `owned_car`) still has room for an upgrade —
-# i.e. there's actually somewhere for a mystery box to land.
+# True if some OTHER owned car (not `owned_car`) still has room for an upgrade.
+# This one KEEPS the exclusion, because it gates a different question: whether to
+# hand out a mystery box AS the reward for a car that has nothing left to gain
+# (draw_upgrade). That car is by definition full, so a box is only worth awarding
+# if some other car can receive it.
 static func _other_car_has_room(profile: Dictionary, owned_car: Dictionary) -> bool:
-	return any_other_car_has_room(profile, int(owned_car.get("instance_id", -1)))
-
-
-# Whether some OTHER owned car (not `current_instance_id`) still has room for an
-# upgrade — used by the HQ Lift's "Open Mystery Box" button to re-check gating at
-# open-time (the garage can change between grant and open, e.g. a car sold).
-static func any_other_car_has_room(profile: Dictionary, current_instance_id: int) -> bool:
+	var current_instance_id := int(owned_car.get("instance_id", -1))
 	for car in profile.get("cars", []):
 		if int(car.get("instance_id", -1)) == current_instance_id:
 			continue
@@ -138,18 +135,38 @@ static func any_other_car_has_room(profile: Dictionary, current_instance_id: int
 	return false
 
 
-# Resolve what a mystery box grants: a uniformly random OTHER owned car (not
-# `current_instance_id`, the car the box came from) among those with a
-# non-empty MAX_TIER-eligible pool, then a uniformly random item from that
-# car's pool. Returns {} when no other car has room (the opener falls back to
-# a repair kit) — a pure resolve, no Save mutation; the caller (Save) performs
-# the actual consume/install.
-static func pick_mystery_box_grant(profile: Dictionary, current_instance_id: int, rng: RandomNumberGenerator = null) -> Dictionary:
+# Whether ANY owned car still has room for an upgrade — i.e. there's somewhere for a
+# mystery box to land. Used by the HQ garage row's "Mystery Box" button to gate itself,
+# re-checked at open-time (the garage can change between grant and open, e.g. a car
+# sold).
+#
+# NO car is excluded, including the currently selected one. Boxes used to be won BY a
+# maxed-out car through the rally reward loop, so "the car it came from" was full by
+# construction and gifting to it would have been a no-op — hence the old
+# any_other_car_has_room. Boxes now also arrive from the online Rally Challenge
+# (ChallengeSession._COMPLETION_REWARD), where they're tied to no car at all, so that
+# assumption no longer holds and excluding the selected car just made boxes dead
+# weight for a one-car garage.
+static func any_car_has_room(profile: Dictionary) -> bool:
+	for car in profile.get("cars", []):
+		if not _car_has_nothing_left(car):
+			return true
+	return false
+
+
+# Resolve what a mystery box grants: a uniformly random owned car among those with a
+# non-empty MAX_TIER-eligible pool, then a uniformly random item from that car's pool.
+# Returns {} when NO car has room (the opener falls back to a repair kit) — a pure
+# resolve, no Save mutation; the caller (Save) performs the actual consume/install.
+#
+# EVERY owned car is a candidate, the currently selected one included — see
+# any_car_has_room for why the old "not the car it came from" exclusion is gone. With
+# one car in the garage the box now fills that car's empty slots instead of being
+# permanently unopenable.
+static func pick_mystery_box_grant(profile: Dictionary, rng: RandomNumberGenerator = null) -> Dictionary:
 	rng = _ensure_rng(rng)
 	var candidates: Array = []
 	for car in profile.get("cars", []):
-		if int(car.get("instance_id", -1)) == current_instance_id:
-			continue
 		if not _parts_at_or_below(MAX_TIER, car.get("installed_upgrades", []), car).is_empty():
 			candidates.append(car)
 	if candidates.is_empty():

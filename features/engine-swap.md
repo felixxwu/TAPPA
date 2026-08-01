@@ -213,20 +213,15 @@ produced. See [tuning.md](tuning.md) for the full axis table.
   NOT pop an info dialog — the old `_no_tokens_dialog` / `_show_no_tokens_info` path
   was removed); plain **"Swap Engine"** and disabled only when there's no other owned
   car to swap with. Health never affects it.
-- **Upgrades page, mystery-box row** (`UpgradesMenu._make_mystery_box_row`,
-  `scripts/upgrades_menu.gd`) — unlike the swap row (always shown, sometimes
-  disabled), this row is **omitted entirely** at 0 boxes held
-  (`Save.mystery_boxes_owned() > 0` gates whether `rebuild()` even builds it),
-  lift-only (the host passes a fifth `on_open_box` param to `setup()`; the
-  car-park popup and the reward-reveal instance leave it unset and drop the row
-  too). When a box is held: a label reading **"Mystery Box: N"** plus an
-  **Open** button, disabled with tooltip "Needs another car in the garage with
-  room for an upgrade" when `RewardSystem.any_other_car_has_room(Save.profile,
-  instance_id)` is false, otherwise enabled with a plain explanatory tooltip.
-  Pressing it runs the host's `on_open_box` callback — at the HQ lift,
-  `hq.gd._on_open_mystery_box`, which calls `Save.open_mystery_box` and shows a plain
-  `ConfirmPopup` reveal card. See [reward-system.md](reward-system.md) → "Mystery box"
-  for the trigger, resolver, and full opening sequence.
+- **Mystery box — NOT on this page.** It used to be a lift-only Upgrades-page row
+  (`UpgradesMenu._make_mystery_box_row`, since deleted): a box is a garage-WIDE
+  reward, not a property of the car on the lift, so it moved to the **garage
+  action row** as a "Mystery Box (N)" button (`hq.gd._refresh_garage_row` ->
+  `_on_open_mystery_box`). Omitted entirely at 0 boxes held; disabled with the
+  tooltip "Every car in the garage is fully upgraded" when
+  `RewardSystem.any_car_has_room(Save.profile)` is false. See
+  [reward-system.md](reward-system.md) → "Mystery box" for the trigger, resolver,
+  and full opening sequence (including why the modal check must precede the spend).
 - **Car-park swap mode** (`hq._enter_engine_swap` / `_carpark_swap_mode`) —
   pressing Swap Engine opens the car park listing **every** OTHER owned car (the
   current car itself is excluded — no self-swap); no car is filtered out on

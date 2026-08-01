@@ -1019,7 +1019,7 @@ func test_hq_garage_is_a_left_right_cursor() -> void:
 	assert_eq(hq._view, hq.View.EXTERIOR, "select on Back leaves the garage for the exterior")
 
 
-# Pressing Drive swaps the SAME row (no camera/view change) to Back (0) / Career (1) /
+# Pressing Drive swaps the SAME row (same station, closer camera) to Back (0) / Career (1) /
 # Free Roam (2) / Online (3) — also a left/right cursor, wrapping. Back on THIS level
 # goes back up to the TOP level, not out to the exterior.
 func test_hq_garage_drive_level_is_a_left_right_cursor() -> void:
@@ -1031,7 +1031,7 @@ func test_hq_garage_drive_level_is_a_left_right_cursor() -> void:
 	hq._garage_focus = 1  # Drive
 	hq._activate_garage_focus()
 	assert_true(hq._garage_showing_drive, "Drive switches to the DRIVE level")
-	assert_eq(hq._view, hq.View.GARAGE, "Drive does NOT change the view/camera")
+	assert_eq(hq._view, hq.View.GARAGE, "Drive does NOT change the view/station")
 	assert_eq(hq._garage_focus, 1, "the DRIVE level starts on Career, its primary action")
 
 	hq._move_garage_focus(1)
@@ -1056,6 +1056,76 @@ func test_hq_garage_drive_level_is_a_left_right_cursor() -> void:
 	assert_false(hq._garage_showing_drive, "Back on the DRIVE level returns to the TOP level")
 	assert_eq(hq._view, hq.View.GARAGE, "still in the garage, not the exterior")
 	assert_eq(hq._garage_focus, 1, "the cursor re-seats on Drive")
+
+
+# Drive keeps the garage STATION but re-frames it: the camera eases in to a low
+# three-quarter FRONT shot of the car on the (lowered) lift, and backing out to the
+# TOP level restores the wide shell framing. Asserted on _station_xform (the tween's
+# target) so it doesn't depend on the move having finished, and on the SHAPE of the
+# framing — in front of the car, off to one side, near the ground — rather than on
+# the authored offsets themselves.
+func test_hq_drive_level_frames_the_lift_car_from_a_low_front_three_quarter() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	var wide: Transform3D = hq._station_xform(hq.View.GARAGE)
+
+	hq._garage_focus = 1  # Drive
+	hq._activate_garage_focus()
+	assert_true(is_instance_valid(hq._lift_car), "the garage station has a car on the lift to frame")
+	var drive: Transform3D = hq._station_xform(hq.View.GARAGE)
+	assert_ne(drive.origin, wide.origin, "Drive re-frames the garage station")
+
+	var lift: Vector3 = Config.data.hq_lift_pos
+	# The lift car noses toward -Z (identity rotation; the car park rotates its markers
+	# by PI to nose them the other way), so "in front of the car" is the -Z side.
+	assert_lt(drive.origin.z, lift.z, "the drive camera sits in FRONT of the car (-Z side)")
+	assert_true(absf(drive.origin.x - lift.x) > 0.1,
+		"and off to one side, so it's a three-quarter view rather than dead-on")
+	assert_lt(absf(drive.origin.x - lift.x), absf(drive.origin.z - lift.z),
+		"but more in front than beside it — a front 3/4, not a side-on shot")
+	assert_lt(drive.origin.y, wide.origin.y, "it drops nearer the ground than the wide shell view")
+	assert_lt(drive.origin.distance_to(lift), wide.origin.distance_to(lift),
+		"and moves closer to the lift")
+	# The shot actually points at the car, not past it.
+	var to_car: Vector3 = (Vector3(lift.x, drive.origin.y, lift.z) - drive.origin).normalized()
+	assert_gt(to_car.dot(-drive.basis.z), 0.9, "the camera looks at the car on the lift")
+
+	# The car stays DOWN — the drive shot is of the lowered lift, not the raised bay.
+	assert_false(hq._lift_raised, "the lift stays lowered for the drive framing")
+
+	hq._garage_focus = 0
+	hq._activate_garage_focus()  # DRIVE level's Back
+	var restored: Transform3D = hq._station_xform(hq.View.GARAGE)
+	assert_eq(restored.origin, wide.origin,
+		"backing out to the TOP level restores the wide garage framing")
+
+
+# The map table deliberately KEEPS the car standing on the lift (every other station
+# away from the garage clears it). The table never shows the lift, but the teardown
+# landed in the frame the camera starts its flight to the table — and the car park /
+# title lineup, which DO borrow that node out of _car_cache, still get it handed back.
+func test_opening_the_map_keeps_the_lift_car_but_the_car_park_still_gets_it_back() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	assert_true(is_instance_valid(hq._lift_car), "the garage stands the selected car on the lift")
+	var on_lift: Node3D = hq._lift_car
+
+	hq._enter_table()
+	await get_tree().process_frame
+	assert_eq(hq._view, hq.View.TABLE, "Career opens the map")
+	assert_true(is_instance_valid(hq._lift_car), "the lift car is NOT torn down for the map")
+	assert_eq(hq._lift_car, on_lift, "it is the same prop, not a respawn")
+	assert_true(on_lift.visible, "and it is left standing, not hidden and stowed")
+
+	# Back to the garage and out to the title: the title parks the collection, which
+	# borrows the cached node, so the lift must have released it.
+	hq._go_to(hq.View.GARAGE)
+	hq._go_to(hq.View.EXTERIOR)
+	assert_null(hq._lift_car, "leaving for a station that parks cars still clears the lift")
 
 
 # --- Rally Challenge entry point (spec §7) -----------------------------------
@@ -3229,7 +3299,7 @@ func _find_mystery_box_button(hq: Node3D) -> Button:
 
 func test_mystery_box_button_disabled_without_a_box_or_room() -> void:
 	# No box held -> the button is OMITTED entirely (not shown disabled). A box held
-	# but every other owned car maxed -> shown, but disabled (nowhere for the gift to
+	# but every owned car maxed -> shown, but disabled (nowhere for the gift to
 	# land). A second, non-maxed car -> enabled and reachable via keyboard/gamepad nav
 	# (the garage row's ButtonCursor). Real catalogue needed: RewardSystem's
 	# mystery-box logic iterates the raw UpgradeLibrary.UPGRADES const regardless of
@@ -3252,7 +3322,7 @@ func test_mystery_box_button_disabled_without_a_box_or_room() -> void:
 	hq._refresh_garage_row()
 	var btn := _find_mystery_box_button(hq)
 	assert_not_null(btn, "a box is held -> the button appears")
-	assert_true(btn.disabled, "no other car has room -> still disabled")
+	assert_true(btn.disabled, "no car at all has room -> still disabled")
 	assert_string_contains(btn.text, "(1)", "the button tracks the held count")
 
 	_save.grant_car("fx_rwd_coupe")
@@ -3282,6 +3352,79 @@ func test_opening_mystery_box_installs_it_on_the_other_car_and_shows_a_reveal() 
 	var recipient: Dictionary = _save.get_car(int(other["instance_id"]))
 	assert_false((recipient["installed_upgrades"] as Array).is_empty(),
 		"the gift landed on the other car")
+
+
+# A box can now land on the SELECTED car too, so a one-car garage is openable — it
+# used to be permanently disabled, since the old rule excluded the car the box "came
+# from" and there was no other. Boxes also arrive from the online challenge now, tied
+# to no car at all, so that exclusion no longer describes anything real.
+func test_mystery_box_button_is_enabled_for_a_one_car_garage_with_room() -> void:
+	UpgradeFixtures.restore()  # see comment in the test above
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	assert_eq((_save.profile["cars"] as Array).size(), 1, "setup: exactly one car owned")
+	hq._refresh_garage_row()
+
+	var btn := _find_mystery_box_button(hq)
+	assert_not_null(btn, "a box is held -> the button appears")
+	assert_false(btn.disabled, "your only car has empty slots, so the box has somewhere to go")
+
+	btn.pressed.emit()
+	await get_tree().process_frame
+	assert_eq(_save.mystery_boxes_owned(), 0, "the box is consumed")
+	var only: Dictionary = _save.selected_car()
+	assert_false((only["installed_upgrades"] as Array).is_empty(),
+		"and the gift landed on the one car in the garage")
+
+
+# Opening is an irreversible save transaction, and the reveal is a ConfirmPopup, which
+# is REFUSED while another modal is on screen. So a second activation behind the first
+# reveal must not spend a box — that spent the box AND its part with nothing shown,
+# leaving the player unable to tell what they got.
+func test_a_second_mystery_box_is_not_spent_while_the_first_reveal_is_up() -> void:
+	UpgradeFixtures.restore()  # see comment in the test above
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 2)
+	hq._refresh_garage_row()
+
+	_find_mystery_box_button(hq).pressed.emit()
+	await get_tree().process_frame
+	assert_eq(_save.mystery_boxes_owned(), 1, "the first box is spent and revealed")
+	assert_not_null(ConfirmPopup.any_open(get_tree()), "its reveal is on screen")
+
+	# Fire again with the reveal still up — the second box must survive.
+	hq._on_open_mystery_box()
+	await get_tree().process_frame
+	assert_eq(_save.mystery_boxes_owned(), 1,
+		"the second box is NOT consumed while a reveal it could not show is up")
+
+
+# The same hole from the input side: a station row must not act on a keypress while a
+# modal owns the screen. The popup's focused button normally consumes it first, but
+# that relies on the popup holding focus — when it doesn't, the press fell through to
+# the garage row and fired a second action behind the popup.
+func test_the_garage_row_ignores_select_while_a_modal_is_open() -> void:
+	var hq: Node3D = load("res://hq.tscn").instantiate()
+	add_child_autofree(hq)
+	await get_tree().process_frame
+	hq._on_exterior_start()
+	assert_false(hq._garage_showing_drive, "setup: on the TOP level, cursor on Drive")
+
+	ConfirmPopup.open(hq, "Busy", "Something is on screen", [{"label": "OK", "callback": Callable()}], 0)
+	await get_tree().process_frame
+	var press := InputEventAction.new()
+	press.action = "menu_select"
+	press.pressed = true
+	hq._unhandled_input(press)
+
+	assert_false(hq._garage_showing_drive,
+		"select did not reach the garage row while the modal was up")
 
 
 func test_detune_prompt_change_upgrades_opens_navigable_popup_without_swap() -> void:
@@ -4212,12 +4355,27 @@ class _StubBoard:
 	var answer: Dictionary = {"ok": false}
 	var calls := 0
 	var gate: Array = []  # non-empty -> park here until the test clears it
+	var cutoff: Dictionary = {"ok": false}
+	var cutoff_calls := 0
 
+	# Yields at least one frame before answering, for the same reason fetch_cutoff
+	# does: a synchronous stub can't observe the in-flight state, and it would let
+	# the row be written before the enforce pass instead of after it, as in the game.
 	func fetch_final_rank(_period_key: String, _stage_count: int) -> Dictionary:
 		calls += 1
+		await Engine.get_main_loop().process_frame
 		while not gate.is_empty():
 			await Engine.get_main_loop().process_frame
 		return answer
+
+	# Always yields at least one frame before answering. A synchronous stub let the
+	# label be written BEFORE _open_challenge_overlay's UITheme.enforce pass, which
+	# hid a real bug: in the game the answer lands AFTER enforce has uppercased the
+	# row, and the guard that compared against the mixed-case literal then bailed.
+	func fetch_cutoff(_period_key: String, _stage_count: int) -> Dictionary:
+		cutoff_calls += 1
+		await Engine.get_main_loop().process_frame
+		return cutoff
 
 
 # The placing query needs a signed-in Cloud (fetch_final_rank can only find the
@@ -4343,4 +4501,252 @@ func test_a_signed_out_player_never_queries_the_board_for_a_placing() -> void:
 	assert_eq(board.calls, 0, "no query is made at all when signed out")
 	assert_eq(hq._challenge_progress_label.text.to_upper(), "COMPLETED",
 		"and the row still reads correctly")
+	_restore_after_placing()
+
+
+# The COMPLETED row says it is fetching too, rather than leaving the placing to pop
+# in later. Same contract as the win row.
+func test_a_completed_period_says_loading_while_the_placing_is_fetched() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": true, "rank": 2, "total_entries": 3}
+	var hq := await _hq_with_a_completed_daily(board)
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)  # query is in flight on return
+
+	var loading: String = hq._challenge_progress_label.text.to_upper()
+	assert_string_contains(loading, "COMPLETED", "it still says the period is done")
+	assert_string_contains(loading, "LOADING", "and says the placing is being fetched")
+
+	for _i in 5:
+		await get_tree().process_frame
+	var settled: String = hq._challenge_progress_label.text.to_upper()
+	assert_string_contains(settled, "2 OF 3", "the placing replaces it")
+	assert_false(settled.contains("LOADING"),
+		"and the placeholder is GONE, not left in front of the placing")
+	_restore_after_placing()
+
+
+# The placeholder is not a resting state here either: an unreachable board must fall
+# back to a bare COMPLETED, never leave "COMPLETED - LOADING…" stuck on screen.
+func test_the_completed_loading_placeholder_is_cleared_when_the_board_cannot_answer() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": false}
+	var hq := await _hq_with_a_completed_daily(board)
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(hq._challenge_progress_label.text.to_upper(), "COMPLETED",
+		"back to a bare COMPLETED, with no placeholder left behind")
+	_restore_after_placing()
+
+
+# --- Board-answer cache (per visit to the online challenge screen) ------------
+
+# Flipping between Daily/Weekly/Monthly re-renders the whole screen, which used to
+# re-issue both board queries every time and flash "Loading…" on rows the player had
+# already seen answered. Answers are cached per period key for the visit.
+func test_switching_kinds_does_not_re_query_an_answer_already_fetched() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": true, "rank": 2, "total_entries": 3}
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 3}
+	var hq := await _hq_with_a_completed_daily(board)
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+	var placing_calls := board.calls
+	var cutoff_calls := board.cutoff_calls
+	assert_true(placing_calls > 0 and cutoff_calls > 0, "setup: the Daily was really fetched")
+
+	# Away to another kind and back.
+	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	for _i in 5:
+		await get_tree().process_frame
+	var weekly_cutoff_calls := board.cutoff_calls
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(board.calls, placing_calls, "returning to the Daily re-uses the cached placing")
+	assert_eq(board.cutoff_calls, weekly_cutoff_calls,
+		"and the cached cut line — neither is asked for twice")
+	# And it is RENDERED from the cache, not left blank or stuck at Loading.
+	assert_string_contains(hq._challenge_progress_label.text.to_upper(), "2 OF 3")
+	assert_string_contains(hq._challenge_win_label.text, UITheme.format_time(112240))
+	assert_false(hq._challenge_win_label.text.to_upper().contains("LOADING"),
+		"a cached answer renders immediately, with no Loading flash")
+	_restore_after_placing()
+
+
+# The cache is per VISIT: closing back to the garage invalidates it, so re-opening
+# asks again rather than showing numbers from the last visit (the board keeps moving).
+func test_closing_the_challenge_screen_invalidates_the_cached_answers() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.answer = {"ok": true, "rank": 2, "total_entries": 3}
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 3}
+	var hq := await _hq_with_a_completed_daily(board)
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+	var placing_calls := board.calls
+	var cutoff_calls := board.cutoff_calls
+
+	hq._close_challenge_overlay()
+	hq._open_challenge_overlay()
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_true(board.calls > placing_calls, "re-opening re-asks for the placing")
+	assert_true(board.cutoff_calls > cutoff_calls, "and for the cut line")
+	_restore_after_placing()
+
+
+# A failure is a transient condition, not a value — it must not be cached, or one
+# offline moment would stick for the rest of the visit.
+func test_a_failed_query_is_not_cached_and_is_retried_on_the_next_visit() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": false}
+	var hq := await _hq_with_a_completed_daily(board)
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+	var cutoff_calls := board.cutoff_calls
+
+	hq._select_challenge_kind(ChallengeLibrary.WEEKLY)
+	for _i in 5:
+		await get_tree().process_frame
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_true(board.cutoff_calls > cutoff_calls + 1,
+		"the failed Daily is asked again, not remembered as an answer")
+	_restore_after_placing()
+
+
+# --- Win condition row: the live top-50% cut line -----------------------------
+
+# The win condition names the placing needed and, when the board can answer, the
+# time currently holding that line — on the SAME row ("Top 50% - 1:52.24"), since
+# the entry screen is a compact HUD readout. Live, never stored: the cut moves as
+# entrants arrive and times improve.
+func test_the_win_condition_shows_the_live_time_to_beat() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 9}
+	var hq := await _hq_with_a_completed_daily(board)
+
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	var text: String = hq._challenge_win_label.text
+	assert_string_contains(text.to_upper(), "TOP 50%", "the placing needed is still named")
+	assert_string_contains(text, UITheme.format_time(112240),
+		"and the row gains the time on the cut line, formatted like every other time")
+	assert_true(board.cutoff_calls > 0, "the time came from a live query")
+	assert_false(text.to_lower().contains("clean"),
+		"the old 'finish clean' clause is gone from the win condition")
+	_restore_after_placing()
+
+
+# Nobody on the line yet (or an unreachable board): the row degrades to the bare
+# condition — never "0:00.00", never an error.
+func test_the_win_condition_stays_bare_when_there_is_no_time_to_beat() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": true, "exists": false, "cutoff_ms": 0, "total_entries": 3}
+	var hq := await _hq_with_a_completed_daily(board)
+
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_string_contains(hq._challenge_win_label.text.to_upper(), "TOP 50%")
+	assert_false(hq._challenge_win_label.text.contains("-"),
+		"no dash-and-time tail is appended when there is no line to beat")
+	_restore_after_placing()
+
+
+# THE REGRESSION: the row must gain its time on the real entry path, which runs
+# UITheme.enforce (uppercasing every Label) immediately after building the row and
+# before the board answers. Asserted through _open_challenge_overlay, not a direct
+# _refresh_challenge_overlay call, because it is exactly that enforce pass the earlier
+# version silently lost the answer to.
+func test_the_cut_line_survives_the_uppercase_enforce_pass_on_open() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 2}
+	var hq := await _hq_with_a_completed_daily(board)  # opens the overlay for real
+	for _i in 5:
+		await get_tree().process_frame
+
+	var text: String = hq._challenge_win_label.text
+	assert_eq(text, text.to_upper(), "setup: the enforce pass really did uppercase the row")
+	assert_string_contains(text, "TOP 50%", "the condition is still named")
+	assert_string_contains(text, UITheme.format_time(112240),
+		"and the time to beat landed despite the row having been uppercased under it")
+	_restore_after_placing()
+
+
+# While the board is being asked, the row SAYS so rather than leaving a gap the time
+# pops into later. The stub parks for a frame, so the placeholder is observable.
+func test_the_win_condition_says_loading_while_the_board_is_being_asked() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 2}
+	var hq := await _hq_with_a_completed_daily(board)  # query is in flight on return
+
+	assert_string_contains(hq._challenge_win_label.text.to_upper(), "LOADING",
+		"the row says it is fetching instead of showing an empty space")
+	assert_string_contains(hq._challenge_win_label.text.to_upper(), "TOP 50%",
+		"and still states the condition while it waits")
+
+	for _i in 5:
+		await get_tree().process_frame
+	var settled: String = hq._challenge_win_label.text
+	assert_string_contains(settled, UITheme.format_time(112240), "the time replaces it")
+	assert_false(settled.to_upper().contains("LOADING"),
+		"and the placeholder is GONE, not left cemented in front of the answer")
+	_restore_after_placing()
+
+
+# "Loading…" is not a resting state: an unreachable board (or no cut line yet) must
+# clear it back to the bare condition, never leave it stuck.
+func test_the_loading_placeholder_is_cleared_when_the_board_cannot_answer() -> void:
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": false}
+	var hq := await _hq_with_a_completed_daily(board)
+	for _i in 5:
+		await get_tree().process_frame
+
+	var text: String = hq._challenge_win_label.text
+	assert_false(text.to_upper().contains("LOADING"), "the placeholder is cleared")
+	assert_string_contains(text.to_upper(), "TOP 50%", "leaving the bare condition")
+	_restore_after_placing()
+
+
+func test_a_signed_out_player_never_queries_the_board_for_the_cut_line() -> void:
+	# The board is world-readable, so this query WOULD answer — but a signed-out
+	# player can't post a checkpoint, so there's no cut for them to make and no
+	# reason to spend a network round trip on every visit to the page.
+	var board := _StubBoard.new()
+	add_child_autofree(board)
+	board.cutoff = {"ok": true, "exists": true, "cutoff_ms": 112240, "total_entries": 9}
+	var hq := await _hq_with_a_completed_daily(board)
+	Cloud.auth = _real_auth  # undo the fake sign-in; discard the setup's own calls
+	board.cutoff_calls = 0
+
+	hq._select_challenge_kind(ChallengeLibrary.DAILY)
+	for _i in 5:
+		await get_tree().process_frame
+
+	assert_eq(board.cutoff_calls, 0, "no query is made at all when signed out")
+	assert_string_contains(hq._challenge_win_label.text.to_upper(), "TOP 50%",
+		"and the row still states the condition")
 	_restore_after_placing()

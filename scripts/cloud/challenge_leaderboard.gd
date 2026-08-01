@@ -179,6 +179,67 @@ func fetch_final_rank(period_key: String, stage_count: int) -> Dictionary:
 	return {"ok": true, "rank": int(result["player_rank"]), "total_entries": int(result["total_entries"])}
 
 
+# The time that currently has to be BEATEN to satisfy the completion gate — i.e. the
+# finishing time sitting on the top-50% cut line right now, so the challenge entry
+# screen can show "Top 50% - 1:52.24" instead of an abstract percentage.
+#
+# The gate is `rank <= ceil(total_entries / 2)` at the final checkpoint (see
+# fetch_final_rank / spec §6), evaluated once the player is IN the field — so the
+# denominator to predict against is the field they'll be part of, i.e. the current
+# entry count PLUS ONE when they haven't posted yet (`_read_own` decides; if they
+# already have an entry they're counted already). Beating the current rank-r time is
+# what puts you at rank r, so the time to beat is the entry at `ceil(field / 2)`,
+# read at offset `ceil(field / 2) - 1`.
+#
+# Worked through: 1 rival -> field 2 -> need rank <= 1 -> beat the current P1.
+# 2 rivals -> field 3 -> need rank <= 2 -> beat the current P2. 3 rivals -> field 4
+# -> need rank <= 2 -> beat the current P2. Counting only the existing entries
+# (field = 1 and 2 in the first two cases) put the line a whole place too high and
+# quoted P1's time when P2's was what mattered.
+#
+# While fewer players have FINISHED than that rank the query is empty — reported as
+# `{"ok": true, "exists": false}`, meaning any finish currently makes the cut.
+#
+# Same posture as the rest of this class: a failure is `{"ok": false}`, never a
+# raised error and never a retry. Purely informational — nothing gates on it.
+func fetch_cutoff(period_key: String, stage_count: int) -> Dictionary:
+	if period_key == "" or stage_count <= 0:
+		return {"ok": false}
+	var token := ""
+	if _signed_in():
+		var fresh := await auth.ensure_fresh_token()
+		if fresh.ok:
+			token = auth.id_token
+
+	var total := await _count_all(period_key, token)
+	if not total.ok:
+		return {"ok": false}
+
+	# Is the player already counted in `total`, or would posting add them to it?
+	var already_entered := false
+	if token != "":
+		var mine := await _read_own(period_key, token)
+		if not mine.ok:
+			return {"ok": false}
+		already_entered = bool(mine.get("exists", false))
+	var field_size: int = total.count if already_entered else total.count + 1
+
+	var cut_rank := int(ceil(field_size / 2.0))
+	var field := "cum_ms_%d" % stage_count
+	var at_line := await _run_query(period_key, field, token, 1, cut_rank - 1)
+	if not at_line.ok:
+		return {"ok": false}
+	var rows: Array = at_line.rows
+	if rows.is_empty():
+		# Fewer finishers than the cut rank — nobody is on the line yet.
+		return {"ok": true, "exists": false, "cutoff_ms": 0, "total_entries": total.count}
+	var row: Dictionary = rows[0]
+	var cutoff_ms := FirestoreCodec.int_field(row.get("raw_fields", {}), field)
+	if cutoff_ms <= 0:
+		return {"ok": true, "exists": false, "cutoff_ms": 0, "total_entries": total.count}
+	return {"ok": true, "exists": true, "cutoff_ms": cutoff_ms, "total_entries": total.count}
+
+
 # --- Firestore calls -----------------------------------------------------------
 
 func _create_entry(period_key: String, cum_ms_1: int, identity: Dictionary) -> Dictionary:
@@ -216,14 +277,16 @@ func _write_failure(response: Dictionary) -> Dictionary:
 	return {"ok": false, "state": POST_FAILED, "error": _classify(response)}
 
 
-func _run_query(period_key: String, order_field: String, token: String) -> Dictionary:
-	var body := {
-		"structuredQuery": {
-			"from": [{"collectionId": "entries"}],
-			"orderBy": [{"field": {"fieldPath": order_field}, "direction": "ASCENDING"}],
-			"limit": PODIUM_ROWS,
-		}
+func _run_query(period_key: String, order_field: String, token: String,
+		limit := PODIUM_ROWS, offset := 0) -> Dictionary:
+	var query := {
+		"from": [{"collectionId": "entries"}],
+		"orderBy": [{"field": {"fieldPath": order_field}, "direction": "ASCENDING"}],
+		"limit": limit,
 	}
+	if offset > 0:
+		query["offset"] = offset
+	var body := {"structuredQuery": query}
 	var response = await rest.request_json(HTTPClient.METHOD_POST,
 		_period_doc(period_key) + ":runQuery",
 		RestClient.json_headers(token), JSON.stringify(body))

@@ -32,7 +32,9 @@ var _confirm_field: TextField
 
 
 func _ready() -> void:
-	add_theme_constant_override("separation", UITheme.GAP)
+	# GAP_TIGHT, not GAP: this page stacks more rows than any other menu and shares its
+	# host with a Back button that must stay on screen (see _build_main's row budget).
+	add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	Cloud.state_changed.connect(_on_cloud_state_changed)
 	Cloud.conflict_detected.connect(_on_conflict_detected)
@@ -125,6 +127,11 @@ func rebuild() -> void:
 		_prompt_conflict.call_deferred(Cloud.sync.conflict_summary())
 
 
+# ROW BUDGET. This page is hosted in a CENTRED VBox that also carries the host's Back
+# button below it (hq.gd._open_account_overlay), so anything that overflows the screen
+# pushes Back off the bottom where it cannot be pressed. Every row here has to earn its
+# place: prefer merging a value onto the control that changes it, or onto a related
+# row, over adding a line of its own.
 func _build_main() -> void:
 	add_child(_heading("Account"))
 
@@ -138,11 +145,20 @@ func _build_main() -> void:
 		return
 
 	add_child(_sub("Signed in as %s" % Cloud.account_label()))
+	# Sync status and last-sync time share ONE row. They are two halves of the same
+	# answer ("is my career backed up, and as of when"), and this page has to fit on a
+	# phone with the host's Back button still on screen below it — see the row budget
+	# note above _build_main.
 	var status := Cloud.status_message()
-	if status != "":
-		add_child(UITheme.label(status, _status_role()))
+	var synced_at := ""
 	if Cloud.sync != null and Cloud.sync.last_sync_utc != "":
-		add_child(_sub("Last synced %s UTC" % Cloud.sync.last_sync_utc))
+		synced_at = "%s UTC" % Cloud.sync.last_sync_utc
+	if status != "" and synced_at != "":
+		add_child(UITheme.label("%s · %s" % [status, synced_at], _status_role()))
+	elif status != "":
+		add_child(UITheme.label(status, _status_role()))
+	elif synced_at != "":
+		add_child(_sub("Last synced %s" % synced_at))
 
 	if Cloud.sync != null and Cloud.sync.blocked_by_conflict:
 		add_child(_action("Resolve sync conflict",
@@ -151,11 +167,20 @@ func _build_main() -> void:
 	# The leaderboard display name. Only shown signed in, because it is only ever
 	# used on a posted time and only a signed-in player can post one. Captured on
 	# first post (the global standings page); this is the edit-it-afterwards path.
+	#
+	# The value rides ON the button rather than sitting in a label above it. The pair
+	# was two full rows saying the same word twice ("Online leaderboard name: Felix" /
+	# "Change online leaderboard name"), which is the single biggest thing that pushed
+	# Back off a small screen.
 	var username := UsernamePopup.current()
-	add_child(_sub("Online leaderboard name: %s" % (username if username != "" else "not set")))
-	add_child(_action("Change online leaderboard name" if username != "" \
-			else "Set an online leaderboard name",
-		_on_username_pressed))
+	# Parenthesised deliberately: `%` binds tighter than the conditional, so the
+	# unbracketed form means what it says here — but it reads as though the ternary
+	# picks the format string, which is a trap for the next person to touch it.
+	var name_button := _action(
+		("Leaderboard name: %s" % username) if username != "" else "Set a leaderboard name",
+		_on_username_pressed)
+	name_button.tooltip_text = "Change the name shown on the online leaderboards"
+	add_child(name_button)
 
 	add_child(_action("Sync now", _on_sync_now_pressed))
 	add_child(_action("Sign out", _on_sign_out_pressed))
@@ -457,7 +482,7 @@ func _action(text: String, on_press: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_ALL
-	b.custom_minimum_size = Vector2(0, 40)
+	b.custom_minimum_size = Vector2(0, UITheme.MENU_ROW_H)  # what UITheme.enforce sets too
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.disabled = _busy
 	if on_press.is_valid():

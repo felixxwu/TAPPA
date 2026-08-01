@@ -364,7 +364,7 @@ func _all_real_parts() -> Array:
 	return parts
 
 
-func test_open_mystery_box_installs_a_disabled_part_on_a_different_car() -> void:
+func test_open_mystery_box_installs_a_disabled_part_on_a_car_with_room() -> void:
 	# Install_upgrade's slot_of()/is_consumable() lookups ARE override-aware, but
 	# RewardSystem.pick_mystery_box_grant iterates the raw UpgradeLibrary.UPGRADES
 	# const (same caveat test_reward_system.gd documents for draw_upgrade) — so
@@ -376,10 +376,10 @@ func test_open_mystery_box_installs_a_disabled_part_on_a_different_car() -> void
 	maxed["installed_upgrades"] = _all_real_parts()
 	var other: Dictionary = _save.grant_car("fx_awd")
 	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
-	var result: Dictionary = _save.open_mystery_box(int(maxed["instance_id"]), _rng(1))
+	var result: Dictionary = _save.open_mystery_box(_rng(1))
 	assert_false(bool(result.get("fallback", false)), "a roomy other car exists — no fallback needed")
 	assert_eq(int(result["recipient_instance_id"]), int(other["instance_id"]),
-		"the gift lands on the other car, not the maxed one")
+		"the gift lands on the car with room, not the maxed one")
 	var recipient: Dictionary = _save.get_car(int(other["instance_id"]))
 	assert_true((recipient["installed_upgrades"] as Array).has(result["item_id"]),
 		"the resolved item is fitted to the recipient")
@@ -396,18 +396,36 @@ func test_open_mystery_box_falls_back_to_repair_kit_when_no_car_has_room() -> vo
 	also_maxed["installed_upgrades"] = _all_real_parts()
 	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
 	var kits_before := int(_save.profile.get("inventory", {}).get("repair_kit", 0))
-	var result: Dictionary = _save.open_mystery_box(int(maxed["instance_id"]), _rng(1))
-	assert_true(bool(result["fallback"]), "no other car has room — falls back")
+	var result: Dictionary = _save.open_mystery_box(_rng(1))
+	assert_true(bool(result["fallback"]), "no car at all has room — falls back")
 	assert_eq(String(result["item_id"]), "repair_kit")
 	assert_eq(int(_save.profile["inventory"].get("repair_kit", 0)), kits_before + 1,
 		"the fallback repair kit lands in inventory")
 	assert_eq(_save.mystery_boxes_owned(), 0, "the box is still consumed even on fallback")
 
 
+# A ONE-CAR garage: the box now fits a part to the only car you own, instead of
+# being permanently unopenable because there was no "other" car to gift.
+func test_open_mystery_box_can_fit_a_part_to_your_only_car() -> void:
+	UpgradeFixtures.restore()  # see comment in the test above
+	var only: Dictionary = _save.grant_car("fx_light_rwd")
+	_save.add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
+	var result: Dictionary = _save.open_mystery_box(_rng(1))
+	assert_false(bool(result.get("fallback", false)),
+		"your one car has empty slots, so there is no need to fall back")
+	assert_eq(int(result["recipient_instance_id"]), int(only["instance_id"]),
+		"the gift lands on the only car you own")
+	var recipient: Dictionary = _save.get_car(int(only["instance_id"]))
+	assert_true((recipient["installed_upgrades"] as Array).has(result["item_id"]),
+		"the resolved item is fitted to it")
+	assert_false((recipient["disabled_upgrades"] as Array).is_empty(),
+		"and installs DISABLED, same as every other gifted part")
+
+
 func test_open_mystery_box_returns_empty_when_none_held() -> void:
 	_save.grant_car("fx_light_rwd")
 	assert_eq(_save.mystery_boxes_owned(), 0, "setup: no box held")
-	var result: Dictionary = _save.open_mystery_box(int(_save.profile["cars"][0]["instance_id"]))
+	var result: Dictionary = _save.open_mystery_box()
 	assert_true(result.is_empty(), "opening with none held is a no-op")
 
 

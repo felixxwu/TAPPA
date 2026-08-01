@@ -45,9 +45,12 @@ read straight off `profile.get("inventory", {})` the same tolerant way
 owned car in `profile.cars` is NOT itself maxed — otherwise the box would have
 nowhere to land), the draw returns `UpgradeLibrary.MYSTERY_BOX_ID` instead of
 picking from the usual pool. Any one condition failing falls through to the
-unchanged normal draw. `any_other_car_has_room(profile, current_instance_id)`
-is the same room-check exposed publicly, so the HQ Lift's Open button can
-re-verify it at open-time (the garage can change between grant and open).
+unchanged normal draw. This exclusion survives ONLY here, because it gates a
+different question: the car being rewarded is by definition full, so a box is
+only worth awarding if somewhere else can receive it. `any_car_has_room(profile)`
+is the room-check exposed publicly for the HQ garage row's Mystery Box button
+(re-verified at open-time, since the garage can change between grant and open)
+and it excludes NOTHING — see *Opening it* below.
 
 Otherwise: pool = parts at the target tier (stepping down to the nearest lower tier that has
 an eligible part, since not every tier has one; `_parts_at_or_below` also skips
@@ -117,16 +120,26 @@ stop being wasted on more swap tokens and instead occasionally gift an
 upgrade to a *different* owned car.
 
 **Resolving what it grants** — `RewardSystem.pick_mystery_box_grant(profile,
-current_instance_id, rng=null) -> Dictionary`: a pure resolver (no `Save`
-mutation) that picks a uniformly random OTHER owned car (excluding
-`current_instance_id`, the maxed car the box came from) among those with a
+rng=null) -> Dictionary`: a pure resolver (no `Save`
+mutation) that picks a uniformly random owned car — **every** car is a
+candidate, the currently selected one included — among those with a
 non-empty `MAX_TIER`-eligible pool (`_parts_at_or_below(MAX_TIER, ...)` on the
 candidate, so the recipient's own tier/prerequisite gating is respected —
 e.g. it won't hand out Big Turbo before Small Turbo), then a uniformly random
 item from that pool. Returns `{"instance_id": ..., "item_id": ...}`, or `{}`
-if no other car has room.
+if no car has room.
 
-**Opening it** — `Save.open_mystery_box(current_instance_id, rng=null) ->
+There used to be a "never the car it came from" exclusion here, on the
+reasoning that a box was won BY a maxed car through the rally reward loop, so
+gifting back to it would be a no-op. Boxes now also arrive from the **online
+Rally Challenge** (`ChallengeSession._COMPLETION_REWARD` — 2/3/4 per
+Daily/Weekly/Monthly), where they are tied to no car at all, so that
+assumption stopped describing anything real: it just made a box permanently
+unopenable for a one-car garage. A box now fills empty slots on any owned car,
+your current one included; cars with nothing left are still skipped, on
+*room*, not on identity.
+
+**Opening it** — `Save.open_mystery_box(rng=null) ->
 Dictionary` (`save_manager.gd`) is the atomic transaction: it consumes the box
 (`consume_item(MYSTERY_BOX_ID, 1, false)`, no save yet — `consume_item` gained
 the same trailing `do_save := true` param `add_item` already had, precisely so
@@ -140,11 +153,18 @@ that save: nothing persisted; after: both persisted). Returns `{}` if no box
 was held, else `{"fallback": bool, "item_id": String,
 "recipient_instance_id": int (only when not fallback)}`.
 
-**Reveal (HQ Lift only)** — the Lift's Upgrades page gets a "Mystery Box: N /
-Open" row (`UpgradesMenu._make_mystery_box_row`, wired via `hq.gd`'s
-`_on_open_mystery_box`) disabled when no box is held or no other car has room
-(`RewardSystem.any_other_car_has_room`, re-checked at open-time since the
-garage can change after the grant). Pressing it calls `Save.open_mystery_box`
+**Reveal (HQ garage row)** — the garage action row gets a "Mystery Box (N)"
+button (`hq.gd._refresh_garage_row` -> `_on_open_mystery_box`), OMITTED
+entirely when no box is held and shown disabled when no car has room
+(`RewardSystem.any_car_has_room`, re-checked at open-time since the garage can
+change after the grant). **Order matters: check, then mutate.** Opening is an
+irreversible save transaction while the reveal is a `ConfirmPopup`, which is
+REFUSED while another modal is on screen (`ConfirmPopup.MODAL_GROUP`) — so
+`_on_open_mystery_box` bails on `ConfirmPopup.any_open` BEFORE spending
+anything. Opening first and revealing second meant a stacked press silently ate
+a box and its part with nothing shown. `hq.gd._unhandled_input` carries the
+same guard for the station rows generally, so no station action fires behind an
+open modal. Pressing it calls `Save.open_mystery_box`
 and shows a plain `ConfirmPopup` card ("You won a *item* for your *car*!" or
 the repair-kit fallback message) — deliberately **not** the race-context
 `UpgradeReveal`, whose repair-now/drive-mode branches assume the revealed item
@@ -210,9 +230,12 @@ Mystery-box coverage (synthetic cars/upgrades, per CLAUDE.md — never the real
 catalogue): a maxed owned car with tokens at/above `MYSTERY_BOX_TOKEN_THRESHOLD`
 and a non-maxed second car draws the box; the same maxed car draws normally
 when tokens are below threshold or no other car has room (regression on the
-existing fallback); `pick_mystery_box_grant` installs onto a different car than
-the one passed in, respecting that recipient's own prerequisite gating.
+existing fallback); `pick_mystery_box_grant` only ever targets a car with room
+(a maxed car is skipped) while a one-car garage resolves onto that one car,
+respecting the recipient's own prerequisite gating.
 `tests/headless/test_save_manager.gd` covers `Save.open_mystery_box`'s atomic
-install, its repair-kit fallback (no other car has room, or install fails),
-and the no-box no-op. `tests/headless/test_menu_flow.gd` covers the Lift row's
-disabled states and that pressing it installs onto the other car (nav test).
+install, its repair-kit fallback (no car has room, or install fails), fitting a
+part to your only car, and the no-box no-op. `tests/headless/test_menu_flow.gd`
+covers the garage button's disabled states, that a one-car garage is openable,
+and the two modal-ordering regressions (a second box is not spent behind an
+open reveal; the garage row ignores select while a modal is up).

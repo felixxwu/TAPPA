@@ -207,7 +207,8 @@ the car rests on (`hq_environment.gd` → `_build_lift`, sized by `hq_lift_platf
 — a short strip that spans post-to-post but tucks into the gap between the wheels)
 rides up and down **with** the car; both are tweened in parallel by
 `hq.gd` → `_apply_lift_height`. Clicking the lift flies
-the camera to the bay, framing the car to one side (`hq_lift_cam_*`). The bay opens on
+the camera to the bay, framing the car to one side as a rear three-quarter shot
+(`hq_lift_cam_*` — see game_config.gd for why it sits on the −X side). The bay opens on
 a **hub** (`LiftPage.HUB`): the car's name/description bottom-left beside the car, with
 **Tuning** / **Upgrades** buttons and a **Test Drive** button under it (to swap which car
 is on the lift, go back to the garage and reopen the **Garage** picker). Each button opens that menu as its own

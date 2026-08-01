@@ -234,35 +234,52 @@ func test_car_has_nothing_left_checks_max_tier_not_target_tier() -> void:
 		"a bone-stock car still has plenty left to gain")
 
 
-func test_any_other_car_has_room() -> void:
+# any_car_has_room excludes NOTHING — a box is a garage-wide reward that can land on
+# any owned car, the selected one included. (The exclusion survives only in
+# _other_car_has_room, which gates a different question — see the draw_upgrade tests.)
+func test_any_car_has_room() -> void:
 	var maxed := _maxed_car(1)
 	var roomy := {"instance_id": 2, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": [], "tuning": {}}
-	var profile := _profile_with_inventory([maxed, roomy], {})
-	assert_true(RewardSystem.any_other_car_has_room(profile, 1),
-		"the other, non-maxed car has room")
-	assert_false(RewardSystem.any_other_car_has_room(profile, 2),
-		"from the roomy car's perspective, the only other car (maxed) has no room")
+	assert_true(RewardSystem.any_car_has_room(_profile_with_inventory([maxed, roomy], {})),
+		"a non-maxed car in the garage means there is somewhere for a box to land")
+	assert_false(RewardSystem.any_car_has_room(_profile_with_inventory([maxed, _maxed_car(2)], {})),
+		"with every car maxed there is nowhere for it to go")
+	assert_false(RewardSystem.any_car_has_room(_profile_with_inventory([], {})),
+		"an empty garage has no room by definition")
 
 
-func test_pick_mystery_box_grant_never_targets_the_current_car() -> void:
+# A ONE-CAR garage is the case the old "never the current car" rule made unopenable:
+# there was no other car, so the box was permanently dead weight. It now fills that
+# car's own empty slots.
+func test_pick_mystery_box_grant_can_target_the_only_car_you_own() -> void:
+	var roomy := {"instance_id": 1, "model_id": "mx5", "hp": 100.0,
+		"installed_upgrades": [], "tuning": {}}
+	var profile := _profile_with_inventory([roomy], {})
+	for i in 30:
+		var grant := RewardSystem.pick_mystery_box_grant(profile, _rng(i))
+		assert_false(grant.is_empty(), "the one car in the garage has room, so the box resolves")
+		assert_eq(int(grant["instance_id"]), 1, "and it targets that car")
+		assert_false(UpgradeLibrary.by_id(String(grant["item_id"])).is_empty(),
+			"the granted item is a real catalogue item")
+
+
+# Only cars with room are candidates — a maxed car is skipped even though it is no
+# longer excluded on identity.
+func test_pick_mystery_box_grant_only_targets_cars_with_room() -> void:
 	var maxed := _maxed_car(1)
 	var roomy := {"instance_id": 2, "model_id": "mx5", "hp": 100.0,
 		"installed_upgrades": [], "tuning": {}}
 	var profile := _profile_with_inventory([maxed, roomy], {})
 	for i in 30:
-		var grant := RewardSystem.pick_mystery_box_grant(profile, 1, _rng(i))
+		var grant := RewardSystem.pick_mystery_box_grant(profile, _rng(i))
 		assert_false(grant.is_empty(), "a candidate with room exists")
-		assert_eq(int(grant["instance_id"]), 2, "the grant only ever targets the OTHER car")
-		assert_false(UpgradeLibrary.by_id(String(grant["item_id"])).is_empty(),
-			"the granted item is a real catalogue item")
+		assert_eq(int(grant["instance_id"]), 2, "the maxed car is never picked — it has no room")
 
 
-func test_pick_mystery_box_grant_empty_when_every_other_car_is_maxed() -> void:
-	var maxed := _maxed_car(1)
-	var also_maxed := _maxed_car(2)
-	var profile := _profile_with_inventory([maxed, also_maxed], {})
-	var grant := RewardSystem.pick_mystery_box_grant(profile, 1, _rng(1))
+func test_pick_mystery_box_grant_empty_when_every_car_is_maxed() -> void:
+	var profile := _profile_with_inventory([_maxed_car(1), _maxed_car(2)], {})
+	var grant := RewardSystem.pick_mystery_box_grant(profile, _rng(1))
 	assert_true(grant.is_empty(), "no candidate has room — the opener must fall back to a repair kit")
 
 

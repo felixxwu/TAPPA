@@ -78,8 +78,10 @@ swap token**, and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; all
 three `slot: ""`, held in the shared `inventory`). The token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md). The mystery box
 is drawn instead of a normal upgrade once a car has nothing left to gain and
-the player is token-rich, and gifts a random upgrade to a *different* owned
-car when opened at the HQ Lift — see [reward-system.md](reward-system.md)
+the player is token-rich, and is also handed out by the online Rally Challenge
+(`ChallengeSession._COMPLETION_REWARD`). Opened from the **HQ garage row**, it
+fits a random upgrade to any owned car with an empty slot — the currently
+selected one included — see [reward-system.md](reward-system.md)
 → "Mystery box" for the trigger, resolver, and reveal. The concrete part
 list and exact numbers are a balance pass (deferred); these are single-purpose
 defaults. The aero kit also **reveals the car's spoiler/splitter mesh** while enabled — see [aero-parts.md](aero-parts.md).
@@ -101,11 +103,10 @@ slider now sits at the **bottom** of the menu — below the part-slot selectors 
 lift-only engine-swap row — as the final power adjustment. Lateral G is no longer shown here.
 The engine-swap row is **lift-only** (the host passes `on_swap`); the popup
 leaves it unset and drops the row, since the swap flow would change the HQ view.
-The **mystery-box row** is likewise lift-only (the host passes a fifth
-`on_open_box` param to `setup`; the popup and the reward-reveal instance leave
-it unset and drop the row) — see [reward-system.md](reward-system.md) →
-"Mystery box" and [engine-swap.md](engine-swap.md) for how the Lift's button
-inventory is laid out.
+There is no mystery-box row on this page any more — a box is a garage-WIDE
+reward, so it lives on the HQ garage action row instead. See
+[reward-system.md](reward-system.md) → "Mystery box" and
+[engine-swap.md](engine-swap.md).
 
 When a host passes a power-to-weight limit (`pw_limit >= 0` — the start-line pre-race
 overlay, the car-park over-powered Change-Upgrades popup, and the reward reveal's
@@ -272,6 +273,6 @@ Collect-reward flow that hosts it is in `test_menu_flow.gd`.
 `test_rally_session.gd` covers per-event won parts binding to the driven car with no
 slottable part won twice per rally (the dedup'd draw). Mystery-box tests — the
 draw trigger, `pick_mystery_box_grant`, `Save.open_mystery_box`'s atomic
-install/fallback, and the Lift row's nav/gating — are covered in
+install/fallback, and the garage button's nav/gating — are covered in
 `test_reward_system.gd` / `test_save_manager.gd` / `test_menu_flow.gd`; see
 `features/reward-system.md` → "Mystery box" for the full breakdown.

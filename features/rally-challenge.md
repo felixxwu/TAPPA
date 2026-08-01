@@ -223,11 +223,83 @@ sections, each a SINGLE row (`hq._challenge_info_row`: a fixed-width dim
 heading beside its value, not heading-above-value-below) so four sections
 cost four lines, not eight:
 
-1. **Win condition** — `Finish clean, place top 50%`. (The ceiling already
-   rides on the header subtitle below, so there's no separate "entry
-   requirement" row repeating it.)
+1. **Win condition** — `Top 50%`, plus the CURRENT time on that cut line
+   appended to the same row when the board can answer it: `Top 50% - 1:52.24`.
+   The time comes from `ChallengeLeaderboard.fetch_cutoff`, fired
+   non-blocking by `hq.gd._fetch_challenge_cutoff` — the row is already
+   correct without it, so there's no `CloudBusy` cover and an unreachable
+   board just leaves the bare condition standing. **Fetched live, never
+   stored**, for the same reason the completed placing is (§below): the cut
+   moves as entrants arrive and times improve. Skipped entirely when signed
+   out — the board is world-readable, but a signed-out player can't post a
+   checkpoint, so there is no cut for them to make and no reason to spend a
+   round trip per page visit. (The ceiling already rides on the header
+   subtitle below, so there's no separate "entry requirement" row repeating
+   it.)
+
+   `fetch_cutoff` mirrors the gate, but against the field the player is ABOUT
+   TO JOIN. The gate is `rank <= ceil(total_entries / 2)` evaluated once they
+   are in the field, so the denominator to predict against is the current entry
+   count **plus one** when they haven't posted yet (`_read_own` decides; an
+   existing entry is already counted). Beating the current rank-r time is what
+   puts you at rank r, so the line is the entry at `ceil(field / 2)` — order by
+   final cumulative time ascending and read the row at offset
+   `ceil(field / 2) - 1` (`_run_query` takes `limit`/`offset` for this).
+
+   Worked through: **1 rival** → field 2 → need rank ≤ 1 → beat the current P1.
+   **2 rivals** → field 3 → need rank ≤ 2 → beat the current P2. **3 rivals** →
+   field 4 → need rank ≤ 2 → still the current P2. Counting only the existing
+   entries put the line a whole place too high in the even cases and quoted P1's
+   time when P2's was what mattered.
+
+   While fewer players have FINISHED than that rank the query is empty —
+   reported as `{"ok": true, "exists": false}`, i.e. any finish currently makes
+   the cut.
+
+   **Both decorations are guarded by `hq.gd._challenge_refresh_generation`, not
+   by comparing the label text.** Every `_refresh_challenge_overlay` bumps the
+   counter; each async query captures it and writes only while it is current.
+   The obvious-looking alternative ("is the row still exactly the string I left
+   it at?") is broken here: `_open_challenge_overlay` runs `UITheme.enforce`
+   immediately after building the row, which UPPERCASES every `Label`, so a
+   mixed-case comparison never matched and the answer was silently dropped.
+   The win row is written only through `hq.gd._set_challenge_win_text(tail)`,
+   which ALWAYS rebuilds it from `_CHALLENGE_WIN_CONDITION` (uppercasing via
+   `UITheme.caps`, since this row is rewritten asynchronously long after the
+   one-shot enforce pass) rather than appending to whatever is on screen. While
+   the query is in flight the row reads **`TOP 50% - LOADING…`** instead of
+   leaving a gap the time pops into; an unreachable board or an empty cut line
+   clears it back to the bare condition, so the placeholder is never a resting
+   state. Rebuilding rather than appending is what stops the placeholder being
+   cemented in front of the answer.
+
+   **Both answers are cached per period key for the duration of one visit**
+   (`hq.gd._challenge_cutoff_cache` / `_challenge_placing_cache`). Switching
+   Daily/Weekly/Monthly re-renders the whole screen, so without this every tab
+   flip re-issued both queries and flashed `LOADING…` on rows the player had
+   already seen answered; a cached answer renders synchronously with no
+   placeholder at all. Keyed by period key, so a period rolling over mid-session
+   re-asks by itself. The cache is stored BEFORE the generation staleness check,
+   so an answer that arrives after the player has switched tabs still counts —
+   switching back is instant rather than paying for the same query twice.
+   **Invalidated in `_close_challenge_overlay`**: leaving for the garage is the
+   invalidation point, so the next visit re-asks a board that has kept moving.
+   Only `ok` answers are cached — a failure is a transient condition (offline,
+   board unreachable), not a value, so it retries on the next tab visit instead
+   of sticking for the whole session.
+
+   The **progress row's COMPLETED state follows the identical contract** via
+   `_set_challenge_completed_text(tail)`: `COMPLETED - LOADING…` while the
+   placing query is in flight, `COMPLETED - 2 OF 3` when it answers, and back to
+   a bare `COMPLETED` if the board can't be reached. Both placeholders are set
+   only AFTER every "we are not going to ask" guard (signed out, no period, no
+   board), so a row that will never gain a value never advertises one.
 2. **Win reward** — per-kind text (`_CHALLENGE_REWARD_TEXT`: `2 mystery boxes` /
-   `3 mystery boxes + 1 low-tier car` / `4 mystery boxes + 1 high-tier car`). A
+   `3 mystery boxes + 1 low-tier car` / `4 mystery boxes + 1 high-tier car`).
+   These boxes are why `RewardSystem.pick_mystery_box_grant` no longer excludes
+   the current car: a challenge box is tied to no car at all, so the old "never
+   the car it came from" rule stopped describing anything real — see
+   [reward-system.md](reward-system.md) → *Mystery box*. A
    plain-language mirror of `ChallengeSession._COMPLETION_REWARD`; keep both in
    step when the table is retuned.
 3. **Eligible cars** — NAMES them (not just a count), mirroring the rally

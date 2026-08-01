@@ -159,6 +159,60 @@ func test_a_failed_cloud_call_tells_the_player_why() -> void:
 	assert_eq(_menu._message, "", "and a call that worked leaves no error behind")
 
 
+# --- Signed-in main view (row-budget compaction) -------------------------------
+# scripts/account_menu.gd's ROW BUDGET comment above _build_main: this page is
+# hosted in a CENTRED VBox that also carries the host's Back button below it
+# (hq.gd._open_account_overlay), so anything that overflows the screen pushes
+# Back off the bottom where it cannot be pressed. These tests assert the
+# behaviour that compaction must preserve, not the wording it landed on.
+
+func _sign_in_fake() -> void:
+	Cloud.auth.uid = "test_uid"
+	Cloud.auth.refresh_token = "test_refresh"
+	Cloud.auth.email = "player@example.com"
+	_menu._show(AccountMenu.View.MAIN)  # rebuild against the now-signed-in Cloud
+
+
+func test_signed_in_main_view_offers_every_action() -> void:
+	_sign_in_fake()
+	assert_true(_has_button_containing("leaderboard name"),
+		"a way to change the leaderboard name must survive the compaction")
+	assert_true(_has_button_containing("sync now"))
+	assert_true(_has_button_containing("sign out"))
+
+
+func test_leaderboard_name_rides_on_the_button_not_a_separate_label() -> void:
+	# The compaction: the old layout had a Label row saying "Online leaderboard
+	# name: X" ABOVE a button that changed it. The value now lives on the
+	# button's own text, so no label row is needed to see it.
+	var saved_name := String(Save.profile.get("username", ""))
+	Save.profile["username"] = "kangaroo"
+	_sign_in_fake()
+	assert_true(_has_button_containing("kangaroo"),
+		"the current leaderboard name must be reachable from a button, without a"
+		+ " label row above it")
+	Save.profile["username"] = saved_name
+
+
+func test_signed_in_main_view_row_count_is_bounded() -> void:
+	# Regression guard, not a pin on the exact count: the whole point of this
+	# compaction was fitting above a Back button that lives OUTSIDE this menu
+	# (hq.gd._open_account_overlay) on small screens. A generous but finite bound
+	# stops the page quietly creeping back up to where Back is unreachable again.
+	_sign_in_fake()
+	var row_count := _menu.get_child_count()
+	assert_lt(row_count, 8,
+		"signed-in main view grew past its row budget (%d rows) — Back must stay"
+		% row_count + " on screen below this page on a small screen")
+
+
+func test_every_button_in_the_signed_in_view_is_focusable() -> void:
+	_sign_in_fake()
+	for node in _menu.find_children("*", "Button", true, false):
+		assert_ne((node as Button).focus_mode, Control.FOCUS_NONE,
+			"button '%s' must be reachable by keyboard/gamepad" % (node as Button).text)
+
+
 func test_controls_come_back_after_a_cloud_call() -> void:
 	# The busy state disables the page's buttons, so it must hand them back —
 	# a menu left inert is unreachable by keyboard and gamepad alike.

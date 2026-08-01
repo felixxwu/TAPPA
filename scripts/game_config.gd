@@ -871,8 +871,25 @@ var peak_torque_rpm := 4500.0
 ## (anchored to the other side of the screen, hq.gd) doesn't cover the car. eye,
 ## then look target — the look is offset toward +X of the car so it sits LEFT of
 ## frame, leaving the right side clear for the menu panel.
-@export var hq_lift_cam_eye := Vector3(2.6, 2.2, 6.0)
-@export var hq_lift_cam_look := Vector3(5.2, 1.3, -1.0)
+##
+## A REAR THREE-QUARTER shot, not the near-straight-on rear it used to be. The lift
+## car sits at hq_lift_pos nosing −Z, so +Z is behind it: the eye swings ~30° off
+## that rear axis (was ~11°, which read as flat-on) and sits closer in — enough to
+## show the flank and the back together. It stays on the −X side because +X runs
+## straight into the garage's side wall, and clears the centre pillar (x≈0) and the
+## lift posts (x = hq_lift_pos.x ± hq_lift_size.x/2, z = hq_lift_pos.z ± the same).
+@export var hq_lift_cam_eye := Vector3(1.1, 1.9, 4.0)
+@export var hq_lift_cam_look := Vector3(5.0, 1.15, -1.0)
+## DRIVE-level camera (the garage row after pressing Drive): a low 3/4 FRONT hero
+## shot of the selected car sitting on the LOWERED lift, rather than the wide
+## garage-station view. The eye is an OFFSET from hq_lift_pos — the lift car noses
+## toward −Z, so the negative Z puts the camera in front of it and the negative X
+## swings round to its front-left for the three-quarter angle. Kept near the ground
+## on purpose, and inside the garage shell (back wall at −hq_garage_size.y / 2).
+@export var hq_drive_cam_offset := Vector3(-2.2, 0.75, -3.4)
+## Height above the lift's base the DRIVE-level camera looks at (bonnet height, so
+## the low shot points up the car's face rather than at the floor).
+@export var hq_drive_cam_look_height := 0.7
 ## Fraction of the screen width the tuning menu panel occupies (anchored right).
 @export_range(0.25, 0.6) var hq_lift_menu_width_frac := 0.42
 ## Fraction of the screen width an OPEN tuning/upgrades page occupies, centred
@@ -947,7 +964,7 @@ var peak_torque_rpm := 4500.0
 ## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
 ## and UI alike. 1.0 = off; 1.2 draws everything 20% wider than reality. Applied
 ## globally by the DisplayStretch autoload (scripts/display_stretch.gd).
-@export_range(0.5, 2.0) var horizontal_stretch := 1.2
+@export_range(0.5, 2.0) var horizontal_stretch := 1.15
 @export var chassis_color := Color(0.85, 0.2, 0.15)
 @export var cabin_color := Color(0.25, 0.3, 0.4)
 @export var wheel_color := Color(0.12, 0.12, 0.12)

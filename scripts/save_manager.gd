@@ -741,14 +741,17 @@ func consume_item(item_id: String, n := 1, do_save := true) -> bool:
 # Open one mystery box: consume it and grant whatever RewardSystem.pick_mystery_box_grant
 # resolves as a SINGLE saved transaction (the resolve happens before any mutation,
 # so consume_item is called with do_save=false and the grant's own save covers
-# both). Falls back to a repair kit if no other car has room, or if the resolved
+# both). Falls back to a repair kit if NO car has room, or if the resolved
 # install unexpectedly fails (e.g. the garage changed between grant and open).
+# ANY owned car can receive the gift, the currently selected one included — a box is
+# a garage-wide reward and is no longer tied to the car that won it (see
+# RewardSystem.any_car_has_room), so this takes no "current car" to exclude.
 # Returns {} if no box was held; otherwise {"fallback": bool, "item_id": String,
 # "recipient_instance_id": int (only when not fallback)} for the caller to reveal.
-func open_mystery_box(current_instance_id: int, rng: RandomNumberGenerator = null) -> Dictionary:
+func open_mystery_box(rng: RandomNumberGenerator = null) -> Dictionary:
 	if not consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false):
 		return {}
-	var grant := RewardSystem.pick_mystery_box_grant(profile, current_instance_id, rng)
+	var grant := RewardSystem.pick_mystery_box_grant(profile, rng)
 	if grant.is_empty():
 		add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)  # saves; covers the consume above too
 		return {"fallback": true, "item_id": UpgradeLibrary.REPAIR_KIT_ID}

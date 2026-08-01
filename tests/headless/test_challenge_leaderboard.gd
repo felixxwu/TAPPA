@@ -299,3 +299,118 @@ func test_firestore_codec_bool_round_trips() -> void:
 	assert_true(FirestoreCodec.bool_field(fields, "dnf"))
 	assert_false(FirestoreCodec.bool_field(fields, "completed"))
 	assert_false(FirestoreCodec.bool_field({}, "missing"), "a missing field decodes false, not an error")
+
+
+# --- fetch_cutoff: the time currently on the top-50% cut line ------------------
+
+# The gate is judged once the player is IN the field, so the denominator to predict
+# against is the current entry count PLUS the player (unless they already posted).
+# Beating the current rank-r time is what puts you AT rank r, so the time to beat is
+# the entry at ceil(field / 2), read at that offset - 1.
+#
+# Queue order: total count, own-entry read (404 = not entered yet), then the one-row
+# cut-line query.
+func _queue_cutoff(total: int, entered: bool, rows: Array) -> void:
+	_rest.queue_ok(_count_result(total))
+	if entered:
+		_rest.queue_ok(_doc("uid123", "YOU", 1, false, {1: 999999}))
+	else:
+		_rest.queue_error(404)
+	_rest.queue_ok(_query_result(rows))
+
+
+func _cut_offset() -> int:
+	return int(_rest.last_body()["structuredQuery"].get("offset", 0))
+
+
+# ONE rival: beating their time makes you P1 of 2, and the top 50% of 2 is rank 1 —
+# so the time to beat is that single existing time.
+func test_fetch_cutoff_with_one_rival_targets_that_rivals_time() -> void:
+	_queue_cutoff(1, false, [_doc("a", "A", 4, false, {4: 412340})])
+
+	var result: Dictionary = await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	assert_true(result.ok)
+	assert_true(result.exists, "one rival IS a cut line — this is not an empty board")
+	assert_eq(int(result.cutoff_ms), 412340)
+	assert_eq(_cut_offset(), 0, "P1 holds the line in a field of two")
+
+
+# TWO rivals: you would be P2 of 3, and the top 50% of 3 is rank 2 — so the line is
+# held by the current P2, not P1.
+func test_fetch_cutoff_with_two_rivals_targets_the_current_second_place() -> void:
+	_queue_cutoff(2, false, [_doc("b", "B", 4, false, {4: 500000})])
+
+	var result: Dictionary = await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	assert_true(result.ok)
+	assert_eq(_cut_offset(), 1, "P2 holds the line in a field of three")
+
+
+# THREE rivals: field of 4, top 50% is rank 2 — still the current P2.
+func test_fetch_cutoff_with_three_rivals_still_targets_second_place() -> void:
+	_queue_cutoff(3, false, [_doc("b", "B", 4, false, {4: 500000})])
+
+	await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	assert_eq(_cut_offset(), 1, "P2 holds the line in a field of four")
+
+
+# Already posted this period: the player is ALREADY counted, so the field must not be
+# inflated by one on top of them.
+func test_fetch_cutoff_does_not_double_count_a_player_already_on_the_board() -> void:
+	_queue_cutoff(3, true, [_doc("b", "B", 4, false, {4: 500000})])
+
+	await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	assert_eq(_cut_offset(), 1, "a field of three, already including you -> P2 holds the line")
+
+
+func test_fetch_cutoff_orders_by_the_final_checkpoint() -> void:
+	_queue_cutoff(1, false, [_doc("a", "A", 4, false, {4: 412340})])
+
+	await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	var query: Dictionary = _rest.last_body()["structuredQuery"]
+	assert_eq(int(query.get("limit", 0)), 1, "asks for just the one row on the line")
+	var order: Array = query["orderBy"]
+	assert_eq(String(order[0]["field"]["fieldPath"]), "cum_ms_4",
+		"ordered by the FINAL checkpoint, which is what the gate ranks on")
+
+
+# Fewer FINISHERS than the cut rank: the denominator counts everyone who ever posted,
+# so the query comes back empty. A real answer — nobody is on the line yet, so any
+# finish currently makes the cut — not a failure.
+func test_fetch_cutoff_reports_no_line_when_too_few_have_finished() -> void:
+	_queue_cutoff(9, false, [])
+
+	var result: Dictionary = await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	assert_true(result.ok, "an empty line is an answer, not an error")
+	assert_false(result.exists)
+	assert_eq(int(result.total_entries), 9)
+
+
+func test_fetch_cutoff_reports_no_line_for_an_empty_board() -> void:
+	_queue_cutoff(0, false, [])
+
+	var result: Dictionary = await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	assert_true(result.ok)
+	assert_false(result.exists, "nobody has posted, so there is nothing to beat")
+
+
+# Same posture as the rest of this class: an unreachable board collapses to
+# {"ok": false} — never an error, never a retry. Nothing gates on this value.
+func test_fetch_cutoff_collapses_a_failure_instead_of_raising() -> void:
+	_rest.queue_error(500)
+
+	var result: Dictionary = await _board.fetch_cutoff(PERIOD_KEY, 4)
+
+	assert_false(result.ok)
+
+
+func test_fetch_cutoff_refuses_a_nonsense_period_without_calling_out() -> void:
+	assert_false(bool((await _board.fetch_cutoff("", 4)).get("ok", false)))
+	assert_false(bool((await _board.fetch_cutoff(PERIOD_KEY, 0)).get("ok", false)))
+	assert_eq(_rest.requests.size(), 0, "neither one touches the network")

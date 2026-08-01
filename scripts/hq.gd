@@ -297,6 +297,29 @@ var _account_menu: AccountMenu
 # family below.
 var _challenge_layer: CanvasLayer
 var _challenge_kind: String = ChallengeLibrary.DAILY
+# Bumped by every _refresh_challenge_overlay. The board queries that decorate the entry
+# screen (placing, cut-line time) are async, so each captures the generation it was
+# fired for and writes its answer ONLY if that's still current — the row may have been
+# rebuilt, or the kind switched, while the request was in flight.
+#
+# This replaced "does the label still read the exact string I left it at", which looked
+# equivalent and was not: _open_challenge_overlay runs UITheme.enforce right after
+# building the row, uppercasing every Label, so a mixed-case comparison never matched
+# and the answer was silently dropped. A counter can't be defeated by anything that
+# rewrites the text.
+var _challenge_refresh_generation := 0
+# Board answers already fetched during THIS visit to the online challenge screen, keyed
+# by period key (so a period rolling over mid-session re-asks by itself). Switching
+# Daily/Weekly/Monthly re-renders the whole screen, which used to re-issue both queries
+# every time and flash "Loading…" on rows the player had already seen answered.
+#
+# Cleared in _close_challenge_overlay — leaving the screen for the garage is the
+# invalidation point, so the numbers can't go stale behind the player's back for long,
+# and re-opening always asks again. Only OK answers are cached: a failure is a transient
+# condition (offline, board unreachable), not a value, so it retries on the next visit
+# to that tab instead of sticking for the rest of the session.
+var _challenge_cutoff_cache: Dictionary = {}
+var _challenge_placing_cache: Dictionary = {}
 # The Daily/Weekly/Monthly tab row: real FOCUS_ALL buttons (so keyboard/gamepad focus
 # can rest on and move across them via native left/right focus-neighbour nav — see
 # menu_nav.gd) but mouse_filter = MOUSE_FILTER_IGNORE and no `pressed` wiring at all, so
@@ -1172,6 +1195,10 @@ func _open_challenge_overlay() -> void:
 func _close_challenge_overlay() -> void:
 	if _challenge_layer == null:
 		return
+	# Leaving for the garage is the cache's invalidation point: the board keeps moving,
+	# so the next visit asks again rather than showing numbers from the last one.
+	_challenge_cutoff_cache.clear()
+	_challenge_placing_cache.clear()
 	_challenge_layer.visible = false
 	_garage_layer.visible = _view == View.GARAGE
 
@@ -1197,8 +1224,13 @@ func _select_challenge_kind(kind_str: String) -> void:
 # gains "- 3 of 42" when the answer arrives. This is decoration on an already-correct
 # label, so it gets no CloudBusy cover — there is nothing to wait for and nothing the
 # player is prevented from doing — and a failure is simply not rendered.
-func _fetch_challenge_placing(period_key_str: String, stage_count: int, for_kind: String) -> void:
+func _fetch_challenge_placing(period_key_str: String, stage_count: int, generation: int) -> void:
 	if period_key_str == "" or stage_count <= 0:
+		return
+	# Already answered this visit (a tab switch, not a fresh open) — render it straight
+	# away. No query, and no "Loading…" flash on a row the player has already seen.
+	if _challenge_placing_cache.has(period_key_str):
+		_apply_challenge_placing(_challenge_placing_cache[period_key_str])
 		return
 	if Cloud == null or Cloud.challenge_leaderboard == null:
 		return
@@ -1208,20 +1240,123 @@ func _fetch_challenge_placing(period_key_str: String, stage_count: int, for_kind
 	# trip on every visit to the page, for an answer that cannot exist.
 	if not Cloud.is_signed_in():
 		return
+	# Say we're fetching rather than leaving the placing to pop in later. Only from
+	# here — past every "we are not going to ask" guard above — so a row that will
+	# never gain a placing doesn't advertise one.
+	_set_challenge_completed_text("Loading…")
 	var info := await Cloud.challenge_leaderboard.fetch_final_rank(period_key_str, stage_count)
+	# Cached BEFORE the staleness check: the answer is valid for its period whatever is
+	# on screen now, so a player who switched tabs mid-flight still gets it instantly on
+	# switching back, rather than paying for the same query twice.
+	if bool(info.get("ok", false)):
+		_challenge_placing_cache[period_key_str] = info
 	# The player can switch tabs (or leave HQ entirely) while this is in flight, so
-	# re-check that the label still belongs to the kind that asked before writing to
-	# it — otherwise the Daily's placing lands on the Weekly's row.
-	if not is_inside_tree() or _challenge_kind != for_kind:
+	# check the row hasn't been rebuilt under us before writing to it — otherwise the
+	# Daily's placing lands on the Weekly's row. See _challenge_refresh_generation for
+	# why this is a counter and not "does the label still read what I left it at".
+	if not is_inside_tree() or generation != _challenge_refresh_generation:
 		return
+	_apply_challenge_placing(info)
+
+
+# Render a placing answer onto the COMPLETED row (shared by the live and cached paths).
+func _apply_challenge_placing(info: Dictionary) -> void:
 	if not is_instance_valid(_challenge_progress_label):
 		return
-	if _challenge_progress_label.text != "COMPLETED":
-		return  # the row moved on (kind switch, a new run started) — leave it alone
 	if not bool(info.get("ok", false)):
-		return  # signed out, no username, or the board is unreachable: stay at COMPLETED
-	_challenge_progress_label.text = "COMPLETED - %d of %d" % [
-		int(info.get("rank", 0)), int(info.get("total_entries", 0))]
+		# Signed out, no username, or the board is unreachable — fall back to a bare
+		# COMPLETED. The placeholder is not a resting state.
+		_set_challenge_completed_text("")
+		return
+	_set_challenge_completed_text("%d of %d" % [
+		int(info.get("rank", 0)), int(info.get("total_entries", 0))])
+
+
+# Write the win-condition row as "<condition>" or "<condition> - <tail>". ALWAYS
+# rebuilt from _CHALLENGE_WIN_CONDITION rather than appended to whatever is on screen,
+# so the transient "Loading…" can't end up cemented in front of the answer — and
+# uppercased here, because UITheme.enforce only runs on the open path and this row is
+# also rewritten later, asynchronously, long after that pass.
+func _set_challenge_win_text(tail: String) -> void:
+	if not is_instance_valid(_challenge_win_label):
+		return
+	var text := _CHALLENGE_WIN_CONDITION
+	if tail != "":
+		text += " - " + tail
+	_challenge_win_label.text = UITheme.caps(text)
+
+
+# Write the progress row's COMPLETED state as "COMPLETED" or "COMPLETED - <tail>".
+# Same contract as _set_challenge_win_text: always rebuilt from the constant rather
+# than appended to what's on screen, so the transient "Loading…" can't survive in
+# front of the placing, and uppercased here because this row is rewritten
+# asynchronously long after the one-shot UITheme.enforce pass.
+func _set_challenge_completed_text(tail: String) -> void:
+	if not is_instance_valid(_challenge_progress_label):
+		return
+	var text := "COMPLETED"
+	if tail != "":
+		text += " - " + tail
+	_challenge_progress_label.text = UITheme.caps(text)
+
+
+# Fill in the CURRENT time on the top-50% cut line, so the win condition reads
+# "Top 50% - 1:52.24" rather than an abstract percentage the player can't aim at.
+# Appended to the SAME row (no separate line) — the entry screen is a compact HUD
+# readout, and a bare percentage gives nothing to chase.
+#
+# Never persisted, and re-asked on every fresh open of the screen, for the same reason
+# the completed placing is (see _fetch_challenge_placing): the cut line MOVES as
+# entrants arrive and times improve, so a number saved across sessions would be quietly
+# wrong. Within ONE visit it is cached per period key (see _challenge_cutoff_cache) so
+# flipping between the Daily/Weekly/Monthly tabs doesn't re-query what it just asked.
+#
+# Non-blocking and undecorated on failure: the row is already correct without the
+# time, so there's no CloudBusy cover and an unreachable board just leaves
+# "Top 50%" standing.
+func _fetch_challenge_cutoff(period_key_str: String, stage_count: int, generation: int) -> void:
+	if period_key_str == "" or stage_count <= 0:
+		return
+	# Already answered this visit (a tab switch, not a fresh open) — render it straight
+	# away. No query, and no "Loading…" flash on a row the player has already seen.
+	if _challenge_cutoff_cache.has(period_key_str):
+		_apply_challenge_cutoff(_challenge_cutoff_cache[period_key_str])
+		return
+	if Cloud == null or Cloud.challenge_leaderboard == null:
+		return
+	# SIGNED OUT: don't ask. The board itself is world-readable (firestore.rules
+	# `allow read: if true`), so this query WOULD answer — but a signed-out player
+	# cannot post a checkpoint at all, so there is no cut for them to make, and asking
+	# anyway means a real network round trip on every visit to this page.
+	if not Cloud.is_signed_in():
+		return
+	# Say we're fetching rather than leaving a gap the time will pop into. Only from
+	# here — past every "we are not going to ask" guard above — so a signed-out player
+	# never sees a "Loading…" that resolves to nothing.
+	_set_challenge_win_text("Loading…")
+	var info := await Cloud.challenge_leaderboard.fetch_cutoff(period_key_str, stage_count)
+	# Cached BEFORE the staleness check — see the same note in _fetch_challenge_placing.
+	if bool(info.get("ok", false)):
+		_challenge_cutoff_cache[period_key_str] = info
+	# The player can switch tabs (or leave HQ) while this is in flight — don't land the
+	# Daily's cut line on the Weekly's row. Generation, not a text comparison: the row is
+	# UPPERCASED by UITheme.enforce after it is built (see _challenge_refresh_generation),
+	# so matching on the text silently dropped every answer.
+	if not is_inside_tree() or generation != _challenge_refresh_generation:
+		return
+	_apply_challenge_cutoff(info)
+
+
+# Render a cut-line answer onto the win row (shared by the live and cached paths).
+func _apply_challenge_cutoff(info: Dictionary) -> void:
+	if not is_instance_valid(_challenge_win_label):
+		return
+	if not bool(info.get("ok", false)) or not bool(info.get("exists", false)):
+		# Unreachable, or nobody is on the line yet (any finish currently makes it).
+		# Either way the placeholder must come back off — it is not a resting state.
+		_set_challenge_win_text("")
+		return
+	_set_challenge_win_text(UITheme.format_time(int(info.get("cutoff_ms", 0))))
 
 
 # The tab button for `kind_str` (Daily/Weekly/Monthly), matched by list position —
@@ -1241,7 +1376,7 @@ const _CHALLENGE_REWARD_TEXT := {
 	"weekly": "3 mystery boxes + 1 low-tier car",
 	"monthly": "4 mystery boxes + 1 high-tier car",
 }
-const _CHALLENGE_WIN_CONDITION := "Finish clean, place top 50%"
+const _CHALLENGE_WIN_CONDITION := "Top 50%"
 
 
 # Rebuild the whole entry screen from ChallengeSession/ChallengeLibrary's current state:
@@ -1251,6 +1386,9 @@ const _CHALLENGE_WIN_CONDITION := "Finish clean, place top 50%"
 func _refresh_challenge_overlay() -> void:
 	if _challenge_layer == null:
 		return
+	# Invalidate any board query still in flight for the PREVIOUS build of this screen.
+	_challenge_refresh_generation += 1
+	var generation := _challenge_refresh_generation
 	_challenge_title_label.text = "%s Challenge" % _challenge_kind.capitalize()
 	# Highlight the current kind's tab — a font-colour swap (GOLD vs. the house default)
 	# rather than a toggled "pressed" look, since these buttons have no toggle_mode/press
@@ -1264,7 +1402,9 @@ func _refresh_challenge_overlay() -> void:
 	var ceiling := ChallengeLibrary.ceiling_for(String(period.get("key", "")))
 	_challenge_subtitle_label.text = "%d hp/t max" % int(round(ceiling))
 
-	_challenge_win_label.text = _CHALLENGE_WIN_CONDITION
+	_set_challenge_win_text("")
+	_fetch_challenge_cutoff(String(period.get("key", "")),
+		int(period.get("stage_count", 0)), generation)
 	_challenge_reward_label.text = str(_CHALLENGE_REWARD_TEXT.get(_challenge_kind, ""))
 
 	@warning_ignore("static_called_on_instance")
@@ -1338,10 +1478,10 @@ func _refresh_challenge_overlay() -> void:
 		# screen belongs to a board that is still open: more entrants keep arriving
 		# and faster times keep pushing the player down, so a rank saved at finish
 		# time is stale by construction.
-		_challenge_progress_label.text = "COMPLETED"
+		_set_challenge_completed_text("")
 		_challenge_progress_label.add_theme_color_override("font_color", UITheme.GREEN)
 		_fetch_challenge_placing(String(period.get("key", "")),
-			int(period.get("stage_count", 0)), _challenge_kind)
+			int(period.get("stage_count", 0)), generation)
 	else:
 		_challenge_progress_label.text = "Not started"
 		# Cleared explicitly: the label is reused across kind switches, so a colour
@@ -1627,6 +1767,15 @@ func _go_to(view: int, snap := false) -> void:
 		_refresh_garage_row()
 	elif view == View.LIFT:
 		_ensure_lift_car()  # the slow raise is triggered by _enter_lift
+	elif view == View.TABLE:
+		pass  # KEEP the lift car: the map table never shows the lift, but tearing the
+		# prop down (and rebuilding it on the way back) landed in the very frame the
+		# camera starts its flight to the table, which is exactly when a hitch is most
+		# visible. It's frozen with process disabled, so leaving it standing is free —
+		# and the player is one Back away from the garage that wants it again. Every
+		# OTHER station still clears it below: the car park / title lineup BORROW this
+		# node out of _car_cache (see _spawn_lift_car / _obtain_parked_car), so the lift
+		# must hand it back before those build.
 	else:
 		_clear_lift_car()
 	# The title screen shows the player's whole collection parked in the car park.
@@ -2495,22 +2644,26 @@ func _refresh_garage_focus() -> void:
 	_garage_cursor.refresh(_garage_focus)
 
 
-# Back out of the DRIVE level to the TOP level (Back/Drive/Garage/Mystery Box), same
-# camera position — the garage row's own "go up a level" action, distinct from the
-# TOP level's Back (which leaves the garage station for the exterior).
+# Back out of the DRIVE level to the TOP level (Back/Drive/Garage/Mystery Box) — the
+# garage row's own "go up a level" action, distinct from the TOP level's Back (which
+# leaves the garage station for the exterior). Pulls the camera back out to the wide
+# garage framing it came from (still the same station; see _station_xform).
 func _garage_back_to_top() -> void:
 	_garage_showing_drive = false
 	_garage_focus = 1  # seat back on Drive
 	_refresh_garage_row()
+	_move_camera_to(_station_xform(View.GARAGE), false)
 
 
-# Enter the DRIVE level (Career/Free Roam/Online), same camera position as the top
-# level — pressing Drive doesn't change the view/scene, only this row's contents.
-# Seats the cursor on Career (1), the primary action, not Back (0).
+# Enter the DRIVE level (Career/Free Roam/Online): the row's contents change, and the
+# camera eases in to a low 3/4 front shot of the car on the lift — no view/scene
+# change, still View.GARAGE. Seats the cursor on Career (1), the primary action,
+# not Back (0).
 func _enter_garage_drive_level() -> void:
 	_garage_showing_drive = true
 	_garage_focus = 1
 	_refresh_garage_row()
+	_move_camera_to(_station_xform(View.GARAGE), false)
 
 
 # Rebuild the garage action row's buttons + ButtonCursor for whichever level is
@@ -2568,12 +2721,11 @@ func _refresh_garage_row() -> void:
 		var boxes := Save.mystery_boxes_owned()
 		if boxes > 0:
 			var to_box := _station_button("Mystery Box (%d)" % boxes, _on_open_mystery_box)
-			var current_id := int(Save.selected_car().get("instance_id", -1))
-			if not RewardSystem.any_other_car_has_room(Save.profile, current_id):
+			if not RewardSystem.any_car_has_room(Save.profile):
 				to_box.disabled = true
-				to_box.tooltip_text = "Needs another car in the garage with room for an upgrade"
+				to_box.tooltip_text = "Every car in the garage is fully upgraded"
 			else:
-				to_box.tooltip_text = "Open a mystery box — gifts a random upgrade to another car"
+				to_box.tooltip_text = "Open a mystery box — fits a random upgrade to one of your cars"
 			_garage_actions_row.add_child(to_box)
 			buttons.append(to_box); actions.append(_on_open_mystery_box)
 	_garage_cursor.setup(buttons, actions)
@@ -2982,13 +3134,18 @@ func _enter_engine_swap() -> void:
 # revealed item belongs to the car the player just drove, which a gift to a
 # DIFFERENT car would misfire) — a simple ConfirmPopup suffices here.
 #
-# A garage-row action now (not a per-car Lift row — a mystery box isn't about
-# the car on the lift, it's a garage-wide reward), so "the car it came from"
-# is Save.selected_car() (the general notion of "the" car outside the lift),
-# not any lift-specific context.
+# A garage-row action (not a per-car Lift row — a mystery box isn't about the car on
+# the lift, it's a garage-wide reward), and it carries no "current car" at all: ANY
+# owned car with an empty slot can receive the gift, the selected one included.
 func _on_open_mystery_box() -> void:
-	var current_id := int(Save.selected_car().get("instance_id", -1))
-	var result := Save.open_mystery_box(current_id)
+	# NEVER spend a box we can't show the result of. Opening is an irreversible save
+	# transaction and the reveal below is a ConfirmPopup, which is REFUSED while another
+	# modal is on screen (ConfirmPopup.MODAL_GROUP) — so opening first and revealing
+	# second means a stacked press silently eats a box and its part, leaving the player
+	# with no idea what they got. Check first, mutate second.
+	if ConfirmPopup.any_open(get_tree()) != null:
+		return
+	var result := Save.open_mystery_box()
 	if result.is_empty():
 		return  # no box held; button should have been disabled
 	# Label/value, one per line — scannable at a glance rather than a sentence.
@@ -3985,7 +4142,13 @@ func _look_xform(eye: Vector3, look: Vector3) -> Transform3D:
 func _station_xform(view: int) -> Transform3D:
 	var cfg: GameConfig = Config.data
 	match view:
-		View.GARAGE: return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
+		# The garage station has TWO framings: the wide shell view on the TOP level,
+		# and — once Drive is pressed — a low 3/4 front hero shot of the car on the
+		# lowered lift. Same station (no view change), different camera.
+		View.GARAGE:
+			if _garage_showing_drive and is_instance_valid(_lift_car):
+				return _drive_cam_xform()
+			return _look_xform(cfg.hq_garage_cam_eye, cfg.hq_garage_cam_look)
 		View.TABLE: return _look_xform(cfg.hq_table_cam_eye + _table_pan, cfg.hq_table_cam_look + _table_pan)
 		View.LIFT: return _look_xform(cfg.hq_lift_cam_eye, cfg.hq_lift_cam_look)
 		View.CARPARK: return _camera_target_xform()
@@ -3995,6 +4158,18 @@ func _station_xform(view: int) -> Transform3D:
 		_:
 			var anchor := _first_car_anchor()
 			return _look_xform(anchor + cfg.hq_exterior_cam_eye, anchor + cfg.hq_exterior_cam_look)
+
+
+# The DRIVE level's framing: a low three-quarter FRONT shot of the car resting on the
+# lowered lift. Posed relative to hq_lift_pos rather than the car node so it's stable
+# while the lower tween is still settling the car's Y (and so it still reads sanely
+# for a car whose ride height differs). Only used while a lift car exists — with an
+# empty garage _station_xform falls back to the wide station view.
+func _drive_cam_xform() -> Transform3D:
+	var cfg: GameConfig = Config.data
+	var base := Vector3(cfg.hq_lift_pos.x, 0.0, cfg.hq_lift_pos.z)
+	return _look_xform(base + cfg.hq_drive_cam_offset,
+		base + Vector3.UP * cfg.hq_drive_cam_look_height)
 
 
 func _focused_car_pos() -> Vector3:
@@ -4230,6 +4405,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	# belongs to the field — MenuNav turns it into "stop typing". One shared
 	# predicate so this guard cannot drift from the one MenuNav uses.
 	if MenuNav.is_text_editing():
+		return
+	# A ConfirmPopup / UsernamePopup is MODAL: it owns the input until dismissed, and its
+	# own MenuNav handles select/back on its buttons. Normally the focused popup button
+	# consumes ui_accept before this ever runs — but that relies on the popup HOLDING
+	# focus, and when it doesn't (nothing focusable, focus released by a rebuild under
+	# it), the same keypress fell through to the station rows below and fired a SECOND
+	# action behind the popup. That's how opening a mystery box could spend a second box
+	# whose reveal was then refused for stacking — the spend is not undoable, so the
+	# station must simply not listen while a modal is up. Guarded here, alongside the
+	# account/challenge overlays, which own input the same way.
+	if ConfirmPopup.any_open(get_tree()) != null:
 		return
 	# The account overlay is modal over the title screen: it owns Back until closed.
 	if _account_layer != null:

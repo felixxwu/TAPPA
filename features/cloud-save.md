@@ -315,7 +315,29 @@ already works:
 Signed out: Google (hidden when unconfigured) / sign in with email / create an
 account. There is deliberately no "continue without an account" button — that is
 what closing the page does, and the Back button already says so. Signed in:
-identity, sync status, last sync, Sync now, Sign out.
+identity, sync status, leaderboard name, Sync now, Sign out.
+
+**Row budget.** The title-screen host (`hq.gd::_open_account_overlay`) puts
+`AccountMenu` in a CENTRED `VBoxContainer` with the overlay's Back button
+BELOW it, so any content that overflows a small screen pushes Back off the
+bottom where it cannot be pressed. `AccountMenu._build_main` carries a "ROW
+BUDGET" comment on this account, and every row it adds has had to justify
+itself against it:
+
+- `_ready()` uses `UITheme.GAP_TIGHT` rather than `UITheme.GAP` for the page's
+  own separation — this page stacks more rows than any other menu.
+- Sync status and "last synced" used to be two separate lines; they are now
+  one row ("UP TO DATE · 12:34 UTC"), with graceful fallback to whichever half
+  exists when the other is missing.
+- The leaderboard name used to be a `Label` row ("Online leaderboard name:
+  FELIX") sitting above the button that changes it — two rows saying the same
+  word twice. The name now rides directly on the button's own text
+  ("Leaderboard name: FELIX", or "Set a leaderboard name" when unset, with a
+  tooltip explaining what it does), collapsing the pair into one row.
+
+`tests/headless/test_account_menu.gd` asserts the signed-in view stays under a
+row-count bound for exactly this reason, and asserts the leaderboard name is
+reachable from a *button's* text rather than a label.
 
 Signing out needs no confirm and **never touches the local profile**: nothing is
 destroyed, the career on the device carries on, and the cloud copy is reachable
