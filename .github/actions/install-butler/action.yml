@@ -1,0 +1,148 @@
+name: Install butler
+description: >
+  Put itch.io's butler CLI on PATH, resiliently. Restores from the Actions cache
+  first and only touches the network on a cache miss; when the network attempt
+  fails but a previously cached copy exists, it uses that instead of failing the
+  release.
+
+# WHY THIS EXISTS
+#
+# itch serves butler only from "broth", across two hostnames that share a
+# backend. Both are flaky on CI, and they fail TOGETHER:
+#
+#   run #438 (2026-08-01 00:07) - all three butler jobs died. broth.itch.ovh
+#     failed DNS resolution; broth.itch.zone answered 500 to every retry.
+#   run #444 (2026-08-01 13:57) - export-windows died the same way, .ovh DNS
+#     again and .zone answering 502.
+#
+# A fully-built, signed release therefore got thrown away because a ~6 MB
+# uploader could not be fetched. Two things fix that:
+#
+#   1. Cache the binary. butler is a stable upload client, so a copy from last
+#      week pushes today's build just fine. Once anything is cached, an outage
+#      costs nothing at all - the happy path never hits the network.
+#   2. When we do fetch, alternate the two hosts across attempts with growing
+#      backoff instead of burning the whole retry budget on one host. The old
+#      step spent 6 fast retries on .ovh (all DNS failures, ~0s each) and then
+#      6 retries 3s apart on .zone - about 15 seconds of real coverage against
+#      an outage. This spreads 6 attempts over ~2.5 minutes and gives each host
+#      three separate chances.
+#
+# The cache key rolls weekly so butler still gets refreshed, and `restore-keys`
+# means a failed refresh falls back to the newest older entry rather than
+# breaking the deploy.
+#
+# There is deliberately no third mirror: itch publishes butler only via broth,
+# so any other URL would be an unverified third party in the release path.
+
+runs:
+  using: composite
+  steps:
+    - name: Work out the cache key
+      id: key
+      shell: bash
+      run: |
+        set -euo pipefail
+        # ISO year + week: refresh butler weekly, and let restore-keys fall back
+        # to an older entry if that week's refresh cannot reach broth.
+        echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+        echo "dir=${RUNNER_TEMP}/butler" >> "$GITHUB_OUTPUT"
+
+    - name: Restore butler from the cache
+      id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.key.outputs.dir }}
+        key: butler-linux-amd64-${{ steps.key.outputs.week }}
+        restore-keys: |
+          butler-linux-amd64-
+
+    - name: Download butler (only when the weekly cache entry is missing)
+      id: download
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        BUTLER_DIR: ${{ steps.key.outputs.dir }}
+        # Empty unless some older entry was restored, in which case a failed
+        # download is survivable.
+        STALE_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+      run: |
+        set -euo pipefail
+        HOSTS=(https://broth.itch.ovh https://broth.itch.zone)
+        # Attempt 0 is immediate; later attempts back off. Alternating the host
+        # each attempt gives both of them three tries across ~135s.
+        DELAYS=(0 5 10 20 40 60)
+
+        # Unpack into a scratch dir and only swap it into place once butler is
+        # actually extracted, so a truncated or corrupt archive can never clobber
+        # a good cached copy.
+        STAGE="${RUNNER_TEMP}/butler-stage"
+        got=""
+        for i in "${!DELAYS[@]}"; do
+          if (( DELAYS[i] > 0 )); then
+            sleep "${DELAYS[i]}"
+          fi
+          host="${HOSTS[$(( i % ${#HOSTS[@]} ))]}"
+          echo "--> attempt $(( i + 1 ))/${#DELAYS[@]}: ${host}"
+          rm -rf "${STAGE}" butler.zip
+          mkdir -p "${STAGE}"
+          # One shot per attempt (no curl --retry): the loop owns retrying so
+          # that a dead host cannot swallow the whole budget. A bad archive is
+          # treated exactly like a failed fetch — move on to the other host.
+          if curl -fsSL --max-time 120 -o butler.zip \
+                "${host}/butler/linux-amd64/LATEST/archive/default" \
+              && unzip -q butler.zip -d "${STAGE}" \
+              && [[ -f "${STAGE}/butler" ]]; then
+            got="${host}"
+            break
+          fi
+          echo "    failed"
+        done
+
+        if [[ -z "${got}" ]]; then
+          rm -rf "${STAGE}" butler.zip
+          if [[ -n "${STALE_KEY}" ]]; then
+            # The whole point of the cache: broth is down, we already have a
+            # butler, so publish with it rather than binning a good build.
+            echo "::warning::Could not reach broth on any host — using the cached butler from '${STALE_KEY}'."
+            exit 0
+          fi
+          echo "::error::Could not download butler from any broth host, and nothing was cached."
+          exit 1
+        fi
+
+        echo "Downloaded butler from ${got}"
+        # The archive holds butler plus its 7z helper libraries; keep them
+        # together so the binary can find them at runtime.
+        rm -rf "${BUTLER_DIR}"
+        mv "${STAGE}" "${BUTLER_DIR}"
+        rm -f butler.zip
+        chmod +x "${BUTLER_DIR}/butler"
+        echo "fresh=true" >> "$GITHUB_OUTPUT"
+
+    - name: Put butler on PATH
+      shell: bash
+      env:
+        BUTLER_DIR: ${{ steps.key.outputs.dir }}
+      run: |
+        set -euo pipefail
+        if [[ ! -x "${BUTLER_DIR}/butler" ]]; then
+          echo "::error::No butler binary at ${BUTLER_DIR} after restore/download."
+          exit 1
+        fi
+        # butler resolves its helper libs relative to the executable, so putting
+        # the directory on PATH is enough. $GITHUB_PATH only affects LATER steps,
+        # hence the absolute path for this smoke check.
+        echo "${BUTLER_DIR}" >> "$GITHUB_PATH"
+        "${BUTLER_DIR}/butler" -V
+
+    - name: Save butler to the cache
+      # Only after a fresh download that just passed `butler -V`, so a broken
+      # binary is never cached and a merely-restored copy is not re-saved.
+      # A key collision here is a warning, not a failure — which is what we want
+      # when export-web / -android / -windows all miss and all download at once.
+      if: steps.download.outputs.fresh == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.key.outputs.dir }}
+        key: butler-linux-amd64-${{ steps.key.outputs.week }}
