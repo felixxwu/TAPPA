@@ -258,6 +258,10 @@ var _cam_tween: Tween
 var _map_table: MapTable        # the wooden table model the map plane sits on
 var _map_plane: MeshInstance3D   # the flat map laid on the table top
 var _pins_root: Node3D          # parent of the rally pins
+# False until _build_hq has run. _ready connects the cloud signals BEFORE the build
+# (it has to: the boot pull it awaits is what emits them), so a handler can fire
+# against a half-constructed HQ — see _on_cloud_profile_replaced.
+var _hq_built := false
 var _pins: Array = []           # the pin Node3Ds (each carries a "rally_id" meta)
 # Focus cursor into _table_targets() (the unlocked rally pins); -1 = none.
 var _table_focus_index := -1
@@ -556,6 +560,7 @@ func _apply_post_process() -> void:
 # Build the whole HQ (environment, station overlays, map pins, initial title view).
 # Synchronous; the caller decides whether to cover it with a loading screen.
 func _build_hq() -> void:
+	_hq_built = true
 	_apply_post_process()
 	_env = HQEnvironment.new()
 	# The pickable table / lift areas route their clicks back to hq's own handlers.
@@ -1788,6 +1793,14 @@ func _go_to(view: int, snap := false) -> void:
 # selection, and the map pins / meter read completion counts that just changed.
 func _on_cloud_profile_replaced() -> void:
 	if not is_inside_tree():
+		return
+	# NOT YET BUILT. _ready connects this signal, then awaits the boot pull — and that
+	# pull landing a downloaded career is exactly what emits profile_replaced. So on a
+	# signed-in boot this fires while _pins_root / _overlays / the lineup are all still
+	# null, and rebuilding them crashed on a null node. Nothing to do: _build_hq runs
+	# straight after the await and constructs every one of these views from the profile
+	# this signal just settled. See _await_boot_pull.
+	if not _hq_built:
 		return
 	_car_cache.clear()  # cached nodes belong to cars that may no longer be owned
 	# A download that lands while the STARTER PICKER is open (the player got there

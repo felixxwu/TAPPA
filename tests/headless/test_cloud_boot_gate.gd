@@ -387,3 +387,28 @@ func test_a_pull_that_settles_as_a_conflict_still_reveals_the_title() -> void:
 	assert_true(ConflictPrompt.is_blocked(),
 		"and the conflict is still live for the start gate to catch")
 	_clear_conflict()
+
+
+func test_a_download_landing_during_the_boot_wait_does_not_touch_an_unbuilt_hq() -> void:
+	# The crash this pins: _ready CONNECTS the cloud signals and only then awaits the
+	# boot pull — it has to, because that pull is what emits them. So on a signed-in
+	# boot, profile_replaced fires while _pins_root / _overlays / the lineup are all
+	# still null, and the rebuild the handler runs died on a null node
+	# ("Cannot call method 'get_children' on a null value"). The handler must no-op
+	# until the build has happened; _build_hq then reads the settled profile anyway.
+	Cloud.initial_pull_pending = true
+	var hq := _boot_hq_unawaited()
+	var built := _count_title_builds(hq)
+	await get_tree().process_frame
+	assert_eq(built[0], 0, "the HQ is parked in the boot wait, with nothing built yet")
+
+	Cloud.profile_replaced.emit()  # the download lands mid-wait
+	await get_tree().process_frame
+	assert_eq(built[0], 0, "the handler does not try to rebuild views that do not exist")
+
+	Cloud._settle_initial_sync()
+	for _i in 5:
+		await get_tree().process_frame
+	assert_eq(built[0], 1,
+		"and the build that follows the wait still runs exactly once, from the settled profile")
+	assert_not_null(hq._pins_root, "a fully built HQ has its pin root, so later signals are safe")

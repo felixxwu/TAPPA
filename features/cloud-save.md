@@ -283,6 +283,17 @@ This is a MID-SESSION path, not the boot one. A profile landing at boot is now
 waited for before anything is built (`_await_boot_pull`, below), so what reaches
 this handler is a first sign-in from the account page or "Use cloud" on a conflict.
 
+**The handler no-ops until the HQ exists (`_hq_built`).** `_ready` connects
+`profile_replaced` *before* it awaits the boot pull — it has to, since that pull is
+what emits the signal — so on a signed-in boot the handler fires while `_pins_root`,
+`_overlays` and the lineup are all still null. Rebuilding them there crashed
+(*"Cannot call method 'get_children' on a null value"*, intermittent: only when the
+cloud copy actually replaced the local profile at boot). There is nothing to do in
+that window anyway — `_build_hq()` runs straight after the await and constructs every
+one of those views from the profile the signal just settled. Pinned by
+`test_cloud_boot_gate.gd` →
+`test_a_download_landing_during_the_boot_wait_does_not_touch_an_unbuilt_hq`.
+
 Without it the player signs in, their cars are restored *on disk*, and the car
 park still shows the empty lot they started with until they relaunch — the save
 worked but nothing on screen said so. Distinct from `state_changed`, which is
