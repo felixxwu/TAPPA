@@ -132,9 +132,10 @@ invariant *live re-derive == a fresh `apply_owned` of the same final state*.
 | `tuning_brake_authority` | `0.3` | Half-span of `brake_bias` the slider moves from the car's default. |
 | `tuning_aero_authority` | `0.5` | Max downforce fraction shifted front↔rear at slider \|1\|. |
 
-A Repair Kit **fully restores** a car's health (`Save.use_repair_kit`) — there is no
-partial-heal tunable. The lift shows **Health** as a percentage (not a raw HP number,
-which reads as horsepower) and flags a wrecked (0%) car.
+Health is restored only by the free between-event field repair (tuned by the
+`field_repair_*` fractions — see [damage.md](damage.md)); there is no full-restore
+action and a wrecked car never comes back. The lift shows **Health** as a percentage
+(not a raw HP number, which reads as horsepower) and flags a wrecked (0%) car.
 
 ## The tuning UI (`TuningPanel`)
 
@@ -230,7 +231,7 @@ garage. Splitting the menus onto their own pages keeps each one from needing to 
   the **engine-detune slider's value label** at the bottom of the menu, below the part rows
   and the lift-only engine-swap row. See
   [upgrade-catalogue.md](upgrade-catalogue.md) and [engine-swap.md](engine-swap.md).
-  (Repair moved to the garage station row — see [menus.md](menus.md).)
+  (There is no Repair action any more — see [damage.md](damage.md).)
 
 ## Tests
 

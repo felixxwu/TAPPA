@@ -1,7 +1,7 @@
 extends Node
 # Autoload "Save": the single source of truth for everything the meta-game
 # mutates — owned cars (each with its own HP / car-bound installed upgrades /
-# tuning), the consumable inventory (repair kits), and rally completion — JSON at
+# tuning), the consumable inventory (swap tokens, mystery boxes), and rally completion — JSON at
 # user://profile.json so progress survives a restart on both desktop and the
 # web build (see todo/save-persistence.md).
 #
@@ -186,9 +186,9 @@ func load_or_new() -> void:
 		save_disabled = true
 		return
 	profile = _sanitise(migrated)
-	# Recover a wrecked-out player: a free repair kit when every owned car is
+	# Recover a wrecked-out player: a free mystery box when every owned car is
 	# wrecked and none is held (also checked on garage view). See features/damage.md.
-	ensure_repair_safety_net()
+	ensure_wreck_safety_net()
 
 
 # Read + JSON-parse a profile file. Returns {} on any failure (missing,
@@ -226,6 +226,15 @@ func _sanitise(p: Dictionary) -> Dictionary:
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
 	p["cars"] = kept
+	# Drop the retired `repair_kit` consumable from older profiles. Done HERE, in the
+	# tolerant sanitise pass, rather than as a schema migration: the key is inert once
+	# nothing reads it, and a SCHEMA_VERSION bump would make every older build refuse
+	# the profile outright — too high a price for cleaning up a dead key, especially
+	# with cloud save moving profiles between devices on different builds.
+	var inv: Dictionary = p.get("inventory", {})
+	if inv.has("repair_kit"):
+		inv.erase("repair_kit")
+		p["inventory"] = inv
 	return p
 
 
@@ -330,7 +339,7 @@ func adopt_profile(incoming: Dictionary) -> bool:
 	var device_settings: Variant = profile.get("settings", {})
 	profile = _sanitise(migrated)
 	profile["settings"] = device_settings
-	ensure_repair_safety_net()
+	ensure_wreck_safety_net()
 	return true
 
 
@@ -428,16 +437,15 @@ const _MIGRATABLE_FROM := [1]
 # Apply the single version N -> N+1 transform.
 #   1 -> 2: upgrades became CAR-BOUND. The old shared `inventory` pool of
 #           slottable parts is gone (parts now live on the OwnedCar they were won
-#           for), so strip every non-repair-kit entry from `inventory` — those
-#           unbound parts were never applied and have no car to belong to. Repair
-#           kits (the one consumable) stay pooled.
+#           for), so strip EVERY entry from `inventory` — those unbound parts were
+#           never applied and have no car to belong to, and the repair kit that used
+#           to be kept here no longer exists as an item at all.
 func _migrate_step(from_version: int, p: Dictionary) -> Dictionary:
 	match from_version:
 		1:
 			var inv: Dictionary = p.get("inventory", {})
 			for item_id in inv.keys():
-				if String(item_id) != UpgradeLibrary.REPAIR_KIT_ID:
-					inv.erase(item_id)
+				inv.erase(item_id)
 			p["inventory"] = inv
 			p["schema_version"] = 2
 	return p
@@ -501,7 +509,7 @@ func set_wheel_toe(instance_id: int, toe: Array) -> void:
 
 
 # Wreck a car: leave it OWNED but at 0 HP — too damaged to enter a rally until a
-# Repair Kit restores it (use_repair_kit). The car is NOT deleted; its installed
+# A wrecked car can NEVER be brought back. It is NOT deleted; its installed
 # upgrades stay fitted (parts are consumed on fit, so they're never returned).
 func wreck_car(instance_id: int) -> void:
 	var car := get_car(instance_id)
@@ -512,26 +520,39 @@ func wreck_car(instance_id: int) -> void:
 
 
 # Whether an owned car is wrecked: a car sitting at 0 HP. A wrecked car stays in
-# the garage but can't be fielded until a Repair Kit restores it.
+# the garage as an un-raceable hulk — there is no repair that revives it.
 func car_is_wrecked(car: Dictionary) -> bool:
 	return not car.is_empty() and float(car.get("hp", 0.0)) <= 0.0
 
 
-# Anti-soft-lock safety net: if the player owns cars, EVERY owned car is wrecked,
-# and no Repair Kit is held, grant one free kit so a wrecked-out player can always
-# bring a car back into service. Returns true if a kit was granted. Call this on
-# save load and whenever the garage is shown.
-func ensure_repair_safety_net() -> bool:
+# True when the player owns at least one car and EVERY one of them is wrecked —
+# the soft-lock state, since a wrecked car can never be repaired back into service.
+# Owning no cars at all is NOT this case (that's a fresh profile before the starter
+# pick, which has its own flow).
+func all_cars_wrecked() -> bool:
 	var cars: Array = profile.get("cars", [])
 	if cars.is_empty():
 		return false
 	for car in cars:
 		if not car_is_wrecked(car):
 			return false
-	var inv: Dictionary = profile.get("inventory", {})
-	if int(inv.get(UpgradeLibrary.REPAIR_KIT_ID, 0)) > 0:
+	return true
+
+
+# Anti-soft-lock safety net: if EVERY owned car is wrecked and no Mystery Box is
+# held, grant one free box. Opening it grants a fresh car (see open_mystery_box), so
+# a wrecked-out player can always get back on a stage. Returns true if a box was
+# granted. Call this on save load and whenever the garage is shown.
+#
+# This replaced a free REPAIR KIT. Kits are gone entirely — damage is one-way now, so
+# there is nothing to repair a wrecked car WITH, and the only way out of a fully
+# wrecked garage is a new car. See features/damage.md.
+func ensure_wreck_safety_net() -> bool:
+	if not all_cars_wrecked():
 		return false
-	add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
+	if mystery_boxes_owned() > 0:
+		return false
+	add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1)
 	return true
 
 
@@ -606,10 +627,10 @@ func mystery_boxes_owned() -> int:
 # reserve the car. The car stays fully usable in career rallies, free roam, the
 # garage, engine swaps and upgrades while the run is in progress. An earlier
 # design did use this to exclude the car from the rally picker, the garage/lift
-# picker, the engine-swap partner list and the reward reveal's "Repair now"
-# offer; all four were REMOVED — they made an owned car unusable across the whole
-# game, which was never the intent. Repairing between stages is an accepted
-# consequence (a challenge is a time competition, not a survival one).
+# picker and the engine-swap partner list; all were REMOVED — they made an owned
+# car unusable across the whole game, which was never the intent. The free
+# between-event field repair applying mid-run is an accepted consequence (a
+# challenge is a time competition, not a survival one).
 #
 # It has never disabled the detune slider either — the p/w ceiling is enforced by
 # the close-button gate, exactly like a career rally's pw_max.
@@ -736,29 +757,49 @@ func consume_item(item_id: String, n := 1, do_save := true) -> bool:
 	return true
 
 
-# Open one mystery box: consume it and grant whatever RewardSystem.pick_mystery_box_grant
-# resolves as a SINGLE saved transaction (the resolve happens before any mutation,
-# so consume_item is called with do_save=false and the grant's own save covers
-# both). Falls back to a repair kit if NO car has room, or if the resolved
-# install unexpectedly fails (e.g. the garage changed between grant and open).
-# ANY owned car can receive the gift, the currently selected one included — a box is
-# a garage-wide reward and is no longer tied to the car that won it (see
-# RewardSystem.any_car_has_room), so this takes no "current car" to exclude.
-# Returns {} if no box was held; otherwise {"fallback": bool, "item_id": String,
-# "recipient_instance_id": int (only when not fallback)} for the caller to reveal.
+# Open one mystery box: consume it and grant, as a SINGLE saved transaction (the
+# resolve happens before any mutation, so consume_item is called with do_save=false
+# and the grant's own save covers both).
+#
+# TWO OUTCOMES, decided by the state of the garage at OPEN time:
+#   * WRECKED OUT (every owned car wrecked) -> a whole new CAR. This is the
+#     anti-soft-lock rescue: wrecked cars can never be repaired, so a part fitted to
+#     one would be worthless. Checked FIRST, ahead of the part grant, for that reason.
+#     The car comes from RewardSystem.draw_car, whose stuck-player fallback already
+#     picks something that re-opens progression.
+#   * OTHERWISE -> a random upgrade for a random owned car with room. ANY owned car
+#     can receive it, the currently selected one included: a box is a garage-wide
+#     reward and is not tied to the car that won it (RewardSystem.any_car_has_room).
+#
+# NOTHING TO GIVE = NOTHING SPENT. When no car has room (and the player isn't wrecked
+# out), the box is left unopened rather than being burned for a consolation prize —
+# there is no repair kit to fall back on any more, and silently eating the box would
+# be strictly worse than the disabled button the garage row already shows.
+#
+# Returns {} when no box was held OR nothing could be granted (box retained);
+# otherwise {"car": bool, "item_id": String, "recipient_instance_id": int} — for a
+# car grant, item_id is the CarLibrary model id and the recipient is the new car.
 func open_mystery_box(rng: RandomNumberGenerator = null) -> Dictionary:
-	if not consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false):
+	if mystery_boxes_owned() <= 0:
 		return {}
+	if all_cars_wrecked():
+		# Explicitly typed: the RewardSystem <-> Save cycle leaves the static's return
+		# type unresolved at parse time, so `:=` would infer Variant (a warning-as-error).
+		var model_id: String = RewardSystem.draw_car(profile, 0, rng)
+		consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false)  # no save yet
+		var car := grant_car(model_id)  # saves; covers the consume above too
+		return {"car": true, "item_id": model_id,
+			"recipient_instance_id": int(car["instance_id"])}
 	var grant := RewardSystem.pick_mystery_box_grant(profile, rng)
 	if grant.is_empty():
-		add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)  # saves; covers the consume above too
-		return {"fallback": true, "item_id": UpgradeLibrary.REPAIR_KIT_ID}
+		return {}  # nowhere for it to land — keep the box
 	var recipient_id := int(grant["instance_id"])
 	var item_id := String(grant["item_id"])
+	consume_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false)  # no save yet
 	if not install_upgrade(recipient_id, item_id, false):
-		add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)  # saves; covers the consume above too
-		return {"fallback": true, "item_id": UpgradeLibrary.REPAIR_KIT_ID}
-	return {"fallback": false, "item_id": item_id, "recipient_instance_id": recipient_id}
+		add_item(UpgradeLibrary.MYSTERY_BOX_ID, 1, false)  # put it back; nothing persisted
+		return {}
+	return {"car": false, "item_id": item_id, "recipient_instance_id": recipient_id}
 
 
 # Fit a won part to a car. Upgrades are CAR-BOUND: a part belongs to the car it
@@ -771,8 +812,7 @@ func open_mystery_box(rng: RandomNumberGenerator = null) -> Dictionary:
 # (used for a direct fit); false -> parked disabled (the reward loop fits every
 # won part disabled, then the podium's Apply enables the player's pick). Fitting
 # the same part to the same car twice is rejected (per-car dedup). Consumables
-# (the repair kit) and unknown ids can't be slotted — use use_repair_kit() /
-# add_item() for those. Returns true on success.
+# and unknown ids can't be slotted — use add_item() for those. Returns true on success.
 func install_upgrade(instance_id: int, item_id: String, enabled := true) -> bool:
 	var car := get_car(instance_id)
 	if car.is_empty():
@@ -825,27 +865,15 @@ func _disable(car: Dictionary, item_id: String) -> void:
 	car["disabled_upgrades"] = disabled
 
 
-# Spend one repair kit to FULLY restore a car's HP to its CarLibrary max_hp — the
-# only way HP climbs back, and what brings a wrecked (0 HP) car back into service.
-# Returns true if a kit was consumed and applied; false if none were owned.
-func use_repair_kit(instance_id: int) -> bool:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return false
-	if not consume_item(UpgradeLibrary.REPAIR_KIT_ID, 1):
-		return false
-	var entry := CarLibrary.by_id(car["model_id"])
-	var max_hp: float = entry.get("max_hp", float(car["hp"])) if not entry.is_empty() else float(car["hp"])
-	car["hp"] = max_hp
-	# A repair also straightens the wheels — the alignment damage is fixed with the HP.
-	car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
-	save()
-	return true
+# NO FULL REPAIR EXISTS. There is deliberately no counterpart to field_repair that
+# restores a car to full or revives a wrecked one — the repair kit that used to do it
+# is gone, so HP is one-way apart from the free between-event patch-up below, and a
+# wrecked car is lost for good. See features/damage.md.
 
 
 # A partial, between-event pit repair (RallySession._enter_event): restore
 # `hp_fraction` of the HP LOST so far and bend each wheel `toe_fraction` back toward
-# straight. Unlike use_repair_kit (a full restore that costs a kit), this is free and
+# straight. This is the ONLY way HP ever climbs back, and it is free and
 # incremental — the engineers patch the car up a bit before each event after the
 # first. Returns a summary the repair popup renders:
 #   {repaired:bool, hp_before, hp_after, max_hp, hp_gained}

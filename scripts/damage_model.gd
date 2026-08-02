@@ -6,7 +6,8 @@ extends RefCounted
 # damage fraction (which drives the engine misfire) and the per-wheel toe the car
 # reads each tick, and wrecks the car at 0 HP. See features/damage.md.
 #
-# HP only ever goes DOWN in-run (no passive regen); a repair kit (Save) is the
+# HP only ever goes DOWN in-run (no passive regen); the free between-event field
+# repair (Save) is the
 # only way it climbs back, and that lives between runs, not here.
 #
 # Binding: when a car is FIELDED from the meta-game (a future rally/Start-line
@@ -17,7 +18,7 @@ extends RefCounted
 # the car self-heals and respawns so play continues (car.gd handles that).
 #
 # There is no in-run anti-soft-lock floor: every car can be wrecked. A wrecked-out
-# player is recovered between runs by Save.ensure_repair_safety_net (a free repair
+# player is recovered between runs by Save.ensure_wreck_safety_net (a free mystery
 # kit when all owned cars are wrecked and none is held).
 
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
@@ -54,7 +55,8 @@ var instance_id := -1
 # Permanent per-wheel toe misalignment (radians), keyed by WHEEL_NAMES. Each solid
 # impact bends every wheel by a random amount/direction (nudge_wheels); car.gd feeds
 # these into the per-wheel VehicleWheel3D.steering so the car's pull/crab comes from
-# the physics alone. Persisted per car (Save), cleared only by a Repair Kit. See
+# the physics alone. Persisted per car (Save), eased back only by the free between-
+# event field repair. See
 # features/damage.md.
 var wheel_toe: Dictionary = _zero_toe()
 
@@ -94,7 +96,7 @@ func toe_array() -> Array:
 	return out
 
 
-# Straighten every wheel (a Repair Kit fixes the alignment along with the HP).
+# Straighten every wheel (the field repair eases the alignment back along with the HP).
 func reset_wheel_toe() -> void:
 	wheel_toe = _zero_toe()
 

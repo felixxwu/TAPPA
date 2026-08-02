@@ -56,7 +56,7 @@ func _field(combined: Array) -> Array:
 	return f
 
 
-# Total item count across the inventory (parts + repair kits).
+# Total item count across the inventory (parts + consumables).
 func _total_items() -> int:
 	var n := 0
 	for item_id in _save.profile["inventory"]:

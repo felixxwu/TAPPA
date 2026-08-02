@@ -200,6 +200,37 @@ need a real display (skipped/zero under `--headless`) and aren't supported on
 every backend (e.g. OpenGL/macOS may report 0) — then infer GPU cost from the
 frame interval minus render-cpu.
 
+## Track-generation probe (one rally event, no cache write)
+
+`./probe_track.sh` → `tools/probe_track_event.tscn` → `tools/probe_track_event.gd`.
+The debugging companion to `./cache_tracks.sh`, which can only rebake **every**
+event — there is no per-track bake. When the baker reports
+`track cache: rally X seed N did not complete`
+(`tools/generate_track_cache.gd` → `_ready`), this runs that ONE event through the
+same `RallySession.canonical_event_config` + `TrackGenParams.for_event` +
+`TrackGenerator.generate` path and prints why, writing **nothing** (the committed
+`data/track_cache.json` is left untouched).
+
+```
+./probe_track.sh --rally=gc_island_gp             # every event of one rally
+./probe_track.sh --rally=gc_island_gp --seed=54103
+./probe_track.sh --seed=54103 --turns=31 --straightness=0.2 --water=-4.0  # ad-hoc
+```
+
+It prints the resolved params, whether `recompute_origin` had to **relocate** the
+start off a wet spot, the terrain height at the origin vs. the waterline ceiling, the
+**wet fraction** of a 400 m box around the start, and `placed=N/turn_count`. Exit
+code 1 if any probed event is incomplete.
+
+Reading it: `relocated=true` + a high wet fraction + `placed=0/N` is the signature of
+a start **marooned on a small dry patch** — every first corner's footprint trips
+`TrackGenerator._collide_and_cells`' `WATER_MAX_WET_FRACTION` rejection, so no
+restart can place even one corner. See [track.md](track.md) and [lakes.md](lakes.md).
+
+It must be a SCENE run (like the cache baker), not `--script`: `Config`/
+`RallySession` are autoloads, and `TrackGenerator._search` calls
+`Platform.is_headless()`.
+
 ## Tests
 
 `tests/headless/test_debug_arrows.gd` — verifies the force-arrow overlay updates

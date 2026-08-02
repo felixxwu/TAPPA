@@ -18,8 +18,7 @@ extends Node3D
 #     menu as its OWN full-height page (TUNE = grip/brake/aero sliders; UPGRADES =
 #     install parts); Test Drive drops into free roam with the car on the lift
 #     so neither needs to scroll; Back returns the page to the hub, and the hub's Back
-#     returns to the garage. (A REPAIR button also lives on the hub row but is hidden
-#     for now — earning Repair Kits is disabled.)
+#     returns to the garage.
 #   * CARPARK  — the outdoor lineup of cars: in RALLY mode the cars ELIGIBLE for the
 #     chosen rally (pan + Start); in GARAGE mode the whole collection (pan +
 #     Select the car to take to the tuning lift).
@@ -82,7 +81,6 @@ const PIN_LABEL_PX := Vector2i(320, 120)
 const PIN_LABEL_PIXEL_SIZE := 0.00255  # 1.5x the original 0.0017 so the boxes read bigger
 const PIN_LABEL_RISE := 0.16
 # Sprite modulate for a readout box whose rally isn't available yet (greyed out).
-const PIN_LABEL_DIM := Color(0.5, 0.5, 0.5, 0.4)
 
 # Loaded LAZILY (not preloaded) so the heavy car scene — which pulls in the MX-5 glb,
 # its texture and the engine-audio resources — isn't decoded at script-compile time
@@ -231,12 +229,6 @@ var _prewarm_running := false
 # the car-park lineup), which OwnedCar it is, and which menu (TUNE / UPGRADES) is up.
 var _lift_car: Node3D
 var _lift_owned: Dictionary = {}
-# Car-lift HUB "Repair" button: repairs the SELECTED car with one Repair Kit. HIDDEN for
-# now (earning Repair Kits is disabled) — built but kept invisible and out of the hub
-# cursor (see _build_lift_overlay). Its label reflects state — "Repair (x kit)" when the
-# car is damaged and a kit is owned, "Repair — full health" / "Repair — no kits"
-# otherwise — recomputed whenever the lift is refreshed (_refresh_lift_repair_button).
-var _lift_repair_button: Button
 var _lift_car_instance_id := -2  # what _lift_car was built for (-2 = nothing yet)
 # Deep hash of the owned dict _lift_car was built from. _ensure_lift_car reuses the
 # prop only when BOTH the instance id and this hash match, so any in-place data change
@@ -384,9 +376,8 @@ var _title_exit_button: Button  # EXTERIOR title Exit Game (last in the row)
 @warning_ignore("unused_private_class_variable")
 var _title_version_label: Label  # EXTERIOR title build-version readout (bottom-right)
 var _no_eligible_label: Label
-# Car-park damage UI: a "too damaged" note + a Repair action for a wrecked focused car.
+# Car-park damage UI: the "wrecked beyond repair" note on a wrecked focused car.
 var _car_warning_label: Label
-var _car_repair_button: Button
 
 # Title screen cursor: a single left/right cursor over Start / Account / Settings /
 # (Exit Game). Same diegetic-station idiom as the garage row and lift hub — FOCUS_NONE
@@ -600,8 +591,8 @@ func _build_hq() -> void:
 
 # First run no longer auto-grants a car: the player picks their starter (MX-5 vs
 # Focus) in the car park on pressing Start (see _enter_starter_pick / _confirm_starter).
-# The chosen car is a normal, wreckable car (the repair-kit safety net,
-# Save.ensure_repair_safety_net, is the anti-soft-lock floor now). Kept as a hook in
+# The chosen car is a normal, wreckable car (the Mystery Box safety net,
+# Save.ensure_wreck_safety_net, is the anti-soft-lock floor now). Kept as a hook in
 # case a future migration needs to backfill; currently a no-op.
 func _ensure_starter() -> void:
 	pass
@@ -678,15 +669,21 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	# Readout: a single design-system black box floating above the flag, holding the
 	# rally name and a row of proper five-pointed stars (gold earned / dim not). Built
 	# as a 2D UITheme panel rendered to a billboarded sprite, so it gets the real house
-	# look (pure-black panel, Syne Mono, uppercase) and always faces the camera. The box
-	# is dimmed for a rally that isn't available yet — locked, or with no eligible car.
+	# look (pure-black panel, Syne Mono, uppercase) and always faces the camera.
+	#
+	# THE BOX IS ALL-OR-NOTHING. A rally that can't be entered yet — locked, or with no
+	# eligible car — gets NO box at all rather than a dimmed one: a menu is either live
+	# and at full opacity, or absent. The 3D flag still stands at every pin regardless,
+	# so the map keeps showing where the unavailable rallies are (grey flag = "coming up").
 	var available := not locked and has_eligible
-	var label := _build_pin_label(String(rally["name"]), earned, available)
-	label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
-	pin.add_child(label)
-	# Keep the readout panel reachable so the keyboard/gamepad cursor can paint it with
-	# the hover-style selection look (see _focus_table_target) without resizing the pin.
-	pin.set_meta("label_panel", label.get_meta("panel"))
+	if available:
+		var label := _build_pin_label(String(rally["name"]), earned)
+		label.position = Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0)
+		pin.add_child(label)
+		# Keep the readout panel reachable so the keyboard/gamepad cursor can paint it
+		# with the hover-style selection look (see _focus_table_target) without resizing
+		# the pin. Absent when there is no box — _focus_table_target checks for the meta.
+		pin.set_meta("label_panel", label.get_meta("panel"))
 
 	# Pickable hit spheres (skipped for a locked pin so it can't be entered), both bound
 	# to the same handler so a click on EITHER the flag/pole OR the floating readout box
@@ -695,7 +692,10 @@ func _make_pin(rally: Dictionary, table_pos: Vector3, plane_size: Vector2, top_y
 	# (~0.72 m) so neighbouring menus' targets don't overlap.
 	if not locked:
 		_add_pin_hit(pin, rally_id, Vector3(0.0, marker_top * 0.5, 0.0), 0.28)
-		_add_pin_hit(pin, rally_id, Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0), 0.32)
+		# Only where a box actually hangs — an unavailable pin has none, and a hit sphere
+		# floating in the empty air above its flag would be a target for nothing.
+		if available:
+			_add_pin_hit(pin, rally_id, Vector3(0.0, marker_top + PIN_LABEL_RISE, 0.0), 0.32)
 	return pin
 
 
@@ -725,7 +725,7 @@ func _add_pin_hit(pin: Node3D, rally_id: String, pos: Vector3, r: float) -> void
 # a transparent SubViewport (so only the black box shows), with `build_body` filling the
 # VBox. Dimmed when `dim` (reads as disabled), and hands its panel back via the "panel"
 # meta so the focus cursor / selection can repaint it.
-func _build_readout_sprite(dim: bool, build_body: Callable) -> Sprite3D:
+func _build_readout_sprite(build_body: Callable) -> Sprite3D:
 	var vp := SubViewport.new()
 	vp.size = PIN_LABEL_PX
 	vp.transparent_bg = true
@@ -754,16 +754,15 @@ func _build_readout_sprite(dim: bool, build_body: Callable) -> Sprite3D:
 	sprite.shaded = false
 	sprite.pixel_size = PIN_LABEL_PIXEL_SIZE
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
-	if dim:
-		sprite.modulate = PIN_LABEL_DIM
 	sprite.set_meta("panel", panel)
 	return sprite
 
 
-func _build_pin_label(rally_name: String, earned: int, available := true) -> Sprite3D:
-	# Dimmed for a rally that can't be entered yet (locked / no eligible car), to match
-	# its grey flag; hands its panel back so the pin (via _make_pin) repaints on selection.
-	return _build_readout_sprite(not available, func(box: VBoxContainer) -> void:
+func _build_pin_label(rally_name: String, earned: int) -> Sprite3D:
+	# Always full opacity: a box only exists for a rally that can be entered (see
+	# _make_pin), so there is no dimmed state to render. Hands its panel back so the pin
+	# repaints it on selection.
+	return _build_readout_sprite(func(box: VBoxContainer) -> void:
 		box.add_theme_constant_override("separation", UITheme.GAP)
 		box.add_child(UITheme.title(rally_name))
 		var stars := StarRow.new()
@@ -2701,55 +2700,15 @@ func _refresh_garage_row(seat_on_drive := false) -> void:
 	_normalize_menus()
 
 
-# Set the lift HUB Repair button's label + enabled state to reflect the SELECTED car's
-# state: it's DISABLED (greyed, unclickable) when there's nothing to do — the car is
-# already at full health, or it's damaged but no Repair Kit is owned — and only enabled
-# when a kit can actually restore a damaged car. The label spells out which case it is.
-# First tops up a stranded player via the safety net (a free kit when every owned car is
-# wrecked), so a repairable-but-kitless player is never left permanently stuck.
-func _refresh_lift_repair_button() -> void:
-	if _lift_repair_button == null:
-		return
-	Save.ensure_repair_safety_net()
-	var owned := Save.selected_car()
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var max_hp := float(entry.get("max_hp", 0.0))
-	var hp := float(owned.get("hp", 0.0))
-	var kits := _repair_kits_owned()
-	if max_hp > 0.0 and hp >= max_hp:
-		_lift_repair_button.text = "Repair — full health"
-		_lift_repair_button.disabled = true
-	elif kits > 0:
-		_lift_repair_button.text = "Repair (%d kit%s)" % [kits, "" if kits == 1 else "s"]
-		_lift_repair_button.disabled = false
-	else:
-		_lift_repair_button.text = "Repair — no kits"
-		_lift_repair_button.disabled = true
-
-
-# Spend one Repair Kit on the selected car (full restore) from the lift HUB. A no-op when
-# the car is already at full health or no kit is owned — the button label already says
-# so. On a repair, respawns the lift/garage prop (fresh DamageModel, so the wreck smoke
-# stops) and re-labels the button.
-func _repair_selected_car() -> void:
-	var id := Save.selected_instance_id()
-	if id < 0:
-		return
-	var owned := Save.get_car(id)
-	var entry := CarLibrary.by_id(String(owned.get("model_id", "")))
-	var max_hp := float(entry.get("max_hp", 0.0))
-	var hp := float(owned.get("hp", 0.0))
-	if max_hp <= 0.0 or hp >= max_hp:
-		return  # nothing to repair
-	if not Save.use_repair_kit(id):
-		return  # no kit owned
-	_ensure_lift_car()  # the car is healed — the hash flips, so the prop respawns healthy
-	_refresh_lift_repair_button()
+# Top up a stranded player: a free Mystery Box when every owned car is wrecked, so a
+# fully wrecked garage always has a way back onto a stage (opening it grants a car).
+# Called wherever the garage/lift is (re)drawn, since wrecking happens out on a stage.
+func _refresh_wreck_safety_net() -> void:
+	Save.ensure_wreck_safety_net()
 
 
 # Move the HUB's left/right cursor between Back (0), Tuning (1), Upgrades (2) and
-# Test Drive (3), wrapping at the ends, and repaint it. (Repair is built but hidden while
-# Repair Kits are disabled, so it's not in the cursor — see _build_lift_overlay.)
+# Test Drive (3), wrapping at the ends, and repaint it.
 func _move_hub_focus(step: int) -> void:
 	_hub_focus = _hub_cursor.wrapped(_hub_focus, step)
 	_refresh_hub_focus()
@@ -2874,9 +2833,9 @@ func _spawn_lift_car(owned: Dictionary) -> Node3D:
 # Refresh the whole menu for the current selected car: name + stats, which menu is
 # shown, the sliders' gating/values, and the upgrades list.
 func _refresh_lift_ui() -> void:
-	# Recover a wrecked-out player before drawing the lift: a free Repair Kit when
+	# Recover a wrecked-out player before drawing the lift: a free Mystery Box when
 	# every owned car is wrecked and none is held (also checked on save load).
-	Save.ensure_repair_safety_net()
+	Save.ensure_wreck_safety_net()
 	_lift_owned = Save.selected_car()
 	_refresh_lift_car_label()
 	# Show the hub (car selector + menu buttons) or a sub-menu page from _lift_page.
@@ -2901,7 +2860,7 @@ func _refresh_lift_ui() -> void:
 	# committed to an event.
 	_lift_upgrades_box.setup(_lift_owned, _on_lift_upgrade_changed, _enter_engine_swap,
 		UpgradesMenu.NO_LIMIT)
-	_refresh_lift_repair_button()  # reflect the selected car's health / kit count
+	_refresh_wreck_safety_net()  # a wrecked-out garage gets its rescue box
 	_hub_focus = _hub_cursor.settled(_hub_focus)  # keep the cursor on a live item
 	_refresh_hub_focus()  # keep the left/right hub cursor highlight in step
 	_normalize_menus()  # re-apply house rules to the freshly-built upgrade rows
@@ -2949,11 +2908,6 @@ func _swap_targets(current_id: int) -> Array:
 	return out
 
 
-# Repair Kits currently held in the shared inventory.
-func _repair_kits_owned() -> int:
-	return int(Save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
-
-
 # Reset the car-park overlay to its empty state: show `message`, blank the car labels,
 # hide the swap-preview / warning / repair widgets, disable Start, and frame the empty
 # lot. Shared by the rally car-select and Garage picker screens when nothing qualifies.
@@ -2966,7 +2920,6 @@ func _show_empty_carpark(message: String) -> void:
 		_swap_preview_label.visible = false
 		_swap_preview_label.text = ""
 	_car_warning_label.visible = false
-	_car_repair_button.visible = false
 	_start_button.disabled = true
 	_move_camera_to(_station_xform(View.CARPARK), true)
 
@@ -3092,9 +3045,9 @@ func _enter_engine_swap() -> void:
 
 # Open a held mystery box: resolves + spends it as one atomic save transaction
 # (Save.open_mystery_box), then shows a plain reveal card naming the winning car
-# and item (or the repair-kit fallback). Deliberately NOT the race-context
-# UpgradeReveal (its repair-now/drive-mode/choice branches all assume the
-# revealed item belongs to the car the player just drove, which a gift to a
+# and item — or, when the player is WRECKED OUT (every owned car wrecked), a whole new
+# car. Deliberately NOT the race-context UpgradeReveal (its drive-mode branch assumes
+# the revealed item belongs to the car the player just drove, which a gift to a
 # DIFFERENT car would misfire) — a simple ConfirmPopup suffices here.
 #
 # A garage-row action (not a per-car Lift row — a mystery box isn't about the car on
@@ -3110,11 +3063,14 @@ func _on_open_mystery_box() -> void:
 		return
 	var result := Save.open_mystery_box()
 	if result.is_empty():
-		return  # no box held; button should have been disabled
+		return  # no box held, or nowhere for it to land — the box is untouched
 	# Label/value, one per line — scannable at a glance rather than a sentence.
 	var body: String
-	if bool(result.get("fallback", false)):
-		body = "Reward: Repair Kit\nFor: no car had room for the gift"
+	if bool(result.get("car", false)):
+		# The wrecked-out rescue: every car was a write-off, so the box paid a new one.
+		var won := CarLibrary.by_id(String(result["item_id"]))
+		body = "Reward: %s\nFor: your garage\n\nEvery car you owned was wrecked — this one is fresh off the truck." \
+			% String(won.get("name", result["item_id"]))
 	else:
 		var recipient := Save.get_car(int(result["recipient_instance_id"]))
 		var entry := CarLibrary.by_id(String(recipient.get("model_id", "")))
@@ -3820,9 +3776,8 @@ func _focus_changed(snap := false) -> void:
 		# surfaced in the confirm popup, so keep Start enabled and the warning clear.
 		_start_button.disabled = false
 		_car_warning_label.visible = false
-		_car_repair_button.visible = false
 	else:
-		# A wrecked focused car gates Start + offers a Repair (full restore).
+		# A wrecked focused car gates Start — permanently.
 		_refresh_focus_damage(owned)
 	_normalize_menus()  # keep house rules on the just-updated car name / stats
 	_move_camera_to(_camera_target_xform(), snap)
@@ -3882,31 +3837,26 @@ func _swap_preview_row(car_name: String, before: float, after: float) -> String:
 	return "[center]%s:  %.0f → %.0f hp/tonne %s[/center]" % [car_name, before, after, arrow]
 
 
-# A wrecked focused car can't be entered: disable Start and explain why, offering a
-# Repair (full restore) when a kit is owned. A healthy car clears all of this — an
+# A wrecked focused car can't be entered — ever: disable Start and say so. There is no
+# repair to offer any more. A healthy car clears all of this — an
 # over-powered car looks eligible here; the over-limit prompt only surfaces as a
 # confirm popup on Start (_show_over_limit_prompt).
 func _refresh_focus_damage(owned: Dictionary) -> void:
 	# Garage mode just picks the car for the lift, so a wrecked car is still a valid
-	# pick (it can be repaired in the bay). WHEELS is purely COSMETIC — a wrecked car
+	# pick (you can still look at it). WHEELS is purely COSMETIC — a wrecked car
 	# can always be re-shod, so damage must never gate it either. Never gate Select on
 	# damage in those modes; nor when the focused car isn't wrecked.
 	if _carpark_mode == CarparkMode.GARAGE or _carpark_mode == CarparkMode.WHEELS \
 			or not Save.car_is_wrecked(owned):
 		_start_button.disabled = false
 		_car_warning_label.visible = false
-		_car_repair_button.visible = false
 		return
+	# Wrecked is TERMINAL — there is no repair to offer, so the warning is final rather
+	# than an instruction. Wrecking every car you own hands you a Mystery Box instead
+	# (Save.ensure_wreck_safety_net); opening it grants a fresh car.
 	_start_button.disabled = true
 	_car_warning_label.visible = true
-	var kits := _repair_kits_owned()
-	if kits > 0:
-		_car_warning_label.text = "Too damaged to enter. Use a Repair Kit to restore it to full health and race."
-		_car_repair_button.visible = true
-		_car_repair_button.text = "Repair (1 kit)"
-	else:
-		_car_warning_label.text = "Too damaged to enter — and you have no Repair Kits. Win one, or pick another car."
-		_car_repair_button.visible = false
+	_car_warning_label.text = "Wrecked beyond repair — it can't race again. Pick another car."
 
 
 # A full-screen dimmer + centred house panel on the car CanvasLayer, holding `body`
@@ -4067,18 +4017,6 @@ func _close_upgrades_popup() -> void:
 			_build_eligible_lineup()
 		_upgrades_popup_dirty = false
 	_focus_changed()
-
-
-# Spend a Repair Kit on the focused (wrecked) car: full restore, then re-evaluate so
-# Start unlocks and the stats refresh. The owned dict is shared with the save, so the
-# restored HP flows straight back into the lineup.
-func _repair_focused_car() -> void:
-	if _eligible.is_empty():
-		return
-	var id := int(_eligible[_focus].get("instance_id", -1))
-	if Save.use_repair_kit(id):
-		_render_lineup_page()  # respawn the current page so the healed prop is fresh (healthy)
-		_focus_changed()       # DamageModel stops the synthetic smoke
 
 
 

@@ -2,9 +2,9 @@ extends GutTest
 # UpgradeReveal: the shared slot-spin reward card (features/menus.md). Normal
 # parts land on an Upgrades/Next action row (granted fitted-disabled, no Apply/Keep
 # — the player enables them later, either right now via Upgrades or later in the
-# garage); a repair kit still offers an Apply/Keep choice (Repair now / Save it)
-# when the driven car is below full health. Headless -> the slot resolves
-# instantly, so the action row/choice is reachable at once. A Skip button
+# garage). There is no Apply/Keep choice any more — it existed only for a won repair
+# kit, and repair kits are gone. Headless -> the slot resolves
+# instantly, so the action row is reachable at once. A Skip button
 # fast-forwards a real (non-headless) spin straight to the actual won item; tests
 # force a real spin by flipping `_headless` post-construction.
 
@@ -49,8 +49,7 @@ func test_slottable_part_reveal_offers_upgrades_and_next() -> void:
 	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
 	w.reveal("fx_aero", id)
 	await get_tree().process_frame
-	assert_false(w._choice_pending, "a normal part is one 'Next' step, no Apply/Keep choice")
-	assert_false(w._choice_box.visible, "no Apply/Keep choice buttons are shown")
+	assert_true(w._action_box.visible, "a normal part is one 'Next' step, no Apply/Keep choice")
 	assert_true(_save.get_car(id)["installed_upgrades"].has("fx_aero"), "the part stays fitted")
 	assert_false(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_aero"),
 		"the part stays disabled — enabled via Next-into-garage or the Upgrades button now")
@@ -61,51 +60,24 @@ func test_slottable_part_reveal_offers_upgrades_and_next() -> void:
 	w._next_button.pressed.emit()
 	assert_true(done[0], "Next continues the flow exactly like the old immediate finish")
 
-func test_repair_kit_on_full_health_car_skips_the_choice_and_offers_next() -> void:
-	var car: Dictionary = _save.grant_car("fx_awd")  # granted at full HP
-	var id := int(car["instance_id"])
-	var w := _make()
-	var done := [false]
-	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
-	w.reveal(UpgradeLibrary.REPAIR_KIT_ID, id)
-	await get_tree().process_frame
-	assert_false(w._choice_pending, "a full-health car shows no use-now choice")
-	assert_true(w._action_box.visible, "the Upgrades/Next row is shown instead")
-	assert_false(done[0], "finished does not fire until Next is pressed")
-	w._next_button.pressed.emit()
-	assert_true(done[0], "Next continues the flow when there's nothing to repair")
-
-func test_repair_kit_on_damaged_car_offers_use_now_and_repairs() -> void:
-	var car: Dictionary = _save.grant_car("fx_awd")
-	var id := int(car["instance_id"])
-	_save.apply_damage(id, 200.0)  # drop below full health
-	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1, false)  # the just-won kit, already banked
-	var full_hp := float(CarLibrary.by_id("fx_awd").get("max_hp", 0.0))
-	assert_lt(float(_save.get_car(id)["hp"]), full_hp, "precondition: the car is damaged")
-	var w := _make()
-	var done := [false]
-	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
-	w.reveal(UpgradeLibrary.REPAIR_KIT_ID, id)
-	await get_tree().process_frame
-	assert_true(w._choice_pending, "a damaged car opens the Repair-now/Save-it choice")
-	assert_true(w._choice_box.visible, "the choice buttons are shown")
-	w._apply_button.pressed.emit()
-	assert_eq(float(_save.get_car(id)["hp"]), full_hp, "Repair now restores the car to full health")
-	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.REPAIR_KIT_ID, 0)), 0, "Repair now spends the kit")
-	assert_true(done[0], "finished fires after the choice")
-
-func test_repair_kit_save_it_leaves_car_damaged_and_keeps_the_kit() -> void:
+func test_a_won_consumable_lands_in_inventory_and_offers_next() -> void:
+	# Every consumable now takes the same plain path — no branch offers to spend one
+	# on the driven car, because the repair kit that used to do that is gone. A DAMAGED
+	# car is used deliberately: that is exactly the state that used to divert here.
 	var car: Dictionary = _save.grant_car("fx_awd")
 	var id := int(car["instance_id"])
 	_save.apply_damage(id, 200.0)
-	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1, false)
-	var damaged_hp := float(_save.get_car(id)["hp"])
+	assert_lt(float(_save.get_car(id)["hp"]), float(CarLibrary.by_id("fx_awd").get("max_hp", 0.0)),
+		"precondition: the driven car is damaged")
 	var w := _make()
-	w.reveal(UpgradeLibrary.REPAIR_KIT_ID, id)
+	var done := [false]
+	w.finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
+	w.reveal(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, id)
 	await get_tree().process_frame
-	w._keep_button.pressed.emit()
-	assert_eq(float(_save.get_car(id)["hp"]), damaged_hp, "Save it leaves the car damaged")
-	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.REPAIR_KIT_ID, 0)), 1, "Save it keeps the kit in inventory")
+	assert_true(w._action_box.visible, "the Upgrades/Next row is shown, with no choice to make")
+	assert_false(done[0], "finished does not fire until Next is pressed")
+	w._next_button.pressed.emit()
+	assert_true(done[0], "Next continues the flow")
 
 func test_skip_button_hidden_when_spin_resolves_instantly() -> void:
 	# Headless (the default in tests) resolves the spin synchronously, so there's
@@ -149,7 +121,7 @@ func test_drivetrain_kit_installs_enabled_without_choice() -> void:
 	var w := _make()
 	w.reveal("fx_drivetrain", id)
 	await get_tree().process_frame
-	assert_false(w._choice_pending, "the drivetrain kit skips Apply/Keep")
+	assert_true(w._action_box.visible, "the drivetrain kit goes straight to the action row")
 	assert_true(UpgradeLibrary.is_enabled(_save.get_car(id), "fx_drivetrain"),
 		"the drivetrain kit installs enabled")
 
@@ -218,13 +190,11 @@ func test_finishing_the_upgrades_menu_continues_the_flow_like_next() -> void:
 	assert_true(done[0], "finishing Upgrades continues the flow exactly like Next")
 
 
-# --- Challenge run: the ceiling applies, and the repair kit can't be spent -----------
+# --- Challenge run: the ceiling applies ----------------------------------------------
 #
 # The reveal's Upgrades overlay used to read RallySession.rally_id()'s restriction
 # directly, which resolves to "no limit" mid-challenge (rally_id() is "") — so a
 # challenge car had NO p/w gate here at all. It now goes through DrivingContext.
-# Separately, spending a won repair kit on the locked car would heal the very damage
-# the run's damage-carries-over contract says must persist (spec §6).
 
 func _start_challenge_on(id: int) -> void:
 	ChallengeSession.auto_load_scenes = false
@@ -247,23 +217,3 @@ func test_upgrades_overlay_gets_the_challenges_ceiling_not_no_limit() -> void:
 		"a challenge run's mid-run Upgrades overlay carries a real p/w ceiling")
 	assert_eq(w._upgrades_menu._pw_limit, ChallengeLibrary.ceiling_for(ChallengeSession.period_key()),
 		"and it's the period's own rolled ceiling")
-
-func test_repair_now_is_still_offered_during_a_challenge_run() -> void:
-	# A challenge locks the RUN to its car; it does not freeze the car's condition.
-	# The player can already repair between stages via the garage, so refusing the kit
-	# here only made the reveal inconsistent with the rest of the game. The weakened
-	# damage carry-over is a deliberate, accepted consequence of that rule.
-	var car: Dictionary = _save.grant_car("fx_awd")
-	var id := int(car["instance_id"])
-	_start_challenge_on(id)
-	_save.apply_damage(id, 200.0)
-	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1, false)
-	var damaged_hp := float(_save.get_car(id)["hp"])
-	assert_lt(damaged_hp, float(CarLibrary.by_id("fx_awd").get("max_hp", 0.0)),
-		"precondition: the driven car is damaged, so Repair now is the relevant branch")
-	assert_true(DrivingContext.is_car_locked(id), "precondition: a run is committed to this car")
-	var w := _make()
-	w.reveal(UpgradeLibrary.REPAIR_KIT_ID, id)
-	await get_tree().process_frame
-	assert_true(w._choice_pending, "an active run no longer suppresses the Repair-now prompt")
-	assert_true(w._choice_box.visible, "the Repair now / Save it buttons are shown")

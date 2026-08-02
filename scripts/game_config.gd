@@ -579,7 +579,7 @@ var peak_torque_rpm := 4500.0
 @export_range(0.01, 1.0) var damage_misfire_duration_max := 0.16
 ## Wheel-toe misalignment from impacts (radians). Each solid impact bends every
 ## wheel by a random amount/direction (DamageModel.nudge_wheels), permanently and
-## per-car (persisted, cleared only by a Repair Kit). The bent wheels are rotated
+## per-car (persisted, eased back only by the free field repair). The bent wheels are rotated
 ## on the VehicleWheel3D nodes themselves, so the car's pull/crab comes from the
 ## physics alone — no synthetic steer bias. See features/damage.md.
 ## Toe (radians) a full-per-hit-cap impact adds to a wheel: the per-wheel nudge is

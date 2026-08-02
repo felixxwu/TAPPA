@@ -278,12 +278,12 @@ func _build_dev_page() -> void:
 		var car_id := String(car["id"])
 		var car_name := String(car["name"])
 		_dev_page.add_child(_make_action_button("Unlock %s" % car_name, _grant_car.bind(car_id, car_name)))
-	_dev_page.add_child(_make_sub("Fit an upgrade to the selected car (repair kit -> inventory):"))
+	_dev_page.add_child(_make_sub("Fit an upgrade to the selected car (consumables -> inventory):"))
 	for up in UpgradeLibrary.UPGRADES:
 		var up_id := String(up["id"])
 		var up_name := String(up["name"])
 		# Slottable parts are car-bound now, so fit them straight onto the selected
-		# car; the repair kit is the one true consumable, so it still goes to inventory.
+		# car; consumables (swap token, mystery box) go to the shared inventory.
 		if UpgradeLibrary.is_consumable(up_id):
 			_dev_page.add_child(_make_action_button("Add %s" % up_name, _add_upgrade.bind(up_id, up_name)))
 		else:
@@ -698,7 +698,7 @@ func _grant_car(model_id: String, display_name: String) -> void:
 	_dev_status.text = "Granted %s." % display_name
 
 
-# Drop a consumable (the repair kit) into the shared inventory.
+# Drop a consumable (swap token / mystery box) into the shared inventory.
 func _add_upgrade(item_id: String, display_name: String) -> void:
 	Save.add_item(item_id)
 	_dev_status.text = "Added %s." % display_name

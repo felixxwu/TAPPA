@@ -14,17 +14,21 @@ extends RefCounted
 # ENABLED parts contribute effects; a car keeps at most one enabled per slot
 # (Save.install_upgrade / set_upgrade_enabled).
 
-# The repair-kit consumable's id, referenced by Save when a repair kit is used.
-const REPAIR_KIT_ID := "repair_kit"
+# THERE IS NO REPAIR KIT. Damage is one-way: a car's HP only ever climbs back via
+# the free between-event pit repair (Save.field_repair), and a WRECKED car is gone
+# for good. The old `repair_kit` consumable — already unearnable, its drop weight
+# pinned at 0 and its garage button hidden — is fully removed; wrecking out is now
+# rescued by the Mystery Box granting a fresh car instead. See features/damage.md.
 
-# The engine-swap consumable's id, spent by Save.swap_engines. Earned like the
-# repair kit (a low-weight reward-pool drop) and held in the shared inventory.
+# The engine-swap consumable's id, spent by Save.swap_engines. Earned as a
+# low-weight reward-pool drop and held in the shared inventory.
 const ENGINE_SWAP_TOKEN_ID := "engine_swap_token"
 
 # The mystery-box consumable's id. Granted instead of a normal reward draw when
 # the driven car has nothing left to gain and the player is swap-token-rich
-# (see RewardSystem.draw_upgrade). Opened from the HQ Lift overlay to gift a
-# random upgrade to a different owned car.
+# (see RewardSystem.draw_upgrade), and as the wrecked-out safety net
+# (Save.ensure_wreck_safety_net). Opened from the HQ garage row to gift a random
+# upgrade to an owned car — or a whole new car when every car is wrecked.
 const MYSTERY_BOX_ID := "mystery_box"
 
 # The valid non-consumable slots. A car holds at most one upgrade per slot;
@@ -86,10 +90,6 @@ const UPGRADES: Array[Dictionary] = [
 	{
 		"id": "drivetrain_swap", "name": "Drivetrain Swap", "slot": "drivetrain",
 		"tier": 2, "consumable": false, "effect": {"unlocks_drivetrain_swap": true},
-	},
-	{
-		"id": REPAIR_KIT_ID, "name": "Repair Kit", "slot": "",
-		"tier": 1, "consumable": true, "effect": {},
 	},
 	{
 		"id": ENGINE_SWAP_TOKEN_ID, "name": "Engine Swap Token", "slot": "",

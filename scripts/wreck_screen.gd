@@ -118,7 +118,7 @@ func _build_overlay() -> void:
 	root.add_child(heading)
 
 	var body := Label.new()
-	body.text = "Your car is too damaged to continue — the rally is a DNF.\nIt's kept in your garage: repair it with a Repair Kit to race it again."
+	body.text = "Your car is too damaged to continue — the rally is a DNF.\nIt's wrecked for good — it stays in your garage, but it will never race again."
 	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body.add_theme_font_size_override("font_size", 16)
 	body.modulate = Color(1, 1, 1, 0.9)

@@ -233,6 +233,70 @@ func test_username_popup_panel_does_not_exceed_the_viewport() -> void:
 	assert_true(panel.get_combined_minimum_size().y <= viewport_h,
 		"the username popup panel must also never exceed the screen")
 
+# REGRESSION. The scroll around the body was sized from
+# `Font.get_multiline_string_size`, which knows nothing about the Label's
+# `line_spacing` theme constant — so an N-line body got a viewport (N-1) x spacing
+# too short and the last line(s) hid behind a scrollbar, on a FULLSCREEN popup with
+# room to spare. These popups must always show all of their text.
+#
+# Asserts the relationship, not pixels: the scroll's viewport is at least as tall as
+# the content inside it, i.e. there is nothing left to scroll to.
+func _assert_body_fully_visible(label: Label, note: String) -> void:
+	var scroll := label.get_parent() as ScrollContainer
+	assert_not_null(scroll, "setup: the body sits in a scroll container")
+	var bar := scroll.get_v_scroll_bar()
+	assert_true(bar.page + 1.0 >= bar.max_value,
+		"%s: the whole body fits without scrolling (content %.1f, viewport %.1f)"
+			% [note, bar.max_value, bar.page])
+	assert_true(scroll.size.y + 1.0 >= label.size.y,
+		"%s: the scroll is at least as tall as its body label (%.1f vs %.1f)"
+			% [note, scroll.size.y, label.size.y])
+
+func test_a_multi_line_body_is_shown_in_full_without_scrolling() -> void:
+	var body := "You are about to abandon this rally and return to the HQ. " \
+		+ "Your progress in this run, including any stage times you have already " \
+		+ "set, will be lost and cannot be recovered later on."
+	var popup := ConfirmPopup.open(_host, "Quit to HQ?", body, _actions_with_flag([""]))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_gt(popup._body_label.get_line_count(), 1, "setup: this body really does wrap")
+	_assert_body_fully_visible(popup._body_label, "multi-line body")
+
+func test_replacing_the_body_regrows_the_scroll_to_fit_it() -> void:
+	# open_committing fills in a placeholder AFTER the popup is on screen, so the
+	# fit must follow the new text rather than staying sized to the placeholder.
+	var popup := ConfirmPopup.open(_host, "T", "Working...", _actions_with_flag([""]))
+	await get_tree().process_frame
+	popup.set_body("The mystery box paid out a brand new turbocharger for your car, "
+		+ "plus a healthy pile of cash to spend on the next one you fancy.")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_gt(popup._body_label.get_line_count(), 1, "setup: the replacement body wraps")
+	_assert_body_fully_visible(popup._body_label, "replaced body")
+
+func test_the_username_popup_body_is_shown_in_full_too() -> void:
+	var popup := UsernamePopup.open(_host)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var label := popup.find_children("*", "Label", true, false)[1] as Label
+	_assert_body_fully_visible(label, "username popup body")
+
+func test_a_pathologically_long_body_stays_scrollable_rather_than_clipped() -> void:
+	# The cap is a fallback, not the normal case: a body too tall for the screen
+	# must remain reachable by scrolling, and must not push the panel off screen.
+	var long_body := "line of text that should wrap and repeat many times over. ".repeat(60)
+	var popup := ConfirmPopup.open(_host, "T", long_body, _actions_with_flag([""]))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var label: Label = popup._body_label
+	var scroll := label.get_parent() as ScrollContainer
+	var bar := scroll.get_v_scroll_bar()
+	assert_gt(bar.max_value, bar.page, "an over-tall body keeps a real scroll range")
+	var panel := popup.find_children("*", "PanelContainer", true, false)[0] as PanelContainer
+	assert_true(panel.get_combined_minimum_size().y
+		<= popup.get_viewport().get_visible_rect().size.y,
+		"and the panel still fits on screen")
+
 func test_an_unparented_host_cannot_raise_a_modal() -> void:
 	# Exclusivity is answered from the scene tree, so a host outside it has no tree
 	# to ask — raise nothing rather than a popup nobody can see or dismiss.

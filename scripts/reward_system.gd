@@ -17,13 +17,8 @@ extends RefCounted
 # balance pass; the values here are placeholder defaults (deferred, per spec).
 const MAX_TIER := 4
 
-# The repair kit's weight in the per-event upgrade pool, relative to a part's
-# weight of 1.0. Kept low — repairs are rare (gameplay.md). Placeholder; becomes
-# a GameConfig tunable (repair_kit_drop_weight) in the balance pass.
-const REPAIR_KIT_DROP_WEIGHT := 0
-
 # The engine swap token's weight in the per-event upgrade pool, relative to a
-# part's weight of 1.0. Kept low like the repair kit — swaps are an occasional
+# part's weight of 1.0. Kept low — swaps are an occasional
 # treat, not a staple. Placeholder; becomes a GameConfig tunable in the balance pass.
 const ENGINE_SWAP_TOKEN_DROP_WEIGHT := 0.2
 
@@ -58,12 +53,14 @@ static func target_tier(rally_difficulty: int, profile: Dictionary) -> int:
 
 # Draw one per-event upgrade item id. Pool = parts at the clamped target tier
 # (stepping down to the nearest lower tier that has an eligible part, since not
-# every tier has one) plus the repair kit and engine swap token as low-weight
-# entries. Parts already
+# every tier has one) plus the engine swap token as a low-weight entry. Parts already
 # fitted to `owned_car` — the car the player just drove, which the podium offers
 # to fit the reward onto — are excluded, so the draw never awards a part the car
-# already has; with every part at/below the tier fitted, only the repair kit
-# remains. Returns an item_id; the caller grants it via Save.add_item.
+# already has; with every part at/below the tier fitted, only the token remains, which
+# is what keeps the draw's "always pays out" guarantee. (The retired repair kit sat in
+# this pool too, but at weight 0 — it never actually dropped, so removing it changes
+# no outcome.)
+# Returns an item_id; the caller grants it via Save.add_item.
 static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: RandomNumberGenerator = null, owned_car: Dictionary = {}) -> String:
 	rng = _ensure_rng(rng)
 	if _car_has_nothing_left(owned_car) and _tokens_owned(profile) >= MYSTERY_BOX_TOKEN_THRESHOLD \
@@ -71,18 +68,21 @@ static func draw_upgrade(rally_difficulty: int, profile: Dictionary, rng: Random
 		return UpgradeLibrary.MYSTERY_BOX_ID
 	var tier := target_tier(rally_difficulty, profile)
 	var parts := _parts_at_or_below(tier, owned_car.get("installed_upgrades", []), owned_car)
-	# Weighted pool: each part weight 1.0, plus the repair kit at its low weight.
+	# Weighted pool: each part weight 1.0, plus the swap token at its low weight. The
+	# token is what backstops the "always pays out" guarantee — with every part fitted
+	# it is the only entry left. The MYSTERY BOX is deliberately NOT in this pool: it is
+	# awarded by the gated branch above, and putting it here would hand out a box in
+	# exactly the cases that gate exists to exclude (no other car has room for one).
 	var pool: Array = []
 	for item_id in parts:
 		pool.append({"id": item_id, "weight": 1.0})
-	pool.append({"id": UpgradeLibrary.REPAIR_KIT_ID, "weight": REPAIR_KIT_DROP_WEIGHT})
 	pool.append({"id": UpgradeLibrary.ENGINE_SWAP_TOKEN_ID, "weight": ENGINE_SWAP_TOKEN_DROP_WEIGHT})
 	return _weighted_pick(pool, rng)
 
 
 # Part ids at exactly `tier`, or — if that tier has no eligible part — at the
-# nearest lower tier that does. Excludes consumables (the repair kit is added
-# separately as a weighted entry), `free` parts (ballast is always available, never
+# nearest lower tier that does. Excludes consumables (they are added
+# separately as weighted entries), `free` parts (ballast is always available, never
 # a reward), any id in `exclude` (parts already fitted to the driven car), and any
 # item whose prerequisite isn't yet fitted to `owned_car` (per-car gate, see
 # UpgradeLibrary.prerequisite_met — e.g. Big Turbo stays out of the pool until
@@ -156,7 +156,7 @@ static func any_car_has_room(profile: Dictionary) -> bool:
 
 # Resolve what a mystery box grants: a uniformly random owned car among those with a
 # non-empty MAX_TIER-eligible pool, then a uniformly random item from that car's pool.
-# Returns {} when NO car has room (the opener falls back to a repair kit) — a pure
+# Returns {} when NO car has room (the opener then leaves the box unspent) — a pure
 # resolve, no Save mutation; the caller (Save) performs the actual consume/install.
 #
 # EVERY owned car is a candidate, the currently selected one included — see

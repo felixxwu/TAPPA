@@ -719,10 +719,10 @@ func test_hq_dev_page_unlocks_cars_upgrades_and_wipes() -> void:
 		"fitting an upgrade installs it on the selected car")
 	assert_eq(int(_save.profile["inventory"].get("fx_turbo_small", 0)), 0,
 		"fitting an upgrade does not touch the consumable inventory")
-	# The repair kit is the one true consumable — it still lands in inventory.
-	dev._add_upgrade(UpgradeLibrary.REPAIR_KIT_ID, "Repair Kit")
-	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.REPAIR_KIT_ID, 0)), 1,
-		"adding the repair kit puts it in inventory")
+	# Consumables still land in the shared inventory rather than on the car.
+	dev._add_upgrade(UpgradeLibrary.MYSTERY_BOX_ID, "Mystery Box")
+	assert_eq(int(_save.profile["inventory"].get(UpgradeLibrary.MYSTERY_BOX_ID, 0)), 1,
+		"adding a consumable puts it in inventory")
 	# Wipe: everything resets to a fresh new game.
 	dev._wipe_progress()
 	assert_eq(int(_save.profile["cars"].size()), 0, "wipe clears all owned cars")
@@ -845,54 +845,23 @@ func test_hq_title_parks_starter_previews_when_garage_is_empty() -> void:
 			"each parked car is a preview (negative id), not an owned car")
 
 
-# The lift-HUB Repair button reflects the SELECTED car's state: it's DISABLED when
-# there's nothing to do — full health, or damaged with no kit — and only enabled when a
-# kit can restore a damaged car; its label spells out the case. Enabled, pressing it
-# spends one Repair Kit to fully restore the car. (The button is currently HIDDEN while
-# Repair Kits are disabled, but the label/repair logic still holds — see
-# todo/remove-repair-kits.md.)
-func test_hq_lift_repair_button_reflects_state_and_repairs() -> void:
-	# A second, healthy car so the wreck-recovery safety net (a free kit when EVERY car is
-	# wrecked) doesn't fire and mask the "no kits" state under test.
-	_save.grant_car("fx_fwd_hatch")
+# The lift used to carry a Repair button. It's gone — repair kits no longer exist — and
+# what the lift does on refresh instead is top up a WRECKED-OUT player with the free
+# Mystery Box that gets them a new car. Drawing the lift must arm that net.
+func test_hq_lift_refresh_arms_the_wreck_safety_net() -> void:
 	var id := int(_save.profile["cars"][0]["instance_id"])
 	_save.set_selected_car(id)
-	var max_hp := float(CarLibrary.by_id(String(_save.get_car(id)["model_id"]))["max_hp"])
+	_save.wreck_car(id)
+	_save.profile["inventory"] = {}
+	assert_true(_save.all_cars_wrecked(), "setup: every owned car is a write-off")
 
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
+	hq._refresh_wreck_safety_net()
 
-	# Healthy selected car: nothing to repair, so the button is disabled.
-	hq._refresh_lift_repair_button()
-	assert_string_contains(hq._lift_repair_button.text.to_lower(), "full health",
-		"a full-health selected car reads 'Repair — full health'")
-	assert_true(hq._lift_repair_button.disabled, "a full-health car disables Repair")
-
-	# Wreck it with no kits: still disabled (nothing can be done), label flags the kit.
-	_save.wreck_car(id)
-	_save.profile["inventory"] = {}
-	hq._refresh_lift_repair_button()
-	assert_string_contains(hq._lift_repair_button.text.to_lower(), "no kits",
-		"a damaged car with no kit reads 'Repair — no kits'")
-	assert_true(hq._lift_repair_button.disabled, "no kit disables Repair")
-
-	# Grant a kit: the button ENABLES, and pressing it fully restores the car.
-	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
-	hq._refresh_lift_repair_button()
-	assert_string_contains(hq._lift_repair_button.text.to_lower(), "kit",
-		"a damaged car with a kit reads 'Repair (n kit)'")
-	assert_false(hq._lift_repair_button.disabled, "a damaged car with a kit enables Repair")
-	hq._repair_selected_car()
-	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
-		"repairing from the lift restores the selected car to full health")
-	assert_true(hq._lift_repair_button.disabled, "once restored, Repair disables again")
-
-	# Full health again: pressing Repair is a no-op — no further kit is spent.
-	var kits_before := int(_save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0))
-	hq._repair_selected_car()
-	assert_eq(int(_save.profile.get("inventory", {}).get(UpgradeLibrary.REPAIR_KIT_ID, 0)), kits_before,
-		"repairing a full-health car spends no kit")
+	assert_eq(_save.mystery_boxes_owned(), 1,
+		"a wrecked-out garage is handed exactly one rescue box")
 
 
 func test_hq_start_flies_into_the_garage() -> void:
@@ -1608,17 +1577,25 @@ func test_hq_map_locks_the_showdown_until_all_others_complete() -> void:
 	assert_eq(menu_targets, 1, "the floating menu box is itself a click target")
 
 
-func test_hq_unavailable_rally_dims_its_floating_readout() -> void:
-	# A rally that can't be entered yet (the locked showdown) greys out its floating
-	# readout box; an available rally (open-class shakedown, starter eligible) is
-	# shown at full brightness.
+func test_hq_unavailable_rally_has_no_floating_readout() -> void:
+	# All-or-nothing: a rally that can't be entered yet (the locked showdown) shows NO
+	# readout box rather than a dimmed one, while an available rally (open-class
+	# shakedown, starter eligible) shows its box at full opacity. The 3D flag stands at
+	# BOTH pins either way, so the map still marks where the unavailable rally is.
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
-	var showdown_sprite := _pin_label_sprite(_pin_for(hq, "the_showdown"))
-	var shakedown_sprite := _pin_label_sprite(_pin_for(hq, "shakedown"))
-	assert_eq(showdown_sprite.modulate, hq.PIN_LABEL_DIM, "the locked showdown's readout is dimmed")
-	assert_eq(shakedown_sprite.modulate, Color.WHITE, "an available rally's readout is full brightness")
+	var showdown := _pin_for(hq, "the_showdown")
+	var shakedown := _pin_for(hq, "shakedown")
+	assert_eq(showdown.find_children("*", "Sprite3D", true, false).size(), 0,
+		"an unavailable rally has no floating menu box at all")
+	assert_false(showdown.has_meta("label_panel"),
+		"and no panel for the focus cursor to paint")
+	assert_eq(_pin_label_sprite(shakedown).modulate, Color.WHITE,
+		"an available rally's box is shown at full opacity")
+	for pin in [showdown, shakedown]:
+		assert_gt((pin as Node3D).find_children("*", "MeshInstance3D", true, false).size(), 0,
+			"the 3D flag is built for available and unavailable rallies alike")
 
 
 func test_hq_pins_stars_reflect_best_placement() -> void:
@@ -1993,9 +1970,9 @@ func test_hq_free_roam_lists_whole_catalogue_and_paginates() -> void:
 	assert_eq(hq._view, hq.View.GARAGE, "Back from Free Roam returns to the garage")
 
 
-func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
-	# A wrecked (0 HP) car still appears in the eligible lineup, but it's too damaged
-	# to enter — Start is disabled until a Repair Kit restores it to full health.
+func test_hq_carpark_gates_a_wrecked_car_permanently() -> void:
+	# A wrecked (0 HP) car still appears in the eligible lineup, but it can never be
+	# entered again — there is no repair to offer, so the warning is final.
 	var owned: Dictionary = _save.grant_car("fx_awd")
 	var id := int(owned["instance_id"])
 	_save.apply_damage(id, 999999.0)  # wreck it (kept at 0 HP, not deleted)
@@ -2013,20 +1990,12 @@ func test_hq_carpark_gates_a_wrecked_car_and_repairs_it() -> void:
 	assert_gt(idx, -1, "the wrecked car is still parked in the lineup")
 	hq._focus = idx
 	hq._focus_changed()
-	# Too damaged, no kit: Start disabled, the warning shows, no Repair offered.
 	assert_true(hq._start_button.disabled, "a wrecked car cannot be entered")
-	assert_true(hq._car_warning_label.visible, "the too-damaged warning is shown")
-	assert_false(hq._car_repair_button.visible, "no Repair option without a kit")
-	# Grant a kit and refresh: the Repair option appears.
-	_save.add_item("repair_kit", 1)
+	assert_true(hq._car_warning_label.visible, "the beyond-repair warning is shown")
+	# Nothing the player can do here brings it back: refreshing does not change that.
 	hq._focus_changed()
-	assert_true(hq._car_repair_button.visible, "with a kit available, Repair is offered")
-	# Repair: full restore, Start unlocks, the warning clears.
-	hq._repair_focused_car()
-	assert_false(hq._start_button.disabled, "repairing the car enables Start")
-	assert_false(hq._car_warning_label.visible, "the warning clears once repaired")
-	assert_almost_eq(float(_save.get_car(id)["hp"]), float(CarLibrary.by_id("fx_awd")["max_hp"]), 0.001,
-		"the repaired car is restored to full health")
+	assert_true(hq._start_button.disabled, "still un-enterable — wrecking is terminal")
+	assert_true(_save.car_is_wrecked(_save.get_car(id)), "and the car is still a wreck")
 
 
 func test_hq_carpark_routes_over_powered_car_to_change_upgrades() -> void:
@@ -2606,8 +2575,8 @@ func test_standings_non_final_event_collects_an_upgrade_reward() -> void:
 	assert_eq(RallySession.phase(), RallySession.Phase.STANDINGS,
 		"the rally has not resumed behind the reveal")
 	# A normal slottable part is now granted fitted-disabled with a single "Next" — no
-	# Apply/Keep choice (the player enables it later in the upgrades menu). Repair kit /
-	# drivetrain also auto-finish.
+	# Apply/Keep choice (the player enables it later in the upgrades menu). Consumables
+	# and the drivetrain kit also auto-finish.
 	if not UpgradeLibrary.is_consumable(won) and UpgradeLibrary.slot_of(won) != "" \
 			and UpgradeLibrary.slot_of(won) != "drivetrain":
 		assert_false(sc._reveal._choice_pending, "a slottable reward no longer opens Apply/Keep")

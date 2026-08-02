@@ -59,16 +59,19 @@ and any part whose `requires_upgrade_id` **prerequisite isn't yet fitted to the
 driven car** (per-car, not garage-wide), via `UpgradeLibrary.prerequisite_met`;
 e.g. Big Turbo stays out of the pool until that car has Small Turbo — see
 `upgrade-catalogue.md`'s "Prerequisite gate") **plus
-the repair kit and the
-engine swap token as low-weight entries** (`REPAIR_KIT_DROP_WEIGHT` /
-`ENGINE_SWAP_TOKEN_DROP_WEIGHT`, both placeholders). Parts **already
+the
+engine swap token as a low-weight entry** (`ENGINE_SWAP_TOKEN_DROP_WEIGHT`, a
+placeholder). The **mystery box is deliberately NOT in this pool** — it is awarded by
+the gated branch above, and adding it here would hand out a box in exactly the cases
+that gate exists to exclude. Parts **already
 fitted to `owned_car`** — the driven car the flow controller passes in — are
 **excluded**, so the draw never awards a part the car already carries. This
 exclusion is also what dedups the multi-reward draw: the flow controller fits
 each won part onto the car **before** the next draw, so re-reading the live car
 each pass stops the same part being won twice in one rally. With every part
-at/below the tier fitted, only the consumables (repair kit + engine swap token)
-remain (the draw still always pays out). Weighted pick → returns an `item_id`;
+at/below the tier fitted, only the swap token remains — which is what keeps the draw
+always paying out. (The retired repair kit sat in this pool too, but at weight 0, so
+it never actually dropped.) Weighted pick → returns an `item_id`;
 most rolls are a part, occasionally a consumable.
 
 **When:** one upgrade is drawn at each **non-final event boundary** — i.e. after
@@ -80,8 +83,7 @@ final event awards no upgrade (the podium reveals the **car** instead).
 **Delivery:** upgrades are **car-bound** — the flow controller fits each drawn
 part straight onto the driven car **disabled**
 (`Save.install_upgrade(car_instance_id, item_id, false)`) and saves immediately
-(savescum-proof); a drawn consumable (repair kit or engine swap token) goes to
-`Save.add_item` instead.
+(savescum-proof); a drawn consumable goes to `Save.add_item` instead.
 The reward is then revealed on **that event's standings interstitial** via the
 shared `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — same slot-machine
 spinner as the podium, anchored to the **bottom** of the screen so it doesn't
@@ -91,28 +93,24 @@ play, non-zero `podium_slot_spin_time`) a **Skip** button
 (`UpgradeReveal._on_skip_pressed`) appears so impatient players can fast-forward
 straight to the landed result — it kills the running tween and runs the exact
 landing steps a natural finish would, so it always lands on the real won item and
-every downstream choice/finish path (Apply/Keep, repair choice) behaves
+every downstream finish path behaves
 identically to letting the spin play out. Hidden headless / when the spin is
 already instant, since there's nothing to skip. For a normal slottable part, the reveal
 displays a single **Next** step: the part (already fitted disabled by the flow
 controller) is confirmed with the caption "added to your garage — install it at
 the next stage", and the player enables it later from the upgrades menu at the next
 event (see `features/upgrade-catalogue.md`). A won part never moves to another car
-and a car never holds two of the same (per-car dedup). A won **repair kit** lands
-in inventory, but if the car you just drove is below full health
-(`EngineSwap.at_full_health`) the reveal first offers a **Repair now / Save it**
-choice: *Repair now* spends the just-won kit on the driven car immediately
-(`Save.use_repair_kit`), *Save it* banks it for the garage. A full-health car
-skips the choice and the kit just lands in inventory — as does a car locked by an
-active Rally Challenge run (`DrivingContext.is_car_locked`), whose damage must
-carry across the run's stages (see `features/rally-challenge.md` → "Car lock"). The **Drivetrain Swap** kit also skips the choice — it has no
-enable/disable, so the reveal always installs it enabled and the player picks a
+and a car never holds two of the same (per-car dedup). A won **consumable** simply
+lands in inventory — there is no Apply/Keep choice on the card any more, because the
+only thing that ever used it was a won repair kit offering to be spent on the driven
+car, and repair kits are gone. The **Drivetrain Swap** kit likewise has no
+enable/disable, so the reveal installs it enabled and the player picks a
 drive mode later in the garage (see `features/upgrade-catalogue.md`).
 
 ## Mystery box (drawn instead of a normal upgrade)
 
 `UpgradeLibrary.MYSTERY_BOX_ID` (`"mystery_box"`) is a consumable, delivered
-and stored exactly like the repair kit / engine swap token —
+and stored exactly like the engine swap token —
 `Save.add_item(MYSTERY_BOX_ID, 1)` into `profile.inventory`, stacks freely.
 `Save.mystery_boxes_owned()` mirrors `engine_swap_tokens_owned()`. It's the
 payoff for a fully-upgraded car: once nothing is left to gain, event rewards
@@ -139,6 +137,14 @@ unopenable for a one-car garage. A box now fills empty slots on any owned car,
 your current one included; cars with nothing left are still skipped, on
 *room*, not on identity.
 
+**Wrecked out? The box pays a CAR.** `open_mystery_box` checks
+`Save.all_cars_wrecked()` **first**, ahead of the part grant: with every owned car a
+write-off, a part fitted to one would be worthless, so the box grants a whole new car
+via `RewardSystem.draw_car` (whose stuck-player fallback already picks something that
+re-opens progression). This is the game's anti-soft-lock floor now that repair kits are
+gone — see [damage.md](damage.md). The button and its label are unchanged; which of the
+two outcomes you get is decided at OPEN time by the state of the garage.
+
 **Opening it** — `Save.open_mystery_box(rng=null) ->
 Dictionary` (`save_manager.gd`) is the atomic transaction: it consumes the box
 (`consume_item(MYSTERY_BOX_ID, 1, false)`, no save yet — `consume_item` gained
@@ -146,7 +152,7 @@ the same trailing `do_save := true` param `add_item` already had, precisely so
 this call can defer the save), then calls `pick_mystery_box_grant`, then
 either `install_upgrade(recipient, item, false)` (fitted **disabled**, same
 delivery model as any other per-event reward) or, if no candidate had room or
-the install unexpectedly fails, falls back to `add_item(REPAIR_KIT_ID, 1)` —
+the install unexpectedly fails, leaves the box UNSPENT and returns `{}` —
 either branch's call is the one save covering both the consume and the grant,
 so a crash mid-sequence can't spend the box without granting anything (before
 that save: nothing persisted; after: both persisted). Returns `{}` if no box
@@ -166,8 +172,8 @@ a box and its part with nothing shown. `hq.gd._unhandled_input` carries the
 same guard for the station rows generally, so no station action fires behind an
 open modal. Pressing it calls `Save.open_mystery_box`
 and shows a plain `ConfirmPopup` card ("You won a *item* for your *car*!" or
-the repair-kit fallback message) — deliberately **not** the race-context
-`UpgradeReveal`, whose repair-now/drive-mode branches assume the revealed item
+the wrecked-out new-car message) — deliberately **not** the race-context
+`UpgradeReveal`, whose drive-mode branch assumes the revealed item
 belongs to the car the player just drove, which would misfire for a gift to a
 different car. See `features/upgrade-catalogue.md` for the catalogue entry and
 `features/menus.md` → "Menu navigation" for the Lift's native-focus button
@@ -221,8 +227,8 @@ handled by the flow controller.
 
 `tests/headless/test_reward_system.gd` (injected seeded RNG): tier-ceiling
 monotonic + clamped; `target_tier` never exceeds the ceiling; upgrade draws land
-at the target tier with the repair kit a rare minority; a part already fitted to
-the driven car is never drawn (repair-kit fallback when the car has everything); car draws never exceed
+at the target tier with the swap token a rare minority; a part already fitted to
+the driven car is never drawn (the token is what's left when the car has everything); car draws never exceed
 the **progress ceiling** (`tier_ceiling(completed_count)`) even off a top-difficulty
 rally, and a low-difficulty rally caps the draw at its difficulty tier even when the
 progress ceiling is high; car draws prefer un-owned before falling back to a duplicate; a stuck
@@ -236,7 +242,8 @@ existing fallback); `pick_mystery_box_grant` only ever targets a car with room
 (a maxed car is skipped) while a one-car garage resolves onto that one car,
 respecting the recipient's own prerequisite gating.
 `tests/headless/test_save_manager.gd` covers `Save.open_mystery_box`'s atomic
-install, its repair-kit fallback (no car has room, or install fails), fitting a
+install, its box-retained no-op (no car has room, or install fails), its new-car
+grant when every owned car is wrecked, fitting a
 part to your only car, and the no-box no-op. `tests/headless/test_menu_flow.gd`
 covers the garage button's disabled states, that a one-car garage is openable,
 and the two modal-ordering regressions (a second box is not spent behind an

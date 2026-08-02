@@ -374,15 +374,7 @@ func build_lift_overlay() -> void:
 	# itself — see tuning_panel.gd — so the hub row no longer carries it.)
 	var test_drive := _hq._station_button("Test Drive", _hq._test_drive)
 	_hq._lift_hub_controls.add_child(test_drive)
-	# Repair: spend one Repair Kit on the selected car (full restore). HIDDEN for now —
-	# earning Repair Kits is disabled, so there's nothing to spend. The button is still
-	# built (and _refresh_lift_repair_button still labels it) but kept invisible and OUT
-	# of the hub cursor so it's neither shown nor navigable; re-add it to both when kits
-	# come back.
-	var repair := _hq._station_button("Repair", _hq._repair_selected_car)
-	repair.visible = false
-	_hq._lift_hub_controls.add_child(repair)
-	_hq._lift_repair_button = repair
+	# (No Repair button: repair kits are gone and damage is one-way — see features/damage.md.)
 	_hq._hub_cursor.setup(
 		[back, to_upgrades, to_tune, test_drive],
 		[on_back, to_upgrades_cb, to_tune_cb, _hq._test_drive])
@@ -447,14 +439,7 @@ func build_car_overlay() -> void:
 	back.focus_mode = Control.FOCUS_NONE
 	back.pressed.connect(_hq._car_back)
 	actions.add_child(back)
-	# Repair the focused wrecked car (uses one kit, restores full health, enables Start).
-	# Hidden unless the focused car is wrecked AND a Repair Kit is owned.
-	_hq._car_repair_button = Button.new()
-	_hq._car_repair_button.text = "Repair (1 kit)"
-	_hq._car_repair_button.focus_mode = Control.FOCUS_NONE
-	_hq._car_repair_button.visible = false
-	_hq._car_repair_button.pressed.connect(_hq._repair_focused_car)
-	actions.add_child(_hq._car_repair_button)
+	# (No Repair button here either — a wrecked car can never be brought back.)
 	_hq._start_button = Button.new()
 	_hq._start_button.text = "Start Rally"
 	_hq._start_button.focus_mode = Control.FOCUS_NONE

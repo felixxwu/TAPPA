@@ -130,6 +130,37 @@ Specific design-system touches:
 - **Wreck screen** (`wreck_screen.gd`) — red heading on a dim black backdrop.
 - **HUD** (`hud.gd`) — the run timer is white (neutral ink), the stage-complete banner green.
 
+## Sizing a scrolled body (`UITheme.fit_body_scroll`)
+
+Modals put their autowrapped body `Label` inside a `TouchScrollContainer` so a long
+message can never push the action buttons off screen (`ConfirmPopup`,
+`UsernamePopup` — see `features/menus.md` → "Body scrolls, buttons stay pinned").
+But a `ScrollContainer` deliberately reports **no minimum size on the axis it may
+scroll**, so inside a `CenterContainer`/`PanelContainer` (both of which size to
+their natural minimum) an untouched scroll collapses to ~0 tall. Its height must
+therefore be set explicitly, and `UITheme.fit_body_scroll(scroll, body, wrap_width)`
+is the one place that does it:
+
+- **Show everything.** The scroll is given the body's true wrapped height, so a
+  normal message never scrolls at all — these popups are fullscreen and their
+  bodies are short. The viewport cap (`BODY_SCROLL_MARGIN`) is a *fallback* for a
+  pathological string: it stays scrollable rather than clipped, and the panel
+  never grows past the screen.
+- **Two measurements.** Before the first layout pass the Label has no width, so the
+  height is *estimated* from the font at the known wrap width; once the Label has a
+  real width its `resized` signal re-fits from the Label's own exact content height.
+  That second pass also covers the body TEXT being swapped later
+  (`ConfirmPopup.set_body` / `open_committing`), which the one-shot measurement
+  never did.
+- **Don't measure with `Font.get_multiline_string_size` alone.** It returns
+  lines x font-height and knows nothing about a Label's `line_spacing` theme
+  constant, so it comes out `(lines - 1) * line_spacing` **short** — that was a real
+  bug: multi-line popup bodies hid their last line behind a scrollbar on a
+  fullscreen popup with room to spare. `_body_content_height` adds the spacing back.
+
+Covered by `tests/headless/test_confirm_popup.gd` (body fully visible, replaced body
+re-fits, long body stays scrollable).
+
 ## Theme generator
 
 `tools/build_ui_theme.gd` builds the project-wide theme (`theme/ui_theme.tres`)

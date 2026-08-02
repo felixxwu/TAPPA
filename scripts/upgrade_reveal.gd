@@ -6,10 +6,8 @@ class_name UpgradeReveal
 # continues past the card, Upgrades opens the same real UpgradesMenu component the
 # pre-stage start line / HQ garage use (features/upgrade-catalogue.md) so the player
 # can slot the just-won part right away, gated by the same rally p/w-limit warning.
-# A won repair kit offers a Repair-now/Save-it choice when the driven car is below
-# full health; otherwise consumables and the drivetrain kit skip straight to the
-# Upgrades/Next row. Emits `finished` once the reveal (+ repair choice, where
-# offered, or Next/Upgrades-done) resolves. Used by the standings interstitial;
+# Consumables and the drivetrain kit skip straight to the Upgrades/Next row. Emits
+# `finished` once the reveal (or Next/Upgrades-done) resolves. Used by the standings interstitial;
 # visually matches the podium reward card (features/menus.md,
 # features/reward-system.md). A "Skip >" button appears only while the reel is
 # actually animating (real play, non-zero spin time) and fast-forwards straight
@@ -18,22 +16,14 @@ class_name UpgradeReveal
 signal finished()
 
 var _car_instance_id := -1
-var _choice_item_id := ""
-var _choice_pending := false
-# Which choice the buttons resolve: "upgrade" (Apply/Keep a slotted part) or
-# "repair" (use the just-won repair kit on the driven car now vs save it).
-var _choice_mode := "upgrade"
 var _reveal_done := false
 var _headless := false
 var _slot_tween: Tween
 
 var _slot_label: Label
 var _slot_caption: Label
-var _choice_box: HBoxContainer
-var _apply_button: Button
-var _keep_button: Button
 var _skip_button: Button
-# Shown once the reveal lands with no repair choice pending (e.g. "Install it at the
+# Shown once the reveal lands (e.g. "Install it at the
 # next stage"): Upgrades jumps straight into the real garage upgrades menu so the
 # player can slot the just-won part immediately; Next continues exactly as the bare
 # `finished.emit()` used to. See _show_actions / _on_upgrades_pressed.
@@ -106,27 +96,9 @@ func _build_ui() -> void:
 	_skip_button.pressed.connect(_on_skip_pressed)
 	col.add_child(_skip_button)
 
-	# The repair-kit apply/keep choice: Repair now spends the just-won kit on the
-	# driven car, Save it banks it for later. Both buttons focusable so the choice
-	# works on keyboard/gamepad. (Normal parts no longer use this box — see
-	# `_offer_choice`.)
-	_choice_box = HBoxContainer.new()
-	_choice_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	_choice_box.add_theme_constant_override("separation", 12)
-	_choice_box.visible = false
-	col.add_child(_choice_box)
-	_apply_button = Button.new()
-	_apply_button.focus_mode = Control.FOCUS_ALL
-	_apply_button.pressed.connect(_on_apply)
-	_choice_box.add_child(_apply_button)
-	_keep_button = Button.new()
-	_keep_button.focus_mode = Control.FOCUS_ALL
-	_keep_button.text = "Keep for later"
-	_keep_button.pressed.connect(_on_keep)
-	_choice_box.add_child(_keep_button)
-
-	# The Upgrades/Next action row: same side-by-side HBoxContainer pattern as
-	# _choice_box above, shown once the reveal has landed with nothing left to choose.
+	# The Upgrades/Next action row, shown once the reveal has landed. (There is no
+	# Apply/Keep choice box any more — the won-repair-kit offer it existed for is gone
+	# along with repair kits themselves; see _offer_choice.)
 	_action_box = HBoxContainer.new()
 	_action_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_action_box.add_theme_constant_override("separation", 12)
@@ -222,44 +194,21 @@ func _start_slot(reel_names: Array, target: String, on_done: Callable) -> void:
 	_skip_button.visible = _slot_tween != null
 	if _skip_button.visible:
 		# Framework: focus + WASD/arrow/gamepad nav onto Skip (no on_back — the host
-		# owns back). Re-attach is cheap and matches the repair-choice pattern below.
+		# owns back). Re-attach is cheap.
 		MenuNav.attach(self, {first = _skip_button})
 
 
 # The won part is already fitted (disabled) to the driven car; the reveal just
 # reports that and emits `finished` — no Apply/Keep, the player enables it later
-# in the garage. Consumables (the repair kit) just land in inventory, and the
-# drivetrain kit installs enabled (its FWD/RWD/AWD selection is made later in the
-# garage). A repair kit still offers a Repair-now/Save-it choice when the driven
-# car is below full health.
+# in the garage. Consumables just land in inventory, and the drivetrain kit installs
+# enabled (its FWD/RWD/AWD selection is made later in the garage).
 func _offer_choice(item_id: String, item_name: String) -> void:
 	var driven := Save.get_car(_car_instance_id)
-	# The repair kit is a consumable — but if the car you just drove is below full
-	# health, offer to spend the just-won kit on it right now (it's already in your
-	# inventory), instead of only banking it for the garage. Full-health cars fall
-	# through to the plain "added to your inventory" path.
-	var driven_entry := CarLibrary.by_id(String(driven.get("model_id", "")))
-	var driven_below_full := not driven_entry.is_empty() \
-			and float(driven.get("hp", 0.0)) < float(driven_entry.get("max_hp", 0.0))
-	# A challenge run does NOT block this. The lock commits a run to the car it
-	# started with; it does not reserve the car or freeze its condition. The player
-	# can already repair between stages via the garage, so refusing the kit here
-	# only made the reveal inconsistent with the rest of the game — the weakened
-	# damage carry-over is a deliberate, accepted consequence of that rule.
-	if item_id == UpgradeLibrary.REPAIR_KIT_ID and not driven.is_empty() and driven_below_full:
-		var repair_car := String(CarLibrary.by_id(String(driven.get("model_id", ""))).get("name", "your car"))
-		_choice_mode = "repair"
-		_choice_item_id = item_id
-		_choice_pending = true
-		_slot_caption.text = UITheme.caps("Repair your %s now? (uses 1 kit)" % repair_car)
-		_apply_button.text = UITheme.caps("Repair now")
-		_keep_button.text = UITheme.caps("Save it")
-		_choice_box.visible = true
-		UITheme.enforce(self)
-		# Framework: focus + WASD/arrow/gamepad nav across Repair/Save (no on_back —
-		# the host owns back). Seats the cursor on Repair.
-		MenuNav.attach(self, {first = _apply_button})
-		return
+	# NO REPAIR CHOICE. This used to intercept a won REPAIR KIT and offer to spend it
+	# on the just-driven car ("Repair now" / "Save it"). Repair kits no longer exist —
+	# damage is one-way apart from the free between-event field repair — so every won
+	# consumable now falls straight through to the plain "added to your inventory"
+	# path below. See features/damage.md.
 	if driven.is_empty() or UpgradeLibrary.slot_of(item_id) == "" or UpgradeLibrary.is_consumable(item_id):
 		_slot_caption.text = UITheme.caps("%s — added to your inventory" % item_name)
 		_show_actions()
@@ -274,20 +223,6 @@ func _offer_choice(item_id: String, item_name: String) -> void:
 	# right now via the Upgrades button below — no caption needed here, the reel
 	# above already names the won part and the Upgrades/Next row says what's next.
 	_show_actions()
-
-
-func _on_apply() -> void:
-	if _choice_mode == "repair":
-		var car_name := String(CarLibrary.by_id(String(Save.get_car(_car_instance_id).get("model_id", ""))).get("name", "your car"))
-		Save.use_repair_kit(_car_instance_id)
-		_slot_caption.text = UITheme.caps("%s repaired to full health" % car_name)
-		_resolve_choice()
-
-
-func _on_keep() -> void:
-	if _choice_mode == "repair":
-		_slot_caption.text = UITheme.caps("Repair kit saved to your inventory")
-		_resolve_choice()
 
 
 # Fast-forwards a running spin straight to the landed result — impatient players
@@ -307,18 +242,8 @@ func _on_skip_pressed() -> void:
 		_spin_on_done.call()
 
 
-func _resolve_choice() -> void:
-	_choice_item_id = ""
-	_choice_mode = "upgrade"
-	_choice_pending = false
-	_choice_box.visible = false
-	finished.emit()
-
-
 # Show the Upgrades/Next action row: hop into the real Upgrades menu right now, or
-# move on. Shown in place of an immediate `finished.emit()` once the
-# reveal has landed with nothing left to choose (repair now/save it — _resolve_choice
-# above — still finishes on its own choice, unchanged).
+# move on. Shown in place of an immediate `finished.emit()` once the reveal lands.
 func _show_actions() -> void:
 	_action_box.visible = true
 	UITheme.enforce(self)

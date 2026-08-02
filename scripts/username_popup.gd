@@ -181,21 +181,10 @@ func _build() -> void:
 
 	UITheme.enforce(self)
 
-	# See ConfirmPopup._build for the full rationale: a ScrollContainer doesn't
-	# report its child's minimum size on the axis it scrolls, so measure the
-	# body's true wrapped height ourselves, cap it against whatever the
-	# viewport actually leaves once the title/field/buttons are accounted for,
-	# and let a short body hug exactly as before.
-	var font: Font = body.get_theme_font("font")
-	var font_size: int = body.get_theme_font_size("font_size")
-	var full_body_h: float = font.get_multiline_string_size(
-		body.text, HORIZONTAL_ALIGNMENT_LEFT, panel_width, font_size).y
-	scroll.custom_minimum_size = Vector2(0, full_body_h)
-	var panel_full_h: float = panel.get_combined_minimum_size().y
-	var reserved_h: float = panel_full_h - full_body_h
-	const VERTICAL_MARGIN := 32.0
-	var max_scroll_h: float = maxf(viewport_size.y - reserved_h - VERTICAL_MARGIN, 40.0)
-	scroll.custom_minimum_size = Vector2(0, minf(full_body_h, max_scroll_h))
+	# See UITheme.fit_body_scroll: a ScrollContainer doesn't report its child's
+	# minimum size on the axis it scrolls, so the body's true wrapped height has to
+	# be measured and handed to it — otherwise the text hides behind a scrollbar.
+	UITheme.fit_body_scroll(scroll, body, panel_width)
 	# Keyboard + gamepad: the cursor lands in the field, up/down walk field ->
 	# Save -> Cancel, and Back (Esc / gamepad B) cancels. MenuNav.is_text_editing
 	# means the first Back press only releases the field, which is what a player

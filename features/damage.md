@@ -7,9 +7,11 @@ Each fielded car has a depleting **HP pool**. Impacts drain it during a run, the
 car's handling and power degrade as HP falls, and at 0 HP the car is **wrecked**
 (run DNF; a fielded car is destroyed along with its installed upgrades — parts are
 fully consumed when fitted, so they are NOT returned). HP only ever goes down
-in-run; between runs it climbs back two ways — a **Repair Kit** (full restore,
-Save) and the free **between-event pit repair** applied automatically at the start
-of every rally event after the first (see *Between-event pit repairs* below).
+in-run, and **wrecking is terminal**. HP climbs back exactly ONE way: the free
+**between-event pit repair** applied automatically at the start of every rally event
+after the first (see *Between-event pit repairs* below). There is no full restore and
+no way to revive a wreck — the Repair Kit that used to do both has been removed. A player whose whole garage is wrecked is rescued by a
+free **Mystery Box**, which grants a new car (see *Wreck at 0 HP*).
 
 ## State (`DamageModel`)
 
@@ -141,9 +143,9 @@ on the `VehicleWheel3D` nodes themselves.
 - **Persistence.** `wheel_toe` lives on the **OwnedCar** (a 4-float array ordered
   like `WHEEL_NAMES`), persisted at each event boundary alongside HP
   (`world.gd._on_session_event_completed` → `Save.set_wheel_toe`), so a car carries
-  its bent wheels **between events**. A **Repair Kit** straightens the wheels along
-  with restoring HP (`Save.use_repair_kit` zeroes it; `DamageModel.reset_wheel_toe`
-  is the in-model equivalent). Older saves with no `wheel_toe` key are backfilled
+  its bent wheels **between events**. The between-event field repair bends them back
+  toward straight along with restoring some HP (`DamageModel.reset_wheel_toe` is the
+  in-model equivalent of zeroing them). Older saves with no `wheel_toe` key are backfilled
   straight (`Save._sanitise`).
 
 ## Soft contacts — bushes & spectators (`apply_soft_drag`)
@@ -197,8 +199,8 @@ needed.
   Each cut also puffs a burst of bonnet smoke — see [engine-smoke.md](engine-smoke.md).
 - **Wheel misalignment** — the car's pull/crab is NOT a damage-fraction effect: it
   comes from the accumulated per-wheel `wheel_toe` applied to the physical wheels
-  (see *Wheel misalignment* above). It persists between events and is fixed only by
-  a Repair Kit, independent of HP.
+  (see *Wheel misalignment* above). It persists between events and is eased back only
+  by the between-event field repair, independent of HP.
 
 ## Wreck at 0 HP
 
@@ -206,19 +208,22 @@ needed.
 - A **fielded** car (`instance_id >= 0`) calls `Save.wreck_car(instance_id)` —
   which leaves the car **owned at 0 HP** (NOT destroyed): it stays in the garage,
   its installed upgrades stay fitted (parts are consumed on fit, so they're never
-  returned), and it's **too damaged to enter a rally** until a **Repair Kit**
-  restores it (`Save.use_repair_kit` → full health). `Save.car_is_wrecked(car)` is
-  the "0 HP" predicate the menus gate on.
+  returned), and it is **permanently too damaged to enter a rally** — nothing revives
+  it, so the car park's warning reads as final rather than as an instruction.
+  `Save.car_is_wrecked(car)` is the "0 HP" predicate the menus gate on.
 - `wrecked` is emitted either way; `car.gd` re-emits it as the car-level `wrecked`
   signal for the rally/menu layer (sibling to `StageManager.stage_completed`).
 - In **free-roam** (unbound) there is no DNF flow, so `car.gd` heals the car
   to full and respawns it at the start so play continues.
 
 Every car — including the starter — is a normal, wreckable car (no invulnerable
-car exists). The anti-soft-lock floor is instead `Save.ensure_repair_safety_net`
+car exists). The anti-soft-lock floor is `Save.ensure_wreck_safety_net`
 (see [save-persistence.md](save-persistence.md)): if the player owns ≥1 car, every
-owned car is wrecked, and no repair kits are held, it grants one free Repair Kit so
-a wrecked car can always be revived.
+owned car is wrecked, and no Mystery Box is held, it grants one free box. Opening it
+grants a **whole new car** rather than an upgrade (`Save.open_mystery_box` checks
+`all_cars_wrecked()` first), because a part fitted to a write-off would be worthless.
+That is the only route out of a fully wrecked garage — see
+[reward-system.md](reward-system.md).
 
 ### Mid-event wreck menu (`scripts/wreck_screen.gd`)
 
@@ -236,7 +241,7 @@ the cinematic and report immediately. See [menus.md](menus.md) for the loop.
 A rally is a campaign of `EVENTS_PER_RALLY` events run back-to-back on one fielded
 car (see [rally-session.md](rally-session.md)). At the **start of every event after
 the first**, the engineers patch the car up a bit — a free, automatic partial
-repair (distinct from the full-restore Repair Kit, which costs an item):
+repair, and the ONLY way HP is ever restored:
 
 - **Health:** restore `field_repair_hp_fraction` (default `0.2`) of the HP **lost so
   far** — a car at 50% comes back to 60% (20% of the missing 50%), one at 90% to 92%.
@@ -303,8 +308,8 @@ knob), `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
 `spectator_drag_strength`), `hud_hp_enabled`, `hud_low_hp_warn_frac`,
 `wreck_settle_max_seconds` (cap on the wreck-menu settle wait; the orbit reuses the
 `start_orbit_*` knobs). Per-car `max_hp` is CarLibrary metadata, **not** a
-`GameConfig` field. A Repair Kit fully restores health (no knob); the between-event
-pit repair is the only partial heal, tuned by the two `field_repair_*` fractions.
+`GameConfig` field. The between-event pit repair is the only heal there is, tuned by
+the two `field_repair_*` fractions.
 Tuning numbers are placeholders pending playtest (the mechanism is fixed, the
 values are not).
 
@@ -323,8 +328,8 @@ health threshold, ramping to 1 at 0 HP), `test_engine_logic.gd` (**misfire**:
 the pure `misfire_rate` is 0 when healthy / positive & load-rising under damage, a
 healthy engine never cuts over many steps, a wrecked one cuts intermittently, and a
 forced cut kills crank torque), `test_save_manager.gd` (`wheel_toe`
-round-trips through save/reload, a Repair Kit straightens the wheels, old saves
-backfill straight, **`field_repair`** restores the given fraction of lost HP, bends
+round-trips through save/reload, a full-fraction field repair straightens the wheels,
+old saves backfill straight, **`field_repair`** restores the given fraction of lost HP, bends
 each wheel the given fraction back toward straight, skips a pristine car, and leaves
 a wrecked car wrecked), `test_rally_session.gd` (the **between-event pit repair**
 fires entering every event after the first, never the first, and its summary is

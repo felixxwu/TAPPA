@@ -33,9 +33,9 @@ roguelike**: do you risk your best car to win, or play it safe?
 | Topic | Decision |
 |---|---|
 | Economy | **No currency.** Progression is purely cars + upgrades won. |
-| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits never drop (`RewardSystem.REPAIR_KIT_DROP_WEIGHT := 0`, `scripts/reward_system.gd:23`), the lift-HQ repair button is hidden (`scripts/hq.gd` `_build_lift_overlay`, `repair.visible = false`), and repair instead happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`, `scripts/rally_session.gd:392-400`). See `todo/remove-repair-kits.md` for the full retirement (some pieces, e.g. the anti-soft-lock replacement for a fully-wrecked car, are still open design questions there — not yet decided). |
+| Damage repair | **SUPERSEDED.** Originally: repair only via rare "repair kit" lootbox items. As implemented: repair kits have been **removed entirely**, and repair happens **automatically between events** (`Save.field_repair`, driven by `RallySession._enter_event`) — a partial restore, and the only way HP ever climbs back. Wrecking (0 HP) is **terminal**: nothing revives a wreck. See `features/damage.md`. |
 | Run stakes | **No retry.** A rally you don't win returns you to HQ and stays re-enterable later from the map (a fresh attempt, chosen from HQ — not an in-place redo). Opponent results are fixed per rally seed; damage from any attempt persists. |
-| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + the car is **kept at 0 HP** (too damaged to field), not destroyed. *(Updated: recovery is no longer a spent repair kit — see the Damage repair row above; the current auto-repair mechanic runs between events, so the exact path back from a full 0-HP wreck is one of the open questions in `todo/remove-repair-kits.md`.)* |
+| Wreck / DNF | Each car has **HP** (heavier ≈ more durable). HP→0 = **wrecked**: rally DNF + the car is **kept at 0 HP**, not destroyed — but it is a write-off and can never race again. The anti-soft-lock floor is the **Mystery Box**: wreck every car you own and you're granted one, and opening it yields a **new car** (`Save.ensure_wreck_safety_net` / `Save.open_mystery_box`). See `features/damage.md`. |
 | Rally complete | **Finish top 3** in a rally (combined time). |
 | Showdown unlock | **All rallies completed** (top-3 each). The world map is a **finite, curated set**. |
 | Soft-lock guard | **Both:** an always-available open-class rally pool the immortal starter qualifies for, **and** reward logic guarantees every car granted is eligible for ≥1 incomplete rally and never leaves zero enterable rallies. |
@@ -93,10 +93,9 @@ roguelike**: do you risk your best car to win, or play it safe?
   start line) tells the player and offers to **return to HQ**. The wrecked car is
   **kept in the garage at 0 HP** — **too damaged to enter a rally** until repaired,
   and its installed upgrades **stay fitted** (parts are consumed on fit, so they're
-  never returned; the car is no longer destroyed). *(Updated: "until repaired" no
-  longer means a spent repair kit — see the Damage repair row in Locked decisions;
-  the exact recovery path for a fully-wrecked (0 HP) car under the auto-repair
-  model is still an open question, see `todo/remove-repair-kits.md`.)*
+  never returned; the car is no longer destroyed). *(Updated: a wreck is never
+  repaired — see the Damage repair row in Locked decisions. The way back from a
+  fully-wrecked garage is the Mystery Box's new-car grant.)*
 - **HP carries over** across events and rallies — chip damage from one rally
   weakens the car in the next unless repaired.
 - **Getting stuck auto-recovers for free.** If a car ends up trapped — pinned,
@@ -115,11 +114,10 @@ roguelike**: do you risk your best car to win, or play it safe?
   spent at the tuning lift or the car-select screen, that fully restores a car's
   health. As implemented, repair kits never drop and the lift/car-park repair
   buttons are hidden; repair instead happens **automatically between events**
-  (`Save.field_repair`, `scripts/rally_session.gd:392-400`) — currently a partial
+  (`Save.field_repair`, `scripts/rally_session.gd:392-400`) — a partial
   restore (see `field_repair_hp_fraction` / `field_repair_toe_fraction` in
-  `config/game_config.tres`), not the kit's full restore. Whether a fully-wrecked
-  (0 HP) car gets a separate full-restore path is still an open question — see
-  `todo/remove-repair-kits.md`.
+  `config/game_config.tres`), and the only heal in the game. A fully-wrecked (0 HP)
+  car gets NO restore path: it is lost, and the Mystery Box grants a new car instead.
 - *(Implementation: max-HP-per-car, HP-per-impact, and how steeply alignment/
   power degrade with HP lost are tuning numbers; defer exact values to a damage
   todo + playtesting. Reuses the existing collision on signs/trees as impact
@@ -229,7 +227,7 @@ Two distinct systems:
   engine/power, aero kit (unlocks aero tuning), suspension. *(The repair kit was
   originally planned as an upgrade-catalogue item too, but it's been retired —
   repair is now automatic between events, see the Damage repair row in Locked
-  decisions and `todo/remove-repair-kits.md`. Exact upgrade list + how each maps
+  decisions. Exact upgrade list + how each maps
   to config knobs → its own todo.)*
 
 - **Appearance** — a third, purely **cosmetic** system: any car's **wheels** can be

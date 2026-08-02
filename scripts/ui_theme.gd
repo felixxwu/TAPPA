@@ -212,6 +212,95 @@ static func reward_card_box() -> StyleBoxFlat:
 	return style
 
 
+# --- Scrolling body text -----------------------------------------------------
+
+# Breathing room kept between a modal panel and the edges of the screen when the
+# body has to be capped. Only ever bites on a pathologically long string.
+const BODY_SCROLL_MARGIN := 32.0
+
+# SIZE A SCROLLED BODY LABEL TO ITS CONTENT. Shared by every modal that puts an
+# autowrapped body Label inside a (Touch)ScrollContainer — ConfirmPopup and
+# UsernamePopup today.
+#
+# WHY THIS EXISTS. A ScrollContainer does not report its child's minimum size on
+# an axis it may scroll, so an untouched scroll collapses to ~0 tall inside a
+# CenterContainer/PanelContainer (both of which size to their natural minimum).
+# The scroll's height therefore has to be set explicitly, and it must be the
+# body's TRUE wrapped height or the last line(s) get hidden behind a scrollbar —
+# exactly the bug this helper fixes. These popups are fullscreen and their bodies
+# are short, so in practice NOTHING should ever scroll; the cap below is only a
+# fallback so a pathological string is reachable rather than clipped.
+#
+# TWO MEASUREMENTS, BECAUSE THE FIRST ONE IS ONLY AN ESTIMATE. Before the first
+# layout pass the Label has no width, so its own minimum height cannot be
+# trusted and we estimate from the font at the known wrap width. That estimate
+# used to be the ONLY measurement, and it is systematically SHORT:
+# `Font.get_multiline_string_size` returns lines x font-height and knows nothing
+# about the Label's `line_spacing` theme constant, so an N-line body came out
+# (N-1) x line_spacing too short and scrolled. We add the spacing back, and then
+# re-fit from the Label itself (via its `resized` signal) once it has a real
+# width and reports its exact content height — which also covers the body TEXT
+# being replaced later (ConfirmPopup.set_body / open_committing).
+static func fit_body_scroll(scroll: ScrollContainer, body: Label, wrap_width: float) -> void:
+	if not is_instance_valid(scroll) or not is_instance_valid(body):
+		return
+	if not scroll.has_meta("body_fit_wired"):
+		scroll.set_meta("body_fit_wired", true)
+		body.resized.connect(_refit_body_scroll.bind(scroll, body, wrap_width))
+	_refit_body_scroll(scroll, body, wrap_width)
+
+
+static func _refit_body_scroll(scroll: ScrollContainer, body: Label, wrap_width: float) -> void:
+	if not is_instance_valid(scroll) or not is_instance_valid(body) or not scroll.is_inside_tree():
+		return
+	var content_h := _body_content_height(body, wrap_width)
+	var previous: float = scroll.custom_minimum_size.y
+	scroll.custom_minimum_size = Vector2(0, content_h)
+	# Cap against what the screen actually leaves once everything OUTSIDE the
+	# scroll (title, field, buttons, gaps, panel padding) has taken its share.
+	var viewport_h: float = scroll.get_viewport().get_visible_rect().size.y \
+		if scroll.get_viewport() != null else 360.0
+	var box := _panel_ancestor(scroll)
+	var reserved_h: float = 0.0
+	if box != null:
+		reserved_h = maxf(box.get_combined_minimum_size().y - content_h, 0.0)
+	var max_h: float = maxf(viewport_h - reserved_h - BODY_SCROLL_MARGIN, 40.0)
+	var fitted: float = minf(content_h, max_h)
+	# Only write when it actually moved: `resized` fires as a RESULT of this
+	# write, and re-writing an identical value would spin the layout forever.
+	if absf(fitted - previous) > 0.5:
+		scroll.custom_minimum_size = Vector2(0, fitted)
+	else:
+		scroll.custom_minimum_size = Vector2(0, previous)
+
+
+# The body's true wrapped height. Prefers the Label's own report once it has been
+# laid out at (about) the wrap width; falls back to a font measurement corrected
+# for `line_spacing` before the first layout pass.
+static func _body_content_height(body: Label, wrap_width: float) -> float:
+	if body.size.x >= wrap_width - 1.0 and body.size.x > 0.0:
+		return body.get_combined_minimum_size().y
+	var body_font: Font = body.get_theme_font("font")
+	var font_size: int = body.get_theme_font_size("font_size")
+	if body_font == null:
+		return 0.0
+	var lines_h: float = body_font.get_multiline_string_size(
+		body.text, HORIZONTAL_ALIGNMENT_LEFT, wrap_width, font_size).y
+	var line_h: float = maxf(body_font.get_height(font_size), 1.0)
+	var line_count: int = maxi(int(round(lines_h / line_h)), 1)
+	var spacing: float = float(body.get_theme_constant("line_spacing"))
+	return lines_h + spacing * float(line_count - 1)
+
+
+static func _panel_ancestor(node: Node) -> PanelContainer:
+	var p := node.get_parent()
+	while p != null:
+		if p is PanelContainer:
+			return p as PanelContainer
+		p = p.get_parent()
+	return null
+
+
 # --- Buttons & selection -----------------------------------------------------
 
 # A standard menu button: uppercase, fixed compact height (rule 3), no keyboard

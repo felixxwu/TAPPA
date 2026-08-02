@@ -226,30 +226,13 @@ func _build(title: String, body: String, default_index: int) -> void:
 	# that final size to be accurate.
 	UITheme.enforce(self)
 
-	# CAP THE SCROLL, NOT THE PANEL. A ScrollContainer does not report its
-	# child's minimum size on an axis it is allowed to scroll (vertical here,
-	# since vertical_scroll_mode defaults to AUTO) — that is precisely the
-	# clipping behaviour scrolling needs, but it also means an untouched scroll
-	# collapses to ~0 tall, and a plain SIZE_EXPAND_FILL only claims space the
-	# parent already has to spare (which a CenterContainer/PanelContainer never
-	# does — they both size to their natural minimum). So: measure the body's
-	# TRUE wrapped height ourselves at the known wrap width via
-	# Font.get_multiline_string_size (the same metric Label's own internal wrap
-	# uses), give the scroll exactly that, measure how tall the whole panel
-	# would then be, and re-clamp the scroll to whatever is actually left under
-	# the viewport height. A short body's true height is smaller than the cap,
-	# so it passes through untouched and the panel hugs it exactly as before —
-	# no forced tall panel, no scrollbar for two lines.
-	var font: Font = body_label.get_theme_font("font")
-	var font_size: int = body_label.get_theme_font_size("font_size")
-	var full_body_h: float = font.get_multiline_string_size(
-		body_label.text, HORIZONTAL_ALIGNMENT_LEFT, panel_width, font_size).y
-	scroll.custom_minimum_size = Vector2(0, full_body_h)
-	var panel_full_h: float = panel.get_combined_minimum_size().y
-	var reserved_h: float = panel_full_h - full_body_h  # title + buttons + gaps + padding
-	const VERTICAL_MARGIN := 32.0
-	var max_scroll_h: float = maxf(viewport_size.y - reserved_h - VERTICAL_MARGIN, 40.0)
-	scroll.custom_minimum_size = Vector2(0, minf(full_body_h, max_scroll_h))
+	# SHOW ALL THE TEXT. The scroll must be given the body's true wrapped height
+	# or it collapses to ~0 (a ScrollContainer reports no minimum on the axis it
+	# scrolls) and the message is hidden behind a scrollbar. UITheme.fit_body_scroll
+	# owns that measurement — including the re-fit once the Label has a real width,
+	# which is also what keeps set_body() (open_committing's deferred body) honest.
+	# It caps against the viewport as a last resort only; a normal body never scrolls.
+	UITheme.fit_body_scroll(scroll, body_label, panel_width)
 
 	# first may be null when every action is disabled — MenuNav simply seats no
 	# cursor, which is the intended behaviour (nothing to focus).

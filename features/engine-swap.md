@@ -11,8 +11,8 @@ in `scripts/upgrades_menu.gd` (`UpgradesMenu`), and the car-park swap-mode UI in
 `scripts/hq.gd`.
 
 **Engine swap** lets the player move any owned car's engine into any other
-owned car. Each swap costs one **engine swap token** — a consumable earned like
-the repair kit (a low-weight reward-pool drop, held in the shared inventory).
+owned car. Each swap costs one **engine swap token** — a consumable earned as a
+low-weight reward-pool drop, held in the shared inventory.
 **Health is irrelevant**: a damaged car swaps fine and keeps its current HP
 through the exchange (no repair coupling). Every swap spends a token, including
 reverting a car to its own stock engine. **Engine detune** is a per-car tuning

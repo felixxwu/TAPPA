@@ -1,7 +1,7 @@
 extends GutTest
 # The upgrade catalogue (UpgradeLibrary): the authored item list, the effect-
 # application pipeline (step 2: baseline → upgrades), and the tuning gates.
-# Slot-replacement and repair-kit behaviour (which need the Save profile) live in
+# Slot-replacement behaviour (which needs the Save profile) lives in
 # test_save_manager.gd. See todo/upgrade-catalogue.md.
 
 
@@ -26,7 +26,8 @@ func test_catalogue_is_well_formed() -> void:
 		else:
 			assert_true(UpgradeLibrary.SLOTS.has(item["slot"]),
 				"%s has a known slot" % item["id"])
-	assert_true(UpgradeLibrary.is_consumable(UpgradeLibrary.REPAIR_KIT_ID), "repair kit is consumable")
+	assert_true(UpgradeLibrary.is_consumable(UpgradeLibrary.ENGINE_SWAP_TOKEN_ID),
+		"the swap token is consumable")
 
 
 func test_lookups() -> void:

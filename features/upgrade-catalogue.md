@@ -4,7 +4,7 @@
 the catalogue of upgrade **items** — authored content (like `CarLibrary` /
 `RallyLibrary`), not player state. The save profile holds the player side (each
 `OwnedCar.installed_upgrades` / `disabled_upgrades`, keyed by the stable `id`
-here, plus the consumable `inventory` — repair kits, engine swap tokens, and mystery boxes); this library defines
+here, plus the consumable `inventory` — engine swap tokens and mystery boxes); this library defines
 what those ids mean and what each does to a fielded car.
 
 **Upgrades are car-bound.** An upgrade belongs to the car it was won for and
@@ -73,9 +73,10 @@ The weight slot uses a **bespoke selector** in `UpgradesMenu` rather than the ge
 earn-gated option row — see below.
 Current set: two **turbo kits** (turbo slot — `turbo_small` tier 1, `turbo_large`
 tier 1 + prerequisite-gated on the same car having `turbo_small`, see above), an aero kit, the three **weight** parts above,
-the drivetrain swap kit, and three consumables — the **repair kit**, the **engine
-swap token**, and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; all
-three `slot: ""`, held in the shared `inventory`). The token is spent
+the drivetrain swap kit, and two consumables — the **engine
+swap token** and the **mystery box** (`MYSTERY_BOX_ID`, `"mystery_box"`; both
+`slot: ""`, held in the shared `inventory`). (A third, the repair kit, was retired —
+damage is one-way now; see [damage.md](damage.md).) The token is spent
 by `Save.swap_engines`, see [engine-swap.md](engine-swap.md). The mystery box
 is drawn instead of a normal upgrade once a car has nothing left to gain and
 the player is token-rich, and is also handed out by the online Rally Challenge
@@ -202,7 +203,7 @@ so an upgrade can push a car over — or back under — a rally's `pw_max` ceili
 The rival pool and reward-grant queries keep using the raw `CARS` entries (those
 are unmodified roster cars, not the player's upgraded ones).
 
-## Install / repair (in `Save`)
+## Install (in `Save`)
 
 The slot policy and HP healing live in `Save` (it owns inventory + HP):
 
@@ -227,10 +228,8 @@ The slot policy and HP healing live in `Save` (it owns inventory + HP):
   disables its same-slot siblings (`OwnedCar.disabled_upgrades` holds the
   toggled-off ids). `UpgradeLibrary.enabled_upgrades(car)` /
   `is_enabled(car, id)` are the read side every effect/gate consumer uses.
-- **`Save.use_repair_kit(instance_id)`** — spends one repair kit to **fully
-  restore** the car to its CarLibrary `max_hp`. The only way HP goes back up, and
-  what revives a wrecked (0 HP) car. Offered at the tuning lift and at the
-  car-select screen when a chosen car is too damaged to enter.
+- **There is no repair action.** HP climbs back only via the free between-event
+  `Save.field_repair`, and a wrecked car is never revived — see [damage.md](damage.md).
 
 ## Reward integration
 
@@ -244,7 +243,7 @@ Turbo) — that policy is reward-system logic (`reward-system.md`); this
 library just provides the tier-keyed pool plus the `requires_upgrade_id` /
 `prerequisite_met` helpers it reads. The flow
 controller fits each won part straight onto the driven car via
-`Save.install_upgrade(..., enabled=false)` (repair kits, being consumable, go to
+`Save.install_upgrade(..., enabled=false)` (consumables go to
 `Save.add_item` instead), and the **standings reveal** (`scripts/upgrade_reveal.gd`,
 not the podium) confirms the part with a single "Next" step — see `features/reward-system.md`.
 
@@ -261,7 +260,7 @@ Disabled parts being inert everywhere (config, effective stats, tuning gates) is
 covered there too. Same-slot exclusivity (applying/enabling a part disables the
 incumbent instead of scrapping it), the `enabled=false` disabled fit, per-car
 duplicate-fit rejection, the same part fitting two different cars independently,
-the `set_upgrade_enabled` toggle, consumable/unknown rejection, repair-kit
+the `set_upgrade_enabled` toggle, consumable/unknown rejection, field-repair
 heal+clamp, wreck (parts stay on the car), and the v1→v2 migration stripping the
 old unbound pool are in `test_save_manager.gd` (they need the Save profile). The
 garage upgrades menu having no apply-from-pool rows, the earn-gated option selectors

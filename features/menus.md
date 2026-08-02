@@ -185,9 +185,9 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   "Online leaderboard >") reads **`Collect reward >`** instead of `Continue to next
   stage >`. Pressing it clears page 2 and takes over the screen with the shared
   `UpgradeReveal` card (`scripts/upgrade_reveal.gd`) — the **same slot-machine spinner
-  as the podium** — which lands on the won part. A won repair kit offers **Repair now /
-  Save it** when the driven car is damaged (else it auto-resolves; the drivetrain kit
-  auto-resolves too) — but NOT when the driven car is locked by an active Rally
+  as the podium** — which lands on the won part. Everything auto-resolves to the
+  Upgrades/Next row now: the Repair-now / Save-it choice a won repair kit used to offer
+  is gone with the kits themselves. Not shown when the driven car is locked by a Rally
   Challenge run (`DrivingContext.is_car_locked`): repairing it would heal the damage
   that run is contracted to carry across stages, so the reveal takes the plain
   Save-it/inventory path and the kit becomes spendable once the run ends (see
@@ -361,11 +361,8 @@ shown, so `ui_accept` proceeds to the results flow — [hud.md](hud.md),
   picker, since we're already focused on one; it delegates to `_start_free_roam` (see
   below). There is no longer a Change Car button on this row — to work on a different car,
   go back to the garage and reopen the **Garage** picker, which brings up the car park.
-  (A **Repair** button also lives on
-  this hub row — spend a Repair Kit to fully restore the selected car
-  (`_repair_selected_car` / `_refresh_lift_repair_button`) — but it is currently
-  **hidden** and left out of the hub cursor while earning Repair Kits is disabled; see
-  `todo/remove-repair-kits.md`.) **Wheels** no longer lives on this hub row — it's a
+  (There is no **Repair** button on this row — repair kits are gone and damage is
+  one-way; see [damage.md](damage.md).) **Wheels** no longer lives on this hub row — it's a
   button inside the **Tuning** page itself (`tuning_panel.gd`, `TuningPanel._wheels_button`,
   native `FOCUS_ALL` matching the panel's sliders), wired via a `setup(owned_car,
   on_change, on_wheels)` callback the lift passes as `_enter_wheel_swap`; the start-line's
@@ -532,18 +529,15 @@ error text via `cloud_busy.gd::report_failure`, a computed multi-line reward via
 has to enter it. Because a `ScrollContainer` doesn't report its child's minimum size on an
 axis it's allowed to scroll (that's what makes clipping work — vertical here defaults to
 `AUTO`), an untouched scroll would collapse to ~0 tall and never hug a short body either.
-`_build` measures the body's true wrapped height itself via `Font.get_multiline_string_size`
-at the known wrap width (after `UITheme.enforce` has set the real font size), sizes the
-scroll to exactly that, measures the whole panel's natural height, then re-clamps the scroll
-to whatever the current logical viewport (`get_viewport().get_visible_rect().size`) leaves
-after title/buttons/padding. A short body's true height is under the cap so it passes
-through untouched — the panel still hugs short content exactly as before, no forced tall
-panel and no scrollbar for two lines. The panel width is likewise adaptive: `clampf(420.0,
+So `_build` hands the sizing to **`UITheme.fit_body_scroll(scroll, body_label, wrap_width)`**
+(see `features/ui-design-system.md` → "Sizing a scrolled body"), which gives the scroll the
+body's true wrapped height and caps it against the viewport only as a fallback. **In practice
+nothing scrolls**: these popups are fullscreen and their bodies are short, so the panel hugs
+the text and all of it is visible. The panel width is likewise adaptive: `clampf(420.0,
 200.0, viewport_width - 32.0)` instead of a bare `420` — at the 288-tall web-touch tier
 (`DisplayStretch`) or in portrait the logical width can be well under 420.
-`scripts/username_popup.gd` shares this exact shape (structurally identical layout, fixed
-today for consistency even though its body is an authored string, not caller-supplied) —
-keep the two in sync if this changes.
+`scripts/username_popup.gd` shares this exact shape and calls the same
+`UITheme.fit_body_scroll` — keep the two in sync if this changes.
 
 ### One modal at a time (`ConfirmPopup.MODAL_GROUP`)
 
@@ -856,7 +850,7 @@ and each button drills into **its own sub-page**:
   player collects the car reward without driving the stages.
   Upgrades are car-bound, so a slottable part **fits straight onto the selected car**
   (`Save.install_upgrade` — no-op with a "own a car first" note when nothing's owned);
-  only the repair kit, the one true consumable, still goes to the inventory
+  only consumables (swap token, mystery box) go to the inventory
   (`Save.add_item`). A status line reports the last action.
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
@@ -946,10 +940,7 @@ lost: `_obtain_parked_car` reuses whatever is warm and builds the remainder on t
 its next frame. (The underlying cost is that each car still *instantiates* all
 embedded bodies before pruning; a deeper fix — lazy per-model body loading in `car.tscn` —
 is noted but not yet done.) Settings no longer lives on this row — it's on the title
-screen now (see the EXTERIOR section above). (A **Repair** button lives on the
-tuning-lift hub row, spending a **Repair Kit** for a full restore via
-`_repair_selected_car` / `_refresh_lift_repair_button`, but is **hidden** for now while
-earning kits is disabled — see `todo/remove-repair-kits.md`.)
+screen now (see the EXTERIOR section above).
 
 **LIFT (the tuning bay).** Entering the bay **raises the car on the lift** — a slow
 tween from the lowered (garage) pose up to `hq_lift_car_height` over
@@ -1039,8 +1030,7 @@ skips either one will look fine in a throwaway test and still wrap in the real g
   the rally's `pw_max` limit) and the HQ car-park Change-Upgrades / detune modal (with
   the rally's limit); the HQ garage lift omits it so the button stays a plain **Back** and
   the player upgrades freely.
-  (Repair is **not** here — it lives on the **tuning-lift hub row** as a
-  `Repair` button, `_repair_selected_car`.) Below the slot rows sits an
+  (There is no Repair anywhere — see [damage.md](damage.md).) Below the slot rows sits an
   **engine-swap row** (`UpgradesMenu._make_engine_swap_row`, `upgrades_menu.gd:215`): the
   car's current engine name and a **Swap Engine** button gated on engine-swap **tokens**
   (NOT on HP). The swap lineup (`_swap_targets`) is **every other owned car regardless of
@@ -1049,9 +1039,10 @@ skips either one will look fine in a throwaway test and still wrap in the real g
   in **swap mode** (`_enter_engine_swap` / `_carpark_swap_mode`), where the normal car-park
   cycle/confirm/back flow exchanges the two cars' engines (`Save.swap_engines`) and returns
   to this page. See [engine-swap.md](engine-swap.md).
-  The wreck-recovery safety net (`Save.ensure_repair_safety_net`, a free kit when all
-  owned cars are wrecked + none held) runs on save load, on garage entry, and on
-  `_refresh_lift_ui`; the garage Repair button's label surfaces the resulting kit count.
+  The wreck-recovery safety net (`Save.ensure_wreck_safety_net`, a free **Mystery Box**
+  when all owned cars are wrecked + none held) runs on save load, on garage entry, and on
+  `_refresh_lift_ui` (`hq.gd._refresh_wreck_safety_net`); opening that box grants a new
+  CAR rather than a part — see [reward-system.md](reward-system.md).
   Both sub-pages share one **`< Back`** button (`_lift_back_button`, returns to the hub)
   that sits in the page `root` **below** the scroll container — a different node level
   from the tune/upgrades body — but it's `FOCUS_ALL`, so `menu_down` off the last body
@@ -1086,14 +1077,19 @@ flag encodes the rally's state on **two axes** (`RallyFlag.pennant_kind` /
 checkered** racing flag; else **bright green** when the player owns a car eligible to
 enter (`_has_eligible_car`); else **dark grey** (no qualifying car — also the locked
 showdown). **Tip + base** (the finial bead and base disk, always one colour): **warm
-gold** once the rally is **won** (1st place, 3 stars), **metal grey** otherwise. A
-rally that isn't available yet (locked, or no eligible car) also **dims its floating
-readout box** (`PIN_LABEL_DIM`) so the whole pin reads as disabled. The
-stars in the box remain the exact readout. Each
-unlocked pin carries **two** pickable `Area3D` hit spheres bound to the same handler
-(`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the floating
-**readout box itself**, so a click on the menu enters the rally just like a click on
-the flag — plus its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
+gold** once the rally is **won** (1st place, 3 stars), **metal grey** otherwise. The
+stars in the box remain the exact readout.
+
+**The readout box is all-or-nothing.** A rally that isn't available yet — locked, or
+with no eligible car — gets **no box at all** (it used to get a dimmed one): a menu is
+either live at full opacity or absent. The **3D flag still stands at every pin**
+regardless, so the map keeps marking where the unavailable rallies are, greyed. An
+available pin therefore carries **two** pickable `Area3D` hit spheres bound to the same
+handler (`_add_pin_hit`, rally id bound) — one over the flag/pole and one over the
+floating **readout box itself**, so a click on the menu enters the rally just like a
+click on the flag — while an unlocked-but-ineligible pin has only the flag sphere (no
+box to click) and no `label_panel` meta for the focus cursor to paint. Each pin also
+carries its `rally_id`/`locked` in metadata; a pin is grey + **non-pickable**
 whenever it isn't **revealed** yet (`RallyLibrary.rally_revealed`): the **showdown** until
 every other rally in its region is completed, and any rally whose **`reveal_after`**
 (a GLOBAL count of completed non-showdown rallies) hasn't been met — a "coming up" hint so a region reveals
@@ -1173,9 +1169,8 @@ its name + stats (drive / **horsepower (HP)** / **weight (kg)** / **Health %**) 
 overlays. Power-to-weight is deliberately **not** shown here; the p/w ratio
 only surfaces where it matters, in the upgrades-menu detune readout. There is
 no floating 3D label above the car. A **wrecked** focused car (`Save.car_is_wrecked`) is
-**too damaged to enter**: Start is disabled and a warning explains why; if a **Repair
-Kit** is owned, a **Repair (1 kit)** button fully restores it (`Save.use_repair_kit`)
-and unlocks Start. An **over-powered** focused car — its p/w sits over the rally's
+**permanently too damaged to enter**: Start is disabled and the warning reads as final
+("wrecked beyond repair") rather than as an instruction, because nothing revives it. An **over-powered** focused car — its p/w sits over the rally's
 `pw_max` cap but detuning the engine would duck it under — still parks
 (`_build_eligible_lineup` records its qualifying tune from
 `RallyLibrary.qualifying_detune` in `_detune_needed`) and **looks eligible** — no
@@ -1481,8 +1476,8 @@ opens the **rally detail**, and Enter flies to the
 **car park** which **filters to the eligible cars** (an AWD car is excluded from an
 RWD-only rally); an open rally parks the whole lineup with **per-car meshes** (a
 mixed lineup keeps each body at its true size); cycling focus re-selects the car and
-wraps; a **wrecked car is gated in the car park** (Start disabled, then a Repair Kit
-restores it to full health and unlocks Start); an **over-powered car parks with the
+wraps; a **wrecked car is gated in the car park permanently** (Start stays disabled —
+there is no repair); an **over-powered car parks with the
 detune-to-enter prompt** (looks eligible; Start pops the on-brand modal offering
 Cancel / Change Upgrades — Change Upgrades opens the gated shared `UpgradesMenu` to
 shed power permanently via the detune slider / ballast / stripping parts, then the

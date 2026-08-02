@@ -56,8 +56,8 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   most-recently-selected car first, and that order persists across relaunches
   (car park lineups iterate `cars`).
 - `inventory` — `{ item_id -> count }`: the **unlocked pool** of not-yet-applied
-  upgrades (won but kept for later) + the consumables (repair kits + engine swap
-  tokens). Adding a new consumable is just a new key — no `SCHEMA_VERSION` bump,
+  upgrades (won but kept for later) + the consumables (engine swap tokens + mystery
+  boxes). Adding a new consumable is just a new key — no `SCHEMA_VERSION` bump,
   and an absent key reads as count 0.
 - `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed } }`, only
   completed rallies present. Completion count is the single progression metric;
@@ -112,12 +112,14 @@ heuristic.
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
 that mutate + autosave: `grant_car(model_id)`, `get_car(instance_id)`,
 `apply_damage(instance_id, amount)`, `wreck_car(instance_id)` (leaves the car owned
-at **0 HP** — not destroyed — too damaged to field until repaired),
+at **0 HP** — not destroyed — and permanently un-fieldable),
 `car_is_wrecked(car)` (the 0-HP predicate the menus gate on),
-`ensure_repair_safety_net()` (anti-soft-lock floor — if the player owns ≥1 car,
-**every** owned car is wrecked, and **no** repair kits are held, grants ONE free
-Repair Kit and returns true, else no-op/false; called at the end of `load_or_new`
-and on every garage-lift refresh, `hq.gd:_refresh_lift_ui`),
+`all_cars_wrecked()` (the soft-lock predicate: owns ≥1 car and every one is a
+write-off), `ensure_wreck_safety_net()` (anti-soft-lock floor — when
+`all_cars_wrecked()` and **no** Mystery Box is held, grants ONE free box and returns
+true, else no-op/false; called at the end of `load_or_new` and on every garage-lift
+refresh, `hq.gd:_refresh_lift_ui`. Opening that box grants a new CAR — see
+[reward-system.md](reward-system.md)),
 `set_tuning(instance_id, tuning)`,
 `swap_engines(id_a, id_b)` (exchanges two owned cars' CURRENT engines; free,
 unlimited, reversible, gated on both sitting at 100% HP via `EngineSwap.can_swap`
@@ -134,8 +136,6 @@ it, a duplicate of a part already on the car is rejected, and a wrecked car
 keeps its parts fitted; see `features/upgrade-catalogue.md`),
 `set_upgrade_enabled(instance_id, item_id, enabled)` (the upgrades-menu toggle —
 free and reversible; enabling a part switches off its same-slot siblings),
-`use_repair_kit(instance_id)`
-(spend a kit to **fully restore** health — revives a wrecked car),
 `complete_rally(rally_id, combined_ms,
 placed)` (idempotent; keeps the best time **and** best placement; does **not** grant
 the car reward — re-wins are farmable). `rally_completed(id)` /
@@ -159,10 +159,12 @@ the car reward — re-wins are farmable). `rally_completed(id)` /
   runs in-memory rather than clobbering the file. Current `SCHEMA_VERSION` is
   `2`; the one authored step is **1 → 2**, added alongside upgrades becoming
   CAR-BOUND: the old shared `inventory` pool of slottable parts is gone (parts
-  now live on the `OwnedCar` they were won for), so the step strips every
-  non-repair-kit entry from `inventory` — those unbound parts were never
-  applied and have no car to belong to — while leaving repair kits (the one
-  remaining pooled consumable) untouched.
+  now live on the `OwnedCar` they were won for), so the step strips **every** entry
+  from `inventory` — those unbound parts were never applied and have no car to belong
+  to, and the repair kits the step used to preserve no longer exist as an item.
+  A retired `repair_kit` key on a CURRENT-version profile is dropped by `_sanitise`
+  instead of by a migration, so no `SCHEMA_VERSION` bump is needed and older builds
+  can still read the file.
 - **Web build:** on the HTML5 export `user://` is IndexedDB (Emscripten IDBFS) —
   `FileAccess` writes land in an in-memory FS that is pushed to IndexedDB
   *asynchronously*, so a write that hasn't synced when the page goes away is
@@ -206,7 +208,7 @@ to recompute on `complete_rally`. `item_id`s come from the upgrade catalogue
 
 `tests/headless/test_save_manager.gd` — round-trip, default profile, instance-id
 uniqueness, HP seeding, idempotent rally completion, wreck-returns-upgrades,
-the starter wrecking like any car, the `ensure_repair_safety_net` free-kit floor
+the starter wrecking like any car, the `ensure_wreck_safety_net` free-box floor
 (all cars wrecked + none held), inventory counts,
 migration refuse/backfill, corrupt-JSON
 and `.bak` fallback, unknown-model + retired-part pruning, new-game reset.

@@ -87,7 +87,7 @@ func test_draw_upgrade_returns_parts_at_target_tier_with_rare_consumables() -> v
 			assert_lte(int(UpgradeLibrary.by_id(id)["tier"]), 2, "drawn part never exceeds the target tier")
 	assert_gt(consumables, 0, "the rare consumables do appear")
 	# Not `parts > consumables`: that pins the shipped catalogue's part-vs-consumable
-	# weighting (a designer retuning REPAIR_KIT_DROP_WEIGHT/ENGINE_SWAP_TOKEN_DROP_WEIGHT
+	# weighting (a designer retuning ENGINE_SWAP_TOKEN_DROP_WEIGHT
 	# could reasonably flip it). The real invariant is just that consumables stay rare
 	# relative to the sample, not that parts strictly outnumber them.
 	assert_gt(parts, 0, "parts are drawn at all")
@@ -280,7 +280,7 @@ func test_pick_mystery_box_grant_only_targets_cars_with_room() -> void:
 func test_pick_mystery_box_grant_empty_when_every_car_is_maxed() -> void:
 	var profile := _profile_with_inventory([_maxed_car(1), _maxed_car(2)], {})
 	var grant := RewardSystem.pick_mystery_box_grant(profile, _rng(1))
-	assert_true(grant.is_empty(), "no candidate has room — the opener must fall back to a repair kit")
+	assert_true(grant.is_empty(), "no candidate has room — the opener must leave the box unspent")
 
 
 # --- Car draw ----------------------------------------------------------------

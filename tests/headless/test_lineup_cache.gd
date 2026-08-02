@@ -138,32 +138,29 @@ func _has_smoke(car: Node) -> bool:
 	return not car.find_children("*", "EngineSmoke", true, false).is_empty()
 
 
-# Repairing the selected car from the garage Repair button heals it immediately: the
-# wrecked prop (which smokes) is rebuilt as a healthy one that does not — the reported
-# bug was the stale prop smoking on after a repair.
-func test_repairing_from_the_garage_stops_the_smoke() -> void:
+# The lift prop must not go stale when the selected car's health changes underneath it.
+# This used to be driven by REPAIRING a wreck (the prop kept smoking after the heal);
+# repair kits are gone, so the same invariant is exercised in the direction that still
+# exists — wrecking a healthy car must respawn a prop that smokes.
+func test_wrecking_the_selected_car_respawns_a_smoking_prop() -> void:
 	var id := int(_save.profile["cars"][0]["instance_id"])
 	_save.set_selected_car(id)
-	_save.wreck_car(id)
-	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
 
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
 	await get_tree().process_frame
 	hq._ensure_lift_car()
-	assert_true(_has_smoke(hq._lift_car), "precondition: a wrecked selected car smokes")
+	assert_false(_has_smoke(hq._lift_car), "precondition: a healthy selected car does not smoke")
 
-	hq._repair_selected_car()
-	assert_true(is_instance_valid(hq._lift_car), "the prop still holds a car after the repair")
-	assert_false(_has_smoke(hq._lift_car), "the repaired car no longer smokes")
-
-
-# Repairing the wrecked focused car in the car park respawns a healthy prop that no
-# longer smokes (same stale-prop bug, other repair entry point).
-func test_repairing_in_the_car_park_stops_the_smoke() -> void:
-	var id := int(_save.profile["cars"][0]["instance_id"])
 	_save.wreck_car(id)
-	_save.add_item(UpgradeLibrary.REPAIR_KIT_ID, 1)
+	hq._ensure_lift_car()
+	assert_true(is_instance_valid(hq._lift_car), "the prop still holds a car after the change")
+	assert_true(_has_smoke(hq._lift_car), "the now-wrecked car smokes — the prop was rebuilt")
+
+
+# Same staleness invariant at the car-park entry point.
+func test_wrecking_a_parked_car_respawns_a_smoking_prop() -> void:
+	var id := int(_save.profile["cars"][0]["instance_id"])
 
 	var hq: Node3D = load("res://hq.tscn").instantiate()
 	add_child_autofree(hq)
@@ -171,19 +168,18 @@ func test_repairing_in_the_car_park_stops_the_smoke() -> void:
 
 	await _build_and_wait(hq, _owned_cars_live())
 	hq._focus = 0
-	var wrecked_car = hq._cars[0]
-	assert_true(_has_smoke(wrecked_car), "precondition: the wrecked parked car smokes")
+	assert_false(_has_smoke(hq._cars[0]), "precondition: the healthy parked car does not smoke")
 
-	hq._repair_focused_car()
-	await _wait_for_lineup(hq)
-	assert_false(_has_smoke(hq._cars[0]), "the repaired parked car no longer smokes")
+	_save.wreck_car(id)
+	await _build_and_wait(hq, _owned_cars_live())
+	assert_true(_has_smoke(hq._cars[0]), "the now-wrecked parked car smokes")
 
 
 # The lift prop is a cache of the selected car's owned data, keyed on instance id AND a
 # deep hash of the owned dict (hq.gd._ensure_lift_car). An in-place data change to the
-# selected car (repair, upgrade toggle, engine swap, ...) flips that hash, so the prop
+# selected car (wreck, upgrade toggle, engine swap, ...) flips that hash, so the prop
 # auto-respawns on the next _ensure_lift_car — no mutator has to remember to force it.
-# This is the invariant that keeps every lift mutator safe; the two repair tests above
+# This is the invariant that keeps every lift mutator safe; the two smoke tests above
 # are one visible consequence of it.
 func test_lift_prop_respawns_when_the_selected_cars_data_changes() -> void:
 	var id := int(_save.profile["cars"][0]["instance_id"])
@@ -317,7 +313,7 @@ func test_lift_prop_reused_when_the_selected_car_is_unchanged() -> void:
 
 
 # Owned cars as LIVE Save references (not deep copies) — the car-park eligible lineup
-# holds live refs, so use_repair_kit's in-place heal flips their deep hash and forces
+# holds live refs, so an in-place health change flips their deep hash and forces
 # a respawn. _owned_cars() (deep copy) would sever that link.
 func _owned_cars_live() -> Array:
 	return _save.profile.get("cars", [])

@@ -206,7 +206,7 @@ same pattern for the rally and upgrade catalogues:
   `fx_ballast` (free, `mass_mult > 1`), `fx_drivetrain` — one part
   per effect shape the apply/`effective_meta` pipeline reads. It re-exports the
   two **structural** consumables by their real constant ids
-  (`UpgradeLibrary.REPAIR_KIT_ID` / `ENGINE_SWAP_TOKEN_ID`) so the save/reward
+  (`UpgradeLibrary.ENGINE_SWAP_TOKEN_ID` / `MYSTERY_BOX_ID`) so the save/reward
   code that looks them up by constant isn't stranded under the override.
 - Same `install()` / `restore()` contract and the same **mandatory-restore**
   rule as `CarFixtures`. Two scoping styles are used, both fine: **global**

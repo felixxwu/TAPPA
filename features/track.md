@@ -200,6 +200,13 @@ search cost (and its restart/backtrack variability) from both generation sites
   that stage. Bumping `CACHE_VERSION` alone, without also bumping
   `BOARD_EPOCH`, leaves old leaderboard entries silently attached to a stage
   whose layout has since changed underneath them.
+- **Diagnosing a bake failure:** the baker prints
+  `track cache: rally X seed N did not complete` when `generate` returns
+  `complete == false` for an event. `cache_tracks.sh` has no per-event mode, so use
+  `./probe_track.sh --rally=X --seed=N` (see
+  [debug-tools.md](debug-tools.md) → "Track-generation probe") to re-run just that
+  event and see the resolved params, the waterline around the start, and how many
+  corners the DFS placed — without rewriting the committed lockfile.
 - **Validation:** the lockfile stores a `source_hash` (SHA-256 of the sorted
   event-key set). CI (`tools/verify_track_cache.tscn`, gating the export jobs) and
   the local suite (`test_track_cache.gd`) recompute and compare it — a forgotten
